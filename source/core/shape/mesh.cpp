@@ -107,7 +107,7 @@ HASH_TABLE **Mesh::Vertex_Hash_Table;
 HASH_TABLE **Mesh::Normal_Hash_Table;
 UV_HASH_TABLE **Mesh::UV_Hash_Table;
 
-thread_local std::unique_ptr<BBoxPriorityQueue> Mesh::mtpQueue(new BBoxPriorityQueue());
+thread_local BBoxPriorityQueue Mesh::mtpQueue;
 
 /*****************************************************************************
 *
@@ -1461,7 +1461,7 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
     Rayinfo rayinfo(ray);
 
     /* Start with an empty priority queue. */
-    mtpQueue->Clear();
+    mtpQueue.Clear();
     found = false;
 
     Best = BOUND_HUGE;
@@ -1476,13 +1476,13 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
 
     /* Set the root object infinite to avoid a test. */
 
-    Check_And_Enqueue(*mtpQueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
+    Check_And_Enqueue(mtpQueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
 
     /* Check elements in the priority queue. */
 
-    while (!mtpQueue->IsEmpty())
+    while (!mtpQueue.IsEmpty())
     {
-        mtpQueue->RemoveMin(Depth, Node);
+        mtpQueue.RemoveMin(Depth, Node);
 
         /*
          * If current intersection is larger than the best intersection found
@@ -1506,7 +1506,7 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
             /* This is a node containing leaves to be checked. */
 
             for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(*mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats());
+                Check_And_Enqueue(mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats());
         }
         else
         {
@@ -2373,7 +2373,7 @@ bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats) const
     Rayinfo rayinfo(ray);
 
     /* Start with an empty priority queue. */
-    mtpQueue->Clear();
+    mtpQueue.Clear();
     found = 0;
 
     Best = BOUND_HUGE;
@@ -2386,19 +2386,19 @@ bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats) const
     Root = Data->Tree;
 
     /* Set the root object infinite to avoid a test. */
-    Check_And_Enqueue(*mtpQueue, Root, &Root->BBox, &rayinfo, stats);
+    Check_And_Enqueue(mtpQueue, Root, &Root->BBox, &rayinfo, stats);
 
     /* Check elements in the priority queue. */
-    while (!mtpQueue->IsEmpty())
+    while (!mtpQueue.IsEmpty())
     {
-        mtpQueue->RemoveMin(Depth, Node);
+        mtpQueue.RemoveMin(Depth, Node);
 
         /* Check current node. */
         if (Node->Entries)
         {
             /* This is a node containing leaves to be checked. */
             for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(*mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, stats);
+                Check_And_Enqueue(mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, stats);
         }
         else
         {

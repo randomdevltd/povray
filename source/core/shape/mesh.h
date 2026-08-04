@@ -206,7 +206,8 @@ private:
         /// functions and making it thread-local, but this would mean having one such
         /// object per function, when it's perfectly safe for them to share one object.
         ///
-        static thread_local std::unique_ptr<BBoxPriorityQueue> mtpQueue;
+        /// Direct TLS object (avoids unique_ptr indirection / TLS init cost on hot path).
+        static thread_local BBoxPriorityQueue mtpQueue;
 };
 
 /// @}
