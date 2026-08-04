@@ -79,24 +79,25 @@ bool sort_and_split(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteOb
 
 BBoxPriorityQueue::BBoxPriorityQueue()
 {
+    // Pre-reserve heap capacity: avoids repeated realloc/default-append on Insert
+    // (profile: tens of millions of Inserts per frame on complex scenes).
+    mQueue.reserve(1024);
     mQueue.resize(BBQ_FIRST_ELEMENT); // element 0 is reserved
 }
 
 BBoxPriorityQueue::~BBoxPriorityQueue()
 {}
 
+__attribute__((hot))
 void BBoxPriorityQueue::Insert(DBL depth, ConstBBoxTreePtr node)
 {
-    vector<Qelem>::size_type size;
-    vector<Qelem>::size_type i;
+    // Grow with push_back (no default-fill of intermediate elements).
+    mQueue.push_back(Qelem());
+    vector<Qelem>::size_type i = mQueue.size() - 1;
 
-    size = mQueue.size();
-    mQueue.resize(size+1);
-
-    i = size;
-    while((i > BBQ_FIRST_ELEMENT) && (depth < mQueue[i/2].depth))
+    while ((i > BBQ_FIRST_ELEMENT) && (depth < mQueue[i / 2].depth))
     {
-        mQueue[i] = mQueue[i/2];
+        mQueue[i] = mQueue[i / 2];
         i /= 2;
     }
     mQueue[i].depth = depth;
@@ -114,24 +115,30 @@ bool BBoxPriorityQueue::RemoveMin(DBL& depth, ConstBBoxTreePtr& node)
     depth = mQueue[BBQ_FIRST_ELEMENT].depth;
     node  = mQueue[BBQ_FIRST_ELEMENT].node;
 
+    // Last element to re-insert into the heap (before pop).
+    const Qelem last = mQueue[size];
+    mQueue.pop_back();
+    size = mQueue.size() - 1; // new last index; 0 if only sentinel remains
+
+    if (size == 0)
+        return true;
+
     i = BBQ_FIRST_ELEMENT;
 
-    while (i <= size/2) // equivalent to 2*i <= size, but more robust
+    while (i <= size / 2) // equivalent to 2*i <= size, but more robust
     {
-        if ((2*i == size) || (mQueue[2*i].depth < mQueue[2*i+1].depth))
-            j = 2*i;
+        if ((2 * i == size) || (mQueue[2 * i].depth < mQueue[2 * i + 1].depth))
+            j = 2 * i;
         else
-            j = 2*i+1;
+            j = 2 * i + 1;
 
-        if (mQueue[size].depth <= mQueue[j].depth)
+        if (last.depth <= mQueue[j].depth)
             break;
 
         mQueue[i] = mQueue[j];
         i = j;
     }
-    if (i != size)
-        mQueue[i] = mQueue[size];
-    mQueue.pop_back();
+    mQueue[i] = last;
 
     return true;
 }
@@ -143,6 +150,7 @@ bool BBoxPriorityQueue::IsEmpty() const
 
 void BBoxPriorityQueue::Clear()
 {
+    // Keep capacity; only reset logical size (C++11+ resize-down preserves capacity).
     mQueue.resize(BBQ_FIRST_ELEMENT);
 }
 
@@ -538,6 +546,8 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     return (found);
 }
 
+// Hot path: tens of millions of calls per frame on complex scenes.
+__attribute__((hot))
 void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats)
 {
     DBL dmin, dmax;
