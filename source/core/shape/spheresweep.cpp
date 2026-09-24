@@ -86,6 +86,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <vector>
 
 // POV-Ray header files (base module)
 #include "base/povassert.h"
@@ -173,10 +174,12 @@ const MATRIX B_Matrix =
 
 bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
-    // TODO - To improve performance, we might use thread-local buffers for all sphere sweeps.
-    SPHSWEEP_INT    *Isect = reinterpret_cast<SPHSWEEP_INT *>(POV_MALLOC(sizeof(SPHSWEEP_INT) * SPHSWEEP_MAX_ISECT, "sphere sweep intersections"));
-    SPHSWEEP_INT    *Sphere_Isect = reinterpret_cast<SPHSWEEP_INT *>(POV_MALLOC(sizeof(SPHSWEEP_INT) * 2 * Num_Spheres, "Sphere sweep sphere intersections"));
-    SPHSWEEP_INT    *Segment_Isect = reinterpret_cast<SPHSWEEP_INT *>(POV_MALLOC(sizeof(SPHSWEEP_INT) * 12 * Num_Segments, "Sphere sweep segment intersections"));
+    static thread_local std::vector<SPHSWEEP_INT> IsectBuffer(SPHSWEEP_MAX_ISECT);
+    static thread_local std::vector<SPHSWEEP_INT> SegmentBuffer;
+    if (SegmentBuffer.size() < size_t(12 * Num_Segments))
+        SegmentBuffer.resize(12 * Num_Segments);
+    SPHSWEEP_INT    *Isect = IsectBuffer.data();
+    SPHSWEEP_INT    *Segment_Isect = SegmentBuffer.data();
     BasicRay        New_Ray;
     DBL             len;
     bool            Intersection_Found = false;
@@ -266,10 +269,6 @@ bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceTh
         if(Intersection_Found)
             Thread->Stats()[Ray_Sphere_Sweep_Tests_Succeeded]++;
     }
-
-    POV_FREE(Isect);
-    POV_FREE(Sphere_Isect);
-    POV_FREE(Segment_Isect);
 
     return Intersection_Found;
 }
