@@ -88,7 +88,7 @@ static void cpuid(int *out, int in)
                           movl %%edx, 0xc(%%rdi);   \
                           popq %%rbx;"              \
                           : : "D" (out), "S" (in)   \
-                          : "%rax", "%rcx", "%rdx");
+                          : "%rax", "%rcx", "%rdx", "memory");
 #else // Architecture
 #error "Don't know how to invoke CPUID on this target architecture."
 #endif // Architecture
