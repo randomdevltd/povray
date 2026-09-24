@@ -80,7 +80,7 @@ OptimizedNoiseInfo gaOptimizedNoiseInfo[] = {
         AVX2FMA3DNoise,             // dNoise,
         &kAVX2FMA3NoiseEnabled,     // enabled,
         AVX2FMA3Supported,          // supported,
-        CPUInfo::IsIntel,           // recommended,
+        nullptr,                    // recommended,
         AVX2FMA3NoiseInit           // init
     },
 #endif
