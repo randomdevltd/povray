@@ -201,7 +201,7 @@ bool Mesh::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *
 
     found = false;
 
-    if (Data->Tree == nullptr)
+    if ((Data->Tree == nullptr) && (Data->FlatTree == nullptr))
     {
         /* There's no bounding hierarchy so just step through all elements. */
 
@@ -281,7 +281,7 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
     found = 0;
 
-    if (Data->Tree == nullptr)
+    if ((Data->Tree == nullptr) && (Data->FlatTree == nullptr))
     {
         /* just step through all elements. */
         for (i = 0; i < Data->Number_Of_Triangles; i++)
@@ -1409,6 +1409,8 @@ void Mesh::Build_Mesh_BBox_Tree()
     Build_BBox_Tree(&Data->Tree, nElem, Triangles, 0, nullptr, maxfinitecount);
     delete Data->FlatTree;
     Data->FlatTree = Build_Flat_BBox_Tree(Data->Tree);
+    Destroy_BBox_Tree(Data->Tree);
+    Data->Tree = nullptr;
 
     /* Get rid of the Triangles array. */
 
@@ -2387,12 +2389,23 @@ bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats) const
     DBL Best, Depth;
     const BBOX_TREE *Node, *Root;
 
+    found = 0;
+    if (Data->FlatTree != nullptr)
+    {
+        Best = BOUND_HUGE;
+        Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, false, stats, [&](const void *leaf) {
+            if (intersect_mesh_triangle(ray, reinterpret_cast<const MESH_TRIANGLE *>(leaf), &Depth))
+                found++;
+            return false;
+        });
+        return ((found & 1) != 0);
+    }
+
     /* Create the direction vectors for this ray. */
     Rayinfo rayinfo(ray);
 
     /* Start with an empty priority queue. */
     mtpQueue.Clear();
-    found = 0;
 
     Best = BOUND_HUGE;
 
