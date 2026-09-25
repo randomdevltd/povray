@@ -572,8 +572,34 @@ static std::int32_t Flatten_Node(FlatBBoxTree& tree, const BBOX_TREE *node)
         return -std::int32_t(tree.leaves.size());
     }
 
+    // Pull up the grandchildren of the largest child nodes while they fit, so blocks run full.
+    vector<const BBOX_TREE *> kids(node->Node, node->Node + node->Entries);
+    while (kids.size() < size_t(FLAT_BBOX_WIDTH))
+    {
+        int pick = -1;
+        BBoxScalar pickArea = -1.0f;
+        for (size_t i = 0; i < kids.size(); ++i)
+        {
+            const BBOX_TREE *c = kids[i];
+            if ((c->Entries == 0) || c->Infinite || (kids.size() - 1 + c->Entries > size_t(FLAT_BBOX_WIDTH)))
+                continue;
+            const BBoxVector3d& s = c->BBox.size;
+            const BBoxScalar area = s[X] * s[Y] + s[Y] * s[Z] + s[Z] * s[X];
+            if (area > pickArea)
+            {
+                pickArea = area;
+                pick = int(i);
+            }
+        }
+        if (pick < 0)
+            break;
+        const BBOX_TREE *c = kids[pick];
+        kids.erase(kids.begin() + pick);
+        kids.insert(kids.end(), c->Node, c->Node + c->Entries);
+    }
+
     const std::int32_t first = std::int32_t(tree.blocks.size());
-    const int count = node->Entries, nblocks = (count + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
+    const int count = int(kids.size()), nblocks = (count + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
     FlatBBoxBlock empty;
     for (int d = X; d <= Z; ++d)
         for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
@@ -590,10 +616,10 @@ static std::int32_t Flatten_Node(FlatBBoxTree& tree, const BBOX_TREE *node)
         tree.blocks.push_back(empty);
     }
     for (int i = 0; i < count; ++i)
-        Set_Flat_Lane(tree.blocks[first + i / FLAT_BBOX_WIDTH], i % FLAT_BBOX_WIDTH, node->Node[i]);
+        Set_Flat_Lane(tree.blocks[first + i / FLAT_BBOX_WIDTH], i % FLAT_BBOX_WIDTH, kids[i]);
     for (int i = 0; i < count; ++i)
     {
-        const std::int32_t ref = Flatten_Node(tree, node->Node[i]);
+        const std::int32_t ref = Flatten_Node(tree, kids[i]);
         tree.blocks[first + i / FLAT_BBOX_WIDTH].child[i % FLAT_BBOX_WIDTH] = ref;
     }
     return first;
