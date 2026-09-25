@@ -1,0 +1,37 @@
+# Tuned build in a container; usage and build arguments in doc/PERF.md#container.
+ARG BASE=docker.io/library/ubuntu:26.04
+
+FROM ${BASE} AS build
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential autoconf automake libtool pkg-config autoconf-archive ca-certificates \
+      libboost-dev libboost-date-time-dev libboost-thread-dev zlib1g-dev libpng-dev libjpeg-dev libtiff-dev \
+ && rm -rf /var/lib/apt/lists/*
+ARG MARCH=native
+ARG MTUNE=native
+ARG PGO=1
+COPY . /src
+WORKDIR /src
+RUN FLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -flto=auto -fno-finite-math-only" \
+ && CONF="--prefix=/usr/local --without-x --without-libsdl --disable-optimiz-arch COMPILED_BY=randomdevltd/povray" \
+ && (cd unix && ./prebuild.sh) \
+ && if [ "${PGO}" = 1 ]; then \
+      ./configure $CONF CXXFLAGS="$FLAGS -fprofile-generate -fprofile-update=atomic" LDFLAGS=-fprofile-generate \
+      && make -j"$(nproc)" \
+      && (cd distribution/scenes/advanced/benchmark \
+          && /src/unix/povray benchmark.ini +L/src/distribution/include +W256 +H256 -D -F) \
+      && find . -name '*.o' -delete && find . -name '*.a' -delete \
+      && FLAGS="$FLAGS -fprofile-use -fprofile-partial-training -Wno-missing-profile"; \
+    fi \
+ && ./configure $CONF CXXFLAGS="$FLAGS" \
+ && make -j"$(nproc)" \
+ && make install DESTDIR=/out
+
+FROM ${BASE}
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      zlib1g libpng16-16t64 libjpeg-turbo8 libtiff6 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/usr/local /usr/local
+WORKDIR /work
+ENTRYPOINT ["povray"]
