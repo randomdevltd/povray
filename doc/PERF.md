@@ -119,7 +119,8 @@ haze.
 `media-shafts.pov` is the hard case: dense haze entirely in the soft shadow of a slatted roof. At 320×240, `+WT2`,
 40 samples, it took 252.6 CPU-s before and 40.1 after. Against a 400-sample `method 2` render its mean is 138.3; the
 old code gives 139.3 and differs per pixel by 7.5 levels once the mean is taken out, the new 138.1 and 8.1. One point
-per sample gave 12.3, three 8.7, six 8.0 at 1.5 times the cost of four.
+per sample gave 12.3, three 8.7, six 8.0 at 1.5 times the cost of four. In the dense soft shadow at upper right the new image is
+about 2.7 levels (1%) darker than the old, with about 10% more rms grain; neither is visible.
 
 `method 3` chooses where to subdivide from the sample values, so a noisy visibility estimate makes its weights
 correlate with the values: a systematic bias, not noise. With one point per sample it brightened mostly lit haze and
