@@ -558,8 +558,11 @@ static void Set_Flat_Lane(FlatBBoxBlock& b, int k, const BBOX_TREE *child)
         }
         else
         {
-            b.lo[d][k] = child->BBox.lowerLeft[d];
-            b.hi[d][k] = child->BBox.lowerLeft[d] + child->BBox.size[d];
+            // Padded outward so single-precision rounding never rejects a box the old test accepted.
+            const float lo = child->BBox.lowerLeft[d], hi = child->BBox.lowerLeft[d] + child->BBox.size[d];
+            const float pad = 1.0e-6f * (std::fabs(lo) + std::fabs(hi)) + 1.0e-20f;
+            b.lo[d][k] = lo - pad;
+            b.hi[d][k] = hi + pad;
         }
     }
 }
