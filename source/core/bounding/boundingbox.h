@@ -387,14 +387,14 @@ void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DB
         stats[nEnqueued] += size - base;
         std::sort(stack + base, stack + size, [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth < b.depth; });
 
-        // Leaves are tested now, nearest first, so their hits cull the nodes queued beside them.
+        // Leaves nearer than any sibling node are tested now, so their hits cull the rest; later ones queue behind the nodes.
         int nodes = base;
         for (int i = base; i < size; ++i)
         {
             const FlatBBoxEntry h = stack[i];
             if (cull && h.depth > best)
                 break;
-            if (h.ref >= 0)
+            if ((h.ref >= 0) || (nodes > base))
                 stack[nodes++] = h;
             else if (leaf(tree.leaves[-1 - h.ref]))
                 return;
