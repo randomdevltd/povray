@@ -8,8 +8,8 @@ Measured on a 4-vCPU AMD EPYC Genoa VM (Ubuntu 26.04, GCC 15) with `tools/bench`
 at `+WT4`, minus a 1-pixel render of the same scene, so tracing and parsing separate. Medians of two to six
 repeats; repeats agree within 2%. The reference is Ubuntu's packaged POV-Ray 3.7.0.10.
 
-**A large private scene**: 74 thousand finite objects (meshes of up to millions of triangles, height fields, sphere
-sweeps, blobs), 13 lights, a 1854×85-pixel band, no anti-aliasing. Shadow rays are 97% of all rays.
+**A large private scene**: 74 thousand finite objects, mostly meshes, rendered as a band without anti-aliasing.
+Shadow rays are 97% of all rays.
 
 | Build | Trace Gcycles | vs 3.7 | Parse Gcycles | Peak memory |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@ sweeps, blobs), 13 lights, a 1854×85-pixel band, no anti-aliasing. Shadow rays 
 | this branch | 122.0 | −52.6% | 114.5 | 1527 MB |
 | this branch, PGO | 117.3 | −54.5% | 105.1 | 1526 MB |
 
-**The whole frame** of the same scene at 1236×708, one run each:
+**The whole frame** of the same scene at low resolution, one run each:
 
 | Build | Gcycles | Wall | Trace CPU | Peak memory |
 |---|---|---|---|---|
@@ -27,7 +27,7 @@ sweeps, blobs), 13 lights, a 1854×85-pixel band, no anti-aliasing. Shadow rays 
 | this branch | 1244 | 119.2 s | 317 s | 1506 MB |
 | this branch, PGO | 1166 | 111.9 s | 297 s | 1505 MB |
 
-PGO here was trained on two other bands of the same scene.
+PGO here was trained on other parts of the same scene.
 
 **The standard benchmark scene** (3.7's `benchmark.pov`, 384×384, its own `benchmark.ini`), where noise, media and
 isosurfaces dominate and bounding barely registers:
@@ -39,8 +39,8 @@ isosurfaces dominate and bounding barely registers:
 | this branch | 1125.9 | +0.8% | 87.7 s |
 | this branch, PGO | 1102.1 | −1.3% | 85.6 s |
 
-Single-threaded renders repeat bit for bit. Against 3.8 master this branch changes 0.15% of pixels in a 1854×31
-band, 0.01% by more than 2 levels and none by more than 11: rays that meet the shared edge of two triangles get the
+Single-threaded renders repeat bit for bit. Against 3.8 master this branch changes 0.15% of pixels in a test band,
+0.01% by more than 2 levels and none by more than 11: rays that meet the shared edge of two triangles get the
 same depth from both, and which one supplies the normal depends on the order they are tested in. PGO alone
 changes about as many.
 
@@ -116,5 +116,5 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Triangles: test a block's triangle leaves eight at a time.
-- Height fields: 5% of the large scene in their own block walk.
+- Height fields: their own block walk.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.

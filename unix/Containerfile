@@ -5,7 +5,7 @@ FROM ${BASE} AS build
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential autoconf automake libtool pkg-config autoconf-archive ca-certificates \
-      libboost-dev libboost-date-time-dev libboost-thread-dev zlib1g-dev libpng-dev libjpeg-dev libtiff-dev \
+      libboost-dev zlib1g-dev libpng-dev libjpeg-dev libtiff-dev \
  && rm -rf /var/lib/apt/lists/*
 ARG MARCH=native
 ARG MTUNE=native

@@ -1,0 +1,7 @@
+.git
+**/*.o
+**/*.a
+**/.deps
+unix/povray
+config.status
+config.log
