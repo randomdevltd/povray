@@ -2268,6 +2268,19 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
     lightcolour = (sample_Colour[0] + sample_Colour[1] + sample_Colour[2] + sample_Colour[3]) * 0.25;
 }
 
+// Maps s in [0,1) to a grid coordinate distributed as the full adaptive grid weights its points: edge points half.
+static double AreaGridCoordinate(double s, int size, bool jitter)
+{
+    const double t = s * (size - 1);
+    if(!jitter)
+        return floor(t + 0.5);
+    if(t < 0.5)
+        return 2.0 * t - 0.5;
+    if(t > size - 1.5)
+        return 2.0 * t - size + 1.5;
+    return t;
+}
+
 void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                           const Vector3d& ipoint, MathColour& lightcolour, const Vector2d& sample)
 {
@@ -2276,19 +2289,8 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
 
     ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1, axis2);
 
-    // A jittered grid covers each cell, a plain one only its points.
-    u = sample[U] * lightsource.Area_Size1;
-    v = sample[V] * lightsource.Area_Size2;
-    if(lightsource.Jitter)
-    {
-        u -= 0.5;
-        v -= 0.5;
-    }
-    else
-    {
-        u = floor(u);
-        v = floor(v);
-    }
+    u = AreaGridCoordinate(sample[U], lightsource.Area_Size1, lightsource.Jitter);
+    v = AreaGridCoordinate(sample[V], lightsource.Area_Size2, lightsource.Jitter);
 
     ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, AreaLightOffset(lightsource, u, v, axis1, axis2));
     TracePointLightShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour);

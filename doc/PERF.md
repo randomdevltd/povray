@@ -98,32 +98,37 @@ light, and every one of those rays that left the media container integrated the 
 area suns, that came to 7,000 shadow rays and 263,000 media samples per camera ray: tracing the window cost 630 times
 as much as without the haze. A cycle profile put 40% of it in media along those shadow rays and 25% in their traversal.
 
-Now each media sample tests one point of each area light. The points of a ray follow the R2 low-discrepancy sequence,
-shifted at random per ray, so a ray's samples cover the whole light between them; a jittered light is sampled anywhere
-in its cells, an unjittered one only at its grid points. Surface lighting is unchanged, bit for bit.
+Now each media sample tests four points of each area light. The points of a ray follow the R2 low-discrepancy
+sequence, shifted at random per ray, so a ray's samples cover the whole light between them. They are distributed as
+the full grid weights its points, edge rows and columns at half weight; sampling the light uniformly instead drew a
+bright line where camera rays run along shadow edges. Surface lighting is unchanged, bit for bit.
 
 | Render | Before | After | |
 |---|---|---|---|
-| the window above, trace | 244.6 CPU-s, 1.66 G media samples, 44.1 M shadow rays | 13.1 CPU-s, 92 M, 2.45 M | 19× |
-| the whole large scene at 232×133, same media | 7886 Gcycles, trace 2237 CPU-s | 730 Gcycles, trace 179 CPU-s | 12.5× trace |
-| the same at `samples 8`, `aa_level 2` | 467 Gcycles, trace 99.6 CPU-s | 193 Gcycles, trace 22.3 CPU-s | 4.5× trace |
-| the standard benchmark, 384×384 | 1116.4 Gcycles | 571.6 Gcycles | −49% |
-| `tools/bench/media-shafts.pov`, 160×120, `+WT1` | 226.3 Gcycles | 9.2 Gcycles | 25× |
+| the window above, trace | 244.6 CPU-s, 1.66 G media samples, 44.1 M shadow rays | 50.1 CPU-s, 363 M, 9.4 M | 4.9× |
+| the whole large scene at 232×133, same media | 7886 Gcycles, trace 2237 CPU-s | 2167 Gcycles, trace 576 CPU-s | 3.9× trace |
+| the standard benchmark, 384×384 | 1116.4 Gcycles | 690.6 Gcycles | −38% |
+| `tools/bench/media-shafts.pov`, 160×120, `+WT1` | 226.3 Gcycles | 35.7 Gcycles | 6.3× |
 
-Gcycles include parsing, about 112 G for the large scene. At the same settings the images match within the renderer's
-own run-to-run noise at `+WT4`: over the whole large-scene frame the mean difference is 0.19 levels with 1.8% of
-pixels off by more than 2, where two runs of the same build differ by 0.19 and 2.2%. The standard benchmark's mean
-brightness is unchanged (151.03 against 151.02) and its differences, in the clouds, are as large as between two of
-its own runs after the change (0.35 against 0.44 levels).
+Gcycles include parsing, about 112 G for the large scene. Over its whole frame the new image differs from the old by
+0.14 levels on average, 1.1% of pixels by more than 2; two `+WT4` runs of one build differ by 0.19 to 0.23. The
+standard benchmark differs by 0.17 levels and keeps its mean brightness. Dropping the large scene's haze to
+`samples 8`, `aa_level 2` as a cheaper setting differs from the full setting by 0.50 levels, up to 74, in the sunlit
+haze.
 
-Dropping the large scene's haze to `samples 8`, `aa_level 2` instead, as a cheaper setting, differs 2.6 times as much
-(0.50 levels, 7.1% of pixels over 2, up to 74), concentrated in the sunlit haze.
+`media-shafts.pov` is the hard case: dense haze entirely in the soft shadow of a slatted roof. At 320×240, `+WT2`,
+40 samples, it took 252.6 CPU-s before and 40.1 after. Against a 400-sample `method 2` render its mean is 138.3; the
+old code gives 139.3 and differs per pixel by 7.5 levels once the mean is taken out, the new 138.1 and 8.1. One point
+per sample gave 12.3, three 8.7, six 8.0 at 1.5 times the cost of four.
 
-`media-shafts.pov` is the hard case: dense haze entirely in the soft shadow of a slatted roof. Against a 200-sample
-render of the old code, the old code at its 40 samples is off by 3.5 levels on average and 3.1 darker; the new code
-at 40 samples by 10.2 and 8.0 darker, at 160 samples by 3.9 and 2.4 darker for a third of the old cost. The darkening
-comes from `method 3`'s refinement reacting to the noisier samples: with `aa_level 1` the old and new means agree.
-Scenes like it need more `samples` for the same noise, and still come out cheaper.
+`method 3` chooses where to subdivide from the sample values, so a noisy visibility estimate makes its weights
+correlate with the values: a systematic bias, not noise. With one point per sample it brightened mostly lit haze and
+darkened mostly shadowed haze, by up to 12% in a one-level model; four points bring it within the old code's own error
+above. Choosing the subdivision from the unshadowed light instead removes the correlation, but then shadow edges are
+never refined and this scene came out 4 levels brighter than both references.
+
+`method 1` with `samples 10, 100`, which adds samples until their variance settles, averaged 10.6 samples per
+interval against 10.1 before, at 1.3 Gcycles against 7.3 for a 64×48 render, with the same error.
 
 ## Method
 
@@ -169,8 +174,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Isosurfaces: threaded dispatch or native code for the function interpreter, whose speed now depends on code
   placement; root finding that uses `max_gradient`.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
-- Media: shadow rays through media still integrate at the media's full sample count, 41% of the haze window's trace
-  after the change above; transmittance needs far fewer samples than in-scattering.
+- Media: shadow rays through media still integrate at the media's full sample count; transmittance needs far fewer
+  samples than in-scattering.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.

@@ -226,6 +226,9 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
         Transform_Tpattern(*i, Trans);
 }
 
+// Points of each area light tested per media sample; see doc/PERF.md.
+static const int kMediaAreaLightPoints = 4;
+
 MediaFunction::MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg) :
     randomNumbers(0.0, 1.0, 32768),
     randomNumberGenerator(&randomNumbers),
@@ -1006,7 +1009,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
                 }
             }
 
-            // Area lights: one point per sample, spread over the light along the ray (an R2 sequence).
+            // Area lights: a few points per sample, spread over the light along the ray (an R2 sequence).
             const double k = lightSampleIndex++;
 
             // Process all light sources.
@@ -1017,11 +1020,19 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
                 {
                     if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
                         lightSampleShift = Vector2d(randomNumberGenerator(), randomNumberGenerator());
-                    const double su = lightSampleShift[U] + k * 0.7548776662466927 + i * 0.6180339887498949;
-                    const double sv = lightSampleShift[V] + k * 0.5698402909980532 + i * 0.4142135623730950;
-                    const Vector2d areaSample(su - floor(su), sv - floor(sv));
-                    if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
-                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Light_Colour, ray, Light_Ray);
+                    const int points = lights[i].light->Area_Light ? kMediaAreaLightPoints : 1;
+                    MathColour Lit_Colour;
+                    for(int j = 0; j < points; j++)
+                    {
+                        const double kj = k * points + j;
+                        const double su = lightSampleShift[U] + kj * 0.7548776662466927 + i * 0.6180339887498949;
+                        const double sv = lightSampleShift[V] + kj * 0.5698402909980532 + i * 0.4142135623730950;
+                        const Vector2d areaSample(su - floor(su), sv - floor(sv));
+                        if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
+                            Lit_Colour += Light_Colour;
+                    }
+                    if(!Lit_Colour.IsZero())
+                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
                 }
             }
         }
