@@ -41,6 +41,7 @@
 #include "core/bounding/boundingbox.h"
 
 // C++ variants of C standard header files
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 
@@ -72,7 +73,7 @@ const int BBQ_FIRST_ELEMENT = 1;
 
 BBOX_TREE *create_bbox_node(int size);
 
-int find_axis(BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last);
+void sort_boxes(BBOX_TREE **boxes, ptrdiff_t count, int axis);
 void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last);
 void build_area_table(BBOX_TREE **Finite, ptrdiff_t a, ptrdiff_t b, BBoxScalar *areas);
 bool sort_and_split(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount, BBoxScalar **areaCache);
@@ -676,86 +677,11 @@ BBOX_TREE *create_bbox_node(int size)
     return (New);
 }
 
-template<int Axis>
-int CDECL compboxes(const void *in_a, const void *in_b)
+void sort_boxes(BBOX_TREE **boxes, ptrdiff_t count, int axis)
 {
-    const BoundingBox *a, *b;
-    BBoxScalar am, bm;
-    typedef const BBOX_TREE *CONST_BBOX_TREE_PTR;
-
-    a = &((*reinterpret_cast<const CONST_BBOX_TREE_PTR *>(in_a))->BBox);
-    b = &((*reinterpret_cast<const CONST_BBOX_TREE_PTR *>(in_b))->BBox);
-
-    am = 2.0 * a->lowerLeft[Axis] + a->size[Axis];
-    bm = 2.0 * b->lowerLeft[Axis] + b->size[Axis];
-
-    if(am < bm)
-        return -1;
-    else
-    {
-        if(am == bm)
-            return 0;
-        else
-            return 1;
-    }
-}
-
-int find_axis(BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last)
-{
-    int which = X;
-    ptrdiff_t i;
-    SNGL e, d = -BOUND_HUGE;
-    BBoxVector3d mins, maxs;
-    BoundingBox *bbox;
-
-    mins = BBoxVector3d(BOUND_HUGE);
-    maxs = BBoxVector3d(-BOUND_HUGE);
-
-    for(i = first; i < last; i++)
-    {
-        bbox = &(Finite[i]->BBox);
-
-        if(bbox->lowerLeft[X] < mins[X])
-            mins[X] = bbox->lowerLeft[X];
-
-        if(bbox->lowerLeft[X] + bbox->size[X] > maxs[X])
-            maxs[X] = bbox->lowerLeft[X] + bbox->size[X];
-
-        if(bbox->lowerLeft[Y] < mins[Y])
-            mins[Y] = bbox->lowerLeft[Y];
-
-        if(bbox->lowerLeft[Y] + bbox->size[Y] > maxs[Y])
-            maxs[Y] = bbox->lowerLeft[Y] + bbox->size[Y];
-
-        if(bbox->lowerLeft[Z] < mins[Z])
-            mins[Z] = bbox->lowerLeft[Z];
-
-        if(bbox->lowerLeft[Z] + bbox->size[Z] > maxs[Z])
-            maxs[Z] = bbox->lowerLeft[Z] + bbox->size[Z];
-    }
-
-    e = maxs[X] - mins[X];
-
-    if(e > d)
-    {
-        d = e;
-        which = X;
-    }
-
-    e = maxs[Y] - mins[Y];
-
-    if(e > d)
-    {
-        d = e;
-        which = Y;
-    }
-
-    e = maxs[Z] - mins[Z];
-
-    if(e > d)
-        which = Z;
-
-    return (which);
+    std::sort(boxes, boxes + count, [axis](const BBOX_TREE *a, const BBOX_TREE *b) {
+        return 2.0 * a->BBox.lowerLeft[axis] + a->BBox.size[axis] < 2.0 * b->BBox.lowerLeft[axis] + b->BBox.size[axis];
+    });
 }
 
 void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last)
@@ -854,25 +780,7 @@ bool sort_and_split(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteOb
     {
         BBoxScalar *area_left, *area_right;
         BBoxScalar best_index, new_index;
-
-        int Axis = find_axis(Finite, first, last);
-
-        // Actually, we could do this faster in several ways. We could use a
-        // logn algorithm to find the median along the given axis, and then a
-        // linear algorithm to partition along the axis. Oh well.
-
-        switch(Axis)
-        {
-            case X:
-                std::qsort(Finite + first, size, sizeof(BBOX_TREE*), compboxes<X>);
-                break;
-            case Y:
-                std::qsort(Finite + first, size, sizeof(BBOX_TREE*), compboxes<Y>);
-                break;
-            case Z:
-                std::qsort(Finite + first, size, sizeof(BBOX_TREE*), compboxes<Z>);
-                break;
-        }
+        int best_axis = Z;
 
         // area_left[] and area_right[] hold the surface areas of the bounding
         // boxes to the left and right of any given point. E.g. area_left[i] holds
@@ -883,21 +791,32 @@ bool sort_and_split(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteOb
         area_left  = *areaCache;
         area_right = area_left + size;
 
-        // Precalculate the areas for speed.
-        build_area_table(Finite, first, last - 1, area_left);
-        build_area_table(Finite, last - 1, first, area_right);
-        best_index = area_right[0] * float(size-3); // estimated cost of _not_ subdividing
-
-        for(i = 1; i < size; i++)
+        // The cheapest split over all three axes, not one axis picked by extent.
+        best_index = BOUND_HUGE;
+        for (int axis = X; axis <= Z; ++axis)
         {
-            new_index = float(i) * area_left[i-1] + float(size-i) * area_right[i];
+            sort_boxes(Finite + first, size, axis);
 
-            if(new_index < best_index)
+            build_area_table(Finite, first, last - 1, area_left);
+            build_area_table(Finite, last - 1, first, area_right);
+            if (axis == X)
+                best_index = area_right[0] * float(size-3); // estimated cost of _not_ subdividing
+
+            for(i = 1; i < size; i++)
             {
-                best_index = new_index;
-                best_loc = i + first;
+                new_index = float(i) * area_left[i-1] + float(size-i) * area_right[i];
+
+                if(new_index < best_index)
+                {
+                    best_index = new_index;
+                    best_loc = i + first;
+                    best_axis = axis;
+                }
             }
         }
+
+        if (best_axis != Z)
+            sort_boxes(Finite + first, size, best_axis);
     }
 
     // Stop splitting if splitting stops being effective.
