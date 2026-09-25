@@ -653,7 +653,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     Intersection New_Intersection;
     bool found = false;
 
-    Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](const void *leaf) {
+    Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](const void *leaf) {
         if (Find_Intersection(&New_Intersection, reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf)), ray, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
         {
@@ -670,7 +670,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     Intersection New_Intersection;
     bool found = false;
 
-    Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](const void *leaf) {
+    Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](const void *leaf) {
         ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf));
         if (precondition(ray, object, 0.0) &&
             Find_Intersection(&New_Intersection, object, ray, postcondition, Thread) &&
