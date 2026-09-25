@@ -107,11 +107,13 @@ A shadow ray through media needs only its transmittance, yet it went through the
 lighting set-up and `method 3` recursion included, at 42% of the window's remaining trace. It now evaluates only the
 extinction, at exactly the points and weights the old path used (89 a ray in the haze), carries the shared end of each
 interval into the next, and stops once the transmittance is below 1/1024. `method 2` and `method 3` shadows come out
-bit for bit as before; `method 1` shadows use its sample count stratified instead of at random, so they lose their
-speckle. A rule that refined from a coarse grid until the transmittance settled took 15 points a ray and was twice as
-fast, but stepped over any feature between its first grid points: `tools/bench/media-puff.pov`'s puff at `Height` 2.2
-cast no shadow at all, while at 3.0 it lands on a grid point. Resolution below the media's own is not safe, so none is
-skipped. Surface lighting is unchanged, bit for bit.
+bit for bit as before with `jitter 0` (with jitter their points are now stratified, not jittered); `method 1` shadows
+use its sample count stratified instead of at random, so they lose their speckle. A rule that refined from a coarse
+grid until the transmittance settled took 15 points a ray and was twice as fast, but stepped over any feature between
+its first grid points: `tools/bench/media-puff.pov`'s puff at `Height` 2.2 cast no shadow at all, while at 3.0 it
+lands on a grid point. Resolution below the media's own is not safe, so none is skipped. The early stop assumes
+extinction is never negative, which a density `color_map` with negative entries breaks. Surface lighting is unchanged,
+bit for bit.
 
 | Render | Before | After | |
 |---|---|---|---|
