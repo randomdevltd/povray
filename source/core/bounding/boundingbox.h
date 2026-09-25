@@ -324,29 +324,81 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread);
 
-/// Nearest-first walk calling `leaf` for hit leaves starting before `best`, which it may lower; true ends the walk.
-/// With `cull` false every hit leaf is visited.
+/// A ray's box tests against a flat tree, and the entries they produce.
+template<typename RayT>
+class FlatBBoxWalker final
+{
+    public:
+        explicit FlatBBoxWalker(const RayT& ray) : entries(local), capacity(LOCAL), size(0)
+        {
+            for (int d = 0; d < 3; ++d)
+            {
+                origin[d] = float(ray.Origin[d]);
+                const DBL r = 1.0 / ray.Direction[d];
+                inv[d] = (fabs(r) < FLAT_BBOX_FAR) ? float(r) : std::copysign(FLAT_BBOX_FAR, float(ray.Direction[d]));
+            }
+        }
+
+        /// Appends the children of node `ref` whose boxes the ray enters before `maxDepth`.
+        template<typename StatsT>
+        void Expand(const FlatBBoxTree& tree, std::int32_t ref, float maxDepth, StatsT& stats)
+        {
+            const int base = size;
+            for (const FlatBBoxBlock *b = &tree.blocks[ref];; ++b)
+            {
+                float tn[FLAT_BBOX_WIDTH], tf[FLAT_BBOX_WIDTH];
+                for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+                {
+                    const float x1 = (b->lo[X][k] - origin[X]) * inv[X], x2 = (b->hi[X][k] - origin[X]) * inv[X];
+                    const float y1 = (b->lo[Y][k] - origin[Y]) * inv[Y], y2 = (b->hi[Y][k] - origin[Y]) * inv[Y];
+                    const float z1 = (b->lo[Z][k] - origin[Z]) * inv[Z], z2 = (b->hi[Z][k] - origin[Z]) * inv[Z];
+                    tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
+                    tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
+                }
+                Reserve(b->count);
+                for (int k = 0; k < b->count; ++k)
+                    if ((tf[k] >= tn[k]) && (tf[k] >= float(EPSILON)) && (tn[k] <= maxDepth))
+                        entries[size++] = FlatBBoxEntry{b->child[k], tn[k]};
+                stats[nChecked] += b->count;
+                if (!b->more)
+                    break;
+            }
+            stats[nEnqueued] += size - base;
+        }
+
+        void Push(const FlatBBoxEntry& e) { Reserve(1); entries[size++] = e; }
+
+        FlatBBoxEntry *entries;
+        int capacity, size;
+
+    private:
+        static const int LOCAL = 256;
+        float origin[3], inv[3];
+        FlatBBoxEntry local[LOCAL];
+        std::vector<FlatBBoxEntry> spill;
+
+        void Reserve(int more)
+        {
+            if (size + more <= capacity)
+                return;
+            if (entries == local)
+                spill.assign(local, local + size);
+            spill.resize(2 * (capacity + more));
+            entries = spill.data();
+            capacity = int(spill.size());
+        }
+};
+
+/// Depth-first walk, nearer children first, calling `leaf` for hit leaves starting before `best`, which it may
+/// lower; true ends the walk. With `cull` false every hit leaf is visited.
 template<typename RayT, typename StatsT, typename LeafFn>
 void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
 {
-    float origin[3], inv[3];
-    for (int d = 0; d < 3; ++d)
+    FlatBBoxWalker<RayT> w(ray);
+    w.Push(FlatBBoxEntry{0, -FLAT_BBOX_FAR});
+    while (w.size > 0)
     {
-        origin[d] = float(ray.Origin[d]);
-        const DBL r = 1.0 / ray.Direction[d];
-        inv[d] = (fabs(r) < FLAT_BBOX_FAR) ? float(r) : std::copysign(FLAT_BBOX_FAR, float(ray.Direction[d]));
-    }
-
-    const int LOCAL = 256;
-    FlatBBoxEntry local[LOCAL];
-    std::vector<FlatBBoxEntry> spill;
-    FlatBBoxEntry *stack = local;
-    int capacity = LOCAL, size = 0;
-    stack[size++] = FlatBBoxEntry{0, -FLAT_BBOX_FAR};
-
-    while (size > 0)
-    {
-        const FlatBBoxEntry e = stack[--size];
+        const FlatBBoxEntry e = w.entries[--w.size];
         if (cull && e.depth > best)
             continue;
         if (e.ref < 0)
@@ -356,51 +408,51 @@ void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DB
             continue;
         }
 
-        const float maxDepth = cull ? float(std::min(best, DBL(FLAT_BBOX_FAR))) : FLAT_BBOX_FAR;
-        const int base = size;
-        for (const FlatBBoxBlock *b = &tree.blocks[e.ref];; ++b)
-        {
-            float tn[FLAT_BBOX_WIDTH], tf[FLAT_BBOX_WIDTH];
-            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
-            {
-                const float x1 = (b->lo[X][k] - origin[X]) * inv[X], x2 = (b->hi[X][k] - origin[X]) * inv[X];
-                const float y1 = (b->lo[Y][k] - origin[Y]) * inv[Y], y2 = (b->hi[Y][k] - origin[Y]) * inv[Y];
-                const float z1 = (b->lo[Z][k] - origin[Z]) * inv[Z], z2 = (b->hi[Z][k] - origin[Z]) * inv[Z];
-                tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
-                tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
-            }
-            if (size + b->count > capacity)
-            {
-                if (stack == local)
-                    spill.assign(local, local + size);
-                spill.resize(2 * (capacity + b->count));
-                stack = spill.data();
-                capacity = int(spill.size());
-            }
-            for (int k = 0; k < b->count; ++k)
-                if ((tf[k] >= tn[k]) && (tf[k] >= float(EPSILON)) && (tn[k] <= maxDepth))
-                    stack[size++] = FlatBBoxEntry{b->child[k], tn[k]};
-            stats[nChecked] += b->count;
-            if (!b->more)
-                break;
-        }
-        stats[nEnqueued] += size - base;
-        std::sort(stack + base, stack + size, [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth < b.depth; });
+        const int base = w.size;
+        w.Expand(tree, e.ref, cull ? float(std::min(best, DBL(FLAT_BBOX_FAR))) : FLAT_BBOX_FAR, stats);
+        FlatBBoxEntry *hits = w.entries;
+        std::sort(hits + base, hits + w.size, [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth < b.depth; });
 
         // Leaves nearer than any sibling node are tested now, so their hits cull the rest; later ones queue behind the nodes.
         int nodes = base;
-        for (int i = base; i < size; ++i)
+        for (int i = base; i < w.size; ++i)
         {
-            const FlatBBoxEntry h = stack[i];
+            const FlatBBoxEntry h = hits[i];
             if (cull && h.depth > best)
                 break;
             if ((h.ref >= 0) || (nodes > base))
-                stack[nodes++] = h;
+                hits[nodes++] = h;
             else if (leaf(tree.leaves[-1 - h.ref]))
                 return;
         }
-        std::reverse(stack + base, stack + nodes);
-        size = nodes;
+        std::reverse(hits + base, hits + nodes);
+        w.size = nodes;
+    }
+}
+
+/// The same with every box taken in order of entry depth across the whole tree, for costly leaves.
+template<typename RayT, typename StatsT, typename LeafFn>
+void Traverse_Flat_BBox_Tree_Ordered(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, StatsT& stats, LeafFn&& leaf)
+{
+    const auto later = [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth > b.depth; };
+    FlatBBoxWalker<RayT> w(ray);
+    w.Push(FlatBBoxEntry{0, -FLAT_BBOX_FAR});
+    while (w.size > 0)
+    {
+        std::pop_heap(w.entries, w.entries + w.size, later);
+        const FlatBBoxEntry e = w.entries[--w.size];
+        if (e.depth > best)
+            break;
+        if (e.ref < 0)
+        {
+            if (leaf(tree.leaves[-1 - e.ref]))
+                return;
+            continue;
+        }
+        const int base = w.size;
+        w.Expand(tree, e.ref, float(std::min(best, DBL(FLAT_BBOX_FAR))), stats);
+        for (int i = base + 1; i <= w.size; ++i)
+            std::push_heap(w.entries, w.entries + i, later);
     }
 }
 
