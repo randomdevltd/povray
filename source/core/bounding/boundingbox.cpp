@@ -793,9 +793,15 @@ BBOX_TREE *create_bbox_node(int size)
 
 void sort_boxes(BBOX_TREE **boxes, ptrdiff_t count, int axis)
 {
-    std::sort(boxes, boxes + count, [axis](const BBOX_TREE *a, const BBOX_TREE *b) {
-        return 2.0 * a->BBox.lowerLeft[axis] + a->BBox.size[axis] < 2.0 * b->BBox.lowerLeft[axis] + b->BBox.size[axis];
+    thread_local vector<std::pair<DBL, BBOX_TREE *>> keyed;
+    keyed.resize(count);
+    for (ptrdiff_t i = 0; i < count; ++i)
+        keyed[i] = std::make_pair(2.0 * boxes[i]->BBox.lowerLeft[axis] + boxes[i]->BBox.size[axis], boxes[i]);
+    std::sort(keyed.begin(), keyed.end(), [](const std::pair<DBL, BBOX_TREE *>& a, const std::pair<DBL, BBOX_TREE *>& b) {
+        return a.first < b.first;
     });
+    for (ptrdiff_t i = 0; i < count; ++i)
+        boxes[i] = keyed[i].second;
 }
 
 void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last)
