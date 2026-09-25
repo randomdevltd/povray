@@ -33,5 +33,6 @@ RUN apt-get update \
       zlib1g libpng16-16t64 libjpeg-turbo8 libtiff6 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/usr/local /usr/local
+RUN mkdir -p /root/.povray/3.8 && touch /root/.povray/3.8/povray.conf
 WORKDIR /work
 ENTRYPOINT ["povray"]
