@@ -103,23 +103,25 @@ sequence, shifted at random per ray, so a ray's samples cover the whole light be
 the full grid weights its points, edge rows and columns at half weight; sampling the light uniformly instead drew a
 bright line where camera rays run along shadow edges.
 
-A shadow ray through media needs only its transmittance, yet it integrated at the media's full sample count: 89
-density samples per ray in the haze, 42% of the window's remaining trace. It now uses `method 3`'s own rule, a third
-each of the two ends and midpoint of every subinterval with shared ends counted twice, starting from two subintervals
-and halving them until the transmittance changes by less than 1/1024, at most down to the count a camera ray uses. The
-haze settles at 15 samples a ray. A plain trapezoid rule on the same points settled as early but weighted the ray's
-start, inside the medium where the light is being computed, a quarter less, and brightened the standard benchmark's
-clouds by 0.6 levels. Surface lighting is unchanged, bit for bit.
+A shadow ray through media needs only its transmittance, yet it went through the full sampling path, per-sample
+lighting set-up and `method 3` recursion included, at 42% of the window's remaining trace. It now evaluates only the
+extinction, at exactly the points and weights the old path used (89 a ray in the haze), carries the shared end of each
+interval into the next, and stops once the transmittance is below 1/1024. `method 2` and `method 3` shadows come out
+bit for bit as before; `method 1` shadows use its sample count stratified instead of at random, so they lose their
+speckle. A rule that refined from a coarse grid until the transmittance settled took 15 points a ray and was twice as
+fast, but stepped over any feature between its first grid points: `tools/bench/media-puff.pov`'s puff at `Height` 2.2
+cast no shadow at all, while at 3.0 it lands on a grid point. Resolution below the media's own is not safe, so none is
+skipped. Surface lighting is unchanged, bit for bit.
 
 | Render | Before | After | |
 |---|---|---|---|
-| the window above, trace | 244.6 CPU-s, 1.66 G media samples, 44.1 M shadow rays | 17.7 CPU-s, 62 M, 9.4 M | 13.8× |
-| the whole large scene at 232×133, same media | 7886 Gcycles, trace 2237 CPU-s | 967 Gcycles, trace 253 CPU-s | 8.9× trace |
-| the standard benchmark, 384×384 | 1116.4 Gcycles | 673.6 Gcycles | −40% |
-| `tools/bench/media-shafts.pov`, 160×120, `+WT1` | 226.3 Gcycles | 11.0 Gcycles | 20.6× |
+| the window above, trace | 244.6 CPU-s, 1.66 G media samples, 44.1 M shadow rays | 36.9 CPU-s, 363 M, 9.4 M | 6.6× |
+| the whole large scene at 232×133, same media | 7886 Gcycles, trace 2237 CPU-s | 1706 Gcycles, trace 457 CPU-s | 4.9× trace |
+| the standard benchmark, 384×384 | 1116.4 Gcycles | 681.8 Gcycles | −39% |
+| `tools/bench/media-shafts.pov`, 160×120, `+WT1` | 226.3 Gcycles | 25.8 Gcycles | 8.8× |
 
 Area light points alone gave 50.1 CPU-s, 2167 Gcycles, 690.6 and 35.7 on these four. The window without haze traces in
-0.39 CPU-s, so haze now costs 45 times as much, down from 630.
+0.39 CPU-s, so haze now costs 95 times as much, down from 630.
 
 Gcycles include parsing, about 112 G for the large scene. Over its whole frame the new image differs from the old by
 0.14 levels on average, 1.1% of pixels by more than 2; two `+WT4` runs of one build differ by 0.19 to 0.23. The
@@ -128,7 +130,7 @@ standard benchmark differs by 0.21 levels and keeps its mean brightness. Droppin
 haze.
 
 `media-shafts.pov` is the hard case: dense haze entirely in the soft shadow of a slatted roof. At 320×240, `+WT2`,
-40 samples, it took 252.6 CPU-s before and 12.1 after. Against a 400-sample `method 2` render its mean is 138.3; the
+40 samples, it took 252.6 CPU-s before and 28.7 after. Against a 400-sample `method 2` render its mean is 138.3; the
 old code gives 139.3 and differs per pixel by 7.5 levels once the mean is taken out, the new 138.1 and 8.1. One point
 per sample gave 12.3, three 8.7, six 8.0 at 1.5 times the cost of four. In the dense soft shadow at upper right the new image is
 about 2.7 levels (1%) darker than the old, with about 10% more rms grain; neither is visible.
@@ -186,7 +188,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Isosurfaces: threaded dispatch or native code for the function interpreter, whose speed now depends on code
   placement; root finding that uses `max_gradient`.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
-- Media: the haze window's shadow rays, 9.4 M of them, are now its largest cost after parsing.
+- Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
+  skipping any safely needs bounds on the density.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
