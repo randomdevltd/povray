@@ -73,10 +73,8 @@ const int BBQ_FIRST_ELEMENT = 1;
 
 BBOX_TREE *create_bbox_node(int size);
 
-void sort_boxes(BBOX_TREE **boxes, ptrdiff_t count, int axis);
 void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last);
-void build_area_table(BBOX_TREE **Finite, ptrdiff_t a, ptrdiff_t b, BBoxScalar *areas);
-bool sort_and_split(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount, BBoxScalar **areaCache);
+bool split_pass(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount);
 
 BBoxPriorityQueue::BBoxPriorityQueue()
 {
@@ -284,15 +282,11 @@ void Build_BBox_Tree(BBOX_TREE **Root, size_t numOfFiniteObjects, BBOX_TREE **&F
         low = 0;
         high = numOfFiniteObjects;
 
-        BBoxScalar *areaCache = new BBoxScalar[numOfFiniteObjects*2];
-
-        while (sort_and_split(Root, Finite, &numOfFiniteObjects, low, high, maxfinitecount, &areaCache))
+        while (split_pass(Root, Finite, &numOfFiniteObjects, low, high, maxfinitecount))
         {
             low = high;
             high = numOfFiniteObjects;
         }
-
-        delete[] areaCache;
 
         // Move infinite objects in the first leaf of Root.
         if(numOfInfiniteObjects > 0)
@@ -842,19 +836,6 @@ BBOX_TREE *create_bbox_node(int size)
     return (New);
 }
 
-void sort_boxes(BBOX_TREE **boxes, ptrdiff_t count, int axis)
-{
-    thread_local vector<std::pair<DBL, BBOX_TREE *>> keyed;
-    keyed.resize(count);
-    for (ptrdiff_t i = 0; i < count; ++i)
-        keyed[i] = std::make_pair(2.0 * boxes[i]->BBox.lowerLeft[axis] + boxes[i]->BBox.size[axis], boxes[i]);
-    std::sort(keyed.begin(), keyed.end(), [](const std::pair<DBL, BBOX_TREE *>& a, const std::pair<DBL, BBOX_TREE *>& b) {
-        return a.first < b.first;
-    });
-    for (ptrdiff_t i = 0; i < count; ++i)
-        boxes[i] = keyed[i].second;
-}
-
 void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t last)
 {
     ptrdiff_t i;
@@ -891,139 +872,147 @@ void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t
     Make_BBox_from_min_max(*BBox, bmin, bmax);
 }
 
-void build_area_table(BBOX_TREE **Finite, ptrdiff_t a, ptrdiff_t b, BBoxScalar *areas)
+static inline BBoxScalar half_area(const BBoxVector3d& lo, const BBoxVector3d& hi)
 {
-    ptrdiff_t i, imin, dir;
-    BBoxScalar tmin, tmax;
-    BBoxVector3d bmin, bmax, len;
-    BoundingBox *bbox;
+    const BBoxVector3d len = hi - lo;
+    return len[X] * (len[Y] + len[Z]) + len[Y] * len[Z];
+}
 
-    if (a < b)
+static inline void grow(BBoxVector3d& lo, BBoxVector3d& hi, const BoundingBox& b)
+{
+    for (int d = X; d <= Z; ++d)
     {
-        imin = a;  dir =  1;
-    }
-    else
-    {
-        imin = b;  dir = -1;
-    }
-
-    bmin = BBoxVector3d(BOUND_HUGE);
-    bmax = BBoxVector3d(-BOUND_HUGE);
-
-    for(i = a; i != (b + dir); i += dir)
-    {
-        bbox = &(Finite[i]->BBox);
-
-        tmin = bbox->lowerLeft[X];
-        tmax = tmin + bbox->size[X];
-
-        if (tmin < bmin[X]) { bmin[X] = tmin; }
-        if (tmax > bmax[X]) { bmax[X] = tmax; }
-
-        tmin = bbox->lowerLeft[Y];
-        tmax = tmin + bbox->size[Y];
-
-        if (tmin < bmin[Y]) { bmin[Y] = tmin; }
-        if (tmax > bmax[Y]) { bmax[Y] = tmax; }
-
-        tmin = bbox->lowerLeft[Z];
-        tmax = tmin + bbox->size[Z];
-
-        if (tmin < bmin[Z]) { bmin[Z] = tmin; }
-        if (tmax > bmax[Z]) { bmax[Z] = tmax; }
-
-        len = bmax - bmin;
-
-        areas[i - imin] = len[X] * (len[Y] + len[Z]) + len[Y] * len[Z];
+        lo[d] = std::min(lo[d], b.lowerLeft[d]);
+        hi[d] = std::max(hi[d], BBoxScalar(b.lowerLeft[d] + b.size[d]));
     }
 }
 
-bool sort_and_split(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount, BBoxScalar **areaCache)
+// One pass of the bottom-up build: the pass's boxes sorted once per axis, the three orders kept by stable
+// partition as the range is split, so every split is the exact surface-area sweep without re-sorting.
+struct SplitPass final
 {
-    ptrdiff_t i, best_loc = -1;
-    ptrdiff_t size = last - first;
+    vector<BBOX_TREE *> items;
+    vector<std::uint32_t> order[3];
+    vector<std::uint8_t> left;
+    vector<std::uint32_t> scratch;
+    vector<BBoxScalar> areaRight;
+    vector<BBOX_TREE *> members;
+    BBOX_TREE **Root;
+    BBOX_TREE **&Finite;
+    size_t *numOfFiniteObjects;
+    size_t& maxfinitecount;
 
-    if(size <= 0)
-        return false;
+    SplitPass(BBOX_TREE **root, BBOX_TREE **&finite, size_t *num, size_t& maxcount) :
+        Root(root), Finite(finite), numOfFiniteObjects(num), maxfinitecount(maxcount) {}
 
-    // Don't bother to do any further examinations if the BUNCHING_FACTOR is reached.
-    if (size > BUNCHING_FACTOR)
+    void emit(ptrdiff_t s, ptrdiff_t e)
     {
-        BBoxScalar *area_left, *area_right;
-        BBoxScalar best_index, new_index;
-        int best_axis = Z;
-
-        // area_left[] and area_right[] hold the surface areas of the bounding
-        // boxes to the left and right of any given point. E.g. area_left[i] holds
-        // the surface area of the bounding box containing Finite 0 through i and
-        // area_right[i] holds the surface area of the box containing Finite
-        // i through size-1.
-
-        area_left  = *areaCache;
-        area_right = area_left + size;
-
-        // The cheapest split over all three axes, not one axis picked by extent.
-        best_index = BOUND_HUGE;
-        for (int axis = X; axis <= Z; ++axis)
+        const ptrdiff_t size = e - s;
+        BBOX_TREE *cd = create_bbox_node(int(size));
+        for (ptrdiff_t i = 0; i < size; ++i)
+            cd->Node[i] = items[order[X][s + i]];
+        calc_bbox(&(cd->BBox), cd->Node, 0, size);
+        *Root = cd;
+        if (*numOfFiniteObjects >= maxfinitecount)
         {
-            sort_boxes(Finite + first, size, axis);
+            // Prim array overrun, increase array by 50%.
+            maxfinitecount = 1.5 * maxfinitecount;
+            Finite = reinterpret_cast<BBOX_TREE **>(POV_REALLOC(Finite, maxfinitecount * sizeof(BBOX_TREE *), "bounding boxes"));
+        }
+        Finite[*numOfFiniteObjects] = cd;
+        (*numOfFiniteObjects)++;
+    }
 
-            build_area_table(Finite, first, last - 1, area_left);
-            build_area_table(Finite, last - 1, first, area_right);
-            if (axis == X)
-                best_index = area_right[0] * float(size-3); // estimated cost of _not_ subdividing
+    bool split(ptrdiff_t s, ptrdiff_t e)
+    {
+        const ptrdiff_t size = e - s;
+        int bestAxis = -1;
+        ptrdiff_t bestCount = 0;
 
-            for(i = 1; i < size; i++)
+        // Don't bother to do any further examinations if the BUNCHING_FACTOR is reached.
+        if (size > BUNCHING_FACTOR)
+        {
+            BBoxScalar best = 0.0f;
+            for (int axis = X; axis <= Z; ++axis)
             {
-                new_index = float(i) * area_left[i-1] + float(size-i) * area_right[i];
-
-                if(new_index < best_index)
+                const std::uint32_t *ord = order[axis].data();
+                BBoxVector3d lo(BOUND_HUGE), hi(-BOUND_HUGE);
+                for (ptrdiff_t i = e - 1; i >= s; --i)
                 {
-                    best_index = new_index;
-                    best_loc = i + first;
-                    best_axis = axis;
+                    grow(lo, hi, items[ord[i]]->BBox);
+                    areaRight[i - s] = half_area(lo, hi);
+                }
+                if (axis == X)
+                    best = areaRight[0] * float(size - 3); // estimated cost of _not_ subdividing
+                lo = BBoxVector3d(BOUND_HUGE);
+                hi = BBoxVector3d(-BOUND_HUGE);
+                for (ptrdiff_t i = s; i < e - 1; ++i)
+                {
+                    grow(lo, hi, items[ord[i]]->BBox);
+                    const ptrdiff_t n = i - s + 1;
+                    const BBoxScalar cost = float(n) * half_area(lo, hi) + float(size - n) * areaRight[n];
+                    if (cost < best)
+                    {
+                        best = cost;
+                        bestAxis = axis;
+                        bestCount = n;
+                    }
                 }
             }
         }
 
-        if (best_axis != Z)
-            sort_boxes(Finite + first, size, best_axis);
-    }
-
-    // Stop splitting if splitting stops being effective.
-    if(best_loc < 0)
-    {
-        BBOX_TREE *cd = create_bbox_node(size);
-
-        for(i = 0; i < size; i++)
-            cd->Node[i] = Finite[first+i];
-
-        calc_bbox(&(cd->BBox), Finite, first, last);
-        *Root = cd;
-        if(*numOfFiniteObjects >= maxfinitecount)
+        // Stop splitting if splitting stops being effective.
+        if (bestAxis < 0)
         {
-            // Prim array overrun, increase array by 50%.
-            maxfinitecount = 1.5 * maxfinitecount;
-
-            // For debugging only.
-            // TODO MESSAGE      Debug_Info("Reallocing Finite to %d\n", maxfinitecount);
-            Finite = reinterpret_cast<BBOX_TREE **>(POV_REALLOC(Finite, maxfinitecount * sizeof(BBOX_TREE *), "bounding boxes"));
-            delete[] *areaCache;
-            *areaCache = new BBoxScalar[maxfinitecount];
+            emit(s, e);
+            return false;
         }
 
-        Finite[*numOfFiniteObjects] = cd;
-        (*numOfFiniteObjects)++;
-
-        return false;
-    }
-    else
-    {
-        sort_and_split(Root, Finite, numOfFiniteObjects, first, best_loc, maxfinitecount, areaCache);
-        sort_and_split(Root, Finite, numOfFiniteObjects, best_loc, last, maxfinitecount, areaCache);
-
+        for (ptrdiff_t i = s; i < e; ++i)
+            left[order[bestAxis][i]] = (i < s + bestCount);
+        for (int axis = X; axis <= Z; ++axis)
+        {
+            if (axis == bestAxis)
+                continue;
+            std::uint32_t *ord = order[axis].data();
+            ptrdiff_t l = s, r = 0;
+            for (ptrdiff_t i = s; i < e; ++i)
+            {
+                if (left[ord[i]])
+                    ord[l++] = ord[i];
+                else
+                    scratch[r++] = ord[i];
+            }
+            std::copy(scratch.begin(), scratch.begin() + r, ord + l);
+        }
+        split(s, s + bestCount);
+        split(s + bestCount, e);
         return true;
     }
+};
+
+bool split_pass(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount)
+{
+    const ptrdiff_t size = last - first;
+    if (size <= 0)
+        return false;
+
+    SplitPass pass(Root, Finite, numOfFiniteObjects, maxfinitecount);
+    pass.items.assign(Finite + first, Finite + last);
+    pass.left.resize(size);
+    pass.scratch.resize(size);
+    pass.areaRight.resize(size);
+    vector<std::pair<DBL, std::uint32_t>> keyed(size);
+    for (int axis = X; axis <= Z; ++axis)
+    {
+        for (ptrdiff_t i = 0; i < size; ++i)
+            keyed[i] = std::make_pair(2.0 * pass.items[i]->BBox.lowerLeft[axis] + pass.items[i]->BBox.size[axis], std::uint32_t(i));
+        std::sort(keyed.begin(), keyed.end());
+        pass.order[axis].resize(size);
+        for (ptrdiff_t i = 0; i < size; ++i)
+            pass.order[axis][i] = keyed[i].second;
+    }
+    return pass.split(0, size);
 }
 
 }
