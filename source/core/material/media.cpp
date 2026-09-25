@@ -231,7 +231,9 @@ MediaFunction::MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg) 
     randomNumberGenerator(&randomNumbers),
     threadData(td),
     trace(t),
-    photonGatherer(pg)
+    photonGatherer(pg),
+    lightSampleIndex(0),
+    lightSampleShift(-1.0, -1.0)
 {
 }
 
@@ -354,6 +356,14 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 
     minSamples = IMedia->Min_Samples;
 
+    const unsigned int savedIndex = lightSampleIndex;
+    const Vector2d savedShift = lightSampleShift;
+    if(!ray.IsShadowTestRay())
+    {
+        lightSampleIndex = 0;
+        lightSampleShift = Vector2d(-1.0, -1.0);
+    }
+
     // Sample all intervals.
     if((IMedia->Sample_Method == 3) && !all_constant_and_light_ray) //  adaptive sampling
         ComputeMediaAdaptiveSampling(medias, lights, mediaintervals, ray, IMedia, aa_threshold, minSamples, ignore_photons, use_scattering);
@@ -361,6 +371,9 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
         ComputeMediaRegularSampling(medias, lights, mediaintervals, ray, IMedia, minSamples, ignore_photons, use_scattering, all_constant_and_light_ray);
 
     ComputeMediaColour(mediaintervals, colour, transm);
+
+    lightSampleIndex = savedIndex;
+    lightSampleShift = savedShift;
 }
 
 void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
@@ -993,13 +1006,21 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
                 }
             }
 
+            // Area lights: one point per sample, spread over the light along the ray (an R2 sequence).
+            const double k = lightSampleIndex++;
+
             // Process all light sources.
             for(size_t i = mediainterval.l0; i <= mediainterval.l1; i++)
             {
                 // Use light only if active and within it's boundaries.
                 if((d1 >= lights[i].s0) && (d1 <= lights[i].s1))
                 {
-                    if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour)))
+                    if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
+                        lightSampleShift = Vector2d(randomNumberGenerator(), randomNumberGenerator());
+                    const double su = lightSampleShift[U] + k * 0.7548776662466927 + i * 0.6180339887498949;
+                    const double sv = lightSampleShift[V] + k * 0.5698402909980532 + i * 0.4142135623730950;
+                    const Vector2d areaSample(su - floor(su), sv - floor(sv));
+                    if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
                         ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Light_Colour, ray, Light_Ray);
                 }
             }

@@ -1893,7 +1893,7 @@ void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsour
 }
 
 // see block_light_source in the v3.6 source
-void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour)
+void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour, const Vector2d* areaSample)
 {
     // test and set highest level traced. We do it differently than TraceRay() does,
     // for compatibility with the way max_trace_level is tested and reported in v3.6
@@ -1918,7 +1918,9 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     newray.SetFlags(Ray::OtherRay, true, false);
 
     // Get shadows from current light source.
-    if(lightsource.Area_Light && qualityFlags.areaLights)
+    if(lightsource.Area_Light && qualityFlags.areaLights && (areaSample != nullptr))
+        TraceAreaLightSampleShadowRay(lightsource, newdepth, newray, point, colour, *areaSample);
+    else if(lightsource.Area_Light && qualityFlags.areaLights)
         TraceAreaLightShadowRay(lightsource, newdepth, newray, point, colour);
     else
         TracePointLightShadowRay(lightsource, newdepth, newray, colour);
@@ -2105,9 +2107,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
 void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                     const Vector3d& ipoint, MathColour& lightcolour)
 {
-    Vector3d temp;
     Vector3d axis1Temp, axis2Temp;
-    double axis1_Length;
 
     lightGrid.resize(lightsource.Area_Size1 * lightsource.Area_Size2);
 
@@ -2122,8 +2122,19 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
     for(size_t ind = 0; ind < lightGrid.size(); ++ind)
         lightGrid[ind].Invalidate();
 
-    axis1Temp = lightsource.Axis1;
-    axis2Temp = lightsource.Axis2;
+    ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1Temp, axis2Temp);
+
+    TraceAreaLightSubsetShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, 0, 0, lightsource.Area_Size1 - 1, lightsource.Area_Size2 - 1, 0, axis1Temp, axis2Temp);
+}
+
+void Trace::ComputeAreaLightAxes(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                 const Vector3d& ipoint, Vector3d& axis1, Vector3d& axis2)
+{
+    Vector3d temp;
+    double axis1_Length;
+
+    axis1 = lightsource.Axis1;
+    axis2 = lightsource.Axis2;
 
     if(lightsource.Orient == true)
     {
@@ -2133,7 +2144,7 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
         ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint);
 
         // Save the lengths of the axes
-        axis1_Length = axis1Temp.length();
+        axis1_Length = axis1.length();
 
         // Make axis 1 be perpendicular with the light-ray
         if(fabs(fabs(lightsourceray.Direction[Z]) - 1.0) < 0.01)
@@ -2142,17 +2153,15 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
         else
             temp = Vector3d(0.0, 0.0, 1.0);
 
-        axis1Temp = cross(lightsourceray.Direction, temp).normalized();
+        axis1 = cross(lightsourceray.Direction, temp).normalized();
 
         // Make axis 2 be perpendicular with the light-ray and with Axis1.  A simple cross-product will do the trick.
-        axis2Temp = cross(lightsourceray.Direction, axis1Temp).normalized();
+        axis2 = cross(lightsourceray.Direction, axis1).normalized();
 
         // make it square
-        axis1Temp *= axis1_Length;
-        axis2Temp *= axis1_Length;
+        axis1 *= axis1_Length;
+        axis2 *= axis1_Length;
     }
-
-    TraceAreaLightSubsetShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, 0, 0, lightsource.Area_Size1 - 1, lightsource.Area_Size2 - 1, 0, axis1Temp, axis2Temp);
 }
 
 void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
@@ -2160,7 +2169,7 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
 {
     MathColour sample_Colour[4];
     int i, u, v, new_u1, new_v1, new_u2, new_v2;
-    double jitter_u, jitter_v, scaleFactor;
+    double jitter_u, jitter_v;
 
     // Sample the four corners of the region
     for(i = 0; i < 4; i++)
@@ -2182,8 +2191,6 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
             sample_Colour[i] = lightGrid[u * lightsource.Area_Size2 + v];
         else
         {
-            Vector3d jitterAxis1, jitterAxis2;
-
             jitter_u = (double)u;
             jitter_v = (double)v;
 
@@ -2193,44 +2200,8 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
                 jitter_v += randomNumberGenerator() - 0.5;
             }
 
-            // Create circular are lights [ENB 9/97]
-            // First, make jitter_u and jitter_v be numbers from -1 to 1
-            // Second, set scaleFactor to the abs max (jitter_u,jitter_v) (for shells)
-            // Third, divide scaleFactor by the length of <jitter_u,jitter_v>
-            // Fourth, scale jitter_u & jitter_v by scaleFactor
-            // Finally scale Axis1 by jitter_u & Axis2 by jitter_v
-            if(lightsource.Circular == true)
-            {
-                jitter_u = jitter_u / (lightsource.Area_Size1 - 1) - 0.5 + 0.001;
-                jitter_v = jitter_v / (lightsource.Area_Size2 - 1) - 0.5 + 0.001;
-                scaleFactor = ((fabs(jitter_u) > fabs(jitter_v)) ? fabs(jitter_u) : fabs(jitter_v));
-                scaleFactor /= sqrt(jitter_u * jitter_u + jitter_v * jitter_v);
-                jitter_u *= scaleFactor;
-                jitter_v *= scaleFactor;
-                jitterAxis1 = axis1 * jitter_u;
-                jitterAxis2 = axis2 * jitter_v;
-            }
-            else
-            {
-                if(lightsource.Area_Size1 > 1)
-                {
-                    scaleFactor = jitter_u / (double)(lightsource.Area_Size1 - 1) - 0.5;
-                    jitterAxis1 = axis1 * scaleFactor;
-                }
-                else
-                    jitterAxis1 = Vector3d(0.0, 0.0, 0.0);
-
-                if(lightsource.Area_Size2 > 1)
-                {
-                    scaleFactor = jitter_v / (double)(lightsource.Area_Size2 - 1) - 0.5;
-                    jitterAxis2 = axis2 * scaleFactor;
-                }
-                else
-                    jitterAxis2 = Vector3d(0.0, 0.0, 0.0);
-            }
-
             // Recalculate the light source ray but not the colour
-            ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, jitterAxis1 + jitterAxis2);
+            ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, AreaLightOffset(lightsource, jitter_u, jitter_v, axis1, axis2));
 
             sample_Colour[i] = lightcolour;
 
@@ -2295,6 +2266,71 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
 
     // Average up the light contributions
     lightcolour = (sample_Colour[0] + sample_Colour[1] + sample_Colour[2] + sample_Colour[3]) * 0.25;
+}
+
+void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                          const Vector3d& ipoint, MathColour& lightcolour, const Vector2d& sample)
+{
+    Vector3d axis1, axis2;
+    double u, v;
+
+    ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1, axis2);
+
+    // A jittered grid covers each cell, a plain one only its points.
+    u = sample[U] * lightsource.Area_Size1;
+    v = sample[V] * lightsource.Area_Size2;
+    if(lightsource.Jitter)
+    {
+        u -= 0.5;
+        v -= 0.5;
+    }
+    else
+    {
+        u = floor(u);
+        v = floor(v);
+    }
+
+    ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, AreaLightOffset(lightsource, u, v, axis1, axis2));
+    TracePointLightShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour);
+}
+
+Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2)
+{
+    Vector3d jitterAxis1, jitterAxis2;
+    double scaleFactor;
+
+    // Circular lights squash the square grid onto a disc [ENB 9/97].
+    if(lightsource.Circular == true)
+    {
+        jitter_u = jitter_u / (lightsource.Area_Size1 - 1) - 0.5 + 0.001;
+        jitter_v = jitter_v / (lightsource.Area_Size2 - 1) - 0.5 + 0.001;
+        scaleFactor = ((fabs(jitter_u) > fabs(jitter_v)) ? fabs(jitter_u) : fabs(jitter_v));
+        scaleFactor /= sqrt(jitter_u * jitter_u + jitter_v * jitter_v);
+        jitter_u *= scaleFactor;
+        jitter_v *= scaleFactor;
+        jitterAxis1 = axis1 * jitter_u;
+        jitterAxis2 = axis2 * jitter_v;
+    }
+    else
+    {
+        if(lightsource.Area_Size1 > 1)
+        {
+            scaleFactor = jitter_u / (double)(lightsource.Area_Size1 - 1) - 0.5;
+            jitterAxis1 = axis1 * scaleFactor;
+        }
+        else
+            jitterAxis1 = Vector3d(0.0, 0.0, 0.0);
+
+        if(lightsource.Area_Size2 > 1)
+        {
+            scaleFactor = jitter_v / (double)(lightsource.Area_Size2 - 1) - 0.5;
+            jitterAxis2 = axis2 * scaleFactor;
+        }
+        else
+            jitterAxis2 = Vector3d(0.0, 0.0, 0.0);
+    }
+
+    return jitterAxis1 + jitterAxis2;
 }
 
 // see filter_shadow_ray in v3.6's lighting.cpp
@@ -3197,7 +3233,7 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
     }
 }
 
-bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour)
+bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour, const Vector2d* areaSample)
 {
     ComputeOneLightRay(lightsource, depth, light_source_ray, p, colour);
 
@@ -3217,7 +3253,7 @@ bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light
     // Test for shadows.
     if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
     {
-        TraceShadowRay(lightsource, depth, light_source_ray, p, colour);
+        TraceShadowRay(lightsource, depth, light_source_ray, p, colour, areaSample);
 
         if(colour.IsNearZero(EPSILON))
         {

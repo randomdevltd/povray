@@ -259,7 +259,8 @@ class Trace
 
         unsigned int GetHighestTraceLevel();
 
-        bool TestShadow(const LightSource &light, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour); // TODO FIXME - this should not be exposed here
+        bool TestShadow(const LightSource &light, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour,
+                        const Vector2d* areaSample = nullptr); // TODO FIXME - this should not be exposed here
 
     protected: // TODO FIXME - should be private
 
@@ -579,12 +580,19 @@ class Trace
         void ComputeOneLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                 const Vector3d& ipoint, MathColour& lightcolour, bool forceAttenuate = false);
 
-        void TraceShadowRay(const LightSource &light, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour);
+        void TraceShadowRay(const LightSource &light, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour,
+                            const Vector2d* areaSample = nullptr);
         void TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour);
         void TraceAreaLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                      const Vector3d& ipoint, MathColour& lightcolour);
         void TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                            const Vector3d& ipoint, MathColour& lightcolour, int u1, int  v1, int  u2, int  v2, int level, const Vector3d& axis1, const Vector3d& axis2);
+        /// Test one point of an area light; `sample` in [0,1)^2 picks where on the light.
+        void TraceAreaLightSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                           const Vector3d& ipoint, MathColour& lightcolour, const Vector2d& sample);
+        void ComputeAreaLightAxes(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                  const Vector3d& ipoint, Vector3d& axis1, Vector3d& axis2);
+        Vector3d AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2);
 
         /// Compute the filtering effect of an object on incident light from a particular light source.
         ///

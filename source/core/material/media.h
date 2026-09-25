@@ -93,6 +93,9 @@ class MediaFunction : public Trace::MediaFunctor
         Trace *trace;
         /// photon gather functions
         PhotonGatherer *photonGatherer;
+        /// media samples taken so far on the current ray, and its random shift of the area light sequence (negative until drawn)
+        unsigned int lightSampleIndex;
+        Vector2d lightSampleShift;
 
         void ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                          const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering,
