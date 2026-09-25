@@ -1473,6 +1473,7 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
                 found = true;
                 Best = hit;
             }
+            return false;
         });
         return found;
     }
