@@ -174,8 +174,10 @@ const MATRIX B_Matrix =
 
 bool SphereSweep::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
-    static thread_local std::vector<SPHSWEEP_INT> IsectBuffer(SPHSWEEP_MAX_ISECT);
+    static thread_local std::vector<SPHSWEEP_INT> IsectBuffer;
     static thread_local std::vector<SPHSWEEP_INT> SegmentBuffer;
+    if (IsectBuffer.size() < size_t(SPHSWEEP_MAX_ISECT))
+        IsectBuffer.resize(SPHSWEEP_MAX_ISECT);
     if (SegmentBuffer.size() < size_t(12 * Num_Segments))
         SegmentBuffer.resize(12 * Num_Segments);
     SPHSWEEP_INT    *Isect = IsectBuffer.data();
