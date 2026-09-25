@@ -103,8 +103,8 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                           const Ray& ray, const Media *IMedia, DBL aa_threshold, int minsamples, bool ignore_photons, bool use_scattering);
         void ComputeMediaColour(MediaIntervalVector& mediaintervals, MathColour& colour, ColourChannel& transm);
-        /// Optical depth of each interval of a shadow ray, sampled only as finely as its transmittance needs.
-        void ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, int maxSubintervals);
+        /// Optical depth of each interval of a shadow ray: extinction alone, at the points the media's sampling uses.
+        void ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, const Media *IMedia);
         MathColour ComputeMediaExtinction(MediaVector& medias, const Ray& ray, DBL depth);
         void ComputeMediaSampleInterval(LitIntervalVector& litintervals, MediaIntervalVector& mediaintervals, const Media *media);
         void ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect);

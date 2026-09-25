@@ -369,7 +369,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 
     // Sample all intervals.
     if(ray.IsShadowTestRay() && !all_constant_and_light_ray)
-        ComputeMediaTransmittance(medias, mediaintervals, ray, max((minSamples + 1) / 2, 1));
+        ComputeMediaTransmittance(medias, mediaintervals, ray, IMedia);
     else if((IMedia->Sample_Method == 3) && !all_constant_and_light_ray) //  adaptive sampling
         ComputeMediaAdaptiveSampling(medias, lights, mediaintervals, ray, IMedia, aa_threshold, minSamples, ignore_photons, use_scattering);
     else
@@ -395,39 +395,47 @@ MathColour MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray&
     return extinction;
 }
 
-void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, int maxSubintervals)
+void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, const Media *IMedia)
 {
-    // Method 3's rule, (ends + 2 * joints + midpoints) / 3 per subinterval, halving until the transmittance
-    // settles within a quarter of an 8-bit level.
-    const DBL tolerance = 1.0 / 1024.0;
+    // The points the old sampling used, without per-sample lighting; stops once transmittance is below 1/1024.
+    const DBL opaque = log(1024.0);
+    const bool method3 = (IMedia->Sample_Method == 3);
+    const int points = method3 ? 2 * max((IMedia->Min_Samples + 1) / 2, 1) + 1 : max(IMedia->Min_Samples, 1);
+    MathColour total, carried;
+    DBL carriedAt = -1.0;
+    bool dark = false;
 
     threadData->Stats()[Media_Intervals] += mediaintervals.size();
     for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
     {
-        int n = min(2, maxSubintervals);
-        MathColour ends = ComputeMediaExtinction(medias, ray, i->s0) + ComputeMediaExtinction(medias, ray, i->s1);
-        MathColour joints, mids;
-        for(int j = 1; j < 2 * n; j++)
-            ((j % 2) ? mids : joints) += ComputeMediaExtinction(medias, ray, i->s0 + i->ds * j / (2 * n));
-        MathColour depth = (ends + joints * 2.0 + mids) * (i->ds / (3 * n));
-
-        while(n < maxSubintervals)
+        MathColour sum;
+        DBL weights = 0.0;
+        for(int j = 0; (j < points) && !dark; j++)
         {
-            joints += mids;
-            mids.Clear();
-            n *= 2;
-            for(int j = 1; j < 2 * n; j += 2)
-                mids += ComputeMediaExtinction(medias, ray, i->s0 + i->ds * j / (2 * n));
-            const MathColour finer = (ends + joints * 2.0 + mids) * (i->ds / (3 * n));
-            const bool settled = (Exp(-finer) - Exp(-depth)).IsNearZero(tolerance);
-            depth = finer;
-            if(settled)
-                break;
+            MathColour extinction;
+            DBL weight = 1.0;
+            if(!method3)
+                extinction = ComputeMediaExtinction(medias, ray, i->s0 + i->ds * (j + 0.5) / points);
+            else
+            {
+                const DBL at = i->s0 + i->ds * j / (points - 1);
+                extinction = ((j == 0) && (at == carriedAt)) ? carried : ComputeMediaExtinction(medias, ray, at);
+                weight = ((j == 0) || (j == points - 1) || (j % 2)) ? 1.0 : 2.0;
+                if(j == points - 1)
+                {
+                    carried = extinction;
+                    carriedAt = at;
+                }
+            }
+            sum += extinction * weight;
+            weights += weight;
+            dark = (total + sum * (i->ds / (method3 ? (points - 1) * 1.5 : points))).Min() > opaque;
         }
 
-        i->od = depth;
+        i->od = (weights > 0.0) ? sum * (i->ds / (method3 ? (points - 1) * 1.5 : points)) : MathColour();
         i->te.Clear();
         i->samples = 1;
+        total += i->od;
     }
 }
 
