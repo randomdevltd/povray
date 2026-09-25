@@ -3905,6 +3905,7 @@ void Parser::Parse_Mesh1 (Mesh* Object)
     Object->Data->References = 1;
 
     Object->Data->Tree = nullptr;
+    Object->Data->FlatTree = nullptr;
     /* NK 1998 */
 
     if( (fabs(Inside_Vect[X]) < EPSILON) &&  (fabs(Inside_Vect[Y]) < EPSILON) &&  (fabs(Inside_Vect[Z]) < EPSILON))
@@ -4579,6 +4580,7 @@ void Parser::Parse_Mesh2 (Mesh* Object)
     Object->Data = reinterpret_cast<MESH_DATA *>(POV_MALLOC(sizeof(MESH_DATA), "triangle mesh data"));
     Object->Data->References = 1;
     Object->Data->Tree = nullptr;
+    Object->Data->FlatTree = nullptr;
     /* NK 1998 */
     /*YS* 31/12/1999 */
 

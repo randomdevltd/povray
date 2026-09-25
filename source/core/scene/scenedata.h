@@ -219,6 +219,7 @@ class SceneData
         // lathe and sor support (bounding cylinders)
         unsigned int Max_Bounding_Cylinders; // TODO - move somewhere else
         BBOX_TREE *boundingSlabs;
+        FlatBBoxTree *flatSlabs;
 
         // TODO FIXME move to parser somehow
         bool splitUnions; // INI option, defaults to false

@@ -203,6 +203,8 @@ void BoundingTask::Run()
 
             Build_Bounding_Slabs(&(sceneData->boundingSlabs), sceneData->objects, sceneData->numberOfFiniteObjects,
                                  sceneData->numberOfInfiniteObjects, numberOfLightSources);
+            delete sceneData->flatSlabs;
+            sceneData->flatSlabs = Build_Flat_BBox_Tree(sceneData->boundingSlabs);
             break;
         }
     }

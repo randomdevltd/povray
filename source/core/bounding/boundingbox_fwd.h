@@ -44,6 +44,7 @@ namespace pov
 {
 
 struct BBox_Tree_Struct;
+struct FlatBBoxTree;
 
 using BBOX_TREE         = BBox_Tree_Struct;         ///< @deprecated
 using BBoxTreePtr       = BBox_Tree_Struct*;

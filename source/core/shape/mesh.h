@@ -115,6 +115,7 @@ struct Mesh_Data_Struct final
     MeshUVVector *UVCoords;            ///< Array of UV coordinates
     MESH_TRIANGLE *Triangles;          ///< Array of triangles.
     BBOX_TREE *Tree;                   ///< Bounding box tree for mesh.
+    FlatBBoxTree *FlatTree;            ///< The same tree, flattened for tracing.
     Vector3d Inside_Vect;              ///< vector to use to test 'inside'
 };
 using MESH_DATA = Mesh_Data_Struct; ///< @deprecated
