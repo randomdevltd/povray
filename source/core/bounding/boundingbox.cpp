@@ -472,7 +472,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
         {
             // This is a node containing leaves to be checked.
             for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(pqueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats());
+                Check_And_Enqueue(pqueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats(), Best_Intersection->Depth);
         }
         else
         {
@@ -525,7 +525,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
         {
             // This is a node containing leaves to be checked.
             for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(pqueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats());
+                Check_And_Enqueue(pqueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats(), Best_Intersection->Depth);
         }
         else
         {
@@ -549,7 +549,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
 
 // Hot path: tens of millions of calls per frame on complex scenes.
 __attribute__((hot))
-void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats)
+void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth)
 {
     DBL dmin, dmax;
 
@@ -648,6 +648,8 @@ void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const Bo
         }
 
         // If we've made it through to here, the ray does hit the box.
+        if (dmin > maxDepth)
+            return;
 
         Stats[nEnqueued]++;
     }
