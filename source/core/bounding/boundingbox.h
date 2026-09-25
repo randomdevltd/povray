@@ -316,11 +316,19 @@ struct FlatBBoxEntry final
     float depth;
 };
 
+struct IntersectionStopCondition
+{
+    virtual ~IntersectionStopCondition() {}
+    virtual bool operator()(const Intersection& isect) const = 0;
+};
+
 FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread);
 
-/// Nearest-first walk: `leaf` is called for each hit leaf whose box starts before `best`, which it may lower.
+/// Nearest-first walk: `leaf` is called for each hit leaf whose box starts before `best`, which it may lower;
+/// it returns true to end the walk.
 /// With `cull` false every hit leaf is visited.
 template<typename RayT, typename StatsT, typename LeafFn>
 void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
@@ -347,7 +355,8 @@ void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DB
             continue;
         if (e.ref < 0)
         {
-            leaf(tree.leaves[-1 - e.ref]);
+            if (leaf(tree.leaves[-1 - e.ref]))
+                return;
             continue;
         }
 
