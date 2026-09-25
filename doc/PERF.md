@@ -39,6 +39,23 @@ isosurfaces dominate and bounding barely registers:
 | this branch | 1125.9 | +0.8% | 87.7 s |
 | this branch, PGO | 1102.1 | −1.3% | 85.6 s |
 
+**The heaviest scenes in 3.7's distribution**, one run each at `+A0.3`, `+WT4`, cycles:
+
+| Scene | Size | Ubuntu 3.7 | 3.8 master + fixes | this branch | vs 3.7 |
+|---|---|---|---|---|---|
+| `advanced/blocks/stackertransp.pov` | 800×600 | 397.2 G | 408.5 G | 256.7 G | −35% |
+| `advanced/abyss.pov` | 800×600 | 138.4 G | 145.4 G | 113.8 G | −18% |
+| `advanced/teapot/teapot3.pov` | 1920×1440 | 66.3 G | 66.8 G | 55.7 G | −16% |
+| `bsp/Tango.pov` | 800×600 | 106.7 G | 136.6 G | 90.3 G | −15% |
+| `language/trace-wicker.pov` | 1920×1440 | 82.4 G | 76.6 G | 74.0 G | −10% |
+| `language/tracevines.pov` | 1920×1440 | 21.2 G | 24.2 G | 21.2 G | 0% |
+| `advanced/isocacti.pov` | 800×600 | 291.6 G | 280.8–298.3 G | 334.9–348.2 G | +17% |
+
+`isocacti` is not slower through anything this branch computes: it runs fewer instructions, and 3.8 master built
+with `-falign-functions=64 -falign-loops=32` is as slow (362.1 G). The isosurface function interpreter,
+`POVFPU_RunDefault`, is front-end bound (stalled cycles 11.5 G against 31.2 G between two placements of identical
+code), so its speed depends on where the linker happens to put it.
+
 Single-threaded renders repeat bit for bit. Against 3.8 master this branch changes 0.15% of pixels in a test band,
 0.01% by more than 2 levels and none by more than 11: rays that meet the shared edge of two triangles get the
 same depth from both, and which one supplies the normal depends on the order they are tested in. PGO alone
@@ -114,6 +131,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 
 ## Next
 
+- Isosurfaces: threaded dispatch or native code for the function interpreter, whose speed now depends on code
+  placement; root finding that uses `max_gradient`.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
