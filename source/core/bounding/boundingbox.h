@@ -287,10 +287,7 @@ void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const Bo
 void Destroy_BBox_Tree(BBOX_TREE *Node);
 
 
-/*****************************************************************************
-* Flattened tree: a BBOX_TREE copied into contiguous blocks of eight child
-* boxes each, tested eight at a time and walked with a stack.
-******************************************************************************/
+// Flattened tree: a BBOX_TREE copied into blocks of eight child boxes, tested together and walked with a stack.
 
 const int FLAT_BBOX_WIDTH = 8;
 const float FLAT_BBOX_FAR = 1.0e30f;
@@ -327,8 +324,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread);
 
-/// Nearest-first walk: `leaf` is called for each hit leaf whose box starts before `best`, which it may lower;
-/// it returns true to end the walk.
+/// Nearest-first walk calling `leaf` for hit leaves starting before `best`, which it may lower; true ends the walk.
 /// With `cull` false every hit leaf is visited.
 template<typename RayT, typename StatsT, typename LeafFn>
 void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
