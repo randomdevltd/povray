@@ -9,17 +9,23 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 ARG MARCH=native
 ARG MTUNE=native
-ARG PGO=1
+ARG HARDENING=1
+ARG PGO=0
+ARG PGO_SCENE=distribution/scenes/advanced/benchmark/benchmark.pov
+ARG PGO_ARGS="+W256 +H256"
 COPY . /src
 WORKDIR /src
 RUN FLAGS="-O3 -march=${MARCH} -mtune=${MTUNE} -flto=auto -fno-finite-math-only" \
+ && if [ "${HARDENING}" = 0 ]; then \
+      FLAGS="$FLAGS -fno-stack-protector -fno-stack-clash-protection -fcf-protection=none -U_FORTIFY_SOURCE"; \
+    fi \
  && CONF="--prefix=/usr/local --without-x --without-libsdl --disable-optimiz-arch COMPILED_BY=randomdevltd/povray" \
  && (cd unix && ./prebuild.sh) \
  && if [ "${PGO}" = 1 ]; then \
       ./configure $CONF CXXFLAGS="$FLAGS -fprofile-generate -fprofile-update=atomic" LDFLAGS=-fprofile-generate \
       && make -j"$(nproc)" \
-      && (cd distribution/scenes/advanced/benchmark \
-          && /src/unix/povray benchmark.ini +L/src/distribution/include +W256 +H256 -D -F) \
+      && (cd "$(dirname "${PGO_SCENE}")" \
+          && /src/unix/povray "+I$(basename "${PGO_SCENE}")" +L/src/distribution/include ${PGO_ARGS} -D -F) \
       && find . -name '*.o' -delete && find . -name '*.a' -delete \
       && FLAGS="$FLAGS -fprofile-use -fprofile-partial-training -Wno-missing-profile"; \
     fi \
