@@ -1506,7 +1506,7 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
             /* This is a node containing leaves to be checked. */
 
             for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats());
+                Check_And_Enqueue(mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats(), OldStyle ? BOUND_HUGE : Best);
         }
         else
         {
