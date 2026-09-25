@@ -87,7 +87,6 @@ BBoxPriorityQueue::BBoxPriorityQueue()
 BBoxPriorityQueue::~BBoxPriorityQueue()
 {}
 
-__attribute__((hot))
 void BBoxPriorityQueue::Insert(DBL depth, ConstBBoxTreePtr node)
 {
     // Grow with push_back (no default-fill of intermediate elements).
@@ -704,8 +703,6 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     return found;
 }
 
-// Hot path: tens of millions of calls per frame on complex scenes.
-__attribute__((hot))
 void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth)
 {
     DBL dmin, dmax;
