@@ -100,6 +100,7 @@ SceneData::SceneData() :
     Max_Blob_Components = 1000; // TODO FIXME - this gets set in the parser but allocated *before* that in the scene data, and if it is 0 here, a malloc may fail there because the memory requested is zero [trf]
     Max_Bounding_Cylinders = 100; // TODO FIXME - see note for Max_Blob_Components
     boundingSlabs = nullptr;
+    flatSlabs = nullptr;
 
     splitUnions = false;
     removeBounds = true;
@@ -126,6 +127,7 @@ SceneData::~SceneData()
     }
     if (boundingSlabs != nullptr)
         Destroy_BBox_Tree(boundingSlabs);
+    delete flatSlabs;
     for (std::vector<TrueTypeFont*>::iterator i = TTFonts.begin(); i != TTFonts.end(); ++i)
         delete *i;
     // TODO: perhaps ObjectBase::~ObjectBase would be a better place

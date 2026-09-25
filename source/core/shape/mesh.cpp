@@ -728,6 +728,7 @@ Mesh::~Mesh()
     if (--(Data->References) == 0)
     {
         Destroy_BBox_Tree(Data->Tree);
+        delete Data->FlatTree;
 
         if (Data->Normals != nullptr)
         {
@@ -1406,6 +1407,8 @@ void Mesh::Build_Mesh_BBox_Tree()
 
     size_t maxfinitecount = 0;
     Build_BBox_Tree(&Data->Tree, nElem, Triangles, 0, nullptr, maxfinitecount);
+    delete Data->FlatTree;
+    Data->FlatTree = Build_Flat_BBox_Tree(Data->Tree);
 
     /* Get rid of the Triangles array. */
 
@@ -1457,14 +1460,28 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
     const BBOX_TREE *Node, *Root;
     bool OldStyle = has_inside_vector;
 
+    found = false;
+    Best = BOUND_HUGE;
+
+    if (Data->FlatTree != nullptr)
+    {
+        Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, !OldStyle, Thread->Stats(), [&](const void *leaf) {
+            const MESH_TRIANGLE *triangle = reinterpret_cast<const MESH_TRIANGLE *>(leaf);
+            DBL hit;
+            if (intersect_mesh_triangle(ray, triangle, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
+            {
+                found = true;
+                Best = hit;
+            }
+        });
+        return found;
+    }
+
     /* Create the direction vectors for this ray. */
     Rayinfo rayinfo(ray);
 
     /* Start with an empty priority queue. */
     mtpQueue.Clear();
-    found = false;
-
-    Best = BOUND_HUGE;
 
 #ifdef BBOX_EXTRA_STATS
     Thread->Stats()[totalQueueResets]++;

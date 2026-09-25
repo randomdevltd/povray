@@ -41,9 +41,11 @@
 #include "core/bounding/boundingbox_fwd.h"
 
 // C++ variants of C standard header files
-//  (none at the moment)
+#include <cmath>
+#include <cstdint>
 
 // C++ standard header files
+#include <algorithm>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -53,6 +55,7 @@
 #include "core/coretypes.h"
 #include "core/math/matrix.h"
 #include "core/render/ray_fwd.h"
+#include "core/support/statisticids.h"
 
 namespace pov
 {
@@ -282,6 +285,104 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
 bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth = BOUND_HUGE);
 void Destroy_BBox_Tree(BBOX_TREE *Node);
+
+
+/*****************************************************************************
+* Flattened tree: a BBOX_TREE copied into contiguous blocks of eight child
+* boxes each, tested eight at a time and walked with a stack.
+******************************************************************************/
+
+const int FLAT_BBOX_WIDTH = 8;
+const float FLAT_BBOX_FAR = 1.0e30f;
+
+struct FlatBBoxBlock final
+{
+    float lo[3][FLAT_BBOX_WIDTH];
+    float hi[3][FLAT_BBOX_WIDTH];
+    std::int32_t child[FLAT_BBOX_WIDTH]; // >= 0: node's first block; < 0: leaf -1-child
+    std::int32_t count;
+    std::int32_t more; // the node continues in the next block
+};
+
+struct FlatBBoxTree final
+{
+    std::vector<FlatBBoxBlock> blocks; // block 0 holds the root alone
+    std::vector<const void *> leaves;
+};
+
+struct FlatBBoxEntry final
+{
+    std::int32_t ref;
+    float depth;
+};
+
+FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root);
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
+
+/// Nearest-first walk: `leaf` is called for each hit leaf whose box starts before `best`, which it may lower.
+/// With `cull` false every hit leaf is visited.
+template<typename RayT, typename StatsT, typename LeafFn>
+void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
+{
+    float origin[3], inv[3];
+    for (int d = 0; d < 3; ++d)
+    {
+        origin[d] = float(ray.Origin[d]);
+        const DBL r = 1.0 / ray.Direction[d];
+        inv[d] = (fabs(r) < FLAT_BBOX_FAR) ? float(r) : std::copysign(FLAT_BBOX_FAR, float(ray.Direction[d]));
+    }
+
+    const int LOCAL = 256;
+    FlatBBoxEntry local[LOCAL];
+    std::vector<FlatBBoxEntry> spill;
+    FlatBBoxEntry *stack = local;
+    int capacity = LOCAL, size = 0;
+    stack[size++] = FlatBBoxEntry{0, -FLAT_BBOX_FAR};
+
+    while (size > 0)
+    {
+        const FlatBBoxEntry e = stack[--size];
+        if (cull && e.depth > best)
+            continue;
+        if (e.ref < 0)
+        {
+            leaf(tree.leaves[-1 - e.ref]);
+            continue;
+        }
+
+        const float maxDepth = cull ? float(std::min(best, DBL(FLAT_BBOX_FAR))) : FLAT_BBOX_FAR;
+        const int base = size;
+        for (const FlatBBoxBlock *b = &tree.blocks[e.ref];; ++b)
+        {
+            float tn[FLAT_BBOX_WIDTH], tf[FLAT_BBOX_WIDTH];
+            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+            {
+                const float x1 = (b->lo[X][k] - origin[X]) * inv[X], x2 = (b->hi[X][k] - origin[X]) * inv[X];
+                const float y1 = (b->lo[Y][k] - origin[Y]) * inv[Y], y2 = (b->hi[Y][k] - origin[Y]) * inv[Y];
+                const float z1 = (b->lo[Z][k] - origin[Z]) * inv[Z], z2 = (b->hi[Z][k] - origin[Z]) * inv[Z];
+                tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
+                tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
+            }
+            if (size + b->count > capacity)
+            {
+                if (stack == local)
+                    spill.assign(local, local + size);
+                spill.resize(2 * (capacity + b->count));
+                stack = spill.data();
+                capacity = int(spill.size());
+            }
+            for (int k = 0; k < b->count; ++k)
+                if ((tf[k] >= tn[k]) && (tf[k] >= float(EPSILON)) && (tn[k] <= maxDepth))
+                    stack[size++] = FlatBBoxEntry{b->child[k], tn[k]};
+            stats[nChecked] += b->count;
+            if (!b->more)
+                break;
+        }
+        stats[nEnqueued] += size - base;
+        std::sort(stack + base, stack + size, [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth > b.depth; });
+    }
+}
 
 
 /*****************************************************************************

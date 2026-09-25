@@ -256,6 +256,8 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)
         }
         case 1:
         {
+            if (sceneData->flatSlabs != nullptr)
+                return (Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, ray, &bestisect, threadData));
             if (sceneData->boundingSlabs != nullptr)
                 return (Intersect_BBox_Tree(priorityQueue, sceneData->boundingSlabs, ray, &bestisect, threadData));
         }
@@ -314,6 +316,8 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray, const RayO
         }
         case 1:
         {
+            if (sceneData->flatSlabs != nullptr)
+                return (Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, ray, &bestisect, precondition, postcondition, threadData));
             if (sceneData->boundingSlabs != nullptr)
                 return (Intersect_BBox_Tree(priorityQueue, sceneData->boundingSlabs, ray, &bestisect, precondition, postcondition, threadData));
         }

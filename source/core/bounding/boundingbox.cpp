@@ -547,6 +547,118 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     return (found);
 }
 
+static void Set_Flat_Lane(FlatBBoxBlock& b, int k, const BBOX_TREE *child)
+{
+    for (int d = X; d <= Z; ++d)
+    {
+        if (child->Infinite)
+        {
+            b.lo[d][k] = -FLAT_BBOX_FAR;
+            b.hi[d][k] = FLAT_BBOX_FAR;
+        }
+        else
+        {
+            b.lo[d][k] = child->BBox.lowerLeft[d];
+            b.hi[d][k] = child->BBox.lowerLeft[d] + child->BBox.size[d];
+        }
+    }
+}
+
+static std::int32_t Flatten_Node(FlatBBoxTree& tree, const BBOX_TREE *node)
+{
+    if (node->Entries == 0)
+    {
+        tree.leaves.push_back(reinterpret_cast<const void *>(node->Node));
+        return -std::int32_t(tree.leaves.size());
+    }
+
+    const std::int32_t first = std::int32_t(tree.blocks.size());
+    const int count = node->Entries, nblocks = (count + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
+    FlatBBoxBlock empty;
+    for (int d = X; d <= Z; ++d)
+        for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+        {
+            empty.lo[d][k] = FLAT_BBOX_FAR;
+            empty.hi[d][k] = -FLAT_BBOX_FAR;
+        }
+    for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+        empty.child[k] = 0;
+    for (int i = 0; i < nblocks; ++i)
+    {
+        empty.count = std::min(FLAT_BBOX_WIDTH, count - i * FLAT_BBOX_WIDTH);
+        empty.more = (i + 1 < nblocks);
+        tree.blocks.push_back(empty);
+    }
+    for (int i = 0; i < count; ++i)
+        Set_Flat_Lane(tree.blocks[first + i / FLAT_BBOX_WIDTH], i % FLAT_BBOX_WIDTH, node->Node[i]);
+    for (int i = 0; i < count; ++i)
+    {
+        const std::int32_t ref = Flatten_Node(tree, node->Node[i]);
+        tree.blocks[first + i / FLAT_BBOX_WIDTH].child[i % FLAT_BBOX_WIDTH] = ref;
+    }
+    return first;
+}
+
+FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root)
+{
+    if (Root == nullptr)
+        return nullptr;
+
+    FlatBBoxTree *tree = new FlatBBoxTree;
+    tree->blocks.resize(1);
+    FlatBBoxBlock& top = tree->blocks[0];
+    for (int d = X; d <= Z; ++d)
+        for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+        {
+            top.lo[d][k] = FLAT_BBOX_FAR;
+            top.hi[d][k] = -FLAT_BBOX_FAR;
+        }
+    for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+        top.child[k] = 0;
+    top.count = 1;
+    top.more = 0;
+    Set_Flat_Lane(tree->blocks[0], 0, Root);
+    const std::int32_t ref = Flatten_Node(*tree, Root);
+    tree->blocks[0].child[0] = ref;
+    tree->blocks.shrink_to_fit();
+    tree->leaves.shrink_to_fit();
+    return tree;
+}
+
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread)
+{
+    Intersection New_Intersection;
+    bool found = false;
+
+    Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](const void *leaf) {
+        if (Find_Intersection(&New_Intersection, reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf)), ray, Thread) &&
+            (New_Intersection.Depth < Best_Intersection->Depth))
+        {
+            *Best_Intersection = New_Intersection;
+            found = true;
+        }
+    });
+    return found;
+}
+
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread)
+{
+    Intersection New_Intersection;
+    bool found = false;
+
+    Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](const void *leaf) {
+        ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf));
+        if (precondition(ray, object, 0.0) &&
+            Find_Intersection(&New_Intersection, object, ray, postcondition, Thread) &&
+            (New_Intersection.Depth < Best_Intersection->Depth))
+        {
+            *Best_Intersection = New_Intersection;
+            found = true;
+        }
+    });
+    return found;
+}
+
 // Hot path: tens of millions of calls per frame on complex scenes.
 __attribute__((hot))
 void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth)
