@@ -368,7 +368,9 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
     }
 
     // Sample all intervals.
-    if((IMedia->Sample_Method == 3) && !all_constant_and_light_ray) //  adaptive sampling
+    if(ray.IsShadowTestRay() && !all_constant_and_light_ray)
+        ComputeMediaTransmittance(medias, mediaintervals, ray, max((minSamples + 1) / 2, 1));
+    else if((IMedia->Sample_Method == 3) && !all_constant_and_light_ray) //  adaptive sampling
         ComputeMediaAdaptiveSampling(medias, lights, mediaintervals, ray, IMedia, aa_threshold, minSamples, ignore_photons, use_scattering);
     else
         ComputeMediaRegularSampling(medias, lights, mediaintervals, ray, IMedia, minSamples, ignore_photons, use_scattering, all_constant_and_light_ray);
@@ -377,6 +379,56 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 
     lightSampleIndex = savedIndex;
     lightSampleShift = savedShift;
+}
+
+MathColour MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray& ray, DBL depth)
+{
+    MathColour density, extinction;
+    const Vector3d point = ray.Evaluate(depth);
+
+    threadData->Stats()[Media_Samples]++;
+    for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
+    {
+        Evaluate_Density_Pigment((*i)->Density, point, density, threadData);
+        extinction += density * (*i)->Extinction;
+    }
+    return extinction;
+}
+
+void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, int maxSubintervals)
+{
+    // Method 3's rule, (ends + 2 * joints + midpoints) / 3 per subinterval, halving until the transmittance
+    // settles within a quarter of an 8-bit level.
+    const DBL tolerance = 1.0 / 1024.0;
+
+    threadData->Stats()[Media_Intervals] += mediaintervals.size();
+    for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
+    {
+        int n = min(2, maxSubintervals);
+        MathColour ends = ComputeMediaExtinction(medias, ray, i->s0) + ComputeMediaExtinction(medias, ray, i->s1);
+        MathColour joints, mids;
+        for(int j = 1; j < 2 * n; j++)
+            ((j % 2) ? mids : joints) += ComputeMediaExtinction(medias, ray, i->s0 + i->ds * j / (2 * n));
+        MathColour depth = (ends + joints * 2.0 + mids) * (i->ds / (3 * n));
+
+        while(n < maxSubintervals)
+        {
+            joints += mids;
+            mids.Clear();
+            n *= 2;
+            for(int j = 1; j < 2 * n; j += 2)
+                mids += ComputeMediaExtinction(medias, ray, i->s0 + i->ds * j / (2 * n));
+            const MathColour finer = (ends + joints * 2.0 + mids) * (i->ds / (3 * n));
+            const bool settled = (Exp(-finer) - Exp(-depth)).IsNearZero(tolerance);
+            depth = finer;
+            if(settled)
+                break;
+        }
+
+        i->od = depth;
+        i->te.Clear();
+        i->samples = 1;
+    }
 }
 
 void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
