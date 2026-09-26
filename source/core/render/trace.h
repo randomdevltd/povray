@@ -172,11 +172,14 @@ struct TraceTicket final
     /// something the subsurface scattering algorithm needs
     unsigned int subsurfaceRecursionDepth;
 
+    /// share of its radiosity sample that a ray below a gather ray carries, for Russian roulette
+    double radiosityShare;
+
     TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
                 float riq = -1.0, float rq = 1.0):
         traceLevel(0), maxAllowedTraceLevel(mtl), maxFoundTraceLevel(0), adcBailout(adcb), alphaBackground(ab),
         radiosityRecursionDepth(rrd), subsurfaceRecursionDepth(ssrd), radiosityImportanceQueried(riq),
-        radiosityImportanceFound(-1.0), radiosityQuality(rq)
+        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0)
     {}
 };
 
@@ -587,6 +590,10 @@ class Trace
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
                                          ConstObjectPtr object, double relativeIor, double lightsourcedepth, Ray& lightsourceray,
                                          const MathColour& lightcolour, bool backside);
+        /// Whether to trace a reflected or refracted ray of the given weight spawned at a point hit by `ray`.
+        /// Below a gather ray, one whose share of its sample is under the ADC bailout survives with probability in
+        /// proportion to that share, `scale` being its compensating factor.
+        bool SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, double weight, unsigned int salt, double& scale);
         /// Classic lighting for radiosity rays: shadow-tests lights brightest first, and estimates the faint remainder
         /// from the visibility of those tested.
         void ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
