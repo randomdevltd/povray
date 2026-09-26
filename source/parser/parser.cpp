@@ -1250,12 +1250,12 @@ void Parser::Parse_Mesh_Camera (Camera& Cam)
         Mesh_Triangle_Struct *tr(mesh->Data->Triangles);
         for (int i = 0, idx = 0, bit = 1; i < mesh->Data->Number_Of_Triangles; i++, tr++)
         {
-            int P1u(mesh->Data->UVCoords[tr->UV1][U] * 10);
-            int P2u(mesh->Data->UVCoords[tr->UV2][U] * 10);
-            int P3u(mesh->Data->UVCoords[tr->UV3][U] * 10);
-            int P1v(mesh->Data->UVCoords[tr->UV1][V] * 10);
-            int P2v(mesh->Data->UVCoords[tr->UV2][V] * 10);
-            int P3v(mesh->Data->UVCoords[tr->UV3][V] * 10);
+            int P1u(mesh->Data->UVCoords[mesh->UV_Index(tr, 0)][U] * 10);
+            int P2u(mesh->Data->UVCoords[mesh->UV_Index(tr, 1)][U] * 10);
+            int P3u(mesh->Data->UVCoords[mesh->UV_Index(tr, 2)][U] * 10);
+            int P1v(mesh->Data->UVCoords[mesh->UV_Index(tr, 0)][V] * 10);
+            int P2v(mesh->Data->UVCoords[mesh->UV_Index(tr, 1)][V] * 10);
+            int P3v(mesh->Data->UVCoords[mesh->UV_Index(tr, 2)][V] * 10);
 
             int minU = min(min(P1u, min(P2u, P3u)), 9);
             int minV = min(min(P1v, min(P2v, P3v)), 9);
@@ -3634,7 +3634,7 @@ void Parser::Parse_Mesh1 (Mesh* Object)
     int number_of_normals, number_of_textures, number_of_triangles, number_of_vertices, number_of_uvcoords;
     int max_normals, max_textures, max_triangles, max_vertices, max_uvcoords;
     DBL l1, l2, l3;
-    Vector3d D1, D2, P1, P2, P3, N1, N2, N3, N;
+    Vector3d D1, D2, P1, P2, P3, N1, N2, N3;
     Vector2d UV1, UV2, UV3;
     MeshVector *Normals, *Vertices;
     TEXTURE **Textures;
@@ -3647,6 +3647,10 @@ void Parser::Parse_Mesh1 (Mesh* Object)
     bool foundZeroNormal=false;
 
     Inside_Vect = Vector3d(0.0, 0.0, 0.0);
+
+    Object->Data = new MESH_DATA();
+    Object->Data->References = 1;
+    MESH_DATA& Data = *Object->Data;
 
     /* Allocate temporary normals, textures, triangles and vertices. */
 
@@ -3708,33 +3712,33 @@ void Parser::Parse_Mesh1 (Mesh* Object)
 
                 /* Init triangle. */
 
-                Object->Init_Mesh_Triangle(&Triangles[number_of_triangles]);
+                MESH_TRIANGLE& Triangle = Triangles[number_of_triangles];
+                Object->Init_Mesh_Triangle(&Triangle);
 
-                Triangles[number_of_triangles].P1 = Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P1);
-                Triangles[number_of_triangles].P2 = Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P2);
-                Triangles[number_of_triangles].P3 = Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P3);
+                Triangle.SetP(0, Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P1));
+                Triangle.SetP(1, Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P2));
+                Triangle.SetP(2, Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P3));
 
                 /* NK 1998 */
                 (void)Parse_Three_UVCoords(UV1,UV2,UV3);
-                Triangles[number_of_triangles].UV1 = Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV1);
-                Triangles[number_of_triangles].UV2 = Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV2);
-                Triangles[number_of_triangles].UV3 = Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV3);
+                Data.UVInd.Set(number_of_triangles, 0, Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV1));
+                Data.UVInd.Set(number_of_triangles, 1, Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV2));
+                Data.UVInd.Set(number_of_triangles, 2, Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV3));
                 /* NK ---- */
 
                 /* NK */
                 /* read possibly three instead of only one texture */
                 /* read these before compute!!! */
                 t2 = t3 = nullptr;
-                Triangles[number_of_triangles].Texture = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, Parse_Mesh_Texture(&t2,&t3));
-                if (t2) Triangles[number_of_triangles].Texture2 = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t2);
-                if (t3) Triangles[number_of_triangles].Texture3 = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t3);
-                if (t2 || t3) Triangles[number_of_triangles].ThreeTex = true;
+                const MeshIndex texture = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, Parse_Mesh_Texture(&t2,&t3));
+                Data.TextureInd.Set(number_of_triangles, 0, texture);
+                if (t2) Data.Texture23Ind.Set(number_of_triangles, 0, Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t2));
+                if (t3) Data.Texture23Ind.Set(number_of_triangles, 1, Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t3));
+                if (t2 || t3) Triangle.SetThreeTex(true);
 
-                Object->Compute_Mesh_Triangle(&Triangles[number_of_triangles], false, P1, P2, P3, N);
+                Object->Compute_Mesh_Triangle(&Triangle, number_of_triangles, false, P1, P2, P3);
 
-                Triangles[number_of_triangles].Normal_Ind = Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N);
-
-                if(Triangles[number_of_triangles].Texture < 0)
+                if(texture < 0)
                     fully_textured = false;
 
                 number_of_triangles++;
@@ -3808,11 +3812,12 @@ void Parser::Parse_Mesh1 (Mesh* Object)
 
                 /* Init triangle. */
 
-                Object->Init_Mesh_Triangle(&Triangles[number_of_triangles]);
+                MESH_TRIANGLE& Triangle = Triangles[number_of_triangles];
+                Object->Init_Mesh_Triangle(&Triangle);
 
-                Triangles[number_of_triangles].P1 = Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P1);
-                Triangles[number_of_triangles].P2 = Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P2);
-                Triangles[number_of_triangles].P3 = Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P3);
+                Triangle.SetP(0, Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P1));
+                Triangle.SetP(1, Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P2));
+                Triangle.SetP(2, Object->Mesh_Hash_Vertex(&number_of_vertices, &max_vertices, &Vertices, P3));
 
                 /* Check for equal normals. */
 
@@ -3824,38 +3829,37 @@ void Parser::Parse_Mesh1 (Mesh* Object)
 
                 /* NK 1998 */
                 (void)Parse_Three_UVCoords(UV1,UV2,UV3);
-                Triangles[number_of_triangles].UV1 = Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV1);
-                Triangles[number_of_triangles].UV2 = Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV2);
-                Triangles[number_of_triangles].UV3 = Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV3);
+                Data.UVInd.Set(number_of_triangles, 0, Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV1));
+                Data.UVInd.Set(number_of_triangles, 1, Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV2));
+                Data.UVInd.Set(number_of_triangles, 2, Object->Mesh_Hash_UV(&number_of_uvcoords, &max_uvcoords, &UVCoords, UV3));
 
                 /* read possibly three instead of only one texture */
                 /* read these before compute!!! */
                 t2 = t3 = nullptr;
-                Triangles[number_of_triangles].Texture = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, Parse_Mesh_Texture(&t2,&t3));
-                if (t2) Triangles[number_of_triangles].Texture2 = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t2);
-                if (t3) Triangles[number_of_triangles].Texture3 = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t3);
-                if (t2 || t3) Triangles[number_of_triangles].ThreeTex = true;
+                const MeshIndex texture = Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, Parse_Mesh_Texture(&t2,&t3));
+                Data.TextureInd.Set(number_of_triangles, 0, texture);
+                if (t2) Data.Texture23Ind.Set(number_of_triangles, 0, Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t2));
+                if (t3) Data.Texture23Ind.Set(number_of_triangles, 1, Object->Mesh_Hash_Texture(&number_of_textures, &max_textures, &Textures, t3));
+                if (t2 || t3) Triangle.SetThreeTex(true);
 
                 if ((fabs(l1) > EPSILON) || (fabs(l2) > EPSILON))
                 {
                     /* Smooth triangle. */
 
-                    Triangles[number_of_triangles].N1 = Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N1);
-                    Triangles[number_of_triangles].N2 = Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N2);
-                    Triangles[number_of_triangles].N3 = Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N3);
+                    Data.NormalInd.Set(number_of_triangles, 0, Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N1));
+                    Data.NormalInd.Set(number_of_triangles, 1, Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N2));
+                    Data.NormalInd.Set(number_of_triangles, 2, Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N3));
 
-                    Object->Compute_Mesh_Triangle(&Triangles[number_of_triangles], true, P1, P2, P3, N);
+                    Object->Compute_Mesh_Triangle(&Triangle, number_of_triangles, true, P1, P2, P3);
                 }
                 else
                 {
                     /* Flat triangle. */
 
-                    Object->Compute_Mesh_Triangle(&Triangles[number_of_triangles], false, P1, P2, P3, N);
+                    Object->Compute_Mesh_Triangle(&Triangle, number_of_triangles, false, P1, P2, P3);
                 }
 
-                Triangles[number_of_triangles].Normal_Ind = Object->Mesh_Hash_Normal(&number_of_normals, &max_normals, &Normals, N);
-
-                if (Triangles[number_of_triangles].Texture < 0)
+                if (texture < 0)
                 {
                     fully_textured = false;
                 }
@@ -3897,14 +3901,11 @@ void Parser::Parse_Mesh1 (Mesh* Object)
         Error("No triangles in triangle mesh.");
     }
 
-    /* Init triangle mesh data. */
+    if (number_of_vertices >= MESH_MAX_VERTICES)
+    {
+        Error("Too many vertices in triangle mesh.");
+    }
 
-    Object->Data = reinterpret_cast<MESH_DATA *>(POV_MALLOC(sizeof(MESH_DATA), "triangle mesh data"));
-
-
-    Object->Data->References = 1;
-
-    Object->Data->FlatTree = nullptr;
     /* NK 1998 */
 
     if( (fabs(Inside_Vect[X]) < EPSILON) &&  (fabs(Inside_Vect[Y]) < EPSILON) &&  (fabs(Inside_Vect[Z]) < EPSILON))
@@ -3919,15 +3920,10 @@ void Parser::Parse_Mesh1 (Mesh* Object)
         Object->Type &= ~PATCH_OBJECT;
     }
 
-    Object->Data->Normals   = nullptr;
-
     /* [LSK] Removed "Data->" */
     Object->Textures  = nullptr;
 
-    Object->Data->Triangles = nullptr;
-    Object->Data->Vertices  = nullptr;
-
-    /* Allocate memory for normals, textures, triangles and vertices. */
+    /* Shrink normals, triangles and vertices to size in place. */
 
     Object->Number_Of_Textures = number_of_textures;
 
@@ -3937,7 +3933,7 @@ void Parser::Parse_Mesh1 (Mesh* Object)
 
     Object->Data->Number_Of_Vertices = number_of_vertices;
 
-    Object->Data->Normals = reinterpret_cast<MeshVector *>(POV_MALLOC(number_of_normals*sizeof(MeshVector), "triangle mesh data"));
+    Object->Data->Normals = reinterpret_cast<MeshVector *>(POV_REALLOC(Normals, number_of_normals*sizeof(MeshVector), "triangle mesh data"));
 
     if (number_of_textures)
     {
@@ -3947,16 +3943,11 @@ void Parser::Parse_Mesh1 (Mesh* Object)
         Object->Textures = reinterpret_cast<TEXTURE **>(POV_MALLOC(number_of_textures*sizeof(TEXTURE *), "triangle mesh data"));
     }
 
-    Object->Data->Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_MALLOC(number_of_triangles*sizeof(MESH_TRIANGLE), "triangle mesh data"));
+    Object->Data->Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_REALLOC(Triangles, number_of_triangles*sizeof(MESH_TRIANGLE), "triangle mesh data"));
 
-    Object->Data->Vertices = reinterpret_cast<MeshVector *>(POV_MALLOC(number_of_vertices*sizeof(MeshVector), "triangle mesh data"));
+    Object->Data->Vertices = reinterpret_cast<MeshVector *>(POV_REALLOC(Vertices, number_of_vertices*sizeof(MeshVector), "triangle mesh data"));
 
-    /* Copy normals, textures, triangles and vertices into mesh. */
-
-    for (i = 0; i < number_of_normals; i++)
-    {
-        Object->Data->Normals[i] = Normals[i];
-    }
+    Object->Finish_Mesh_Data();
 
     for (i = 0; i < number_of_textures; i++)
     {
@@ -3973,16 +3964,6 @@ void Parser::Parse_Mesh1 (Mesh* Object)
         Object->Type |= TEXTURED_OBJECT;
     }
 
-    for (i = 0; i < number_of_triangles; i++)
-    {
-        Object->Data->Triangles[i] = Triangles[i];
-    }
-
-    for (i = 0; i < number_of_vertices; i++)
-    {
-        Object->Data->Vertices[i] = Vertices[i];
-    }
-
     /* NK 1998 */
     /* do the four steps above, but for UV coordinates*/
     Object->Data->UVCoords  = nullptr;
@@ -3997,10 +3978,7 @@ void Parser::Parse_Mesh1 (Mesh* Object)
 
     /* Free temporary memory. */
 
-    POV_FREE(Normals);
     POV_FREE(Textures);
-    POV_FREE(Triangles);
-    POV_FREE(Vertices);
 
 /*
     Render_Info("Mesh: %ld bytes: %ld vertices, %ld normals, %ld textures, %ld triangles, %ld uv-coords\n",
@@ -4089,7 +4067,7 @@ void Parser::Parse_Mesh2 (Mesh* Object)
     bool foundZeroNormal = false;
 
     DBL l1, l2;
-    Vector3d D1, D2, P1, P2, P3, N1, N;
+    Vector3d D1, D2, P1, P2, P3, N1;
     Vector3d Inside_Vect;
 
     Vector2d UV1;
@@ -4100,6 +4078,10 @@ void Parser::Parse_Mesh2 (Mesh* Object)
     MESH_TRIANGLE *Triangles;
 
     Inside_Vect = Vector3d(0.0, 0.0, 0.0);
+
+    Object->Data = new MESH_DATA();
+    Object->Data->References = 1;
+    MESH_DATA& Data = *Object->Data;
 
     /* normals, uvcoords, and textures are optional */
     number_of_vertices = 0;
@@ -4125,6 +4107,8 @@ void Parser::Parse_Mesh2 (Mesh* Object)
 
             if (number_of_vertices<=0)
                 Error("No vertices in triangle mesh.");
+            if (number_of_vertices >= MESH_MAX_VERTICES)
+                Error("Too many vertices in triangle mesh.");
 
             /* allocate memory for vertices */
             Vertices = reinterpret_cast<MeshVector *>(POV_MALLOC(number_of_vertices*sizeof(MeshVector), "triangle mesh data"));
@@ -4287,21 +4271,20 @@ void Parser::Parse_Mesh2 (Mesh* Object)
         Object->Init_Mesh_Triangle(&Triangles[i]);
 
         /* assign the vertices */
-        Triangles[i].P1 = a;
-        Triangles[i].P2 = b;
-        Triangles[i].P3 = c;
+        Triangles[i].SetP(0, a);
+        Triangles[i].SetP(1, b);
+        Triangles[i].SetP(2, c);
 
         /* look for a texture index */
         EXPECT_ONE_CAT
             CASE_FLOAT_UNGET
-                Triangles[i].Texture = Parse_Float(); Parse_Comma();
-                if (Triangles[i].Texture >= number_of_textures ||
-                    Triangles[i].Texture < 0)
+                a = Parse_Float(); Parse_Comma();
+                if (a >= number_of_textures || a < 0)
                     Error("Texture index out of range in mesh2.");
+                Data.TextureInd.Set(i, 0, a);
             END_CASE
 
             OTHERWISE
-                Triangles[i].Texture = -1;
                 fully_textured = false;
                 UNGET
             END_CASE
@@ -4309,28 +4292,26 @@ void Parser::Parse_Mesh2 (Mesh* Object)
         /* look for a texture index */
         EXPECT_ONE_CAT
             CASE_FLOAT_UNGET
-                Triangles[i].Texture2 = Parse_Float(); Parse_Comma();
-                if (Triangles[i].Texture2 >= number_of_textures ||
-                    Triangles[i].Texture2 < 0)
+                a = Parse_Float(); Parse_Comma();
+                if (a >= number_of_textures || a < 0)
                     Error("Texture index out of range in mesh2.");
-                Triangles[i].ThreeTex = true;
+                Data.Texture23Ind.Set(i, 0, a);
+                Triangles[i].SetThreeTex(true);
             END_CASE
             OTHERWISE
-                Triangles[i].Texture2 = -1;
                 UNGET
             END_CASE
         END_EXPECT
         /* look for a texture index */
         EXPECT_ONE_CAT
             CASE_FLOAT_UNGET
-                Triangles[i].Texture3 = Parse_Float(); Parse_Comma();
-                if (Triangles[i].Texture3 >= number_of_textures ||
-                    Triangles[i].Texture3 < 0)
+                a = Parse_Float(); Parse_Comma();
+                if (a >= number_of_textures || a < 0)
                     Error("Texture index out of range in mesh2.");
-                Triangles[i].ThreeTex = true;
+                Data.Texture23Ind.Set(i, 1, a);
+                Triangles[i].SetThreeTex(true);
             END_CASE
             OTHERWISE
-                Triangles[i].Texture3 = -1;
                 UNGET
             END_CASE
         END_EXPECT
@@ -4373,9 +4354,9 @@ void Parser::Parse_Mesh2 (Mesh* Object)
                 }
 
                 /* assign the uv coordinate */
-                Triangles[i].UV1 = a;
-                Triangles[i].UV2 = b;
-                Triangles[i].UV3 = c;
+                Data.UVInd.Set(i, 0, a);
+                Data.UVInd.Set(i, 1, b);
+                Data.UVInd.Set(i, 2, c);
             }
             Parse_End();
             /*EXIT*/
@@ -4430,10 +4411,10 @@ void Parser::Parse_Mesh2 (Mesh* Object)
                     Error("Mesh normal index out of range.");
                 }
 
-                /* assign the uv coordinate */
-                Triangles[i].N1 = a;
-                Triangles[i].N2 = b;
-                Triangles[i].N3 = c;
+                /* assign the normal indices */
+                Data.NormalInd.Set(i, 0, a);
+                Data.NormalInd.Set(i, 1, b);
+                Data.NormalInd.Set(i, 2, c);
             }
             Parse_End();
             /*EXIT*/
@@ -4466,21 +4447,11 @@ void Parser::Parse_Mesh2 (Mesh* Object)
     {
         if (number_of_uvcoords==number_of_vertices)
         {
-            for (i=0; i<number_of_triangles; i++)
-            {
-                Triangles[i].UV1 = Triangles[i].P1;
-                Triangles[i].UV2 = Triangles[i].P2;
-                Triangles[i].UV3 = Triangles[i].P3;
-            }
+            Data.UVInd.byVertex = true;
         }
         else if (number_of_uvcoords==1)
         {
-            for (i=0; i<number_of_triangles; i++)
-            {
-                Triangles[i].UV1 = 0;
-                Triangles[i].UV2 = 0;
-                Triangles[i].UV3 = 0;
-            }
+            Data.UVInd.fill = 0;
         }
         else
         {
@@ -4498,13 +4469,7 @@ void Parser::Parse_Mesh2 (Mesh* Object)
                So, we pretend that we read in some normal_indices
             */
             number_of_normal_indices = number_of_triangles;
-
-            for (i=0; i<number_of_triangles; i++)
-            {
-                Triangles[i].N1 = Triangles[i].P1;
-                Triangles[i].N2 = Triangles[i].P2;
-                Triangles[i].N3 = Triangles[i].P3;
-            }
+            Data.NormalInd.byVertex = true;
         }
         else if (number_of_normals)
         {
@@ -4514,32 +4479,25 @@ void Parser::Parse_Mesh2 (Mesh* Object)
 
     /* ---------------- Compute Triangle Normals ---------------- */
 
-    /* reallocate the normals stuff */
-    if (!number_of_normals)
-        Normals = reinterpret_cast<MeshVector *>(POV_MALLOC(number_of_triangles*sizeof(MeshVector), "triangle mesh data"));
-    else
-        Normals = reinterpret_cast<MeshVector *>(POV_REALLOC(Normals, (number_of_normals+number_of_triangles)*sizeof(MeshVector), "triangle mesh data"));
-
     for (i=0; i<number_of_triangles; i++)
     {
-        a = (int) Triangles[i].P1;
-        b = (int) Triangles[i].P2;
-        c = (int) Triangles[i].P3;
-        n1 = (int) Triangles[i].N1;
-        n2 = (int) Triangles[i].N2;
-        n3 = (int) Triangles[i].N3;
+        a = (int) Triangles[i].P1();
+        b = (int) Triangles[i].P2();
+        c = (int) Triangles[i].P3();
 
         P1 = Vector3d(Vertices[a]);
         P2 = Vector3d(Vertices[b]);
         P3 = Vector3d(Vertices[c]);
-
-        Triangles[i].Smooth = false;
 
         /* compute the normal (check for smoothness) */
         /* if number_of_normal_indices > 0, then the first triangles
            are smooth and the rest are flat */
         if (i<number_of_normal_indices)
         {
+            n1 = Data.NormalInd.Get(Triangles[i], i, 0);
+            n2 = Data.NormalInd.Get(Triangles[i], i, 1);
+            n3 = Data.NormalInd.Get(Triangles[i], i, 2);
+
             /* Check for equal normals. */
             D1 = Vector3d(Normals[n1]) - Vector3d(Normals[n2]);
             D2 = Vector3d(Normals[n1]) - Vector3d(Normals[n3]);
@@ -4550,35 +4508,23 @@ void Parser::Parse_Mesh2 (Mesh* Object)
             if ((fabs(l1) > EPSILON) || (fabs(l2) > EPSILON))
             {
                 /* Smooth triangle. */
-                Object->Compute_Mesh_Triangle(&Triangles[i], true, P1, P2, P3, N);
-                Triangles[i].Smooth = true;
+                Object->Compute_Mesh_Triangle(&Triangles[i], i, true, P1, P2, P3);
             }
             else
             {
                 /* Flat triangle. */
-                Object->Compute_Mesh_Triangle(&Triangles[i], false, P1, P2, P3, N);
+                Object->Compute_Mesh_Triangle(&Triangles[i], i, false, P1, P2, P3);
             }
         }
         else
         {
             /* Flat triangle. */
-            Object->Compute_Mesh_Triangle(&Triangles[i], false, P1, P2, P3, N);
+            Object->Compute_Mesh_Triangle(&Triangles[i], i, false, P1, P2, P3);
         }
-
-        /* assign the triangle normal that we just computed */
-        Triangles[i].Normal_Ind = i+number_of_normals;
-        Normals[i+number_of_normals] = MeshVector(N);
     }
-
-    /* now remember how many normals we really have */
-    number_of_normals += number_of_triangles;
 
     /* ----------------------------------------------------- */
 
-    /* Init triangle mesh data. */
-    Object->Data = reinterpret_cast<MESH_DATA *>(POV_MALLOC(sizeof(MESH_DATA), "triangle mesh data"));
-    Object->Data->References = 1;
-    Object->Data->FlatTree = nullptr;
     /* NK 1998 */
     /*YS* 31/12/1999 */
 
@@ -4609,6 +4555,8 @@ void Parser::Parse_Mesh2 (Mesh* Object)
     Object->Data->Number_Of_Vertices = number_of_vertices;
     Object->Data->Number_Of_UVCoords  = number_of_uvcoords;
     Object->Number_Of_Textures = number_of_textures;
+
+    Object->Finish_Mesh_Data();
 
     if (number_of_textures)
     {

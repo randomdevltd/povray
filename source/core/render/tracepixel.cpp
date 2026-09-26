@@ -700,10 +700,10 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
 
                 // set the ray origin to the centriod of the triangle.
                 const Mesh_Triangle_Struct& tr = mesh->Data->Triangles[faceIndex];
-                ray.Origin = Vector3d(mesh->Data->Vertices[tr.P1] + mesh->Data->Vertices[tr.P2] + mesh->Data->Vertices[tr.P3]) / 3;
+                ray.Origin = Vector3d(mesh->Data->Vertices[tr.P1()] + mesh->Data->Vertices[tr.P2()] + mesh->Data->Vertices[tr.P3()]) / 3;
 
                 // set the ray direction according to the normal of the face
-                ray.Direction = Vector3d(mesh->Data->Normals[tr.Normal_Ind]);
+                ray.Direction = mesh->Face_Normal(&tr);
 
                 // we use the Z co-ordinate of the camera location to indicate how far, along
                 // the ray's direction, we should move the ray's origin point. this allows the
@@ -756,8 +756,8 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
                         Mesh_Triangle_Struct& tr = mesh->Data->Triangles[faceIndex];
 
                         // see comments for distribution method 0
-                        ray.Origin = Vector3d(mesh->Data->Vertices[tr.P1] + mesh->Data->Vertices[tr.P2] + mesh->Data->Vertices[tr.P3]) / 3;
-                        ray.Direction = Vector3d(mesh->Data->Normals[tr.Normal_Ind]);
+                        ray.Origin = Vector3d(mesh->Data->Vertices[tr.P1()] + mesh->Data->Vertices[tr.P2()] + mesh->Data->Vertices[tr.P3()]) / 3;
+                        ray.Direction = mesh->Face_Normal(&tr);
                         ray.Origin = ray.Evaluate(camera.Location[Z]);
                         if (camera.Direction[Z] < -EPSILON)
                             ray.Direction.invert();
@@ -791,8 +791,8 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
 
                 // see comments for distribution method 0
                 Mesh_Triangle_Struct& tr = mesh->Data->Triangles[faceIndex];
-                ray.Origin = Vector3d(mesh->Data->Vertices[tr.P1] + mesh->Data->Vertices[tr.P2] + mesh->Data->Vertices[tr.P3]) / 3;
-                ray.Direction = Vector3d(mesh->Data->Normals[tr.Normal_Ind]);
+                ray.Origin = Vector3d(mesh->Data->Vertices[tr.P1()] + mesh->Data->Vertices[tr.P2()] + mesh->Data->Vertices[tr.P3()]) / 3;
+                ray.Direction = mesh->Face_Normal(&tr);
                 ray.Origin = ray.Evaluate(camera.Location[Z]);
                 if (camera.Direction[Z] < -EPSILON)
                     ray.Direction.invert();
@@ -836,12 +836,12 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
                             if ((intersection & mask) != 0)
                             {
                                 const Mesh_Triangle_Struct *tr(mesh->Data->Triangles + idx * 32 + bit);
-                                const double& P1u(mesh->Data->UVCoords[tr->UV1][U]);
-                                const double& P2u(mesh->Data->UVCoords[tr->UV2][U]);
-                                const double& P3u(mesh->Data->UVCoords[tr->UV3][U]);
-                                const double& P1v(mesh->Data->UVCoords[tr->UV1][V]);
-                                const double& P2v(mesh->Data->UVCoords[tr->UV2][V]);
-                                const double& P3v(mesh->Data->UVCoords[tr->UV3][V]);
+                                const double& P1u(mesh->Data->UVCoords[mesh->UV_Index(tr, 0)][U]);
+                                const double& P2u(mesh->Data->UVCoords[mesh->UV_Index(tr, 1)][U]);
+                                const double& P3u(mesh->Data->UVCoords[mesh->UV_Index(tr, 2)][U]);
+                                const double& P1v(mesh->Data->UVCoords[mesh->UV_Index(tr, 0)][V]);
+                                const double& P2v(mesh->Data->UVCoords[mesh->UV_Index(tr, 1)][V]);
+                                const double& P3v(mesh->Data->UVCoords[mesh->UV_Index(tr, 2)][V]);
 
                                 // derive the barycentric co-ordinates from the UV co-ords
                                 double scale = (P2u - P1u) * (P3v - P1v) - (P3u - P1u) * (P2v - P1v);
@@ -854,10 +854,10 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
                                     continue;
 
                                 // now all we need to do is convert the barycentric co-ordinates back to a point in 3d space which is on the surface of the face
-                                ray.Origin = Vector3d(mesh->Data->Vertices[tr->P1] * B1 + mesh->Data->Vertices[tr->P2] * B2 + mesh->Data->Vertices[tr->P3] * B3);
+                                ray.Origin = Vector3d(mesh->Data->Vertices[tr->P1()] * B1 + mesh->Data->Vertices[tr->P2()] * B2 + mesh->Data->Vertices[tr->P3()] * B3);
 
                                 // we use the one normal for any location on the face, unless smooth is set
-                                ray.Direction = Vector3d(mesh->Data->Normals[tr->Normal_Ind]);
+                                ray.Direction = mesh->Face_Normal(tr);
                                 if (camera.Smooth)
                                     mesh->Smooth_Mesh_Normal(ray.Direction, tr, ray.Origin);
 

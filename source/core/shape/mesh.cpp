@@ -344,7 +344,7 @@ void Mesh::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread
 
     Triangle = reinterpret_cast<const MESH_TRIANGLE *>(Inter->Pointer);
 
-    if (Triangle->Smooth)
+    if (Triangle->Smooth())
     {
         if (Trans != nullptr)
         {
@@ -366,7 +366,7 @@ void Mesh::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread
     }
     else
     {
-        Result = Vector3d(Data->Normals[Triangle->Normal_Ind]);
+        Result = Face_Normal(Triangle);
 
         if (Trans != nullptr)
         {
@@ -378,6 +378,19 @@ void Mesh::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread
 }
 
 
+
+// A triangle's smoothing frame: Perp scaled to measure 0..1 from edge P2-P3 towards P1, and the dominant axis of that edge.
+static void smooth_frame(const Vector3d& P1, const Vector3d& P2, const Vector3d& P3, Vector3d& Perp, int& vAxis)
+{
+    const Vector3d P3MinusP2 = P3 - P2;
+    vAxis = max3_coordinate(fabs(P3MinusP2[X]), fabs(P3MinusP2[Y]), fabs(P3MinusP2[Z]));
+
+    Vector3d VTemp1 = (P2 - P3).normalized();
+    const Vector3d VTemp2 = P1 - P3;
+    VTemp1 *= dot(VTemp2, VTemp1);
+    Perp = (VTemp1 - VTemp2).normalized();
+    Perp /= -dot(VTemp2, Perp);
+}
 
 /*****************************************************************************
 *
@@ -409,14 +422,15 @@ void Mesh::Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, c
 {
     int axis;
     DBL u, v;
-    DBL k1, k2, k3;
-    Vector3d PIMinusP1, N1, N2, N3;
+    Vector3d PIMinusP1, P1, P2, P3, N1, N2, N3, Perp;
 
+    get_triangle_vertices(Triangle, P1, P2, P3);
     get_triangle_normals(Triangle, N1, N2, N3);
+    smooth_frame(P1, P2, P3, Perp, axis);
 
-    PIMinusP1 = IPoint - Vector3d(Data->Vertices[Triangle->P1]);
+    PIMinusP1 = IPoint - P1;
 
-    u = dot(PIMinusP1, Vector3d(Triangle->Perp));
+    u = dot(PIMinusP1, Perp);
 
     if (u < EPSILON)
     {
@@ -424,16 +438,22 @@ void Mesh::Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, c
     }
     else
     {
-        axis = Triangle->vAxis;
-
-        k1 = Data->Vertices[Triangle->P1][axis];
-        k2 = Data->Vertices[Triangle->P2][axis];
-        k3 = Data->Vertices[Triangle->P3][axis];
-
-        v = (PIMinusP1[axis] / u + k1 - k2) / (k3 - k2);
+        v = (PIMinusP1[axis] / u + P1[axis] - P2[axis]) / (P3[axis] - P2[axis]);
 
         Result = N1 + u * (N2 - N1 + v * (N3 - N2));
     }
+}
+
+Vector3d Mesh::Face_Normal(const MESH_TRIANGLE *Triangle) const
+{
+    Vector3d P1, P2, P3;
+
+    get_triangle_vertices(Triangle, P1, P2, P3);
+    const Vector3d N = cross(P3 - P1, P2 - P1);
+    const DBL len = N.length();
+    if (len == 0.0)
+        return N;
+    return N * ((Triangle->Flipped() ? -1.0 : 1.0) / len);
 }
 
 
@@ -749,7 +769,7 @@ Mesh::~Mesh()
             POV_FREE(Data->Triangles);
         }
 
-        POV_FREE(Data);
+        delete Data;
     }
 }
 
@@ -833,50 +853,28 @@ void Mesh::Compute_BBox()
 *
 ******************************************************************************/
 
-bool Mesh::Compute_Mesh_Triangle(MESH_TRIANGLE *Triangle, bool Smooth, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3, Vector3d& S_Normal) const
+bool Mesh::Compute_Mesh_Triangle(MESH_TRIANGLE *Triangle, MeshIndex Index, bool Smooth, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3)
 {
-    MeshIndex temp;
     bool swap;
-    DBL x, y, z;
-    Vector3d V1, V2;
-    DBL Length;
+    Vector3d S_Normal;
+    const size_t tri = size_t(Index);
 
-    const Vector3d *pP1;
-    const Vector3d *pP2;
-
-    V1 = P2 - P1;
-    V2 = P3 - P1;
-
-    S_Normal = cross(V2, V1);
-
-    Length = S_Normal.length();
+    S_Normal = cross(P3 - P1, P2 - P1);
 
     /* Set up a flag so we can ignore degenerate triangles */
 
-    if (Length == 0.0)
+    if (S_Normal.length() == 0.0)
     {
         return(false);
     }
 
-    /* Normalize the normal vector. */
-
-    S_Normal /= Length;
-
-    Triangle->Distance = dot(S_Normal, P1);
-
-    Triangle->Distance *= -1.0;
-
     /* Find triangle's dominant axis. */
 
-    x = fabs(S_Normal[X]);
-    y = fabs(S_Normal[Y]);
-    z = fabs(S_Normal[Z]);
-
-    Triangle->Dominant_Axis = max3_coordinate(x, y, z);
+    Triangle->SetDominantAxis(max3_coordinate(fabs(S_Normal[X]), fabs(S_Normal[Y]), fabs(S_Normal[Z])));
 
     swap = false;
 
-    switch (Triangle->Dominant_Axis)
+    switch (Triangle->Dominant_Axis())
     {
         case X:
 
@@ -908,103 +906,93 @@ bool Mesh::Compute_Mesh_Triangle(MESH_TRIANGLE *Triangle, bool Smooth, const Vec
 
     if (swap)
     {
-        temp = Triangle->P2;
-        Triangle->P2 = Triangle->P1;
-        Triangle->P1 = temp;
+        const MeshIndex temp = Triangle->P1();
+        Triangle->SetP(0, Triangle->P2());
+        Triangle->SetP(1, temp);
+        Triangle->SetFlipped(true);
 
-        /* NK 1998 */
-        temp = Triangle->UV2;
-        Triangle->UV2 = Triangle->UV1;
-        Triangle->UV1 = temp;
+        Data->UVInd.Swap(tri, 0, 1);
 
-        if (Triangle->ThreeTex)
+        if (Triangle->ThreeTex())
         {
-            temp = Triangle->Texture2;
-            Triangle->Texture2 = Triangle->Texture;
-            Triangle->Texture = temp;
+            const MeshIndex t1 = Data->TextureInd.Get(*Triangle, tri, 0), t2 = Data->Texture23Ind.Get(*Triangle, tri, 0);
+            Data->TextureInd.Set(tri, 0, t2);
+            Data->Texture23Ind.Set(tri, 0, t1);
         }
-
-        pP1 = &P2;
-        pP2 = &P1;
 
         if (Smooth)
         {
-            temp = Triangle->N2;
-            Triangle->N2 = Triangle->N1;
-            Triangle->N1 = temp;
+            Data->NormalInd.Swap(tri, 0, 1);
         }
-    }
-    else
-    {
-        pP1 = &P1;
-        pP2 = &P2;
     }
 
     if (Smooth)
     {
-    //  compute_smooth_triangle(Triangle, *pP1, *pP2, P3);
-        Triangle->Smooth = true;
+        Triangle->SetSmooth(true);
     }
-
-    compute_smooth_triangle(Triangle, *pP1, *pP2, P3);
 
     return(true);
 }
 
+static bool Smooth_Triangle(const MESH_TRIANGLE& t) { return t.Smooth(); }
+static bool Three_Tex_Triangle(const MESH_TRIANGLE& t) { return t.ThreeTex(); }
+static bool Any_Triangle(const MESH_TRIANGLE&) { return true; }
 
-
-/*****************************************************************************
-*
-* FUNCTION
-*
-*   compute_smooth_triangle
-*
-* INPUT
-*
-* OUTPUT
-*
-* RETURNS
-*
-* AUTHOR
-*
-*   Dieter Bayer
-*
-* DESCRIPTION
-*
-*   -
-*
-* CHANGES
-*
-*   Feb 1995 : Creation.
-*
-******************************************************************************/
-
-void Mesh::compute_smooth_triangle(MESH_TRIANGLE *Triangle, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3) const
+void Mesh::Finish_Mesh_Data()
 {
-    Vector3d P3MinusP2, VTemp1, VTemp2;
-    DBL x, y, z, uDenominator, Proj;
+    const size_t n = size_t(Data->Number_Of_Triangles);
+    Data->NormalInd.Finish(Data->Triangles, n, true, Smooth_Triangle);
+    Data->UVInd.Finish(Data->Triangles, n, true, Any_Triangle);
+    Data->TextureInd.Finish(Data->Triangles, n, false, Any_Triangle);
+    Data->Texture23Ind.Finish(Data->Triangles, n, false, Three_Tex_Triangle);
+}
 
-    P3MinusP2 = P3 - P2;
+void MeshIndexColumn::Set(size_t tri, int k, MeshIndex v)
+{
+    const size_t i = tri * width + k;
+    if (values.empty() && (v == fill) && !byVertex)
+        return;
+    POV_ASSERT(!byVertex);
+    if (values.size() <= i)
+        values.resize((tri + 1) * width, fill);
+    values[i] = v;
+}
 
-    x = fabs(P3MinusP2[X]);
-    y = fabs(P3MinusP2[Y]);
-    z = fabs(P3MinusP2[Z]);
+void MeshIndexColumn::Swap(size_t tri, int j, int k)
+{
+    if (!values.empty())
+        std::swap(values[tri * width + j], values[tri * width + k]);
+}
 
-    Triangle->vAxis = max3_coordinate(x, y, z);
-
-    VTemp1 = (P2 - P3).normalized();
-
-    VTemp2 = P1 - P3;
-
-    Proj = dot(VTemp2, VTemp1);
-
-    VTemp1 *= Proj;
-
-    Triangle->Perp = MeshVector((VTemp1 - VTemp2).normalized());
-
-    uDenominator = -dot(VTemp2, Vector3d(Triangle->Perp));
-
-    Triangle->Perp /= uDenominator;
+void MeshIndexColumn::Finish(const Mesh_Triangle_Struct *triangles, size_t n, bool vertexLike, bool (*relevant)(const Mesh_Triangle_Struct&))
+{
+    if (values.empty())
+        return;
+    values.resize(n * width, fill);
+    bool sameAsVertex = vertexLike, constant = true, none = true;
+    MeshIndex value = fill;
+    for (size_t t = 0; (t < n) && (sameAsVertex || constant); ++t)
+    {
+        if (!relevant(triangles[t]))
+            continue;
+        for (int k = 0; k < width; ++k)
+        {
+            const MeshIndex v = values[t * width + k];
+            sameAsVertex = sameAsVertex && (v == triangles[t].P(k));
+            constant = constant && (none || (v == value));
+            value = v;
+            none = false;
+        }
+    }
+    if (!sameAsVertex && !constant)
+    {
+        values.shrink_to_fit();
+        return;
+    }
+    byVertex = sameAsVertex && !none;
+    if (!byVertex && !none)
+        fill = value;
+    std::vector<MeshIndex>().swap(values);
 }
 
 
@@ -1037,31 +1025,30 @@ void Mesh::compute_smooth_triangle(MESH_TRIANGLE *Triangle, const Vector3d& P1, 
 
 bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Triangle, DBL *Depth) const
 {
-    DBL NormalDotOrigin, NormalDotDirection;
+    DBL NormalDotDirection;
     DBL s, t;
     Vector3d P1, P2, P3, S_Normal;
 
-    S_Normal = Vector3d(Data->Normals[Triangle->Normal_Ind]);
+    get_triangle_vertices(Triangle, P1, P2, P3);
+
+    // Unnormalised: the depth needs no unit normal, and the grazing test scales by its length instead.
+    S_Normal = cross(P3 - P1, P2 - P1);
 
     NormalDotDirection = dot(S_Normal, ray.Direction);
 
-    if (fabs(NormalDotDirection) < EPSILON)
+    if (!(NormalDotDirection * NormalDotDirection > EPSILON * EPSILON * S_Normal.lengthSqr()))
     {
         return(false);
     }
 
-    NormalDotOrigin = dot(S_Normal, ray.Origin);
-
-    *Depth = -(Triangle->Distance + NormalDotOrigin) / NormalDotDirection;
+    *Depth = dot(S_Normal, P1 - ray.Origin) / NormalDotDirection;
 
     if ((*Depth < DEPTH_TOLERANCE) || (*Depth > MAX_DISTANCE))
     {
         return(false);
     }
 
-    get_triangle_vertices(Triangle, P1, P2, P3);
-
-    switch (Triangle->Dominant_Axis)
+    switch (Triangle->Dominant_Axis())
     {
         case X:
 
@@ -1133,6 +1120,8 @@ bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Tri
     return(false);
 }
 
+
+
 /*
  *  MeshUV - By Xander Enzmann
  *
@@ -1154,7 +1143,7 @@ void Mesh::MeshUV(const Vector3d& P, const MESH_TRIANGLE *Triangle, Vector2d& Re
     get_triangle_vertices(Triangle, P1, P2, P3);
     B[0] = P2 - P1;
     B[1] = P3 - P1;
-    B[2] = Vector3d(Data->Normals[Triangle->Normal_Ind]);
+    B[2] = Face_Normal(Triangle);
 
     if (!MInvers3(B, IB)) {
         // Failed to invert - that means this is a degenerate triangle
@@ -1270,32 +1259,7 @@ bool Mesh::test_hit(const MESH_TRIANGLE *Triangle, const BasicRay &OrigRay, DBL 
 
 void Mesh::Init_Mesh_Triangle(MESH_TRIANGLE *Triangle)
 {
-    Triangle->Smooth = false;
-    Triangle->ThreeTex = false;
-    Triangle->Dominant_Axis = 0;
-    Triangle->vAxis         = 0;
-
-    Triangle->P1 =
-    Triangle->P2 =
-    Triangle->P3 = -1;
-
-    Triangle->Normal_Ind = -1;
-    Triangle->Texture2 =
-    Triangle->Texture3 = -1;
-
-    Triangle->Texture = -1;
-
-    Triangle->N1 =
-    Triangle->N2 =
-    Triangle->N3 = -1;
-
-    Triangle->UV1 =
-    Triangle->UV2 =
-    Triangle->UV3 = -1;
-
-    Triangle->Perp = MeshVector(0.0, 0.0, 0.0);
-
-    Triangle->Distance = 0.0;
+    Triangle->Word[0] = Triangle->Word[1] = Triangle->Word[2] = 0;
 }
 
 
@@ -1964,9 +1928,9 @@ void Mesh::Destroy_Mesh_Hash_Tables()
 
 void Mesh::get_triangle_vertices(const MESH_TRIANGLE *Triangle, Vector3d& P1, Vector3d& P2, Vector3d& P3) const
 {
-    P1 = Vector3d(Data->Vertices[Triangle->P1]);
-    P2 = Vector3d(Data->Vertices[Triangle->P2]);
-    P3 = Vector3d(Data->Vertices[Triangle->P3]);
+    P1 = Vector3d(Data->Vertices[Triangle->P1()]);
+    P2 = Vector3d(Data->Vertices[Triangle->P2()]);
+    P3 = Vector3d(Data->Vertices[Triangle->P3()]);
 }
 
 
@@ -2004,9 +1968,10 @@ void Mesh::get_triangle_vertices(const MESH_TRIANGLE *Triangle, Vector3d& P1, Ve
 
 void Mesh::get_triangle_normals(const MESH_TRIANGLE *Triangle, Vector3d& N1, Vector3d& N2, Vector3d& N3) const
 {
-    N1 = Vector3d(Data->Normals[Triangle->N1]);
-    N2 = Vector3d(Data->Normals[Triangle->N2]);
-    N3 = Vector3d(Data->Normals[Triangle->N3]);
+    const size_t tri = size_t(Triangle - Data->Triangles);
+    N1 = Vector3d(Data->Normals[Data->NormalInd.Get(*Triangle, tri, 0)]);
+    N2 = Vector3d(Data->Normals[Data->NormalInd.Get(*Triangle, tri, 1)]);
+    N3 = Vector3d(Data->Normals[Data->NormalInd.Get(*Triangle, tri, 2)]);
 }
 
 
@@ -2041,9 +2006,9 @@ void Mesh::get_triangle_normals(const MESH_TRIANGLE *Triangle, Vector3d& N1, Vec
 
 void Mesh::get_triangle_uvcoords(const MESH_TRIANGLE *Triangle, Vector2d& UV1, Vector2d& UV2, Vector2d& UV3) const
 {
-    UV1 = Vector2d(Data->UVCoords[Triangle->UV1]);
-    UV2 = Vector2d(Data->UVCoords[Triangle->UV2]);
-    UV3 = Vector2d(Data->UVCoords[Triangle->UV3]);
+    UV1 = Vector2d(Data->UVCoords[UV_Index(Triangle, 0)]);
+    UV2 = Vector2d(Data->UVCoords[UV_Index(Triangle, 1)]);
+    UV3 = Vector2d(Data->UVCoords[UV_Index(Triangle, 2)]);
 }
 
 
@@ -2184,12 +2149,12 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
 
     /* ---------------- this is for P1 ---------------- */
     /* Side1 is opposite side, Side2 is an adjacent side (vector pointing away) */
-    Side1 = Vector3d(Data->Vertices[Triangle->P3] - Data->Vertices[Triangle->P2]);
-    Side2 = Vector3d(Data->Vertices[Triangle->P3] - Data->Vertices[Triangle->P1]);
+    Side1 = Vector3d(Data->Vertices[Triangle->P3()] - Data->Vertices[Triangle->P2()]);
+    Side2 = Vector3d(Data->Vertices[Triangle->P3()] - Data->Vertices[Triangle->P1()]);
 
     /* find A */
     /* A is a vector from this vertex to the intersection point */
-    vA = P - Vector3d(Data->Vertices[Triangle->P1]);
+    vA = P - Vector3d(Data->Vertices[Triangle->P1()]);
 
     /* find B */
     /* B is a vector from this intersection to the opposite side (Side1) */
@@ -2207,11 +2172,11 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
     w1 = 1+t1/t2;
 
     /* ---------------- this is for P2 ---------------- */
-    Side1 = Vector3d(Data->Vertices[Triangle->P3] - Data->Vertices[Triangle->P1]);
-    Side2 = Vector3d(Data->Vertices[Triangle->P3] - Data->Vertices[Triangle->P2]);
+    Side1 = Vector3d(Data->Vertices[Triangle->P3()] - Data->Vertices[Triangle->P1()]);
+    Side2 = Vector3d(Data->Vertices[Triangle->P3()] - Data->Vertices[Triangle->P2()]);
 
     /* find A */
-    vA = P - Vector3d(Data->Vertices[Triangle->P2]);
+    vA = P - Vector3d(Data->Vertices[Triangle->P2()]);
 
     /* find B */
     t1 = dot(Side2, Side1);
@@ -2224,11 +2189,11 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
     w2 = 1+t1/t2;
 
     /* ---------------- this is for P3 ---------------- */
-    Side1 = Vector3d(Data->Vertices[Triangle->P2] - Data->Vertices[Triangle->P1]);
-    Side2 = Vector3d(Data->Vertices[Triangle->P2] - Data->Vertices[Triangle->P3]);
+    Side1 = Vector3d(Data->Vertices[Triangle->P2()] - Data->Vertices[Triangle->P1()]);
+    Side2 = Vector3d(Data->Vertices[Triangle->P2()] - Data->Vertices[Triangle->P3()]);
 
     /* find A */
-    vA = P - Vector3d(Data->Vertices[Triangle->P3]);
+    vA = P - Vector3d(Data->Vertices[Triangle->P3()]);
 
     /* find B */
     t1 = dot(Side2, Side1);
@@ -2240,9 +2205,9 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
     /* w3 = 1-fabs(t1/t2); */
     w3 = 1+t1/t2;
 
-    Result =  w1 * Vector2d(Data->UVCoords[Triangle->UV1]) +
-              w2 * Vector2d(Data->UVCoords[Triangle->UV2]) +
-              w3 * Vector2d(Data->UVCoords[Triangle->UV3]);
+    Result =  w1 * Vector2d(Data->UVCoords[UV_Index(Triangle, 0)]) +
+              w2 * Vector2d(Data->UVCoords[UV_Index(Triangle, 1)]) +
+              w3 * Vector2d(Data->UVCoords[UV_Index(Triangle, 2)]);
 }
 
 
@@ -2293,10 +2258,11 @@ bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats) const
 void Mesh::Determine_Textures(Intersection *isect, bool hitinside, WeightedTextureVector& textures, TraceThreadData *Threaddata)
 {
     const MESH_TRIANGLE *tri = reinterpret_cast<const MESH_TRIANGLE *>(isect->Pointer);
+    const size_t index = size_t(tri - Data->Triangles);
 
     if ((Interior_Texture != nullptr) && (hitinside == true)) // useful feature for checking mesh orientation and other effects [trf]
         textures.push_back(WeightedTexture(1.0, Interior_Texture));
-    else if(tri->ThreeTex)
+    else if(tri->ThreeTex())
     {
         Vector3d p1, p2, p3;
         Vector3d epoint;
@@ -2308,9 +2274,9 @@ void Mesh::Determine_Textures(Intersection *isect, bool hitinside, WeightedTextu
         else
             epoint = isect->IPoint;
 
-        p1 = Vector3d(Data->Vertices[tri->P1]);
-        p2 = Vector3d(Data->Vertices[tri->P2]);
-        p3 = Vector3d(Data->Vertices[tri->P3]);
+        p1 = Vector3d(Data->Vertices[tri->P1()]);
+        p2 = Vector3d(Data->Vertices[tri->P2()]);
+        p3 = Vector3d(Data->Vertices[tri->P3()]);
 
         w1 = 1.0 - COLC(SmoothTriangle::Calculate_Smooth_T(epoint, p1, p2, p3));
         w2 = 1.0 - COLC(SmoothTriangle::Calculate_Smooth_T(epoint, p2, p3, p1));
@@ -2318,12 +2284,12 @@ void Mesh::Determine_Textures(Intersection *isect, bool hitinside, WeightedTextu
 
         wsum = 1.0 / (w1 + w2 + w3);
 
-        textures.push_back(WeightedTexture(w1 * wsum, Textures[tri->Texture]));
-        textures.push_back(WeightedTexture(w2 * wsum, Textures[tri->Texture2]));
-        textures.push_back(WeightedTexture(w3 * wsum, Textures[tri->Texture3]));
+        textures.push_back(WeightedTexture(w1 * wsum, Textures[Data->TextureInd.Get(*tri, index, 0)]));
+        textures.push_back(WeightedTexture(w2 * wsum, Textures[Data->Texture23Ind.Get(*tri, index, 0)]));
+        textures.push_back(WeightedTexture(w3 * wsum, Textures[Data->Texture23Ind.Get(*tri, index, 1)]));
     }
-    else if(tri->Texture >= 0) // TODO FIXME - make sure there always is some valid texture, also for code above! [trf]
-        textures.push_back(WeightedTexture(1.0, Textures[tri->Texture]));
+    else if(Data->TextureInd.Get(*tri, index, 0) >= 0) // TODO FIXME - make sure there always is some valid texture, also for code above! [trf]
+        textures.push_back(WeightedTexture(1.0, Textures[Data->TextureInd.Get(*tri, index, 0)]));
     else if (Texture != nullptr)
         textures.push_back(WeightedTexture(1.0, Texture));
 }
