@@ -1555,15 +1555,17 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
     for(int i = 0; i < object->LLights.size(); i++)
         consider(*object->LLights[i], -1);
 
-    std::sort(lightCandidates.begin() + first, lightCandidates.end(),
-              [](const LightCandidate& a, const LightCandidate& b) { return a.weight > b.weight; });
-
     double untested = total;
     double testedWeight = 0.0;
     double litWeight = 0.0;
     size_t next = first;
     for (; (next < lightCandidates.size()) && (untested > kUntestedLightFraction * total); ++next)
     {
+        size_t brightest = next;
+        for (size_t i = next + 1; i < lightCandidates.size(); ++i)
+            if (lightCandidates[i].weight > lightCandidates[brightest].weight)
+                brightest = i;
+        std::swap(lightCandidates[next], lightCandidates[brightest]);
         // copied, as a shadow ray's own lighting may grow the stack
         const LightCandidate candidate = lightCandidates[next];
         MathColour lit;
@@ -2018,7 +2020,8 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
 // TODO: try moving it back in at some point in the future.
 struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
 {
-    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return !Test_Flag(object, NO_SHADOW_FLAG); }
+    ConstObjectPtr missed = nullptr; // already found not to cross the ray within its reach
+    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return (object != missed) && !Test_Flag(object, NO_SHADOW_FLAG); }
 };
 
 struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
@@ -2113,7 +2116,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                     cacheObject = nullptr;
             }
             else
+            {
+                precond.missed = cacheObject;
                 cacheObject = nullptr;
+            }
         }
     }
 
