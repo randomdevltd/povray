@@ -146,6 +146,24 @@ never refined and this scene came out 4 levels brighter than both references.
 `method 1` with `samples 10, 100`, which adds samples until their variance settles, averaged 10.6 samples per
 interval against 10.1 before, at 1.3 Gcycles against 7.3 for a 64×48 render, with the same error.
 
+## Subsurface light on open surfaces
+
+This section is a correction, not a speed-up, and it changes images. Subsurface scattering finds its diffuse sample
+points by casting rays from a point just under the surface and divides their sum by the number of rays cast, so a ray
+that meets nothing is a sample of nothing. Dividing by the rays that hit something instead is right for a closed
+object, where every ray hits, but gives an open surface such as a plane twice its subsurface light, since half the rays
+from under it leave.
+
+`tools/bench/sslt-open.pov`, 160×120, `+WT1`, mean levels (red, green, blue):
+
+| Case | Dividing by hits | Dividing by rays cast |
+|---|---|---|
+| 0, the top of a closed slab | 218.5, 184.1, 137.1 | the same, bit for bit |
+| 1, a plane of the same material | 255.0, 239.4, 177.7 (clipped) | 218.5, 184.1, 137.1 |
+| 2, a sphere clipped open over a floor | 121.8, 118.6, 114.0 | 120.7, 117.6, 113.2 |
+
+Closed objects render as before. The cost is unchanged.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
