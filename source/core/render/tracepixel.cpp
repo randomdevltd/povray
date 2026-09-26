@@ -310,6 +310,9 @@ void TracePixel::SetupCamera(const Camera& cam)
 
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
+    // Subsurface clouds space their points by the pixel footprint, which needs the angle one pixel spans.
+    if ((camera.Type == PERSPECTIVE_CAMERA) && (width > 0.0) && (camera.Direction.length() > 0.0))
+        SetPixelFootprint(camera.Location, 2.0 * atan(0.5 * camera.Right.length() / camera.Direction.length()) / width);
     if(useFocalBlur == false)
     {
         colour.Clear();

@@ -65,6 +65,7 @@ SceneData::SceneData() :
     functionContextFactory()
 {
     atmosphereIOR = 1.0;
+    subsurfaceCache = std::make_shared<SubsurfaceCache>();
     atmosphereDispersion = 0.0;
     backgroundColour = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 1.0));
     ambientLight = MathColour(1.0);

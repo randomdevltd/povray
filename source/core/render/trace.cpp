@@ -3404,6 +3404,23 @@ void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr objec
     }
 }
 
+static const bool kSSLTCloud = getenv("SSLT_CLOUD") ? atoi(getenv("SSLT_CLOUD")) != 0 : true;
+static const double kSSLTReach = getenv("SSLT_REACH") ? atof(getenv("SSLT_REACH")) : 8.0;
+static const double kSSLTDisc = getenv("SSLT_DISC") ? atof(getenv("SSLT_DISC")) : 1.5;
+static const double kSSLTMaxSide = getenv("SSLT_MAXSIDE") ? atof(getenv("SSLT_MAXSIDE")) : 64.0;
+static const double kSSLTError = getenv("SSLT_ERR") ? atof(getenv("SSLT_ERR")) : 0.1;
+static const int kSSLTAreaPoints = getenv("SSLT_AREAPTS") ? atoi(getenv("SSLT_AREAPTS")) : 4;
+static const double kSSLTObjectPoints = getenv("SSLT_OBJPTS") ? atof(getenv("SSLT_OBJPTS")) : 262144.0;
+static const double kSSLTNudge = getenv("SSLT_NUDGE") ? atof(getenv("SSLT_NUDGE")) : 0.0;
+static const bool kSSLTLeaf = getenv("SSLT_LEAF") ? atoi(getenv("SSLT_LEAF")) != 0 : true;
+static const bool kSSLTLocalLeaf = getenv("SSLT_LOCALLEAF") ? atoi(getenv("SSLT_LOCALLEAF")) != 0 : false;
+static const int kSSLTSingleDiv = getenv("SSLT_SDIV") ? atoi(getenv("SSLT_SDIV")) : 1;
+static const double kSSLTFootprint = getenv("SSLT_FOOT") ? atof(getenv("SSLT_FOOT")) : 1.0;
+static const double kSSLTFlatArea = getenv("SSLT_FLATAREA") ? atof(getenv("SSLT_FLATAREA")) : 1.5;
+static const double kSSLTFlatFacing = getenv("SSLT_FLATFACING") ? atof(getenv("SSLT_FLATFACING")) : 0.7;
+static const bool kSSLTInterp = getenv("SSLT_INTERP") ? atoi(getenv("SSLT_INTERP")) != 0 : true;
+
+
 // One point of an area light per shadow ray, spread over the light by an R2 sequence.
 static Vector2d SubsurfaceAreaSample(const Vector2d& shift, int index)
 {
@@ -3415,6 +3432,7 @@ static Vector2d SubsurfaceAreaSample(const Vector2d& shift, int index)
 // Shadow rays per sample for each light that reaches any sample, and the share of them split evenly between lights.
 static const double kSubsurfaceShadowBudget = 1.0;
 static const double kSubsurfaceEvenShare = 0.5;
+static const double kSSLTMaxDraws = getenv("SSLT_MAXDRAWS") ? atof(getenv("SSLT_MAXDRAWS")) : 1e9;
 
 // Unshadowed light a diffuse sample point receives from one source; rd holds its profile, exit transmittance and weight.
 void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta,
@@ -3502,6 +3520,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
         candidate.factor[j] = min(f, double(FLT_MAX));
     }
     candidate.SetLight(xi.IPoint, lightcolour);
+    candidate.normal = xi.INormal;
 }
 
 void Trace::SubsurfaceCandidate::SetLight(const Vector3d& p, const MathColour& lightcolour)
@@ -3574,7 +3593,7 @@ void Trace::ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lig
     if (!(sum > 0.0))
         return;
 
-    double budgetAll = count * kSubsurfaceShadowBudget * lit;
+    double budgetAll = min(double(count) * kSubsurfaceShadowBudget, kSSLTMaxDraws) * lit;
     for (int l = 0; l < lights.size(); l++)
     {
         if (!(sums[l] > 0.0))
@@ -3605,7 +3624,7 @@ void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const Lig
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
 void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
-                                                const std::vector<const LightSource*>& lights, TraceTicket& ticket)
+                                                const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, TraceTicket& ticket)
 {
     Lo.Clear();
     if (lights.empty())
@@ -3648,6 +3667,32 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
                                              candidates[l * numSamples + i], ticket);
     }
 
+    if (cloud != nullptr)
+    {
+        // Light entering where the cloud has points is shadowed as they are.
+        std::vector<MathColour> visibility(lights.size());
+        for (int i = 0; i < numSamples; i++)
+        {
+            for (int l = 0; l < lights.size(); l++)
+            {
+                SubsurfaceCandidate& c = candidates[l * numSamples + i];
+                if (!(c.bound > 0.0))
+                    continue;
+                if (cloud->local)
+                {
+                    if ((c.point - out.IPoint).lengthSqr() > Sqr(cloud->reach / sceneData->mmPerUnit))
+                        continue;
+                    for (int m = 0; m < lights.size(); m++)
+                        visibility[m] = cloud->localVisibility[m];
+                }
+                else if (!(kSSLTLeaf ? LookupSubsurfaceVisibility(*cloud, c.point, c.normal, visibility.data(), nullptr)
+                                     : InterpolateSubsurface(*cloud, cloud->cells, c.point, c.normal, nullptr, visibility.data())))
+                    continue;
+                Lo += c.unshadowed * visibility[l] * c.factor;
+                c.bound = 0.0;
+            }
+        }
+    }
     ShadeSubsurfaceCandidates(lights, candidates.data(), numSamples, Lo, ticket);
 
     // TODO FIXME - radiosity should also be taken into account
@@ -3675,6 +3720,489 @@ bool Trace::SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, 
     refracted = (unitV * eta + unitN * (eta * cosPhi - cosTheta)).normalized();
 
     return true;
+}
+
+static double Fraction(double v) { return v - floor(v); }
+
+// Light entering the surface at point: each light's colour, shadow, cosine and Fresnel transmittance; see doc/PERF.md.
+MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
+                                             int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket)
+{
+    MathColour irradiance;
+    for (int l = 0; l < lights.size(); l++)
+    {
+        const LightSource& lightsource = *lights[l];
+        bool sampled = (areaShift != nullptr) && lightsource.Area_Light && qualityFlags.areaLights;
+        int points = sampled ? areaPoints : 1;
+        MathColour lit, shadowed, unshadowed;
+        for (int k = 0; k < points; k++)
+        {
+            Ray lightsourceray(ticket);
+            double lightsourcedepth;
+            MathColour lightcolour;
+            ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, point, lightcolour, true);
+            if (lightcolour.IsNearZero(EPSILON))
+                break;
+            unshadowed += lightcolour;
+            if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
+            {
+                Vector2d areaSample = sampled ? SubsurfaceAreaSample(*areaShift, k * 7 + l) : Vector2d();
+                if (kSSLTNudge > 0.0)
+                {
+                    double side = (dot(normal, lightsourceray.Direction) >= 0.0) ? kSSLTNudge : -kSSLTNudge;
+                    lightsourceray.Origin = point + normal.normalized() * side;
+                }
+                TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, point, lightcolour, sampled ? &areaSample : nullptr);
+            }
+            shadowed += lightcolour;
+            double cos_in = fabs(dot(normal, lightsourceray.Direction));
+            if (cos_in >= EPSILON)
+                lit += lightcolour * float(cos_in * ComputeFt(min(cos_in, 1.0), eta));
+        }
+        irradiance += lit / float(points);
+        if (visibility != nullptr)
+            for (int j = 0; j < MathColour::channels; j++)
+                visibility[l * 3 + j] = (fabs(unshadowed[j]) > EPSILON) ? shadowed[j] / unshadowed[j] : 1.0f;
+    }
+    return irradiance;
+}
+
+// Points on the object inside one cell, spread by random lines (Crofton: uniform per area), each lit by every light.
+bool Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, TraceTicket& ticket)
+{
+    ObjectPtr object = cloud.object;
+    double size = cloud.size, mm = sceneData->mmPerUnit;
+    Vector3d lo = Vector3d(key.x, key.y, key.z) * size;
+    Vector3d hi = lo + Vector3d(size);
+    const BoundingBox& box = object->BBox;
+    for (int a = 0; a < 3; a++)
+        if ((box.lowerLeft[a] > hi[a]) || (box.lowerLeft[a] + box.size[a] < lo[a]))
+            return true;
+
+    Vector3d centre = lo + Vector3d(size * 0.5);
+    double radius = size * sqrt(3.0) * 0.5;
+    double sphereArea = 4.0 * M_PI * Sqr(radius * mm);
+    int lines = int(ceil(sphereArea / (2.0 * Sqr(cloud.spacing * mm))));
+    float pointArea = float(sphereArea / (2.0 * lines));
+
+    // A 4-d Kronecker sequence (reciprocal powers of the generalised golden ratio), shifted per cell.
+    const double g = 1.1673039782614187;
+    const double alpha[4] = { 1 / g, 1 / (g * g), 1 / (g * g * g), 1 / (g * g * g * g) };
+    size_t seed = SubsurfaceCellKeyHash()(key);
+    double shift[4];
+    for (int i = 0; i < 4; i++, seed = seed * 6364136223846793005ull + 1442695040888963407ull)
+        shift[i] = double(seed >> 11) * (1.0 / 9007199254740992.0);
+
+    double lead = Vector3d(box.size[X], box.size[Y], box.size[Z]).length();
+    std::vector<Intersection> hits, crossings;
+    for (int n = 0; n < lines; n++)
+    {
+        double u[4];
+        for (int i = 0; i < 4; i++)
+            u[i] = Fraction(shift[i] + n * alpha[i]);
+        double z = 1.0 - 2.0 * u[0], ring = sqrt(max(0.0, 1.0 - z * z)), phi = 2.0 * M_PI * u[1];
+        Vector3d dir(ring * cos(phi), ring * sin(phi), z);
+        Vector3d t1, t2;
+        ComputeSurfaceTangents(dir, t1, t2);
+        double rho = radius * sqrt(u[2]), theta = 2.0 * M_PI * u[3];
+        // Lines start outside the object's box, so every crossing inside the cell is on them.
+        Vector3d origin = centre + t1 * (rho * cos(theta)) + t2 * (rho * sin(theta)) - dir * (radius + lead);
+
+        crossings.clear();
+        CollectCrossings(object, origin, dir, lead, lead + 2.0 * radius, cloud.stepped, crossings, ticket);
+        for (const Intersection& in : crossings)
+        {
+            bool inside = true;
+            for (int a = 0; a < 3; a++)
+                inside = inside && (in.IPoint[a] >= lo[a]) && (in.IPoint[a] < hi[a]);
+            if (inside)
+                hits.push_back(in);
+        }
+    }
+
+    int lights = int(cloud.lights.size());
+
+    cell.lights = lights;
+    cell.points.resize(hits.size());
+    cell.visibility.resize(hits.size() * lights * 3);
+    for (int h = 0; h < hits.size(); h++)
+    {
+        Intersection& in = hits[h];
+        ComputeSSLTNormal(in);
+        Vector2d areaShift(Fraction(shift[0] + h * 0.7548776662466927), Fraction(shift[1] + h * 0.5698402909980532));
+        MathColour irradiance = ComputeSubsurfaceIrradiance(in.IPoint, in.INormal, cloud.lights, cloud.eta, kSSLTAreaPoints, &areaShift,
+                                                            lights ? &cell.visibility[h * lights * 3] : nullptr, ticket);
+        SubsurfacePoint& point = cell.points[h];
+        point.position = in.IPoint;
+        Vector3d n = in.INormal.normalized();
+        for (int j = 0; j < 3; j++)
+        {
+            point.irradiance[j] = irradiance[j];
+            point.normal[j] = float(n[j]);
+        }
+        point.area = pointArea;
+        point.id = h;
+    }
+    cell.BuildHierarchy();
+    if (getenv("SSLT_DEBUG"))
+    {
+        fprintf(stderr, "SSLTDEBUG cell %d %d %d lines %d points %zu pointArea %g\n", key.x, key.y, key.z, lines, cell.points.size(), pointArea);
+        if (getenv("SSLT_DUMP"))
+            for (const SubsurfacePoint& p : cell.points)
+                fprintf(stderr, "SSLTPT %g %g %g\n", p.position[X], p.position[Y], p.position[Z]);
+    }
+    return true;
+}
+
+// Every crossing of the object along a line within [from, to]; stepped, one nearest-hit test per crossing, for shapes
+// whose single test returns too few (blobs do), which would thin the cloud.
+void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double from, double to, bool stepped, std::vector<Intersection>& hits, TraceTicket& ticket)
+{
+    if (!stepped)
+    {
+        Ray ray(ticket, origin, dir, Ray::SubsurfaceRay);
+        if (!object->Bound.empty() && !Ray_In_Bound(ray, object->Bound, threadData))
+            return;
+        IStack stack(stackPool);
+        if (object->All_Intersections(ray, stack, threadData))
+            for (; stack->size() > 0; stack->pop())
+                if ((stack->top().Depth >= from) && (stack->top().Depth <= to))
+                    hits.push_back(stack->top());
+        return;
+    }
+    double step = max(1e-7, 1e-6 * to);
+    double travelled = 0.0;
+    Vector3d o = origin;
+    for (int guard = 0; guard < 256; guard++)
+    {
+        Intersection isect;
+        Ray ray(ticket, o, dir, Ray::SubsurfaceRay);
+        if (!FindIntersection(object, isect, ray, to - travelled))
+            return;
+        travelled += isect.Depth;
+        if (travelled >= from)
+        {
+            isect.Depth = travelled;
+            hits.push_back(isect);
+        }
+        o = isect.IPoint + dir * step;
+        travelled += step;
+    }
+}
+
+// The object's surface area in scene units, from how often random lines through its bounding sphere cross it (Crofton).
+double Trace::EstimateSubsurfaceArea(ObjectPtr object, bool& stepped, TraceTicket& ticket)
+{
+    const BoundingBox& box = object->BBox;
+    for (int a = 0; a < 3; a++)
+        if (box.size[a] >= BOUND_HUGE / 4)
+            return HUGE_VAL;
+    Vector3d lo(box.lowerLeft[X], box.lowerLeft[Y], box.lowerLeft[Z]);
+    Vector3d extent(box.size[X], box.size[Y], box.size[Z]);
+    Vector3d centre = lo + extent * 0.5;
+    double radius = extent.length() * 0.5;
+    const int lines = 4096;
+    const double g = 1.1673039782614187;
+    const double alpha[4] = { 1 / g, 1 / (g * g), 1 / (g * g * g), 1 / (g * g * g * g) };
+    long hits = 0, single = 0;
+    std::vector<Intersection> crossings;
+    for (int n = 0; n < lines; n++)
+    {
+        double u[4];
+        for (int i = 0; i < 4; i++)
+            u[i] = Fraction(0.5 + n * alpha[i]);
+        double z = 1.0 - 2.0 * u[0], ring = sqrt(max(0.0, 1.0 - z * z)), phi = 2.0 * M_PI * u[1];
+        Vector3d dir(ring * cos(phi), ring * sin(phi), z);
+        Vector3d t1, t2;
+        ComputeSurfaceTangents(dir, t1, t2);
+        double rho = radius * sqrt(u[2]), theta = 2.0 * M_PI * u[3];
+        Vector3d origin = centre + t1 * (rho * cos(theta)) + t2 * (rho * sin(theta)) - dir * (2.0 * radius);
+        crossings.clear();
+        CollectCrossings(object, origin, dir, radius, 3.0 * radius, true, crossings, ticket);
+        hits += crossings.size();
+        crossings.clear();
+        CollectCrossings(object, origin, dir, radius, 3.0 * radius, false, crossings, ticket);
+        single += crossings.size();
+    }
+    stepped = (single != hits);
+    if (getenv("SSLT_DEBUG"))
+        fprintf(stderr, "SSLTDEBUG area %g stepped %d\n", 4.0 * M_PI * Sqr(radius) * hits / (2.0 * lines), int(stepped));
+    return 4.0 * M_PI * Sqr(radius) * hits / (2.0 * lines);
+}
+
+// Fixes the object's cloud and collects the cells within reach of the exit point; false where no cloud can serve.
+bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, SubsurfaceCloud& cloud, TraceTicket& ticket)
+{
+    cloud.object = SubsurfaceObject(out);
+    if (cloud.object->interior == nullptr)
+        return false;
+    double mm = sceneData->mmPerUnit;
+    double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
+    if (!(sigmaMin > 0.0))
+        return false;
+    cloud.reach = kSSLTReach / sigmaMin;
+    cloud.eta = cloud.object->interior->IOR / sceneData->atmosphereIOR;
+    CollectSubsurfaceLights(cloud.object, cloud.lights);
+
+    // Diffusion that stays within about a pixel is taken as lit like the exit point.
+    double footprint = (ssltPixelAngle > 0.0) ? (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle : 0.0;
+    cloud.local = (1.0 / sigmaMin / mm < kSSLTFootprint * footprint);
+    if (cloud.local)
+        return true;
+
+    // One cloud per object, its spacing set by the first shading point to ask: a fraction of the diffusion's reach.
+    SubsurfaceCache::Plan plan;
+    if (!sceneData->subsurfaceCache->FindPlan(cloud.object, plan))
+    {
+        plan.sizeLevel = int(ceil(log2(cloud.reach / mm)));
+        plan.spacingLevel = plan.sizeLevel - int(round(log2(kSSLTMaxSide)));
+        double points = EstimateSubsurfaceArea(cloud.object, plan.stepped, ticket) / Sqr(ldexp(1.0, plan.spacingLevel));
+        plan.usable = (points < kSSLTObjectPoints) && sceneData->subsurfaceCache->Reserve(size_t(points * 1.25) + 1024);
+        plan = sceneData->subsurfaceCache->StorePlan(cloud.object, plan);
+    }
+    if (!plan.usable)
+        return false;
+    cloud.sizeLevel = plan.sizeLevel;
+    cloud.spacingLevel = plan.spacingLevel;
+    cloud.stepped = plan.stepped;
+    cloud.size = ldexp(1.0, cloud.sizeLevel);
+    cloud.spacing = ldexp(1.0, cloud.spacingLevel);
+    return GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm, cloud.cells, &cloud.coords, ticket);
+}
+
+// The cells of the cloud that a sphere touches, built as needed.
+bool Trace::GatherSubsurfaceCells(const SubsurfaceCloud& cloud, const Vector3d& centre, double radius, std::vector<std::shared_ptr<SubsurfaceCell>>& cells,
+                                  std::vector<Vector3d>* coords, TraceTicket& ticket)
+{
+    cells.clear();
+    if (coords != nullptr)
+        coords->clear();
+    int lo[3], hi[3];
+    for (int a = 0; a < 3; a++)
+    {
+        lo[a] = int(floor((centre[a] - radius) / cloud.size));
+        hi[a] = int(floor((centre[a] + radius) / cloud.size));
+    }
+    for (int cx = lo[X]; cx <= hi[X]; cx++)
+    for (int cy = lo[Y]; cy <= hi[Y]; cy++)
+    for (int cz = lo[Z]; cz <= hi[Z]; cz++)
+    {
+        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cloud.spacingLevel, cx, cy, cz };
+        bool build;
+        std::shared_ptr<SubsurfaceCell> cell = sceneData->subsurfaceCache->Acquire(key, build);
+        if (build)
+            sceneData->subsurfaceCache->Publish(cell, BuildSubsurfaceCell(cloud, key, *cell, ticket));
+        if (!cell->usable)
+            return false;
+        if (!cell->nodes.empty())
+        {
+            cells.push_back(cell);
+            if (coords != nullptr)
+                coords->push_back(Vector3d(cx, cy, cz));
+        }
+    }
+    return true;
+}
+
+// Irradiance and per-light visibility at a surface point, from the cloud points within a few spacings facing the same way.
+bool Trace::InterpolateSubsurface(const SubsurfaceCloud& cloud, const std::vector<std::shared_ptr<SubsurfaceCell>>& cells, const Vector3d& q, const Vector3d& normal,
+                                  MathColour* irradiance, MathColour* visibility)
+{
+    double radius = kSSLTDisc * cloud.spacing;
+    double radiusSqr = Sqr(radius);
+    Vector3d n = normal.normalized();
+    double weightSum = 0.0;
+    PreciseMathColour e;
+    std::vector<double>& vis = ssltScratchWeights;
+    vis.assign(cloud.lights.size() * 3, 0.0);
+    std::vector<int>& stack = ssltScratchStack;
+    for (const std::shared_ptr<SubsurfaceCell>& cell : cells)
+    {
+        stack.assign(1, 0);
+        while (!stack.empty())
+        {
+            int index = stack.back();
+            stack.pop_back();
+            const SubsurfaceNode& node = cell->nodes[index];
+            double boxSqr = 0.0;
+            for (int a = 0; a < 3; a++)
+                boxSqr += Sqr(max(0.0, max(node.lo[a] - q[a], q[a] - node.hi[a])));
+            if (boxSqr > radiusSqr)
+                continue;
+            if (node.count == 0)
+            {
+                stack.push_back(index + 1);
+                stack.push_back(node.first);
+                continue;
+            }
+            for (int i = node.first; i < node.first + node.count; i++)
+            {
+                const SubsurfacePoint& p = cell->points[i];
+                double dSqr = (p.position - q).lengthSqr();
+                double facing = p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z];
+                if ((dSqr >= radiusSqr) || (facing < 0.5))
+                    continue;
+                double w = Sqr(1.0 - dSqr / radiusSqr);
+                weightSum += w;
+                for (int j = 0; j < 3; j++)
+                    e[j] += w * p.irradiance[j];
+                const float* v = &cell->visibility[p.id * cell->lights * 3];
+                for (int k = 0; k < vis.size(); k++)
+                    vis[k] += w * v[k];
+            }
+        }
+    }
+    if (!(weightSum > 0.0))
+        return false;
+    if (irradiance != nullptr)
+        *irradiance = MathColour(e / weightSum);
+    if (visibility != nullptr)
+        for (int l = 0; l < cloud.lights.size(); l++)
+            for (int j = 0; j < 3; j++)
+                visibility[l][j] = float(vis[l * 3 + j] / weightSum);
+    return true;
+}
+
+// Per-light visibility at a surface point from the leaf of the cloud hierarchy nearest it, among points facing the same way.
+bool Trace::LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, MathColour* visibility, MathColour* irradiance)
+{
+    Vector3d key(floor(q[X] / cloud.size), floor(q[Y] / cloud.size), floor(q[Z] / cloud.size));
+    const SubsurfaceCell* cell = nullptr;
+    for (int i = 0; i < cloud.cells.size(); i++)
+        if ((cloud.coords[i] - key).lengthSqr() < 0.25)
+            cell = cloud.cells[i].get();
+    if (cell == nullptr)
+        return false;
+    auto boxSqr = [&q](const SubsurfaceNode& node)
+    {
+        double d = 0.0;
+        for (int a = 0; a < 3; a++)
+            d += Sqr(max(0.0, max(node.lo[a] - q[a], q[a] - node.hi[a])));
+        return d;
+    };
+    int index = 0;
+    while (cell->nodes[index].count == 0)
+        index = (boxSqr(cell->nodes[index + 1]) <= boxSqr(cell->nodes[cell->nodes[index].first])) ? index + 1 : cell->nodes[index].first;
+    const SubsurfaceNode& leaf = cell->nodes[index];
+    Vector3d n = normal.normalized();
+    int lights = (visibility != nullptr) ? int(cloud.lights.size()) : 0, used = 0;
+    for (int l = 0; l < lights; l++)
+        visibility[l].Clear();
+    MathColour e;
+    for (int i = leaf.first; i < leaf.first + leaf.count; i++)
+    {
+        const SubsurfacePoint& p = cell->points[i];
+        if (p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z] < 0.5)
+            continue;
+        const float* v = &cell->visibility[p.id * cell->lights * 3];
+        for (int l = 0; l < lights; l++)
+            for (int j = 0; j < 3; j++)
+                visibility[l][j] += v[l * 3 + j];
+        for (int j = 0; j < 3; j++)
+            e[j] += p.irradiance[j];
+        used++;
+    }
+    if (used == 0)
+        return false;
+    for (int l = 0; l < lights; l++)
+        visibility[l] /= float(used);
+    if (irradiance != nullptr)
+        *irradiance = e / float(used);
+    return true;
+}
+
+// The diffuse term from the object's irradiance cloud, gathered hierarchically.
+MathColour Trace::ComputeSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud, TraceTicket& ticket)
+{
+    double mm = sceneData->mmPerUnit;
+    double reachSqr = Sqr(cloud.reach);
+
+    if (cloud.local)
+    {
+        // The whole diffusion lies within a pixel or two: all of it is lit as the exit point is.
+        MathColour here = ComputeSubsurfaceIrradiance(out.IPoint, out.INormal, cloud.lights, cloud.eta, 1, nullptr, &cloud.localVisibility[0][0], ticket);
+        return MathColour(profile.RdDisc(cloud.reach) * (M_PI * reachSqr) * PreciseMathColour(here) * ftOut);
+    }
+
+    // Within a disc of a few point spacings the light is taken as that at the exit point.
+    double disc = kSSLTDisc * cloud.spacing * mm;
+    double discSqr = Sqr(disc);
+    MathColour here;
+    bool known = kSSLTLocalLeaf ? LookupSubsurfaceVisibility(cloud, out.IPoint, out.INormal, nullptr, &here)
+                                : (kSSLTInterp && InterpolateSubsurface(cloud, cloud.cells, out.IPoint, out.INormal, &here, nullptr));
+    if (!known)
+        here = ComputeSubsurfaceIrradiance(out.IPoint, out.INormal, cloud.lights, cloud.eta, 1, nullptr, nullptr, ticket);
+    PreciseMathColour sum, inner;
+    double innerArea = 0.0, facing = 1.0;
+    Vector3d n = out.INormal.normalized();
+
+    const Vector3d& x = out.IPoint;
+    std::vector<int> stack;
+    for (const std::shared_ptr<SubsurfaceCell>& cell : cloud.cells)
+    {
+        stack.assign(1, 0);
+        while (!stack.empty())
+        {
+            int index = stack.back();
+            stack.pop_back();
+            const SubsurfaceNode& node = cell->nodes[index];
+            double boxSqr = 0.0;
+            for (int a = 0; a < 3; a++)
+                boxSqr += Sqr(max(0.0, max(node.lo[a] - x[a], x[a] - node.hi[a])));
+            boxSqr *= Sqr(mm);
+            if (boxSqr > reachSqr)
+                continue;
+            if ((boxSqr > discSqr) && (node.area < kSSLTError * boxSqr))
+            {
+                PreciseMathColour rd = profile.Rd((x - node.centre).lengthSqr() * Sqr(mm));
+                for (int j = 0; j < 3; j++)
+                    sum[j] += rd[j] * node.irradiance[j];
+                continue;
+            }
+            if (node.count == 0)
+            {
+                stack.push_back(index + 1);
+                stack.push_back(node.first);
+                continue;
+            }
+            for (int i = node.first; i < node.first + node.count; i++)
+            {
+                const SubsurfacePoint& p = cell->points[i];
+                double distSqr = (x - p.position).lengthSqr() * Sqr(mm);
+                PreciseMathColour rd = profile.Rd(distSqr);
+                PreciseMathColour& to = (distSqr <= discSqr) ? inner : sum;
+                for (int j = 0; j < 3; j++)
+                    to[j] += rd[j] * p.irradiance[j] * p.area;
+                if (distSqr <= discSqr)
+                {
+                    innerArea += p.area;
+                    facing = min(facing, fabs(p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z]));
+                }
+            }
+        }
+    }
+    // The disc stands for the surface near the exit only where that surface is about flat; elsewhere, its own points do.
+    double ratio = innerArea / (M_PI * discSqr);
+    if ((ratio > kSSLTFlatArea) || (ratio < 1.0 / kSSLTFlatArea) || (facing < kSSLTFlatFacing))
+        sum += inner;
+    else
+        sum += profile.RdDisc(disc) * (M_PI * discSqr) * PreciseMathColour(here);
+    return MathColour(sum * ftOut);
+}
+
+// The mean of Rd over a disc of radius (mm) centred on the exit point, in closed form.
+PreciseMathColour Trace::SubsurfaceProfile::RdDisc(double radius) const
+{
+    PreciseMathColour rd;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double d_r = sqrt(Sqr(z_r[j]) + Sqr(radius));
+        double d_v = sqrt(Sqr(z_v[j]) + Sqr(radius));
+        double integral = exp(-sigma_tr[j] * z_r[j]) - z_r[j] * exp(-sigma_tr[j] * d_r) / d_r
+                        + exp(-sigma_tr[j] * z_v[j]) - z_v[j] * exp(-sigma_tr[j] * d_v) / d_v;
+        rd[j] = scale[j] * 2.0 * M_PI * integral / (M_PI * Sqr(radius));
+    }
+    return rd;
 }
 
 // Jensen's dipole diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
@@ -3774,6 +4302,15 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
 
     std::vector<const LightSource*> lights;
     CollectSubsurfaceLights(out.Object, lights);
+
+    SubsurfaceCloud cloudData;
+    bool cloud = kSSLTCloud && !radiosity_needed && OpenSubsurfaceCloud(out, profile, cloudData, Eye.GetTicket());
+    if (cloud)
+        cloudData.localVisibility.assign(cloudData.lights.size() + 1, MathColour(1.0));
+    if (cloud)
+        Total_Colour += ComputeSubsurfaceCloud(out, profile, ftOut, cloudData, Eye.GetTicket());
+    else
+    {
     std::vector<SubsurfaceCandidate> candidates(lights.size() * NumSamplesDiffuse);
 
     Vector3d sampleBase;
@@ -3808,8 +4345,9 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
             ComputeDiffuseCandidate(*lights[l], in, rd, eta, candidates[l * NumSamplesDiffuse + i], Eye.GetTicket());
     }
     ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket());
-    if (trueNumSamples > 0)
-        Total_Colour /= trueNumSamples;
+    if (NumSamplesDiffuse > 0)
+        Total_Colour /= NumSamplesDiffuse; // DEV ONLY: from the open-surface fix, arrives by rebase
+    }
 
     Vector3d refractedEye;
     if (SSLTComputeRefractedDirection(Eye.Direction, out.INormal, 1.0/eta, refractedEye))
@@ -3834,8 +4372,10 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         if (NumSamplesSingle > 0)
         {
             MathColour singleColour;
-            ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, eta, lights, Eye.GetTicket());
-            Total_Colour += singleColour / NumSamplesSingle;
+            int singleSamples = cloud ? max(1, (NumSamplesSingle + kSSLTSingleDiv - 1) / kSSLTSingleDiv) : NumSamplesSingle;
+            ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, singleSamples, singleColour, eta, lights,
+                                                cloud ? &cloudData : nullptr, Eye.GetTicket());
+            Total_Colour += singleColour / singleSamples;
         }
 
         // colour dependent unscattered contribution

@@ -44,6 +44,13 @@
 //  (none at the moment)
 
 // Boost header files
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
+
 #include <boost/flyweight.hpp>
 #include <boost/flyweight/key_value.hpp>
 
@@ -88,6 +95,81 @@ class SubsurfaceInterior final
         };
 
         flyweight<key_value<float,PrecomputedReducedAlbedo>> precomputedReducedAlbedo;
+};
+
+/// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
+struct SubsurfacePoint final
+{
+    Vector3d position;
+    float normal[3];
+    float irradiance[3];
+    float area;
+    int id; ///< index into the cell's visibility, which stays in build order
+};
+
+/// A node of a cell's point hierarchy: its box, area-weighted centre, total area and area-weighted irradiance.
+struct SubsurfaceNode final
+{
+    Vector3d lo, hi, centre;
+    float area;
+    float irradiance[3];
+    int first, count; ///< points of a leaf; for an inner node, count is 0 and first the second child
+};
+
+/// The irradiance cloud of one object in one cube of space, with its point hierarchy; see doc/PERF.md.
+struct SubsurfaceCell final
+{
+    std::vector<SubsurfacePoint> points;
+    std::vector<SubsurfaceNode> nodes;
+    std::vector<float> visibility; ///< per point, per light, per channel: shadowed over unshadowed light
+    int lights = 0;
+    bool ready = false;
+    bool usable = false;
+    void BuildHierarchy();
+};
+
+/// Where a cell sits: the object, the cell and point spacing levels, and the cell's integer position.
+struct SubsurfaceCellKey final
+{
+    const void *object;
+    int sizeLevel, spacingLevel;
+    int x, y, z;
+    bool operator==(const SubsurfaceCellKey& o) const
+    {
+        return object == o.object && sizeLevel == o.sizeLevel && spacingLevel == o.spacingLevel && x == o.x && y == o.y && z == o.z;
+    }
+};
+
+struct SubsurfaceCellKeyHash final
+{
+    size_t operator()(const SubsurfaceCellKey& k) const;
+};
+
+/// Irradiance clouds built on demand and shared by all render threads, up to a point budget.
+class SubsurfaceCache final
+{
+    public:
+        /// The cell for key, and whether the caller must build it (and then call Publish); waits while another thread builds it.
+        std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
+        void Publish(const std::shared_ptr<SubsurfaceCell>& cell, bool usable);
+        /// What the first shading point to ask learnt about an object's shape.
+        struct Plan
+        {
+            int sizeLevel, spacingLevel;
+            bool usable, stepped;
+        };
+        bool FindPlan(const void *object, Plan& plan);
+        Plan StorePlan(const void *object, const Plan& plan);
+        /// Reserves room for points; false once the budget is spent.
+        bool Reserve(size_t points);
+        ~SubsurfaceCache();
+
+    private:
+        std::mutex mutex;
+        std::condition_variable built;
+        std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
+        std::atomic<size_t> reserved{0};
+        std::unordered_map<const void*, Plan> plans;
 };
 
 /// Approximation to the Fresnel diffuse reflectance.

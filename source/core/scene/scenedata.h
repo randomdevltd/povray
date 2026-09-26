@@ -53,6 +53,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/radiosity.h"
+#include "core/lighting/subsurface.h"
 #include "core/scene/atmosphere_fwd.h"
 #include "core/scene/camera.h"
 #include "core/shape/truetype.h"
@@ -157,6 +158,8 @@ class SceneData
         int subsurfaceSamplesSingle;
         /// whether to compute radiosity contribution to subsurface effects
         bool subsurfaceUseRadiosity;
+        /// subsurface irradiance clouds, built while rendering
+        std::shared_ptr<SubsurfaceCache> subsurfaceCache;
 
         // ********************************************************************************
         // temporary variables for BSP testing ... we may or may not keep these in future
