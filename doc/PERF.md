@@ -226,6 +226,54 @@ Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 - Skipping shadow rays for negligible unshadowed light: subsumed by drawing in proportion to it.
 - Evaluating the diffusion profile with SIMD: it is 2.5% of `subsurface.pov`'s cycles.
 
+## Mesh memory
+
+Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
+triangle stored 76 bytes (fourteen indices whether or not the mesh had UVs, smooth normals or per-triangle textures,
+plus a precomputed plane and smoothing frame) and added its face normal to the normals array; the flattened tree cost
+another 60 bytes; and while a mesh was built its pointer tree and flat tree coexisted.
+
+Now the flat tree is built straight from the triangles' boxes by the same surface-area passes, with no pointer tree,
+and a mesh groups its leaves eight at a time, where the scene keeps four, so blocks fill. A triangle is its three
+vertex indices with its flags in their top bits, so a mesh holds at most 2^30 vertices. Normal, UV and texture indices
+live in per-mesh columns that exist only when they vary and do not simply follow the vertex indices. The plane is
+recomputed from the vertices in the ray test and the smoothing frame at the hit. Mesh blocks store their children's
+boxes as 16-bit steps of a grid spanning the block, rounded outward, with a step of margin at each end of the grid and
+on each box, since decoding cancels terms of the block's size: 156 bytes a block against 232. A vertex that is
+infinite or not a number is a parse error, since it would make its block's grid infinite.
+
+Measured on a 1.5-million-triangle `mesh2` with a normal per vertex (`tools/bench/mesh-cylinder.py 600 1251 mesh-
+cylinder.inc`, then `mesh-cylinder.pov`), parsed alone; heap is `mallinfo` in use once the mesh is built, trace a
+`+WT1` render at 960×720, `+A0.0 +R3`:
+
+| Build | Heap per triangle | Peak RSS | Parse Gcycles | Trace Gcycles |
+|---|---|---|---|---|
+| before | 159 bytes | 468 MB | 14.4 | 45.1 |
+| tree built from boxes | 151 | 294 | 12.7 | 45.0–45.8 |
+| 12-byte triangles, columns | 79 | 190 | 11.7 | 45.1–46.1 |
+| 16-bit boxes | 61 | 166 | 12.2 | 47.5 (+6.6%) |
+| leaf groups of up to eight | 54 | 148 | 12.1 | 46.8 (+6.0%) |
+
+The last two rows are means of nine and four runs, each interleaved with as many of the first row's build (44.5 and
+44.2 there); instructions rise 6.1% and 2.8%, and groups of eight cut box tests by 10%. Of the 54 bytes, 12 are the
+triangle, 6 its share of vertices, 6 of vertex normals and 30 the tree (0.19 blocks a triangle).
+
+Building from boxes and quantising change no image. Recomputing the plane changes 47 of 691,200 single-thread pixels,
+the large ones isolated shadow specks of the stored plane that are now lit like their neighbours; groups of eight
+change 4 more, by up to 6 levels, where rays meet an edge two triangles share. `tools/bench/mesh-features.pov` covers
+`mesh` and `mesh2` with per-triangle, interpolated and UV-mapped textures, smooth normals and inside tests, and
+renders identically.
+
+Decoding a quantised block costs a widening and a multiply-add per bound. The portable loop let GCC split it into
+128-bit halves around the widening, 9% slower, so GCC gets vector types; the block's offset is its origin × inverse
+direction minus the ray origin's, the latter formed once per ray.
+
+Left, per triangle: 8-bit boxes would save about 8 bytes and octahedral 32-bit vertex normals 4. Placing children
+contiguously saves under a byte, since most lanes are leaves, whose triangle ids stay explicit while mesh cameras
+index triangles in file order. A `mesh {}` of smooth triangles keeps a 12-byte normal-index column, which hashing
+normals by vertex would remove. Building peaks at about 100 bytes a triangle of heap, mostly the pass's boxes and sort
+orders.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
@@ -276,4 +324,5 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
   irradiance at points on the surface across neighbouring pixels would remove the shadow rays, at the price of a cache.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
+- Mesh memory: the tree is now 55% of a mesh; 8-bit blocks are the next saving.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
