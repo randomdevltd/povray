@@ -307,12 +307,18 @@ class Trace
         {
             const LightSource*  light;
             int                 index;
+            double              depth;
+            Vector3d            direction;
+            MathColour          colour;
+            bool                backside;
             MathColour          potential;
             double              weight;
         };
 
         /// Stack of lights awaiting shadow tests in @ref ComputeSampledDiffuseLight().
         std::vector<LightCandidate> lightCandidates;
+        /// Stack of indices into @ref lightCandidates, brightest first.
+        std::vector<size_t> lightOrder;
 
         /// Scene data.
         std::shared_ptr<SceneData> sceneData;
@@ -570,8 +576,17 @@ class Trace
                                  MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
-                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1,
-                                    bool testShadow = true);
+                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1);
+        /// The ray, distance and unshadowed colour of a light; `false` if it cannot light this side of the surface.
+        bool ComputeOneLightReach(const LightSource &lightsource, const FINISH *finish, const Vector3d& ipoint, const Vector3d& layer_normal, ConstObjectPtr object,
+                                  double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour, bool& backside);
+        /// Filters a light's colour by what lies between it and the point.
+        void TestOneLightShadow(const LightSource &lightsource, double lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, int light_index);
+        /// Adds the classic lighting of one light of the given (possibly shadowed) colour.
+        void ComputeOneLightContribution(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
+                                         const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
+                                         ConstObjectPtr object, double relativeIor, double lightsourcedepth, Ray& lightsourceray,
+                                         const MathColour& lightcolour, bool backside);
         /// Classic lighting for radiosity rays: shadow-tests lights brightest first, and estimates the faint remainder
         /// from the visibility of those tested.
         void ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
