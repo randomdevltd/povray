@@ -537,6 +537,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     save_trace_level        = ticket.traceLevel;
     save_adc_bailout        = ticket.adcBailout;
     save_radiosityQuality   = ticket.radiosityQuality;
+    const double save_radiosityShare = ticket.radiosityShare;
 
     // adjust the max_trace_level
     // [CLi] Set max trace level to a value independent of "ray history" (except for the current radiosity bounce depth of course),
@@ -560,6 +561,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     bool use_raw_normal = similar(raw_normal, layer_normal); // if the normal isn't pertubed, go for the raw normal right away because it makes life easier
     double qualitySum = 0.0;
     param.directionGenerator.InitSequence(cur_sample_count, raw_normal, layer_normal, use_raw_normal, brilliance);
+    ticket.radiosityShare = 1.0 / max(1u, cur_sample_count);
     for(unsigned int i = 0, hit = 0; i < cur_sample_count; i++)
     {
         bool ray_ok = param.directionGenerator.GetDirection(direction);
@@ -739,6 +741,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     ticket.traceLevel           = save_trace_level;
     ticket.adcBailout           = save_adc_bailout;
     ticket.radiosityQuality     = max(save_radiosityQuality, qualitySum/okCount);
+    ticket.radiosityShare       = save_radiosityShare;
 
     return qualitySum/okCount;
 }

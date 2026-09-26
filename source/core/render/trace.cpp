@@ -38,6 +38,8 @@
 
 // C++ variants of C standard header files
 #include <cfloat>
+#include <cstdint>
+#include <cstring>
 
 // C++ standard header files
 #include <algorithm>
@@ -1100,7 +1102,20 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         new_Weight = weight * w1;
 
         // Trace refracted ray.
-        tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight);
+        double roulette;
+        if (SurvivesRadiosityRoulette(ray, isect.IPoint, new_Weight, 0, roulette))
+        {
+            const double share = ray.GetTicket().radiosityShare;
+            ray.GetTicket().radiosityShare = share * roulette;
+            tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight);
+            ray.GetTicket().radiosityShare = share;
+            rfrCol *= roulette;
+        }
+        else
+        {
+            rfrCol.Clear();
+            rfrTransm = 0.0;
+        }
 
         // Get distance based attenuation.
         // TODO - virtually the same code is used in ComputeShadowTexture().
@@ -1165,7 +1180,15 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 if(!(*listWNRX)[i].reflec.IsZero())
                 {
                     rflCol.Clear();
-                    ComputeReflection(layer->Finish, isect.IPoint, ray, (*listWNRX)[i].normal, rawnormal, rflCol, (*listWNRX)[i].weight);
+                    double roulette;
+                    if (SurvivesRadiosityRoulette(ray, isect.IPoint, (*listWNRX)[i].weight, i + 1, roulette))
+                    {
+                        const double share = ray.GetTicket().radiosityShare;
+                        ray.GetTicket().radiosityShare = share * roulette;
+                        ComputeReflection(layer->Finish, isect.IPoint, ray, (*listWNRX)[i].normal, rawnormal, rflCol, (*listWNRX)[i].weight);
+                        ray.GetTicket().radiosityShare = share;
+                        rflCol *= roulette;
+                    }
 
                     if((*listWNRX)[i].reflex != 1.0)
                     {
@@ -1518,6 +1541,44 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         for(int i = 0; i < object->LLights.size(); i++)
             ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
+}
+
+// A uniform number in [0,1) from the bits of a point, a direction and a salt, the same whatever thread draws it.
+static double RouletteDraw(const Vector3d& point, const Vector3d& direction, unsigned int salt)
+{
+    std::uint64_t h = 0x9E3779B97F4A7C15ull * (salt + 1);
+    for (int i = 0; i < 3; i++)
+    {
+        const double values[2] = { point[i], direction[i] };
+        std::uint64_t bits[2];
+        std::memcpy(bits, values, sizeof(bits));
+        for (std::uint64_t b : bits)
+        {
+            h ^= b + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
+            h ^= h >> 31;
+            h *= 0xBF58476D1CE4E5B9ull;
+            h ^= h >> 29;
+        }
+    }
+    return double(h >> 11) * (1.0 / 9007199254740992.0);
+}
+
+bool Trace::SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, double weight, unsigned int salt, double& scale)
+{
+    scale = 1.0;
+    const TraceTicket& ticket = ray.GetTicket();
+    const double importance = weight * ticket.radiosityShare;
+    // what ADC would cut anyway, and what matters enough to trace, are left alone
+    if (!ray.IsRadiosityRay() || (weight < ticket.adcBailout) || (importance >= ticket.adcBailout))
+        return true;
+    const double p = importance / ticket.adcBailout;
+    if (RouletteDraw(point, ray.Direction, salt) >= p)
+    {
+        threadData->Stats()[ADC_Saves]++;
+        return false;
+    }
+    scale = 1.0 / p;
+    return true;
 }
 
 // Lights left untested may carry at most this fraction of a radiosity ray's unshadowed classic lighting.
