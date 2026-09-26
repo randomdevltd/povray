@@ -104,7 +104,7 @@ SubsurfaceInterior::PrecomputedReducedAlbedo::PrecomputedReducedAlbedo(float ior
 PreciseColourChannel SubsurfaceInterior::PrecomputedReducedAlbedo::operator()(PreciseColourChannel diffuseReflectance) const
 {
     PreciseColourChannel Rd = clip(diffuseReflectance, 0.0, 1.0);
-    PreciseColourChannel i = diffuseReflectance * ReducedAlbedoSamples;
+    PreciseColourChannel i = Rd * ReducedAlbedoSamples;
     int i0 = floor(i);
     int i1 = ceil(i);
     PreciseColourChannel p = (i-i0);
