@@ -342,7 +342,7 @@ void RadiosityFunction::ResetTopLevelStats()
     topLevelReuse      = 0.0;
 }
 
-void RadiosityFunction::BeforeTile(int id, unsigned int pts, long sequence)
+void RadiosityFunction::BeforeTile(int id, unsigned int pts, std::int64_t sequence)
 {
     if (isFinalTrace)
         POV_RADIOSITY_ASSERT(pts == FINAL_TRACE);
@@ -370,7 +370,7 @@ void RadiosityFunction::BeforeTile(int id, unsigned int pts, long sequence)
 
     // next tile, so we start the sample direction pattern all over again
     for (unsigned int depth = 0; depth < settings.recursionLimit; depth ++)
-        recursionParameters[depth].directionGenerator.Reset(settings.directionPoolSize, (sequence < 0 ? -1 : sequence * long(settings.recursionLimit) + depth));
+        recursionParameters[depth].directionGenerator.Reset(settings.directionPoolSize, (sequence < 0 ? -1 : sequence * std::int64_t(settings.recursionLimit) + depth));
 
     POV_RADIOSITY_ASSERT(cacheBlockPool == nullptr);
     cacheBlockPool = radiosityCache.AcquireBlockPool();
@@ -764,7 +764,7 @@ RadiosityFunction::SampleDirectionGenerator::SampleDirectionGenerator() :
     frameZ(0,0,1)
 {}
 
-void RadiosityFunction::SampleDirectionGenerator::Reset(unsigned int samplePoolCount, long sequence)
+void RadiosityFunction::SampleDirectionGenerator::Reset(unsigned int samplePoolCount, std::int64_t sequence)
 {
     if (!sampleDirections)
         sampleDirections = GetSubRandomCosWeightedDirectionGenerator(0, samplePoolCount);
@@ -772,7 +772,7 @@ void RadiosityFunction::SampleDirectionGenerator::Reset(unsigned int samplePoolC
     {
         auto seedable = std::dynamic_pointer_cast<SeedableNumberGenerator<Vector3d>>(sampleDirections);
         if (seedable)
-            seedable->Seed(size_t(sequence) * 663);
+            seedable->Seed(size_t(std::uint64_t(sequence) * RADIOSITY_SAMPLE_DIRECTION_STRIDE));
     }
 }
 

@@ -43,6 +43,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -83,6 +84,7 @@ static const unsigned int RADIOSITY_MAX_SAMPLE_DIRECTIONS    = kRandCosWeightedC
 // - it has no divisors in common with 1600 (kRandCosWeightedCount), so that any consecutive 1600 samples will start at
 //   a different index
 // - it gives the highest possible number of "secondary strides", those being -274, 115, -44, -17, -7 and 3
+static const unsigned int RADIOSITY_SAMPLE_DIRECTION_STRIDE = 663;
 
 // settings as effective for a particular bounce depth during a particular trace step
 struct RadiosityRecursionSettings final
@@ -296,7 +298,7 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         virtual void ResetTopLevelStats();
         /// `sequence`, when not negative, restarts the gather directions at a point given by the tile, so that a tile's
         /// samples do not depend on which tiles its thread traced before.
-        virtual void BeforeTile(int id, unsigned int pts = FINAL_TRACE, long sequence = -1);
+        virtual void BeforeTile(int id, unsigned int pts = FINAL_TRACE, std::int64_t sequence = -1);
         virtual void AfterTile();
 
     private:
@@ -307,7 +309,7 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
                 /// constructor
                 SampleDirectionGenerator();
                 /// Called before each tile
-                void Reset(unsigned int samplePoolCount, long sequence);
+                void Reset(unsigned int samplePoolCount, std::int64_t sequence);
                 /// Called before each sample
                 void InitSequence(unsigned int& sample_count, const Vector3d& raw_normal, const Vector3d& layer_normal, bool use_raw_normal, DBL brilliance);
                 /// Called to get the next sampling ray direction
