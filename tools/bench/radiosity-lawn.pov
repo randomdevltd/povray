@@ -5,6 +5,9 @@
 #ifndef (Recursion) #declare Recursion = 1; #end
 #ifndef (PretraceStart) #declare PretraceStart = 0.16; #end
 #ifndef (PretraceEnd) #declare PretraceEnd = 0.02; #end
+#ifndef (LowErrorFactor) #declare LowErrorFactor = 0.5; #end
+#ifndef (NearestCount) #declare NearestCount = 5; #end
+#ifndef (MinimumReuse) #declare MinimumReuse = 0.015; #end
 #ifndef (Lamps) #declare Lamps = 24; #end
 #ifndef (Blades) #declare Blades = 40000; #end
 #ifndef (Radiosity) #declare Radiosity = 1; #end
@@ -19,6 +22,9 @@ global_settings {
     count Count
     error_bound ErrorBound
     recursion_limit Recursion
+    low_error_factor LowErrorFactor
+    nearest_count NearestCount
+    minimum_reuse MinimumReuse
     always_sample off
   }
   #end
