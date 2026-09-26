@@ -296,7 +296,7 @@ spawn are lit exactly as before.
 | a light's cached occluder is left out of the scene walk once it has missed | every shadow ray of every render: lawn without radiosity 4.45 → 4.09 Gcycles, with it 18.9 → 17.0; images identical |
 | each light's ray and unshadowed term computed once per gather-ray hit | lawn 33.6 → 32.5 G instructions; the stock Cornell box, a grid of equal lights none of which can be skipped, from 13% more instructions than before this branch to 3% |
 | cache files keep nine significant digits, quality and brilliance, skip malformed or too-deep records and report what loaded | below |
-| under `+HR` each tile restarts the gather directions from its own serial number | the stock `patio-radio_37.pov`, rendered twice with `+HR` at 4 threads, was 1.4 levels apart and is now identical |
+| under `+HR` each tile restarts the gather directions at a point set by its serial number, and in the pretrace its pass | the stock `patio-radio_37.pov`, rendered twice with `+HR` at 4 threads, was 1.4 levels apart and is now identical |
 
 Together, on the lawn at 320×180, two runs of each back to back: 34.3 and 33.6 Gcycles before, 16.2 and 16.5 after
 (67.4 → 32.5 G instructions). The window's image moves by 0.09 levels on average, 4 at most; the lawn's by 0.03, 2
