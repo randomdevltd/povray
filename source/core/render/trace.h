@@ -835,7 +835,8 @@ class Trace
         void ComputeSSLTNormal (Intersection& Ray_Intersection);
         bool IsSameSSLTObject(ConstObjectPtr obj1, ConstObjectPtr obj2);
         void ComputeDiffuseSampleBase(Vector3d& basePoint, const Intersection& out, const Vector3d& vOut, double avgFreeDist, TraceTicket& ticket);
-        void ComputeDiffuseSamplePoint(const Vector3d& basePoint, Intersection& in, double& sampleArea, TraceTicket& ticket);
+        void ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket);
+        ObjectPtr SubsurfaceObject(const Intersection& isect);
         void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta, SubsurfaceCandidate& candidate, TraceTicket& ticket);
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double eta, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
