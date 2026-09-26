@@ -150,7 +150,7 @@ struct Mesh_Data_Struct final
     MeshIndexColumn UVInd {3, 0};
     MeshIndexColumn TextureInd {1, -1};
     MeshIndexColumn Texture23Ind {2, -1};   ///< The second and third texture of a colour-interpolated triangle.
-    FlatBBoxTree *FlatTree = nullptr;       ///< Bounding box tree for mesh, flattened; leaf ids are triangle indices.
+    FlatMeshBBoxTree *FlatTree = nullptr;       ///< Bounding box tree for mesh, flattened; leaf ids are triangle indices.
     Vector3d Inside_Vect;                   ///< vector to use to test 'inside'
 };
 using MESH_DATA = Mesh_Data_Struct; ///< @deprecated
@@ -201,6 +201,8 @@ class Mesh final : public ObjectBase
         bool Compute_Mesh_Triangle(MESH_TRIANGLE *Triangle, MeshIndex Index, bool Smooth, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3);
         /// Drops the index columns that carry no information once every triangle is in.
         void Finish_Mesh_Data();
+        /// False if a vertex is infinite or NaN, which would leave no finite box for the mesh's tree.
+        bool Vertices_Finite() const;
 
         void Build_Mesh_BBox_Tree();
         bool Degenerate(const Vector3d& P1, const Vector3d& P2, const Vector3d& P3);

@@ -65,6 +65,9 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -945,6 +948,21 @@ void Mesh::Finish_Mesh_Data()
     Data->UVInd.Finish(Data->Triangles, n, true, Any_Triangle);
     Data->TextureInd.Finish(Data->Triangles, n, false, Any_Triangle);
     Data->Texture23Ind.Finish(Data->Triangles, n, false, Three_Tex_Triangle);
+}
+
+bool Mesh::Vertices_Finite() const
+{
+    // By bit pattern: -ffast-math folds std::isfinite to true.
+    for (MeshIndex i = 0; i < Data->Number_Of_Vertices; ++i)
+        for (int d = X; d <= Z; ++d)
+        {
+            const float v = Data->Vertices[i][d];
+            std::uint32_t u;
+            std::memcpy(&u, &v, sizeof(u));
+            if ((u & 0x7f800000u) == 0x7f800000u)
+                return false;
+        }
+    return true;
 }
 
 void MeshIndexColumn::Set(size_t tri, int k, MeshIndex v)
