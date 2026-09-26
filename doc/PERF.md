@@ -226,6 +226,60 @@ Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 - Skipping shadow rays for negligible unshadowed light: subsumed by drawing in proportion to it.
 - Evaluating the diffusion profile with SIMD: it is 2.5% of `subsurface.pov`'s cycles.
 
+## Radiosity
+
+The same 100×60 window of the large scene, single-threaded, traces in 0.32 CPU-s without radiosity, 12.1 with
+`count 60, error_bound 0.6` (38×) and 2.6 with `count 30, error_bound 1.5` (8×). In a window the pretrace takes
+two samples; the final pass gathers the rest, one sample per four pixels at `error_bound 0.6`, since the foliage's
+normals keep samples from being reused across neighbouring leaves. Each gather ray that hit a surface then traced
+a shadow ray to every light in the scene, most of them small lamps whose light fades within a few units: 24 shadow
+rays per gather ray. On `tools/bench/radiosity-lawn.pov` (a sun and 24 fading lamps over a lawn of thin blades)
+those shadow rays were 72% of the render.
+
+Gather rays now rank the lights at their hit by unshadowed contribution and shadow-test them brightest first, until
+the untested ones would carry at most 5% of it; those are scaled by the share of the tested light that got through.
+A sample averages 30 to 60 such rays, so the estimate's error stays far below the sample's own noise. Reflections and
+refractions spawned by a gather ray are radiosity rays too and are lit the same way; camera rays and everything they
+spawn are lit exactly as before.
+
+| Change | Effect, single-threaded |
+|---|---|
+| gather rays shadow-test lights brightest first | lawn 34.6 → 18.9 Gcycles, shadow rays 9.77 M → 4.03 M; the window 12.05 → 6.74 CPU-s at `count 60`, 2.58 → 1.32 at `count 30` |
+| a light's cached occluder is left out of the scene walk once it has missed | every shadow ray of every render: lawn without radiosity 4.45 → 4.09 Gcycles, with it 18.9 → 17.0; images identical |
+| each light's ray and unshadowed term computed once per gather-ray hit | lawn 33.6 → 32.5 G instructions; the stock Cornell box, a grid of equal lights none of which can be skipped, from 13% more instructions than before this branch to 3% |
+| cache files keep full precision, quality and brilliance, skip malformed or too-deep records and report what loaded | below |
+
+Together, on the lawn at 320×180, two runs of each back to back: 34.3 and 33.6 Gcycles before, 16.2 and 16.5 after
+(67.4 → 32.5 G instructions). The window's image moves by 0.09 levels on average, 4 at most; the lawn's by 0.03, 2
+at most. Two 4-thread runs of one build differ by 1.8 levels on average and up to 47 on the lawn, because which
+samples exist depends on thread timing. Leaving 2% untested gave 23.5 Gcycles on the lawn, 10% gave 16.4 with
+differences up to 4 levels; on the window 10% and 20% moved pixels by up to 6 and 12 levels.
+
+### At print density, and reusing a cache
+
+The 30× above is a low-resolution figure. Samples are spaced in the scene, not on the screen, so the finer the
+pixels, the more of them share each sample. Two 200×200 close-ups of the large scene at 200 DPI and its whole frame
+at 10 DPI, `count 30, error_bound 1.5`, 4 threads, trace CPU-s:
+
+| | Close-up 1 | Close-up 2 | Whole frame, 10 DPI |
+|---|---|---|---|
+| without radiosity | 14.5 | 12.6 | 96.1 |
+| radiosity, before this branch | | | 413.7 (4.3×) |
+| radiosity computed in the render | 32.8 (2.3×), 3,363 samples | 19.2 (1.5×), 927 | 282.9 (2.9×), 35,025 |
+| radiosity loaded from the 10 DPI frame (`+RFI`) | 17.6 (1.2×), 777 | 14.9 (1.2×), 264 | |
+
+The 10 DPI frame that saved the cache (`+RFO`) is the 282.9 CPU-s above. The close-ups take three quarters of the
+samples they need from it; the rest lie on detail too small to be hit at 10 DPI. They differ from close-ups
+computed in place by 1.8 and 1.9 levels on average, about as much as two 4-thread renders of the lawn differ.
+
+Cache files were not dependable before this branch: illuminance was written with four decimals, so dark samples lost
+precision and anything under 0.00005 turned black; quality and brilliance were not saved, so low-quality samples came
+back at full weight; a file whose samples went deeper than the loading scene's `recursion_limit` read past the end of
+a per-depth settings array; a malformed record put uninitialised or non-finite values in the octree; and a missing
+file loaded silently. Samples are kept in scene space and carry no tile
+or thread, so a loaded cache serves any window, resolution or thread count. With `recursion_limit 1` they also hold
+illuminance before `brightness`, which can change between saving and loading.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it

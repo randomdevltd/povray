@@ -1344,7 +1344,7 @@ bool ot_save_tree(OT_NODE *root, OStream *fd)
 
 bool ot_write_block(OT_BLOCK *bl, void *fd) // must be passed as void * for compatibility
 {
-    (reinterpret_cast<OStream *>(fd))->printf("C%d\t%g\t%g\t%g\t%02x%02x%02x\t%.4f\t%.4f\t%.4f\t%g\t%g\t%02x%02x%02x\n", // tw
+    (reinterpret_cast<OStream *>(fd))->printf("C%d\t%.9g\t%.9g\t%.9g\t%02x%02x%02x\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%02x%02x%02x\t%.9g\t%.9g\n", // tw
         (int)(bl->Bounce_Depth + 1), // file format still uses 1-based bounce depth counting
 
         bl->Point[X], bl->Point[Y], bl->Point[Z],
@@ -1362,9 +1362,9 @@ bool ot_write_block(OT_BLOCK *bl, void *fd) // must be passed as void * for comp
         bl->Nearest_Distance,
         (int)((bl->To_Nearest_Surface[X]+1.)*.5*254.+.499999),
         (int)((bl->To_Nearest_Surface[Y]+1.)*.5*254.+.499999),
-        (int)((bl->To_Nearest_Surface[Z]+1.)*.5*254.+.499999)
+        (int)((bl->To_Nearest_Surface[Z]+1.)*.5*254.+.499999),
 
-        // TODO - write Quality and Brilliance
+        bl->Quality, bl->Brilliance
     );
     return true;
 }

@@ -1494,6 +1494,13 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
 {
     Vector3d reye;
 
+    // crand draws a random number per evaluation, so its lights are tested one by one as before
+    if(eye.IsRadiosityRay() && (finish->Crand <= 0.0) && (threadData->lightSources.size() + object->LLights.size() > 1))
+    {
+        ComputeSampledDiffuseLight(finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+        return;
+    }
+
     // TODO FIXME - [CLi] why is this computed here? Not so exciting, is it?
     if(finish->Specular != 0.0)
         reye = -eye.Direction;
@@ -1511,6 +1518,94 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         for(int i = 0; i < object->LLights.size(); i++)
             ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
+}
+
+// Lights left untested may carry at most this fraction of a radiosity ray's unshadowed classic lighting.
+static const double kUntestedLightFraction = 0.05;
+
+void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
+                                       const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor)
+{
+    const Vector3d reye(-eye.Direction);
+    const size_t first = lightCandidates.size();
+    Ray lightsourceray(eye);
+    double total = 0.0;
+    double faintest = HUGE_VAL;
+
+    auto consider = [&](const LightSource& light, int index)
+    {
+        if (!qualityFlags.shadows || (light.Light_Type == FILL_LIGHT_SOURCE) || (light.Projected_Through_Object != nullptr))
+        {
+            ComputeOneDiffuseLight(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, index);
+            return;
+        }
+        LightCandidate candidate;
+        candidate.light = &light;
+        candidate.index = index;
+        if (!ComputeOneLightReach(light, finish, ipoint, layer_normal, object, candidate.depth, lightsourceray, candidate.colour, candidate.backside))
+            return;
+        candidate.direction = lightsourceray.Direction;
+        ComputeOneLightContribution(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, candidate.potential, attenuation, object, relativeIor,
+                                    candidate.depth, lightsourceray, candidate.colour, candidate.backside);
+        candidate.weight = candidate.potential.Weight();
+        if (candidate.weight > 0.0)
+        {
+            lightCandidates.push_back(candidate);
+            total += candidate.weight;
+            faintest = std::min(faintest, candidate.weight);
+        }
+    };
+
+    if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
+    {
+        for(int i = 0; i < threadData->lightSources.size(); i++)
+            consider(*threadData->lightSources[i], i);
+    }
+    for(int i = 0; i < object->LLights.size(); i++)
+        consider(*object->LLights[i], -1);
+
+    const size_t end = lightCandidates.size();
+    const size_t order = lightOrder.size();
+    for (size_t i = first; i < end; ++i)
+        lightOrder.push_back(i);
+    // when even the faintest light is too bright to leave untested, the order does not matter
+    if (faintest <= kUntestedLightFraction * total)
+        std::sort(lightOrder.begin() + order, lightOrder.end(),
+                  [this](size_t a, size_t b) { return lightCandidates[a].weight > lightCandidates[b].weight; });
+
+    double untested = total;
+    double testedWeight = 0.0;
+    double litWeight = 0.0;
+    size_t next = order;
+    for (; (next < lightOrder.size()) && (untested > kUntestedLightFraction * total); ++next)
+    {
+        // copied, as a shadow ray's own lighting may grow the stacks
+        const LightCandidate candidate = lightCandidates[lightOrder[next]];
+        MathColour lightcolour = candidate.colour;
+        lightsourceray.Origin = ipoint;
+        lightsourceray.Direction = candidate.direction;
+        TestOneLightShadow(*candidate.light, candidate.depth, lightsourceray, ipoint, lightcolour, candidate.index);
+        MathColour lit;
+        if ((lightcolour - candidate.colour).IsZero())
+            lit = candidate.potential;
+        else if (!lightcolour.IsNearZero(EPSILON))
+            ComputeOneLightContribution(*candidate.light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, lit, attenuation, object, relativeIor,
+                                        candidate.depth, lightsourceray, lightcolour, candidate.backside);
+        colour += lit;
+        testedWeight += candidate.weight;
+        litWeight += lit.Weight();
+        untested -= candidate.weight;
+    }
+
+    if (next < lightOrder.size())
+    {
+        const double visible = litWeight / testedWeight;
+        for (; next < lightOrder.size(); ++next)
+            colour += lightCandidates[lightOrder[next]].potential * visible;
+    }
+
+    lightOrder.resize(order);
+    lightCandidates.resize(first);
 }
 
 void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
@@ -1641,18 +1736,32 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
                                    const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index)
 {
-    double lightsourcedepth, cos_shadow_angle;
+    double lightsourcedepth;
     Ray lightsourceray(eye);
     MathColour lightcolour;
-    bool backside = false;
-    MathColour tmpCol;
+    bool backside;
+
+    if (!ComputeOneLightReach(lightsource, finish, ipoint, layer_normal, object, lightsourcedepth, lightsourceray, lightcolour, backside))
+        return;
+
+    TestOneLightShadow(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, light_index);
+
+    ComputeOneLightContribution(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor,
+                                lightsourcedepth, lightsourceray, lightcolour, backside);
+}
+
+bool Trace::ComputeOneLightReach(const LightSource &lightsource, const FINISH *finish, const Vector3d& ipoint, const Vector3d& layer_normal, ConstObjectPtr object,
+                                 double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour, bool& backside)
+{
+    double cos_shadow_angle;
+    backside = false;
 
     // Get a colour and a ray.
     ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour);
 
     // Don't calculate spotlights when outside of the light's cone.
     if(lightcolour.IsNearZero(EPSILON))
-        return;
+        return false;
 
     // See if light on far side of surface from camera.
     if(!(Test_Flag(object, DOUBLE_ILLUMINATE_FLAG)) // NK 1998 double_illuminate - changed to Test_Flag
@@ -1664,10 +1773,15 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
             if (finish->DiffuseBack != 0.0)
                 backside = true;
             else
-                return;
+                return false;
         }
     }
 
+    return true;
+}
+
+void Trace::TestOneLightShadow(const LightSource &lightsource, double lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, int light_index)
+{
     // If light source was not blocked by any intervening object, then
     // calculate it's contribution to the object's overall illumination.
     if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
@@ -1687,6 +1801,14 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
         else
             TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour);
     }
+}
+
+void Trace::ComputeOneLightContribution(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
+                                        const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
+                                        ConstObjectPtr object, double relativeIor, double lightsourcedepth, Ray& lightsourceray,
+                                        const MathColour& lightcolour, bool backside)
+{
+    MathColour tmpCol;
 
     if(!lightcolour.IsNearZero(EPSILON))
     {
@@ -1946,7 +2068,8 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
 // TODO: try moving it back in at some point in the future.
 struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
 {
-    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return !Test_Flag(object, NO_SHADOW_FLAG); }
+    ConstObjectPtr missed = nullptr; // already found not to cross the ray within its reach
+    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return (object != missed) && !Test_Flag(object, NO_SHADOW_FLAG); }
 };
 
 struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
@@ -2041,7 +2164,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                     cacheObject = nullptr;
             }
             else
+            {
+                precond.missed = cacheObject;
                 cacheObject = nullptr;
+            }
         }
     }
 
