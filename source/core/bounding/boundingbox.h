@@ -46,6 +46,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <functional>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -304,7 +305,7 @@ struct FlatBBoxBlock final
 struct FlatBBoxTree final
 {
     std::vector<FlatBBoxBlock> blocks; // block 0 holds the root alone
-    std::vector<const void *> leaves;
+    std::vector<const void *> leaves; // by leaf id; empty when ids index the caller's own array
 };
 
 struct FlatBBoxEntry final
@@ -319,7 +320,15 @@ struct IntersectionStopCondition
     virtual bool operator()(const Intersection& isect) const = 0;
 };
 
+typedef std::function<void(const std::uint32_t *items, size_t count)> BBoxGroupFn;
+typedef std::function<void(size_t leaf, BoundingBox& box)> FlatLeafBoxFn;
+
+/// One level of the bottom-up build: groups `boxes` by surface area, calling `emit` per group; false once all form one.
+bool Split_BBox_Pass(const BoundingBox *boxes, size_t count, const BBoxGroupFn& emit);
+
 FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root);
+/// The tree Build_BBox_Tree would make of `numLeaves` finite leaves, flattened without building it; leaf k is id k.
+FlatBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread);
@@ -389,7 +398,7 @@ class FlatBBoxWalker final
         }
 };
 
-/// Depth-first walk, nearer children first, calling `leaf` for hit leaves starting before `best`, which it may
+/// Depth-first walk, nearer children first, calling `leaf` with the id of hit leaves starting before `best`, which it may
 /// lower; true ends the walk. With `cull` false every hit leaf is visited.
 template<typename RayT, typename StatsT, typename LeafFn>
 void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
@@ -403,7 +412,7 @@ void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DB
             continue;
         if (e.ref < 0)
         {
-            if (leaf(tree.leaves[-1 - e.ref]))
+            if (leaf(-1 - e.ref))
                 return;
             continue;
         }
@@ -422,7 +431,7 @@ void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DB
                 break;
             if ((h.ref >= 0) || (nodes > base))
                 hits[nodes++] = h;
-            else if (leaf(tree.leaves[-1 - h.ref]))
+            else if (leaf(-1 - h.ref))
                 return;
         }
         std::reverse(hits + base, hits + nodes);
@@ -445,7 +454,7 @@ void Traverse_Flat_BBox_Tree_Ordered(const FlatBBoxTree& tree, const RayT& ray, 
             break;
         if (e.ref < 0)
         {
-            if (leaf(tree.leaves[-1 - e.ref]))
+            if (leaf(-1 - e.ref))
                 return;
             continue;
         }

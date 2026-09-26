@@ -557,7 +557,6 @@ void Parser::Parse_Obj (Mesh* mesh)
 
     mesh->Data = reinterpret_cast<MESH_DATA *>(POV_MALLOC(sizeof(MESH_DATA), "triangle mesh data"));
     mesh->Data->References = 1;
-    mesh->Data->Tree = nullptr;
     mesh->Data->FlatTree = nullptr;
 
     mesh->has_inside_vector = insideVector.IsNearNull (EPSILON);
