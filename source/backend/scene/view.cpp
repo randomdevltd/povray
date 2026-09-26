@@ -50,6 +50,7 @@
 // POV-Ray header files (base module)
 #include "base/path.h"
 #include "base/povassert.h"
+#include "base/stringutilities.h"
 #include "base/timer.h"
 #include "base/image/colourspace.h"
 
@@ -751,7 +752,18 @@ void View::StartRender(POVMS_Object& renderOptions)
         // TODO FIXME - [CLi] I guess the radiosity file name needs more attention than this; probably a frontend job
         Path radiosityFile = Path(renderOptions.TryGetUCS2String(kPOVAttrib_RadiosityFileName, "object.rca"));
         if(loadRadiosityCache)
-            loadRadiosityCache = viewData.radiosityCache.Load(radiosityFile);
+        {
+            long loaded = viewData.radiosityCache.Load(radiosityFile);
+            MessageFactory messageFactory(viewData.GetSceneData()->warningLevel, "Radiosity",
+                                          viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                                          viewData.sceneData->sceneId, viewData.viewId);
+            if (loaded > 0)
+                messageFactory.Info("Loaded %ld radiosity samples from '%s'.", loaded, UCS2toSysString(radiosityFile()).c_str());
+            else
+                messageFactory.Warning(kWarningGeneral, "No radiosity samples loaded: '%s' %s.", UCS2toSysString(radiosityFile()).c_str(),
+                                       (loaded < 0 ? "cannot be read" : "holds none"));
+            loadRadiosityCache = (loaded > 0);
+        }
         if(saveRadiosityCache)
             viewData.radiosityCache.InitAutosave(radiosityFile, loadRadiosityCache); // if we loaded the file, add to existing data
     }

@@ -211,7 +211,8 @@ class RadiosityCache final
         RadiosityCache(const SceneRadiositySettings& radset);
         ~RadiosityCache();
 
-        bool Load(const Path& inputFile);
+        /// Adds the samples of a cache file; returns how many, or -1 if the file cannot be read.
+        long Load(const Path& inputFile);
         void InitAutosave(const Path& outputFile, bool append);
 
         DBL FindReusableBlock(RenderStatistics& stats, DBL errorbound, const Vector3d& ipoint, const Vector3d& snormal, DBL brilliance, MathColour& illuminance, int recursionDepth, int pretraceStep, int tileId);
@@ -247,6 +248,7 @@ class RadiosityCache final
 #endif
 
         RadiosityRecursionSettings* recursionSettings; // dynamically allocated array; use recursion depth as index
+        int recursionLimit;                            // size of recursionSettings
 
         void InsertBlock(ot_node_struct* node, ot_block_struct *block);
         ot_node_struct *GetNode(RenderStatistics* stats, const ot_id_struct& id);
