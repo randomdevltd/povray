@@ -164,6 +164,12 @@ from under it leave.
 
 Closed objects render as before. The cost is unchanged.
 
+`scenes/subsurface/subsurface.pov` was tuned with doubled light on its open marble floor. The floor's `diffuse`, which
+sets its subsurface albedo, is 1.6 on the dark tiles and 1.2 on the light ones, which brings the dark
+tiles and the far floor within 2 to 3 levels of the doubled render. The light tiles stay about 23 levels darker (204 to
+181 in red): the doubling made them reflect 1.33 times the light falling on them, and a subsurface finish reflects at
+most all of it, which `diffuse 1.2` reaches.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
