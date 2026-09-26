@@ -160,25 +160,34 @@ only the light's direction, colour and the profile. Shadow rays are then drawn s
 amounts: D rays for each light that reaches any sample (S for single scattering), half shared evenly between those
 lights and half by their share of the unshadowed light. A draw at an area light tests one point of it, spread over
 the light by an R2 sequence as in media, so a sample drawn several times sees several points. Each draw is weighted
-by the inverse of its chance, so the expected result is the old one. Single scattering now draws one bend point per
+by the inverse of its chance, so the expected result of the shadow draws is the old one. Single scattering now draws one bend point per
 sample for all three channels, from the mixture of the channels' distributions, each channel weighted by its own
 density over the mixture (the balance heuristic): a third of the entry and shadow rays. The profile's per-channel
 constants are computed once per shading point instead of per sample and light, and the Fresnel terms take the cosine
-directly rather than `cos(acos(x))`.
+directly rather than `cos(acos(x))`. The rays that find diffuse sample points and where light enters for single
+scattering test only the subsurface object itself, not the whole scene. A diffuse ray that met another object first
+used to count as an empty sample; it now passes through, and the sum is still divided by the rays that hit, so where
+the base point sees other geometry (a shell clipped open over a floor) the diffuse term comes out brighter. Dividing by
+the rays cast, a separate correction for open surfaces, makes both walks agree; until it lands this is a difference.
 
 | Render, `+WT4` | Before | After | |
 |---|---|---|---|
-| `tools/bench/sslt-lamps.pov`, 160×120 | 18.0 Gcycles, 15.4 M shadow rays | 3.2 Gcycles, 1.8 M | 5.6× |
-| the same at 320×240 | 72.4 Gcycles, 21.2 CPU-s | 12.7 Gcycles, 3.6 CPU-s | 5.7× |
-| `scenes/subsurface/subsurface.pov`, 160×120 | 25.7 Gcycles, 7.2 M shadow rays | 16.8 Gcycles, 3.7 M | 1.5× |
-| the same at 320×240 | 100.0 Gcycles, 28.9 CPU-s | 64.9 Gcycles, 18.7 CPU-s | 1.5× |
+| `tools/bench/sslt-lamps.pov`, 160×120 | 18.0 Gcycles, 15.4 M shadow rays | 3.0 Gcycles, 1.8 M | 6.0× |
+| the same at 320×240 | 72.4 Gcycles, 61.5 M shadow rays | 11.7 Gcycles, 7.1 M | 6.2× |
+| `scenes/subsurface/subsurface.pov`, 160×120 | 25.7 Gcycles, 7.2 M shadow rays | 12.0 Gcycles, 3.7 M | 2.1× |
+| the same at 320×240 | 100.0 Gcycles, 28.7 M shadow rays | 46.7 Gcycles, 14.9 M | 2.1× |
+
+Without subsurface scattering the two scenes trace in 2.1 and 0.6 Gcycles at 320×240, so the subsurface part itself
+went from 70.3 to 9.6 Gcycles (7.3×) and from 99.4 to 46.1 (2.2×). Testing only the object's own surface was 1.1× and
+1.4× of that on its own.
 
 `sslt-lamps.pov` has two soft area suns behind slats, a spotlight and two fading lamps over wax and marble;
 `subsurface.pov` has one point light and 400 diffuse samples, so its remaining cost is mostly the sample rays
 themselves. Noise is measured as the rms difference between two renders that differ only in their random samples
-(`+BS7` against the default block size), over √2: 1.15 before and 1.21 after on `sslt-lamps.pov`, 1.11 and 1.18 on
-`subsurface.pov`, in 8-bit levels. Against a render of the old code at 16 times the samples, `sslt-lamps.pov` is off
-by 1.21–1.23 rms before and 1.26–1.30 after, with the same mean (−0.01 levels).
+(`+BS7` against the default block size), over √2: 1.15 before and 1.19 after on `sslt-lamps.pov`, 1.11 and 1.16 on
+`subsurface.pov`, in 8-bit levels. Against renders of the old code at 16 and 4 times the samples, `sslt-lamps.pov` is
+off by 1.21–1.23 rms before and 1.28 after, `subsurface.pov` by 1.20–1.22 and 1.26, with the same mean (within 0.01
+levels).
 
 Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 
