@@ -186,6 +186,30 @@ Single scattering takes one point per sample for all three colour channels, draw
 distance distributions; each channel is weighted by its own density over that average, which keeps every channel
 unbiased with a third of the rays. The diffusion profile's per-channel constants are computed once per shading point.
 
+The rays that find diffuse sample points, and where light enters the object for single scattering, test only the
+subsurface object (its outermost CSG, if any), not the whole scene. A diffuse ray that meets another object first
+passes through it to the subsurface object.
+
+Results with both parts, `+WT4`, user-space cycles:
+
+| Render | Before | After | |
+|---|---|---|---|
+| `tools/bench/sslt-lamps.pov`, 160×120 | 18.0 Gcycles, 15.4 M shadow rays | 3.0 Gcycles, 1.8 M | 6.0× |
+| the same at 320×240 | 72.4 Gcycles, 61.5 M shadow rays | 11.7 Gcycles, 7.1 M | 6.2× |
+| `scenes/subsurface/subsurface.pov`, 160×120 | 24.8 Gcycles, 7.2 M shadow rays | 12.3 Gcycles, 3.8 M | 2.0× |
+| the same at 320×240 | 102.1 Gcycles, 28.7 M shadow rays | 48.2 Gcycles, 15.3 M | 2.1× |
+
+`sslt-lamps.pov` has two soft area suns behind slats, a spotlight and two fading lamps over wax and marble.
+`subsurface.pov` has one point light and 400 diffuse samples, so most of its remaining cost is the sample rays
+themselves; both columns use its rebalanced floor. Without subsurface scattering the scenes trace in 2.1 and 0.6
+Gcycles at 320×240, so the subsurface part went from 70.3 to 9.6 Gcycles (7.3×) and from 101.5 to 47.6 (2.1×).
+Testing only the object's own surface accounts for 1.1× and 1.4× of that.
+
+Noise, the rms difference between two renders that differ only in their random samples (`+BS7` against the default
+block size) divided by √2 to give one render's noise, goes from 1.15 to 1.23 levels on `sslt-lamps.pov` and from 1.17
+to 1.20 on `subsurface.pov`. Against renders of the previous code at 16 and 4 times the samples, the rms error goes from
+1.21–1.23 to 1.28 and from 1.26–1.27 to 1.31, with the same mean within 0.01 levels.
+
 Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 
 - One area-light point per sample without drawing by unshadowed light: about a quarter more error against the reference.
@@ -248,6 +272,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
+- Subsurface: the diffuse sample rays and the entry rays of single scattering are most of its cost; caching
+  irradiance at points on the surface across neighbouring pixels would remove the shadow rays, at the price of a cache.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.

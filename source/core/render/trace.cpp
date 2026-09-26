@@ -3371,7 +3371,7 @@ void Trace::ComputeDiffuseSampleBase(Vector3d& basePoint, const Intersection& ou
         basePoint = pOut + nOut * avgFreeDist;
 }
 
-void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, Intersection& in, double& sampleArea, TraceTicket& ticket)
+void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket)
 {
     // generate a vector in a random direction
     // TODO FIXME - a suitably weighted distribution (oriented according to the surface normal) would possibly be better
@@ -3380,7 +3380,7 @@ void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, Intersection& i
     Vector3d v = (*(ssltUniformDirectionGenerator[ticket.subsurfaceRecursionDepth]))();
 
     Ray ray(ticket, basePoint, v, Ray::SubsurfaceRay);
-    bool found = FindIntersection(in, ray);
+    bool found = FindIntersection(object, in, ray);
 
     if (found)
     {
@@ -3455,7 +3455,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
 
     // Where light from the source enters the object, ignoring refraction; mostly for the surface normal there.
     Intersection xi;
-    if (!FindIntersection(xi, lightsourceray))
+    if (!FindIntersection(SubsurfaceObject(out), xi, lightsourceray))
         return;
 
     if (!IsSameSSLTObject(xi.Object, out.Object))
@@ -3583,6 +3583,12 @@ void Trace::ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lig
         int budget = max(1, int(budgetAll * share + 0.5));
         total += DrawSubsurfaceShadows(*lights[l], &candidates[l * count], count, sums[l], budget, ticket);
     }
+}
+
+// The whole object a subsurface intersection belongs to: its outermost CSG, if any.
+ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
+{
+    return (isect.Csg != nullptr) ? isect.Csg : isect.Object;
 }
 
 // The global lights unless the object turns them off, then those of its light group.
@@ -3775,7 +3781,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     for (int i = 0; i < NumSamplesDiffuse; i++)
     {
         Intersection in;
-        ComputeDiffuseSamplePoint(sampleBase, in, sampleArea, Eye.GetTicket());
+        ComputeDiffuseSamplePoint(sampleBase, SubsurfaceObject(out), in, sampleArea, Eye.GetTicket());
 
         // avoid pathological cases
         if (sampleArea == 0)
