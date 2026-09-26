@@ -248,6 +248,7 @@ spawn are lit exactly as before.
 | a light's cached occluder is left out of the scene walk once it has missed | every shadow ray of every render: lawn without radiosity 4.45 → 4.09 Gcycles, with it 18.9 → 17.0; images identical |
 | each light's ray and unshadowed term computed once per gather-ray hit | lawn 33.6 → 32.5 G instructions; the stock Cornell box, a grid of equal lights none of which can be skipped, from 13% more instructions than before this branch to 3% |
 | cache files keep full precision, quality and brilliance, skip malformed or too-deep records and report what loaded | below |
+| under `+HR` each tile restarts the gather directions from its own serial number | the stock `patio-radio_37.pov`, rendered twice with `+HR` at 4 threads, was 1.4 levels apart and is now identical |
 
 Together, on the lawn at 320×180, two runs of each back to back: 34.3 and 33.6 Gcycles before, 16.2 and 16.5 after
 (67.4 → 32.5 G instructions). The window's image moves by 0.09 levels on average, 4 at most; the lawn's by 0.03, 2
@@ -276,9 +277,20 @@ Cache files were not dependable before this branch: illuminance was written with
 precision and anything under 0.00005 turned black; quality and brilliance were not saved, so low-quality samples came
 back at full weight; a file whose samples went deeper than the loading scene's `recursion_limit` read past the end of
 a per-depth settings array; a malformed record put uninitialised or non-finite values in the octree; and a missing
-file loaded silently. Samples are kept in scene space and carry no tile
-or thread, so a loaded cache serves any window, resolution or thread count. With `recursion_limit 1` they also hold
-illuminance before `brightness`, which can change between saving and loading.
+file loaded silently. Samples are kept in scene space and carry no tile or thread, so a loaded cache serves any
+window, resolution or thread count. With `recursion_limit 1` they also hold illuminance before `brightness`, which
+can change between saving and loading.
+
+### Settings
+
+On the lawn at 320×180, 4 threads, against `count 800, error_bound 0.15`: `error_bound`, not `count`, sets the
+blotches and the bias. At about 15 Gcycles, `count 30, error_bound 0.3` differs from the reference by 0.77 levels
+after a 7-pixel blur and is 0.4 brighter; `count 120, error_bound 1.5` differs by 1.90 and is 1.6 brighter. Larger
+bounds brighten the grass most, 3 levels at 1.5, as samples near the tips are reused down the blades.
+`low_error_factor`, `nearest_count` and `minimum_reuse` moved nothing measurably. `pretrace_end 0.005` halved the
+error for twice the cycles, no better than a smaller `error_bound`. Against a three-bounce reference, a second
+bounce at `error_bound 0.6` cost twice as much and came closest (1.12 against 1.81 for one); at 1.5 it bought
+nothing.
 
 ## Method
 
@@ -328,6 +340,10 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
   skipping any safely needs bounds on the density.
 - Subsurface: the diffuse sample rays and the entry rays of single scattering are most of its cost; caching
   irradiance at points on the surface across neighbouring pixels would remove the shadow rays, at the price of a cache.
+- Radiosity: a gather ray's reflections and refractions are traced to the camera's adaptive depth, although each is
+  one of 30 to 60 in its sample; judging them by their share of the sample cut a 200 DPI close-up's trace by 16% with
+  images 1 level darker at most, and Russian roulette would do it without the bias. Irradiance gradients would let a
+  larger `error_bound` keep its accuracy and lose the grass's brightening.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
