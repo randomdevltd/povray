@@ -302,6 +302,18 @@ class Trace
         /// Current index into lightColorCaches.
         int lightColorCacheIndex;
 
+        /// A light's unshadowed contribution, pending its shadow test.
+        struct LightCandidate final
+        {
+            const LightSource*  light;
+            int                 index;
+            MathColour          potential;
+            double              weight;
+        };
+
+        /// Stack of lights awaiting shadow tests in @ref ComputeSampledDiffuseLight().
+        std::vector<LightCandidate> lightCandidates;
+
         /// Scene data.
         std::shared_ptr<SceneData> sceneData;
 
@@ -558,7 +570,12 @@ class Trace
                                  MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
-                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1);
+                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1,
+                                    bool testShadow = true);
+        /// Classic lighting for radiosity rays: shadow-tests lights brightest first, and estimates the faint remainder
+        /// from the visibility of those tested.
+        void ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
+                                        const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,

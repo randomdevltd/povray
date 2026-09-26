@@ -1494,6 +1494,13 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
 {
     Vector3d reye;
 
+    // crand draws a random number per evaluation, so its lights are tested one by one as before
+    if(eye.IsRadiosityRay() && (finish->Crand <= 0.0))
+    {
+        ComputeSampledDiffuseLight(finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+        return;
+    }
+
     // TODO FIXME - [CLi] why is this computed here? Not so exciting, is it?
     if(finish->Specular != 0.0)
         reye = -eye.Direction;
@@ -1511,6 +1518,70 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         for(int i = 0; i < object->LLights.size(); i++)
             ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
+}
+
+// Lights left untested may carry at most this fraction of a radiosity ray's unshadowed classic lighting.
+static const double kUntestedLightFraction = 0.05;
+
+void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
+                                       const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor)
+{
+    const Vector3d reye(-eye.Direction);
+    const size_t first = lightCandidates.size();
+    double total = 0.0;
+
+    auto consider = [&](const LightSource& light, int index)
+    {
+        if (!qualityFlags.shadows || (light.Light_Type == FILL_LIGHT_SOURCE) || (light.Projected_Through_Object != nullptr))
+        {
+            ComputeOneDiffuseLight(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, index);
+            return;
+        }
+        LightCandidate candidate { &light, index, MathColour(), 0.0 };
+        ComputeOneDiffuseLight(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, candidate.potential, attenuation, object, relativeIor, index, false);
+        candidate.weight = candidate.potential.Weight();
+        if (candidate.weight > 0.0)
+        {
+            lightCandidates.push_back(candidate);
+            total += candidate.weight;
+        }
+    };
+
+    if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
+    {
+        for(int i = 0; i < threadData->lightSources.size(); i++)
+            consider(*threadData->lightSources[i], i);
+    }
+    for(int i = 0; i < object->LLights.size(); i++)
+        consider(*object->LLights[i], -1);
+
+    std::sort(lightCandidates.begin() + first, lightCandidates.end(),
+              [](const LightCandidate& a, const LightCandidate& b) { return a.weight > b.weight; });
+
+    double untested = total;
+    double testedWeight = 0.0;
+    double litWeight = 0.0;
+    size_t next = first;
+    for (; (next < lightCandidates.size()) && (untested > kUntestedLightFraction * total); ++next)
+    {
+        // copied, as a shadow ray's own lighting may grow the stack
+        const LightCandidate candidate = lightCandidates[next];
+        MathColour lit;
+        ComputeOneDiffuseLight(*candidate.light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, lit, attenuation, object, relativeIor, candidate.index);
+        colour += lit;
+        testedWeight += candidate.weight;
+        litWeight += lit.Weight();
+        untested -= candidate.weight;
+    }
+
+    if (next < lightCandidates.size())
+    {
+        const double visible = litWeight / testedWeight;
+        for (; next < lightCandidates.size(); ++next)
+            colour += lightCandidates[next].potential * visible;
+    }
+
+    lightCandidates.resize(first);
 }
 
 void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
@@ -1639,7 +1710,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 
 // see Diffuse_One_Light in the v3.6 code (lighting.cpp)
 void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
-                                   const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index)
+                                   const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index,
+                                   bool testShadow)
 {
     double lightsourcedepth, cos_shadow_angle;
     Ray lightsourceray(eye);
@@ -1670,7 +1742,7 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
 
     // If light source was not blocked by any intervening object, then
     // calculate it's contribution to the object's overall illumination.
-    if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
+    if (testShadow && qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
     {
         if (lightColorCacheIndex != -1 && light_index != -1)
         {
