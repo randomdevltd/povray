@@ -69,7 +69,7 @@ plane {
         scale 0.3
       }
       finish{
-        diffuse 0.8
+        diffuse 1.2
         specular 0.6
         reflection { 0.2 fresnel }
         conserve_energy
@@ -89,7 +89,7 @@ plane {
         scale 0.3
       }
       finish{
-        diffuse 0.8
+        diffuse 1.6
         specular 0.6
         reflection { 0.2 fresnel }
         conserve_energy
