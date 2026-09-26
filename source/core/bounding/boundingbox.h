@@ -336,8 +336,9 @@ struct IntersectionStopCondition
 typedef std::function<void(const std::uint32_t *items, size_t count)> BBoxGroupFn;
 typedef std::function<void(size_t leaf, BoundingBox& box)> FlatLeafBoxFn;
 
-/// One level of the bottom-up build: groups `boxes` by surface area, calling `emit` per group; false once all form one.
-bool Split_BBox_Pass(const BoundingBox *boxes, size_t count, const BBoxGroupFn& emit);
+/// One level of the bottom-up build: groups `boxes` by surface area, at most `bunching` unsplit, calling `emit` per
+/// group; false once all form one.
+bool Split_BBox_Pass(const BoundingBox *boxes, size_t count, int bunching, const BBoxGroupFn& emit);
 
 FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root);
 /// The tree Build_BBox_Tree would make of `numLeaves` finite leaves, flattened without building it; leaf k is id k.
