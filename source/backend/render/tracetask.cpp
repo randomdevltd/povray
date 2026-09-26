@@ -408,7 +408,7 @@ void TraceTask::SimpleSamplingM0()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? long(serial) : -1);
 
         pixels.clear();
         pixels.reserve(rect.GetArea());
@@ -463,7 +463,7 @@ void TraceTask::SimpleSamplingM0P()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? long(serial) : -1);
 
         unsigned int px = (rect.GetWidth() + previewSize - 1) / previewSize;
         unsigned int py = (rect.GetHeight() + previewSize - 1) / previewSize;
@@ -527,7 +527,7 @@ void TraceTask::NonAdaptiveSupersamplingM1()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? long(serial) : -1);
 
         SmartBlock pixels(rect.left, rect.top, rect.GetWidth(), rect.GetHeight());
 
@@ -612,7 +612,7 @@ void TraceTask::AdaptiveSupersamplingM2()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? long(serial) : -1);
 
         SmartBlock pixels(rect.left, rect.top, rect.GetWidth(), rect.GetHeight());
 
@@ -686,7 +686,7 @@ void TraceTask::StochasticSupersamplingM3()
     {
         GetViewDataPtr()->stochasticRandomGenerator->Seed(GetViewDataPtr()->stochasticRandomSeedBase + serial);
 
-        radiosity.BeforeTile(highReproducibility? serial : 0);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? long(serial) : -1);
 
         pixels.clear();
         pixelsSum.clear();

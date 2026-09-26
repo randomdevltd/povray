@@ -128,7 +128,8 @@ void RadiosityTask::Run()
         double pretraceSize     = max(pretraceStartSize * pow(0.5f, (float)pBlockInfo->pass),     pretraceEndSize);
         double nextPretraceSize = max(pretraceStartSize * pow(0.5f, (float)pBlockInfo->pass + 1), pretraceEndSize);
 
-        radiosity.BeforeTile((nominalThreads? serial % nominalThreads : 0), pretraceStep + pBlockInfo->pass);
+        radiosity.BeforeTile((nominalThreads? serial % nominalThreads : 0), pretraceStep + pBlockInfo->pass,
+                             (nominalThreads? long(serial) * RadiosityFunction::PRETRACE_MAX + pretraceStep + pBlockInfo->pass : -1));
         randgen.SetSeed((pretraceStep + pBlockInfo->pass) * 17 + serial * 13); // make sure our jitter is different (but reproducible) for each pass and tile
 
         unsigned int px = (rect.GetWidth()  + pretraceSize - 1) / pretraceSize;
