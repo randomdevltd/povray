@@ -247,20 +247,21 @@ spawn are lit exactly as before.
 | gather rays shadow-test lights brightest first | lawn 34.6 → 18.9 Gcycles, shadow rays 9.77 M → 4.03 M; the window 12.05 → 6.74 CPU-s at `count 60`, 2.58 → 1.32 at `count 30` |
 | a light's cached occluder is left out of the scene walk once it has missed | every shadow ray of every render: lawn without radiosity 4.45 → 4.09 Gcycles, with it 18.9 → 17.0; images identical |
 | each light's ray and unshadowed term computed once per gather-ray hit | lawn 33.6 → 32.5 G instructions; the stock Cornell box, a grid of equal lights none of which can be skipped, from 13% more instructions than before this branch to 3% |
-| cache files keep full precision, quality and brilliance, skip malformed or too-deep records and report what loaded | below |
+| cache files keep nine significant digits, quality and brilliance, skip malformed or too-deep records and report what loaded | below |
 | under `+HR` each tile restarts the gather directions from its own serial number | the stock `patio-radio_37.pov`, rendered twice with `+HR` at 4 threads, was 1.4 levels apart and is now identical |
 
 Together, on the lawn at 320×180, two runs of each back to back: 34.3 and 33.6 Gcycles before, 16.2 and 16.5 after
 (67.4 → 32.5 G instructions). The window's image moves by 0.09 levels on average, 4 at most; the lawn's by 0.03, 2
 at most. Two 4-thread runs of one build differ by 1.8 levels on average and up to 47 on the lawn, because which
-samples exist depends on thread timing. Leaving 2% untested gave 23.5 Gcycles on the lawn, 10% gave 16.4 with
-differences up to 4 levels; on the window 10% and 20% moved pixels by up to 6 and 12 levels.
+samples exist depends on thread timing. With only the brightest-first change, where leaving 5% untested gave 18.9
+Gcycles on the lawn, 2% gave 23.5 and 10% gave 16.4 with differences up to 4 levels; on the window 10% and 20% moved
+pixels by up to 6 and 12 levels.
 
 ### At print density, and reusing a cache
 
-The 30× above is a low-resolution figure. Samples are spaced in the scene, not on the screen, so the finer the
-pixels, the more of them share each sample. Two 200×200 close-ups of the large scene at 200 DPI and its whole frame
-at 10 DPI, `count 30, error_bound 1.5`, 4 threads, trace CPU-s:
+The window's 38× and 8× above are low-resolution figures. Samples are spaced in the scene, not on the screen, so
+the finer the pixels, the more of them share each sample. Two 200×200 close-ups of the large scene at 200 DPI and
+its whole frame at 10 DPI, `count 30, error_bound 1.5`, 4 threads, trace CPU-s:
 
 | | Close-up 1 | Close-up 2 | Whole frame, 10 DPI |
 |---|---|---|---|
