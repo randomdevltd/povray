@@ -463,8 +463,8 @@ void Parser::Parse_Obj (Mesh* mesh)
 
     if (vertexList.empty())
         Error ("No vertices in obj file.");
-    else if (vertexList.size() >= std::numeric_limits<int>::max())
-        Error ("Too many UV vectors in obj file.");
+    else if (vertexList.size() >= size_t(MESH_MAX_VERTICES))
+        Error ("Too many vertices in obj file.");
 
     vertexArray = reinterpret_cast<MeshVector *>(POV_MALLOC(vertexList.size()*sizeof(MeshVector), "triangle mesh data"));
     for (size_t i = 0; i < vertexList.size(); ++i)
@@ -475,7 +475,7 @@ void Parser::Parse_Obj (Mesh* mesh)
         if (normalList.size() >= std::numeric_limits<int>::max())
             Error ("Too many normal vectors in obj file.");
 
-        normalArray = reinterpret_cast<MeshVector *>(POV_MALLOC((normalList.size()+faceList.size())*sizeof(MeshVector), "triangle mesh data"));
+        normalArray = reinterpret_cast<MeshVector *>(POV_MALLOC(normalList.size()*sizeof(MeshVector), "triangle mesh data"));
         for (size_t i = 0; i < normalList.size(); ++i)
         {
             Vector3d& n = normalList[i];
@@ -513,51 +513,46 @@ void Parser::Parse_Obj (Mesh* mesh)
     if (faceList.empty())
         Error ("No faces in obj file.");
 
+    mesh->Data = new MESH_DATA();
+    mesh->Data->References = 1;
+    MESH_DATA& data = *mesh->Data;
+
     triangleArray = reinterpret_cast<MESH_TRIANGLE *>(POV_MALLOC(faceList.size()*sizeof(MESH_TRIANGLE), "triangle mesh data"));
-    for (size_t i = 0, j = normalList.size(); i < faceList.size(); ++i, ++j)
+    for (size_t i = 0; i < faceList.size(); ++i)
     {
         const FaceData& objTriangle = faceList[i];
         MESH_TRIANGLE& triangle = triangleArray[i];
         mesh->Init_Mesh_Triangle (&triangle);
-        triangle.P1 = objTriangle.vertexList[0].vertexId - 1;
-        triangle.P2 = objTriangle.vertexList[1].vertexId - 1;
-        triangle.P3 = objTriangle.vertexList[2].vertexId - 1;
-        triangle.Texture  = objTriangle.materialId - 1;
-        triangle.UV1 = max(1, objTriangle.vertexList[0].uvId) - 1;
-        triangle.UV2 = max(1, objTriangle.vertexList[1].uvId) - 1;
-        triangle.UV3 = max(1, objTriangle.vertexList[2].uvId) - 1;
-        triangle.Smooth = (i < smoothFaces);
-        const Vector3d& P1 = vertexList[triangle.P1];
-        const Vector3d& P2 = vertexList[triangle.P2];
-        const Vector3d& P3 = vertexList[triangle.P3];
-        Vector3d N;
-        if (triangle.Smooth)
+        for (int k = 0; k < 3; ++k)
         {
-            triangle.N1 = objTriangle.vertexList[0].normalId - 1;
-            triangle.N2 = objTriangle.vertexList[1].normalId - 1;
-            triangle.N3 = objTriangle.vertexList[2].normalId - 1;
-            Vector3d& N1 = normalList[triangle.N1];
-            Vector3d& N2 = normalList[triangle.N2];
-            Vector3d& N3 = normalList[triangle.N3];
+            triangle.SetP(k, objTriangle.vertexList[k].vertexId - 1);
+            data.UVInd.Set(i, k, max(1, objTriangle.vertexList[k].uvId) - 1);
+        }
+        data.TextureInd.Set(i, 0, objTriangle.materialId - 1);
+        bool smooth = (i < smoothFaces);
+        const Vector3d& P1 = vertexList[triangle.P1()];
+        const Vector3d& P2 = vertexList[triangle.P2()];
+        const Vector3d& P3 = vertexList[triangle.P3()];
+        if (smooth)
+        {
+            for (int k = 0; k < 3; ++k)
+                data.NormalInd.Set(i, k, objTriangle.vertexList[k].normalId - 1);
+            Vector3d& N1 = normalList[objTriangle.vertexList[0].normalId - 1];
+            Vector3d& N2 = normalList[objTriangle.vertexList[1].normalId - 1];
+            Vector3d& N3 = normalList[objTriangle.vertexList[2].normalId - 1];
 
             // check for equal normals
             Vector3d D1 = N1 - N2;
             Vector3d D2 = N1 - N3;
             double l1 = D1.lengthSqr();
             double l2 = D2.lengthSqr();
-            triangle.Smooth = ((fabs(l1) > EPSILON) || (fabs(l2) > EPSILON));
+            smooth = ((fabs(l1) > EPSILON) || (fabs(l2) > EPSILON));
         }
-        mesh->Compute_Mesh_Triangle (&triangle, triangle.Smooth, P1, P2, P3, N);
-        triangle.Normal_Ind = j;
-        normalArray[j] = MeshVector(N);
+        mesh->Compute_Mesh_Triangle (&triangle, MeshIndex(i), smooth, P1, P2, P3);
     }
 
     if (fullyTextured)
         mesh->Type |= TEXTURED_OBJECT;
-
-    mesh->Data = reinterpret_cast<MESH_DATA *>(POV_MALLOC(sizeof(MESH_DATA), "triangle mesh data"));
-    mesh->Data->References = 1;
-    mesh->Data->FlatTree = nullptr;
 
     mesh->has_inside_vector = insideVector.IsNearNull (EPSILON);
     if (mesh->has_inside_vector)
@@ -577,11 +572,12 @@ void Parser::Parse_Obj (Mesh* mesh)
     mesh->Textures        = textureArray;
 
     /* copy number of for normals, textures, triangles and vertices. */
-    mesh->Data->Number_Of_Normals   = normalList.size() + faceList.size();
+    mesh->Data->Number_Of_Normals   = normalList.size();
     mesh->Data->Number_Of_Triangles = faceList.size();
     mesh->Data->Number_Of_Vertices  = vertexList.size();
     mesh->Data->Number_Of_UVCoords  = uvList.size();
     mesh->Number_Of_Textures        = materialList.size();
+    mesh->Finish_Mesh_Data();
 
     if (!materialList.empty())
         Set_Flag(mesh, MULTITEXTURE_FLAG);

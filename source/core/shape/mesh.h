@@ -43,7 +43,9 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -77,45 +79,79 @@ namespace pov
 * Global typedefs
 ******************************************************************************/
 
-// TODO - a SnglVector2d should probably suffice for MeshUVVector, and reduce the Mesh's memory footprint by 8 bytes per triangle.
-// TODO - on systems with 64-bit int type, int is probably overkill for MeshIndex; maybe we even want to make Mesh a template, using short for small meshes.
+// TODO - a SnglVector2d should probably suffice for MeshUVVector, and reduce the Mesh's memory footprint by 8 bytes per UV coordinate.
 
 using MeshVector    = SnglVector3d; ///< Data type used to store vertices and normals.
 using MeshUVVector  = Vector2d;     ///< Data type used to store UV coordinates.
 using MeshIndex     = signed int;   ///< Data type used to store indices into vertices / normals / uv coordinate / texture tables. Must be signed and able to hold 2*max.
 
+const MeshIndex MESH_MAX_VERTICES = MeshIndex(1) << 30; ///< Vertex indices share their word with the triangle's flags.
+
+/// A triangle: its vertex indices, with its flags in their top bits; the plane and smoothing frame come from the vertices.
 struct Mesh_Triangle_Struct final
 {
-    MeshVector Perp;               ///< Vector used for smooth triangles.
+    std::uint32_t Word[3];
 
-    SNGL Distance;                 ///< Distance of triangle along normal.
+    static const std::uint32_t INDEX_MASK = (std::uint32_t(1) << 30) - 1;
 
-    MeshIndex Normal_Ind;          ///< Index of unsmoothed triangle normal.
-    MeshIndex P1, P2, P3;          ///< Indices of triangle vertices.
-    MeshIndex Texture;             ///< Index of triangle texture.
-    MeshIndex Texture2, Texture3;  ///< Color Triangle Patch.
-    MeshIndex N1, N2, N3;          ///< Indices of smoothed triangle normals.
-    MeshIndex UV1, UV2, UV3;       ///< Indicies of UV coordinate vectors
+    MeshIndex P(int i) const { return MeshIndex(Word[i] & INDEX_MASK); }
+    MeshIndex P1() const { return P(0); }
+    MeshIndex P2() const { return P(1); }
+    MeshIndex P3() const { return P(2); }
+    void SetP(int i, MeshIndex v) { Word[i] = (Word[i] & ~INDEX_MASK) | std::uint32_t(v); }
 
-    unsigned int Smooth:1;         ///< Is this a smooth triangle.
-    unsigned int Dominant_Axis:2;  ///< Dominant axis.
-    unsigned int vAxis:2;          ///< Axis for smooth triangle.
-    unsigned int ThreeTex:1;       ///< Color Triangle Patch.
+    int Dominant_Axis() const { return int(Word[0] >> 30); }
+    bool Smooth() const { return (Word[1] >> 31) != 0; }
+    bool ThreeTex() const { return ((Word[1] >> 30) & 1) != 0; }
+    bool Flipped() const { return (Word[2] >> 31) != 0; } ///< Vertices 1 and 2 were swapped, so the face normal is reversed.
+
+    void SetDominantAxis(int a) { Word[0] = (Word[0] & INDEX_MASK) | (std::uint32_t(a) << 30); }
+    void SetSmooth(bool b) { SetFlag(1, 31, b); }
+    void SetThreeTex(bool b) { SetFlag(1, 30, b); }
+    void SetFlipped(bool b) { SetFlag(2, 31, b); }
+
+private:
+    void SetFlag(int w, int bit, bool b) { Word[w] = (Word[w] & ~(std::uint32_t(1) << bit)) | (std::uint32_t(b) << bit); }
 };
 using MESH_TRIANGLE = Mesh_Triangle_Struct; ///< @deprecated
 
+/// Indices a triangle may carry beyond its vertices, `width` per triangle, stored only once triangles differ.
+struct MeshIndexColumn final
+{
+    std::vector<MeshIndex> values; ///< Empty while every entry is `fill`, or equals its vertex index if `byVertex`.
+    MeshIndex fill;
+    bool byVertex;
+    int width;
+
+    MeshIndexColumn(int w, MeshIndex f) : fill(f), byVertex(false), width(w) {}
+
+    MeshIndex Get(const Mesh_Triangle_Struct& t, size_t tri, int k) const
+    {
+        return !values.empty() ? values[tri * width + k] : byVertex ? t.P(k) : fill;
+    }
+    void Set(size_t tri, int k, MeshIndex v);
+    void Swap(size_t tri, int j, int k);
+    /// Sizes the column to `n` triangles, dropping it if the triangles `relevant` accepts hold a constant or their vertex indices.
+    void Finish(const Mesh_Triangle_Struct *triangles, size_t n, bool vertexLike, bool (*relevant)(const Mesh_Triangle_Struct&));
+};
+
 struct Mesh_Data_Struct final
 {
-    int References;                    ///< Number of references to the mesh.
-    MeshIndex Number_Of_UVCoords;      ///< Number of UV coords in the mesh.
-    MeshIndex Number_Of_Normals;       ///< Number of normals in the mesh.
-    MeshIndex Number_Of_Triangles;     ///< Number of trinagles in the mesh.
-    MeshIndex Number_Of_Vertices;      ///< Number of vertices in the mesh.
-    MeshVector *Normals, *Vertices;    ///< Arrays of normals and vertices.
-    MeshUVVector *UVCoords;            ///< Array of UV coordinates
-    MESH_TRIANGLE *Triangles;          ///< Array of triangles.
-    FlatBBoxTree *FlatTree;            ///< Bounding box tree for mesh, flattened; leaf ids are triangle indices.
-    Vector3d Inside_Vect;              ///< vector to use to test 'inside'
+    int References = 0;                     ///< Number of references to the mesh.
+    MeshIndex Number_Of_UVCoords = 0;       ///< Number of UV coords in the mesh.
+    MeshIndex Number_Of_Normals = 0;        ///< Number of normals in the mesh.
+    MeshIndex Number_Of_Triangles = 0;      ///< Number of trinagles in the mesh.
+    MeshIndex Number_Of_Vertices = 0;       ///< Number of vertices in the mesh.
+    MeshVector *Normals = nullptr;          ///< Smooth triangles' vertex normals.
+    MeshVector *Vertices = nullptr;
+    MeshUVVector *UVCoords = nullptr;       ///< Array of UV coordinates
+    MESH_TRIANGLE *Triangles = nullptr;     ///< Array of triangles.
+    MeshIndexColumn NormalInd {3, -1};      ///< Smooth triangles' normal indices.
+    MeshIndexColumn UVInd {3, 0};
+    MeshIndexColumn TextureInd {1, -1};
+    MeshIndexColumn Texture23Ind {2, -1};   ///< The second and third texture of a colour-interpolated triangle.
+    FlatBBoxTree *FlatTree = nullptr;       ///< Bounding box tree for mesh, flattened; leaf ids are triangle indices.
+    Vector3d Inside_Vect;                   ///< vector to use to test 'inside'
 };
 using MESH_DATA = Mesh_Data_Struct; ///< @deprecated
 
@@ -162,7 +198,9 @@ class Mesh final : public ObjectBase
         void Create_Mesh_Hash_Tables();
 
         /// @note The method may decide to re-order the vertices without notice.
-        bool Compute_Mesh_Triangle(MESH_TRIANGLE *Triangle, bool Smooth, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3, Vector3d& S_Normal) const;
+        bool Compute_Mesh_Triangle(MESH_TRIANGLE *Triangle, MeshIndex Index, bool Smooth, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3);
+        /// Drops the index columns that carry no information once every triangle is in.
+        void Finish_Mesh_Data();
 
         void Build_Mesh_BBox_Tree();
         bool Degenerate(const Vector3d& P1, const Vector3d& P2, const Vector3d& P3);
@@ -173,13 +211,15 @@ class Mesh final : public ObjectBase
         MeshIndex Mesh_Hash_Texture(MeshIndex *Number_Of_Textures, MeshIndex *Max_Textures, TEXTURE ***Textures, TEXTURE *Texture);
         MeshIndex Mesh_Hash_UV(MeshIndex *Number, MeshIndex *Max, MeshUVVector **Elements, const Vector2d& aPoint);
         void Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, const Vector3d& IPoint) const;
+        /// The triangle's unit normal, as the vertices first gave it.
+        Vector3d Face_Normal(const MESH_TRIANGLE *Triangle) const;
+        MeshIndex UV_Index(const MESH_TRIANGLE *Triangle, int k) const { return Data->UVInd.Get(*Triangle, size_t(Triangle - Data->Triangles), k); }
 
         virtual void Determine_Textures(Intersection *, bool, WeightedTextureVector&, TraceThreadData *) override;
     protected:
         bool Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread);
         void Compute_Mesh_BBox();
         void MeshUV(const Vector3d& P, const MESH_TRIANGLE *Triangle, Vector2d& Result) const;
-        void compute_smooth_triangle(MESH_TRIANGLE *Triangle, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3) const;
         bool intersect_mesh_triangle(const BasicRay& ray, const MESH_TRIANGLE *Triangle, DBL *Depth) const;
         bool test_hit(const MESH_TRIANGLE *Triangle, const BasicRay& OrigRay, DBL Depth, DBL len, IStack& Depth_Stack, TraceThreadData *Thread);
         void get_triangle_bbox(const MESH_TRIANGLE *Triangle, BoundingBox *BBox) const;
