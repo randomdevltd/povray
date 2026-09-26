@@ -3813,13 +3813,11 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
 
     double      sampleArea;
     double      weight;
-    double      weightSum;
     double      sigma_a_mean        = sigma_a.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_s_mean  = sigma_prime_s.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_t_mean  = sigma_a_mean + sigma_prime_s_mean;
     double      sigma_tr_mean_sqr   = sigma_a_mean * sigma_prime_t_mean * 3.0;
     double      sigma_tr_mean       = sqrt(sigma_tr_mean_sqr);
-    int         trueNumSamples;
 
     bool radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) &&
                             (sceneData->subsurfaceUseRadiosity == true) &&
@@ -3828,9 +3826,6 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
 
     Vector3d sampleBase;
     ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
-
-    weightSum = 0.0;
-    trueNumSamples = 0;
 
     for (int i = 0; i < NumSamplesDiffuse; i++)
     {
@@ -3841,8 +3836,6 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         if (sampleArea != 0)
         {
             weight = sampleArea;
-            weightSum += weight;
-            trueNumSamples ++;
 
             if (IsSameSSLTObject(in.Object, out.Object))
             {
@@ -3871,8 +3864,9 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
             }
         }
     }
-    if (trueNumSamples > 0)
-        Total_Colour /= trueNumSamples;
+    // Rays that leave without meeting the object count as samples of nothing, or open surfaces get twice their light.
+    if (NumSamplesDiffuse > 0)
+        Total_Colour /= NumSamplesDiffuse;
 
 #endif
 
