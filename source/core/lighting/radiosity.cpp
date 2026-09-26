@@ -894,7 +894,8 @@ RadiosityCache::RadiosityCache(const SceneRadiositySettings& radset) :
     ra_gather_count(0),
     ot_fd(nullptr),
     Gather_Total_Count(0),
-    recursionSettings(radset.GetRecursionSettings(true)) // be prepared for the main render
+    recursionSettings(radset.GetRecursionSettings(true)), // be prepared for the main render
+    recursionLimit(radset.recursionLimit)
 {
     #ifdef RADSTATS
         ot_seenodecount = 0;
@@ -906,110 +907,84 @@ RadiosityCache::RadiosityCache(const SceneRadiositySettings& radset) :
     #endif
 }
 
-bool RadiosityCache::Load(const Path& inputFile)
+long RadiosityCache::Load(const Path& inputFile)
 {
-    bool ok = false;
     IStream* fd = NewIStream(inputFile, POV_File_Data_RCA);
-    if (fd != nullptr)
+    if ((fd == nullptr) || !*fd)
     {
-        BlockPool* pool = AcquireBlockPool();
-
-        bool got_eof;
-        int line_num = 0;
-        int depth, tx, ty, tz;
-        Vector3d point;
-        Vector3d normal;
-        Vector3d to_nearest;
-        MathColour dx, dy, dz;
-        MathColour illuminance;
-        double harmonic_mean;
-        double nearest;
-        int goodreads = 0;
-        int count;
-        DBL brightness;
-        char normal_string[30], to_nearest_string[30];
-        char line[101];
-
-        //info->Gather_Total.clear();
-        //info->Gather_Total_Count = 0;
-
-        while (!(got_eof = !fd->getline (line, 99)))
-        {
-            switch ( line[0] )
-            {
-                case 'B':    // the file contains the old radiosity_brightness value
-                {
-                    if ( sscanf(line, "B%lf\n", &brightness) == 1 )
-                    {
-                        //info->Brightness = brightness;
-                    }
-                    break;
-                }
-                case 'P':    // the file made it to the point that the Preview was done
-                {
-                    //info->FirstRadiosityPass = true;
-                    break;
-                }
-                case 'C':
-                {
-#if (NUM_COLOUR_CHANNELS == 3)
-                    RGBColour tempCol;
-                    count = sscanf(line, "C%d %lf %lf %lf %s %f %f %f %lf %lf %s\n", // tw
-                        &depth,
-                        &point[X], &point[Y], &point[Z],
-                        normal_string,
-                        &tempCol.red(), &tempCol.green(), &tempCol.blue(),
-                        &harmonic_mean,
-                        &nearest, to_nearest_string
-                    );
-                    illuminance = ToMathColour(tempCol);
-#else
-                    #error "TODO!"
-#endif
-                    if ( count == 11 )
-                    {
-                        depth = depth - 1; // file format still uses 1-based bounce depth counting
-
-                        // normals aren't very critical for direction precision, so they are packed
-                        sscanf(normal_string, "%02x%02x%02x", &tx, &ty, &tz);
-                        normal[X] = ((double)tx * (1./ 254.))*2.-1.;
-                        normal[Y] = ((double)ty * (1./ 254.))*2.-1.;
-                        normal[Z] = ((double)tz * (1./ 254.))*2.-1.;
-                        normal.normalize();
-
-                        sscanf(to_nearest_string, "%02x%02x%02x", &tx, &ty, &tz);
-                        to_nearest[X] = ((double)tx * (1./ 254.))*2.-1.;
-                        to_nearest[Y] = ((double)ty * (1./ 254.))*2.-1.;
-                        to_nearest[Z] = ((double)tz * (1./ 254.))*2.-1.;
-                        to_nearest.normalize();
-
-                        line_num++;
-
-                        AddBlock(pool, nullptr, point, normal, 1.0 /* TODO FIXME - brilliance */, to_nearest, dx, dy, dz, illuminance, harmonic_mean, nearest, 1.0 /* TODO FIXME - quality */, depth, PRETRACE_STEP_LOADED, 0);
-                        goodreads++;
-                    }
-                    break;
-                }
-
-                default:
-                {
-                // wrong leading character on line, just try again on next line
-                }
-
-            } // end switch
-        } // end while-reading loop
-
-        if ( goodreads > 0 )
-            ;// TODO MESSAGE         Debug_Info("Reloaded %d values from radiosity cache file.\n", goodreads);
-        else
-            ;// TODO MESSAGE         PossibleError("Unable to read any values from the radiosity cache file.");
-        ok = true;
-
-        ReleaseBlockPool(pool);
-
         delete fd;
+        return -1;
     }
-    return ok;
+
+    BlockPool* pool = AcquireBlockPool();
+
+    int depth, tx, ty, tz;
+    Vector3d point;
+    Vector3d normal;
+    Vector3d to_nearest;
+    MathColour dx, dy, dz;
+    MathColour illuminance;
+    double harmonic_mean;
+    double nearest;
+    double quality;
+    double brilliance;
+    long goodreads = 0;
+    int count;
+    char normal_string[30], to_nearest_string[30];
+    char line[256];
+
+    while (fd->getline(line, sizeof(line)))
+    {
+        if (line[0] != 'C')
+            continue;
+
+#if (NUM_COLOUR_CHANNELS == 3)
+        RGBColour tempCol;
+        quality = 1.0;
+        brilliance = 1.0;
+        // files written before quality and brilliance were saved have 11 fields
+        count = sscanf(line, "C%d %lf %lf %lf %29s %f %f %f %lf %lf %29s %lf %lf",
+            &depth,
+            &point[X], &point[Y], &point[Z],
+            normal_string,
+            &tempCol.red(), &tempCol.green(), &tempCol.blue(),
+            &harmonic_mean,
+            &nearest, to_nearest_string,
+            &quality, &brilliance
+        );
+        illuminance = ToMathColour(tempCol);
+#else
+        #error "TODO!"
+#endif
+        if ((count != 11) && (count != 13))
+            continue;
+
+        depth = depth - 1; // file format still uses 1-based bounce depth counting
+        // deeper bounces than this scene's recursion_limit are never looked up
+        if ((depth < 0) || (depth >= recursionLimit))
+            continue;
+
+        // normals aren't very critical for direction precision, so they are packed
+        sscanf(normal_string, "%02x%02x%02x", &tx, &ty, &tz);
+        normal[X] = ((double)tx * (1./ 254.))*2.-1.;
+        normal[Y] = ((double)ty * (1./ 254.))*2.-1.;
+        normal[Z] = ((double)tz * (1./ 254.))*2.-1.;
+        normal.normalize();
+
+        sscanf(to_nearest_string, "%02x%02x%02x", &tx, &ty, &tz);
+        to_nearest[X] = ((double)tx * (1./ 254.))*2.-1.;
+        to_nearest[Y] = ((double)ty * (1./ 254.))*2.-1.;
+        to_nearest[Z] = ((double)tz * (1./ 254.))*2.-1.;
+        to_nearest.normalize();
+
+        AddBlock(pool, nullptr, point, normal, brilliance, to_nearest, dx, dy, dz, illuminance, harmonic_mean, nearest, quality, depth, PRETRACE_STEP_LOADED, 0);
+        goodreads++;
+    }
+
+    ReleaseBlockPool(pool);
+
+    delete fd;
+    return goodreads;
 }
 
 void RadiosityCache::InitAutosave(const Path& outputFile, bool append)
