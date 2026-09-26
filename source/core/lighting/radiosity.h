@@ -294,7 +294,9 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         // retrieves top level statistics information to drive pretrace re-iteration
         virtual void GetTopLevelStats(long& queryCount, float& reuse);
         virtual void ResetTopLevelStats();
-        virtual void BeforeTile(int id, unsigned int pts = FINAL_TRACE);
+        /// `sequence`, when not negative, restarts the gather directions at a point given by the tile, so that a tile's
+        /// samples do not depend on which tiles its thread traced before.
+        virtual void BeforeTile(int id, unsigned int pts = FINAL_TRACE, long sequence = -1);
         virtual void AfterTile();
 
     private:
@@ -305,7 +307,7 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
                 /// constructor
                 SampleDirectionGenerator();
                 /// Called before each tile
-                void Reset(unsigned int samplePoolCount);
+                void Reset(unsigned int samplePoolCount, long sequence);
                 /// Called before each sample
                 void InitSequence(unsigned int& sample_count, const Vector3d& raw_normal, const Vector3d& layer_normal, bool use_raw_normal, DBL brilliance);
                 /// Called to get the next sampling ray direction
