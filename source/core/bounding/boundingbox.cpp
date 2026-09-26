@@ -67,6 +67,7 @@ namespace pov
 using std::vector;
 
 const int BUNCHING_FACTOR = 4;
+const int MESH_BUNCHING = FLAT_BBOX_WIDTH; // mesh leaf groups fill a block, where the scene keeps its tree's shape
 // Initial number of entries in a priority queue.
 const int INITIAL_PRIORITY_QUEUE_SIZE = 256;
 const int BBQ_FIRST_ELEMENT = 1;
@@ -798,7 +799,7 @@ FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& le
     }
     for (bool more = true; more; )
     {
-        more = Split_BBox_Pass(boxes.data(), boxes.size(), [&](const std::uint32_t *idx, size_t size) {
+        more = Split_BBox_Pass(boxes.data(), boxes.size(), MESH_BUNCHING, [&](const std::uint32_t *idx, size_t size) {
             BoxTreeSource::Node node;
             node.first = std::uint32_t(src.kids.size());
             node.count = std::uint32_t(size);
@@ -1066,7 +1067,9 @@ struct SplitPass final
     vector<BBoxScalar> areaRight;
     const BBoxGroupFn& emit;
 
-    SplitPass(const BoundingBox *b, const BBoxGroupFn& e) : boxes(b), emit(e) {}
+    const ptrdiff_t bunching;
+
+    SplitPass(const BoundingBox *b, const BBoxGroupFn& e, int n) : boxes(b), emit(e), bunching(n) {}
 
     bool split(ptrdiff_t s, ptrdiff_t e)
     {
@@ -1074,8 +1077,8 @@ struct SplitPass final
         int bestAxis = -1;
         ptrdiff_t bestCount = 0;
 
-        // Don't bother to do any further examinations if the BUNCHING_FACTOR is reached.
-        if (size > BUNCHING_FACTOR)
+        // Don't bother to do any further examinations if the bunching factor is reached.
+        if (size > bunching)
         {
             BBoxScalar best = 0.0f;
             for (int axis = X; axis <= Z; ++axis)
@@ -1136,12 +1139,12 @@ struct SplitPass final
     }
 };
 
-bool Split_BBox_Pass(const BoundingBox *boxes, size_t size, const BBoxGroupFn& emit)
+bool Split_BBox_Pass(const BoundingBox *boxes, size_t size, int bunching, const BBoxGroupFn& emit)
 {
     if (size == 0)
         return false;
 
-    SplitPass pass(boxes, emit);
+    SplitPass pass(boxes, emit, bunching);
     {
         vector<std::pair<DBL, std::uint32_t>> keyed(size);
         for (int axis = X; axis <= Z; ++axis)
@@ -1169,7 +1172,7 @@ bool split_pass(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObject
     vector<BoundingBox> boxes(items.size());
     for (size_t i = 0; i < items.size(); ++i)
         boxes[i] = items[i]->BBox;
-    return Split_BBox_Pass(boxes.data(), boxes.size(), [&](const std::uint32_t *idx, size_t size) {
+    return Split_BBox_Pass(boxes.data(), boxes.size(), BUNCHING_FACTOR, [&](const std::uint32_t *idx, size_t size) {
         BBOX_TREE *cd = create_bbox_node(int(size));
         for (size_t i = 0; i < size; ++i)
             cd->Node[i] = items[idx[i]];
