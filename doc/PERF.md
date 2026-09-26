@@ -226,6 +226,31 @@ Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 - Skipping shadow rays for negligible unshadowed light: subsumed by drawing in proportion to it.
 - Evaluating the diffusion profile with SIMD: it is 2.5% of `subsurface.pov`'s cycles.
 
+## Radiosity
+
+The same 100×60 window of the large scene, single-threaded, traces in 0.32 CPU-s without radiosity, 12.1 with
+`count 60, error_bound 0.6` (38×) and 2.6 with `count 30, error_bound 1.5` (8×). In a window the pretrace takes
+two samples; the final pass gathers the rest, one sample per four pixels at `error_bound 0.6`, since the foliage's
+normals keep samples from being reused across neighbouring leaves. Each gather ray that hit a surface then traced
+a shadow ray to every light in the scene, most of them small lamps whose light fades within a few units: 24 shadow
+rays per gather ray. On `tools/bench/radiosity-lawn.pov` (a sun and 24 fading lamps over a lawn of thin blades)
+those shadow rays were 72% of the render.
+
+Gather rays now rank the lights at their hit by unshadowed contribution and shadow-test them brightest first, until
+the untested ones would carry at most 5% of it; those are scaled by the share of the tested light that got through.
+A sample averages 30 to 60 such rays, so the estimate's error stays far below the sample's own noise. Camera,
+reflected and refracted rays are lit exactly as before.
+
+| Render, single-threaded | Before | After | |
+|---|---|---|---|
+| the window, `count 60, error_bound 0.6` | 12.05 CPU-s, 2.12 M shadow rays | 6.74 CPU-s, 1.15 M | 1.8× |
+| the window, `count 30, error_bound 1.5` | 2.58 CPU-s, 426 K | 1.32 CPU-s, 286 K | 2.0× |
+| `radiosity-lawn.pov`, 320×180 | 34.6 Gcycles, 9.77 M | 18.9 Gcycles, 4.03 M | 1.8× |
+
+The window's image moves by 0.09 levels on average, 4 at most; the lawn's by 0.03, 2 at most. Two 4-thread runs
+of one build differ by 1.8 levels on average and up to 47 on the lawn, because which samples exist depends on
+thread timing. Leaving 2% untested gave 23.5 Gcycles on the lawn, 10% gave 16.4 with differences up to 4 levels.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
