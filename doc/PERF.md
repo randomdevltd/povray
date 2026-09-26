@@ -180,18 +180,19 @@ themselves. Noise is measured as the rms difference between two renders that dif
 `subsurface.pov`, in 8-bit levels. Against a render of the old code at 16 times the samples, `sslt-lamps.pov` is off
 by 1.21–1.23 rms before and 1.26–1.30 after, with the same mean (−0.01 levels).
 
-Tried and not kept, on these scenes and a larger one with a dozen lights:
+Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 
 - One area-light point per sample instead of drawing by contribution: about a quarter more error against the reference.
-- Drawing all lights' shadow rays from one pool by unshadowed light: a hidden sun takes the rays and the lamps that do
-  reach the surface turn into fireflies. A pilot round that measured each light's visibility first did not help.
-- Choosing which lights to test for single scattering by their light at the bend point: 20% more noise where
-  single scattering is strong, for 8% less work.
-- Aiming half the diffuse sample rays at the exit point in a cosine-power lobe: more noise, not less, on both scenes.
-- Half a shadow ray per sample: 14% more noise. Two: 5% less noise for 20% more cost.
-- Three bend points per sample through the mixture: 2% less noise for 60% more cost.
+- Drawing all lights' shadow rays from one pool by unshadowed light: 1.77 rms against the reference, against 1.20
+  before; a sun hidden behind the slats takes rays that the lamps reaching the surface need.
+- Testing only some lights for single scattering, chosen by their light at the bend point: two of five cost 9% less
+  at 1% more noise, one of five 12% less at 7% more; not worth a second sampling decision.
+- Aiming half the diffuse sample rays at the exit point in a cosine-power lobe: more noise, not less, here and on
+  `subsurface.pov`.
+- Half a shadow ray per sample: 6% more noise for 19% less cost. Two: 2% less noise for 19% more cost.
+- Three bend points per sample through the mixture: 2% less noise for 58% more cost.
 - Skipping shadow rays for negligible unshadowed light: subsumed by drawing in proportion to it.
-- Evaluating the diffusion profile with SIMD: it is under 3% of the heaviest-sampled scene.
+- Evaluating the diffusion profile with SIMD: 2.5% of `subsurface.pov`'s cycles.
 
 ## Method
 

@@ -3510,7 +3510,7 @@ void Trace::SubsurfaceCandidate::SetLight(const Vector3d& p, const MathColour& l
     unshadowed = lightcolour;
     bound = 0.0;
     for (int j = 0; j < MathColour::channels; j++)
-        bound = max(bound, double(lightcolour[j] * factor[j]));
+        bound = max(bound, fabs(double(lightcolour[j] * factor[j]))); // magnitude: negative lights count too
 }
 
 // Estimates the shadowed sum of one light's candidates from budget shadow rays, drawn systematically in proportion to their bounds.
