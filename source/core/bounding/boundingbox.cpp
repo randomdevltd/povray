@@ -540,11 +540,11 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     return (found);
 }
 
-static void Set_Flat_Lane(FlatBBoxBlock& b, int k, const BBOX_TREE *child)
+static void Set_Flat_Lane(FlatBBoxBlock& b, int k, const BoundingBox& box, bool infinite)
 {
     for (int d = X; d <= Z; ++d)
     {
-        if (child->Infinite)
+        if (infinite)
         {
             b.lo[d][k] = -FLAT_BBOX_FAR;
             b.hi[d][k] = FLAT_BBOX_FAR;
@@ -552,7 +552,7 @@ static void Set_Flat_Lane(FlatBBoxBlock& b, int k, const BBOX_TREE *child)
         else
         {
             // Padded outward so single-precision rounding never rejects a box the old test accepted.
-            const float lo = child->BBox.lowerLeft[d], hi = child->BBox.lowerLeft[d] + child->BBox.size[d];
+            const float lo = box.lowerLeft[d], hi = box.lowerLeft[d] + box.size[d];
             const float pad = 1.0e-6f * (std::fabs(lo) + std::fabs(hi)) + 1.0e-20f;
             b.lo[d][k] = lo - pad;
             b.hi[d][k] = hi + pad;
@@ -560,26 +560,70 @@ static void Set_Flat_Lane(FlatBBoxBlock& b, int k, const BBOX_TREE *child)
     }
 }
 
-static std::int32_t Flatten_Node(FlatBBoxTree& tree, const BBOX_TREE *node)
+// A pointer tree as the flattener reads it.
+struct PointerTreeSource final
 {
-    if (node->Entries == 0)
-    {
-        tree.leaves.push_back(reinterpret_cast<const void *>(node->Node));
-        return -std::int32_t(tree.leaves.size());
-    }
+    typedef const BBOX_TREE *Ref;
+    vector<const void *>& leaves;
 
-    // Pull up the grandchildren of the largest child nodes while they fit, so blocks run full.
-    vector<const BBOX_TREE *> kids(node->Node, node->Node + node->Entries);
+    bool Leaf(Ref r) const { return r->Entries == 0; }
+    int Entries(Ref r) const { return r->Entries; }
+    Ref Child(Ref r, int i) const { return r->Node[i]; }
+    bool Infinite(Ref r) const { return r->Infinite; }
+    BoundingBox Box(Ref r) const { return r->BBox; }
+    std::int32_t LeafId(Ref r) const
+    {
+        leaves.push_back(reinterpret_cast<const void *>(r->Node));
+        return std::int32_t(leaves.size() - 1);
+    }
+};
+
+// The same tree built straight from leaf boxes: nodes in an array, leaf k referenced as -1-k.
+struct BoxTreeSource final
+{
+    typedef std::int32_t Ref;
+    struct Node final
+    {
+        BoundingBox box;
+        std::uint32_t first, count;
+    };
+    vector<Node> nodes;
+    vector<Ref> kids;
+    const FlatLeafBoxFn& leafBox;
+
+    explicit BoxTreeSource(const FlatLeafBoxFn& fn) : leafBox(fn) {}
+    bool Leaf(Ref r) const { return r < 0; }
+    int Entries(Ref r) const { return int(nodes[r].count); }
+    Ref Child(Ref r, int i) const { return kids[nodes[r].first + i]; }
+    bool Infinite(Ref) const { return false; }
+    BoundingBox Box(Ref r) const
+    {
+        if (r >= 0)
+            return nodes[r].box;
+        BoundingBox b;
+        leafBox(size_t(-1 - r), b);
+        return b;
+    }
+    std::int32_t LeafId(Ref r) const { return -1 - r; }
+};
+
+// Pull up the grandchildren of the largest child nodes while they fit, so blocks run full.
+template<typename Src>
+static void Flat_Kids(const Src& src, typename Src::Ref node, vector<typename Src::Ref>& kids)
+{
+    kids.clear();
+    for (int i = 0; i < src.Entries(node); ++i)
+        kids.push_back(src.Child(node, i));
     while (kids.size() < size_t(FLAT_BBOX_WIDTH))
     {
         int pick = -1;
         BBoxScalar pickArea = -1.0f;
         for (size_t i = 0; i < kids.size(); ++i)
         {
-            const BBOX_TREE *c = kids[i];
-            if ((c->Entries == 0) || c->Infinite || (kids.size() - 1 + c->Entries > size_t(FLAT_BBOX_WIDTH)))
+            const typename Src::Ref c = kids[i];
+            if (src.Leaf(c) || src.Infinite(c) || (kids.size() - 1 + src.Entries(c) > size_t(FLAT_BBOX_WIDTH)))
                 continue;
-            const BBoxVector3d& s = c->BBox.size;
+            const BBoxVector3d s = src.Box(c).size;
             const BBoxScalar area = s[X] * s[Y] + s[Y] * s[Z] + s[Z] * s[X];
             if (area > pickArea)
             {
@@ -589,36 +633,76 @@ static std::int32_t Flatten_Node(FlatBBoxTree& tree, const BBOX_TREE *node)
         }
         if (pick < 0)
             break;
-        const BBOX_TREE *c = kids[pick];
+        const typename Src::Ref c = kids[pick];
         kids.erase(kids.begin() + pick);
-        kids.insert(kids.end(), c->Node, c->Node + c->Entries);
+        for (int i = 0; i < src.Entries(c); ++i)
+            kids.push_back(src.Child(c, i));
     }
+}
 
-    const std::int32_t first = std::int32_t(tree.blocks.size());
-    const int count = int(kids.size()), nblocks = (count + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
-    FlatBBoxBlock empty;
+template<typename Src>
+static size_t Count_Flat_Blocks(const Src& src, typename Src::Ref node)
+{
+    if (src.Leaf(node))
+        return 0;
+    vector<typename Src::Ref> kids;
+    Flat_Kids(src, node, kids);
+    size_t n = (kids.size() + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
+    for (const typename Src::Ref k : kids)
+        n += Count_Flat_Blocks(src, k);
+    return n;
+}
+
+static void Init_Flat_Block(FlatBBoxBlock& b, int count, bool more)
+{
     for (int d = X; d <= Z; ++d)
         for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
         {
-            empty.lo[d][k] = FLAT_BBOX_FAR;
-            empty.hi[d][k] = -FLAT_BBOX_FAR;
+            b.lo[d][k] = FLAT_BBOX_FAR;
+            b.hi[d][k] = -FLAT_BBOX_FAR;
         }
     for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
-        empty.child[k] = 0;
+        b.child[k] = 0;
+    b.count = count;
+    b.more = more;
+}
+
+template<typename Src>
+static std::int32_t Flatten_Node(FlatBBoxTree& tree, const Src& src, typename Src::Ref node)
+{
+    if (src.Leaf(node))
+        return -1 - src.LeafId(node);
+
+    vector<typename Src::Ref> kids;
+    Flat_Kids(src, node, kids);
+    const std::int32_t first = std::int32_t(tree.blocks.size());
+    const int count = int(kids.size()), nblocks = (count + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
     for (int i = 0; i < nblocks; ++i)
     {
-        empty.count = std::min(FLAT_BBOX_WIDTH, count - i * FLAT_BBOX_WIDTH);
-        empty.more = (i + 1 < nblocks);
-        tree.blocks.push_back(empty);
+        tree.blocks.emplace_back();
+        Init_Flat_Block(tree.blocks.back(), std::min(FLAT_BBOX_WIDTH, count - i * FLAT_BBOX_WIDTH), i + 1 < nblocks);
     }
     for (int i = 0; i < count; ++i)
-        Set_Flat_Lane(tree.blocks[first + i / FLAT_BBOX_WIDTH], i % FLAT_BBOX_WIDTH, kids[i]);
+        Set_Flat_Lane(tree.blocks[first + i / FLAT_BBOX_WIDTH], i % FLAT_BBOX_WIDTH, src.Box(kids[i]), src.Infinite(kids[i]));
     for (int i = 0; i < count; ++i)
     {
-        const std::int32_t ref = Flatten_Node(tree, kids[i]);
+        const std::int32_t ref = Flatten_Node(tree, src, kids[i]);
         tree.blocks[first + i / FLAT_BBOX_WIDTH].child[i % FLAT_BBOX_WIDTH] = ref;
     }
     return first;
+}
+
+template<typename Src>
+static FlatBBoxTree *Flatten(const Src& src, typename Src::Ref root, FlatBBoxTree *tree)
+{
+    tree->blocks.reserve(1 + Count_Flat_Blocks(src, root));
+    tree->blocks.emplace_back();
+    Init_Flat_Block(tree->blocks[0], 1, false);
+    Set_Flat_Lane(tree->blocks[0], 0, src.Box(root), src.Infinite(root));
+    const std::int32_t ref = Flatten_Node(*tree, src, root);
+    tree->blocks[0].child[0] = ref;
+    tree->leaves.shrink_to_fit();
+    return tree;
 }
 
 FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root)
@@ -627,24 +711,58 @@ FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root)
         return nullptr;
 
     FlatBBoxTree *tree = new FlatBBoxTree;
-    tree->blocks.resize(1);
-    FlatBBoxBlock& top = tree->blocks[0];
-    for (int d = X; d <= Z; ++d)
-        for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+    return Flatten(PointerTreeSource{tree->leaves}, Root, tree);
+}
+
+static void Calc_BBox(BoundingBox& box, const BoundingBox *boxes, const std::uint32_t *idx, size_t size)
+{
+    Vector3d bmin(BOUND_HUGE), bmax(-BOUND_HUGE);
+    for (size_t i = 0; i < size; ++i)
+    {
+        const BoundingBox& b = boxes[idx[i]];
+        for (int d = X; d <= Z; ++d)
         {
-            top.lo[d][k] = FLAT_BBOX_FAR;
-            top.hi[d][k] = -FLAT_BBOX_FAR;
+            const DBL tmin = b.lowerLeft[d], tmax = tmin + b.size[d];
+            bmin[d] = std::min(bmin[d], tmin);
+            bmax[d] = std::max(bmax[d], tmax);
         }
-    for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
-        top.child[k] = 0;
-    top.count = 1;
-    top.more = 0;
-    Set_Flat_Lane(tree->blocks[0], 0, Root);
-    const std::int32_t ref = Flatten_Node(*tree, Root);
-    tree->blocks[0].child[0] = ref;
-    tree->blocks.shrink_to_fit();
-    tree->leaves.shrink_to_fit();
-    return tree;
+    }
+    Make_BBox_from_min_max(box, bmin, bmax);
+}
+
+FlatBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox)
+{
+    if (numLeaves == 0)
+        return nullptr;
+
+    BoxTreeSource src(leafBox);
+    vector<BoundingBox> boxes(numLeaves), nextBoxes;
+    vector<std::int32_t> refs(numLeaves), nextRefs;
+    for (size_t i = 0; i < numLeaves; ++i)
+    {
+        leafBox(i, boxes[i]);
+        refs[i] = -1 - std::int32_t(i);
+    }
+    for (bool more = true; more; )
+    {
+        more = Split_BBox_Pass(boxes.data(), boxes.size(), [&](const std::uint32_t *idx, size_t size) {
+            BoxTreeSource::Node node;
+            node.first = std::uint32_t(src.kids.size());
+            node.count = std::uint32_t(size);
+            for (size_t i = 0; i < size; ++i)
+                src.kids.push_back(refs[idx[i]]);
+            Calc_BBox(node.box, boxes.data(), idx, size);
+            nextRefs.push_back(std::int32_t(src.nodes.size()));
+            nextBoxes.push_back(node.box);
+            src.nodes.push_back(node);
+        });
+        boxes.swap(nextBoxes);
+        refs.swap(nextRefs);
+        vector<BoundingBox>().swap(nextBoxes);
+        vector<std::int32_t>().swap(nextRefs);
+    }
+    vector<BoundingBox>().swap(boxes);
+    return Flatten(src, std::int32_t(src.nodes.size() - 1), new FlatBBoxTree);
 }
 
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread)
@@ -652,8 +770,8 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     Intersection New_Intersection;
     bool found = false;
 
-    Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](const void *leaf) {
-        if (Find_Intersection(&New_Intersection, reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf)), ray, Thread) &&
+    Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](std::int32_t leaf) {
+        if (Find_Intersection(&New_Intersection, reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf])), ray, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
         {
             *Best_Intersection = New_Intersection;
@@ -669,8 +787,8 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     Intersection New_Intersection;
     bool found = false;
 
-    Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](const void *leaf) {
-        ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf));
+    Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](std::int32_t leaf) {
+        ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf]));
         if (precondition(ray, object, 0.0) &&
             Find_Intersection(&New_Intersection, object, ray, postcondition, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
@@ -688,8 +806,8 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     Intersection New_Intersection;
     bool found = false;
 
-    Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](const void *leaf) {
-        ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(leaf));
+    Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](std::int32_t leaf) {
+        ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf]));
         if (precondition(ray, object, 0.0) &&
             Find_Intersection(&New_Intersection, object, ray, postcondition, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
@@ -888,37 +1006,14 @@ static inline void grow(BBoxVector3d& lo, BBoxVector3d& hi, const BoundingBox& b
 // partition as the range is split, so every split is the exact surface-area sweep without re-sorting.
 struct SplitPass final
 {
-    vector<BBOX_TREE *> items;
+    const BoundingBox *boxes;
     vector<std::uint32_t> order[3];
     vector<std::uint8_t> left;
     vector<std::uint32_t> scratch;
     vector<BBoxScalar> areaRight;
-    vector<BBOX_TREE *> members;
-    BBOX_TREE **Root;
-    BBOX_TREE **&Finite;
-    size_t *numOfFiniteObjects;
-    size_t& maxfinitecount;
+    const BBoxGroupFn& emit;
 
-    SplitPass(BBOX_TREE **root, BBOX_TREE **&finite, size_t *num, size_t& maxcount) :
-        Root(root), Finite(finite), numOfFiniteObjects(num), maxfinitecount(maxcount) {}
-
-    void emit(ptrdiff_t s, ptrdiff_t e)
-    {
-        const ptrdiff_t size = e - s;
-        BBOX_TREE *cd = create_bbox_node(int(size));
-        for (ptrdiff_t i = 0; i < size; ++i)
-            cd->Node[i] = items[order[X][s + i]];
-        calc_bbox(&(cd->BBox), cd->Node, 0, size);
-        *Root = cd;
-        if (*numOfFiniteObjects >= maxfinitecount)
-        {
-            // Prim array overrun, increase array by 50%.
-            maxfinitecount = 1.5 * maxfinitecount;
-            Finite = reinterpret_cast<BBOX_TREE **>(POV_REALLOC(Finite, maxfinitecount * sizeof(BBOX_TREE *), "bounding boxes"));
-        }
-        Finite[*numOfFiniteObjects] = cd;
-        (*numOfFiniteObjects)++;
-    }
+    SplitPass(const BoundingBox *b, const BBoxGroupFn& e) : boxes(b), emit(e) {}
 
     bool split(ptrdiff_t s, ptrdiff_t e)
     {
@@ -936,7 +1031,7 @@ struct SplitPass final
                 BBoxVector3d lo(BOUND_HUGE), hi(-BOUND_HUGE);
                 for (ptrdiff_t i = e - 1; i >= s; --i)
                 {
-                    grow(lo, hi, items[ord[i]]->BBox);
+                    grow(lo, hi, boxes[ord[i]]);
                     areaRight[i - s] = half_area(lo, hi);
                 }
                 if (axis == X)
@@ -945,7 +1040,7 @@ struct SplitPass final
                 hi = BBoxVector3d(-BOUND_HUGE);
                 for (ptrdiff_t i = s; i < e - 1; ++i)
                 {
-                    grow(lo, hi, items[ord[i]]->BBox);
+                    grow(lo, hi, boxes[ord[i]]);
                     const ptrdiff_t n = i - s + 1;
                     const BBoxScalar cost = float(n) * half_area(lo, hi) + float(size - n) * areaRight[n];
                     if (cost < best)
@@ -961,7 +1056,7 @@ struct SplitPass final
         // Stop splitting if splitting stops being effective.
         if (bestAxis < 0)
         {
-            emit(s, e);
+            emit(order[X].data() + s, size_t(size));
             return false;
         }
 
@@ -988,28 +1083,54 @@ struct SplitPass final
     }
 };
 
-bool split_pass(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount)
+bool Split_BBox_Pass(const BoundingBox *boxes, size_t size, const BBoxGroupFn& emit)
 {
-    const ptrdiff_t size = last - first;
-    if (size <= 0)
+    if (size == 0)
         return false;
 
-    SplitPass pass(Root, Finite, numOfFiniteObjects, maxfinitecount);
-    pass.items.assign(Finite + first, Finite + last);
+    SplitPass pass(boxes, emit);
+    {
+        vector<std::pair<DBL, std::uint32_t>> keyed(size);
+        for (int axis = X; axis <= Z; ++axis)
+        {
+            for (size_t i = 0; i < size; ++i)
+                keyed[i] = std::make_pair(2.0 * boxes[i].lowerLeft[axis] + boxes[i].size[axis], std::uint32_t(i));
+            std::sort(keyed.begin(), keyed.end());
+            pass.order[axis].resize(size);
+            for (size_t i = 0; i < size; ++i)
+                pass.order[axis][i] = keyed[i].second;
+        }
+    }
     pass.left.resize(size);
     pass.scratch.resize(size);
     pass.areaRight.resize(size);
-    vector<std::pair<DBL, std::uint32_t>> keyed(size);
-    for (int axis = X; axis <= Z; ++axis)
-    {
-        for (ptrdiff_t i = 0; i < size; ++i)
-            keyed[i] = std::make_pair(2.0 * pass.items[i]->BBox.lowerLeft[axis] + pass.items[i]->BBox.size[axis], std::uint32_t(i));
-        std::sort(keyed.begin(), keyed.end());
-        pass.order[axis].resize(size);
-        for (ptrdiff_t i = 0; i < size; ++i)
-            pass.order[axis][i] = keyed[i].second;
-    }
-    return pass.split(0, size);
+    return pass.split(0, ptrdiff_t(size));
+}
+
+bool split_pass(BBOX_TREE **Root, BBOX_TREE **&Finite, size_t *numOfFiniteObjects, ptrdiff_t first, ptrdiff_t last, size_t& maxfinitecount)
+{
+    if (last <= first)
+        return false;
+
+    const vector<BBOX_TREE *> items(Finite + first, Finite + last);
+    vector<BoundingBox> boxes(items.size());
+    for (size_t i = 0; i < items.size(); ++i)
+        boxes[i] = items[i]->BBox;
+    return Split_BBox_Pass(boxes.data(), boxes.size(), [&](const std::uint32_t *idx, size_t size) {
+        BBOX_TREE *cd = create_bbox_node(int(size));
+        for (size_t i = 0; i < size; ++i)
+            cd->Node[i] = items[idx[i]];
+        calc_bbox(&(cd->BBox), cd->Node, 0, size);
+        *Root = cd;
+        if (*numOfFiniteObjects >= maxfinitecount)
+        {
+            // Prim array overrun, increase array by 50%.
+            maxfinitecount = 1.5 * maxfinitecount;
+            Finite = reinterpret_cast<BBOX_TREE **>(POV_REALLOC(Finite, maxfinitecount * sizeof(BBOX_TREE *), "bounding boxes"));
+        }
+        Finite[*numOfFiniteObjects] = cd;
+        (*numOfFiniteObjects)++;
+    });
 }
 
 }

@@ -107,8 +107,6 @@ HASH_TABLE **Mesh::Vertex_Hash_Table;
 HASH_TABLE **Mesh::Normal_Hash_Table;
 UV_HASH_TABLE **Mesh::UV_Hash_Table;
 
-thread_local BBoxPriorityQueue Mesh::mtpQueue;
-
 /*****************************************************************************
 *
 * FUNCTION
@@ -201,7 +199,7 @@ bool Mesh::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *
 
     found = false;
 
-    if ((Data->Tree == nullptr) && (Data->FlatTree == nullptr))
+    if (Data->FlatTree == nullptr)
     {
         /* There's no bounding hierarchy so just step through all elements. */
 
@@ -281,7 +279,7 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
     found = 0;
 
-    if ((Data->Tree == nullptr) && (Data->FlatTree == nullptr))
+    if (Data->FlatTree == nullptr)
     {
         /* just step through all elements. */
         for (i = 0; i < Data->Number_Of_Triangles; i++)
@@ -727,7 +725,6 @@ Mesh::~Mesh()
 
     if (--(Data->References) == 0)
     {
-        Destroy_BBox_Tree(Data->Tree);
         delete Data->FlatTree;
 
         if (Data->Normals != nullptr)
@@ -1376,46 +1373,17 @@ void Mesh::get_triangle_bbox(const MESH_TRIANGLE *Triangle, BoundingBox *BBox) c
 
 void Mesh::Build_Mesh_BBox_Tree()
 {
-    MeshIndex i, nElem, maxelements;
-    BBOX_TREE **Triangles;
-
     if (!Test_Flag(this, HIERARCHY_FLAG))
     {
         return;
     }
 
-    nElem = Data->Number_Of_Triangles;
-
-    maxelements = 2 * nElem;
-
-    /* Now allocate an array to hold references to these elements. */
-
-    Triangles = reinterpret_cast<BBOX_TREE **>(POV_MALLOC(maxelements*sizeof(BBOX_TREE *), "mesh bbox tree"));
-
-    /* Init list with mesh elements. */
-
-    for (i = 0; i < nElem; i++)
-    {
-        Triangles[i] = reinterpret_cast<BBOX_TREE *>(POV_MALLOC(sizeof(BBOX_TREE), "mesh bbox tree"));
-
-        Triangles[i]->Infinite = false;
-        Triangles[i]->Entries  = 0;
-        Triangles[i]->Node     = reinterpret_cast<BBOX_TREE **>(&Data->Triangles[i]);
-
-        get_triangle_bbox(&Data->Triangles[i], &Triangles[i]->BBox);
-    }
-
-    size_t maxfinitecount = 0;
-    Build_BBox_Tree(&Data->Tree, nElem, Triangles, 0, nullptr, maxfinitecount);
     delete Data->FlatTree;
-    Data->FlatTree = Build_Flat_BBox_Tree(Data->Tree);
-    Destroy_BBox_Tree(Data->Tree);
-    Data->Tree = nullptr;
-
-    /* Get rid of the Triangles array. */
-
-    POV_FREE(Triangles);
+    Data->FlatTree = Build_Flat_BBox_Tree(size_t(Data->Number_Of_Triangles), [this](size_t i, BoundingBox& box) {
+        get_triangle_bbox(&Data->Triangles[i], &box);
+    });
 }
+
 
 
 
@@ -1456,96 +1424,22 @@ void Mesh::Build_Mesh_BBox_Tree()
 
 bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, IStack& Depth_Stack, TraceThreadData *Thread)
 {
-    bool found;
-    MeshIndex i;
-    DBL Best, Depth;
-    const BBOX_TREE *Node, *Root;
-    bool OldStyle = has_inside_vector;
+    bool found = false;
+    DBL Best = BOUND_HUGE;
 
-    found = false;
-    Best = BOUND_HUGE;
-
-    if (Data->FlatTree != nullptr)
-    {
-        Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, !OldStyle, Thread->Stats(), [&](const void *leaf) {
-            const MESH_TRIANGLE *triangle = reinterpret_cast<const MESH_TRIANGLE *>(leaf);
-            DBL hit;
-            if (intersect_mesh_triangle(ray, triangle, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
-            {
-                found = true;
-                Best = std::min(Best, hit);
-            }
-            return false;
-        });
-        return found;
-    }
-
-    /* Create the direction vectors for this ray. */
-    Rayinfo rayinfo(ray);
-
-    /* Start with an empty priority queue. */
-    mtpQueue.Clear();
-
-#ifdef BBOX_EXTRA_STATS
-    Thread->Stats()[totalQueueResets]++;
-#endif
-
-    /* Check top node. */
-
-    Root = Data->Tree;
-
-    /* Set the root object infinite to avoid a test. */
-
-    Check_And_Enqueue(mtpQueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
-
-    /* Check elements in the priority queue. */
-
-    while (!mtpQueue.IsEmpty())
-    {
-        mtpQueue.RemoveMin(Depth, Node);
-
-        /*
-         * If current intersection is larger than the best intersection found
-         * so far our task is finished, because all other bounding boxes in
-         * the priority queue are further away.
-         */
-
-        /* NK 1999 - had to comment this out for use with CSG
-        if (Depth > Best)
+    Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
+        const MESH_TRIANGLE *triangle = &Data->Triangles[leaf];
+        DBL hit;
+        if (intersect_mesh_triangle(ray, triangle, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
         {
-            break;
+            found = true;
+            Best = std::min(Best, hit);
         }
-        */
-        if ( !OldStyle && Depth > Best)
-            break;
-
-        /* Check current node. */
-
-        if (Node->Entries)
-        {
-            /* This is a node containing leaves to be checked. */
-
-            for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, Thread->Stats(), OldStyle ? BOUND_HUGE : Best);
-        }
-        else
-        {
-            /* This is a leaf so test the contained triangle. */
-
-            if (intersect_mesh_triangle(ray, reinterpret_cast<MESH_TRIANGLE *>(Node->Node), &Depth))
-            {
-                if (test_hit(reinterpret_cast<MESH_TRIANGLE *>(Node->Node), Orig_Ray, Depth, len, Depth_Stack, Thread))
-                {
-                    found = true;
-
-                    Best = Depth;
-                }
-            }
-        }
-    }
-
-    return(found);
+        return false;
+    });
+    return found;
 }
+
 
 
 
@@ -2385,67 +2279,14 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
 
 bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats) const
 {
-    MeshIndex i, found;
-    DBL Best, Depth;
-    const BBOX_TREE *Node, *Root;
+    MeshIndex found = 0;
+    DBL Best = BOUND_HUGE, Depth;
 
-    found = 0;
-    if (Data->FlatTree != nullptr)
-    {
-        Best = BOUND_HUGE;
-        Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, false, stats, [&](const void *leaf) {
-            if (intersect_mesh_triangle(ray, reinterpret_cast<const MESH_TRIANGLE *>(leaf), &Depth))
-                found++;
-            return false;
-        });
-        return ((found & 1) != 0);
-    }
-
-    /* Create the direction vectors for this ray. */
-    Rayinfo rayinfo(ray);
-
-    /* Start with an empty priority queue. */
-    mtpQueue.Clear();
-
-    Best = BOUND_HUGE;
-
-#ifdef BBOX_EXTRA_STATS
-    stats[totalQueueResets]++;
-#endif
-
-    /* Check top node. */
-    Root = Data->Tree;
-
-    /* Set the root object infinite to avoid a test. */
-    Check_And_Enqueue(mtpQueue, Root, &Root->BBox, &rayinfo, stats);
-
-    /* Check elements in the priority queue. */
-    while (!mtpQueue.IsEmpty())
-    {
-        mtpQueue.RemoveMin(Depth, Node);
-
-        /* Check current node. */
-        if (Node->Entries)
-        {
-            /* This is a node containing leaves to be checked. */
-            for (i = 0; i < Node->Entries; i++)
-                Check_And_Enqueue(mtpQueue, Node->Node[i], &Node->Node[i]->BBox, &rayinfo, stats);
-        }
-        else
-        {
-            /* This is a leaf so test the contained triangle. */
-
-            if (intersect_mesh_triangle(ray, reinterpret_cast<MESH_TRIANGLE *>(Node->Node), &Depth))
-            {
-                /* actually, this should push onto a local depth stack and
-                   make sure that we don't have the same intersection point from
-                   two (or three) different triangles!!!!! */
-                found++;
-            }
-        }
-    }
-
-    /* odd number = inside, even number = outside */
+    Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, false, stats, [&](std::int32_t leaf) {
+        if (intersect_mesh_triangle(ray, &Data->Triangles[leaf], &Depth))
+            found++;
+        return false;
+    });
     return ((found & 1) != 0);
 }
 

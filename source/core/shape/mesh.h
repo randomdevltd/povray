@@ -114,8 +114,7 @@ struct Mesh_Data_Struct final
     MeshVector *Normals, *Vertices;    ///< Arrays of normals and vertices.
     MeshUVVector *UVCoords;            ///< Array of UV coordinates
     MESH_TRIANGLE *Triangles;          ///< Array of triangles.
-    BBOX_TREE *Tree;                   ///< Bounding box tree for mesh.
-    FlatBBoxTree *FlatTree;            ///< The same tree, flattened for tracing.
+    FlatBBoxTree *FlatTree;            ///< Bounding box tree for mesh, flattened; leaf ids are triangle indices.
     Vector3d Inside_Vect;              ///< vector to use to test 'inside'
 };
 using MESH_DATA = Mesh_Data_Struct; ///< @deprecated
@@ -197,18 +196,6 @@ private:
         static HASH_TABLE **Vertex_Hash_Table;
         static HASH_TABLE **Normal_Hash_Table;
         static UV_HASH_TABLE **UV_Hash_Table;
-
-        /// Priority queue object.
-        ///
-        /// This object is for temporary use in the intersection and insideness tests;
-        /// the only reason it is not simply a local variable there is that we want to
-        /// avoid the overhead of repeated construction and destruction on the stack.
-        /// Technically we could get the same performance by keeping it local to the
-        /// functions and making it thread-local, but this would mean having one such
-        /// object per function, when it's perfectly safe for them to share one object.
-        ///
-        /// Direct TLS object (avoids unique_ptr indirection / TLS init cost on hot path).
-        static thread_local BBoxPriorityQueue mtpQueue;
 };
 
 /// @}
