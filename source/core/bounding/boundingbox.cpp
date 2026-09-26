@@ -653,7 +653,7 @@ static size_t Count_Flat_Blocks(const Src& src, typename Src::Ref node)
     return n;
 }
 
-static void Init_Flat_Block(FlatBBoxBlock& b, int count, bool more)
+static void Fill_Flat_Block(FlatBBoxBlock& b, const BoundingBox *boxes, const bool *infinite, int count, bool more)
 {
     for (int d = X; d <= Z; ++d)
         for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
@@ -665,10 +665,56 @@ static void Init_Flat_Block(FlatBBoxBlock& b, int count, bool more)
         b.child[k] = 0;
     b.count = count;
     b.more = more;
+    for (int k = 0; k < count; ++k)
+        Set_Flat_Lane(b, k, boxes[k], infinite[k]);
 }
 
-template<typename Src>
-static std::int32_t Flatten_Node(FlatBBoxTree& tree, const Src& src, typename Src::Ref node)
+static void Fill_Flat_Block(FlatQBBoxBlock& b, const BoundingBox *boxes, const bool *infinite, int count, bool more)
+{
+    const float QMAX = 65535.0f;
+    FlatBBoxBlock f;
+    Fill_Flat_Block(f, boxes, infinite, count, more);
+    for (int d = X; d <= Z; ++d)
+    {
+        float lo = FLAT_BBOX_FAR, hi = -FLAT_BBOX_FAR;
+        for (int k = 0; k < count; ++k)
+        {
+            POV_ASSERT(!infinite[k]);
+            lo = std::min(lo, f.lo[d][k]);
+            hi = std::max(hi, f.hi[d][k]);
+        }
+        // A step of margin at both grid ends and on every lane, since decoding cancels terms of the block's size.
+        float scale = (hi - lo) / (QMAX - 2.0f);
+        while ((lo - scale) + (QMAX - 1.0f) * scale < hi)
+            scale = std::nextafter(scale, FLAT_BBOX_FAR);
+        lo -= scale;
+        b.origin[d] = lo;
+        b.scale[d] = scale;
+        for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+        {
+            b.lo[d][k] = b.hi[d][k] = 0;
+            if ((k >= count) || !(scale > 0.0f))
+                continue;
+            float q = std::min(QMAX, std::max(0.0f, std::floor((f.lo[d][k] - lo) / scale)));
+            while ((q > 0.0f) && (lo + q * scale > f.lo[d][k]))
+                q -= 1.0f;
+            float r = std::min(QMAX, std::max(0.0f, std::ceil((f.hi[d][k] - lo) / scale)));
+            while ((r < QMAX) && (lo + r * scale < f.hi[d][k]))
+                r += 1.0f;
+            q = std::max(0.0f, q - 1.0f);
+            r = std::min(QMAX, r + 1.0f);
+            b.lo[d][k] = std::uint16_t(q);
+            b.hi[d][k] = std::uint16_t(r);
+        }
+    }
+    for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+        b.child[k] = 0;
+    b.count = std::uint16_t(count);
+    b.more = std::uint16_t(more);
+}
+
+template<typename Block, typename Src>
+static std::int32_t Flatten_Node(FlatBBoxTreeOf<Block>& tree, const Src& src, typename Src::Ref node)
 {
     if (src.Leaf(node))
         return -1 - src.LeafId(node);
@@ -679,11 +725,17 @@ static std::int32_t Flatten_Node(FlatBBoxTree& tree, const Src& src, typename Sr
     const int count = int(kids.size()), nblocks = (count + FLAT_BBOX_WIDTH - 1) / FLAT_BBOX_WIDTH;
     for (int i = 0; i < nblocks; ++i)
     {
+        BoundingBox boxes[FLAT_BBOX_WIDTH];
+        bool infinite[FLAT_BBOX_WIDTH];
+        const int n = std::min(FLAT_BBOX_WIDTH, count - i * FLAT_BBOX_WIDTH);
+        for (int k = 0; k < n; ++k)
+        {
+            boxes[k] = src.Box(kids[i * FLAT_BBOX_WIDTH + k]);
+            infinite[k] = src.Infinite(kids[i * FLAT_BBOX_WIDTH + k]);
+        }
         tree.blocks.emplace_back();
-        Init_Flat_Block(tree.blocks.back(), std::min(FLAT_BBOX_WIDTH, count - i * FLAT_BBOX_WIDTH), i + 1 < nblocks);
+        Fill_Flat_Block(tree.blocks.back(), boxes, infinite, n, i + 1 < nblocks);
     }
-    for (int i = 0; i < count; ++i)
-        Set_Flat_Lane(tree.blocks[first + i / FLAT_BBOX_WIDTH], i % FLAT_BBOX_WIDTH, src.Box(kids[i]), src.Infinite(kids[i]));
     for (int i = 0; i < count; ++i)
     {
         const std::int32_t ref = Flatten_Node(tree, src, kids[i]);
@@ -692,13 +744,14 @@ static std::int32_t Flatten_Node(FlatBBoxTree& tree, const Src& src, typename Sr
     return first;
 }
 
-template<typename Src>
-static FlatBBoxTree *Flatten(const Src& src, typename Src::Ref root, FlatBBoxTree *tree)
+template<typename Block, typename Src>
+static FlatBBoxTreeOf<Block> *Flatten(const Src& src, typename Src::Ref root, FlatBBoxTreeOf<Block> *tree)
 {
+    const BoundingBox box = src.Box(root);
+    const bool infinite = src.Infinite(root);
     tree->blocks.reserve(1 + Count_Flat_Blocks(src, root));
     tree->blocks.emplace_back();
-    Init_Flat_Block(tree->blocks[0], 1, false);
-    Set_Flat_Lane(tree->blocks[0], 0, src.Box(root), src.Infinite(root));
+    Fill_Flat_Block(tree->blocks[0], &box, &infinite, 1, false);
     const std::int32_t ref = Flatten_Node(*tree, src, root);
     tree->blocks[0].child[0] = ref;
     tree->leaves.shrink_to_fit();
@@ -730,7 +783,7 @@ static void Calc_BBox(BoundingBox& box, const BoundingBox *boxes, const std::uin
     Make_BBox_from_min_max(box, bmin, bmax);
 }
 
-FlatBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox)
+FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox)
 {
     if (numLeaves == 0)
         return nullptr;
@@ -762,7 +815,7 @@ FlatBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBo
         vector<std::int32_t>().swap(nextRefs);
     }
     vector<BoundingBox>().swap(boxes);
-    return Flatten(src, std::int32_t(src.nodes.size() - 1), new FlatBBoxTree);
+    return Flatten(src, std::int32_t(src.nodes.size() - 1), new FlatMeshBBoxTree);
 }
 
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread)

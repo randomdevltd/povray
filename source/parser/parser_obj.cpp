@@ -578,6 +578,8 @@ void Parser::Parse_Obj (Mesh* mesh)
     mesh->Data->Number_Of_UVCoords  = uvList.size();
     mesh->Number_Of_Textures        = materialList.size();
     mesh->Finish_Mesh_Data();
+    if (!mesh->Vertices_Finite())
+        Error("Mesh vertex is infinite or not a number.");
 
     if (!materialList.empty())
         Set_Flag(mesh, MULTITEXTURE_FLAG);

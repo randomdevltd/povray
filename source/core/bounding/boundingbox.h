@@ -43,6 +43,7 @@
 // C++ variants of C standard header files
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 // C++ standard header files
 #include <algorithm>
@@ -302,9 +303,21 @@ struct FlatBBoxBlock final
     std::int32_t more; // the node continues in the next block
 };
 
-struct FlatBBoxTree final
+/// A mesh's block: the child boxes as 16-bit steps of a grid spanning the block, rounded outward.
+struct FlatQBBoxBlock final
 {
-    std::vector<FlatBBoxBlock> blocks; // block 0 holds the root alone
+    float origin[3], scale[3];
+    std::uint16_t lo[3][FLAT_BBOX_WIDTH];
+    std::uint16_t hi[3][FLAT_BBOX_WIDTH];
+    std::int32_t child[FLAT_BBOX_WIDTH]; // as in FlatBBoxBlock
+    std::uint16_t count;
+    std::uint16_t more;
+};
+
+template<typename Block>
+struct FlatBBoxTreeOf final
+{
+    std::vector<Block> blocks; // block 0 holds the root alone
     std::vector<const void *> leaves; // by leaf id; empty when ids index the caller's own array
 };
 
@@ -328,7 +341,7 @@ bool Split_BBox_Pass(const BoundingBox *boxes, size_t count, const BBoxGroupFn& 
 
 FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root);
 /// The tree Build_BBox_Tree would make of `numLeaves` finite leaves, flattened without building it; leaf k is id k.
-FlatBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox);
+FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread);
@@ -345,25 +358,19 @@ class FlatBBoxWalker final
                 origin[d] = float(ray.Origin[d]);
                 const DBL r = 1.0 / ray.Direction[d];
                 inv[d] = (fabs(r) < FLAT_BBOX_FAR) ? float(r) : std::copysign(FLAT_BBOX_FAR, float(ray.Direction[d]));
+                originInv[d] = origin[d] * inv[d];
             }
         }
 
         /// Appends the children of node `ref` whose boxes the ray enters before `maxDepth`.
-        template<typename StatsT>
-        void Expand(const FlatBBoxTree& tree, std::int32_t ref, float maxDepth, StatsT& stats)
+        template<typename Block, typename StatsT>
+        void Expand(const FlatBBoxTreeOf<Block>& tree, std::int32_t ref, float maxDepth, StatsT& stats)
         {
             const int base = size;
-            for (const FlatBBoxBlock *b = &tree.blocks[ref];; ++b)
+            for (const Block *b = &tree.blocks[ref];; ++b)
             {
                 float tn[FLAT_BBOX_WIDTH], tf[FLAT_BBOX_WIDTH];
-                for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
-                {
-                    const float x1 = (b->lo[X][k] - origin[X]) * inv[X], x2 = (b->hi[X][k] - origin[X]) * inv[X];
-                    const float y1 = (b->lo[Y][k] - origin[Y]) * inv[Y], y2 = (b->hi[Y][k] - origin[Y]) * inv[Y];
-                    const float z1 = (b->lo[Z][k] - origin[Z]) * inv[Z], z2 = (b->hi[Z][k] - origin[Z]) * inv[Z];
-                    tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
-                    tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
-                }
+                Slabs(*b, tn, tf);
                 Reserve(b->count);
                 for (int k = 0; k < b->count; ++k)
                     if ((tf[k] >= tn[k]) && (tf[k] >= float(EPSILON)) && (tn[k] <= maxDepth))
@@ -382,7 +389,60 @@ class FlatBBoxWalker final
 
     private:
         static const int LOCAL = 256;
-        float origin[3], inv[3];
+        float origin[3], inv[3], originInv[3];
+
+        void Slabs(const FlatBBoxBlock& b, float *tn, float *tf) const
+        {
+            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+            {
+                const float x1 = (b.lo[X][k] - origin[X]) * inv[X], x2 = (b.hi[X][k] - origin[X]) * inv[X];
+                const float y1 = (b.lo[Y][k] - origin[Y]) * inv[Y], y2 = (b.hi[Y][k] - origin[Y]) * inv[Y];
+                const float z1 = (b.lo[Z][k] - origin[Z]) * inv[Z], z2 = (b.hi[Z][k] - origin[Z]) * inv[Z];
+                tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
+                tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
+            }
+        }
+
+        void Slabs(const FlatQBBoxBlock& b, float *tn, float *tf) const
+        {
+#if defined(__GNUC__) && !defined(__clang__)
+            // GCC splits the portable loop into 128-bit halves around the widening; vectors keep it one 256-bit pass.
+            typedef float V8F __attribute__((vector_size(32)));
+            typedef std::uint16_t V8H __attribute__((vector_size(16)));
+            typedef std::int32_t V8I __attribute__((vector_size(32)));
+            static_assert(FLAT_BBOX_WIDTH == 8, "one vector per axis");
+            V8F n, f;
+            for (int d = 0; d < 3; ++d)
+            {
+                const float at = b.origin[d] * inv[d] - originInv[d], step = b.scale[d] * inv[d];
+                V8H ql, qh;
+                std::memcpy(&ql, b.lo[d], sizeof(ql));
+                std::memcpy(&qh, b.hi[d], sizeof(qh));
+                const V8F l = at + __builtin_convertvector(__builtin_convertvector(ql, V8I), V8F) * step;
+                const V8F h = at + __builtin_convertvector(__builtin_convertvector(qh, V8I), V8F) * step;
+                const V8F a = (h < l) ? h : l, c = (h < l) ? l : h;
+                n = (d == 0) ? a : ((n < a) ? a : n);
+                f = (d == 0) ? c : ((c < f) ? c : f);
+            }
+            std::memcpy(tn, &n, sizeof(n));
+            std::memcpy(tf, &f, sizeof(f));
+#else
+            float at[3], step[3];
+            for (int d = 0; d < 3; ++d)
+            {
+                at[d] = b.origin[d] * inv[d] - originInv[d];
+                step[d] = b.scale[d] * inv[d];
+            }
+            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+            {
+                const float x1 = at[X] + float(b.lo[X][k]) * step[X], x2 = at[X] + float(b.hi[X][k]) * step[X];
+                const float y1 = at[Y] + float(b.lo[Y][k]) * step[Y], y2 = at[Y] + float(b.hi[Y][k]) * step[Y];
+                const float z1 = at[Z] + float(b.lo[Z][k]) * step[Z], z2 = at[Z] + float(b.hi[Z][k]) * step[Z];
+                tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
+                tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
+            }
+#endif
+        }
         FlatBBoxEntry local[LOCAL];
         std::vector<FlatBBoxEntry> spill;
 
@@ -400,8 +460,8 @@ class FlatBBoxWalker final
 
 /// Depth-first walk, nearer children first, calling `leaf` with the id of hit leaves starting before `best`, which it may
 /// lower; true ends the walk. With `cull` false every hit leaf is visited.
-template<typename RayT, typename StatsT, typename LeafFn>
-void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
+template<typename TreeT, typename RayT, typename StatsT, typename LeafFn>
+void Traverse_Flat_BBox_Tree(const TreeT& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
 {
     FlatBBoxWalker<RayT> w(ray);
     w.Push(FlatBBoxEntry{0, -FLAT_BBOX_FAR});
@@ -440,8 +500,8 @@ void Traverse_Flat_BBox_Tree(const FlatBBoxTree& tree, const RayT& ray, const DB
 }
 
 /// The same with every box taken in order of entry depth across the whole tree, for costly leaves.
-template<typename RayT, typename StatsT, typename LeafFn>
-void Traverse_Flat_BBox_Tree_Ordered(const FlatBBoxTree& tree, const RayT& ray, const DBL& best, StatsT& stats, LeafFn&& leaf)
+template<typename TreeT, typename RayT, typename StatsT, typename LeafFn>
+void Traverse_Flat_BBox_Tree_Ordered(const TreeT& tree, const RayT& ray, const DBL& best, StatsT& stats, LeafFn&& leaf)
 {
     const auto later = [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth > b.depth; };
     FlatBBoxWalker<RayT> w(ray);

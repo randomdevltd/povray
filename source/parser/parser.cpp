@@ -3948,6 +3948,8 @@ void Parser::Parse_Mesh1 (Mesh* Object)
     Object->Data->Vertices = reinterpret_cast<MeshVector *>(POV_REALLOC(Vertices, number_of_vertices*sizeof(MeshVector), "triangle mesh data"));
 
     Object->Finish_Mesh_Data();
+    if (!Object->Vertices_Finite())
+        Error("Mesh vertex is infinite or not a number.");
 
     for (i = 0; i < number_of_textures; i++)
     {
@@ -4557,6 +4559,8 @@ void Parser::Parse_Mesh2 (Mesh* Object)
     Object->Number_Of_Textures = number_of_textures;
 
     Object->Finish_Mesh_Data();
+    if (!Object->Vertices_Finite())
+        Error("Mesh vertex is infinite or not a number.");
 
     if (number_of_textures)
     {

@@ -44,7 +44,11 @@ namespace pov
 {
 
 struct BBox_Tree_Struct;
-struct FlatBBoxTree;
+struct FlatBBoxBlock;
+struct FlatQBBoxBlock;
+template<typename Block> struct FlatBBoxTreeOf;
+using FlatBBoxTree      = FlatBBoxTreeOf<FlatBBoxBlock>;
+using FlatMeshBBoxTree  = FlatBBoxTreeOf<FlatQBBoxBlock>;
 
 using BBOX_TREE         = BBox_Tree_Struct;         ///< @deprecated
 using BBoxTreePtr       = BBox_Tree_Struct*;
