@@ -64,6 +64,7 @@
 #include "core/lighting/radiosity.h"
 
 // C++ variants of C standard header files
+#include <cmath>
 #include <cstring>
 
 // C++ standard header files
@@ -964,18 +965,30 @@ long RadiosityCache::Load(const Path& inputFile)
         if ((depth < 0) || (depth >= recursionLimit))
             continue;
 
+        if (!std::isfinite(point[X]) || !std::isfinite(point[Y]) || !std::isfinite(point[Z]) ||
+            !std::isfinite(tempCol.red()) || !std::isfinite(tempCol.green()) || !std::isfinite(tempCol.blue()) ||
+            !std::isfinite(harmonic_mean) || !(harmonic_mean > 0.0) || !std::isfinite(nearest) || !(nearest >= 0.0) ||
+            !(quality > 0.0) || !(quality <= 1.0) || !std::isfinite(brilliance) || !(brilliance > 0.0))
+            continue;
+
         // normals aren't very critical for direction precision, so they are packed
-        sscanf(normal_string, "%02x%02x%02x", &tx, &ty, &tz);
+        if (sscanf(normal_string, "%02x%02x%02x", &tx, &ty, &tz) != 3)
+            continue;
         normal[X] = ((double)tx * (1./ 254.))*2.-1.;
         normal[Y] = ((double)ty * (1./ 254.))*2.-1.;
         normal[Z] = ((double)tz * (1./ 254.))*2.-1.;
+        if (normal.lengthSqr() == 0.0)
+            continue;
         normal.normalize();
 
-        sscanf(to_nearest_string, "%02x%02x%02x", &tx, &ty, &tz);
+        if (sscanf(to_nearest_string, "%02x%02x%02x", &tx, &ty, &tz) != 3)
+            continue;
         to_nearest[X] = ((double)tx * (1./ 254.))*2.-1.;
         to_nearest[Y] = ((double)ty * (1./ 254.))*2.-1.;
         to_nearest[Z] = ((double)tz * (1./ 254.))*2.-1.;
-        to_nearest.normalize();
+        // a sample whose rays all escaped has no nearest surface, saved as a zero vector
+        if (to_nearest.lengthSqr() > 0.0)
+            to_nearest.normalize();
 
         AddBlock(pool, nullptr, point, normal, brilliance, to_nearest, dx, dy, dz, illuminance, harmonic_mean, nearest, quality, depth, PRETRACE_STEP_LOADED, 0);
         goodreads++;
