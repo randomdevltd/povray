@@ -3288,25 +3288,13 @@ bool Trace::IsObjectInCSG(ConstObjectPtr object, ConstObjectPtr parent)
 
 // SSLT code by Sarah Tariq and Lawrence (Lorenzo) Ibarria
 
-double Trace::ComputeFt(double phi, double eta)
+double Trace::ComputeFt(double cos_angle, double eta)
 {
-#if 0
-    double sin_phi   = sin(phi);
-    double sin_theta = sin_phi / eta;
-    if ((sin_theta < -1.0) || (sin_theta > 1.0))
-        return 0; // total reflection, i.e. no transmission at all
-
-    double  theta = asin(sin_theta);
-
-    return 1 - 0.5 * (Sqr(sin(phi-theta)) / Sqr(sin(phi+theta)) + Sqr(tan(phi-theta)) / Sqr(tan(phi+theta)));
-#else
-    double cos_angle = cos(phi);
     double g = sqrt(Sqr(eta) + Sqr(cos_angle) - 1);
     double F = 0.5 * (Sqr(g - cos_angle) / Sqr(g + cos_angle));
     F = F * (1 + Sqr(cos_angle * (g + cos_angle) - 1) / Sqr(cos_angle * (g - cos_angle) + 1));
 
     return 1.0 - min(1.0,max(0.0,F));
-#endif
 }
 
 void Trace::ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v)
@@ -3416,20 +3404,56 @@ void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, Intersection& i
     }
 }
 
-void Trace::ComputeOneSingleScatteringContribution(const LightSource& lightsource, const Intersection& out, double sigma_t_xo, double sigma_s, double s_prime_out,
-                                                   MathColour& Lo, double eta, const Vector3d& bend_point, double phi_out, double cos_out_prime, TraceTicket& ticket)
+// One point of an area light per shadow ray; a low-discrepancy (R2) sequence spreads successive rays over the light.
+static Vector2d SubsurfaceAreaSample(const Vector2d& shift, int index)
 {
-    // TODO FIXME - part of this code is very alike to ComputeOneDiffuseLight()
+    const double su = shift[U] + index * 0.7548776662466927;
+    const double sv = shift[V] + index * 0.5698402909980532;
+    return Vector2d(su - floor(su), sv - floor(sv));
+}
 
+// Shadow rays per sample for each light that reaches any sample, and the share of them split evenly between lights.
+static const double kSubsurfaceShadowBudget = 1.0;
+static const double kSubsurfaceEvenShare = 0.5;
+
+// Unshadowed light a diffuse sample point receives from one source; rd holds its profile, exit transmittance and weight.
+void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta,
+                                    SubsurfaceCandidate& candidate, TraceTicket& ticket)
+{
+    Ray lightsourceray(ticket);
+    double lightsourcedepth;
+    MathColour lightcolour;
+    ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, in.IPoint, lightcolour, true);
+
+    // Don't calculate spotlights when outside of the light's cone.
+    if(lightcolour.IsNearZero(EPSILON))
+        return;
+
+    // Light reaches the point from inside the object, so either side of the surface may face it.
+    double cos_in = fabs(dot(in.INormal, lightsourceray.Direction));
+    // [CLi] light coming in almost parallel to the surface is a problem though
+    if(cos_in < EPSILON)
+        return;
+
+    // POV-Ray's light intensities already imply the 1/pi factor, so it is left out here.
+    double ft = cos_in * ComputeFt(min(cos_in, 1.0), eta);
+    for (int j = 0; j < MathColour::channels; j++)
+        candidate.factor[j] = ft * rd[j];
+    candidate.SetLight(in.IPoint, lightcolour);
+}
+
+// Unshadowed single-scattered light from one source at bend_point; weightOut holds each channel's sampling weight.
+void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
+                                             const PreciseMathColour& weightOut, double eta, const Vector3d& bend_point, double ftOut, double cos_out_prime,
+                                             SubsurfaceCandidate& candidate, TraceTicket& ticket)
+{
     // Do Light source to get the correct lightsourceray
     // (note that for now we're mainly interested in the direction)
     Ray lightsourceray(ticket, Ray::SubsurfaceRay);
     double lightsourcedepth;
     ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, bend_point);
 
-    // We're below the surface; determine where a light ray from the source would be intersecting this object's surface
-    // (and, more importantly, what the surface normal is there; notice that this intersection is an approximation,
-    // ignoring refraction)
+    // Where light from the source enters the object, ignoring refraction; mostly for the surface normal there.
     Intersection xi;
     if (!FindIntersection(xi, lightsourceray))
         return;
@@ -3447,115 +3471,178 @@ void Trace::ComputeOneSingleScatteringContribution(const LightSource& lightsourc
     if(lightcolour.IsNearZero(EPSILON))
         return;
 
-    // See if light on far side of surface from camera.
-    // [CLi] double_illuminate and diffuse backside illumination don't seem to make much sense with BSSRDF, so we ignore them here.
-    // [CLi] BSSRDF always does "full area lighting", so we ignore it here.
-    double cos_in = dot(xi.INormal, lightsourceray.Direction);
-    // [CLi] we're coming from inside the object, so the surface /must/ be properly oriented towards the camera; if it isn't,
-    // it must be the normal's fault
-    if (cos_in < 0)
-    {
-        xi.INormal.invert();
-        cos_in = -cos_in;
-    }
+    // Light reaches the point from inside the object, so either side of the surface may face it.
+    double cos_in = fabs(dot(xi.INormal, lightsourceray.Direction));
     // [CLi] light coming in almost parallel to the surface is a problem though
     if(cos_in < EPSILON)
         return;
 
-    // If light source was not blocked by any intervening object, then
-    // calculate it's contribution to the object's overall illumination.
-    if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
-    {
-        // [CLi] Not using lightColorCache because it's unsuited for BSSRDF
-        TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, xi.IPoint, lightcolour);
-    }
-
-    // Don't calculate anything more if we're in full shadow
-    if(lightcolour.IsNearZero(EPSILON))
-        return;
-
-    double sigma_t_xi = sigma_t_xo; // TODO FIXME - theoretically this should be taken from point where light comes in
-
-    double cos_in_sqr       = Sqr(cos_in);
-    double sin_in_sqr       = 1 - cos_in_sqr;
-    double eta_sqr          = Sqr(eta);
-    double sin_in_prime_sqr = sin_in_sqr / eta_sqr;
-    double cos_in_prime_sqr = 1 - sin_in_prime_sqr;
+    double cos_in_prime_sqr = 1 - (1 - Sqr(cos_in)) / Sqr(eta);
     if (cos_in_prime_sqr < 0.0)
         return; // total reflection
-    double cos_in_prime  = sqrt(cos_in_prime_sqr);
-
+    double cos_in_prime = sqrt(cos_in_prime_sqr);
     if (cos_in_prime <= EPSILON)
         return; // close enough to total reflection to give us trouble
 
-    //MathColour lightColour = MathColour(lightsource.colour);
-    lightcolour *= cos_in; // TODO VERIFY - is this right? Where does this term come from??
-
-    // compute si
     double si = (bend_point - xi.IPoint).length() * sceneData->mmPerUnit;
-
-    // calculate s_prime_i
     double s_prime_i = si * cos_in / cos_in_prime;
+    double F = ComputeFt(min(cos_in, 1.0), eta) * ftOut;
 
-    // calculate F
-    double phi_in  = acos(cos_in);
-    double F = ComputeFt(phi_in, eta) * ComputeFt(phi_out, eta);
+    // G is only valid for comparatively flat surfaces; sigma_t where the light enters is taken to be that at the exit.
+    double G = fabs(cos_out_prime / cos_in_prime);
 
-    // calculate sigma_tc
-    double G = fabs(cos_out_prime / cos_in_prime); // TODO FIXME - theoretically this is only valid for comparatively flat surfaces
-    double sigma_tc = sigma_t_xo + G * sigma_t_xi;
+    // Isotropic phase function, less the 1/pi that POV-Ray's light intensities already imply.
+    const double p = 1.0 / 4.0;
 
-    // calculate the phase function
-    // NOTE: We're leaving out the 1/pi factor because in POV-Ray, by convention,
-    // light intensity is normalized to imply this factor already.
-    double p = 1.0 / 4.0; // asume isotropic scattering (normally this would be 1/(4*M_PI))
-
-    // multiply with the e terms
-    double eTerms = exp(-s_prime_i * sigma_t_xi) * exp(-s_prime_out * sigma_t_xo);    // TODO FIXME - theoretically first sigma_t should be taken from from xi.IPoint
-
-    double factor = (sigma_s * F * p / sigma_tc) * eTerms;
-    if (factor >= DBL_MAX)
-        factor = DBL_MAX;
-    POV_SUBSURFACE_ASSERT((factor >= 0.0) && (factor <= DBL_MAX)); // verify factor is a non-negative, finite value (no #INF, no #IND, no #NAN)
-
-    lightcolour *= factor;
-
-    // add up the contribution
-    Lo += lightcolour;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double sigma_tc = sigma_t_xo[j] * (1.0 + G);
+        double f = (sigma_s[j] * F * p / sigma_tc) * exp(-s_prime_i * sigma_t_xo[j]) * weightOut[j] * cos_in;
+        POV_SUBSURFACE_ASSERT((f >= 0.0) && (f <= DBL_MAX)); // verify f is a non-negative, finite value (no #INF, no #IND, no #NAN)
+        candidate.factor[j] = min(f, double(FLT_MAX));
+    }
+    candidate.SetLight(xi.IPoint, lightcolour);
 }
 
-// call this once for each color
-// out.INormal is calculated
-void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double theta_out, double cos_out_prime, const Vector3d& refractedREye, double sigma_t_xo, double sigma_s, MathColour& Lo, double eta,
-                                                TraceTicket& ticket)
+void Trace::SubsurfaceCandidate::SetLight(const Vector3d& p, const MathColour& lightcolour)
+{
+    point = p;
+    unshadowed = lightcolour;
+    bound = 0.0;
+    for (int j = 0; j < MathColour::channels; j++)
+        bound = max(bound, fabs(double(lightcolour[j] * factor[j]))); // magnitude: negative lights count too
+}
+
+// Estimates the shadowed sum of one light's candidates from budget shadow rays, drawn systematically in proportion to their bounds.
+MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket)
+{
+    MathColour estimate;
+    double step = sum / budget;
+    double next = randomNumberGenerator() * step;
+    double end = 0.0;
+    int drawn = 0;
+    Vector2d shift(randomNumberGenerator(), randomNumberGenerator());
+    for (int i = 0; (i < count) && (drawn < budget); i++)
+    {
+        const SubsurfaceCandidate& c = candidates[i];
+        end += c.bound;
+        int hits = 0;
+        for (; (drawn + hits < budget) && (next < end); next += step)
+            hits++;
+        if (hits == 0)
+            continue;
+
+        // A point light's ray is the same each time; an area light gets a new point of the light per draw.
+        int rays = (lightsource.Area_Light && qualityFlags.areaLights) ? hits : 1;
+        MathColour lit;
+        for (int r = 0; r < rays; r++)
+        {
+            Ray lightsourceray(ticket);
+            double lightsourcedepth;
+            MathColour lightcolour;
+            ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, true);
+            Vector2d areaSample = SubsurfaceAreaSample(shift, drawn + r);
+            TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, &areaSample);
+            lit += lightcolour;
+        }
+        drawn += hits;
+        estimate += lit * c.factor * float((hits / double(rays)) * step / c.bound);
+    }
+    return estimate;
+}
+
+// Adds the shadowed light of the candidates, count per light in lights' order; see doc/PERF.md.
+void Trace::ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket)
+{
+    std::vector<double> sums(lights.size(), 0.0);
+    double sum = 0.0;
+    int lit = 0;
+    for (int l = 0; l < lights.size(); l++)
+    {
+        const LightSource& lightsource = *lights[l];
+        bool shadows = qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE));
+        for (int i = l * count; i < (l + 1) * count; i++)
+        {
+            if (shadows)
+                sums[l] += candidates[i].bound;
+            else if (candidates[i].bound > 0.0)
+                total += candidates[i].unshadowed * candidates[i].factor;
+        }
+        sum += sums[l];
+        lit += (sums[l] > 0.0);
+    }
+    if (!(sum > 0.0))
+        return;
+
+    double budgetAll = count * kSubsurfaceShadowBudget * lit;
+    for (int l = 0; l < lights.size(); l++)
+    {
+        if (!(sums[l] > 0.0))
+            continue;
+        double share = kSubsurfaceEvenShare / lit + (1.0 - kSubsurfaceEvenShare) * sums[l] / sum;
+        int budget = max(1, int(budgetAll * share + 0.5));
+        total += DrawSubsurfaceShadows(*lights[l], &candidates[l * count], count, sums[l], budget, ticket);
+    }
+}
+
+// The global lights unless the object turns them off, then those of its light group.
+void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights)
+{
+    lights.clear();
+    if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
+        for(int i = 0; i < threadData->lightSources.size(); i++)
+            lights.push_back(threadData->lightSources[i]);
+    for(int i = 0; i < object->LLights.size(); i++)
+        lights.push_back(object->LLights[i]);
+}
+
+// Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
+void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
+                                                const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
+                                                const std::vector<const LightSource*>& lights, TraceTicket& ticket)
 {
     Lo.Clear();
+    if (lights.empty())
+        return;
 
-    // calculate s_prime_out
     while (ssltUniformNumberGenerator.size() <= ticket.subsurfaceRecursionDepth)
         ssltUniformNumberGenerator.push_back(GetRandomDoubleGenerator(0.0, 1.0, 32767));
-    double epsilon = 1.0 - (*(ssltUniformNumberGenerator[ticket.subsurfaceRecursionDepth]))(); // epsilon is a random floating point value in the range (0,1] (i.e. not including 0, but including 1)
-    double s_prime_out = fabs(log(epsilon)) / sigma_t_xo;
+    SequentialNumberGenerator<double>& uniform = *ssltUniformNumberGenerator[ticket.subsurfaceRecursionDepth];
 
-    if (s_prime_out >= dist)
-        return; // not within the object - this is covered by a "zero scattering" term instead
+    std::vector<SubsurfaceCandidate> candidates(lights.size() * numSamples);
+    int channel = min(int(uniform() * MathColour::channels), MathColour::channels - 1);
 
-    //compute bend_point wihch is s_prime_out distance away on refractedREye
-    Vector3d bend_point = out.IPoint + refractedREye * (s_prime_out / sceneData->mmPerUnit);
-
-    // global light sources, if not turned off for this object
-    if((out.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
+    for (int i = 0; i < numSamples; i++, channel = (channel + 1) % MathColour::channels)
     {
-        for(int i = 0; i < threadData->lightSources.size(); i++)
-            ComputeOneSingleScatteringContribution(*threadData->lightSources[i], out, sigma_t_xo, sigma_s, s_prime_out, Lo, eta, bend_point, theta_out, cos_out_prime, ticket);
+        double epsilon = 1.0 - uniform(); // in (0,1]
+        double s_prime_out = fabs(log(epsilon)) / sigma_t_xo[channel];
+
+        if (s_prime_out >= dist)
+            continue; // not within the object - this is covered by a "zero scattering" term instead
+
+        PreciseMathColour pdf;
+        double pdfMix = 0.0;
+        for (int j = 0; j < MathColour::channels; j++)
+        {
+            pdf[j] = sigma_t_xo[j] * exp(-s_prime_out * sigma_t_xo[j]);
+            pdfMix += pdf[j] / MathColour::channels;
+        }
+        if (!(pdfMix > 0.0))
+            continue;
+
+        // Each channel's own sampling density over the mixture's, times its attenuation on the way out.
+        PreciseMathColour weightOut;
+        for (int j = 0; j < MathColour::channels; j++)
+            weightOut[j] = pdf[j] / pdfMix * exp(-s_prime_out * sigma_t_xo[j]);
+
+        Vector3d bend_point = out.IPoint + refractedREye * (s_prime_out / sceneData->mmPerUnit);
+
+        for (int l = 0; l < lights.size(); l++)
+            ComputeSingleScatteringCandidate(*lights[l], out, sigma_t_xo, sigma_s, weightOut, eta, bend_point, ftOut, cos_out_prime,
+                                             candidates[l * numSamples + i], ticket);
     }
 
-    // local light sources from a light group, if any
-    if(!out.Object->LLights.empty())
-    {
-        for(int i = 0; i < out.Object->LLights.size(); i++)
-            ComputeOneSingleScatteringContribution(*out.Object->LLights[i], out, sigma_t_xo, sigma_s, s_prime_out, Lo, eta, bend_point, theta_out, cos_out_prime, ticket);
-    }
+    ShadeSubsurfaceCandidates(lights, candidates.data(), numSamples, Lo, ticket);
 
     // TODO FIXME - radiosity should also be taken into account
 }
@@ -3584,175 +3671,36 @@ bool Trace::SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, 
     return true;
 }
 
-void Trace::ComputeDiffuseContribution(const Intersection& out, const Vector3d& vOut, const Vector3d& pIn, const Vector3d& nIn, const Vector3d& vIn, double& sd, double sigma_prime_s, double sigma_a, double eta)
+// Jensen's dipole diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
+PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr) const
 {
-    // TODO FIXME - a great deal of this can be precomputed
-    double  sigma_prime_t = sigma_prime_s + sigma_a;
-    double  alpha_prime = sigma_prime_s / sigma_prime_t;
-    double  F_dr = FresnelDiffuseReflectance(eta);
-    double  Aconst = ((1 + F_dr) / (1 - F_dr));
-    double  Rd;
-
-    double  cos_phi_in  = clip(dot(vIn,  nIn),         -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
-    double  cos_phi_out = clip(dot(vOut, out.INormal), -1.0, 1.0);
-    double  phi_in  = acos(cos_phi_in);
-    double  phi_out = acos(cos_phi_out);
-
-    double  F = ComputeFt(phi_in, eta) * ComputeFt(phi_out, eta);
-
-#if 1
-    // full BSSRDF model
-
-    double  distSqr = (pIn - out.IPoint).lengthSqr() * Sqr(sceneData->mmPerUnit);
-
-    double  Dconst = 1 / (3 * sigma_prime_t);
-    double  sigma_tr = sqrt(3 * sigma_a * sigma_prime_t);
-
-    double  z_r = 1.0 / sigma_prime_t;
-    double  dSqr_r = Sqr(z_r) + distSqr;
-    double  d_r = sqrt(dSqr_r);
-    double  z_v = z_r * (1.0 + Aconst * 4.0/3.0);
-    double  dSqr_v = Sqr(z_v) + distSqr;
-    double  d_v = sqrt(dSqr_v);
-
-    double common_term  = alpha_prime / (4.0 * M_PI);               // dimensionless
-    double C1           = z_r * (sigma_tr + 1.0/d_r);               // dimensionless
-    double C2           = z_v * (sigma_tr + 1.0/d_v);               // dimensionless
-    double r_term       = C1 * exp(-sigma_tr * d_r) / dSqr_r;     // dimension 1/area
-    double v_term       = C2 * exp(-sigma_tr * d_v) / dSqr_v;     // dimension 1/area
-
-    Rd = common_term * (r_term + v_term);
-
-#else
-    // uniform illumination BRDF approximation
-    // TODO - use this for radiosity?
-
-    // calculate Rd
-    double root_term = sqrt(3.0 * (1.0 - alpha_prime));
-    Rd = (alpha_prime / 2.0) * (1 + exp((-4.0/3.0) * Aconst * root_term)) * exp(-root_term);
-
-#endif
-
-    // NOTE: We're leaving out the 1/pi factor because in POV-Ray, by convention,
-    // light intensity is normalized to imply this factor already.
-    sd = F * Rd; // (normally this would be F*Rd/M_PI)
-    POV_SUBSURFACE_ASSERT((sd >= 0.0) && (sd <= DBL_MAX)); // verify sd is a non-negative, finite value (no #INF, no #IND, no #NAN)
-}
-
-void Trace::ComputeDiffuseContribution1(const LightSource& lightsource, const Intersection& out, const Vector3d& vOut, const Intersection& in, MathColour& Total_Colour,
-                                        const PreciseMathColour& sigma_prime_s, const PreciseMathColour& sigma_a, double eta, double weight, TraceTicket& ticket)
-{
-    // TODO FIXME - part of this code is very alike to ComputeOneDiffuseLight()
-
-    // Get a colour and a ray.
-    Ray lightsourceray(ticket);
-    double lightsourcedepth;
-    MathColour lightcolour;
-    ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, in.IPoint, lightcolour, true);
-
-    // Don't calculate spotlights when outside of the light's cone.
-    if(lightcolour.IsNearZero(EPSILON))
-        return;
-
-    Vector3d nIn = in.INormal;
-
-    // See if light on far side of surface from camera.
-    // [CLi] double_illuminate and diffuse backside illumination don't seem to make much sense with BSSRDF, so we ignore them here.
-    // [CLi] BSSRDF always does "full area lighting", so we ignore it here.
-    double cos_in = dot(nIn, lightsourceray.Direction);
-    // [CLi] we're coming from inside the object, so the surface /must/ be properly oriented towards the camera; if it isn't,
-    // it must be the normal's fault
-    if (cos_in < 0)
-    {
-        nIn.invert();
-        cos_in = -cos_in;
-    }
-    // [CLi] light coming in almost parallel to the surface is a problem though
-    if(cos_in < EPSILON)
-        return;
-
-    // If light source was not blocked by any intervening object, then
-    // calculate it's contribution to the object's overall illumination.
-    if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
-    {
-        // [CLi] Not using lightColorCache because it's unsuited for BSSRDF
-        TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, in.IPoint, lightcolour);
-    }
-
-    // Don't calculate anything more if we're in full shadow
-    if(lightcolour.IsNearZero(EPSILON))
-        return;
-
-    lightcolour *= cos_in;
+    PreciseMathColour rd;
     for (int j = 0; j < MathColour::channels; j++)
     {
-        double sd;
-        ComputeDiffuseContribution(out, vOut, in.IPoint, nIn, lightsourceray.Direction, sd, sigma_prime_s[j], sigma_a[j], eta);
-        sd *= weight;
-        POV_SUBSURFACE_ASSERT(sd >= 0);
-        lightcolour[j] *= sd;
-        Total_Colour[j] += lightcolour[j];
+        double dSqr_r = Sqr(z_r[j]) + distSqr;
+        double d_r    = sqrt(dSqr_r);
+        double dSqr_v = Sqr(z_v[j]) + distSqr;
+        double d_v    = sqrt(dSqr_v);
+        double r_term = z_r[j] * (sigma_tr[j] + 1.0/d_r) * exp(-sigma_tr[j] * d_r) / dSqr_r; // dimension 1/area
+        double v_term = z_v[j] * (sigma_tr[j] + 1.0/d_v) * exp(-sigma_tr[j] * d_v) / dSqr_v; // dimension 1/area
+        rd[j] = scale[j] * (r_term + v_term);
     }
+    return rd;
 }
 
-void Trace::ComputeDiffuseAmbientContribution1(const Intersection& out, const Vector3d& vOut, const Intersection& in, MathColour& Total_Colour,
-                                               const PreciseMathColour& sigma_prime_s, const PreciseMathColour& sigma_a, double eta, double weight, TraceTicket& ticket)
+void Trace::ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double eta, double weight, TraceTicket& ticket)
 {
-#if 0
-    // generate a random direction vector (using a distribution cosine-weighted along the normal)
-    Vector3d axisU, axisV;
-    ComputeSurfaceTangents(in.INormal, axisU, axisV);
-    while (ssltCosWeightedDirectionGenerator.size() <= ticket.subsurfaceRecursionDepth)
-        ssltCosWeightedDirectionGenerator.push_back(GetSubRandomCosWeightedDirectionGenerator(2, 32767));
-    Vector3d direction = (*(ssltCosWeightedDirectionGenerator[ticket.subsurfaceRecursionDepth]))();
-    double cos_in = direction.y(); // cosine of angle between normal and random vector
-    Vector3d vIn = in.INormal*cos_in + axisU*direction.x() + axisV*direction.z();
-
-    POV_SUBSURFACE_ASSERT(fabs(dot(in.INormal, axisU)) < EPSILON);
-    POV_SUBSURFACE_ASSERT(fabs(dot(in.INormal, axisV)) < EPSILON);
-    POV_SUBSURFACE_ASSERT(fabs(dot(axisU, axisV)) < EPSILON);
-
-    // [CLi] light coming in almost parallel to the surface is a problem
-    if(cos_in < EPSILON)
-        return;
-
-    Ray ambientray = Ray(ticket, in.IPoint, vIn, Ray::OtherRay); // TODO FIXME - [CLi] check whether ray type is suitable
-    MathColour ambientcolour;
-    ColourChannel dummyTransm;
-    TraceRay(ambientray, ambientcolour, dummyTransm, weight, false);
-
-    // Don't calculate anything more if there's no light input
-    if(ambientcolour.IsNearZero(EPSILON))
-        return;
-
-    for (int j = 0; j < 3; j++)
-    {
-        double sd;
-        // Note: radiosity data is already cosine-weighted, so we're passing the surface normal as incident light direction
-        ComputeDiffuseContribution(out, vOut, in.IPoint, in.INormal,  vIn, sd, sigma_prime_s[j], sigma_a[j], eta);
-        sd *= 0.5/cos_in; // the distribution is cosine-weighted, but sd was computed assuming neutral weighting, so compensate
-        sd *= weight;
-        POV_SUBSURFACE_ASSERT(sd >= 0);
-        ambientcolour[j] *= sd;
-        POV_SUBSURFACE_ASSERT(ambientcolour[j] >= 0);
-        Total_Colour[j] += ambientcolour[j];
-    }
-#else
     MathColour ambientcolour;
     // TODO FIXME - should support pertubed normals
     radiosity.ComputeAmbient(in.IPoint, in.INormal, in.INormal, 1.0 /* TODO - brilliance */, ambientcolour, weight, ticket);
+    // Radiosity data is already cosine-weighted, so the light is taken as arriving along the normal.
+    double ft = ComputeFt(1.0, eta);
     for (int j = 0; j < MathColour::channels; j++)
     {
-        double sd;
-        // Note: radiosity data is already cosine-weighted, so we're passing the surface normal as incident light direction
-        ComputeDiffuseContribution(out, vOut, in.IPoint, in.INormal, in.INormal, sd, sigma_prime_s[j], sigma_a[j], eta);
-        sd *= weight;
-        POV_SUBSURFACE_ASSERT(sd >= 0);
-        ambientcolour[j] *= sd;
+        ambientcolour[j] *= ft * rd[j];
         POV_SUBSURFACE_ASSERT(ambientcolour[j] >= 0);
         Total_Colour[j] += ambientcolour[j];
     }
-#endif
 }
 
 void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& layer_pigment_colour, const Intersection& out, Ray& Eye, const Vector3d& Layer_Normal, MathColour& Final_Colour, double Attenuation)
@@ -3767,13 +3715,9 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     {
         NumSamplesDiffuse = 1;
         NumSamplesSingle  = 1;
-        //NumSamplesDiffuse = (int)ceil(sqrt(NumSamplesDiffuse));
-        //NumSamplesSingle  = (int)ceil(sqrt(NumSamplesSingle));
     }
 
     Eye.GetTicket().subsurfaceRecursionDepth++;
-
-    LightSource Light_Source;
 
     Vector3d vOut = -Eye.Direction;
 
@@ -3783,46 +3727,47 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
 
     ComputeRelativeIOR(Eye, out.Object->interior.get(), eta);
 
-#if 0
-    // user setting specifies mean free path
-    PreciseMathColour   alpha_prime     = object->interior->subsurface->GetReducedAlbedo(layer_pigment_colour * Finish->Diffuse);
-    PreciseMathColour   sigma_tr        = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
-
-    PreciseMathColour   sigma_prime_t   = sigma_tr / sqrt(3*(1.0-alpha_prime));
-    PreciseMathColour   sigma_prime_s   = alpha_prime * sigma_prime_t;
-    PreciseMathColour   sigma_a         = sigma_prime_t - sigma_prime_s;
-    PreciseMathColour   sigma_tr_sqr    = sigma_tr * sigma_tr;
-#else
     // user setting specifies reduced scattering coefficient
     PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(layer_pigment_colour * Finish->Diffuse);
     PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;
     PreciseMathColour   sigma_a         = sigma_prime_t - sigma_prime_s;
-    PreciseMathColour   sigma_tr_sqr    = sigma_a * sigma_prime_t * 3.0;
-    PreciseMathColour   sigma_tr        = Sqrt(sigma_tr_sqr);
-#endif
 
     PreciseMathColour   g(0.0); // the mean cosine of the scattering angle; for isotropic scattering, g = 0
     PreciseMathColour   sigma_t_xo      = sigma_prime_t / (1.0-g);
     PreciseMathColour   sigma_s         = sigma_prime_s / (1.0-g);
 
-#if 1
+    double F_dr   = FresnelDiffuseReflectance(eta);
+    double Aconst = ((1 + F_dr) / (1 - F_dr));
+    SubsurfaceProfile profile;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double spt = sigma_prime_s[j] + sigma_a[j];
+        profile.scale[j]    = (sigma_prime_s[j] / spt) / (4.0 * M_PI);
+        profile.sigma_tr[j] = sqrt(3 * sigma_a[j] * spt);
+        profile.z_r[j]      = 1.0 / spt;
+        profile.z_v[j]      = profile.z_r[j] * (1.0 + Aconst * 4.0/3.0);
+    }
+
+    double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
+    double ftOut   = ComputeFt(cos_out, eta);
 
     // colour dependent diffuse contribution
 
     double      sampleArea;
-    double      weight;
     double      sigma_a_mean        = sigma_a.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_s_mean  = sigma_prime_s.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_t_mean  = sigma_a_mean + sigma_prime_s_mean;
-    double      sigma_tr_mean_sqr   = sigma_a_mean * sigma_prime_t_mean * 3.0;
-    double      sigma_tr_mean       = sqrt(sigma_tr_mean_sqr);
 
     bool radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) &&
                             (sceneData->subsurfaceUseRadiosity == true) &&
                             (radiosity.CheckRadiosityTraceLevel(Eye.GetTicket()) == true) &&
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);
+
+    std::vector<const LightSource*> lights;
+    CollectSubsurfaceLights(out.Object, lights);
+    std::vector<SubsurfaceCandidate> candidates(lights.size() * NumSamplesDiffuse);
 
     Vector3d sampleBase;
     ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
@@ -3833,42 +3778,28 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         ComputeDiffuseSamplePoint(sampleBase, in, sampleArea, Eye.GetTicket());
 
         // avoid pathological cases
-        if (sampleArea != 0)
-        {
-            weight = sampleArea;
+        if (sampleArea == 0)
+            continue;
 
-            if (IsSameSSLTObject(in.Object, out.Object))
-            {
-                // radiosity-alike ambient illumination
-                if (radiosity_needed)
-                    // shoot just one random ray to account for ambient illumination (we're averaging stuff anyway)
-                    ComputeDiffuseAmbientContribution1(out, vOut, in, Total_Colour, sigma_prime_s, sigma_a, eta, weight, Eye.GetTicket());
+        if (!IsSameSSLTObject(in.Object, out.Object))
+            continue; // TODO - what's the proper thing to do?
 
-                // global light sources, if not turned off for this object
-                if((out.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-                {
-                    for(int k = 0; k < threadData->lightSources.size(); k++)
-                        ComputeDiffuseContribution1(*threadData->lightSources[k], out, vOut, in, Total_Colour, sigma_prime_s, sigma_a, eta, weight, Eye.GetTicket());
-                }
+        double weight = sampleArea;
+        double distSqr = (in.IPoint - out.IPoint).lengthSqr() * Sqr(sceneData->mmPerUnit);
+        PreciseMathColour rd = profile.Rd(distSqr) * (ftOut * weight);
 
-                // local light sources from a light group, if any
-                if(!out.Object->LLights.empty())
-                {
-                    for(int k = 0; k < out.Object->LLights.size(); k++)
-                        ComputeDiffuseContribution1(*out.Object->LLights[k], out, vOut, in, Total_Colour, sigma_prime_s, sigma_a, eta, weight, Eye.GetTicket());
-                }
-            }
-            else
-            {
-                // TODO - what's the proper thing to do?
-            }
-        }
+        // radiosity-alike ambient illumination
+        if (radiosity_needed)
+            // shoot just one random ray to account for ambient illumination (we're averaging stuff anyway)
+            ComputeDiffuseAmbientContribution1(in, rd, Total_Colour, eta, weight, Eye.GetTicket());
+
+        for (int l = 0; l < lights.size(); l++)
+            ComputeDiffuseCandidate(*lights[l], in, rd, eta, candidates[l * NumSamplesDiffuse + i], Eye.GetTicket());
     }
+    ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket());
     // Rays that leave without meeting the object count as samples of nothing, or open surfaces get twice their light.
     if (NumSamplesDiffuse > 0)
         Total_Colour /= NumSamplesDiffuse;
-
-#endif
 
     Vector3d refractedEye;
     if (SSLTComputeRefractedDirection(Eye.Direction, out.INormal, 1.0/eta, refractedEye))
@@ -3886,27 +3817,16 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         else
             dist = HUGE_VAL;
 
-        double cos_out = dot(vOut, out.INormal);
         double cos_out_prime = sqrt(1 - ((Sqr(1.0 / eta)) * (1 - Sqr(cos_out))));
-        double theta_out = acos(cos_out);
-
-#if 1
 
         // colour dependent single scattering contribution
 
-        for (int i = 0; i < NumSamplesSingle; i++)
+        if (NumSamplesSingle > 0)
         {
-            for (int j = 0; j < MathColour::channels; j ++)
-            {
-                MathColour temp;
-                ComputeSingleScatteringContribution(out, dist, theta_out, cos_out_prime, refractedEye, sigma_t_xo[j], sigma_s[j], temp, eta, Eye.GetTicket());
-                Total_Colour[j] += temp[j] / NumSamplesSingle;
-            }
+            MathColour singleColour;
+            ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, eta, lights, Eye.GetTicket());
+            Total_Colour += singleColour / NumSamplesSingle;
         }
-
-#endif
-
-#if 1
 
         // colour dependent unscattered contribution
 
@@ -3916,7 +3836,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
 
         // TODO FIXME - account for fresnel attenuation at interfaces
         PreciseMathColour att = Exp(-sigma_prime_t * dist); // TODO should be sigma_t
-        weight = att.WeightMax();
+        double weight = att.WeightMax();
         if (weight > Eye.GetTicket().adcBailout)
         {
             if (!found)
@@ -3944,9 +3864,6 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
                 // TODO - trace the ray into that object (if it is transparent)
             }
         }
-
-#endif
-
     }
 
     Final_Colour += Total_Colour;

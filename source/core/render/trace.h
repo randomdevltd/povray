@@ -814,17 +814,39 @@ class Trace
     /// @{
     ///
 
-        double ComputeFt(double phi, double eta);
+        /// Per-channel constants of the dipole diffusion profile at one shading point.
+        struct SubsurfaceProfile
+        {
+            PreciseMathColour scale, sigma_tr, z_r, z_v;
+            PreciseMathColour Rd(double distSqr) const;
+        };
+
+        /// A subsurface sample lit by one light, before its shadow is tested.
+        struct SubsurfaceCandidate
+        {
+            Vector3d point;
+            MathColour factor, unshadowed;
+            double bound = 0.0;
+            void SetLight(const Vector3d& p, const MathColour& lightcolour);
+        };
+
+        double ComputeFt(double cos_angle, double eta);
         void ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v);
         void ComputeSSLTNormal (Intersection& Ray_Intersection);
         bool IsSameSSLTObject(ConstObjectPtr obj1, ConstObjectPtr obj2);
         void ComputeDiffuseSampleBase(Vector3d& basePoint, const Intersection& out, const Vector3d& vOut, double avgFreeDist, TraceTicket& ticket);
         void ComputeDiffuseSamplePoint(const Vector3d& basePoint, Intersection& in, double& sampleArea, TraceTicket& ticket);
-        void ComputeDiffuseContribution(const Intersection& out, const Vector3d& vOut, const Vector3d& pIn, const Vector3d& nIn, const Vector3d& vIn, double& sd, double sigma_prime_s, double sigma_a, double eta);
-        void ComputeDiffuseContribution1(const LightSource& lightsource, const Intersection& out, const Vector3d& vOut, const Intersection& in, MathColour& Total_Colour, const PreciseMathColour& sigma_prime_s, const PreciseMathColour& sigma_a, double eta, double weight, TraceTicket& ticket);
-        void ComputeDiffuseAmbientContribution1(const Intersection& out, const Vector3d& vOut, const Intersection& in, MathColour& Total_Colour, const PreciseMathColour& sigma_prime_s, const PreciseMathColour& sigma_a, double eta, double weight, TraceTicket& ticket);
-        void ComputeOneSingleScatteringContribution(const LightSource& lightsource, const Intersection& out, double sigma_t_xo, double sigma_s, double s_prime_out, MathColour& Lo, double eta, const Vector3d& bend_point, double phi_out, double cos_out_prime, TraceTicket& ticket);
-        void ComputeSingleScatteringContribution(const Intersection& out, double dist, double theta_out, double cos_out_prime, const Vector3d& refractedREye, double sigma_t_xo, double sigma_s, MathColour& Lo, double eta, TraceTicket& ticket);
+        void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta, SubsurfaceCandidate& candidate, TraceTicket& ticket);
+        void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double eta, double weight, TraceTicket& ticket);
+        void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
+                                              const PreciseMathColour& weightOut, double eta, const Vector3d& bend_point, double ftOut, double cos_out_prime,
+                                              SubsurfaceCandidate& candidate, TraceTicket& ticket);
+        void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
+                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
+                                                 const std::vector<const LightSource*>& lights, TraceTicket& ticket);
+        void ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket);
+        MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket);
+        void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights);
         void ComputeSubsurfaceScattering (const FINISH *Finish, const MathColour& layer_pigment_colour, const Intersection& isect, Ray& Eye, const Vector3d& Layer_Normal, MathColour& colour, double Attenuation);
         bool SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, double eta, Vector3d& refracted);
 

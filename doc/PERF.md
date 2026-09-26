@@ -170,6 +170,38 @@ tiles and the far floor within 2 to 3 levels of the doubled render. The light ti
 181 in red): the doubling made them reflect 1.33 times the light falling on them, and a subsurface finish reflects at
 most all of it, which `diffuse 1.2` reaches.
 
+## Subsurface light transport
+
+A subsurface shading point (`samples D, S` in `global_settings`) takes D diffuse sample points on the surface and S
+single-scattering points along the refracted eye ray. For each point and each light it first works out the light the
+point would pass on if nothing shadowed it, from the light's colour and direction and the diffusion profile; that needs
+no rays. Shadow rays then go where that light is: D rays for each light that reaches any point (S for single
+scattering), half shared evenly between those lights and half by their share of the unshadowed light. Within a light,
+each ray picks a point with probability proportional to its unshadowed light, and the result is weighted by the inverse
+of that probability, so the shadowing is unbiased. Lights with negative colour count by magnitude. A ray to an area
+light tests one point of the light, taken from a low-discrepancy (R2) sequence so that successive rays cover it evenly,
+instead of the light's full adaptive grid of 9 to 81 rays.
+
+Single scattering takes one point per sample for all three colour channels, drawn from the average of the channels'
+distance distributions; each channel is weighted by its own density over that average, which keeps every channel
+unbiased with a third of the rays. The diffusion profile's per-channel constants are computed once per shading point.
+
+Tried and not kept, measured on `sslt-lamps.pov` unless noted:
+
+- One area-light point per sample without drawing by unshadowed light: about a quarter more error against the reference.
+- One pool of shadow rays for all lights, drawn by unshadowed light: 1.77 rms against the reference, against 1.20; a sun
+  hidden behind the slats takes rays that the lamps reaching the surface need.
+- Testing only some lights for single scattering, chosen by their light at the scattering point: two of five cost 9%
+  less at 1% more noise, one of five 12% less at 7% more.
+- Diffuse points sampled from the diffusion profile itself, projected along the normal and two tangents: unbiased, but
+  2–3 times as noisy at the same cost on both scenes, and 1.5 times on a flat slab, where rays from under the surface
+  already follow the profile's core.
+- Aiming half the diffuse sample rays at the exit point in a cosine-power lobe: more noise here and on `subsurface.pov`.
+- Half a shadow ray per sample: 6% more noise for 19% less cost. Two: 2% less noise for 19% more cost.
+- Three single-scattering points per sample: 2% less noise for 58% more cost.
+- Skipping shadow rays for negligible unshadowed light: subsumed by drawing in proportion to it.
+- Evaluating the diffusion profile with SIMD: it is 2.5% of `subsurface.pov`'s cycles.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
