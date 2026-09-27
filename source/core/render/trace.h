@@ -218,6 +218,8 @@ class Trace
                 virtual ~RadiosityFunctor() {}
                 virtual void ComputeAmbient(const Vector3d& ipoint, const Vector3d& raw_normal, const Vector3d& layer_normal, double brilliance, MathColour& ambient_colour, double weight, TraceTicket& ticket) { }
                 virtual bool CheckRadiosityTraceLevel(const TraceTicket& ticket) { return false; }
+                virtual bool IsFinalTrace() const { return false; } ///< whether the pretrace's samples are all there
+                virtual bool LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour) { return false; }
         };
 
         /// @todo TraceThreadData already holds a reference to SceneData.
@@ -897,6 +899,7 @@ class Trace
             int sizeLevel = 0;
             double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
             bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
+            bool radiosity = false; ///< the points carry the radiosity cache's light too
             double footprint = 0.0; ///< a pixel's span at the exit point, in mm
             std::vector<const LightSource*> lights;
             std::vector<MathColour> exitLight; ///< per light, at the exit point, shadowed
@@ -938,8 +941,10 @@ class Trace
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key);
         MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
                                               TraceTicket& ticket, std::uint64_t key);
+        MathColour ComputeCloudExitAmbient(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);
         void BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell);
         void FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable);
+        void AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& cell);
         void WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder);
         void CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
         void LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
