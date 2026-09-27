@@ -310,6 +310,13 @@ void TracePixel::SetupCamera(const Camera& cam)
 
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
+    // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
+    if (!subsurfaceCameraSet)
+    {
+        bool perspective = (camera.Type == PERSPECTIVE_CAMERA) && (width > 0.0) && (camera.Direction.length() > 0.0);
+        sceneData->subsurfaceCache->SetCamera(camera.Location, perspective ? 2.0 * atan(0.5 * camera.Right.length() / camera.Direction.length()) / width : 0.0);
+        subsurfaceCameraSet = true;
+    }
     if(useFocalBlur == false)
     {
         colour.Clear();

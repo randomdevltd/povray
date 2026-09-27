@@ -69,6 +69,7 @@ namespace pov
 using namespace pov_base;
 
 class BSPTree;
+class SubsurfaceCache;
 
 /// Class holding scene specific data.
 ///
@@ -157,6 +158,14 @@ class SceneData
         int subsurfaceSamplesSingle;
         /// whether to compute radiosity contribution to subsurface effects
         bool subsurfaceUseRadiosity;
+        /// how subsurface light is found where a finish does not say: kSubsurfaceMethodSampled or kSubsurfaceMethodPointCloud
+        int subsurfaceMethod;
+        /// point-cloud method: how coarsely far groups of points may be summed as one
+        double subsurfaceErrorBound;
+        /// point-cloud method: point spacing relative to the automatic spacing
+        double subsurfaceSpacing;
+        /// subsurface irradiance clouds, built while rendering
+        std::shared_ptr<SubsurfaceCache> subsurfaceCache;
 
         // ********************************************************************************
         // temporary variables for BSP testing ... we may or may not keep these in future
