@@ -1,5 +1,5 @@
 // Radiosity stress: a lawn of thin blades between posts and canopies, a sun and many small fading lamps; see doc/PERF.md.
-// Declare=Shiny=1 makes the canopies reflect and the blades translucent, so gather rays spawn reflected and transmitted rays.
+// Declare=Shiny=1 adds reflective canopies and translucent blades for gather rays to spawn from; Shiny=2 a reflection exponent.
 #version 3.7;
 #ifndef (Count) #declare Count = 60; #end
 #ifndef (ErrorBound) #declare ErrorBound = 0.6; #end
@@ -68,7 +68,7 @@ mesh {
       sphere { P + y * H + <rand(R) - 0.5, rand(R) - 0.3, rand(R) - 0.5> * 3, 0.3 + 0.4 * rand(R) }
     #end
     pigment { rgb <0.2, 0.5, 0.25> }
-    #if (Shiny) finish { reflection 0.15 } #end
+    #if (Shiny) finish { reflection { 0.15 #if (Shiny = 2) exponent 0.5 #end } } #end
   }
 #end
 

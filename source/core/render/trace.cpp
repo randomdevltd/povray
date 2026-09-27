@@ -1181,22 +1181,24 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 {
                     rflCol.Clear();
                     double roulette;
-                    if (SurvivesRadiosityRoulette(ray, isect.IPoint, (*listWNRX)[i].weight, i + 1, roulette))
+                    if (!SurvivesRadiosityRoulette(ray, isect.IPoint, (*listWNRX)[i].weight, i + 1, roulette))
+                        roulette = 0.0;
+                    else
                     {
                         const double share = ray.GetTicket().radiosityShare;
                         ray.GetTicket().radiosityShare = share * roulette;
                         ComputeReflection(layer->Finish, isect.IPoint, ray, (*listWNRX)[i].normal, rawnormal, rflCol, (*listWNRX)[i].weight);
                         ray.GetTicket().radiosityShare = share;
-                        rflCol *= roulette;
                     }
 
+                    // the roulette scales the term, not the colour a reflection exponent bends
                     if((*listWNRX)[i].reflex != 1.0)
                     {
-                        resultColour += (*listWNRX)[i].reflec * Pow(rflCol, (*listWNRX)[i].reflex);
+                        resultColour += (*listWNRX)[i].reflec * Pow(rflCol, (*listWNRX)[i].reflex) * roulette;
                     }
                     else
                     {
-                        resultColour += (*listWNRX)[i].reflec * rflCol;
+                        resultColour += (*listWNRX)[i].reflec * rflCol * roulette;
                     }
                 }
             }
