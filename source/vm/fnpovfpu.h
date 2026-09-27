@@ -44,7 +44,7 @@
 #include "vm/fnpovfpu_fwd.h"
 
 // C++ variants of C standard header files
-//  (none at the moment)
+#include <cstdint>
 
 // C++ standard header files
 #include <set>
@@ -145,9 +145,19 @@ struct FunctionCode
     void *private_data;
 };
 
+/// One instruction as the interpreters run it: a handler, two register fields and the 20-bit operand, decoded once.
+struct VMOp
+{
+    std::uint16_t code;
+    std::uint8_t a;
+    std::uint8_t b;
+    std::uint32_t k;
+};
+
 struct FunctionEntry
 {
     FunctionCode fn;            // valid if reference_count != 0
+    std::vector<VMOp> ops;      // fn.program decoded, one entry per instruction
     FUNCTION next_unreferenced; // valid if reference_count == 0
     unsigned int reference_count;
     SYS_FUNCTION_ENTRY
@@ -251,6 +261,7 @@ extern const unsigned int POVFPU_Sys2TableSize;
 
 void POVFPU_Exception(FPUContext *context, FUNCTION fn, const char *msg = nullptr);
 DBL POVFPU_RunDefault(FPUContext *context, FUNCTION k);
+DBL POVFPU_RunScalar(FPUContext *context, FUNCTION k);
 
 void FNCode_Delete(FunctionCode *);
 
@@ -258,6 +269,7 @@ class FunctionVM : public GenericFunctionContextFactory
 {
         friend void POVFPU_Exception(FPUContext *, FUNCTION, const char *);
         friend DBL POVFPU_RunDefault(FPUContext *, FUNCTION);
+        friend DBL POVFPU_RunScalar(FPUContext *, FUNCTION);
 
     public:
 
