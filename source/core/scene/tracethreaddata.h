@@ -131,7 +131,7 @@ class TraceThreadData : public ThreadData
         int Facets_CVC;
         Vector3d Facets_Cube[81];
 
-        /// Seed of the stochastic anti-aliasing draws.
+        /// Salt of every path key, so that renders with different seeds draw independently.
         size_t stochasticRandomSeedBase;
 
         // TODO FIXME - thread-local copy of lightsources. we need this

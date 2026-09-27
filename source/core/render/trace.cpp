@@ -4251,12 +4251,14 @@ void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
             SubsurfaceCell::Stage stage = cell.stage;
             int job = cell.next++;
             lock.unlock();
+            // A shared cell comes out the same whichever ray needed it first, so its jobs trace from a ticket of their own.
+            TraceTicket jobTicket(sceneData->parsedMaxTraceLevel, sceneData->parsedAdcBailout);
             try
             {
                 if (!cell.failed && (stage == SubsurfaceCell::kCasting))
-                    CastSubsurfaceLines(cloud, key, cell, job, ticket);
+                    CastSubsurfaceLines(cloud, key, cell, job, jobTicket);
                 else if (!cell.failed)
-                    LightSubsurfacePoints(cloud, key, cell, job, ticket);
+                    LightSubsurfacePoints(cloud, key, cell, job, jobTicket);
             }
             catch (...)
             {

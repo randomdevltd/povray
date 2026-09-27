@@ -369,7 +369,7 @@ spawn are lit exactly as before.
 | a light's cached occluder is left out of the scene walk once it has missed | every shadow ray of every render: lawn without radiosity 4.45 → 4.09 Gcycles, with it 18.9 → 17.0; images identical |
 | each light's ray and unshadowed term computed once per gather-ray hit | lawn 33.6 → 32.5 G instructions; the stock Cornell box, a grid of equal lights none of which can be skipped, from 13% more instructions than before this branch to 3% |
 | cache files keep nine significant digits, quality and brilliance, skip malformed or too-deep records and report what loaded | below |
-| under `+HR` each tile restarts the gather directions at a point set by its serial number, and in the pretrace its pass | the stock `patio-radio_37.pov`, rendered twice with `+HR` at 4 threads, was 1.4 levels apart and is now identical |
+| under `+HR` each tile restarts the gather directions at a point set by its serial number, and in the pretrace its pass (since replaced by keyed directions, see "Random draws") | the stock `patio-radio_37.pov`, rendered twice with `+HR` at 4 threads, was 1.4 levels apart and is now identical |
 
 Together, on the lawn at 320×180, two runs of each back to back: 34.3 and 33.6 Gcycles before, 16.2 and 16.5 after
 (67.4 → 32.5 G instructions). The window's image moves by 0.09 levels on average, 4 at most; the lawn's by 0.03, 2
@@ -609,6 +609,50 @@ leaves on average on the close-up, and only one in ten of those is hit, so decod
 what it saved: against the box change alone, −0.7 to +5.5% on the close-ups, 0 to +1.9% on the lawn and −0.9 to
 −1.1% on the mesh bench, across variants that decoded lanes only as rays reached them, skipped blocks opening onto a
 single leaf, or kept 256 blocks a thread.
+
+## Random draws
+
+Area-light jitter, media, `crand`, rainbow jitter, subsurface light, photons and radiosity gather directions drew from
+streams that ran on across each thread's work, so a pixel depended on what its thread had traced before: a detail
+window, another thread count or another render order changed the image. Every draw is now a hash of a path key, an
+effect and a sample index. A camera ray's key hashes its origin and direction (and `+SS`, which is 0 unless set);
+a child ray's hashes its parent's, its kind and its index; a radiosity sample hashes its point and normals, and a
+photon its light, target and place in the shooting grid. Photons are sorted into one order before the tree is built,
+radiosity samples are kept in each octree node in an order of their own, and `+HR` is the default. A subsurface point
+cloud's cell traces its shadows from a ticket of its own, not that of the ray that first needed it.
+
+A test scene with every effect (`tests/render/random_effects.pov`) at 320×240 renders bit for bit the same with 1 and 8
+threads, with `+RP5`, `+BS7` and a mosaic preview, and in a 128×120 window; before, 85% of its pixels differed between
+1 and 8 threads. The three radiosity scenes below also match at 1 and 8 threads. Radiosity still changes in a window,
+where the pretrace samples only what the window shows.
+
+The same scene at 1280×720 without anti-aliasing shows the old table's structure: its subsurface sphere is covered in
+vertical stripes, in POV-Ray 3.7.0 as well as before this change, because neighbouring pixels drew correlated runs of
+the table. With hashed draws the sphere's noise is even. With `+HR` as the default, a radiosity sample gathered during
+the final pass is not seen by other tiles, so a surface that crosses a tile edge can show a faint block-shaped step,
+as `+HR` did before; it moves with `+BS`.
+
+Flat regions, 256×256, means (and each build's spread over four renders): a soft-shadow penumbra 0.61230 (0.00010)
+before, 0.61240 (0.00017) after; `crand` 0.80415, 0.80428; media 0.54093 (0.00001), 0.54040 (0.00007). Pixel variances
+agree within 2%. The old generator repeated a table of 32,768 values, so its renders agree with each other almost
+exactly and carry the table's own error, about 0.0003 on the media region. Measured against that near-zero spread,
+the media differences look significant (z of −4 and −6), but the z-scores are inflated: the old renders are not
+independent samples, and the gap is within the table's error.
+
+Radiosity at 320×240 against converged renders, several renders each:
+
+| Scene | RMSE before | after | Mean before | after |
+|---|---|---|---|---|
+| `cornell` (`recursion_limit 3`) | 0.00306 | 0.00338 | +0.21% | −0.49% |
+| `radiosity` | 0.00965 | 0.00948 | +0.30% | +0.25% |
+
+With `recursion_limit 1` the Cornell box's mean moves by 0.03%. The deeper bounces lose something from the old stream,
+where consecutive samples took consecutive runs of the direction pool; the per-tile restart under `+HR` that this
+replaces showed the same −0.5%. Choosing aligned runs, sibling-disjoint runs or a shifted Halton prefix instead moved
+it only to −0.3%.
+
+The large scene's band, four counted runs of each build, trace only: instructions −0.11%, cycles −0.25% (runs spread
+±2%).
 
 ## Method
 

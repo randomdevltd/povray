@@ -60,6 +60,7 @@
 #include "core/render/trace.h"
 #include "core/scene/object.h"
 #include "core/scene/scenedata.h"
+#include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
 
 // this must be the last file included
@@ -930,7 +931,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
     }
 
     ray.Direction.normalize();
-    ray.SetKey(DeriveKey(DeriveKey(0, ray.Origin), ray.Direction));
+    ray.SetKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ray.Origin), ray.Direction));
 
     return true;
 }
