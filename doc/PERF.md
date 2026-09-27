@@ -792,6 +792,58 @@ refined pixels twice; method 1 traces a line of pixels above and left of each bl
 neighbours that may already be anti-aliased. Renders stopped at several points, during a level and during the
 anti-aliasing pass, and continued with `+C` match an uninterrupted one bit for bit with one thread.
 
+## Isosurfaces
+
+Functions ran on a switch over about a thousand opcodes, each with its registers baked in, behind one indirect
+jump; `advanced/isocacti.pov` was as slow as 3.7 or slower, and its cycles moved with code placement. Now:
+
+- Programs are decoded once, and the one-point interpreter has a handler per opcode and register pair, as the
+  switch had, each ending in its own computed-goto dispatch. Handlers that took their registers as fields and kept
+  them in an array were tried first: every dependent op then waited on a store being forwarded, and GCC folded
+  their dispatch tails back into one jump, so they were slower than the switch. The function carries
+  `optimize("no-crossjumping", "no-gcse", "no-tree-slp-vectorize")` to keep the tails apart.
+- `ExecuteBatch` evaluates four points per call on `simd::Vec<DBL, 4>`. Lanes that branch apart keep their own
+  program counters and the lowest runs next, calls run under the caller's lane mask, and anything the batch does not
+  model falls back to one point at a time. Normals take one batch, and the root finder its interval's two ends.
+- sin, cos, tan, their inverses and hyperbolics, exp, log, log10, pow and atan2 come from xsimd in both paths; the
+  one-point path runs the same four-lane call on a broadcast value, so both return the same bits. xsimd picks its
+  trigonometric range reduction from all lanes at once, so `simd::sin`, `cos` and `tan` run lanes in groups that
+  need the same one. floor, ceil, int, div and mod stay exact library calls; xsimd's pow is exp(y log x), whose
+  error grows with |y log x|. xsimd takes signs from −0.0, so `configure` adds `-fno-associative-math
+  -fsigned-zeros` after `-ffast-math`; without them `sin` and `cos` lose their sign.
+- An opaque isosurface tested by a shadow ray, which only needs to know whether the light is blocked, searches for
+  any root short of the light: where an interval's far end is inside, bisection tries that half first. Either
+  half's test depends only on its ends, so it finds a root exactly when the full search does.
+
+Single-threaded counted runs of whole frames at a quarter of their pixels, medians of two, parse included, against
+`performance` at 785bee41. The last three scenes are `tools/bench/isosurface-noise-sphere.pov` (a sphere under five
+octaves of strong noise) with its box as written and three times wider, and `tools/bench/isosurface-caverns.pov`.
+
+| Scene | Ubuntu 3.7 | `performance` | this branch | Function calls |
+|---|---|---|---|---|
+| `isocacti`, 400×300 `+A0.3` | 74.1 G | 78.9 G | 53.7 G (−32%) | 85.5 M → 83.3 M |
+| noise sphere, 320×240 | | 13.4 G | 7.4 G (−45%) | 5.69 M → 5.18 M |
+| noise sphere, box ×3, 320×240 | | 18.2 G | 9.6 G (−47%) | 7.49 M → 6.96 M |
+| caverns, 200×150 | | 9.7 G | 4.9 G (−50%) | 6.46 M → 5.99 M |
+
+The two new flags alone move `performance` by −8% to +5% across these scenes, within what code placement does to
+it; against `performance` built with them, the branch saves 35–45%. On `isocacti`, one run each on earlier builds:
+`-falign-functions=64 -falign-loops=32` moves `performance` by −1.9% and this branch by −0.3%; library maths instead
+of xsimd costs +4.7%, one point at a time instead of batches +0.2%. With library maths and `-fno-fast-math
+-ffp-contract=off`, the branch spends 30% fewer cycles per function call than `performance` for the same calls. The
+any-root shadow search saves 1.7% on `isocacti`, 9% on the noise sphere and 8% on the caverns.
+
+Built with the same flags, single-threaded, this branch draws every scene above exactly as `performance` does, pixel
+for pixel, and so does it for `incdemo/i_internal.pov` (frames 10–15), the noise sphere with max_gradient halved, and
+`distribution/scenes/objects/superel-iso.pov`, which draws superel1 and superel2 as `f_superellipsoid` isosurfaces
+alone and under reflection, glass, bumps, area lights, media, radiosity and photons; their coverage matches the
+native superellipsoid at every pixel. Batched and one-point evaluation return the same bits, and `tests_fnbatch.cpp`
+checks the VM's library maths against `std::` to 1e-12 over ±200. The caverns, with a red background, show no red,
+open or closed, or at accuracy 0.0001 with max_gradient 6: no ray escapes, and the scene's black patches are rock in
+shadow.
+
+Four-threaded counts on the shared box spread by 20–30% between runs of one build, so these are single-threaded.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
@@ -816,7 +868,8 @@ default. Train PGO on scenes like the ones you render: trained on the standard b
 4% slower to trace and 47% slower to parse than no PGO, since that scene has almost no meshes and their code was
 built as cold. Trained on other parts of the large scene itself, PGO saved 4–10%.
 
-`-ffast-math` needs `-fno-finite-math-only` after it or some intersections break.
+`-ffast-math` needs `-fno-finite-math-only` after it or some intersections break, and `-fno-associative-math
+-fsigned-zeros` for the function VM's maths.
 
 ## Forks worth pulling
 
@@ -833,8 +886,10 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 
 ## Next
 
-- Isosurfaces: threaded dispatch or native code for the function interpreter, whose speed now depends on code
-  placement; root finding that uses `max_gradient`.
+- Isosurfaces: vectorised noise, so that batches pay where functions are mostly noise; batches of rays rather than
+  of points. An occupancy grid from max_gradient, skipping empty cells while root finding, was tried: it moved roots,
+  gained 7 points only on a leaning trunk in a loose box and cost up to 6 on tighter ones; a tighter `contained_by`
+  does better.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
