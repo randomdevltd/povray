@@ -4156,7 +4156,7 @@ static const double kCloudFinest = 1.0 / 1024.0;
 
 // Points on the object inside one cell, where lines along the axes cross it, each lit by every light. The caller builds
 // it; other threads that need it meanwhile help with its jobs.
-void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, TraceTicket& ticket)
+void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell)
 {
     try
     {
@@ -4183,7 +4183,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             cell.jobs = 3 * cell.steps;
         }
         cell.changed.notify_all();
-        WorkOnSubsurfaceCell(cloud, key, cell, true, ticket);
+        WorkOnSubsurfaceCell(cloud, key, cell, true);
 
         size_t count = cell.found;
         bool usable = !cell.failed && (cell.unoriented * 16 <= count);
@@ -4204,7 +4204,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.next = cell.done = 0;
             }
             cell.changed.notify_all();
-            WorkOnSubsurfaceCell(cloud, key, cell, true, ticket);
+            WorkOnSubsurfaceCell(cloud, key, cell, true);
             usable = !cell.failed;
             if (usable)
                 cell.BuildHierarchy();
@@ -4239,9 +4239,18 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
     cell.changed.notify_all();
 }
 
+// Cell jobs run at the quality subsurface needs, whichever trace runs them (a radiosity gather's has no area lights).
+struct CellQuality final
+{
+    QualityFlags& flags;
+    QualityFlags saved;
+    CellQuality(QualityFlags& f) : flags(f), saved(f) { flags = QualityFlags(9); }
+    ~CellQuality() { flags = saved; }
+};
+
 // Takes jobs of a cell being built until none are left; then the builder returns once its stage is done, a helper once
 // the cell is ready. A job that throws fails the cell.
-void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder, TraceTicket& ticket)
+void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder)
 {
     std::unique_lock<std::mutex> lock(cell.mutex);
     while (cell.stage != SubsurfaceCell::kReady)
@@ -4255,6 +4264,7 @@ void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
             TraceTicket jobTicket(sceneData->parsedMaxTraceLevel, sceneData->parsedAdcBailout);
             try
             {
+                CellQuality quality(qualityFlags);
                 if (!cell.failed && (stage == SubsurfaceCell::kCasting))
                     CastSubsurfaceLines(cloud, key, cell, job, jobTicket);
                 else if (!cell.failed)
@@ -4409,8 +4419,7 @@ void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vec
 }
 
 // Fixes the object's cloud and collects the cells within reach of the exit point; false where no cloud can serve.
-bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud,
-                                TraceTicket& ticket)
+bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud)
 {
     cloud.object = SubsurfaceObject(out);
     if (cloud.object->interior == nullptr)
@@ -4443,7 +4452,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
     // Cells are a power of four in size, at least the diffusion's reach, so a texture that varies it uses few sizes.
     cloud.sizeLevel = 2 * int(ceil(0.5 * log2(cloud.reach / mm)));
     cloud.size = ldexp(1.0, cloud.sizeLevel);
-    if (!GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm, ticket))
+    if (!GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm))
         return false;
     const SubsurfaceCell *here = FindSubsurfaceCell(cloud, out.IPoint);
     if (here == nullptr)
@@ -4470,13 +4479,13 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
     if (ring > cloud.reach)
     {
         cloud.reach = ring;
-        return GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm, ticket);
+        return GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm);
     }
     return true;
 }
 
 // The cells of the cloud that a sphere touches, built as needed.
-bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre, double radius, TraceTicket& ticket)
+bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre, double radius)
 {
     cloud.cells.clear();
     cloud.coords.clear();
@@ -4500,9 +4509,9 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
             bool build;
             std::shared_ptr<SubsurfaceCell> cell = sceneData->subsurfaceCache->Acquire(key, build);
             if (build)
-                BuildSubsurfaceCell(cloud, key, *cell, ticket);
+                BuildSubsurfaceCell(cloud, key, *cell);
             else
-                WorkOnSubsurfaceCell(cloud, key, *cell, false, ticket);
+                WorkOnSubsurfaceCell(cloud, key, *cell, false);
             known = cell.get();
         }
         if (!known->usable)
@@ -4832,7 +4841,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     MathColour cloudDiffuse;
-    bool cloud = (method == kSubsurfaceMethodPointCloud) && !radiosity_needed && OpenSubsurfaceCloud(out, profile, lights, cloudData, Eye.GetTicket()) &&
+    bool cloud = (method == kSubsurfaceMethodPointCloud) && !radiosity_needed && OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     if (cloud)
         Total_Colour += cloudDiffuse;
