@@ -81,7 +81,7 @@ jobs:
           --exclude="unix/scripts*"     \
           --exclude="platform/windows"  \
           --exclude="vfe/win"           \
-          doc platform source unix vfe  \
+          doc libraries/xsimd platform source unix vfe \
           LICENSE README.md changes.txt revision.txt
         # Add everything created by the prebuild process, except for some
         # interim products created by the prebuild process.
