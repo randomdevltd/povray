@@ -140,6 +140,7 @@ POV_File_Extensions gPOV_File_Extensions[POV_File_Count] =
     {{ ".rca",  ".RCA",  "",      ""      }}, // POV_File_Data_RCA
     {{ ".log",  ".LOG",  "",      ""      }}, // POV_File_Data_LOG
     {{ ".bak",  ".BAK",  "",      ""      }}, // POV_File_Data_Backup
+    {{ ".povm", ".POVM", "",      ""      }}, // POV_File_Data_POVM
     {{ ".ttf",  ".TTF",  "",      ""      }}  // POV_File_Font_TTF
 };
 
@@ -170,6 +171,7 @@ const int gFile_Type_To_Mask [POV_File_Count] =
     NO_FILE,   // POV_File_Data_RCA
     NO_FILE,   // POV_File_Data_LOG
     NO_FILE,   // POV_File_Data_Backup
+    NO_FILE,   // POV_File_Data_POVM
     NO_FILE    // POV_File_Font_TTF
 };
 

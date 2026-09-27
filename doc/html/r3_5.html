@@ -2165,6 +2165,15 @@ face_indices {
 </pre>
 <p class="Note"><strong>Note:</strong> The numbers of <code>uv_indices</code> must equal number of faces.</p>
 <p>The indexes are <em>zero based</em>, so the first item in each list has an index of zero.</p>
+<p>A <code>mesh2</code> can instead load its geometry from a binary <code>.povm</code> file, which parses in a fraction of the time and caches the mesh&#39;s bounding tree beside it:</p>
+<pre>
+mesh2 {
+  povm &quot;trunk.povm&quot;
+  [inside_vector &lt;direction&gt;]
+  [OBJECT_MODIFIERS...]
+  }
+</pre>
+<p>The format, the cache and the tools that write and convert <code>.povm</code> files are described in <code>doc/povm.md</code>.</p>
 
 </div>
 <a name="r3_5_1_2_4_1"></a>

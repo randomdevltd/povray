@@ -89,6 +89,7 @@ enum
     POV_File_Data_RCA,
     POV_File_Data_LOG,
     POV_File_Data_Backup,
+    POV_File_Data_POVM,
     POV_File_Font_TTF,
     POV_File_Count
 };

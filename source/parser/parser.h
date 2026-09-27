@@ -43,7 +43,7 @@
 #include "parser/parser_fwd.h"
 
 // C++ variants of C standard header files
-//  (none at the moment)
+#include <cstdint>
 
 // C++ standard header files
 #include <chrono>
@@ -207,6 +207,14 @@ struct BetaFlags final
         realTimeRaytracing(false),
         videoCapture(false)
     {}
+};
+
+/// Where a mesh loaded from a `.povm` file caches its bounding tree, and what the cache must match.
+struct PovmTreeKey final
+{
+    UCS2String path;
+    std::uint64_t bytes = 0;
+    std::uint64_t hash = 0;
 };
 
 /*****************************************************************************
@@ -780,6 +788,8 @@ class Parser final
 #endif
         void Parse_Mesh1 (Mesh*);
         void Parse_Mesh2 (Mesh*);
+        void Parse_Povm (Mesh*, PovmTreeKey& key);
+        void Povm_Mesh_Tree (Mesh*, const PovmTreeKey& key);
 
         TEXTURE *Parse_Mesh_Texture(TEXTURE **t2, TEXTURE **t3);
         ObjectPtr Parse_TrueType(void);
