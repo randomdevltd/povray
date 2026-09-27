@@ -230,8 +230,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 static const int kMediaAreaLightPoints = 4;
 
 MediaFunction::MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg) :
-    randomNumbers(0.0, 1.0, 32768),
-    randomNumberGenerator(&randomNumbers),
+    drawKey(0),
     threadData(td),
     trace(t),
     photonGatherer(pg),
@@ -361,6 +360,9 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 
     const unsigned int savedIndex = lightSampleIndex;
     const Vector2d savedShift = lightSampleShift;
+    const std::uint64_t savedKey = drawKey;
+    drawKey = ray.NextChildKey(kDrawMedia);
+    trace->MarkGrain();
     if(!ray.IsShadowTestRay())
     {
         lightSampleIndex = 0;
@@ -379,6 +381,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 
     lightSampleIndex = savedIndex;
     lightSampleShift = savedShift;
+    drawKey = savedKey;
 }
 
 MathColour MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray& ray, DBL depth)
@@ -452,19 +455,21 @@ void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSource
     threadData->Stats()[Media_Intervals] += mediaintervals.size();
     for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
     {
+        const std::uint64_t intervalKey = DeriveKey(drawKey, kDrawMedia, i - mediaintervals.begin());
+
         // Sample current interval.
 
         for(j = 0; j < minsamples; j++)
         {
             if(IMedia->Sample_Method == 2)
             {
-                d0 = (j + 0.5) / minsamples + (randomNumberGenerator() * IMedia->Jitter / minsamples);
+                d0 = (j + 0.5) / minsamples + (Draw(intervalKey, kDrawMediaSample, j) * IMedia->Jitter / minsamples);
                 ComputeOneMediaSample(medias, lights, *i, ray, d0, C0, od0, 2, ignore_photons, use_scattering, false);
             }
             else
             {
                 // we may get here with media method 3
-                d0 = randomNumberGenerator();
+                d0 = Draw(intervalKey, kDrawMediaSample, j);
                 ComputeOneMediaSample(medias, lights, *i, ray, d0, C0, od0, 1, ignore_photons, use_scattering, false);
             }
 
@@ -480,6 +485,8 @@ void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSource
         {
             if(i->samples < IMedia->Max_Samples)
             {
+                const std::uint64_t intervalKey = DeriveKey(drawKey, kDrawMedia, i - mediaintervals.begin());
+
                 // Get variance of samples.
                 n = 1.0 / (DBL)i->samples;
 
@@ -489,7 +496,7 @@ void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSource
                 while(!Va.IsNearZero(IMedia->Sample_Threshold[i->samples - 1]))
                 {
                     // Sample current interval again.
-                    ComputeOneMediaSample(medias, lights, *i, ray, randomNumberGenerator(), C0, od0, 1, ignore_photons, use_scattering, false);
+                    ComputeOneMediaSample(medias, lights, *i, ray, Draw(intervalKey, kDrawMediaSample, minsamples + i->samples), C0, od0, 1, ignore_photons, use_scattering, false);
 
                     // Have we reached maximum number of samples.
                     if(i->samples > IMedia->Max_Samples)
@@ -529,8 +536,9 @@ void MediaFunction::ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourc
             subIntervalCount = 1;
 
         dd = 1.0 / (DBL)subIntervalCount;
+        const std::uint64_t intervalKey = DeriveKey(drawKey, kDrawMedia, i - mediaintervals.begin());
 
-        ComputeOneMediaSample(medias, lights, *i, ray, dd * IMedia->Jitter * (randomNumberGenerator() - 0.5), C0, od0, 3, ignore_photons, use_scattering, false);
+        ComputeOneMediaSample(medias, lights, *i, ray, dd * IMedia->Jitter * (Draw(intervalKey, kDrawMediaSample, 0) - 0.5), C0, od0, 3, ignore_photons, use_scattering, false);
 
         // clear out od & te
         i->te.Clear();
@@ -540,9 +548,9 @@ void MediaFunction::ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourc
         for(j = 1; j <= subIntervalCount; j++)
         {
             d1 = d0 + dd;
-            ComputeOneMediaSample(medias, lights, *i, ray, d1 + dd * IMedia->Jitter * (randomNumberGenerator() - 0.5), C1, od1, 3, ignore_photons, use_scattering, false);
+            ComputeOneMediaSample(medias, lights, *i, ray, d1 + dd * IMedia->Jitter * (Draw(intervalKey, kDrawMediaSample, j) - 0.5), C1, od1, 3, ignore_photons, use_scattering, false);
             ComputeOneMediaSampleRecursive(medias, lights, *i, ray, d0, d1, Result, C0, C1, ODResult, od0, od1, IMedia->AA_Level - 1,
-                                           IMedia->Jitter, aa_threshold, ignore_photons, use_scattering, false);
+                                           IMedia->Jitter, aa_threshold, ignore_photons, use_scattering, false, DeriveKey(intervalKey, kDrawMedia, j));
 
             // keep a sum of the results
             // do some attenuation, too, since we are doing samples in order
@@ -1070,7 +1078,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
             }
 
             // Area lights: a few points per sample, spread over the light along the ray (an R2 sequence).
-            const double k = lightSampleIndex++;
+            const double k = lightSampleIndex;
+            Light_Ray.SetKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex++));
 
             // Process all light sources.
             for(size_t i = mediainterval.l0; i <= mediainterval.l1; i++)
@@ -1079,7 +1088,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
                 if((d1 >= lights[i].s0) && (d1 <= lights[i].s1))
                 {
                     if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
-                        lightSampleShift = Vector2d(randomNumberGenerator(), randomNumberGenerator());
+                        lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
                     const int points = lights[i].light->Area_Light ? kMediaAreaLightPoints : 1;
                     MathColour Lit_Colour;
                     for(int j = 0; j < points; j++)
@@ -1131,7 +1140,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 
 void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
                                                    DBL d1, DBL d3, MathColour& Result, const MathColour& C1, const MathColour& C3, MathColour& ODResult, const MathColour& od1, const MathColour& od3,
-                                                   int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass)
+                                                   int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass, std::uint64_t key)
 {
     MathColour C2, Result2;
     MathColour od2, ODResult2;
@@ -1139,7 +1148,7 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
 
     // d2 is between d1 and d3 (all in range of 0..1
     d2 = 0.5 * (d1 + d3);
-    jdist = d2 + Jitter * (d3 - d1) * (randomNumberGenerator() - 0.5);
+    jdist = d2 + Jitter * (d3 - d1) * (Draw(key, kDrawMediaSample, 0) - 0.5);
 
     ComputeOneMediaSample(medias, lights, mediainterval, ray, jdist, C2, od2, 3, ignore_photons, use_scattering, photonPass);
 
@@ -1167,7 +1176,7 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
     {
         // recurse again
         ComputeOneMediaSampleRecursive(medias, lights, mediainterval, ray, d1, d2, Result2, C1, C2, ODResult2, od1, od2,
-                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass);
+                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass, DeriveKey(key, kDrawMedia, 0));
 
         // average colors & optical depth (well, actually do half of the averaging; we'll ad another "half a color" later)
         Result   = Result2   / 2.0;
@@ -1193,7 +1202,7 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
     {
         // recurse again
         ComputeOneMediaSampleRecursive(medias, lights, mediainterval, ray,  d2, d3, Result2, C2, C3, ODResult2, od2, od3,
-                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass);
+                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass, DeriveKey(key, kDrawMedia, 1));
 
         // average colors & optical depth (well, actually do half of the averaging; we already did "half a color" earlier)
         Result   += Result2   / 2.0;

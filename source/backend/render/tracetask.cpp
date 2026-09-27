@@ -408,7 +408,7 @@ void TraceTask::SimpleSamplingM0()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? std::int64_t(serial) : -1);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         pixels.clear();
         pixels.reserve(rect.GetArea());
@@ -463,7 +463,7 @@ void TraceTask::SimpleSamplingM0P()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? std::int64_t(serial) : -1);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         unsigned int px = (rect.GetWidth() + previewSize - 1) / previewSize;
         unsigned int py = (rect.GetHeight() + previewSize - 1) / previewSize;
@@ -527,7 +527,7 @@ void TraceTask::NonAdaptiveSupersamplingM1()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? std::int64_t(serial) : -1);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         SmartBlock pixels(rect.left, rect.top, rect.GetWidth(), rect.GetHeight());
 
@@ -612,7 +612,7 @@ void TraceTask::AdaptiveSupersamplingM2()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? std::int64_t(serial) : -1);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         SmartBlock pixels(rect.left, rect.top, rect.GetWidth(), rect.GetHeight());
 
@@ -684,9 +684,7 @@ void TraceTask::StochasticSupersamplingM3()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
-        GetViewDataPtr()->stochasticRandomGenerator->Seed(GetViewDataPtr()->stochasticRandomSeedBase + serial);
-
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE, highReproducibility? std::int64_t(serial) : -1);
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         pixels.clear();
         pixelsSum.clear();
@@ -770,7 +768,8 @@ void TraceTask::StochasticSupersamplingM3()
                         RGBTColour colTemp;
                         PreciseRGBTColour col, colSqr;
 
-                        Vector2d jitter = Uniform2dOnSquare(GetViewDataPtr()->stochasticRandomGenerator) - 0.5;
+                        const std::uint64_t pixelKey = DeriveKey(GetViewDataPtr()->stochasticRandomSeedBase, kDrawAntialias, (std::uint64_t(y) << 32) + x);
+                        Vector2d jitter(Draw(pixelKey, kDrawAntialias, 2 * samples) - 0.5, Draw(pixelKey, kDrawAntialias, 2 * samples + 1) - 0.5);
                         trace(x+0.5 + jitter.x(), y+0.5 + jitter.y(), GetViewData()->GetWidth(), GetViewData()->GetHeight(), colTemp);
 
                         col = PreciseRGBTColour(GammaCurve::Encode(aaGamma, colTemp));

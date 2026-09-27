@@ -733,15 +733,9 @@ void View::StartRender(POVMS_Object& renderOptions)
     if((previewendsize == 2) && (tracingmethod == 0)) // optimisation to render all pixels only once
         previewendsize = 1;
 
-    highReproducibility = renderOptions.TryGetBool(kPOVAttrib_HighReproducibility, false);
+    highReproducibility = renderOptions.TryGetBool(kPOVAttrib_HighReproducibility, true);
 
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
-    if (seed == 0)
-        // The following expression returns the number of _ticks_ elapsed since
-        // the system clock's _epoch_, where a _tick_ is the platform-dependent
-        // shortest time interval the system clock can measure, and _epoch_ is a
-        // platform-dependent point in time (usually 1970-01-01 00:00:00).
-        seed = std::chrono::system_clock::now().time_since_epoch().count();
 
     // TODO FIXME - [CLi] handle loading, storing (and later optionally deleting) of radiosity cache file for trace abort & continue feature
     // TODO FIXME - [CLi] if high reproducibility is a demand, timing of writing samples to disk is an issue regarding abort & continue

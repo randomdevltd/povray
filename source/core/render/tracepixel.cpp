@@ -310,6 +310,7 @@ void TracePixel::SetupCamera(const Camera& cam)
 
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
+    ClearGrain();
     // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
     if (!subsurfaceCameraSet)
     {
@@ -929,6 +930,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
     }
 
     ray.Direction.normalize();
+    ray.SetKey(DeriveKey(DeriveKey(0, ray.Origin), ray.Direction));
 
     return true;
 }

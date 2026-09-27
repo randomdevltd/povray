@@ -41,7 +41,8 @@
 #include "core/math/randomsequence_fwd.h"
 
 // C++ variants of C standard header files
-//  (none at the moment)
+#include <cstdint>
+#include <cstring>
 
 // C++ standard header files
 #include <memory>
@@ -67,6 +68,70 @@ std::vector<int> RandomInts(int minval, int maxval, size_t count);
 std::vector<double> RandomDoubles(int minval, int maxval, size_t count);
 
 DBL POV_rand(unsigned int& next_rand);
+
+/// What a derived key or a draw is for, so that one key yields independent values for each.
+enum RandomDrawKind : std::uint64_t
+{
+    kDrawPosition = 1,
+    kDrawReflection,
+    kDrawRefraction,
+    kDrawShadow,
+    kDrawAreaLight,
+    kDrawFullAreaLight,
+    kDrawMedia,
+    kDrawMediaSample,
+    kDrawMediaAreaShift,
+    kDrawCrand,
+    kDrawRainbow,
+    kDrawSubsurface,
+    kDrawGather,
+    kDrawGatherPool,
+    kDrawPhoton,
+    kDrawPhotonChoice,
+    kDrawPhotonBounce,
+    kDrawPhotonMap,
+    kDrawAntialias,
+    kDrawPretrace,
+};
+
+/// A bijective 64-bit mix (SplitMix64's finaliser).
+inline std::uint64_t MixBits(std::uint64_t z)
+{
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+
+/// The key of the index-th child of its kind below a path key; draws are made the same way, and carry no state.
+inline std::uint64_t DeriveKey(std::uint64_t key, std::uint64_t kind, std::uint64_t index)
+{
+    return MixBits(key ^ MixBits(kind * 0x9E3779B97F4A7C15ull + index));
+}
+
+/// A key folding in a floating-point value's exact bits.
+inline std::uint64_t DeriveKey(std::uint64_t key, double value)
+{
+    std::uint64_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return DeriveKey(key, kDrawPosition, bits);
+}
+
+inline std::uint64_t DeriveKey(std::uint64_t key, const Vector3d& v)
+{
+    return DeriveKey(DeriveKey(DeriveKey(key, v[X]), v[Y]), v[Z]);
+}
+
+/// A uniform value in [0,1) from 64 hashed bits.
+inline double DrawUnit(std::uint64_t bits)
+{
+    return double(bits >> 11) * (1.0 / 9007199254740992.0);
+}
+
+/// The index-th uniform value in [0,1) of a kind drawn from a key.
+inline double Draw(std::uint64_t key, std::uint64_t kind, std::uint64_t index)
+{
+    return DrawUnit(DeriveKey(key, kind, index));
+}
 
 // need this to prevent VC++ v8 from thinking that Generator refers to boost::Generator
 class Generator;
@@ -320,6 +385,12 @@ IndexedDoubleGeneratorPtr GetIndexedRandomDoubleGenerator(double minval, double 
 /// @param[in]  count           Number of values to provide.
 /// @return                     A shared pointer to a corresponding number generator.
 ///
+/// The first count directions of @ref GetSubRandomCosWeightedDirectionGenerator(), by index.
+IndexedVectorGeneratorPtr GetIndexedSubRandomCosWeightedDirectionGenerator(unsigned int id, size_t count);
+
+/// The first count directions of @ref GetSubRandomDirectionGenerator(), by index.
+IndexedVectorGeneratorPtr GetIndexedSubRandomDirectionGenerator(unsigned int id, size_t count);
+
 SequentialDoubleGeneratorPtr GetSubRandomDoubleGenerator(unsigned int id, double minval, double maxval, size_t count = 0);
 
 /// Gets a source for cosine-weighted sub-random (low discrepancy) vectors on the unit hemisphere centered around +Y.

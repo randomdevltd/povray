@@ -82,6 +82,15 @@ using std::vector;
 
 #define SHADOW_TOLERANCE 1.0e-3
 
+// Directions in the pool diffuse subsurface samples take theirs from.
+static const size_t kSubsurfaceDirectionPool = 32767;
+
+// A light's index among a path's shadow rays; global and light-group lights are numbered separately.
+static std::uint64_t LightSlot(const LightSource& light)
+{
+    return 2 * std::uint64_t(light.index) + (light.lightGroupLight ? 1 : 0);
+}
+
 
 bool NoSomethingFlagRayObjectCondition::operator()(const Ray& ray, ConstObjectPtr object, double) const
 {
@@ -103,12 +112,7 @@ Trace::Trace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFl
     maxFoundTraceLevel(0),
     qualityFlags(qf),
     mailbox(0),
-    crandRandomNumberGenerator(0),
-    randomNumbers(0.0, 1.0, 32768),
-    randomNumberGenerator(&randomNumbers),
-    ssltUniformDirectionGenerator(),
-    ssltUniformNumberGenerator(),
-    ssltCosWeightedDirectionGenerator(),
+    ssltUniformDirections(GetIndexedSubRandomDirectionGenerator(0, kSubsurfaceDirectionPool)),
     cooperate(cf),
     media(mf),
     radiosity(rf),
@@ -1296,6 +1300,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
     double n, n2;
 
     nray.SetFlags(Ray::ReflectionRay, ray);
+    nray.SetKey(ray.NextChildKey(kDrawReflection));
 
     // The rest of this is essentally what was originally here, with small changes.
     n = -2.0 * dot(ray.Direction, normal);
@@ -1359,6 +1364,8 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
     bool totalReflection = false;
 
     nray.SetFlags(Ray::RefractionRay, ray);
+    const std::uint64_t refractionKey = ray.NextChildKey(kDrawRefraction);
+    nray.SetKey(refractionKey);
 
     // Set up new ray.
     nray.Origin = ipoint;
@@ -1467,6 +1474,7 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
                 // NB setting the dispersion factor also causes the MonochromaticRay flag to be set
                 SpectralBand spectralBand(i, dispersionelements);
                 nray.SetSpectralBand(spectralBand);
+                nray.SetKey(DeriveKey(refractionKey, kDrawRefraction, i));
 
                 (void)TraceRefractionRay(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, tempTransm, weight);
 
@@ -1723,6 +1731,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         r = gatherer.gatherPhotonsAdaptive(&IPoint, &Layer_Normal, true);
 
     n = gatherer.gatheredPhotons.numFound;
+    const std::uint64_t photonKey = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
 
     tmpCol.Clear();
 
@@ -1785,7 +1794,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
             // (Diffuse contribution is not supported in combination with BSSRDF, to emphasize the fact that the BSSRDF
             // model is intended to provide for all the diffuse term by default. If users want to add some additional
             // surface-only diffuse term, they should use layered textures.
-            ComputeDiffuseColour(Finish, lightDirection, Eye.Direction, Layer_Normal, tmpCol2, Light_Colour, Layer_Pigment_Colour, relativeIor, Attenuation, backside);
+            ComputeDiffuseColour(Finish, lightDirection, Eye.Direction, Layer_Normal, tmpCol2, Light_Colour, Layer_Pigment_Colour, relativeIor, Attenuation, backside,
+                                 photonKey, j);
 
         // NK rad - don't compute highlights for radiosity gather rays, since this causes
         // problems with colors being far too bright
@@ -1911,7 +1921,8 @@ void Trace::ComputeOneLightContribution(const LightSource &lightsource, const Ve
             // (Diffuse contribution is not supported in combination with BSSRDF, to emphasize the fact that the BSSRDF
             // model is intended to provide for all the diffuse term by default. If users want to add some additional
             // surface-only diffuse term, they should use layered textures.
-            ComputeDiffuseColour(finish, lightsourceray.Direction, eye.Direction, layer_normal, tmpCol, lightcolour, layer_pigment_colour, relativeIor, attenuation, backside);
+            ComputeDiffuseColour(finish, lightsourceray.Direction, eye.Direction, layer_normal, tmpCol, lightcolour, layer_pigment_colour, relativeIor, attenuation, backside,
+                                 eye.GetKey(), LightSlot(lightsource) << 32);
 
         MathColour tempLightColour = (finish->AlphaKnockout ? lightcolour * attenuation : lightcolour);
 
@@ -1979,6 +1990,9 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
 
     MathColour sampleLightcolour = lightcolour / (lightsource.Area_Size1 * lightsource.Area_Size2);
     MathColour attenuatedLightcolour;
+    const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
+    if(lightsource.Jitter)
+        MarkGrain();
 
     for(int v = 0; v < lightsource.Area_Size2; ++v)
     {
@@ -1991,10 +2005,11 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             bool backside = false;
             MathColour tmpCol;
 
+            const std::uint64_t cell = std::uint64_t(v) * lightsource.Area_Size1 + u;
             if(lightsource.Jitter)
             {
-                jitter_u += randomNumberGenerator() - 0.5;
-                jitter_v += randomNumberGenerator() - 0.5;
+                jitter_u += Draw(key, kDrawFullAreaLight, 2 * cell) - 0.5;
+                jitter_v += Draw(key, kDrawFullAreaLight, 2 * cell + 1) - 0.5;
             }
 
             // Create circular are lights [ENB 9/97]
@@ -2055,7 +2070,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                 // (Diffuse contribution is not supported in combination with BSSRDF, to emphasize the fact that the BSSRDF
                 // model is intended to provide for all the diffuse term by default. If users want to add some additional
                 // surface-only diffuse term, they should use layered textures.
-                ComputeDiffuseColour(finish, lsr.Direction, eye.Direction, layer_normal, tmpCol, attenuatedLightcolour, layer_pigment_colour, relativeIor, attenuation, backside);
+                ComputeDiffuseColour(finish, lsr.Direction, eye.Direction, layer_normal, tmpCol, attenuatedLightcolour, layer_pigment_colour, relativeIor, attenuation, backside,
+                                     eye.GetKey(), (LightSlot(lightsource) << 32) + 1 + cell);
 
             // NK rad - don't compute highlights for radiosity gather rays, since this causes
             // problems with colors being far too bright
@@ -2123,6 +2139,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
 
     // NOTE: shadow rays are never photon rays, so flag can be hard-coded to false
     newray.SetFlags(Ray::OtherRay, true, false);
+    newray.Derive(lightsourceray, kDrawShadow, LightSlot(lightsource));
 
     // Get shadows from current light source.
     if(lightsource.Area_Light && qualityFlags.areaLights && (areaSample != nullptr))
@@ -2341,6 +2358,24 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
     ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1Temp, axis2Temp);
 
     TraceAreaLightSubsetShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, 0, 0, lightsource.Area_Size1 - 1, lightsource.Area_Size2 - 1, 0, axis1Temp, axis2Temp);
+
+    // Jitter only shapes a shadow the light's points disagree on.
+    if(lightsource.Jitter && !grain)
+    {
+        const MathColour* first = nullptr;
+        for(const MathColour& sample : lightGrid)
+        {
+            if(!sample.IsValid())
+                continue;
+            if(first == nullptr)
+                first = &sample;
+            else if(!(sample - *first).IsZero())
+            {
+                MarkGrain();
+                break;
+            }
+        }
+    }
 }
 
 void Trace::ComputeAreaLightAxes(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
@@ -2412,8 +2447,9 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
 
             if(lightsource.Jitter)
             {
-                jitter_u += randomNumberGenerator() - 0.5;
-                jitter_v += randomNumberGenerator() - 0.5;
+                const std::uint64_t cell = std::uint64_t(u) * lightsource.Area_Size2 + v;
+                jitter_u += Draw(lightsourceray.GetKey(), kDrawAreaLight, 2 * cell) - 0.5;
+                jitter_v += Draw(lightsourceray.GetKey(), kDrawAreaLight, 2 * cell + 1) - 0.5;
             }
 
             // Recalculate the light source ray but not the colour
@@ -2720,7 +2756,7 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
 }
 
 void Trace::ComputeDiffuseColour(const FINISH *finish, const Vector3d& lightDirection, const Vector3d& eyeDirection, const Vector3d& layer_normal, MathColour& colour, const MathColour& light_colour,
-                                 const MathColour& layer_pigment_colour, double relativeIor, double attenuation, bool backside)
+                                 const MathColour& layer_pigment_colour, double relativeIor, double attenuation, bool backside, std::uint64_t key, std::uint64_t index)
 {
     double cos_angle_of_incidence, intensity;
     double diffuse = (backside? finish->DiffuseBack : finish->Diffuse) * finish->BrillianceAdjust;
@@ -2739,7 +2775,10 @@ void Trace::ComputeDiffuseColour(const FINISH *finish, const Vector3d& lightDire
     intensity *= diffuse * attenuation;
 
     if(finish->Crand > 0.0)
-        intensity -= POV_rand(crandRandomNumberGenerator) * finish->Crand;
+    {
+        intensity -= Draw(key, kDrawCrand, index) * finish->Crand;
+        MarkGrain();
+    }
 
     if (finish->Fresnel != 0.0)
     {
@@ -3373,7 +3412,8 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
 
     n = 0;
 
-    for (RAINBOW *Rainbow = sceneData->rainbow; Rainbow != nullptr; Rainbow = Rainbow->Next)
+    std::uint64_t rainbowIndex = 0;
+    for (RAINBOW *Rainbow = sceneData->rainbow; Rainbow != nullptr; Rainbow = Rainbow->Next, rainbowIndex++)
     {
         if ((Rainbow->Pigment != nullptr) && (Rainbow->Distance != 0.0) && (Rainbow->Width != 0.0))
         {
@@ -3403,7 +3443,10 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
 
                     // Jitter index.
                     if(Rainbow->Jitter > 0.0)
-                        index += (2.0 * randomNumberGenerator() - 1.0) * Rainbow->Jitter;
+                    {
+                        index += (2.0 * Draw(ray.GetKey(), kDrawRainbow, rainbowIndex) - 1.0) * Rainbow->Jitter;
+                        MarkGrain();
+                    }
 
                     if((index >= 0.0) && (index <= 1.0 - EPSILON))
                     {
@@ -3587,13 +3630,12 @@ void Trace::ComputeDiffuseSampleBase(Vector3d& basePoint, const Intersection& ou
         basePoint = pOut + nOut * avgFreeDist;
 }
 
-void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket)
+void Trace::ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket,
+                                      std::uint64_t key, int sample)
 {
-    // generate a vector in a random direction
+    // A shading point's samples take successive directions of the pool, from a place its key sets.
     // TODO FIXME - a suitably weighted distribution (oriented according to the surface normal) would possibly be better
-    while (ssltUniformDirectionGenerator.size() <= ticket.subsurfaceRecursionDepth)
-        ssltUniformDirectionGenerator.push_back(GetSubRandomDirectionGenerator(0, 32767));
-    Vector3d v = (*(ssltUniformDirectionGenerator[ticket.subsurfaceRecursionDepth]))();
+    Vector3d v = (*ssltUniformDirections)[(DeriveKey(key, kDrawSubsurface, 0) + sample) % kSubsurfaceDirectionPool];
 
     Ray ray(ticket, basePoint, v, Ray::SubsurfaceRay);
     bool found = FindIntersection(object, in, ray);
@@ -3758,14 +3800,16 @@ void Trace::SubsurfaceCandidate::SetLight(const Vector3d& p, const MathColour& l
 }
 
 // Estimates the shadowed sum of one light's candidates from budget shadow rays, drawn systematically in proportion to their bounds.
-MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket)
+MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket,
+                                        std::uint64_t key)
 {
     MathColour estimate;
+    const std::uint64_t lightKey = DeriveKey(key, kDrawShadow, LightSlot(lightsource));
     double step = sum / budget;
-    double next = randomNumberGenerator() * step;
+    double next = Draw(lightKey, kDrawSubsurface, 0) * step;
     double end = 0.0;
     int drawn = 0;
-    Vector2d shift(randomNumberGenerator(), randomNumberGenerator());
+    Vector2d shift(Draw(lightKey, kDrawSubsurface, 1), Draw(lightKey, kDrawSubsurface, 2));
     for (int i = 0; (i < count) && (drawn < budget); i++)
     {
         const SubsurfaceCandidate& c = candidates[i];
@@ -3782,6 +3826,7 @@ MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const Su
         for (int r = 0; r < rays; r++)
         {
             Ray lightsourceray(ticket);
+            lightsourceray.SetKey(DeriveKey(lightKey, kDrawSubsurface, 3 + drawn + r));
             double lightsourcedepth;
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, true);
@@ -3796,7 +3841,8 @@ MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const Su
 }
 
 // Adds the shadowed light of the candidates, count per light in lights' order; see doc/PERF.md.
-void Trace::ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket)
+void Trace::ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket,
+                                      std::uint64_t key)
 {
     std::vector<double> sums(lights.size(), 0.0);
     double sum = 0.0;
@@ -3825,7 +3871,7 @@ void Trace::ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lig
             continue;
         double share = kSubsurfaceEvenShare / lit + (1.0 - kSubsurfaceEvenShare) * sums[l] / sum;
         int budget = max(1, int(budgetAll * share + 0.5));
-        total += DrawSubsurfaceShadows(*lights[l], &candidates[l * count], count, sums[l], budget, ticket);
+        total += DrawSubsurfaceShadows(*lights[l], &candidates[l * count], count, sums[l], budget, ticket, key);
     }
 }
 
@@ -3849,7 +3895,8 @@ void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const Lig
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
 void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
-                                                const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, TraceTicket& ticket)
+                                                const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, TraceTicket& ticket,
+                                                std::uint64_t key)
 {
     Lo.Clear();
     if (lights.empty())
@@ -3892,16 +3939,12 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
     if (sampled == 0)
         return;
 
-    while (ssltUniformNumberGenerator.size() <= ticket.subsurfaceRecursionDepth)
-        ssltUniformNumberGenerator.push_back(GetRandomDoubleGenerator(0.0, 1.0, 32767));
-    SequentialNumberGenerator<double>& uniform = *ssltUniformNumberGenerator[ticket.subsurfaceRecursionDepth];
-
     std::vector<SubsurfaceCandidate> candidates(lights.size() * numSamples);
-    int channel = min(int(uniform() * MathColour::channels), MathColour::channels - 1);
+    int channel = min(int(Draw(key, kDrawSubsurface, 0) * MathColour::channels), MathColour::channels - 1);
 
     for (int i = 0; i < numSamples; i++, channel = (channel + 1) % MathColour::channels)
     {
-        double epsilon = 1.0 - uniform(); // in (0,1]
+        double epsilon = 1.0 - Draw(key, kDrawSubsurface, i + 1); // in (0,1]
         double s_prime_out = fabs(log(epsilon)) / sigma_t_xo[channel];
 
         if (s_prime_out >= dist)
@@ -3946,7 +3989,7 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
             }
         }
     }
-    ShadeSubsurfaceCandidates(lights, candidates.data(), numSamples, Lo, ticket);
+    ShadeSubsurfaceCandidates(lights, candidates.data(), numSamples, Lo, ticket, key);
 
     // TODO FIXME - radiosity should also be taken into account
 }
@@ -4014,7 +4057,7 @@ bool Trace::SubsurfaceVisibility::Agrees(int light) const
 
 // Light entering the surface at point: each light's colour, shadow, cosine and Fresnel transmittance; see doc/PERF.md.
 MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
-                                             int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket)
+                                             int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key)
 {
     MathColour irradiance;
     for (int l = 0; l < lights.size(); l++)
@@ -4026,6 +4069,7 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
         for (int k = 0; k < points; k++)
         {
             Ray lightsourceray(ticket);
+            lightsourceray.SetKey(DeriveKey(key, kDrawSubsurface, k));
             double lightsourcedepth;
             MathColour lightcolour;
             ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, point, lightcolour, true);
@@ -4052,7 +4096,7 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
 
 // Light entering at the exit point, shadowed as the disc's points agree or else by its own shadow test; keeps each light's
 // shadowed colour and direction, and whether its shadow holds around the point, for single scattering; see doc/PERF.md.
-MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, TraceTicket& ticket)
+MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, TraceTicket& ticket, std::uint64_t key)
 {
     MathColour irradiance;
     size_t count = cloud.lights.size();
@@ -4075,6 +4119,7 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
                 lightcolour *= CloudColour(&disc.mean[l * MathColour::channels]);
             else
             {
+                lightsourceray.SetKey(key);
                 TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, out.IPoint, lightcolour, nullptr);
                 cloud.exitAgreed[l] = cloud.local;
             }
@@ -4323,7 +4368,7 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         Vector3d normal(point.normal[0], point.normal[1], point.normal[2]);
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
         MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, normal, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
-                                                            cell.visibility.data() + k * stride, ticket);
+                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k));
         for (int j = 0; j < MathColour::channels; j++)
             point.irradiance[j] = irradiance[j];
         point.id = k;
@@ -4533,7 +4578,7 @@ static double UnfoldedDistance(const Vector3d& x, const Vector3d& n, const Subsu
 // The diffuse term from the object's cloud around the exit point (core, disc, ring and beyond; see doc/PERF.md); false
 // where the disc bends, or the ring is short of points or folds out of sight (edges, thin parts, creases), for method 1.
 bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
-                                   MathColour& diffuse, TraceTicket& ticket)
+                                   MathColour& diffuse, TraceTicket& ticket, std::uint64_t key)
 {
     double mm = sceneData->mmPerUnit;
     double reachSqr = Sqr(cloud.reach);
@@ -4541,7 +4586,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     if (cloud.local)
     {
         ssltScratchVisibility.Reset(cloud.lights.size());
-        MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, ticket);
+        MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, ticket, key);
         diffuse = MathColour(profile.RdDisc(cloud.reach) * (M_PI * reachSqr) * PreciseMathColour(here) * ftOut);
         return true;
     }
@@ -4643,7 +4688,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
         return false;
     visibility.Finish();
 
-    MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, ticket);
+    MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, ticket, key);
     PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
     PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
     PreciseMathColour sum = far + coreRd * PreciseMathColour(here);
@@ -4726,6 +4771,8 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     }
 
     Eye.GetTicket().subsurfaceRecursionDepth++;
+    const std::uint64_t key = Eye.NextChildKey(kDrawSubsurface);
+    MarkGrain();
 
     Vector3d vOut = -Eye.Direction;
 
@@ -4784,7 +4831,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     MathColour cloudDiffuse;
     bool cloud = (method == kSubsurfaceMethodPointCloud) && !radiosity_needed && OpenSubsurfaceCloud(out, profile, lights, cloudData, Eye.GetTicket()) &&
-                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket());
+                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     if (cloud)
         Total_Colour += cloudDiffuse;
     else
@@ -4794,7 +4841,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         for (int i = 0; i < NumSamplesDiffuse; i++)
         {
             Intersection in;
-            ComputeDiffuseSamplePoint(sampleBase, SubsurfaceObject(out), in, sampleArea, Eye.GetTicket());
+            ComputeDiffuseSamplePoint(sampleBase, SubsurfaceObject(out), in, sampleArea, Eye.GetTicket(), key, i);
 
             // avoid pathological cases
             if (sampleArea == 0)
@@ -4815,7 +4862,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
             for (int l = 0; l < lights.size(); l++)
                 ComputeDiffuseCandidate(*lights[l], in, rd, eta, candidates[l * NumSamplesDiffuse + i], Eye.GetTicket());
         }
-        ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket());
+        ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 2));
         // Rays that leave without meeting the object count as samples of nothing, or open surfaces get twice their light.
         if (NumSamplesDiffuse > 0)
             Total_Colour /= NumSamplesDiffuse;
@@ -4825,6 +4872,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     if (SSLTComputeRefractedDirection(Eye.Direction, out.INormal, 1.0/eta, refractedEye))
     {
         Ray refractedEyeRay(Eye.GetTicket(), out.IPoint, refractedEye);
+        refractedEyeRay.SetKey(DeriveKey(key, kDrawRefraction, 0));
         Intersection unscatteredIn;
 
         double dist;
@@ -4845,7 +4893,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         {
             MathColour singleColour;
             ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, eta, lights,
-                                                cloud ? &cloudData : nullptr, Eye.GetTicket());
+                                                cloud ? &cloudData : nullptr, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3));
             Total_Colour += singleColour / NumSamplesSingle;
         }
 
@@ -4873,6 +4921,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
                 if (SSLTComputeRefractedDirection(refractedEye, unscatteredIn.INormal, eta, doubleRefractedEye))
                 {
                     Ray doubleRefractedEyeRay(refractedEyeRay);
+                    doubleRefractedEyeRay.SetKey(DeriveKey(key, kDrawRefraction, 1));
                     doubleRefractedEyeRay.SetFlags(Ray::RefractionRay, refractedEyeRay);
                     doubleRefractedEyeRay.Origin = unscatteredIn.IPoint;
                     doubleRefractedEyeRay.Direction = doubleRefractedEye;

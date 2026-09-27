@@ -259,6 +259,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     Interior *interior;
     const TEXTURE *Layer;
     Ray NewRay(ray);
+    NewRay.SetKey(ray.NextChildKey(kDrawReflection));
     int doReflection, doDiffuse, doRefraction;
     DBL reflectionWeight, refractionWeight, diffuseWeight, dieWeight, totalWeight;
     DBL choice;
@@ -362,6 +363,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     if (threadData->passThruThis)
     {
         Ray NRay(ray);
+        NRay.SetKey(ray.NextChildKey(kDrawRefraction));
 
         NRay.Origin = isect.IPoint;
         NRay.Direction = ray.Direction;
@@ -501,7 +503,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             dieWeight /= totalWeight;
 
             // now, determine which we want to use
-            choice = randomNumberGenerator();
+            choice = DrawUnit(ray.NextChildKey(kDrawPhotonChoice));
             if (choice<diffuseWeight)
             {
                 // do diffuse
@@ -569,6 +571,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
         threadData->GFilCol = FilCol;
 
         Ray NRay(ray);
+        NRay.SetKey(ray.NextChildKey(kDrawRefraction));
 
         NRay.Origin = isect.IPoint;
         NRay.Direction = ray.Direction;
@@ -600,7 +603,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     if (doDiffuse)
     {
         //ChooseRay(Ray &NewRay, Vector3d& Normal, Vector3d& Raw_Normal, int WhichRay)
-        ChooseRay(NewRay, LayNormal, rawnormal, std::rand()%400); // TODO - magic number
+        ChooseRay(NewRay, LayNormal, rawnormal, int(Draw(NewRay.GetKey(), kDrawPhotonBounce, 0) * 400)); // TODO - magic number
 
         MathColour CurLightCol;
         CurLightCol = LightCol * ResCol;
@@ -708,6 +711,8 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
     bool totalReflection = false;
 
     nray.SetFlags(Ray::RefractionRay, ray);
+    const std::uint64_t refractionKey = ray.NextChildKey(kDrawRefraction);
+    nray.SetKey(refractionKey);
 
     // Set up new ray.
     nray.Origin = ipoint;
@@ -811,6 +816,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
                 // NB setting the dispersion factor also causes the MonochromaticRay flag to be set
                 SpectralBand spectralBand(i, dispersionelements);
                 nray.SetSpectralBand(spectralBand);
+                nray.SetKey(DeriveKey(refractionKey, kDrawRefraction, i));
 
                 tempColour = colour * spectralBand.GetHue() / DBL(dispersionelements);
 
@@ -1117,10 +1123,12 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
     MathColour PhotonColour;
 
     Od = colour;
+    const std::uint64_t key = ray.NextChildKey(kDrawMedia);
 
     for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
     {
         DBL mediaSpacingFactor;
+        const std::uint64_t intervalKey = DeriveKey(key, kDrawMedia, i - mediaintervals.begin());
 
         if(!threadData->photonSourceLight->Parallel)
         {
@@ -1168,7 +1176,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
 
         for(j = 0; j < minsamples; j++)
         {
-            d0 = (j + 0.5 + randomNumberGenerator()*sceneData->photonSettings.jitter - 0.5*sceneData->photonSettings.jitter) / minsamples;
+            d0 = (j + 0.5 + Draw(intervalKey, kDrawMediaSample, j)*sceneData->photonSettings.jitter - 0.5*sceneData->photonSettings.jitter) / minsamples;
             ComputeOneMediaSample(medias, lights, *i, ray, d0, C0, od0, 2 /* use method 2 */, ignore_photons, use_scattering, true);
 
             if (use_scattering && !ignore_photons)
@@ -1804,8 +1812,34 @@ void PhotonMap::sortAndSubdivide(int start, int end, int /*sorted*/)
   Postconditions:
     photons are in a valid kd-tree format
 ******************************************************************************/
+// A total order on photons by their bits, so the tree does not depend on which thread shot which photon first.
+static bool PhotonPrecedes(const Photon& a, const Photon& b)
+{
+    for (int k = X; k <= Z; k++)
+    {
+        const PhotonScalar fa = a.Loc[k], fb = b.Loc[k];
+        std::uint32_t ba, bb;
+        std::memcpy(&ba, &fa, sizeof(ba));
+        std::memcpy(&bb, &fb, sizeof(bb));
+        if (ba != bb)
+            return ba < bb;
+    }
+    if (a.theta != b.theta)
+        return a.theta < b.theta;
+    if (a.phi != b.phi)
+        return a.phi < b.phi;
+    return std::lexicographical_compare(*a.colour, *a.colour + 4, *b.colour, *b.colour + 4);
+}
+
 void PhotonMap::buildTree()
 {
+    std::vector<Photon> photons(numPhotons);
+    for (int i = 0; i < numPhotons; i++)
+        photons[i] = GetPhoton(i);
+    std::sort(photons.begin(), photons.end(), PhotonPrecedes);
+    for (int i = 0; i < numPhotons; i++)
+        GetPhoton(i) = photons[i];
+
 //  Send_Progress("Sorting photons", PROGRESS_SORTING_PHOTONS);
     sortAndSubdivide(0, numPhotons-1, X+Y+Z /* this is not X, Y, or Z */);
 }
@@ -1856,7 +1890,7 @@ void PhotonMap::setGatherOptions(ScenePhotonSettings &photonSettings, bool media
 
         for(i=0; i<numToSample; i++)
         {
-            j = std::rand() % numPhotons;
+            j = int(DeriveKey(mediaMap, kDrawPhotonMap, i) % numPhotons);
 
             Point = Vector3d(GetPhoton(j).Loc);
 
@@ -1936,7 +1970,7 @@ void PhotonMap::setGatherOptions(ScenePhotonSettings &photonSettings, bool media
         lessThan = 0;
         for(i=0; i<numToSample; i++)
         {
-            j = std::rand() % numPhotons;
+            j = int(DeriveKey(mediaMap, kDrawPhotonMap, numToSample + i) % numPhotons);
 
             Point = Vector3d(GetPhoton(j).Loc);
 

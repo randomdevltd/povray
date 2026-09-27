@@ -66,8 +66,6 @@ class PhotonShootingTask final : public RenderTask
         PhotonShootingStrategy* strategy;
 
         Timer timer;
-        RandomDoubleSequence rands;
-        RandomDoubleSequence::Generator randgen;
 
         PhotonShootingTask(ViewData *vd, PhotonShootingStrategy* strategy, size_t seed);
         virtual ~PhotonShootingTask() override;

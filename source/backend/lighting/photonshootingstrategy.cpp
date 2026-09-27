@@ -87,6 +87,7 @@ void PhotonShootingStrategy::createUnitsForCombo(ObjectPtr obj, LightSource* lig
 {
     PhotonShootingUnit* unit = new PhotonShootingUnit(light, obj);
     unit->lightAndObject.computeAnglesAndDeltas(sceneData);
+    unit->lightAndObject.serial = units.size();
     units.push_back(unit);
 }
 
