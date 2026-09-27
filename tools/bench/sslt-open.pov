@@ -1,5 +1,5 @@
-// Case 0: a slab's top; 1: a plane of the same material, which should match it; 2: a clipped shell over a floor;
-// 3: a block with a hollow cut by difference; 4: a block as a mesh wound inward, with an inside vector.
+// Case 0: a slab's top; 1: a plane of it; 2: a clipped shell; 3: a block with a hollow; 4: a block as an inward mesh;
+// 5: a sphere seen directly and in a mirror, lit through glass (+SR/+ER: which ray is first).
 #version 3.7;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Diffuse) #declare Diffuse = 200; #end
@@ -16,6 +16,13 @@ light_source { <-3, 6, -3>, rgb 1.2 }
   camera { location <0, 1.5, -4> look_at <0, 0.6, 0> angle 40 right x * 4 / 3 }
   plane { y, 0 pigment { rgb 0.5 } }
   sphere { <0, 0.6, 0>, 0.6 clipped_by { box { <-1, 0, -1>, <1, 0.9, 1> } } texture { T } interior { ior 1.4 } }
+#elseif (Case = 5)
+  global_settings { max_trace_level 3 }
+  camera { location <0, 1, -3> look_at <0, 1.2, 0> angle 50 right x * 4 / 3 }
+  plane { y, 0 pigment { rgb 0.5 } }
+  sphere { <0, 0.5, 0>, 0.5 texture { T } interior { ior 1.4 } }
+  box { <-1.5, -0.01, -0.8>, <1.5, 0.01, 0.8> rotate x * 40 translate <0, 2.2, 0.4> pigment { rgb 1 } finish { reflection 1 } }
+  box { <-1, 1.4, -1>, <1, 1.42, 1> rotate z * -30 pigment { rgbf <0.9, 1, 0.9, 0.9> } interior { ior 1.5 } }
 #else
   camera { location <0, 2.6, -3.2> look_at <0, 0.4, 0> angle 45 right x * 4 / 3 }
   plane { y, -0.01 pigment { rgb 0.5 } }
