@@ -3157,7 +3157,7 @@ specify <code>Split_Unions=on</code> or use <code> +SU</code>. The default is
 <p>Every render of a scene gives the same result by default. Random effects draw from values fixed by the scene and the pixel, not by the order of rendering or the number of threads.</p>
 <p>If the <code>Stochastic_Seed=</code>n or <code>+SS</code>n option is specified, the stochastic mechanisms draw differently for each value, so that renders with different values can be averaged to get a higher-quality image.</p>
 <p class="Note"><strong>Note:</strong> Even if the seed is set identically, other factors may cause differences in the result. For example the render block size <code>+BS</code>n or the render pattern <code>+RP</code>n options. Results may also differ between versions of POV-Ray.</p>
-<p>Presently anti-aliasing sampling method 3 is the only feature that is sensitive to the stochastic seed setting.</p>
+<p>Every random effect is sensitive to the stochastic seed setting: area light jitter, media, <code>crand</code>, rainbow jitter, subsurface light transport, radiosity, photons and anti-aliasing sampling method 3.</p>
 
 </div>
 <a name="r3_2_8_8"></a>

@@ -194,7 +194,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
        --------------------------------------------- */
     i = 0;
     notComputed = true;
-    const std::uint64_t comboKey = DeriveKey(0, kDrawPhoton, combo.serial);
+    const std::uint64_t comboKey = DeriveKey(renderDataPtr->stochasticRandomSeedBase, kDrawPhoton, combo.serial);
     std::uint64_t thetaIndex = 0;
     for(theta=combo.mintheta; theta<combo.maxtheta; theta+=combo.dtheta, thetaIndex++)
     {

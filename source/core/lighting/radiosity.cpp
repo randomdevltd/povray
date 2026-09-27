@@ -560,7 +560,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     unsigned int okCountRaw = 0;
     bool use_raw_normal = similar(raw_normal, layer_normal); // if the normal isn't pertubed, go for the raw normal right away because it makes life easier
     double qualitySum = 0.0;
-    const std::uint64_t sampleKey = DeriveKey(DeriveKey(DeriveKey(0, ipoint), raw_normal), layer_normal);
+    const std::uint64_t sampleKey = DeriveKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ipoint), raw_normal), layer_normal);
     param.directionGenerator.InitSequence(cur_sample_count, raw_normal, layer_normal, use_raw_normal, brilliance, sampleKey);
     ticket.radiosityShare = 1.0 / max(1u, cur_sample_count);
     for(unsigned int i = 0, hit = 0; i < cur_sample_count; i++)

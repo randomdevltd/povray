@@ -189,7 +189,7 @@ void RadiosityTask::Run()
                     RGBTColour col;
 
                     // jitter in [-1,1) per axis, keyed on the pixel and pass
-                    const std::uint64_t key = DeriveKey(DeriveKey(DeriveKey(0, x), y), kDrawPretrace, currentStep);
+                    const std::uint64_t key = DeriveKey(DeriveKey(DeriveKey(GetViewDataPtr()->stochasticRandomSeedBase, x), y), kDrawPretrace, currentStep);
                     trace(x + offset + jitter * (2.0 * Draw(key, kDrawPretrace, 0) - 1.0), y + offset + jitter * (2.0 * Draw(key, kDrawPretrace, 1) - 1.0),
                           width, height, col);
 
