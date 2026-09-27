@@ -76,8 +76,6 @@ namespace pov
 PhotonShootingTask::PhotonShootingTask(ViewData *vd, PhotonShootingStrategy* strategy, size_t seed) :
     RenderTask(vd, seed, "Photon"),
     trace(vd->GetSceneData(), GetViewDataPtr(), vd->GetQualityFeatureFlags(), cooperate),
-    rands(0.0, 1.0, 32768),
-    randgen(&rands),
     strategy(strategy),
     cooperate(*this),
     maxTraceLevel(vd->GetSceneData()->photonSettings.Max_Trace_Level),
@@ -196,8 +194,11 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
        --------------------------------------------- */
     i = 0;
     notComputed = true;
-    for(theta=combo.mintheta; theta<combo.maxtheta; theta+=combo.dtheta)
+    const std::uint64_t comboKey = DeriveKey(0, kDrawPhoton, combo.serial);
+    std::uint64_t thetaIndex = 0;
+    for(theta=combo.mintheta; theta<combo.maxtheta; theta+=combo.dtheta, thetaIndex++)
     {
+        const std::uint64_t thetaKey = DeriveKey(comboKey, kDrawPhoton, thetaIndex);
         Cooperate();
         SendProgress();
         renderDataPtr->hitObject = false;
@@ -223,17 +224,19 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
         ShootingDirection shootingDirection(combo.light,combo.target);
         shootingDirection.compute();
 
-        minphi = -M_PI + dphi*randgen()*0.5;
+        minphi = -M_PI + dphi*Draw(thetaKey, kDrawPhoton, 0)*0.5;
         maxphi = M_PI - dphi/2 + (minphi+M_PI);
-        for(phi=minphi; phi<maxphi; phi+=dphi)
+        std::uint64_t phiIndex = 0;
+        for(phi=minphi; phi<maxphi; phi+=dphi, phiIndex++)
         {
+            const std::uint64_t photonKey = DeriveKey(thetaKey, kDrawPhoton, phiIndex + 1);
             int x_samples,y_samples;
             int area_x, area_y;
             /* ------------------- shoot one photon ------------------ */
 
             /* jitter theta & phi */
-            jitphi = phi + (dphi)*(randgen() - 0.5)*1.0*GetSceneData()->photonSettings.jitter;
-            jittheta = theta + (combo.dtheta)*(randgen() - 0.5)*1.0*GetSceneData()->photonSettings.jitter;
+            jitphi = phi + (dphi)*(Draw(photonKey, kDrawPhoton, 0) - 0.5)*1.0*GetSceneData()->photonSettings.jitter;
+            jittheta = theta + (combo.dtheta)*(Draw(photonKey, kDrawPhoton, 1) - 0.5)*1.0*GetSceneData()->photonSettings.jitter;
 
             /* actually, shoot multiple samples for area light */
             if(combo.light->Area_Light && combo.light->Photon_Area_Light && !combo.light->Parallel)
@@ -253,6 +256,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
                 {
                     TraceTicket ticket(maxTraceLevel, adcBailout);
                     Ray ray(ticket);
+                    ray.SetKey(DeriveKey(photonKey, kDrawPhoton, 2 + std::uint64_t(area_x) * y_samples + area_y));
 
                     ray.Origin = combo.light->Center;
 

@@ -69,6 +69,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <atomic>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -342,7 +343,7 @@ void RadiosityFunction::ResetTopLevelStats()
     topLevelReuse      = 0.0;
 }
 
-void RadiosityFunction::BeforeTile(int id, unsigned int pts, std::int64_t sequence)
+void RadiosityFunction::BeforeTile(int id, unsigned int pts)
 {
     if (isFinalTrace)
         POV_RADIOSITY_ASSERT(pts == FINAL_TRACE);
@@ -368,9 +369,8 @@ void RadiosityFunction::BeforeTile(int id, unsigned int pts, std::int64_t sequen
     pretraceStep = pts;
     tileId = id;
 
-    // next tile, so we start the sample direction pattern all over again
     for (unsigned int depth = 0; depth < settings.recursionLimit; depth ++)
-        recursionParameters[depth].directionGenerator.Reset(settings.directionPoolSize, (sequence < 0 ? -1 : sequence * std::int64_t(settings.recursionLimit) + depth));
+        recursionParameters[depth].directionGenerator.Reset(settings.directionPoolSize);
 
     POV_RADIOSITY_ASSERT(cacheBlockPool == nullptr);
     cacheBlockPool = radiosityCache.AcquireBlockPool();
@@ -560,7 +560,8 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     unsigned int okCountRaw = 0;
     bool use_raw_normal = similar(raw_normal, layer_normal); // if the normal isn't pertubed, go for the raw normal right away because it makes life easier
     double qualitySum = 0.0;
-    param.directionGenerator.InitSequence(cur_sample_count, raw_normal, layer_normal, use_raw_normal, brilliance);
+    const std::uint64_t sampleKey = DeriveKey(DeriveKey(DeriveKey(0, ipoint), raw_normal), layer_normal);
+    param.directionGenerator.InitSequence(cur_sample_count, raw_normal, layer_normal, use_raw_normal, brilliance, sampleKey);
     ticket.radiosityShare = 1.0 / max(1u, cur_sample_count);
     for(unsigned int i = 0, hit = 0; i < cur_sample_count; i++)
     {
@@ -569,7 +570,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
         {
             // out of good sample directions, but we may still re-try with the raw normal
             use_raw_normal = true;
-            param.directionGenerator.InitSequence(cur_sample_count, raw_normal, layer_normal, use_raw_normal, brilliance);
+            param.directionGenerator.InitSequence(cur_sample_count, raw_normal, layer_normal, use_raw_normal, brilliance, sampleKey);
             ray_ok = param.directionGenerator.GetDirection(direction);
         }
         if (!ray_ok)
@@ -579,6 +580,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
         if (use_raw_normal) okCountRaw ++;
         ticket.radiosityQuality = 1.0;
         Ray nray(ticket, ipoint, direction, Ray::OtherRay, false, false, true); // Build a ray pointing in the chosen direction
+        nray.SetKey(DeriveKey(sampleKey, kDrawGather, i));
         ticket.radiosityRecursionDepth++;
         ticket.radiosityImportanceQueried = (float)i / (float)(cur_sample_count-1);
         bool alphaBackground = ticket.alphaBackground;
@@ -760,6 +762,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
 ******************************************************************************/
 
 RadiosityFunction::SampleDirectionGenerator::SampleDirectionGenerator() :
+    nextDirection(0),
     rawNormalMode(false),
     rawNormal(0,1,0),
     frameX(1,0,0),
@@ -767,21 +770,17 @@ RadiosityFunction::SampleDirectionGenerator::SampleDirectionGenerator() :
     frameZ(0,0,1)
 {}
 
-void RadiosityFunction::SampleDirectionGenerator::Reset(unsigned int samplePoolCount, std::int64_t sequence)
+void RadiosityFunction::SampleDirectionGenerator::Reset(unsigned int samplePoolCount)
 {
     if (!sampleDirections)
-        sampleDirections = GetSubRandomCosWeightedDirectionGenerator(0, samplePoolCount);
-    if (sequence >= 0)
-    {
-        auto seedable = std::dynamic_pointer_cast<SeedableNumberGenerator<Vector3d>>(sampleDirections);
-        if (seedable)
-            seedable->Seed(size_t(std::uint64_t(sequence) * RADIOSITY_SAMPLE_DIRECTION_STRIDE));
-    }
+        sampleDirections = GetIndexedSubRandomCosWeightedDirectionGenerator(0, samplePoolCount);
 }
 
-void RadiosityFunction::SampleDirectionGenerator::InitSequence(unsigned int& sample_count, const Vector3d& raw_normal, const Vector3d& layer_normal, bool use_raw_normal, DBL br)
+void RadiosityFunction::SampleDirectionGenerator::InitSequence(unsigned int& sample_count, const Vector3d& raw_normal, const Vector3d& layer_normal, bool use_raw_normal, DBL br,
+                                                               std::uint64_t key)
 {
-    size_t sequenceSize = sampleDirections->CycleLength();
+    size_t sequenceSize = sampleDirections->MaxIndex() + 1;
+    nextDirection = DeriveKey(key, kDrawGatherPool, use_raw_normal ? 1 : 0) % sequenceSize;
     sample_count = (unsigned int)min((size_t)sample_count, sequenceSize);
 
     if (use_raw_normal)
@@ -839,7 +838,7 @@ bool RadiosityFunction::SampleDirectionGenerator::GetDirection(Vector3d& directi
     do
     {
         //Increase_Counter(stats[Gather_Performed_Count]);
-        random_vec = (*sampleDirections)();
+        random_vec = (*sampleDirections)[nextDirection++];
 
         // Tweak the direction vector according to the brilliance specified.
         random_vec.y() = fabs(random_vec.y());
@@ -1415,14 +1414,32 @@ ot_node_struct *RadiosityCache::GetNode(RenderStatistics* stats, const ot_id_str
     return this_node;
 }
 
+// An order on a node's samples by what they are, so lookups sum them the same way whichever thread stored them first.
+static bool BlockPrecedes(const ot_block_struct* a, const ot_block_struct* b)
+{
+    for (int k = X; k <= Z; k++)
+        if (a->Point[k] != b->Point[k])
+            return a->Point[k] < b->Point[k];
+    if (a->Pass != b->Pass)
+        return a->Pass < b->Pass;
+    if (a->TileId != b->TileId)
+        return a->TileId < b->TileId;
+    return a->Bounce_Depth < b->Bounce_Depth;
+}
+
 void RadiosityCache::InsertBlock(ot_node_struct *node, ot_block_struct *block)
 {
 #if POV_MULTITHREADED
     std::lock_guard<std::mutex> lock(octree.blockMutex);
 #endif
 
-    block->next = node->Values;
-    node->Values = block;
+    ot_block_struct** link = &node->Values;
+    while ((*link != nullptr) && !BlockPrecedes(block, *link))
+        link = &(*link)->next;
+    block->next = *link;
+    // lookups walk the list without the lock, so the block must be whole before it is linked in
+    std::atomic_thread_fence(std::memory_order_release);
+    *link = block;
 }
 
 /*****************************************************************************

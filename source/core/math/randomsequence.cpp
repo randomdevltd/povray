@@ -1037,6 +1037,25 @@ SequentialVectorGeneratorPtr GetSubRandomCosWeightedDirectionGenerator(unsigned 
     }
 }
 
+IndexedVectorGeneratorPtr GetIndexedSubRandomCosWeightedDirectionGenerator(unsigned int id, size_t count)
+{
+    POV_RANDOMSEQUENCE_ASSERT(count > 0);
+    if ((id == 0) && (count < LegacyCosWeightedDirectionGenerator::NumEntries))
+    {
+        LegacyCosWeightedDirectionGenerator::ParameterStruct param;
+        return IndexedVectorGeneratorPtr(new PrecomputedVectorGenerator(LegacyCosWeightedDirectionMetaFactory::GetFactory(param), count));
+    }
+    HaltonCosWeightedDirectionGenerator::ParameterStruct param(primeTable[id % PRIME_TABLE_COUNT], primeTable[(id+1) % PRIME_TABLE_COUNT]);
+    return IndexedVectorGeneratorPtr(new PrecomputedVectorGenerator(HaltonCosWeightedDirectionMetaFactory::GetFactory(param), count));
+}
+
+IndexedVectorGeneratorPtr GetIndexedSubRandomDirectionGenerator(unsigned int id, size_t count)
+{
+    POV_RANDOMSEQUENCE_ASSERT(count > 0);
+    HaltonUniformDirectionGenerator::ParameterStruct param(primeTable[id % PRIME_TABLE_COUNT], primeTable[(id+1) % PRIME_TABLE_COUNT]);
+    return IndexedVectorGeneratorPtr(new PrecomputedVectorGenerator(HaltonUniformDirectionMetaFactory::GetFactory(param), count));
+}
+
 SequentialDoubleGeneratorPtr GetSubRandomDoubleGenerator(unsigned int id, double minval, double maxval, size_t count)
 {
     HaltonDoubleGenerator::ParameterStruct param(primeTable[id % PRIME_TABLE_COUNT], minval, maxval);

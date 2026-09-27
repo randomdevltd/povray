@@ -131,8 +131,7 @@ class TraceThreadData : public ThreadData
         int Facets_CVC;
         Vector3d Facets_Cube[81];
 
-        /// Common random number generator for all stochastic stuff
-        SeedableDoubleGeneratorPtr stochasticRandomGenerator;
+        /// Seed of the stochastic anti-aliasing draws.
         size_t stochasticRandomSeedBase;
 
         // TODO FIXME - thread-local copy of lightsources. we need this

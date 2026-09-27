@@ -375,6 +375,8 @@ class LightTargetCombo final
         DBL dtheta;
         DBL photonSpread;
         ShootingDirection shootingDirection;
+        /// Place among all light and target pairs, which keys its photons.
+        std::uint64_t serial = 0;
 
         int computeMergedFlags();
         void computeAnglesAndDeltas(std::shared_ptr<SceneData> sceneData);

@@ -94,11 +94,6 @@ RadiosityTask::~RadiosityTask()
 
 void RadiosityTask::Run()
 {
-    //RandomIntSequence rands(0, 2, 2047);
-    //RandomIntSequence::Generator randgen(&rands);
-    RandomDoubleSequence rands(-1.0, 1.0, 2047);
-    RandomDoubleSequence::Generator randgen(&rands);
-
     DBL width = GetViewData()->GetWidth();
     DBL height = GetViewData()->GetHeight();
 
@@ -128,9 +123,7 @@ void RadiosityTask::Run()
         double pretraceSize     = max(pretraceStartSize * pow(0.5f, (float)pBlockInfo->pass),     pretraceEndSize);
         double nextPretraceSize = max(pretraceStartSize * pow(0.5f, (float)pBlockInfo->pass + 1), pretraceEndSize);
 
-        radiosity.BeforeTile((nominalThreads? serial % nominalThreads : 0), pretraceStep + pBlockInfo->pass,
-                             (nominalThreads? std::int64_t(serial) * RadiosityFunction::PRETRACE_MAX + pretraceStep + pBlockInfo->pass : -1));
-        randgen.SetSeed((pretraceStep + pBlockInfo->pass) * 17 + serial * 13); // make sure our jitter is different (but reproducible) for each pass and tile
+        radiosity.BeforeTile((nominalThreads? serial % nominalThreads : 0), pretraceStep + pBlockInfo->pass);
 
         unsigned int px = (rect.GetWidth()  + pretraceSize - 1) / pretraceSize;
         unsigned int py = (rect.GetHeight() + pretraceSize - 1) / pretraceSize;
@@ -195,7 +188,10 @@ void RadiosityTask::Run()
 
                     RGBTColour col;
 
-                    trace(x + offset + jitter * randgen(), y + offset + jitter * randgen(), width, height, col);
+                    // jitter in [-1,1) per axis, keyed on the pixel and pass
+                    const std::uint64_t key = DeriveKey(DeriveKey(DeriveKey(0, x), y), kDrawPretrace, currentStep);
+                    trace(x + offset + jitter * (2.0 * Draw(key, kDrawPretrace, 0) - 1.0), y + offset + jitter * (2.0 * Draw(key, kDrawPretrace, 1) - 1.0),
+                          width, height, col);
 
                     pixelpositions.push_back(Vector2d(x, y));
                     pixelcolors.push_back(col);

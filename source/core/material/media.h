@@ -83,10 +83,8 @@ class MediaFunction : public Trace::MediaFunctor
         virtual void ComputeMedia(const RayInteriorVector& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         virtual void ComputeMedia(MediaVector& medias, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
     protected:
-        /// pseudo-random number sequence
-        RandomDoubleSequence randomNumbers;
-        /// pseudo-random number generator based on random number sequence
-        RandomDoubleSequence::Generator randomNumberGenerator;
+        /// The key the current ray's media draws are hashed from.
+        std::uint64_t drawKey;
         /// thread data
         TraceThreadData *threadData;
         /// tracing functions
@@ -115,7 +113,7 @@ class MediaFunction : public Trace::MediaFunctor
                                    MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass);
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
                                             DBL d1, DBL d3, MathColour& Result, const MathColour& C1, const MathColour& C3, MathColour& ODResult, const MathColour& od1, const MathColour& od3,
-                                            int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass);
+                                            int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass, std::uint64_t key);
         void ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };

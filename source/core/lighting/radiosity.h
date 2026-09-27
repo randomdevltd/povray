@@ -77,15 +77,6 @@ struct ot_id_struct;
 #define RADIOSITY_CACHE_EXTENSION ".rca"
 
 static const unsigned int RADIOSITY_MAX_SAMPLE_DIRECTIONS    = kRandCosWeightedCount;
-// to get some more pseudo-randomness and make use of the full range of all the precomputed sample directions,
-// we start each sample direction sequence at a different index than the previous one; 663 has some nice properties
-// for this:
-// - it is fairly large stride, only giving "overlap" of consecutive samples at high sample counts
-// - it has no divisors in common with 1600 (kRandCosWeightedCount), so that any consecutive 1600 samples will start at
-//   a different index
-// - it gives the highest possible number of "secondary strides", those being -274, 115, -44, -17, -7 and 3
-static const unsigned int RADIOSITY_SAMPLE_DIRECTION_STRIDE = 663;
-
 // settings as effective for a particular bounce depth during a particular trace step
 struct RadiosityRecursionSettings final
 {
@@ -296,9 +287,7 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         // retrieves top level statistics information to drive pretrace re-iteration
         virtual void GetTopLevelStats(long& queryCount, float& reuse);
         virtual void ResetTopLevelStats();
-        /// `sequence`, when not negative, restarts the gather directions at a point given by the tile, so that a tile's
-        /// samples do not depend on which tiles its thread traced before.
-        virtual void BeforeTile(int id, unsigned int pts = FINAL_TRACE, std::int64_t sequence = -1);
+        virtual void BeforeTile(int id, unsigned int pts = FINAL_TRACE);
         virtual void AfterTile();
 
     private:
@@ -309,9 +298,10 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
                 /// constructor
                 SampleDirectionGenerator();
                 /// Called before each tile
-                void Reset(unsigned int samplePoolCount, std::int64_t sequence);
-                /// Called before each sample
-                void InitSequence(unsigned int& sample_count, const Vector3d& raw_normal, const Vector3d& layer_normal, bool use_raw_normal, DBL brilliance);
+                void Reset(unsigned int samplePoolCount);
+                /// Called before each sample; its key sets where in the pool its directions start.
+                void InitSequence(unsigned int& sample_count, const Vector3d& raw_normal, const Vector3d& layer_normal, bool use_raw_normal, DBL brilliance,
+                                  std::uint64_t key);
                 /// Called to get the next sampling ray direction
                 bool GetDirection(Vector3d& direction);
             protected:
@@ -329,8 +319,9 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
                 Vector3d frameY;
                 /// direction we'll map the precomputed sample directions' Z axis to
                 Vector3d frameZ;
-                /// Generator for sampling directions
-                SequentialVectorGeneratorPtr sampleDirections;
+                /// The pool of sampling directions, and the next one a sample takes
+                IndexedVectorGeneratorPtr sampleDirections;
+                size_t nextDirection;
         };
 
         // structure to store precomputed effective parameters for each recursion depth

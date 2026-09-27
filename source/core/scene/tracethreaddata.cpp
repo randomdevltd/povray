@@ -61,7 +61,6 @@ namespace pov
 TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
     sceneData(sd),
     qualityFlags(9),
-    stochasticRandomGenerator(GetRandomDoubleGenerator(0.0,1.0)),
     stochasticRandomSeedBase(seed),
     mpCrackleCache(new CrackleCache),
     mpRenderStats(new RenderStatistics)
@@ -90,8 +89,6 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
     timeType = kUnknownTime;
     cpuTime = 0;
     realTime = 0;
-
-    stochasticRandomGenerator->Seed(stochasticRandomSeedBase);
 
     for(std::vector<LightSource *>::iterator it = sceneData->lightSources.begin(); it != sceneData->lightSources.end(); it++)
         lightSources.push_back(static_cast<LightSource *> (Copy_Object(*it)));
