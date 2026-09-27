@@ -457,6 +457,7 @@ endif
 # Include paths for headers.
 AM_CPPFLAGS = \\
   -I\$(top_srcdir)/unix/povconfig \\
+  -I\$(top_srcdir)/libraries/xsimd/include \\
   -I\$(top_srcdir)/source \\
   -I\$(top_builddir)/source \\
   -I\$(top_srcdir)/platform/unix \\
@@ -609,7 +610,7 @@ SUBDIRS = source vfe platform unix
 # Additional files to distribute.
 EXTRA_DIST = \\
   bootstrap kde_install.sh \\
-  doc icons include ini scenes scripts \\
+  doc icons include ini scenes scripts libraries/xsimd \\
   povray.ini.in changes.txt revision.txt
 
 # Additional files to clean with 'make distclean'.
@@ -828,6 +829,7 @@ endif
 # Include paths for headers.
 AM_CPPFLAGS = \\
   -I\$(top_srcdir)/unix/povconfig \\
+  -I\$(top_srcdir)/libraries/xsimd/include \\
   -I\$(top_srcdir)/platform/unix \\
   \$(cppflags_platformcpu) \\
   -I\$(top_srcdir)/unix \\
@@ -1365,6 +1367,7 @@ endif
 # Include paths for headers.
 AM_CPPFLAGS = \\
   -I\$(top_srcdir)/unix/povconfig \\
+  -I\$(top_srcdir)/libraries/xsimd/include \\
   -I\$(top_srcdir)/platform/unix \\
   \$(cppflags_platformcpu) \\
   -I\$(top_srcdir)/vfe/unix \\
@@ -1456,6 +1459,7 @@ libplatform_a_SOURCES = \\
 # Include paths for headers.
 AM_CPPFLAGS = \\
   -I\$(top_srcdir)/unix/povconfig \\
+  -I\$(top_srcdir)/libraries/xsimd/include \\
   -I\$(top_srcdir)/platform/unix \\
   \$(cppflags_platformcpu) \\
   -I\$(top_srcdir)/vfe \\

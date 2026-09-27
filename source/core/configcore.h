@@ -58,6 +58,12 @@
     #define POV_EXPERIMENTAL_BRILLIANCE_OUT 0
 #endif
 
+/// @def POV_SIMD_DISABLED
+/// Whether @ref pov::simd types use plain scalar code rather than the SIMD instructions the build targets.
+#ifndef POV_SIMD_DISABLED
+    #define POV_SIMD_DISABLED 0
+#endif
+
 //******************************************************************************
 ///
 /// @name PooledSimpleVector Sizes

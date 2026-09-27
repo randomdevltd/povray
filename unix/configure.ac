@@ -98,6 +98,7 @@ AX_ARG_ENABLE([--disable-pipe],            [disable usage of pipes during compil
 AX_ARG_ENABLE([--disable-strip],           [disable stripping all symbols from the object files (larger binary)])
 AX_ARG_ENABLE([--disable-shared],          [disable linking with shared libraries (same as --enable-static)])
 AX_ARG_ENABLE([--disable-io-restrictions], [disable POV-Ray's mechanism for control of I/O operations])
+AX_ARG_ENABLE([--disable-simd],            [disable SIMD kernels (scalar code for every build target)])
 
 AX_ARG_WITH([--without-cygwin-dll], [],    [don't link with the Cygwin DLL (MinGW required)])
 AX_ARG_WITH([--with-zlib],          [DIR], [use the ZLIB library (in directory DIR)])
@@ -681,6 +682,17 @@ if test x"$pov_compiler_vendor" = x"gnu"; then
   AX_TEST_COMPILER_FLAGS([-Wno-non-template-friend])
 fi
 AX_TEST_COMPILER_FLAGS([-Wsuggest-override])
+
+
+# SIMD kernels.
+AC_MSG_CHECKING([whether to enable SIMD kernels])
+if test x"$enable_simd" = x"no"; then
+  AC_MSG_RESULT([no])
+  AC_DEFINE([POV_SIMD_DISABLED], [1], [SIMD kernels.])
+else
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([POV_SIMD_DISABLED], [0], [SIMD kernels.])
+fi
 
 
 # I/O restrictions.
