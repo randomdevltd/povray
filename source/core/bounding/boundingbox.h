@@ -56,6 +56,7 @@
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
 #include "core/math/matrix.h"
+#include "core/math/simd.h"
 #include "core/render/ray_fwd.h"
 #include "core/support/statisticids.h"
 
@@ -368,14 +369,20 @@ class FlatBBoxWalker final
         void Expand(const FlatBBoxTreeOf<Block>& tree, std::int32_t ref, float maxDepth, StatsT& stats)
         {
             const int base = size;
+            const Lanes eps(float(EPSILON)), limit(maxDepth);
             for (const Block *b = &tree.blocks[ref];; ++b)
             {
-                float tn[FLAT_BBOX_WIDTH], tf[FLAT_BBOX_WIDTH];
+                Lanes tn, tf;
                 Slabs(*b, tn, tf);
+                std::uint32_t hit = simd::bits((tf >= tn) & (tf >= eps) & (tn <= limit)) & ((1u << b->count) - 1u);
+                float depth[FLAT_BBOX_WIDTH];
+                tn.store(depth);
                 Reserve(b->count);
-                for (int k = 0; k < b->count; ++k)
-                    if ((tf[k] >= tn[k]) && (tf[k] >= float(EPSILON)) && (tn[k] <= maxDepth))
-                        entries[size++] = FlatBBoxEntry{b->child[k], tn[k]};
+                for (; hit != 0; hit &= hit - 1u)
+                {
+                    const int k = simd::lowest_lane(hit);
+                    entries[size++] = FlatBBoxEntry{b->child[k], depth[k]};
+                }
                 stats[nChecked] += b->count;
                 if (!b->more)
                     break;
@@ -392,58 +399,37 @@ class FlatBBoxWalker final
         static const int LOCAL = 256;
         float origin[3], inv[3], originInv[3];
 
-        void Slabs(const FlatBBoxBlock& b, float *tn, float *tf) const
+        typedef simd::Vec<float, FLAT_BBOX_WIDTH> Lanes;
+
+        void Slabs(const FlatBBoxBlock& b, Lanes& tn, Lanes& tf) const
         {
-            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+            Lanes n[3], f[3];
+            for (int d = 0; d < 3; ++d)
             {
-                const float x1 = (b.lo[X][k] - origin[X]) * inv[X], x2 = (b.hi[X][k] - origin[X]) * inv[X];
-                const float y1 = (b.lo[Y][k] - origin[Y]) * inv[Y], y2 = (b.hi[Y][k] - origin[Y]) * inv[Y];
-                const float z1 = (b.lo[Z][k] - origin[Z]) * inv[Z], z2 = (b.hi[Z][k] - origin[Z]) * inv[Z];
-                tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
-                tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
+                const Lanes o(origin[d]), r(inv[d]);
+                const Lanes t1 = (Lanes::load(b.lo[d]) - o) * r, t2 = (Lanes::load(b.hi[d]) - o) * r;
+                n[d] = simd::min(t1, t2);
+                f[d] = simd::max(t1, t2);
             }
+            tn = simd::max(simd::max(n[X], n[Y]), n[Z]);
+            tf = simd::min(simd::min(f[X], f[Y]), f[Z]);
         }
 
-        void Slabs(const FlatQBBoxBlock& b, float *tn, float *tf) const
+        void Slabs(const FlatQBBoxBlock& b, Lanes& tn, Lanes& tf) const
         {
-#if defined(__GNUC__) && !defined(__clang__)
-            // GCC splits the portable loop into 128-bit halves around the widening; vectors keep it one 256-bit pass.
-            typedef float V8F __attribute__((vector_size(32)));
-            typedef std::uint16_t V8H __attribute__((vector_size(16)));
-            typedef std::int32_t V8I __attribute__((vector_size(32)));
-            static_assert(FLAT_BBOX_WIDTH == 8, "one vector per axis");
-            V8F n, f;
+            Lanes n[3], f[3];
             for (int d = 0; d < 3; ++d)
             {
-                const float at = b.origin[d] * inv[d] - originInv[d], step = b.scale[d] * inv[d];
-                V8H ql, qh;
-                std::memcpy(&ql, b.lo[d], sizeof(ql));
-                std::memcpy(&qh, b.hi[d], sizeof(qh));
-                const V8F l = at + __builtin_convertvector(__builtin_convertvector(ql, V8I), V8F) * step;
-                const V8F h = at + __builtin_convertvector(__builtin_convertvector(qh, V8I), V8F) * step;
-                const V8F a = (h < l) ? h : l, c = (h < l) ? l : h;
-                n = (d == 0) ? a : ((n < a) ? a : n);
-                f = (d == 0) ? c : ((c < f) ? c : f);
+                const Lanes at(b.origin[d] * inv[d] - originInv[d]), step(b.scale[d] * inv[d]);
+                const Lanes l = simd::fma(simd::load_widened<FLAT_BBOX_WIDTH>(b.lo[d]), step, at);
+                const Lanes h = simd::fma(simd::load_widened<FLAT_BBOX_WIDTH>(b.hi[d]), step, at);
+                n[d] = simd::min(h, l);
+                f[d] = simd::max(l, h);
             }
-            std::memcpy(tn, &n, sizeof(n));
-            std::memcpy(tf, &f, sizeof(f));
-#else
-            float at[3], step[3];
-            for (int d = 0; d < 3; ++d)
-            {
-                at[d] = b.origin[d] * inv[d] - originInv[d];
-                step[d] = b.scale[d] * inv[d];
-            }
-            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
-            {
-                const float x1 = at[X] + float(b.lo[X][k]) * step[X], x2 = at[X] + float(b.hi[X][k]) * step[X];
-                const float y1 = at[Y] + float(b.lo[Y][k]) * step[Y], y2 = at[Y] + float(b.hi[Y][k]) * step[Y];
-                const float z1 = at[Z] + float(b.lo[Z][k]) * step[Z], z2 = at[Z] + float(b.hi[Z][k]) * step[Z];
-                tn[k] = std::max(std::max(std::min(x1, x2), std::min(y1, y2)), std::min(z1, z2));
-                tf[k] = std::min(std::min(std::max(x1, x2), std::max(y1, y2)), std::max(z1, z2));
-            }
-#endif
+            tn = simd::max(simd::max(n[X], n[Y]), n[Z]);
+            tf = simd::min(simd::min(f[X], f[Y]), f[Z]);
         }
+
         FlatBBoxEntry local[LOCAL];
         std::vector<FlatBBoxEntry> spill;
 
