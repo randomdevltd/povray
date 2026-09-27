@@ -38,11 +38,13 @@
 
 // C++ variants of C standard header files
 #include <cfloat>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
 // C++ standard header files
 #include <algorithm>
+#include <limits>
 
 // POV-Ray header files (base module)
 #include "base/povassert.h"
@@ -4174,6 +4176,18 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
     return irradiance;
 }
 
+// The radiosity cache's light entering at the exit point (normal n, pointing out) for a cloud that carries it.
+MathColour Trace::ComputeCloudExitAmbient(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket)
+{
+    MathColour ambient;
+    if (cloud.radiosity)
+    {
+        radiosity.ComputeAmbient(out.IPoint, n, n, 1.0, ambient, 1.0, ticket);
+        ambient *= float(ComputeFt(1.0, cloud.eta));
+    }
+    return ambient;
+}
+
 // A random number in [0, 1) from a 64-bit state (splitmix64).
 static double CloudRandom(uint64_t& state)
 {
@@ -4249,6 +4263,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             }
             cell.lights = int(cloud.lights.size());
             cell.visibility.resize(count * cell.lights * MathColour::channels);
+            if (key.radiosity)
+                cell.ambient.assign(count * MathColour::channels, std::numeric_limits<float>::quiet_NaN());
             {
                 std::lock_guard<std::mutex> lock(cell.mutex);
                 cell.stage = SubsurfaceCell::kLighting;
@@ -4258,6 +4274,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             cell.changed.notify_all();
             WorkOnSubsurfaceCell(cloud, key, cell, true);
             usable = !cell.failed;
+            if (usable && key.radiosity)
+                AddSubsurfaceAmbient(cloud, cell);
             if (usable)
                 cell.BuildHierarchy();
         }
@@ -4444,7 +4462,35 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         for (int j = 0; j < MathColour::channels; j++)
             point.irradiance[j] = irradiance[j];
         point.id = k;
+        MathColour ambient;
+        if (key.radiosity && radiosity.LookupPretraceAmbient(point.position, normal, ambient))
+            for (int j = 0; j < MathColour::channels; j++)
+                cell.ambient[k * MathColour::channels + j] = ambient[j];
     }
+}
+
+// Adds the radiosity cache's light to a cell's points, entering along the normal as in the sampled method; a point with
+// no sample near enough takes the mean of those with one.
+void Trace::AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& cell)
+{
+    const int channels = MathColour::channels;
+    size_t count = cell.points.size(), found = 0;
+    std::vector<double> mean(channels, 0.0);
+    for (size_t k = 0; k < count; k++)
+        if (!std::isnan(cell.ambient[k * channels]))
+        {
+            found++;
+            for (int j = 0; j < channels; j++)
+                mean[j] += cell.ambient[k * channels + j];
+        }
+    float ft = float(ComputeFt(1.0, cloud.eta));
+    for (SubsurfacePoint& point : cell.points)
+    {
+        const float *ambient = &cell.ambient[point.id * channels];
+        for (int j = 0; j < channels; j++)
+            point.irradiance[j] += ft * (!std::isnan(ambient[0]) ? ambient[j] : (found > 0) ? float(mean[j] / found) : 0.0f);
+    }
+    std::vector<float>().swap(cell.ambient);
 }
 
 // Every crossing of the object along a line within [from, to]. One test of some shapes returns only the nearest
@@ -4567,7 +4613,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     for (int cy = lo[Y]; cy <= hi[Y]; cy++)
     for (int cz = lo[Z]; cz <= hi[Z]; cz++)
     {
-        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz };
+        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.radiosity };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
@@ -4662,10 +4708,15 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     double mm = sceneData->mmPerUnit;
     double reachSqr = Sqr(cloud.reach);
 
+    Vector3d n = out.INormal.normalized();
+    // The exit normal points out of the object, away from the base point below it, as the cloud's normals do.
+    if (dot(n, out.IPoint - base) < 0.0)
+        n.invert();
+
     if (cloud.local)
     {
         ssltScratchVisibility.Reset(cloud.lights.size());
-        MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, false, ticket, key);
+        MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, false, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
         diffuse = MathColour(profile.RdDisc(cloud.reach) * (M_PI * reachSqr) * PreciseMathColour(here) * ftOut);
         return true;
     }
@@ -4673,10 +4724,6 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     double core = kCloudCore * cloud.spacing * mm, disc = kCloudDisc * cloud.spacing * mm, ring = kCloudRing * cloud.spacing * mm;
     double coreSqr = Sqr(core), discSqr = Sqr(disc), ringSqr = Sqr(ring);
     double errorBound = sceneData->subsurfaceErrorBound;
-    Vector3d n = out.INormal.normalized();
-    // The exit normal points out of the object, away from the base point below it, as the cloud's normals do.
-    if (dot(n, out.IPoint - base) < 0.0)
-        n.invert();
     const Vector3d& x = out.IPoint;
     SubsurfaceVisibility& visibility = ssltScratchVisibility;
     visibility.Reset(cloud.lights.size());
@@ -4817,6 +4864,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, coarse, ticket, key);
     if (cloud.exitMismatch)
         return false;
+    here += ComputeCloudExitAmbient(out, n, cloud, ticket);
     PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
     PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
     PreciseMathColour sum = far + coreRd * coreShare * PreciseMathColour(here);
@@ -4973,14 +5021,16 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     std::vector<const LightSource*> lights;
     CollectSubsurfaceLights(out.Object, lights);
 
-    // The point cloud leaves radiosity, and shading points it cannot serve, to the sampled method.
+    // Shading points the cloud cannot serve, and radiosity in the pretrace (the cache still filling), use method 1.
     int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
+    bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();
     Vector3d sampleBase;
     ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
+    cloudData.radiosity = cloudRadiosity;
     MathColour cloudDiffuse;
-    bool cloud = (method == kSubsurfaceMethodPointCloud) && !radiosity_needed && OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
+    bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     if (cloud)
         Total_Colour += cloudDiffuse;

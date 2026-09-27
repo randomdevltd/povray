@@ -284,6 +284,9 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         // checks whether the specified recursion depth is still within the configured limits
         virtual bool CheckRadiosityTraceLevel(const TraceTicket& ticket) override;
 
+        virtual bool IsFinalTrace() const override { return isFinalTrace; }
+        virtual bool LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour) override;
+
         // retrieves top level statistics information to drive pretrace re-iteration
         virtual void GetTopLevelStats(long& queryCount, float& reuse);
         virtual void ResetTopLevelStats();

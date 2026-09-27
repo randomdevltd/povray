@@ -133,6 +133,7 @@ struct SubsurfaceCell final
     std::vector<SubsurfacePoint> points;
     std::vector<SubsurfaceNode> nodes;
     std::vector<float> visibility; ///< per point, per light, per channel: shadowed over unshadowed light
+    std::vector<float> ambient; ///< while lighting a radiosity cell: per point and channel, the cache's light, or NaN if none
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
@@ -157,9 +158,10 @@ struct SubsurfaceCellKey final
     const void *object;
     int sizeLevel;
     int x, y, z;
+    bool radiosity; ///< whether its points carry the radiosity cache's light as well as the lights'
     bool operator==(const SubsurfaceCellKey& o) const
     {
-        return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z;
+        return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity;
     }
 };
 

@@ -126,7 +126,7 @@ static const size_t kSubsurfacePointBudget = size_t(1) << 20;
 size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
     size_t h = std::hash<const void*>()(k.object);
-    for (int v : { k.sizeLevel, k.x, k.y, k.z })
+    for (int v : { k.sizeLevel, k.x, k.y, k.z, int(k.radiosity) })
         h = h * 1000003u ^ std::hash<int>()(v);
     return h;
 }
