@@ -186,7 +186,6 @@ static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector
     node.lo = node.hi = points[first].position;
     node.centre = Vector3d(0.0);
     node.area = 0.0f;
-    node.twoSided = false;
     Vector3d normal(0.0);
     for (int j = 0; j < MathColour::channels; j++)
         node.irradiance[j] = 0.0f;
@@ -203,7 +202,6 @@ static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector
             node.irradiance[j] += p.irradiance[j] * p.area;
         node.centre += p.position * p.area;
         node.area += p.area;
-        node.twoSided = node.twoSided || p.twoSided;
     }
     node.centre /= std::max(double(node.area), 1e-30);
     normal = (normal.length() > 0.0) ? normal.normalized() : Vector3d(0.0);

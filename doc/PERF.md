@@ -240,10 +240,9 @@ object, and each crossing is a point standing for h²/|n|₁ of surface (h the g
 point per grid square on a patch facing an axis and no clumps. All crossings along a line are collected by testing it
 again past the farthest one found, since one test of a blob returns only the nearest interval. A point's normal is
 turned to point out of the object, by testing which side of it is inside: primitives report normals with no regard to
-a `difference` inverting them, and a mesh's follow its winding. A crossing outside on both sides (an open sheet, or a
-part thinner than about a twentieth of the spacing) is kept as a two-sided point, with its surface's normal; one
-inside on both sides (a union's inner surface) is dropped, and a cube that drops more than one in sixteen is left to
-method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The spacing is a
+a `difference` inverting them, and a mesh's follow its winding. Crossings whose sides cannot be told apart (open
+sheets, parts thinner than about a twentieth of the spacing, a union's inner surfaces) are dropped, and a cube that
+drops more than one in sixteen is left to method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The spacing is a
 128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
 cube comes nearest it if that is coarser, and never under a 1024th of the side; a pixel spans a size plus an angle
 times the distance, for perspective, orthographic, spherical, fisheye, ultra-wide, omnimax and panoramic cameras
@@ -270,12 +269,12 @@ crease), which is 1 on a flat surface and more across an edge, unless the ring h
 ring's area or faces away from the exit point (a thin part's far side), where its points are summed as they are;
 beyond, points are summed in groups whose area is small against their distance (`error_bound`, 0.1) and whose normals
 agree. A point counts only if the sampled method's base point, under the exit point, sees it from the inside, which
-keeps light from crossing gaps between parts of an object; two-sided points always count. Where the disc bends by more
+keeps light from crossing gaps between parts of an object. Where the disc bends by more
 than 60° (edges, tight curves) or a point within 2.5 spacings is seen from behind (creases), the shading point uses
 method 1. The disc and ring are sized by the coarsest cube they reach, so where cubes of different spacing meet each
 still holds enough points. Diffusion shorter than a pixel is taken as lit like the exit point.
 
-**Edges.** Where the surface runs out (an open border, a narrow leaf), the closed-form core, disc and ring integrals
+**Edges.** Where the surface runs out (an open border), the closed-form core, disc and ring integrals
 would count surface that is not there. A window (1 − r²/R²)² over the ring measures how much of a plane the points
 cover and where the covered part's centroid lies, taking each point at the centre of the grid square its line
 crosses, so the lines' jitter does not show (its share varies by 0.4% on a flat surface, against 5% at the points
@@ -323,7 +322,7 @@ goes from 9.6 to 5.3 Gcycles (1.8×) and from 47.9 to 16.1 (3.0×). Where it dif
 blocks at 800×600 are 2 to 4 levels off: the rounded foot of the candle in `subsurface.pov`, beside its wax drip, and
 on the wax sphere in `sslt-lamps.pov`; method 1's blocks are within 1.2.
 
-Later, with the changes above (edges, two-sided points, cameras other than perspective, coarse clouds, radiosity, and
+Later, with the changes above (edges, cameras other than perspective, coarse clouds, radiosity, and
 far groups summed as one when their normals agree within 60°, after splitting the two faces of thin parts apart),
 `+WT4` user-space cycles in billions, method 1 against method 2 before and after:
 
@@ -337,15 +336,14 @@ far groups summed as one when their normals agree within 60°, after splitting t
 | `tools/bench/sslt-wide.pov`, 1600×800, 6 diffuse samples | 39.0 | 97.2 | 41.5 |
 | the same, 4000×2000, a 200×200 window on a trunk, 74 samples | 52.0 | 64.6 | 23.0 |
 | the same, a 200×200 window on the small mesh, 74 samples | 44.8 | 45.2 | 15.2 |
-| `tools/bench/sslt-leaves.pov`, 320×240 | 252.5 | 253.8 | 56.9 |
 | `tools/bench/sslt-open.pov` Case 6 (thin rod and wall), 320×240 | 2.6 | 5.4 | 3.0 |
 
 `sslt-wide.pov` at 1600×800 peaked at 390 MB with method 2 before, 100 MB after, and 83 MB with method 1; at 6 samples
 method 1 is cheap and noisy, and method 2 is still 6% slower there. Method 1 renders bit for bit as before. Against
 method 1 at 8 to 16 times the samples, the worst 8-pixel blocks at 800×600 are within 3.4 levels on `subsurface.pov`
 and 5.2 on `sslt-lamps.pov` (method 1: 1.2 on both), 4.9 on `sslt-lamps.pov` with radiosity, 2.3 on the thin rod and
-wall, 6.8 on the leaves (method 1 at 74 samples: 3.3), and 3.8 and 6.6 on the two windows, the latter at the underside
-of the small mesh; the rim of `sslt-open.pov` Case 2 is under Next.
+wall, and 3.8 and 6.6 on the two windows, the latter at the underside of the small mesh; the rim of `sslt-open.pov`
+Case 2 is under Next.
 
 Tried and not kept:
 
@@ -354,6 +352,10 @@ Tried and not kept:
   shadows differ (the slats over `sslt-lamps.pov`) came out up to 9 levels dark.
 - Measuring the covered share with the window taken at the points themselves: their jitter varies it by 5% on a flat
   surface, which showed as blotches wherever the correction came into play.
+- Open and thin sheets as two-sided points (kept with the surface's normal, never seen from behind, facing either way):
+  `sslt-leaves.pov` went from 252 Gcycles to 57, but was less accurate than method 1 at 74 samples: rms 2.88 against
+  the reference at 320×240 (method 1: 1.98), and 8-pixel blocks up to 6.8 levels off at 800×600 (method 1: 3.3).
+  Open sheets are left to method 1: `sslt-leaves.pov` takes 247.1 Gcycles with method 2 against 244.6 with method 1.
 - Handing no shading points over for bends and creases: a small concave dimple in `sslt-lamps.pov` came out 14 levels
   bright and block edges 6 levels dark.
 - Points where random lines cross the object: their clumps showed as faint mottling on wax and, summed raw near the
@@ -764,8 +766,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
-- Subsurface: method 2 still hands sharp edges and creases to method 1, and samples single scattering from lights
-  behind the surface. Just below the rim of `sslt-open.pov` Case 2, 8-pixel blocks at 800×600 are up to 6 levels off
+- Subsurface: method 2 still hands open sheets, sharp edges and creases to method 1, and samples single scattering
+  from lights behind the surface. Just below the rim of `sslt-open.pov` Case 2, 8-pixel blocks at 800×600 are up to 6 levels off
   the reference at the default spacing, as a soft band rather than the stepped one before; at `spacing 0.5` they are
   within a level.
 - Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders
