@@ -2250,6 +2250,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         {
             // An opaque blocker is found as well by any hit short of the light as by the nearest.
             const double limit = lightsourcedepth - projectedDepth;
+            const IsoShadowWindow window(threadData, SHADOW_TOLERANCE, limit);
             if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(lightsourceray, &boundedIntersection, threadData) &&
                  (boundedIntersection.Depth < limit)) ||
                 FindIntersection(cacheObject, boundedIntersection, lightsourceray, limit))
@@ -2292,6 +2293,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (qualityFlags.shadows && (sceneData->boundingMethod == 1) && (sceneData->flatSlabs != nullptr))
         {
             OpaqueShadowStopCondition stop(std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth));
+            const IsoShadowWindow window(threadData, SHADOW_TOLERANCE, stop.farthest);
             foundIntersection = Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
         }
         else

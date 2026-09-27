@@ -83,6 +83,8 @@ struct ISO_ThreadData final
     GenericScalarFunctionInstance* pFn;
     DBL Vlength;
     DBL tl;
+    DBL shadowFrom;         // any root between these depths will do; shadowTo zero for the first root
+    DBL shadowTo;
     int Inv3;
 };
 
@@ -253,6 +255,9 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         }
 
         isoData.pFn = &fn;
+        const bool anyHit = Test_Flag(this, OPAQUE_FLAG) && Clip.empty() && !eval && (Thread->isoShadowTo > 0.0);
+        isoData.shadowFrom = Thread->isoShadowFrom;
+        isoData.shadowTo = anyHit ? Thread->isoShadowTo : 0.0;
 
         for (; itrace < max_trace; itrace++)
         {
@@ -266,6 +271,8 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                     Depth_Stack->push(Intersection(tmin, IPoint, this, 0, 0 /*Side1*/));
                     IFound = true;
                 }
+                if (anyHit && (tmin > isoData.shadowFrom) && (tmin < isoData.shadowTo))
+                    break;
             }
             tmin += accuracy * 5.0;
             if((tmax - tmin) < accuracy)
@@ -999,6 +1006,10 @@ bool IsoSurface::Function_Find_Root_R(ISO_ThreadData& itd, const ISO_Pair* EP1, 
         EPa.f = Float_Function(itd, EPa.t);
 
         itd.cache.fmax = min(EPa.f, itd.cache.fmax);
+        // Either half's search depends only on its ends, so a shadow ray may try the half ending inside first.
+        if ((itd.shadowTo > 0.0) && (EP2->f < 0) && (EP1->t > itd.shadowFrom) && (EP2->t < itd.shadowTo))
+            return Function_Find_Root_R(itd, &EPa, EP2, dt, t21, len * 2.0, maxg, pThreadData) ||
+                   Function_Find_Root_R(itd, EP1, &EPa, dt, t21, len * 2.0, maxg, pThreadData);
         if(!Function_Find_Root_R(itd, EP1, &EPa, dt, t21, len * 2.0, maxg, pThreadData))
             return (Function_Find_Root_R(itd, &EPa, EP2, dt, t21, len * 2.0,maxg, pThreadData));
         else
