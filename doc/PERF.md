@@ -429,6 +429,61 @@ not depend on thread order.
 The close-up moves by 0.08 levels on average and 1 at most. Against a converged render the shiny lawn's error goes
 from 1.58 to 1.64 levels, with the same mean brightness.
 
+## Mesh triangles and shadow rays
+
+On the mesh bench above (`+WT1`, 960×720, `+A0.0 +R3`), three runs of each, interleaved, without the skip of a
+missed cached occluder described under Radiosity:
+
+| Build | Trace Gcycles | Instructions |
+|---|---|---|
+| before | 46.41 | 123.4 G |
+| this change | 44.69 (−3.7%) | 119.6 G (−3.1%) |
+
+3.7's `chess2.pov`, which has no meshes, renders identically, in the same cycles to 0.1% and 0.2% more instructions.
+
+Cycle profiles of the 12-byte triangles' cost here (+2.0 G of trace, three profiles each way) put a third in the
+mesh's box walk, which decodes 16-bit boxes; a quarter in the triangle test, which fetches three vertices and
+forms a cross product before it can reject, where the stored plane rejected at once; a quarter in the smooth
+normal at each hit, whose smoothing frame is rebuilt every time; and a sixth in the scene walk, whose code did not
+change. Each thread now keeps 256 decoded triangles, in slot index mod 256, tagged with the index and a serial no
+other mesh data shares: vertices and face normal for the test, and the smoothing frame once a hit asks for it.
+Images are unchanged, bit for bit. Rays close together test the same triangles, all the more with anti-aliasing:
+
+| Slots | Per thread | Lookups served | Trace Gcycles, with the rest of this change |
+|---|---|---|---|
+| 64 | 9.5 KB | 92.0% | 45.61 |
+| 128 | 19 KB | 96.1% | 44.94 |
+| 256 | 38 KB | 97.8% | 44.69 |
+| 512 | 76 KB | 98.6% | 45.05 |
+| 1024 | 152 KB | 99.2% | 45.23 |
+
+three runs each, with `performance` at 46.41 in the same rounds. Slots of 96 bytes, holding the vertices in single
+precision as the mesh stores them, cost 2.5 G more instructions in conversions and traced 1.6–3.3% slower than
+152-byte slots at every size. Slots without the smoothing frame saved 1.3% of cycles, against 2.3% with it.
+
+A mesh walks its tree nearest box first and skips boxes that start beyond its nearest hit so far. That hit could be
+one its caller then rejects: callers drop hits nearer than `MIN_ISECT_DEPTH`, and shadow rays those within
+`SMALL_TOLERANCE`. A ray leaving a mesh can meet its own triangle that near, and the walk then skipped everything
+behind it, including a triangle that blocks the ray. Only hits beyond `SMALL_TOLERANCE`, which every caller accepts,
+now cull. On the bench 2,426 more shadow rays are blocked and 1,543 of 691,200 pixels get darker, 1,312 by one
+level and none by more than five; none get lighter.
+
+Any hit on an opaque mesh short of the light blocks a shadow ray, yet each test walked the mesh's tree for the
+nearest. Each thread remembers, per mesh and octant of directions, the triangle nearest the start of its last
+shadow ray through the mesh, and tests it first in the light's test of its cached blocker and in the scene walk
+that stops at the first opaque hit, but not inside CSG. With the walk culling only behind accepted hits, it blocks
+exactly when the walk would have: the bench renders identically with and without it, and at `+WT4` as at `+WT1`.
+With a light's cached occluder left out of the walk once it has missed (see Radiosity), it and the decoded
+triangles took the bench from 38.4 to 36.2 Gcycles, measured before the culling fix.
+
+A light caches only objects flagged opaque, but a CSG object whose own texture is opaque can have a component with
+a see-through texture of its own. A cached test that met that component filtered the light without stopping, and
+the scene walk that followed, from the same origin, filtered it again, so its shadow turned twice as dark once the
+object was cached, depending on render order (`tools/bench/shadow-cached-csg.pov`). Such a hit now leaves the light
+as it was. The walk also stopped at a hit on the cached object, which would have hidden anything behind a partial
+blocker, but it never fired: a cached primitive always blocks outright, and a hit's object is a primitive, never
+the cached CSG.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
