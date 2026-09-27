@@ -157,20 +157,22 @@ void SubsurfaceCache::Release(size_t points)
     reserved -= std::min(points, reserved);
 }
 
-void SubsurfaceCache::SetCamera(const Vector3d& location, double pixelAngle)
+void SubsurfaceCache::SetCamera(const Vector3d& location, double pixelSize, double pixelAngle)
 {
     std::lock_guard<std::mutex> lock(mutex);
     if (cameraSet)
         return;
     cameraLocation = location;
+    cameraPixelSize = pixelSize;
     cameraPixelAngle = pixelAngle;
     cameraSet = true;
 }
 
-bool SubsurfaceCache::GetCamera(Vector3d& location, double& pixelAngle) const
+bool SubsurfaceCache::GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const
 {
     std::lock_guard<std::mutex> lock(mutex);
     location = cameraLocation;
+    pixelSize = cameraPixelSize;
     pixelAngle = cameraPixelAngle;
     return cameraSet;
 }
@@ -225,6 +227,17 @@ static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector
     BuildSubsurfaceNode(points, nodes, first, half);
     nodes[index].first = BuildSubsurfaceNode(points, nodes, first + half, count - half);
     return index;
+}
+
+double SubsurfaceCell::Spacing(const Vector3d& normal) const
+{
+    double facing = 0.0, density = 0.0;
+    for (int a = 0; a < 3; a++)
+    {
+        facing += fabs(normal[a]);
+        density += fabs(normal[a]) / (step[a] * step[a]);
+    }
+    return (density > 0.0) ? sqrt(facing / density) : std::max(step[0], std::max(step[1], step[2]));
 }
 
 void SubsurfaceCell::BuildHierarchy()

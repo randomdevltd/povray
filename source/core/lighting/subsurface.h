@@ -130,10 +130,11 @@ struct SubsurfaceCell final
     std::vector<SubsurfacePoint> points;
     std::vector<SubsurfaceNode> nodes;
     std::vector<float> visibility; ///< per point, per light, per channel: shadowed over unshadowed light
-    double spacing = 0.0; ///< between points, in scene units
+    double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
     void BuildHierarchy();
+    double Spacing(const Vector3d& normal) const; ///< between points on a surface with this unit normal
 
     /// Building goes in stages, each split into jobs that every thread needing the cell meanwhile takes a share of.
     /// A cell that fails (too many points, a crossing that cannot be oriented, an exception) ends ready but unusable.
@@ -141,7 +142,7 @@ struct SubsurfaceCell final
     std::mutex mutex;
     std::condition_variable changed;
     Stage stage = kCasting;
-    int jobs = 0, next = 0, done = 0, steps = 0;
+    int jobs = 0, next = 0, done = 0, steps[3] = {}; ///< steps: lines per row along each axis
     std::atomic<bool> failed{false};
     size_t found = 0, reserved = 0, unoriented = 0; ///< while casting: points kept, points reserved, crossings dropped
     std::vector<std::vector<SubsurfacePoint>> rows; ///< points found by each row of lines while casting
@@ -174,8 +175,8 @@ class SubsurfaceCache final
         bool Reserve(size_t points);
         void Release(size_t points);
         /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
-        void SetCamera(const Vector3d& location, double pixelAngle);
-        bool GetCamera(Vector3d& location, double& pixelAngle) const;
+        void SetCamera(const Vector3d& location, double pixelSize, double pixelAngle);
+        bool GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const;
 
     private:
         mutable std::mutex mutex;
@@ -183,7 +184,7 @@ class SubsurfaceCache final
         size_t reserved = 0;
         bool cameraSet = false;
         Vector3d cameraLocation;
-        double cameraPixelAngle = 0.0;
+        double cameraPixelSize = 0.0, cameraPixelAngle = 0.0;
 };
 
 /// Approximation to the Fresnel diffuse reflectance.

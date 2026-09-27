@@ -315,8 +315,35 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
     // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
     if (!subsurfaceCameraSet)
     {
-        bool perspective = (camera.Type == PERSPECTIVE_CAMERA) && (width > 0.0) && (camera.Direction.length() > 0.0);
-        sceneData->subsurfaceCache->SetCamera(camera.Location, perspective ? 2.0 * atan(0.5 * camera.Right.length() / camera.Direction.length()) / width : 0.0);
+        // A pixel spans pixelSize + pixelAngle * distance; zero for camera types this does not model.
+        double pixelSize = 0.0, pixelAngle = 0.0;
+        if ((width > 0.0) && (height > 0.0))
+        {
+            switch (camera.Type)
+            {
+                case PERSPECTIVE_CAMERA:
+                    if (camera.Direction.length() > 0.0)
+                        pixelAngle = 2.0 * atan(0.5 * camera.Right.length() / camera.Direction.length()) / width;
+                    break;
+                case ORTHOGRAPHIC_CAMERA:
+                    pixelSize = min(camera.Right.length() / width, camera.Up.length() / height);
+                    break;
+                case SPHERICAL_CAMERA:
+                    pixelAngle = min(camera.H_Angle / width, camera.V_Angle / height) * M_PI_180;
+                    break;
+                case FISHEYE_CAMERA:
+                case ULTRA_WIDE_ANGLE_CAMERA:
+                case OMNIMAX_CAMERA:
+                    pixelAngle = camera.Angle * M_PI_180 / max(width, height);
+                    break;
+                case PANORAMIC_CAMERA:
+                    pixelAngle = M_PI / width;
+                    break;
+                default:
+                    break;
+            }
+        }
+        sceneData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
         subsurfaceCameraSet = true;
     }
     if(useFocalBlur == false)
