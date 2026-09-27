@@ -226,6 +226,78 @@ Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 - Skipping shadow rays for negligible unshadowed light: subsumed by drawing in proportion to it.
 - Evaluating the diffusion profile with SIMD: it is 2.5% of `subsurface.pov`'s cycles.
 
+## Subsurface point cloud
+
+`subsurface { method 2 }` in `global_settings`, or in a finish's `subsurface` block, finds the diffuse subsurface
+light from a cloud of points shared by all shading points instead of rays under each one. The default stays method 1,
+the sampled method above. Method 2 is smooth where method 1 is grainy, and faster; it is not bit-exact, and its
+brightness is within a fraction of a level of method 1 at many samples (tables below).
+
+**The cloud.** Space is cut into cubes whose side is a power of four at least the diffusion's reach (8 diffusion
+lengths of the channel that diffuses farthest), so a texture that varies the diffusion uses few sizes. A cube's points
+are built the first time a shading point needs it: lines along the three axes through a jittered grid cross the
+object, and each crossing is a point standing for h²/|n|₁ of surface (h the grid step, n its normal), which gives one
+point per grid square on a patch facing an axis and no clumps. All crossings along a line are collected by testing it
+again past the farthest one found, since one test of a blob returns only the nearest interval. A point's normal is
+turned to point out of the object, by testing which side of it is inside: primitives report normals with no regard to
+a `difference` inverting them, and a mesh's follow its winding. Crossings whose sides cannot be told apart (open
+shapes, parts thinner than about a tenth of the spacing) are dropped, and a cube that drops more than one in sixteen is
+left to method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The
+spacing is a 128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's
+camera where the cube comes nearest it if that is coarser, and never under a 1024th of the side. The camera is set
+once for the render, so a cube comes out the same whichever thread builds it, from a camera ray, the radiosity
+pretrace or a radiosity sample. Threads that need a cube while it is built take jobs from its building, so it does not
+hold them up; an exception in any job leaves the cube unusable instead of holding up the threads waiting on it. A cube
+of more than 262144 points is left to method 1, as are unbounded objects such as planes. A budget of about a million
+points (about 120 bytes each, and 12 per light) covers all objects; once it is spent, cubes built later go to method 1,
+and which cubes those are depends on the order threads reach them, so it can vary between renders.
+
+**The sum.** Around the exit point, a core half a spacing across is lit as the exit point is, from its own light and
+its own shadow test where the nearby points disagree on a light's shadow (so shadow edges stay sharp); out to 1.5
+spacings the points' light is averaged by their share of the diffusion profile and multiplied by the profile's
+integral over the disc, in closed form; out to 4 spacings the same, times how much nearer the ring's points are than
+they would be with the surface unfolded flat (taking the planes through the exit point and each point to meet at a
+crease), which is 1 on a flat surface and more across an edge, unless the ring holds more than 1.33 times a flat
+ring's area or faces away from the exit point (a thin part's far side), where its points are summed as they are;
+beyond, points are summed in groups whose area is small against their distance (`error_bound`, 0.1) and whose normals
+agree. A point counts only if the sampled method's base point, under the exit point, sees it from the inside, which
+keeps light from crossing gaps between parts of an object. Where the disc bends (edges, parts thinner than about a
+spacing, tight curves), the ring holds under 0.75 times a flat ring's area (open borders) or holds a point the base
+point sees from behind (creases), the shading point uses method 1. The disc and ring are sized by the coarsest cube
+they reach, so where cubes of different spacing meet each still holds enough points. Diffusion shorter than a pixel is
+taken as lit like the exit point.
+
+**Single scattering.** A light in front of the surface whose shadow the disc agrees on needs no samples: on a flat
+surface the path in from the light is a fixed multiple of the path out, which gives the sampled estimate's expectation
+in closed form. Other lights (behind, or at shadow edges) are sampled as in method 1, with the shadow taken from
+nearby points where they agree.
+
+Results, `+WT4`, user-space cycles (on an otherwise idle machine; `tools/bench/pcount.c`), and error against method 1 with
+many samples (16 times the diffuse samples at 320×240, 8 times at 800×600) in levels of 255, over the pixels that
+subsurface light changes:
+
+| Render | Method 1 | Method 2 | | Method 1 mean, rms | Method 2 mean, rms |
+|---|---|---|---|---|---|
+| `tools/bench/sslt-lamps.pov`, 320×240 | 11.7 Gcycles | 7.4 | 1.6× | −0.04, 2.88 | −0.17, 2.06 |
+| the same at 800×600 | 71.9 Gcycles | 45.0 | 1.6× | −0.03, 2.92 | −0.21, 1.95 |
+| `scenes/subsurface/subsurface.pov`, 320×240 | 48.5 Gcycles | 16.7 | 2.9× | −0.02, 1.22 | −0.06, 1.05 |
+| the same at 800×600 | 306.6 Gcycles | 109.2 | 2.8× | −0.02, 1.24 | −0.05, 0.92 |
+
+Over the whole image, `sslt-open.pov` Case 0 (the top of a slab) is 0.25 levels darker than the reference with rms 2.0
+against method 1's 3.0; Case 2 (a clipped shell) is within 0.01 levels, rms 0.83 against 0.86. Shadow rays halve on
+both bench scenes. Without subsurface light the scenes trace in 2.1 and 0.6 Gcycles at 320×240, so the subsurface part
+goes from 9.6 to 5.3 Gcycles (1.8×) and from 47.9 to 16.1 (3.0×). Where it differs from the reference most, 8-pixel
+blocks at 800×600 are 2 to 4 levels off: the rounded foot of the candle in `subsurface.pov`, beside its wax drip, and
+on the wax sphere in `sslt-lamps.pov`; method 1's blocks are within 1.2.
+
+Tried and not kept:
+
+- Points where random lines cross the object: their clumps showed as faint mottling on wax and, summed raw near the
+  exit point, as blotches.
+- Summing the ring raw wherever its normals turn by more than 45°: mottling on the candle's rounded rim.
+- One cloud per object laid out by the first shading point: a floor seen from close to far gets one spacing, and the
+  first shading point's material fixes it for a texture that varies the diffusion.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
@@ -403,8 +475,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
-- Subsurface: the diffuse sample rays and the entry rays of single scattering are most of its cost; caching
-  irradiance at points on the surface across neighbouring pixels would remove the shadow rays, at the price of a cache.
+- Subsurface: method 2 still hands edges, thin parts and creases to method 1, and samples single scattering from
+  lights behind the surface.
 - Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders
   they cut the lawn's blurred error by a third at `error_bound 0.6` and the Cornell box's by 37% for 5–7% more
   cycles, and ended the grass's brightening, but left the patio unchanged, made a close-up of the large scene 14–25%
