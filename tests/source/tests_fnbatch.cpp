@@ -33,6 +33,7 @@
 ///
 //******************************************************************************
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -122,6 +123,36 @@ void CheckBatchMatchesScalar(FunctionVM& vm, FUNCTION fn)
     }
 }
 
+/// Runs `fn` one point at a time and in batches of four over `n` points spread across [lo, hi] in x and [ylo, yhi] in y,
+/// and checks both against `ref` within 1e-12 relative to max(1, |ref|).
+template<typename F>
+void CheckMathsAgainstStd(FunctionVM& vm, FUNCTION fn, F ref, DBL lo, DBL hi, DBL ylo, DBL yhi, const char *name)
+{
+    static const bool noiseReady = (Initialize_Noise(), true);
+    (void)noiseReady;
+    TraceThreadData thread(std::make_shared<SceneData>(), 1);
+    FPUContext ctx(&vm, &thread);
+    const int kPoints = 4000;
+    std::vector<DBL> x(kPoints), y(kPoints), z(kPoints, 0.0), batch(kPoints);
+    for (int i = 0; i < kPoints; ++i)
+    {
+        x[i] = lo + (hi - lo) * (i + 0.37) / kPoints;
+        y[i] = ylo + (yhi - ylo) * ((i * 7919) % kPoints + 0.61) / kPoints;
+    }
+    for (int first = 0; first < kPoints; first += 4)
+        POVFPU_RunBatch(&ctx, fn, &x[first], &y[first], &z[first], &batch[first], 4);
+    for (int i = 0; i < kPoints; ++i)
+    {
+        ctx.SetLocal(0, x[i]);
+        ctx.SetLocal(1, y[i]);
+        ctx.SetLocal(2, z[i]);
+        const DBL one = POVFPU_RunDefault(&ctx, fn), want = ref(x[i], y[i]);
+        const DBL tol = 1e-12 * std::max(DBL(1.0), std::fabs(want));
+        BOOST_CHECK_MESSAGE(std::fabs(one - want) <= tol, name << "(" << x[i] << ", " << y[i] << ") = " << one << ", std " << want);
+        BOOST_CHECK_MESSAGE(Same(batch[i], one), name << " batch " << batch[i] << " != one point " << one);
+    }
+}
+
 }
 // end of anonymous namespace
 
@@ -207,6 +238,32 @@ BOOST_AUTO_TEST_CASE( GlobalStoresFallBackToScalar )
     a.loadXYZ();
     a.op(OPCODE_STORE, 0, 2, 0); a.op(OPCODE_LOAD, 0, 0, 0); a.op(OPCODE_MUL, 3, 0); a.op(OPCODE_RTS);
     CheckBatchMatchesScalar(*vm, Add(*vm, a));
+}
+
+BOOST_AUTO_TEST_CASE( LibraryMathsMatchStd )
+{
+    boost::intrusive_ptr<FunctionVM> vm(new FunctionVM());
+    auto one = [&](unsigned int k) { Asm a; a.op(OPCODE_GROW, 0, 0, 8); a.loadXYZ(); a.op(OPCODE_MOVE, 2, 0);
+                                     a.op(OPCODE_SYS1, 0, 0, k); a.op(OPCODE_RTS); return Add(*vm, a); };
+    auto two = [&](unsigned int k) { Asm a; a.op(OPCODE_GROW, 0, 0, 8); a.loadXYZ(); a.op(OPCODE_MOVE, 2, 0); a.op(OPCODE_MOVE, 3, 1);
+                                     a.op(OPCODE_SYS2, 0, 0, k); a.op(OPCODE_RTS); return Add(*vm, a); };
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_SIN), [](DBL x, DBL) { return std::sin(x); }, -200, 200, 0, 0, "sin");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_COS), [](DBL x, DBL) { return std::cos(x); }, -200, 200, 0, 0, "cos");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_TAN), [](DBL x, DBL) { return std::tan(x); }, -200, 200, 0, 0, "tan");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_ASIN), [](DBL x, DBL) { return std::asin(x); }, -1, 1, 0, 0, "asin");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_ACOS), [](DBL x, DBL) { return std::acos(x); }, -1, 1, 0, 0, "acos");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_ATAN), [](DBL x, DBL) { return std::atan(x); }, -200, 200, 0, 0, "atan");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_SINH), [](DBL x, DBL) { return std::sinh(x); }, -200, 200, 0, 0, "sinh");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_COSH), [](DBL x, DBL) { return std::cosh(x); }, -200, 200, 0, 0, "cosh");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_TANH), [](DBL x, DBL) { return std::tanh(x); }, -200, 200, 0, 0, "tanh");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_ASINH), [](DBL x, DBL) { return std::asinh(x); }, -200, 200, 0, 0, "asinh");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_ACOSH), [](DBL x, DBL) { return std::acosh(x); }, 1, 200, 0, 0, "acosh");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_ATANH), [](DBL x, DBL) { return std::atanh(x); }, -0.999, 0.999, 0, 0, "atanh");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_EXP), [](DBL x, DBL) { return std::exp(x); }, -200, 200, 0, 0, "exp");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_LN), [](DBL x, DBL) { return std::log(x); }, 1e-6, 200, 0, 0, "log");
+    CheckMathsAgainstStd(*vm, one(TRAP_SYS1_LOG), [](DBL x, DBL) { return std::log10(x); }, 1e-6, 200, 0, 0, "log10");
+    CheckMathsAgainstStd(*vm, two(TRAP_SYS2_POW), [](DBL x, DBL y) { return std::pow(x, y); }, 1e-3, 10, -4, 4, "pow");
+    CheckMathsAgainstStd(*vm, two(TRAP_SYS2_ATAN2), [](DBL x, DBL y) { return std::atan2(x, y); }, -200, 200, -200, 200, "atan2");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

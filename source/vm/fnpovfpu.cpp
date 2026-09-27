@@ -284,7 +284,7 @@ using std::vector;
     X(LOADG) X(LOADL) X(STOREG) X(STOREL) \
     X(BEQ) X(BNE) X(BLT) X(BLE) X(BGT) X(BGE) \
     X(XEQ) X(XNE) X(XLT) X(XLE) X(XGT) X(XGE) X(XDZ) \
-    X(JSR) X(JMP) X(RTS) X(CALL) X(CALLF) X(SYS1) X(SQRT) X(SYS2) X(TRAP) X(TRAPS) \
+    X(JSR) X(JMP) X(RTS) X(CALL) X(CALLF) X(SYS1) X(SQRT) X(MATH1) X(SYS2) X(MATH2) X(TRAP) X(TRAPS) \
     X(GROW) X(PUSH) X(POP) X(NOP)
 
 enum VMCode
@@ -325,6 +325,10 @@ static VMOp DecodeInstruction(Instruction w, const FunctionCode& f)
 
     if ((d.code == VM_SYS1) && (d.k == TRAP_SYS1_SQRT))
         d.code = VM_SQRT;
+    else if ((d.code == VM_SYS1) && (d.k <= TRAP_SYS1_LOG) && (d.k != TRAP_SYS1_FLOOR) && (d.k != TRAP_SYS1_CEIL))
+        d.code = VM_MATH1;
+    else if ((d.code == VM_SYS2) && ((d.k == TRAP_SYS2_POW) || (d.k == TRAP_SYS2_ATAN2)))
+        d.code = VM_MATH2;
     else if ((d.code == VM_TRAP) && (d.k < POVFPU_TrapTableSize))
         d.a = std::uint8_t(POVFPU_TrapTable[d.k].parameter_cnt);
     else if (d.code == VM_TRAPS)
@@ -1150,6 +1154,44 @@ void POVFPU_Exception(FPUContext *context, FUNCTION fn, const char *msg)
 *
 ******************************************************************************/
 
+typedef simd::Vec<DBL, POVFPU_LANES> LaneVec;
+typedef LaneVec::MaskType LaneMask;
+
+/// The library functions both interpreters take from the simd layer, so one point and a batch agree bit for bit.
+static LaneVec Math1(unsigned int k, LaneVec a)
+{
+    switch (k)
+    {
+        case TRAP_SYS1_SIN:     return simd::sin(a);
+        case TRAP_SYS1_COS:     return simd::cos(a);
+        case TRAP_SYS1_TAN:     return simd::tan(a);
+        case TRAP_SYS1_ASIN:    return simd::asin(a);
+        case TRAP_SYS1_ACOS:    return simd::acos(a);
+        case TRAP_SYS1_ATAN:    return simd::atan(a);
+        case TRAP_SYS1_SINH:    return simd::sinh(a);
+        case TRAP_SYS1_COSH:    return simd::cosh(a);
+        case TRAP_SYS1_TANH:    return simd::tanh(a);
+        case TRAP_SYS1_ASINH:   return simd::asinh(a);
+        case TRAP_SYS1_ACOSH:   return simd::acosh(a);
+        case TRAP_SYS1_ATANH:   return simd::atanh(a);
+        case TRAP_SYS1_EXP:     return simd::exp(a);
+        case TRAP_SYS1_LN:      return simd::log(a);
+        default:                return simd::log10(a);
+    }
+}
+
+static LaneVec Math2(unsigned int k, LaneVec a, LaneVec b)
+{
+    return (k == TRAP_SYS2_POW) ? simd::pow(a, b) : simd::atan2(a, b);
+}
+
+static DBL FirstLane(LaneVec v)
+{
+    DBL out[POVFPU_LANES];
+    v.store(out);
+    return out[0];
+}
+
 DBL POVFPU_RunDefault(FPUContext *context, FUNCTION fn)
 {
     context->threaddata->Stats()[Ray_Function_VM_Calls]++;
@@ -1276,7 +1318,9 @@ DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
 
     VM_CASE(SYS1)   r[0] = POVFPU_Sys1Table[op->k](r[0]); VM_NEXT();
     VM_CASE(SQRT)   r[0] = sqrt(r[0]); VM_NEXT();
+    VM_CASE(MATH1)  r[0] = FirstLane(Math1(op->k, LaneVec(r[0]))); VM_NEXT();
     VM_CASE(SYS2)   r[0] = POVFPU_Sys2Table[op->k](r[0], r[1]); VM_NEXT();
+    VM_CASE(MATH2)  r[0] = FirstLane(Math2(op->k, LaneVec(r[0]), LaneVec(r[1]))); VM_NEXT();
     VM_CASE(TRAP)
         r[0] = POVFPU_TrapTable[op->k].fn(context, &dblstack[sp], fn);
         maxdblstacksize = context->maxdblstacksize;
@@ -1318,9 +1362,6 @@ DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
     #undef VM_NEXT
     #undef VM_JUMP
 }
-
-typedef simd::Vec<DBL, POVFPU_LANES> LaneVec;
-typedef LaneVec::MaskType LaneMask;
 
 static_assert(POVFPU_LANES == 4, "kLaneOn lists four lanes");
 static const unsigned int kAllLanes = (1u << POVFPU_LANES) - 1;
@@ -1553,6 +1594,8 @@ bool BatchRun::Frame(FUNCTION fn, unsigned int sp, unsigned int own, int depth)
                 break;
 
             case VM_SQRT:   Put(0, simd::sqrt(r[0]), act); break;
+            case VM_MATH1:  Put(0, Math1(op.k, r[0]), act); break;
+            case VM_MATH2:  Put(0, Math2(op.k, r[0], r[1]), act); break;
             case VM_SYS1:
                 r[0].store(v);
                 PerLane(act, v, [&](unsigned int i) { return POVFPU_Sys1Table[op.k](v[i]); });

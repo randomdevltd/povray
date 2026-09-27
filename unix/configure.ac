@@ -775,6 +775,8 @@ if test x"$enable_optimiz" != x"no"; then
       AX_TEST_COMPILER_FLAGS([-ffast-math])
       # the renderer compares against infinities (HUGE_VAL), which finite-only math folds away
       AX_TEST_COMPILER_FLAGS([-fno-finite-math-only])
+      AX_TEST_COMPILER_FLAGS([-fno-associative-math])  # why: -fsigned-zeros warns without it
+      AX_TEST_COMPILER_FLAGS([-fsigned-zeros])  # why: xsimd builds signs from -0.0
       ;;
 
     intel)
