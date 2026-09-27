@@ -429,6 +429,49 @@ not depend on thread order.
 The close-up moves by 0.08 levels on average and 1 at most. Against a converged render the shiny lawn's error goes
 from 1.58 to 1.64 levels, with the same mean brightness.
 
+### A sampled light for the faint rest
+
+A gather-ray hit lit mostly by lamps still tested most of them to leave no more than 5% of its light untested. It
+now tests them brightest first only until the untested ones carry at most a quarter of its unshadowed light. Unless
+those carry under 5%, one of them, drawn in proportion to its light, then stands for them all, scaled by their total
+over its own. The estimate is unbiased, and the draw hashes the hit point and ray direction, so it does not depend on
+thread order.
+
+| Render, one thread unless noted | Before | After |
+|---|---|---|
+| large scene, 200 DPI close-up, radiosity overhead, two runs | 57.5 and 58.0 Gcycles, 78.2 G instructions | 41.2 and 42.2 Gcycles, 61.9 G |
+| large scene, whole frame at 10 DPI, 4 threads, radiosity overhead, two runs | 536 and 554 Gcycles, 849 G instructions | 461 and 415 Gcycles, 640 G |
+| lawn, 320×180 | 17.0 Gcycles, 3.95 M shadow rays | 13.2 Gcycles, 2.46 M |
+| a room lit by four lamps at `count 30` | 506 K shadow rays | 487 K |
+
+Against converged renders the lawn's error stays at 1.99 levels and the room's at 0.59; the close-up's goes from
+1.82 to 1.87, and that of a second 200 DPI window, of smooth ground, from 0.97 to 0.93.
+
+Drawing a light as soon as the brightest was tested cut the close-up's radiosity overhead by 42%, but the image
+showed the render's tiles. A sample's direct light at its gather-ray hits, against testing every light, then varied
+by 26% (standard deviation over the close-up's 3,328 samples), against 4.4% when testing to 5%, which reads 2%
+dark. The final pass shades a pixel from whatever cached samples reach it and takes a new one only where none does,
+tile after 32-pixel tile, so pixels either side of a tile edge are shaded from different samples: three tiles of
+the close-up came out 2.4 levels darker, with sharp edges. It was variance, not a correlated draw. Neighbouring
+samples' errors were uncorrelated (0.01), their mean was 0.1%, and another salt moved the steps to other tiles.
+Unbiased rules tried on the close-up, with the draw hashed per ray or spread evenly across a sample's rays under one
+shift per sample:
+
+| Rule | Spread | Radiosity shadow rays |
+|---|---|---|
+| test to 5% (before) | 4.4%, 2% dark | 1.59 M |
+| the brightest, then one hashed | 26% | 0.70 M |
+| the brightest, then one spread | 21% | 0.70 M |
+| the brightest, then two spread | 14% | 0.93 M |
+| to 40%, then one spread | 13% | 0.94 M |
+| to 25%, then one hashed | 9% | 1.14 M |
+| to 15%, then one hashed | 6% | 1.33 M |
+
+At 25% the largest step between tiles, against the image before, is 0.55 levels on the close-up and 0.14 on the
+second window; the shadow-cache changes already in this branch's base moved the close-up's tiles by up to 1.4. Two
+spread lights took 32% of the overhead's instructions off against 21%, but left the close-up's error at 1.95 levels,
+as high as one.
+
 ## Mesh triangles and shadow rays
 
 On the mesh bench above (`+WT1`, 960×720, `+A0.0 +R3`), three runs of each, interleaved, without the skip of a

@@ -1586,6 +1586,12 @@ bool Trace::SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, dou
 // Lights left untested may carry at most this fraction of a radiosity ray's unshadowed classic lighting.
 static const double kUntestedLightFraction = 0.05;
 
+// Once the untested lights carry at most this fraction, one of them, drawn in proportion to its light, stands for them all.
+static const double kSampledLightFraction = 0.25;
+
+// Salt for the draw of a radiosity ray's sampled light, distinct from the roulette's salts.
+static const unsigned int kLightDrawSalt = 97;
+
 void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
                                        const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor)
 {
@@ -1632,18 +1638,12 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
     for (size_t i = first; i < end; ++i)
         lightOrder.push_back(i);
     // when even the faintest light is too bright to leave untested, the order does not matter
-    if (faintest <= kUntestedLightFraction * total)
+    if (faintest <= kSampledLightFraction * total)
         std::sort(lightOrder.begin() + order, lightOrder.end(),
                   [this](size_t a, size_t b) { return lightCandidates[a].weight > lightCandidates[b].weight; });
 
-    double untested = total;
-    double testedWeight = 0.0;
-    double litWeight = 0.0;
-    size_t next = order;
-    for (; (next < lightOrder.size()) && (untested > kUntestedLightFraction * total); ++next)
+    auto test = [&](const LightCandidate& candidate)
     {
-        // copied, as a shadow ray's own lighting may grow the stacks
-        const LightCandidate candidate = lightCandidates[lightOrder[next]];
         MathColour lightcolour = candidate.colour;
         lightsourceray.Origin = ipoint;
         lightsourceray.Direction = candidate.direction;
@@ -1654,13 +1654,35 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
         else if (!lightcolour.IsNearZero(EPSILON))
             ComputeOneLightContribution(*candidate.light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, lit, attenuation, object, relativeIor,
                                         candidate.depth, lightsourceray, lightcolour, candidate.backside);
+        return lit;
+    };
+
+    double untested = total;
+    double testedWeight = 0.0;
+    double litWeight = 0.0;
+    size_t next = order;
+    for (; (next < lightOrder.size()) && (untested > kSampledLightFraction * total); ++next)
+    {
+        // copied, as a shadow ray's own lighting may grow the stacks
+        const LightCandidate candidate = lightCandidates[lightOrder[next]];
+        const MathColour lit = test(candidate);
         colour += lit;
         testedWeight += candidate.weight;
         litWeight += lit.Weight();
         untested -= candidate.weight;
     }
 
-    if (next < lightOrder.size())
+    if ((next < lightOrder.size()) && (untested > kUntestedLightFraction * total))
+    {
+        // hashed from the hit and the ray, so the draw does not depend on thread order
+        double draw = RouletteDraw(ipoint, eye.Direction, kLightDrawSalt) * untested;
+        size_t pick = next;
+        for (; (pick + 1 < lightOrder.size()) && (draw >= lightCandidates[lightOrder[pick]].weight); ++pick)
+            draw -= lightCandidates[lightOrder[pick]].weight;
+        const LightCandidate candidate = lightCandidates[lightOrder[pick]];
+        colour += test(candidate) * (untested / candidate.weight);
+    }
+    else if (next < lightOrder.size())
     {
         const double visible = litWeight / testedWeight;
         for (; next < lightOrder.size(); ++next)
