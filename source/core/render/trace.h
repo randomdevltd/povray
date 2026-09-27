@@ -613,8 +613,8 @@ class Trace
         /// Whether to trace a reflection or refraction of this weight spawned by `ray`; below a gather ray, one whose share
         /// of its sample is under the ADC bailout survives in proportion to it, and `scale` compensates.
         bool SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, double weight, unsigned int salt, double& scale);
-        /// Classic lighting for radiosity rays: shadow-tests lights brightest first, and estimates the faint remainder
-        /// from the visibility of those tested.
+        /// Classic lighting for radiosity rays: shadow-tests lights brightest first until the untested ones carry at most
+        /// a quarter of the unshadowed light, then lets one of those, drawn in proportion to its light, stand for them all.
         void ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
                                         const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
