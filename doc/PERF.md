@@ -246,7 +246,10 @@ inside on both sides (a union's inner surface) is dropped, and a cube that drops
 method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The spacing is a
 128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
 cube comes nearest it if that is coarser, and never under a 1024th of the side; a pixel spans a size plus an angle
-times the distance, for perspective, orthographic, spherical, fisheye, ultra-wide, omnimax and panoramic cameras.
+times the distance, for perspective, orthographic, spherical, fisheye, ultra-wide, omnimax and panoramic cameras
+(for spherical and panoramic ones, a pixel at the equator, coarser than one toward the poles); cylinder, mesh and
+user-defined cameras get no pixel size, so their cubes take the finest spacing, and a plane under one can spend the
+point budget before its shading points fall back to method 1.
 Lines along an axis the camera looks across are spaced up to twice as widely, by one over the square root of the
 cosine between the axis and the direction to the camera, since surfaces facing that axis are seen obliquely; a point
 then stands for 1/Σ(|nₐ|/hₐ²) of surface. The camera is set once for the render, and a cube is lit from a fresh trace
@@ -293,7 +296,9 @@ the radiosity cache's light to each point, entering along the normal as the samp
 the exit point's own. Points read only the pretrace's and loaded samples, as a final-trace query from a tile no tile
 has, so no final-trace sample counts and a cube does not depend on the tile that builds it; where none is near, the
 bound is widened up to fourfold, then deeper bounces are tried, and a point still without one takes its cube's mean.
-The pretrace uses method 1, since the cache is incomplete while it runs.
+The pretrace uses method 1, since the cache is incomplete while it runs. With `radiosity { subsurface on }`, gathers
+at the deepest bounce use cubes without radiosity, so the same parts of an object can be built twice, once of each
+kind, from the one point budget.
 
 **Single scattering.** A light in front of the surface whose shadow the disc agrees on needs no samples: on a flat
 surface the path in from the light is a fixed multiple of the path out, which gives the sampled estimate's expectation
