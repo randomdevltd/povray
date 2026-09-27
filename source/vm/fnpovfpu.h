@@ -145,10 +145,12 @@ struct FunctionCode
     void *private_data;
 };
 
-/// One instruction as the interpreters run it: a handler, two register fields and the 20-bit operand, decoded once.
+/// One instruction as the interpreters run it, decoded once: the batch's handler and register fields, the scalar
+/// interpreter's handler (specialised by register, as the opcodes are), and the 20-bit operand.
 struct VMOp
 {
     std::uint16_t code;
+    std::uint16_t scalar;
     std::uint8_t a;
     std::uint8_t b;
     std::uint32_t k;
