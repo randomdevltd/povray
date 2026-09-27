@@ -3676,7 +3676,7 @@ static const double kCloudRing = 4.0;
 static const int kCloudAreaPoints = 4;
 static const double kCloudFlat = 0.5;
 static const double kCloudFold = 0.0;
-static const double kCloudCone = 0.9;
+static const double kCloudCone = 0.5;
 static const double kCloudCrease = 2.5;
 // Most ring area, over a flat ring's, for a flat ring; visibilities this close agree.
 static const double kCloudDense = 1.33;
@@ -4733,98 +4733,108 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     double creaseSqr = Sqr(kCloudCrease * cloud.spacing * mm);
     bool hidden = false;
     std::vector<int>& stack = ssltScratchStack;
-    for (int c = 0; c < cloud.cells.size(); c++)
+    // The ring's points are walked first, so that a shading point handed to method 1 does not pay for the far ones.
+    auto walk = [&](bool near)
     {
-        const SubsurfaceCell *cell = cloud.cells[c];
-        Vector3d cellLo = cloud.coords[c] * cloud.size;
-        int stride = cell->lights * MathColour::channels;
-        stack.assign(1, 0);
-        while (!stack.empty())
+        for (int c = 0; c < cloud.cells.size(); c++)
         {
-            int index = stack.back();
-            stack.pop_back();
-            const SubsurfaceNode& node = cell->nodes[index];
-            double boxSqr = 0.0;
-            for (int a = 0; a < 3; a++)
-                boxSqr += Sqr(max(0.0, max(node.lo[a] - x[a], x[a] - node.hi[a])));
-            boxSqr *= Sqr(mm);
-            if (boxSqr > reachSqr)
-                continue;
-            if ((boxSqr > ringSqr) && (node.area < errorBound * boxSqr) && (node.cone >= kCloudCone))
+            const SubsurfaceCell *cell = cloud.cells[c];
+            Vector3d cellLo = cloud.coords[c] * cloud.size;
+            int stride = cell->lights * MathColour::channels;
+            stack.assign(1, 0);
+            while (!stack.empty())
             {
-                Vector3d toward = node.centre - base;
-                if (node.twoSided || (toward[X] * node.normal[0] + toward[Y] * node.normal[1] + toward[Z] * node.normal[2] > 0.0))
+                int index = stack.back();
+                stack.pop_back();
+                const SubsurfaceNode& node = cell->nodes[index];
+                double boxSqr = 0.0, outerSqr = 0.0;
+                for (int a = 0; a < 3; a++)
                 {
-                    double distSqr = (x - node.centre).lengthSqr() * Sqr(mm);
+                    boxSqr += Sqr(max(0.0, max(node.lo[a] - x[a], x[a] - node.hi[a])));
+                    outerSqr += Sqr(max(x[a] - node.lo[a], node.hi[a] - x[a]));
+                }
+                boxSqr *= Sqr(mm);
+                if ((boxSqr > (near ? ringSqr : reachSqr)) || (!near && (outerSqr * Sqr(mm) < ringSqr)))
+                    continue;
+                if (!near && (boxSqr > ringSqr) && (node.area < errorBound * boxSqr) && (node.cone >= kCloudCone))
+                {
+                    Vector3d toward = node.centre - base;
+                    if (node.twoSided || (toward[X] * node.normal[0] + toward[Y] * node.normal[1] + toward[Z] * node.normal[2] > 0.0))
+                    {
+                        double distSqr = (x - node.centre).lengthSqr() * Sqr(mm);
+                        PreciseMathColour rd = profile.Rd(distSqr);
+                        for (int j = 0; j < MathColour::channels; j++)
+                            far[j] += rd[j] * node.irradiance[j];
+                    }
+                    continue;
+                }
+                if (node.count == 0)
+                {
+                    stack.push_back(index + 1);
+                    stack.push_back(node.first);
+                    continue;
+                }
+                for (int i = node.first; i < node.first + node.count; i++)
+                {
+                    const SubsurfacePoint& p = cell->points[i];
+                    double distSqr = (x - p.position).lengthSqr() * Sqr(mm);
+                    if ((distSqr < ringSqr) != near)
+                        continue;
+                    // A point the base point sees from behind is reached only through another part of the surface.
+                    Vector3d toward = p.position - base;
+                    if (!p.twoSided && (toward[X] * p.normal[0] + toward[Y] * p.normal[1] + toward[Z] * p.normal[2] <= 0.0))
+                    {
+                        hidden = hidden || (distSqr < creaseSqr);
+                        continue;
+                    }
                     PreciseMathColour rd = profile.Rd(distSqr);
+                    if (!near)
+                    {
+                        for (int j = 0; j < MathColour::channels; j++)
+                            far[j] += rd[j] * p.area * p.irradiance[j];
+                        continue;
+                    }
+                    double facing = p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z];
+                    if (p.twoSided)
+                        facing = fabs(facing);
+                    bool inDisc = (distSqr < discSqr);
+                    if (inDisc)
+                    {
+                        discFacing = min(discFacing, facing);
+                        visibility.Add(cell->visibility.data() + p.id * stride);
+                    }
+                    double unfoldedSqr = inDisc ? distSqr : Sqr(UnfoldedDistance(x, n, p) * mm);
+                    // The window is taken at the centre of the grid square the point's line crosses, free of its jitter.
+                    Vector3d square = p.position;
+                    for (int b = 1; b < 3; b++)
+                    {
+                        int u = (p.axis + b) % 3;
+                        double h = cloud.size / cell->steps[p.axis];
+                        square[u] = cellLo[u] + (floor((square[u] - cellLo[u]) / h) + 0.5) * h;
+                    }
+                    double window = p.area * CloudWindow((square - x).lengthSqr() * Sqr(mm) * unfoldedSqr / max(distSqr, 1e-30), ringSqr);
+                    covered += window;
+                    moment += (square - x) * window;
+                    if (!inDisc)
+                    {
+                        ringFacing = min(ringFacing, facing);
+                        ringArea += p.area;
+                        PreciseMathColour rdUnfolded = profile.Rd(unfoldedSqr);
+                        for (int j = 0; j < MathColour::channels; j++)
+                            ringUnfolded[j] += rdUnfolded[j] * p.area;
+                    }
+                    PreciseMathColour& weight = inDisc ? discWeight : ringWeight;
+                    PreciseMathColour& light = inDisc ? discLight : ringLight;
                     for (int j = 0; j < MathColour::channels; j++)
-                        far[j] += rd[j] * node.irradiance[j];
-                }
-                continue;
-            }
-            if (node.count == 0)
-            {
-                stack.push_back(index + 1);
-                stack.push_back(node.first);
-                continue;
-            }
-            for (int i = node.first; i < node.first + node.count; i++)
-            {
-                const SubsurfacePoint& p = cell->points[i];
-                double distSqr = (x - p.position).lengthSqr() * Sqr(mm);
-                // A point the base point sees from behind is reached only through another part of the surface.
-                Vector3d toward = p.position - base;
-                if (!p.twoSided && (toward[X] * p.normal[0] + toward[Y] * p.normal[1] + toward[Z] * p.normal[2] <= 0.0))
-                {
-                    hidden = hidden || (distSqr < creaseSqr);
-                    continue;
-                }
-                double facing = p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z];
-                if (p.twoSided)
-                    facing = fabs(facing);
-                if (distSqr < discSqr)
-                {
-                    discFacing = min(discFacing, facing);
-                    visibility.Add(cell->visibility.data() + p.id * stride);
-                }
-                PreciseMathColour rd = profile.Rd(distSqr);
-                if (distSqr >= ringSqr)
-                {
-                    for (int j = 0; j < MathColour::channels; j++)
-                        far[j] += rd[j] * p.area * p.irradiance[j];
-                    continue;
-                }
-                bool inDisc = (distSqr < discSqr);
-                double unfoldedSqr = inDisc ? distSqr : Sqr(UnfoldedDistance(x, n, p) * mm);
-                // The window is taken at the centre of the grid square the point's line crosses, free of its jitter.
-                Vector3d square = p.position;
-                for (int b = 1; b < 3; b++)
-                {
-                    int u = (p.axis + b) % 3;
-                    double h = cloud.size / cell->steps[p.axis];
-                    square[u] = cellLo[u] + (floor((square[u] - cellLo[u]) / h) + 0.5) * h;
-                }
-                double window = p.area * CloudWindow((square - x).lengthSqr() * Sqr(mm) * unfoldedSqr / max(distSqr, 1e-30), ringSqr);
-                covered += window;
-                moment += (square - x) * window;
-                if (!inDisc)
-                {
-                    ringFacing = min(ringFacing, facing);
-                    ringArea += p.area;
-                    PreciseMathColour rdUnfolded = profile.Rd(unfoldedSqr);
-                    for (int j = 0; j < MathColour::channels; j++)
-                        ringUnfolded[j] += rdUnfolded[j] * p.area;
-                }
-                PreciseMathColour& weight = inDisc ? discWeight : ringWeight;
-                PreciseMathColour& light = inDisc ? discLight : ringLight;
-                for (int j = 0; j < MathColour::channels; j++)
-                {
-                    weight[j] += rd[j] * p.area;
-                    light[j] += rd[j] * p.area * p.irradiance[j];
+                    {
+                        weight[j] += rd[j] * p.area;
+                        light[j] += rd[j] * p.area * p.irradiance[j];
+                    }
                 }
             }
         }
-    }
+    };
+    walk(true);
     double density = ringArea / (M_PI * (ringSqr - discSqr));
     if ((visibility.count == 0) || (discFacing < kCloudFlat) || hidden)
         return false;
@@ -4864,6 +4874,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, coarse, ticket, key);
     if (cloud.exitMismatch)
         return false;
+    walk(false);
     here += ComputeCloudExitAmbient(out, n, cloud, ticket);
     PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
     PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
