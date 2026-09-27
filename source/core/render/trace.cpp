@@ -4528,6 +4528,7 @@ void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vec
 bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud)
 {
     cloud.object = SubsurfaceObject(out);
+    cloud.edge = false;
     if (cloud.object->interior == nullptr)
         return false;
     // Cloud points hold a shadow per light of the whole object, which a part in a light group of its own cannot use.
