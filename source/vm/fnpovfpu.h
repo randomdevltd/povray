@@ -184,6 +184,8 @@ class FPUContext : public GenericFunctionContext
         DBL *dblstack;
         #endif
         int nextArgument;
+        DBL *lanestackbase;
+        unsigned int maxlanestacksize;
 
         void SetLocal(unsigned int k, DBL v);
         DBL GetLocal(unsigned int k);
@@ -259,9 +261,13 @@ extern const Sys2 POVFPU_Sys2Table[];
 extern const unsigned int POVFPU_Sys1TableSize;
 extern const unsigned int POVFPU_Sys2TableSize;
 
+/// Points the batched interpreter evaluates together.
+const int POVFPU_LANES = 4;
+
 void POVFPU_Exception(FPUContext *context, FUNCTION fn, const char *msg = nullptr);
 DBL POVFPU_RunDefault(FPUContext *context, FUNCTION k);
 DBL POVFPU_RunScalar(FPUContext *context, FUNCTION k);
+void POVFPU_RunBatch(FPUContext *context, FUNCTION fn, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n);
 
 void FNCode_Delete(FunctionCode *);
 
@@ -270,6 +276,7 @@ class FunctionVM : public GenericFunctionContextFactory
         friend void POVFPU_Exception(FPUContext *, FUNCTION, const char *);
         friend DBL POVFPU_RunDefault(FPUContext *, FUNCTION);
         friend DBL POVFPU_RunScalar(FPUContext *, FUNCTION);
+        friend struct BatchRun;
 
     public:
 
@@ -283,6 +290,7 @@ class FunctionVM : public GenericFunctionContextFactory
                 virtual void InitArguments(GenericFunctionContextPtr pContext) override;
                 virtual void PushArgument(GenericFunctionContextPtr pContext, DBL arg) override;
                 virtual DBL Execute(GenericFunctionContextPtr pContext) override;
+                virtual void ExecuteBatch(GenericFunctionContextPtr pContext, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n) override;
                 virtual GenericScalarFunctionPtr Clone() const override;
                 virtual const CustomFunctionSourceInfo* GetSourceInfo() const override;
             protected:

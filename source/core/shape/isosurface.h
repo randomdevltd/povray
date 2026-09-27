@@ -138,6 +138,7 @@ class IsoSurface final : public ObjectBase
         bool Function_Find_Root_R(ISO_ThreadData& itd, const ISO_Pair*, const ISO_Pair*, DBL, DBL, DBL, DBL& max_gradient, TraceThreadData* pThreadData);
 
         inline DBL Float_Function(ISO_ThreadData& itd, DBL t) const;
+        inline void Polarized_Pair(ISO_ThreadData& itd, DBL t1, DBL t2, DBL& p1, DBL& p2) const;
         inline DBL EvaluateAbs (GenericScalarFunctionInstance& fn, Vector3d& p) const;
         inline DBL EvaluatePolarized (GenericScalarFunctionInstance& fn, Vector3d& p) const;
         inline bool IsInside (GenericScalarFunctionInstance& fn, Vector3d& p) const;

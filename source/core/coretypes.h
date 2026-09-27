@@ -658,6 +658,18 @@ public:
     virtual void InitArguments(GenericFunctionContextPtr pContext) = 0;
     virtual void PushArgument(GenericFunctionContextPtr pContext, ARG_T arg) = 0;
     virtual RETURN_T Execute(GenericFunctionContextPtr pContext) = 0;
+    /// Evaluates `n` points `(x[i], y[i], z[i])`, each exactly as a three-argument Execute would.
+    virtual void ExecuteBatch(GenericFunctionContextPtr pContext, const ARG_T *x, const ARG_T *y, const ARG_T *z, RETURN_T *results, int n)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            InitArguments(pContext);
+            PushArgument(pContext, x[i]);
+            PushArgument(pContext, y[i]);
+            PushArgument(pContext, z[i]);
+            results[i] = Execute(pContext);
+        }
+    }
     virtual GenericCustomFunction* Clone() const = 0;
     virtual const CustomFunctionSourceInfo* GetSourceInfo() const { return nullptr; }
 };
@@ -730,6 +742,12 @@ public:
     inline RETURN_T Evaluate(const Vector3d& argV)
     {
         return Evaluate(argV.x(), argV.y(), argV.z());
+    }
+
+    inline void Evaluate(const ARG_T *x, const ARG_T *y, const ARG_T *z, RETURN_T *results, int n)
+    {
+        mpFunction->ExecuteBatch(mpContext, x, y, z, results, n);
+        mReInit = true;
     }
 
 protected:

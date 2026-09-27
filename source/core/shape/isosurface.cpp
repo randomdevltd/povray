@@ -403,20 +403,15 @@ void IsoSurface::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *
         else
             New_Point = Inter->IPoint;
 
-        TPoint = New_Point;
-        funct = fn.Evaluate(TPoint);
-
-        TPoint = New_Point;
-        TPoint[X] += accuracy;
-        Result[X] = fn.Evaluate(TPoint) - funct;
-            TPoint = New_Point;
-
-        TPoint[Y] += accuracy;
-        Result[Y] = fn.Evaluate(TPoint) - funct;
-            TPoint = New_Point;
-
-        TPoint[Z] += accuracy;
-        Result[Z] = fn.Evaluate(TPoint) - funct;
+        const DBL xs[4] = { New_Point[X], New_Point[X] + accuracy, New_Point[X], New_Point[X] };
+        const DBL ys[4] = { New_Point[Y], New_Point[Y], New_Point[Y] + accuracy, New_Point[Y] };
+        const DBL zs[4] = { New_Point[Z], New_Point[Z], New_Point[Z], New_Point[Z] + accuracy };
+        DBL f[4];
+        fn.Evaluate(xs, ys, zs, f, 4);
+        funct = f[0];
+        Result[X] = f[1] - funct;
+        Result[Y] = f[2] - funct;
+        Result[Z] = f[3] - funct;
 
         if((Result[X] == 0) && (Result[Y] == 0) && (Result[Z] == 0))
             Result[X] = 1.0;
@@ -892,8 +887,10 @@ bool IsoSurface::Function_Find_Root(ISO_ThreadData& itd, const Vector3d& PP, con
     itd.cache.Dglobal = DD;
 
     itd.cache.current = nullptr;
+    DBL p1, p2;
+    Polarized_Pair(itd, *Depth1, *Depth2, p1, p2);
     EP1.t = *Depth1;
-    EP1.f = Float_Function(itd, *Depth1);
+    EP1.f = (DBL)itd.Inv3 * p1;
     itd.cache.fmax = EP1.f;
     if((closed == false) && (EP1.f < 0.0))
     {
@@ -902,7 +899,7 @@ bool IsoSurface::Function_Find_Root(ISO_ThreadData& itd, const Vector3d& PP, con
     }
 
     EP2.t = *Depth2;
-    EP2.f = Float_Function(itd, *Depth2);
+    EP2.f = (DBL)itd.Inv3 * p2;
     itd.cache.fmax = min(EP2.f, itd.cache.fmax);
 
     oldmg = maxg;
@@ -1047,6 +1044,19 @@ DBL IsoSurface::Float_Function(ISO_ThreadData& itd, DBL t) const
     return ((DBL)itd.Inv3 * EvaluatePolarized (*itd.pFn, VTmp));
 }
 
+
+void IsoSurface::Polarized_Pair(ISO_ThreadData& itd, DBL t1, DBL t2, DBL& p1, DBL& p2) const
+{
+    const Vector3d a = itd.cache.Pglobal + t1 * itd.cache.Dglobal;
+    const Vector3d b = itd.cache.Pglobal + t2 * itd.cache.Dglobal;
+    const DBL xs[2] = { a.x(), b.x() };
+    const DBL ys[2] = { a.y(), b.y() };
+    const DBL zs[2] = { a.z(), b.z() };
+    DBL f[2];
+    itd.pFn->Evaluate(xs, ys, zs, f, 2);
+    p1 = positivePolarity ? (threshold - f[0]) : (f[0] - threshold);
+    p2 = positivePolarity ? (threshold - f[1]) : (f[1] - threshold);
+}
 
 /*****************************************************************************/
 
