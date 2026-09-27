@@ -1,5 +1,5 @@
 // Case 0: a slab's top; 1: a plane of it; 2: a clipped shell; 3: a block with a hollow; 4: a block as an inward mesh;
-// 5: a sphere seen directly and in a mirror, lit through glass (+SR/+ER: which ray is first).
+// 5: a sphere seen directly and in a mirror, lit through glass (+SR/+ER: which ray is first); 6: a thin rod and wall.
 #version 3.7;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Diffuse) #declare Diffuse = 200; #end
@@ -23,6 +23,11 @@ light_source { <-3, 6, -3>, rgb 1.2 }
   sphere { <0, 0.5, 0>, 0.5 texture { T } interior { ior 1.4 } }
   box { <-1.5, -0.01, -0.8>, <1.5, 0.01, 0.8> rotate x * 40 translate <0, 2.2, 0.4> pigment { rgb 1 } finish { reflection 1 } }
   box { <-1, 1.4, -1>, <1, 1.42, 1> rotate z * -30 pigment { rgbf <0.9, 1, 0.9, 0.9> } interior { ior 1.5 } }
+#elseif (Case = 6)
+  camera { location <0, 1.2, -3> look_at <0, 0.5, 0> angle 40 right x * 4 / 3 }
+  plane { y, 0 pigment { rgb 0.5 } }
+  cylinder { <-0.7, 0, 0>, <-0.7, 1, 0>, 0.03 texture { T } interior { ior 1.4 } }
+  box { <0, 0, -0.5>, <0.03, 1, 0.5> rotate y * 30 translate x * 0.4 texture { T } interior { ior 1.4 } }
 #else
   camera { location <0, 2.6, -3.2> look_at <0, 0.4, 0> angle 45 right x * 4 / 3 }
   plane { y, -0.01 pigment { rgb 0.5 } }

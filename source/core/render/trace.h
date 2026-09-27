@@ -877,6 +877,7 @@ class Trace
             PreciseMathColour scale, sigma_tr, z_r, z_v;
             PreciseMathColour Rd(double distSqr) const;
             PreciseMathColour RdDisc(double radius) const;
+            PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
         };
 
         /// A subsurface sample lit by one light, before its shadow is tested.
@@ -896,10 +897,13 @@ class Trace
             int sizeLevel = 0;
             double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
             bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
+            double footprint = 0.0; ///< a pixel's span at the exit point, in mm
             std::vector<const LightSource*> lights;
             std::vector<MathColour> exitLight; ///< per light, at the exit point, shadowed
             std::vector<Vector3d> exitDirection; ///< zero where the light sends nothing to the exit point
             std::vector<char> exitAgreed; ///< whether the light's shadow holds around the exit point
+            bool edge = false; ///< the surface runs out within the ring
+            bool exitMismatch = false; ///< on a coarse cloud, whether the exit point's shadow differs from its neighbours'
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
         };
@@ -932,7 +936,8 @@ class Trace
                                          std::uint64_t key);
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key);
-        MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, TraceTicket& ticket, std::uint64_t key);
+        MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
+                                              TraceTicket& ticket, std::uint64_t key);
         void BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell);
         void FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable);
         void WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder);
