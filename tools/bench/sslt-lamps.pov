@@ -5,10 +5,11 @@
 #ifndef (Subsurface) #declare Subsurface = 1; #end
 #ifndef (Method) #declare Method = 1; #end
 #ifndef (Radiosity) #declare Radiosity = 0; #end
+#ifndef (Spacing) #declare Spacing = 1; #end
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 40
-  #if (Subsurface) subsurface { samples Diffuse, Single method Method radiosity Radiosity } #end
+  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing radiosity Radiosity } #end
   #if (Radiosity) radiosity { pretrace_start 0.08 pretrace_end 0.02 count 60 error_bound 1 recursion_limit 2 } #end
 }
 
