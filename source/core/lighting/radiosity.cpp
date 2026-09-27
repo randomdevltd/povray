@@ -1035,6 +1035,15 @@ void RadiosityCache::InitAutosave(const Path& outputFile, bool append)
     ot_fd = NewOStream(outputFile, POV_File_Data_RCA, append);
 }
 
+void RadiosityCache::EndAutosave()
+{
+#if POV_MULTITHREADED
+    std::lock_guard<std::mutex> lock(fileMutex);
+#endif
+    delete ot_fd;
+    ot_fd = nullptr;
+}
+
 /*****************************************************************************
 *
 * FUNCTION  Deinitialize_Radiosity_Code()

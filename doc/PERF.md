@@ -753,6 +753,45 @@ it only to −0.3%.
 The large scene's band, four counted runs of each build, trace only: instructions −0.11%, cycles −0.25% (runs spread
 ±2%).
 
+## Progressive rendering
+
+`+PR` (`Progressive_Render=on`) resolves the whole frame at doubling resolution instead of block by block, so the image
+is a complete best-so-far picture at every point and a final render doubles as its own preview. Samples sit on one
+lattice anchored at the image origin: the first level traces the points a step apart, where the step is the smallest
+power of two covering the frame, and each level after halves the step and traces only the points the coarser levels
+have not. Every pixel is traced once, and each sample fills its cell of the image until a finer level overwrites the
+parts it does not own. Anti-aliasing runs as one more pass: method 1 compares each pixel with its four real
+neighbours, including those in other blocks, and method 2 puts the lattice on pixel corners and subdivides from them,
+reusing samples on an edge that the pixel to the left or above already traced. That reuse stays within a block: a
+subdivision sample on a block border is still traced by both blocks. Method 3 is refused with `+PR`. In a render
+window away from the origin (`+SC`, `+SR`), the coarsest levels may have no sample inside the window, so it stays
+empty until the lattice is fine enough to reach it.
+
+The anti-aliasing pass keeps every lattice sample, 16 bytes per pixel beside the image buffer (about 133 MB at
+3840×2160). Continuing such a render with `+C` reads the samples back from the state file; while it starts, a few
+transient copies of that size exist in the frontend and in the render options.
+
+A progressive render continues with `+C` from the level and block where it stopped. Its state file (version 0002) marks
+each block with its level and keeps the lattice samples the anti-aliasing pass needs; its radiosity cache is kept
+beside it (or in the `+RFO` file) and loaded on continuing, so no pretrace runs again; a cache with no samples
+(stopped before any were saved) is pretraced again. Continuing with other `+A` or `+R` values applies them to the
+anti-aliasing pass, as a block-order `+C` does to the blocks left.
+
+Against block order at 333×127 with 4 threads, `+A0.1 +R3`, on a plain test scene and on
+`tests/render/random_effects.pov`:
+
+| | Block order | `+PR` |
+|---|---|---|
+| no anti-aliasing, image | | bit for bit the same; a trace counter shows each pixel traced once |
+| method 2, rays (plain / every effect) | 1,102,627 / 853,152 | 909,592 / 685,648, bit for bit the same image |
+| method 2, subdivision samples | 293,976 / 433,847 | 236,531 / 339,322 |
+| method 1, pixels supersampled (9 samples each) | 25,542 / 24,075 | 23,200 / 25,088, the same with `+BS8` and `+BS32` |
+
+Block order traces method 2's corners on block edges twice and every subdivision sample on an edge shared by two
+refined pixels twice; method 1 traces a line of pixels above and left of each block and compares each pixel with
+neighbours that may already be anti-aliased. Renders stopped at several points, during a level and during the
+anti-aliasing pass, and continued with `+C` match an uninterrupted one bit for bit with one thread.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it

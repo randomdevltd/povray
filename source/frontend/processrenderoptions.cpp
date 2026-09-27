@@ -193,6 +193,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Post_Scene_Return",   kPOVAttrib_PostSceneCommand,   kUseSpecialHandler },
     { "Preview_End_Size",    kPOVAttrib_PreviewEndSize,     kPOVMSType_Int },
     { "Preview_Start_Size",  kPOVAttrib_PreviewStartSize,   kPOVMSType_Int },
+    { "Progressive_Render",  kPOVAttrib_ProgressiveRender,  kPOVMSType_Bool },
     { "Pre_Frame_Command",   kPOVAttrib_PreFrameCommand,    kUseSpecialHandler },
     { "Pre_Frame_Return",    kPOVAttrib_PreFrameCommand,    kUseSpecialHandler },
     { "Pre_Scene_Command",   kPOVAttrib_PreSceneCommand,    kUseSpecialHandler },
@@ -315,6 +316,7 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
 
     { "O",   kPOVAttrib_OutputFile,         kPOVMSType_UCS2String,  kNoParameter },
 
+    { "PR",  kNoParameter,                  kNoParameter,           kPOVAttrib_ProgressiveRender },
     { "P",   kNoParameter,                  kNoParameter,           kPOVAttrib_PauseWhenDone },
 
     { "Q",   kPOVAttrib_Quality,            kPOVMSType_Int,         kNoParameter },

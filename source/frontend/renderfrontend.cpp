@@ -613,6 +613,14 @@ void RenderFrontendBase::MakeBackupPath(POVMS_Object& ropts, ViewData& vd, const
     vd.imageBackupFile.SetFile(GetFileName(Path(vd.imageBackupFile.GetFile())) + u".pov-state");
 }
 
+/// Which samples a progressive render's levels trace: 0 for a render in block order, 1 pixel centres, 2 pixel corners.
+static unsigned char ProgressiveLattice(POVMS_Object& ropts)
+{
+    if (!ropts.TryGetBool(kPOVAttrib_ProgressiveRender, false))
+        return 0;
+    return (ropts.TryGetBool(kPOVAttrib_Antialias, false) && (ropts.TryGetInt(kPOVAttrib_SamplingMethod, 1) == 2)) ? 2 : 1;
+}
+
 void RenderFrontendBase::NewBackup(POVMS_Object& ropts, ViewData& vd, const Path& outputpath)
 {
     vd.imageBackup.reset();
@@ -627,7 +635,9 @@ void RenderFrontendBase::NewBackup(POVMS_Object& ropts, ViewData& vd, const Path
 
         if(!*vd.imageBackup)
             throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot create render state output file.");
+        memset(&hdr, 0, sizeof(hdr));
         memcpy(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig));
+        hdr.reserved[0] = ProgressiveLattice(ropts);
         memcpy(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver));
         if(vd.imageBackup->write(&hdr, sizeof(hdr)) == false)
             throw POV_EXCEPTION(kFileDataErr, "Cannot write header to render state output file.");
@@ -655,6 +665,16 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
     // Note: due to the fact that tellg() only returns a 32-bit int on some platforms,
     // currently this code will only work properly with a state file that is < 4gb in
     // size, which works out to a render of roughly 16k*16k pixels.
+
+    bool progressive = ropts.TryGetBool(kPOVAttrib_ProgressiveRender, false);
+    bool keepSamples = progressive && ropts.TryGetBool(kPOVAttrib_Antialias, false);
+    POVMSInt level = -1;
+    std::vector<POVMSInt> levelSkip;
+    unsigned int latticeWidth = ropts.TryGetInt(kPOVAttrib_Width, 160) + ((ProgressiveLattice(ropts) == 2) ? 1 : 0);
+    unsigned int latticeHeight = ropts.TryGetInt(kPOVAttrib_Height, 120) + ((ProgressiveLattice(ropts) == 2) ? 1 : 0);
+    std::vector<POVMSFloat> samples;
+    if (keepSamples)
+        samples.assign(size_t(latticeWidth) * latticeHeight * 4, 0.0f);
 
     serial = 0;
     vd.imageBackup.reset();
@@ -688,6 +708,8 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
                 throw POV_EXCEPTION(kFileDataErr, "Render state file header appears to be invalid.");
             if (memcmp (hdr.ver, RENDER_STATE_VER, sizeof (hdr.ver)) != 0)
                 throw POV_EXCEPTION(kFileDataErr, "Render state file was written by another version of POV-Ray.");
+            if (hdr.reserved[0] != ProgressiveLattice(ropts))
+                throw POV_EXCEPTION(kFileDataErr, "Render state file was written with other progressive render or anti-aliasing settings.");
 
             while(pos < end && inbuffer->eof() == false)
             {
@@ -697,8 +719,37 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
                 {
                     msg.Read(*(inbuffer.get()));
 
+                    if (progressive)
+                    {
+                        // levels run one after another, so only the blocks finished at the last level matter
+                        POVMSInt msgLevel = msg.GetInt(kPOVAttrib_ProgressLevel);
+                        if (msgLevel > level)
+                        {
+                            level = msgLevel;
+                            levelSkip.clear();
+                        }
+                        if ((msgLevel == level) && msg.Exist(kPOVAttrib_PixelId))
+                            levelSkip.push_back(msg.GetInt(kPOVAttrib_PixelId));
+                        if (keepSamples && (msg.GetIdentifier() == kPOVMsgIdent_PixelSet))
+                        {
+                            std::vector<POVMSInt> positions(msg.GetIntVector(kPOVAttrib_PixelPositions));
+                            std::vector<POVMSFloat> colors(msg.GetFloatVector(kPOVAttrib_PixelColors));
+                            for (size_t i = 0; (i * 2 + 1 < positions.size()) && (i * 5 + 4 < colors.size()); i++)
+                            {
+                                unsigned int x = positions[i * 2];
+                                unsigned int y = positions[i * 2 + 1];
+                                if ((x >= latticeWidth) || (y >= latticeHeight))
+                                    continue;
+                                POVMSFloat* sample = &samples[(size_t(y) * latticeWidth + x) * 4];
+                                sample[0] = colors[i * 5];
+                                sample[1] = colors[i * 5 + 1];
+                                sample[2] = colors[i * 5 + 2];
+                                sample[3] = colors[i * 5 + 4];
+                            }
+                        }
+                    }
                     // do not render complete blocks again
-                    if(msg.Exist(kPOVAttrib_PixelId) == true)
+                    else if(msg.Exist(kPOVAttrib_PixelId) == true)
                     {
                         POVMSInt pid = msg.GetInt(kPOVAttrib_PixelId);
 
@@ -728,6 +779,15 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
     }
     else
         throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot open state file from previous render.");
+
+    if (level >= 0)
+    {
+        ropts.SetInt(kPOVAttrib_ProgressLevel, level);
+        skip = levelSkip;
+        if (!samples.empty())
+            ropts.SetFloatVector(kPOVAttrib_ProgressSamples, samples);
+    }
+    std::vector<POVMSFloat>().swap(samples);
 
     // make sure the input file is closed since we're about to write to it
     inbuffer.reset();
@@ -1221,6 +1281,8 @@ void OutputOptions(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
     }
     else
         tsb->printf("  Mosaic preview.......Off\n");
+
+    tsb->printf("  Progressive render..%s\n", GetOptionSwitchString(msg, kPOVAttrib_ProgressiveRender, false));
 
     tsb->printf("  Continued trace.....%s\n", GetOptionSwitchString(msg, kPOVAttrib_ContinueTrace, false));
 

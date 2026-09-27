@@ -72,7 +72,8 @@ class TraceTask final : public RenderTask
     public:
         TraceTask(ViewData *vd, unsigned int tm, DBL js,
                   DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
-                  unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed);
+                  unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
+                  int level = -1, unsigned int ls = 0, bool lf = false);
         virtual ~TraceTask() override;
 
         virtual void Run() override;
@@ -99,6 +100,15 @@ class TraceTask final : public RenderTask
                 RGBTColour& operator()(size_t x, size_t y);
 
                 void Clear();
+
+                struct Edge final
+                {
+                    std::vector<RGBTColour> colors;
+                    std::vector<bool> sampled;
+                };
+                /// Copy one side of the buffer (column `pos`, or row `pos`) to or from a neighbouring pixel's buffer.
+                void SaveEdge(size_t pos, bool column, Edge& edge) const;
+                void LoadEdge(size_t pos, bool column, const Edge& edge);
             private:
                 std::vector<RGBTColour> colors;
                 std::vector<bool> sampled;
@@ -116,6 +126,9 @@ class TraceTask final : public RenderTask
         bool passCompletesImage;        ///< Pass is the last one computing pixels for the final image.
         bool highReproducibility;
         pov_base::GammaCurvePtr aaGamma;
+        int progressLevel;              ///< Pass of a progressive render, or -1 for a render in block order.
+        unsigned int latticeStep;       ///< Sample spacing of a progressive level; 0 for its anti-aliasing pass.
+        bool latticeFirst;              ///< The first level, which also traces the points of the coarser lattice.
 
         /// tracing core
         TracePixel trace;
@@ -130,6 +143,11 @@ class TraceTask final : public RenderTask
         void NonAdaptiveSupersamplingM1();
         void AdaptiveSupersamplingM2();
         void StochasticSupersamplingM3();
+
+        void ProgressiveLevel();
+        void ProgressiveRefineM1();
+        void ProgressiveRefineM2();
+        bool DiffersFromSample(const RGBTColour& gcCur, unsigned int x, unsigned int y);
 
         void NonAdaptiveSupersamplingForOnePixel(DBL x, DBL y, RGBTColour& leftcol, RGBTColour& topcol, RGBTColour& curcol, bool& sampleleft, bool& sampletop, bool& samplecurrent);
         void SupersampleOnePixel(DBL x, DBL y, RGBTColour& col);

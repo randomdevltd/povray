@@ -232,9 +232,35 @@ void TraceTask::SubdivisionBuffer::Clear()
     sampled.assign(sampled.size(), false);
 }
 
+void TraceTask::SubdivisionBuffer::SaveEdge(size_t pos, bool column, Edge& edge) const
+{
+    edge.colors.resize(size);
+    edge.sampled.resize(size);
+    for(size_t i = 0; i < size; i++)
+    {
+        size_t index = column ? (pos + (i * size)) : (i + (pos * size));
+        edge.colors[i] = colors[index];
+        edge.sampled[i] = sampled[index];
+    }
+}
+
+void TraceTask::SubdivisionBuffer::LoadEdge(size_t pos, bool column, const Edge& edge)
+{
+    for(size_t i = 0; i < size; i++)
+    {
+        if(edge.sampled[i])
+        {
+            size_t index = column ? (pos + (i * size)) : (i + (pos * size));
+            colors[index] = edge.colors[i];
+            sampled[index] = true;
+        }
+    }
+}
+
 TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
                      DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
-                     unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed) :
+                     unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
+                     int level, unsigned int ls, bool lf) :
     RenderTask(vd, seed, "Trace"),
     trace(vd->GetSceneData(), &vd->GetCamera(), GetViewDataPtr(), vd->GetSceneData()->parsedMaxTraceLevel, vd->GetSceneData()->parsedAdcBailout,
           vd->GetQualityFeatureFlags(), cooperate, media, radiosity),
@@ -250,6 +276,9 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     passContributesToImage(contributesToImage),
     passCompletesImage((ps == 0) || ((ps == 1) && contributesToImage)),
     highReproducibility(hr),
+    progressLevel(level),
+    latticeStep(ls),
+    latticeFirst(lf),
     media(GetViewDataPtr(), &trace, &photonGatherer),
     radiosity(vd->GetSceneData(), GetViewDataPtr(),
               vd->GetSceneData()->radiositySettings, vd->GetRadiosityCache(), cooperate, true, vd->GetCamera().Location),
@@ -291,7 +320,16 @@ void TraceTask::Run()
     do
     {
 #endif
-        switch(tracingMethod)
+        if(progressLevel >= 0)
+        {
+            if(latticeStep > 0)
+                ProgressiveLevel();
+            else if(tracingMethod == 1)
+                ProgressiveRefineM1();
+            else if(tracingMethod == 2)
+                ProgressiveRefineM2();
+        }
+        else switch(tracingMethod)
         {
             case 0:
                 if(previewSize > 0)
@@ -829,6 +867,173 @@ void TraceTask::StochasticSupersamplingM3()
 
         GetViewDataPtr()->AfterTile();
         GetViewData()->CompletedRectangle(rect, serial, pixels, 1, passContributesToImage, passCompletesImage);
+
+        Cooperate();
+    }
+}
+
+void TraceTask::ProgressiveLevel()
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    const bool corners = (tracingMethod == 2);
+    const bool keep = GetViewData()->KeepsLatticeSamples();
+    POVRect rect;
+    vector<Vector2d> positions;
+    vector<RGBTColour> colors;
+    unsigned int serial;
+
+    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    {
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
+
+        positions.clear();
+        colors.clear();
+
+        // the last blocks of the area also own the pixel corners on its far edges
+        unsigned int right = rect.right + ((corners && (rect.right == area.right)) ? 1 : 0);
+        unsigned int bottom = rect.bottom + ((corners && (rect.bottom == area.bottom)) ? 1 : 0);
+        unsigned int left = ((rect.left + latticeStep - 1) / latticeStep) * latticeStep;
+        unsigned int top = ((rect.top + latticeStep - 1) / latticeStep) * latticeStep;
+
+        for(unsigned int y = top; y <= bottom; y += latticeStep)
+        {
+            for(unsigned int x = left; x <= right; x += latticeStep)
+            {
+                if(!latticeFirst && (x % (2 * latticeStep) == 0) && (y % (2 * latticeStep) == 0))
+                    continue;
+
+                RGBTColour col;
+
+                if(corners)
+                    trace(DBL(x), DBL(y), GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+                else
+                    trace(DBL(x)+0.5, DBL(y)+0.5, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+                GetViewDataPtr()->Stats()[Number_Of_Pixels]++;
+
+                if(keep)
+                    GetViewData()->LatticeSample(x, y) = col;
+                positions.push_back(Vector2d(x, y));
+                colors.push_back(col);
+
+                Cooperate();
+            }
+        }
+
+        radiosity.AfterTile();
+
+        GetViewDataPtr()->AfterTile();
+        if(positions.empty())
+            GetViewData()->CompletedRectangle(rect, serial, 0.0f);
+        else
+            GetViewData()->CompletedRectangle(rect, serial, positions, colors, latticeStep, true, true,
+                                              float(positions.size()) / float(rect.GetArea()), nullptr, progressLevel);
+
+        Cooperate();
+    }
+}
+
+bool TraceTask::DiffersFromSample(const RGBTColour& gcCur, unsigned int x, unsigned int y)
+{
+    return (ColourDistanceRGBT(GammaCurve::Encode(aaGamma, GetViewData()->LatticeSample(x, y)), gcCur) >= aaThreshold);
+}
+
+void TraceTask::ProgressiveRefineM1()
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    POVRect rect;
+    vector<RGBTColour> pixels;
+    unsigned int serial;
+
+    jitterScale = jitterScale / DBL(aaDepth);
+
+    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    {
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
+
+        pixels.clear();
+        pixels.reserve(rect.GetArea());
+
+        for(unsigned int y = rect.top; y <= rect.bottom; y++)
+        {
+            for(unsigned int x = rect.left; x <= rect.right; x++)
+            {
+                RGBTColour col = GetViewData()->LatticeSample(x, y);
+                RGBTColour gcCur = GammaCurve::Encode(aaGamma, col);
+
+                // every neighbour is a real centre sample, including those in other blocks
+                if(((x > area.left)   && DiffersFromSample(gcCur, x - 1, y)) ||
+                   ((x < area.right)  && DiffersFromSample(gcCur, x + 1, y)) ||
+                   ((y > area.top)    && DiffersFromSample(gcCur, x, y - 1)) ||
+                   ((y < area.bottom) && DiffersFromSample(gcCur, x, y + 1)))
+                    SupersampleOnePixel(DBL(x), DBL(y), col);
+
+                pixels.push_back(col);
+
+                Cooperate();
+            }
+        }
+
+        radiosity.AfterTile();
+
+        GetViewDataPtr()->AfterTile();
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
+
+        Cooperate();
+    }
+}
+
+void TraceTask::ProgressiveRefineM2()
+{
+    POVRect rect;
+    vector<RGBTColour> pixels;
+    unsigned int serial;
+    size_t subsize = (size_t(1) << aaDepth);
+    SubdivisionBuffer buffer(subsize + 1);
+    SubdivisionBuffer::Edge leftEdge;
+    vector<SubdivisionBuffer::Edge> topEdges;
+
+    jitterScale = jitterScale / DBL((1 << aaDepth) + 1);
+
+    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    {
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
+
+        pixels.clear();
+        pixels.reserve(rect.GetArea());
+        topEdges.resize(rect.GetWidth());
+
+        for(unsigned int y = rect.top; y <= rect.bottom; y++)
+        {
+            for(unsigned int x = rect.left; x <= rect.right; x++)
+            {
+                RGBTColour col;
+
+                // samples on an edge shared with the pixel to the left or above were traced for that pixel
+                buffer.Clear();
+                if(x > rect.left)
+                    buffer.LoadEdge(0, true, leftEdge);
+                if(y > rect.top)
+                    buffer.LoadEdge(0, false, topEdges[x - rect.left]);
+
+                buffer.SetSample(0, 0, GetViewData()->LatticeSample(x, y));
+                buffer.SetSample(0, subsize, GetViewData()->LatticeSample(x, y + 1));
+                buffer.SetSample(subsize, 0, GetViewData()->LatticeSample(x + 1, y));
+                buffer.SetSample(subsize, subsize, GetViewData()->LatticeSample(x + 1, y + 1));
+
+                SubdivideOnePixel(DBL(x), DBL(y), 0.5, 0, 0, subsize, buffer, col, aaDepth - 1);
+
+                buffer.SaveEdge(subsize, true, leftEdge);
+                buffer.SaveEdge(subsize, false, topEdges[x - rect.left]);
+                pixels.push_back(col);
+
+                Cooperate();
+            }
+        }
+
+        radiosity.AfterTile();
+
+        GetViewDataPtr()->AfterTile();
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
 
         Cooperate();
     }

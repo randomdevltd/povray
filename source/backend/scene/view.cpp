@@ -48,6 +48,7 @@
 #include <boost/math/common_factor.hpp>
 
 // POV-Ray header files (base module)
+#include "base/filesystem.h"
 #include "base/path.h"
 #include "base/povassert.h"
 #include "base/stringutilities.h"
@@ -111,6 +112,7 @@ ViewData::ViewData(shared_ptr<BackendSceneData> sd) :
     blockSize(DEFAULT_BLOCK_SIZE),
     realTimeRaytracing(false),
     rtrData(nullptr),
+    latticeWidth(0),
     renderArea(0, 0, 159, 119),
     radiosityCache(sd->radiositySettings),
     sceneData(sd),
@@ -403,7 +405,7 @@ bool ViewData::GetNextRectangle(POVRect& rect, unsigned int& serial, BlockInfo*&
     return true;
 }
 
-void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<RGBTColour>& pixels, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo)
+void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<RGBTColour>& pixels, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel)
 {
     if (realTimeRaytracing == true)
     {
@@ -451,6 +453,8 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
                 // (used by continue-trace to identify blocks that do not need to be rendered again)
                 pixelblockmsg.SetInt(kPOVAttrib_PixelId, serial);
             pixelblockmsg.SetInt(kPOVAttrib_PixelSize, size);
+            if (progressLevel >= 0)
+                pixelblockmsg.SetInt(kPOVAttrib_ProgressLevel, progressLevel);
             pixelblockmsg.SetInt(kPOVAttrib_Left, rect.left);
             pixelblockmsg.SetInt(kPOVAttrib_Top, rect.top);
             pixelblockmsg.SetInt(kPOVAttrib_Right, rect.right);
@@ -473,7 +477,7 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
     CompletedRectangle(rect, serial, completion, blockInfo);
 }
 
-void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<Vector2d>& positions, const vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo)
+void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<Vector2d>& positions, const vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel)
 {
     try
     {
@@ -514,6 +518,15 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
             // (used by continue-trace to identify blocks that do not need to be rendered again)
             pixelblockmsg.SetInt(kPOVAttrib_PixelId, serial);
         pixelblockmsg.SetInt(kPOVAttrib_PixelSize, size);
+        if (progressLevel >= 0)
+        {
+            // samples fill cells that cross block borders, so they are clipped to the whole render area
+            pixelblockmsg.SetInt(kPOVAttrib_ProgressLevel, progressLevel);
+            pixelblockmsg.SetInt(kPOVAttrib_Left, renderArea.left);
+            pixelblockmsg.SetInt(kPOVAttrib_Top, renderArea.top);
+            pixelblockmsg.SetInt(kPOVAttrib_Right, renderArea.right);
+            pixelblockmsg.SetInt(kPOVAttrib_Bottom, renderArea.bottom);
+        }
 
         pixelblockmsg.SetInt(kPOVAttrib_ViewId, viewId);
         pixelblockmsg.SetSourceAddress(sceneData->backendAddress);
@@ -565,14 +578,15 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, floa
     }
 }
 
-void ViewData::SetNextRectangle(const BlockIdSet& bsl, unsigned int fs)
+void ViewData::SetNextRectangle(const BlockIdSet& bsl, unsigned int fs, bool keepProgress)
 {
     blockSkipList = bsl;
     blockBusyList.clear(); // safety catch; shouldn't be necessary
     blockPostponedList.clear(); // safety catch; shouldn't be necessary
     nextBlock = fs;
     completedFirstPass = false; // TODO
-    pixelsCompleted = 0; // TODO
+    if (!keepProgress)
+        pixelsCompleted = 0; // TODO
 }
 
 void ViewData::SetHighestTraceLevel(unsigned int htl)
@@ -735,22 +749,35 @@ void View::StartRender(POVMS_Object& renderOptions)
 
     highReproducibility = renderOptions.TryGetBool(kPOVAttrib_HighReproducibility, true);
 
+    bool progressive = renderOptions.TryGetBool(kPOVAttrib_ProgressiveRender, false) &&
+                       !renderOptions.TryGetBool(kPOVAttrib_RealTimeRaytracing, false);
+    if (progressive && (tracingmethod == 3))
+        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1 and 2 only.");
+    bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
+
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
 
-    // TODO FIXME - [CLi] handle loading, storing (and later optionally deleting) of radiosity cache file for trace abort & continue feature
     // TODO FIXME - [CLi] if high reproducibility is a demand, timing of writing samples to disk is an issue regarding abort & continue
     bool loadRadiosityCache = renderOptions.TryGetBool(kPOVAttrib_RadiosityFromFile, false);
     bool saveRadiosityCache = renderOptions.TryGetBool(kPOVAttrib_RadiosityToFile, false);
-    if (loadRadiosityCache || saveRadiosityCache)
+    bool radiosityOn = viewData.GetSceneData()->radiositySettings.radiosityEnabled && viewData.qualityFlags.radiosity;
+    // TODO FIXME - [CLi] I guess the radiosity file name needs more attention than this; probably a frontend job
+    Path radiosityFile = Path(renderOptions.TryGetUCS2String(kPOVAttrib_RadiosityFileName, "object.rca"));
+    // a progressive render keeps its cache beside the render state, or in the +RFO file, so continuing skips the pretrace
+    Path radiosityStateFile;
+    if (progressive && radiosityOn && !saveRadiosityCache)
+        radiosityStateFile = Path(renderOptions.TryGetUCS2String(kPOVAttrib_RadiosityStateFile, ""));
+    bool resumeRadiosity = resumed && radiosityOn && (saveRadiosityCache || !radiosityStateFile.Empty());
+    bool skipPretrace = false;
+    if (loadRadiosityCache || saveRadiosityCache || !radiosityStateFile.Empty())
     {
-        // TODO FIXME - [CLi] I guess the radiosity file name needs more attention than this; probably a frontend job
-        Path radiosityFile = Path(renderOptions.TryGetUCS2String(kPOVAttrib_RadiosityFileName, "object.rca"));
+        MessageFactory messageFactory(viewData.GetSceneData()->warningLevel, "Radiosity",
+                                      viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                                      viewData.sceneData->sceneId, viewData.viewId);
+        long loaded = -1;
         if(loadRadiosityCache)
         {
-            long loaded = viewData.radiosityCache.Load(radiosityFile);
-            MessageFactory messageFactory(viewData.GetSceneData()->warningLevel, "Radiosity",
-                                          viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
-                                          viewData.sceneData->sceneId, viewData.viewId);
+            loaded = viewData.radiosityCache.Load(radiosityFile);
             if (loaded > 0)
                 messageFactory.Info("Loaded %ld radiosity samples from '%s'.", loaded, UCS2toSysString(radiosityFile()).c_str());
             else
@@ -758,8 +785,22 @@ void View::StartRender(POVMS_Object& renderOptions)
                                        (loaded < 0 ? "cannot be read" : "holds none"));
             loadRadiosityCache = (loaded > 0);
         }
+        if (resumeRadiosity)
+        {
+            Path resumeFile = saveRadiosityCache ? radiosityFile : radiosityStateFile;
+            if (!(renderOptions.TryGetBool(kPOVAttrib_RadiosityFromFile, false) && saveRadiosityCache))
+                loaded = viewData.radiosityCache.Load(resumeFile);
+            skipPretrace = (loaded > 0);
+            if (skipPretrace)
+                messageFactory.Info("Continuing with %ld radiosity samples from '%s'; no pretrace.", loaded, UCS2toSysString(resumeFile()).c_str());
+            else
+                messageFactory.Warning(kWarningGeneral, "No radiosity samples of the interrupted render in '%s'; pretracing again.",
+                                       UCS2toSysString(resumeFile()).c_str());
+        }
         if(saveRadiosityCache)
-            viewData.radiosityCache.InitAutosave(radiosityFile, loadRadiosityCache); // if we loaded the file, add to existing data
+            viewData.radiosityCache.InitAutosave(radiosityFile, loadRadiosityCache || resumeRadiosity); // if we loaded the file, add to existing data
+        else if (!radiosityStateFile.Empty())
+            viewData.radiosityCache.InitAutosave(radiosityStateFile, resumeRadiosity);
     }
 
     viewData.GetSceneData()->radiositySettings.vainPretrace = renderOptions.TryGetBool(kPOVAttrib_RadiosityVainPretrace, true);
@@ -855,6 +896,14 @@ void View::StartRender(POVMS_Object& renderOptions)
 
         for(vector<POVMSInt>::iterator i(psl.begin()); i != psl.end(); i++)
             blockskiplist->insert(*i);
+    }
+
+    // a continued progressive render skips blocks of the level it resumes at only, not of the pretrace
+    shared_ptr<ViewData::BlockIdSet> progressSkipList(new ViewData::BlockIdSet());
+    if (progressive)
+    {
+        progressSkipList.swap(blockskiplist);
+        nextblock = 0;
     }
 
     viewData.SetNextRectangle(*blockskiplist, nextblock);
@@ -1060,7 +1109,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     }
 
     // do radiosity pretrace
-    if(viewData.GetSceneData()->radiositySettings.radiosityEnabled)
+    if(viewData.GetSceneData()->radiositySettings.radiosityEnabled && !skipPretrace)
     {
         // TODO load radiosity data (if applicable)?
 
@@ -1135,8 +1184,12 @@ void View::StartRender(POVMS_Object& renderOptions)
         // TODO store radiosity data (if applicable)?
     }
 
+    if (progressive)
+        QueueProgressiveRender(renderOptions, tracingmethod, jitterscale, aathreshold, aaconfidence, aadepth, aaGammaCurve,
+                               highReproducibility, seed, maxRenderThreads, renderOptions.TryGetInt(kPOVAttrib_ProgressLevel, 0),
+                               progressSkipList);
     // do render with mosaic preview
-    if(previewstartsize > 1)
+    else if(previewstartsize > 1)
     {
         // If the mosaic preview goes all the way down to single-pixel size and no anti-aliasing is required,
         // we don't need a dedicated final render pass.
@@ -1198,6 +1251,9 @@ void View::StartRender(POVMS_Object& renderOptions)
 
     // wait for render to finish
     renderTasks.AppendSync();
+
+    if (!radiosityStateFile.Empty())
+        renderTasks.AppendFunction(boost::bind(&View::EndRadiosityStateFile, this, _1, radiosityStateFile));
 
     // send shutdown messages
     renderTasks.AppendFunction(boost::bind(&View::DispatchShutdownMessages, this, _1));
@@ -1448,6 +1504,69 @@ void View::SendStatistics(TaskQueue&)
 void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, unsigned int fs)
 {
     viewData.SetNextRectangle(*bsl, fs);
+}
+
+void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,
+                                  DBL aaConfidence, unsigned int aaDepth, GammaCurvePtr& aaGamma, bool highReproducibility,
+                                  size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip)
+{
+    const bool corners = (tracingMethod == 2);
+    unsigned int maxStep = 1;
+    while (maxStep < max(viewData.GetWidth(), viewData.GetHeight()))
+        maxStep <<= 1;
+    int levels = 1;
+    for (unsigned int step = maxStep; step > 1; step >>= 1)
+        levels++;
+
+    if (tracingMethod != 0)
+    {
+        viewData.latticeWidth = viewData.GetWidth() + (corners ? 1 : 0);
+        unsigned int latticeHeight = viewData.GetHeight() + (corners ? 1 : 0);
+        viewData.latticeSamples.assign(size_t(viewData.latticeWidth) * latticeHeight, RGBTColour());
+        static_assert(sizeof(RGBTColour) == 4 * sizeof(POVMSFloat), "lattice samples are read as RGBT float quadruples");
+        if (renderOptions.Exist(kPOVAttrib_ProgressSamples))
+        {
+            POVMS_Attribute samples;
+            renderOptions.Get(kPOVAttrib_ProgressSamples, samples);
+            size_t bytes = viewData.latticeSamples.size() * sizeof(RGBTColour);
+            int len = int(bytes);
+            if ((size_t(samples.GetVectorSize()) * sizeof(POVMSFloat) != bytes) || (size_t(len) != bytes))
+                throw POV_EXCEPTION(kInvalidDataSizeErr, "Lattice samples from the render state file do not match the image size.");
+            samples.Get(kPOVMSType_VectorFloat, &viewData.latticeSamples[0], &len);
+        }
+    }
+
+    shared_ptr<ViewData::BlockIdSet> noSkip(new ViewData::BlockIdSet());
+    bool firstPass = true;
+    unsigned int step = maxStep;
+    for (int level = 0; level <= levels; level++, step >>= 1)
+    {
+        bool refine = (level == levels);
+        if ((level < resumeLevel) || (refine && (tracingMethod == 0)))
+            continue;
+
+        renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, (level == resumeLevel) ? resumeSkip : noSkip, !firstPass && !refine));
+        renderTasks.AppendSync();
+        firstPass = false;
+
+        for (int i = 0; i < maxRenderThreads; i++)
+            viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
+                &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
+                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0
+                ))));
+        renderTasks.AppendSync();
+    }
+}
+
+void View::StartLevel(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress)
+{
+    viewData.SetNextRectangle(*bsl, 0, keepProgress);
+}
+
+void View::EndRadiosityStateFile(TaskQueue&, Path file)
+{
+    viewData.radiosityCache.EndAutosave();
+    pov_base::Filesystem::DeleteFile(file());
 }
 
 void View::RenderControlThread()
