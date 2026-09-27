@@ -295,6 +295,9 @@ enum VMCode
     VM_COUNT
 };
 
+/// Scalar handlers beyond the 1024 register-specialised opcodes.
+enum { VMS_SQRT = 1024, VMS_MATH1, VMS_MATH2, VMS_CALLF, VMS_NOP, VMS_COUNT };
+
 static VMOp DecodeInstruction(Instruction w, const FunctionCode& f)
 {
     static const std::uint16_t kR[9] = { VM_ADD, VM_SUB, VM_MUL, VM_DIV, VM_MOD, VM_MOVE, VM_CMP, VM_NEG, VM_ABS };
@@ -306,7 +309,7 @@ static VMOp DecodeInstruction(Instruction w, const FunctionCode& f)
     static const std::uint16_t kSpecial[16] = { VM_JSR, VM_JMP, VM_RTS, VM_CALL, VM_SYS1, VM_SYS2, VM_TRAP, VM_TRAPS,
                                                 VM_GROW, VM_PUSH, VM_POP, VM_NOP, VM_NOP, VM_NOP, VM_NOP, VM_NOP };
     const unsigned int op = GET_OP(w), hi = op >> 6, mid = (op >> 3) & 7, lo = op & 7;
-    VMOp d = { VM_NOP, std::uint8_t(mid), std::uint8_t(lo), GET_K(w) };
+    VMOp d = { VM_NOP, std::uint16_t((op < 1024) ? op : VMS_NOP), std::uint8_t(mid), std::uint8_t(lo), GET_K(w) };
 
     if (hi < 9)
         d.code = kR[hi];
@@ -324,11 +327,20 @@ static VMOp DecodeInstruction(Instruction w, const FunctionCode& f)
         d.code = kSpecial[mid * 8 + lo];
 
     if ((d.code == VM_SYS1) && (d.k == TRAP_SYS1_SQRT))
+    {
         d.code = VM_SQRT;
+        d.scalar = VMS_SQRT;
+    }
     else if ((d.code == VM_SYS1) && (d.k <= TRAP_SYS1_LOG) && (d.k != TRAP_SYS1_FLOOR) && (d.k != TRAP_SYS1_CEIL))
+    {
         d.code = VM_MATH1;
+        d.scalar = VMS_MATH1;
+    }
     else if ((d.code == VM_SYS2) && ((d.k == TRAP_SYS2_POW) || (d.k == TRAP_SYS2_ATAN2)))
+    {
         d.code = VM_MATH2;
+        d.scalar = VMS_MATH2;
+    }
     else if ((d.code == VM_TRAP) && (d.k < POVFPU_TrapTableSize))
         d.a = std::uint8_t(POVFPU_TrapTable[d.k].parameter_cnt);
     else if (d.code == VM_TRAPS)
@@ -350,12 +362,15 @@ static void DecodeProgram(const FunctionCode& f, vector<VMOp>& ops)
         if ((((c >= VM_BEQ) && (c <= VM_BGE)) || (c == VM_JMP) || (c == VM_JSR)) && (ops[i].k <= n))
             target[ops[i].k] = true;
     }
-    ops[n] = VMOp { VM_RTS, 0, 0, 0 };
+    ops[n] = VMOp { VM_RTS, OPCODE_RTS, 0, 0, 0 };
     for (unsigned int i = 0; i + 2 < n; ++i)
     {
         if ((ops[i].code == VM_PUSH) && (ops[i + 1].code == VM_CALL) && (ops[i + 2].code == VM_POP) &&
             (ops[i + 2].k == ops[i].k) && !target[i + 1] && !target[i + 2])
+        {
             ops[i].code = VM_CALLF;
+            ops[i].scalar = VMS_CALLF;
+        }
     }
 }
 
@@ -1192,6 +1207,148 @@ static DBL FirstLane(LaneVec v)
     return out[0];
 }
 
+// Scalar handlers, one per opcode with its register fields, as the original switch had: h opcode, m and l fields.
+#define POVFPU_EACH_L(X, h, m) X(h, m, 0) X(h, m, 1) X(h, m, 2) X(h, m, 3) X(h, m, 4) X(h, m, 5) X(h, m, 6) X(h, m, 7)
+#define POVFPU_EACH_ML(X, h) POVFPU_EACH_L(X, h, 0) POVFPU_EACH_L(X, h, 1) POVFPU_EACH_L(X, h, 2) POVFPU_EACH_L(X, h, 3) \
+    POVFPU_EACH_L(X, h, 4) POVFPU_EACH_L(X, h, 5) POVFPU_EACH_L(X, h, 6) POVFPU_EACH_L(X, h, 7)
+#define POVFPU_EACH(X) POVFPU_EACH_ML(X, 0) POVFPU_EACH_ML(X, 1) POVFPU_EACH_ML(X, 2) POVFPU_EACH_ML(X, 3) \
+    POVFPU_EACH_ML(X, 4) POVFPU_EACH_ML(X, 5) POVFPU_EACH_ML(X, 6) POVFPU_EACH_ML(X, 7) POVFPU_EACH_ML(X, 8) \
+    POVFPU_EACH_ML(X, 9) POVFPU_EACH_ML(X, 10) POVFPU_EACH_ML(X, 11) POVFPU_EACH_ML(X, 12) POVFPU_EACH_ML(X, 13) \
+    POVFPU_EACH_ML(X, 14) POVFPU_EACH_ML(X, 15)
+
+#define POVFPU_CMP(c, d) ccr = ((((c) > (d)) & 1) << 1) | (((c) == (d)) & 1)
+#define POVFPU_EXC(cond) if (cond) POVFPU_Exception(context, fn)
+
+#define POVFPU_BODY_0(m, l) r##l = r##l + r##m;
+#define POVFPU_BODY_1(m, l) r##l = r##l - r##m;
+#define POVFPU_BODY_2(m, l) r##l = r##l * r##m;
+#define POVFPU_BODY_3(m, l) r##l = r##l / r##m;
+#define POVFPU_BODY_4(m, l) r##l = fmod(r##l, r##m);
+#define POVFPU_BODY_5(m, l) r##l = r##m;
+#define POVFPU_BODY_6(m, l) POVFPU_CMP(r##m, r##l);
+#define POVFPU_BODY_7(m, l) r##l = -r##m;
+#define POVFPU_BODY_8(m, l) r##l = fabs(r##m);
+#define POVFPU_BODY_9(m, l) POVFPU_I##m(l)
+#define POVFPU_BODY_10(m, l) POVFPU_S##m(l)
+#define POVFPU_BODY_11(m, l) POVFPU_LOAD##m(l)
+#define POVFPU_BODY_12(m, l) POVFPU_STORE##m(l)
+#define POVFPU_BODY_13(m, l) POVFPU_B##l(m)
+#define POVFPU_BODY_14(m, l) POVFPU_X##m(l)
+#define POVFPU_BODY_15(m, l) POVFPU_SP##m(l)
+
+#define POVFPU_I0(l) r##l = r##l + consts[op->k];
+#define POVFPU_I1(l) r##l = r##l - consts[op->k];
+#define POVFPU_I2(l) r##l = r##l * consts[op->k];
+#define POVFPU_I3(l) r##l = r##l / consts[op->k];
+#define POVFPU_I4(l) r##l = fmod(r##l, consts[op->k]);
+#define POVFPU_I5(l) r##l = consts[op->k];
+#define POVFPU_I6(l) POVFPU_CMP(consts[op->k], r##l);
+#define POVFPU_I7(l)
+#define POVFPU_S0(l) r##l = (ccr == 1);
+#define POVFPU_S1(l) r##l = (ccr != 1);
+#define POVFPU_S2(l) r##l = (ccr == 2);
+#define POVFPU_S3(l) r##l = (ccr >= 1);
+#define POVFPU_S4(l) r##l = (ccr == 0);
+#define POVFPU_S5(l) r##l = (ccr <= 1);
+#define POVFPU_S6(l) r##l = (r##l == 0.0);
+#define POVFPU_S7(l) r##l = (r##l != 0.0);
+#define POVFPU_LOAD0(l) r##l = globals[op->k];
+#define POVFPU_LOAD1(l) r##l = dblstack[sp + op->k];
+#define POVFPU_STORE0(l) globals[op->k] = r##l;
+#define POVFPU_STORE1(l) dblstack[sp + op->k] = r##l;
+#define POVFPU_LOAD2(l)
+#define POVFPU_LOAD3(l)
+#define POVFPU_LOAD4(l)
+#define POVFPU_LOAD5(l)
+#define POVFPU_LOAD6(l)
+#define POVFPU_LOAD7(l)
+#define POVFPU_STORE2(l)
+#define POVFPU_STORE3(l)
+#define POVFPU_STORE4(l)
+#define POVFPU_STORE5(l)
+#define POVFPU_STORE6(l)
+#define POVFPU_STORE7(l)
+#define POVFPU_B0(m) POVFPU_BR##m
+#define POVFPU_B1(m)
+#define POVFPU_B2(m)
+#define POVFPU_B3(m)
+#define POVFPU_B4(m)
+#define POVFPU_B5(m)
+#define POVFPU_B6(m)
+#define POVFPU_B7(m)
+#define POVFPU_BR0 if (ccr == 1) VM_JUMP(op->k);
+#define POVFPU_BR1 if (ccr != 1) VM_JUMP(op->k);
+#define POVFPU_BR2 if (ccr == 2) VM_JUMP(op->k);
+#define POVFPU_BR3 if (ccr >= 1) VM_JUMP(op->k);
+#define POVFPU_BR4 if (ccr == 0) VM_JUMP(op->k);
+#define POVFPU_BR5 if (ccr <= 1) VM_JUMP(op->k);
+#define POVFPU_BR6
+#define POVFPU_BR7
+#define POVFPU_X0(l) POVFPU_EXC(r##l == 0.0);
+#define POVFPU_X1(l) POVFPU_EXC(r##l != 0.0);
+#define POVFPU_X2(l) POVFPU_EXC(r##l < 0.0);
+#define POVFPU_X3(l) POVFPU_EXC(r##l <= 0.0);
+#define POVFPU_X4(l) POVFPU_EXC(r##l > 0.0);
+#define POVFPU_X5(l) POVFPU_EXC(r##l >= 0.0);
+#define POVFPU_X6(l) POVFPU_EXC((r0 == 0.0) && (r##l == 0.0));
+#define POVFPU_X7(l)
+#define POVFPU_SP0(l) POVFPU_SPECIAL##l
+#define POVFPU_SP1(l) POVFPU_STACK##l
+#define POVFPU_SP2(l)
+#define POVFPU_SP3(l)
+#define POVFPU_SP4(l)
+#define POVFPU_SP5(l)
+#define POVFPU_SP6(l)
+#define POVFPU_SP7(l)
+#define POVFPU_SPECIAL0 POVFPU_PUSH_FRAME(); VM_JUMP(op->k);
+#define POVFPU_SPECIAL1 VM_JUMP(op->k);
+#define POVFPU_SPECIAL2 \
+    if (psp == 0) \
+        return r0; \
+    psp--; \
+    pc = pstack[psp].pc; \
+    fn = pstack[psp].fn; \
+    ops = functions[fn].ops.data();
+#define POVFPU_SPECIAL3 POVFPU_PUSH_FRAME(); fn = op->k; ops = functions[fn].ops.data(); VM_JUMP(0);
+#define POVFPU_SPECIAL4 r0 = POVFPU_Sys1Table[op->k](r0);
+#define POVFPU_SPECIAL5 r0 = POVFPU_Sys2Table[op->k](r0, r1);
+#define POVFPU_SPECIAL6 \
+    r0 = POVFPU_TrapTable[op->k].fn(context, &dblstack[sp], fn); \
+    maxdblstacksize = context->maxdblstacksize; \
+    dblstack = context->dblstackbase;
+#define POVFPU_SPECIAL7 \
+    POVFPU_TrapSTable[op->k].fn(context, &dblstack[sp], fn, sp); \
+    maxdblstacksize = context->maxdblstacksize; \
+    dblstack = context->dblstackbase;
+#define POVFPU_STACK0 \
+    if ((unsigned int)(sp + op->k) >= (unsigned int)MAX_K) \
+        POVFPU_Exception(context, fn, "Stack full. Possible infinite recursive function call."); \
+    else if (sp + op->k >= maxdblstacksize) \
+    { \
+        maxdblstacksize = context->maxdblstacksize = context->maxdblstacksize + max(op->k + 1, (unsigned int)INITIAL_DBL_STACK_SIZE); \
+        dblstack = context->dblstackbase = reinterpret_cast<DBL *>(POV_REALLOC(dblstack, sizeof(DBL) * maxdblstacksize, "fn: stack")); \
+    }
+#define POVFPU_STACK1 \
+    if (sp + op->k >= maxdblstacksize) \
+        POVFPU_Exception(context, fn, "Function evaluation stack overflow."); \
+    sp += op->k;
+#define POVFPU_STACK2 \
+    if (op->k > sp) \
+        POVFPU_Exception(context, fn, "Function evaluation stack underflow."); \
+    sp -= op->k;
+#define POVFPU_STACK3
+#define POVFPU_STACK4
+#define POVFPU_STACK5
+#define POVFPU_STACK6
+#define POVFPU_STACK7
+
+#define POVFPU_PUSH_FRAME() \
+    pstack[psp].pc = pc; \
+    pstack[psp].fn = fn; \
+    psp++; \
+    if (psp >= MAX_CALL_STACK_SIZE) \
+        POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.")
+
 DBL POVFPU_RunDefault(FPUContext *context, FUNCTION fn)
 {
     context->threaddata->Stats()[Ray_Function_VM_Calls]++;
@@ -1209,7 +1366,7 @@ DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
     StackFrame *pstack = context->pstackbase;
     DBL *dblstack = context->dblstackbase;
     unsigned int maxdblstacksize = context->maxdblstacksize;
-    DBL r[8] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+    DBL r0 = 0.0, r1 = 0.0, r2 = 0.0, r3 = 0.0, r4 = 0.0, r5 = 0.0, r6 = 0.0, r7 = 0.0;
     const VMOp *ops = functions[fn].ops.data();
     const VMOp *op = ops;
     unsigned int pc = 0;
@@ -1218,140 +1375,49 @@ DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
     unsigned int psp = 0;
 
 #if POVFPU_THREADED
-    #define POVFPU_LABEL(n) &&L_##n,
-    static const void *const dispatch[VM_COUNT] = { POVFPU_OPS(POVFPU_LABEL) };
+    #define POVFPU_LABEL(h, m, l) &&L_##h##_##m##_##l,
+    static const void *const dispatch[VMS_COUNT] =
+    {
+        POVFPU_EACH(POVFPU_LABEL) &&L_SQRT, &&L_MATH1, &&L_MATH2, &&L_CALLF, &&L_NOP
+    };
     #undef POVFPU_LABEL
-    #define VM_CASE(n) L_##n:
-    #define VM_NEXT() { op = ops + ++pc; goto *dispatch[op->code]; }
-    #define VM_JUMP(t) { pc = (t); op = ops + pc; goto *dispatch[op->code]; }
-    goto *dispatch[op->code];
+    #define VM_CASE(h, m, l) L_##h##_##m##_##l:
+    #define VM_SPECIAL(name, index) L_##name:
+    #define VM_NEXT() { op = ops + ++pc; goto *dispatch[op->scalar]; }
+    #define VM_JUMP(t) { pc = (t); op = ops + pc; goto *dispatch[op->scalar]; }
+    goto *dispatch[op->scalar];
 #else
-    #define VM_CASE(n) case VM_##n:
+    #define VM_CASE(h, m, l) case ((h) * 64 + (m) * 8 + (l)):
+    #define VM_SPECIAL(name, index) case index:
     #define VM_NEXT() { ++pc; continue; }
     #define VM_JUMP(t) { pc = (t); continue; }
     for (;;)
     {
     op = ops + pc;
-    switch (op->code)
+    switch (op->scalar)
     {
 #endif
 
-    VM_CASE(ADD)    r[op->b] = r[op->b] + r[op->a]; VM_NEXT();
-    VM_CASE(SUB)    r[op->b] = r[op->b] - r[op->a]; VM_NEXT();
-    VM_CASE(MUL)    r[op->b] = r[op->b] * r[op->a]; VM_NEXT();
-    VM_CASE(DIV)    r[op->b] = r[op->b] / r[op->a]; VM_NEXT();
-    VM_CASE(MOD)    r[op->b] = fmod(r[op->b], r[op->a]); VM_NEXT();
-    VM_CASE(MOVE)   r[op->b] = r[op->a]; VM_NEXT();
-    VM_CASE(CMP)    ccr = (((r[op->a] > r[op->b]) & 1) << 1) | ((r[op->a] == r[op->b]) & 1); VM_NEXT();
-    VM_CASE(NEG)    r[op->b] = -r[op->a]; VM_NEXT();
-    VM_CASE(ABS)    r[op->b] = fabs(r[op->a]); VM_NEXT();
+    #define POVFPU_HANDLER(h, m, l) VM_CASE(h, m, l) POVFPU_BODY_##h(m, l) VM_NEXT();
+    POVFPU_EACH(POVFPU_HANDLER)
+    #undef POVFPU_HANDLER
 
-    VM_CASE(ADDI)   r[op->b] = r[op->b] + consts[op->k]; VM_NEXT();
-    VM_CASE(SUBI)   r[op->b] = r[op->b] - consts[op->k]; VM_NEXT();
-    VM_CASE(MULI)   r[op->b] = r[op->b] * consts[op->k]; VM_NEXT();
-    VM_CASE(DIVI)   r[op->b] = r[op->b] / consts[op->k]; VM_NEXT();
-    VM_CASE(MODI)   r[op->b] = fmod(r[op->b], consts[op->k]); VM_NEXT();
-    VM_CASE(LOADI)  r[op->b] = consts[op->k]; VM_NEXT();
-    VM_CASE(CMPI)   ccr = (((consts[op->k] > r[op->b]) & 1) << 1) | ((consts[op->k] == r[op->b]) & 1); VM_NEXT();
-
-    VM_CASE(SEQ)    r[op->b] = (ccr == 1); VM_NEXT();
-    VM_CASE(SNE)    r[op->b] = (ccr != 1); VM_NEXT();
-    VM_CASE(SLT)    r[op->b] = (ccr == 2); VM_NEXT();
-    VM_CASE(SLE)    r[op->b] = (ccr >= 1); VM_NEXT();
-    VM_CASE(SGT)    r[op->b] = (ccr == 0); VM_NEXT();
-    VM_CASE(SGE)    r[op->b] = (ccr <= 1); VM_NEXT();
-    VM_CASE(TEQ)    r[op->b] = (r[op->b] == 0.0); VM_NEXT();
-    VM_CASE(TNE)    r[op->b] = (r[op->b] != 0.0); VM_NEXT();
-
-    VM_CASE(LOADG)  r[op->b] = globals[op->k]; VM_NEXT();
-    VM_CASE(LOADL)  r[op->b] = dblstack[sp + op->k]; VM_NEXT();
-    VM_CASE(STOREG) globals[op->k] = r[op->b]; VM_NEXT();
-    VM_CASE(STOREL) dblstack[sp + op->k] = r[op->b]; VM_NEXT();
-
-    VM_CASE(BEQ)    if (ccr == 1) VM_JUMP(op->k); VM_NEXT();
-    VM_CASE(BNE)    if (ccr != 1) VM_JUMP(op->k); VM_NEXT();
-    VM_CASE(BLT)    if (ccr == 2) VM_JUMP(op->k); VM_NEXT();
-    VM_CASE(BLE)    if (ccr >= 1) VM_JUMP(op->k); VM_NEXT();
-    VM_CASE(BGT)    if (ccr == 0) VM_JUMP(op->k); VM_NEXT();
-    VM_CASE(BGE)    if (ccr <= 1) VM_JUMP(op->k); VM_NEXT();
-
-    VM_CASE(XEQ)    if (r[op->b] == 0.0) POVFPU_Exception(context, fn); VM_NEXT();
-    VM_CASE(XNE)    if (r[op->b] != 0.0) POVFPU_Exception(context, fn); VM_NEXT();
-    VM_CASE(XLT)    if (r[op->b] < 0.0) POVFPU_Exception(context, fn); VM_NEXT();
-    VM_CASE(XLE)    if (r[op->b] <= 0.0) POVFPU_Exception(context, fn); VM_NEXT();
-    VM_CASE(XGT)    if (r[op->b] > 0.0) POVFPU_Exception(context, fn); VM_NEXT();
-    VM_CASE(XGE)    if (r[op->b] >= 0.0) POVFPU_Exception(context, fn); VM_NEXT();
-    VM_CASE(XDZ)    if ((r[0] == 0.0) && (r[op->b] == 0.0)) POVFPU_Exception(context, fn); VM_NEXT();
-
-    VM_CASE(JSR)
-        pstack[psp].pc = pc;
-        pstack[psp].fn = fn;
-        psp++;
-        if (psp >= MAX_CALL_STACK_SIZE)
-            POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.");
-        VM_JUMP(op->k);
-    VM_CASE(JMP)
-        VM_JUMP(op->k);
-    VM_CASE(RTS)
-        if (psp == 0)
-            return r[0];
-        psp--;
-        pc = pstack[psp].pc;
-        fn = pstack[psp].fn;
-        ops = functions[fn].ops.data();
-        VM_NEXT();
-    VM_CASE(CALLF)
+    VM_SPECIAL(SQRT, VMS_SQRT)      r0 = sqrt(r0); VM_NEXT();
+    VM_SPECIAL(MATH1, VMS_MATH1)    r0 = FirstLane(Math1(op->k, LaneVec(r0))); VM_NEXT();
+    VM_SPECIAL(MATH2, VMS_MATH2)    r0 = FirstLane(Math2(op->k, LaneVec(r0), LaneVec(r1))); VM_NEXT();
+    VM_SPECIAL(CALLF, VMS_CALLF)
         if (sp + op->k >= maxdblstacksize)
             POVFPU_Exception(context, fn, "Function evaluation stack overflow.");
         sp += op->k;
         op = ops + ++pc;
-        // fall through - the fused call returns to the pop after it
-    VM_CASE(CALL)
-        pstack[psp].pc = pc;
-        pstack[psp].fn = fn;
-        psp++;
-        if (psp >= MAX_CALL_STACK_SIZE)
-            POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.");
+        POVFPU_PUSH_FRAME();
         fn = op->k;
         ops = functions[fn].ops.data();
         VM_JUMP(0);
-
-    VM_CASE(SYS1)   r[0] = POVFPU_Sys1Table[op->k](r[0]); VM_NEXT();
-    VM_CASE(SQRT)   r[0] = sqrt(r[0]); VM_NEXT();
-    VM_CASE(MATH1)  r[0] = FirstLane(Math1(op->k, LaneVec(r[0]))); VM_NEXT();
-    VM_CASE(SYS2)   r[0] = POVFPU_Sys2Table[op->k](r[0], r[1]); VM_NEXT();
-    VM_CASE(MATH2)  r[0] = FirstLane(Math2(op->k, LaneVec(r[0]), LaneVec(r[1]))); VM_NEXT();
-    VM_CASE(TRAP)
-        r[0] = POVFPU_TrapTable[op->k].fn(context, &dblstack[sp], fn);
-        maxdblstacksize = context->maxdblstacksize;
-        dblstack = context->dblstackbase;
-        VM_NEXT();
-    VM_CASE(TRAPS)
-        POVFPU_TrapSTable[op->k].fn(context, &dblstack[sp], fn, sp);
-        maxdblstacksize = context->maxdblstacksize;
-        dblstack = context->dblstackbase;
-        VM_NEXT();
-
-    VM_CASE(GROW)
-        if ((unsigned int)(sp + op->k) >= (unsigned int)MAX_K)
-            POVFPU_Exception(context, fn, "Stack full. Possible infinite recursive function call.");
-        else if (sp + op->k >= maxdblstacksize)
-        {
-            maxdblstacksize = context->maxdblstacksize = context->maxdblstacksize + max(op->k + 1, (unsigned int)INITIAL_DBL_STACK_SIZE);
-            dblstack = context->dblstackbase = reinterpret_cast<DBL *>(POV_REALLOC(dblstack, sizeof(DBL) * maxdblstacksize, "fn: stack"));
-        }
-        VM_NEXT();
-    VM_CASE(PUSH)
-        if (sp + op->k >= maxdblstacksize)
-            POVFPU_Exception(context, fn, "Function evaluation stack overflow.");
-        sp += op->k;
-        VM_NEXT();
-    VM_CASE(POP)
-        if (op->k > sp)
-            POVFPU_Exception(context, fn, "Function evaluation stack underflow.");
-        sp -= op->k;
-        VM_NEXT();
-    VM_CASE(NOP)
+    VM_SPECIAL(NOP, VMS_NOP)
+#if !POVFPU_THREADED
+    default:
+#endif
         VM_NEXT();
 
 #if !POVFPU_THREADED
@@ -1359,6 +1425,7 @@ DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
     }
 #endif
     #undef VM_CASE
+    #undef VM_SPECIAL
     #undef VM_NEXT
     #undef VM_JUMP
 }
