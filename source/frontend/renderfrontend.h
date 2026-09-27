@@ -189,7 +189,7 @@ std::string GetProgressTime(POVMS_Object& obj, POVMSType key);
 // end of namespace Message2Console
 
 #define RENDER_STATE_SIG "POV-Ray Render State File\0\0"
-#define RENDER_STATE_VER "0001"
+#define RENDER_STATE_VER "0002"
 
 struct Backup_File_Header final
 {
@@ -709,6 +709,9 @@ void RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::StartRender(ViewId
                 }
             }
         }
+
+        if (obj.TryGetBool(kPOVAttrib_ProgressiveRender, false) && (vhi->second.data.imageBackup != nullptr))
+            obj.SetUCS2String(kPOVAttrib_RadiosityStateFile, (vhi->second.data.imageBackupFile() + u".rca").c_str());
 
         RenderFrontendBase::StartRender(vhi->second.data, vid, obj);
         HandleRenderMessage(vid, kPOVMsgIdent_RenderOptions, obj);

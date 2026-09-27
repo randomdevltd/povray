@@ -156,6 +156,14 @@ Start mosaic preview with blocks \fIn\fP pixels square.
 \fBEP\fP\fIn\fP or \fBPreview_End_Size\fP=\fIinteger\fP
 End mosaic preview with blocks \fIn\fP pixels square.
 .TP
+\fBPR\fP or \fBProgressive_Render\fP=\fIbool\fP
+Render the whole frame at doubling resolution, tracing each pixel once, so the image
+is always a complete best-so-far picture; anti-aliasing (methods 1 and 2) runs after
+the last level. Replaces the mosaic preview, and continues with \fBC\fP from the
+level and block where it stopped, without a new radiosity pretrace; other \fBA\fP or
+\fBR\fP values given then apply to the anti-aliasing pass. Anti-aliasing keeps one
+sample per pixel (16 bytes) for the whole frame.
+.TP
 \fBUD\fP or \fBDraw_Vistas\fP=\fIbool\fP
 Draw vista rectangles before rendering has been deprecated.
 .SS Output options \- file related:

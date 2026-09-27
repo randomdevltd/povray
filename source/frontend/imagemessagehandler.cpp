@@ -40,6 +40,8 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
+#include <limits>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -112,12 +114,21 @@ void ImageMessageHandler::DrawPixelSet(const SceneData& sd, const ViewData& vd, 
     if((pixelpositions.size() / 2) != (pixelcolors.size() / 5))
         throw POV_EXCEPTION(kInvalidDataSizeErr, "Number of pixel colors and pixel positions does not match!");
 
+    // a progressive sample fills its cell only within the render area, and may lie on the corner just outside it
+    POVRect clip(0, 0, std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
+    if (msg.Exist(kPOVAttrib_Left))
+        clip = POVRect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
+
     for(int i = 0, ii = 0; (i < pixelcolors.size()) && (ii < pixelpositions.size()); i += 5, ii += 2)
     {
         RGBTColour col(pixelcolors[i], pixelcolors[i + 1], pixelcolors[i + 2], pixelcolors[i + 4]); // NB pixelcolors[i + 3] is an unused channel
         RGBTColour gcol(col);
         unsigned int x(pixelpositions[ii]);
         unsigned int y(pixelpositions[ii + 1]);
+        if ((x < clip.left) || (y < clip.top) || (x > clip.right) || (y > clip.bottom))
+            continue;
+        unsigned int w(std::min(psize, clip.right - x + 1));
+        unsigned int h(std::min(psize, clip.bottom - y + 1));
         Display::RGBA8 rgba;
         float dither = GetDitherOffset(x, y);
 
@@ -153,13 +164,13 @@ void ImageMessageHandler::DrawPixelSet(const SceneData& sd, const ViewData& vd, 
         else
         {
             if (vd.display != nullptr)
-                vd.display->DrawFilledRectangle(x, y, x + psize - 1, y + psize - 1, rgba);
+                vd.display->DrawFilledRectangle(x, y, x + w - 1, y + h - 1, rgba);
 
             if (final && (vd.image != nullptr))
             {
-                for(unsigned int py = 0; (py < psize) && (y + py < vd.image->GetHeight()); py++)
+                for(unsigned int py = 0; (py < h) && (y + py < vd.image->GetHeight()); py++)
                 {
-                    for(unsigned int px = 0; (px < psize) && (x + px < vd.image->GetWidth()); px++)
+                    for(unsigned int px = 0; (px < w) && (x + px < vd.image->GetWidth()); px++)
                         vd.image->SetRGBTValue(x + px, y + py, col);
                 }
             }

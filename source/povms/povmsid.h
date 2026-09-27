@@ -413,11 +413,13 @@ enum
 
     kPOVAttrib_PreviewStartSize      = 'PStS',
     kPOVAttrib_PreviewEndSize        = 'PEnS',
+    kPOVAttrib_ProgressiveRender     = 'PgRn',
 
     kPOVAttrib_RadiosityFileName     = 'RaFN',
     kPOVAttrib_RadiosityFromFile     = 'RaFF',
     kPOVAttrib_RadiosityToFile       = 'RaTF',
     kPOVAttrib_RadiosityVainPretrace = 'RaVP',
+    kPOVAttrib_RadiosityStateFile    = 'RaSF',  ///< (UCS2String) Radiosity cache kept beside the render state file.
 
     kPOVAttrib_RenderBlockSize       = 'RBSi',
 
@@ -622,6 +624,8 @@ enum
     kPOVAttrib_PixelPositions        = 'PPos',
     kPOVAttrib_PixelSkipList         = 'PSLi',
     kPOVAttrib_PixelFinal            = 'PFin',  ///< (Void) Set if pixel data is relevant for final image.
+    kPOVAttrib_ProgressLevel         = 'PgLv',  ///< (Int) Progressive render pass of a block, or the pass a continued render resumes at.
+    kPOVAttrib_ProgressSamples       = 'PgSa',  ///< (FloatVector) Lattice samples from the render state file, RGBT per point in row order.
 
     // scene/view error reporting and TBD
     kPOVAttrib_CurrentLine           = 'CurL',

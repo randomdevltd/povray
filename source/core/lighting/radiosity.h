@@ -207,6 +207,7 @@ class RadiosityCache final
         /// Adds the samples of a cache file; returns how many, or -1 if the file cannot be read.
         long Load(const Path& inputFile);
         void InitAutosave(const Path& outputFile, bool append);
+        void EndAutosave();
 
         DBL FindReusableBlock(RenderStatistics& stats, DBL errorbound, const Vector3d& ipoint, const Vector3d& snormal, DBL brilliance, MathColour& illuminance, int recursionDepth, int pretraceStep, int tileId);
         BlockPool* AcquireBlockPool();

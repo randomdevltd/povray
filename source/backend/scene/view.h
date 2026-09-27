@@ -51,7 +51,9 @@
 #include <vector>
 
 // POV-Ray header files (base module)
+#include "base/path.h"
 #include "base/types.h" // TODO - only appears to be pulled in for POVRect - can we avoid this?
+#include "base/image/colourspace_fwd.h"
 
 // POV-Ray header files (core module)
 #include "core/core_fwd.h"
@@ -169,7 +171,7 @@ class ViewData final
          */
         void CompletedRectangle(const POVRect& rect, unsigned int serial, const std::vector<RGBTColour>& pixels,
                                 unsigned int size, bool relevant, bool complete, float completion = 1.0,
-                                BlockInfo* blockInfo = nullptr);
+                                BlockInfo* blockInfo = nullptr, int progressLevel = -1);
 
         /**
          *  Called to (fully or partially) complete rendering of a specific sub-rectangle of the view.
@@ -190,7 +192,7 @@ class ViewData final
          */
         void CompletedRectangle(const POVRect& rect, unsigned int serial, const std::vector<Vector2d>& positions,
                                 const std::vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete,
-                                float completion = 1.0, BlockInfo* blockInfo = nullptr);
+                                float completion = 1.0, BlockInfo* blockInfo = nullptr, int progressLevel = -1);
 
         /**
          *  Called to (fully or partially) complete rendering of a specific sub-rectangle of the view without updating pixel data.
@@ -211,7 +213,7 @@ class ViewData final
          *  @param  bsl             Block serial numbers to skip.
          *  @param  fs              First block to start with checking with serial number.
          */
-        void SetNextRectangle(const BlockIdSet& bsl, unsigned int fs);
+        void SetNextRectangle(const BlockIdSet& bsl, unsigned int fs, bool keepProgress = false);
 
         /**
          *  Get width of view in pixels.
@@ -272,6 +274,10 @@ class ViewData final
          *  @return                 Radiosity cache.
          */
         RadiosityCache& GetRadiosityCache();
+
+        /// Sample of a progressive render's lattice (pixel centres, or pixel corners for method 2), kept for anti-aliasing.
+        RGBTColour& LatticeSample(unsigned int x, unsigned int y) { return latticeSamples[x + y * latticeWidth]; }
+        bool KeepsLatticeSamples() const { return !latticeSamples.empty(); }
 
         /**
          *  Get the value of the real-time raytracing option
@@ -349,6 +355,9 @@ class ViewData final
         bool realTimeRaytracing;
         /// data specifically associated with the RTR feature
         RTRData *rtrData;
+
+        std::vector<RGBTColour> latticeSamples;
+        unsigned int latticeWidth;
 
         /// functions to compute the X & Y block
         void getBlockXY(const unsigned int nb, unsigned int &x, unsigned int &y);
@@ -501,6 +510,14 @@ class View final
          *  @param  fs              First block to start with checking with serial number.
          */
         void SetNextRectangle(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, unsigned int fs);
+
+        void QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,
+                                    DBL aaConfidence, unsigned int aaDepth, GammaCurvePtr& aaGamma, bool highReproducibility,
+                                    size_t seed, int maxRenderThreads, int resumeLevel, std::shared_ptr<ViewData::BlockIdSet> resumeSkip);
+
+        void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
+
+        void EndRadiosityStateFile(TaskQueue& taskq, Path file);
 
         /**
          *  Thread controlling the render task queue.
