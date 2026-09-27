@@ -4150,9 +4150,11 @@ static uint64_t CloudSeed(const SubsurfaceCellKey& key, int stage, int job)
 }
 
 static const int kCloudPointsPerJob = 256;
-// Points a cell may hold, and the finest spacing, in cell sides; past the first a cell is left to method 1.
+// Points a cell may hold, and the finest spacing, in cell sides; past the first a cell is left to method 1. Least
+// cosine between the view and an axis that sparser lines along it allow for.
 static const size_t kCloudCellPoints = size_t(1) << 18;
 static const double kCloudFinest = 1.0 / 1024.0;
+static const double kCloudOblique = 1.0 / 4.0;
 
 // Points on the object inside one cell, where lines along the axes cross it, each lit by every light. The caller builds
 // it; other threads that need it meanwhile help with its jobs.
@@ -4168,19 +4170,27 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
         for (int a = 0; a < 3; a++)
             empty = empty || (box.lowerLeft[a] > hi[a]) || (box.lowerLeft[a] + box.size[a] < lo[a]);
 
-        // Points need be no closer than about a pixel where the cell's part of the object comes nearest the camera.
-        double nearestSqr = 0.0;
+        // Points need be no closer than about a pixel where the cell's part of the object comes nearest the camera;
+        // lines along an axis the camera looks across may be sparser, as surfaces facing it are seen obliquely.
+        Vector3d toward;
         for (int a = 0; a < 3; a++)
         {
             double from = max(lo[a], double(box.lowerLeft[a])), to = min(hi[a], double(box.lowerLeft[a] + box.size[a]));
-            nearestSqr += Sqr(max(0.0, max(from - ssltCameraLocation[a], ssltCameraLocation[a] - to)));
+            toward[a] = max(0.0, max(from - ssltCameraLocation[a], ssltCameraLocation[a] - to));
         }
+        double nearest = toward.length();
         {
             std::lock_guard<std::mutex> lock(cell.mutex);
-            cell.spacing = max(max(size / kCloudCellSpacings, sqrt(nearestSqr) * ssltPixelAngle) * sceneData->subsurfaceSpacing, size * kCloudFinest);
-            cell.steps = empty ? 0 : max(1, int(ceil(size / (cell.spacing * sqrt(1.5)))));
-            cell.rows.resize(3 * cell.steps);
-            cell.jobs = 3 * cell.steps;
+            cell.jobs = 0;
+            for (int a = 0; a < 3; a++)
+            {
+                double facing = ((nearest > 0.0) && (ssltPixelAngle > 0.0)) ? max(toward[a] / nearest, kCloudOblique) : 1.0;
+                double pixel = (ssltPixelSize + nearest * ssltPixelAngle) / sqrt(facing);
+                cell.step[a] = max(max(size / kCloudCellSpacings, pixel) * sceneData->subsurfaceSpacing, size * kCloudFinest);
+                cell.steps[a] = empty ? 0 : max(1, int(ceil(size / (cell.step[a] * sqrt(1.5)))));
+                cell.jobs += cell.steps[a];
+            }
+            cell.rows.resize(cell.jobs);
         }
         cell.changed.notify_all();
         WorkOnSubsurfaceCell(cloud, key, cell, true);
@@ -4294,14 +4304,16 @@ void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
     }
 }
 
-// One row of lines along one axis through a jittered grid of step h: a patch with unit normal n meets such lines |n|_1/h^2
-// times per unit area, so each crossing stands for h^2/|n|_1 of surface, and a patch facing an axis gets one per square.
+// One row of lines along one axis through a jittered grid of step h_a: a patch with unit normal n meets those lines
+// |n_a|/h_a^2 times per unit area, so each crossing stands for 1/sum(|n_a|/h_a^2) of surface.
 void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket)
 {
     double size = cloud.size, mm = sceneData->mmPerUnit;
-    int steps = cell.steps;
+    int a = 0, i = job;
+    while (i >= cell.steps[a])
+        i -= cell.steps[a++];
+    int steps = cell.steps[a], u = (a + 1) % 3, v = (a + 2) % 3;
     double h = size / steps;
-    int a = job / steps, i = job % steps, u = (a + 1) % 3, v = (a + 2) % 3;
     Vector3d lo = Vector3d(key.x, key.y, key.z) * size;
     double start = lo[a] - h;
     // Normals point out of the object where a step along them leaves it; a crossing that cannot tell is dropped.
@@ -4348,7 +4360,10 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 point.normal[k] = float(n[k]);
             for (int k = 0; k < MathColour::channels; k++)
                 point.irradiance[k] = 0.0f;
-            point.area = float(Sqr(h * mm) / (fabs(n[X]) + fabs(n[Y]) + fabs(n[Z])));
+            double density = 0.0;
+            for (int b = 0; b < 3; b++)
+                density += fabs(n[b]) * Sqr(cell.steps[b] / size);
+            point.area = float(Sqr(mm) / density);
             point.id = 0;
             row.push_back(point);
             kept++;
@@ -4435,10 +4450,10 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
     cloud.reach = kCloudReach / sigmaMin;
     cloud.eta = cloud.object->interior->IOR / sceneData->atmosphereIOR;
     if (!ssltCameraKnown)
-        ssltCameraKnown = sceneData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelAngle);
+        ssltCameraKnown = sceneData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle);
 
     // Diffusion that stays within about a pixel is taken as lit like the exit point.
-    double footprint = (ssltPixelAngle > 0.0) ? (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle : 0.0;
+    double footprint = ssltPixelSize + (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle;
     cloud.local = (1.0 / sigmaMin / mm < footprint);
     if (cloud.local)
         return true;
@@ -4458,7 +4473,8 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
     if (here == nullptr)
         return false;
     // The disc and ring are sized by the coarsest cell they reach, so that each holds enough of its points.
-    cloud.spacing = here->spacing;
+    Vector3d normal = out.INormal.normalized();
+    cloud.spacing = here->Spacing(normal);
     for (int pass = 0; pass < 2; pass++)
     {
         double ringSqr = Sqr(kCloudRing * cloud.spacing);
@@ -4471,7 +4487,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
                 distSqr += Sqr(max(0.0, max(lo - out.IPoint[a], out.IPoint[a] - lo - cloud.size)));
             }
             if (distSqr < ringSqr)
-                cloud.spacing = max(cloud.spacing, cloud.cells[i]->spacing);
+                cloud.spacing = max(cloud.spacing, cloud.cells[i]->Spacing(normal));
         }
     }
     // The ring must lie within reach, for its points to be counted.
@@ -4552,9 +4568,9 @@ bool Trace::LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vecto
     while (cell->nodes[index].count == 0)
         index = (boxSqr(cell->nodes[index + 1]) <= boxSqr(cell->nodes[cell->nodes[index].first])) ? index + 1 : cell->nodes[index].first;
     const SubsurfaceNode& leaf = cell->nodes[index];
-    if (boxSqr(leaf) > Sqr(kCloudDisc * cell->spacing))
-        return false;
     Vector3d n = normal.normalized();
+    if (boxSqr(leaf) > Sqr(kCloudDisc * cell->Spacing(n)))
+        return false;
     int stride = cell->lights * MathColour::channels;
     visibility.Reset(cloud.lights.size());
     for (int i = leaf.first; i < leaf.first + leaf.count; i++)

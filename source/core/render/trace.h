@@ -359,9 +359,9 @@ class Trace
         IndexedVectorGeneratorPtr ssltUniformDirections;
         /// Whether a random draw has shaped the result since @ref ClearGrain().
         bool grain = false;
-        /// The subsurface cache's camera, once it is set: where it is and the angle one pixel spans (0 if not perspective).
+        /// The subsurface cache's camera, once set: where it is, and a pixel's span as size plus angle times distance.
         Vector3d ssltCameraLocation;
-        double ssltPixelAngle = 0.0;
+        double ssltPixelSize = 0.0, ssltPixelAngle = 0.0;
         bool ssltCameraKnown = false;
         /// Per light and channel, the lowest, mean and highest visibility of a few cloud points.
         struct SubsurfaceVisibility
