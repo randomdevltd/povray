@@ -265,145 +265,94 @@ using std::vector;
 * Local preprocessor defines
 ******************************************************************************/
 
-#define DEBUG_DEFAULTCPU 0
-#define SUPPORT_INTEGER_INSTRUCTIONS 0
-
 #define MAX_FN MAX_K
 
-#define _OP_MATH_ABCOP(a,b,c,op) \
-    case (a+b+0): r0 = r0 op c; break; \
-    case (a+b+1): r1 = r1 op c; break; \
-    case (a+b+2): r2 = r2 op c; break; \
-    case (a+b+3): r3 = r3 op c; break; \
-    case (a+b+4): r4 = r4 op c; break; \
-    case (a+b+5): r5 = r5 op c; break; \
-    case (a+b+6): r6 = r6 op c; break; \
-    case (a+b+7): r7 = r7 op c; break
+#ifndef POVFPU_THREADED
+    #if defined(__GNUC__)
+        #define POVFPU_THREADED 1
+    #else
+        #define POVFPU_THREADED 0
+    #endif
+#endif
 
-#define _OP_ABS_ABC(a,b,c) \
-    case (a+b+0): r0 = fabs(c); break; \
-    case (a+b+1): r1 = fabs(c); break; \
-    case (a+b+2): r2 = fabs(c); break; \
-    case (a+b+3): r3 = fabs(c); break; \
-    case (a+b+4): r4 = fabs(c); break; \
-    case (a+b+5): r5 = fabs(c); break; \
-    case (a+b+6): r6 = fabs(c); break; \
-    case (a+b+7): r7 = fabs(c); break
+/// Interpreter handlers; one list orders the decoder's codes, the threaded dispatch table and the switch.
+#define POVFPU_OPS(X) \
+    X(ADD) X(SUB) X(MUL) X(DIV) X(MOD) X(MOVE) X(CMP) X(NEG) X(ABS) \
+    X(ADDI) X(SUBI) X(MULI) X(DIVI) X(MODI) X(LOADI) X(CMPI) \
+    X(SEQ) X(SNE) X(SLT) X(SLE) X(SGT) X(SGE) X(TEQ) X(TNE) \
+    X(LOADG) X(LOADL) X(STOREG) X(STOREL) \
+    X(BEQ) X(BNE) X(BLT) X(BLE) X(BGT) X(BGE) \
+    X(XEQ) X(XNE) X(XLT) X(XLE) X(XGT) X(XGE) X(XDZ) \
+    X(JSR) X(JMP) X(RTS) X(CALL) X(CALLF) X(SYS1) X(SQRT) X(SYS2) X(TRAP) X(TRAPS) \
+    X(GROW) X(PUSH) X(POP) X(NOP)
 
-#define OP_MOD_ABC(a,b,c) \
-    case ((a*64)+(b*8)+0): r0 = fmod(r0, c); break; \
-    case ((a*64)+(b*8)+1): r1 = fmod(r1, c); break; \
-    case ((a*64)+(b*8)+2): r2 = fmod(r2, c); break; \
-    case ((a*64)+(b*8)+3): r3 = fmod(r3, c); break; \
-    case ((a*64)+(b*8)+4): r4 = fmod(r4, c); break; \
-    case ((a*64)+(b*8)+5): r5 = fmod(r5, c); break; \
-    case ((a*64)+(b*8)+6): r6 = fmod(r6, c); break; \
-    case ((a*64)+(b*8)+7): r7 = fmod(r7, c); break
+enum VMCode
+{
+#define POVFPU_ENUM(n) VM_##n,
+    POVFPU_OPS(POVFPU_ENUM)
+#undef POVFPU_ENUM
+    VM_COUNT
+};
 
-#define OP_MATH_AOP(a,op) \
-    _OP_MATH_ABCOP((a*64),(0*8),r0,op); \
-    _OP_MATH_ABCOP((a*64),(1*8),r1,op); \
-    _OP_MATH_ABCOP((a*64),(2*8),r2,op); \
-    _OP_MATH_ABCOP((a*64),(3*8),r3,op); \
-    _OP_MATH_ABCOP((a*64),(4*8),r4,op); \
-    _OP_MATH_ABCOP((a*64),(5*8),r5,op); \
-    _OP_MATH_ABCOP((a*64),(6*8),r6,op); \
-    _OP_MATH_ABCOP((a*64),(7*8),r7,op)
+static VMOp DecodeInstruction(Instruction w, const FunctionCode& f)
+{
+    static const std::uint16_t kR[9] = { VM_ADD, VM_SUB, VM_MUL, VM_DIV, VM_MOD, VM_MOVE, VM_CMP, VM_NEG, VM_ABS };
+    static const std::uint16_t kI[8] = { VM_ADDI, VM_SUBI, VM_MULI, VM_DIVI, VM_MODI, VM_LOADI, VM_CMPI, VM_NOP };
+    static const std::uint16_t kS[8] = { VM_SEQ, VM_SNE, VM_SLT, VM_SLE, VM_SGT, VM_SGE, VM_TEQ, VM_TNE };
+    static const std::uint16_t kM[4] = { VM_LOADG, VM_LOADL, VM_STOREG, VM_STOREL };
+    static const std::uint16_t kB[8] = { VM_BEQ, VM_BNE, VM_BLT, VM_BLE, VM_BGT, VM_BGE, VM_NOP, VM_NOP };
+    static const std::uint16_t kX[8] = { VM_XEQ, VM_XNE, VM_XLT, VM_XLE, VM_XGT, VM_XGE, VM_XDZ, VM_NOP };
+    static const std::uint16_t kSpecial[16] = { VM_JSR, VM_JMP, VM_RTS, VM_CALL, VM_SYS1, VM_SYS2, VM_TRAP, VM_TRAPS,
+                                                VM_GROW, VM_PUSH, VM_POP, VM_NOP, VM_NOP, VM_NOP, VM_NOP, VM_NOP };
+    const unsigned int op = GET_OP(w), hi = op >> 6, mid = (op >> 3) & 7, lo = op & 7;
+    VMOp d = { VM_NOP, std::uint8_t(mid), std::uint8_t(lo), GET_K(w) };
 
-#define OP_MOD_A(a) \
-    OP_MOD_ABC(a,0,r0); \
-    OP_MOD_ABC(a,1,r1); \
-    OP_MOD_ABC(a,2,r2); \
-    OP_MOD_ABC(a,3,r3); \
-    OP_MOD_ABC(a,4,r4); \
-    OP_MOD_ABC(a,5,r5); \
-    OP_MOD_ABC(a,6,r6); \
-    OP_MOD_ABC(a,7,r7)
+    if (hi < 9)
+        d.code = kR[hi];
+    else if (hi == 9)
+        d.code = kI[mid];
+    else if (hi == 10)
+        d.code = kS[mid];
+    else if (((hi == 11) || (hi == 12)) && (mid < 2))
+        d.code = kM[(hi - 11) * 2 + mid];
+    else if ((hi == 13) && (lo == 0))
+        d.code = kB[mid];
+    else if (hi == 14)
+        d.code = kX[mid];
+    else if ((hi == 15) && (mid < 2))
+        d.code = kSpecial[mid * 8 + lo];
 
-#define OP_ABS_A(a) \
-    _OP_ABS_ABC((a*64),(0*8),r0); \
-    _OP_ABS_ABC((a*64),(1*8),r1); \
-    _OP_ABS_ABC((a*64),(2*8),r2); \
-    _OP_ABS_ABC((a*64),(3*8),r3); \
-    _OP_ABS_ABC((a*64),(4*8),r4); \
-    _OP_ABS_ABC((a*64),(5*8),r5); \
-    _OP_ABS_ABC((a*64),(6*8),r6); \
-    _OP_ABS_ABC((a*64),(7*8),r7)
+    if ((d.code == VM_SYS1) && (d.k == TRAP_SYS1_SQRT))
+        d.code = VM_SQRT;
+    else if ((d.code == VM_TRAP) && (d.k < POVFPU_TrapTableSize))
+        d.a = std::uint8_t(POVFPU_TrapTable[d.k].parameter_cnt);
+    else if (d.code == VM_TRAPS)
+        d.a = std::uint8_t(f.return_size + f.parameter_cnt);
+    return d;
+}
 
-#define OP_XCC_ABOP(a,b,op) \
-    case ((a*64)+(b*8)+0): if(r0 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+1): if(r1 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+2): if(r2 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+3): if(r3 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+4): if(r4 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+5): if(r5 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+6): if(r6 op 0.0) POVFPU_Exception(context, fn); break; \
-    case ((a*64)+(b*8)+7): if(r7 op 0.0) POVFPU_Exception(context, fn); break; \
+/// Decodes a program, fusing each `push k; call; pop k` no branch lands inside, and ends it with a spare `rts`.
+static void DecodeProgram(const FunctionCode& f, vector<VMOp>& ops)
+{
+    const unsigned int n = f.program_size;
+    vector<bool> target(n + 1, false);
 
-#define OP_MATH_ABCOP(a,b,c,op) \
-    case ((a*64)+(b*8)+0): r0 = (r0 op c); break; \
-    case ((a*64)+(b*8)+1): r1 = (r1 op c); break; \
-    case ((a*64)+(b*8)+2): r2 = (r2 op c); break; \
-    case ((a*64)+(b*8)+3): r3 = (r3 op c); break; \
-    case ((a*64)+(b*8)+4): r4 = (r4 op c); break; \
-    case ((a*64)+(b*8)+5): r5 = (r5 op c); break; \
-    case ((a*64)+(b*8)+6): r6 = (r6 op c); break; \
-    case ((a*64)+(b*8)+7): r7 = (r7 op c); break
-
-
-#define OP_ASSIGN_ABOP(a,b,op) \
-    case ((a*64)+(b*8)+0): r0 = op; break; \
-    case ((a*64)+(b*8)+1): r1 = op; break; \
-    case ((a*64)+(b*8)+2): r2 = op; break; \
-    case ((a*64)+(b*8)+3): r3 = op; break; \
-    case ((a*64)+(b*8)+4): r4 = op; break; \
-    case ((a*64)+(b*8)+5): r5 = op; break; \
-    case ((a*64)+(b*8)+6): r6 = op; break; \
-    case ((a*64)+(b*8)+7): r7 = op; break
-
-#define OP_REVASSIGN_ABOP(a,b,op) \
-    case ((a*64)+(b*8)+0): op = r0; break; \
-    case ((a*64)+(b*8)+1): op = r1; break; \
-    case ((a*64)+(b*8)+2): op = r2; break; \
-    case ((a*64)+(b*8)+3): op = r3; break; \
-    case ((a*64)+(b*8)+4): op = r4; break; \
-    case ((a*64)+(b*8)+5): op = r5; break; \
-    case ((a*64)+(b*8)+6): op = r6; break; \
-    case ((a*64)+(b*8)+7): op = r7; break
-
-#define OP_CMP_ABC(a,b,c) \
-    case ((a*64)+(b*8)+0): ccr = (((c > r0) & 1) << 1) | ((c == r0) & 1); break; \
-    case ((a*64)+(b*8)+1): ccr = (((c > r1) & 1) << 1) | ((c == r1) & 1); break; \
-    case ((a*64)+(b*8)+2): ccr = (((c > r2) & 1) << 1) | ((c == r2) & 1); break; \
-    case ((a*64)+(b*8)+3): ccr = (((c > r3) & 1) << 1) | ((c == r3) & 1); break; \
-    case ((a*64)+(b*8)+4): ccr = (((c > r4) & 1) << 1) | ((c == r4) & 1); break; \
-    case ((a*64)+(b*8)+5): ccr = (((c > r5) & 1) << 1) | ((c == r5) & 1); break; \
-    case ((a*64)+(b*8)+6): ccr = (((c > r6) & 1) << 1) | ((c == r6) & 1); break; \
-    case ((a*64)+(b*8)+7): ccr = (((c > r7) & 1) << 1) | ((c == r7) & 1); break; \
-
-#define OP_SPECIAL(a,b,c,op) \
-    case ((a*64)+(b*8)+c): op; break
-
-#define OP_SPECIAL_CASE(a,b,c) \
-    case ((a*64)+(b*8)+c):
-
-#define OP_INT_MATH_ABOP(a,b,op) \
-    case ((a*64)+(b*4)+0): iA = iA op iA; break; \
-    case ((a*64)+(b*4)+1): iA = iA op iB; break; \
-    case ((a*64)+(b*4)+2): iB = iB op iA; break; \
-    case ((a*64)+(b*4)+3): iB = iB op iB; break
-
-#define OP_INT_MATH_SHIFT_ABOP(a,b,op,c) \
-    case ((a*64)+(b*4)+0): iA = (c(iA) op iA); break; \
-    case ((a*64)+(b*4)+1): iA = (c(iA) op iB); break; \
-    case ((a*64)+(b*4)+2): iB = (c(iB) op iA); break; \
-    case ((a*64)+(b*4)+3): iB = (c(iB) op iB); break
-
-#define OP_INT_SPECIAL(a,b,c,op) \
-    case ((a*64)+(b*4)+c): op; break
-
-#define OP_INT_SPECIAL_CASE(a,b,c) \
-    case ((a*64)+(b*4)+c):
+    ops.resize(n + 1);
+    for (unsigned int i = 0; i < n; ++i)
+    {
+        ops[i] = DecodeInstruction(f.program[i], f);
+        const unsigned int c = ops[i].code;
+        if ((((c >= VM_BEQ) && (c <= VM_BGE)) || (c == VM_JMP) || (c == VM_JSR)) && (ops[i].k <= n))
+            target[ops[i].k] = true;
+    }
+    ops[n] = VMOp { VM_RTS, 0, 0, 0 };
+    for (unsigned int i = 0; i + 2 < n; ++i)
+    {
+        if ((ops[i].code == VM_PUSH) && (ops[i + 1].code == VM_CALL) && (ops[i + 2].code == VM_POP) &&
+            (ops[i + 2].k == ops[i].k) && !target[i + 1] && !target[i + 2])
+            ops[i].code = VM_CALLF;
+    }
+}
 
 /*****************************************************************************
 * Local typedefs
@@ -1044,6 +993,7 @@ FUNCTION FunctionVM::AddFunction(FunctionCode *f)
         throw POV_EXCEPTION_STRING("Maximum number of 1046576 functions per scene reached.");
 
     functions[fn].fn = *f;
+    DecodeProgram(functions[fn].fn, functions[fn].ops);
     functions[fn].reference_count = 1;
     SYS_ADD_FUNCTION(fn);
 
@@ -1101,6 +1051,7 @@ void FunctionVM::RemoveFunction(FUNCTION fn)
                     RemoveFunction(GET_K(f.fn.program[i]));
             }
             FNCode_Delete(&(f.fn));
+            vector<VMOp>().swap(functions[fn].ops);
 
             // we use unused entries to store a linked list of those, for easier later re-use
             functions[fn].next_unreferenced = nextUnreferenced;
@@ -1194,286 +1145,177 @@ void POVFPU_Exception(FPUContext *context, FUNCTION fn, const char *msg)
 *
 * CHANGES
 *
-*   -
+*   Runs the decoded program with one indirect jump per handler where the compiler has computed goto.
 *
 ******************************************************************************/
 
 DBL POVFPU_RunDefault(FPUContext *context, FUNCTION fn)
 {
+    context->threaddata->Stats()[Ray_Function_VM_Calls]++;
+    return POVFPU_RunScalar(context, fn);
+}
+
+#if POVFPU_THREADED && defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("no-crossjumping", "no-gcse", "no-tree-slp-vectorize")))
+#endif
+DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
+{
     vector<FunctionEntry>& functions(context->functionvm->functions);
-    vector<DBL>& consts(context->functionvm->consts);
+    const DBL *consts = context->functionvm->consts.data();
     vector<DBL>& globals(context->functionvm->globals);
     StackFrame *pstack = context->pstackbase;
     DBL *dblstack = context->dblstackbase;
     unsigned int maxdblstacksize = context->maxdblstacksize;
-    DBL r0 = 0.0, r1 = 0.0, r2 = 0.0, r3 = 0.0, r4 = 0.0, r5 = 0.0, r6 = 0.0, r7 = 0.0;
-    Instruction *program = nullptr;
-    unsigned int k = 0;
+    DBL r[8] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+    const VMOp *ops = functions[fn].ops.data();
+    const VMOp *op = ops;
     unsigned int pc = 0;
     unsigned int ccr = 0;
     unsigned int sp = 0;
     unsigned int psp = 0;
 
-#if (SUPPORT_INTEGER_INSTRUCTIONS == 1)
-    POV_LONG iA, iB, itemp;
-#endif
-
-#if (DEBUG_DEFAULTCPU == 1)
-#if 0
-    // CJC TODO FIXME - stats stuff
-    COUNTER instr;
-    Long_To_Counter(functions[fn].fn.program_size, instr);
-    Add_Counter(stats[Ray_Function_VM_Instruction_Est], stats[Ray_Function_VM_Instruction_Est], instr);
-#endif
-#endif
-
-    context->threaddata->Stats()[Ray_Function_VM_Calls]++;
-
-    program = functions[fn].fn.program;
-
-    while(true)
+#if POVFPU_THREADED
+    #define POVFPU_LABEL(n) &&L_##n,
+    static const void *const dispatch[VM_COUNT] = { POVFPU_OPS(POVFPU_LABEL) };
+    #undef POVFPU_LABEL
+    #define VM_CASE(n) L_##n:
+    #define VM_NEXT() { op = ops + ++pc; goto *dispatch[op->code]; }
+    #define VM_JUMP(t) { pc = (t); op = ops + pc; goto *dispatch[op->code]; }
+    goto *dispatch[op->code];
+#else
+    #define VM_CASE(n) case VM_##n:
+    #define VM_NEXT() { ++pc; continue; }
+    #define VM_JUMP(t) { pc = (t); continue; }
+    for (;;)
     {
-        k = GET_K(program[pc]);
-        switch(GET_OP(program[pc]))
+    op = ops + pc;
+    switch (op->code)
+    {
+#endif
+
+    VM_CASE(ADD)    r[op->b] = r[op->b] + r[op->a]; VM_NEXT();
+    VM_CASE(SUB)    r[op->b] = r[op->b] - r[op->a]; VM_NEXT();
+    VM_CASE(MUL)    r[op->b] = r[op->b] * r[op->a]; VM_NEXT();
+    VM_CASE(DIV)    r[op->b] = r[op->b] / r[op->a]; VM_NEXT();
+    VM_CASE(MOD)    r[op->b] = fmod(r[op->b], r[op->a]); VM_NEXT();
+    VM_CASE(MOVE)   r[op->b] = r[op->a]; VM_NEXT();
+    VM_CASE(CMP)    ccr = (((r[op->a] > r[op->b]) & 1) << 1) | ((r[op->a] == r[op->b]) & 1); VM_NEXT();
+    VM_CASE(NEG)    r[op->b] = -r[op->a]; VM_NEXT();
+    VM_CASE(ABS)    r[op->b] = fabs(r[op->a]); VM_NEXT();
+
+    VM_CASE(ADDI)   r[op->b] = r[op->b] + consts[op->k]; VM_NEXT();
+    VM_CASE(SUBI)   r[op->b] = r[op->b] - consts[op->k]; VM_NEXT();
+    VM_CASE(MULI)   r[op->b] = r[op->b] * consts[op->k]; VM_NEXT();
+    VM_CASE(DIVI)   r[op->b] = r[op->b] / consts[op->k]; VM_NEXT();
+    VM_CASE(MODI)   r[op->b] = fmod(r[op->b], consts[op->k]); VM_NEXT();
+    VM_CASE(LOADI)  r[op->b] = consts[op->k]; VM_NEXT();
+    VM_CASE(CMPI)   ccr = (((consts[op->k] > r[op->b]) & 1) << 1) | ((consts[op->k] == r[op->b]) & 1); VM_NEXT();
+
+    VM_CASE(SEQ)    r[op->b] = (ccr == 1); VM_NEXT();
+    VM_CASE(SNE)    r[op->b] = (ccr != 1); VM_NEXT();
+    VM_CASE(SLT)    r[op->b] = (ccr == 2); VM_NEXT();
+    VM_CASE(SLE)    r[op->b] = (ccr >= 1); VM_NEXT();
+    VM_CASE(SGT)    r[op->b] = (ccr == 0); VM_NEXT();
+    VM_CASE(SGE)    r[op->b] = (ccr <= 1); VM_NEXT();
+    VM_CASE(TEQ)    r[op->b] = (r[op->b] == 0.0); VM_NEXT();
+    VM_CASE(TNE)    r[op->b] = (r[op->b] != 0.0); VM_NEXT();
+
+    VM_CASE(LOADG)  r[op->b] = globals[op->k]; VM_NEXT();
+    VM_CASE(LOADL)  r[op->b] = dblstack[sp + op->k]; VM_NEXT();
+    VM_CASE(STOREG) globals[op->k] = r[op->b]; VM_NEXT();
+    VM_CASE(STOREL) dblstack[sp + op->k] = r[op->b]; VM_NEXT();
+
+    VM_CASE(BEQ)    if (ccr == 1) VM_JUMP(op->k); VM_NEXT();
+    VM_CASE(BNE)    if (ccr != 1) VM_JUMP(op->k); VM_NEXT();
+    VM_CASE(BLT)    if (ccr == 2) VM_JUMP(op->k); VM_NEXT();
+    VM_CASE(BLE)    if (ccr >= 1) VM_JUMP(op->k); VM_NEXT();
+    VM_CASE(BGT)    if (ccr == 0) VM_JUMP(op->k); VM_NEXT();
+    VM_CASE(BGE)    if (ccr <= 1) VM_JUMP(op->k); VM_NEXT();
+
+    VM_CASE(XEQ)    if (r[op->b] == 0.0) POVFPU_Exception(context, fn); VM_NEXT();
+    VM_CASE(XNE)    if (r[op->b] != 0.0) POVFPU_Exception(context, fn); VM_NEXT();
+    VM_CASE(XLT)    if (r[op->b] < 0.0) POVFPU_Exception(context, fn); VM_NEXT();
+    VM_CASE(XLE)    if (r[op->b] <= 0.0) POVFPU_Exception(context, fn); VM_NEXT();
+    VM_CASE(XGT)    if (r[op->b] > 0.0) POVFPU_Exception(context, fn); VM_NEXT();
+    VM_CASE(XGE)    if (r[op->b] >= 0.0) POVFPU_Exception(context, fn); VM_NEXT();
+    VM_CASE(XDZ)    if ((r[0] == 0.0) && (r[op->b] == 0.0)) POVFPU_Exception(context, fn); VM_NEXT();
+
+    VM_CASE(JSR)
+        pstack[psp].pc = pc;
+        pstack[psp].fn = fn;
+        psp++;
+        if (psp >= MAX_CALL_STACK_SIZE)
+            POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.");
+        VM_JUMP(op->k);
+    VM_CASE(JMP)
+        VM_JUMP(op->k);
+    VM_CASE(RTS)
+        if (psp == 0)
+            return r[0];
+        psp--;
+        pc = pstack[psp].pc;
+        fn = pstack[psp].fn;
+        ops = functions[fn].ops.data();
+        VM_NEXT();
+    VM_CASE(CALLF)
+        if (sp + op->k >= maxdblstacksize)
+            POVFPU_Exception(context, fn, "Function evaluation stack overflow.");
+        sp += op->k;
+        op = ops + ++pc;
+        // fall through - the fused call returns to the pop after it
+    VM_CASE(CALL)
+        pstack[psp].pc = pc;
+        pstack[psp].fn = fn;
+        psp++;
+        if (psp >= MAX_CALL_STACK_SIZE)
+            POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.");
+        fn = op->k;
+        ops = functions[fn].ops.data();
+        VM_JUMP(0);
+
+    VM_CASE(SYS1)   r[0] = POVFPU_Sys1Table[op->k](r[0]); VM_NEXT();
+    VM_CASE(SQRT)   r[0] = sqrt(r[0]); VM_NEXT();
+    VM_CASE(SYS2)   r[0] = POVFPU_Sys2Table[op->k](r[0], r[1]); VM_NEXT();
+    VM_CASE(TRAP)
+        r[0] = POVFPU_TrapTable[op->k].fn(context, &dblstack[sp], fn);
+        maxdblstacksize = context->maxdblstacksize;
+        dblstack = context->dblstackbase;
+        VM_NEXT();
+    VM_CASE(TRAPS)
+        POVFPU_TrapSTable[op->k].fn(context, &dblstack[sp], fn, sp);
+        maxdblstacksize = context->maxdblstacksize;
+        dblstack = context->dblstackbase;
+        VM_NEXT();
+
+    VM_CASE(GROW)
+        if ((unsigned int)(sp + op->k) >= (unsigned int)MAX_K)
+            POVFPU_Exception(context, fn, "Stack full. Possible infinite recursive function call.");
+        else if (sp + op->k >= maxdblstacksize)
         {
-            OP_MATH_AOP(0,+);           // add   Rs, Rd
-            OP_MATH_AOP(1,-);           // sub   Rs, Rd
-            OP_MATH_AOP(2,*);           // mul   Rs, Rd
-            OP_MATH_AOP(3,/);           // div   Rs, Rd
-            OP_MOD_A(4);                // mod   Rs, Rd
-
-            OP_ASSIGN_ABOP(5,0,r0);     // move  R0, Rd
-            OP_ASSIGN_ABOP(5,1,r1);     // move  R1, Rd
-            OP_ASSIGN_ABOP(5,2,r2);     // move  R2, Rd
-            OP_ASSIGN_ABOP(5,3,r3);     // move  R3, Rd
-            OP_ASSIGN_ABOP(5,4,r4);     // move  R4, Rd
-            OP_ASSIGN_ABOP(5,5,r5);     // move  R5, Rd
-            OP_ASSIGN_ABOP(5,6,r6);     // move  R6, Rd
-            OP_ASSIGN_ABOP(5,7,r7);     // move  R7, Rd
-
-            OP_CMP_ABC(6,0,r0);         // cmp   R0, Rd
-            OP_CMP_ABC(6,1,r1);         // cmp   R1, Rd
-            OP_CMP_ABC(6,2,r2);         // cmp   R2, Rd
-            OP_CMP_ABC(6,3,r3);         // cmp   R3, Rd
-            OP_CMP_ABC(6,4,r4);         // cmp   R4, Rd
-            OP_CMP_ABC(6,5,r5);         // cmp   R5, Rd
-            OP_CMP_ABC(6,6,r6);         // cmp   R6, Rd
-            OP_CMP_ABC(6,7,r7);         // cmp   R7, Rd
-
-            OP_ASSIGN_ABOP(7,0,-r0);    // neg   R0, Rd
-            OP_ASSIGN_ABOP(7,1,-r1);    // neg   R1, Rd
-            OP_ASSIGN_ABOP(7,2,-r2);    // neg   R2, Rd
-            OP_ASSIGN_ABOP(7,3,-r3);    // neg   R3, Rd
-            OP_ASSIGN_ABOP(7,4,-r4);    // neg   R4, Rd
-            OP_ASSIGN_ABOP(7,5,-r5);    // neg   R5, Rd
-            OP_ASSIGN_ABOP(7,6,-r6);    // neg   R6, Rd
-            OP_ASSIGN_ABOP(7,7,-r7);    // neg   R7, Rd
-
-            OP_ABS_A(8);                // abs   Rs, Rd
-
-            OP_MATH_ABCOP(9,0,consts[k],+);      // addi  k, Rd
-            OP_MATH_ABCOP(9,1,consts[k],-);      // subi  k, Rd
-            OP_MATH_ABCOP(9,2,consts[k],*);      // muli  k, Rd
-            OP_MATH_ABCOP(9,3,consts[k],/);      // divi  k, Rd
-            OP_MOD_ABC(9,4,consts[k]);           // modi  k, Rd
-            OP_ASSIGN_ABOP(9,5,consts[k]);       // loadi k, Rd
-
-            OP_CMP_ABC(9,6,consts[k]);           // cmpi  k, Rs
-
-            OP_ASSIGN_ABOP(10,0,ccr == 1);              // seq   Rd
-            OP_ASSIGN_ABOP(10,1,ccr != 1);              // sne   Rd
-            OP_ASSIGN_ABOP(10,2,ccr == 2);              // slt   Rd
-            OP_ASSIGN_ABOP(10,3,ccr >= 1);              // sle   Rd
-            OP_ASSIGN_ABOP(10,4,ccr == 0);              // sgt   Rd
-            OP_ASSIGN_ABOP(10,5,ccr <= 1);              // sge   Rd
-            OP_MATH_ABCOP(10,6,0.0,==);                 // teq   Rd
-            OP_MATH_ABCOP(10,7,0.0,!=);                 // tne   Rd
-
-            OP_ASSIGN_ABOP(11,0,globals[k]);            // load  0(k), Rd
-            OP_ASSIGN_ABOP(11,1,dblstack[sp+k]);        // load  SP(k), Rd
-
-            OP_REVASSIGN_ABOP(12,0,globals[k]);         // store Rs, 0(k)
-            OP_REVASSIGN_ABOP(12,1,dblstack[sp+k]);     // store Rs, SP(k)
-
-            OP_SPECIAL(13,0,0,if(ccr == 1) pc = k - 1); // beq   k
-            OP_SPECIAL(13,1,0,if(ccr != 1) pc = k - 1); // bne   k
-            OP_SPECIAL(13,2,0,if(ccr == 2) pc = k - 1); // blt   k
-            OP_SPECIAL(13,3,0,if(ccr >= 1) pc = k - 1); // ble   k
-            OP_SPECIAL(13,4,0,if(ccr == 0) pc = k - 1); // bgt   k
-            OP_SPECIAL(13,5,0,if(ccr <= 1) pc = k - 1); // bge   k
-
-            OP_XCC_ABOP(14,0,==);                       // xeq   Rd
-            OP_XCC_ABOP(14,1,!=);                       // xne   Rd
-            OP_XCC_ABOP(14,2,<);                        // xlt   Rd
-            OP_XCC_ABOP(14,3,<=);                       // xle   Rd
-            OP_XCC_ABOP(14,4,>);                        // xgt   Rd
-            OP_XCC_ABOP(14,5,>=);                       // xge   Rd
-
-            OP_SPECIAL(14,6,0,if((r0 == 0.0) && (r0 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R0
-            OP_SPECIAL(14,6,1,if((r0 == 0.0) && (r1 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R1
-            OP_SPECIAL(14,6,2,if((r0 == 0.0) && (r2 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R2
-            OP_SPECIAL(14,6,3,if((r0 == 0.0) && (r3 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R3
-            OP_SPECIAL(14,6,4,if((r0 == 0.0) && (r4 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R4
-            OP_SPECIAL(14,6,5,if((r0 == 0.0) && (r5 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R5
-            OP_SPECIAL(14,6,6,if((r0 == 0.0) && (r6 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R6
-            OP_SPECIAL(14,6,7,if((r0 == 0.0) && (r7 == 0.0)) POVFPU_Exception(context, fn)); // xdz   R0, R7
-
-            OP_SPECIAL_CASE(15,0,0)                     // jsr   k
-                pstack[psp].pc = pc;
-                pstack[psp].fn = fn;
-                psp++;
-                if(psp >= MAX_CALL_STACK_SIZE)
-                    POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.");
-                pc = k;
-                continue; // prevent increment of pc
-            OP_SPECIAL_CASE(15,0,1)                     // jmp   k
-                pc = k;
-                continue; // prevent increment of pc
-            OP_SPECIAL_CASE(15,0,2)                     // rts
-                if(psp == 0)
-                    return r0;
-                psp--;
-                pc = pstack[psp].pc; // old position, will be incremented
-                fn = pstack[psp].fn;
-                program = functions[fn].fn.program;
-                break;
-            OP_SPECIAL_CASE(15,0,3)                     // call  k
-                pstack[psp].pc = pc;
-                pstack[psp].fn = fn;
-                psp++;
-                if(psp >= MAX_CALL_STACK_SIZE)
-                    POVFPU_Exception(context, fn, "Maximum function evaluation recursion level reached.");
-                fn = k;
-                program = functions[fn].fn.program;
-                pc = 0;
-                continue; // prevent increment of pc
-
-            OP_SPECIAL_CASE(15,0,4)                     // sys1  k
-                r0 = POVFPU_Sys1Table[k](r0);
-                break;
-            OP_SPECIAL_CASE(15,0,5)                     // sys2  k
-                r0 = POVFPU_Sys2Table[k](r0,r1);
-                break;
-            OP_SPECIAL_CASE(15,0,6)                     // trap  k
-                r0 = POVFPU_TrapTable[k].fn(context, &dblstack[sp], fn);
-                maxdblstacksize = context->maxdblstacksize;
-                dblstack = context->dblstackbase;
-                break;
-            OP_SPECIAL_CASE(15,0,7)                     // traps k
-                POVFPU_TrapSTable[k].fn(context, &dblstack[sp], fn, sp);
-                maxdblstacksize = context->maxdblstacksize;
-                dblstack = context->dblstackbase;
-                break;
-
-            OP_SPECIAL_CASE(15,1,0)                     // grow  k
-                if((unsigned int)((unsigned int)sp + (unsigned int)k) >= (unsigned int)MAX_K)
-                {
-                    POVFPU_Exception(context, fn, "Stack full. Possible infinite recursive function call.");
-                }
-                else if(sp + k >= maxdblstacksize)
-                {
-                    maxdblstacksize = context->maxdblstacksize = context->maxdblstacksize + max(k + 1, (unsigned int)INITIAL_DBL_STACK_SIZE);
-                    dblstack = context->dblstackbase = reinterpret_cast<DBL *>(POV_REALLOC(dblstack, sizeof(DBL) * maxdblstacksize, "fn: stack"));
-                }
-                break;
-            OP_SPECIAL_CASE(15,1,1)                     // push  k
-                if(sp + k >= maxdblstacksize)
-                    POVFPU_Exception(context, fn, "Function evaluation stack overflow.");
-                sp += k;
-                break;
-            OP_SPECIAL_CASE(15,1,2)                     // pop   k
-                if(k > sp)
-                    POVFPU_Exception(context, fn, "Function evaluation stack underflow.");
-                sp -= k;
-                break;
-#if (SUPPORT_INTEGER_INSTRUCTIONS == 1)
-            OP_SPECIAL_CASE(15,1,3)                     // iconv
-                iA = POV_LONG(r0);
-                break;
-            OP_SPECIAL_CASE(15,1,4)                     // fconv
-                r0 = DBL(iA);
-                break;
-
-            OP_SPECIAL_CASE(15,1,5)                     // reserved
-                POVFPU_Exception(context, fn, "Internal error - reserved function VM opcode found!");
-                break;
-
-            OP_INT_MATH_ABOP(15,32,+);                  // add   s, d
-            OP_INT_MATH_ABOP(15,33,-);                  // sub   s, d
-            OP_INT_MATH_ABOP(15,34,*);                  // mul   s, d
-            OP_INT_SPECIAL(15,35,0,iA = iA / iB);       // div   B, A
-            OP_INT_SPECIAL(15,35,1,iB = iB / iA);       // div   A, B
-            OP_INT_SPECIAL(15,35,2,iA = iA % iB);       // mod   B, A
-            OP_INT_SPECIAL(15,35,3,iB = iB % iA);       // mod   A, B
-
-            OP_INT_SPECIAL(15,36,0,ccr = (((iB > iA) & 1) << 1) | ((iB == iA) & 1)); // cmp   B, A
-            OP_INT_SPECIAL(15,36,1,ccr = (((iA > iB) & 1) << 1) | ((iA == iB) & 1)); // cmp   A, B
-
-            OP_INT_SPECIAL(15,36,2,itemp = iA; iA = iB; iB = itemp); // exg   A, B
-
-            OP_INT_SPECIAL(15,36,3,iA = iB = 0);        // clr   A, B
-            OP_INT_SPECIAL(15,37,0,iA = 0);             // clr   A
-            OP_INT_SPECIAL(15,37,1,iB = 0);             // clr   B
-
-            OP_INT_SPECIAL(15,37,2,iA = iB);            // move  B, A
-            OP_INT_SPECIAL(15,37,3,iB = iA);            // move  A, B
-
-            OP_INT_SPECIAL(15,38,0,iA = -iA);           // neg   A
-            OP_INT_SPECIAL(15,38,1,iB = -iB);           // neg   B
-
-            OP_INT_SPECIAL(15,38,2,iA = abs(iA));       // abs   A
-            OP_INT_SPECIAL(15,38,3,iB = abs(iB));       // abs   B
-
-            OP_INT_SPECIAL(15,39,0,iA = iA + k);        // addi  k, A
-            OP_INT_SPECIAL(15,39,1,iB = iB + k);        // addi  k, B
-            OP_INT_SPECIAL(15,39,2,iA = iA - k);        // subi  k, A
-            OP_INT_SPECIAL(15,39,3,iB = iB - k);        // subi  k, B
-
-            OP_INT_MATH_SHIFT_ABOP(15,40,<<,POV_LONG);     // asl   s, d
-            OP_INT_MATH_SHIFT_ABOP(15,41,>>,POV_LONG);     // asr   s, d
-            OP_INT_MATH_SHIFT_ABOP(15,42,<<,POV_ULONG);    // lsl   s, d
-            OP_INT_MATH_SHIFT_ABOP(15,43,>>,POV_ULONG);    // lsr   s, d
-
-            OP_INT_MATH_ABOP(15,44,&);                  // and   s, d
-            OP_INT_MATH_ABOP(15,45,|);                  // or    s, d
-            OP_INT_MATH_ABOP(15,46,^);                  // xor   s, d
-            OP_INT_SPECIAL(15,47,0,iA = !iA);           // not   A, A
-            OP_INT_SPECIAL(15,47,1,iA = !iB);           // not   B, A
-            OP_INT_SPECIAL(15,47,2,iB = !iA);           // not   A, B
-            OP_INT_SPECIAL(15,47,3,iB = !iB);           // not   B, B
-
-            OP_INT_SPECIAL(15,48,0,iA = k);             // loadi A
-            OP_INT_SPECIAL(15,48,1,iB = k);             // loadi B
-            OP_INT_SPECIAL(15,48,2,iA = (iA << 16) | k);// ldhi  A
-            OP_INT_SPECIAL(15,48,3,iB = (iB << 16) | k);// ldhi  B
-
-            OP_INT_SPECIAL(15,49,0,iA = max(POV_LONG(k), iA)); // max   k, A
-            OP_INT_SPECIAL(15,49,1,iB = max(POV_LONG(k), iB)); // max   k, B
-            OP_INT_SPECIAL(15,49,2,iA = min(POV_LONG(k), iA)); // min   k, A
-            OP_INT_SPECIAL(15,49,3,iB = min(POV_LONG(k), iB)); // min   k, B
-
-            OP_INT_SPECIAL(15,50,0,iA = (POV_LONG(iA) << k));  // asl   k, A
-            OP_INT_SPECIAL(15,50,1,iB = (POV_LONG(iB) >> k));  // asr   k, B
-            OP_INT_SPECIAL(15,50,2,iA = (POV_ULONG(iA) << k)); // lsl   k, A
-            OP_INT_SPECIAL(15,50,3,iB = (POV_ULONG(iB) >> k)); // lsr   k, B
-#endif
-            default:                                    // nop
-                break;
+            maxdblstacksize = context->maxdblstacksize = context->maxdblstacksize + max(op->k + 1, (unsigned int)INITIAL_DBL_STACK_SIZE);
+            dblstack = context->dblstackbase = reinterpret_cast<DBL *>(POV_REALLOC(dblstack, sizeof(DBL) * maxdblstacksize, "fn: stack"));
         }
+        VM_NEXT();
+    VM_CASE(PUSH)
+        if (sp + op->k >= maxdblstacksize)
+            POVFPU_Exception(context, fn, "Function evaluation stack overflow.");
+        sp += op->k;
+        VM_NEXT();
+    VM_CASE(POP)
+        if (op->k > sp)
+            POVFPU_Exception(context, fn, "Function evaluation stack underflow.");
+        sp -= op->k;
+        VM_NEXT();
+    VM_CASE(NOP)
+        VM_NEXT();
 
-        pc++;
+#if !POVFPU_THREADED
     }
-
-#if (DEBUG_DEFAULTCPU == 1)
-    printf("Registers\n");
-    printf("=========\n");
-    printf("PC = %d\n", (int)pc);
-    printf("CCR = %x\n", (int)ccr);
-    printf("R0 = %8f   R4 = %8f\n", (float)r0, (float)r4);
-    printf("R1 = %8f   R5 = %8f\n", (float)r1, (float)r5);
-    printf("R2 = %8f   R6 = %8f\n", (float)r2, (float)r6);
-    printf("R3 = %8f   R7 = %8f\n", (float)r3, (float)r7);
+    }
 #endif
+    #undef VM_CASE
+    #undef VM_NEXT
+    #undef VM_JUMP
 }
 
 /*****************************************************************************
