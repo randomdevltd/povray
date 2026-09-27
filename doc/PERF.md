@@ -341,6 +341,22 @@ error for twice the cycles, no better than a smaller `error_bound`. Against a th
 bounce at `error_bound 0.6` cost twice as much and came closest (1.12 against 1.81 for one); at 1.5 it bought
 nothing.
 
+### Gather rays' reflections and refractions
+
+A gather ray is one of 30 to 60 averaged into its sample, but what it spawned at a reflective or translucent hit was
+traced to the camera's adaptive depth, as if it alone filled the pixel. Each ray below a gather ray now carries its
+share of the sample, and a reflected or refracted ray whose share falls short of `adc_bailout` survives with
+probability in proportion, scaled up to keep the mean. The draw hashes the hit point and ray direction, so it does
+not depend on thread order.
+
+| Render | Before | After |
+|---|---|---|
+| close-up 1 at 200 DPI, `count 30, error_bound 1.5`, single-threaded | 30.0 CPU-s; 97 K reflected, 104 K transmitted rays | 24.8 CPU-s; 55 K, 54 K |
+| lawn with reflective canopies and translucent blades (`Declare=Shiny=1`), 4 threads | 58.4 and 58.2 Gcycles | 43.9 and 44.3 |
+
+The close-up moves by 0.08 levels on average and 1 at most. Against a converged render the shiny lawn's error goes
+from 1.58 to 1.64 levels, with the same mean brightness.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
@@ -393,6 +409,10 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
   one of 30 to 60 in its sample; judging them by their share of the sample cut a 200 DPI close-up's trace by 16% with
   images 1 level darker at most, and Russian roulette would do it without the bias. Irradiance gradients would let a
   larger `error_bound` keep its accuracy and lose the grass's brightening.
+- Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders
+  they cut the lawn's blurred error by a third at `error_bound 0.6` and the Cornell box's by 37% for 5–7% more
+  cycles, and ended the grass's brightening, but left the patio unchanged, made a close-up of the large scene 14–25%
+  worse at `count 30` (10% from the stratified gather alone) and no better at `count 60`. They are not in this branch.
 - Triangles: test a block's triangle leaves eight at a time.
 - Height fields: their own block walk.
 - Mesh memory: the tree is now 55% of a mesh; 8-bit blocks are the next saving.
