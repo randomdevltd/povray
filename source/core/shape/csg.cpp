@@ -128,6 +128,7 @@ inline bool Test_Ray_Flags_Shadow(const Ray& ray, ConstObjectPtr obj)
 bool CSGUnion::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     int Found;
+    const IsoShadowWindow exactHits(Thread, 0.0, 0.0);
 
     Thread->Stats()[Ray_CSG_Union_Tests]++;
 
@@ -219,6 +220,7 @@ bool CSGUnion::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
 bool CSGIntersection::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     int Maybe_Found, Found;
+    const IsoShadowWindow exactHits(Thread, 0.0, 0.0);
     IStack Local_Stack(Thread->stackPool);
     POV_REFPOOL_ASSERT(Local_Stack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
 
@@ -307,6 +309,7 @@ bool CSGIntersection::All_Intersections(const Ray& ray, IStack& Depth_Stack, Tra
 bool CSGMerge::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     int Found;
+    const IsoShadowWindow exactHits(Thread, 0.0, 0.0);
     bool inside_flag;
     IStack Local_Stack(Thread->stackPool);
     POV_REFPOOL_ASSERT(Local_Stack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition

@@ -98,6 +98,9 @@ class PhotonMap;
 struct Blob_Interval_Struct;
 
 /// Class holding parser thread specific data.
+/// Sets the shadow window of @ref TraceThreadData for a scope, and restores it after.
+struct IsoShadowWindow;
+
 class TraceThreadData : public ThreadData
 {
     public:
@@ -114,6 +117,11 @@ class TraceThreadData : public ThreadData
         /// Get the statistics.
         /// @return     Reference to statistic counters.
         RenderStatistics& Stats(void) { return *mpRenderStats; }
+
+        /// Depths between which an opaque blocker ends a shadow ray, so an opaque isosurface may report any root
+        /// there rather than the first; both zero where the first is needed.
+        double isoShadowFrom;
+        double isoShadowTo;
 
         DBL *Fractal_IStack[4];
         void **Blob_Queue;
@@ -208,6 +216,19 @@ class TraceThreadData : public ThreadData
 
         /// current tile index (for crackle cache expiry)
         size_t progress_index;
+};
+
+struct IsoShadowWindow final
+{
+    TraceThreadData *thread;
+    double from;
+    double to;
+    IsoShadowWindow(TraceThreadData *t, double f, double u) : thread(t), from(t->isoShadowFrom), to(t->isoShadowTo)
+    {
+        t->isoShadowFrom = f;
+        t->isoShadowTo = u;
+    }
+    ~IsoShadowWindow() { thread->isoShadowFrom = from; thread->isoShadowTo = to; }
 };
 
 /// @}

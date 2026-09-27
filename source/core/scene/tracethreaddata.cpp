@@ -65,6 +65,7 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
     mpCrackleCache(new CrackleCache),
     mpRenderStats(new RenderStatistics)
 {
+    isoShadowFrom = isoShadowTo = 0.0;
     for(int i = 0; i < 4; i++)
         Fractal_IStack[i] = nullptr;
     Fractal::Allocate_Iteration_Stack(Fractal_IStack, sceneData->Fractal_Iteration_Stack_Length);
