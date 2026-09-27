@@ -7114,6 +7114,22 @@ void Parser::Parse_Global_Settings()
                     sceneData->subsurfaceUseRadiosity = ((int)Parse_Float() != 0);
                 END_CASE
 
+                CASE (METHOD_TOKEN)
+                    sceneData->subsurfaceMethod = Parse_Int_With_Range(kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, "subsurface method");
+                END_CASE
+
+                CASE (ERROR_BOUND_TOKEN)
+                    sceneData->subsurfaceErrorBound = Parse_Float();
+                    if (!(sceneData->subsurfaceErrorBound > 0.0))
+                        Error("Subsurface error_bound must be greater than 0.");
+                END_CASE
+
+                CASE (SPACING_TOKEN)
+                    sceneData->subsurfaceSpacing = Parse_Float();
+                    if (!(sceneData->subsurfaceSpacing > 0.0))
+                        Error("Subsurface spacing must be greater than 0.");
+                END_CASE
+
                 OTHERWISE
                     UNGET
                     EXIT

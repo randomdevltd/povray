@@ -1333,6 +1333,25 @@ finish { crand 0.05 }
 <pre>
   subsurface { samples INT, INT }
 </pre>
+<p>Subsurface light can be found in one of two ways, chosen with <code>method</code> in the global settings <code>subsurface</code> block:</p>
+<pre>
+  global_settings {
+    subsurface { method INT }
+    }
+</pre>
+<ul>
+  <li><code>method 1</code>, the default, traces the diffuse samples under every shading point. It converges on the exact result as the sample count rises, and is grainy with few samples.</li>
+  <li><code>method 2</code> lights a cloud of points spread over each subsurface object once, shares it between all shading points, and sums the cloud around each shading point. It gives smooth rather than grainy results, usually in less time, and its brightness stays close to that of method 1 with many samples. The diffuse sample count applies only where it hands over to method 1; the single-scattering count applies to both methods.</li>
+</ul>
+<p>Method 2 hands shading points it cannot serve to method 1: where the surface is not flat over a few point spacings around the shading point (sharp edges, parts thinner than the spacing, tight curves), on infinite objects, on surfaces whose inside and outside it cannot tell (open meshes and other open shapes), where more than about 260 000 points fall in one cube of space, once the cloud's budget of about a million points is spent (which parts that is can vary between renders), and when subsurface radiosity is on. A finish can choose its own method, which overrides the global one:</p>
+<pre>
+  finish { subsurface { translucency COLOR method INT } }
+</pre>
+<p>Two further settings in the global settings <code>subsurface</code> block tune method 2:</p>
+<pre>
+  subsurface { method 2 spacing FLOAT error_bound FLOAT }
+</pre>
+<p><code>spacing</code>, 1.0 by default, scales the distance between cloud points, which is otherwise a sixteenth to a quarter of the material's diffusion length, or about a pixel where that is coarser. Smaller values follow thin parts and fine shadow detail more closely, and cost more points, memory and time to build the cloud. <code>error_bound</code>, 0.1 by default, sets how coarsely distant points are summed: a group of points counts as one when its area is less than <code>error_bound</code> times the square of its distance. Smaller values are slower and closer to the exact sum.</p>
 <p>See the sample SSLT scene in <code>~scenes/subsurface/subsurface.pov</code> for more information. See also this PDF document, <a href="http://graphics.stanford.edu/papers/bssrdf/bssrdf.pdf">A Practical Model for Subsurface Light Transport</a>, for more in depth information about SSLT, including some sample values to use when defining new materials.</p>
 <p>To specify whether subsurface light transport effects should be <em>applied</em> to incoming <code>radiosity</code> based diffuse illumination, you should place the following in the global settings <code>subsurface</code> block:</p>
 <pre>
