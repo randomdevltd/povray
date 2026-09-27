@@ -4039,7 +4039,11 @@ ObjectPtr Parser::Parse_Mesh2()
 
     Object = new Mesh();
 
-    Parse_Mesh2 (Object);
+    PovmTreeKey povm;
+    if (AllowToken(POVM_TOKEN))
+        Parse_Povm (Object, povm);
+    else
+        Parse_Mesh2 (Object);
 
     // Create bounding box.
 
@@ -4051,7 +4055,10 @@ ObjectPtr Parser::Parse_Mesh2()
 
     // Create bounding box tree.
 
-    Object->Build_Mesh_BBox_Tree();
+    if (povm.path.empty())
+        Object->Build_Mesh_BBox_Tree();
+    else
+        Povm_Mesh_Tree (Object, povm);
 
     return Object;
 }

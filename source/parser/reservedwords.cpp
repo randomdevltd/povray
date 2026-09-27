@@ -420,6 +420,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { POLYNOMIAL_TOKEN,             "polynomial" },
     { POT_TOKEN,                    "pot" },
     { POTENTIAL_TOKEN,              "potential" },
+    { POVM_TOKEN,                   "povm" },
     { POW_TOKEN,                    "pow" },
     { PPM_TOKEN,                    "ppm" },
     { PRECISION_TOKEN,              "precision" },
