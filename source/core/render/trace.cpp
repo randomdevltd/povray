@@ -4407,8 +4407,7 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             Vector3d n = in.INormal / length;
             bool ahead = cloud.object->Inside(in.IPoint + n * probe, threadData);
             bool behind = cloud.object->Inside(in.IPoint - n * probe, threadData);
-            // Inside on both sides is a surface within the object (a union's); outside on both, an open or thin sheet.
-            if (ahead && behind)
+            if (ahead == behind)
             {
                 dropped++;
                 continue;
@@ -4416,7 +4415,6 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             if (ahead)
                 n.invert();
             SubsurfacePoint point;
-            point.twoSided = !ahead && !behind;
             point.position = in.IPoint;
             for (int k = 0; k < 3; k++)
                 point.normal[k] = float(n[k]);
@@ -4673,7 +4671,7 @@ bool Trace::LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vecto
     {
         const SubsurfacePoint& p = cell->points[i];
         double facing = p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z];
-        if ((p.twoSided ? fabs(facing) : facing) >= 0.5)
+        if (facing >= 0.5)
             visibility.Add(cell->visibility.data() + p.id * stride);
     }
     visibility.Finish();
@@ -4685,8 +4683,6 @@ bool Trace::LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vecto
 static double UnfoldedDistance(const Vector3d& x, const Vector3d& n, const SubsurfacePoint& p)
 {
     Vector3d np(p.normal[0], p.normal[1], p.normal[2]);
-    if (p.twoSided && (dot(n, np) < 0.0))
-        np.invert();
     double straight = (p.position - x).length();
     double c = dot(n, np);
     if (!(c < 0.999) || !(c > -0.999))
@@ -4760,7 +4756,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                 if (!near && (boxSqr > ringSqr) && (node.area < errorBound * boxSqr) && (node.cone >= kCloudCone))
                 {
                     Vector3d toward = node.centre - base;
-                    if (node.twoSided || (toward[X] * node.normal[0] + toward[Y] * node.normal[1] + toward[Z] * node.normal[2] > 0.0))
+                    if (toward[X] * node.normal[0] + toward[Y] * node.normal[1] + toward[Z] * node.normal[2] > 0.0)
                     {
                         double distSqr = (x - node.centre).lengthSqr() * Sqr(mm);
                         PreciseMathColour rd = profile.Rd(distSqr);
@@ -4783,7 +4779,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                         continue;
                     // A point the base point sees from behind is reached only through another part of the surface.
                     Vector3d toward = p.position - base;
-                    if (!p.twoSided && (toward[X] * p.normal[0] + toward[Y] * p.normal[1] + toward[Z] * p.normal[2] <= 0.0))
+                    if (toward[X] * p.normal[0] + toward[Y] * p.normal[1] + toward[Z] * p.normal[2] <= 0.0)
                     {
                         hidden = hidden || (distSqr < creaseSqr);
                         continue;
@@ -4796,8 +4792,6 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                         continue;
                     }
                     double facing = p.normal[0] * n[X] + p.normal[1] * n[Y] + p.normal[2] * n[Z];
-                    if (p.twoSided)
-                        facing = fabs(facing);
                     bool inDisc = (distSqr < discSqr);
                     if (inDisc)
                     {

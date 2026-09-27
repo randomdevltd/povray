@@ -106,12 +106,11 @@ enum SubsurfaceMethod
 struct SubsurfacePoint final
 {
     Vector3d position;
-    float normal[3]; ///< pointing out of the object; as the surface reports it on a two-sided point
+    float normal[3]; ///< pointing out of the object
     float irradiance[MathColour::channels];
     float area;
-    unsigned id : 29; ///< index into the cell's visibility, which stays in build order
+    unsigned id : 30; ///< index into the cell's visibility, which stays in build order
     unsigned axis : 2; ///< that of the line that found it
-    unsigned twoSided : 1; ///< on an open or thin sheet, with outside on both sides
 };
 
 /// A node of a cell's point hierarchy: its box, area-weighted centre, total area, area-weighted irradiance, and the
@@ -124,7 +123,6 @@ struct SubsurfaceNode final
     float normal[3];
     float cone;
     int first, count; ///< points of a leaf; for an inner node, count is 0 and first the second child
-    bool twoSided; ///< whether any of its points is two-sided
 };
 
 /// The irradiance cloud of one object in one cube of space, with its point hierarchy; see doc/PERF.md.
