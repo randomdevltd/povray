@@ -251,8 +251,10 @@ Tried and not kept, measured on `sslt-lamps.pov` unless noted:
 
 `subsurface { method 2 }` in `global_settings`, or in a finish's `subsurface` block, finds the diffuse subsurface
 light from a cloud of points shared by all shading points instead of rays under each one. The default stays method 1,
-the sampled method above. Method 2 is smooth where method 1 is grainy, and faster; it is not bit-exact, and its
-brightness is within a fraction of a level of method 1 at many samples (tables below).
+the sampled method above. Method 2 is smooth where method 1 is grainy and not bit-exact. At the quality of method 1 with
+many samples it is 1.2 to 3.8 times as fast on most bench scenes, about as fast on a slab and a plane, slower on a
+small mesh where it needs spacing 0.25, and short of that quality at every setting tried on one wide view (tables
+below).
 
 **The cloud.** Space is cut into cubes whose side is a power of four at least the diffusion's reach (8 diffusion
 lengths of the channel that diffuses farthest), so a texture that varies the diffusion uses few sizes. A cube's points
@@ -325,46 +327,60 @@ surface the path in from the light is a fixed multiple of the path out, which gi
 in closed form. Other lights (behind, or at shadow edges) are sampled as in method 1, with the shadow taken from
 nearby points where they agree.
 
-Results, `+WT4`, user-space cycles (on an otherwise idle machine; `tools/bench/pcount.c`), and error against method 1 with
-many samples (16 times the diffuse samples at 320×240, 8 times at 800×600) in levels of 255, over the pixels that
-subsurface light changes:
+**Results at equal quality.** For each bench scene the reference is method 1 at the samples below, and the yardstick,
+against which errors are measured, is method 1 at 8 times those samples. Method 2 is close to the reference when, against
+the yardstick, its rms error over the pixels that subsurface light changes is no worse than the reference's, its worst
+8×8-pixel block (mean luminance) is within a level of the reference's worst, and a sheet (yardstick, reference, method 2,
+their differences ×4 and an enlarged crop of method 2's worst block) shows no artefact. Method 2 was rendered at 1/16,
+1/8, 1/4, 1/2 and 1 times the reference's samples (diffuse and single scattering alike; the diffuse count applies only
+where it hands a shading point to method 1) at the default spacing, then at finer spacings where that missed; the
+table gives the least that is close. 320×240 unless noted, `+WT4`, user-space cycles (`tools/bench/pcount.c`) and
+CPU-seconds of one run each, errors in levels of 255:
 
-| Render | Method 1 | Method 2 | | Method 1 mean, rms | Method 2 mean, rms |
-|---|---|---|---|---|---|
-| `tools/bench/sslt-lamps.pov`, 320×240 | 11.7 Gcycles | 7.4 | 1.6× | −0.04, 2.88 | −0.17, 2.06 |
-| the same at 800×600 | 71.9 Gcycles | 45.0 | 1.6× | −0.03, 2.92 | −0.21, 1.95 |
-| `scenes/subsurface/subsurface.pov`, 320×240 | 48.5 Gcycles | 16.7 | 2.9× | −0.02, 1.22 | −0.06, 1.05 |
-| the same at 800×600 | 306.6 Gcycles | 109.2 | 2.8× | −0.02, 1.24 | −0.05, 0.92 |
+| Scene | Reference samples | Method 2 | Gcycles | CPU-s | | rms | Worst block |
+|---|---|---|---|---|---|---|---|
+| `scenes/subsurface/subsurface.pov` | 400, 40 | 400, 40, spacing 0.7 | 46.3 → 17.0 | 13.9 → 5.2 | 2.7× | 1.15 → 1.04 | 0.8 → 1.5 |
+| `tools/bench/sslt-lamps.pov` | 74, 21 | 19, 5, spacing 0.5 | 11.4 → 7.0 | 3.3 → 2.0 | 1.6× | 2.77 → 2.23 | 0.8 → 1.5 |
+| the same, radiosity and subsurface radiosity on | 74, 21 | 74, 21 | 86.0 → 22.5 | 24.8 → 6.4 | 3.8× | 3.43 → 2.12 | 1.6 → 2.5 |
+| `tools/bench/sslt-open.pov` Case 0, a slab's top | 200, 12 | 13, 1 | 12.8 → 12.3 | 3.6 → 3.5 | 1.04× | 2.72 → 1.22 | 0.8 → 1.2 |
+| Case 1, a plane | 200, 12 | 200, 12 | 8.5 → 8.9 | 2.4 → 2.5 | 0.95× | 2.70 → 2.09 | 0.8 → 0.9 |
+| Case 2, a clipped shell | 200, 12 | 200, 12, spacing 0.35 | 2.37 → 1.94 | 0.64 → 0.55 | 1.2× | 2.08 → 1.80 | 0.8 → 1.2 |
+| Case 6, a thin rod and wall | 200, 12 | 200, 12, spacing 0.5 | 2.54 → 2.39 | 0.83 → 0.65 | 1.06× | 1.88 → 1.60 | 1.1 → 1.6 |
+| `tools/bench/sslt-wide.pov`, 1600×800 | 74, 12 | not close; 74, 12 | 106.1 → 83.7 | 30.2 → 24.1 | | 4.78 → 5.74 | 1.7 → 8.6 |
+| the same, 4000×2000, a 200×200 window on a trunk | 74, 12 | 37, 6 | 52.4 → 16.7 | 14.5 → 4.3 | 3.1× | 5.51 → 4.37 | 3.1 → 3.7 |
+| the same, a 200×200 window on the small mesh | 74, 12 | 74, 12, spacing 0.25 | 43.4 → 47.9 | 11.9 → 13.2 | 0.91× | 2.81 → 1.47 | 1.7 → 1.2 |
 
-Over the whole image, `sslt-open.pov` Case 0 (the top of a slab) is 0.25 levels darker than the reference with rms 2.0
-against method 1's 3.0; Case 2 (a clipped shell) is within 0.01 levels, rms 0.83 against 0.86. Shadow rays halve on
-both bench scenes. Without subsurface light the scenes trace in 2.1 and 0.6 Gcycles at 320×240, so the subsurface part
-goes from 9.6 to 5.3 Gcycles (1.8×) and from 47.9 to 16.1 (3.0×). Where it differs from the reference most, 8-pixel
-blocks at 800×600 are 2 to 4 levels off: the rounded foot of the candle in `subsurface.pov`, beside its wax drip, and
-on the wax sphere in `sslt-lamps.pov`; method 1's blocks are within 1.2.
+The yardsticks take 3200, 320 on `subsurface.pov`, 592, 168 on `sslt-lamps.pov`, 1600, 96 on `sslt-open.pov` and 592,
+96 on `sslt-wide.pov`. Method 2's mean is within 0.45 levels of the yardstick's, except on the slab's top (−0.73; the
+reference: −0.13). Where the default spacing is not enough:
 
-Later, with the changes above (edges, cameras other than perspective, coarse clouds, radiosity, and
-far groups summed as one when their normals agree within 60°, after splitting the two faces of thin parts apart),
-`+WT4` user-space cycles in billions, method 1 against method 2 before and after:
+- The clipped shell's rim: a band just below it has blocks 3.5 levels off at spacing 1, 2.1 at 0.5 and 1.2 at 0.35.
+  Spacing 0.35 costs method 2 60% more CPU time than spacing 1, and still less than the reference (1.94 Gcycles
+  against 2.37).
+- The small mesh's underside: blocks 6.7 levels off at spacing 1 and 5.3 at 0.5; at 0.25, close to the reference but
+  10% slower than it, and near the point budget (two runs differed in one pixel).
+- `sslt-wide.pov`'s whole frame at 1600×800: a trunk's ridged bark comes out up to 8.6 levels light in 8-pixel blocks
+  at spacings 1, 0.5 and 0.25 alike, so not for want of points; at 4000×2000 the same trunk is within 3.7 levels. Method
+  2 is not close there at any setting tried.
+- `subsurface.pov` and `sslt-lamps.pov` are close in rms at the default spacing, but blocks on the candle and the wax
+  sphere stay 2.3 to 2.4 levels off at any sample count; spacings 0.7 and 0.5 bring them within 1.5.
 
-| Render | Method 1 | Method 2 before | after |
-|---|---|---|---|
-| `scenes/subsurface/subsurface.pov`, 320×240 | 44.6 | 17.1 | 16.2 |
-| the same at 800×600 | 273.9 | 110.1 | 109.2 |
-| `tools/bench/sslt-lamps.pov`, 320×240 | 10.9 | 7.3 | 7.1 |
-| the same at 800×600 | 73.0 | 46.7 | 42.8 |
-| the same, 320×240, radiosity and subsurface radiosity on | 72.3 | 72.3 (method 1) | 19.8 |
-| `tools/bench/sslt-wide.pov`, 1600×800, 6 diffuse samples | 39.0 | 97.2 | 41.5 |
-| the same, 4000×2000, a 200×200 window on a trunk, 74 samples | 52.0 | 64.6 | 23.0 |
-| the same, a 200×200 window on the small mesh, 74 samples | 44.8 | 45.2 | 15.2 |
-| `tools/bench/sslt-open.pov` Case 6 (thin rod and wall), 320×240 | 2.6 | 5.4 | 3.0 |
+On the slab and the plane method 2 costs what method 1 does at equal quality; on the thin rod and wall, whose parts
+method 2 largely hands to method 1, it is 6% cheaper.
 
-`sslt-wide.pov` at 1600×800 peaked at 390 MB with method 2 before, 100 MB after, and 83 MB with method 1; at 6 samples
-method 1 is cheap and noisy, and method 2 is still 6% slower there. Method 1 renders bit for bit as before. Against
-method 1 at 8 to 16 times the samples, the worst 8-pixel blocks at 800×600 are within 3.4 levels on `subsurface.pov`
-and 5.2 on `sslt-lamps.pov` (method 1: 1.2 on both), 4.9 on `sslt-lamps.pov` with radiosity, 2.3 on the thin rod and
-wall, and 3.8 and 6.6 on the two windows, the latter at the underside of the small mesh; the rim of `sslt-open.pov`
-Case 2 is under Next.
+In about the reference's time instead, method 2 with more samples, CPU-seconds from single runs (the reference's in
+brackets):
+
+| Scene | Method 2 | CPU-s | rms | Worst block |
+|---|---|---|---|---|
+| `subsurface.pov` | 1600, 160, spacing 0.7 | 12.3 (12.6) | 0.89 (1.15) | 1.5 (0.8) |
+| `sslt-lamps.pov` | 148, 42, spacing 0.5 | 3.0 (3.1) | 1.57 (2.77) | 1.4 (0.8) |
+| the same, with radiosity | 296, 84 | 13.6 (24.2) | 1.74 (3.43) | 2.6 (1.6) |
+| `sslt-wide.pov`, trunk window | 296, 48 | 15.8 (13.8) | 3.07 (5.51) | 3.7 (3.1) |
+
+Lower rms with more samples comes from the shading points handed to method 1 and from single scattering; the worst
+blocks, which are method 2's own bias, do not move. `sslt-wide.pov` at 1600×800 peaks at 100 MB with method 2 and
+83 MB with method 1.
 
 Tried and not kept:
 
@@ -783,10 +799,9 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
-- Subsurface: method 2 still hands sharp edges and creases to method 1, and samples single scattering
-  from lights behind the surface. Just below the rim of `sslt-open.pov` Case 2, 8-pixel blocks at 800×600 are up to 6 levels off
-  the reference at the default spacing, as a soft band rather than the stepped one before; at `spacing 0.5` they are
-  within a level.
+- Subsurface: method 2 still hands sharp edges and creases to method 1, and samples single scattering from lights
+  behind the surface. At equal quality it needs spacing 0.35 at the rim of `sslt-open.pov` Case 2 and 0.25 under the
+  small mesh in `sslt-wide.pov`, and at 1600×800 that scene's bark comes out up to 8.6 levels light at any spacing.
 - Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders
   they cut the lawn's blurred error by a third at `error_bound 0.6` and the Cornell box's by 37% for 5–7% more
   cycles, and ended the grass's brightening, but left the patio unchanged, made a close-up of the large scene 14–25%

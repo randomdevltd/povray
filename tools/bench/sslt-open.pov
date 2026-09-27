@@ -3,8 +3,15 @@
 #version 3.7;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Diffuse) #declare Diffuse = 200; #end
+#ifndef (Single) #declare Single = 12; #end
 #ifndef (Method) #declare Method = 1; #end
-global_settings { assumed_gamma 1.0 mm_per_unit 40 subsurface { samples Diffuse, 12 method Method } }
+#ifndef (Spacing) #declare Spacing = 1; #end
+#ifndef (Subsurface) #declare Subsurface = 1; #end
+global_settings {
+  assumed_gamma 1.0
+  mm_per_unit 40
+  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing } #end
+}
 light_source { <-3, 6, -3>, rgb 1.2 }
 #declare T = texture { pigment { rgb <0.9, 0.6, 0.3> } finish { diffuse 0.7 subsurface { translucency <3, 2, 1> } } }
 #if (Case < 2)
