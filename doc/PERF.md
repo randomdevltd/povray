@@ -557,6 +557,28 @@ as it was. The walk also stopped at a hit on the cached object, which would have
 blocker, but it never fired: a cached primitive always blocks outright, and a hit's object is a primitive, never
 the cached CSG.
 
+## Binary meshes
+
+A large generated mesh spent its parse in the SDL tokenizer and expression parser, one number at a time: a
+7.7-million-triangle `mesh2` is about 640 MB of text. A `mesh2` can now load its geometry from a `.povm` file of
+little-endian arrays (`doc/povm.md`), and caches its bounding tree beside it in a `.povt` file keyed on the `.povm`
+content and the build, so a second render neither parses nor builds anything. `tools/povm` writes `.povm` from Node
+and converts OBJ, `mesh` and `mesh2` files.
+
+On the 1.5-million-triangle mesh bench above, one-pixel renders, three runs of each, interleaved:
+
+| Source | Parse Gcycles | Instructions | Peak RSS | File |
+|---|---|---|---|---|
+| text `mesh2` | 11.66–12.32 | 36.67 G | 148 MB | 80.0 MB |
+| `.povm`, no cache | 5.00–5.14 | 9.43 G | 148 MB | 36.0 MB |
+| `.povm`, warm cache | 0.170–0.176 | 0.44 G | 90 MB | 36.0 MB + 43.7 MB `.povt` |
+
+Building the tree is almost all of the uncached load, and its working set sets the peak either way. Scaled by
+triangle count to a 7.7-million-triangle mesh: about 62, 26 and 0.9 Gcycles, and
+700, 700 and 400 MB peak (POV-Ray alone peaks at 15 MB), with a 185 MB `.povm` and a 224 MB `.povt`. The bench
+renders identically at `+WT1` from all three, and `tools/povm/test/test.sh` checks that converted OBJ, `mesh` and
+`mesh2` files render as their sources.
+
 ## SIMD
 
 `core/math/simd.h` gives kernels fixed-width vectors, `simd::Vec<T, N>` and its mask type, over xsimd 13.2.0 (in
