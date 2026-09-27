@@ -533,7 +533,8 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
 {
     unsigned int cur_sample_count;
 
-    Vector3d direction, up, min_dist_vec;
+    Vector3d direction, up;
+    Vector3d min_dist_vec(0.0);
     int save_Max_Trace_Level;
     MathColour dxs, dys, dzs;
     MathColour colour_sums, temp_colour;
@@ -549,8 +550,8 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     DBL to_eye = (this->cameraPosition - ipoint).length();
     DBL reuse_dist_min      = to_eye * recSettings.minReuseFactor;
     DBL maximum_distance    = to_eye * recSettings.maxReuseFactor;
-    if (recSettings.maxReuseFactor >= HUGE_VAL)
-        maximum_distance = HUGE_VAL;
+    if (recSettings.maxReuseFactor >= BOUND_HUGE)
+        maximum_distance = BOUND_HUGE;
 
     cur_sample_count        = recSettings.raysPerSample;
 
@@ -571,7 +572,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     // Since we'll be calculating averages, zero the accumulators
     inverse_distance_sum = 0.0;
 
-    smallest_dist = BOUND_HUGE;
+    smallest_dist = HUGE_VAL; // above any clamped depth, so the first ray always sets min_dist_vec
 
     DBL weight = max(ticket.adcBailout + EPSILON, recSettings.weight);
 
@@ -661,9 +662,9 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
             colour_sums += temp_colour;
         }
 
-        // we always get the distance, so we'll use it
-        if(depth > HUGE_VAL)
-            depth = HUGE_VAL;
+        // escaping rays return HUGE_VAL (infinity); clamped, they take part in the nearest-direction test
+        if(depth > BOUND_HUGE)
+            depth = BOUND_HUGE;
         else
         {
 #ifdef RADSTATS
@@ -679,6 +680,8 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
         inverse_distance_sum += 1.0 / depth;
 
     } // end ray sampling loop
+
+    POV_ASSERT(okCount == 0 || smallest_dist <= BOUND_HUGE);
 
     threadData->Stats()[Radiosity_RayCount] += okCount;
     if (ticket.radiosityRecursionDepth == 0)
