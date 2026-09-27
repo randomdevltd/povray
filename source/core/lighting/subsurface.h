@@ -41,7 +41,12 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <atomic>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 // Boost header files
 #include <boost/flyweight.hpp>
@@ -88,6 +93,97 @@ class SubsurfaceInterior final
         };
 
         flyweight<key_value<float,PrecomputedReducedAlbedo>> precomputedReducedAlbedo;
+};
+
+/// How subsurface light is found: rays under every shading point, or a point cloud shared by them; see doc/PERF.md.
+enum SubsurfaceMethod
+{
+    kSubsurfaceMethodSampled = 1,
+    kSubsurfaceMethodPointCloud = 2,
+};
+
+/// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
+struct SubsurfacePoint final
+{
+    Vector3d position;
+    float normal[3]; ///< pointing out of the object
+    float irradiance[MathColour::channels];
+    float area;
+    int id; ///< index into the cell's visibility, which stays in build order
+};
+
+/// A node of a cell's point hierarchy: its box, area-weighted centre, total area, area-weighted irradiance, and the
+/// mean normal of its points with the least cosine between it and theirs.
+struct SubsurfaceNode final
+{
+    Vector3d lo, hi, centre;
+    float area;
+    float irradiance[MathColour::channels];
+    float normal[3];
+    float cone;
+    int first, count; ///< points of a leaf; for an inner node, count is 0 and first the second child
+};
+
+/// The irradiance cloud of one object in one cube of space, with its point hierarchy; see doc/PERF.md.
+struct SubsurfaceCell final
+{
+    std::vector<SubsurfacePoint> points;
+    std::vector<SubsurfaceNode> nodes;
+    std::vector<float> visibility; ///< per point, per light, per channel: shadowed over unshadowed light
+    double spacing = 0.0; ///< between points, in scene units
+    int lights = 0;
+    bool usable = false;
+    void BuildHierarchy();
+
+    /// Building goes in stages, each split into jobs that every thread needing the cell meanwhile takes a share of.
+    /// A cell that fails (too many points, a crossing that cannot be oriented, an exception) ends ready but unusable.
+    enum Stage { kCasting, kLighting, kReady };
+    std::mutex mutex;
+    std::condition_variable changed;
+    Stage stage = kCasting;
+    int jobs = 0, next = 0, done = 0, steps = 0;
+    std::atomic<bool> failed{false};
+    size_t found = 0, reserved = 0, unoriented = 0; ///< while casting: points kept, points reserved, crossings dropped
+    std::vector<std::vector<SubsurfacePoint>> rows; ///< points found by each row of lines while casting
+};
+
+/// Where a cell sits: the object, the cell size level (its side is 2^level scene units) and the cell's integer position.
+struct SubsurfaceCellKey final
+{
+    const void *object;
+    int sizeLevel;
+    int x, y, z;
+    bool operator==(const SubsurfaceCellKey& o) const
+    {
+        return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z;
+    }
+};
+
+struct SubsurfaceCellKeyHash final
+{
+    size_t operator()(const SubsurfaceCellKey& k) const;
+};
+
+/// Irradiance clouds built on demand and shared by all render threads, up to a point budget.
+class SubsurfaceCache final
+{
+    public:
+        /// The cell for key, and whether the caller is the first to ask and so must build it.
+        std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
+        /// Reserves room for points; false once the budget is spent.
+        bool Reserve(size_t points);
+        void Release(size_t points);
+        /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
+        void SetCamera(const Vector3d& location, double pixelAngle);
+        bool GetCamera(Vector3d& location, double& pixelAngle) const;
+
+    private:
+        mutable std::mutex mutex;
+        std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
+        size_t reserved = 0;
+        bool cameraSet = false;
+        Vector3d cameraLocation;
+        double cameraPixelAngle = 0.0;
 };
 
 /// Approximation to the Fresnel diffuse reflectance.
