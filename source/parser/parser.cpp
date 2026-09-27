@@ -46,6 +46,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <map>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -6645,6 +6646,7 @@ void Parser::Parse_Frame ()
             if (Object == nullptr)
                 Expectation_Error ("object or directive");
             Post_Process (Object, nullptr);
+            Remove_Subsurface_Without_Inside (Object);
             Link_To_Frame (Object);
         END_CASE
     END_EXPECT
@@ -9271,6 +9273,152 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     if (Object->IsOpaque())
         Set_Flag(Object, OPAQUE_FLAG);
 }
+
+namespace
+{
+
+bool Uses_Subsurface(const TEXTURE *Textures)
+{
+    for (const TEXTURE *Layer = Textures; Layer != nullptr; Layer = Layer->Next)
+    {
+        if ((Layer->Finish != nullptr) && Layer->Finish->UseSubsurface)
+            return true;
+        for (const TEXTURE *Material : Layer->Materials)
+            if (Uses_Subsurface(Material))
+                return true;
+        if (Layer->Blend_Map != nullptr)
+            for (const TextureBlendMapEntry& Entry : Layer->Blend_Map->Blend_Map_Entries)
+                if (Uses_Subsurface(Entry.Vals))
+                    return true;
+    }
+    return false;
+}
+
+// A new copy of textures with subsurface off in every finish, sharing the parts that use none.
+TEXTURE *Copy_Without_Subsurface(TEXTURE *Textures)
+{
+    TEXTURE *New = Copy_Textures(Textures);
+    for (TEXTURE *Layer = New; Layer != nullptr; Layer = Layer->Next)
+    {
+        if (Layer->Finish != nullptr)
+            Layer->Finish->UseSubsurface = false;
+        for (TEXTURE *& Material : Layer->Materials)
+        {
+            if (!Uses_Subsurface(Material))
+                continue;
+            TEXTURE *Old = Material;
+            Material = Copy_Without_Subsurface(Old);
+            Destroy_Textures(Old);
+        }
+        if (Layer->Blend_Map != nullptr)
+        {
+            TextureBlendMapPtr Map = std::make_shared<TextureBlendMap>();
+            Map->Type = Layer->Blend_Map->Type;
+            Map->Blend_Map_Entries = Layer->Blend_Map->Blend_Map_Entries;
+            for (TextureBlendMapEntry& Entry : Map->Blend_Map_Entries)
+                Entry.Vals = Uses_Subsurface(Entry.Vals) ? Copy_Without_Subsurface(Entry.Vals) : Copy_Texture_Pointer(Entry.Vals);
+            Layer->Blend_Map = Map;
+        }
+    }
+    return New;
+}
+
+/// Textures already stripped of subsurface, each key and copy holding a reference, and the first piece stripped.
+struct SubsurfaceStrip final
+{
+    std::map<TEXTURE *, TEXTURE *> copies;
+    const char *kind = nullptr;
+    const char *missing = nullptr;
+
+    ~SubsurfaceStrip()
+    {
+        for (auto& copy : copies)
+        {
+            Destroy_Textures(copy.first);
+            Destroy_Textures(copy.second);
+        }
+    }
+
+    bool Strip(TEXTURE *& Texture)
+    {
+        auto found = copies.find(Texture);
+        if (found == copies.end())
+        {
+            if (!Uses_Subsurface(Texture))
+                return false;
+            found = copies.emplace(Copy_Texture_Pointer(Texture), Copy_Without_Subsurface(Texture)).first;
+        }
+        Destroy_Textures(Texture);
+        Texture = Copy_Texture_Pointer(found->second);
+        return true;
+    }
+};
+
+// Whether an object has no inside: a sheet, or a compound of only sheets. Subsurface is stripped from each sheet.
+bool Strip_Subsurface_Without_Inside(ObjectPtr Object, SubsurfaceStrip& Strip)
+{
+    const char *Kind = nullptr, *Missing = "inside";
+    Mesh *AsMesh = dynamic_cast<Mesh *>(Object);
+    if (CompoundObject *Compound = dynamic_cast<CompoundObject *>(Object))
+    {
+        bool None = !Compound->children.empty();
+        for (ObjectPtr Child : Compound->children)
+            None = Strip_Subsurface_Without_Inside(Child, Strip) && None;
+        if (!None)
+            return false;
+    }
+    else if (AsMesh != nullptr)
+    {
+        if (AsMesh->has_inside_vector)
+            return false;
+        Kind = "mesh";
+        Missing = "inside_vector";
+    }
+    else if (dynamic_cast<SmoothTriangle *>(Object) != nullptr)
+        Kind = "smooth_triangle";
+    else if (dynamic_cast<Triangle *>(Object) != nullptr)
+        Kind = "triangle";
+    else if (dynamic_cast<Polygon *>(Object) != nullptr)
+        Kind = "polygon";
+    else if (dynamic_cast<BicubicPatch *>(Object) != nullptr)
+        Kind = "bicubic_patch";
+    else if (dynamic_cast<Parametric *>(Object) != nullptr)
+        Kind = "parametric";
+    else
+        return false;
+
+    bool Stripped = Strip.Strip(Object->Texture);
+    Stripped = Strip.Strip(Object->Interior_Texture) || Stripped;
+    for (MeshIndex i = 0; (AsMesh != nullptr) && (i < AsMesh->Number_Of_Textures); i++)
+        Stripped = Strip.Strip(AsMesh->Textures[i]) || Stripped;
+    if (Stripped && (Kind != nullptr) && (Strip.kind == nullptr))
+    {
+        Strip.kind = Kind;
+        Strip.missing = Missing;
+    }
+    return true;
+}
+
+}
+
+// Subsurface light needs a volume under the surface; on a sheet it would also switch off the ordinary diffuse light.
+void Parser::Remove_Subsurface_Without_Inside(ObjectPtr Object)
+{
+    if (!sceneData->useSubsurface)
+        return;
+    SubsurfaceStrip Strip;
+    Strip_Subsurface_Without_Inside(Object, Strip);
+    if (Strip.kind == nullptr)
+        return;
+    if (dynamic_cast<CompoundObject *>(Object) == nullptr)
+        Warning("Subsurface scattering needs a solid object; this %s has no %s, so subsurface is ignored.",
+                Strip.kind, Strip.missing);
+    else
+        Warning("Subsurface scattering needs a solid object; this object's %s parts have no %s, so subsurface is ignored on them.",
+                Strip.kind, Strip.missing);
+}
+
+
 
 /*****************************************************************************
 *
