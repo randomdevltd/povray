@@ -50,6 +50,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/lightgroup.h"
+#include "core/lighting/subsurface.h"
 #include "core/material/blendmap.h"
 #include "core/material/interior.h"
 #include "core/material/media.h"
@@ -2450,6 +2451,9 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                 END_CASE
                 CASE (TRANSLUCENCY_TOKEN)
                     Parse_Colour(New->SubsurfaceTranslucency);
+                END_CASE
+                CASE (METHOD_TOKEN)
+                    New->SubsurfaceMethod = Parse_Int_With_Range(kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, "subsurface method");
                 END_CASE
                 OTHERWISE
                     UNGET
