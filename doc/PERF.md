@@ -557,6 +557,37 @@ as it was. The walk also stopped at a hit on the cached object, which would have
 blocker, but it never fired: a cached primitive always blocks outright, and a hit's object is a primitive, never
 the cached CSG.
 
+## SIMD
+
+`core/math/simd.h` gives kernels fixed-width vectors, `simd::Vec<T, N>` and its mask type, over xsimd 13.2.0 (in
+`libraries/xsimd`, its last release needing only C++11). The build's `-march` picks the form: one register where the
+target has N lanes of T, two halves where it has fewer, and plain scalars under `--disable-simd`, whose `fma` is fused
+where the target has FMA and whose `min` and `max` treat ties and NaN as x86's do, so on x86 both give the same results.
+Only this header includes xsimd, so a move to C++26 `std::simd` rewrites it alone. `tools/bench/simd-disasm.sh` compiles
+a 16-bit block's slab test through `simd::` and in raw intrinsics: the same 62 instructions for `x86-64-v3`, and 57 for
+AVX-512.
+
+Flat blocks test their eight boxes through it; one compare mask gives the lanes to append, lowest first, as the loop
+took them. Against `performance`, trace with parse subtracted, medians of runs whose spread is 2–6%:
+
+| Scene | Runs | Trace Gcycles | Instructions |
+|---|---|---|---|
+| the large scene, a 200 px close-up at 200 DPI, `+WT4` | 3 | 61.6 → 56.6 (−8.2%) | −7.8% |
+| the same with radiosity | 3 | 116.6 → 113.9 (−2.4%) | −9.3% |
+| the same, 400 px, without radiosity | 2 | 251.8 → 242.9 (−3.5%) | −8.6% |
+| `radiosity-lawn.pov`, 320×180, `+WT1` | 5 | 15.20 → 13.99 (−7.9%) | −8.8% |
+| the mesh bench, 960×720, `+WT1` | 5 | 36.43 → 36.54 (+0.3%) | −9.8% |
+
+Single-threaded renders of all of them are identical to `performance`'s, with SIMD and with `--disable-simd`.
+
+Testing a block's triangle leaves eight at a time was tried and is not in this branch. Each thread kept 64 mesh
+blocks decoded lane by lane in double precision, and an eight-lane test, computed per lane exactly as the scalar one,
+dropped leaves whose triangle the ray missed before they were queued; images were unchanged. A block opens onto 3.1
+leaves on average on the close-up, and only one in ten of those is hit, so decoding and testing all lanes cost about
+what it saved: against the box change alone, −0.7 to +5.5% on the close-ups, 0 to +1.9% on the lawn and −0.9 to
+−1.1% on the mesh bench, across variants that decoded lanes only as rays reached them, skipped blocks opening onto a
+single leaf, or kept 256 blocks a thread.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
@@ -609,7 +640,7 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
   they cut the lawn's blurred error by a third at `error_bound 0.6` and the Cornell box's by 37% for 5–7% more
   cycles, and ended the grass's brightening, but left the patio unchanged, made a close-up of the large scene 14–25%
   worse at `count 30` (10% from the stratified gather alone) and no better at `count 60`. They are not in this branch.
-- Triangles: test a block's triangle leaves eight at a time.
+- Triangles: eight-lane tests pay only where blocks open onto more leaves; test rays eight at a time instead.
 - Height fields: their own block walk.
 - Mesh memory: the tree is now 55% of a mesh; 8-bit blocks are the next saving.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
