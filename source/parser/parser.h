@@ -807,6 +807,7 @@ class Parser final
         void Link(ObjectPtr New_Object, std::vector<ObjectPtr>& Object_List_Root);
         void Link_To_Frame(ObjectPtr Object);
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
+        void Remove_Subsurface_Without_Inside(ObjectPtr Object);
 
         void Parse_Global_Settings();
         void Global_Setting_Warn();

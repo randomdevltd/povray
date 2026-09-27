@@ -170,6 +170,27 @@ tiles and the far floor within 2 to 3 levels of the doubled render. The light ti
 181 in red): the doubling made them reflect 1.33 times the light falling on them, and a subsurface finish reflects at
 most all of it, which `diffuse 1.2` reaches.
 
+## Subsurface light on objects with no inside
+
+Subsurface scattering needs a volume under the surface. On an object with no inside it is wrong, not just slow: the
+sampled method's rays from under the surface find nothing to cross, and a finish with subsurface drops its ordinary
+diffuse light, including `diffuse FRONT, BACK` light through the back of a sheet. The parser now removes subsurface from
+the finishes of such objects and warns once per object:
+
+    Subsurface scattering needs a solid object; this mesh has no inside_vector, so subsurface is ignored.
+    Subsurface scattering needs a solid object; this object's triangle parts have no inside, so subsurface is ignored on them.
+
+Objects with no inside are meshes without `inside_vector`, triangles, smooth triangles, polygons, bicubic patches and
+parametric surfaces, whether alone or as pieces of a CSG object. The check runs once the object is complete, so a texture
+set on a parent union or on a copy of a declared object counts, as do a mesh2's per-triangle textures and interior
+textures. The stripped texture is a copy made once per object, so a texture shared with solid objects keeps its subsurface
+there. Method 1 renders solid objects bit for bit as before.
+
+`tools/bench/sslt-sheet.pov`, 480×360, a leaf as a mesh2, the same leaf as a union of triangles and a sphere sharing
+their texture (`diffuse 0.6, 0.3` with subsurface), lit from behind: before, the leaves showed their triangles through
+grain, at 127.6, 160.7, 97.7 on average; now they take ordinary diffuse light, 106.5, 148.0, 82.0, smooth, with 0.3 of
+the light behind them showing through. The sphere's pixels are unchanged. The render takes 0.48 CPU-seconds, against 1.39.
+
 ## Subsurface light transport
 
 A subsurface shading point (`samples D, S` in `global_settings`) takes D diffuse sample points on the surface and S
@@ -240,8 +261,8 @@ object, and each crossing is a point standing for h²/|n|₁ of surface (h the g
 point per grid square on a patch facing an axis and no clumps. All crossings along a line are collected by testing it
 again past the farthest one found, since one test of a blob returns only the nearest interval. A point's normal is
 turned to point out of the object, by testing which side of it is inside: primitives report normals with no regard to
-a `difference` inverting them, and a mesh's follow its winding. Crossings whose sides cannot be told apart (open
-sheets, parts thinner than about a twentieth of the spacing, a union's inner surfaces) are dropped, and a cube that
+a `difference` inverting them, and a mesh's follow its winding. Crossings whose sides cannot be told apart (parts
+thinner than about a twentieth of the spacing, a union's inner surfaces) are dropped, and a cube that
 drops more than one in sixteen is left to method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The spacing is a
 128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
 cube comes nearest it if that is coarser, and never under a 1024th of the side; a pixel spans a size plus an angle
@@ -352,10 +373,6 @@ Tried and not kept:
   shadows differ (the slats over `sslt-lamps.pov`) came out up to 9 levels dark.
 - Measuring the covered share with the window taken at the points themselves: their jitter varies it by 5% on a flat
   surface, which showed as blotches wherever the correction came into play.
-- Open and thin sheets as two-sided points (kept with the surface's normal, never seen from behind, facing either way):
-  `sslt-leaves.pov` went from 252 Gcycles to 57, but was less accurate than method 1 at 74 samples: rms 2.88 against
-  the reference at 320×240 (method 1: 1.98), and 8-pixel blocks up to 6.8 levels off at 800×600 (method 1: 3.3).
-  Open sheets are left to method 1: `sslt-leaves.pov` takes 247.1 Gcycles with method 2 against 244.6 with method 1.
 - Handing no shading points over for bends and creases: a small concave dimple in `sslt-lamps.pov` came out 14 levels
   bright and block edges 6 levels dark.
 - Points where random lines cross the object: their clumps showed as faint mottling on wax and, summed raw near the
@@ -766,7 +783,7 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
-- Subsurface: method 2 still hands open sheets, sharp edges and creases to method 1, and samples single scattering
+- Subsurface: method 2 still hands sharp edges and creases to method 1, and samples single scattering
   from lights behind the surface. Just below the rim of `sslt-open.pov` Case 2, 8-pixel blocks at 800×600 are up to 6 levels off
   the reference at the default spacing, as a soft band rather than the stepped one before; at `spacing 0.5` they are
   within a level.
