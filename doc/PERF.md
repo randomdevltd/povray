@@ -356,9 +356,10 @@ a shadow ray to every light in the scene, most of them small lamps whose light f
 rays per gather ray. On `tools/bench/radiosity-lawn.pov` (a sun and 24 fading lamps over a lawn of thin blades)
 those shadow rays were 72% of the render.
 
-Gather rays now rank the lights at their hit by unshadowed contribution and shadow-test them brightest first, until
-the untested ones would carry at most 5% of it; those are scaled by the share of the tested light that got through.
-A sample averages 30 to 60 such rays, so the estimate's error stays far below the sample's own noise. Reflections and
+Gather rays at first ranked the lights at their hit by unshadowed contribution and shadow-tested them brightest
+first, until the untested ones would carry at most 5% of it; those were scaled by the share of the tested light that
+got through. A sample averages 30 to 60 such rays, so the estimate's error stayed far below the sample's own noise.
+"A sampled light for the faint rest" below replaces the 5% with a quarter and a drawn light. Reflections and
 refractions spawned by a gather ray are radiosity rays too and are lit the same way; camera rays and everything they
 spawn are lit exactly as before.
 
@@ -433,7 +434,7 @@ from 1.58 to 1.64 levels, with the same mean brightness.
 
 A gather-ray hit lit mostly by lamps still tested most of them to leave no more than 5% of its light untested. It
 now tests them brightest first only until the untested ones carry at most a quarter of its unshadowed light. Unless
-those carry under 5%, one of them, drawn in proportion to its light, then stands for them all, scaled by their total
+those carry 5% or less, one of them, drawn in proportion to its light, then stands for them all, scaled by their total
 over its own. The estimate is unbiased, and the draw hashes the hit point and ray direction, so it does not depend on
 thread order.
 
@@ -446,6 +447,13 @@ thread order.
 
 Against converged renders the lawn's error stays at 1.99 levels and the room's at 0.59; the close-up's goes from
 1.82 to 1.87, and that of a second 200 DPI window, of smooth ground, from 0.97 to 0.93.
+
+On stock scenes at 320×240, single-threaded: the Cornell box's nine nearly equal area lights leave the untested
+ones near the quarter at most hits, so a hit tests seven and draws one of the last two where it tested all nine. Its
+shadow rays go from 7.39 M to 6.69 M and its cycles from 15.2 G to 14.9 G; the image moves by 0.01 levels on
+average, and no step between tiles exceeds 0.03 levels, 0.23 at `count 15`; its error against a converged render
+stays at 0.82 levels, 1.58 at `count 15`. `patio-radio_37.pov` has one light, and `biscuit.pov` with radiosity added
+has one light that casts shadows; both render bit-identical.
 
 Drawing a light as soon as the brightest was tested cut the close-up's radiosity overhead by 42%, but the image
 showed the render's tiles. A sample's direct light at its gather-ray hits, against testing every light, then varied
@@ -483,6 +491,10 @@ as the rays they saved. With few lights tested per hit, a shadow ray is too chea
 A hierarchy over the lights for ranking them: with one pass to find the brightest, ranking took under 2% of the
 close-up's render threads, and a hit here has at most 13 lights to sort. Skipping the pretrace when a loaded cache
 covers the frame: the pretrace takes under a second of the close-up.
+
+Variance-driven gather counts were not attempted. On the lawn `count` moved the error less than `error_bound` at the
+same cost (see Settings), and the tile steps above came from per-sample variance, which fewer rays on quiet samples
+would raise.
 
 `shadow_threshold`, a global setting that let camera, reflected and refracted rays test their lights brightest first
 and stop once the untested ones could add at most a given share of the light found visible. Single-threaded trace
