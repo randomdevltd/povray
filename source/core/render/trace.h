@@ -590,9 +590,8 @@ class Trace
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
                                          ConstObjectPtr object, double relativeIor, double lightsourcedepth, Ray& lightsourceray,
                                          const MathColour& lightcolour, bool backside);
-        /// Whether to trace a reflected or refracted ray of the given weight spawned at a point hit by `ray`.
-        /// Below a gather ray, one whose share of its sample is under the ADC bailout survives with probability in
-        /// proportion to that share, `scale` being its compensating factor.
+        /// Whether to trace a reflection or refraction of this weight spawned by `ray`; below a gather ray, one whose share
+        /// of its sample is under the ADC bailout survives in proportion to it, and `scale` compensates.
         bool SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, double weight, unsigned int salt, double& scale);
         /// Classic lighting for radiosity rays: shadow-tests lights brightest first, and estimates the faint remainder
         /// from the visibility of those tested.

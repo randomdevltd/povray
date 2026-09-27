@@ -405,10 +405,6 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
   skipping any safely needs bounds on the density.
 - Subsurface: the diffuse sample rays and the entry rays of single scattering are most of its cost; caching
   irradiance at points on the surface across neighbouring pixels would remove the shadow rays, at the price of a cache.
-- Radiosity: a gather ray's reflections and refractions are traced to the camera's adaptive depth, although each is
-  one of 30 to 60 in its sample; judging them by their share of the sample cut a 200 DPI close-up's trace by 16% with
-  images 1 level darker at most, and Russian roulette would do it without the bias. Irradiance gradients would let a
-  larger `error_bound` keep its accuracy and lose the grass's brightening.
 - Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders
   they cut the lawn's blurred error by a third at `error_bound 0.6` and the Cornell box's by 37% for 5–7% more
   cycles, and ended the grass's brightening, but left the patio unchanged, made a close-up of the large scene 14–25%
