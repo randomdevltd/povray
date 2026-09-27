@@ -1,0 +1,15 @@
+/**
+
+@dir
+@ingroup PovLibraries
+@brief Source code of the _xsimd_ 3rd party library (headers only).
+
+This directory contains the headers of xsimd 13.2.0 (the last release requiring
+only C++11), and is part of the POV-Ray source distribution package. POV-Ray
+code uses it only through `core/math/simd.h`.
+
+Official xsimd source code can be obtained via <https://github.com/xtensor-stack/xsimd>.
+
+See `LICENSE` file in this directory for licensing information.
+
+*/
