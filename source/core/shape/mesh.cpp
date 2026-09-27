@@ -1415,7 +1415,9 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
         if (intersect_mesh_triangle(ray, triangle, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
         {
             found = true;
-            Best = std::min(Best, hit);
+            // Callers drop hits nearer than MIN_ISECT_DEPTH, shadow rays up to SMALL_TOLERANCE: those must not hide the rest.
+            if (hit / len > SMALL_TOLERANCE)
+                Best = std::min(Best, hit);
         }
         return false;
     });
