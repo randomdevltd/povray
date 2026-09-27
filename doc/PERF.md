@@ -472,6 +472,24 @@ second window; the shadow-cache changes already in this branch's base moved the 
 spread lights took 32% of the overhead's instructions off against 21%, but left the close-up's error at 1.95 levels,
 as high as one.
 
+### Tried and dropped
+
+Two caches of direct light at gather-ray hits. Irradiance from classic lights, kept per object, cell and normal, with
+cells sized from the gather ray's reach, was reused by 6–12% of hits on the lawn and saved nothing. Per-light
+visibility, kept per object and cell with cells sized from the distance to the camera and shared between threads, was
+reused by 38–55% of shadow tests and cut the lawn's shadow rays by up to 25%, but its lookups and locks cost as much
+as the rays they saved. With few lights tested per hit, a shadow ray is too cheap to cache.
+
+A hierarchy over the lights for ranking them: with one pass to find the brightest, ranking took under 2% of the
+close-up's render threads, and a hit here has at most 13 lights to sort. Skipping the pretrace when a loaded cache
+covers the frame: the pretrace takes under a second of the close-up.
+
+`shadow_threshold`, a global setting that let camera, reflected and refracted rays test their lights brightest first
+and stop once the untested ones could add at most a given share of the light found visible. Single-threaded trace
+CPU-s at 0 and 0.05: the lawn without radiosity 0.59 and 0.44, the stock `drums.pov` 0.80 and 0.61, the large scene's
+close-up 20.4 and 19.6. Dropped (owner): the gain was marginal on some scenes (4% on the large scene) and its visual
+cost was unpredictable without comparison renders; even 0.05 lost a real coloured shadow on `drums.pov`.
+
 ## Mesh triangles and shadow rays
 
 On the mesh bench above (`+WT1`, 960×720, `+A0.0 +R3`), three runs of each, interleaved, without the skip of a
