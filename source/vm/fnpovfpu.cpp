@@ -245,6 +245,7 @@ Density of instruction set: 916 / 1024 = 0.8945
 #include "base/povassert.h"
 
 // POV-Ray header files (core module)
+#include "core/math/simd.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
 
@@ -1318,6 +1319,349 @@ DBL POVFPU_RunScalar(FPUContext *context, FUNCTION fn)
     #undef VM_JUMP
 }
 
+typedef simd::Vec<DBL, POVFPU_LANES> LaneVec;
+typedef LaneVec::MaskType LaneMask;
+
+static_assert(POVFPU_LANES == 4, "kLaneOn lists four lanes");
+static const unsigned int kAllLanes = (1u << POVFPU_LANES) - 1;
+static const DBL kLaneOn[1 << POVFPU_LANES][POVFPU_LANES] =
+{
+    { 0, 0, 0, 0 }, { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 1, 1, 0, 0 }, { 0, 0, 1, 0 }, { 1, 0, 1, 0 }, { 0, 1, 1, 0 }, { 1, 1, 1, 0 },
+    { 0, 0, 0, 1 }, { 1, 0, 0, 1 }, { 0, 1, 0, 1 }, { 1, 1, 0, 1 }, { 0, 0, 1, 1 }, { 1, 0, 1, 1 }, { 0, 1, 1, 1 }, { 1, 1, 1, 1 }
+};
+
+static inline LaneMask MaskOf(unsigned int lanes) { return LaneVec::load(kLaneOn[lanes]) != LaneVec(0.0); }
+
+/// Runs a program for four points at once, each lane computing exactly what the scalar interpreter would.
+/// Lanes that branch apart keep their own program counters; the lowest runs next, so they meet again at joins.
+struct BatchRun final
+{
+    FPUContext *ctx;
+    FunctionVM *vm;
+    unsigned int unique;    // lanes [unique, 4) repeat lane unique - 1, so only the first `unique` call out
+    DBL *ls;                // lane stack: slot s of lane i at ls[s * 4 + i]
+    LaneVec r[8];
+    LaneMask lt;            // lanes whose last compare set "lower"
+    LaneMask eq;            // lanes whose last compare set "equal"
+
+    BatchRun(FPUContext *c, unsigned int u) : ctx(c), vm(c->functionvm.get()), unique(u), ls(c->lanestackbase)
+    {
+        for (int i = 0; i < 8; ++i)
+            r[i] = LaneVec(0.0);
+        lt = eq = (LaneVec(0.0) != LaneVec(0.0));
+    }
+
+    bool Reserve(unsigned int slots)
+    {
+        if (slots >= MAX_K)
+            return false;
+        if (slots > ctx->maxlanestacksize)
+        {
+            const unsigned int size = max(slots, ctx->maxlanestacksize + (unsigned int)INITIAL_DBL_STACK_SIZE);
+            DBL *p = reinterpret_cast<DBL *>(POV_MALLOC(sizeof(DBL) * POVFPU_LANES * size, "fn: lane stack"));
+            if (ctx->lanestackbase != nullptr)
+            {
+                std::memcpy(p, ctx->lanestackbase, sizeof(DBL) * POVFPU_LANES * ctx->maxlanestacksize);
+                POV_FREE(ctx->lanestackbase);
+            }
+            ctx->lanestackbase = p;
+            ctx->maxlanestacksize = size;
+        }
+        ls = ctx->lanestackbase;
+        return true;
+    }
+
+    POV_SIMD_INLINE void Put(unsigned int reg, LaneVec v, unsigned int act)
+    {
+        r[reg] = (act == kAllLanes) ? v : simd::select(MaskOf(act), v, r[reg]);
+    }
+
+    POV_SIMD_INLINE void Compare(LaneVec c, LaneVec d, unsigned int act)
+    {
+        if (act == kAllLanes)
+        {
+            lt = (c > d);
+            eq = (c == d);
+        }
+        else
+        {
+            const LaneMask m = MaskOf(act);
+            lt = (m & (c > d)) | (~m & lt);
+            eq = (m & (c == d)) | (~m & eq);
+        }
+    }
+
+    static POV_SIMD_INLINE LaneVec Flag(LaneMask m) { return simd::select(m, LaneVec(1.0), LaneVec(0.0)); }
+
+    /// Calls `f(lane values...)` for the active lanes that hold distinct points; repeats copy lane unique - 1.
+    template<typename F>
+    void PerLane(unsigned int act, DBL *v, F f) const
+    {
+        for (unsigned int i = 0; i < POVFPU_LANES; ++i)
+        {
+            if (act & (1u << i))
+                v[i] = (i < unique) ? f(i) : v[unique - 1];
+        }
+    }
+
+    bool CallTrap(FUNCTION fn, const VMOp& op, unsigned int sp, unsigned int act, bool vectorResult);
+    bool Frame(FUNCTION fn, unsigned int sp, unsigned int own, int depth);
+};
+
+bool BatchRun::CallTrap(FUNCTION fn, const VMOp& op, unsigned int sp, unsigned int act, bool vectorResult)
+{
+    const unsigned int window = op.a;
+    if (sp + window > ctx->maxlanestacksize)
+        return false;
+    if ((window > 0) && (window > ctx->maxdblstacksize))
+        ctx->SetLocal(window - 1, 0.0);
+
+    DBL result[POVFPU_LANES];
+    r[0].store(result);
+    for (unsigned int i = 0; i < POVFPU_LANES; ++i)
+    {
+        if (!(act & (1u << i)))
+            continue;
+        const unsigned int src = min(i, unique - 1);
+        if (i == src)
+        {
+            for (unsigned int j = 0; j < window; ++j)
+                ctx->dblstackbase[j] = ls[(sp + j) * POVFPU_LANES + i];
+            if (vectorResult)
+                POVFPU_TrapSTable[op.k].fn(ctx, ctx->dblstackbase, fn, 0);
+            else
+                result[i] = POVFPU_TrapTable[op.k].fn(ctx, ctx->dblstackbase, fn);
+        }
+        else if (!vectorResult)
+            result[i] = result[src];
+        if (vectorResult)
+        {
+            for (unsigned int j = 0; j < window; ++j)
+                ls[(sp + j) * POVFPU_LANES + i] = (i == src) ? ctx->dblstackbase[j] : ls[(sp + j) * POVFPU_LANES + src];
+        }
+    }
+    if (!vectorResult)
+        r[0] = LaneVec::load(result);
+    return true;
+}
+
+bool BatchRun::Frame(FUNCTION fn, unsigned int sp, unsigned int own, int depth)
+{
+    if (depth >= 64)
+        return false;
+
+    const vector<DBL>& consts(vm->consts);
+    const vector<DBL>& globals(vm->globals);
+    const VMOp *ops = vm->functions[fn].ops.data();
+    unsigned int pc = 0;
+    unsigned int live = own;
+    unsigned int act = own;
+    unsigned int lanePc[POVFPU_LANES] = { 0, 0, 0, 0 };
+    bool diverged = false;
+    DBL v[POVFPU_LANES];
+    DBL w[POVFPU_LANES];
+
+    for (;;)
+    {
+        const VMOp& op = ops[pc];
+        unsigned int next = pc + 1;
+        unsigned int taken = 0;
+        unsigned int slot = sp + op.k;
+
+        switch (op.code)
+        {
+            case VM_ADD:    Put(op.b, r[op.b] + r[op.a], act); break;
+            case VM_SUB:    Put(op.b, r[op.b] - r[op.a], act); break;
+            case VM_MUL:    Put(op.b, r[op.b] * r[op.a], act); break;
+            case VM_DIV:    Put(op.b, r[op.b] / r[op.a], act); break;
+            case VM_MOVE:   Put(op.b, r[op.a], act); break;
+            case VM_CMP:    Compare(r[op.a], r[op.b], act); break;
+            case VM_NEG:    Put(op.b, -r[op.a], act); break;
+            case VM_ABS:    Put(op.b, simd::abs(r[op.a]), act); break;
+            case VM_MOD:
+            case VM_MODI:
+                r[op.b].store(v);
+                if (op.code == VM_MOD)
+                    r[op.a].store(w);
+                PerLane(act, v, [&](unsigned int i) { return fmod(v[i], (op.code == VM_MOD) ? w[i] : consts[op.k]); });
+                r[op.b] = LaneVec::load(v);
+                break;
+
+            case VM_ADDI:   Put(op.b, r[op.b] + LaneVec(consts[op.k]), act); break;
+            case VM_SUBI:   Put(op.b, r[op.b] - LaneVec(consts[op.k]), act); break;
+            case VM_MULI:   Put(op.b, r[op.b] * LaneVec(consts[op.k]), act); break;
+            case VM_DIVI:   Put(op.b, r[op.b] / LaneVec(consts[op.k]), act); break;
+            case VM_LOADI:  Put(op.b, LaneVec(consts[op.k]), act); break;
+            case VM_CMPI:   Compare(LaneVec(consts[op.k]), r[op.b], act); break;
+
+            case VM_SEQ:    Put(op.b, Flag(eq), act); break;
+            case VM_SNE:    Put(op.b, Flag(~eq), act); break;
+            case VM_SLT:    Put(op.b, Flag(lt), act); break;
+            case VM_SLE:    Put(op.b, Flag(lt | eq), act); break;
+            case VM_SGT:    Put(op.b, Flag(~(lt | eq)), act); break;
+            case VM_SGE:    Put(op.b, Flag(~lt), act); break;
+            case VM_TEQ:    Put(op.b, Flag(r[op.b] == LaneVec(0.0)), act); break;
+            case VM_TNE:    Put(op.b, Flag(r[op.b] != LaneVec(0.0)), act); break;
+
+            case VM_LOADG:  Put(op.b, LaneVec(globals[op.k]), act); break;
+            case VM_LOADL:
+                if (slot >= ctx->maxlanestacksize)
+                    return false;
+                Put(op.b, LaneVec::load(ls + slot * POVFPU_LANES), act);
+                break;
+            case VM_STOREL:
+                if (slot >= ctx->maxlanestacksize)
+                    return false;
+                if (act == kAllLanes)
+                    r[op.b].store(ls + slot * POVFPU_LANES);
+                else
+                    simd::select(MaskOf(act), r[op.b], LaneVec::load(ls + slot * POVFPU_LANES)).store(ls + slot * POVFPU_LANES);
+                break;
+
+            case VM_BEQ:    taken = simd::bits(eq) & act; break;
+            case VM_BNE:    taken = simd::bits(~eq) & act; break;
+            case VM_BLT:    taken = simd::bits(lt) & act; break;
+            case VM_BLE:    taken = simd::bits(lt | eq) & act; break;
+            case VM_BGT:    taken = simd::bits(~(lt | eq)) & act; break;
+            case VM_BGE:    taken = simd::bits(~lt) & act; break;
+            case VM_JMP:    taken = act; break;
+
+            case VM_XEQ:    if (simd::bits(r[op.b] == LaneVec(0.0)) & act) POVFPU_Exception(ctx, fn); break;
+            case VM_XNE:    if (simd::bits(r[op.b] != LaneVec(0.0)) & act) POVFPU_Exception(ctx, fn); break;
+            case VM_XLT:    if (simd::bits(r[op.b] < LaneVec(0.0)) & act) POVFPU_Exception(ctx, fn); break;
+            case VM_XLE:    if (simd::bits(r[op.b] <= LaneVec(0.0)) & act) POVFPU_Exception(ctx, fn); break;
+            case VM_XGT:    if (simd::bits(r[op.b] > LaneVec(0.0)) & act) POVFPU_Exception(ctx, fn); break;
+            case VM_XGE:    if (simd::bits(r[op.b] >= LaneVec(0.0)) & act) POVFPU_Exception(ctx, fn); break;
+            case VM_XDZ:
+                if (simd::bits((r[0] == LaneVec(0.0)) & (r[op.b] == LaneVec(0.0))) & act)
+                    POVFPU_Exception(ctx, fn);
+                break;
+
+            case VM_RTS:
+                live &= ~act;
+                if (live == 0)
+                    return true;
+                break;
+            case VM_CALLF:
+                if ((slot >= ctx->maxlanestacksize) || !Frame(ops[pc + 1].k, slot, act, depth + 1))
+                    return false;
+                next = pc + 3;
+                break;
+            case VM_CALL:
+                if (!Frame(op.k, sp, act, depth + 1))
+                    return false;
+                break;
+
+            case VM_SQRT:   Put(0, simd::sqrt(r[0]), act); break;
+            case VM_SYS1:
+                r[0].store(v);
+                PerLane(act, v, [&](unsigned int i) { return POVFPU_Sys1Table[op.k](v[i]); });
+                r[0] = LaneVec::load(v);
+                break;
+            case VM_SYS2:
+                r[0].store(v);
+                r[1].store(w);
+                PerLane(act, v, [&](unsigned int i) { return POVFPU_Sys2Table[op.k](v[i], w[i]); });
+                r[0] = LaneVec::load(v);
+                break;
+            case VM_TRAP:
+            case VM_TRAPS:
+                if (!CallTrap(fn, op, sp, act, op.code == VM_TRAPS))
+                    return false;
+                break;
+
+            case VM_GROW:
+                if (!Reserve(slot + 1))
+                    return false;
+                break;
+            case VM_NOP:
+                break;
+            default:
+                return false;
+        }
+
+        const unsigned int target = op.k;
+        if (!diverged)
+        {
+            if (taken == 0)
+                pc = next;
+            else if (taken == act)
+                pc = target;
+            else
+            {
+                for (unsigned int i = 0; i < POVFPU_LANES; ++i)
+                    lanePc[i] = (taken & (1u << i)) ? target : next;
+                diverged = true;
+            }
+            if (!diverged)
+                continue;
+        }
+        else
+        {
+            for (unsigned int i = 0; i < POVFPU_LANES; ++i)
+            {
+                if (act & live & (1u << i))
+                    lanePc[i] = (taken & (1u << i)) ? target : next;
+            }
+        }
+
+        pc = ~0u;
+        act = 0;
+        for (unsigned int i = 0; i < POVFPU_LANES; ++i)
+        {
+            if (!(live & (1u << i)))
+                continue;
+            if (lanePc[i] < pc)
+            {
+                pc = lanePc[i];
+                act = 1u << i;
+            }
+            else if (lanePc[i] == pc)
+                act |= 1u << i;
+        }
+        diverged = (act != live);
+    }
+}
+
+void POVFPU_RunBatch(FPUContext *context, FUNCTION fn, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n)
+{
+    context->threaddata->Stats()[Ray_Function_VM_Calls] += (POV_ULONG)n;
+    for (int base = 0; base < n; base += POVFPU_LANES)
+    {
+        const int count = min(POVFPU_LANES, n - base);
+        BatchRun run(context, count);
+        bool done = run.Reserve(INITIAL_DBL_STACK_SIZE);
+        if (done)
+        {
+            for (int i = 0; i < POVFPU_LANES; ++i)
+            {
+                const int src = base + min(i, count - 1);
+                run.ls[0 * POVFPU_LANES + i] = x[src];
+                run.ls[1 * POVFPU_LANES + i] = y[src];
+                run.ls[2 * POVFPU_LANES + i] = z[src];
+            }
+            done = run.Frame(fn, 0, kAllLanes, 0);
+        }
+        if (done)
+        {
+            DBL out[POVFPU_LANES];
+            run.r[0].store(out);
+            for (int i = 0; i < count; ++i)
+                results[base + i] = out[i];
+        }
+        else
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                context->SetLocal(0, x[base + i]);
+                context->SetLocal(1, y[base + i]);
+                context->SetLocal(2, z[base + i]);
+                results[base + i] = POVFPU_RunScalar(context, fn);
+            }
+        }
+    }
+}
+
 /*****************************************************************************
 *
 * FUNCTION
@@ -1455,6 +1799,11 @@ DBL FunctionVM::CustomFunction::Execute(GenericFunctionContextPtr pGenericContex
     return POVFPU_Run (pContext, *mpFn);
 }
 
+void FunctionVM::CustomFunction::ExecuteBatch(GenericFunctionContextPtr pGenericContext, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n)
+{
+    POVFPU_RunBatch(GetFPUContextPtr(pGenericContext), *mpFn, x, y, z, results, n);
+}
+
 GenericScalarFunctionPtr FunctionVM::CustomFunction::Clone() const
 {
     return new CustomFunction(mpVm.get(), mpVm->CopyFunction(mpFn));
@@ -1490,7 +1839,9 @@ FPUContext::FPUContext(FunctionVM* pVm, TraceThreadData* pThreadData) :
     pstackbase(reinterpret_cast<StackFrame *>(POV_MALLOC(sizeof(StackFrame) * MAX_CALL_STACK_SIZE, "fn: pstack"))),
     functionvm(pVm),
     threaddata(pThreadData),
-    nextArgument(0)
+    nextArgument(0),
+    lanestackbase(nullptr),
+    maxlanestacksize(0)
 {
     #if (SYS_FUNCTIONS == 1)
     context->dblstack = context->dblstackbase;
@@ -1501,6 +1852,8 @@ FPUContext::~FPUContext()
 {
     POV_FREE(dblstackbase);
     POV_FREE(pstackbase);
+    if (lanestackbase != nullptr)
+        POV_FREE(lanestackbase);
 }
 
 }

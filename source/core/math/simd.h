@@ -154,6 +154,7 @@ template<typename T> POV_SIMD_INLINE SVec<T> fma(SVec<T> a, SVec<T> b, SVec<T> c
 template<typename T> POV_SIMD_INLINE SVec<T> min(SVec<T> a, SVec<T> b) { return (a.v < b.v) ? a : b; }
 template<typename T> POV_SIMD_INLINE SVec<T> max(SVec<T> a, SVec<T> b) { return (a.v > b.v) ? a : b; }
 template<typename T> POV_SIMD_INLINE SVec<T> sqrt(SVec<T> a) { return SVec<T>(std::sqrt(a.v)); }
+template<typename T> POV_SIMD_INLINE SVec<T> abs(SVec<T> a) { return SVec<T>(std::fabs(a.v)); }
 template<typename T> POV_SIMD_INLINE SVec<T> select(SMask<T> m, SVec<T> a, SVec<T> b) { return m.m ? a : b; }
 template<typename T> POV_SIMD_INLINE bool any(SMask<T> m) { return m.m; }
 template<typename T> POV_SIMD_INLINE bool all(SMask<T> m) { return m.m; }
@@ -207,6 +208,7 @@ POV_SIMD_INLINE NVec<T, N> fma(NVec<T, N> a, NVec<T, N> b, NVec<T, N> c) { retur
 template<typename T, int N> POV_SIMD_INLINE NVec<T, N> min(NVec<T, N> a, NVec<T, N> b) { return NVec<T, N>(xsimd::min(a.v, b.v)); }
 template<typename T, int N> POV_SIMD_INLINE NVec<T, N> max(NVec<T, N> a, NVec<T, N> b) { return NVec<T, N>(xsimd::max(a.v, b.v)); }
 template<typename T, int N> POV_SIMD_INLINE NVec<T, N> sqrt(NVec<T, N> a) { return NVec<T, N>(xsimd::sqrt(a.v)); }
+template<typename T, int N> POV_SIMD_INLINE NVec<T, N> abs(NVec<T, N> a) { return NVec<T, N>(xsimd::abs(a.v)); }
 template<typename T, int N>
 POV_SIMD_INLINE NVec<T, N> select(NMask<T, N> m, NVec<T, N> a, NVec<T, N> b) { return NVec<T, N>(xsimd::select(m.m, a.v, b.v)); }
 template<typename T, int N> POV_SIMD_INLINE bool any(NMask<T, N> m) { return xsimd::any(m.m); }
@@ -271,6 +273,7 @@ POV_SIMD_INLINE PVec<T, N> min(PVec<T, N> a, PVec<T, N> b) { return PVec<T, N>(m
 template<typename T, int N>
 POV_SIMD_INLINE PVec<T, N> max(PVec<T, N> a, PVec<T, N> b) { return PVec<T, N>(max(a.lo, b.lo), max(a.hi, b.hi)); }
 template<typename T, int N> POV_SIMD_INLINE PVec<T, N> sqrt(PVec<T, N> a) { return PVec<T, N>(sqrt(a.lo), sqrt(a.hi)); }
+template<typename T, int N> POV_SIMD_INLINE PVec<T, N> abs(PVec<T, N> a) { return PVec<T, N>(abs(a.lo), abs(a.hi)); }
 template<typename T, int N>
 POV_SIMD_INLINE PVec<T, N> select(PMask<T, N> m, PVec<T, N> a, PVec<T, N> b)
 {
