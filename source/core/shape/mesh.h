@@ -135,6 +135,11 @@ struct MeshIndexColumn final
     void Finish(const Mesh_Triangle_Struct *triangles, size_t n, bool vertexLike, bool (*relevant)(const Mesh_Triangle_Struct&));
 };
 
+struct MeshTriangleDecode;
+
+/// A number no other mesh data has had in this run, so per-thread copies of triangles cannot outlive their mesh.
+std::uint64_t Mesh_Data_Serial();
+
 struct Mesh_Data_Struct final
 {
     int References = 0;                     ///< Number of references to the mesh.
@@ -152,6 +157,7 @@ struct Mesh_Data_Struct final
     MeshIndexColumn Texture23Ind {2, -1};   ///< The second and third texture of a colour-interpolated triangle.
     FlatMeshBBoxTree *FlatTree = nullptr;       ///< Bounding box tree for mesh, flattened; leaf ids are triangle indices.
     Vector3d Inside_Vect;                   ///< vector to use to test 'inside'
+    std::uint64_t Serial = Mesh_Data_Serial();
 };
 using MESH_DATA = Mesh_Data_Struct; ///< @deprecated
 
@@ -212,7 +218,7 @@ class Mesh final : public ObjectBase
         MeshIndex Mesh_Hash_Normal(MeshIndex *Number_Of_Normals, MeshIndex *Max_Normals, MeshVector **Normals, const Vector3d& Normal);
         MeshIndex Mesh_Hash_Texture(MeshIndex *Number_Of_Textures, MeshIndex *Max_Textures, TEXTURE ***Textures, TEXTURE *Texture);
         MeshIndex Mesh_Hash_UV(MeshIndex *Number, MeshIndex *Max, MeshUVVector **Elements, const Vector2d& aPoint);
-        void Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, const Vector3d& IPoint) const;
+        void Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, const Vector3d& IPoint, TraceThreadData *Thread) const;
         /// The triangle's unit normal, as the vertices first gave it.
         Vector3d Face_Normal(const MESH_TRIANGLE *Triangle) const;
         MeshIndex UV_Index(const MESH_TRIANGLE *Triangle, int k) const { return Data->UVInd.Get(*Triangle, size_t(Triangle - Data->Triangles), k); }
@@ -223,6 +229,8 @@ class Mesh final : public ObjectBase
         void Compute_Mesh_BBox();
         void MeshUV(const Vector3d& P, const MESH_TRIANGLE *Triangle, Vector2d& Result) const;
         bool intersect_mesh_triangle(const BasicRay& ray, const MESH_TRIANGLE *Triangle, DBL *Depth) const;
+        bool intersect_mesh_triangle(const BasicRay& ray, MeshIndex i, TraceThreadData *Thread, DBL *Depth) const;
+        MeshTriangleDecode& decoded_triangle(MeshIndex i, TraceThreadData *Thread) const;
         bool test_hit(const MESH_TRIANGLE *Triangle, const BasicRay& OrigRay, DBL Depth, DBL len, IStack& Depth_Stack, TraceThreadData *Thread);
         void get_triangle_bbox(const MESH_TRIANGLE *Triangle, BoundingBox *BBox) const;
         bool intersect_bbox_tree(const BasicRay& ray, const BasicRay& Orig_Ray, DBL len, IStack& Depth_Stack, TraceThreadData *Thread);

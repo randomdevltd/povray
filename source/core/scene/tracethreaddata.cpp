@@ -82,6 +82,9 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
 
     Facets_Last_Seed = 0x80000000;
 
+    for (MeshTriangleDecode& d : meshDecodes)
+        d.mesh = 0;
+
     timeType = kUnknownTime;
     cpuTime = 0;
     realTime = 0;
