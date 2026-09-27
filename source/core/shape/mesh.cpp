@@ -147,7 +147,7 @@ bool Mesh::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 {
     Thread->Stats()[Ray_Mesh_Tests]++;
 
-    if (Intersect(ray, Depth_Stack, Thread))
+    if (Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread))
     {
         Thread->Stats()[Ray_Mesh_Tests_Succeeded]++;
         return(true);
@@ -184,7 +184,20 @@ bool Mesh::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 *
 ******************************************************************************/
 
-bool Mesh::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread)
+DBL Mesh::mesh_ray(const BasicRay& ray, BasicRay& New_Ray) const
+{
+    if (Trans == nullptr)
+    {
+        New_Ray = ray;
+        return 1.0;
+    }
+    MInvTransRay(New_Ray, ray, Trans);
+    const DBL len = New_Ray.Direction.length();
+    New_Ray.Direction /= len;
+    return len;
+}
+
+bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     MeshIndex i;
     bool found;
@@ -193,19 +206,7 @@ bool Mesh::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *
 
     /* Transform the ray into mesh space. */
 
-    if (Trans != nullptr)
-    {
-        MInvTransRay(New_Ray, ray, Trans);
-
-        len = New_Ray.Direction.length();
-        New_Ray.Direction /= len;
-    }
-    else
-    {
-        New_Ray = ray;
-
-        len = 1.0;
-    }
+    len = mesh_ray(ray, New_Ray);
 
     found = false;
 
@@ -228,7 +229,7 @@ bool Mesh::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *
     {
         /* Use the mesh's bounding hierarchy. */
 
-        return(intersect_bbox_tree(New_Ray, ray, len, Depth_Stack, Thread));
+        return(intersect_bbox_tree(New_Ray, ray, len, shadow, Depth_Stack, Thread));
     }
 
     return(found);
@@ -1448,10 +1449,22 @@ void Mesh::Build_Mesh_BBox_Tree()
 *
 ******************************************************************************/
 
-bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, IStack& Depth_Stack, TraceThreadData *Thread)
+static int octant(const Vector3d& direction)
+{
+    return int(direction[X] < 0.0) | (int(direction[Y] < 0.0) << 1) | (int(direction[Z] < 0.0) << 2);
+}
+
+static MeshShadowHint& shadow_hint(TraceThreadData *Thread, const void *mesh, int o)
+{
+    const std::uint64_t h = (std::uint64_t(reinterpret_cast<std::uintptr_t>(mesh)) >> 4) * 0x9E3779B97F4A7C15ull;
+    return Thread->meshShadowHints[(int(h >> 58) + o) & (TraceThreadData::MESH_SHADOW_HINTS - 1)];
+}
+
+bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     bool found = false;
     DBL Best = BOUND_HUGE;
+    std::int32_t nearest = -1;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
         const MESH_TRIANGLE *triangle = &Data->Triangles[leaf];
@@ -1460,12 +1473,41 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
         {
             found = true;
             // Callers drop hits nearer than MIN_ISECT_DEPTH, shadow rays up to SMALL_TOLERANCE: those must not hide the rest.
-            if (hit / len > SMALL_TOLERANCE)
-                Best = std::min(Best, hit);
+            if ((hit / len > SMALL_TOLERANCE) && (hit < Best))
+            {
+                Best = hit;
+                nearest = leaf;
+            }
         }
         return false;
     });
+    if (shadow && (nearest >= 0))
+    {
+        const int o = octant(ray.Direction);
+        shadow_hint(Thread, Data, o) = MeshShadowHint{Data, o, nearest};
+    }
     return found;
+}
+
+bool Mesh::Shadow_Hint_Intersection(const Ray& ray, Intersection *isect, TraceThreadData *Thread)
+{
+    BasicRay New_Ray;
+    const DBL len = mesh_ray(ray, New_Ray);
+    const int o = octant(New_Ray.Direction);
+    const MeshShadowHint& hint = shadow_hint(Thread, Data, o);
+    if ((Data->FlatTree == nullptr) || (hint.mesh != Data) || (hint.octant != o) || (hint.triangle >= Data->Number_Of_Triangles))
+        return false;
+    if (!Bound.empty() && !Ray_In_Bound(ray, Bound, Thread))
+        return false;
+
+    DBL hit;
+    if (!intersect_mesh_triangle(New_Ray, hint.triangle, Thread, &hit) || (hit / len < MIN_ISECT_DEPTH))
+        return false;
+    const Vector3d IPoint = ray.Evaluate(hit / len);
+    if (!Clip.empty() && !Point_In_Clip(IPoint, Clip, Thread))
+        return false;
+    *isect = Intersection(hit / len, IPoint, this, &Data->Triangles[hint.triangle]);
+    return true;
 }
 
 
