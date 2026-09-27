@@ -43,9 +43,13 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <memory>
 
 // POV-Ray header files (base module)
-//  (none at the moment)
+#include "base/fileinputoutput.h"
+#include "base/pov_mem.h"
+#include "base/stringutilities.h"
+#include "base/textstream.h"
 
 // POV-Ray header files (core module)
 #include "core/material/interior.h"
@@ -63,6 +67,7 @@ namespace pov_parser
 using namespace pov;
 
 using std::max;
+using std::shared_ptr;
 using std::vector;
 
 static const int kMaxObjBufferSize = 1024;
@@ -277,7 +282,10 @@ void Parser::Parse_Obj (Mesh* mesh)
 
     stream = Locate_File (fileName, POV_File_Text_OBJ, ign, true);
     if (stream != nullptr)
-        textStream = new IBufferedTextStream (fileName, stream.get());
+    {
+        stream.reset();
+        textStream = new IBufferedTextStream (ign.c_str(), POV_File_Text_OBJ);
+    }
     if (!textStream)
         Error ("Cannot open obj file %s.", UCS2toSysString(fileName).c_str());
 
@@ -351,10 +359,6 @@ void Parser::Parse_Obj (Mesh* mesh)
                         Error ("Inconsistent use of UV indices in obj file %s line %i", UCS2toSysString(fileName).c_str(), (int)textStream->line());
                     if ((haveNormal != 0) && (haveNormal != haveVertices))
                         Error ("Inconsistent use of normal indices in obj file %s line %i", UCS2toSysString(fileName).c_str(), (int)textStream->line());
-                    if (haveNormal > 0)
-                        faceList.push_back (face);
-                    else
-                        flatFaceList.push_back (face);
                 }
                 break;
 
@@ -479,13 +483,14 @@ void Parser::Parse_Obj (Mesh* mesh)
         for (size_t i = 0; i < normalList.size(); ++i)
         {
             Vector3d& n = normalList[i];
-            if ((fabs(n.x()) < EPSILON) && (fabs(n.x()) < EPSILON) && (fabs(n.z()) < EPSILON))
+            if ((fabs(n.x()) < EPSILON) && (fabs(n.y()) < EPSILON) && (fabs(n.z()) < EPSILON))
             {
                 n.x() = 1.0;  // make it nonzero
                 if (!foundZeroNormal)
                     Warning("Normal vector in mesh2 cannot be zero - changing it to <1,0,0>.");
                 foundZeroNormal = true;
             }
+            n.normalize();
             normalArray[i] = MeshVector(n);
         }
     }
@@ -554,7 +559,7 @@ void Parser::Parse_Obj (Mesh* mesh)
     if (fullyTextured)
         mesh->Type |= TEXTURED_OBJECT;
 
-    mesh->has_inside_vector = insideVector.IsNearNull (EPSILON);
+    mesh->has_inside_vector = !insideVector.IsNearNull (EPSILON);
     if (mesh->has_inside_vector)
     {
         mesh->Data->Inside_Vect = insideVector.normalized();
