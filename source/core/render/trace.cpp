@@ -2143,14 +2143,13 @@ struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
 // Any opaque hit in the shadow window blacks the light out, whether or not it is the nearest.
 struct OpaqueShadowStopCondition final : public IntersectionStopCondition
 {
-    ConstObjectPtr cacheObject;
     double farthest;
 
-    OpaqueShadowStopCondition(ConstObjectPtr cache, double limit) : cacheObject(cache), farthest(limit) {}
+    explicit OpaqueShadowStopCondition(double limit) : farthest(limit) {}
 
     virtual bool operator()(const Intersection& isect) const override
     {
-        if ((isect.Object == cacheObject) || (isect.Depth >= farthest))
+        if (isect.Depth >= farthest)
             return false;
         ConstObjectPtr testObject = (isect.Csg != nullptr ? isect.Csg : isect.Object);
         return Test_Flag(isect.Object, OPAQUE_FLAG) && Test_Flag(testObject, OPAQUE_FLAG);
@@ -2212,6 +2211,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             {
                 if(!Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG))
                 {
+                    // A part that lets light through is left to the walk below, which filters it once.
+                    const MathColour unfiltered = lightcolour;
                     ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
 
                     if(lightcolour.IsNearZero(EPSILON) &&
@@ -2222,9 +2223,9 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                         threadData->Stats()[Shadow_Cache_Hits]++;
                         return;
                     }
+                    lightcolour = unfiltered;
                 }
-                else
-                    cacheObject = nullptr;
+                cacheObject = nullptr;
             }
             else
             {
@@ -2245,13 +2246,13 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
 
         if (qualityFlags.shadows && (sceneData->boundingMethod == 1) && (sceneData->flatSlabs != nullptr))
         {
-            OpaqueShadowStopCondition stop(cacheObject, std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth));
+            OpaqueShadowStopCondition stop(std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth));
             foundIntersection = Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
         }
         else
             foundIntersection = FindIntersection(boundedIntersection, lightsourceray, precond, postcond);
 
-        if((foundIntersection == true) && (boundedIntersection.Object != cacheObject) &&
+        if((foundIntersection == true) &&
            (boundedIntersection.Depth < lightsourcedepth - SHADOW_TOLERANCE) &&
            (lightsourcedepth - boundedIntersection.Depth > projectedDepth) &&
            (boundedIntersection.Depth > SHADOW_TOLERANCE))
