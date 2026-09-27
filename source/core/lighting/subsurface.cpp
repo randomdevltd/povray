@@ -38,7 +38,8 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
+#include <functional>
 
 // POV-Ray header files (base module)
 #include "base/mathutil.h"
@@ -117,6 +118,123 @@ PreciseMathColour SubsurfaceInterior::GetReducedAlbedo(const MathColour& diffuse
     for (int i = 0; i < MathColour::channels; i ++)
         result[i] = (precomputedReducedAlbedo.get())(diffuseReflectance[i]);
     return result;
+}
+
+// Points in all subsurface clouds together: about 120 bytes each with the hierarchy, and 12 more per light.
+static const size_t kSubsurfacePointBudget = size_t(1) << 20;
+
+size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
+{
+    size_t h = std::hash<const void*>()(k.object);
+    for (int v : { k.sizeLevel, k.x, k.y, k.z })
+        h = h * 1000003u ^ std::hash<int>()(v);
+    return h;
+}
+
+std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey& key, bool& build)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::shared_ptr<SubsurfaceCell>& slot = cells[key];
+    build = (slot == nullptr);
+    if (build)
+        slot = std::make_shared<SubsurfaceCell>();
+    return slot;
+}
+
+bool SubsurfaceCache::Reserve(size_t points)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (reserved + points > kSubsurfacePointBudget)
+        return false;
+    reserved += points;
+    return true;
+}
+
+
+void SubsurfaceCache::Release(size_t points)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    reserved -= std::min(points, reserved);
+}
+
+void SubsurfaceCache::SetCamera(const Vector3d& location, double pixelAngle)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (cameraSet)
+        return;
+    cameraLocation = location;
+    cameraPixelAngle = pixelAngle;
+    cameraSet = true;
+}
+
+bool SubsurfaceCache::GetCamera(Vector3d& location, double& pixelAngle) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    location = cameraLocation;
+    pixelAngle = cameraPixelAngle;
+    return cameraSet;
+}
+
+// Splits the points at the median of the longest axis until four or fewer remain.
+static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector<SubsurfaceNode>& nodes, int first, int count)
+{
+    int index = int(nodes.size());
+    nodes.emplace_back();
+    SubsurfaceNode node;
+    node.lo = node.hi = points[first].position;
+    node.centre = Vector3d(0.0);
+    node.area = 0.0f;
+    Vector3d normal(0.0);
+    for (int j = 0; j < MathColour::channels; j++)
+        node.irradiance[j] = 0.0f;
+    for (int i = first; i < first + count; i++)
+    {
+        const SubsurfacePoint& p = points[i];
+        for (int a = 0; a < 3; a++)
+        {
+            node.lo[a] = std::min(node.lo[a], p.position[a]);
+            node.hi[a] = std::max(node.hi[a], p.position[a]);
+            normal[a] += p.normal[a] * p.area;
+        }
+        for (int j = 0; j < MathColour::channels; j++)
+            node.irradiance[j] += p.irradiance[j] * p.area;
+        node.centre += p.position * p.area;
+        node.area += p.area;
+    }
+    node.centre /= std::max(double(node.area), 1e-30);
+    normal = (normal.length() > 0.0) ? normal.normalized() : Vector3d(0.0);
+    node.cone = 1.0f;
+    for (int i = first; i < first + count; i++)
+        node.cone = std::min(node.cone, float(points[i].normal[0] * normal[X] + points[i].normal[1] * normal[Y] + points[i].normal[2] * normal[Z]));
+    for (int a = 0; a < 3; a++)
+        node.normal[a] = float(normal[a]);
+    if (count <= 4)
+    {
+        node.first = first;
+        node.count = count;
+        nodes[index] = node;
+        return index;
+    }
+    Vector3d extent = node.hi - node.lo;
+    int axis = (extent[X] >= extent[Y] && extent[X] >= extent[Z]) ? X : (extent[Y] >= extent[Z] ? Y : Z);
+    int half = count / 2;
+    std::nth_element(points.begin() + first, points.begin() + first + half, points.begin() + first + count,
+                     [axis](const SubsurfacePoint& a, const SubsurfacePoint& b) { return a.position[axis] < b.position[axis]; });
+    node.count = 0;
+    nodes[index] = node;
+    BuildSubsurfaceNode(points, nodes, first, half);
+    nodes[index].first = BuildSubsurfaceNode(points, nodes, first + half, count - half);
+    return index;
+}
+
+void SubsurfaceCell::BuildHierarchy()
+{
+    nodes.clear();
+    if (!points.empty())
+    {
+        nodes.reserve(points.size());
+        BuildSubsurfaceNode(points, nodes, 0, int(points.size()));
+    }
 }
 
 }
