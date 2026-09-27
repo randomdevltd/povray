@@ -236,6 +236,8 @@ class ObjectBase
         virtual bool Precompute() { return true; }
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) = 0; // could be "const", if it wasn't for isosurface max_gradient estimation stuff
+        /// Any hit on the part that blocked this thread's last shadow ray in a similar direction, if this ray crosses it too.
+        virtual bool Shadow_Hint_Intersection(const Ray&, Intersection *, TraceThreadData *) { return false; }
         virtual double GetPotential (const Vector3d&, bool subtractThreshold, TraceThreadData *) const;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const = 0;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const = 0;

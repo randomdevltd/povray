@@ -84,6 +84,14 @@ struct MeshTriangleDecode final
     bool framed;
 };
 
+/// The triangle of a mesh that last blocked a shadow ray heading into one octant of directions.
+struct MeshShadowHint final
+{
+    const void *mesh;
+    std::int32_t octant;
+    std::int32_t triangle;
+};
+
 using namespace pov_base;
 
 class PhotonMap;
@@ -153,6 +161,8 @@ class TraceThreadData : public ThreadData
 
         static const int MESH_DECODES = 256;
         MeshTriangleDecode meshDecodes[MESH_DECODES];
+        static const int MESH_SHADOW_HINTS = 64;
+        MeshShadowHint meshShadowHints[MESH_SHADOW_HINTS];
 
         // data for waves and ripples pattern
         unsigned int numberOfWaves;
