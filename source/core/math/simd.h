@@ -155,6 +155,19 @@ template<typename T> POV_SIMD_INLINE SVec<T> min(SVec<T> a, SVec<T> b) { return 
 template<typename T> POV_SIMD_INLINE SVec<T> max(SVec<T> a, SVec<T> b) { return (a.v > b.v) ? a : b; }
 template<typename T> POV_SIMD_INLINE SVec<T> sqrt(SVec<T> a) { return SVec<T>(std::sqrt(a.v)); }
 template<typename T> POV_SIMD_INLINE SVec<T> abs(SVec<T> a) { return SVec<T>(std::fabs(a.v)); }
+
+#define POV_SIMD_MATH1(f) \
+    template<typename T> POV_SIMD_INLINE SVec<T> f(SVec<T> a) { return SVec<T>(std::f(a.v)); }
+#define POV_SIMD_MATH2(f) \
+    template<typename T> POV_SIMD_INLINE SVec<T> f(SVec<T> a, SVec<T> b) { return SVec<T>(std::f(a.v, b.v)); }
+#define POV_SIMD_MATH_ALL(M1, M2) \
+    M1(sin) M1(cos) M1(tan) M1(asin) M1(acos) M1(atan) M1(sinh) M1(cosh) M1(tanh) M1(asinh) M1(acosh) M1(atanh) \
+    M1(exp) M1(log) M1(log10) M2(pow) M2(atan2)
+
+POV_SIMD_MATH_ALL(POV_SIMD_MATH1, POV_SIMD_MATH2)
+
+#undef POV_SIMD_MATH1
+#undef POV_SIMD_MATH2
 template<typename T> POV_SIMD_INLINE SVec<T> select(SMask<T> m, SVec<T> a, SVec<T> b) { return m.m ? a : b; }
 template<typename T> POV_SIMD_INLINE bool any(SMask<T> m) { return m.m; }
 template<typename T> POV_SIMD_INLINE bool all(SMask<T> m) { return m.m; }
@@ -209,6 +222,62 @@ template<typename T, int N> POV_SIMD_INLINE NVec<T, N> min(NVec<T, N> a, NVec<T,
 template<typename T, int N> POV_SIMD_INLINE NVec<T, N> max(NVec<T, N> a, NVec<T, N> b) { return NVec<T, N>(xsimd::max(a.v, b.v)); }
 template<typename T, int N> POV_SIMD_INLINE NVec<T, N> sqrt(NVec<T, N> a) { return NVec<T, N>(xsimd::sqrt(a.v)); }
 template<typename T, int N> POV_SIMD_INLINE NVec<T, N> abs(NVec<T, N> a) { return NVec<T, N>(xsimd::abs(a.v)); }
+
+namespace detail
+{
+
+/// xsimd reduces trigonometric arguments by the method all lanes allow, so lanes go through `f` in groups that need
+/// the same one; each lane then gets what it would alone. `f` must be a sin, cos or tan.
+template<typename T, int N, typename F>
+POV_SIMD_INLINE NVec<T, N> TrigByLane(NVec<T, N> a, F f)
+{
+    typedef typename NVec<T, N>::Batch B;
+    const B x = xsimd::abs(a.v);
+    const std::uint32_t all = (N >= 32) ? ~0u : ((1u << N) - 1);
+    const std::uint32_t upTo[4] = { std::uint32_t((x <= xsimd::constants::pio4<B>()).mask()),
+                                    std::uint32_t((x <= xsimd::constants::pio2<B>()).mask()),
+                                    std::uint32_t((x <= xsimd::constants::twentypi<B>()).mask()),
+                                    std::uint32_t((x <= xsimd::constants::mediumpi<B>()).mask()) };
+    std::uint32_t done = 0;
+    B result = a.v;
+    for (int c = 0; (c <= 4) && (done != all); ++c)
+    {
+        const std::uint32_t lanes = ((c < 4) ? upTo[c] : all) & ~done;
+        if (lanes == 0)
+            continue;
+        T v[N];
+        a.v.store_unaligned(v);
+        int rep = 0;
+        while (!((lanes >> rep) & 1u))
+            ++rep;
+        for (int k = 0; k < N; ++k)
+            if (!((lanes >> k) & 1u))
+                v[k] = v[rep];
+        result = xsimd::select(B::batch_bool_type::from_mask(lanes), f(B::load_unaligned(v)), result);
+        done |= lanes;
+    }
+    return NVec<T, N>(result);
+}
+
+}
+// end of namespace detail
+
+#define POV_SIMD_MATH1(f) \
+    template<typename T, int N> POV_SIMD_INLINE NVec<T, N> f(NVec<T, N> a) { return NVec<T, N>(xsimd::f(a.v)); }
+#define POV_SIMD_TRIG(f) \
+    template<typename T, int N> POV_SIMD_INLINE NVec<T, N> f(NVec<T, N> a) \
+    { return detail::TrigByLane(a, [](typename NVec<T, N>::Batch b) { return xsimd::f(b); }); }
+#define POV_SIMD_MATH2(f) \
+    template<typename T, int N> POV_SIMD_INLINE NVec<T, N> f(NVec<T, N> a, NVec<T, N> b) { return NVec<T, N>(xsimd::f(a.v, b.v)); }
+
+POV_SIMD_TRIG(sin) POV_SIMD_TRIG(cos) POV_SIMD_TRIG(tan)
+POV_SIMD_MATH1(asin) POV_SIMD_MATH1(acos) POV_SIMD_MATH1(atan) POV_SIMD_MATH1(sinh) POV_SIMD_MATH1(cosh) POV_SIMD_MATH1(tanh)
+POV_SIMD_MATH1(asinh) POV_SIMD_MATH1(acosh) POV_SIMD_MATH1(atanh) POV_SIMD_MATH1(exp) POV_SIMD_MATH1(log) POV_SIMD_MATH1(log10)
+POV_SIMD_MATH2(pow) POV_SIMD_MATH2(atan2)
+
+#undef POV_SIMD_MATH1
+#undef POV_SIMD_TRIG
+#undef POV_SIMD_MATH2
 template<typename T, int N>
 POV_SIMD_INLINE NVec<T, N> select(NMask<T, N> m, NVec<T, N> a, NVec<T, N> b) { return NVec<T, N>(xsimd::select(m.m, a.v, b.v)); }
 template<typename T, int N> POV_SIMD_INLINE bool any(NMask<T, N> m) { return xsimd::any(m.m); }
@@ -274,6 +343,17 @@ template<typename T, int N>
 POV_SIMD_INLINE PVec<T, N> max(PVec<T, N> a, PVec<T, N> b) { return PVec<T, N>(max(a.lo, b.lo), max(a.hi, b.hi)); }
 template<typename T, int N> POV_SIMD_INLINE PVec<T, N> sqrt(PVec<T, N> a) { return PVec<T, N>(sqrt(a.lo), sqrt(a.hi)); }
 template<typename T, int N> POV_SIMD_INLINE PVec<T, N> abs(PVec<T, N> a) { return PVec<T, N>(abs(a.lo), abs(a.hi)); }
+
+#define POV_SIMD_MATH1(f) \
+    template<typename T, int N> POV_SIMD_INLINE PVec<T, N> f(PVec<T, N> a) { return PVec<T, N>(f(a.lo), f(a.hi)); }
+#define POV_SIMD_MATH2(f) \
+    template<typename T, int N> POV_SIMD_INLINE PVec<T, N> f(PVec<T, N> a, PVec<T, N> b) { return PVec<T, N>(f(a.lo, b.lo), f(a.hi, b.hi)); }
+
+POV_SIMD_MATH_ALL(POV_SIMD_MATH1, POV_SIMD_MATH2)
+
+#undef POV_SIMD_MATH1
+#undef POV_SIMD_MATH2
+#undef POV_SIMD_MATH_ALL
 template<typename T, int N>
 POV_SIMD_INLINE PVec<T, N> select(PMask<T, N> m, PVec<T, N> a, PVec<T, N> b)
 {
