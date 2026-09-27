@@ -461,7 +461,8 @@ void RadiosityFunction::ComputeAmbient(const Vector3d& ipoint, const Vector3d& r
     ambient_colour *= settings.brightness;
 }
 
-// Pretrace and loaded samples only (a final-trace query from no tile); if none is near, wider bounds, deeper bounces.
+// Pretrace and loaded samples only (a final-trace query from tile -1, which no sample has); if none is near, wider
+// bounds, then deeper bounces.
 bool RadiosityFunction::LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour)
 {
     if (!isFinalTrace)
@@ -471,7 +472,7 @@ bool RadiosityFunction::LookupPretraceAmbient(const Vector3d& ipoint, const Vect
         for (DBL widen = 1.0; widen <= 4.0; widen *= 2.0)
         {
             if (radiosityCache.FindReusableBlock(threadData->Stats(), errorBound * recursionSettings[depth].errorBoundFactor * widen, ipoint, normal, 1.0,
-                                                 ambient_colour, depth, FINAL_TRACE, OT_TILE_MAX) > 0.0)
+                                                 ambient_colour, depth, FINAL_TRACE, -1) > 0.0)
             {
                 ambient_colour = (ambient_colour * (1.0f - settings.grayThreshold)) + (settings.grayThreshold * ambient_colour.Greyscale());
                 ambient_colour *= settings.brightness;
