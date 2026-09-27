@@ -866,7 +866,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
                                 // we use the one normal for any location on the face, unless smooth is set
                                 ray.Direction = mesh->Face_Normal(tr);
                                 if (camera.Smooth)
-                                    mesh->Smooth_Mesh_Normal(ray.Direction, tr, ray.Origin);
+                                    mesh->Smooth_Mesh_Normal(ray.Direction, tr, ray.Origin, threadData);
 
                                 found = true;
                                 break;

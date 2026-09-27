@@ -43,6 +43,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <memory>
 #include <stack>
 #include <vector>
@@ -68,6 +69,20 @@ namespace pov
 /// @addtogroup PovCore
 ///
 /// @{
+
+/// A mesh triangle as its ray test and smooth normal use it, kept per thread in slot `index % MESH_DECODES`.
+struct MeshTriangleDecode final
+{
+    std::uint64_t mesh; ///< The mesh data's serial; 0 while the slot is empty.
+    std::int32_t index;
+    std::int32_t axis;  ///< The triangle's dominant axis.
+    Vector3d p1, p2, p3;
+    Vector3d n;         ///< Unnormalised face normal, cross(p3 - p1, p2 - p1).
+    double nn;          ///< Its squared length.
+    Vector3d perp;      ///< Smoothing frame, once `framed`.
+    int vaxis;
+    bool framed;
+};
 
 using namespace pov_base;
 
@@ -135,6 +150,9 @@ class TraceThreadData : public ThreadData
         PhotonMap* mediaPhotonMap;
 
         CrackleCache* mpCrackleCache;
+
+        static const int MESH_DECODES = 256;
+        MeshTriangleDecode meshDecodes[MESH_DECODES];
 
         // data for waves and ripples pattern
         unsigned int numberOfWaves;

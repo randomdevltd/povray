@@ -65,6 +65,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -87,6 +88,12 @@
 
 namespace pov
 {
+
+std::uint64_t Mesh_Data_Serial()
+{
+    static std::atomic<std::uint64_t> last(0);
+    return ++last;
+}
 
 /*****************************************************************************
 * Local preprocessor defines
@@ -358,7 +365,7 @@ void Mesh::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread
             IPoint = Inter->IPoint;
         }
 
-        Smooth_Mesh_Normal(Result, Triangle, IPoint);
+        Smooth_Mesh_Normal(Result, Triangle, IPoint, Thread);
 
         if (Trans != nullptr)
         {
@@ -421,15 +428,23 @@ static void smooth_frame(const Vector3d& P1, const Vector3d& P2, const Vector3d&
 *
 ******************************************************************************/
 
-void Mesh::Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, const Vector3d& IPoint) const
+void Mesh::Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, const Vector3d& IPoint, TraceThreadData *Thread) const
 {
-    int axis;
     DBL u, v;
-    Vector3d PIMinusP1, P1, P2, P3, N1, N2, N3, Perp;
+    Vector3d PIMinusP1, N1, N2, N3;
 
-    get_triangle_vertices(Triangle, P1, P2, P3);
+    MeshTriangleDecode& d = decoded_triangle(MeshIndex(Triangle - Data->Triangles), Thread);
+    if (!d.framed)
+    {
+        smooth_frame(d.p1, d.p2, d.p3, d.perp, d.vaxis);
+        d.framed = true;
+    }
+    const Vector3d& P1 = d.p1;
+    const Vector3d& P2 = d.p2;
+    const Vector3d& P3 = d.p3;
+    const Vector3d& Perp = d.perp;
+    const int axis = d.vaxis;
     get_triangle_normals(Triangle, N1, N2, N3);
-    smooth_frame(P1, P2, P3, Perp, axis);
 
     PIMinusP1 = IPoint - P1;
 
@@ -1041,20 +1056,15 @@ void MeshIndexColumn::Finish(const Mesh_Triangle_Struct *triangles, size_t n, bo
 *
 ******************************************************************************/
 
-bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Triangle, DBL *Depth) const
+static inline bool intersect_decoded_triangle(const BasicRay &ray, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3,
+                                             const Vector3d& S_Normal, DBL NormalLengthSqr, int axis, DBL *Depth)
 {
     DBL NormalDotDirection;
     DBL s, t;
-    Vector3d P1, P2, P3, S_Normal;
-
-    get_triangle_vertices(Triangle, P1, P2, P3);
-
-    // Unnormalised: the depth needs no unit normal, and the grazing test scales by its length instead.
-    S_Normal = cross(P3 - P1, P2 - P1);
 
     NormalDotDirection = dot(S_Normal, ray.Direction);
 
-    if (!(NormalDotDirection * NormalDotDirection > EPSILON * EPSILON * S_Normal.lengthSqr()))
+    if (!(NormalDotDirection * NormalDotDirection > EPSILON * EPSILON * NormalLengthSqr))
     {
         return(false);
     }
@@ -1066,7 +1076,7 @@ bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Tri
         return(false);
     }
 
-    switch (Triangle->Dominant_Axis())
+    switch (axis)
     {
         case X:
 
@@ -1136,6 +1146,40 @@ bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Tri
     }
 
     return(false);
+}
+
+
+
+bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Triangle, DBL *Depth) const
+{
+    Vector3d P1, P2, P3;
+    get_triangle_vertices(Triangle, P1, P2, P3);
+    // Unnormalised: the depth needs no unit normal, and the grazing test scales by its length instead.
+    const Vector3d S_Normal = cross(P3 - P1, P2 - P1);
+    return intersect_decoded_triangle(ray, P1, P2, P3, S_Normal, S_Normal.lengthSqr(), Triangle->Dominant_Axis(), Depth);
+}
+
+bool Mesh::intersect_mesh_triangle(const BasicRay &ray, MeshIndex i, TraceThreadData *Thread, DBL *Depth) const
+{
+    const MeshTriangleDecode& d = decoded_triangle(i, Thread);
+    return intersect_decoded_triangle(ray, d.p1, d.p2, d.p3, d.n, d.nn, d.axis, Depth);
+}
+
+MeshTriangleDecode& Mesh::decoded_triangle(MeshIndex i, TraceThreadData *Thread) const
+{
+    MeshTriangleDecode& d = Thread->meshDecodes[i & (TraceThreadData::MESH_DECODES - 1)];
+    if ((d.mesh != Data->Serial) || (d.index != i))
+    {
+        const MESH_TRIANGLE *Triangle = &Data->Triangles[i];
+        get_triangle_vertices(Triangle, d.p1, d.p2, d.p3);
+        d.n = cross(d.p3 - d.p1, d.p2 - d.p1);
+        d.nn = d.n.lengthSqr();
+        d.axis = Triangle->Dominant_Axis();
+        d.framed = false;
+        d.mesh = Data->Serial;
+        d.index = i;
+    }
+    return d;
 }
 
 
@@ -1412,7 +1456,7 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
         const MESH_TRIANGLE *triangle = &Data->Triangles[leaf];
         DBL hit;
-        if (intersect_mesh_triangle(ray, triangle, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
+        if (intersect_mesh_triangle(ray, leaf, Thread, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
         {
             found = true;
             // Callers drop hits nearer than MIN_ISECT_DEPTH, shadow rays up to SMALL_TOLERANCE: those must not hide the rest.
