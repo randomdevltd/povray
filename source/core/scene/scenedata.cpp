@@ -48,6 +48,7 @@
 #include "base/image/colourspace.h"
 
 // POV-Ray header files (core module)
+#include "core/lighting/subsurface.h"
 #include "core/material/noise.h"
 #include "core/material/pattern.h"
 #include "core/scene/atmosphere.h"
@@ -65,6 +66,7 @@ SceneData::SceneData() :
     functionContextFactory()
 {
     atmosphereIOR = 1.0;
+    subsurfaceCache = std::make_shared<SubsurfaceCache>();
     atmosphereDispersion = 0.0;
     backgroundColour = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 1.0));
     ambientLight = MathColour(1.0);
@@ -92,6 +94,9 @@ SceneData::SceneData() :
     subsurfaceSamplesDiffuse = 50;
     subsurfaceSamplesSingle = 50;
     subsurfaceUseRadiosity = false;
+    subsurfaceMethod = kSubsurfaceMethodSampled;
+    subsurfaceErrorBound = 0.1;
+    subsurfaceSpacing = 1.0;
 
     bspMaxDepth = 0;
     bspObjectIsectCost = bspBaseAccessCost = bspChildAccessCost = bspMissChance = 0.0f;

@@ -271,6 +271,7 @@ FINISH *Create_Finish()
     New->UseSubsurface = false;
     New->SubsurfaceTranslucency.Clear();
     New->SubsurfaceAnisotropy.Clear();
+    New->SubsurfaceMethod = 0;
 
     New->AlphaKnockout = false;
 

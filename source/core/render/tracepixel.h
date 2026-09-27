@@ -115,6 +115,8 @@ class TracePixel final : public Trace
 
         bool useFocalBlur;
         FocalBlurData *focalBlurData;
+        /// Whether this has given the subsurface cache the view's camera.
+        bool subsurfaceCameraSet = false;
 
         bool precomputeContainingInteriors;
         RayInteriorVector containingInteriors;

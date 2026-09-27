@@ -44,6 +44,7 @@
 
 // C++ standard header files
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -52,6 +53,7 @@
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
 #include "core/bounding/bsptree.h"
+#include "core/lighting/subsurface.h"
 #include "core/math/randomsequence.h"
 #include "core/render/ray.h"
 #include "core/scene/atmosphere_fwd.h"
@@ -359,6 +361,24 @@ class Trace
         std::vector<SequentialDoubleGeneratorPtr> ssltUniformNumberGenerator;
         /// Sub-random cos-weighted 3d points on hemisphere sequence.
         std::vector<SequentialVectorGeneratorPtr> ssltCosWeightedDirectionGenerator;
+        /// The subsurface cache's camera, once it is set: where it is and the angle one pixel spans (0 if not perspective).
+        Vector3d ssltCameraLocation;
+        double ssltPixelAngle = 0.0;
+        bool ssltCameraKnown = false;
+        /// Per light and channel, the lowest, mean and highest visibility of a few cloud points.
+        struct SubsurfaceVisibility
+        {
+            std::vector<float> lo, mean, hi;
+            void Reset(size_t lights);
+            void Add(const float *visibility);
+            void Finish();
+            bool Agrees(int light) const;
+            int count = 0;
+        };
+        /// Scratch space for subsurface cloud queries.
+        std::vector<int> ssltScratchStack;
+        std::vector<char> ssltScratchClosed;
+        SubsurfaceVisibility ssltScratchVisibility;
         /// Thread data.
         TraceThreadData *threadData;
 
@@ -857,6 +877,7 @@ class Trace
         {
             PreciseMathColour scale, sigma_tr, z_r, z_v;
             PreciseMathColour Rd(double distSqr) const;
+            PreciseMathColour RdDisc(double radius) const;
         };
 
         /// A subsurface sample lit by one light, before its shadow is tested.
@@ -864,9 +885,30 @@ class Trace
         {
             Vector3d point;
             MathColour factor, unshadowed;
+            Vector3d normal;
             double bound = 0.0;
             void SetLight(const Vector3d& p, const MathColour& lightcolour);
         };
+
+        /// An object's irradiance cloud as one shading point sees it: its levels, lights and the cells within reach.
+        struct SubsurfaceCloud
+        {
+            ObjectPtr object = nullptr;
+            int sizeLevel = 0;
+            double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
+            bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
+            std::vector<const LightSource*> lights;
+            std::vector<MathColour> exitLight; ///< per light, at the exit point, shadowed
+            std::vector<Vector3d> exitDirection; ///< zero where the light sends nothing to the exit point
+            std::vector<char> exitAgreed; ///< whether the light's shadow holds around the exit point
+            std::vector<const SubsurfaceCell*> cells;
+            std::vector<Vector3d> coords;
+        };
+
+        /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
+        SubsurfaceCloud ssltClouds[2];
+        /// The finished cells this thread has used, so it need not ask the shared cache again.
+        std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
 
         double ComputeFt(double cos_angle, double eta);
         void ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v);
@@ -882,9 +924,25 @@ class Trace
                                               SubsurfaceCandidate& candidate, TraceTicket& ticket);
         void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                  const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
-                                                 const std::vector<const LightSource*>& lights, TraceTicket& ticket);
+                                                 const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, TraceTicket& ticket);
         void ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket);
         MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket);
+        MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
+                                               int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket);
+        MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, TraceTicket& ticket);
+        void BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, TraceTicket& ticket);
+        void FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable);
+        void WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder, TraceTicket& ticket);
+        void CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
+        void LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
+        void CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double from, double to, std::vector<Intersection>& hits, TraceTicket& ticket);
+        bool OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud,
+                                 TraceTicket& ticket);
+        bool GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre, double radius, TraceTicket& ticket);
+        const SubsurfaceCell *FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q);
+        bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);
+        bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
+                                    MathColour& diffuse, TraceTicket& ticket);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights);
         void ComputeSubsurfaceScattering (const FINISH *Finish, const MathColour& layer_pigment_colour, const Intersection& isect, Ray& Eye, const Vector3d& Layer_Normal, MathColour& colour, double Attenuation);
         bool SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, double eta, Vector3d& refracted);
