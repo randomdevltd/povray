@@ -1583,13 +1583,13 @@ bool Trace::SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, dou
     return true;
 }
 
-// Lights left untested may carry at most this fraction of a radiosity ray's unshadowed classic lighting.
+// Untested lights carrying at most this fraction of the unshadowed light are scaled by the tested ones' visibility, not drawn.
 static const double kUntestedLightFraction = 0.05;
 
-// Once the untested lights carry at most this fraction, one of them, drawn in proportion to its light, stands for them all.
+// Lights are shadow-tested brightest first until the untested ones carry at most this fraction of the unshadowed light.
 static const double kSampledLightFraction = 0.25;
 
-// Salt for the draw of a radiosity ray's sampled light, distinct from the roulette's salts.
+// Salt for the draw of a radiosity ray's sampled light.
 static const unsigned int kLightDrawSalt = 97;
 
 void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
