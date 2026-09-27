@@ -177,7 +177,7 @@ bool SubsurfaceCache::GetCamera(Vector3d& location, double& pixelSize, double& p
     return cameraSet;
 }
 
-// Splits the points at the median of the longest axis until four or fewer remain.
+// Splits the points until four or fewer remain.
 static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector<SubsurfaceNode>& nodes, int first, int count)
 {
     int index = int(nodes.size());
@@ -219,11 +219,23 @@ static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector
         nodes[index] = node;
         return index;
     }
-    Vector3d extent = node.hi - node.lo;
-    int axis = (extent[X] >= extent[Y] && extent[X] >= extent[Z]) ? X : (extent[Y] >= extent[Z] ? Y : Z);
-    int half = count / 2;
-    std::nth_element(points.begin() + first, points.begin() + first + half, points.begin() + first + count,
-                     [axis](const SubsurfacePoint& a, const SubsurfacePoint& b) { return a.position[axis] < b.position[axis]; });
+    // Points facing opposite ways (the two faces of a thin part) are split by facing first, so each face's groups can
+    // be summed as one; otherwise at the median of the longest axis.
+    int half = 0;
+    if (node.cone < 0.0f)
+    {
+        const float d[3] = { points[first].normal[0], points[first].normal[1], points[first].normal[2] };
+        half = int(std::partition(points.begin() + first, points.begin() + first + count, [&d](const SubsurfacePoint& p)
+                                  { return p.normal[0] * d[0] + p.normal[1] * d[1] + p.normal[2] * d[2] >= 0.0f; }) - points.begin()) - first;
+    }
+    if ((half <= 0) || (half >= count))
+    {
+        Vector3d extent = node.hi - node.lo;
+        int axis = (extent[X] >= extent[Y] && extent[X] >= extent[Z]) ? X : (extent[Y] >= extent[Z] ? Y : Z);
+        half = count / 2;
+        std::nth_element(points.begin() + first, points.begin() + first + half, points.begin() + first + count,
+                         [axis](const SubsurfacePoint& a, const SubsurfacePoint& b) { return a.position[axis] < b.position[axis]; });
+    }
     node.count = 0;
     nodes[index] = node;
     BuildSubsurfaceNode(points, nodes, first, half);
