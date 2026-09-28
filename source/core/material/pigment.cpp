@@ -44,7 +44,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
 
 // POV-Ray header files (base module)
 #include "base/pov_err.h"
@@ -673,73 +673,149 @@ static bool Blends_Linearly(const GenericPigmentBlendMap& map, TraceThreadData *
     }
 }
 
-// The pattern of a pigment whose warps are all transforms, over a colour map that blends linearly; null otherwise.
-static const ContinuousPattern *Linear_Density_Pattern(const PIGMENT *pigment, const ColourBlendMap *& map, TraceThreadData *ttd)
+// A linearly blending colour map's colour at value, as ColourBlendMap::Compute gives it.
+static inline MathColour Linear_Map_Colour(const ColourBlendMap& map, DBL value)
 {
-    if ((pigment->Type <= LAST_SPECIAL_PATTERN) || (ttd->qualityFlags.quickColour && pigment->Quick_Colour.IsValid()))
-        return nullptr;
+    const ColourBlendMap::Entry *prev, *next;
+    DBL prevWeight, nextWeight;
+    map.Search(value, prev, next, prevWeight, nextWeight);
+    if (prev == next)
+        return next->Vals.colour();
+    return prev->Vals.colour() * prevWeight + next->Vals.colour() * nextWeight;
+}
+
+void Plan_Density_Pigment(DensityPigmentPlan& plan, const PIGMENT *pigment, TraceThreadData *ttd)
+{
+    plan.pigment = pigment;
+    plan.pattern = nullptr;
+    plan.map = nullptr;
+    plan.constant = true;
+    plan.sorted = false;
+    if (ttd->qualityFlags.quickColour && pigment->Quick_Colour.IsValid())
+    {
+        plan.colour = pigment->Quick_Colour.colour();
+        return;
+    }
+    if (pigment->Type == PLAIN_PATTERN)
+    {
+        plan.colour = pigment->colour.colour();
+        return;
+    }
+    plan.constant = false;
+    if (pigment->Type <= LAST_SPECIAL_PATTERN)
+        return;
     const ContinuousPattern *pattern = dynamic_cast<const ContinuousPattern*>(pigment->pattern.get());
-    map = dynamic_cast<const ColourBlendMap*>(pigment->Blend_Map.get());
+    const ColourBlendMap *map = dynamic_cast<const ColourBlendMap*>(pigment->Blend_Map.get());
     if ((pattern == nullptr) || (map == nullptr) || !Blends_Linearly(*map, ttd))
-        return nullptr;
+        return;
     for (WarpList::const_iterator i = pattern->warps.begin(); i != pattern->warps.end(); ++i)
         if (dynamic_cast<const TransformWarp*>(*i) == nullptr)
-            return nullptr;
-    return pattern;
+            return;
+    plan.pattern = pattern;
+    plan.map = map;
+    plan.sorted = std::is_sorted(map->Blend_Map_Entries.begin(), map->Blend_Map_Entries.end(),
+                                 [](const ColourBlendMap::Entry& x, const ColourBlendMap::Entry& y) { return x.value < y.value; });
+}
+
+void Apply_Density_Pigment(const DensityPigmentPlan& plan, const Vector3d *p, MathColour *c, size_t n, TraceThreadData *ttd)
+{
+    if (plan.constant)
+    {
+        for (size_t j = 0; j < n; ++j)
+            c[j] *= plan.colour;
+        return;
+    }
+    if (plan.pattern == nullptr)
+    {
+        TransColour lc;
+        for (size_t j = 0; j < n; ++j)
+        {
+            lc.Clear();
+            Compute_Pigment(lc, plan.pigment, p[j], nullptr, nullptr, ttd);
+            c[j] *= lc.colour();
+        }
+        return;
+    }
+
+    Vector3d tp[kDensityBatch];
+    DBL value[kDensityBatch];
+    const WarpList& warps = plan.pattern->warps;
+    for (size_t j = 0; j < n; ++j)
+    {
+        tp[j] = p[j];
+        for (WarpList::const_reverse_iterator w = warps.rbegin(); w != warps.rend(); ++w)
+            MInvTransPoint(tp[j], tp[j], &static_cast<const TransformWarp*>(*w)->Trans);
+        for (int k = X; k <= Z; k++)
+        {
+            if (tp[j][k] > COORDINATE_LIMIT)
+                tp[j][k] = COORDINATE_LIMIT;
+            else if (tp[j][k] < -COORDINATE_LIMIT)
+                tp[j][k] = -COORDINATE_LIMIT;
+        }
+    }
+    plan.pattern->EvaluateBatch(tp, value, n, ttd);
+    for (size_t j = 0; j < n; ++j)
+        c[j] *= Linear_Map_Colour(*plan.map, value[j]);
 }
 
 void Evaluate_Density_Pigment(vector<PIGMENT*>& Density, const Vector3d *p, MathColour *c, size_t n, TraceThreadData *ttd)
 {
-    Vector3d tp[kDensityBatch];
-    DBL value[kDensityBatch];
-
     for (size_t j = 0; j < n; ++j)
         c[j].Set(1.0);
-
     for (vector<PIGMENT*>::reverse_iterator i = Density.rbegin(); i != Density.rend(); ++ i)
     {
-        const ColourBlendMap *map;
-        const ContinuousPattern *pattern = Linear_Density_Pattern(*i, map, ttd);
-        if (pattern == nullptr)
-        {
-            TransColour lc;
-            for (size_t j = 0; j < n; ++j)
-            {
-                lc.Clear();
-                Compute_Pigment(lc, *i, p[j], nullptr, nullptr, ttd);
-                c[j] *= lc.colour();
-            }
+        DensityPigmentPlan plan;
+        Plan_Density_Pigment(plan, *i, ttd);
+        Apply_Density_Pigment(plan, p, c, n, ttd);
+    }
+}
+
+bool Density_Range(const DensityPigmentPlan& plan, const Vector3d& a, const Vector3d& b, MathColour& lo, MathColour& hi)
+{
+    if (plan.constant)
+    {
+        lo = hi = plan.colour;
+        return true;
+    }
+    if (!plan.sorted)
+        return false;
+
+    Vector3d ta = a, tb = b;
+    const WarpList& warps = plan.pattern->warps;
+    for (WarpList::const_reverse_iterator w = warps.rbegin(); w != warps.rend(); ++w)
+    {
+        MInvTransPoint(ta, ta, &static_cast<const TransformWarp*>(*w)->Trans);
+        MInvTransPoint(tb, tb, &static_cast<const TransformWarp*>(*w)->Trans);
+    }
+    for (int k = X; k <= Z; k++)
+        if ((fabs(ta[k]) > COORDINATE_LIMIT) || (fabs(tb[k]) > COORDINATE_LIMIT))
+            return false;
+
+    DBL vlo, vhi;
+    if (!plan.pattern->EvaluateRange(ta, tb, vlo, vhi))
+        return false;
+
+    // The map is linear between entries, so its range is that of its values at the ends and the entries between.
+    lo = hi = Linear_Map_Colour(*plan.map, vlo);
+    const MathColour top = Linear_Map_Colour(*plan.map, vhi);
+    for (int ch = 0; ch < MathColour::channels; ++ch)
+    {
+        lo[ch] = std::min(lo[ch], top[ch]);
+        hi[ch] = std::max(hi[ch], top[ch]);
+    }
+    for (const ColourBlendMap::Entry& entry : plan.map->Blend_Map_Entries)
+    {
+        if (entry.value < vlo)
             continue;
-        }
-
-        const WarpList& warps = pattern->warps;
-        for (size_t j = 0; j < n; ++j)
+        if (entry.value > vhi)
+            break;
+        for (int ch = 0; ch < MathColour::channels; ++ch)
         {
-            tp[j] = p[j];
-            for (WarpList::const_reverse_iterator w = warps.rbegin(); w != warps.rend(); ++w)
-                MInvTransPoint(tp[j], tp[j], &static_cast<const TransformWarp*>(*w)->Trans);
-            for (int k = X; k <= Z; k++)
-            {
-                if (tp[j][k] > COORDINATE_LIMIT)
-                    tp[j][k] = COORDINATE_LIMIT;
-                else if (tp[j][k] < -COORDINATE_LIMIT)
-                    tp[j][k] = -COORDINATE_LIMIT;
-            }
-        }
-
-        pattern->EvaluateBatch(tp, value, n, ttd);
-
-        for (size_t j = 0; j < n; ++j)
-        {
-            const ColourBlendMap::Entry *prev, *next;
-            DBL prevWeight, nextWeight;
-            map->Search(value[j], prev, next, prevWeight, nextWeight);
-            if (prev == next)
-                c[j] *= next->Vals.colour();
-            else
-                c[j] *= prev->Vals.colour() * prevWeight + next->Vals.colour() * nextWeight;
+            lo[ch] = std::min(lo[ch], entry.Vals.colour()[ch]);
+            hi[ch] = std::max(hi[ch], entry.Vals.colour()[ch]);
         }
     }
+    return true;
 }
 
 //******************************************************************************

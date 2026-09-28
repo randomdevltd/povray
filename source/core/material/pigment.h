@@ -149,6 +149,29 @@ const size_t kDensityBatch = 16;
 /// Evaluate_Density_Pigment at each of n <= kDensityBatch points, bit for bit.
 void Evaluate_Density_Pigment(std::vector<PIGMENT*>& Density, const Vector3d *p, MathColour *c, size_t n, TraceThreadData *ttd);
 
+struct ContinuousPattern;
+
+/// A density pigment classified once: a constant colour, a transformed continuous pattern over a linear colour map, or
+/// anything else.
+struct DensityPigmentPlan final
+{
+    const PIGMENT *pigment;
+    const ContinuousPattern *pattern; ///< set for a transformed continuous pattern over a linear colour map
+    const ColourBlendMap *map;
+    bool constant;
+    bool sorted;                      ///< the map's entries are in order, so ranges along segments hold
+    MathColour colour;                ///< the colour where it is constant
+};
+
+void Plan_Density_Pigment(DensityPigmentPlan& plan, const PIGMENT *pigment, TraceThreadData *ttd);
+
+/// Multiplies each of n <= kDensityBatch colours by the planned pigment's colour at its point, bit for bit as
+/// Evaluate_Density_Pigment does.
+void Apply_Density_Pigment(const DensityPigmentPlan& plan, const Vector3d *p, MathColour *c, size_t n, TraceThreadData *ttd);
+
+/// Per-channel range of the planned pigment's colour along the segment from a to b; false where there is none.
+bool Density_Range(const DensityPigmentPlan& plan, const Vector3d& a, const Vector3d& b, MathColour& lo, MathColour& hi);
+
 /// @}
 ///
 //##############################################################################
