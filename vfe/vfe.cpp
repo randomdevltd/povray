@@ -606,6 +606,7 @@ VirtualFrontEnd::VirtualFrontEnd(vfeSession& session, POVMSContext ctx, POVMSAdd
   backendAddress = addr ;
   state = kReady ;
   m_PostPauseState = kReady;
+  m_SnapshotInterval = std::chrono::seconds(0);
   consoleResult = nullptr;
   displayResult = nullptr;
   m_PauseRequested = m_PausedAfterFrame = false;
@@ -1107,6 +1108,8 @@ State VirtualFrontEnd::Process()
             m_Session->AppendStatusMessage (e.what()) ;
             return state = kFailed;
           }
+          m_SnapshotInterval = std::chrono::seconds(options.TryGetInt(kPOVAttrib_SnapshotInterval, 0));
+          m_NextSnapshot = std::chrono::steady_clock::now() + m_SnapshotInterval;
           try { renderFrontend.StartRender(viewId, options); }
           catch(pov_base::Exception& e)
           {
@@ -1229,6 +1232,12 @@ State VirtualFrontEnd::Process()
           return state = kPostFrameShellout;
 
         default:
+          if (m_Session->TakeSnapshotRequest() ||
+              ((m_SnapshotInterval.count() > 0) && (std::chrono::steady_clock::now() >= m_NextSnapshot)))
+          {
+            renderFrontend.WriteSnapshot(viewId);
+            m_NextSnapshot = std::chrono::steady_clock::now() + m_SnapshotInterval;
+          }
           break;
       }
       return kRendering;

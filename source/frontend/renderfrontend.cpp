@@ -37,13 +37,22 @@
 #include "frontend/renderfrontend.h"
 
 // C++ variants of C standard header files
-//  (none at the moment)
+#include <climits>
+#include <cstdio>
+#include <cstring>
 
 // C++ standard header files
 #include <algorithm>
+#include <memory>
+#include <random>
+
+#ifndef LIBPNG_MISSING
+#include <png.h>
+#endif
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
+#include "base/filesystem.h"
 #include "base/mathutil.h"
 #include "base/platformbase.h"
 #include "base/textstream.h"
@@ -51,6 +60,7 @@
 #include "base/types.h"
 #include "base/image/colourspace.h"
 #include "base/image/dither.h"
+#include "base/image/encoding.h"
 
 // POV-Ray header files (POVMS module)
 #include "povms/povmsid.h"
@@ -806,6 +816,183 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
         }
         else
             throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot create state output file stream.");
+    }
+}
+
+namespace
+{
+
+struct SnapshotCanvas final
+{
+    unsigned int width;
+    unsigned int height;
+    bool alpha;
+    GammaCurvePtr gamma;
+    std::vector<unsigned char> rgba;
+
+    void Fill(unsigned int x, unsigned int y, unsigned int w, unsigned int h, const POVMSFloat* colour)
+    {
+        float red = colour[0], green = colour[1], blue = colour[2], opacity = 1.0f;
+        if (alpha)
+        {
+            // straight alpha as the PNG writer makes it, raised so highlights on transparent pixels survive
+            opacity = clip(1.0f - colour[4], 0.0f, 1.0f);
+            opacity = max(opacity, min(1.0f, RGBColour(red, green, blue).Greyscale()));
+            if (opacity > 0.0f)
+            {
+                red /= opacity;
+                green /= opacity;
+                blue /= opacity;
+            }
+        }
+        const unsigned char encoded[4] = { (unsigned char)IntEncode(gamma, red, 255), (unsigned char)IntEncode(gamma, green, 255),
+                                           (unsigned char)IntEncode(gamma, blue, 255), (unsigned char)IntEncode(opacity, 255) };
+        for (unsigned int py = y; (py < y + h) && (py < height); py++)
+        {
+            for (unsigned int px = x; (px < x + w) && (px < width); px++)
+                memcpy(&rgba[(size_t(py) * width + px) * 4], encoded, 4);
+        }
+    }
+};
+
+#ifndef LIBPNG_MISSING
+void SnapshotPngWrite(png_structp png, png_bytep data, png_size_t length)
+{
+    if (!static_cast<OStream*>(png_get_io_ptr(png))->write(data, length))
+        png_error(png, "write failed");
+}
+
+void SnapshotPngFlush(png_structp)
+{
+}
+#endif
+
+void WriteSnapshotPng(OStream& file, const SnapshotCanvas& canvas)
+{
+#ifdef LIBPNG_MISSING
+    throw POV_EXCEPTION(kCannotHandleDataErr, "Snapshots need PNG support, and this build has none.");
+#else
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+    png_infop info = (png != nullptr) ? png_create_info_struct(png) : nullptr;
+    if (info == nullptr)
+    {
+        png_destroy_write_struct(&png, nullptr);
+        throw POV_EXCEPTION(kOutOfMemoryErr, "Cannot allocate PNG data structures.");
+    }
+    if (setjmp(png_jmpbuf(png)))
+    {
+        png_destroy_write_struct(&png, &info);
+        throw POV_EXCEPTION(kFileDataErr, "Cannot write snapshot PNG.");
+    }
+    png_set_write_fn(png, &file, SnapshotPngWrite, SnapshotPngFlush);
+    png_set_IHDR(png, info, canvas.width, canvas.height, 8, PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_set_sRGB_gAMA_and_cHRM(png, info, PNG_sRGB_INTENT_PERCEPTUAL);
+    png_write_info(png, info);
+    for (unsigned int y = 0; y < canvas.height; y++)
+        png_write_row(png, const_cast<png_bytep>(&canvas.rgba[size_t(y) * canvas.width * 4]));
+    png_write_end(png, info);
+    png_destroy_write_struct(&png, &info);
+#endif
+}
+
+}
+// end of anonymous namespace
+
+void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshotFile, POVMS_Object& ropts)
+{
+    if (snapshotFile.empty())
+        throw POV_EXCEPTION(kParamErr, "No Snapshot_File given.");
+
+    SnapshotCanvas canvas;
+    canvas.width = ropts.TryGetInt(kPOVAttrib_Width, 160);
+    canvas.height = ropts.TryGetInt(kPOVAttrib_Height, 120);
+    canvas.alpha = ropts.TryGetBool(kPOVAttrib_OutputAlpha, false);
+    canvas.gamma = TranscodingGammaCurve::Get(GetGammaCurve((GammaTypeId)ropts.TryGetInt(kPOVAttrib_WorkingGammaType, DEFAULT_WORKING_GAMMA_TYPE),
+                                                            ropts.TryGetFloat(kPOVAttrib_WorkingGamma, DEFAULT_WORKING_GAMMA)),
+                                              SRGBGammaCurve::Get());
+    canvas.rgba.assign(size_t(canvas.width) * canvas.height * 4, 0);
+
+    IFileStream in(stateFile);
+    if (!in)
+        throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot open render state file " + UCS2toSysString(stateFile) + ".");
+    in.seekg(0, IOBase::seek_end);
+    POV_OFF_T end = in.tellg();
+    in.seekg(0, IOBase::seek_set);
+
+    Backup_File_Header hdr;
+    if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || (memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0))
+        throw POV_EXCEPTION(kFileDataErr, "Not a render state file of this version of POV-Ray.");
+
+    // the messages ImageMessageHandler draws into the final image, drawn the same way
+    unsigned int lattice = (hdr.reserved[0] == 2) ? 1 : 0;
+    bool outside = false;
+    for (POV_OFF_T pos = sizeof(hdr); (pos < end) && !in.eof() && !outside; pos = in.tellg())
+    {
+        try
+        {
+            POVMS_Message msg;
+            msg.Read(in);
+            unsigned int psize = msg.TryGetInt(kPOVAttrib_PixelSize, 1);
+            if (msg.GetIdentifier() == kPOVMsgIdent_PixelSet)
+            {
+                std::vector<POVMSInt> positions(msg.GetIntVector(kPOVAttrib_PixelPositions));
+                std::vector<POVMSFloat> colours(msg.GetFloatVector(kPOVAttrib_PixelColors));
+                POVRect area(0, 0, INT_MAX, INT_MAX);
+                if (msg.Exist(kPOVAttrib_Left))
+                    area = POVRect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
+                for (size_t i = 0; (i * 5 + 4 < colours.size()) && (i * 2 + 1 < positions.size()); i++)
+                {
+                    unsigned int x = positions[i * 2];
+                    unsigned int y = positions[i * 2 + 1];
+                    outside = outside || (x >= canvas.width + lattice) || (y >= canvas.height + lattice);
+                    if ((x < area.left) || (y < area.top) || (x > area.right) || (y > area.bottom))
+                        continue;
+                    canvas.Fill(x, y, min(psize, area.right - x + 1), min(psize, area.bottom - y + 1), &colours[i * 5]);
+                }
+            }
+            else if (msg.GetIdentifier() == kPOVMsgIdent_PixelBlockSet)
+            {
+                POVRect rect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
+                outside = (rect.right >= canvas.width) || (rect.bottom >= canvas.height);
+                std::vector<POVMSFloat> block(msg.GetFloatVector(kPOVAttrib_PixelBlock));
+                size_t i = 0;
+                for (unsigned int y = rect.top; !outside && (y <= rect.bottom); y += psize)
+                {
+                    for (unsigned int x = rect.left; (x <= rect.right) && (i * 5 + 4 < block.size()); x += psize, i++)
+                        canvas.Fill(x, y, psize, psize, &block[i * 5]);
+                }
+            }
+        }
+        catch (pov_base::Exception&)
+        {
+            // a message cut short is where the file ends, as for a continued render
+            break;
+        }
+    }
+    if (outside)
+        throw POV_EXCEPTION(kInvalidDataSizeErr, "The render state file holds pixels outside the image size given with +W and +H.");
+
+    UCS2String temp = snapshotFile + SysToUCS2String("." + std::to_string(std::random_device()()) + ".tmp");
+    try
+    {
+        std::unique_ptr<OStream> file(NewOStream(Path(temp), POV_File_Image_PNG, false));
+        if ((file == nullptr) || !*file)
+            throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot create snapshot file " + UCS2toSysString(temp) + ".");
+        WriteSnapshotPng(*file, canvas);
+        file->flush();
+        if (!*file)
+            throw POV_EXCEPTION(kFileDataErr, "Cannot write snapshot file " + UCS2toSysString(temp) + ".");
+    }
+    catch (pov_base::Exception&)
+    {
+        pov_base::Filesystem::DeleteFile(temp);
+        throw;
+    }
+    if (std::rename(UCS2toSysString(temp).c_str(), UCS2toSysString(snapshotFile).c_str()) != 0)
+    {
+        pov_base::Filesystem::DeleteFile(temp);
+        throw POV_EXCEPTION(kFileDataErr, "Cannot rename snapshot to " + UCS2toSysString(snapshotFile) + ".");
     }
 }
 

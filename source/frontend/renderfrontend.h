@@ -161,6 +161,9 @@ struct ViewData final
     bool greyscaleDisplay;
 
     Path imageBackupFile;
+
+    UCS2String snapshotFile;
+    std::shared_ptr<POVMS_Object> snapshotOptions;
 };
 
 namespace Message2Console
@@ -197,6 +200,9 @@ struct Backup_File_Header final
     unsigned char ver[4];
     unsigned char reserved[480];
 };
+
+/// Writes the pixels a render state file holds to a PNG, unrendered ones transparent; see doc/snapshot.md.
+void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshotFile, POVMS_Object& ropts);
 
 class RenderFrontendBase : public POVMS_MessageReceiver
 {
@@ -314,6 +320,7 @@ class RenderFrontend : public RenderFrontendBase
         void PauseRender(ViewId vid);
         void ResumeRender(ViewId vid);
         void StopRender(ViewId vid);
+        void WriteSnapshot(ViewId vid);
 
         virtual std::shared_ptr<Console> GetConsole(SceneId sid) override;
         virtual std::shared_ptr<Image> GetImage(ViewId vid) override;
@@ -713,6 +720,18 @@ void RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::StartRender(ViewId
         if (obj.TryGetBool(kPOVAttrib_ProgressiveRender, false) && (vhi->second.data.imageBackup != nullptr))
             obj.SetUCS2String(kPOVAttrib_RadiosityStateFile, (vhi->second.data.imageBackupFile() + u".rca").c_str());
 
+        vhi->second.data.snapshotFile = obj.TryGetUCS2String(kPOVAttrib_SnapshotFile, "");
+        if (!vhi->second.data.snapshotFile.empty())
+        {
+            if (vhi->second.data.imageBackup == nullptr)
+            {
+                scenehandler[view2scene[vid]].data.console->Output("Warning: Snapshot_File needs the render state file, so no snapshots will be written.");
+                vhi->second.data.snapshotFile.clear();
+            }
+            else
+                vhi->second.data.snapshotOptions = std::make_shared<POVMS_Object>(obj);
+        }
+
         RenderFrontendBase::StartRender(vhi->second.data, vid, obj);
         HandleRenderMessage(vid, kPOVMsgIdent_RenderOptions, obj);
     }
@@ -818,6 +837,7 @@ void RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::HandleRenderMessag
             // close the state file if it's open
             if (vhi->second.data.imageBackup != nullptr)
             {
+                WriteSnapshot(vid);
                 vhi->second.data.imageBackup.reset();
                 pov_base::Filesystem::DeleteFile(vhi->second.data.imageBackupFile());
             }
@@ -831,10 +851,29 @@ void RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::HandleRenderMessag
 
             // close the state file if it's open
             if (vhi->second.data.imageBackup != nullptr)
+            {
+                WriteSnapshot(vid);
                 vhi->second.data.imageBackup.reset();
+            }
         }
         else
             vhi->second.render.HandleMessage(sceneData, vhi->second.data, ident, msg);
+    }
+}
+
+template<class PARSER_MH, class FILE_MH, class RENDER_MH, class IMAGE_MH>
+void RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::WriteSnapshot(ViewId vid)
+{
+    typename ViewHandlerMap::iterator vhi(viewhandler.find(vid));
+    if ((vhi == viewhandler.end()) || vhi->second.data.snapshotFile.empty() || (vhi->second.data.imageBackup == nullptr))
+        return;
+    try
+    {
+        WriteRenderSnapshot(vhi->second.data.imageBackupFile(), vhi->second.data.snapshotFile, *vhi->second.data.snapshotOptions);
+    }
+    catch (pov_base::Exception& e)
+    {
+        scenehandler[view2scene[vid]].data.console->Output(std::string("Warning: Cannot write snapshot: ") + e.what());
     }
 }
 
