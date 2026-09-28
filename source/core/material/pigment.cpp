@@ -660,6 +660,88 @@ void Evaluate_Density_Pigment(vector<PIGMENT*>& Density, const Vector3d& p, Math
     }
 }
 
+// Whether Blend() reduces to colour1 * weight1 + colour2 * weight2.
+static bool Blends_Linearly(const GenericPigmentBlendMap& map, TraceThreadData *ttd)
+{
+    const bool working = GammaCurve::IsNeutral(ttd->GetSceneData()->workingGamma);
+    switch (map.blendMode)
+    {
+        case 1:  return working;
+        case 2:  return GammaCurve::IsNeutral(map.blendGamma);
+        case 3:  return working && GammaCurve::IsNeutral(map.blendGamma);
+        default: return true;
+    }
+}
+
+// The pattern of a pigment whose warps are all transforms, over a colour map that blends linearly; null otherwise.
+static const ContinuousPattern *Linear_Density_Pattern(const PIGMENT *pigment, const ColourBlendMap *& map, TraceThreadData *ttd)
+{
+    if ((pigment->Type <= LAST_SPECIAL_PATTERN) || (ttd->qualityFlags.quickColour && pigment->Quick_Colour.IsValid()))
+        return nullptr;
+    const ContinuousPattern *pattern = dynamic_cast<const ContinuousPattern*>(pigment->pattern.get());
+    map = dynamic_cast<const ColourBlendMap*>(pigment->Blend_Map.get());
+    if ((pattern == nullptr) || (map == nullptr) || !Blends_Linearly(*map, ttd))
+        return nullptr;
+    for (WarpList::const_iterator i = pattern->warps.begin(); i != pattern->warps.end(); ++i)
+        if (dynamic_cast<const TransformWarp*>(*i) == nullptr)
+            return nullptr;
+    return pattern;
+}
+
+void Evaluate_Density_Pigment(vector<PIGMENT*>& Density, const Vector3d *p, MathColour *c, size_t n, TraceThreadData *ttd)
+{
+    Vector3d tp[kDensityBatch];
+    DBL value[kDensityBatch];
+
+    for (size_t j = 0; j < n; ++j)
+        c[j].Set(1.0);
+
+    for (vector<PIGMENT*>::reverse_iterator i = Density.rbegin(); i != Density.rend(); ++ i)
+    {
+        const ColourBlendMap *map;
+        const ContinuousPattern *pattern = Linear_Density_Pattern(*i, map, ttd);
+        if (pattern == nullptr)
+        {
+            TransColour lc;
+            for (size_t j = 0; j < n; ++j)
+            {
+                lc.Clear();
+                Compute_Pigment(lc, *i, p[j], nullptr, nullptr, ttd);
+                c[j] *= lc.colour();
+            }
+            continue;
+        }
+
+        const WarpList& warps = pattern->warps;
+        for (size_t j = 0; j < n; ++j)
+        {
+            tp[j] = p[j];
+            for (WarpList::const_reverse_iterator w = warps.rbegin(); w != warps.rend(); ++w)
+                MInvTransPoint(tp[j], tp[j], &static_cast<const TransformWarp*>(*w)->Trans);
+            for (int k = X; k <= Z; k++)
+            {
+                if (tp[j][k] > COORDINATE_LIMIT)
+                    tp[j][k] = COORDINATE_LIMIT;
+                else if (tp[j][k] < -COORDINATE_LIMIT)
+                    tp[j][k] = -COORDINATE_LIMIT;
+            }
+        }
+
+        pattern->EvaluateBatch(tp, value, n, ttd);
+
+        for (size_t j = 0; j < n; ++j)
+        {
+            const ColourBlendMap::Entry *prev, *next;
+            DBL prevWeight, nextWeight;
+            map->Search(value[j], prev, next, prevWeight, nextWeight);
+            if (prev == next)
+                c[j] *= next->Vals.colour();
+            else
+                c[j] *= prev->Vals.colour() * prevWeight + next->Vals.colour() * nextWeight;
+        }
+    }
+}
+
 //******************************************************************************
 
 ColourBlendMap::ColourBlendMap() : BlendMap<TransColour>(kBlendMapType_Colour) {}

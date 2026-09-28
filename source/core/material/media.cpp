@@ -384,18 +384,23 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
     drawKey = savedKey;
 }
 
-MathColour MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray& ray, DBL depth)
+void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray& ray, const DBL *depths, MathColour *extinction, size_t n)
 {
-    MathColour density, extinction;
-    const Vector3d point = ray.Evaluate(depth);
+    Vector3d points[kDensityBatch];
+    MathColour density[kDensityBatch];
 
-    threadData->Stats()[Media_Samples]++;
+    threadData->Stats()[Media_Samples] += n;
+    for(size_t j = 0; j < n; j++)
+    {
+        points[j] = ray.Evaluate(depths[j]);
+        extinction[j].Clear();
+    }
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
-        Evaluate_Density_Pigment((*i)->Density, point, density, threadData);
-        extinction += density * (*i)->Extinction;
+        Evaluate_Density_Pigment((*i)->Density, points, density, n, threadData);
+        for(size_t j = 0; j < n; j++)
+            extinction[j] += density[j] * (*i)->Extinction;
     }
-    return extinction;
 }
 
 void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, const Media *IMedia)
@@ -407,32 +412,40 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
     MathColour total, carried;
     DBL carriedAt = -1.0;
     bool dark = false;
+    DBL at[kDensityBatch];
+    MathColour extinction[kDensityBatch];
 
     threadData->Stats()[Media_Intervals] += mediaintervals.size();
     for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
     {
         MathColour sum;
         DBL weights = 0.0;
-        for(int j = 0; (j < points) && !dark; j++)
+        for(int j0 = 0; (j0 < points) && !dark; j0 += int(kDensityBatch))
         {
-            MathColour extinction;
-            DBL weight = 1.0;
-            if(!method3)
-                extinction = ComputeMediaExtinction(medias, ray, i->s0 + i->ds * (j + 0.5) / points);
-            else
+            const int n = min(points - j0, int(kDensityBatch));
+            for(int k = 0; k < n; k++)
+                at[k] = method3 ? i->s0 + i->ds * (j0 + k) / (points - 1) : i->s0 + i->ds * (j0 + k + 0.5) / points;
+            const int reuse = (method3 && (j0 == 0) && (at[0] == carriedAt)) ? 1 : 0;
+            ComputeMediaExtinction(medias, ray, at + reuse, extinction + reuse, n - reuse);
+            if(reuse)
+                extinction[0] = carried;
+            for(int k = 0; (k < n) && !dark; k++)
             {
-                const DBL at = i->s0 + i->ds * j / (points - 1);
-                extinction = ((j == 0) && (at == carriedAt)) ? carried : ComputeMediaExtinction(medias, ray, at);
-                weight = ((j == 0) || (j == points - 1) || (j % 2)) ? 1.0 : 2.0;
-                if(j == points - 1)
+                const int j = j0 + k;
+                DBL weight = 1.0;
+                if(method3)
                 {
-                    carried = extinction;
-                    carriedAt = at;
+                    weight = ((j == 0) || (j == points - 1) || (j % 2)) ? 1.0 : 2.0;
+                    if(j == points - 1)
+                    {
+                        carried = extinction[k];
+                        carriedAt = at[k];
+                    }
                 }
+                sum += extinction[k] * weight;
+                weights += weight;
+                dark = (total + sum * (i->ds / (method3 ? (points - 1) * 1.5 : points))).Min() > opaque;
             }
-            sum += extinction * weight;
-            weights += weight;
-            dark = (total + sum * (i->ds / (method3 ? (points - 1) * 1.5 : points))).Min() > opaque;
         }
 
         i->od = (weights > 0.0) ? sum * (i->ds / (method3 ? (points - 1) * 1.5 : points)) : MathColour();

@@ -75,6 +75,9 @@ struct GenericWarp
     virtual bool UnwarpNormal(Vector3d& rN) const = 0;
 };
 
+/// Warped points are clamped to this magnitude on each axis.
+const DBL COORDINATE_LIMIT = 1.0e17;
+
 typedef GenericWarp* WarpPtr;
 typedef const GenericWarp* ConstWarpPtr;
 typedef std::vector<WarpPtr> WarpList;

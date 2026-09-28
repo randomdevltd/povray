@@ -329,6 +329,15 @@ struct ContinuousPattern : public BasicPattern
     ///
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const = 0;
 
+    /// Evaluate() at each of n points, with no intersection or ray, bit for bit.
+    void EvaluateBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const;
+
+    /// EvaluateRaw() at each of n points; simple patterns override it to keep the loop free of calls.
+    virtual void EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const;
+
+    /// The wave function, frequency and phase applied to a raw value.
+    DBL Wave(DBL value) const;
+
     virtual unsigned int NumDiscreteBlendMapEntries() const override;
     virtual bool CanMap() const override;
 };
@@ -401,6 +410,7 @@ struct BoxedPattern final : public ContinuousPattern
 {
     virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual void EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const override;
 };
 
 /// Implements the `brick` pattern.
@@ -463,6 +473,7 @@ struct CylindricalPattern final : public ContinuousPattern
 {
     virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual void EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const override;
 };
 
 /// Implements the `density_file` pattern.
@@ -547,6 +558,7 @@ struct GradientPattern final : public ContinuousPattern
 
     virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual void EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const override;
 };
 
 /// Implements the `granite` pattern.
@@ -667,6 +679,7 @@ struct PlanarPattern final : public ContinuousPattern
 {
     virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual void EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const override;
 };
 
 /// Implements the `potential` pattern.
@@ -738,6 +751,7 @@ struct SphericalPattern final : public ContinuousPattern
 {
     virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual void EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const override;
 };
 
 /// Implements the `square` pattern.
