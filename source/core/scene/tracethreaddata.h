@@ -64,6 +64,8 @@
 namespace pov
 {
 
+class SubsurfaceCache;
+
 //##############################################################################
 ///
 /// @addtogroup PovCore
@@ -160,11 +162,14 @@ class TraceThreadData : public ThreadData
         // to treat the lightsource as const, after which this can go away.
         std::vector<LightSource*> lightSources;
 
+        std::shared_ptr<SubsurfaceCache> subsurfaceCache;
+
         // all of these are for photons
         // most of them should be refactored into parameters, return values, or other objects
         LightSource *photonSourceLight;
         ObjectPtr photonTargetObject;
         bool litObjectIgnoresPhotons;
+        bool subsurfacePhotonBoundaryProbe = false;
         MathColour GFilCol;
         int hitObject;    // did we hit the target object? (for autostop)
         DBL photonSpread; // photon spread (in radians)

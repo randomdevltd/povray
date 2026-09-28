@@ -61,6 +61,13 @@ Single-threaded renders repeat bit for bit. Against 3.8 master this branch chang
 same depth from both, and which one supplies the normal depends on the order they are tested in. PGO alone
 changes about as many.
 
+## Subsurface photons
+
+Multiple-scattering diffusion now receives incident surface photons with methods 1 and 2.
+The public focused-caustic fixture adds about 44% instructions with the default cloud spacing
+to supply previously missing light; finer spacing trades additional gathers and memory for accuracy.
+See [the model, fixtures and measured costs](SUBSURFACE_PHOTONS.md).
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

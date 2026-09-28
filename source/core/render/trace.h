@@ -1025,6 +1025,7 @@ class Trace
             int sizeLevel = 0;
             double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
             bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
+            bool photons = false;
             bool radiosity = false; ///< the points carry the radiosity cache's light too
             double footprint = 0.0; ///< a pixel's span at the exit point, in mm
             std::vector<const LightSource*> lights;
@@ -1039,6 +1040,7 @@ class Trace
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
+        std::unique_ptr<PhotonGatherer> ssltPhotonGatherers[2];
         /// The finished cells this thread has used, so it need not ask the shared cache again.
         std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
 
@@ -1070,6 +1072,15 @@ class Trace
                                          std::uint64_t key);
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key);
+        bool SubsurfacePhotonsEnabled(ConstObjectPtr receiver) const;
+        bool UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const;
+        bool RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double radius,
+                                             Vector3d& outward, TraceTicket& ticket);
+        MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, double eta, ObjectPtr receiver,
+                                                     PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud);
+        bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
+                                               const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,
+                                               TraceTicket& ticket, std::uint64_t key, MathColour& diffuse);
         MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
                                               TraceTicket& ticket, std::uint64_t key);
         MathColour ComputeCloudExitAmbient(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);

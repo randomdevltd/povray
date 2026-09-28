@@ -74,6 +74,7 @@
 #include "core/shape/cone.h"
 #include "core/shape/disc.h"
 #include "core/shape/isosurface.h"
+#include "core/shape/mesh.h"
 #include "core/shape/plane.h"
 #include "core/shape/polynomial.h"
 #include "core/shape/quadric.h"
@@ -4900,6 +4901,364 @@ MathColour Trace::ComputeCloudExitAmbient(const Intersection& out, const Vector3
     return ambient;
 }
 
+static Vector3d SubsurfacePhotonNormal(Intersection& hit, TraceThreadData* data)
+{
+    Vector3d normal;
+    if (const Mesh* mesh = dynamic_cast<const Mesh*>(hit.Object))
+    {
+        normal = mesh->Face_Normal(static_cast<const MESH_TRIANGLE*>(hit.Pointer));
+        if (mesh->Trans != nullptr)
+            MTransNormal(normal, normal, mesh->Trans);
+    }
+    else
+        hit.Object->Normal(normal, &hit, data);
+    return normal;
+}
+
+bool Trace::SubsurfacePhotonsEnabled(ConstObjectPtr receiver) const
+{
+    return sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
+           (sceneData->surfacePhotonMap.numPhotons > 0) && !Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
+}
+
+bool Trace::UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const
+{
+    if ((Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG) != Test_Flag(root, PH_IGNORE_PHOTONS_FLAG)) ||
+        (Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG) != Test_Flag(root, NO_GLOBAL_LIGHTS_FLAG)) || (receiver->LLights != root->LLights))
+        return false;
+    if (receiver->interior != root->interior)
+        return false;
+    if (const Mesh* mesh = dynamic_cast<const Mesh*>(receiver))
+        if (mesh->Data->Normals != nullptr)
+            return false;
+    if (receiver->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : static_cast<const CSG*>(receiver)->children)
+            if (!UniformSubsurfacePhotonReceiver(child, root))
+                return false;
+    return true;
+}
+
+struct SubsurfacePhotonBoundaryProbe final
+{
+    bool& state;
+    bool saved;
+    explicit SubsurfacePhotonBoundaryProbe(bool& value) : state(value), saved(value) { state = true; }
+    ~SubsurfacePhotonBoundaryProbe() { state = saved; }
+};
+
+// An isosurface's roots are only as exact as its accuracy, so a deposit and a later hit on it can differ by a few times that.
+static double SubsurfaceRootTolerance(ConstObjectPtr object)
+{
+    double tolerance = 0.0;
+    if (const IsoSurface* iso = dynamic_cast<const IsoSurface*>(object))
+        tolerance = 4.0 * iso->accuracy;
+    else if (object->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : static_cast<const CSG*>(object)->children)
+            tolerance = max(tolerance, SubsurfaceRootTolerance(child));
+    return tolerance;
+}
+
+bool Trace::RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& n, ObjectPtr receiver, double radius,
+                                             Vector3d& outward, TraceTicket& ticket)
+{
+    double scale = max(1.0, max(fabs(location[X]), max(fabs(location[Y]), fabs(location[Z]))));
+    double tolerance = max(max(1e-7, 2.0 * std::numeric_limits<PhotonScalar>::epsilon() * scale), SubsurfaceRootTolerance(receiver));
+    if (!(tolerance < 0.01 * radius))
+        return false;
+    SubsurfacePhotonBoundaryProbe probeState(threadData->subsurfacePhotonBoundaryProbe);
+    // Recover the deposit boundary without changing the on-disk photon layout.
+    double extent = max(double(receiver->BBox.size[X]), max(double(receiver->BBox.size[Y]), double(receiver->BBox.size[Z])));
+    double probe = max(1e-3, max(4.0 * tolerance, max(0.05 * radius, min(extent, 1e6) * 1e-4)));
+    Ray ray(ticket, location + n * probe, -n, Ray::SubsurfaceRay);
+    IStack hits(stackPool);
+    if (!receiver->All_Intersections(ray, hits, threadData))
+        return false;
+    Intersection deposit;
+    int matches = 0;
+    for (; !hits->empty(); hits->pop())
+    {
+        const Intersection& hit = hits->top();
+        if ((hit.Depth > 0.0) && (hit.Depth < 2.0 * probe) && ((hit.IPoint - location).length() <= tolerance))
+        {
+            if ((matches == 1) && (hit.Object == deposit.Object) && dynamic_cast<const Mesh*>(hit.Object) &&
+                ((hit.IPoint - deposit.IPoint).length() <= max(1e-10, 64.0 * std::numeric_limits<double>::epsilon() * scale)))
+            {
+                Intersection other = hit;
+                Vector3d a = SubsurfacePhotonNormal(deposit, threadData), b = SubsurfacePhotonNormal(other, threadData);
+                double lengths = a.length() * b.length();
+                if ((lengths > 0.0) && (fabs(dot(a, b)) >= (1.0 - 1e-10) * lengths))
+                    continue;
+            }
+            ++matches;
+            deposit = hit;
+        }
+    }
+    if ((matches != 1) || ((deposit.IPoint - location).length() > tolerance) ||
+        !IsObjectInCSG(deposit.Object, receiver) || Test_Flag(deposit.Object, PH_IGNORE_PHOTONS_FLAG))
+        return false;
+    deposit.INormal = SubsurfacePhotonNormal(deposit, threadData);
+    double depositLength = deposit.INormal.length();
+    if (!(depositLength > 0.0) || !std::isfinite(depositLength))
+        return false;
+    outward = deposit.INormal / depositLength;
+    double orientationProbe = 4.0 * tolerance;
+    bool ahead = receiver->Inside(deposit.IPoint + outward * orientationProbe, threadData);
+    bool behind = receiver->Inside(deposit.IPoint - outward * orientationProbe, threadData);
+    if (ahead == behind)
+        return false;
+    if (ahead)
+        outward.invert();
+    return true;
+}
+
+MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, double eta, ObjectPtr receiver,
+                                                  PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud)
+{
+    MathColour irradiance;
+    const PhotonMap& map = sceneData->surfacePhotonMap;
+    if (!SubsurfacePhotonsEnabled(receiver) || !(eta > 0.0) || !std::isfinite(eta) ||
+        !(map.minGatherRad > 0.0) || !std::isfinite(map.minGatherRad) || !(map.gatherRadStep >= 0.0) ||
+        !std::isfinite(map.gatherRadStep) || (map.gatherNumSteps < 1))
+        return irradiance;
+    double length = normal.length();
+    if (!(length > 0.0) || !std::isfinite(length))
+        return irradiance;
+    Vector3d n = normal / length;
+    if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, map.minGatherRad, n, ticket))
+        return irradiance;
+    threadData->Stats()[cloud ? Subsurface_Photon_Cloud_Gathers : Subsurface_Photon_Sample_Gathers]++;
+    // Each entry needs a fresh gather; gathered is only a texture-layer reuse flag.
+    double radius = gatherer.gatherPhotonsAdaptive(&point, &n, true);
+    threadData->Stats()[Subsurface_Photon_Searches] += gatherer.adaptiveSearches;
+    if (!(radius > 0.0) || !std::isfinite(radius))
+        return irradiance;
+    threadData->Stats()[Subsurface_Photon_Radius_Sum] += radius;
+    threadData->Stats()[Subsurface_Photon_Radius_Squared_Sum] += Sqr(radius);
+    threadData->Stats()[Subsurface_Photon_Candidates] += gatherer.gatheredPhotons.numFound;
+    for (int i = 0; i < gatherer.gatheredPhotons.numFound; i++)
+    {
+        const Photon& photon = *gatherer.gatheredPhotons.photonGatherList[i];
+        int theta = photon.theta + 127, phi = photon.phi + 127;
+        Vector3d incoming(sinCosData.cosTheta[theta] * sinCosData.cosTheta[phi], sinCosData.sinTheta[theta],
+                          sinCosData.cosTheta[theta] * sinCosData.sinTheta[phi]);
+        double cosine = min(1.0, dot(n, incoming));
+        if (!(cosine > EPSILON) || !(Sqr(eta) + Sqr(cosine) > 1.0))
+            continue;
+        Vector3d outward;
+        if (!RecoverSubsurfacePhotonBoundary(Vector3d(photon.Loc), n, receiver, radius, outward, ticket))
+            continue;
+        if ((dot(n, outward) < 0.5) || !(dot(outward, incoming) > EPSILON))
+            continue;
+        double ft = ComputeFt(cosine, eta);
+        if (!std::isfinite(ft) || !(ft > 0.0))
+            continue;
+        MathColour flux = ToMathColour(RGBColour(photon.colour));
+        for (int j = 0; j < MathColour::channels; j++)
+            if (std::isfinite(flux[j]) && (flux[j] >= 0.0))
+                irradiance[j] += flux[j] * ft;
+        threadData->Stats()[Subsurface_Photon_Accepted]++;
+    }
+    // Flux density already contains projected area; rejected deposits leave the aperture unchanged.
+    irradiance /= M_PI * Sqr(radius);
+    for (int j = 0; j < MathColour::channels; j++)
+        if (!std::isfinite(irradiance[j]))
+            irradiance[j] = 0.0f;
+    return irradiance;
+}
+
+// Projects dipole-pole discs onto the boundary visible from the existing interior sample base.
+bool Trace::ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
+                                              const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,
+                                              TraceTicket& ticket, std::uint64_t key, MathColour& diffuse)
+{
+    ObjectPtr receiver = SubsurfaceObject(out);
+    if ((dynamic_cast<const Box*>(receiver) == nullptr) && (dynamic_cast<const Sphere*>(receiver) == nullptr) &&
+        (dynamic_cast<const Mesh*>(receiver) == nullptr))
+        return false;
+    if (const Mesh* mesh = dynamic_cast<const Mesh*>(receiver))
+        if (!mesh->has_inside_vector)
+            return false;
+    const BoundingBox& box = receiver->BBox;
+    double scale = 1.0;
+    double extent = 0.0;
+    for (int a = 0; a < 3; a++)
+    {
+        if (!(box.size[a] > 0.0) || !(box.size[a] < BOUND_HUGE / 4) || !std::isfinite(box.lowerLeft[a]))
+            return false;
+        scale = max(scale, max(fabs(double(box.lowerLeft[a])), fabs(double(box.lowerLeft[a] + box.size[a]))));
+        extent = max(extent, double(box.size[a]));
+    }
+    double tolerance = max(1e-10, 64.0 * std::numeric_limits<double>::epsilon() * scale);
+    double padding = max(1e-7, 2.0 * std::numeric_limits<PhotonScalar>::epsilon() * scale);
+    double originOffset = max(1e-3, max(4.0 * padding, 1e-4 * extent));
+    double mm = sceneData->mmPerUnit;
+    double heights[2 * MathColour::channels];
+    double sigmas[2 * MathColour::channels], weights[2 * MathColour::channels];
+    double weightSum = 0.0;
+    int poles = 0;
+    for (int j = 0; j < MathColour::channels; j++)
+        for (double h : { profile.z_r[j] / mm, profile.z_v[j] / mm })
+        {
+            double sigma = profile.sigma_tr[j] * mm;
+            double weight = profile.scale[j] * exp(-sigma * h);
+            if ((h > 0.0) && std::isfinite(h) && (sigma >= 0.0) && std::isfinite(sigma) && (weight > 0.0) && std::isfinite(weight))
+            {
+                heights[poles] = h;
+                sigmas[poles] = sigma;
+                weights[poles++] = weight;
+                weightSum += weight;
+            }
+        }
+    if (poles == 0)
+        return false;
+    for (int p = 0; p < poles; p++)
+        weights[p] /= weightSum;
+    Intersection exit = out;
+    Vector3d axes[3];
+    axes[0] = SubsurfacePhotonNormal(exit, threadData);
+    double length = axes[0].length();
+    if (!(length > 0.0) || !std::isfinite(length))
+        return false;
+    axes[0] /= length;
+    ComputeSurfaceTangents(axes[0], axes[1], axes[2]);
+    double probabilities[3] = { 0.8, 0.1, 0.1 };
+    int counts[3] = { samples, 0, 0 };
+    if (samples >= 3)
+    {
+        counts[1] = counts[2] = max(1, samples / 10);
+        counts[0] = samples - counts[1] - counts[2];
+        for (int a = 0; a < 3; a++)
+            probabilities[a] = double(counts[a]) / samples;
+    }
+    PreciseMathColour sum;
+    std::vector<Intersection> crossings;
+    std::uint64_t sampleKey = DeriveKey(key, kDrawSubsurface, 6);
+    for (int i = 0; i < samples; i++)
+    {
+        double choice = Draw(sampleKey, kDrawSubsurface, 4 * i);
+        int axis = (samples >= 3) ? ((i < counts[0]) ? 0 : (i < counts[0] + counts[1]) ? 1 : 2) : (choice < 0.8) ? 0 : (choice < 0.9) ? 1 : 2;
+        int pole = 0;
+        double mass = Draw(sampleKey, kDrawSubsurface, 4 * i + 1);
+        for (; pole + 1 < poles && mass >= weights[pole]; pole++)
+            mass -= weights[pole];
+        double u = Draw(sampleKey, kDrawSubsurface, 4 * i + 2);
+        double h = heights[pole], sigma = sigmas[pole];
+        double t = u / (1.0 - u);
+        if (sigma > 0.0)
+        {
+            double target = -std::log1p(-u);
+            double a = sigma * h;
+            t = target / (a + 1.0);
+            for (int iteration = 0; iteration < 32; iteration++)
+            {
+                double error = a * t + std::log1p(t) - target;
+                if (fabs(error) <= 1e-13 * (1.0 + target))
+                    break;
+                t = max(0.0, t - error / (a + 1.0 / (1.0 + t)));
+            }
+        }
+        double r = h * sqrt(t * (t + 2.0));
+        double phi = 2.0 * M_PI * Draw(sampleKey, kDrawSubsurface, 4 * i + 3);
+        Vector3d point = out.IPoint + r * (axes[(axis + 1) % 3] * cos(phi) + axes[(axis + 2) % 3] * sin(phi));
+        Vector3d dir = axes[axis];
+        double nearDepth = -HUGE_VAL, farDepth = HUGE_VAL;
+        for (int a = 0; a < 3; a++)
+        {
+            double lo = box.lowerLeft[a] - padding, hi = box.lowerLeft[a] + box.size[a] + padding;
+            if (dir[a] == 0.0)
+            {
+                if ((point[a] < lo) || (point[a] > hi))
+                    farDepth = -HUGE_VAL;
+            }
+            else
+            {
+                double a0 = (lo - point[a]) / dir[a], a1 = (hi - point[a]) / dir[a];
+                nearDepth = max(nearDepth, min(a0, a1));
+                farDepth = min(farDepth, max(a0, a1));
+            }
+        }
+        if (!(nearDepth < farDepth) || !std::isfinite(nearDepth) || !std::isfinite(farDepth))
+            continue;
+        crossings.clear();
+        Ray projection(ticket, point + dir * (nearDepth - originOffset), dir, Ray::SubsurfaceRay);
+        IStack hits(stackPool);
+        receiver->All_Intersections(projection, hits, threadData);
+        for (; !hits->empty(); hits->pop())
+            crossings.push_back(hits->top());
+        std::sort(crossings.begin(), crossings.end(), [](const Intersection& a, const Intersection& b) { return a.Depth < b.Depth; });
+        Vector3d previous;
+        bool havePrevious = false;
+        int entryIndex = 0;
+        for (Intersection& in : crossings)
+        {
+            if (havePrevious && ((in.IPoint - previous).lengthSqr() <= Sqr(tolerance)))
+                continue;
+            previous = in.IPoint;
+            havePrevious = true;
+            if (!IsSameSSLTObject(in.Object, out.Object) || Test_Flag(in.Object, PH_IGNORE_PHOTONS_FLAG))
+                continue;
+            Vector3d delta = in.IPoint - base;
+            double distance = delta.length();
+            if (!(distance > tolerance))
+                continue;
+            Intersection visible;
+            Ray ray(ticket, base, delta / distance, Ray::SubsurfaceRay);
+            if (!FindIntersection(receiver, visible, ray, distance + 8.0 * tolerance) ||
+                ((visible.IPoint - in.IPoint).lengthSqr() > Sqr(8.0 * tolerance)))
+                continue;
+            Vector3d normal = SubsurfacePhotonNormal(in, threadData);
+            double normalLength = normal.length();
+            if (!(normalLength > 0.0) || !std::isfinite(normalLength))
+                continue;
+            normal /= normalLength;
+            if (dot(normal, delta) < 0.0)
+                normal.invert();
+            Vector3d offset = in.IPoint - out.IPoint;
+            double distSqr = offset.lengthSqr(), density = 0.0;
+            for (int a = 0; a < 3; a++)
+            {
+                double radialSqr = max(0.0, distSqr - Sqr(dot(offset, axes[a])));
+                double disk = 0.0;
+                for (int p = 0; p < poles; p++)
+                {
+                    double dSqr = radialSqr + Sqr(heights[p]);
+                    double distance = sqrt(dSqr);
+                    disk += weights[p] * heights[p] * (1.0 + sigmas[p] * distance) *
+                            exp(-sigmas[p] * radialSqr / (distance + heights[p])) / (dSqr * distance);
+                }
+                density += probabilities[a] * fabs(dot(normal, axes[a])) * disk / (2.0 * M_PI);
+            }
+            if (!(density > 0.0) || !std::isfinite(density))
+                continue;
+            PreciseMathColour rd = profile.Rd(distSqr * Sqr(mm)) * (ftOut * Sqr(mm) / density);
+            if (flesh.PerEntry())
+            {
+                SubsurfaceEntry entry;
+                ComputeSubsurfaceEntry(flesh, in.IPoint, -normal, Draw(DeriveKey(sampleKey, kDrawSubsurface, i), kDrawSubsurface, entryIndex++), entry);
+                rd *= PreciseMathColour(entry.factor);
+            }
+            MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, normal, out.Object->interior->IOR / sceneData->atmosphereIOR,
+                                                                      receiver, gatherer, ticket, false);
+            sum += rd * PreciseMathColour(photonEntry);
+        }
+    }
+    diffuse = (samples > 0) ? MathColour(sum / double(samples)) : MathColour();
+    return true;
+}
+
+struct SubsurfacePhotonReceiver final
+{
+    bool& state;
+    bool saved;
+    bool active;
+    SubsurfacePhotonReceiver(bool& value, ConstObjectPtr receiver, bool enabled) : state(value), saved(value), active(enabled)
+    {
+        if (active)
+            state = Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
+    }
+    ~SubsurfacePhotonReceiver() { if (active) state = saved; }
+};
+
 // A random number in [0, 1) from a 64-bit state (splitmix64).
 static double CloudRandom(uint64_t& state)
 {
@@ -4977,6 +5336,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             cell.visibility.resize(count * cell.lights * MathColour::channels);
             if (key.medium != nullptr)
                 cell.entry.assign(count * 2 * MathColour::channels, 0.0f);
+            if (key.photons)
+                cell.photonEntry.assign(count * MathColour::channels, 0.0f);
             if (key.radiosity)
                 cell.ambient.assign(count * MathColour::channels, std::numeric_limits<float>::quiet_NaN());
             {
@@ -5016,7 +5377,7 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
         cell.stage = SubsurfaceCell::kReady;
         if (!usable)
         {
-            sceneData->subsurfaceCache->Release(cell.reserved);
+            threadData->subsurfaceCache->Release(cell.reserved);
             cell.reserved = 0;
         }
     }
@@ -5145,10 +5506,10 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
         }
         if (kept + dropped == 0)
             continue;
-        bool reserved = (kept == 0) || sceneData->subsurfaceCache->Reserve(kept);
+        bool reserved = (kept == 0) || threadData->subsurfaceCache->Reserve(kept);
         std::lock_guard<std::mutex> lock(cell.mutex);
         if (reserved && (cell.stage == SubsurfaceCell::kReady))
-            sceneData->subsurfaceCache->Release(kept);
+            threadData->subsurfaceCache->Release(kept);
         else if (reserved)
             cell.reserved += kept;
         cell.found += kept;
@@ -5176,6 +5537,10 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
     int stride = cell.lights * MathColour::channels;
     int first = job * kCloudPointsPerJob, last = min(int(cell.points.size()), first + kCloudPointsPerJob);
     uint64_t state = CloudSeed(key, 1, job);
+    SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
+    std::unique_ptr<PhotonGatherer> gatherer;
+    if (key.photons)
+        gatherer.reset(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
     for (int k = first; k < last; k++)
     {
         SubsurfacePoint& point = cell.points[k];
@@ -5183,11 +5548,19 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
         MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, normal, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
                                                             cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k));
+        MathColour photonEntry;
+        if (gatherer)
+        {
+            photonEntry = ComputeSubsurfacePhotonIrradiance(point.position, normal, cloud.eta, cloud.object, *gatherer, ticket, true);
+            irradiance += photonEntry;
+        }
         if (key.medium != nullptr)
         {
             SubsurfaceEntry entry;
             ComputeSubsurfaceEntry(*cloud.flesh, point.position, -normal, CloudDepthDraw(key, cell, point, cloud.size), entry);
             irradiance = irradiance * entry.factor + entry.emission;
+            if (gatherer)
+                photonEntry *= entry.factor;
             for (int j = 0; j < MathColour::channels; j++)
             {
                 cell.entry[k * 2 * MathColour::channels + j] = entry.factor[j];
@@ -5195,7 +5568,11 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
             }
         }
         for (int j = 0; j < MathColour::channels; j++)
+        {
             point.irradiance[j] = irradiance[j];
+            if (gatherer)
+                cell.photonEntry[k * MathColour::channels + j] = photonEntry[j];
+        }
         point.id = k;
         MathColour ambient;
         if (key.radiosity && radiosity.LookupPretraceAmbient(point.position, normal, ambient))
@@ -5267,6 +5644,8 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
 {
     cloud.object = SubsurfaceObject(out);
     cloud.edge = false;
+    if (cloud.photons && !UniformSubsurfacePhotonReceiver(cloud.object, cloud.object))
+        return false;
     if (cloud.object->interior == nullptr)
         return false;
     // Cloud points hold a shadow per light of the whole object, which a part in a light group of its own cannot use.
@@ -5280,14 +5659,14 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
     cloud.reach = kCloudReach / sigmaMin;
     cloud.eta = cloud.object->interior->IOR / sceneData->atmosphereIOR;
     if (!ssltCameraKnown)
-        ssltCameraKnown = sceneData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle);
+        ssltCameraKnown = threadData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle);
 
     // Diffusion that stays within about a pixel is taken as lit like the exit point.
     double footprint = ssltPixelSize + (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle;
     cloud.footprint = footprint * mm;
     cloud.local = (1.0 / sigmaMin / mm < footprint);
     if (cloud.local)
-        return true;
+        return !cloud.photons;
 
     // Cells are a power of four in size, at least the diffusion's reach, so a texture that varies it uses few sizes.
     cloud.sizeLevel = 2 * int(ceil(0.5 * log2(cloud.reach / mm)));
@@ -5352,12 +5731,12 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     for (int cy = lo[Y]; cy <= hi[Y]; cy++)
     for (int cz = lo[Z]; cz <= hi[Z]; cz++)
     {
-        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.radiosity, cloud.medium };
+        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.photons, cloud.radiosity, cloud.medium };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
             bool build;
-            std::shared_ptr<SubsurfaceCell> cell = sceneData->subsurfaceCache->Acquire(key, build);
+            std::shared_ptr<SubsurfaceCell> cell = threadData->subsurfaceCache->Acquire(key, build);
             if (build)
                 BuildSubsurfaceCell(cloud, key, *cell);
             else
@@ -5466,7 +5845,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     const Vector3d& x = out.IPoint;
     SubsurfaceVisibility& visibility = ssltScratchVisibility;
     visibility.Reset(cloud.lights.size());
-    PreciseMathColour far, discWeight, discLight, ringWeight, ringLight, ringUnfolded, discFactor, discEmission;
+    PreciseMathColour far, discWeight, discLight, ringWeight, ringLight, ringUnfolded, discFactor, discEmission, discPhotons;
     double discFacing = 1.0, ringFacing = 1.0, ringArea = 0.0, covered = 0.0;
     Vector3d moment(0.0);
     double creaseSqr = Sqr(kCloudCrease * cloud.spacing * mm);
@@ -5539,6 +5918,8 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     {
                         discFacing = min(discFacing, facing);
                         visibility.Add(cell->visibility.data() + p.id * stride);
+                        for (int j = 0; cloud.photons && (j < MathColour::channels); j++)
+                            discPhotons[j] += rd[j] * p.area * cell->photonEntry[p.id * MathColour::channels + j];
                         for (int j = 0; !cell->entry.empty() && (j < MathColour::channels); j++)
                         {
                             discFactor[j] += rd[j] * p.area * cell->entry[p.id * 2 * MathColour::channels + j];
@@ -5580,6 +5961,10 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     double density = ringArea / (M_PI * (ringSqr - discSqr));
     if ((visibility.count == 0) || (discFacing < kCloudFlat) || hidden)
         return false;
+    if (cloud.photons)
+        for (int j = 0; j < MathColour::channels; j++)
+            if (!(discWeight[j] > 0.0))
+                return false;
     visibility.Finish();
     // Coarse points cannot place a shadow edge between them: the exit point tests its own, and edges go to method 1.
     double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
@@ -5613,6 +5998,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
         ringShare = regionShare(disc, ring);
     }
 
+    SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, coarse, ticket, key);
     if (cloud.exitMismatch)
         return false;
@@ -5623,6 +6009,9 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
         for (int j = 0; j < MathColour::channels; j++)
             here[j] = (discWeight[j] > 0.0) ? here[j] * discFactor[j] / discWeight[j] + discEmission[j] / discWeight[j]
                                             : here[j] * cloud.flesh->nearby.factor[j] + cloud.flesh->nearby.emission[j];
+    if (cloud.photons)
+        for (int j = 0; j < MathColour::channels; j++)
+            here[j] += discPhotons[j] / discWeight[j];
     PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
     PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
     PreciseMathColour sum = far + coreRd * coreShare * PreciseMathColour(here);
@@ -5944,19 +6333,38 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     cloudData.radiosity = cloudRadiosity;
+    cloudData.photons = SubsurfacePhotonsEnabled(out.Object);
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
     bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
-    if (cloud)
-        Total_Colour += cloudDiffuse;
-    else
+    const bool photonSamples = cloudData.photons && !cloud;
+    if (photonSamples && (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed))
     {
-        std::vector<SubsurfaceCandidate> candidates(lights.size() * NumSamplesDiffuse);
+        cloudData.photons = false;
+        cloud = OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
+                ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+    }
+    const bool photonsOnly = cloud && photonSamples;
+    if (!cloud || photonSamples)
+    {
+        std::vector<SubsurfaceCandidate> candidates(photonsOnly ? 0 : lights.size() * NumSamplesDiffuse);
         const std::uint64_t fleshKey = DeriveKey(key, kDrawSubsurface, 4);
+        std::unique_ptr<PhotonGatherer>& gatherer = ssltPhotonGatherers[Eye.GetTicket().subsurfaceRecursionDepth - 1];
+        MathColour projectedDiffuse;
+        bool projectedPhotons = false;
+        if (photonSamples)
+        {
+            if (!gatherer)
+                gatherer.reset(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
+            if (method == kSubsurfaceMethodPointCloud)
+                threadData->Stats()[Subsurface_Photon_Fallbacks]++;
+            projectedPhotons = ComputeProjectedSubsurfacePhotons(out, sampleBase, profile, flesh, ftOut, sceneData->subsurfaceSamplesDiffuse, *gatherer,
+                                                                 Eye.GetTicket(), key, projectedDiffuse);
+        }
 
-        for (int i = 0; i < NumSamplesDiffuse; i++)
+        for (int i = 0; (!photonsOnly || !projectedPhotons) && (i < NumSamplesDiffuse); i++)
         {
             Intersection in;
             ComputeDiffuseSamplePoint(sampleBase, SubsurfaceObject(out), in, sampleArea, Eye.GetTicket(), key, i);
@@ -5978,23 +6386,38 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                     n.invert();
                 SubsurfaceEntry entry;
                 ComputeSubsurfaceEntry(flesh, in.IPoint, n, Draw(fleshKey, kDrawSubsurface, i), entry);
-                Total_Colour += MathColour(rd * PreciseMathColour(entry.emission));
+                if (!photonsOnly)
+                    Total_Colour += MathColour(rd * PreciseMathColour(entry.emission));
                 rd *= PreciseMathColour(entry.factor);
             }
 
+            if (photonSamples && !projectedPhotons && !Test_Flag(in.Object, PH_IGNORE_PHOTONS_FLAG))
+            {
+                Vector3d n = SubsurfacePhotonNormal(in, threadData).normalized();
+                if (dot(n, in.IPoint - sampleBase) < 0.0)
+                    n.invert();
+                MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, n, out.Object->interior->IOR / sceneData->atmosphereIOR, SubsurfaceObject(out), *gatherer, Eye.GetTicket(), false);
+                Total_Colour += MathColour(rd * PreciseMathColour(photonEntry));
+            }
+
             // radiosity-alike ambient illumination
-            if (radiosity_needed)
+            if (radiosity_needed && !photonsOnly)
                 // shoot just one random ray to account for ambient illumination (we're averaging stuff anyway)
                 ComputeDiffuseAmbientContribution1(in, rd, Total_Colour, eta, weight, Eye.GetTicket());
 
-            for (int l = 0; l < lights.size(); l++)
+            for (int l = 0; !photonsOnly && (l < lights.size()); l++)
                 ComputeDiffuseCandidate(*lights[l], in, rd, eta, candidates[l * NumSamplesDiffuse + i], Eye.GetTicket());
         }
-        ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 2));
+        if (!photonsOnly)
+            ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 2));
         // Rays that leave without meeting the object count as samples of nothing, or open surfaces get twice their light.
         if (NumSamplesDiffuse > 0)
             Total_Colour /= NumSamplesDiffuse;
+        if (projectedPhotons)
+            Total_Colour += projectedDiffuse;
     }
+    if (cloud)
+        Total_Colour += cloudDiffuse;
     // Looked-up flesh is relative to the reference; emission the same everywhere enters over the whole profile.
     for (int j = 0; flesh.fleshAtDepth && (j < MathColour::channels); j++)
         Total_Colour[j] /= max(flesh.reference[j], kFleshFloor);

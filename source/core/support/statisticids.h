@@ -274,6 +274,12 @@ typedef enum INTSTATS
     Priority_Queue_Remove,
     Gather_Performed_Count,
     Gather_Expanded_Count,
+    Subsurface_Photon_Cloud_Gathers,
+    Subsurface_Photon_Sample_Gathers,
+    Subsurface_Photon_Searches,
+    Subsurface_Photon_Candidates,
+    Subsurface_Photon_Accepted,
+    Subsurface_Photon_Fallbacks,
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample
@@ -346,6 +352,8 @@ typedef enum FPSTATS
     Radiosity_Weight_R3,
     Radiosity_Weight_R4ff,
 
+    Subsurface_Photon_Radius_Sum,
+    Subsurface_Photon_Radius_Squared_Sum,
     /* Must be the last */
     MaxFPStat
 } FPStatsIndex;

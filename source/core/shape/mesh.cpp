@@ -289,13 +289,14 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     }
 
     found = 0;
+    DBL depthTolerance = Thread->subsurfacePhotonBoundaryProbe ? std::numeric_limits<DBL>::min() : DEPTH_TOLERANCE;
 
     if (Data->FlatTree == nullptr)
     {
         /* just step through all elements. */
         for (i = 0; i < Data->Number_Of_Triangles; i++)
         {
-            if (intersect_mesh_triangle(ray, &Data->Triangles[i], &t))
+            if (intersect_mesh_triangle(ray, &Data->Triangles[i], &t, depthTolerance))
             {
                 /* actually, this should push onto a local depth stack and
                    make sure that we don't have the same intersection point from
@@ -309,7 +310,7 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     else
     {
         /* Use the mesh's bounding hierarchy. */
-        inside = inside_bbox_tree(ray, Thread->Stats());
+        inside = inside_bbox_tree(ray, Thread->Stats(), depthTolerance);
     }
 
     if (Test_Flag(this, INVERTED_FLAG))
@@ -1058,7 +1059,7 @@ void MeshIndexColumn::Finish(const Mesh_Triangle_Struct *triangles, size_t n, bo
 ******************************************************************************/
 
 static inline bool intersect_decoded_triangle(const BasicRay &ray, const Vector3d& P1, const Vector3d& P2, const Vector3d& P3,
-                                             const Vector3d& S_Normal, DBL NormalLengthSqr, int axis, DBL *Depth)
+                                             const Vector3d& S_Normal, DBL NormalLengthSqr, int axis, DBL *Depth, DBL depthTolerance = DEPTH_TOLERANCE)
 {
     DBL NormalDotDirection;
     DBL s, t;
@@ -1072,7 +1073,7 @@ static inline bool intersect_decoded_triangle(const BasicRay &ray, const Vector3
 
     *Depth = dot(S_Normal, P1 - ray.Origin) / NormalDotDirection;
 
-    if ((*Depth < DEPTH_TOLERANCE) || (*Depth > MAX_DISTANCE))
+    if ((*Depth < depthTolerance) || (*Depth > MAX_DISTANCE))
     {
         return(false);
     }
@@ -1151,13 +1152,13 @@ static inline bool intersect_decoded_triangle(const BasicRay &ray, const Vector3
 
 
 
-bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Triangle, DBL *Depth) const
+bool Mesh::intersect_mesh_triangle(const BasicRay &ray, const MESH_TRIANGLE *Triangle, DBL *Depth, DBL depthTolerance) const
 {
     Vector3d P1, P2, P3;
     get_triangle_vertices(Triangle, P1, P2, P3);
     // Unnormalised: the depth needs no unit normal, and the grazing test scales by its length instead.
     const Vector3d S_Normal = cross(P3 - P1, P2 - P1);
-    return intersect_decoded_triangle(ray, P1, P2, P3, S_Normal, S_Normal.lengthSqr(), Triangle->Dominant_Axis(), Depth);
+    return intersect_decoded_triangle(ray, P1, P2, P3, S_Normal, S_Normal.lengthSqr(), Triangle->Dominant_Axis(), Depth, depthTolerance);
 }
 
 bool Mesh::intersect_mesh_triangle(const BasicRay &ray, MeshIndex i, TraceThreadData *Thread, DBL *Depth) const
@@ -2348,13 +2349,13 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
 *
 ******************************************************************************/
 
-bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats) const
+bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats, DBL depthTolerance) const
 {
     MeshIndex found = 0;
     DBL Best = BOUND_HUGE, Depth;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, false, stats, [&](std::int32_t leaf) {
-        if (intersect_mesh_triangle(ray, &Data->Triangles[leaf], &Depth))
+        if (intersect_mesh_triangle(ray, &Data->Triangles[leaf], &Depth, depthTolerance))
             found++;
         return false;
     });

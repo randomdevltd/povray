@@ -62,6 +62,7 @@ ViewThreadData::ViewThreadData(ViewData *vd, size_t seed) :
     TraceThreadData(std::dynamic_pointer_cast<SceneData>(vd->GetSceneData()), seed),
     viewData(vd)
 {
+    subsurfaceCache = vd->GetSubsurfaceCache();
 }
 
 ViewThreadData::~ViewThreadData()
