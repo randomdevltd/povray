@@ -26,11 +26,18 @@ for mode in -pr +pr; do
         echo "snapshot $mode: writing a snapshot changed the state file"; exit 1
     fi
     cmp snapshot_whole.png snapshot_kept.png
-    head -c $(($(wc -c < snapshot_kept.pov-state) / 2)) snapshot_kept.pov-state > snapshot_resumed.pov-state
-    offline snapshot_resumed.pov-state snapshot_half.png
-    if cmp -s snapshot_half.png snapshot_whole.png; then
-        echo "snapshot $mode: half a state file gave the whole image"; exit 1
+    # cut at record boundaries, each record starting with its POVMS header, so the cut does not depend on record sizes
+    records=$(grep -boa POVRAYMS snapshot_kept.pov-state | cut -d: -f1)
+    count=$(echo "$records" | wc -l)
+    if [ "$count" -lt 4 ]; then
+        echo "snapshot $mode: the state file holds only $count records"; exit 1
     fi
+    head -c $(echo "$records" | sed -n 2p) snapshot_kept.pov-state > snapshot_first.pov-state
+    offline snapshot_first.pov-state snapshot_first.png
+    if cmp -s snapshot_first.png snapshot_whole.png; then
+        echo "snapshot $mode: the first of $count records gave the whole image"; exit 1
+    fi
+    head -c $(echo "$records" | sed -n $((count / 2 + 1))p) snapshot_kept.pov-state > snapshot_resumed.pov-state
     render resumed $mode +c +SNsnapshot_resumed.png
     pixels whole; pixels resumed
     cmp snapshot_whole.px snapshot_resumed.px
