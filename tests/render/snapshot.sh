@@ -5,7 +5,7 @@ POVRAY=$1; SRCDIR=$2
 W=96; H=64
 render() {
     name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/include" +w$W +h$H -d -p -v -gp -a +wt1 +bs16 +fp16 +o"snapshot_$name.ppm" "$@"
+    "$POVRAY" +i"$SRCDIR/tests/render/snapshot.pov" +L"$SRCDIR/include" +w$W +h$H -d -p -v -gp -a +wt1 +bs16 +fp16 +o"snapshot_$name.ppm" "$@"
 }
 pixels() {
     # the header carries the render date, so only the pixels of 6 bytes are compared
