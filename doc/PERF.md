@@ -115,6 +115,19 @@ lands on a grid point. Resolution below the media's own is not safe, so none is 
 extinction is never negative, which a density `color_map` with negative entries breaks. Surface lighting is unchanged,
 bit for bit.
 
+Shadow density batches preserve the point path's arithmetic. Supported density patterns also provide
+conservative extinction ranges, so a stretch may use the range midpoint when its optical-depth error
+fits a shared 1/1024 budget. Bounds are used only when a whole-ray upper bound, inflated for rounding,
+proves at least one colour channel cannot reach the opacity cutoff. Other rays retain the point path's
+per-point cutoff: moving it to a stretch boundary changes bright-light shadows substantially.
+`tools/bench/media-opacity.pov` exercises this case; `Method`, `Intervals`, `Samples`, `Absorption` and
+`StartDensity` select threshold and sampling cases. The budget follows the shadow ray through separate
+media containers; area-light samples have independent budgets and reserve their worst remainder for the
+shared atmospheric tail. `tools/bench/media-segments.pov` tests accumulated errors across containers. The
+rounding allowance is reserved from the same budget; unusually large sample counts may use the exact path.
+Run `python3 tools/bench/check-media-opacity.py <reference-binary> <candidate-binary> <output-directory>`
+to compare cutoff cases exactly and stacked-media cases within 64/65535 per displayed colour channel.
+
 | Render | Before | After | |
 |---|---|---|---|
 | the window above, trace | 244.6 CPU-s, 1.66 G media samples, 44.1 M shadow rays | 36.9 CPU-s, 363 M, 9.4 M | 6.6× |

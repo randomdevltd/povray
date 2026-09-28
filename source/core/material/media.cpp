@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <limits>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -486,6 +487,29 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Extinction
     }
 }
 
+static bool BelowMediaOpacity(const MediaIntervalVector& intervals, int points, const MathColour& hi, DBL budget, DBL& roundingError)
+{
+    const DBL rounding = (2.0 * points + intervals.size() + 64.0) * std::numeric_limits<ColourChannel>::epsilon();
+    if(rounding >= 0.01)
+        return false;
+    for(int ch = 0; ch < MathColour::channels; ch++)
+        if(!(hi[ch] >= 0.0) || !std::isfinite(hi[ch]))
+            return false;
+    const DBL sumUpper = DBL(hi.Max()) * (2.0 * points) / (1.0 - rounding);
+    if(sumUpper >= std::numeric_limits<ColourChannel>::max())
+        return false;
+    DBL length = 0.0;
+    for(const auto& interval : intervals)
+    {
+        if(!(interval.ds >= 0.0) || !std::isfinite(interval.ds))
+            return false;
+        length += interval.ds;
+    }
+    const DBL upper = (DBL(hi.Min()) + 1e-6 * DBL(hi.Max())) * length / (1.0 - rounding);
+    roundingError = rounding * DBL(hi.Max()) * length / (1.0 - rounding);
+    return std::isfinite(upper) && (upper < log(1024.0)) && (roundingError < budget);
+}
+
 void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, const Media *IMedia)
 {
     const bool method3 = (IMedia->Sample_Method == 3);
@@ -493,10 +517,16 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
     ExtinctionPlan plan;
     const bool planned = plan.Plan(medias, threadData);
     MathColour lo, hi;
+    DBL roundingError;
 
     threadData->Stats()[Media_Intervals] += mediaintervals.size();
-    if(planned && plan.Range(ray.Evaluate(mediaintervals.front().s0), ray.Evaluate(mediaintervals.back().s1), lo, hi) && (lo.Min() >= 0.0))
+    if(planned && (ray.GetMediaErrorBudget() > 0.0) &&
+       plan.Range(ray.Evaluate(mediaintervals.front().s0), ray.Evaluate(mediaintervals.back().s1), lo, hi) && (lo.Min() >= 0.0) &&
+       BelowMediaOpacity(mediaintervals, points, hi, ray.GetMediaErrorBudget(), roundingError))
+    {
+        ray.SetMediaErrorBudget(ray.GetMediaErrorBudget() - roundingError);
         ComputeMediaBoundedTransmittance(medias, mediaintervals, ray, plan, method3, points, lo, hi);
+    }
     else
         ComputeMediaPointTransmittance(medias, mediaintervals, ray, planned ? &plan : nullptr, method3, points);
 }
@@ -557,14 +587,12 @@ void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaI
 {
     // Today's points and weights, but a stretch of them whose extinction range fits its share of a 1/1024 budget
     // takes the middle of the range instead; see doc/PERF.md.
-    const DBL opaque = log(1024.0);
     const int minStretch = 4;
     const int maxPieces = 8;
     const int capacity = 64;
-    DBL budget = 1.0 / 1024.0;
+    DBL budget = ray.GetMediaErrorBudget();
     DBL remaining = 0.0;
-    MathColour total, lo, hi;
-    bool dark = false;
+    MathColour lo, hi;
     DBL at[kDensityBatch];
     MathColour extinction[kDensityBatch];
     int stack[capacity];
@@ -582,14 +610,12 @@ void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaI
         int top = 0;
         stack[top++] = 0;
         stack[top++] = points - 1;
-        while((top > 0) && !dark)
+        while(top > 0)
         {
             const int b = stack[--top];
             const int a = stack[--top];
             const int n = b - a + 1;
-            DBL weights = 0.0;
-            for(int j = a; j <= b; j++)
-                weights += weight(j);
+            const DBL weights = method3 ? n + (b / 2 + 1) - ((a + 1) / 2) - (a == 0) - (b == points - 1) : n;
             const DBL length = weights * scale;
 
             bool ranged = false;
@@ -617,7 +643,6 @@ void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaI
                     od += (lo + hi) * (0.5 * length);
                     budget -= error;
                     remaining -= length;
-                    dark = (total + od).Min() > opaque;
                     continue;
                 }
                 // Where extinction is smooth the error shrinks with the square of a stretch's length, its share only linearly.
@@ -634,16 +659,15 @@ void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaI
             }
 
             MathColour sum;
-            for(int j0 = a; (j0 <= b) && !dark; j0 += int(kDensityBatch))
+            for(int j0 = a; j0 <= b; j0 += int(kDensityBatch))
             {
                 const int m = min(b + 1 - j0, int(kDensityBatch));
                 for(int k = 0; k < m; k++)
                     at[k] = depth(j0 + k);
                 ComputeMediaExtinction(medias, &plan, ray, at, extinction, m);
-                for(int k = 0; (k < m) && !dark; k++)
+                for(int k = 0; k < m; k++)
                 {
                     sum += extinction[k] * weight(j0 + k);
-                    dark = (total + od + sum * scale).Min() > opaque;
                 }
             }
             od += sum * scale;
@@ -653,8 +677,8 @@ void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaI
         i->od = od;
         i->te.Clear();
         i->samples = 1;
-        total += od;
     }
+    ray.SetMediaErrorBudget(budget);
 }
 
 void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,

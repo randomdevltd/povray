@@ -2154,6 +2154,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     // NOTE: shadow rays are never photon rays, so flag can be hard-coded to false
     newray.SetFlags(Ray::OtherRay, true, false);
     newray.Derive(lightsourceray, kDrawShadow, LightSlot(lightsource));
+    newray.ResetMediaErrorBudget();
 
     // Get shadows from current light source.
     if(lightsource.Area_Light && qualityFlags.areaLights && (areaSample != nullptr))
@@ -2211,6 +2212,7 @@ struct OpaqueShadowStopCondition final : public IntersectionStopCondition
 
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
+    lightsourceray.ResetMediaErrorBudget();
     Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
     bool foundTransparentObjects = false;
@@ -2271,6 +2273,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                 {
                     // A part that lets light through is left to the walk below, which filters it once.
                     const MathColour unfiltered = lightcolour;
+                    const DBL mediaBudget = lightsourceray.GetMediaErrorBudget();
                     ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
 
                     if(lightcolour.IsNearZero(EPSILON) &&
@@ -2282,6 +2285,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                         return;
                     }
                     lightcolour = unfiltered;
+                    lightsourceray.SetMediaErrorBudget(mediaBudget);
                 }
                 cacheObject = nullptr;
             }
@@ -2474,6 +2478,7 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
             sample_Colour[i] = lightcolour;
 
             TracePointLightShadowRay(lightsource, lightsourcedepth, lsr, sample_Colour[i]);
+            lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
 
             lightGrid[u * lightsource.Area_Size2 + v] = sample_Colour[i];
         }

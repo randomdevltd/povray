@@ -114,6 +114,10 @@ class Ray final : public BasicRay
         inline TraceTicket& GetTicket() { return ticket; }
         inline const TraceTicket& GetTicket() const { return ticket; }
 
+        DBL GetMediaErrorBudget() const { return mediaErrorBudget; }
+        void SetMediaErrorBudget(DBL value) const { mediaErrorBudget = value; }
+        void ResetMediaErrorBudget() { mediaErrorBudget = 1.0 / 1024.0; }
+
         /// The path key this ray's random draws are hashed from.
         std::uint64_t GetKey() const { return key; }
         void SetKey(std::uint64_t k) { key = k; children = 0; }
@@ -129,6 +133,7 @@ class Ray final : public BasicRay
         TraceTicket& ticket;
         std::uint64_t key = 0;
         mutable std::uint32_t children = 0;
+        mutable DBL mediaErrorBudget = 0.0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;
