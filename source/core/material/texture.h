@@ -130,6 +130,12 @@ struct Finish_Struct final
     SNGL Crand, Metallic;
     MathColour Ambient, Emission, Reflection_Max, Reflection_Min;
     MathColour SubsurfaceTranslucency, SubsurfaceAnisotropy;
+    MathColour SubsurfaceColour;   ///< the flesh's diffuse reflectance where SubsurfaceHasColour; the pigment is then the skin
+    MathColour SubsurfaceEmission; ///< light the flesh gives off, where SubsurfaceEmits and there is no emission pigment
+    PIGMENT *SubsurfacePigment;    ///< the flesh where it varies; SubsurfaceColour is its constant case
+    PIGMENT *SubsurfaceEmissionPigment;
+    PIGMENT *SubsurfaceThicknessPigment; ///< the skin's relative thickness as a grey value, else SubsurfaceThickness
+    SNGL SubsurfaceThickness;
     //MathColour SigmaPrimeS, SigmaA;
     SNGL Reflection_Falloff;  // Added by MBP 8/27/98
     bool Reflection_Fresnel;
@@ -138,7 +144,11 @@ struct Finish_Struct final
     int Conserve_Energy;  // added by NK Dec 19 1999
     bool UseSubsurface;   // whether to use subsurface light transport
     int SubsurfaceMethod; // kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, or 0 for the scene's
+    bool SubsurfaceHasColour, SubsurfaceEmits;
+    bool SubsurfaceThicknessSet; ///< whether the skin's thickness was given, so the skin is looked up where light enters
+    bool SubsurfaceVolume; ///< whether the flesh and its emission are looked up below where light enters
     bool AlphaKnockout;   // whether pigment alpha knocks out finish effects
+    ~Finish_Struct();
 };
 
 

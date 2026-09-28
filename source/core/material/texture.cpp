@@ -189,6 +189,12 @@ void Transform_Textures(TEXTURE *Textures, const TRANSFORM *Trans)
         {
             Transform_Tpattern(Layer->Pigment, Trans);
             Transform_Tpattern(Layer->Tnormal, Trans);
+            if (Layer->Finish != nullptr)
+            {
+                Transform_Tpattern(Layer->Finish->SubsurfacePigment, Trans);
+                Transform_Tpattern(Layer->Finish->SubsurfaceEmissionPigment, Trans);
+                Transform_Tpattern(Layer->Finish->SubsurfaceThicknessPigment, Trans);
+            }
         }
         else
         {
@@ -272,6 +278,16 @@ FINISH *Create_Finish()
     New->SubsurfaceTranslucency.Clear();
     New->SubsurfaceAnisotropy.Clear();
     New->SubsurfaceMethod = 0;
+    New->SubsurfaceColour.Clear();
+    New->SubsurfaceEmission.Clear();
+    New->SubsurfacePigment = nullptr;
+    New->SubsurfaceEmissionPigment = nullptr;
+    New->SubsurfaceThicknessPigment = nullptr;
+    New->SubsurfaceThickness = 1.0;
+    New->SubsurfaceHasColour = false;
+    New->SubsurfaceEmits = false;
+    New->SubsurfaceThicknessSet = false;
+    New->SubsurfaceVolume = false;
 
     New->AlphaKnockout = false;
 
@@ -300,6 +316,13 @@ FINISH *Create_Finish()
 *
 ******************************************************************************/
 
+Finish_Struct::~Finish_Struct()
+{
+    Destroy_Pigment(SubsurfacePigment);
+    Destroy_Pigment(SubsurfaceEmissionPigment);
+    Destroy_Pigment(SubsurfaceThicknessPigment);
+}
+
 FINISH *Copy_Finish(const FINISH *Old)
 {
     FINISH *New;
@@ -308,6 +331,9 @@ FINISH *Copy_Finish(const FINISH *Old)
     {
         New = Create_Finish();
         *New = *Old;
+        New->SubsurfacePigment = Copy_Pigment(Old->SubsurfacePigment);
+        New->SubsurfaceEmissionPigment = Copy_Pigment(Old->SubsurfaceEmissionPigment);
+        New->SubsurfaceThicknessPigment = Copy_Pigment(Old->SubsurfaceThicknessPigment);
     }
     else
         New = nullptr;
@@ -566,6 +592,11 @@ void Post_Textures(TEXTURE *Textures)
                     }
                     Post_Pigment(Layer->Pigment);
                     Post_Tnormal(Layer->Tnormal);
+                    if (Layer->Finish != nullptr)
+                        for (PIGMENT *pigment : { Layer->Finish->SubsurfacePigment, Layer->Finish->SubsurfaceEmissionPigment,
+                                                  Layer->Finish->SubsurfaceThicknessPigment })
+                            if (pigment != nullptr)
+                                Post_Pigment(pigment);
 
                     break;
 

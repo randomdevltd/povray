@@ -605,6 +605,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { VERTEX_VECTORS_TOKEN,         "vertex_vectors" },
     { VLENGTH_TOKEN,                "vlength" },
     { VNORMALIZE_TOKEN,             "vnormalize" },
+    { VOLUME_SAMPLING_TOKEN,        "volume_sampling" },
     { VROTATE_TOKEN,                "vrotate" },
     { VSTR_TOKEN,                   "vstr" },
     { VTURBULENCE_TOKEN,            "vturbulence" },
