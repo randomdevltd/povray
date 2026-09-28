@@ -1014,6 +1014,54 @@ averaged apart, so light through an upper layer times the layer under it is a pr
 two patterns are unrelated; metallic reflection reads the averaged colour; `texture_map` and `material_map` pick their
 texture at the hit point (aliased like an unfiltered ray, not biased). Scenes with `assumed_gamma` other than 1
 average, like antialiasing, in their working space.
+## Function-density point batches
+
+Function densities reuse one function context for each density batch. Eligible functions with SIMD
+transcendental operations and at most one noise call site in their expanded call graph use the existing
+four-point VM; other functions, and batches shorter than four points, use scalar execution on that context.
+The noise-call gate counts both sides of branches conservatively. Noise itself remains scalar
+per distinct lane. This is separate from conservative function-range bounds: complex noise functions
+can evaluate in batches even when no useful interval bound is available.
+
+Eligibility is computed once with the function's decoded program. It follows named calls, admits only
+arithmetic and the deterministic `f_noise3d`/`f_noise_generator` traps, and checks initialized locals,
+call depth and stack requirements. Globals, stateful or unknown traps and unsupported instructions
+retain the original point path. The check precedes execution so rejected callbacks cannot be replayed
+after a partial batch. Existing isosurface batch selection is unchanged.
+
+Sample coordinates, order, values greater than one wrapped with `fmod`, waves, colour maps, density
+multiplication and optical-depth integration retain their existing operations. Turbulence and nonlinear
+colour maps still use the pigment fallback. There is no new approximation or scene-language setting.
+
+`tools/bench/media-function-simd.pov` exercises direct and named noise, four octaves, nested clouds,
+branching, explicit noise generators, wrapping, arithmetic and a stateful trap fallback. Run
+`tools/bench/check-media-function-simd.py REFERENCE_BINARY CANDIDATE_BINARY OUTPUT_DIRECTORY` for
+89 image pairs across all noise generators and media methods, including pigment fallbacks. The standalone
+`tools/bench/check-function-batches.sh BUILD_DIRECTORY OUTPUT_DIRECTORY` checks scalar/batch values,
+waves, tails, local initialization, resource limits, context selection and function lifecycle.
+On the matched native builds, all 89 rendered pairs were pixel-identical at 16 bits. The standalone
+suite passed 245,916 pattern comparisons and 231,012 direct SIMD comparisons over 40 eligibility cases.
+
+Single-threaded trace counts against `2255e747`, with matching native compiler flags, no AA,
+noise generator 3, media method 3, and medians of three alternating runs minus a matching one-pixel
+run. Function fixtures are 240×180; the standard benchmark is 128×128.
+
+| Fixture | Before Gcycles | After Gcycles | Cycles | Instructions |
+|---|---|---|---|---|
+| Case 0, one noise call | 3.428 | 3.435 | +0.2% | −3.2% |
+| Case 1, noise and SIMD maths | 5.068 | 4.691 | −7.4% | −22.7% |
+| Case 2, four named noise octaves | 8.361 | 8.367 | +0.1% | −1.1% |
+| Case 3, nested cloud, scalar context reuse | 11.113 | 10.558 | −5.0% | −0.9% |
+| Case 4, branching noise | 3.717 | 3.713 | −0.1% | −2.7% |
+| Case 7, SIMD maths | 6.603 | 4.628 | −29.9% | −30.1% |
+| Case 8, stateful callback fallback | 8.822 | 8.638 | −2.1% | +0.1% |
+| Standard benchmark | 15.785 | 15.785 | 0.0% | 0.0% |
+
+Noise-only cases are effectively neutral. The unchanged callback fallback's cycle difference and the
+cloud's small instruction saving illustrate why these timings are not universal speedup predictions.
+The initial unrestricted SIMD selection regressed noise-only fixtures by 5–7%; a maths-only preference
+still regressed the nested cloud by 4%. The conservative gate avoids those measured regressions.
+Actual multi-point noise remains a separate kernel experiment.
 
 ## Method
 

@@ -239,7 +239,10 @@ Density of instruction set: 916 / 1024 = 0.8945
 
 // C++ standard header files
 #include <algorithm>
+#include <bitset>
+#include <functional>
 #include <limits>
+#include <map>
 
 // POV-Ray header files (base module)
 #include "base/mathutil.h"
@@ -373,6 +376,185 @@ static void DecodeProgram(const FunctionCode& f, vector<VMOp>& ops)
             ops[i].scalar = VMS_CALLF;
         }
     }
+}
+
+void FunctionVM::PlanBatch(FUNCTION fn)
+{
+    const size_t maxLocals = 256;
+    FunctionEntry& entry = functions[fn];
+    entry.batchDepth = entry.batchStack = 0;
+    entry.batchMath = false;
+    if ((entry.fn.return_size != 0) || (entry.fn.program_size == 0) || (entry.ops.size() > 4096))
+        return;
+    const bool grows = entry.ops[0].code == VM_GROW;
+    const unsigned int frame = grows ? entry.ops[0].k + 1 : entry.fn.parameter_cnt;
+    if ((frame > maxLocals) || (entry.fn.parameter_cnt > frame) ||
+        (!grows && ((entry.fn.program_size != 2) || (entry.ops[0].code != VM_TRAP))))
+        return;
+    unsigned int stack = max(frame, 3u), depth = 1;
+    bool batchMath = false;
+    for (size_t pc = 0; pc < entry.ops.size(); ++pc)
+    {
+        const VMOp& op = entry.ops[pc];
+        switch (op.code)
+        {
+            case VM_ADD: case VM_SUB: case VM_MUL: case VM_DIV: case VM_MOD:
+            case VM_MOVE: case VM_CMP: case VM_NEG: case VM_ABS:
+            case VM_SEQ: case VM_SNE: case VM_SLT: case VM_SLE: case VM_SGT: case VM_SGE:
+            case VM_TEQ: case VM_TNE:
+            case VM_XEQ: case VM_XNE: case VM_XLT: case VM_XLE: case VM_XGT: case VM_XGE: case VM_XDZ:
+            case VM_RTS:
+                break;
+            case VM_ADDI: case VM_SUBI: case VM_MULI: case VM_DIVI: case VM_MODI: case VM_LOADI: case VM_CMPI:
+                if (op.k >= consts.size())
+                    return;
+                break;
+            case VM_LOADL: case VM_STOREL:
+                if (op.k >= frame)
+                    return;
+                break;
+            case VM_BEQ: case VM_BNE: case VM_BLT: case VM_BLE: case VM_BGT: case VM_BGE: case VM_JMP:
+                if (op.k >= entry.ops.size())
+                    return;
+                break;
+            case VM_GROW:
+                stack = max(stack, op.k + 1);
+                break;
+            case VM_CALL: case VM_CALLF:
+            {
+                const bool fused = op.code == VM_CALLF;
+                if (fused && (pc + 2 >= entry.ops.size()))
+                    return;
+                const unsigned int callee = fused ? entry.ops[pc + 1].k : op.k;
+                const unsigned int offset = fused ? op.k : 0;
+                if ((callee == fn) || (callee >= functions.size()) || !functions[callee].batchDepth)
+                    return;
+                const FunctionEntry& child = functions[callee];
+                if ((offset >= frame) || (child.fn.parameter_cnt > frame - offset))
+                    return;
+                stack = max(stack, offset + child.batchStack);
+                depth = max(depth, child.batchDepth + 1);
+                batchMath = batchMath || child.batchMath;
+                pc += fused ? 2 : 0;
+                break;
+            }
+            case VM_SQRT: case VM_MATH1: case VM_SYS1:
+                if (op.k >= POVFPU_Sys1TableSize)
+                    return;
+                batchMath = batchMath || (op.code == VM_MATH1);
+                break;
+            case VM_MATH2: case VM_SYS2:
+                if (op.k >= POVFPU_Sys2TableSize)
+                    return;
+                batchMath = batchMath || (op.code == VM_MATH2);
+                break;
+            case VM_TRAP:
+                // Only f_noise3d and f_noise_generator are pure scalar traps in this path.
+                if (((op.k != 76) && (op.k != 78)) || (op.a > frame))
+                    return;
+                break;
+            case VM_NOP:
+                if ((pc >= entry.fn.program_size) || (GET_OP(entry.fn.program[pc]) != OPCODE_NOP))
+                    return;
+                break;
+            default:
+                return;
+        }
+    }
+    if ((depth > 64) || (stack >= MAX_K))
+        return;
+
+    // A local must have been written on every path reaching a read; calls invalidate their frames.
+    typedef std::bitset<maxLocals> Locals;
+    vector<Locals> before(entry.ops.size());
+    vector<bool> reached(entry.ops.size(), false);
+    vector<size_t> pending(1, 0);
+    for (unsigned int k = 0; k < entry.fn.parameter_cnt; ++k)
+        before[0].set(k);
+    reached[0] = true;
+    auto visit = [&](size_t pc, const Locals& state)
+    {
+        if (!reached[pc] || ((before[pc] & state) != before[pc]))
+        {
+            before[pc] = reached[pc] ? before[pc] & state : state;
+            reached[pc] = true;
+            pending.push_back(pc);
+        }
+    };
+    while (!pending.empty())
+    {
+        const size_t pc = pending.back();
+        pending.pop_back();
+        const VMOp& op = entry.ops[pc];
+        Locals state = before[pc];
+        size_t next = pc + 1;
+        if ((op.code == VM_LOADL) && !state.test(op.k))
+            return;
+        if (op.code == VM_STOREL)
+            state.set(op.k);
+        if ((op.code == VM_CALL) || (op.code == VM_CALLF))
+        {
+            const bool fused = op.code == VM_CALLF;
+            const FunctionEntry& child = functions[fused ? entry.ops[pc + 1].k : op.k];
+            const unsigned int offset = fused ? op.k : 0;
+            for (unsigned int k = 0; k < child.fn.parameter_cnt; ++k)
+                if (!state.test(offset + k))
+                    return;
+            for (unsigned int k = offset; k < frame; ++k)
+                state.reset(k);
+            next += fused ? 2 : 0;
+        }
+        if (op.code == VM_TRAP)
+            for (unsigned int k = 0; k < op.a; ++k)
+                if (!state.test(k))
+                    return;
+        if (op.code == VM_RTS)
+            continue;
+        if ((op.code >= VM_BEQ) && (op.code <= VM_BGE))
+            visit(op.k, state);
+        if (op.code == VM_JMP)
+            visit(op.k, state);
+        else if (next < entry.ops.size())
+            visit(next, state);
+    }
+    std::map<FUNCTION, unsigned int> noiseCounts;
+    std::function<unsigned int(FUNCTION)> countNoise = [&](FUNCTION current) -> unsigned int
+    {
+        const auto found = noiseCounts.find(current);
+        if (found != noiseCounts.end())
+            return found->second;
+        unsigned int total = 0;
+        const vector<VMOp>& ops = functions[current].ops;
+        for (size_t pc = 0; (pc < ops.size()) && (total < 2); ++pc)
+        {
+            const VMOp& op = ops[pc];
+            if (op.code == VM_TRAP)
+                ++total;
+            else if (op.code == VM_CALL)
+                total += countNoise(op.k);
+            else if (op.code == VM_CALLF)
+            {
+                total += countNoise(ops[pc + 1].k);
+                pc += 2;
+            }
+        }
+        return noiseCounts[current] = min(total, 2u);
+    };
+    entry.batchDepth = depth;
+    entry.batchStack = stack;
+    // Keep multiple scalar noise calls on the scalar path to avoid measured density regressions.
+    entry.batchMath = batchMath && (countNoise(fn) < 2);
+}
+
+bool FunctionVM::CanExecuteBatch(FUNCTION fn) const
+{
+    return (fn < functions.size()) && (functions[fn].reference_count > 0) &&
+           (functions[fn].fn.parameter_cnt <= 3) && (functions[fn].batchDepth > 0);
+}
+
+bool FunctionVM::PreferBatch(FUNCTION fn) const
+{
+    return CanExecuteBatch(fn) && functions[fn].batchMath;
 }
 
 enum RangeCode { RangeParameter, RangeConstant, RangeAdd, RangeSub, RangeMul, RangeDiv, RangeNeg, RangeAbs, RangeMin, RangeMax };
@@ -1227,6 +1409,7 @@ FUNCTION FunctionVM::AddFunction(FunctionCode *f)
 
     functions[fn].fn = *f;
     DecodeProgram(functions[fn].fn, functions[fn].ops);
+    PlanBatch(fn);
     BuildRangePlan(fn);
     functions[fn].reference_count = 1;
     SYS_ADD_FUNCTION(fn);
@@ -1287,6 +1470,8 @@ void FunctionVM::RemoveFunction(FUNCTION fn)
             FNCode_Delete(&(f.fn));
             vector<VMOp>().swap(functions[fn].ops);
             functions[fn].range.reset();
+            functions[fn].batchDepth = functions[fn].batchStack = 0;
+            functions[fn].batchMath = false;
 
             // we use unused entries to store a linked list of those, for easier later re-use
             functions[fn].next_unreferenced = nextUnreferenced;
@@ -2122,6 +2307,16 @@ DBL FunctionVM::CustomFunction::Execute(GenericFunctionContextPtr pGenericContex
 {
     FPUContext* pContext = GetFPUContextPtr(pGenericContext);
     return POVFPU_Run (pContext, *mpFn);
+}
+
+bool FunctionVM::CustomFunction::CanExecuteBatch() const
+{
+    return mpVm->CanExecuteBatch(*mpFn);
+}
+
+bool FunctionVM::CustomFunction::PreferBatch() const
+{
+    return mpVm->PreferBatch(*mpFn);
 }
 
 void FunctionVM::CustomFunction::ExecuteBatch(GenericFunctionContextPtr pGenericContext, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n)

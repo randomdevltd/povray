@@ -164,6 +164,9 @@ struct FunctionEntry
     FunctionCode fn;            // valid if reference_count != 0
     std::vector<VMOp> ops;      // fn.program decoded, one entry per instruction
     std::shared_ptr<const FunctionRangePlan> range;
+    unsigned int batchDepth = 0;
+    unsigned int batchStack = 0;
+    bool batchMath = false;
     FUNCTION next_unreferenced; // valid if reference_count == 0
     unsigned int reference_count;
     SYS_FUNCTION_ENTRY
@@ -296,6 +299,8 @@ class FunctionVM : public GenericFunctionContextFactory
                 virtual void InitArguments(GenericFunctionContextPtr pContext) override;
                 virtual void PushArgument(GenericFunctionContextPtr pContext, DBL arg) override;
                 virtual DBL Execute(GenericFunctionContextPtr pContext) override;
+                virtual bool CanExecuteBatch() const override;
+                virtual bool PreferBatch() const override;
                 virtual void ExecuteBatch(GenericFunctionContextPtr pContext, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n) override;
                 virtual GenericScalarFunctionPtr Clone() const override;
                 virtual bool EvaluateRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const override;
@@ -322,6 +327,8 @@ class FunctionVM : public GenericFunctionContextFactory
         FUNCTION AddFunction(FunctionCode *f);
         void RemoveFunction(FUNCTION fn);
         bool EvaluateRange(FUNCTION fn, const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const;
+        bool CanExecuteBatch(FUNCTION fn) const;
+        bool PreferBatch(FUNCTION fn) const;
 
         FUNCTION_PTR CopyFunction(FUNCTION_PTR pK);
         void DestroyFunction(FUNCTION_PTR pK);
@@ -331,6 +338,7 @@ class FunctionVM : public GenericFunctionContextFactory
     private:
 
         void BuildRangePlan(FUNCTION fn);
+        void PlanBatch(FUNCTION fn);
 
         std::vector<FunctionEntry> functions;
         FUNCTION nextUnreferenced;
