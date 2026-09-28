@@ -773,6 +773,8 @@ if test x"$enable_optimiz" != x"no"; then
         AX_TEST_COMPILER_FLAGS([-finline-functions])
       fi
       AX_TEST_COMPILER_FLAGS([-ffast-math])
+      # the renderer compares against infinities (HUGE_VAL), which finite-only math folds away
+      AX_TEST_COMPILER_FLAGS([-fno-finite-math-only])
       ;;
 
     intel)
