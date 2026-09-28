@@ -524,6 +524,7 @@ class Parser final
         void Parse_Pigment (PIGMENT **);
         void Parse_Tnormal (TNORMAL **);
         void Parse_Finish (FINISH **);
+        void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
         void Parse_Interior (InteriorPtr&);
         void Parse_Media_Density_Pattern (PIGMENT **);

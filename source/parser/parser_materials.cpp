@@ -2232,6 +2232,16 @@ void Parser::Parse_Tnormal (TNORMAL **Tnormal_Ptr)
 *
 ******************************************************************************/
 
+// A subsurface finish's pigment block, after its keyword.
+void Parser::Parse_Subsurface_Pigment(PIGMENT *&pigment)
+{
+    Parse_Begin();
+    if (pigment == nullptr)
+        pigment = Create_Pigment();
+    Parse_Pigment(&pigment);
+    Parse_End();
+}
+
 void Parser::Parse_Finish (FINISH **Finish_Ptr)
 {
     TransColour Temp_Colour;
@@ -2454,6 +2464,41 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                 END_CASE
                 CASE (METHOD_TOKEN)
                     New->SubsurfaceMethod = Parse_Int_With_Range(kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, "subsurface method");
+                END_CASE
+                CASE (COLOUR_TOKEN)
+                    Parse_Colour(New->SubsurfaceColour);
+                    New->SubsurfaceHasColour = true;
+                    Destroy_Pigment(New->SubsurfacePigment);
+                    New->SubsurfacePigment = nullptr;
+                END_CASE
+                CASE (PIGMENT_TOKEN)
+                    Parse_Subsurface_Pigment(New->SubsurfacePigment);
+                    New->SubsurfaceHasColour = true;
+                END_CASE
+                CASE (EMISSION_TOKEN)
+                    New->SubsurfaceEmits = true;
+                    if (AllowToken(PIGMENT_TOKEN))
+                        Parse_Subsurface_Pigment(New->SubsurfaceEmissionPigment);
+                    else
+                    {
+                        Destroy_Pigment(New->SubsurfaceEmissionPigment);
+                        New->SubsurfaceEmissionPigment = nullptr;
+                        Parse_Colour(New->SubsurfaceEmission);
+                    }
+                END_CASE
+                CASE (THICKNESS_TOKEN)
+                    New->SubsurfaceThicknessSet = true;
+                    if (AllowToken(PIGMENT_TOKEN))
+                        Parse_Subsurface_Pigment(New->SubsurfaceThicknessPigment);
+                    else
+                    {
+                        Destroy_Pigment(New->SubsurfaceThicknessPigment);
+                        New->SubsurfaceThicknessPigment = nullptr;
+                        New->SubsurfaceThickness = Parse_Float();
+                    }
+                END_CASE
+                CASE (VOLUME_SAMPLING_TOKEN)
+                    New->SubsurfaceVolume = ((int) Allow_Float(1.0) != 0);
                 END_CASE
                 OTHERWISE
                     UNGET

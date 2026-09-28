@@ -3947,8 +3947,8 @@ void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const Lig
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
 void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
-                                                const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, TraceTicket& ticket,
-                                                std::uint64_t key)
+                                                const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
+                                                TraceTicket& ticket, std::uint64_t key)
 {
     Lo.Clear();
     if (lights.empty())
@@ -3985,6 +3985,8 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
                 double depth = (dist < HUGE_VAL) ? -expm1(-sigma_t_xo[j] * (2.0 + G) * dist) : 1.0;
                 f[j] = sigma_s[j] * F * 0.25 * cos_in / (sigma_t_xo[j] * (1.0 + G)) * depth / (2.0 + G);
             }
+            if (flesh.skin != nullptr)
+                f *= flesh.exitSkin;
             Lo += cloud->exitLight[l] * f * float(numSamples);
         }
     }
@@ -4024,6 +4026,15 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
                 ComputeSingleScatteringCandidate(*lights[l], out, sigma_t_xo, sigma_s, weightOut, eta, bend_point, ftOut, cos_out_prime,
                                                  candidates[l * numSamples + i], ticket);
     }
+
+    // Light entering elsewhere crosses the skin there.
+    if (flesh.skin != nullptr)
+        for (SubsurfaceCandidate& c : candidates)
+            if (c.bound > 0.0)
+            {
+                c.factor *= ComputeSubsurfaceSkin(flesh, c.point);
+                c.SetLight(c.point, c.unshadowed);
+            }
 
     if ((cloud != nullptr) && !cloud->local)
     {
@@ -4277,6 +4288,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             }
             cell.lights = int(cloud.lights.size());
             cell.visibility.resize(count * cell.lights * MathColour::channels);
+            if (key.medium != nullptr)
+                cell.entry.assign(count * 2 * MathColour::channels, 0.0f);
             if (key.radiosity)
                 cell.ambient.assign(count * MathColour::channels, std::numeric_limits<float>::quiet_NaN());
             {
@@ -4458,6 +4471,18 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     }
 }
 
+// A draw for the depth of a point's flesh lookups: an R3 lattice over the grid squares, so that neighbouring points'
+// depths spread evenly over the draw and a few of them together stand for all depths.
+static double CloudDepthDraw(const SubsurfaceCellKey& key, const SubsurfaceCell& cell, const SubsurfacePoint& point, double size)
+{
+    static const double lattice[3] = { 0.8191725133961645, 0.6710436067037893, 0.5497004779019703 };
+    uint64_t state = CloudSeed(key, 3, point.axis);
+    double u = CloudRandom(state);
+    for (int a = 0; a < 3; a++)
+        u += lattice[a] * floor(point.position[a] * cell.steps[a] / size);
+    return u - floor(u);
+}
+
 // The light entering one run of a cell's points, and their shadow from each light.
 void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket)
 {
@@ -4471,6 +4496,17 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
         MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, normal, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
                                                             cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k));
+        if (key.medium != nullptr)
+        {
+            SubsurfaceEntry entry;
+            ComputeSubsurfaceEntry(*cloud.flesh, point.position, -normal, CloudDepthDraw(key, cell, point, cloud.size), entry);
+            irradiance = irradiance * entry.factor + entry.emission;
+            for (int j = 0; j < MathColour::channels; j++)
+            {
+                cell.entry[k * 2 * MathColour::channels + j] = entry.factor[j];
+                cell.entry[(k * 2 + 1) * MathColour::channels + j] = entry.emission[j];
+            }
+        }
         for (int j = 0; j < MathColour::channels; j++)
             point.irradiance[j] = irradiance[j];
         point.id = k;
@@ -4500,7 +4536,10 @@ void Trace::AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& c
     {
         const float *ambient = &cell.ambient[point.id * channels];
         for (int j = 0; j < channels; j++)
-            point.irradiance[j] += ft * (!std::isnan(ambient[0]) ? ambient[j] : (found > 0) ? float(mean[j] / found) : 0.0f);
+        {
+            float light = ft * (!std::isnan(ambient[0]) ? ambient[j] : (found > 0) ? float(mean[j] / found) : 0.0f);
+            point.irradiance[j] += cell.entry.empty() ? light : light * cell.entry[point.id * 2 * channels + j];
+        }
     }
     std::vector<float>().swap(cell.ambient);
 }
@@ -4626,7 +4665,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     for (int cy = lo[Y]; cy <= hi[Y]; cy++)
     for (int cz = lo[Z]; cz <= hi[Z]; cz++)
     {
-        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.radiosity };
+        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.radiosity, cloud.medium };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
@@ -4728,6 +4767,8 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     {
         ssltScratchVisibility.Reset(cloud.lights.size());
         MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, false, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
+        if (cloud.medium != nullptr)
+            here = here * cloud.flesh->nearby.factor + cloud.flesh->nearby.emission;
         diffuse = MathColour(profile.RdDisc(cloud.reach) * (M_PI * reachSqr) * PreciseMathColour(here) * ftOut);
         return true;
     }
@@ -4738,7 +4779,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     const Vector3d& x = out.IPoint;
     SubsurfaceVisibility& visibility = ssltScratchVisibility;
     visibility.Reset(cloud.lights.size());
-    PreciseMathColour far, discWeight, discLight, ringWeight, ringLight, ringUnfolded;
+    PreciseMathColour far, discWeight, discLight, ringWeight, ringLight, ringUnfolded, discFactor, discEmission;
     double discFacing = 1.0, ringFacing = 1.0, ringArea = 0.0, covered = 0.0;
     Vector3d moment(0.0);
     double creaseSqr = Sqr(kCloudCrease * cloud.spacing * mm);
@@ -4811,6 +4852,11 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     {
                         discFacing = min(discFacing, facing);
                         visibility.Add(cell->visibility.data() + p.id * stride);
+                        for (int j = 0; !cell->entry.empty() && (j < MathColour::channels); j++)
+                        {
+                            discFactor[j] += rd[j] * p.area * cell->entry[p.id * 2 * MathColour::channels + j];
+                            discEmission[j] += rd[j] * p.area * cell->entry[(p.id * 2 + 1) * MathColour::channels + j];
+                        }
                     }
                     double unfoldedSqr = inDisc ? distSqr : Sqr(UnfoldedDistance(x, n, p) * mm);
                     // The window is taken at the centre of the grid square the point's line crosses, free of its jitter.
@@ -4885,6 +4931,11 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
         return false;
     walk(false);
     here += ComputeCloudExitAmbient(out, n, cloud, ticket);
+    // The core takes the flesh and emission of the disc's points, not those under the exit point.
+    if (cloud.medium != nullptr)
+        for (int j = 0; j < MathColour::channels; j++)
+            here[j] = (discWeight[j] > 0.0) ? here[j] * discFactor[j] / discWeight[j] + discEmission[j] / discWeight[j]
+                                            : here[j] * cloud.flesh->nearby.factor[j] + cloud.flesh->nearby.emission[j];
     PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
     PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
     PreciseMathColour sum = far + coreRd * coreShare * PreciseMathColour(here);
@@ -4917,6 +4968,15 @@ PreciseMathColour Trace::SubsurfaceProfile::RdDisc(double radius) const
                         + exp(-sigma_tr[j] * z_v[j]) - z_v[j] * exp(-sigma_tr[j] * d_v) / d_v;
         rd[j] = scale[j] * 2.0 * M_PI * integral / (M_PI * Sqr(radius));
     }
+    return rd;
+}
+
+// The integral of Rd over the whole plane, in closed form.
+PreciseMathColour Trace::SubsurfaceProfile::RdTotal() const
+{
+    PreciseMathColour rd;
+    for (int j = 0; j < MathColour::channels; j++)
+        rd[j] = scale[j] * 2.0 * M_PI * (exp(-sigma_tr[j] * z_r[j]) + exp(-sigma_tr[j] * z_v[j]));
     return rd;
 }
 
@@ -4977,6 +5037,7 @@ void Trace::ComputeDiffuseAmbientContribution1(const Intersection& in, const Pre
 void Trace::SubsurfaceLayers::Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility)
 {
     reflectance += visibility * (pigment * layer->Finish->Diffuse);
+    tint += visibility * pigment;
     weight += visibility;
     if (top == nullptr)
         top = layer;
@@ -4987,8 +5048,129 @@ bool Trace::SubsurfaceLayers::Finish()
     if ((top == nullptr) || !(weight.WeightMax() > 0.0))
         return false;
     for (int j = 0; j < MathColour::channels; j++)
+    {
         reflectance[j] = (weight[j] > 0.0) ? reflectance[j] / weight[j] : 0.0f;
+        tint[j] = (weight[j] > 0.0) ? tint[j] / weight[j] : 0.0f;
+    }
     return true;
+}
+
+// Flesh lookups per shading point for its reference colour and its nearby entry values, and how far they spread
+// sideways, in mean depths.
+static const int kFleshSamples = 4;
+static const double kFleshSpread = 2.0;
+static const double kFleshFloor = 1e-3;
+
+// The skin's transmittance at a surface point: its tint to the power of half its relative thickness, one crossing's share.
+MathColour Trace::ComputeSubsurfaceSkin(const SubsurfaceFlesh& flesh, const Vector3d& point)
+{
+    TransColour colour;
+    Compute_Pigment(colour, flesh.skin, point, nullptr, nullptr, threadData);
+    double thickness = flesh.finish->SubsurfaceThickness;
+    if (flesh.finish->SubsurfaceThicknessPigment != nullptr)
+    {
+        TransColour grey;
+        Compute_Pigment(grey, flesh.finish->SubsurfaceThicknessPigment, point, nullptr, nullptr, threadData);
+        thickness = grey.colour().Greyscale();
+    }
+    return Pow(colour.colour().ClippedLower(0.0), ColourChannel(0.5 * max(0.0, thickness)));
+}
+
+// What light entering the flesh at a surface point is multiplied by, and the flesh's own light there; inward is the unit
+// normal into the object, and draw sets the depth of the flesh's lookup.
+void Trace::ComputeSubsurfaceEntry(const SubsurfaceFlesh& flesh, const Vector3d& point, const Vector3d& inward, double draw, SubsurfaceEntry& entry)
+{
+    entry.flesh = MathColour(1.0);
+    entry.emission.Clear();
+    if (flesh.fleshAtDepth || flesh.emissionAtDepth)
+    {
+        Vector3d q = point + inward * (-log(1.0 - draw) * flesh.depth);
+        TransColour colour;
+        if (flesh.fleshAtDepth)
+        {
+            Compute_Pigment(colour, flesh.finish->SubsurfacePigment, q, nullptr, nullptr, threadData);
+            entry.flesh = colour.colour().ClippedLower(0.0);
+        }
+        if (flesh.emissionAtDepth && (flesh.finish->SubsurfaceEmissionPigment != nullptr))
+        {
+            Compute_Pigment(colour, flesh.finish->SubsurfaceEmissionPigment, q, nullptr, nullptr, threadData);
+            entry.emission = colour.colour() * entry.flesh;
+        }
+        else if (flesh.emissionAtDepth)
+            entry.emission = flesh.finish->SubsurfaceEmission * entry.flesh;
+    }
+    entry.factor = entry.flesh;
+    if (flesh.skin != nullptr)
+        entry.factor *= ComputeSubsurfaceSkin(flesh, point);
+}
+
+// The flesh and skin at a shading point; the flesh's reference and nearby values are means of a few lookups spread
+// around it, so that nothing is read from under the exit point alone.
+void Trace::SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
+                                 std::uint64_t key)
+{
+    const FINISH *finish = layers.top->Finish;
+    flesh.finish = finish;
+    if (!finish->SubsurfaceHasColour && !finish->SubsurfaceEmits)
+        return;
+    flesh.depth = finish->SubsurfaceTranslucency.Greyscale() / sceneData->mmPerUnit;
+    flesh.fleshAtDepth = finish->SubsurfaceVolume && (finish->SubsurfacePigment != nullptr);
+    flesh.emissionAtDepth = finish->SubsurfaceEmits && finish->SubsurfaceVolume && ((finish->SubsurfaceEmissionPigment != nullptr) || flesh.fleshAtDepth);
+    bool skin = finish->SubsurfaceHasColour && ((finish->SubsurfaceThicknessPigment != nullptr) || (finish->SubsurfaceThickness != 0.0));
+    if (skin && (finish->SubsurfaceThicknessSet || flesh.fleshAtDepth || flesh.emissionAtDepth))
+        flesh.skin = layers.top->Pigment;
+
+    TransColour colour;
+    if (skin)
+    {
+        MathColour tint = layers.tint.ClippedLower(0.0);
+        double thickness = finish->SubsurfaceThickness;
+        if (finish->SubsurfaceThicknessPigment != nullptr)
+        {
+            Compute_Pigment(colour, finish->SubsurfaceThicknessPigment, out.IPoint, &out, nullptr, threadData);
+            thickness = colour.colour().Greyscale();
+        }
+        flesh.exitSkin = Pow(tint, ColourChannel(0.5 * max(0.0, thickness)));
+        if (flesh.skin == nullptr)
+            flesh.entrySkin = flesh.exitSkin;
+    }
+    if (finish->SubsurfaceEmits && !flesh.emissionAtDepth)
+    {
+        flesh.emission = finish->SubsurfaceEmission;
+        if (finish->SubsurfaceEmissionPigment != nullptr)
+        {
+            Compute_Pigment(colour, finish->SubsurfaceEmissionPigment, out.IPoint, &out, nullptr, threadData);
+            flesh.emission = colour.colour();
+        }
+    }
+    if (finish->SubsurfaceHasColour && (finish->SubsurfacePigment == nullptr))
+        flesh.reference = PreciseMathColour(finish->SubsurfaceColour);
+    else if (finish->SubsurfaceHasColour && !flesh.fleshAtDepth)
+    {
+        Compute_Pigment(colour, finish->SubsurfacePigment, out.IPoint, &out, nullptr, threadData);
+        flesh.reference = PreciseMathColour(colour.colour().ClippedLower(0.0));
+    }
+    if (!flesh.PerEntry())
+        return;
+
+    Vector3d u, v;
+    ComputeSurfaceTangents(inward, u, v);
+    SubsurfaceEntry sum, entry;
+    sum.factor.Clear();
+    sum.flesh.Clear();
+    for (int k = 0; k < kFleshSamples; k++)
+    {
+        double r = kFleshSpread * flesh.depth * sqrt(Draw(key, kDrawSubsurface, 3 * k)), phi = 2.0 * M_PI * Draw(key, kDrawSubsurface, 3 * k + 1);
+        ComputeSubsurfaceEntry(flesh, out.IPoint + (u * cos(phi) + v * sin(phi)) * r, inward, Draw(key, kDrawSubsurface, 3 * k + 2), entry);
+        sum.flesh += entry.flesh;
+        sum.factor += entry.factor;
+        sum.emission += entry.emission;
+    }
+    flesh.nearby.flesh = sum.flesh / float(kFleshSamples);
+    flesh.nearby.factor = sum.factor / float(kFleshSamples);
+    flesh.nearby.emission = sum.emission / float(kFleshSamples);
+    if (flesh.fleshAtDepth)
+        flesh.reference = PreciseMathColour(flesh.nearby.flesh);
 }
 
 void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& out, Ray& Eye, MathColour& Final_Colour)
@@ -5018,8 +5200,16 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     ComputeRelativeIOR(Eye, out.Object->interior.get(), eta);
 
+    // The profile's reflectance is the flesh's where it has a colour of its own, otherwise the layers'.
+    Vector3d inward = out.INormal.normalized();
+    if (dot(inward, vOut) > 0.0)
+        inward.invert();
+    SubsurfaceFlesh flesh;
+    SetUpSubsurfaceFlesh(flesh, layers, out, inward, DeriveKey(key, kDrawSubsurface, 5));
+    MathColour reflectance = Finish->SubsurfaceHasColour ? MathColour(flesh.reference) * Finish->Diffuse : layers.reflectance;
+
     // user setting specifies reduced scattering coefficient
-    PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(layers.reflectance);
+    PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
     PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;
@@ -5067,6 +5257,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     cloudData.radiosity = cloudRadiosity;
+    cloudData.flesh = &flesh;
+    cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
     bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
@@ -5075,6 +5267,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     else
     {
         std::vector<SubsurfaceCandidate> candidates(lights.size() * NumSamplesDiffuse);
+        const std::uint64_t fleshKey = DeriveKey(key, kDrawSubsurface, 4);
 
         for (int i = 0; i < NumSamplesDiffuse; i++)
         {
@@ -5091,6 +5284,16 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
             double weight = sampleArea;
             double distSqr = (in.IPoint - out.IPoint).lengthSqr() * Sqr(sceneData->mmPerUnit);
             PreciseMathColour rd = profile.Rd(distSqr) * (ftOut * weight);
+            if (flesh.PerEntry())
+            {
+                Vector3d n = in.INormal.normalized();
+                if (dot(n, sampleBase - in.IPoint) < 0.0)
+                    n.invert();
+                SubsurfaceEntry entry;
+                ComputeSubsurfaceEntry(flesh, in.IPoint, n, Draw(fleshKey, kDrawSubsurface, i), entry);
+                Total_Colour += MathColour(rd * PreciseMathColour(entry.emission));
+                rd *= PreciseMathColour(entry.factor);
+            }
 
             // radiosity-alike ambient illumination
             if (radiosity_needed)
@@ -5105,6 +5308,13 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         if (NumSamplesDiffuse > 0)
             Total_Colour /= NumSamplesDiffuse;
     }
+    // Looked-up flesh is relative to the reference; emission the same everywhere enters over the whole profile.
+    for (int j = 0; flesh.fleshAtDepth && (j < MathColour::channels); j++)
+        Total_Colour[j] /= max(flesh.reference[j], kFleshFloor);
+    if (Finish->SubsurfaceHasColour)
+        Total_Colour *= flesh.entrySkin;
+    if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
+        Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftOut);
 
     Vector3d refractedEye;
     if (SSLTComputeRefractedDirection(Eye.Direction, out.INormal, 1.0/eta, refractedEye))
@@ -5131,7 +5341,9 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         {
             MathColour singleColour;
             ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, eta, lights,
-                                                cloud ? &cloudData : nullptr, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3));
+                                                cloud ? &cloudData : nullptr, flesh, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3));
+            if (Finish->SubsurfaceHasColour)
+                singleColour *= flesh.entrySkin;
             Total_Colour += singleColour / NumSamplesSingle;
         }
 
@@ -5164,7 +5376,10 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                     doubleRefractedEyeRay.Origin = unscatteredIn.IPoint;
                     doubleRefractedEyeRay.Direction = doubleRefractedEye;
                     TraceRay(doubleRefractedEyeRay, tempColour, tempTransm, weight, false);
-                    Total_Colour += MathColour(PreciseMathColour(tempColour) * att);
+                    MathColour unscattered = MathColour(PreciseMathColour(tempColour) * att);
+                    if (Finish->SubsurfaceHasColour)
+                        unscattered *= (flesh.skin != nullptr) ? flesh.exitSkin : flesh.entrySkin;
+                    Total_Colour += unscattered;
                 }
             }
             else
@@ -5174,6 +5389,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         }
     }
 
+    if (Finish->SubsurfaceHasColour)
+        Total_Colour *= flesh.exitSkin;
     Final_Colour += Total_Colour * layers.weight;
 
     Eye.GetTicket().subsurfaceRecursionDepth--;

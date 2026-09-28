@@ -1135,7 +1135,7 @@ FINISH_ITEMS:
   metallic [Amount] | reflection COLOR |
   crand Amount | conserve_energy BOOL |
   reflection { Color_Reflecting_Min [REFLECTION_ITEMS...] } |
-  subsurface { translucency COLOR } |
+  subsurface { translucency COLOR [SUBSURFACE_ITEMS...] } |
   irid { Irid_Amount [IRID_ITEMS...] |
   use_alpha BOOL
   }
@@ -1353,6 +1353,22 @@ finish { crand 0.05 }
   subsurface { method 2 spacing FLOAT error_bound FLOAT }
 </pre>
 <p><code>spacing</code>, 1.0 by default, scales the distance between cloud points, which is otherwise a sixteenth to a quarter of the material's diffusion length, or about a pixel where that is coarser (for spherical and panoramic cameras, a pixel at the equator; cylinder, mesh and user-defined cameras use the finer spacing throughout, so an infinite object under one may spend the point budget and fall back to method 1). Smaller values follow thin parts and fine shadow detail more closely, and cost more points, memory and time to build the cloud. <code>error_bound</code>, 0.1 by default, sets how coarsely distant points are summed: a group of points counts as one when its area is less than <code>error_bound</code> times the square of its distance. Smaller values are slower and closer to the exact sum.</p>
+<p>A texture of several layers scatters once: the layers' pigments are blended as the viewer sees them, by each layer's opacity and filter, and the topmost subsurface layer's finish sets the translucency and the settings below. A half-transparent subsurface layer over another therefore adds only its share of light, instead of looking opaque.</p>
+<p>By default the pigment is also the colour of the material inside: a dark pigment makes a dark material throughout, which lets little light through. To give the inside, the <em>flesh</em>, a colour of its own, the finish's <code>subsurface</code> block takes further items:</p>
+<pre>
+SUBSURFACE_ITEMS:
+  method INT | colour COLOR | pigment { PIGMENT } |
+  emission COLOR | emission pigment { PIGMENT } |
+  thickness FLOAT | thickness pigment { PIGMENT } |
+  volume_sampling BOOL
+</pre>
+<ul>
+  <li><code>colour</code> or <code>pigment</code> sets the flesh's colour, which (times <code>diffuse</code>) takes the place of the pigment's in the diffusion. The texture's pigment then becomes the colour of a thin <em>skin</em> over the flesh: light that enters the flesh crosses the skin, and crosses it again on the way out, so a dark skin over bright flesh shows the flesh's colour dimmed by the skin's.</li>
+  <li><code>thickness</code> sets the skin's thickness relative to the one at which the pigment is the colour of a round trip through it: each crossing lets through the pigment raised to half the thickness. It defaults to 1; 0 leaves no skin, only the flesh's colour; a pigment gives it as a pattern by its grey value, so thinner skin shows more of the flesh. Once <code>thickness</code> is given, or <code>volume_sampling</code> looks the flesh up, the skin is looked up at every point where light enters as well as where it leaves.</li>
+  <li><code>emission</code> is light the flesh gives off. It enters the diffusion like light entering the flesh at every point, so it spreads under the surface like any other light; it is never added at the surface itself.</li>
+  <li><code>volume_sampling on</code> looks the flesh <code>pigment</code> and the <code>emission</code> pigment up below the surface, at a random depth about one <code>translucency</code> deep under each point where light enters, instead of once at the shading point (<code>off</code>, the default). Patterns are three-dimensional, so a pattern such as <code>marble</code> reads as veins under the skin, blurred by the diffusion.</li>
+</ul>
+<p>Without these items a material scatters exactly as before. Subsurface light does not cross between separate objects: a flesh object inside a separate skin object does not glow through it, which is what these items are for.</p>
 <p>See the sample SSLT scene in <code>~scenes/subsurface/subsurface.pov</code> for more information. See also this PDF document, <a href="http://graphics.stanford.edu/papers/bssrdf/bssrdf.pdf">A Practical Model for Subsurface Light Transport</a>, for more in depth information about SSLT, including some sample values to use when defining new materials.</p>
 <p>To specify whether subsurface light transport effects should be <em>applied</em> to incoming <code>radiosity</code> based diffuse illumination, you should place the following in the global settings <code>subsurface</code> block:</p>
 <pre>
