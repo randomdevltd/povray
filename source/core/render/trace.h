@@ -243,6 +243,9 @@ class Trace
         /// @return                         The distance to the nearest object hit.
         ///
         virtual double TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth = 0.0);
+
+        /// Trace a primary ray and its twin, which differs only in its path key, finding their intersection once.
+        void TraceRayPair(Ray& ray, Ray& twin, MathColour& colour, ColourChannel& transm, MathColour& twinColour, ColourChannel& twinTransm, DBL maxDepth = 0.0);
 /*
         /// Trace a ray.
         ///
@@ -276,6 +279,9 @@ class Trace
                         const Vector2d* areaSample = nullptr); // TODO FIXME - this should not be exposed here
 
     protected: // TODO FIXME - should be private
+
+        /// Colour and transmittance of a ray whose intersection, if `found`, is `isect`.
+        void ShadeRay(Ray& ray, Intersection& isect, bool found, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay);
 
         /// Structure used to cache reflection information for multi-layered textures.
         struct WNRX final

@@ -186,6 +186,36 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     float oldRadiosityImportanceQueried = ray.GetTicket().radiosityImportanceQueried;
     ray.GetTicket().radiosityImportanceQueried = -1.0; // indicates that recursive calls to TraceRay() should not check for radiosity importance
 
+    ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay);
+
+    ray.GetTicket().radiosityImportanceQueried = oldRadiosityImportanceQueried;
+
+    if(found == false)
+        return HUGE_VAL;
+    else
+        return bestisect.Depth;
+}
+
+void Trace::TraceRayPair(Ray& ray, Ray& twin, MathColour& colour, ColourChannel& transm, MathColour& twinColour, ColourChannel& twinTransm, DBL maxDepth)
+{
+    Intersection bestisect;
+    NoSomethingFlagRayObjectCondition precond;
+    TrueRayObjectCondition postcond;
+
+    threadData->Stats()[Number_Of_Rays] += 2;
+    cooperate();
+
+    if (maxDepth >= EPSILON)
+        bestisect.Depth = maxDepth;
+
+    const bool found = FindIntersection(bestisect, ray, precond, postcond);
+    Intersection twinisect = bestisect;
+    ShadeRay(ray, bestisect, found, colour, transm, 1.0, false);
+    ShadeRay(twin, twinisect, found, twinColour, twinTransm, 1.0, false);
+}
+
+void Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay)
+{
     const bool traceLevelIncremented = !continuedRay;
 
     if(traceLevelIncremented)
@@ -226,13 +256,6 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     if(traceLevelIncremented)
         ray.GetTicket().traceLevel--;
     maxFoundTraceLevel = (unsigned int) max(maxFoundTraceLevel, ray.GetTicket().maxFoundTraceLevel);
-
-    ray.GetTicket().radiosityImportanceQueried = oldRadiosityImportanceQueried;
-
-    if(found == false)
-        return HUGE_VAL;
-    else
-        return bestisect.Depth;
 }
 
 bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)

@@ -43,9 +43,12 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 // POV-Ray header files (base module)
+#include "base/types.h"
 #include "base/image/colourspace_fwd.h"
 
 // POV-Ray header files (core module)
@@ -73,7 +76,7 @@ class TraceTask final : public RenderTask
         TraceTask(ViewData *vd, unsigned int tm, DBL js,
                   DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                   unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                  int level = -1, unsigned int ls = 0, bool lf = false);
+                  int level = -1, unsigned int ls = 0, bool lf = false, bool pairs = false);
         virtual ~TraceTask() override;
 
         virtual void Run() override;
@@ -129,6 +132,20 @@ class TraceTask final : public RenderTask
         int progressLevel;              ///< Pass of a progressive render, or -1 for a render in block order.
         unsigned int latticeStep;       ///< Sample spacing of a progressive level; 0 for its anti-aliasing pass.
         bool latticeFirst;              ///< The first level, which also traces the points of the coarser lattice.
+        bool aaPairs;                   ///< Method 4's first anti-aliasing pass, which tests pairs of neighbours.
+
+        /// A colour in OKLab, with its transmittance, for method 4's comparisons.
+        struct OkLab final { float l, a, b, t; };
+        /// Method 4's cells of the pixel it refines: a quadtree keyed by level and position, each cell naming its sample.
+        struct Cell final { int sample; bool split; bool traced; };
+        std::unordered_map<std::uint64_t, Cell> cells;
+        std::vector<RGBTColour> cellColours;
+        std::vector<OkLab> cellLabs;
+        std::vector<std::uint64_t> cellQueue;
+        /// OKLab of the current block's centre samples, with a one-pixel border.
+        std::vector<OkLab> blockLabs;
+        int blockLabLeft, blockLabTop, blockLabWidth;
+        unsigned int refineX, refineY, refineDirections;
 
         /// tracing core
         TracePixel trace;
@@ -148,6 +165,17 @@ class TraceTask final : public RenderTask
         void ProgressiveRefineM1();
         void ProgressiveRefineM2();
         bool DiffersFromSample(const RGBTColour& gcCur, unsigned int x, unsigned int y);
+
+        void ProgressivePairsM4();
+        void ProgressiveRefineM4();
+        OkLab ToOkLab(const RGBTColour& col);
+        bool Contended(const OkLab& a, const OkLab& b) const;
+        void LoadBlockLabs(const pov_base::POVRect& rect);
+        const OkLab& BlockLab(int x, int y) const { return blockLabs[(x - blockLabLeft) + (y - blockLabTop) * blockLabWidth]; }
+        void TraceSample(DBL x, DBL y, unsigned int px, unsigned int py, RGBTColour& col);
+        void RefinePixelM4(unsigned int x, unsigned int y, unsigned int directions, RGBTColour& col);
+        void SplitCell(unsigned int level, unsigned int cx, unsigned int cy, int direction);
+        void CompareCell(std::uint64_t key);
 
         void NonAdaptiveSupersamplingForOnePixel(DBL x, DBL y, RGBTColour& leftcol, RGBTColour& topcol, RGBTColour& curcol, bool& sampleleft, bool& sampletop, bool& samplecurrent);
         void SupersampleOnePixel(DBL x, DBL y, RGBTColour& col);
