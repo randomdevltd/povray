@@ -158,7 +158,7 @@ End mosaic preview with blocks \fIn\fP pixels square.
 .TP
 \fBPR\fP or \fBProgressive_Render\fP=\fIbool\fP
 Render the whole frame at doubling resolution, tracing each pixel once, so the image
-is always a complete best-so-far picture; anti-aliasing (methods 1 and 2) runs after
+is always a complete best-so-far picture; anti-aliasing (methods 1, 2 and 4) runs after
 the last level. Replaces the mosaic preview, and continues with \fBC\fP from the
 level and block where it stopped, without a new radiosity pretrace; other \fBA\fP or
 \fBR\fP values given then apply to the anti-aliasing pass. Anti-aliasing keeps one
@@ -195,8 +195,17 @@ Do antialiasing on the pixels until the difference between adjacent pixels
 is less that 0.\fIn\fP, or the maximum recursion depth is reached.
 .TP
 \fBAM\fP\fIn\fP or \fBSampling_Method\fP=\fIinteger\fP
-Specify the method of antialiasing used, non\-adaptive (\fIn\fP = 1), or
-adaptive antialiasing (\fIn\fP = 2).
+Specify the method of antialiasing used, non\-adaptive (\fIn\fP = 1),
+adaptive antialiasing (\fIn\fP = 2), or, with \fBPR\fP, refining only pixels that differ
+from a neighbour (\fIn\fP = 4). Method 4 compares colours by their distance in OKLab,
+so its threshold of about 0.02 is just noticeable; a probe between two differing pixels
+decides which of them holds the edge, and that pixel is split towards it, deeper where
+adjacent samples still differ, down to depth \fBR\fP.
+.TP
+\fBAKG\fP or \fBAntialias_Keep_Grain\fP=\fIbool\fP
+Method 4: sub\-samples take their pixel's random draws, and a difference that is only
+grain (area lights, media, \fIcrand\fP) is not refined. On by default; off, anti\-aliasing
+averages grain away.
 .TP
 \fBJ\fP\fIn.n\fP or \fBJitter\fP=\fIbool\fP \fBJitter_Amount\fP=\fIfloat\fP
 Specify maximum radius, in pixels, that antialiased samples should be

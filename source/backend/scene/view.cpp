@@ -727,7 +727,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
 
     if(renderOptions.TryGetBool(kPOVAttrib_Antialias, false) == true)
-        tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 3); // TODO FIXME - magic number in clip
+        tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 4); // TODO FIXME - magic number in clip
 
     aadepth = clip((unsigned int)renderOptions.TryGetInt(kPOVAttrib_AntialiasDepth, 3), 1u, 9u);
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
@@ -752,7 +752,9 @@ void View::StartRender(POVMS_Object& renderOptions)
     bool progressive = renderOptions.TryGetBool(kPOVAttrib_ProgressiveRender, false) &&
                        !renderOptions.TryGetBool(kPOVAttrib_RealTimeRaytracing, false);
     if (progressive && (tracingmethod == 3))
-        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1 and 2 only.");
+        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1, 2 and 4 only.");
+    if (!progressive && (tracingmethod == 4))
+        throw POV_EXCEPTION(kParamErr, "Anti-aliasing method 4 needs progressive rendering (+PR).");
     bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
 
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
@@ -1310,6 +1312,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
     // basic tracing stats
     renderStats.SetLong(kPOVAttrib_Pixels, stats[Number_Of_Pixels]);
     renderStats.SetLong(kPOVAttrib_PixelSamples, stats[Number_Of_Samples]);
+    renderStats.SetLong(kPOVAttrib_PixelsSupersampled, stats[Number_Of_Pixels_Supersampled]);
     renderStats.SetLong(kPOVAttrib_Rays, stats[Number_Of_Rays]);
     renderStats.SetLong(kPOVAttrib_RaysSaved, stats[ADC_Saves]);
 
@@ -1534,25 +1537,34 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
                 throw POV_EXCEPTION(kInvalidDataSizeErr, "Lattice samples from the render state file do not match the image size.");
             samples.Get(kPOVMSType_VectorFloat, &viewData.latticeSamples[0], &len);
         }
+        if (tracingMethod == 4)
+        {
+            viewData.contention.assign(viewData.latticeSamples.size(), 0);
+            if (renderOptions.TryGetBool(kPOVAttrib_AntialiasKeepGrain, true))
+                viewData.latticeGrain.assign(viewData.latticeSamples.size(), 1);
+        }
     }
 
     shared_ptr<ViewData::BlockIdSet> noSkip(new ViewData::BlockIdSet());
     bool firstPass = true;
     unsigned int step = maxStep;
-    for (int level = 0; level <= levels; level++, step >>= 1)
+    // method 4 anti-aliases in two passes: pair tests, then refinement; the first keeps no state, so it always runs
+    const int lastLevel = levels + ((tracingMethod == 4) ? 1 : 0);
+    for (int level = 0; level <= lastLevel; level++, step >>= 1)
     {
-        bool refine = (level == levels);
-        if ((level < resumeLevel) || (refine && (tracingMethod == 0)))
+        bool refine = (level >= levels);
+        bool pairs = (tracingMethod == 4) && (level == levels);
+        if (((level < resumeLevel) && !pairs) || (refine && (tracingMethod == 0)))
             continue;
 
-        renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, (level == resumeLevel) ? resumeSkip : noSkip, !firstPass && !refine));
+        renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, ((level == resumeLevel) && !pairs) ? resumeSkip : noSkip, !firstPass && !refine));
         renderTasks.AppendSync();
         firstPass = false;
 
         for (int i = 0; i < maxRenderThreads; i++)
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
                 &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0
+                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, pairs
                 ))));
         renderTasks.AppendSync();
     }

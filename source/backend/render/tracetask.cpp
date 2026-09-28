@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -260,7 +261,7 @@ void TraceTask::SubdivisionBuffer::LoadEdge(size_t pos, bool column, const Edge&
 TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
                      DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                      unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                     int level, unsigned int ls, bool lf) :
+                     int level, unsigned int ls, bool lf, bool pairs) :
     RenderTask(vd, seed, "Trace"),
     trace(vd->GetSceneData(), &vd->GetCamera(), GetViewDataPtr(), vd->GetSceneData()->parsedMaxTraceLevel, vd->GetSceneData()->parsedAdcBailout,
           vd->GetQualityFeatureFlags(), cooperate, media, radiosity),
@@ -279,6 +280,7 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     progressLevel(level),
     latticeStep(ls),
     latticeFirst(lf),
+    aaPairs(pairs),
     media(GetViewDataPtr(), &trace, &photonGatherer),
     radiosity(vd->GetSceneData(), GetViewDataPtr(),
               vd->GetSceneData()->radiositySettings, vd->GetRadiosityCache(), cooperate, true, vd->GetCamera().Location),
@@ -328,6 +330,10 @@ void TraceTask::Run()
                 ProgressiveRefineM1();
             else if(tracingMethod == 2)
                 ProgressiveRefineM2();
+            else if(aaPairs)
+                ProgressivePairsM4();
+            else
+                ProgressiveRefineM4();
         }
         else switch(tracingMethod)
         {
@@ -912,6 +918,8 @@ void TraceTask::ProgressiveLevel()
 
                 if(keep)
                     GetViewData()->LatticeSample(x, y) = col;
+                if(GetViewData()->KeepsGrain())
+                    GetViewData()->LatticeGrain(x, y) = trace.Grainy();
                 positions.push_back(Vector2d(x, y));
                 colors.push_back(col);
 
@@ -1036,6 +1044,289 @@ void TraceTask::ProgressiveRefineM2()
         GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
 
         Cooperate();
+    }
+}
+
+namespace
+{
+// Directions to the eight neighbours; a pixel tests its pairs towards the first four, and d + 4 is opposite d.
+const int kDirX[8] = { 1, 1, 0, -1, -1, -1,  0,  1 };
+const int kDirY[8] = { 0, 1, 1,  1,  0, -1, -1, -1 };
+
+std::uint64_t CellKey(unsigned int level, unsigned int cx, unsigned int cy)
+{
+    return (std::uint64_t(level) << 40) | (std::uint64_t(cy) << 20) | cx;
+}
+}
+
+TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
+{
+    const RGBColour c = GammaCurve::Decode(GetViewData()->GetSceneData()->workingGamma, col.rgb());
+    const float l = std::cbrt(0.4122214708f * c.red() + 0.5363325363f * c.green() + 0.0514459929f * c.blue());
+    const float m = std::cbrt(0.2119034982f * c.red() + 0.6806995451f * c.green() + 0.1073969566f * c.blue());
+    const float s = std::cbrt(0.0883024619f * c.red() + 0.2817188376f * c.green() + 0.6299787005f * c.blue());
+    return OkLab { 0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s,
+                   1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s,
+                   0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s,
+                   col.transm() };
+}
+
+bool TraceTask::Contended(const OkLab& a, const OkLab& b) const
+{
+    const float dl = a.l - b.l, da = a.a - b.a, db = a.b - b.b;
+    return ((dl * dl + da * da + db * db) >= aaThreshold * aaThreshold) || (std::fabs(a.t - b.t) >= aaThreshold);
+}
+
+void TraceTask::LoadBlockLabs(const POVRect& rect)
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    blockLabLeft = int(rect.left) - 1;
+    blockLabTop = int(rect.top) - 1;
+    blockLabWidth = int(rect.GetWidth()) + 2;
+    blockLabs.assign(size_t(blockLabWidth) * (rect.GetHeight() + 2), OkLab());
+    for (int y = max(blockLabTop, int(area.top)); y <= min(int(rect.bottom) + 1, int(area.bottom)); y++)
+        for (int x = max(blockLabLeft, int(area.left)); x <= min(int(rect.right) + 1, int(area.right)); x++)
+            blockLabs[(x - blockLabLeft) + (y - blockLabTop) * blockLabWidth] = ToOkLab(GetViewData()->LatticeSample(x, y));
+}
+
+void TraceTask::TraceSample(DBL x, DBL y, unsigned int px, unsigned int py, RGBTColour& col)
+{
+    // a sample keeps its pixel's random draws, so anti-aliasing keeps intended grain
+    if (GetViewData()->KeepsGrain())
+        trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col, Vector2d(px + 0.5, py + 0.5));
+    else
+        trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+    GetViewDataPtr()->Stats()[Number_Of_Samples]++;
+    Cooperate();
+}
+
+void TraceTask::ProgressivePairsM4()
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    const bool keepGrain = GetViewData()->KeepsGrain();
+    POVRect rect;
+    unsigned int serial;
+
+    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    {
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
+        LoadBlockLabs(rect);
+
+        for(unsigned int y = rect.top; y <= rect.bottom; y++)
+        {
+            for(unsigned int x = rect.left; x <= rect.right; x++)
+            {
+                const OkLab& lp = BlockLab(x, y);
+                const Vector2d centre(x + 0.5, y + 0.5);
+                std::uint16_t bits = 0;
+
+                for(int d = 0; d < 8; d++)
+                {
+                    const int qx = int(x) + kDirX[d], qy = int(y) + kDirY[d];
+                    const bool outX = (qx < int(area.left)) || (qx > int(area.right));
+                    const bool outY = (qy < int(area.top)) || (qy > int(area.bottom));
+                    const Vector2d at(centre[X] + 0.5 * kDirX[d], centre[Y] + 0.5 * kDirY[d]);
+                    RGBTColour probe, twin;
+
+                    if(outX || outY)
+                    {
+                        // beyond the frame: one probe per side neighbour and per frame corner, as a diagonal along a side shares its edge
+                        if((kDirX[d] != 0) && (kDirY[d] != 0) && !(outX && outY))
+                            continue;
+                        TraceSample(at[X], at[Y], x, y, probe);
+                        if(Contended(ToOkLab(probe), lp))
+                            bits |= (1 << d);
+                        continue;
+                    }
+                    if((d >= 4) || !Contended(lp, BlockLab(qx, qy)))
+                        continue;
+
+                    const OkLab& lq = BlockLab(qx, qy);
+                    if(keepGrain && (GetViewData()->LatticeGrain(x, y) || GetViewData()->LatticeGrain(qx, qy)))
+                    {
+                        // noise test: each pixel's own draws at the shared point; a probe matching its own centre clears it
+                        trace.TracePair(at[X], at[Y], GetViewData()->GetWidth(), GetViewData()->GetHeight(), centre, Vector2d(qx + 0.5, qy + 0.5), probe, twin);
+                        GetViewDataPtr()->Stats()[Number_Of_Samples] += 2;
+                        Cooperate();
+                        if(Contended(ToOkLab(probe), lp))
+                            bits |= (1 << d);
+                        if(Contended(ToOkLab(twin), lq))
+                            bits |= (1 << (8 + d));
+                        continue;
+                    }
+
+                    // a probe matching one side puts the edge in the other pixel; a third colour refines both, and one matching both neither
+                    TraceSample(at[X], at[Y], x, y, probe);
+                    const OkLab lb = ToOkLab(probe);
+                    if(Contended(lb, lp))
+                        bits |= (1 << d);
+                    if(Contended(lb, lq))
+                        bits |= (1 << (8 + d));
+                }
+
+                GetViewData()->Contention(x, y) = bits;
+            }
+        }
+
+        radiosity.AfterTile();
+
+        GetViewDataPtr()->AfterTile();
+        GetViewData()->CompletedRectangle(rect, serial, 0.0f);
+
+        Cooperate();
+    }
+}
+
+void TraceTask::ProgressiveRefineM4()
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    POVRect rect;
+    vector<RGBTColour> pixels;
+    unsigned int serial;
+
+    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    {
+        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
+        LoadBlockLabs(rect);
+
+        pixels.clear();
+        pixels.reserve(rect.GetArea());
+
+        for(unsigned int y = rect.top; y <= rect.bottom; y++)
+        {
+            for(unsigned int x = rect.left; x <= rect.right; x++)
+            {
+                RGBTColour col = GetViewData()->LatticeSample(x, y);
+                unsigned int directions = GetViewData()->Contention(x, y) & 0xff;
+
+                // the neighbours to the west, north-west, north and north-east tested the pair and may ask this pixel to refine
+                for(int d = 0; d < 4; d++)
+                {
+                    const int nx = int(x) - kDirX[d], ny = int(y) - kDirY[d];
+                    if((nx >= int(area.left)) && (nx <= int(area.right)) && (ny >= int(area.top)) &&
+                       (GetViewData()->Contention(nx, ny) & (1 << (8 + d))))
+                        directions |= (1 << (d + 4));
+                }
+
+                if(directions != 0)
+                    RefinePixelM4(x, y, directions, col);
+
+                pixels.push_back(col);
+                Cooperate();
+            }
+        }
+
+        radiosity.AfterTile();
+
+        GetViewDataPtr()->AfterTile();
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
+
+        Cooperate();
+    }
+}
+
+void TraceTask::RefinePixelM4(unsigned int x, unsigned int y, unsigned int directions, RGBTColour& col)
+{
+    GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+
+    refineX = x;
+    refineY = y;
+    refineDirections = directions;
+    cells.clear();
+    cellColours.assign(1, col);
+    cellLabs.assign(1, BlockLab(x, y));
+    cellQueue.clear();
+    cells[CellKey(0, 0, 0)] = Cell { 0, false, true };
+
+    for(int d = 0; d < 8; d++)
+        if(directions & (1 << d))
+            SplitCell(0, 0, 0, d);
+    for(size_t i = 0; i < cellQueue.size(); i++)
+        CompareCell(cellQueue[i]);
+
+    // the pixel is the area-weighted mean of its leaf cells
+    col.Clear();
+    for(const auto& cell : cells)
+        if(!cell.second.split)
+            col += cellColours[cell.second.sample] * (1.0 / DBL(std::uint64_t(1) << (2 * (cell.first >> 40))));
+}
+
+void TraceTask::SplitCell(unsigned int level, unsigned int cx, unsigned int cy, int d)
+{
+    if(level >= aaDepth)
+        return;
+
+    Cell& cell = cells[CellKey(level, cx, cy)];
+    if(!cell.split)
+    {
+        cell.split = true;
+        const Cell inherited { cell.sample, false, false };
+        for(unsigned int j = 0; j < 4; j++)
+            cells[CellKey(level + 1, 2 * cx + (j & 1), 2 * cy + (j >> 1))] = inherited;
+    }
+
+    // trace the children that face the direction: two for a side, one for a diagonal
+    const DBL size = 1.0 / DBL(1u << (level + 1));
+    for(unsigned int j = 0; j < 4; j++)
+    {
+        const int ix = int(j & 1), iy = int(j >> 1);
+        if(((kDirX[d] != 0) && (ix != (kDirX[d] > 0 ? 1 : 0))) || ((kDirY[d] != 0) && (iy != (kDirY[d] > 0 ? 1 : 0))))
+            continue;
+        const unsigned int ccx = 2 * cx + ix, ccy = 2 * cy + iy;
+        const std::uint64_t key = CellKey(level + 1, ccx, ccy);
+        Cell& child = cells[key];
+        if(child.split || child.traced)
+            continue;
+        RGBTColour sample;
+        TraceSample(refineX + (ccx + 0.5) * size, refineY + (ccy + 0.5) * size, refineX, refineY, sample);
+        child = Cell { int(cellColours.size()), false, true };
+        cellColours.push_back(sample);
+        cellLabs.push_back(ToOkLab(sample));
+        cellQueue.push_back(key);
+    }
+}
+
+void TraceTask::CompareCell(std::uint64_t key)
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    const unsigned int level = (unsigned int)(key >> 40);
+    const unsigned int cx = (unsigned int)(key & 0xfffff), cy = (unsigned int)((key >> 20) & 0xfffff);
+    const int n = int(1u << level);
+
+    for(int d = 0; d < 8; d++)
+    {
+        const OkLab lc = cellLabs[cells[key].sample];
+        const int nx = int(cx) + kDirX[d], ny = int(cy) + kDirY[d];
+
+        if((nx < 0) || (ny < 0) || (nx >= n) || (ny >= n))
+        {
+            // across the pixel boundary, the neighbouring pixel's centre, towards neighbours whose pair put the edge here
+            const int sx = (nx < 0 ? -1 : (nx >= n ? 1 : 0)), sy = (ny < 0 ? -1 : (ny >= n ? 1 : 0));
+            const int px = int(refineX) + sx, py = int(refineY) + sy;
+            int side = 0;
+            while((kDirX[side] != sx) || (kDirY[side] != sy))
+                side++;
+            if((refineDirections & (1u << side)) && (px >= int(area.left)) && (px <= int(area.right)) &&
+               (py >= int(area.top)) && (py <= int(area.bottom)) && Contended(lc, BlockLab(px, py)))
+                SplitCell(level, cx, cy, d);
+            continue;
+        }
+
+        // the leaf holding the neighbouring position, split too if it has a sample of its own; finer neighbours compare themselves
+        for(unsigned int l = 0; l <= level; l++)
+        {
+            const unsigned int lx = unsigned(nx) >> (level - l), ly = unsigned(ny) >> (level - l);
+            const Cell& other = cells[CellKey(l, lx, ly)];
+            if(other.split)
+                continue;
+            if(Contended(lc, cellLabs[other.sample]))
+            {
+                SplitCell(level, cx, cy, d);
+                if(other.traced)
+                    SplitCell(l, lx, ly, (d + 4) % 8);
+            }
+            break;
+        }
     }
 }
 

@@ -1092,7 +1092,7 @@ void RenderOptions(POVMS_Object& obj, TextStreamBuffer *tsb)
     {
         int method = 0;
         if(obj.TryGetBool(kPOVAttrib_Antialias, false) == true)
-            method = clip(obj.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 3); // TODO FIXME - magic number in clip
+            method = clip(obj.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 4); // TODO FIXME - magic number in clip
         int depth = clip(obj.TryGetInt(kPOVAttrib_AntialiasDepth, 3), 1, 9); // TODO FIXME - magic number in clip
         float threshold = clip(obj.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
         float aagamma = obj.TryGetFloat(kPOVAttrib_AntialiasGamma, 2.5f);
@@ -1438,6 +1438,11 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
     else
         tsb->printf("Pixels:  %15.0f   Samples: %15.0f   Smpls/Pxl: -\n",
                     POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+
+    l2 = 0;
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_PixelsSupersampled, &l2);
+    if((POVMSLongToCDouble(l2) > 0.5) && (POVMSLongToCDouble(l) > 0.5))
+        tsb->printf("Supersampled: %10.0f   (%.2f%% of pixels)\n", POVMSLongToCDouble(l2), 100.0 * POVMSLongToCDouble(l2) / POVMSLongToCDouble(l));
 
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_Rays, &l);
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_RaysSaved, &l2);

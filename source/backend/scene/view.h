@@ -48,6 +48,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <cstdint>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -278,6 +279,11 @@ class ViewData final
         /// Sample of a progressive render's lattice (pixel centres, or pixel corners for method 2), kept for anti-aliasing.
         RGBTColour& LatticeSample(unsigned int x, unsigned int y) { return latticeSamples[x + y * latticeWidth]; }
         bool KeepsLatticeSamples() const { return !latticeSamples.empty(); }
+        /// Method 4: whether a pixel's centre trace was grainy (set for pixels continued from a render state file).
+        std::uint8_t& LatticeGrain(unsigned int x, unsigned int y) { return latticeGrain[x + y * latticeWidth]; }
+        bool KeepsGrain() const { return !latticeGrain.empty(); }
+        /// Method 4: the directions a pixel refines towards, as found by the pair tests (see TraceTask::ProgressivePairsM4).
+        std::uint16_t& Contention(unsigned int x, unsigned int y) { return contention[x + y * latticeWidth]; }
 
         /**
          *  Get the value of the real-time raytracing option
@@ -357,6 +363,8 @@ class ViewData final
         RTRData *rtrData;
 
         std::vector<RGBTColour> latticeSamples;
+        std::vector<std::uint8_t> latticeGrain;
+        std::vector<std::uint16_t> contention;
         unsigned int latticeWidth;
 
         /// functions to compute the X & Y block
