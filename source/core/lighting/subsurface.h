@@ -132,6 +132,7 @@ struct SubsurfaceCell final
     std::vector<SubsurfaceNode> nodes;
     std::vector<float> visibility; ///< per point, per light, per channel: shadowed over unshadowed light
     std::vector<float> ambient; ///< while lighting a radiosity cell: per point and channel, the cache's light, or NaN if none
+    std::vector<float> entry; ///< with a medium: per point, the flesh times skin its light enters by, then its emission, per channel
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
@@ -157,9 +158,11 @@ struct SubsurfaceCellKey final
     int sizeLevel;
     int x, y, z;
     bool radiosity; ///< whether its points carry the radiosity cache's light as well as the lights'
+    const void *medium; ///< the texture layer whose flesh and skin its points look up where light enters, or null
     bool operator==(const SubsurfaceCellKey& o) const
     {
-        return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity;
+        return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
+               medium == o.medium;
     }
 };
 

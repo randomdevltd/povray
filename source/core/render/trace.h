@@ -880,6 +880,38 @@ class Trace
             PreciseMathColour Rd(double distSqr) const;
             PreciseMathColour RdDisc(double radius) const;
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
+            PreciseMathColour RdTotal() const;
+        };
+
+        /// A texture's subsurface layers blended as the viewer sees them: reflectance and colour weighted by each layer's
+        /// opacity and filter, their sum, and the topmost layer, whose finish they scatter with.
+        struct SubsurfaceLayers
+        {
+            MathColour reflectance, tint, weight;
+            const TEXTURE *top = nullptr;
+            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility);
+            bool Finish();
+        };
+
+        /// Where light enters the flesh: the flesh there, what the light is multiplied by (flesh times skin transmittance),
+        /// and the flesh's emission times the flesh.
+        struct SubsurfaceEntry
+        {
+            MathColour flesh{1.0}, factor{1.0}, emission;
+        };
+
+        /// The flesh and skin of one shading point, and what is looked up where light enters; see doc/PERF.md.
+        struct SubsurfaceFlesh
+        {
+            const FINISH *finish = nullptr;
+            const PIGMENT *skin = nullptr; ///< the skin's tint where light enters, when it is looked up there
+            double depth = 0.0; ///< mean depth of the flesh's lookups below the surface, in scene units
+            bool fleshAtDepth = false, emissionAtDepth = false;
+            MathColour exitSkin{1.0}, entrySkin{1.0}; ///< the skin's transmittance here, and where light enters unless looked up there
+            MathColour emission; ///< the flesh's emission where it is the same at every entry point
+            PreciseMathColour reference{1.0}; ///< the flesh colour the looked-up one is taken relative to
+            SubsurfaceEntry nearby; ///< the mean of a few entry points around this one, for light entering as it does here
+            bool PerEntry() const { return fleshAtDepth || emissionAtDepth || (skin != nullptr); }
         };
 
         /// A subsurface sample lit by one light, before its shadow is tested.
@@ -896,6 +928,8 @@ class Trace
         struct SubsurfaceCloud
         {
             ObjectPtr object = nullptr;
+            const SubsurfaceFlesh *flesh = nullptr;
+            const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
             int sizeLevel = 0;
             double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
             bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
@@ -931,8 +965,8 @@ class Trace
                                               SubsurfaceCandidate& candidate, TraceTicket& ticket);
         void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                  const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
-                                                 const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, TraceTicket& ticket,
-                                                 std::uint64_t key);
+                                                 const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
+                                                 TraceTicket& ticket, std::uint64_t key);
         void ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket,
                                        std::uint64_t key);
         MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket,
@@ -956,7 +990,11 @@ class Trace
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights);
-        void ComputeSubsurfaceScattering (const FINISH *Finish, const MathColour& layer_pigment_colour, const Intersection& isect, Ray& Eye, const Vector3d& Layer_Normal, MathColour& colour, double Attenuation);
+        void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, MathColour& colour);
+        void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
+                                  std::uint64_t key);
+        MathColour ComputeSubsurfaceSkin(const SubsurfaceFlesh& flesh, const Vector3d& point);
+        void ComputeSubsurfaceEntry(const SubsurfaceFlesh& flesh, const Vector3d& point, const Vector3d& inward, double draw, SubsurfaceEntry& entry);
         bool SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, double eta, Vector3d& refracted);
 
     ///
