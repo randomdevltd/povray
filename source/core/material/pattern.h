@@ -563,6 +563,7 @@ struct FunctionPattern final : public ContinuousPattern
     virtual ~FunctionPattern() override;
     virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
     virtual DBL EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual bool EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const override;
 };
 
 /// Implements the `gradient` pattern.
