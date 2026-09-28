@@ -49,6 +49,9 @@
 #ifndef LIBPNG_MISSING
 #include <png.h>
 #endif
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -867,6 +870,16 @@ void SnapshotPngFlush(png_structp)
 }
 #endif
 
+bool ReplaceSnapshot(const UCS2String& from, const UCS2String& to)
+{
+#if defined(_WIN32)
+    return MoveFileExW(reinterpret_cast<const wchar_t *>(from.c_str()), reinterpret_cast<const wchar_t *>(to.c_str()),
+                       MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+    return std::rename(UCS2toSysString(from).c_str(), UCS2toSysString(to).c_str()) == 0;
+#endif
+}
+
 void WriteSnapshotPng(OStream& file, const SnapshotCanvas& canvas)
 {
 #ifdef LIBPNG_MISSING
@@ -927,13 +940,18 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
     // the messages ImageMessageHandler draws into the final image, drawn the same way
     unsigned int lattice = (hdr.reserved[0] == 2) ? 1 : 0;
     bool outside = false;
-    for (POV_OFF_T pos = sizeof(hdr); (pos < end) && !in.eof() && !outside; pos = in.tellg())
+    bool corrupt = false;
+    for (POV_OFF_T pos = sizeof(hdr); (pos < end) && !in.eof() && !outside && !corrupt; pos = in.tellg())
     {
         try
         {
             POVMS_Message msg;
             msg.Read(in);
-            unsigned int psize = msg.TryGetInt(kPOVAttrib_PixelSize, 1);
+            POVMSInt pixelSize = msg.TryGetInt(kPOVAttrib_PixelSize, 1);
+            corrupt = (pixelSize < 1);
+            if (corrupt)
+                break;
+            unsigned int psize = pixelSize;
             if (msg.GetIdentifier() == kPOVMsgIdent_PixelSet)
             {
                 std::vector<POVMSInt> positions(msg.GetIntVector(kPOVAttrib_PixelPositions));
@@ -970,6 +988,8 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
             break;
         }
     }
+    if (corrupt)
+        throw POV_EXCEPTION(kFileDataErr, "The render state file holds a record with a pixel size below 1.");
     if (outside)
         throw POV_EXCEPTION(kInvalidDataSizeErr, "The render state file holds pixels outside the image size given with +W and +H.");
 
@@ -989,7 +1009,7 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
         pov_base::Filesystem::DeleteFile(temp);
         throw;
     }
-    if (std::rename(UCS2toSysString(temp).c_str(), UCS2toSysString(snapshotFile).c_str()) != 0)
+    if (!ReplaceSnapshot(temp, snapshotFile))
     {
         pov_base::Filesystem::DeleteFile(temp);
         throw POV_EXCEPTION(kFileDataErr, "Cannot rename snapshot to " + UCS2toSysString(snapshotFile) + ".");
