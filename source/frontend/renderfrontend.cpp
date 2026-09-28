@@ -51,6 +51,7 @@
 #endif
 #if defined(_WIN32)
 #include <windows.h>
+#undef DeleteFile
 #endif
 
 // POV-Ray header files (base module)
