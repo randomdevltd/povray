@@ -882,6 +882,16 @@ class Trace
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
         };
 
+        /// A texture's subsurface layers blended as the viewer sees them: reflectance weighted by each layer's opacity
+        /// and filter, their sum, and the topmost layer, whose finish they scatter with.
+        struct SubsurfaceLayers
+        {
+            MathColour reflectance, weight;
+            const TEXTURE *top = nullptr;
+            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility);
+            bool Finish();
+        };
+
         /// A subsurface sample lit by one light, before its shadow is tested.
         struct SubsurfaceCandidate
         {
@@ -956,7 +966,7 @@ class Trace
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights);
-        void ComputeSubsurfaceScattering (const FINISH *Finish, const MathColour& layer_pigment_colour, const Intersection& isect, Ray& Eye, const Vector3d& Layer_Normal, MathColour& colour, double Attenuation);
+        void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, MathColour& colour);
         bool SSLTComputeRefractedDirection(const Vector3d& v, const Vector3d& n, double eta, Vector3d& refracted);
 
     ///

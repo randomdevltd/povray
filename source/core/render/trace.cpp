@@ -818,6 +818,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     if(sceneData->photonSettings.photonsEnabled && sceneData->surfacePhotonMap.numPhotons > 0)
         surfacePhotonGatherer.reset(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
 
+    SubsurfaceLayers subsurfaceLayers;
+
     for (layer_number = 0, layer = texture; (layer != nullptr) && (trans > ray.GetTicket().adcBailout); layer_number++, layer = layer->Next)
     {
         // Get perturbed surface normal.
@@ -895,9 +897,16 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
 
             if(sceneData->useSubsurface && layer->Finish->UseSubsurface && qualityFlags.subsurface)
             {
-                // Add diffuse & single scattering contribution.
-                ComputeSubsurfaceScattering(layer->Finish, layCol.colour(), isect, ray, layNormal, tmpCol, att);
-                // [CLi] moved multiplication with filCol to further below
+                // A single layer scatters here; several are blended as they are seen and scattered once after the loop.
+                if (texture->Next == nullptr)
+                {
+                    SubsurfaceLayers single;
+                    single.Add(layer, layCol.colour(), MathColour(att));
+                    if (single.Finish())
+                        ComputeSubsurfaceScattering(single, isect, ray, tmpCol);
+                }
+                else
+                    subsurfaceLayers.Add(layer, layCol.colour(), filCol * att);
 
                 // Radiosity-style ambient may be subject to subsurface light transport.
                 // In that case, the respective computations are handled by the BSSRDF code already.
@@ -1092,6 +1101,9 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         // TODO CLARIFY - is this working properly if filCol.greyscale() is negative? (what would be the right thing then?)
         trans = min(1.0, (double)fabs(filCol.Greyscale()));
     }
+
+    if (subsurfaceLayers.Finish())
+        ComputeSubsurfaceScattering(subsurfaceLayers, isect, ray, resultColour);
 
     // Calculate transmitted component.
     //
@@ -4962,8 +4974,26 @@ void Trace::ComputeDiffuseAmbientContribution1(const Intersection& in, const Pre
     }
 }
 
-void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& layer_pigment_colour, const Intersection& out, Ray& Eye, const Vector3d& Layer_Normal, MathColour& Final_Colour, double Attenuation)
+void Trace::SubsurfaceLayers::Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility)
 {
+    reflectance += visibility * (pigment * layer->Finish->Diffuse);
+    weight += visibility;
+    if (top == nullptr)
+        top = layer;
+}
+
+bool Trace::SubsurfaceLayers::Finish()
+{
+    if ((top == nullptr) || !(weight.WeightMax() > 0.0))
+        return false;
+    for (int j = 0; j < MathColour::channels; j++)
+        reflectance[j] = (weight[j] > 0.0) ? reflectance[j] / weight[j] : 0.0f;
+    return true;
+}
+
+void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& out, Ray& Eye, MathColour& Final_Colour)
+{
+    const FINISH *Finish = layers.top->Finish;
     int NumSamplesDiffuse = sceneData->subsurfaceSamplesDiffuse;
     int NumSamplesSingle  = sceneData->subsurfaceSamplesSingle;
 
@@ -4989,7 +5019,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
     ComputeRelativeIOR(Eye, out.Object->interior.get(), eta);
 
     // user setting specifies reduced scattering coefficient
-    PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(layer_pigment_colour * Finish->Diffuse);
+    PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(layers.reflectance);
     PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;
@@ -5144,7 +5174,7 @@ void Trace::ComputeSubsurfaceScattering(const FINISH *Finish, const MathColour& 
         }
     }
 
-    Final_Colour += Total_Colour;
+    Final_Colour += Total_Colour * layers.weight;
 
     Eye.GetTicket().subsurfaceRecursionDepth--;
 }
