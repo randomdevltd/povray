@@ -6645,6 +6645,25 @@ DBL FunctionPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIs
     return ((value > 1.0) ? fmod(value, 1.0) : value);
 }
 
+bool FunctionPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    const DBL slack = RangeSlack(a, b);
+    Vector3d lower, upper;
+    for (int axis = X; axis <= Z; ++axis)
+    {
+        lower[axis] = min(a[axis], b[axis]) - slack;
+        upper[axis] = max(a[axis], b[axis]) + slack;
+    }
+    if (!pFn->EvaluateRange(lower, upper, lo, hi))
+        return false;
+    if (hi > 1.0)
+    {
+        lo = min(lo, 0.0);
+        hi = 1.0;
+    }
+    return true;
+}
+
 
 /*****************************************************************************
 *

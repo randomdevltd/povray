@@ -239,6 +239,7 @@ Density of instruction set: 916 / 1024 = 0.8945
 
 // C++ standard header files
 #include <algorithm>
+#include <limits>
 
 // POV-Ray header files (base module)
 #include "base/mathutil.h"
@@ -372,6 +373,218 @@ static void DecodeProgram(const FunctionCode& f, vector<VMOp>& ops)
             ops[i].scalar = VMS_CALLF;
         }
     }
+}
+
+enum RangeCode { RangeParameter, RangeConstant, RangeAdd, RangeSub, RangeMul, RangeDiv, RangeNeg, RangeAbs, RangeMin, RangeMax };
+
+struct FunctionRangePlan
+{
+    struct Op
+    {
+        RangeCode code;
+        int a, b;
+        DBL value;
+    };
+    vector<Op> ops;
+    unsigned int parameters;
+    int result;
+};
+
+static const size_t kRangeNodes = 128;
+static const size_t kRangeLocals = 256;
+
+void FunctionVM::BuildRangePlan(FUNCTION fn)
+{
+    FunctionEntry& entry = functions[fn];
+    entry.range.reset();
+    if ((entry.fn.return_size != 0) || (entry.ops.size() > 2048) || (entry.fn.parameter_cnt > kRangeLocals))
+        return;
+    std::shared_ptr<FunctionRangePlan> plan(new FunctionRangePlan);
+    plan->parameters = entry.fn.parameter_cnt;
+    int r[8];
+    std::fill(r, r + 8, -1);
+    vector<int> locals;
+    bool valid = true;
+
+    auto add = [&](RangeCode code, int a, int b, DBL value) -> int
+    {
+        if ((plan->ops.size() == kRangeNodes) ||
+            ((code >= RangeAdd) && (a < 0)) ||
+            (((code >= RangeAdd && code <= RangeDiv) || code >= RangeMin) && (b < 0)))
+        {
+            valid = false;
+            return -1;
+        }
+        plan->ops.push_back(FunctionRangePlan::Op{code, a, b, value});
+        return int(plan->ops.size() - 1);
+    };
+    auto constant = [&](unsigned int k) -> int
+    {
+        if ((k >= consts.size()) || !std::isfinite(consts[k]))
+        {
+            valid = false;
+            return -1;
+        }
+        return add(RangeConstant, 0, 0, consts[k]);
+    };
+    for (unsigned int i = 0; i < plan->parameters; ++i)
+        locals.push_back(add(RangeParameter, i, 0, 0.0));
+
+    for (size_t pc = 0; valid && (pc < entry.ops.size()); ++pc)
+    {
+        const VMOp& op = entry.ops[pc];
+        switch (op.code)
+        {
+            case VM_GROW:
+                if (op.k > kRangeLocals)
+                    return;
+                if (locals.size() < op.k)
+                    locals.resize(op.k, -1);
+                break;
+            case VM_NOP:
+                break;
+            case VM_LOADL:
+                if (op.k >= locals.size())
+                    return;
+                r[op.b] = locals[op.k];
+                break;
+            case VM_STOREL:
+                if (op.k >= locals.size())
+                    return;
+                locals[op.k] = r[op.b];
+                break;
+            case VM_LOADI: r[op.b] = constant(op.k); break;
+            case VM_MOVE:  r[op.b] = r[op.a]; break;
+            case VM_NEG:   r[op.b] = add(RangeNeg, r[op.a], 0, 0.0); break;
+            case VM_ABS:   r[op.b] = add(RangeAbs, r[op.a], 0, 0.0); break;
+            case VM_ADD:   r[op.b] = add(RangeAdd, r[op.b], r[op.a], 0.0); break;
+            case VM_SUB:   r[op.b] = add(RangeSub, r[op.b], r[op.a], 0.0); break;
+            case VM_MUL:   r[op.b] = add(RangeMul, r[op.b], r[op.a], 0.0); break;
+            case VM_ADDI:  r[op.b] = add(RangeAdd, r[op.b], constant(op.k), 0.0); break;
+            case VM_SUBI:  r[op.b] = add(RangeSub, r[op.b], constant(op.k), 0.0); break;
+            case VM_MULI:  r[op.b] = add(RangeMul, r[op.b], constant(op.k), 0.0); break;
+            case VM_DIVI:
+                if ((op.k >= consts.size()) || (consts[op.k] == 0.0))
+                    return;
+                r[op.b] = add(RangeDiv, r[op.b], constant(op.k), 0.0);
+                break;
+            case VM_CMP:
+            {
+                if ((pc + 2 >= entry.ops.size()) || (op.a != 0) || (op.b != 1))
+                    return;
+                const VMOp& branch = entry.ops[pc + 1];
+                const VMOp& move = entry.ops[pc + 2];
+                if (((branch.code != VM_BGT) && (branch.code != VM_BLT)) || (branch.k != pc + 3) ||
+                    (move.code != VM_MOVE) || (move.a != 1) || (move.b != 0))
+                    return;
+                r[0] = add(branch.code == VM_BGT ? RangeMin : RangeMax, r[0], r[1], 0.0);
+                pc += 2;
+                break;
+            }
+            case VM_CALLF:
+            {
+                if (pc + 2 >= entry.ops.size())
+                    return;
+                const unsigned int callee = entry.ops[pc + 1].k;
+                if ((callee >= functions.size()) || !functions[callee].range)
+                    return;
+                const FunctionRangePlan& child = *functions[callee].range;
+                if ((op.k > locals.size()) || (child.parameters > locals.size() - op.k))
+                    return;
+                vector<int> nodes;
+                for (const FunctionRangePlan::Op& c : child.ops)
+                {
+                    if (c.code == RangeParameter)
+                        nodes.push_back(locals[op.k + c.a]);
+                    else if (c.code == RangeConstant)
+                        nodes.push_back(add(c.code, 0, 0, c.value));
+                    else
+                        nodes.push_back(add(c.code, nodes[c.a], c.code == RangeNeg || c.code == RangeAbs ? 0 : nodes[c.b], 0.0));
+                }
+                std::fill(r, r + 8, -1);
+                r[0] = nodes[child.result];
+                std::fill(locals.begin() + op.k, locals.end(), -1);
+                pc += 2;
+                break;
+            }
+            case VM_RTS:
+                if ((r[0] < 0) || (pc + 2 != entry.ops.size()))
+                    return;
+                plan->result = r[0];
+                entry.range = plan;
+                return;
+            default:
+                return;
+        }
+    }
+}
+
+bool FunctionVM::EvaluateRange(FUNCTION fn, const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    if ((fn >= functions.size()) || !functions[fn].range || (functions[fn].range->parameters > 3))
+        return false;
+    const FunctionRangePlan& plan = *functions[fn].range;
+    struct Interval { DBL lo, hi; } values[kRangeNodes];
+    const DBL infinity = std::numeric_limits<DBL>::infinity();
+    for (int axis = 0; axis < 3; ++axis)
+        if (!std::isfinite(a[axis]) || !std::isfinite(b[axis]))
+            return false;
+    for (size_t i = 0; i < plan.ops.size(); ++i)
+    {
+        const FunctionRangePlan::Op& op = plan.ops[i];
+        Interval v;
+        if (op.code == RangeParameter)
+            v = Interval{min(a[op.a], b[op.a]), max(a[op.a], b[op.a])};
+        else if (op.code == RangeConstant)
+            v = Interval{op.value, op.value};
+        else
+        {
+            const Interval x = values[op.a];
+            if (op.code == RangeNeg)
+                v = Interval{-x.hi, -x.lo};
+            else if (op.code == RangeAbs)
+                v = Interval{x.lo <= 0.0 && x.hi >= 0.0 ? 0.0 : min(fabs(x.lo), fabs(x.hi)), max(fabs(x.lo), fabs(x.hi))};
+            else
+            {
+                const Interval y = values[op.b];
+                switch (op.code)
+                {
+                    case RangeAdd: v = Interval{x.lo + y.lo, x.hi + y.hi}; break;
+                    case RangeSub: v = Interval{x.lo - y.hi, x.hi - y.lo}; break;
+                    case RangeMin: v = Interval{min(x.lo, y.lo), min(x.hi, y.hi)}; break;
+                    case RangeMax: v = Interval{max(x.lo, y.lo), max(x.hi, y.hi)}; break;
+                    case RangeMul:
+                    case RangeDiv:
+                    {
+                        if ((op.code == RangeDiv) && (y.lo <= 0.0) && (y.hi >= 0.0))
+                            return false;
+                        DBL p[4];
+                        if (op.code == RangeMul)
+                        {
+                            p[0] = x.lo * y.lo; p[1] = x.lo * y.hi;
+                            p[2] = x.hi * y.lo; p[3] = x.hi * y.hi;
+                        }
+                        else
+                        {
+                            p[0] = x.lo / y.lo; p[1] = x.lo / y.hi;
+                            p[2] = x.hi / y.lo; p[3] = x.hi / y.hi;
+                        }
+                        v = Interval{*std::min_element(p, p + 4), *std::max_element(p, p + 4)};
+                        break;
+                    }
+                    default: return false;
+                }
+                if (op.code <= RangeDiv)
+                    v = Interval{std::nextafter(v.lo, -infinity), std::nextafter(v.hi, infinity)};
+            }
+        }
+        if (!std::isfinite(v.lo) || !std::isfinite(v.hi))
+            return false;
+        values[i] = v;
+    }
+    lo = values[plan.result].lo;
+    hi = values[plan.result].hi;
+    return true;
 }
 
 /*****************************************************************************
@@ -1014,6 +1227,7 @@ FUNCTION FunctionVM::AddFunction(FunctionCode *f)
 
     functions[fn].fn = *f;
     DecodeProgram(functions[fn].fn, functions[fn].ops);
+    BuildRangePlan(fn);
     functions[fn].reference_count = 1;
     SYS_ADD_FUNCTION(fn);
 
@@ -1072,6 +1286,7 @@ void FunctionVM::RemoveFunction(FUNCTION fn)
             }
             FNCode_Delete(&(f.fn));
             vector<VMOp>().swap(functions[fn].ops);
+            functions[fn].range.reset();
 
             // we use unused entries to store a linked list of those, for easier later re-use
             functions[fn].next_unreferenced = nextUnreferenced;
@@ -1917,6 +2132,11 @@ void FunctionVM::CustomFunction::ExecuteBatch(GenericFunctionContextPtr pGeneric
 GenericScalarFunctionPtr FunctionVM::CustomFunction::Clone() const
 {
     return new CustomFunction(mpVm.get(), mpVm->CopyFunction(mpFn));
+}
+
+bool FunctionVM::CustomFunction::EvaluateRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    return mpVm->EvaluateRange(*mpFn, a, b, lo, hi);
 }
 
 const CustomFunctionSourceInfo* FunctionVM::CustomFunction::GetSourceInfo() const

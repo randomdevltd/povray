@@ -117,7 +117,7 @@ bit for bit.
 
 Shadow density batches preserve the point path's arithmetic. Supported density patterns also provide
 conservative extinction ranges, so a stretch may use the range midpoint when its optical-depth error
-fits a shared 1/1024 budget. Bounds are used only when a whole-ray upper bound, inflated for rounding,
+fits a shared 1/1024 budget. Bounds are used only when a whole-segment upper bound, inflated for rounding,
 proves at least one colour channel cannot reach the opacity cutoff. Other rays retain the point path's
 per-point cutoff: moving it to a stretch boundary changes bright-light shadows substantially.
 `tools/bench/media-opacity.pov` exercises this case; `Method`, `Intervals`, `Samples`, `Absorption` and
@@ -125,8 +125,21 @@ per-point cutoff: moving it to a stretch boundary changes bright-light shadows s
 media containers; area-light samples have independent budgets and reserve their worst remainder for the
 shared atmospheric tail. `tools/bench/media-segments.pov` tests accumulated errors across containers. The
 rounding allowance is reserved from the same budget; unusually large sample counts may use the exact path.
+
+Simple function densities also provide ranges: finite constants, coordinates, addition, subtraction,
+multiplication, constant division, absolute value and min/max clamps. The VM compiles a bounded-size
+range plan once, preserving its instruction order and rounded constants; supported named scalar
+functions are included in their callers' plans. Range queries allocate nothing and do not alter point
+evaluation. Arithmetic bounds round outward, while min/max retain exact saturation at zero and one.
+The pattern's wrap above one, its wave and its colour map still apply. Unsupported calls, noise,
+general conditionals, variable division, nonfinite ranges and oversized plans use the point path.
+`tools/bench/media-functions.pov` covers direct and named functions, transforms, clamps and fallback.
 Run `python3 tools/bench/check-media-opacity.py <reference-binary> <candidate-binary> <output-directory>`
 to compare cutoff cases exactly and stacked-media cases within 64/65535 per displayed colour channel.
+Run `python3 tools/bench/check-media-functions.py <reference-binary> <candidate-binary> <output-directory>`
+to check function-density shadows across sampling methods and interval counts with the same tolerance.
+`tools/bench/check-function-ranges.sh <configured-build-directory> <output-directory>` checks range
+containment against scalar VM execution using that build's compiler flags and libraries.
 
 | Render | Before | After | |
 |---|---|---|---|

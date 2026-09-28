@@ -48,6 +48,7 @@
 
 // C++ standard header files
 #include <set>
+#include <memory>
 #include <vector>
 
 // Boost header files
@@ -156,10 +157,13 @@ struct VMOp
     std::uint32_t k;
 };
 
+struct FunctionRangePlan;
+
 struct FunctionEntry
 {
     FunctionCode fn;            // valid if reference_count != 0
     std::vector<VMOp> ops;      // fn.program decoded, one entry per instruction
+    std::shared_ptr<const FunctionRangePlan> range;
     FUNCTION next_unreferenced; // valid if reference_count == 0
     unsigned int reference_count;
     SYS_FUNCTION_ENTRY
@@ -294,6 +298,7 @@ class FunctionVM : public GenericFunctionContextFactory
                 virtual DBL Execute(GenericFunctionContextPtr pContext) override;
                 virtual void ExecuteBatch(GenericFunctionContextPtr pContext, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n) override;
                 virtual GenericScalarFunctionPtr Clone() const override;
+                virtual bool EvaluateRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const override;
                 virtual const CustomFunctionSourceInfo* GetSourceInfo() const override;
             protected:
                 boost::intrusive_ptr<FunctionVM> mpVm;
@@ -316,6 +321,7 @@ class FunctionVM : public GenericFunctionContextFactory
 
         FUNCTION AddFunction(FunctionCode *f);
         void RemoveFunction(FUNCTION fn);
+        bool EvaluateRange(FUNCTION fn, const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const;
 
         FUNCTION_PTR CopyFunction(FUNCTION_PTR pK);
         void DestroyFunction(FUNCTION_PTR pK);
@@ -323,6 +329,8 @@ class FunctionVM : public GenericFunctionContextFactory
         virtual GenericFunctionContextPtr CreateFunctionContext(TraceThreadData* pTd) override;
 
     private:
+
+        void BuildRangePlan(FUNCTION fn);
 
         std::vector<FunctionEntry> functions;
         FUNCTION nextUnreferenced;
