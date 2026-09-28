@@ -538,7 +538,7 @@ void MediaFunction::ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourc
         dd = 1.0 / (DBL)subIntervalCount;
         const std::uint64_t intervalKey = DeriveKey(drawKey, kDrawMedia, i - mediaintervals.begin());
 
-        ComputeOneMediaSample(medias, lights, *i, ray, dd * IMedia->Jitter * (Draw(intervalKey, kDrawMediaSample, 0) - 0.5), C0, od0, 3, ignore_photons, use_scattering, false);
+        ComputeOneMediaSample(medias, lights, *i, ray, (IMedia->Jitter == 0.0) ? 0.0 : dd * IMedia->Jitter * (Draw(intervalKey, kDrawMediaSample, 0) - 0.5), C0, od0, 3, ignore_photons, use_scattering, false);
 
         // clear out od & te
         i->te.Clear();
@@ -548,9 +548,10 @@ void MediaFunction::ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourc
         for(j = 1; j <= subIntervalCount; j++)
         {
             d1 = d0 + dd;
-            ComputeOneMediaSample(medias, lights, *i, ray, d1 + dd * IMedia->Jitter * (Draw(intervalKey, kDrawMediaSample, j) - 0.5), C1, od1, 3, ignore_photons, use_scattering, false);
+            ComputeOneMediaSample(medias, lights, *i, ray, (IMedia->Jitter == 0.0) ? d1 : d1 + dd * IMedia->Jitter * (Draw(intervalKey, kDrawMediaSample, j) - 0.5), C1, od1, 3, ignore_photons, use_scattering, false);
             ComputeOneMediaSampleRecursive(medias, lights, *i, ray, d0, d1, Result, C0, C1, ODResult, od0, od1, IMedia->AA_Level - 1,
-                                           IMedia->Jitter, aa_threshold, ignore_photons, use_scattering, false, DeriveKey(intervalKey, kDrawMedia, j));
+                                           IMedia->Jitter, aa_threshold, ignore_photons, use_scattering, false,
+                                           (IMedia->Jitter == 0.0) ? 0 : DeriveKey(intervalKey, kDrawMedia, j));
 
             // keep a sum of the results
             // do some attenuation, too, since we are doing samples in order
@@ -1148,7 +1149,7 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
 
     // d2 is between d1 and d3 (all in range of 0..1
     d2 = 0.5 * (d1 + d3);
-    jdist = d2 + Jitter * (d3 - d1) * (Draw(key, kDrawMediaSample, 0) - 0.5);
+    jdist = (Jitter == 0.0) ? d2 : d2 + Jitter * (d3 - d1) * (Draw(key, kDrawMediaSample, 0) - 0.5);
 
     ComputeOneMediaSample(medias, lights, mediainterval, ray, jdist, C2, od2, 3, ignore_photons, use_scattering, photonPass);
 
@@ -1176,7 +1177,7 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
     {
         // recurse again
         ComputeOneMediaSampleRecursive(medias, lights, mediainterval, ray, d1, d2, Result2, C1, C2, ODResult2, od1, od2,
-                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass, DeriveKey(key, kDrawMedia, 0));
+                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass, (Jitter == 0.0) ? 0 : DeriveKey(key, kDrawMedia, 0));
 
         // average colors & optical depth (well, actually do half of the averaging; we'll ad another "half a color" later)
         Result   = Result2   / 2.0;
@@ -1202,7 +1203,7 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
     {
         // recurse again
         ComputeOneMediaSampleRecursive(medias, lights, mediainterval, ray,  d2, d3, Result2, C2, C3, ODResult2, od2, od3,
-                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass, DeriveKey(key, kDrawMedia, 1));
+                                       depth - 1, Jitter, aa_threshold, ignore_photons, use_scattering, photonPass, (Jitter == 0.0) ? 0 : DeriveKey(key, kDrawMedia, 1));
 
         // average colors & optical depth (well, actually do half of the averaging; we already did "half a color" earlier)
         Result   += Result2   / 2.0;
