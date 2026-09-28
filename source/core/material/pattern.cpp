@@ -6710,6 +6710,42 @@ DBL FunctionPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIs
     return ((value > 1.0) ? fmod(value, 1.0) : value);
 }
 
+void FunctionPattern::EvaluateRawBatch(const Vector3d *points, DBL *values, size_t n, TraceThreadData *thread) const
+{
+    if (n == 0)
+        return;
+    if (!pFn->CanExecuteBatch())
+    {
+        ContinuousPattern::EvaluateRawBatch(points, values, n, thread);
+        return;
+    }
+    GenericScalarFunctionInstance fn(pFn, thread);
+    if ((n < 4) || !pFn->PreferBatch())
+    {
+        for (size_t i = 0; i < n; ++i)
+        {
+            const DBL value = fn.Evaluate(points[i]);
+            values[i] = (value > 1.0) ? fmod(value, 1.0) : value;
+        }
+        return;
+    }
+    DBL x[kDensityBatch], y[kDensityBatch], z[kDensityBatch];
+    for (size_t first = 0; first < n; first += kDensityBatch)
+    {
+        const size_t count = min(n - first, kDensityBatch);
+        for (size_t i = 0; i < count; ++i)
+        {
+            x[i] = points[first + i].x();
+            y[i] = points[first + i].y();
+            z[i] = points[first + i].z();
+        }
+        fn.Evaluate(x, y, z, values + first, int(count));
+        for (size_t i = first; i < first + count; ++i)
+            if (values[i] > 1.0)
+                values[i] = fmod(values[i], 1.0);
+    }
+}
+
 bool FunctionPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
 {
     const DBL slack = RangeSlack(a, b);

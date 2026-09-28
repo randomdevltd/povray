@@ -658,6 +658,8 @@ public:
     virtual void InitArguments(GenericFunctionContextPtr pContext) = 0;
     virtual void PushArgument(GenericFunctionContextPtr pContext, ARG_T arg) = 0;
     virtual RETURN_T Execute(GenericFunctionContextPtr pContext) = 0;
+    virtual bool CanExecuteBatch() const { return false; }
+    virtual bool PreferBatch() const { return true; }
     /// Evaluates `n` points `(x[i], y[i], z[i])`, each exactly as a three-argument Execute would.
     virtual void ExecuteBatch(GenericFunctionContextPtr pContext, const ARG_T *x, const ARG_T *y, const ARG_T *z, RETURN_T *results, int n)
     {
