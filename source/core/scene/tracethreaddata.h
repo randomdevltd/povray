@@ -64,6 +64,8 @@
 namespace pov
 {
 
+class SubsurfaceCache;
+
 //##############################################################################
 ///
 /// @addtogroup PovCore
@@ -159,6 +161,8 @@ class TraceThreadData : public ThreadData
         // just to the area light shadow code). This code ought to be fixed
         // to treat the lightsource as const, after which this can go away.
         std::vector<LightSource*> lightSources;
+
+        std::shared_ptr<SubsurfaceCache> subsurfaceCache;
 
         // all of these are for photons
         // most of them should be refactored into parameters, return values, or other objects

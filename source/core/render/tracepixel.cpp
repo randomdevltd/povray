@@ -354,7 +354,7 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
                     break;
             }
         }
-        sceneData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
+        threadData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
         subsurfaceCameraSet = true;
     }
     TraceSamples(colour, x, y, width, height, TraceTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha), 1.0);

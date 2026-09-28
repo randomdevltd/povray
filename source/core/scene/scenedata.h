@@ -168,8 +168,6 @@ class SceneData
         double subsurfaceErrorBound;
         /// point-cloud method: point spacing relative to the automatic spacing
         double subsurfaceSpacing;
-        /// subsurface irradiance clouds, built while rendering
-        std::shared_ptr<SubsurfaceCache> subsurfaceCache;
 
         // ********************************************************************************
         // temporary variables for BSP testing ... we may or may not keep these in future

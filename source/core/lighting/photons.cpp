@@ -2461,6 +2461,7 @@ DBL PhotonGatherer::gatherPhotonsAdaptive(const Vector3d* pt, const Vector3d* no
     DBL prevDensity, thisDensity;
     bool expanded = false;
 
+    adaptiveSearches = 1;
     // first try at gathering
     num=gatherPhotons(pt, Size, &radius, norm, flatten);
     prevDensity = thisDensity = num / (radius*radius);
@@ -2483,6 +2484,7 @@ DBL PhotonGatherer::gatherPhotonsAdaptive(const Vector3d* pt, const Vector3d* no
         // increase the size
         Size+=map->gatherRadStep;
 
+        ++adaptiveSearches;
         // gather again, with the new size
         tempn=gatherPhotons(pt, Size, &tempr, norm, flatten);
 

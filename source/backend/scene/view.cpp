@@ -59,6 +59,7 @@
 // POV-Ray header files (core module)
 #include "core/lighting/photons.h"
 #include "core/lighting/radiosity.h"
+#include "core/lighting/subsurface.h"
 #include "core/math/matrix.h"
 #include "core/support/octree.h"
 
@@ -774,6 +775,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     if (renderControlThread == nullptr)
         renderControlThread = new std::thread(boost::bind(&View::RenderControlThread, this));
 
+    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
 
     if(renderOptions.TryGetBool(kPOVAttrib_Antialias, false) == true)
@@ -1348,6 +1350,19 @@ void View::GetStatistics(POVMS_Object& renderStats)
 
     for(vector<ViewThreadData *>::iterator i(viewThreadData.begin()); i != viewThreadData.end(); i++)
         stats += (*i)->Stats();
+
+    double photonGathers = double(stats[Subsurface_Photon_Cloud_Gathers]) + double(stats[Subsurface_Photon_Sample_Gathers]);
+    if (photonGathers > 0.0)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface photons", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        double mean = double(stats[Subsurface_Photon_Radius_Sum]) / photonGathers;
+        double variance = max(0.0, double(stats[Subsurface_Photon_Radius_Squared_Sum]) / photonGathers - Sqr(mean));
+        messages.Info("Entry gathers: cloud %.0f, sampled %.0f, fallback %.0f; searches %.0f; deposits %.0f/%.0f accepted; radius %.6g +/- %.6g.",
+                      double(stats[Subsurface_Photon_Cloud_Gathers]), double(stats[Subsurface_Photon_Sample_Gathers]),
+                      double(stats[Subsurface_Photon_Fallbacks]), double(stats[Subsurface_Photon_Searches]),
+                      double(stats[Subsurface_Photon_Accepted]), double(stats[Subsurface_Photon_Candidates]), mean, sqrt(variance));
+    }
 
     // object intersection stats
     POVMS_List isectStats;

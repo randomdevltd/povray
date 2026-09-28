@@ -312,6 +312,12 @@ class ViewData final
         inline std::shared_ptr<BackendSceneData>& GetSceneData() { return sceneData; }
 
         /**
+         *  Get the subsurface cell cache shared by this view's render threads.
+         *  @return                 Subsurface cache.
+         */
+        std::shared_ptr<SubsurfaceCache> GetSubsurfaceCache() const { return subsurfaceCache; }
+
+        /**
          *  Get the view id for this view.
          *  @return                 View id.
          */
@@ -503,6 +509,7 @@ class ViewData final
         POVRect renderArea;
         /// camera of this view
         Camera camera;
+        std::shared_ptr<SubsurfaceCache> subsurfaceCache;
         /// generated radiosity data
         RadiosityCache radiosityCache;
         /// scene data

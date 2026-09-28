@@ -295,6 +295,7 @@ class PhotonGatherer final
         DBL flattenFactor; // amount to flatten the sphere to make it
                            // an ellipsoid when gathering photons
                            // zero = no flatten, one = regular
+        int adaptiveSearches = 0;
         bool gathered;
         DBL alreadyGatheredRadius;
 
