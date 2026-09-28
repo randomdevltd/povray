@@ -353,8 +353,25 @@ ContinuousPattern::ContinuousPattern(const ContinuousPattern& obj) :
 
 DBL ContinuousPattern::Evaluate(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
 {
-    DBL value = EvaluateRaw(EPoint, pIsection, pRay, pThread);
+    return Wave(EvaluateRaw(EPoint, pIsection, pRay, pThread));
+}
 
+void ContinuousPattern::EvaluateBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    EvaluateRawBatch(EPoints, values, n, pThread);
+    if (waveType != kWaveType_Raw)
+        for (size_t i = 0; i < n; ++i)
+            values[i] = Wave(values[i]);
+}
+
+void ContinuousPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    for (size_t i = 0; i < n; ++i)
+        values[i] = EvaluateRaw(EPoints[i], nullptr, nullptr, pThread);
+}
+
+DBL ContinuousPattern::Wave(DBL value) const
+{
     if (waveType == kWaveType_Raw)
         return value;
 
@@ -5451,7 +5468,7 @@ DBL AgatePattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsect
 *
 ******************************************************************************/
 
-DBL BoxedPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+static inline DBL BoxedRaw(const Vector3d& EPoint)
 {
     DBL value;
 
@@ -5459,6 +5476,17 @@ DBL BoxedPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsect
     CLIP_DENSITY(value);
 
     return(value);
+}
+
+DBL BoxedPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+{
+    return BoxedRaw(EPoint);
+}
+
+void BoxedPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    for (size_t i = 0; i < n; ++i)
+        values[i] = BoxedRaw(EPoints[i]);
 }
 
 
@@ -6022,7 +6050,7 @@ DBL CracklePattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIse
 *
 ******************************************************************************/
 
-DBL CylindricalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+static inline DBL CylindricalRaw(const Vector3d& EPoint)
 {
     DBL value;
 
@@ -6030,6 +6058,17 @@ DBL CylindricalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *
     CLIP_DENSITY(value);
 
     return(value);
+}
+
+DBL CylindricalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+{
+    return CylindricalRaw(EPoint);
+}
+
+void CylindricalPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    for (size_t i = 0; i < n; ++i)
+        values[i] = CylindricalRaw(EPoints[i]);
 }
 
 
@@ -6383,13 +6422,24 @@ DBL FunctionPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIs
 *
 ******************************************************************************/
 
-DBL GradientPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+static inline DBL GradientRaw(const Vector3d& EPoint, const Vector3d& gradient)
 {
     DBL Result;
     Result = dot(EPoint, gradient);
 
     /* Mod to keep within [0.0,1.0] range */
     return ((Result > 1.0) ? fmod(Result, 1.0) : Result);
+}
+
+DBL GradientPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+{
+    return GradientRaw(EPoint, gradient);
+}
+
+void GradientPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    for (size_t i = 0; i < n; ++i)
+        values[i] = GradientRaw(EPoints[i], gradient);
 }
 
 
@@ -8021,13 +8071,24 @@ DBL PigmentPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIse
 *
 ******************************************************************************/
 
-DBL PlanarPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+static inline DBL PlanarRaw(const Vector3d& EPoint)
 {
     DBL value = fabs(EPoint[Y]);
 
     CLIP_DENSITY(value);
 
     return value;
+}
+
+DBL PlanarPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+{
+    return PlanarRaw(EPoint);
+}
+
+void PlanarPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    for (size_t i = 0; i < n; ++i)
+        values[i] = PlanarRaw(EPoints[i]);
 }
 
 
@@ -8548,7 +8609,7 @@ DBL Spiral2Pattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIse
 *
 ******************************************************************************/
 
-DBL SphericalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+static inline DBL SphericalRaw(const Vector3d& EPoint)
 {
     DBL value;
 
@@ -8556,6 +8617,17 @@ DBL SphericalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pI
     CLIP_DENSITY(value);
 
     return(value);
+}
+
+DBL SphericalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+{
+    return SphericalRaw(EPoint);
+}
+
+void SphericalPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
+{
+    for (size_t i = 0; i < n; ++i)
+        values[i] = SphericalRaw(EPoints[i]);
 }
 
 

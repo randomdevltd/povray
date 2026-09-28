@@ -143,6 +143,12 @@ void Post_Pigment(PIGMENT *Pigment, bool* pHasFilter = nullptr);
 bool Compute_Pigment(TransColour& colour, const PIGMENT *Pigment, const Vector3d& IPoint, const Intersection *Intersect, const Ray *ray, TraceThreadData *Thread);
 void Evaluate_Density_Pigment(std::vector<PIGMENT*>& Density, const Vector3d& p, MathColour& c, TraceThreadData *ttd);
 
+/// Most points the batched Evaluate_Density_Pigment takes at once.
+const size_t kDensityBatch = 16;
+
+/// Evaluate_Density_Pigment at each of n <= kDensityBatch points, bit for bit.
+void Evaluate_Density_Pigment(std::vector<PIGMENT*>& Density, const Vector3d *p, MathColour *c, size_t n, TraceThreadData *ttd);
+
 /// @}
 ///
 //##############################################################################
