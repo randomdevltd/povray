@@ -408,6 +408,108 @@ DBL ContinuousPattern::Wave(DBL value) const
     return value;
 }
 
+bool ContinuousPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    return false;
+}
+
+bool ContinuousPattern::EvaluateRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    if (!EvaluateRawRange(a, b, lo, hi))
+        return false;
+    if (waveType == kWaveType_Raw)
+        return true;
+
+    const DBL period = 1.00001; // the fmod modulus in Wave()
+    const bool identity = (waveFrequency == 1.0) && (wavePhase == 0.0) && (lo >= 0.0) && (hi < period);
+    if (!identity && (waveFrequency != 0.0))
+    {
+        DBL wa = lo * waveFrequency + wavePhase;
+        DBL wb = hi * waveFrequency + wavePhase;
+        lo = min(wa, wb);
+        hi = max(wa, wb);
+        if ((lo >= 0.0) && (floor(lo / period) == floor(hi / period)) && (fmod(lo, period) <= fmod(hi, period)))
+        {
+            lo = fmod(lo, period);
+            hi = fmod(hi, period);
+        }
+        else
+        {
+            lo = 0.0;
+            hi = period;
+        }
+    }
+    else if (lo < 0.0)
+    {
+        lo = 0.0;
+        hi = max(hi, 1.0);
+    }
+
+    switch (waveType)
+    {
+        case kWaveType_Ramp:
+            break;
+        case kWaveType_Cubic:
+        {
+            const DBL fl = Sqr(lo) * ((-2.0 * lo) + 3.0);
+            const DBL fh = Sqr(hi) * ((-2.0 * hi) + 3.0);
+            const DBL peak = ((lo < 1.0) && (hi > 1.0)) ? 1.0 : max(fl, fh);
+            lo = min(fl, fh);
+            hi = peak;
+            break;
+        }
+        case kWaveType_Poly:
+            if (waveExponent < 0.0)
+            {
+                if (lo <= 0.0)
+                    return false;
+                const DBL top = pow(lo, (DBL) waveExponent);
+                lo = pow(hi, (DBL) waveExponent);
+                hi = top;
+            }
+            else
+            {
+                lo = pow(lo, (DBL) waveExponent);
+                hi = pow(hi, (DBL) waveExponent);
+            }
+            break;
+        default:
+            lo = 0.0;
+            hi = 1.0;
+            break;
+    }
+    return true;
+}
+
+// Rounding slack for a range along a segment whose points are transformed one at a time.
+static inline DBL RangeSlack(const Vector3d& a, const Vector3d& b)
+{
+    return 1e-9 * (1.0 + max(max(max(fabs(a[X]), fabs(a[Y])), max(fabs(a[Z]), fabs(b[X]))), max(fabs(b[Y]), fabs(b[Z]))));
+}
+
+static inline DBL ClipDensity(DBL r)
+{
+    CLIP_DENSITY(r);
+    return r;
+}
+
+// Range of CLIP_DENSITY over distances [rmin, rmax], widened by slack.
+static inline void RadialRange(DBL rmin, DBL rmax, DBL slack, DBL& lo, DBL& hi)
+{
+    lo = ClipDensity(rmax + slack);
+    hi = ClipDensity(max(rmin - slack, 0.0));
+}
+
+// Nearest and farthest distance from the origin along the segment from a to b.
+static void SegmentDistance(const Vector3d& a, const Vector3d& b, DBL& rmin, DBL& rmax)
+{
+    const Vector3d d = b - a;
+    const DBL dd = d.lengthSqr();
+    const DBL t = (dd > 0.0) ? min(max(-dot(a, d) / dd, 0.0), 1.0) : 0.0;
+    rmin = (a + d * t).length();
+    rmax = max(a.length(), b.length());
+}
+
 unsigned int ContinuousPattern::NumDiscreteBlendMapEntries() const { return 0; }
 bool ContinuousPattern::CanMap() const { return true; }
 
@@ -5483,6 +5585,32 @@ DBL BoxedPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsect
     return BoxedRaw(EPoint);
 }
 
+static inline DBL MaxNorm(const Vector3d& p)
+{
+    return max(fabs(p[X]), max(fabs(p[Y]), fabs(p[Z])));
+}
+
+bool BoxedPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    const Vector3d d = b - a;
+    DBL rmin = min(MaxNorm(a), MaxNorm(b));
+    const DBL rmax = max(MaxNorm(a), MaxNorm(b));
+    // The norm is convex and piecewise linear along the segment, so its minimum is where two of +-x, +-y, +-z meet.
+    for (int i = X; i <= Z; ++i)
+        for (int j = i; j <= Z; ++j)
+            for (int sign = -1; sign <= ((i == j) ? -1 : 1); sign += 2)
+            {
+                const DBL den = d[i] - sign * d[j];
+                if (den == 0.0)
+                    continue;
+                const DBL t = (sign * a[j] - a[i]) / den;
+                if ((t > 0.0) && (t < 1.0))
+                    rmin = min(rmin, MaxNorm(a + d * t));
+            }
+    RadialRange(rmin, rmax, RangeSlack(a, b), lo, hi);
+    return true;
+}
+
 void BoxedPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
 {
     for (size_t i = 0; i < n; ++i)
@@ -6065,6 +6193,14 @@ DBL CylindricalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *
     return CylindricalRaw(EPoint);
 }
 
+bool CylindricalPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    DBL rmin, rmax;
+    SegmentDistance(Vector3d(a[X], 0.0, a[Z]), Vector3d(b[X], 0.0, b[Z]), rmin, rmax);
+    RadialRange(rmin, rmax, RangeSlack(a, b), lo, hi);
+    return true;
+}
+
 void CylindricalPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
 {
     for (size_t i = 0; i < n; ++i)
@@ -6314,6 +6450,129 @@ DBL DensityFilePattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *
 }
 
 
+// Voxels per block of a density file's range grid, on each axis.
+static const size_t kDensityBlock = 8;
+// Catmull-Rom's negative weights sum to at most 1/8 per axis, so in three the overshoot is (1.25^3 - 1) / 2 of the range.
+static const DBL kTricubicOvershoot = 0.4765625;
+
+static inline DBL DensityVoxel(const DENSITY_FILE_DATA *d, size_t i)
+{
+    if (d->Type == 4)
+        return (DBL)d->Density32[i] / (DBL)UNSIGNED32_MAX;
+    if (d->Type == 2)
+        return (DBL)d->Density16[i] / (DBL)UNSIGNED16_MAX;
+    return (DBL)d->Density8[i] / (DBL)UNSIGNED8_MAX;
+}
+
+// Voxel indices along one axis that cells c0 to c1 can read, wrapping in size_t as EvaluateRaw's zmax does.
+static void DensityStencil(size_t c0, size_t c1, size_t size, std::vector<size_t>& out)
+{
+    out.clear();
+    for (size_t k = c0 - 1; ; ++k)
+    {
+        out.push_back(k % size);
+        if (k == c1 + 3)
+            break;
+    }
+}
+
+static void Build_Density_Blocks(DENSITY_FILE_DATA *d)
+{
+    const size_t sx = d->Sx, sy = d->Sy, sz = d->Sz;
+    d->Bx = (sx + kDensityBlock - 1) / kDensityBlock;
+    d->By = (sy + kDensityBlock - 1) / kDensityBlock;
+    d->Bz = (sz + kDensityBlock - 1) / kDensityBlock;
+    d->BlockMin.assign(d->Bx * d->By * d->Bz, 0.0f);
+    d->BlockMax.assign(d->Bx * d->By * d->Bz, 0.0f);
+    d->Min = 1.0f;
+    d->Max = 0.0f;
+    for (size_t i = 0; i < sx * sy * sz; ++i)
+    {
+        d->Min = min(d->Min, (float)DensityVoxel(d, i));
+        d->Max = max(d->Max, (float)DensityVoxel(d, i));
+    }
+
+    std::vector<std::vector<size_t>> stencil[3];
+    const size_t sizes[3] = { sx, sy, sz };
+    const size_t blocks[3] = { d->Bx, d->By, d->Bz };
+    for (int k = 0; k < 3; ++k)
+    {
+        stencil[k].resize(blocks[k]);
+        for (size_t b = 0; b < blocks[k]; ++b)
+            DensityStencil(b * kDensityBlock, min((b + 1) * kDensityBlock, sizes[k]) - 1, sizes[k], stencil[k][b]);
+    }
+    for (size_t bz = 0; bz < d->Bz; ++bz)
+        for (size_t by = 0; by < d->By; ++by)
+            for (size_t bx = 0; bx < d->Bx; ++bx)
+            {
+                float lo = 1.0f, hi = 0.0f;
+                for (size_t z : stencil[2][bz])
+                    for (size_t y : stencil[1][by])
+                        for (size_t x : stencil[0][bx])
+                        {
+                            const float v = (float)DensityVoxel(d, z * sy * sx + y * sx + x);
+                            lo = min(lo, v);
+                            hi = max(hi, v);
+                        }
+                d->BlockMin[(bz * d->By + by) * d->Bx + bx] = lo;
+                d->BlockMax[(bz * d->By + by) * d->Bx + bx] = hi;
+            }
+}
+
+bool DensityFilePattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    const DENSITY_FILE_DATA *d = (densityFile != nullptr) ? densityFile->Data : nullptr;
+    lo = hi = 0.0;
+    if ((d == nullptr) || !d->Sx || !d->Sy || !d->Sz)
+        return true;
+    if (d->BlockMin.empty())
+        return false;
+
+    const DBL slack = RangeSlack(a, b);
+    const size_t sizes[3] = { d->Sx, d->Sy, d->Sz };
+    size_t b0[3], b1[3], count = 1;
+    bool inside = true;
+    for (int k = 0; k < 3; ++k)
+    {
+        const DBL pmin = min(a[k], b[k]) - slack;
+        const DBL pmax = max(a[k], b[k]) + slack;
+        if ((pmax < 0.0) || (pmin >= 1.0))
+            return true;
+        const size_t c0 = (size_t)(max(pmin, 0.0) * (DBL)sizes[k]);
+        const size_t c1 = min((size_t)(min(pmax, 1.0) * (DBL)sizes[k]) + 1, sizes[k] - 1);
+        // Outside the unit cube, and at a last cell that rounds to the file's size, the density is 0.
+        inside = inside && (pmin >= 0.0) && (pmax < 1.0) && (c1 < sizes[k] - 1);
+        b0[k] = min((c0 > 0) ? c0 - 1 : 0, sizes[k] - 1) / kDensityBlock;
+        b1[k] = c1 / kDensityBlock;
+        count *= b1[k] - b0[k] + 1;
+    }
+
+    DBL mn = d->Min, mx = d->Max;
+    if (count <= 4096)
+    {
+        mn = 1.0;
+        mx = 0.0;
+        for (size_t bz = b0[2]; bz <= b1[2]; ++bz)
+            for (size_t by = b0[1]; by <= b1[1]; ++by)
+                for (size_t bx = b0[0]; bx <= b1[0]; ++bx)
+                {
+                    mn = min(mn, (DBL)d->BlockMin[(bz * d->By + by) * d->Bx + bx]);
+                    mx = max(mx, (DBL)d->BlockMax[(bz * d->By + by) * d->Bx + bx]);
+                }
+    }
+    const int interpolation = densityFile->Interpolation % 10;
+    if ((interpolation != kDensityFileInterpolation_None) && (interpolation != kDensityFileInterpolation_Trilinear))
+    {
+        const DBL spread = kTricubicOvershoot * (mx - mn);
+        mn -= spread;
+        mx += spread;
+    }
+    lo = inside ? max(mn - 1e-6, 0.0) : 0.0;
+    hi = max(mx + 1e-6, 0.0);
+    return true;
+}
+
+
 /*****************************************************************************
 *
 * FUNCTION
@@ -6434,6 +6693,26 @@ static inline DBL GradientRaw(const Vector3d& EPoint, const Vector3d& gradient)
 DBL GradientPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
 {
     return GradientRaw(EPoint, gradient);
+}
+
+bool GradientPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    const DBL slack = RangeSlack(a, b) * (1.0 + gradient.length());
+    const DBL va = dot(a, gradient);
+    const DBL vb = dot(b, gradient);
+    lo = min(va, vb) - slack;
+    hi = max(va, vb) + slack;
+    if (hi <= 1.0)
+        return true;
+    if ((lo > 1.0) && (floor(lo) == floor(hi)) && (fmod(lo, 1.0) <= fmod(hi, 1.0)))
+    {
+        lo = fmod(lo, 1.0);
+        hi = fmod(hi, 1.0);
+        return true;
+    }
+    lo = min(lo, 0.0);
+    hi = 1.0;
+    return true;
 }
 
 void GradientPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
@@ -8085,6 +8364,14 @@ DBL PlanarPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsec
     return PlanarRaw(EPoint);
 }
 
+bool PlanarPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    const DBL ya = fabs(a[Y]);
+    const DBL yb = fabs(b[Y]);
+    RadialRange((a[Y] * b[Y] <= 0.0) ? 0.0 : min(ya, yb), max(ya, yb), RangeSlack(a, b), lo, hi);
+    return true;
+}
+
 void PlanarPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
 {
     for (size_t i = 0; i < n; ++i)
@@ -8622,6 +8909,14 @@ static inline DBL SphericalRaw(const Vector3d& EPoint)
 DBL SphericalPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
 {
     return SphericalRaw(EPoint);
+}
+
+bool SphericalPattern::EvaluateRawRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
+{
+    DBL rmin, rmax;
+    SegmentDistance(a, b, rmin, rmax);
+    RadialRange(rmin, rmax, RangeSlack(a, b), lo, hi);
+    return true;
 }
 
 void SphericalPattern::EvaluateRawBatch(const Vector3d *EPoints, DBL *values, size_t n, TraceThreadData *pThread) const
@@ -9178,6 +9473,9 @@ DENSITY_FILE *Create_Density_File()
     New->Data->Density16 = nullptr;
     New->Data->Density8 = nullptr;
 
+    New->Data->Bx = New->Data->By = New->Data->Bz = 0;
+    New->Data->Min = New->Data->Max = 0.0f;
+
     return (New);
 }
 
@@ -9362,6 +9660,8 @@ void Read_Density_File(IStream *file, DENSITY_FILE *df)
         }
         else
             throw POV_EXCEPTION_STRING("Invalid density file size");
+
+        Build_Density_Blocks(df->Data);
     }
 }
 

@@ -384,17 +384,100 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
     drawKey = savedKey;
 }
 
-void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray& ray, const DBL *depths, MathColour *extinction, size_t n)
+// Most density pigments, and media, a ray plans once; beyond them each batch of points classifies its own.
+const size_t kMaxDensityPlans = 8;
+
+// A shadow ray's media classified once, for extinction at points and its range along segments.
+class ExtinctionPlan final
+{
+    public:
+        bool Plan(MediaVector& medias, TraceThreadData *threadData);
+        void Evaluate(const Vector3d *points, MathColour *extinction, size_t n, TraceThreadData *threadData) const;
+        bool Range(const Vector3d& a, const Vector3d& b, MathColour& lo, MathColour& hi) const;
+    private:
+        DensityPigmentPlan plans[kMaxDensityPlans];
+        size_t ends[kMaxDensityPlans];
+        const MathColour *extinction[kMaxDensityPlans];
+        size_t medias;
+};
+
+bool ExtinctionPlan::Plan(MediaVector& list, TraceThreadData *threadData)
+{
+    size_t n = 0;
+    medias = 0;
+    for(MediaVector::iterator i(list.begin()); i != list.end(); i++)
+    {
+        if((medias == kMaxDensityPlans) || (n + (*i)->Density.size() > kMaxDensityPlans))
+            return false;
+        for(vector<PIGMENT*>::iterator d = (*i)->Density.begin(); d != (*i)->Density.end(); ++d)
+            Plan_Density_Pigment(plans[n++], *d, threadData);
+        ends[medias] = n;
+        extinction[medias++] = &(*i)->Extinction;
+    }
+    return true;
+}
+
+void ExtinctionPlan::Evaluate(const Vector3d *points, MathColour *result, size_t n, TraceThreadData *threadData) const
+{
+    MathColour density[kDensityBatch];
+
+    for(size_t j = 0; j < n; j++)
+        result[j].Clear();
+    for(size_t m = 0, first = 0; m < medias; first = ends[m++])
+    {
+        for(size_t j = 0; j < n; j++)
+            density[j].Set(1.0);
+        for(size_t k = ends[m]; k > first; k--)
+            Apply_Density_Pigment(plans[k - 1], points, density, n, threadData);
+        for(size_t j = 0; j < n; j++)
+            result[j] += density[j] * (*extinction[m]);
+    }
+}
+
+bool ExtinctionPlan::Range(const Vector3d& a, const Vector3d& b, MathColour& lo, MathColour& hi) const
+{
+    lo.Clear();
+    hi.Clear();
+    for(size_t m = 0, k = 0; m < medias; m++)
+    {
+        MathColour dlo(1.0), dhi(1.0), plo, phi;
+        for(; k < ends[m]; k++)
+        {
+            if(!Density_Range(plans[k], a, b, plo, phi))
+                return false;
+            for(int ch = 0; ch < MathColour::channels; ch++)
+            {
+                const ColourChannel p[4] = { dlo[ch] * plo[ch], dlo[ch] * phi[ch], dhi[ch] * plo[ch], dhi[ch] * phi[ch] };
+                dlo[ch] = min(min(p[0], p[1]), min(p[2], p[3]));
+                dhi[ch] = max(max(p[0], p[1]), max(p[2], p[3]));
+            }
+        }
+        for(int ch = 0; ch < MathColour::channels; ch++)
+        {
+            const ColourChannel e = (*extinction[m])[ch];
+            lo[ch] += min(dlo[ch] * e, dhi[ch] * e);
+            hi[ch] += max(dlo[ch] * e, dhi[ch] * e);
+        }
+    }
+    return true;
+}
+
+void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const ExtinctionPlan *plan, const Ray& ray, const DBL *depths,
+                                           MathColour *extinction, size_t n)
 {
     Vector3d points[kDensityBatch];
     MathColour density[kDensityBatch];
 
     threadData->Stats()[Media_Samples] += n;
     for(size_t j = 0; j < n; j++)
-    {
         points[j] = ray.Evaluate(depths[j]);
-        extinction[j].Clear();
+    if(plan != nullptr)
+    {
+        plan->Evaluate(points, extinction, n, threadData);
+        return;
     }
+    for(size_t j = 0; j < n; j++)
+        extinction[j].Clear();
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
         Evaluate_Density_Pigment((*i)->Density, points, density, n, threadData);
@@ -405,17 +488,30 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Ray& ray, 
 
 void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, const Media *IMedia)
 {
-    // The points the old sampling used, without per-sample lighting; stops once transmittance is below 1/1024.
-    const DBL opaque = log(1024.0);
     const bool method3 = (IMedia->Sample_Method == 3);
     const int points = method3 ? 2 * max((IMedia->Min_Samples + 1) / 2, 1) + 1 : max(IMedia->Min_Samples, 1);
+    ExtinctionPlan plan;
+    const bool planned = plan.Plan(medias, threadData);
+    MathColour lo, hi;
+
+    threadData->Stats()[Media_Intervals] += mediaintervals.size();
+    if(planned && plan.Range(ray.Evaluate(mediaintervals.front().s0), ray.Evaluate(mediaintervals.back().s1), lo, hi) && (lo.Min() >= 0.0))
+        ComputeMediaBoundedTransmittance(medias, mediaintervals, ray, plan, method3, points, lo, hi);
+    else
+        ComputeMediaPointTransmittance(medias, mediaintervals, ray, planned ? &plan : nullptr, method3, points);
+}
+
+void MediaFunction::ComputeMediaPointTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
+                                                   const ExtinctionPlan *plan, bool method3, int points)
+{
+    // The points the old sampling used, without per-sample lighting; stops once transmittance is below 1/1024.
+    const DBL opaque = log(1024.0);
     MathColour total, carried;
     DBL carriedAt = -1.0;
     bool dark = false;
     DBL at[kDensityBatch];
     MathColour extinction[kDensityBatch];
 
-    threadData->Stats()[Media_Intervals] += mediaintervals.size();
     for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
     {
         MathColour sum;
@@ -426,7 +522,7 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
             for(int k = 0; k < n; k++)
                 at[k] = method3 ? i->s0 + i->ds * (j0 + k) / (points - 1) : i->s0 + i->ds * (j0 + k + 0.5) / points;
             const int reuse = (method3 && (j0 == 0) && (at[0] == carriedAt)) ? 1 : 0;
-            ComputeMediaExtinction(medias, ray, at + reuse, extinction + reuse, n - reuse);
+            ComputeMediaExtinction(medias, plan, ray, at + reuse, extinction + reuse, n - reuse);
             if(reuse)
                 extinction[0] = carried;
             for(int k = 0; (k < n) && !dark; k++)
@@ -452,6 +548,112 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
         i->te.Clear();
         i->samples = 1;
         total += i->od;
+    }
+}
+
+void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
+                                                     const ExtinctionPlan& plan, bool method3, int points,
+                                                     const MathColour& rayLo, const MathColour& rayHi)
+{
+    // Today's points and weights, but a stretch of them whose extinction range fits its share of a 1/1024 budget
+    // takes the middle of the range instead; see doc/PERF.md.
+    const DBL opaque = log(1024.0);
+    const int minStretch = 4;
+    const int maxPieces = 8;
+    const int capacity = 64;
+    DBL budget = 1.0 / 1024.0;
+    DBL remaining = 0.0;
+    MathColour total, lo, hi;
+    bool dark = false;
+    DBL at[kDensityBatch];
+    MathColour extinction[kDensityBatch];
+    int stack[capacity];
+
+    for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
+        remaining += i->ds;
+
+    for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
+    {
+        const DBL scale = i->ds / (method3 ? (points - 1) * 1.5 : points);
+        auto depth = [&](int j) { return method3 ? i->s0 + i->ds * j / (points - 1) : i->s0 + i->ds * (j + 0.5) / points; };
+        auto weight = [&](int j) { return (!method3 || (j == 0) || (j == points - 1) || (j % 2)) ? 1.0 : 2.0; };
+        bool whole = (mediaintervals.size() == 1);
+        MathColour od;
+        int top = 0;
+        stack[top++] = 0;
+        stack[top++] = points - 1;
+        while((top > 0) && !dark)
+        {
+            const int b = stack[--top];
+            const int a = stack[--top];
+            const int n = b - a + 1;
+            DBL weights = 0.0;
+            for(int j = a; j <= b; j++)
+                weights += weight(j);
+            const DBL length = weights * scale;
+
+            bool ranged = false;
+            if(n >= minStretch)
+            {
+                if(whole)
+                {
+                    lo = rayLo;
+                    hi = rayHi;
+                    ranged = true;
+                }
+                else
+                    ranged = plan.Range(ray.Evaluate(depth(a)), ray.Evaluate(depth(b)), lo, hi) && (lo.Min() >= 0.0);
+            }
+            whole = false;
+            if(ranged)
+            {
+                DBL spread = 0.0;
+                for(int ch = 0; ch < MathColour::channels; ch++)
+                    spread = max(spread, DBL(hi[ch] - lo[ch]));
+                const DBL error = (0.5 * spread + 1e-6 * hi.Max()) * length;
+                const DBL allowed = (remaining > length) ? budget * length / remaining : budget;
+                if(error <= allowed)
+                {
+                    od += (lo + hi) * (0.5 * length);
+                    budget -= error;
+                    remaining -= length;
+                    dark = (total + od).Min() > opaque;
+                    continue;
+                }
+                // Where extinction is smooth the error shrinks with the square of a stretch's length, its share only linearly.
+                const int pieces = int(min(DBL(min(maxPieces, n / minStretch)), ceil(2.0 * error / max(allowed, 1e-300))));
+                if((pieces >= 2) && (top + 2 * pieces <= capacity))
+                {
+                    for(int k = pieces - 1; k >= 0; k--)
+                    {
+                        stack[top++] = a + (n * k) / pieces;
+                        stack[top++] = a + (n * (k + 1)) / pieces - 1;
+                    }
+                    continue;
+                }
+            }
+
+            MathColour sum;
+            for(int j0 = a; (j0 <= b) && !dark; j0 += int(kDensityBatch))
+            {
+                const int m = min(b + 1 - j0, int(kDensityBatch));
+                for(int k = 0; k < m; k++)
+                    at[k] = depth(j0 + k);
+                ComputeMediaExtinction(medias, &plan, ray, at, extinction, m);
+                for(int k = 0; (k < m) && !dark; k++)
+                {
+                    sum += extinction[k] * weight(j0 + k);
+                    dark = (total + od + sum * scale).Min() > opaque;
+                }
+            }
+            od += sum * scale;
+            remaining -= length;
+        }
+
+        i->od = od;
+        i->te.Clear();
+        i->samples = 1;
+        total += od;
     }
 }
 

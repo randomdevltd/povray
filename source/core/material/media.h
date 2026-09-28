@@ -74,6 +74,8 @@ enum
 
 void Transform_Density(std::vector<PIGMENT*>& Density, const TRANSFORM *Trans);
 
+class ExtinctionPlan;
+
 class MediaFunction : public Trace::MediaFunctor
 {
     public:
@@ -103,8 +105,16 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaColour(MediaIntervalVector& mediaintervals, MathColour& colour, ColourChannel& transm);
         /// Optical depth of each interval of a shadow ray: extinction alone, at the points the media's sampling uses.
         void ComputeMediaTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, const Media *IMedia);
-        /// Extinction at each of n <= kDensityBatch depths along the ray.
-        void ComputeMediaExtinction(MediaVector& medias, const Ray& ray, const DBL *depths, MathColour *extinction, size_t n);
+        /// ComputeMediaTransmittance at every point.
+        void ComputeMediaPointTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
+                                            const ExtinctionPlan *plan, bool method3, int points);
+        /// ComputeMediaTransmittance where every density bounds its extinction along a segment; rayLo and rayHi bound the ray.
+        void ComputeMediaBoundedTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
+                                              const ExtinctionPlan& plan, bool method3, int points,
+                                              const MathColour& rayLo, const MathColour& rayHi);
+        /// Extinction at each of n <= kDensityBatch depths along the ray, from plan where there is one.
+        void ComputeMediaExtinction(MediaVector& medias, const ExtinctionPlan *plan, const Ray& ray, const DBL *depths,
+                                    MathColour *extinction, size_t n);
         void ComputeMediaSampleInterval(LitIntervalVector& litintervals, MediaIntervalVector& mediaintervals, const Media *media);
         void ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect);
         void ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect);
