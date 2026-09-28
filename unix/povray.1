@@ -43,7 +43,8 @@ the current rendering on text\-only terminals.
 An interrupt handler allows rendering to be interrupted in a safe way,
 so that any data not currently written to disk will be saved before
 exiting.  Control\-C or SIGINT will cause a user abort, and save the
-current rendering, before exiting.  See \fIkill(1)\fP for more information.
+current rendering, before exiting.  SIGUSR1 writes a snapshot of the
+render so far when \fBSnapshot_File\fP is set.  See \fIkill(1)\fP for more information.
 .IP
 Platform and architecture-independent rendering means that the same scene
 will render in the same way on all computers and operating systems
@@ -135,6 +136,19 @@ Continue a previously interrupted scene trace.
 .TP
 \fBCC\fP or \fBCreate_Continue_Trace_Log\fP=\fIbool\fP
 Create trace state file needed to later continue an interrupted scene trace.
+.TP
+\fBSN\fP<\fIpng_file\fP> or \fBSnapshot_File\fP=\fIfile\fP
+Write the pixels rendered so far, read from the trace state file, to an 8\-bit sRGB
+PNG with unrendered pixels transparent: on SIGUSR1, every \fBSnapshot_Interval\fP
+seconds, and when the render ends, fails or is stopped. The file is replaced
+atomically. See doc/snapshot.md.
+.TP
+\fBSnapshot_Interval\fP=\fIseconds\fP
+Also write the snapshot this often while rendering; 0 (the default) for never.
+.TP
+\fBSnapshot_From\fP=\fIstate_file\fP
+Write the snapshot from this trace state file and exit, without parsing or
+rendering anything; give the render's \fBW\fP and \fBH\fP (and \fBUA\fP), plus \fBSN\fP.
 .TP
 \fBP\fP or \fBPause_When_Done\fP=\fIbool\fP
 If previewing, pause when the rendering is complete before closing the window.

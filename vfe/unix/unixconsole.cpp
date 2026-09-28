@@ -34,6 +34,7 @@
 //******************************************************************************
 
 // C++ variants of C standard header files
+#include <atomic>
 #include <csignal>
 #include <cstdlib>
 
@@ -94,6 +95,7 @@ static bool gCancelRender = false;
 static int gSignalNumber = 0;
 static std::mutex gSignalMutex;
 static volatile bool gTerminateSignalHandler = false;
+static std::atomic<bool> gSnapshotRequested(false);
 
 
 // TODO FIXME - This way to handle signals seems rather wonky, as it is subject
@@ -123,6 +125,13 @@ static void SignalHandler (void)
 #endif
 
         // Got a signal.
+#ifdef SIGUSR1
+        if (signum == SIGUSR1)
+        {
+            gSnapshotRequested = true;
+            continue;
+        }
+#endif
         std::lock_guard<std::mutex> lock(gSignalMutex);
         gSignalNumber = signum;
     }
@@ -480,6 +489,9 @@ int main (int argc, char **argv)
 #ifdef SIGCHLD
     sigaddset(&sigset, SIGCHLD);
 #endif
+#ifdef SIGUSR1
+    sigaddset(&sigset, SIGUSR1);
+#endif
 
     pthread_sigmask(SIG_BLOCK, &sigset, nullptr);
 
@@ -589,6 +601,24 @@ int main (int argc, char **argv)
         }
         ErrorExit(session);
     }
+    if (session->GetOptions().GetOptions().Exist(kPOVAttrib_SnapshotFrom))
+    {
+        POVMS_Object& ropts = session->GetOptions().GetOptions();
+        try
+        {
+            pov_frontend::WriteRenderSnapshot(ropts.GetUCS2String(kPOVAttrib_SnapshotFrom), ropts.TryGetUCS2String(kPOVAttrib_SnapshotFile, ""), ropts);
+        }
+        catch (pov_base::Exception& e)
+        {
+            fprintf(stderr, "%s: cannot write snapshot: %s\n", PACKAGE, e.what());
+            retval = RETURN_ERROR;
+        }
+        session->Shutdown();
+        TerminateSignalHandler(sigthread);
+        delete sigthread;
+        delete session;
+        return retval;
+    }
     if (session->StartRender() != vfeNoError)
         ErrorExit(session);
 
@@ -601,6 +631,8 @@ int main (int argc, char **argv)
     while (((flags = session->GetStatus(true, 200)) & stRenderShutdown) == 0)
     {
         ProcessSignal();
+        if (gSnapshotRequested.exchange(false))
+            session->RequestSnapshot();
         if (gCancelRender)
         {
             CancelRender(session);

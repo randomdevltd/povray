@@ -274,9 +274,10 @@ int vfeSession::SetOptions (vfeRenderOptions& opts)
   }
 
   int n = sizeof (str) ;
-  if ((err = POVMSUtil_GetUCS2String (&obj, kPOVAttrib_InputFile, str, &n)) != kNoErr)
+  if ((err = POVMSUtil_GetUCS2String (&obj, kPOVAttrib_InputFile, str, &n)) == kNoErr)
+    m_InputFilename = str;
+  else if (POVMSObject_Exist (&obj, kPOVAttrib_SnapshotFrom) != kNoErr)
     return (m_LastError = vfeNoInputFile);
-  m_InputFilename = str;
 
   POVMSUtil_GetInt (&obj, kPOVAttrib_Width, &m_RenderWidth) ;
   POVMSUtil_GetInt (&obj, kPOVAttrib_Height, &m_RenderHeight) ;

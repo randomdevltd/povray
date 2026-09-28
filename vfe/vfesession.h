@@ -39,6 +39,7 @@
 #ifndef POVRAY_VFE_VFESESSION_H
 #define POVRAY_VFE_VFESESSION_H
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -909,6 +910,10 @@ namespace vfe
       // supplied options are copied into the internal instance.
       virtual vfeRenderOptions& GetOptions() { return m_RenderOptions; }
 
+      // Asks for a snapshot of the running render (see doc/snapshot.md); safe from any thread.
+      void RequestSnapshot() { m_SnapshotRequested = true; }
+      bool TakeSnapshotRequest() { return m_SnapshotRequested.exchange(false); }
+
       // Fetches one message from either the generic, status, or console message
       // queues, whichever has the earliest timestamp. Returns true if a message
       // is fetched, otherwise false (meaning all the queues are empty). It expects
@@ -1259,6 +1264,7 @@ namespace vfe
       vfeStatusFlags m_EventMask;
       vfeStatusFlags m_StatusFlags;
       vfeRenderOptions m_RenderOptions;
+      std::atomic<bool> m_SnapshotRequested{false};
 
       static bool m_Initialized;
       static vfeSession *m_CurrentSessionTemporaryHack;

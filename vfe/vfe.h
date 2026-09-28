@@ -38,6 +38,7 @@
 #ifndef POVRAY_VFE_VFE_H
 #define POVRAY_VFE_VFE_H
 
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -256,6 +257,8 @@ namespace vfe
       bool m_PausedAfterFrame;
       bool m_PauseRequested;
       State m_PostPauseState;
+      std::chrono::seconds m_SnapshotInterval;
+      std::chrono::steady_clock::time_point m_NextSnapshot;
   };
 }
 // end of namespace vfe
