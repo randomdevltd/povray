@@ -397,6 +397,73 @@ Tried and not kept:
 - One cloud per object laid out by the first shading point: a floor seen from close to far gets one spacing, and the
   first shading point's material fixes it for a texture that varies the diffusion.
 
+## Subsurface flesh and skin
+
+A texture's subsurface layers are blended into the colour the viewer sees, by each layer's opacity and filter as the
+diffuse term takes them, and scattered once with the topmost subsurface layer's finish. Each layer used to scatter on
+its own at full strength, so a half-transparent layer looked opaque and a texture of n layers paid n evaluations.
+
+A finish's `colour` or `pigment` gives the flesh inside a colour of its own; the texture's pigment is then a skin light
+crosses on the way in and out, each crossing letting through the pigment to the power of half the relative
+`thickness`. There is still one diffusion profile per shading point, built from a reference flesh colour: the
+`colour`, or, with `volume_sampling`, the mean of four lookups spread over two mean depths around the shading point, so
+that nothing depends on the flesh under the exit point alone. What varies between entry points is a multiplier on the
+light entering there: the looked-up flesh over the reference (divided once, at the end), times the skin's transmittance
+there, plus the flesh's emission times its colour. The lookups are made at a depth drawn from an exponential with mean
+one `translucency`: method 1 at each diffuse sample point, from the shading point's keyed draws; method 2 once per
+cloud point as it is lit, from an R3 lattice over the grid squares so that neighbouring points' depths spread evenly,
+into a cube keyed by the texture layer as well as the object. Method 2's core, which is lit as the exit point is,
+takes the multiplier and emission of the disc's points, weighted by the profile, instead of those under the exit
+point; the local path takes the four spread lookups. Emission the same at every entry point is added in closed form
+(the profile's integral over the plane). Without the new keywords none of this runs: `subsurface.pov`,
+`sslt-lamps.pov`, `sslt-open.pov` and the skin scene's case 0 render bit-identical to before with both methods (method 2 on
+`subsurface.pov` compared at `+WT1`; at `+WT4` it varies between runs of either build, as the point budget runs out in
+thread order).
+
+Cost, 320×240, `+WT4`, user-space Gcycles (`tools/bench/pcount.c`) of one run each, 60 diffuse samples on
+`tools/bench/sslt-skin.pov`:
+
+| Scene | Method 1 | Method 2 |
+|---|---|---|
+| `scenes/subsurface/subsurface.pov` | 44.3 → 44.8 | 15.7 → 15.9 |
+| `tools/bench/sslt-lamps.pov` | 12.4 → 11.2 | 7.3 → 7.0 |
+| skin, a dark pigment (case 0) | 3.1 → 3.1 | 3.3 → 3.2 |
+| skin, a half-transparent layer over flesh (case 1) | 5.8 → 3.1 | 5.8 → 2.7 |
+| skin, a flesh pigment and no skin (case 6) | 3.0 | 2.9 |
+| skin, `colour` (case 2) | 3.1 | 2.8 |
+| skin, `pigment` veins, `volume_sampling` (case 3) | 5.4 | 3.4 |
+| the same, plain pigments for the veins | 3.4 | 2.8 |
+| skin, veins with an `emission` pigment (case 4) | 6.6 | 3.7 |
+| the same, plain pigments | 3.5 | 2.9 |
+| skin, `thickness` as a `bozo` pattern (case 5) | 4.1 | 3.0 |
+
+Instructions on the first two scenes are within 0.8% (104.5 → 104.8 and 40.4 → 40.7 G on `subsurface.pov`); the
+cycle differences are run-to-run. The layered case halves, being scattered once. The skin itself costs nothing
+(case 2 against case 6). With plain pigments the lookups add 10% to method 1 (up to four `Compute_Pigment` calls, a
+logarithm and a power per diffuse sample) and nothing measurable to method 2, which makes them once per cloud point;
+the rest of cases 3 to 5 is the patterns themselves (`marble` with turbulence, twice with emission). Here the brighter
+flesh (case 6 against case 0) spreads light further without costing more.
+
+Quality against method 1 at 1920 samples, rms error in levels of 255 (mean shift in brackets), with the method-1
+cycles that reach method 2's error, interpolated between 30, 60, 120 and 240 samples:
+
+| Case | Method 1, 60 | Method 2 | Method 1 at equal error |
+|---|---|---|---|
+| 2, `colour` | 1.07 (−0.01), 3.1 G | 0.71 (−0.02), 2.8 G | 5.0 G, 1.8× |
+| 3, veins | 1.12 (−0.01), 5.4 G | 0.80 (+0.03), 3.4 G | 8.5 G, 2.5× |
+| 4, glowing veins | 2.15 (−0.05), 6.6 G | 3.16 (−0.18), 3.7 G | worse than method 1 at 30 |
+| the same, `spacing 0.5` | | 2.13 (−0.10), 4.9 G | 6.7 G, 1.4× |
+| the same, `spacing 0.25` | | 1.16 (−0.05), 8.7 G | 20 G, 2.3× |
+| 5, `thickness` pattern | 1.10 (−0.01), 4.1 G | 0.76 (−0.02), 3.0 G | 5.9 G, 2.0× |
+| 1, layers (performance: 11.2, +4.2) | 2.07 (−0.04), 3.1 G | 1.52 (−0.07), 2.7 G | |
+
+Method 2 resolves what the lookups vary only down to its point spacing: the glowing veins, narrower than the default
+spacing between cloud points here, come out as blotches until `spacing` is lowered, and at 0.25 match the reference. Spreading the points' depths over a lattice instead of drawing them independently lowered
+case 4's error from 3.29 to 3.16 and case 3's from 0.82 to 0.80.
+
+Subsurface light still does not cross between separate objects: a flesh object inside a skin object does not glow
+through it.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
