@@ -1078,6 +1078,9 @@ class Trace
                                              Vector3d& outward, TraceTicket& ticket);
         MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, double eta, ObjectPtr receiver,
                                                      PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud);
+        bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
+                                               const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,
+                                               TraceTicket& ticket, std::uint64_t key, MathColour& diffuse);
         MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
                                               TraceTicket& ticket, std::uint64_t key);
         MathColour ComputeCloudExitAmbient(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);

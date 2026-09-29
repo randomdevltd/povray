@@ -1,5 +1,6 @@
 #version 3.7;
 #ifndef (Method) #declare Method = 2; #end
+#ifndef (SurfaceOnly) #declare SurfaceOnly = 0; #end
 #ifndef (Samples) #declare Samples = 256; #end
 #ifndef (Spacing) #declare Spacing = 0.7; #end
 #ifndef (Photons) #declare Photons = 1; #end
@@ -35,10 +36,10 @@ camera { orthographic location <0, 6, -0.001> look_at 0 right x * 4 up z * 3 }
 background { rgb 0 }
 #declare Surface = texture {
   pigment { #if (Skin = 2) checker rgb 0.25 rgb 1 scale 0.15 #elseif (Skin) rgb 0.25 #else rgb 0.8 #end }
-  finish { ambient 0 diffuse 1 subsurface { translucency Mfp
+  finish { ambient 0 diffuse 1 #if (!SurfaceOnly) subsurface { translucency Mfp
     #if (Skin) colour rgb 0.8 thickness Thickness #end
     #if (Glow) emission rgb 0.05 #end
-  } }
+  } #end }
 }
 #if (Group) light_group { #end
 #if (Mixed) merge { #else union { #end

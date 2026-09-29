@@ -169,6 +169,7 @@ class TraceThreadData : public ThreadData
         LightSource *photonSourceLight;
         ObjectPtr photonTargetObject;
         bool litObjectIgnoresPhotons;
+        bool subsurfacePhotonBoundaryProbe = false;
         MathColour GFilCol;
         int hitObject;    // did we hit the target object? (for autostop)
         DBL photonSpread; // photon spread (in radians)
