@@ -113,6 +113,7 @@ ViewData::ViewData(shared_ptr<BackendSceneData> sd) :
     realTimeRaytracing(false),
     rtrData(nullptr),
     latticeWidth(0),
+    latticeSamplesActive(false),
     renderArea(0, 0, 159, 119),
     radiosityCache(sd->radiositySettings),
     sceneData(sd),
@@ -1520,12 +1521,13 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
 
     if (tracingMethod != 0)
     {
-        viewData.latticeWidth = viewData.GetWidth() + (corners ? 1 : 0);
+        viewData.ActivateLatticeSamples();
+        unsigned int latticeWidth = viewData.GetWidth() + (corners ? 1 : 0);
         unsigned int latticeHeight = viewData.GetHeight() + (corners ? 1 : 0);
-        viewData.latticeSamples.assign(size_t(viewData.latticeWidth) * latticeHeight, RGBTColour());
         static_assert(sizeof(RGBTColour) == 4 * sizeof(POVMSFloat), "lattice samples are read as RGBT float quadruples");
         if (renderOptions.Exist(kPOVAttrib_ProgressSamples))
         {
+            viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
             POVMS_Attribute samples;
             renderOptions.Get(kPOVAttrib_ProgressSamples, samples);
             size_t bytes = viewData.latticeSamples.size() * sizeof(RGBTColour);

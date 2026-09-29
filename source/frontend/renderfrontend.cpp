@@ -830,6 +830,8 @@ struct SnapshotCanvas final
 {
     unsigned int width;
     unsigned int height;
+    unsigned int offsetX;
+    unsigned int offsetY;
     bool alpha;
     GammaCurvePtr gamma;
     std::vector<unsigned char> rgba;
@@ -851,10 +853,18 @@ struct SnapshotCanvas final
         }
         const unsigned char encoded[4] = { (unsigned char)IntEncode(gamma, red, 255), (unsigned char)IntEncode(gamma, green, 255),
                                            (unsigned char)IntEncode(gamma, blue, 255), (unsigned char)IntEncode(opacity, 255) };
-        for (unsigned int py = y; (py < y + h) && (py < height); py++)
+        for (unsigned int py = y; (py < y + h); py++)
         {
-            for (unsigned int px = x; (px < x + w) && (px < width); px++)
-                memcpy(&rgba[(size_t(py) * width + px) * 4], encoded, 4);
+            const unsigned int dstY = py - offsetY;
+            if (dstY >= height)
+                continue;
+            for (unsigned int px = x; (px < x + w); px++)
+            {
+                const unsigned int dstX = px - offsetX;
+                if (dstX >= width)
+                    continue;
+                memcpy(&rgba[(size_t(dstY) * width + dstX) * 4], encoded, 4);
+            }
         }
     }
 };
@@ -918,81 +928,139 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
     if (snapshotFile.empty())
         throw POV_EXCEPTION(kParamErr, "No Snapshot_File given.");
 
+    const unsigned int finalWidth = ropts.TryGetInt(kPOVAttrib_Width, 160);
+    const unsigned int finalHeight = ropts.TryGetInt(kPOVAttrib_Height, 120);
+    const unsigned int lattice = ropts.TryGetBool(kPOVAttrib_ProgressiveRender, false) ? ((ropts.TryGetBool(kPOVAttrib_Antialias, false) && (ropts.TryGetInt(kPOVAttrib_SamplingMethod, 1) == 2)) ? 1u : 0u) : 0u;
+
+    struct Bounds final
+    {
+        bool any = false;
+        unsigned int left = 0;
+        unsigned int top = 0;
+        unsigned int right = 0;
+        unsigned int bottom = 0;
+
+        void Update(unsigned int x, unsigned int y, unsigned int width, unsigned int height)
+        {
+            const unsigned int x1 = x + width - 1;
+            const unsigned int y1 = y + height - 1;
+            if (!any)
+            {
+                left = x;
+                top = y;
+                right = x1;
+                bottom = y1;
+                any = true;
+            }
+            else
+            {
+                left = min(left, x);
+                top = min(top, y);
+                right = max(right, x1);
+                bottom = max(bottom, y1);
+            }
+        }
+    } bounds;
+
     SnapshotCanvas canvas;
-    canvas.width = ropts.TryGetInt(kPOVAttrib_Width, 160);
-    canvas.height = ropts.TryGetInt(kPOVAttrib_Height, 120);
+    canvas.width = finalWidth;
+    canvas.height = finalHeight;
+    canvas.offsetX = 0;
+    canvas.offsetY = 0;
     canvas.alpha = ropts.TryGetBool(kPOVAttrib_OutputAlpha, false);
     canvas.gamma = TranscodingGammaCurve::Get(GetGammaCurve((GammaTypeId)ropts.TryGetInt(kPOVAttrib_WorkingGammaType, DEFAULT_WORKING_GAMMA_TYPE),
                                                             ropts.TryGetFloat(kPOVAttrib_WorkingGamma, DEFAULT_WORKING_GAMMA)),
                                               SRGBGammaCurve::Get());
     canvas.rgba.assign(size_t(canvas.width) * canvas.height * 4, 0);
 
-    IFileStream in(stateFile);
-    if (!in)
-        throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot open render state file " + UCS2toSysString(stateFile) + ".");
-    in.seekg(0, IOBase::seek_end);
-    POV_OFF_T end = in.tellg();
-    in.seekg(0, IOBase::seek_set);
-
-    Backup_File_Header hdr;
-    if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || (memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0))
-        throw POV_EXCEPTION(kFileDataErr, "Not a render state file of this version of POV-Ray.");
-
-    // the messages ImageMessageHandler draws into the final image, drawn the same way
-    unsigned int lattice = (hdr.reserved[0] == 2) ? 1 : 0;
-    bool outside = false;
-    bool corrupt = false;
-    for (POV_OFF_T pos = sizeof(hdr); (pos < end) && !in.eof() && !outside && !corrupt; pos = in.tellg())
+    auto readState = [&](const bool fill)
     {
-        try
+        IFileStream in(stateFile);
+        if (!in)
+            throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot open render state file " + UCS2toSysString(stateFile) + ".");
+        in.seekg(0, IOBase::seek_end);
+        POV_OFF_T end = in.tellg();
+        in.seekg(0, IOBase::seek_set);
+
+        Backup_File_Header hdr;
+        if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || (memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0))
+            throw POV_EXCEPTION(kFileDataErr, "Not a render state file of this version of POV-Ray.");
+
+        bool outside = false;
+        bool corrupt = false;
+        for (POV_OFF_T pos = sizeof(hdr); (pos < end) && !in.eof(); pos = in.tellg())
         {
-            POVMS_Message msg;
-            msg.Read(in);
-            POVMSInt pixelSize = msg.TryGetInt(kPOVAttrib_PixelSize, 1);
-            corrupt = (pixelSize < 1);
-            if (corrupt)
+            try
+            {
+                POVMS_Message msg;
+                msg.Read(in);
+                POVMSInt pixelSize = msg.TryGetInt(kPOVAttrib_PixelSize, 1);
+                corrupt = (pixelSize < 1);
+                if (corrupt)
+                    break;
+                unsigned int psize = pixelSize;
+                if (msg.GetIdentifier() == kPOVMsgIdent_PixelSet)
+                {
+                    std::vector<POVMSInt> positions(msg.GetIntVector(kPOVAttrib_PixelPositions));
+                    std::vector<POVMSFloat> colours(msg.GetFloatVector(kPOVAttrib_PixelColors));
+                    POVRect area(0, 0, INT_MAX, INT_MAX);
+                    if (msg.Exist(kPOVAttrib_Left))
+                        area = POVRect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
+                    for (size_t i = 0; (i * 5 + 4 < colours.size()) && (i * 2 + 1 < positions.size()); i++)
+                    {
+                        unsigned int x = positions[i * 2];
+                        unsigned int y = positions[i * 2 + 1];
+                        outside = outside || (x >= finalWidth + lattice) || (y >= finalHeight + lattice);
+                        if ((x < area.left) || (y < area.top) || (x > area.right) || (y > area.bottom))
+                            continue;
+                        unsigned int w = min(psize, area.right - x + 1);
+                        unsigned int h = min(psize, area.bottom - y + 1);
+                        if (fill)
+                            canvas.Fill(x, y, w, h, &colours[i * 5]);
+                        else
+                            bounds.Update(x, y, w, h);
+                    }
+                }
+                else if (msg.GetIdentifier() == kPOVMsgIdent_PixelBlockSet)
+                {
+                    POVRect rect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
+                    outside = (rect.right >= finalWidth) || (rect.bottom >= finalHeight);
+                    std::vector<POVMSFloat> block(msg.GetFloatVector(kPOVAttrib_PixelBlock));
+                    size_t i = 0;
+                    for (unsigned int y = rect.top; !outside && (y <= rect.bottom); y += psize)
+                    {
+                        for (unsigned int x = rect.left; (x <= rect.right) && (i * 5 + 4 < block.size()); x += psize, i++)
+                        {
+                            if (fill)
+                                canvas.Fill(x, y, psize, psize, &block[i * 5]);
+                            else
+                                bounds.Update(x, y, psize, psize);
+                        }
+                    }
+                }
+            }
+            catch (pov_base::Exception&)
+            {
                 break;
-            unsigned int psize = pixelSize;
-            if (msg.GetIdentifier() == kPOVMsgIdent_PixelSet)
-            {
-                std::vector<POVMSInt> positions(msg.GetIntVector(kPOVAttrib_PixelPositions));
-                std::vector<POVMSFloat> colours(msg.GetFloatVector(kPOVAttrib_PixelColors));
-                POVRect area(0, 0, INT_MAX, INT_MAX);
-                if (msg.Exist(kPOVAttrib_Left))
-                    area = POVRect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
-                for (size_t i = 0; (i * 5 + 4 < colours.size()) && (i * 2 + 1 < positions.size()); i++)
-                {
-                    unsigned int x = positions[i * 2];
-                    unsigned int y = positions[i * 2 + 1];
-                    outside = outside || (x >= canvas.width + lattice) || (y >= canvas.height + lattice);
-                    if ((x < area.left) || (y < area.top) || (x > area.right) || (y > area.bottom))
-                        continue;
-                    canvas.Fill(x, y, min(psize, area.right - x + 1), min(psize, area.bottom - y + 1), &colours[i * 5]);
-                }
-            }
-            else if (msg.GetIdentifier() == kPOVMsgIdent_PixelBlockSet)
-            {
-                POVRect rect(msg.GetInt(kPOVAttrib_Left), msg.GetInt(kPOVAttrib_Top), msg.GetInt(kPOVAttrib_Right), msg.GetInt(kPOVAttrib_Bottom));
-                outside = (rect.right >= canvas.width) || (rect.bottom >= canvas.height);
-                std::vector<POVMSFloat> block(msg.GetFloatVector(kPOVAttrib_PixelBlock));
-                size_t i = 0;
-                for (unsigned int y = rect.top; !outside && (y <= rect.bottom); y += psize)
-                {
-                    for (unsigned int x = rect.left; (x <= rect.right) && (i * 5 + 4 < block.size()); x += psize, i++)
-                        canvas.Fill(x, y, psize, psize, &block[i * 5]);
-                }
             }
         }
-        catch (pov_base::Exception&)
-        {
-            // a message cut short is where the file ends, as for a continued render
-            break;
-        }
+        if (corrupt)
+            throw POV_EXCEPTION(kFileDataErr, "The render state file holds a record with a pixel size below 1.");
+        if (outside)
+            throw POV_EXCEPTION(kInvalidDataSizeErr, "The render state file holds pixels outside the image size given with +W and +H.");
+    };
+
+    readState(false);
+    if (bounds.any)
+    {
+        canvas.offsetX = bounds.left;
+        canvas.offsetY = bounds.top;
+        canvas.width = bounds.right - bounds.left + 1;
+        canvas.height = bounds.bottom - bounds.top + 1;
+        canvas.rgba.assign(size_t(canvas.width) * canvas.height * 4, 0);
     }
-    if (corrupt)
-        throw POV_EXCEPTION(kFileDataErr, "The render state file holds a record with a pixel size below 1.");
-    if (outside)
-        throw POV_EXCEPTION(kInvalidDataSizeErr, "The render state file holds pixels outside the image size given with +W and +H.");
+
+    readState(true);
 
     UCS2String temp = snapshotFile + SysToUCS2String("." + std::to_string(std::random_device()()) + ".tmp");
     try

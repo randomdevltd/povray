@@ -276,8 +276,20 @@ class ViewData final
         RadiosityCache& GetRadiosityCache();
 
         /// Sample of a progressive render's lattice (pixel centres, or pixel corners for method 2), kept for anti-aliasing.
+        void ActivateLatticeSamples() { latticeSamplesActive = true; }
+        void EnsureLatticeSamples(unsigned int width, unsigned int height)
+        {
+            if ((width == 0) || (height == 0))
+                return;
+            latticeSamplesActive = true;
+            if (latticeSamples.empty() || (latticeWidth != width))
+            {
+                latticeWidth = width;
+                latticeSamples.assign(size_t(latticeWidth) * height, RGBTColour());
+            }
+        }
         RGBTColour& LatticeSample(unsigned int x, unsigned int y) { return latticeSamples[x + y * latticeWidth]; }
-        bool KeepsLatticeSamples() const { return !latticeSamples.empty(); }
+        bool KeepsLatticeSamples() const { return latticeSamplesActive; }
 
         /**
          *  Get the value of the real-time raytracing option
@@ -358,6 +370,7 @@ class ViewData final
 
         std::vector<RGBTColour> latticeSamples;
         unsigned int latticeWidth;
+        bool latticeSamplesActive;
 
         /// functions to compute the X & Y block
         void getBlockXY(const unsigned int nb, unsigned int &x, unsigned int &y);
