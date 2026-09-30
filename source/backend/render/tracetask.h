@@ -185,6 +185,7 @@ class TraceTask final : public RenderTask
         void ProgressiveM5();
         void FitPixelM5(unsigned int x, unsigned int y, AaFit& fit);
         void ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit);
+        void ProbeSegmentsM5();
         OkLab ToOkLab(const RGBTColour& col);
         bool Contended(const OkLab& a, const OkLab& b) const;
         void LoadBlockLabs(const pov_base::POVRect& rect);

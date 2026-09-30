@@ -84,7 +84,26 @@ struct AaFit final
     std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours.
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
     std::uint8_t probes = 0;        ///< Probes traced so far.
+    std::int32_t seg = -1;          ///< Chain mode: the segment whose line this pixel takes, or -1.
     RGBTColour a, b;                ///< Colours on the two sides.
+};
+
+/// Method 5, chain mode: a straight run of a contour, held as what is known about where its line can lie.
+/// The frame has its origin on the line, u along it and v towards colour B; the line is v = a + b u.
+struct AaSeg final
+{
+    struct Pt final { float u, v; std::uint8_t b; };    ///< A sample or probe in the frame; b is 1 when it showed colour B.
+    float cx = 0, cy = 0, tx = 1, ty = 0, nx = 0, ny = 1;
+    float a = 0, b = 0;
+    float uLo = 0, uHi = 0;         ///< Extent along the line.
+    float contrast = 0, length = 0;
+    std::vector<Pt> hullA, hullB;   ///< Upper hull of the colour A points, lower hull of the colour B ones: all that bound the line.
+    std::vector<Pt> fresh;          ///< Probe results not yet folded into the hulls.
+    RGBTColour ca[2], cb[2];        ///< Colours on each side at the low and high end.
+    float w[3] = { 0, 0, 0 };       ///< How far the line could lie from its estimate at the low end, middle and high end.
+    float probeU = 0, probeV = 0;   ///< Where the planner wants the next probe.
+    std::uint8_t probes = 0;
+    std::uint8_t state = 0;         ///< 0 open, 1 settled or contradicted.
 };
 
 class RTRData final
@@ -323,6 +342,10 @@ class ViewData final
         bool aaExhausted = false;
         DBL aaFraction = 0.0;
         DBL aaThr = 0.0;
+        /// Method 5, chain mode: the fitted segments, and the ones the planner chose to probe this round.
+        std::vector<AaSeg> aaSegs;
+        std::vector<std::uint32_t> aaProbeList;
+        std::atomic<std::uint32_t> aaProbeNext {0};
 
         /**
          *  Get the value of the real-time raytracing option

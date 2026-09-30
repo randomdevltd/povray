@@ -1412,10 +1412,10 @@ inline float Dist2(const float* a, const float* b)
     return d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
 }
 
-/// Priorities within about a twentieth of an octave share a bucket, and buckets are what the planner ties on.
+/// Priorities within about a tenth of an octave share a bucket, and buckets are what the planner ties on.
 int M5Bucket(float priority)
 {
-    return std::min(255, std::max(0, int(16.0f * (std::log2(std::max(priority, 1.0e-6f)) + 10.0f))));
+    return std::min(255, std::max(0, int(10.0f * (std::log2(std::max(priority, 1.0e-6f)) + 14.0f))));
 }
 
 /// Fraction of the unit pixel lying beyond the line n.q = s, with the pixel centre at the origin.
@@ -1508,10 +1508,208 @@ float M5BestLine(const std::vector<M5Bracket>& br, int i0, int i1, float& nx, fl
     return best;
 }
 
+/// Keep only the points that can bound a line: the upper hull when the points must lie below it, else the lower.
+void M5Hull(std::vector<AaSeg::Pt>& p, bool upper)
+{
+    std::sort(p.begin(), p.end(), [](const AaSeg::Pt& a, const AaSeg::Pt& b) { return (a.u < b.u) || ((a.u == b.u) && (a.v < b.v)); });
+    std::vector<AaSeg::Pt> h;
+    for(const AaSeg::Pt& q : p)
+    {
+        while(h.size() >= 2)
+        {
+            const AaSeg::Pt& a = h[h.size() - 2];
+            const AaSeg::Pt& b = h.back();
+            const float cross = (b.u - a.u) * (q.v - a.v) - (b.v - a.v) * (q.u - a.u);
+            if(upper ? (cross >= 0.0f) : (cross <= 0.0f))
+                h.pop_back();
+            else
+                break;
+        }
+        h.push_back(q);
+    }
+    p.swap(h);
+}
+
+/// Every line v = a + b u that keeps the colour A points below it and the colour B points above is possible; take the
+/// middle of those and work out how far either way the line could lie at three places along it. False when none is.
+bool M5Estimate(AaSeg& s)
+{
+    auto alo = [&](float b)
+    {
+        float m = -std::numeric_limits<float>::max();
+        for(const AaSeg::Pt& p : s.hullA)
+            m = std::max(m, p.v - b * p.u);
+        return m;
+    };
+    auto ahi = [&](float b)
+    {
+        float m = std::numeric_limits<float>::max();
+        for(const AaSeg::Pt& p : s.hullB)
+            m = std::min(m, p.v - b * p.u);
+        return m;
+    };
+    auto gap = [&](float b) { return ahi(b) - alo(b); };
+
+    const float bmax = 0.6f;
+    float l = -bmax, r = bmax;
+    for(int i = 0; i < 48; i++)
+    {
+        const float m1 = l + (r - l) / 3.0f, m2 = r - (r - l) / 3.0f;
+        if(gap(m1) < gap(m2))
+            l = m1;
+        else
+            r = m2;
+    }
+    const float bs = 0.5f * (l + r);
+    if(gap(bs) < 0.0f)
+    {
+        s.b = bs;
+        s.a = 0.5f * (alo(bs) + ahi(bs));
+        s.w[0] = s.w[1] = s.w[2] = 0.0f;
+        return false;
+    }
+
+    // the slopes that leave room form an interval around the widest one
+    float b1 = -bmax, b2 = bmax;
+    if(gap(b1) < 0.0f)
+    {
+        float lo = b1, hi = bs;
+        for(int i = 0; i < 40; i++)
+        {
+            const float mid = 0.5f * (lo + hi);
+            if(gap(mid) >= 0.0f) hi = mid; else lo = mid;
+        }
+        b1 = hi;
+    }
+    if(gap(b2) < 0.0f)
+    {
+        float lo = bs, hi = b2;
+        for(int i = 0; i < 40; i++)
+        {
+            const float mid = 0.5f * (lo + hi);
+            if(gap(mid) >= 0.0f) lo = mid; else hi = mid;
+        }
+        b2 = lo;
+    }
+    s.b = 0.5f * (b1 + b2);
+    s.a = 0.5f * (alo(s.b) + ahi(s.b));
+
+    const float us[3] = { s.uLo, 0.5f * (s.uLo + s.uHi), s.uHi };
+    for(int k = 0; k < 3; k++)
+    {
+        const float u = us[k];
+        float lo = b1, hi = b2;
+        for(int i = 0; i < 48; i++)
+        {
+            const float m1 = lo + (hi - lo) / 3.0f, m2 = hi - (hi - lo) / 3.0f;
+            if(ahi(m1) + m1 * u < ahi(m2) + m2 * u) lo = m1; else hi = m2;
+        }
+        const float top = ahi(0.5f * (lo + hi)) + 0.5f * (lo + hi) * u;
+        lo = b1;
+        hi = b2;
+        for(int i = 0; i < 48; i++)
+        {
+            const float m1 = lo + (hi - lo) / 3.0f, m2 = hi - (hi - lo) / 3.0f;
+            if(alo(m1) + m1 * u > alo(m2) + m2 * u) lo = m1; else hi = m2;
+        }
+        const float bottom = alo(0.5f * (lo + hi)) + 0.5f * (lo + hi) * u;
+        s.w[k] = std::max(0.0f, top - bottom);
+    }
+    return true;
+}
+
+/// Fold the last round's probe results into each segment's bounds and re-estimate its line.
+void M5FoldSegments(ViewData* vd)
+{
+    for(AaSeg& s : vd->aaSegs)
+    {
+        if(s.fresh.empty())
+            continue;
+        for(const AaSeg::Pt& p : s.fresh)
+            (p.b ? s.hullB : s.hullA).push_back(p);
+        s.fresh.clear();
+        M5Hull(s.hullA, true);
+        M5Hull(s.hullB, false);
+        if(!M5Estimate(s))
+            s.state = 1;
+    }
+}
+
+/// Choose the segments to probe this round, best first, before any ray is traced for them: a probe at the end where
+/// the line is least certain is worth the contrast, times how uncertain it is, times how many pixels the line crosses.
+void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabled)
+{
+    const POVRect& area = vd->GetRenderArea();
+    std::vector<int> bucket(vd->aaSegs.size(), -1);
+    std::int64_t hist[256] = {}, total = 0;
+    if(enabled)
+    {
+        for(size_t i = 0; i < vd->aaSegs.size(); i++)
+        {
+            const AaSeg& s = vd->aaSegs[i];
+            const float wavg = 0.25f * (s.w[0] + 2.0f * s.w[1] + s.w[2]);
+            if(s.state || (wavg <= o.gapMin))
+                continue;
+            bucket[i] = M5Bucket(s.contrast * wavg * std::max(1.0f, s.length));
+            hist[bucket[i]]++;
+            total++;
+        }
+    }
+
+    int threshold = 0;
+    std::int64_t admitted = total;
+    bool cut = false;
+    if(enabled)
+    {
+        std::int64_t cum = 0;
+        for(int b = 255; b >= 0; b--)
+        {
+            cum += hist[b];
+            if(cum >= vd->aaBudgetLeft)
+            {
+                threshold = b;
+                admitted = cum;
+                cut = true;
+                break;
+            }
+        }
+    }
+
+    vd->aaProbeList.clear();
+    vd->aaProbeNext.store(0);
+    for(size_t i = 0; i < vd->aaSegs.size(); i++)
+    {
+        if((bucket[i] < 0) || (bucket[i] < threshold))
+            continue;
+        AaSeg& s = vd->aaSegs[i];
+        const float len = s.uHi - s.uLo;
+        float u = 0.5f * (s.uLo + s.uHi);
+        if(len >= 4.0f)
+        {
+            const float inset = std::min(2.0f, 0.25f * len);
+            u = (s.w[0] >= s.w[2]) ? (s.uLo + inset) : (s.uHi - inset);
+        }
+        const float v = s.a + s.b * u;
+        const float px = s.cx + u * s.tx + v * s.nx, py = s.cy + u * s.ty + v * s.ny;
+        if((px < float(area.left)) || (px >= float(area.right) + 1.0f) || (py < float(area.top)) || (py >= float(area.bottom) + 1.0f))
+        {
+            s.state = 1;
+            continue;
+        }
+        s.probeU = u;
+        s.probeV = v;
+        vd->aaProbeList.push_back(std::uint32_t(i));
+    }
+    vd->aaBudgetLeft -= admitted;
+    if(cut)
+        vd->aaExhausted = true;
+}
+
 /// Method 5 without windows: find every contour in the centre samples, cut it into the longest straight runs the
 /// samples allow, and give each pixel the line of the run it lies most inside of.
 void M5ChainFit(ViewData* vd, const M5Options& o)
 {
+    vd->aaSegs.clear();
     const POVRect& area = vd->GetRenderArea();
     const int x0 = int(area.left), y0 = int(area.top), w = int(area.GetWidth()), h = int(area.GetHeight());
     const float eps2 = o.ceps * o.ceps, k2 = o.kappa * o.kappa;
@@ -1772,13 +1970,50 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
 
             if(good - i0 + 1 >= o.lmin)
             {
-                const float gap = std::max(0.0f, M5BestLine(br, i0, good, nx, ny, s));
+                M5BestLine(br, i0, good, nx, ny, s);
                 const float tx = -ny, ty = nx;
                 float uA = tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy, uB = tx * br[size_t(good)].cx + ty * br[size_t(good)].cy;
                 if(uA > uB)
                     std::swap(uA, uB);
                 const float uLo = uA - 0.5f, uHi = uB + 0.5f, uMid = 0.5f * (uLo + uHi), half = 0.5f * (uHi - uLo);
                 const float ext = 0.5f * (std::fabs(nx) + std::fabs(ny));
+
+                // the run as a segment: the samples either side of it, in a frame with its line as the u axis
+                const float uc = 0.5f * (uA + uB);
+                const int segId = int(vd->aaSegs.size());
+                vd->aaSegs.emplace_back();
+                {
+                    AaSeg& sg = vd->aaSegs.back();
+                    sg.cx = nx * s + tx * uc;
+                    sg.cy = ny * s + ty * uc;
+                    sg.tx = tx;
+                    sg.ty = ty;
+                    sg.nx = nx;
+                    sg.ny = ny;
+                    sg.uLo = uLo - uc;
+                    sg.uHi = uHi - uc;
+                    sg.length = uHi - uLo;
+                    for(int i = i0; i <= good; i++)
+                    {
+                        const M5Bracket& bk = br[size_t(i)];
+                        const float ax = float(bk.rx) + 0.5f, ay = float(bk.ry) + 0.5f, bx = float(bk.lx) + 0.5f, by = float(bk.ly) + 0.5f;
+                        sg.hullA.push_back(AaSeg::Pt { tx * ax + ty * ay - uc, nx * ax + ny * ay - s, 0 });
+                        sg.hullB.push_back(AaSeg::Pt { tx * bx + ty * by - uc, nx * bx + ny * by - s, 1 });
+                    }
+                    M5Hull(sg.hullA, true);
+                    M5Hull(sg.hullB, false);
+                    const M5Bracket& bm = br[size_t((i0 + good) / 2)];
+                    sg.contrast = std::sqrt(Dist2(lab(bm.lx, bm.ly), lab(bm.rx, bm.ry)));
+                    auto mean = [&](const std::vector<RGBTColour>& cum, int a, int b) { return (cum[size_t(b) + 1] - cum[size_t(a)]) * (1.0 / double(b - a + 1)); };
+                    const int firstEnd = std::min(good, i0 + 5), lastStart = std::max(i0, good - 5);
+                    const bool forward = (tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy) <= (tx * br[size_t(good)].cx + ty * br[size_t(good)].cy);
+                    sg.ca[forward ? 0 : 1] = mean(cumR, i0, firstEnd);
+                    sg.cb[forward ? 0 : 1] = mean(cumL, i0, firstEnd);
+                    sg.ca[forward ? 1 : 0] = mean(cumR, lastStart, good);
+                    sg.cb[forward ? 1 : 0] = mean(cumL, lastStart, good);
+                    if(!M5Estimate(sg))
+                        sg.state = 1;
+                }
 
                 auto visit = [&](int px, int py)
                 {
@@ -1807,10 +2042,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                     const double inv = 1.0 / double(kb - ka + 1);
                     AaFit& f = vd->Fit(unsigned(px), unsigned(py));
                     f.kind = 1;
-                    f.nx = nx;
-                    f.ny = ny;
-                    f.lo = sRel - 0.5f * gap;
-                    f.hi = sRel + 0.5f * gap;
+                    f.seg = segId;
                     f.b = (cumL[size_t(kb) + 1] - cumL[size_t(ka)]) * inv;
                     f.a = (cumR[size_t(kb) + 1] - cumR[size_t(ka)]) * inv;
                     f.contrast = std::sqrt(Dist2(lab(br[size_t(lo)].lx, br[size_t(lo)].ly), lab(br[size_t(lo)].rx, br[size_t(lo)].ry)));
@@ -1920,6 +2152,16 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
 
     const bool probe = (pass == 2);
     const bool enabled = !o.freeOnly && !vd->aaExhausted && (probe ? (round < o.rounds) : o.noise);
+
+    if(o.chain)
+    {
+        M5FoldSegments(vd);
+        if(probe)
+        {
+            M5PlanSegments(vd, o, enabled);
+            return;
+        }
+    }
 
     // a candidate's priority is what is still unknown about it, worked out before anything is traced for it
     auto bucketOf = [&](const AaFit& f) -> int
@@ -2203,8 +2445,42 @@ void TraceTask::ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit)
     fit.probes++;
 }
 
+void TraceTask::ProbeSegmentsM5()
+{
+    ViewData* vd = GetViewData();
+    radiosity.BeforeTile(0, RadiosityFunction::FINAL_TRACE);
+    for(;;)
+    {
+        const std::uint32_t k = vd->aaProbeNext.fetch_add(1);
+        if(k >= vd->aaProbeList.size())
+            break;
+        AaSeg& s = vd->aaSegs[vd->aaProbeList[k]];
+        const float px = s.cx + s.probeU * s.tx + s.probeV * s.nx, py = s.cy + s.probeU * s.ty + s.probeV * s.ny;
+
+        RGBTColour col;
+        TraceSample(px, py, unsigned(px), unsigned(py), col);
+
+        // which side of the line the point is on, by whether it is nearer the colour of one side or the other
+        const float t = (s.uHi > s.uLo) ? std::min(1.0f, std::max(0.0f, (s.probeU - s.uLo) / (s.uHi - s.uLo))) : 0.5f;
+        const OkLab pa = ToOkLab(s.ca[0] * (1.0 - t) + s.ca[1] * t), pb = ToOkLab(s.cb[0] * (1.0 - t) + s.cb[1] * t), pc = ToOkLab(col);
+        const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+        const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+        const float score = (vv > 0.0f) ? ((pc.l - pa.l) * v[0] + (pc.a - pa.a) * v[1] + (pc.b - pa.b) * v[2] + (pc.t - pa.t) * v[3]) / vv : 0.0f;
+        s.fresh.push_back(AaSeg::Pt { s.probeU, s.probeV, std::uint8_t(score >= 0.5f ? 1 : 0) });
+        s.probes++;
+        Cooperate();
+    }
+    radiosity.AfterTile();
+    GetViewDataPtr()->AfterTile();
+}
+
 void TraceTask::ProgressiveM5()
 {
+    if((aaPass == 2) && M5Opts().chain)
+    {
+        ProbeSegmentsM5();
+        return;
+    }
     const bool traces = (aaPass == 2) || (aaPass == 3);
     POVRect rect;
     vector<RGBTColour> pixels;
@@ -2259,14 +2535,28 @@ void TraceTask::ProgressiveM5()
                     default:
                     {
                         RGBTColour col = GetViewData()->LatticeSample(x, y);
+                        float mapProbes = float(fit.probes);
                         if(fit.kind == 1)
                         {
-                            const float ext = 0.5f * (std::fabs(fit.nx) + std::fabs(fit.ny));
-                            const float s = std::min(ext, std::max(-ext, 0.5f * (fit.lo + fit.hi)));
-                            const double f = M5Coverage(fit.nx, fit.ny, s);
+                            float nx = fit.nx, ny = fit.ny, s;
+                            int probes = fit.probes;
+                            if(fit.seg >= 0)
+                            {
+                                // the segment's line now, after any probes, seen from this pixel's centre
+                                const AaSeg& sg = GetViewData()->aaSegs[size_t(fit.seg)];
+                                const float inv = 1.0f / std::sqrt(1.0f + sg.b * sg.b);
+                                nx = (sg.nx - sg.b * sg.tx) * inv;
+                                ny = (sg.ny - sg.b * sg.ty) * inv;
+                                s = sg.a * inv - (nx * (float(x) + 0.5f - sg.cx) + ny * (float(y) + 0.5f - sg.cy));
+                                probes = sg.probes;
+                                mapProbes = float(sg.probes);
+                            }
+                            else
+                                s = 0.5f * (fit.lo + fit.hi);
+                            const double f = M5Coverage(nx, ny, s);
                             col = fit.a * (1.0 - f);
                             col += fit.b * f;
-                            if(fit.probes > 0)
+                            if(probes > 0)
                                 GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
                         }
                         else if((fit.kind == 2) && (fit.probes > 0))
@@ -2278,7 +2568,7 @@ void TraceTask::ProgressiveM5()
                         if(M5Opts().map)
                         {
                             // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got
-                            const float p = float(fit.probes);
+                            const float p = mapProbes;
                             col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : 0.0f, (fit.kind == 1) ? 0.25f : 0.0f,
                                              (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : 0.0f, 0.0f);
                         }
