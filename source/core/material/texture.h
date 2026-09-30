@@ -136,6 +136,8 @@ struct Finish_Struct final
     PIGMENT *SubsurfaceEmissionPigment;
     PIGMENT *SubsurfaceThicknessPigment; ///< the skin's relative thickness as a grey value, else SubsurfaceThickness
     SNGL SubsurfaceThickness;
+    SNGL SubsurfaceDepth;  ///< mean depth of volume_sampling lookups below the surface, in mm; 0 takes half the translucency
+    SNGL SubsurfaceSpread; ///< their standard deviation, in mm; 0 takes half the translucency
     //MathColour SigmaPrimeS, SigmaA;
     SNGL Reflection_Falloff;  // Added by MBP 8/27/98
     bool Reflection_Fresnel;

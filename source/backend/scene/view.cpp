@@ -1364,6 +1364,28 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       double(stats[Subsurface_Photon_Accepted]), double(stats[Subsurface_Photon_Candidates]), mean, sqrt(variance));
     }
 
+    if (stats[Subsurface_Cloud_Attempts] > 0)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        double attempts = double(stats[Subsurface_Cloud_Attempts]), served = double(stats[Subsurface_Cloud_Served]);
+        double other = double(stats[Subsurface_Cloud_Bent]) + double(stats[Subsurface_Cloud_Hidden]) +
+                       double(stats[Subsurface_Cloud_Shadow_Edge]) + double(stats[Subsurface_Cloud_Exit_Mismatch]);
+        messages.Info("Method 2 point cloud: %.0f shading points tried, %.0f served; method 1 for %.0f (no cloud %.0f, bent disc %.0f, "
+                      "hidden %.0f, shadow edge %.0f, exit mismatch %.0f).",
+                      attempts, served, attempts - served, max(0.0, attempts - served - other), double(stats[Subsurface_Cloud_Bent]),
+                      double(stats[Subsurface_Cloud_Hidden]), double(stats[Subsurface_Cloud_Shadow_Edge]), double(stats[Subsurface_Cloud_Exit_Mismatch]));
+    }
+
+    if (stats[Subsurface_Thin_Walls] > 0)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Warning(kWarningGeneral, "The subsurface volume_sampling depth is larger than the object's wall at %.0f of %.0f sampled walls; "
+                         "lower the depth, or leave it out to use half the translucency.",
+                         double(stats[Subsurface_Thin_Walls]), double(stats[Subsurface_Walls]));
+    }
+
     // object intersection stats
     POVMS_List isectStats;
 
