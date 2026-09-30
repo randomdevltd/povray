@@ -1546,6 +1546,7 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         }
         if (tracingMethod == 4)
         {
+            viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
             viewData.contention.assign(viewData.latticeSamples.size(), 0);
             if (renderOptions.TryGetBool(kPOVAttrib_AntialiasKeepGrain, true))
                 viewData.latticeGrain.assign(viewData.latticeSamples.size(), 1);

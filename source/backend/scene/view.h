@@ -559,7 +559,7 @@ class View final
 
         void QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,
                                     DBL aaConfidence, unsigned int aaDepth, GammaCurvePtr& aaGamma, bool highReproducibility,
-                                    size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip,
+                                    size_t seed, int maxRenderThreads, int resumeLevel, std::shared_ptr<ViewData::BlockIdSet> resumeSkip,
                                     DBL aaBudget = 0.0);
 
         void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
