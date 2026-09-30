@@ -24,6 +24,8 @@
 #ifndef (Radiosity) #declare Radiosity = 0; #end
 #ifndef (Shift) #declare Shift = 0; #end
 #ifndef (Mfp) #declare Mfp = 0.28; #end
+#ifndef (Depth) #declare Depth = 0; #end
+#ifndef (Spread) #declare Spread = 0; #end
 #ifndef (Power) #declare Power = 0.08; #end
 global_settings {
   assumed_gamma 1 mm_per_unit 1 max_trace_level 12
@@ -43,6 +45,10 @@ background { rgb 0 }
 #declare ReceiverFinish = finish {
   diffuse 0.8 ambient 0 specular 0
   #if (!SurfaceOnly) subsurface { translucency Mfp
+    #if (Depth > 0)
+      pigment { bozo scale 0.1 color_map { [0 rgb <0.8, 0.5, 0.4>] [1 rgb <0.95, 0.75, 0.6>] } }
+      volume_sampling { depth Depth #if (Spread > 0) spread Spread #end }
+    #end
     #if (Skin) colour rgb <0.85, 0.65, 0.45> thickness Thickness #end
     #if (Glow) emission rgb <0.015, 0.02, 0.03> #end
   } #end

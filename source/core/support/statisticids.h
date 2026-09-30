@@ -280,6 +280,14 @@ typedef enum INTSTATS
     Subsurface_Photon_Candidates,
     Subsurface_Photon_Accepted,
     Subsurface_Photon_Fallbacks,
+    Subsurface_Walls,
+    Subsurface_Thin_Walls,
+    Subsurface_Cloud_Attempts,
+    Subsurface_Cloud_Served,
+    Subsurface_Cloud_Bent,
+    Subsurface_Cloud_Hidden,
+    Subsurface_Cloud_Shadow_Edge,
+    Subsurface_Cloud_Exit_Mismatch,
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample

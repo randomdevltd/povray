@@ -2561,7 +2561,28 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                     }
                 END_CASE
                 CASE (VOLUME_SAMPLING_TOKEN)
-                    New->SubsurfaceVolume = ((int) Allow_Float(1.0) != 0);
+                    if (Parse_Begin(false))
+                    {
+                        New->SubsurfaceVolume = true;
+                        // depth and spread are matched by their text, so they stay free as identifiers elsewhere
+                        for (;;)
+                        {
+                            Get_Token();
+                            const bool isDepth = (CurrentTokenText() == "depth"), isSpread = (CurrentTokenText() == "spread");
+                            if (!isDepth && !isSpread)
+                            {
+                                Unget_Token();
+                                break;
+                            }
+                            SNGL& value = isDepth ? New->SubsurfaceDepth : New->SubsurfaceSpread;
+                            value = Parse_Float();
+                            if (!(value >= 0.0))
+                                Error("Subsurface volume_sampling %s must not be negative.", isDepth ? "depth" : "spread");
+                        }
+                        Parse_End();
+                    }
+                    else
+                        New->SubsurfaceVolume = ((int) Allow_Float(1.0) != 0);
                 END_CASE
                 OTHERWISE
                     UNGET

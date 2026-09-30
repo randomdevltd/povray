@@ -443,14 +443,30 @@ A texture's subsurface layers are blended into the colour the viewer sees, by ea
 diffuse term takes them, and scattered once with the topmost subsurface layer's finish. Each layer used to scatter on
 its own at full strength, so a half-transparent layer looked opaque and a texture of n layers paid n evaluations.
 
+`volume_sampling { depth D spread S }` reads the flesh and emission patterns in a slice below the surface: each light-entry
+point looks up a depth drawn from a normal curve of mean `D` and standard deviation `S` (mm, through `mm_per_unit`), cut
+off at the surface by drawing only from the part of the curve below it, so no lookup falls outside the object. Both
+default to half the `translucency` (its grey mean). `translucency` is how far light spreads and `depth`/`spread` choose
+which part of the pattern it picks up, so a small `spread` shows a thin slice of a 3D pattern instead of all of it. The
+bare `volume_sampling` and `volume_sampling 1` forms still parse, with the defaults. When `D` exceeds the wall measured
+at sampled crossings the render warns.
+
+The point cloud tells a crossing's side of the surface by testing a step along its normal, at most a twentieth of the
+point spacing; that step is cut to a quarter of the wall to the neighbouring crossings on the line, so walls much thinner
+than the spacing keep their points. The point step is also capped so that at least 32 lines cross an object's longest
+side: it was sized from the diffusion reach and the pixel alone, so a small object beside a long reach got a few points
+and cells with none, and every shading point near them went to method 1. A point lying on a cell's face (an object
+resting on y = 0) is matched to the nearest gathered cell instead of the empty one beside it. The render reports, for
+method 2, how many shading points the cloud served and why the rest went to method 1.
+
 A finish's `colour` or `pigment` gives the flesh inside a colour of its own; the texture's pigment is then a skin light
 crosses on the way in and out, each crossing letting through the pigment to the power of half the relative
 `thickness`. There is still one diffusion profile per shading point, built from a reference flesh colour: the
-`colour`, or, with `volume_sampling`, the mean of four lookups spread over two mean depths around the shading point, so
+`colour`, or, with `volume_sampling`, the mean of four lookups spread over two depth-plus-spreads around the shading point, so
 that nothing depends on the flesh under the exit point alone. What varies between entry points is a multiplier on the
 light entering there: the looked-up flesh over the reference (divided once, at the end), times the skin's transmittance
-there, plus the flesh's emission times its colour. The lookups are made at a depth drawn from an exponential with mean
-one `translucency`: method 1 at each diffuse sample point, from the shading point's keyed draws; method 2 once per
+there, plus the flesh's emission times its colour. The lookups are made at a depth drawn from a normal curve (see
+`volume_sampling` above): method 1 at each diffuse sample point, from the shading point's keyed draws; method 2 once per
 cloud point as it is lit, from an R3 lattice over the grid squares so that neighbouring points' depths spread evenly,
 into a cube keyed by the texture layer as well as the object. Method 2's core, which is lit as the exit point is,
 takes the multiplier and emission of the disc's points, weighted by the profile, instead of those under the exit

@@ -998,6 +998,9 @@ class Trace
             const FINISH *finish = nullptr;
             const PIGMENT *skin = nullptr; ///< the skin's tint where light enters, when it is looked up there
             double depth = 0.0; ///< mean depth of the flesh's lookups below the surface, in scene units
+            double spread = 0.0; ///< their standard deviation, in scene units
+            double outside = 0.0; ///< the share of that normal curve above the surface, which the draws leave out
+            double DepthAt(double draw) const;
             bool fleshAtDepth = false, emissionAtDepth = false;
             MathColour exitSkin{1.0}, entrySkin{1.0}; ///< the skin's transmittance here, and where light enters unless looked up there
             MathColour emission; ///< the flesh's emission where it is the same at every entry point
