@@ -1592,9 +1592,9 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         unsigned int latticeWidth = viewData.GetWidth() + (corners ? 1 : 0);
         unsigned int latticeHeight = viewData.GetHeight() + (corners ? 1 : 0);
         static_assert(sizeof(RGBTColour) == 4 * sizeof(POVMSFloat), "lattice samples are read as RGBT float quadruples");
+        viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
         if (renderOptions.Exist(kPOVAttrib_ProgressSamples))
         {
-            viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
             POVMS_Attribute samples;
             renderOptions.Get(kPOVAttrib_ProgressSamples, samples);
             size_t bytes = viewData.latticeSamples.size() * sizeof(RGBTColour);
@@ -1605,7 +1605,6 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         }
         if (tracingMethod == 4)
         {
-            viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
             viewData.StartAaState();
             viewData.aaFraction = aaBudget;
             viewData.aaThr = aaThreshold;
