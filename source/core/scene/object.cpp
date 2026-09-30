@@ -115,204 +115,70 @@ std::string& ObjectDebugHelper::SimpleDesc(std::string& result)
 *
 ******************************************************************************/
 
+static bool Ray_Enters_Object_BBox(ConstObjectPtr object, const Ray& ray)
+{
+    const Vector3d tmp(1.0 / ray.GetDirection()[X], 1.0 / ray.GetDirection()[Y], 1.0 / ray.GetDirection()[Z]);
+    const BBoxVector3d invdir(tmp);
+    const BBoxDirection variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
+    return object->Intersect_BBox(variant, BBoxVector3d(ray.Origin), invdir);
+}
+
+template<typename AcceptFn>
+static bool Nearest_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, const AcceptFn& accept, TraceThreadData *threadData)
+{
+    if ((object->Bound.empty() == false) && (Ray_In_Bound(ray, object->Bound, threadData) == false))
+        return false;
+
+    IStack depthstack(threadData->stackPool);
+    POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
+
+    if (object->All_Intersections(ray, depthstack, threadData) == false)
+        return false;
+
+    DBL closest = HUGE_VAL;
+    bool found = false;
+    for (; depthstack->size() > 0; depthstack->pop())
+    {
+        const DBL depth = depthstack->top().Depth;
+        // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
+        if (depth < closest && (ray.IsSubsurfaceRay() || depth >= MIN_ISECT_DEPTH) && accept(depth))
+        {
+            *isect = depthstack->top();
+            closest = depth;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool Find_Intersection_BBox_Passed(Intersection *isect, ObjectPtr object, const Ray& ray, TraceThreadData *threadData)
+{
+    return Nearest_Intersection(isect, object, ray, [](DBL) { return true; }, threadData);
+}
+
+bool Find_Intersection_BBox_Passed(Intersection *isect, ObjectPtr object, const Ray& ray, const RayObjectCondition& postcondition, TraceThreadData *threadData)
+{
+    return Nearest_Intersection(isect, object, ray, [&](DBL depth) { return postcondition(ray, object, depth); }, threadData);
+}
+
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-    {
-        DBL closest = HUGE_VAL;
-        BBoxVector3d origin;
-        BBoxVector3d invdir;
-        BBoxDirection variant;
-
-        Vector3d tmp(1.0 / ray.GetDirection()[X], 1.0 / ray.GetDirection()[Y], 1.0 /ray.GetDirection()[Z]);
-        origin = BBoxVector3d(ray.Origin);
-        invdir = BBoxVector3d(tmp);
-        variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
-
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
-            return false;
-
-        if(object->Bound.empty() == false)
-        {
-            if(Ray_In_Bound(ray, object->Bound, threadData) == false)
-                return false;
-        }
-
-        IStack depthstack(threadData->stackPool);
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
-
-        if(object->All_Intersections(ray, depthstack, threadData))
-        {
-            bool found = false;
-            double tmpDepth = 0;
-
-            while(depthstack->size() > 0)
-            {
-                tmpDepth = depthstack->top().Depth;
-                // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH))
-                {
-                    *isect = depthstack->top();
-                    closest = tmpDepth;
-                    found = true;
-                }
-
-                depthstack->pop();
-            }
-
-            return (found == true);
-        }
-
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack is in a cleaned-up condition (again)
-    }
-
-    return false;
+    return (object != nullptr) && Ray_Enters_Object_BBox(object, ray) && Find_Intersection_BBox_Passed(isect, object, ray, threadData);
 }
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, const RayObjectCondition& postcondition, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-    {
-        DBL closest = HUGE_VAL;
-        BBoxVector3d origin;
-        BBoxVector3d invdir;
-        BBoxDirection variant;
-
-        Vector3d tmp(1.0 / ray.GetDirection()[X], 1.0 / ray.GetDirection()[Y], 1.0 /ray.GetDirection()[Z]);
-        origin = BBoxVector3d(ray.Origin);
-        invdir = BBoxVector3d(tmp);
-        variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
-
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
-            return false;
-
-        if(object->Bound.empty() == false)
-        {
-            if(Ray_In_Bound(ray, object->Bound, threadData) == false)
-                return false;
-        }
-
-        IStack depthstack(threadData->stackPool);
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
-
-        if(object->All_Intersections(ray, depthstack, threadData))
-        {
-            bool found = false;
-            double tmpDepth = 0;
-
-            while(depthstack->size() > 0)
-            {
-                tmpDepth = depthstack->top().Depth;
-                // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
-                {
-                    *isect = depthstack->top();
-                    closest = tmpDepth;
-                    found = true;
-                }
-
-                depthstack->pop();
-            }
-
-            return (found == true);
-        }
-
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack is in a cleaned-up condition (again)
-    }
-
-    return false;
+    return (object != nullptr) && Ray_Enters_Object_BBox(object, ray) && Find_Intersection_BBox_Passed(isect, object, ray, postcondition, threadData);
 }
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-    {
-        DBL closest = HUGE_VAL;
-
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
-            return false;
-
-        if(object->Bound.empty() == false)
-        {
-            if(Ray_In_Bound(ray, object->Bound, threadData) == false)
-                return false;
-        }
-
-        IStack depthstack(threadData->stackPool);
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
-
-        if(object->All_Intersections(ray, depthstack, threadData))
-        {
-            bool found = false;
-            double tmpDepth = 0;
-
-            while(depthstack->size() > 0)
-            {
-                tmpDepth = depthstack->top().Depth;
-                // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH))
-                {
-                    *isect = depthstack->top();
-                    closest = tmpDepth;
-                    found = true;
-                }
-
-                depthstack->pop();
-            }
-
-            return (found == true);
-        }
-
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack is in a cleaned-up condition (again)
-    }
-
-    return false;
+    return (object != nullptr) && object->Intersect_BBox(variant, origin, invdir) && Find_Intersection_BBox_Passed(isect, object, ray, threadData);
 }
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, const RayObjectCondition& postcondition, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-    {
-        DBL closest = HUGE_VAL;
-
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
-            return false;
-
-        if(object->Bound.empty() == false)
-        {
-            if(Ray_In_Bound(ray, object->Bound, threadData) == false)
-                return false;
-        }
-
-        IStack depthstack(threadData->stackPool);
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
-
-        if(object->All_Intersections(ray, depthstack, threadData))
-        {
-            bool found = false;
-            double tmpDepth = 0;
-
-            while(depthstack->size() > 0)
-            {
-                tmpDepth = depthstack->top().Depth;
-                // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
-                {
-                    *isect = depthstack->top();
-                    closest = tmpDepth;
-                    found = true;
-                }
-
-                depthstack->pop();
-            }
-
-            return (found == true);
-        }
-
-        POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack is in a cleaned-up condition (again)
-    }
-
-    return false;
+    return (object != nullptr) && object->Intersect_BBox(variant, origin, invdir) && Find_Intersection_BBox_Passed(isect, object, ray, postcondition, threadData);
 }
 
 
