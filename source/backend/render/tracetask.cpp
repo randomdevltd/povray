@@ -261,7 +261,7 @@ void TraceTask::SubdivisionBuffer::LoadEdge(size_t pos, bool column, const Edge&
 TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
                      DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                      unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                     int level, unsigned int ls, bool lf, bool pairs) :
+                     int level, unsigned int ls, bool lf, bool pairs, DBL aab) :
     RenderTask(vd, seed, "Trace"),
     trace(vd->GetSceneData(), &vd->GetCamera(), GetViewDataPtr(), vd->GetSceneData()->parsedMaxTraceLevel, vd->GetSceneData()->parsedAdcBailout,
           vd->GetQualityFeatureFlags(), cooperate, media, radiosity),
@@ -271,6 +271,7 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     aaThreshold(aat),
     aaConfidence(aac),
     aaDepth(aad),
+    aaBudget(aab),
     aaGamma(aag),
     previewSize(ps),
     previewSkipCorner(psc),
@@ -1281,6 +1282,8 @@ void TraceTask::SplitCell(unsigned int level, unsigned int cx, unsigned int cy, 
         if(child.split || child.traced)
             continue;
         RGBTColour sample;
+        if((aaBudget > 0.0) && !GetViewData()->ReserveAASample())
+            return;
         TraceSample(refineX + (ccx + 0.5) * size, refineY + (ccy + 0.5) * size, refineX, refineY, sample);
         child = Cell { int(cellColours.size()), false, true };
         cellColours.push_back(sample);

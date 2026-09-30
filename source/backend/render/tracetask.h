@@ -76,7 +76,8 @@ class TraceTask final : public RenderTask
         TraceTask(ViewData *vd, unsigned int tm, DBL js,
                   DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                   unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                  int level = -1, unsigned int ls = 0, bool lf = false, bool pairs = false);
+                  int level = -1, unsigned int ls = 0, bool lf = false, bool pairs = false,
+                  DBL aab = 0.0);
         virtual ~TraceTask() override;
 
         virtual void Run() override;
@@ -123,6 +124,7 @@ class TraceTask final : public RenderTask
         DBL aaThreshold;
         DBL aaConfidence;
         unsigned int aaDepth;
+        DBL aaBudget;
         unsigned int previewSize;
         bool previewSkipCorner;
         bool passContributesToImage;    ///< Pass computes pixels for the final image.

@@ -713,6 +713,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     DBL aathreshold = 0.3;
     DBL aaconfidence = 0.9;
     unsigned int aadepth = 3;
+    DBL aaBudget = 0.0;
     DBL aaGammaValue = 1.0;
     GammaCurvePtr aaGammaCurve;
     unsigned int previewstartsize = 0;
@@ -733,6 +734,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     aadepth = clip((unsigned int)renderOptions.TryGetInt(kPOVAttrib_AntialiasDepth, 3), 1u, 9u);
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
     aaconfidence = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasConfidence, 0.9f), 0.0f, 1.0f);
+    aaBudget = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasBudget, 0.0f), 0.0f, 1.0e9f);
     if(renderOptions.TryGetBool(kPOVAttrib_Jitter, true) == true)
         jitterscale = clip(renderOptions.TryGetFloat(kPOVAttrib_JitterAmount, 1.0f), 0.0f, 1.0f);
     else
@@ -1187,10 +1189,12 @@ void View::StartRender(POVMS_Object& renderOptions)
         // TODO store radiosity data (if applicable)?
     }
 
+    viewData.SetAntialiasBudget(aaBudget, viewData.GetWidth(), viewData.GetHeight());
+
     if (progressive)
         QueueProgressiveRender(renderOptions, tracingmethod, jitterscale, aathreshold, aaconfidence, aadepth, aaGammaCurve,
                                highReproducibility, seed, maxRenderThreads, renderOptions.TryGetInt(kPOVAttrib_ProgressLevel, 0),
-                               progressSkipList);
+                               progressSkipList, aaBudget);
     // do render with mosaic preview
     else if(previewstartsize > 1)
     {
@@ -1512,7 +1516,8 @@ void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, un
 
 void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,
                                   DBL aaConfidence, unsigned int aaDepth, GammaCurvePtr& aaGamma, bool highReproducibility,
-                                  size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip)
+                                  size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip,
+                                  DBL aaBudget)
 {
     const bool corners = (tracingMethod == 2);
     unsigned int maxStep = 1;
@@ -1566,7 +1571,7 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         for (int i = 0; i < maxRenderThreads; i++)
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
                 &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, pairs
+                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, pairs, aaBudget
                 ))));
         renderTasks.AppendSync();
     }

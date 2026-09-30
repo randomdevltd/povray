@@ -44,6 +44,9 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -297,6 +300,26 @@ class ViewData final
         /// Method 4: the directions a pixel refines towards, as found by the pair tests (see TraceTask::ProgressivePairsM4).
         std::uint16_t& Contention(unsigned int x, unsigned int y) { return contention[x + y * latticeWidth]; }
 
+        /// Method 4: cap on refinement samples, as a fraction of the pixel count; 0 means no cap.
+        void SetAntialiasBudget(DBL fraction, unsigned int width, unsigned int height)
+        {
+            aaBudgetUsed.store(0, std::memory_order_relaxed);
+            const std::uint64_t total = std::uint64_t(width) * std::uint64_t(height);
+            const std::uint64_t limit = (fraction > 0.0) ? std::uint64_t(std::ceil(double(total) * fraction)) : 0;
+            aaBudgetLimit.store((fraction > 0.0) ? std::max<std::uint64_t>(limit, 1) : 0, std::memory_order_relaxed);
+        }
+        bool ReserveAASample()
+        {
+            const std::uint64_t limit = aaBudgetLimit.load(std::memory_order_relaxed);
+            if (limit == 0)
+                return true;
+            std::uint64_t used = aaBudgetUsed.load(std::memory_order_relaxed);
+            while (used < limit)
+                if (aaBudgetUsed.compare_exchange_weak(used, used + 1, std::memory_order_relaxed))
+                    return true;
+            return false;
+        }
+
         /**
          *  Get the value of the real-time raytracing option
          *  @return                 true if RTR was requested in render options
@@ -379,6 +402,8 @@ class ViewData final
         std::vector<std::uint16_t> contention;
         unsigned int latticeWidth;
         bool latticeSamplesActive;
+        std::atomic<std::uint64_t> aaBudgetLimit {0};
+        std::atomic<std::uint64_t> aaBudgetUsed {0};
 
         /// functions to compute the X & Y block
         void getBlockXY(const unsigned int nb, unsigned int &x, unsigned int &y);
@@ -534,7 +559,8 @@ class View final
 
         void QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,
                                     DBL aaConfidence, unsigned int aaDepth, GammaCurvePtr& aaGamma, bool highReproducibility,
-                                    size_t seed, int maxRenderThreads, int resumeLevel, std::shared_ptr<ViewData::BlockIdSet> resumeSkip);
+                                    size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip,
+                                    DBL aaBudget = 0.0);
 
         void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
 

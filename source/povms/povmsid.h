@@ -387,6 +387,7 @@ enum
     kPOVAttrib_AntialiasThreshold    = 'AATh',
     kPOVAttrib_AntialiasConfidence   = 'AACo',
     kPOVAttrib_AntialiasDepth        = 'AADe',
+    kPOVAttrib_AntialiasBudget       = 'AABu',
     kPOVAttrib_Jitter                = 'AAJi',
     kPOVAttrib_JitterAmount          = 'AAJA',
     kPOVAttrib_AntialiasGamma        = 'AAGa',
