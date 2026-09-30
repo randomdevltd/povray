@@ -85,7 +85,9 @@ class TraceTask final : public RenderTask
         /// Method 5, between passes on one thread: pass 0 prepares, 2 chooses the probes of a round, 3 the noisy pixels to average.
         static void PlanM5(ViewData* vd, int pass, int round);
         /// Probe rounds queued for method 5; the planner may stop earlier.
-        static constexpr int kM5Rounds = 6;
+        static constexpr int kM5Rounds = 12;
+        /// Rounds of extra samples for noisy pixels, each adding at most one a pixel.
+        static constexpr int kM5NoiseRounds = 8;
 
         virtual void Run() override;
         virtual void Stopped() override;

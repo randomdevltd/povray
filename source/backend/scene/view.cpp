@@ -1612,7 +1612,8 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         addPass(1, 0, false, noSkip);
         for (int round = 0; round < TraceTask::kM5Rounds; round++)
             addPass(2, round, true, noSkip);
-        addPass(3, 0, true, noSkip);
+        for (int round = 0; round < TraceTask::kM5NoiseRounds; round++)
+            addPass(3, round, true, noSkip);
         addPass(4, 0, false, (aaLevel == resumeLevel) ? resumeSkip : noSkip);
     }
 }

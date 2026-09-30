@@ -1354,8 +1354,14 @@ struct M5Options final
     bool freeOnly = false;
     bool noise = true;
     float emax = 2.0f;
-    float gapMin = 1.0f / 16.0f;
+    float gapMin = 0.001f;
     int rounds = TraceTask::kM5Rounds;
+    bool chain = false;             ///< Fit whole contours instead of a window round each pixel.
+    int lmin = 4;                   ///< Shortest run of crossings a chain segment may be fitted to.
+    float rho = 0.35f;              ///< Share of contended links in a 5x5 window above which it is noise.
+    float ceps = 0.002f;            ///< Chain mode: differences below this are rounding, whatever their neighbours.
+    float kappa = 2.0f;             ///< Chain mode: a link is a contour crossing when it jumps this many times its neighbours' ramp.
+    bool map = false;               ///< Write where the samples went instead of the image.
 };
 
 const M5Options& M5Opts()
@@ -1384,6 +1390,12 @@ const M5Options& M5Opts()
                     else if(key == "EMAX")   o.emax = float(v);
                     else if(key == "GAP")    o.gapMin = float(v);
                     else if(key == "ROUNDS") o.rounds = int(v);
+                    else if(key == "CHAIN")  o.chain = (v != 0.0);
+                    else if(key == "LMIN")   o.lmin = int(v);
+                    else if(key == "RHO")    o.rho = float(v);
+                    else if(key == "CEPS")   o.ceps = float(v);
+                    else if(key == "KAPPA")  o.kappa = float(v);
+                    else if(key == "MAP")    o.map = (v != 0.0);
                 }
                 pos = end + 1;
             }
@@ -1431,6 +1443,456 @@ float M5Coverage(float nx, float ny, float s)
 }
 }
 
+namespace
+{
+/// Where a contour crosses a link between two neighbouring samples, and the pixels of those samples, the one left of travel first.
+struct M5Bracket final { float cx, cy; int lx, ly, rx, ry; };
+
+/// The line with the widest gap between the samples that must lie beyond it (left of the chain) and short of it (right).
+/// Returns that gap, negative when no line separates them; n.q = s is the line, with n pointing at the left samples.
+float M5BestLine(const std::vector<M5Bracket>& br, int i0, int i1, float& nx, float& ny, float& s)
+{
+    float tx = br[i1].cx - br[i0].cx, ty = br[i1].cy - br[i0].cy;
+    float len = std::sqrt(tx * tx + ty * ty);
+    if(len < 1.0e-3f)
+    {
+        tx = 1.0f;
+        ty = 0.0f;
+        len = 1.0f;
+    }
+    const float theta0 = std::atan2(-tx / len, ty / len);
+
+    auto gapAt = [&](float th, float& lo, float& hi)
+    {
+        const float c = std::cos(th), sn = std::sin(th);
+        float minL = std::numeric_limits<float>::max(), maxR = -minL;
+        for(int i = i0; i <= i1; i++)
+        {
+            const M5Bracket& b = br[i];
+            minL = std::min(minL, c * (float(b.lx) + 0.5f) + sn * (float(b.ly) + 0.5f));
+            maxR = std::max(maxR, c * (float(b.rx) + 0.5f) + sn * (float(b.ry) + 0.5f));
+        }
+        lo = maxR;
+        hi = minL;
+        return minL - maxR;
+    };
+
+    float best = -std::numeric_limits<float>::max(), bestTh = theta0, bestLo = 0.0f, bestHi = 0.0f, lo, hi;
+    const float step0 = 3.14159265f / 24.0f;
+    for(int k = -8; k <= 8; k++)
+    {
+        const float th = theta0 + float(k) * step0;
+        const float g = gapAt(th, lo, hi);
+        if(g > best)
+        {
+            best = g; bestTh = th; bestLo = lo; bestHi = hi;
+        }
+    }
+    float step = step0;
+    for(int r = 0; r < 6; r++)
+    {
+        step *= 0.5f;
+        for(int d = -1; d <= 1; d += 2)
+        {
+            const float th = bestTh + float(d) * step;
+            const float g = gapAt(th, lo, hi);
+            if(g > best)
+            {
+                best = g; bestTh = th; bestLo = lo; bestHi = hi;
+            }
+        }
+    }
+    nx = std::cos(bestTh);
+    ny = std::sin(bestTh);
+    s = 0.5f * (bestLo + bestHi);
+    return best;
+}
+
+/// Method 5 without windows: find every contour in the centre samples, cut it into the longest straight runs the
+/// samples allow, and give each pixel the line of the run it lies most inside of.
+void M5ChainFit(ViewData* vd, const M5Options& o)
+{
+    const POVRect& area = vd->GetRenderArea();
+    const int x0 = int(area.left), y0 = int(area.top), w = int(area.GetWidth()), h = int(area.GetHeight());
+    const float eps2 = o.ceps * o.ceps, k2 = o.kappa * o.kappa;
+    auto at = [&](int x, int y) { return size_t(x - x0) + size_t(y - y0) * size_t(w); };
+    auto lab = [&](int x, int y) { return vd->AaLabAt(unsigned(x), unsigned(y)); };
+
+    // squared distance to the east and south neighbours
+    std::vector<float> dE(size_t(w) * size_t(h), 0.0f), dS(size_t(w) * size_t(h), 0.0f);
+    for(int y = y0; y < y0 + h; y++)
+    {
+        for(int x = x0; x < x0 + w; x++)
+        {
+            if(x + 1 < x0 + w)
+                dE[at(x, y)] = Dist2(lab(x, y), lab(x + 1, y));
+            if(y + 1 < y0 + h)
+                dS[at(x, y)] = Dist2(lab(x, y), lab(x, y + 1));
+        }
+    }
+
+    // bit 0: the link to the east neighbour is a contour crossing, bit 1: the one to the south; a link is one when it
+    // jumps well beyond the ramp on either side of it, so a faint line counts and a smooth gradient does not
+    std::vector<std::uint8_t> link(size_t(w) * size_t(h), 0);
+    for(int y = y0; y < y0 + h; y++)
+    {
+        for(int x = x0; x < x0 + w; x++)
+        {
+            std::uint8_t bits = 0;
+            const float e = dE[at(x, y)];
+            if(e >= eps2)
+            {
+                const float ramp = std::max((x > x0) ? dE[at(x - 1, y)] : 0.0f, (x + 1 < x0 + w) ? dE[at(x + 1, y)] : 0.0f);
+                if(e >= k2 * ramp)
+                    bits |= 1;
+            }
+            const float s = dS[at(x, y)];
+            if(s >= eps2)
+            {
+                const float ramp = std::max((y > y0) ? dS[at(x, y - 1)] : 0.0f, (y + 1 < y0 + h) ? dS[at(x, y + 1)] : 0.0f);
+                if(s >= k2 * ramp)
+                    bits |= 2;
+            }
+            link[at(x, y)] = bits;
+        }
+    }
+
+    // noise: a 5x5 window where too many links differ has no contour worth following
+    std::vector<std::int32_t> sat(size_t(w + 1) * size_t(h + 1), 0);
+    for(int y = 0; y < h; y++)
+    {
+        for(int x = 0; x < w; x++)
+        {
+            const std::uint8_t b = link[size_t(x) + size_t(y) * size_t(w)];
+            sat[size_t(x + 1) + size_t(y + 1) * size_t(w + 1)] = int((b & 1) + ((b >> 1) & 1)) +
+                sat[size_t(x) + size_t(y + 1) * size_t(w + 1)] + sat[size_t(x + 1) + size_t(y) * size_t(w + 1)] - sat[size_t(x) + size_t(y) * size_t(w + 1)];
+        }
+    }
+    std::vector<std::uint8_t> noisy(size_t(w) * size_t(h), 0);
+    for(int y = 0; y < h; y++)
+    {
+        for(int x = 0; x < w; x++)
+        {
+            const int xa = std::max(0, x - 2), xb = std::min(w, x + 3), ya = std::max(0, y - 2), yb = std::min(h, y + 3);
+            const int sum = sat[size_t(xb) + size_t(yb) * size_t(w + 1)] - sat[size_t(xa) + size_t(yb) * size_t(w + 1)] -
+                            sat[size_t(xb) + size_t(ya) * size_t(w + 1)] + sat[size_t(xa) + size_t(ya) * size_t(w + 1)];
+            if(float(sum) > o.rho * 2.0f * float((xb - xa) * (yb - ya)))
+            {
+                noisy[size_t(x) + size_t(y) * size_t(w)] = 1;
+                float far2 = 0.0f;
+                const int dx[4] = { 1, -1, 0, 0 }, dy[4] = { 0, 0, 1, -1 };
+                for(int k = 0; k < 4; k++)
+                {
+                    const int nx = x + x0 + dx[k], ny = y + y0 + dy[k];
+                    if((nx >= x0) && (nx < x0 + w) && (ny >= y0) && (ny < y0 + h))
+                        far2 = std::max(far2, Dist2(lab(x + x0, y + y0), lab(nx, ny)));
+                }
+                AaFit& f = vd->Fit(unsigned(x + x0), unsigned(y + y0));
+                f.kind = 2;
+                f.contrast = std::sqrt(far2);
+            }
+        }
+    }
+    for(int y = y0; y < y0 + h; y++)
+    {
+        for(int x = x0; x < x0 + w; x++)
+        {
+            std::uint8_t& bits = link[at(x, y)];
+            if((bits & 1) && noisy[at(x, y)] && noisy[at(x + 1, y)])
+                bits &= ~1;
+            if((bits & 2) && noisy[at(x, y)] && noisy[at(x, y + 1)])
+                bits &= ~2;
+        }
+    }
+
+    // join the crossings inside each 2x2 cell of samples; a node is a link, id 2 * pixel + (south ? 1 : 0)
+    const size_t nodes = 2 * size_t(w) * size_t(h);
+    std::vector<std::int32_t> nb(2 * nodes, -1);
+    auto connect = [&](size_t a, size_t b)
+    {
+        for(int k = 0; k < 2; k++)
+            if(nb[2 * a + k] < 0) { nb[2 * a + k] = std::int32_t(b); break; }
+        for(int k = 0; k < 2; k++)
+            if(nb[2 * b + k] < 0) { nb[2 * b + k] = std::int32_t(a); break; }
+    };
+    for(int y = y0; y + 1 < y0 + h; y++)
+    {
+        for(int x = x0; x + 1 < x0 + w; x++)
+        {
+            const size_t T = 2 * at(x, y), B = 2 * at(x, y + 1), L = 2 * at(x, y) + 1, R = 2 * at(x + 1, y) + 1;
+            const bool fT = link[at(x, y)] & 1, fB = link[at(x, y + 1)] & 1, fL = link[at(x, y)] & 2, fR = link[at(x + 1, y)] & 2;
+            const int k = int(fT) + int(fB) + int(fL) + int(fR);
+            if(k == 2)
+            {
+                size_t ids[2];
+                int n = 0;
+                if(fT) ids[n++] = T;
+                if(fR) ids[n++] = R;
+                if(fB) ids[n++] = B;
+                if(fL) ids[n++] = L;
+                connect(ids[0], ids[1]);
+            }
+            else if(k == 4)
+            {
+                // the diagonal that matches stays joined through the middle; the other pair's corners are cut off
+                if(Dist2(lab(x, y), lab(x + 1, y + 1)) <= Dist2(lab(x + 1, y), lab(x, y + 1)))
+                {
+                    connect(T, R);
+                    connect(L, B);
+                }
+                else
+                {
+                    connect(T, L);
+                    connect(R, B);
+                }
+            }
+        }
+    }
+
+    std::vector<std::uint8_t> visited(nodes, 0);
+    std::vector<float> weight(size_t(w) * size_t(h), 0.0f);
+    std::vector<size_t> chain;
+    std::vector<M5Bracket> br;
+    std::vector<RGBTColour> cumL, cumR;
+    std::vector<std::uint8_t> weak(size_t(w) * size_t(h), 0);
+    auto markWeak = [&](int a, int b)
+    {
+        for(int i = a; i <= b; i++)
+        {
+            weak[at(br[size_t(i)].lx, br[size_t(i)].ly)] = 1;
+            weak[at(br[size_t(i)].rx, br[size_t(i)].ry)] = 1;
+        }
+    };
+    auto degree = [&](size_t id) { return int(nb[2 * id] >= 0) + int(nb[2 * id + 1] >= 0); };
+    auto walk = [&](size_t start)
+    {
+        chain.clear();
+        std::int64_t prev = -1;
+        size_t cur = start;
+        for(;;)
+        {
+            chain.push_back(cur);
+            visited[cur] = 1;
+            const std::int32_t a = nb[2 * cur], b = nb[2 * cur + 1];
+            std::int64_t next = -1;
+            if((a >= 0) && (a != prev) && !visited[size_t(a)])
+                next = a;
+            else if((b >= 0) && (b != prev) && !visited[size_t(b)])
+                next = b;
+            if(next < 0)
+                break;
+            prev = std::int64_t(cur);
+            cur = size_t(next);
+        }
+    };
+
+    auto process = [&]()
+    {
+        const int m = int(chain.size());
+        br.resize(size_t(m));
+        for(int i = 0; i < m; i++)
+        {
+            const size_t id = chain[size_t(i)], pix = id >> 1;
+            const int px = x0 + int(pix % size_t(w)), py = y0 + int(pix / size_t(w));
+            const bool south = (id & 1) != 0;
+            br[size_t(i)].cx = south ? float(px) + 0.5f : float(px) + 1.0f;
+            br[size_t(i)].cy = south ? float(py) + 1.0f : float(py) + 0.5f;
+            br[size_t(i)].lx = px;
+            br[size_t(i)].ly = py;
+            br[size_t(i)].rx = south ? px : px + 1;
+            br[size_t(i)].ry = south ? py + 1 : py;
+        }
+        if(m < o.lmin)
+        {
+            markWeak(0, m - 1);
+            return;
+        }
+        // the left sample is the one on the left of the direction of travel
+        for(int i = 0; i < m; i++)
+        {
+            const int ia = std::max(0, i - 1), ib = std::min(m - 1, i + 1);
+            const float tx = br[size_t(ib)].cx - br[size_t(ia)].cx, ty = br[size_t(ib)].cy - br[size_t(ia)].cy;
+            M5Bracket& b = br[size_t(i)];
+            const float side = (float(b.lx) + 0.5f - b.cx) * ty - (float(b.ly) + 0.5f - b.cy) * tx;
+            if(side < 0.0f)
+            {
+                std::swap(b.lx, b.rx);
+                std::swap(b.ly, b.ry);
+            }
+        }
+        cumL.assign(size_t(m) + 1, RGBTColour());
+        cumR.assign(size_t(m) + 1, RGBTColour());
+        for(int i = 0; i < m; i++)
+        {
+            cumL[size_t(i) + 1] = cumL[size_t(i)] + vd->LatticeSample(unsigned(br[size_t(i)].lx), unsigned(br[size_t(i)].ly));
+            cumR[size_t(i) + 1] = cumR[size_t(i)] + vd->LatticeSample(unsigned(br[size_t(i)].rx), unsigned(br[size_t(i)].ry));
+        }
+
+        float nx, ny, s;
+        auto feasible = [&](int a, int b) { return M5BestLine(br, a, b, nx, ny, s) >= 0.0f; };
+
+        int i0 = 0;
+        while(i0 < m - 1)
+        {
+            // the longest run from i0 that one line still separates: double, then bisect
+            int good = i0 + 1;
+            if(feasible(i0, good))
+            {
+                int step = 2, bad = -1;
+                for(;;)
+                {
+                    const int t = std::min(m - 1, good + step);
+                    if(t == good)
+                        break;
+                    if(feasible(i0, t))
+                    {
+                        good = t;
+                        step *= 2;
+                    }
+                    else
+                    {
+                        bad = t;
+                        break;
+                    }
+                }
+                if(bad >= 0)
+                {
+                    int lo = good, hi = bad;
+                    while(hi - lo > 1)
+                    {
+                        const int mid = (lo + hi) / 2;
+                        if(feasible(i0, mid))
+                            lo = mid;
+                        else
+                            hi = mid;
+                    }
+                    good = lo;
+                }
+            }
+
+            if(good - i0 + 1 >= o.lmin)
+            {
+                const float gap = std::max(0.0f, M5BestLine(br, i0, good, nx, ny, s));
+                const float tx = -ny, ty = nx;
+                float uA = tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy, uB = tx * br[size_t(good)].cx + ty * br[size_t(good)].cy;
+                if(uA > uB)
+                    std::swap(uA, uB);
+                const float uLo = uA - 0.5f, uHi = uB + 0.5f, uMid = 0.5f * (uLo + uHi), half = 0.5f * (uHi - uLo);
+                const float ext = 0.5f * (std::fabs(nx) + std::fabs(ny));
+
+                auto visit = [&](int px, int py)
+                {
+                    if((px < x0) || (px >= x0 + w) || (py < y0) || (py >= y0 + h) || noisy[at(px, py)])
+                        return;
+                    const float cx = float(px) + 0.5f, cy = float(py) + 0.5f;
+                    const float sRel = s - (nx * cx + ny * cy);
+                    if(std::fabs(sRel) > ext + 1.0e-3f)
+                        return;
+                    const float upos = tx * cx + ty * cy;
+                    const float wt = std::max(0.001f, 1.0f - std::fabs(upos - uMid) / half);
+                    if(wt <= weight[at(px, py)])
+                        return;
+                    weight[at(px, py)] = wt;
+
+                    int lo = i0, hi = good;
+                    while(lo < hi)
+                    {
+                        const int mid = (lo + hi) / 2;
+                        if(tx * br[size_t(mid)].cx + ty * br[size_t(mid)].cy < upos)
+                            lo = mid + 1;
+                        else
+                            hi = mid;
+                    }
+                    const int ka = std::max(i0, lo - 8), kb = std::min(good, lo + 8);
+                    const double inv = 1.0 / double(kb - ka + 1);
+                    AaFit& f = vd->Fit(unsigned(px), unsigned(py));
+                    f.kind = 1;
+                    f.nx = nx;
+                    f.ny = ny;
+                    f.lo = sRel - 0.5f * gap;
+                    f.hi = sRel + 0.5f * gap;
+                    f.b = (cumL[size_t(kb) + 1] - cumL[size_t(ka)]) * inv;
+                    f.a = (cumR[size_t(kb) + 1] - cumR[size_t(ka)]) * inv;
+                    f.contrast = std::sqrt(Dist2(lab(br[size_t(lo)].lx, br[size_t(lo)].ly), lab(br[size_t(lo)].rx, br[size_t(lo)].ry)));
+                    f.probes = 0;
+                };
+
+                // every pixel the run's line passes through, column by column for a flat line, else row by row
+                float ax = nx * s + tx * uLo, ay = ny * s + ty * uLo, bx = nx * s + tx * uHi, by = ny * s + ty * uHi;
+                if(std::fabs(ny) >= std::fabs(nx))
+                {
+                    const float xmin = std::min(ax, bx), xmax = std::max(ax, bx);
+                    for(int i = int(std::floor(xmin)); i <= int(std::floor(xmax)); i++)
+                    {
+                        const float xa = std::max(xmin, float(i)), xb = std::min(xmax, float(i + 1));
+                        if(xb < xa)
+                            continue;
+                        const float ya = (s - nx * xa) / ny, yb = (s - nx * xb) / ny;
+                        for(int j = int(std::floor(std::min(ya, yb))); j <= int(std::floor(std::max(ya, yb))); j++)
+                            visit(i, j);
+                    }
+                }
+                else
+                {
+                    const float ymin = std::min(ay, by), ymax = std::max(ay, by);
+                    for(int j = int(std::floor(ymin)); j <= int(std::floor(ymax)); j++)
+                    {
+                        const float ya = std::max(ymin, float(j)), yb = std::min(ymax, float(j + 1));
+                        if(yb < ya)
+                            continue;
+                        const float xa = (s - ny * ya) / nx, xb = (s - ny * yb) / nx;
+                        for(int i = int(std::floor(std::min(xa, xb))); i <= int(std::floor(std::max(xa, xb))); i++)
+                            visit(i, j);
+                    }
+                }
+            }
+            else
+                markWeak(i0, good);
+
+            if(good >= m - 1)
+                break;
+            // the next run starts inside this one, so every pixel has a run it is well inside of
+            i0 = std::max(i0 + 1, good - std::max(1, (good - i0) / 4));
+        }
+    };
+
+    // open contours from their ends first, then the closed ones
+    for(size_t id = 0; id < nodes; id++)
+    {
+        if(!visited[id] && (degree(id) == 1))
+        {
+            walk(id);
+            process();
+        }
+    }
+    for(size_t id = 0; id < nodes; id++)
+    {
+        if(!visited[id] && (degree(id) == 2))
+        {
+            walk(id);
+            process();
+        }
+    }
+
+    // contours too short or too ragged to fit, with no good run through them, are noise
+    for(int y = y0; y < y0 + h; y++)
+    {
+        for(int x = x0; x < x0 + w; x++)
+        {
+            AaFit& f = vd->Fit(unsigned(x), unsigned(y));
+            if(weak[at(x, y)] && (f.kind == 0))
+            {
+                float far2 = std::max(dE[at(x, y)], dS[at(x, y)]);
+                if(x > x0) far2 = std::max(far2, dE[at(x - 1, y)]);
+                if(y > y0) far2 = std::max(far2, dS[at(x, y - 1)]);
+                f.kind = 2;
+                f.contrast = std::sqrt(far2);
+            }
+        }
+    }
+}
+}
+
 void TraceTask::PlanM5(ViewData* vd, int pass, int round)
 {
     const M5Options& o = M5Opts();
@@ -1448,6 +1910,8 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
                 vd->Fit(x, y) = AaFit();
             }
         }
+        if(o.chain)
+            M5ChainFit(vd, o);
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
         vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
         vd->aaExhausted = false;
@@ -1462,13 +1926,14 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
     {
         if(probe)
         {
-            if((f.kind != 1) || (f.probes >= 7))
+            if(f.kind != 1)
                 return -1;
             const float ext = 0.5f * (std::fabs(f.nx) + std::fabs(f.ny));
             const float gap = std::min(f.hi, ext) - std::max(f.lo, -ext);
             return (gap > o.gapMin) ? M5Bucket(f.contrast * gap) : -1;
         }
-        return ((f.kind == 2) && (f.probes == 0)) ? M5Bucket(f.contrast) : -1;
+        // a noisy pixel's next sample is worth less for each it already has
+        return ((f.kind == 2) && (f.probes < 250)) ? M5Bucket(f.contrast / (1.0f + float(f.probes))) : -1;
     };
 
     std::int64_t hist[256] = {};
@@ -1714,8 +2179,12 @@ void TraceTask::ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit)
     }
     if(uhi < ulo)
         ulo = uhi = 0.0f;
-    static const float kWalk[7] = { 0.0f, -0.5f, 0.5f, -0.25f, 0.25f, -0.75f, 0.75f };
-    const float u = 0.5f * (ulo + uhi) + kWalk[std::min<int>(fit.probes, 6)] * 0.5f * (uhi - ulo);
+    // van der Corput, so any number of probes stay spread along the chord
+    float vdc = 0.0f, scale = 0.5f;
+    for(unsigned k = unsigned(fit.probes) + 1; k != 0; k >>= 1, scale *= 0.5f)
+        if(k & 1)
+            vdc += scale;
+    const float u = 0.5f * (ulo + uhi) + (vdc - 0.5f) * (uhi - ulo);
 
     RGBTColour col;
     TraceSample(DBL(x) + 0.5 + sm * fit.nx + u * tx, DBL(y) + 0.5 + sm * fit.ny + u * ty, x, y, col);
@@ -1757,7 +2226,8 @@ void TraceTask::ProgressiveM5()
                 switch(aaPass)
                 {
                     case 1:
-                        FitPixelM5(x, y, fit);
+                        if(!M5Opts().chain)
+                            FitPixelM5(x, y, fit);
                         break;
                     case 2:
                         if(fit.planned)
@@ -1766,11 +2236,24 @@ void TraceTask::ProgressiveM5()
                     case 3:
                         if(fit.planned)
                         {
-                            const int j = int((x + y) & 3);
+                            // Halton 2,3 from this pixel's own count, shifted by a fixed amount per pixel so neighbours differ
+                            auto halton = [](unsigned index, unsigned base)
+                            {
+                                float r = 0.0f, f = 1.0f / float(base);
+                                for(unsigned i = index; i > 0; i /= base, f /= float(base))
+                                    r += f * float(i % base);
+                                return r;
+                            };
+                            const unsigned k = unsigned(fit.probes) + 1;
+                            const unsigned h = (x * 73856093u) ^ (y * 19349663u);
+                            const float jx = float(h & 1023u) / 1024.0f, jy = float((h >> 10) & 1023u) / 1024.0f;
+                            float ox = halton(k, 2) + jx, oy = halton(k, 3) + jy;
+                            ox -= std::floor(ox);
+                            oy -= std::floor(oy);
                             RGBTColour extra;
-                            TraceSample(DBL(x) + 0.5 + ((j & 1) ? 0.25 : -0.25), DBL(y) + 0.5 + ((j & 2) ? 0.25 : -0.25), x, y, extra);
-                            GetViewData()->AaExtra(x, y) = extra;
-                            fit.probes = 1;
+                            TraceSample(DBL(x) + ox, DBL(y) + oy, x, y, extra);
+                            GetViewData()->AaExtra(x, y) += extra;
+                            fit.probes++;
                         }
                         break;
                     default:
@@ -1789,8 +2272,15 @@ void TraceTask::ProgressiveM5()
                         else if((fit.kind == 2) && (fit.probes > 0))
                         {
                             col += GetViewData()->AaExtra(x, y);
-                            col = col * 0.5;
+                            col = col * (1.0 / double(fit.probes + 1));
                             GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                        }
+                        if(M5Opts().map)
+                        {
+                            // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got
+                            const float p = float(fit.probes);
+                            col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : 0.0f, (fit.kind == 1) ? 0.25f : 0.0f,
+                                             (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : 0.0f, 0.0f);
                         }
                         pixels.push_back(col);
                     }
