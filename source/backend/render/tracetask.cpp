@@ -904,9 +904,6 @@ void TraceTask::ProgressiveLevel()
         positions.clear();
         colors.clear();
 
-        if (keep)
-            GetViewData()->EnsureLatticeSamples(area.right + (corners ? 1 : 0) + 1, area.bottom + (corners ? 1 : 0) + 1);
-
         // the last blocks of the area also own the pixel corners on its far edges
         unsigned int right = rect.right + ((corners && (rect.right == area.right)) ? 1 : 0);
         unsigned int bottom = rect.bottom + ((corners && (rect.bottom == area.bottom)) ? 1 : 0);
