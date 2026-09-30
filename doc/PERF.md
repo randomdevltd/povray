@@ -89,6 +89,13 @@ Each effect is against the build before it, on the band above.
 | mesh pointer trees freed once flattened | −30% peak memory |
 | boxes beyond the best hit so far never queued (the pointer-tree path) | small |
 | PGO | 4–10% trace; separate PGO builds of the same code differ by up to 5% |
+| leaves the flat walk has box-tested skip the object's own box pretest, and the walk cuts boxes a ray leaves before `MIN_ISECT_DEPTH`, as that pretest did | trace instructions: −4.5% on a 200 px close-up of a large scene, −3.8% `stackertransp.pov`, −1.7% `mesh-features.pov`, −1.4% `mesh-cylinder.pov`, −0.7% the standard benchmark; pixels unchanged |
+
+The figures are trace-only (a full run minus a parse-only run), medians of three, against `performance` before the change. Instruction counts repeat to within 0.1%; cycles on this box do not (spread 2–10%), so they are given as a check and not as the result: −1.7% on `stackertransp.pov`, −1.6% on the close-up and −0.1% on the standard benchmark, all within spread, but +2.9% on `mesh-cylinder.pov` (spread 3%) and +4.4% on `mesh-features.pov` (one run), where instructions fell and time did not. The mesh scenes may gain nothing in time.
+
+Without the `MIN_ISECT_DEPTH` cut (the walk keeping its `EPSILON` cut) the instruction change was −2.0% on `stackertransp.pov`, −1.1% on `mesh-cylinder.pov`, −0.5% on the standard benchmark, −4.4% on the close-up and +1.2% on `mesh-features.pov`: the pretest had been rejecting boxes a ray leaving a surface had already exited, and the padded flat-walk boxes let them through to be tested. Without the cut the standard benchmark first measured +1.8% in cycles; that did not reproduce in later runs (−0.4%).
+
+Bounding boxes in double precision (`BBoxScalar` as `DBL`, as povr does) were measured on top of the pretest change before the cut was restored, `+WT1`, three runs each: trace cycles −1.8% on `stackertransp.pov`, within spread on the close-up, +0.2% on the standard benchmark and +1.9% on `mesh-cylinder.pov`, with the mesh bench's parse peak up from 161 to 220 MB and the close-up's parse 4% slower; it also changed 361 of 9,216 pixels of the standard benchmark, by up to 29 levels, identically in all three runs. Not taken.
 
 ## Media lit by area lights
 

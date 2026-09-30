@@ -819,20 +819,23 @@ FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& le
     return Flatten(src, std::int32_t(src.nodes.size() - 1), new FlatMeshBBoxTree);
 }
 
+// The object box pretest's cut, kept by the walk: boxes the ray leaves before MIN_ISECT_DEPTH are skipped.
+static const float SCENE_MIN_EXIT = float(MIN_ISECT_DEPTH);
+
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread)
 {
     Intersection New_Intersection;
     bool found = false;
 
     Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](std::int32_t leaf) {
-        if (Find_Intersection(&New_Intersection, reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf])), ray, Thread) &&
+        if (Find_Intersection_BBox_Passed(&New_Intersection, reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf])), ray, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
         {
             *Best_Intersection = New_Intersection;
             found = true;
         }
         return false;
-    });
+    }, SCENE_MIN_EXIT);
     return found;
 }
 
@@ -844,14 +847,14 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     Traverse_Flat_BBox_Tree_Ordered(tree, ray, Best_Intersection->Depth, Thread->Stats(), [&](std::int32_t leaf) {
         ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf]));
         if (precondition(ray, object, 0.0) &&
-            Find_Intersection(&New_Intersection, object, ray, postcondition, Thread) &&
+            Find_Intersection_BBox_Passed(&New_Intersection, object, ray, postcondition, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
         {
             *Best_Intersection = New_Intersection;
             found = true;
         }
         return false;
-    });
+    }, SCENE_MIN_EXIT);
     return found;
 }
 
@@ -871,7 +874,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
             found = true;
             return true;
         }
-        if (Find_Intersection(&New_Intersection, object, ray, postcondition, Thread) &&
+        if (Find_Intersection_BBox_Passed(&New_Intersection, object, ray, postcondition, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
         {
             *Best_Intersection = New_Intersection;
@@ -879,7 +882,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
             return stop(New_Intersection);
         }
         return false;
-    });
+    }, SCENE_MIN_EXIT);
     return found;
 }
 

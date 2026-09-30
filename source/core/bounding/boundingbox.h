@@ -353,7 +353,7 @@ template<typename RayT>
 class FlatBBoxWalker final
 {
     public:
-        explicit FlatBBoxWalker(const RayT& ray) : entries(local), capacity(LOCAL), size(0)
+        FlatBBoxWalker(const RayT& ray, float minExit) : entries(local), capacity(LOCAL), size(0), minExit(minExit)
         {
             for (int d = 0; d < 3; ++d)
             {
@@ -369,7 +369,7 @@ class FlatBBoxWalker final
         void Expand(const FlatBBoxTreeOf<Block>& tree, std::int32_t ref, float maxDepth, StatsT& stats)
         {
             const int base = size;
-            const Lanes eps(float(EPSILON)), limit(maxDepth);
+            const Lanes eps(minExit), limit(maxDepth);
             for (const Block *b = &tree.blocks[ref];; ++b)
             {
                 Lanes tn, tf;
@@ -398,6 +398,7 @@ class FlatBBoxWalker final
     private:
         static const int LOCAL = 256;
         float origin[3], inv[3], originInv[3];
+        float minExit;
 
         typedef simd::Vec<float, FLAT_BBOX_WIDTH> Lanes;
 
@@ -446,11 +447,11 @@ class FlatBBoxWalker final
 };
 
 /// Depth-first walk, nearer children first, calling `leaf` with the id of hit leaves starting before `best`, which it may
-/// lower; true ends the walk. With `cull` false every hit leaf is visited.
+/// lower; true ends the walk. With `cull` false every hit leaf is visited. Boxes the ray leaves before `minExit` are skipped.
 template<typename TreeT, typename RayT, typename StatsT, typename LeafFn>
-void Traverse_Flat_BBox_Tree(const TreeT& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf)
+void Traverse_Flat_BBox_Tree(const TreeT& tree, const RayT& ray, const DBL& best, bool cull, StatsT& stats, LeafFn&& leaf, float minExit = float(EPSILON))
 {
-    FlatBBoxWalker<RayT> w(ray);
+    FlatBBoxWalker<RayT> w(ray, minExit);
     w.Push(FlatBBoxEntry{0, -FLAT_BBOX_FAR});
     while (w.size > 0)
     {
@@ -488,10 +489,10 @@ void Traverse_Flat_BBox_Tree(const TreeT& tree, const RayT& ray, const DBL& best
 
 /// The same with every box taken in order of entry depth across the whole tree, for costly leaves.
 template<typename TreeT, typename RayT, typename StatsT, typename LeafFn>
-void Traverse_Flat_BBox_Tree_Ordered(const TreeT& tree, const RayT& ray, const DBL& best, StatsT& stats, LeafFn&& leaf)
+void Traverse_Flat_BBox_Tree_Ordered(const TreeT& tree, const RayT& ray, const DBL& best, StatsT& stats, LeafFn&& leaf, float minExit = float(EPSILON))
 {
     const auto later = [](const FlatBBoxEntry& a, const FlatBBoxEntry& b) { return a.depth > b.depth; };
-    FlatBBoxWalker<RayT> w(ray);
+    FlatBBoxWalker<RayT> w(ray, minExit);
     w.Push(FlatBBoxEntry{0, -FLAT_BBOX_FAR});
     while (w.size > 0)
     {

@@ -406,6 +406,9 @@ bool Find_Intersection(Intersection *Ray_Intersection, ObjectPtr Object, const R
 bool Find_Intersection(Intersection *Ray_Intersection, ObjectPtr Object, const Ray& ray, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, TraceThreadData *ThreadData);
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, const RayObjectCondition& postcondition, TraceThreadData *ThreadData);
+/// Find_Intersection for an object whose bounding box the caller has already seen the ray enter.
+bool Find_Intersection_BBox_Passed(Intersection *isect, ObjectPtr object, const Ray& ray, TraceThreadData *Thread);
+bool Find_Intersection_BBox_Passed(Intersection *isect, ObjectPtr object, const Ray& ray, const RayObjectCondition& postcondition, TraceThreadData *Thread);
 bool Ray_In_Bound(const Ray& ray, const std::vector<ObjectPtr>& Bounding_Object, TraceThreadData *Thread);
 bool Point_In_Clip(const Vector3d& IPoint, const std::vector<ObjectPtr>& Clip, TraceThreadData *Thread);
 ObjectPtr Copy_Object(ObjectPtr Old);
