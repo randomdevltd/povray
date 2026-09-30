@@ -62,6 +62,8 @@
 namespace pov
 {
 
+struct AaFit;
+
 #ifdef PROFILE_INTERSECTIONS
     // NB not thread-safe (and not intended to be)
     extern POV_ULONG gIntersectionTime;
@@ -77,8 +79,13 @@ class TraceTask final : public RenderTask
                   DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                   unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
                   int level = -1, unsigned int ls = 0, bool lf = false, bool pairs = false,
-                  DBL aab = 0.0);
+                  DBL aab = 0.0, int aap = 0, int aar = 0);
         virtual ~TraceTask() override;
+
+        /// Method 5, between passes on one thread: pass 0 prepares, 2 chooses the probes of a round, 3 the noisy pixels to average.
+        static void PlanM5(ViewData* vd, int pass, int round);
+        /// Probe rounds queued for method 5; the planner may stop earlier.
+        static constexpr int kM5Rounds = 6;
 
         virtual void Run() override;
         virtual void Stopped() override;
@@ -135,6 +142,8 @@ class TraceTask final : public RenderTask
         unsigned int latticeStep;       ///< Sample spacing of a progressive level; 0 for its anti-aliasing pass.
         bool latticeFirst;              ///< The first level, which also traces the points of the coarser lattice.
         bool aaPairs;                   ///< Method 4's first anti-aliasing pass, which tests pairs of neighbours.
+        int aaPass;                     ///< Method 5's pass: 1 fit, 2 probe, 3 noise average, 4 resolve.
+        int aaRound;                    ///< Method 5's probe round.
 
         /// A colour in OKLab, with its transmittance, for method 4's comparisons.
         struct OkLab final { float l, a, b, t; };
@@ -170,6 +179,10 @@ class TraceTask final : public RenderTask
 
         void ProgressivePairsM4();
         void ProgressiveRefineM4();
+        static OkLab OkLabOf(ViewData* vd, const RGBTColour& col);
+        void ProgressiveM5();
+        void FitPixelM5(unsigned int x, unsigned int y, AaFit& fit);
+        void ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit);
         OkLab ToOkLab(const RGBTColour& col);
         bool Contended(const OkLab& a, const OkLab& b) const;
         void LoadBlockLabs(const pov_base::POVRect& rect);

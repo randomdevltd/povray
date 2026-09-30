@@ -29,10 +29,6 @@ render grain_averaged 1 +pr +am4 +a0.02 +r3 -akg
 if same grain_none grain_averaged; then
     echo "antialias_m4: with -AKG grain should be averaged"; exit 1
 fi
-render budgeted 2 +pr +am4 +a0.02 +r3 +ab0.5
-if [ ! -f am4_budgeted.ppm ]; then
-    echo "antialias_m4: +AB budget should be accepted by AM4"; exit 1
-fi
 if render refused 2 +am4 +a0.02 2> /dev/null; then
     echo "antialias_m4: +AM4 without +PR should be refused"; exit 1
 fi

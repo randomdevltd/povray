@@ -42,7 +42,9 @@
 // C++ standard header files
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
+#include <string>
 
 // POV-Ray header files (base module)
 #include "base/image/colourspace.h"
@@ -261,7 +263,7 @@ void TraceTask::SubdivisionBuffer::LoadEdge(size_t pos, bool column, const Edge&
 TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
                      DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                      unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                     int level, unsigned int ls, bool lf, bool pairs, DBL aab) :
+                     int level, unsigned int ls, bool lf, bool pairs, DBL aab, int aap, int aar) :
     RenderTask(vd, seed, "Trace"),
     trace(vd->GetSceneData(), &vd->GetCamera(), GetViewDataPtr(), vd->GetSceneData()->parsedMaxTraceLevel, vd->GetSceneData()->parsedAdcBailout,
           vd->GetQualityFeatureFlags(), cooperate, media, radiosity),
@@ -282,6 +284,8 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     latticeStep(ls),
     latticeFirst(lf),
     aaPairs(pairs),
+    aaPass(aap),
+    aaRound(aar),
     media(GetViewDataPtr(), &trace, &photonGatherer),
     radiosity(vd->GetSceneData(), GetViewDataPtr(),
               vd->GetSceneData()->radiositySettings, vd->GetRadiosityCache(), cooperate, true, vd->GetCamera().Location),
@@ -327,6 +331,8 @@ void TraceTask::Run()
         {
             if(latticeStep > 0)
                 ProgressiveLevel();
+            else if(tracingMethod == 5)
+                ProgressiveM5();
             else if(tracingMethod == 1)
                 ProgressiveRefineM1();
             else if(tracingMethod == 2)
@@ -1063,9 +1069,9 @@ std::uint64_t CellKey(unsigned int level, unsigned int cx, unsigned int cy)
 }
 }
 
-TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
+TraceTask::OkLab TraceTask::OkLabOf(ViewData* vd, const RGBTColour& col)
 {
-    const RGBColour c = GammaCurve::Decode(GetViewData()->GetSceneData()->workingGamma, col.rgb());
+    const RGBColour c = GammaCurve::Decode(vd->GetSceneData()->workingGamma, col.rgb());
     const float l = std::cbrt(0.4122214708f * c.red() + 0.5363325363f * c.green() + 0.0514459929f * c.blue());
     const float m = std::cbrt(0.2119034982f * c.red() + 0.6806995451f * c.green() + 0.1073969566f * c.blue());
     const float s = std::cbrt(0.0883024619f * c.red() + 0.2817188376f * c.green() + 0.6299787005f * c.blue());
@@ -1073,6 +1079,11 @@ TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
                    1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s,
                    0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s,
                    col.transm() };
+}
+
+TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
+{
+    return OkLabOf(GetViewData(), col);
 }
 
 bool TraceTask::Contended(const OkLab& a, const OkLab& b) const
@@ -1282,8 +1293,6 @@ void TraceTask::SplitCell(unsigned int level, unsigned int cx, unsigned int cy, 
         if(child.split || child.traced)
             continue;
         RGBTColour sample;
-        if((aaBudget > 0.0) && !GetViewData()->ReserveAASample())
-            return;
         TraceSample(refineX + (ccx + 0.5) * size, refineY + (ccy + 0.5) * size, refineX, refineY, sample);
         child = Cell { int(cellColours.size()), false, true };
         cellColours.push_back(sample);
@@ -1333,6 +1342,475 @@ void TraceTask::CompareCell(std::uint64_t key)
             }
             break;
         }
+    }
+}
+
+namespace
+{
+/// Method 5's experiment switches, read once from POV_AA5, e.g. `W=7,FREE=0,NOISE=1,EMAX=2,GAP=0.0625,ROUNDS=6`.
+struct M5Options final
+{
+    int window = 5;
+    bool freeOnly = false;
+    bool noise = true;
+    float emax = 2.0f;
+    float gapMin = 1.0f / 16.0f;
+    int rounds = TraceTask::kM5Rounds;
+};
+
+const M5Options& M5Opts()
+{
+    static const M5Options options = []
+    {
+        M5Options o;
+        if(const char* env = std::getenv("POV_AA5"))
+        {
+            const std::string s(env);
+            size_t pos = 0;
+            while(pos < s.size())
+            {
+                size_t end = s.find(',', pos);
+                if(end == std::string::npos)
+                    end = s.size();
+                const std::string item = s.substr(pos, end - pos);
+                const size_t eq = item.find('=');
+                if(eq != std::string::npos)
+                {
+                    const std::string key = item.substr(0, eq);
+                    const double v = std::atof(item.c_str() + eq + 1);
+                    if(key == "W")           o.window = int(v);
+                    else if(key == "FREE")   o.freeOnly = (v != 0.0);
+                    else if(key == "NOISE")  o.noise = (v != 0.0);
+                    else if(key == "EMAX")   o.emax = float(v);
+                    else if(key == "GAP")    o.gapMin = float(v);
+                    else if(key == "ROUNDS") o.rounds = int(v);
+                }
+                pos = end + 1;
+            }
+        }
+        o.window = std::min(7, std::max(3, o.window)) | 1;
+        return o;
+    }();
+    return options;
+}
+
+inline float Dist2(const float* a, const float* b)
+{
+    const float d0 = a[0] - b[0], d1 = a[1] - b[1], d2 = a[2] - b[2], d3 = a[3] - b[3];
+    return d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+}
+
+/// Priorities within about a twentieth of an octave share a bucket, and buckets are what the planner ties on.
+int M5Bucket(float priority)
+{
+    return std::min(255, std::max(0, int(16.0f * (std::log2(std::max(priority, 1.0e-6f)) + 10.0f))));
+}
+
+/// Fraction of the unit pixel lying beyond the line n.q = s, with the pixel centre at the origin.
+float M5Coverage(float nx, float ny, float s)
+{
+    float a = std::fabs(nx), b = std::fabs(ny);
+    if(a < b)
+        std::swap(a, b);
+    const float ext = 0.5f * (a + b);
+    if(s <= -ext)
+        return 1.0f;
+    if(s >= ext)
+        return 0.0f;
+    float cdf;
+    const float m = 0.5f * (a - b);
+    if(b < 1.0e-6f)
+        cdf = 0.5f + s / a;
+    else if(s < -m)
+        cdf = (s + ext) * (s + ext) / (2.0f * a * b);
+    else if(s > m)
+        cdf = 1.0f - (ext - s) * (ext - s) / (2.0f * a * b);
+    else
+        cdf = 0.5f + s / a;
+    return 1.0f - std::min(1.0f, std::max(0.0f, cdf));
+}
+}
+
+void TraceTask::PlanM5(ViewData* vd, int pass, int round)
+{
+    const M5Options& o = M5Opts();
+    const POVRect& area = vd->GetRenderArea();
+
+    if(pass == 0)
+    {
+        for(unsigned int y = area.top; y <= area.bottom; y++)
+        {
+            for(unsigned int x = area.left; x <= area.right; x++)
+            {
+                const OkLab l = OkLabOf(vd, vd->LatticeSample(x, y));
+                float* dst = vd->AaLabAt(x, y);
+                dst[0] = l.l; dst[1] = l.a; dst[2] = l.b; dst[3] = l.t;
+                vd->Fit(x, y) = AaFit();
+            }
+        }
+        const double pixels = double(area.GetWidth()) * double(area.GetHeight());
+        vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
+        vd->aaExhausted = false;
+        return;
+    }
+
+    const bool probe = (pass == 2);
+    const bool enabled = !o.freeOnly && !vd->aaExhausted && (probe ? (round < o.rounds) : o.noise);
+
+    // a candidate's priority is what is still unknown about it, worked out before anything is traced for it
+    auto bucketOf = [&](const AaFit& f) -> int
+    {
+        if(probe)
+        {
+            if((f.kind != 1) || (f.probes >= 7))
+                return -1;
+            const float ext = 0.5f * (std::fabs(f.nx) + std::fabs(f.ny));
+            const float gap = std::min(f.hi, ext) - std::max(f.lo, -ext);
+            return (gap > o.gapMin) ? M5Bucket(f.contrast * gap) : -1;
+        }
+        return ((f.kind == 2) && (f.probes == 0)) ? M5Bucket(f.contrast) : -1;
+    };
+
+    std::int64_t hist[256] = {};
+    std::int64_t total = 0;
+    if(enabled)
+    {
+        for(unsigned int y = area.top; y <= area.bottom; y++)
+        {
+            for(unsigned int x = area.left; x <= area.right; x++)
+            {
+                const int b = bucketOf(vd->Fit(x, y));
+                if(b >= 0)
+                {
+                    hist[b]++;
+                    total++;
+                }
+            }
+        }
+    }
+
+    // take whole buckets, best first, until the budget is reached; the bucket that crosses it is taken whole
+    // and the pass is the last, so the result never depends on which of equal candidates came first
+    int threshold = 0;
+    std::int64_t admitted = total;
+    bool cut = false;
+    if(enabled)
+    {
+        std::int64_t cum = 0;
+        for(int b = 255; b >= 0; b--)
+        {
+            cum += hist[b];
+            if(cum >= vd->aaBudgetLeft)
+            {
+                threshold = b;
+                admitted = cum;
+                cut = true;
+                break;
+            }
+        }
+    }
+
+    for(unsigned int y = area.top; y <= area.bottom; y++)
+    {
+        for(unsigned int x = area.left; x <= area.right; x++)
+        {
+            AaFit& f = vd->Fit(x, y);
+            const int b = enabled ? bucketOf(f) : -1;
+            f.planned = ((b >= 0) && (b >= threshold)) ? 1 : 0;
+        }
+    }
+    vd->aaBudgetLeft -= admitted;
+    if(cut)
+        vd->aaExhausted = true;
+}
+
+void TraceTask::FitPixelM5(unsigned int x, unsigned int y, AaFit& fit)
+{
+    const M5Options& o = M5Opts();
+    const POVRect& area = GetViewData()->GetRenderArea();
+    const int h = o.window / 2;
+    const float thr2 = float(aaThreshold * aaThreshold);
+    const float* lc = GetViewData()->AaLabAt(x, y);
+
+    struct Sample final { float dx, dy; const float* lab; int cls; };
+    Sample s[49];
+    int n = 0, farIndex = 0;
+    float farthest = 0.0f;
+    for(int dy = -h; dy <= h; dy++)
+    {
+        const int py = int(y) + dy;
+        if((py < int(area.top)) || (py > int(area.bottom)))
+            continue;
+        for(int dx = -h; dx <= h; dx++)
+        {
+            const int px = int(x) + dx;
+            if((px < int(area.left)) || (px > int(area.right)))
+                continue;
+            const float* l = GetViewData()->AaLabAt(px, py);
+            s[n] = Sample { float(dx), float(dy), l, 0 };
+            const float d = Dist2(l, lc);
+            if(d > farthest)
+            {
+                farthest = d;
+                farIndex = n;
+            }
+            n++;
+        }
+    }
+
+    fit.kind = 0;
+    if(farthest < thr2)
+        return;
+
+    // the two colours: the one farthest from the centre, then the one farthest from that
+    const float* lb = s[farIndex].lab;
+    const float* la = lc;
+    float most = -1.0f;
+    for(int i = 0; i < n; i++)
+    {
+        const float d = Dist2(s[i].lab, lb);
+        if(d > most)
+        {
+            most = d;
+            la = s[i].lab;
+        }
+    }
+    const float u[4] = { lb[0] - la[0], lb[1] - la[1], lb[2] - la[2], lb[3] - la[3] };
+    const float uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2] + u[3] * u[3];
+    if(uu < thr2)
+        return;
+
+    // each sample's place between them, and whether it is on the line between them at all
+    float gx = 0.0f, gy = 0.0f;
+    int nB = 0, offLine = 0;
+    for(int i = 0; i < n; i++)
+    {
+        const float d[4] = { s[i].lab[0] - la[0], s[i].lab[1] - la[1], s[i].lab[2] - la[2], s[i].lab[3] - la[3] };
+        const float t = (d[0] * u[0] + d[1] * u[1] + d[2] * u[2] + d[3] * u[3]) / uu;
+        float r2 = 0.0f;
+        for(int k = 0; k < 4; k++)
+            r2 += (d[k] - t * u[k]) * (d[k] - t * u[k]);
+        if(r2 > std::max(thr2, 0.0625f * uu))
+            offLine++;
+        s[i].cls = (t >= 0.5f) ? 1 : 0;
+        nB += s[i].cls;
+        const float tc = std::min(1.0f, std::max(0.0f, t));
+        gx += s[i].dx * tc;
+        gy += s[i].dy * tc;
+    }
+
+    fit.contrast = std::sqrt(farthest);
+    // more than two colours in a quarter of the window, or no direction to the change: nothing to track
+    if((offLine * 4 > n) || (std::sqrt(gx * gx + gy * gy) < 0.08f * float(n)))
+    {
+        fit.kind = 2;
+        return;
+    }
+
+    // the normal is about the direction the second colour lies in; try a few either side and keep the cleanest split
+    const float theta0 = std::atan2(gy, gx);
+    int bestErr = std::numeric_limits<int>::max();
+    float bestGap = -1.0f, bestNx = 0.0f, bestNy = 0.0f, bestLo = 0.0f, bestHi = 0.0f;
+    for(int j = -2; j <= 2; j++)
+    {
+        const float th = theta0 + float(j) * (3.14159265f / 16.0f);
+        const float nx = std::cos(th), ny = std::sin(th);
+        float sv[49];
+        int sc[49];
+        for(int i = 0; i < n; i++)
+        {
+            const float v = nx * s[i].dx + ny * s[i].dy;
+            int k = i;
+            while((k > 0) && (sv[k - 1] > v))
+            {
+                sv[k] = sv[k - 1];
+                sc[k] = sc[k - 1];
+                k--;
+            }
+            sv[k] = v;
+            sc[k] = s[i].cls;
+        }
+        int errors = n - nB, minErr = errors, bestK = 0;
+        float bestG = 0.0f;
+        for(int k = 1; k <= n; k++)
+        {
+            errors += (sc[k - 1] == 1) ? 1 : -1;
+            const float gap = (k < n) ? (sv[k] - sv[k - 1]) : 0.0f;
+            if((errors < minErr) || ((errors == minErr) && (gap > bestG)))
+            {
+                minErr = errors;
+                bestK = k;
+                bestG = gap;
+            }
+        }
+        if((minErr < bestErr) || ((minErr == bestErr) && (bestG > bestGap)))
+        {
+            bestErr = minErr;
+            bestGap = bestG;
+            bestNx = nx;
+            bestNy = ny;
+            bestLo = (bestK > 0) ? sv[bestK - 1] : sv[0] - 1.0f;
+            bestHi = (bestK < n) ? sv[bestK] : sv[n - 1] + 1.0f;
+        }
+    }
+    if(float(bestErr) > o.emax * float(n) / 25.0f)
+    {
+        fit.kind = 2;
+        return;
+    }
+
+    // the colour of each side: near samples count most, and the pixel's own side is the pixel's own sample
+    RGBTColour ca, cb;
+    ca.Clear();
+    cb.Clear();
+    double wa = 0.0, wb = 0.0;
+    int ownClass = 0;
+    RGBTColour own = GetViewData()->LatticeSample(x, y);
+    for(int i = 0; i < n; i++)
+    {
+        const double d2 = double(s[i].dx * s[i].dx + s[i].dy * s[i].dy);
+        const double w = 1.0 / ((1.0 + d2) * (1.0 + d2));
+        const RGBTColour col = GetViewData()->LatticeSample(unsigned(int(x) + int(s[i].dx)), unsigned(int(y) + int(s[i].dy)));
+        if(s[i].dx == 0.0f && s[i].dy == 0.0f)
+            ownClass = s[i].cls;
+        if(s[i].cls == 1) { cb += col * w; wb += w; }
+        else              { ca += col * w; wa += w; }
+    }
+    ca = ca * (1.0 / wa);
+    cb = cb * (1.0 / wb);
+    if(ownClass == 1)
+        cb = own;
+    else
+        ca = own;
+
+    fit.kind = 1;
+    fit.nx = bestNx;
+    fit.ny = bestNy;
+    fit.lo = bestLo;
+    fit.hi = bestHi;
+    fit.a = ca;
+    fit.b = cb;
+}
+
+void TraceTask::ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit)
+{
+    const float ext = 0.5f * (std::fabs(fit.nx) + std::fabs(fit.ny));
+    const float lo = std::max(fit.lo, -ext), hi = std::min(fit.hi, ext);
+    const float sm = 0.5f * (lo + hi);
+    const float tx = -fit.ny, ty = fit.nx;
+
+    // the part of the line at that offset which lies inside the pixel; successive probes walk along it
+    float ulo = -2.0f, uhi = 2.0f;
+    const float along[2][2] = { { sm * fit.nx, tx }, { sm * fit.ny, ty } };
+    for(const auto& axis : along)
+    {
+        if(std::fabs(axis[1]) < 1.0e-6f)
+            continue;
+        float u1 = (-0.5f - axis[0]) / axis[1], u2 = (0.5f - axis[0]) / axis[1];
+        if(u1 > u2)
+            std::swap(u1, u2);
+        ulo = std::max(ulo, u1);
+        uhi = std::min(uhi, u2);
+    }
+    if(uhi < ulo)
+        ulo = uhi = 0.0f;
+    static const float kWalk[7] = { 0.0f, -0.5f, 0.5f, -0.25f, 0.25f, -0.75f, 0.75f };
+    const float u = 0.5f * (ulo + uhi) + kWalk[std::min<int>(fit.probes, 6)] * 0.5f * (uhi - ulo);
+
+    RGBTColour col;
+    TraceSample(DBL(x) + 0.5 + sm * fit.nx + u * tx, DBL(y) + 0.5 + sm * fit.ny + u * ty, x, y, col);
+
+    // a probe on the first colour's side puts the edge beyond it, otherwise before it
+    const OkLab pa = ToOkLab(fit.a), pb = ToOkLab(fit.b), pc = ToOkLab(col);
+    const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+    const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+    const float t = (vv > 0.0f) ? ((pc.l - pa.l) * v[0] + (pc.a - pa.a) * v[1] + (pc.b - pa.b) * v[2] + (pc.t - pa.t) * v[3]) / vv : 0.0f;
+    if(t < 0.5f)
+        fit.lo = sm;
+    else
+        fit.hi = sm;
+    if(fit.lo > fit.hi)
+        fit.lo = fit.hi = sm;
+    fit.probes++;
+}
+
+void TraceTask::ProgressiveM5()
+{
+    const bool traces = (aaPass == 2) || (aaPass == 3);
+    POVRect rect;
+    vector<RGBTColour> pixels;
+    unsigned int serial;
+
+    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    {
+        if(traces)
+            radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
+        pixels.clear();
+        if(aaPass == 4)
+            pixels.reserve(rect.GetArea());
+
+        for(unsigned int y = rect.top; y <= rect.bottom; y++)
+        {
+            for(unsigned int x = rect.left; x <= rect.right; x++)
+            {
+                AaFit& fit = GetViewData()->Fit(x, y);
+                switch(aaPass)
+                {
+                    case 1:
+                        FitPixelM5(x, y, fit);
+                        break;
+                    case 2:
+                        if(fit.planned)
+                            ProbePixelM5(x, y, fit);
+                        break;
+                    case 3:
+                        if(fit.planned)
+                        {
+                            const int j = int((x + y) & 3);
+                            RGBTColour extra;
+                            TraceSample(DBL(x) + 0.5 + ((j & 1) ? 0.25 : -0.25), DBL(y) + 0.5 + ((j & 2) ? 0.25 : -0.25), x, y, extra);
+                            GetViewData()->AaExtra(x, y) = extra;
+                            fit.probes = 1;
+                        }
+                        break;
+                    default:
+                    {
+                        RGBTColour col = GetViewData()->LatticeSample(x, y);
+                        if(fit.kind == 1)
+                        {
+                            const float ext = 0.5f * (std::fabs(fit.nx) + std::fabs(fit.ny));
+                            const float s = std::min(ext, std::max(-ext, 0.5f * (fit.lo + fit.hi)));
+                            const double f = M5Coverage(fit.nx, fit.ny, s);
+                            col = fit.a * (1.0 - f);
+                            col += fit.b * f;
+                            if(fit.probes > 0)
+                                GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                        }
+                        else if((fit.kind == 2) && (fit.probes > 0))
+                        {
+                            col += GetViewData()->AaExtra(x, y);
+                            col = col * 0.5;
+                            GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                        }
+                        pixels.push_back(col);
+                    }
+                }
+                if(traces)
+                    Cooperate();
+            }
+            Cooperate();
+        }
+
+        if(traces)
+            radiosity.AfterTile();
+
+        GetViewDataPtr()->AfterTile();
+        if(aaPass == 4)
+            GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
+        else
+            GetViewData()->CompletedRectangle(rect, serial, 0.0f);
+
+        Cooperate();
     }
 }
 

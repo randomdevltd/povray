@@ -75,6 +75,18 @@ namespace pov
 
 using namespace pov_base;
 
+/// Method 5: an edge fitted to the centre samples around a pixel, without tracing a ray.
+struct AaFit final
+{
+    float nx = 0, ny = 0;           ///< Unit normal, pointing at colour B.
+    float lo = 0, hi = 0;           ///< The edge lies between these offsets along the normal from the pixel centre.
+    float contrast = 0;             ///< OkLab distance between the two colours.
+    std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours.
+    std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
+    std::uint8_t probes = 0;        ///< Probes traced so far.
+    RGBTColour a, b;                ///< Colours on the two sides.
+};
+
 class RTRData final
 {
     public:
@@ -300,25 +312,17 @@ class ViewData final
         /// Method 4: the directions a pixel refines towards, as found by the pair tests (see TraceTask::ProgressivePairsM4).
         std::uint16_t& Contention(unsigned int x, unsigned int y) { return contention[x + y * latticeWidth]; }
 
-        /// Method 4: cap on refinement samples, as a fraction of the pixel count; 0 means no cap.
-        void SetAntialiasBudget(DBL fraction, unsigned int width, unsigned int height)
-        {
-            aaBudgetUsed.store(0, std::memory_order_relaxed);
-            const std::uint64_t total = std::uint64_t(width) * std::uint64_t(height);
-            const std::uint64_t limit = (fraction > 0.0) ? std::uint64_t(std::ceil(double(total) * fraction)) : 0;
-            aaBudgetLimit.store((fraction > 0.0) ? std::max<std::uint64_t>(limit, 1) : 0, std::memory_order_relaxed);
-        }
-        bool ReserveAASample()
-        {
-            const std::uint64_t limit = aaBudgetLimit.load(std::memory_order_relaxed);
-            if (limit == 0)
-                return true;
-            std::uint64_t used = aaBudgetUsed.load(std::memory_order_relaxed);
-            while (used < limit)
-                if (aaBudgetUsed.compare_exchange_weak(used, used + 1, std::memory_order_relaxed))
-                    return true;
-            return false;
-        }
+        /// Method 5: OkLab (l, a, b, transmittance) of a lattice sample, for the edge fits.
+        float* AaLabAt(unsigned int x, unsigned int y) { return &aaLab[4 * (size_t(x) + size_t(y) * latticeWidth)]; }
+        /// Method 5: the edge fitted around a pixel.
+        AaFit& Fit(unsigned int x, unsigned int y) { return aaFit[x + y * latticeWidth]; }
+        /// Method 5: a noisy pixel's extra sample.
+        RGBTColour& AaExtra(unsigned int x, unsigned int y) { return aaExtra[x + y * latticeWidth]; }
+        /// Method 5: samples the planner may still commit; a pass that would go past it is the last.
+        std::int64_t aaBudgetLeft = 0;
+        bool aaExhausted = false;
+        DBL aaFraction = 0.0;
+        DBL aaThr = 0.0;
 
         /**
          *  Get the value of the real-time raytracing option
@@ -402,8 +406,9 @@ class ViewData final
         std::vector<std::uint16_t> contention;
         unsigned int latticeWidth;
         bool latticeSamplesActive;
-        std::atomic<std::uint64_t> aaBudgetLimit {0};
-        std::atomic<std::uint64_t> aaBudgetUsed {0};
+        std::vector<float> aaLab;
+        std::vector<AaFit> aaFit;
+        std::vector<RGBTColour> aaExtra;
 
         /// functions to compute the X & Y block
         void getBlockXY(const unsigned int nb, unsigned int &x, unsigned int &y);
@@ -563,6 +568,9 @@ class View final
                                     DBL aaBudget = 0.0);
 
         void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
+
+        /// Method 5's planning step between two passes.
+        void PlanAntialias(TaskQueue& taskq, int pass, int round);
 
         void EndRadiosityStateFile(TaskQueue& taskq, Path file);
 

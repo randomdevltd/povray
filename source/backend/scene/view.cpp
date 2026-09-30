@@ -729,7 +729,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
 
     if(renderOptions.TryGetBool(kPOVAttrib_Antialias, false) == true)
-        tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 4); // TODO FIXME - magic number in clip
+        tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 5); // TODO FIXME - magic number in clip
 
     aadepth = clip((unsigned int)renderOptions.TryGetInt(kPOVAttrib_AntialiasDepth, 3), 1u, 9u);
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
@@ -755,8 +755,8 @@ void View::StartRender(POVMS_Object& renderOptions)
     bool progressive = renderOptions.TryGetBool(kPOVAttrib_ProgressiveRender, false) &&
                        !renderOptions.TryGetBool(kPOVAttrib_RealTimeRaytracing, false);
     if (progressive && (tracingmethod == 3))
-        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1, 2 and 4 only.");
-    if (!progressive && (tracingmethod == 4))
+        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1, 2, 4 and 5 only.");
+    if (!progressive && ((tracingmethod == 4) || (tracingmethod == 5)))
         throw POV_EXCEPTION(kParamErr, "Anti-aliasing method 4 needs progressive rendering (+PR).");
     bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
 
@@ -1189,8 +1189,6 @@ void View::StartRender(POVMS_Object& renderOptions)
         // TODO store radiosity data (if applicable)?
     }
 
-    viewData.SetAntialiasBudget(aaBudget, viewData.GetWidth(), viewData.GetHeight());
-
     if (progressive)
         QueueProgressiveRender(renderOptions, tracingmethod, jitterscale, aathreshold, aaconfidence, aadepth, aaGammaCurve,
                                highReproducibility, seed, maxRenderThreads, renderOptions.TryGetInt(kPOVAttrib_ProgressLevel, 0),
@@ -1544,6 +1542,16 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
                 throw POV_EXCEPTION(kInvalidDataSizeErr, "Lattice samples from the render state file do not match the image size.");
             samples.Get(kPOVMSType_VectorFloat, &viewData.latticeSamples[0], &len);
         }
+        if (tracingMethod == 5)
+        {
+            viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
+            const size_t count = viewData.latticeSamples.size();
+            viewData.aaLab.assign(count * 4, 0.0f);
+            viewData.aaFit.assign(count, AaFit());
+            viewData.aaExtra.assign(count, RGBTColour());
+            viewData.aaFraction = aaBudget;
+            viewData.aaThr = aaThreshold;
+        }
         if (tracingMethod == 4)
         {
             viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
@@ -1557,7 +1565,7 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
     bool firstPass = true;
     unsigned int step = maxStep;
     // method 4 anti-aliases in two passes: pair tests, then refinement; the first keeps no state, so it always runs
-    const int lastLevel = levels + ((tracingMethod == 4) ? 1 : 0);
+    const int lastLevel = (tracingMethod == 5) ? (levels - 1) : (levels + ((tracingMethod == 4) ? 1 : 0));
     for (int level = 0; level <= lastLevel; level++, step >>= 1)
     {
         bool refine = (level >= levels);
@@ -1576,6 +1584,42 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
                 ))));
         renderTasks.AppendSync();
     }
+
+    if (tracingMethod == 5)
+    {
+        // fit edges to the samples already traced, then rounds of probes the planner picks, then noise, then the image;
+        // none of it is saved, so a continued render repeats it and only the last pass skips the blocks already written
+        int aaLevel = levels;
+        auto addPass = [&](int pass, int round, bool plan, shared_ptr<ViewData::BlockIdSet> skip)
+        {
+            if (plan)
+            {
+                renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, pass, round));
+                renderTasks.AppendSync();
+            }
+            renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skip, false));
+            renderTasks.AppendSync();
+            for (int i = 0; i < maxRenderThreads; i++)
+                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
+                    &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
+                    0, false, true, highReproducibility, seed, aaLevel, 0, false, false, aaBudget, pass, round
+                    ))));
+            renderTasks.AppendSync();
+            aaLevel++;
+        };
+        renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 0, 0));
+        renderTasks.AppendSync();
+        addPass(1, 0, false, noSkip);
+        for (int round = 0; round < TraceTask::kM5Rounds; round++)
+            addPass(2, round, true, noSkip);
+        addPass(3, 0, true, noSkip);
+        addPass(4, 0, false, (aaLevel == resumeLevel) ? resumeSkip : noSkip);
+    }
+}
+
+void View::PlanAntialias(TaskQueue&, int pass, int round)
+{
+    TraceTask::PlanM5(&viewData, pass, round);
 }
 
 void View::StartLevel(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress)
