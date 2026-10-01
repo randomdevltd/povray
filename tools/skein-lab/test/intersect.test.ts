@@ -10,7 +10,7 @@ test('a tube fatter than half the strand spacing is caught intersecting itself',
 });
 
 test('the clean examples report no self-intersections', () => {
-  for (const name of ['sphere', 'torus', 'frustum', 'log', 'knot', 'curl'] as const) {
+  for (const name of ['sphere', 'torus', 'frustum', 'log', 'knot', 'curl', 'column'] as const) {
     const n = selfIntersections(examples[name]);
     console.log(`${name}: ${n}`);
     assert.equal(n, 0, name);

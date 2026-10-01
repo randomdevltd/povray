@@ -1,6 +1,6 @@
-import type { Curve, FoldSample } from './fold.ts';
+import type { Curve } from './fold.ts';
 
-type Polar = (c: FoldSample) => number;
+export type Polar = (c: { theta: number }) => number;
 
 export const circle = (r = 1): Polar => () => r;
 
