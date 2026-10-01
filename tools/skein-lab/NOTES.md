@@ -3,7 +3,8 @@
 Throwaway previewer for the pipeline-of-maps surface grammar. Not the renderer.
 
 Run: `sbx npm install`, `sbx node --test test/*.test.ts`, `sbx npx tsc --noEmit -p .`, `sbx node build.mjs`,
-then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/?ex=torus&wire=1&normals=1`.
+then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/gallery.html` or `/?ex=torus&wire=1&normals=1`.
+`sbx node scripts/survey.ts [names]` prints metrics for every example. API reference: `API.md`.
 
 ## Decisions where the model was silent
 
@@ -53,12 +54,11 @@ then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/?ex=toru
   expecting "bend preserving lengths" will be surprised.
 - **Path holonomy at t = 1.** First cut wrapped t = 1 back to t = 0, which made the seam look closed even with
   correction off; the gap moved into the last cell instead. Fixed: only t outside [0, 1] wraps.
-- **Spindle torus is not a crossing.** Planned as the deliberate self-intersection case, it reported 0 and
-  that is right: a spindle torus only touches itself at the two axis points. Replaced by a tube of radius 0.9
-  on the trefoil (strand spacing 1.66), which reports 184 pairs.
-- **Grid-aligned crossings are missed.** A figure-eight curve section crosses itself along lines that sit on
-  mesh edges at every v level; contacts then land on triangle boundaries and the strict test reports 0.
-  The coarse test is a gross-overlap detector, not a proof of embedding.
+- **Spindle torus is not a crossing.** It only touches itself at the two axis points: the strict detector
+  said 0, the inclusive one says 6000 (every ring converges there). Both are defensible; it now sits in the
+  failure gallery as the "touching" case.
+- **Grid-aligned crossings were missed** by the first, strict detector (contacts on triangle boundaries).
+  Round 2 made it inclusive; see below.
 - **Volume of an intersecting shape is meaningless.** The fat knot reports 81.0, double-counting the overlap.
 - **Hard creases are smoothed.** Finite-difference normals at n-gon corners blend across the edge; fine for a
   preview, wrong for a renderer that wants crease normals.
@@ -66,3 +66,79 @@ then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/?ex=toru
   is too coarse for any displace with sharp features.
 - **Cost of nesting.** Each stage that reads `n` evaluates the previous stage 5 times; chains of displaces
   are exponential in depth. Fine for the examples here, not a renderer design.
+
+## Round 2: primitives, series, gallery
+
+### Decisions
+
+- **Transforms are ops.** `scale` / `rotate` take an optional origin; `translate` / `matrix` are absolute.
+  All accept a constant (fast path, no sample built) or a value of the per-sample inputs.
+- **A series is callable two ways.** `path(...)(0.3)` evaluates at 0.3; called with a sample it evaluates
+  at `v`. That makes every series structurally a `Field`, so `Value<T>` stays `T | Field<T>` and arrow
+  parameters keep their contextual types. A three-way union with a `(t: number) => T` member broke
+  inference in every example (`({ v }) =>` became implicit `any`).
+- **`by(f, key | expr)`** is the one way to drive a series from anything but v. It also works on plain
+  one-argument functions.
+- **`path(p0, p1, ...)`** takes points at uniform parameters (linear by default); **`spline([t, p], ...)`**
+  takes knots with parameter values (Catmull-Rom by default). Both take a trailing options object:
+  `closed`, `interp` (`linear | catmull | cubic`), `arclength`. Closed knots live in [0, 1); 1 closes.
+- **Named fold slots.** `twist` and `axial` are fold options; `radius` may also return
+  `{ radius, angle, axial }` or the positional array. `twist` now works for curve sections too.
+  The path-axis extra roll was renamed `roll` to free `twist`.
+- **Models may be arrays of shapes.** Metrics sum area/volume and run the intersection test on the merged
+  coarse meshes, so parts that touch or interpenetrate count.
+- **Seam identifications** `shift` and `flip` on the v seam: welded by index with u remapped, measured by
+  the seam gap with the same remap. Flip turns volume off (non-orientable).
+- **Flat caps are ear-clipped**, not fanned: the C-beam's centroid sits outside its section, and the fan
+  produced 102 intersecting pairs (volume was still right; signed fans cancel).
+- **The intersection test is inclusive** (boundary contacts count, 1e-12 slack). It catches the
+  grid-aligned Klein crossing (992 pairs) and counts touching contact. Ear clipping had to treat
+  near-collinear ears with a tolerance, or the inclusive test flagged cap/wall T-contacts on n-gon edges.
+
+### Friction (round 2)
+
+- **Height-setting is now `scale([1, k, 1])`**, which reads well. Uniform function-valued scale is a trap:
+  `scale(by(flare, ...))` also scaled y, folded the column back over itself (102 pairs). Fixed with a Vec3
+  path `[k, 1, k]`, but the uniform form looks right and is wrong.
+- **Lathe profiles with straight runs** (capsule) need a piecewise function; there is no arc/segment profile
+  builder. A `profile(line(...), arc(...))` helper would make the capsule one line.
+- **Instancing is plain TypeScript.** DNA rungs, chain links and rope strands are `Array.from` / factory
+  functions over `rotate` + `translate`. Natural in TS; a grammar needs an explicit repeat/instance construct.
+- **Closure conditions are on the author.** A twisted square torus closes only if the twist is a multiple
+  of the section symmetry and `shift` matches it; Möbius and Klein need `flip`. Nothing infers these.
+- **Union by touching is an intersection.** The pumpkin stem had to float 2 mm above the body or the
+  detector counted 941 contacts. There is no union/CSG notion; parts are just listed.
+- **Sprinkles are bumps, not objects.** `displace` can only push along the normal; real sprinkles would be
+  instanced shapes scattered on the surface.
+- **Catmull-Rom overshoots on uneven spacing**: a 0.1 segment next to a 2.9 one doubles back (cusp). Found by
+  the arclength test (28% chord spread); the test now measures along the curve (0.15% spread, same 1%
+  tolerance). A centripetal variant would avoid the cusp.
+- **`series((t): Vec3 => ...)` needs the return annotation**, or TypeScript infers `number[]`.
+- **Flip seams render with a crease**: welded vertices take one normal across a non-orientable seam (Klein).
+
+### Limits: what the model cannot express
+
+- **Genus above 1 / branching.** One (u, v) sheet gives sphere, disc, tube, torus, Möbius or Klein topology.
+  A double torus, a pretzel with three holes, a Y-junction or a tree limb needs several shapes or a
+  different construct. The figure-8 loop and chain are genus-1 tubes; the pretzel was left out.
+- **Coincident sheets** (a fold with range > 2π at constant radius) overlap exactly; the detector ignores
+  coplanar pairs, so this is not reported.
+- **Hard creases**: normals are always finite differences; n-gon and star edges shade soft.
+- **Profiles through the axis mid-surface** (a closed lathe profile touching r = 0) are pinch points the
+  mesh does not weld; the bowl was written as an open profile from pole to pole instead.
+
+### What would be awkward in POV-Ray syntax (input to the grammar work, not a design)
+
+- **Destructured sample records** `({ v, theta, n }) =>`: POV functions take positional float parameters;
+  there is no record of named inputs, and no "previous stage" normal.
+- **Non-scalar returns**: radius as `[r, angle, axial]` or `{ radius, angle, axial }`, vector-valued scale
+  and translate. POV `function {}` returns one float; vector results need three functions or spline/
+  transform tricks.
+- **Higher-order values**: `ops(...)`, `morph(keys, t)`, `by(f, map)`, factories like `link(...place)`.
+  POV macros cover this at parse time only; they are not values.
+- **Series**: POV `spline { linear_spline | cubic_spline | natural_spline ... }` with explicit parameters is
+  a close match to `spline([t, p], ...)`, and calling `S(t)` is native. Missing: closed handling (repeat
+  points by hand), arc-length reparameterisation, scalar series (use `.x` of a vector spline).
+- **Topology flags** (`wrap`, `ends`, `shift`, `flip`, `grid`) are an object literal here; in POV they would be
+  keywords inside the object block, which is probably easier to read than the TS form.
+- **Models as arrays** map directly onto `union { }`.
