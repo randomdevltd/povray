@@ -85,6 +85,7 @@ struct AaFit final
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
     std::uint8_t probes = 0;        ///< Probes traced so far.
     std::int32_t seg = -1;          ///< Chain mode: the segment whose line this pixel takes, or -1.
+    std::int32_t seg2 = -1;         ///< Chain mode: a second segment whose line may also cross it.
     RGBTColour a, b;                ///< Colours on the two sides.
 };
 
@@ -340,6 +341,7 @@ class ViewData final
         RGBTColour& AaExtra(unsigned int x, unsigned int y) { return aaExtra[x + y * latticeWidth]; }
         /// Method 5: samples the planner may still commit; a pass that would go past it is the last.
         std::int64_t aaBudgetLeft = 0;
+        std::int64_t aaReserve = 0;     ///< Budget the edge probes leave for the noise tier.
         bool aaExhausted = false;
         DBL aaFraction = 0.0;
         DBL aaThr = 0.0;

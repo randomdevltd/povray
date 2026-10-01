@@ -1367,6 +1367,14 @@ struct M5Options final
     float reach = 4.0f;             ///< Join: how far apart two segment ends may be, in pixels.
     float turn = 0.94f;             ///< Join: how nearly opposite their outward directions must be (cosine).
     float lateral = 1.0f;           ///< Join: how far one end may sit off the other's line, in pixels.
+    float minLen = 0.0f;            ///< Chain mode: fits on segments shorter than this go to the noise tier instead.
+    int dense = 0;                  ///< Chain mode: fits with this many different segments in a 5x5 window go to the noise tier.
+    float noiseFrac = 0.0f;         ///< Share of the budget kept for the noise tier; negative for the share of screen it covers.
+    bool stats = false;             ///< Print how the pixels were classified.
+    int halo = 0;                   ///< Chain mode: radius within which dense contours make flat pixels worth a sample; 0 for none.
+    float haloRho = 0.12f;          ///< Share of contour links in that window above which it counts as dense.
+    float rough = 0.0f;             ///< Chain mode: links differing by at least this, whatever their neighbours, count towards roughness; 0 for none.
+    float roughRho = 0.3f;          ///< Share of rough links in the halo window above which flat pixels there join the noise tier.
 };
 
 const M5Options& M5Opts()
@@ -1405,6 +1413,14 @@ const M5Options& M5Opts()
                     else if(key == "REACH")  o.reach = float(v);
                     else if(key == "TURN")   o.turn = float(v);
                     else if(key == "LATERAL") o.lateral = float(v);
+                    else if(key == "MINLEN") o.minLen = float(v);
+                    else if(key == "DENSE")  o.dense = int(v);
+                    else if(key == "NOISEFRAC") o.noiseFrac = float(v);
+                    else if(key == "STATS")  o.stats = (v != 0.0);
+                    else if(key == "HALO")   o.halo = int(v);
+                    else if(key == "HALORHO") o.haloRho = float(v);
+                    else if(key == "ROUGH")  o.rough = float(v);
+                    else if(key == "ROUGHRHO") o.roughRho = float(v);
                 }
                 pos = end + 1;
             }
@@ -1425,6 +1441,46 @@ inline float Dist2(const float* a, const float* b)
 int M5Bucket(float priority)
 {
     return std::min(255, std::max(0, int(10.0f * (std::log2(std::max(priority, 1.0e-6f)) + 14.0f))));
+}
+
+struct M5Poly final { float x[8], y[8]; int n; };
+
+/// The part of a convex polygon on one side of the line n.q = s.
+M5Poly M5Clip(const M5Poly& p, float nx, float ny, float s, bool beyond)
+{
+    M5Poly o;
+    o.n = 0;
+    const float sign = beyond ? 1.0f : -1.0f;
+    for(int i = 0; i < p.n; i++)
+    {
+        const int j = (i + 1) % p.n;
+        const float di = sign * (nx * p.x[i] + ny * p.y[i] - s), dj = sign * (nx * p.x[j] + ny * p.y[j] - s);
+        if(di >= 0.0f)
+        {
+            o.x[o.n] = p.x[i];
+            o.y[o.n] = p.y[i];
+            o.n++;
+        }
+        if((di >= 0.0f) != (dj >= 0.0f))
+        {
+            const float t = di / (di - dj);
+            o.x[o.n] = p.x[i] + t * (p.x[j] - p.x[i]);
+            o.y[o.n] = p.y[i] + t * (p.y[j] - p.y[i]);
+            o.n++;
+        }
+    }
+    return o;
+}
+
+float M5PolyArea(const M5Poly& p)
+{
+    float a = 0.0f;
+    for(int i = 0; i < p.n; i++)
+    {
+        const int j = (i + 1) % p.n;
+        a += p.x[i] * p.y[j] - p.x[j] * p.y[i];
+    }
+    return std::fabs(a) * 0.5f;
 }
 
 /// Fraction of the unit pixel lying beyond the line n.q = s, with the pixel centre at the origin.
@@ -1655,9 +1711,12 @@ bool M5StationOk(const AaSeg& s, float u);
 
 /// Choose the segments to probe this round, best first, before any ray is traced for them: a probe at the end where
 /// the line is least certain is worth the contrast, times how uncertain it is, times how many pixels the line crosses.
-void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabled)
+void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabledIn)
 {
     const POVRect& area = vd->GetRenderArea();
+    // what the edge probes may still spend, once the noise tier's share is set aside
+    const std::int64_t avail = vd->aaBudgetLeft - vd->aaReserve;
+    const bool enabled = enabledIn && (avail > 0);
     std::vector<int> bucket(vd->aaSegs.size(), -1);
     std::int64_t hist[256] = {}, total = 0;
     if(enabled)
@@ -1683,7 +1742,7 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabled)
         for(int b = 255; b >= 0; b--)
         {
             cum += hist[b];
-            if(cum >= vd->aaBudgetLeft)
+            if(cum >= avail)
             {
                 threshold = b;
                 admitted = cum;
@@ -1734,7 +1793,7 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabled)
         vd->aaProbeList.push_back(std::uint32_t(i));
     }
     vd->aaBudgetLeft -= admitted;
-    if(cut)
+    if(cut && (vd->aaReserve <= 0))
         vd->aaExhausted = true;
 }
 
@@ -1994,6 +2053,21 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 sat[size_t(x) + size_t(y + 1) * size_t(w + 1)] + sat[size_t(x + 1) + size_t(y) * size_t(w + 1)] - sat[size_t(x) + size_t(y) * size_t(w + 1)];
         }
     }
+    // roughness: links that differ a lot in themselves, which a field of noise has everywhere and no link stands out
+    std::vector<std::int32_t> rsat(size_t(w + 1) * size_t(h + 1), 0);
+    if(o.rough > 0.0f)
+    {
+        const float r2 = o.rough * o.rough;
+        for(int y = 0; y < h; y++)
+        {
+            for(int x = 0; x < w; x++)
+            {
+                const size_t k = size_t(x) + size_t(y) * size_t(w);
+                rsat[size_t(x + 1) + size_t(y + 1) * size_t(w + 1)] = int(dE[k] >= r2) + int(dS[k] >= r2) +
+                    rsat[size_t(x) + size_t(y + 1) * size_t(w + 1)] + rsat[size_t(x + 1) + size_t(y) * size_t(w + 1)] - rsat[size_t(x) + size_t(y) * size_t(w + 1)];
+            }
+        }
+    }
     std::vector<std::uint8_t> noisy(size_t(w) * size_t(h), 0);
     for(int y = 0; y < h; y++)
     {
@@ -2076,7 +2150,8 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
     }
 
     std::vector<std::uint8_t> visited(nodes, 0);
-    std::vector<float> weight(size_t(w) * size_t(h), 0.0f);
+    std::vector<float> weight(size_t(w) * size_t(h), 0.0f), weight2(size_t(w) * size_t(h), 0.0f);
+    std::vector<std::pair<size_t, int>> overshoot;
     std::vector<size_t> chain;
     std::vector<M5Bracket> br;
     std::vector<std::uint8_t> weak(size_t(w) * size_t(h), 0);
@@ -2313,11 +2388,31 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
             if(std::fabs(s - (nx * pcx + ny * pcy)) > ext + slack + 1.0e-3f)
                 return;
             const float upos = (pcx - sg.cx) * sg.tx + (pcy - sg.cy) * sg.ty;
-            const float wt = std::max(0.001f, 1.0f - std::fabs(upos - uMid) / half);
-            if(wt <= weight[at(px, py)])
+            // past the end of the run its line is only a guess, good enough to be a second line at a junction
+            if(std::fabs(upos - uMid) > half + 0.5f)
+            {
+                overshoot.push_back(std::make_pair(at(px, py), int(id)));
                 return;
-            weight[at(px, py)] = wt;
+            }
+            const float wt = std::max(0.001f, 1.0f - std::fabs(upos - uMid) / half);
             AaFit& f = vd->Fit(unsigned(px), unsigned(py));
+            if(f.seg == int(id))
+                return;
+            if(wt <= weight[at(px, py)])
+            {
+                if(wt > weight2[at(px, py)])
+                {
+                    f.seg2 = int(id);
+                    weight2[at(px, py)] = wt;
+                }
+                return;
+            }
+            if(f.seg >= 0)
+            {
+                f.seg2 = f.seg;
+                weight2[at(px, py)] = weight[at(px, py)];
+            }
+            weight[at(px, py)] = wt;
             f.kind = 1;
             f.seg = int(id);
             f.contrast = sg.contrast;
@@ -2326,10 +2421,10 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
         };
 
         // every pixel the line passes through, column by column for a flat line, else row by row
-        const float ax = sg.cx + (sg.uLo - 0.5f) * sg.tx + (sg.a + sg.b * (sg.uLo - 0.5f)) * sg.nx;
-        const float ay = sg.cy + (sg.uLo - 0.5f) * sg.ty + (sg.a + sg.b * (sg.uLo - 0.5f)) * sg.ny;
-        const float bx = sg.cx + (sg.uHi + 0.5f) * sg.tx + (sg.a + sg.b * (sg.uHi + 0.5f)) * sg.nx;
-        const float by = sg.cy + (sg.uHi + 0.5f) * sg.ty + (sg.a + sg.b * (sg.uHi + 0.5f)) * sg.ny;
+        const float ax = sg.cx + (sg.uLo - 3.5f) * sg.tx + (sg.a + sg.b * (sg.uLo - 3.5f)) * sg.nx;
+        const float ay = sg.cy + (sg.uLo - 3.5f) * sg.ty + (sg.a + sg.b * (sg.uLo - 3.5f)) * sg.ny;
+        const float bx = sg.cx + (sg.uHi + 3.5f) * sg.tx + (sg.a + sg.b * (sg.uHi + 3.5f)) * sg.nx;
+        const float by = sg.cy + (sg.uHi + 3.5f) * sg.ty + (sg.a + sg.b * (sg.uHi + 3.5f)) * sg.ny;
         if(std::fabs(ny) >= std::fabs(nx))
         {
             const float xmin = std::min(ax, bx), xmax = std::max(ax, bx);
@@ -2360,6 +2455,68 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
         }
     }
 
+    for(const auto& ov : overshoot)
+    {
+        AaFit& f = vd->Fit(unsigned(x0 + int(ov.first % size_t(w))), unsigned(y0 + int(ov.first / size_t(w))));
+        if((f.seg >= 0) && (f.seg != ov.second) && (f.seg2 < 0))
+            f.seg2 = ov.second;
+    }
+
+    // a line fitted on a short run, or among many others, is a guess; those pixels are better averaged than blended
+    if((o.minLen > 0.0f) || (o.dense > 0))
+    {
+        std::vector<std::uint8_t> demote(size_t(w) * size_t(h), 0);
+        for(int y = y0; y < y0 + h; y++)
+        {
+            for(int x = x0; x < x0 + w; x++)
+            {
+                const AaFit& f = vd->Fit(unsigned(x), unsigned(y));
+                if((f.kind != 1) || (f.seg < 0))
+                    continue;
+                bool bad = vd->aaSegs[size_t(f.seg)].length < o.minLen;
+                if(!bad && (o.dense > 0))
+                {
+                    int ids[25], n = 0;
+                    for(int dy = -2; dy <= 2; dy++)
+                    {
+                        for(int dx = -2; dx <= 2; dx++)
+                        {
+                            const int nx2 = x + dx, ny2 = y + dy;
+                            if((nx2 < x0) || (nx2 >= x0 + w) || (ny2 < y0) || (ny2 >= y0 + h))
+                                continue;
+                            const AaFit& g = vd->Fit(unsigned(nx2), unsigned(ny2));
+                            if((g.kind != 1) || (g.seg < 0))
+                                continue;
+                            bool seen = false;
+                            for(int k = 0; k < n; k++)
+                                seen = seen || (ids[k] == g.seg);
+                            if(!seen)
+                                ids[n++] = g.seg;
+                        }
+                    }
+                    bad = (n >= o.dense);
+                }
+                demote[at(x, y)] = bad ? 1 : 0;
+            }
+        }
+        for(int y = y0; y < y0 + h; y++)
+        {
+            for(int x = x0; x < x0 + w; x++)
+            {
+                if(!demote[at(x, y)])
+                    continue;
+                AaFit& f = vd->Fit(unsigned(x), unsigned(y));
+                float far2 = std::max(dE[at(x, y)], dS[at(x, y)]);
+                if(x > x0) far2 = std::max(far2, dE[at(x - 1, y)]);
+                if(y > y0) far2 = std::max(far2, dS[at(x, y - 1)]);
+                f.kind = 2;
+                f.seg = -1;
+                f.seg2 = -1;
+                f.contrast = std::sqrt(far2);
+            }
+        }
+    }
+
     // contours too short or too ragged to fit, with no good run through them, are noise
     for(int y = y0; y < y0 + h; y++)
     {
@@ -2373,6 +2530,38 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 if(y > y0) far2 = std::max(far2, dS[at(x, y - 1)]);
                 f.kind = 2;
                 f.contrast = std::sqrt(far2);
+            }
+        }
+    }
+
+    // flat pixels among dense contours may hide detail the samples alias away, such as columns gone solid in the distance
+    if(o.halo > 0)
+    {
+        const int r = o.halo;
+        for(int y = y0; y < y0 + h; y++)
+        {
+            for(int x = x0; x < x0 + w; x++)
+            {
+                AaFit& f = vd->Fit(unsigned(x), unsigned(y));
+                if(f.kind != 0)
+                    continue;
+                const int lx = x - x0, ly = y - y0;
+                const int xa = std::max(0, lx - r), xb = std::min(w, lx + r + 1), ya = std::max(0, ly - r), yb = std::min(h, ly + r + 1);
+                const int sum = sat[size_t(xb) + size_t(yb) * size_t(w + 1)] - sat[size_t(xa) + size_t(yb) * size_t(w + 1)] -
+                                sat[size_t(xb) + size_t(ya) * size_t(w + 1)] + sat[size_t(xa) + size_t(ya) * size_t(w + 1)];
+                const float density = float(sum) / (2.0f * float((xb - xa) * (yb - ya)));
+                float rdensity = 0.0f;
+                if(o.rough > 0.0f)
+                {
+                    const int rsum = rsat[size_t(xb) + size_t(yb) * size_t(w + 1)] - rsat[size_t(xa) + size_t(yb) * size_t(w + 1)] -
+                                     rsat[size_t(xb) + size_t(ya) * size_t(w + 1)] + rsat[size_t(xa) + size_t(ya) * size_t(w + 1)];
+                    rdensity = float(rsum) / (2.0f * float((xb - xa) * (yb - ya)));
+                }
+                if((density > o.haloRho) || ((o.rough > 0.0f) && (rdensity > o.roughRho)))
+                {
+                    f.kind = 2;
+                    f.contrast = 0.05f * std::max(density, rdensity);
+                }
             }
         }
     }
@@ -2401,6 +2590,26 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
         vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
         vd->aaExhausted = false;
+        vd->aaReserve = 0;
+        if(o.chain)
+        {
+            std::int64_t nFit = 0, nNoise = 0;
+            for(unsigned int y = area.top; y <= area.bottom; y++)
+            {
+                for(unsigned int x = area.left; x <= area.right; x++)
+                {
+                    const AaFit& f = vd->Fit(x, y);
+                    nFit += (f.kind == 1) ? 1 : 0;
+                    nNoise += (f.kind == 2) ? 1 : 0;
+                }
+            }
+            const double frac = (o.noiseFrac >= 0.0f) ? double(o.noiseFrac) : double(nNoise) / double(std::max<std::int64_t>(1, nFit + nNoise));
+            vd->aaReserve = std::int64_t(frac * double(vd->aaBudgetLeft));
+            if(o.stats)
+                std::fprintf(stderr, "AA5 pixels %.0f: fitted %lld (%.1f%%), noisy %lld (%.1f%%), segments %zu, budget %lld, reserved for noise %lld\n", pixels,
+                             (long long)nFit, 100.0 * double(nFit) / pixels, (long long)nNoise, 100.0 * double(nNoise) / pixels, vd->aaSegs.size(),
+                             (long long)vd->aaBudgetLeft, (long long)vd->aaReserve);
+        }
         return;
     }
 
@@ -2791,6 +3000,7 @@ void TraceTask::ProgressiveM5()
                     {
                         RGBTColour col = GetViewData()->LatticeSample(x, y);
                         float mapProbes = float(fit.probes);
+                        float mapGreen = 0.25f;
                         if(fit.kind == 1)
                         {
                             float nx = fit.nx, ny = fit.ny, s;
@@ -2809,8 +3019,63 @@ void TraceTask::ProgressiveM5()
                             else
                                 s = 0.5f * (fit.lo + fit.hi);
                             const double f = M5Coverage(nx, ny, s);
+
+                            // two lines of different directions both crossing the pixel: a junction, up to four regions
+                            bool twoLines = false;
+                            float n2x = 0.0f, n2y = 0.0f, s2 = 0.0f;
+                            if((fit.seg >= 0) && (fit.seg2 >= 0))
+                            {
+                                const AaSeg& g2 = GetViewData()->aaSegs[size_t(fit.seg2)];
+                                const float inv2 = 1.0f / std::sqrt(1.0f + g2.b * g2.b);
+                                n2x = (g2.nx - g2.b * g2.tx) * inv2;
+                                n2y = (g2.ny - g2.b * g2.ty) * inv2;
+                                s2 = g2.a * inv2 - (n2x * (float(x) + 0.5f - g2.cx) + n2y * (float(y) + 0.5f - g2.cy));
+                                const float c2 = M5Coverage(n2x, n2y, s2);
+                                twoLines = (std::fabs(nx * n2x + ny * n2y) < 0.95f) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
+                            }
+
+                            if(twoLines)
+                            {
+                                mapGreen = 0.9f;
+                                const POVRect& area = GetViewData()->GetRenderArea();
+                                RGBTColour qc[4];
+                                double qw[4] = { 0.0, 0.0, 0.0, 0.0 };
+                                for(int oy = -2; oy <= 2; oy++)
+                                {
+                                    for(int ox = -2; ox <= 2; ox++)
+                                    {
+                                        const int sx = int(x) + ox, sy = int(y) + oy;
+                                        if((sx < int(area.left)) || (sx > int(area.right)) || (sy < int(area.top)) || (sy > int(area.bottom)))
+                                            continue;
+                                        const int q = int(nx * float(ox) + ny * float(oy) > s) + 2 * int(n2x * float(ox) + n2y * float(oy) > s2);
+                                        const double wgt = 1.0 / double((1 + ox * ox + oy * oy) * (1 + ox * ox + oy * oy));
+                                        qc[q] += GetViewData()->LatticeSample(unsigned(sx), unsigned(sy)) * wgt;
+                                        qw[q] += wgt;
+                                    }
+                                }
+                                M5Poly sq;
+                                sq.n = 4;
+                                const float cxs[4] = { -0.5f, 0.5f, 0.5f, -0.5f }, cys[4] = { -0.5f, -0.5f, 0.5f, 0.5f };
+                                for(int k = 0; k < 4; k++)
+                                {
+                                    sq.x[k] = cxs[k];
+                                    sq.y[k] = cys[k];
+                                }
+                                RGBTColour own = col;
+                                col.Clear();
+                                for(int q = 0; q < 4; q++)
+                                {
+                                    const double ar = double(M5PolyArea(M5Clip(M5Clip(sq, nx, ny, s, (q & 1) != 0), n2x, n2y, s2, (q & 2) != 0)));
+                                    if(ar < 1.0e-4)
+                                        continue;
+                                    int src = q;
+                                    if(qw[src] <= 0.0)
+                                        src = (qw[q ^ 1] > 0.0) ? (q ^ 1) : ((qw[q ^ 2] > 0.0) ? (q ^ 2) : -1);
+                                    col += ((src >= 0) ? (qc[src] * (1.0 / qw[src])) : own) * ar;
+                                }
+                            }
                             // a pixel the final line does not cross stays as it was sampled
-                            if((fit.seg < 0) || ((f > 0.0) && (f < 1.0)))
+                            else if((fit.seg < 0) || ((f > 0.0) && (f < 1.0)))
                             {
                                 col = fit.a * (1.0 - f);
                                 col += fit.b * f;
@@ -2828,7 +3093,7 @@ void TraceTask::ProgressiveM5()
                         {
                             // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got
                             const float p = mapProbes;
-                            col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : 0.0f, (fit.kind == 1) ? 0.25f : 0.0f,
+                            col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : 0.0f, (fit.kind == 1) ? mapGreen : 0.0f,
                                              (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : 0.0f, 0.0f);
                         }
                         pixels.push_back(col);
