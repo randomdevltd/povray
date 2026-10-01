@@ -97,7 +97,8 @@ struct AaSeg final
 {
     struct Pt final { float u, v; std::uint8_t b; };    ///< A sample or probe in the frame; b is 1 when it showed colour B.
     float cx = 0, cy = 0, tx = 1, ty = 0, nx = 0, ny = 1;
-    float a = 0, b = 0;
+    float a = 0, b = 0, c = 0;      ///< The edge v = a + b u + c u^2 in the frame; c is 0 unless fitted as a curve.
+    bool quad = false;              ///< Fitted as a curve: its bounds keep every point, since only a line's lie on hulls.
     float uLo = 0, uHi = 0;         ///< Extent along the line.
     float contrast = 0, length = 0;
     std::vector<Pt> hullA, hullB;   ///< Upper hull of the colour A points, lower hull of the colour B ones: all that bound the line.

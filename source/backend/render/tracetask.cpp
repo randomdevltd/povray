@@ -1104,6 +1104,9 @@ struct M4Options final
     float haloRho = 0.12f;          ///< Share of contour links in that window above which it counts as dense.
     float rough = 0.06f;            ///< Chain mode: links differing by at least this, whatever their neighbours, count towards roughness; 0 for none.
     float roughRho = 0.3f;          ///< Share of rough links in the halo window above which flat pixels there join the noise tier.
+    bool cv = true;                 ///< Resolve: keep a pixel's own samples and add the fit's coverage correction, rather than replace them.
+    bool quad = false;              ///< Chain mode: fit runs of a contour with parabolas, so curves need not be cut into chords.
+    float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
 };
 
 const M4Options& M4Opts()
@@ -1150,6 +1153,9 @@ const M4Options& M4Opts()
                     else if(key == "HALORHO") o.haloRho = float(v);
                     else if(key == "ROUGH")  o.rough = float(v);
                     else if(key == "ROUGHRHO") o.roughRho = float(v);
+                    else if(key == "CV")     o.cv = (v != 0.0);
+                    else if(key == "QUAD")   o.quad = (v != 0.0);
+                    else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
             }
@@ -1234,6 +1240,22 @@ float M4Coverage(float nx, float ny, float s)
     else
         cdf = 0.5f + s / a;
     return 1.0f - std::min(1.0f, std::max(0.0f, cdf));
+}
+
+/// A colour held per channel within the range of the pixel's own sample and the region colours it was built from.
+RGBTColour M4Bounded(const RGBTColour& c, const RGBTColour& own, const RGBTColour* sums, const double* weights, int n = 4)
+{
+    RGBTColour lo = own, hi = own;
+    for(int i = 0; i < n; i++)
+    {
+        if(weights[i] <= 0.0)
+            continue;
+        const RGBTColour r = sums[i] * (1.0 / weights[i]);
+        lo = RGBTColour(std::min(lo.red(), r.red()), std::min(lo.green(), r.green()), std::min(lo.blue(), r.blue()), std::min(lo.transm(), r.transm()));
+        hi = RGBTColour(std::max(hi.red(), r.red()), std::max(hi.green(), r.green()), std::max(hi.blue(), r.blue()), std::max(hi.transm(), r.transm()));
+    }
+    return RGBTColour(std::min(hi.red(), std::max(lo.red(), c.red())), std::min(hi.green(), std::max(lo.green(), c.green())),
+                      std::min(hi.blue(), std::max(lo.blue(), c.blue())), std::min(hi.transm(), std::max(lo.transm(), c.transm())));
 }
 }
 
@@ -1326,8 +1348,12 @@ void M4Hull(std::vector<AaSeg::Pt>& p, bool upper)
 
 /// Every line v = a + b u that keeps the colour A points below it and the colour B points above is possible; take the
 /// middle of those and work out how far either way the line could lie at three places along it. False when none is.
+bool M4EstimateQ(AaSeg& s, float bend);
+
 bool M4Estimate(AaSeg& s)
 {
+    if(s.quad)
+        return M4EstimateQ(s, M4Opts().bend);
     auto alo = [&](float b)
     {
         float m = -std::numeric_limits<float>::max();
@@ -1412,6 +1438,119 @@ bool M4Estimate(AaSeg& s)
     return true;
 }
 
+/// The offsets a that let v = a + b u + c u^2 pass above every colour A point and below every colour B one: [lo, hi].
+inline void M4Room(const AaSeg& s, float b, float c, float& lo, float& hi)
+{
+    lo = -std::numeric_limits<float>::max();
+    hi = std::numeric_limits<float>::max();
+    for(const AaSeg::Pt& p : s.hullA)
+        lo = std::max(lo, p.v - (b + c * p.u) * p.u);
+    for(const AaSeg::Pt& p : s.hullB)
+        hi = std::min(hi, p.v - (b + c * p.u) * p.u);
+}
+
+/// Golden-section maximum of a concave function on [lo, hi].
+template<typename F> float M4GoldenMax(F f, float lo, float hi, int iterations, float& at)
+{
+    const float g = 0.618034f;
+    float x1 = hi - g * (hi - lo), x2 = lo + g * (hi - lo), f1 = f(x1), f2 = f(x2);
+    for(int i = 0; i < iterations; i++)
+    {
+        if(f1 < f2) { lo = x1; x1 = x2; f1 = f2; x2 = lo + g * (hi - lo); f2 = f(x2); }
+        else        { hi = x2; x2 = x1; f2 = f1; x1 = hi - g * (hi - lo); f1 = f(x1); }
+    }
+    at = 0.5f * (lo + hi);
+    return f(at);
+}
+
+/// Maximum over slope b and curvature c of a function concave in both, by nested golden sections.
+template<typename F> float M4Max2(F f, float bmax, float cmax, float& bb, float& cc)
+{
+    auto overB = [&](float c) { float b; return M4GoldenMax([&](float x) { return f(x, c); }, -bmax, bmax, 26, b); };
+    const float best = M4GoldenMax(overB, -cmax, cmax, 26, cc);
+    M4GoldenMax([&](float x) { return f(x, cc); }, -bmax, bmax, 26, bb);
+    return best;
+}
+
+/// The parabola fit: the most room between the samples, with curvature only where it buys more room than it bends.
+bool M4EstimateQ(AaSeg& s, float bend)
+{
+    const float len = std::max(1.0f, s.uHi - s.uLo), bmax = 0.6f, cmax = std::min(0.35f, 1.2f / len);
+    const float sag = 0.25f * len * len;
+    auto gap = [&](float b, float c) { float lo, hi; M4Room(s, b, c, lo, hi); return hi - lo; };
+    float b, c, lo, hi;
+    if(M4Max2(gap, bmax, cmax, b, c) < 0.0f)
+    {
+        M4Room(s, b, c, lo, hi);
+        s.b = b; s.c = c; s.a = 0.5f * (lo + hi);
+        s.w[0] = s.w[1] = s.w[2] = 0.0f;
+        return false;
+    }
+    float pb, pc;
+    M4Max2([&](float x, float y) { return gap(x, y) - bend * std::fabs(y) * sag; }, bmax, cmax, pb, pc);
+    if(gap(pb, pc) >= 0.0f)
+    {
+        b = pb;
+        c = pc;
+    }
+    M4Room(s, b, c, lo, hi);
+    s.b = b; s.c = c; s.a = 0.5f * (lo + hi);
+
+    const float big = 1000.0f;
+    const float us[3] = { s.uLo, 0.5f * (s.uLo + s.uHi), s.uHi };
+    for(int k = 0; k < 3; k++)
+    {
+        const float u = us[k];
+        float tb, tc;
+        const float top = M4Max2([&](float x, float y) { float l, h; M4Room(s, x, y, l, h); return h + (x + y * u) * u + big * std::min(0.0f, h - l); }, bmax, cmax, tb, tc);
+        const float bottom = -M4Max2([&](float x, float y) { float l, h; M4Room(s, x, y, l, h); return -(l + (x + y * u) * u) + big * std::min(0.0f, h - l); }, bmax, cmax, tb, tc);
+        s.w[k] = std::max(0.0f, top - bottom);
+    }
+    return true;
+}
+
+/// Whether one parabola, in the frame of the chord from bracket i0 to i1, can keep every left sample above it and every right one below.
+bool M4FeasibleQ(const std::vector<M4Bracket>& br, int i0, int i1, float& nx, float& ny, float& s)
+{
+    float dx = br[i1].cx - br[i0].cx, dy = br[i1].cy - br[i0].cy;
+    const float dl = std::sqrt(dx * dx + dy * dy);
+    if(dl < 1.0e-3f) { dx = 1.0f; dy = 0.0f; } else { dx /= dl; dy /= dl; }
+    nx = -dy;
+    ny = dx;
+    float side = 0.0f;
+    for(int i = i0; i <= i1; i++)
+        side += nx * float(br[i].lx - br[i].rx) + ny * float(br[i].ly - br[i].ry);
+    if(side < 0.0f) { nx = -nx; ny = -ny; }
+    const float tx = -ny, ty = nx, mx = 0.5f * (br[i0].cx + br[i1].cx), my = 0.5f * (br[i0].cy + br[i1].cy);
+    s = nx * mx + ny * my;
+    const float uc = tx * mx + ty * my;
+    AaSeg q;
+    float uLo = std::numeric_limits<float>::max(), uHi = -uLo;
+    for(int i = i0; i <= i1; i++)
+    {
+        const M4Bracket& b = br[i];
+        const float ax = float(b.rx) + 0.5f, ay = float(b.ry) + 0.5f, bx = float(b.lx) + 0.5f, by = float(b.ly) + 0.5f;
+        q.hullA.push_back(AaSeg::Pt { tx * ax + ty * ay - uc, nx * ax + ny * ay - s, 0 });
+        q.hullB.push_back(AaSeg::Pt { tx * bx + ty * by - uc, nx * bx + ny * by - s, 1 });
+        uLo = std::min(uLo, tx * b.cx + ty * b.cy - uc);
+        uHi = std::max(uHi, tx * b.cx + ty * b.cy - uc);
+    }
+    const float len = std::max(1.0f, uHi - uLo + 1.0f);
+    float b, c;
+    return M4Max2([&](float x, float y) { float lo, hi; M4Room(q, x, y, lo, hi); return hi - lo; }, 0.6f, std::min(0.35f, 1.2f / len), b, c) >= 0.0f;
+}
+
+/// The tangent of a segment's edge at the point along it nearest (px, py), as the line n.q = s in image coordinates.
+inline void M4LineAt(const AaSeg& sg, float px, float py, float& nx, float& ny, float& s)
+{
+    const float u = (px - sg.cx) * sg.tx + (py - sg.cy) * sg.ty;
+    const float a = sg.a - sg.c * u * u, b = sg.b + 2.0f * sg.c * u;
+    const float inv = 1.0f / std::sqrt(1.0f + b * b);
+    nx = (sg.nx - b * sg.tx) * inv;
+    ny = (sg.ny - b * sg.ty) * inv;
+    s = a * inv + nx * sg.cx + ny * sg.cy;
+}
+
 /// Fold the last round's probe results into each segment's bounds and re-estimate its line.
 void M4FoldSegments(ViewData* vd)
 {
@@ -1423,9 +1562,20 @@ void M4FoldSegments(ViewData* vd)
         for(const AaSeg::Pt& p : s.fresh)
             (p.b ? s.hullB : s.hullA).push_back(p);
         s.fresh.clear();
-        M4Hull(s.hullA, true);
-        M4Hull(s.hullB, false);
-        if(!M4Estimate(s))
+        if(!M4Opts().quad)
+        {
+            M4Hull(s.hullA, true);
+            M4Hull(s.hullB, false);
+        }
+        bool ok = M4Estimate(s);
+        if(!ok && M4Opts().quad && !s.quad)
+        {
+            // probes have shown the edge bends: let it
+            s.quad = true;
+            ok = M4Estimate(s);
+            s.quad = ok;
+        }
+        if(!ok)
         {
             // a probe that contradicts the rest: keep the line as it was, and probe this segment no more
             s.hullA = keepA;
@@ -1510,7 +1660,7 @@ void M4PlanSegments(ViewData* vd, const M4Options& o, bool enabledIn)
         }
         if(!found)
             continue;
-        const float v = s.a + s.b * u;
+        const float v = s.a + (s.b + s.c * u) * u;
         const float px = s.cx + u * s.tx + v * s.nx, py = s.cy + u * s.ty + v * s.ny;
         if((px < float(area.left)) || (px >= float(area.right) + 1.0f) || (py < float(area.top)) || (py >= float(area.bottom) + 1.0f))
         {
@@ -1950,7 +2100,7 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
             }
         }
         float nx, ny, s;
-        auto feasible = [&](int a, int b) { return M4BestLine(br, a, b, nx, ny, s) >= 0.0f; };
+        auto feasible = [&](int a, int b) { return o.quad ? M4FeasibleQ(br, a, b, nx, ny, s) : (M4BestLine(br, a, b, nx, ny, s) >= 0.0f); };
 
         int i0 = 0;
         while(i0 < m - 1)
@@ -2019,7 +2169,12 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
 
             if(good - i0 + 1 >= o.lmin)
             {
-                M4BestLine(br, i0, good, nx, ny, s);
+                // a line wherever one fits the run; a parabola only for runs no line can
+                const bool curved = o.quad && (M4BestLine(br, i0, good, nx, ny, s) < 0.0f);
+                if(curved)
+                    M4FeasibleQ(br, i0, good, nx, ny, s);
+                else if(!o.quad)
+                    M4BestLine(br, i0, good, nx, ny, s);
                 const float tx = -ny, ty = nx;
                 float uA = tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy, uB = tx * br[size_t(good)].cx + ty * br[size_t(good)].cy;
                 if(uA > uB)
@@ -2047,8 +2202,12 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
                         sg.hullA.push_back(AaSeg::Pt { tx * ax + ty * ay - uc, nx * ax + ny * ay - s, 0 });
                         sg.hullB.push_back(AaSeg::Pt { tx * bx + ty * by - uc, nx * bx + ny * by - s, 1 });
                     }
-                    M4Hull(sg.hullA, true);
-                    M4Hull(sg.hullB, false);
+                    sg.quad = curved;
+                    if(!o.quad)
+                    {
+                        M4Hull(sg.hullA, true);
+                        M4Hull(sg.hullB, false);
+                    }
                     const M4Bracket& bm = br[size_t((i0 + good) / 2)];
                     sg.contrast = std::sqrt(Dist2(lab(bm.lx, bm.ly), lab(bm.rx, bm.ry)));
                     for(int i = i0; i <= good; i++)
@@ -2101,10 +2260,8 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
         const AaSeg& sg = vd->aaSegs[id];
         if(sg.state == 2)
             continue;
-        const float inv = 1.0f / std::sqrt(1.0f + sg.b * sg.b);
-        const float nx = (sg.nx - sg.b * sg.tx) * inv, ny = (sg.ny - sg.b * sg.ty) * inv;
-        const float s = sg.a * inv + nx * sg.cx + ny * sg.cy;
-        const float ext = 0.5f * (std::fabs(nx) + std::fabs(ny));
+        float nx, ny, s;
+        M4LineAt(sg, sg.cx, sg.cy, nx, ny, s);
         // probes can move the line anywhere the bounds allow, so own every pixel it might come to cross
         const float slack = 0.5f * std::max(sg.w[0], std::max(sg.w[1], sg.w[2])) + 1.0e-3f;
         const float uMid = 0.5f * (sg.uLo + sg.uHi), half = 0.5f * (sg.uHi - sg.uLo);
@@ -2114,7 +2271,9 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
             if((px < x0) || (px >= x0 + w) || (py < y0) || (py >= y0 + h) || noisy[at(px, py)])
                 return;
             const float pcx = float(px) + 0.5f, pcy = float(py) + 0.5f;
-            if(std::fabs(s - (nx * pcx + ny * pcy)) > ext + slack + 1.0e-3f)
+            float lx, ly, ls;
+            M4LineAt(sg, pcx, pcy, lx, ly, ls);
+            if(std::fabs(ls - (lx * pcx + ly * pcy)) > 0.5f * (std::fabs(lx) + std::fabs(ly)) + slack + 1.0e-3f)
                 return;
             const float upos = (pcx - sg.cx) * sg.tx + (pcy - sg.cy) * sg.ty;
             // past the end of the run its line is only a guess, good enough to be a second line at a junction
@@ -2149,6 +2308,20 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
             M4LocalColours(sg, upos, f.a, f.b);
         };
 
+        // every pixel the curve passes near, stepping along it
+        if(sg.quad)
+        {
+            const int reach = int(std::ceil(slack + 0.75f));
+            for(float u = sg.uLo - 3.5f; u <= sg.uHi + 3.5f; u += 0.25f)
+            {
+                const float v = sg.a + (sg.b + sg.c * u) * u;
+                const int cx = int(std::floor(sg.cx + u * sg.tx + v * sg.nx)), cy = int(std::floor(sg.cy + u * sg.ty + v * sg.ny));
+                for(int j = cy - reach; j <= cy + reach; j++)
+                    for(int i = cx - reach; i <= cx + reach; i++)
+                        visit(i, j);
+            }
+            continue;
+        }
         // every pixel the line passes through, column by column for a flat line, else row by row
         const float ax = sg.cx + (sg.uLo - 3.5f) * sg.tx + (sg.a + sg.b * (sg.uLo - 3.5f)) * sg.nx;
         const float ay = sg.cy + (sg.uLo - 3.5f) * sg.ty + (sg.a + sg.b * (sg.uLo - 3.5f)) * sg.ny;
@@ -2750,6 +2923,7 @@ void TraceTask::ProgressiveM4()
                         break;
                     default:
                     {
+                        const M4Options& o4 = M4Opts();
                         RGBTColour col = GetViewData()->LatticeSample(x, y);
                         float mapProbes = float(fit.probes);
                         float mapGreen = 0.25f;
@@ -2761,10 +2935,8 @@ void TraceTask::ProgressiveM4()
                             {
                                 // the segment's line now, after any probes, seen from this pixel's centre
                                 const AaSeg& sg = GetViewData()->aaSegs[size_t(fit.seg)];
-                                const float inv = 1.0f / std::sqrt(1.0f + sg.b * sg.b);
-                                nx = (sg.nx - sg.b * sg.tx) * inv;
-                                ny = (sg.ny - sg.b * sg.ty) * inv;
-                                s = sg.a * inv - (nx * (float(x) + 0.5f - sg.cx) + ny * (float(y) + 0.5f - sg.cy));
+                                M4LineAt(sg, float(x) + 0.5f, float(y) + 0.5f, nx, ny, s);
+                                s -= nx * (float(x) + 0.5f) + ny * (float(y) + 0.5f);
                                 probes = sg.probes;
                                 mapProbes = float(sg.probes);
                             }
@@ -2778,10 +2950,8 @@ void TraceTask::ProgressiveM4()
                             if((fit.seg >= 0) && (fit.seg2 >= 0))
                             {
                                 const AaSeg& g2 = GetViewData()->aaSegs[size_t(fit.seg2)];
-                                const float inv2 = 1.0f / std::sqrt(1.0f + g2.b * g2.b);
-                                n2x = (g2.nx - g2.b * g2.tx) * inv2;
-                                n2y = (g2.ny - g2.b * g2.ty) * inv2;
-                                s2 = g2.a * inv2 - (n2x * (float(x) + 0.5f - g2.cx) + n2y * (float(y) + 0.5f - g2.cy));
+                                M4LineAt(g2, float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
+                                s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
                                 const float c2 = M4Coverage(n2x, n2y, s2);
                                 twoLines = (std::fabs(nx * n2x + ny * n2y) < 0.95f) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
                             }
@@ -2813,20 +2983,39 @@ void TraceTask::ProgressiveM4()
                                     sq.x[k] = cxs[k];
                                     sq.y[k] = cys[k];
                                 }
-                                RGBTColour own = col;
+                                RGBTColour own = col, centreModel = own;
                                 col.Clear();
+                                const int q0 = int(0.0f > s) + 2 * int(0.0f > s2);
                                 for(int q = 0; q < 4; q++)
                                 {
                                     const double ar = double(M4PolyArea(M4Clip(M4Clip(sq, nx, ny, s, (q & 1) != 0), n2x, n2y, s2, (q & 2) != 0)));
-                                    if(ar < 1.0e-4)
-                                        continue;
                                     int src = q;
                                     if(qw[src] <= 0.0)
                                         src = (qw[q ^ 1] > 0.0) ? (q ^ 1) : ((qw[q ^ 2] > 0.0) ? (q ^ 2) : -1);
-                                    col += ((src >= 0) ? (qc[src] * (1.0 / qw[src])) : own) * ar;
+                                    const RGBTColour qcol = (src >= 0) ? (qc[src] * (1.0 / qw[src])) : own;
+                                    if(q == q0)
+                                        centreModel = qcol;
+                                    if(ar >= 1.0e-4)
+                                        col += qcol * ar;
                                 }
+                                if(o4.cv)
+                                    col = M4Bounded(own + col - centreModel, own, qc, qw);
                             }
                             // a pixel the final line does not cross stays as it was sampled
+                            else if(o4.cv && ((fit.seg < 0) || ((f > 0.0) && (f < 1.0))))
+                            {
+                                // the pixel keeps its own sample; the fit adds what the rest of its area, beyond the centre's side, contributes
+                                const OkLab pa = ToOkLab(fit.a), pb = ToOkLab(fit.b), po = ToOkLab(col);
+                                const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+                                const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+                                const bool centreB = (vv > 0.0f) && (((po.l - pa.l) * v[0] + (po.a - pa.a) * v[1] + (po.b - pa.b) * v[2] + (po.t - pa.t) * v[3]) >= 0.5f * vv);
+                                const double fb = centreB ? std::max(f, 0.5) : std::min(f, 0.5);
+                                const RGBTColour own = col;
+                                col += (fit.b - fit.a) * (fb - (centreB ? 1.0 : 0.0));
+                                const RGBTColour ends[2] = { fit.a, fit.b };
+                                const double ew[2] = { 1.0, 1.0 };
+                                col = M4Bounded(col, own, ends, ew, 2);
+                            }
                             else if((fit.seg < 0) || ((f > 0.0) && (f < 1.0)))
                             {
                                 col = fit.a * (1.0 - f);
