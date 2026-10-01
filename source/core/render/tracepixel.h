@@ -90,12 +90,6 @@ class TracePixel final : public Trace
         /// @param[in]  height  Vertical size of the image in pixels.
         /// @param[out] colour  Computed colour of the (sub-)pixel.
         void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour);
-
-        /// Trace a sub-pixel with the random draws of the camera ray through `keyAt`, typically its pixel's centre.
-        void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour, const Vector2d& keyAt);
-
-        /// Trace one point twice, with the random draws of the camera rays through `keyA` and through `keyB`.
-        void TracePair(DBL x, DBL y, DBL width, DBL height, const Vector2d& keyA, const Vector2d& keyB, RGBTColour& a, RGBTColour& b);
     private:
         // Focal blur data
         class FocalBlurData final
@@ -123,9 +117,6 @@ class TracePixel final : public Trace
         FocalBlurData *focalBlurData;
         /// Whether this has given the subsurface cache the view's camera.
         bool subsurfaceCameraSet = false;
-        /// While set, camera rays take the path key of the camera ray this far away in the image.
-        bool shiftKey = false;
-        Vector2d keyShift;
 
         bool precomputeContainingInteriors;
         RayInteriorVector containingInteriors;
@@ -159,7 +150,6 @@ class TracePixel final : public Trace
         GenericScalarFunctionInstancePtr mpCameraDirectionFn[3];
 
         bool CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number);
-        void SetSubsurfaceCamera(DBL width, DBL height);
 
         void InitRayContainerState(Ray& ray, bool compute = false);
         void InitRayContainerStateTree(Ray& ray, BBOX_TREE *node);

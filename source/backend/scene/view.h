@@ -75,7 +75,7 @@ namespace pov
 
 using namespace pov_base;
 
-/// Method 5: an edge fitted to the centre samples around a pixel, without tracing a ray.
+/// Method 4: an edge fitted to the centre samples around a pixel, without tracing a ray.
 struct AaFit final
 {
     float nx = 0, ny = 0;           ///< Unit normal, pointing at colour B.
@@ -89,7 +89,7 @@ struct AaFit final
     RGBTColour a, b;                ///< Colours on the two sides.
 };
 
-/// Method 5, chain mode: a straight run of a contour, held as what is known about where its line can lie.
+/// Method 4, chain mode: a straight run of a contour, held as what is known about where its line can lie.
 /// The frame has its origin on the line, u along it and v towards colour B; the line is v = a + b u.
 struct AaSeg final
 {
@@ -327,25 +327,20 @@ class ViewData final
         }
         RGBTColour& LatticeSample(unsigned int x, unsigned int y) { return latticeSamples[x + y * latticeWidth]; }
         bool KeepsLatticeSamples() const { return latticeSamplesActive; }
-        /// Method 4: whether a pixel's centre trace was grainy (set for pixels continued from a render state file).
-        std::uint8_t& LatticeGrain(unsigned int x, unsigned int y) { return latticeGrain[x + y * latticeWidth]; }
-        bool KeepsGrain() const { return !latticeGrain.empty(); }
-        /// Method 4: the directions a pixel refines towards, as found by the pair tests (see TraceTask::ProgressivePairsM4).
-        std::uint16_t& Contention(unsigned int x, unsigned int y) { return contention[x + y * latticeWidth]; }
 
-        /// Method 5: OkLab (l, a, b, transmittance) of a lattice sample, for the edge fits.
+        /// Method 4: OkLab (l, a, b, transmittance) of a lattice sample, for the edge fits.
         float* AaLabAt(unsigned int x, unsigned int y) { return &aaLab[4 * (size_t(x) + size_t(y) * latticeWidth)]; }
-        /// Method 5: the edge fitted around a pixel.
+        /// Method 4: the edge fitted around a pixel.
         AaFit& Fit(unsigned int x, unsigned int y) { return aaFit[x + y * latticeWidth]; }
-        /// Method 5: a noisy pixel's extra sample.
+        /// Method 4: a noisy pixel's extra sample.
         RGBTColour& AaExtra(unsigned int x, unsigned int y) { return aaExtra[x + y * latticeWidth]; }
-        /// Method 5: samples the planner may still commit; a pass that would go past it is the last.
+        /// Method 4: samples the planner may still commit; a pass that would go past it is the last.
         std::int64_t aaBudgetLeft = 0;
         std::int64_t aaReserve = 0;     ///< Budget the edge probes leave for the noise tier.
         bool aaExhausted = false;
         DBL aaFraction = 0.0;
         DBL aaThr = 0.0;
-        /// Method 5, chain mode: the fitted segments, and the ones the planner chose to probe this round.
+        /// Method 4, chain mode: the fitted segments, and the ones the planner chose to probe this round.
         std::vector<AaSeg> aaSegs;
         std::vector<std::uint32_t> aaProbeList;
         std::atomic<std::uint32_t> aaProbeNext {0};
@@ -428,8 +423,6 @@ class ViewData final
         RTRData *rtrData;
 
         std::vector<RGBTColour> latticeSamples;
-        std::vector<std::uint8_t> latticeGrain;
-        std::vector<std::uint16_t> contention;
         unsigned int latticeWidth;
         bool latticeSamplesActive;
         std::vector<float> aaLab;
@@ -595,7 +588,7 @@ class View final
 
         void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
 
-        /// Method 5's planning step between two passes.
+        /// Method 4's planning step between two passes.
         void PlanAntialias(TaskQueue& taskq, int pass, int round);
 
         void EndRadiosityStateFile(TaskQueue& taskq, Path file);

@@ -309,51 +309,43 @@ void TracePixel::SetupCamera(const Camera& cam)
         focalBlurData = new FocalBlurData(camera, threadData);
 }
 
-void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour, const Vector2d& keyAt)
-{
-    shiftKey = true;
-    keyShift = keyAt - Vector2d(x, y);
-    (*this)(x, y, width, height, colour);
-    shiftKey = false;
-}
-
-void TracePixel::TracePair(DBL x, DBL y, DBL width, DBL height, const Vector2d& keyA, const Vector2d& keyB, RGBTColour& a, RGBTColour& b)
-{
-    if (useFocalBlur || (camera.Rays_Per_Pixel != 1))
-    {
-        (*this)(x, y, width, height, a, keyA);
-        (*this)(x, y, width, height, b, keyB);
-        return;
-    }
-    ClearGrain();
-    SetSubsurfaceCamera(width, height);
-    TraceTicket ticket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
-    Ray ray(ticket);
-    TraceTicket keyTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
-    Ray keyRay(keyTicket);
-    shiftKey = true;
-    keyShift = keyA - Vector2d(x, y);
-    bool traced = CreateCameraRay(ray, x, y, width, height, 0);
-    shiftKey = false;
-    if (!traced || !CreateCameraRay(keyRay, keyB[X], keyB[Y], width, height, 0))
-    {
-        (*this)(x, y, width, height, a, keyA);
-        (*this)(x, y, width, height, b, keyB);
-        return;
-    }
-    Ray twin(ray);
-    twin.SetKey(keyRay.GetKey());
-    MathColour colA, colB;
-    ColourChannel transmA = 0.0, transmB = 0.0;
-    TraceRayPair(ray, twin, colA, transmA, colB, transmB, camera.Max_Ray_Distance);
-    a = RGBTColour(ToRGBColour(colA), transmA);
-    b = RGBTColour(ToRGBColour(colB), transmB);
-}
-
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
     ClearGrain();
-    SetSubsurfaceCamera(width, height);
+    // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
+    if (!subsurfaceCameraSet)
+    {
+        // A pixel spans pixelSize + pixelAngle * distance; zero for camera types this does not model.
+        double pixelSize = 0.0, pixelAngle = 0.0;
+        if ((width > 0.0) && (height > 0.0))
+        {
+            switch (camera.Type)
+            {
+                case PERSPECTIVE_CAMERA:
+                    if (camera.Direction.length() > 0.0)
+                        pixelAngle = 2.0 * atan(0.5 * camera.Right.length() / camera.Direction.length()) / width;
+                    break;
+                case ORTHOGRAPHIC_CAMERA:
+                    pixelSize = min(camera.Right.length() / width, camera.Up.length() / height);
+                    break;
+                case SPHERICAL_CAMERA:
+                    pixelAngle = min(camera.H_Angle / width, camera.V_Angle / height) * M_PI_180;
+                    break;
+                case FISHEYE_CAMERA:
+                case ULTRA_WIDE_ANGLE_CAMERA:
+                case OMNIMAX_CAMERA:
+                    pixelAngle = camera.Angle * M_PI_180 / max(width, height);
+                    break;
+                case PANORAMIC_CAMERA:
+                    pixelAngle = M_PI / width;
+                    break;
+                default:
+                    break;
+            }
+        }
+        sceneData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
+        subsurfaceCameraSet = true;
+    }
     if(useFocalBlur == false)
     {
         colour.Clear();
@@ -380,43 +372,6 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
     }
     else
         TraceRayWithFocalBlur(colour, x, y, width, height);
-}
-
-void TracePixel::SetSubsurfaceCamera(DBL width, DBL height)
-{
-    // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
-    if (subsurfaceCameraSet)
-        return;
-    // A pixel spans pixelSize + pixelAngle * distance; zero for camera types this does not model.
-    double pixelSize = 0.0, pixelAngle = 0.0;
-    if ((width > 0.0) && (height > 0.0))
-    {
-        switch (camera.Type)
-        {
-            case PERSPECTIVE_CAMERA:
-                if (camera.Direction.length() > 0.0)
-                    pixelAngle = 2.0 * atan(0.5 * camera.Right.length() / camera.Direction.length()) / width;
-                break;
-            case ORTHOGRAPHIC_CAMERA:
-                pixelSize = min(camera.Right.length() / width, camera.Up.length() / height);
-                break;
-            case SPHERICAL_CAMERA:
-                pixelAngle = min(camera.H_Angle / width, camera.V_Angle / height) * M_PI_180;
-                break;
-            case FISHEYE_CAMERA:
-            case ULTRA_WIDE_ANGLE_CAMERA:
-            case OMNIMAX_CAMERA:
-                pixelAngle = camera.Angle * M_PI_180 / max(width, height);
-                break;
-            case PANORAMIC_CAMERA:
-                pixelAngle = M_PI / width;
-                break;
-            default:
-                break;
-        }
-    }
-    sceneData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
-    subsurfaceCameraSet = true;
 }
 
 bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number)
@@ -1004,16 +959,6 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
 
     ray.Direction.normalize();
     ray.SetKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ray.Origin), ray.Direction));
-
-    if (shiftKey)
-    {
-        shiftKey = false;
-        TraceTicket keyTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
-        Ray keyRay(keyTicket);
-        if (CreateCameraRay(keyRay, x + keyShift[X], y + keyShift[Y], width, height, ray_number))
-            ray.SetKey(keyRay.GetKey());
-        shiftKey = true;
-    }
 
     return true;
 }

@@ -391,7 +391,6 @@ enum
     kPOVAttrib_Jitter                = 'AAJi',
     kPOVAttrib_JitterAmount          = 'AAJA',
     kPOVAttrib_AntialiasGamma        = 'AAGa',
-    kPOVAttrib_AntialiasKeepGrain    = 'AAKG',
     kPOVAttrib_AntialiasGammaType    = 'AAGT', // currently not supported by code
     kPOVAttrib_Quality               = 'Qual',
     kPOVAttrib_HighReproducibility   = 'HRep',

@@ -210,16 +210,16 @@ is less that 0.\fIn\fP, or the maximum recursion depth is reached.
 .TP
 \fBAM\fP\fIn\fP or \fBSampling_Method\fP=\fIinteger\fP
 Specify the method of antialiasing used, non\-adaptive (\fIn\fP = 1),
-adaptive antialiasing (\fIn\fP = 2), or, with \fBPR\fP, refining only pixels that differ
-from a neighbour (\fIn\fP = 4). Method 4 compares colours by their distance in OKLab,
-so its threshold of about 0.02 is just noticeable; a probe between two differing pixels
-decides which of them holds the edge, and that pixel is split towards it, deeper where
-adjacent samples still differ, down to depth \fBR\fP.
+adaptive antialiasing (\fIn\fP = 2), or, with \fBPR\fP, spending a sample budget where it
+matters most (\fIn\fP = 4). Method 4 fits straight edges to the samples already traced,
+probes only where a line is still uncertain, and averages extra samples into noisy pixels;
+\fBA\fP sets the colour difference, in OKLab, that counts as an edge (about 0.02 is just
+noticeable) and \fBAB\fP sets how many extra samples it may spend.
 .TP
-\fBAKG\fP or \fBAntialias_Keep_Grain\fP=\fIbool\fP
-Method 4: sub\-samples take their pixel's random draws, and a difference that is only
-grain (area lights, media, \fIcrand\fP) is not refined. On by default; off, anti\-aliasing
-averages grain away.
+\fBAB\fP\fIn.n\fP or \fBAntialias_Budget\fP=\fIfloat\fP
+Method 4: the extra samples to spend, as a fraction of the pixel count (1.0 is one extra
+sample per pixel on average). Planning stops once the budget is reached, so the last pass may
+somewhat overshoot it; the image does not depend on the number of threads.
 .TP
 \fBJ\fP\fIn.n\fP or \fBJitter\fP=\fIbool\fP \fBJitter_Amount\fP=\fIfloat\fP
 Specify maximum radius, in pixels, that antialiased samples should be

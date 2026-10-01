@@ -1368,7 +1368,7 @@ void RenderOptions(POVMS_Object& obj, TextStreamBuffer *tsb)
     {
         int method = 0;
         if(obj.TryGetBool(kPOVAttrib_Antialias, false) == true)
-            method = clip(obj.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 5); // TODO FIXME - magic number in clip
+            method = clip(obj.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 4); // TODO FIXME - magic number in clip
         int depth = clip(obj.TryGetInt(kPOVAttrib_AntialiasDepth, 3), 1, 9); // TODO FIXME - magic number in clip
         float threshold = clip(obj.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
         float aagamma = obj.TryGetFloat(kPOVAttrib_AntialiasGamma, 2.5f);

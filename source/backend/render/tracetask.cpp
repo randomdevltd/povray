@@ -264,7 +264,7 @@ void TraceTask::SubdivisionBuffer::LoadEdge(size_t pos, bool column, const Edge&
 TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
                      DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                      unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                     int level, unsigned int ls, bool lf, bool pairs, DBL aab, int aap, int aar) :
+                     int level, unsigned int ls, bool lf, DBL aab, int aap, int aar) :
     RenderTask(vd, seed, "Trace"),
     trace(vd->GetSceneData(), &vd->GetCamera(), GetViewDataPtr(), vd->GetSceneData()->parsedMaxTraceLevel, vd->GetSceneData()->parsedAdcBailout,
           vd->GetQualityFeatureFlags(), cooperate, media, radiosity),
@@ -284,7 +284,6 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     progressLevel(level),
     latticeStep(ls),
     latticeFirst(lf),
-    aaPairs(pairs),
     aaPass(aap),
     aaRound(aar),
     media(GetViewDataPtr(), &trace, &photonGatherer),
@@ -332,16 +331,12 @@ void TraceTask::Run()
         {
             if(latticeStep > 0)
                 ProgressiveLevel();
-            else if(tracingMethod == 5)
-                ProgressiveM5();
+            else if(tracingMethod == 4)
+                ProgressiveM4();
             else if(tracingMethod == 1)
                 ProgressiveRefineM1();
             else if(tracingMethod == 2)
                 ProgressiveRefineM2();
-            else if(aaPairs)
-                ProgressivePairsM4();
-            else
-                ProgressiveRefineM4();
         }
         else switch(tracingMethod)
         {
@@ -929,8 +924,6 @@ void TraceTask::ProgressiveLevel()
 
                 if(keep)
                     GetViewData()->LatticeSample(x, y) = col;
-                if(GetViewData()->KeepsGrain())
-                    GetViewData()->LatticeGrain(x, y) = trace.Grainy();
                 positions.push_back(Vector2d(x, y));
                 colors.push_back(col);
 
@@ -1058,18 +1051,6 @@ void TraceTask::ProgressiveRefineM2()
     }
 }
 
-namespace
-{
-// Directions to the eight neighbours; a pixel tests its pairs towards the first four, and d + 4 is opposite d.
-const int kDirX[8] = { 1, 1, 0, -1, -1, -1,  0,  1 };
-const int kDirY[8] = { 0, 1, 1,  1,  0, -1, -1, -1 };
-
-std::uint64_t CellKey(unsigned int level, unsigned int cx, unsigned int cy)
-{
-    return (std::uint64_t(level) << 40) | (std::uint64_t(cy) << 20) | cx;
-}
-}
-
 TraceTask::OkLab TraceTask::OkLabOf(ViewData* vd, const RGBTColour& col)
 {
     const RGBColour c = GammaCurve::Decode(vd->GetSceneData()->workingGamma, col.rgb());
@@ -1087,277 +1068,25 @@ TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
     return OkLabOf(GetViewData(), col);
 }
 
-bool TraceTask::Contended(const OkLab& a, const OkLab& b) const
+void TraceTask::TraceSample(DBL x, DBL y, RGBTColour& col)
 {
-    const float dl = a.l - b.l, da = a.a - b.a, db = a.b - b.b;
-    return ((dl * dl + da * da + db * db) >= aaThreshold * aaThreshold) || (std::fabs(a.t - b.t) >= aaThreshold);
-}
-
-void TraceTask::LoadBlockLabs(const POVRect& rect)
-{
-    const POVRect& area = GetViewData()->GetRenderArea();
-    blockLabLeft = int(rect.left) - 1;
-    blockLabTop = int(rect.top) - 1;
-    blockLabWidth = int(rect.GetWidth()) + 2;
-    blockLabs.assign(size_t(blockLabWidth) * (rect.GetHeight() + 2), OkLab());
-    for (int y = max(blockLabTop, int(area.top)); y <= min(int(rect.bottom) + 1, int(area.bottom)); y++)
-        for (int x = max(blockLabLeft, int(area.left)); x <= min(int(rect.right) + 1, int(area.right)); x++)
-            blockLabs[(x - blockLabLeft) + (y - blockLabTop) * blockLabWidth] = ToOkLab(GetViewData()->LatticeSample(x, y));
-}
-
-void TraceTask::TraceSample(DBL x, DBL y, unsigned int px, unsigned int py, RGBTColour& col)
-{
-    // a sample keeps its pixel's random draws, so anti-aliasing keeps intended grain
-    if (GetViewData()->KeepsGrain())
-        trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col, Vector2d(px + 0.5, py + 0.5));
-    else
-        trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+    trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
     GetViewDataPtr()->Stats()[Number_Of_Samples]++;
     Cooperate();
 }
 
-void TraceTask::ProgressivePairsM4()
-{
-    const POVRect& area = GetViewData()->GetRenderArea();
-    const bool keepGrain = GetViewData()->KeepsGrain();
-    POVRect rect;
-    unsigned int serial;
-
-    while(GetViewData()->GetNextRectangle(rect, serial) == true)
-    {
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
-        LoadBlockLabs(rect);
-
-        for(unsigned int y = rect.top; y <= rect.bottom; y++)
-        {
-            for(unsigned int x = rect.left; x <= rect.right; x++)
-            {
-                const OkLab& lp = BlockLab(x, y);
-                const Vector2d centre(x + 0.5, y + 0.5);
-                std::uint16_t bits = 0;
-
-                for(int d = 0; d < 8; d++)
-                {
-                    const int qx = int(x) + kDirX[d], qy = int(y) + kDirY[d];
-                    const bool outX = (qx < int(area.left)) || (qx > int(area.right));
-                    const bool outY = (qy < int(area.top)) || (qy > int(area.bottom));
-                    const Vector2d at(centre[X] + 0.5 * kDirX[d], centre[Y] + 0.5 * kDirY[d]);
-                    RGBTColour probe, twin;
-
-                    if(outX || outY)
-                    {
-                        // beyond the frame: one probe per side neighbour and per frame corner, as a diagonal along a side shares its edge
-                        if((kDirX[d] != 0) && (kDirY[d] != 0) && !(outX && outY))
-                            continue;
-                        TraceSample(at[X], at[Y], x, y, probe);
-                        if(Contended(ToOkLab(probe), lp))
-                            bits |= (1 << d);
-                        continue;
-                    }
-                    if((d >= 4) || !Contended(lp, BlockLab(qx, qy)))
-                        continue;
-
-                    const OkLab& lq = BlockLab(qx, qy);
-                    if(keepGrain && (GetViewData()->LatticeGrain(x, y) || GetViewData()->LatticeGrain(qx, qy)))
-                    {
-                        // noise test: each pixel's own draws at the shared point; a probe matching its own centre clears it
-                        trace.TracePair(at[X], at[Y], GetViewData()->GetWidth(), GetViewData()->GetHeight(), centre, Vector2d(qx + 0.5, qy + 0.5), probe, twin);
-                        GetViewDataPtr()->Stats()[Number_Of_Samples] += 2;
-                        Cooperate();
-                        if(Contended(ToOkLab(probe), lp))
-                            bits |= (1 << d);
-                        if(Contended(ToOkLab(twin), lq))
-                            bits |= (1 << (8 + d));
-                        continue;
-                    }
-
-                    // a probe matching one side puts the edge in the other pixel; a third colour refines both, and one matching both neither
-                    TraceSample(at[X], at[Y], x, y, probe);
-                    const OkLab lb = ToOkLab(probe);
-                    if(Contended(lb, lp))
-                        bits |= (1 << d);
-                    if(Contended(lb, lq))
-                        bits |= (1 << (8 + d));
-                }
-
-                GetViewData()->Contention(x, y) = bits;
-            }
-        }
-
-        radiosity.AfterTile();
-
-        GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, 0.0f);
-
-        Cooperate();
-    }
-}
-
-void TraceTask::ProgressiveRefineM4()
-{
-    const POVRect& area = GetViewData()->GetRenderArea();
-    POVRect rect;
-    vector<RGBTColour> pixels;
-    unsigned int serial;
-
-    while(GetViewData()->GetNextRectangle(rect, serial) == true)
-    {
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
-        LoadBlockLabs(rect);
-
-        pixels.clear();
-        pixels.reserve(rect.GetArea());
-
-        for(unsigned int y = rect.top; y <= rect.bottom; y++)
-        {
-            for(unsigned int x = rect.left; x <= rect.right; x++)
-            {
-                RGBTColour col = GetViewData()->LatticeSample(x, y);
-                unsigned int directions = GetViewData()->Contention(x, y) & 0xff;
-
-                // the neighbours to the west, north-west, north and north-east tested the pair and may ask this pixel to refine
-                for(int d = 0; d < 4; d++)
-                {
-                    const int nx = int(x) - kDirX[d], ny = int(y) - kDirY[d];
-                    if((nx >= int(area.left)) && (nx <= int(area.right)) && (ny >= int(area.top)) &&
-                       (GetViewData()->Contention(nx, ny) & (1 << (8 + d))))
-                        directions |= (1 << (d + 4));
-                }
-
-                if(directions != 0)
-                    RefinePixelM4(x, y, directions, col);
-
-                pixels.push_back(col);
-                Cooperate();
-            }
-        }
-
-        radiosity.AfterTile();
-
-        GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
-
-        Cooperate();
-    }
-}
-
-void TraceTask::RefinePixelM4(unsigned int x, unsigned int y, unsigned int directions, RGBTColour& col)
-{
-    GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
-
-    refineX = x;
-    refineY = y;
-    refineDirections = directions;
-    cells.clear();
-    cellColours.assign(1, col);
-    cellLabs.assign(1, BlockLab(x, y));
-    cellQueue.clear();
-    cells[CellKey(0, 0, 0)] = Cell { 0, false, true };
-
-    for(int d = 0; d < 8; d++)
-        if(directions & (1 << d))
-            SplitCell(0, 0, 0, d);
-    for(size_t i = 0; i < cellQueue.size(); i++)
-        CompareCell(cellQueue[i]);
-
-    // the pixel is the area-weighted mean of its leaf cells
-    col.Clear();
-    for(const auto& cell : cells)
-        if(!cell.second.split)
-            col += cellColours[cell.second.sample] * (1.0 / DBL(std::uint64_t(1) << (2 * (cell.first >> 40))));
-}
-
-void TraceTask::SplitCell(unsigned int level, unsigned int cx, unsigned int cy, int d)
-{
-    if(level >= aaDepth)
-        return;
-
-    Cell& cell = cells[CellKey(level, cx, cy)];
-    if(!cell.split)
-    {
-        cell.split = true;
-        const Cell inherited { cell.sample, false, false };
-        for(unsigned int j = 0; j < 4; j++)
-            cells[CellKey(level + 1, 2 * cx + (j & 1), 2 * cy + (j >> 1))] = inherited;
-    }
-
-    // trace the children that face the direction: two for a side, one for a diagonal
-    const DBL size = 1.0 / DBL(1u << (level + 1));
-    for(unsigned int j = 0; j < 4; j++)
-    {
-        const int ix = int(j & 1), iy = int(j >> 1);
-        if(((kDirX[d] != 0) && (ix != (kDirX[d] > 0 ? 1 : 0))) || ((kDirY[d] != 0) && (iy != (kDirY[d] > 0 ? 1 : 0))))
-            continue;
-        const unsigned int ccx = 2 * cx + ix, ccy = 2 * cy + iy;
-        const std::uint64_t key = CellKey(level + 1, ccx, ccy);
-        Cell& child = cells[key];
-        if(child.split || child.traced)
-            continue;
-        RGBTColour sample;
-        TraceSample(refineX + (ccx + 0.5) * size, refineY + (ccy + 0.5) * size, refineX, refineY, sample);
-        child = Cell { int(cellColours.size()), false, true };
-        cellColours.push_back(sample);
-        cellLabs.push_back(ToOkLab(sample));
-        cellQueue.push_back(key);
-    }
-}
-
-void TraceTask::CompareCell(std::uint64_t key)
-{
-    const POVRect& area = GetViewData()->GetRenderArea();
-    const unsigned int level = (unsigned int)(key >> 40);
-    const unsigned int cx = (unsigned int)(key & 0xfffff), cy = (unsigned int)((key >> 20) & 0xfffff);
-    const int n = int(1u << level);
-
-    for(int d = 0; d < 8; d++)
-    {
-        const OkLab lc = cellLabs[cells[key].sample];
-        const int nx = int(cx) + kDirX[d], ny = int(cy) + kDirY[d];
-
-        if((nx < 0) || (ny < 0) || (nx >= n) || (ny >= n))
-        {
-            // across the pixel boundary, the neighbouring pixel's centre, towards neighbours whose pair put the edge here
-            const int sx = (nx < 0 ? -1 : (nx >= n ? 1 : 0)), sy = (ny < 0 ? -1 : (ny >= n ? 1 : 0));
-            const int px = int(refineX) + sx, py = int(refineY) + sy;
-            int side = 0;
-            while((kDirX[side] != sx) || (kDirY[side] != sy))
-                side++;
-            if((refineDirections & (1u << side)) && (px >= int(area.left)) && (px <= int(area.right)) &&
-               (py >= int(area.top)) && (py <= int(area.bottom)) && Contended(lc, BlockLab(px, py)))
-                SplitCell(level, cx, cy, d);
-            continue;
-        }
-
-        // the leaf holding the neighbouring position, split too if it has a sample of its own; finer neighbours compare themselves
-        for(unsigned int l = 0; l <= level; l++)
-        {
-            const unsigned int lx = unsigned(nx) >> (level - l), ly = unsigned(ny) >> (level - l);
-            const Cell& other = cells[CellKey(l, lx, ly)];
-            if(other.split)
-                continue;
-            if(Contended(lc, cellLabs[other.sample]))
-            {
-                SplitCell(level, cx, cy, d);
-                if(other.traced)
-                    SplitCell(l, lx, ly, (d + 4) % 8);
-            }
-            break;
-        }
-    }
-}
-
 namespace
 {
-/// Method 5's experiment switches, read once from POV_AA5, e.g. `W=7,FREE=0,NOISE=1,EMAX=2,GAP=0.0625,ROUNDS=6`.
-struct M5Options final
+/// Method 4's experiment switches, read once from POV_AA4, e.g. `W=7,FREE=0,NOISE=1,EMAX=2,GAP=0.0625,ROUNDS=6`.
+struct M4Options final
 {
     int window = 5;
     bool freeOnly = false;
     bool noise = true;
     float emax = 2.0f;
     float gapMin = 0.001f;
-    int rounds = TraceTask::kM5Rounds;
-    bool chain = false;             ///< Fit whole contours instead of a window round each pixel.
+    int rounds = TraceTask::kM4Rounds;
+    bool chain = true;              ///< Fit whole contours instead of a window round each pixel.
     int lmin = 4;                   ///< Shortest run of crossings a chain segment may be fitted to.
     float rho = 0.35f;              ///< Share of contended links in a 5x5 window above which it is noise.
     float ceps = 0.002f;            ///< Chain mode: differences below this are rounding, whatever their neighbours.
@@ -1367,22 +1096,22 @@ struct M5Options final
     float reach = 4.0f;             ///< Join: how far apart two segment ends may be, in pixels.
     float turn = 0.94f;             ///< Join: how nearly opposite their outward directions must be (cosine).
     float lateral = 1.0f;           ///< Join: how far one end may sit off the other's line, in pixels.
-    float minLen = 0.0f;            ///< Chain mode: fits on segments shorter than this go to the noise tier instead.
-    int dense = 0;                  ///< Chain mode: fits with this many different segments in a 5x5 window go to the noise tier.
+    float minLen = 8.0f;            ///< Chain mode: fits on segments shorter than this go to the noise tier instead.
+    int dense = 4;                  ///< Chain mode: fits with this many different segments in a 5x5 window go to the noise tier.
     float noiseFrac = 0.0f;         ///< Share of the budget kept for the noise tier; negative for the share of screen it covers.
     bool stats = false;             ///< Print how the pixels were classified.
-    int halo = 0;                   ///< Chain mode: radius within which dense contours make flat pixels worth a sample; 0 for none.
+    int halo = 3;                   ///< Chain mode: radius within which dense contours make flat pixels worth a sample; 0 for none.
     float haloRho = 0.12f;          ///< Share of contour links in that window above which it counts as dense.
-    float rough = 0.0f;             ///< Chain mode: links differing by at least this, whatever their neighbours, count towards roughness; 0 for none.
+    float rough = 0.06f;            ///< Chain mode: links differing by at least this, whatever their neighbours, count towards roughness; 0 for none.
     float roughRho = 0.3f;          ///< Share of rough links in the halo window above which flat pixels there join the noise tier.
 };
 
-const M5Options& M5Opts()
+const M4Options& M4Opts()
 {
-    static const M5Options options = []
+    static const M4Options options = []
     {
-        M5Options o;
-        if(const char* env = std::getenv("POV_AA5"))
+        M4Options o;
+        if(const char* env = std::getenv("POV_AA4"))
         {
             const std::string s(env);
             size_t pos = 0;
@@ -1438,17 +1167,17 @@ inline float Dist2(const float* a, const float* b)
 }
 
 /// Priorities within about a tenth of an octave share a bucket, and buckets are what the planner ties on.
-int M5Bucket(float priority)
+int M4Bucket(float priority)
 {
     return std::min(255, std::max(0, int(10.0f * (std::log2(std::max(priority, 1.0e-6f)) + 14.0f))));
 }
 
-struct M5Poly final { float x[8], y[8]; int n; };
+struct M4Poly final { float x[8], y[8]; int n; };
 
 /// The part of a convex polygon on one side of the line n.q = s.
-M5Poly M5Clip(const M5Poly& p, float nx, float ny, float s, bool beyond)
+M4Poly M4Clip(const M4Poly& p, float nx, float ny, float s, bool beyond)
 {
-    M5Poly o;
+    M4Poly o;
     o.n = 0;
     const float sign = beyond ? 1.0f : -1.0f;
     for(int i = 0; i < p.n; i++)
@@ -1472,7 +1201,7 @@ M5Poly M5Clip(const M5Poly& p, float nx, float ny, float s, bool beyond)
     return o;
 }
 
-float M5PolyArea(const M5Poly& p)
+float M4PolyArea(const M4Poly& p)
 {
     float a = 0.0f;
     for(int i = 0; i < p.n; i++)
@@ -1484,7 +1213,7 @@ float M5PolyArea(const M5Poly& p)
 }
 
 /// Fraction of the unit pixel lying beyond the line n.q = s, with the pixel centre at the origin.
-float M5Coverage(float nx, float ny, float s)
+float M4Coverage(float nx, float ny, float s)
 {
     float a = std::fabs(nx), b = std::fabs(ny);
     if(a < b)
@@ -1511,11 +1240,11 @@ float M5Coverage(float nx, float ny, float s)
 namespace
 {
 /// Where a contour crosses a link between two neighbouring samples, and the pixels of those samples, the one left of travel first.
-struct M5Bracket final { float cx, cy; int lx, ly, rx, ry; };
+struct M4Bracket final { float cx, cy; int lx, ly, rx, ry; };
 
 /// The line with the widest gap between the samples that must lie beyond it (left of the chain) and short of it (right).
 /// Returns that gap, negative when no line separates them; n.q = s is the line, with n pointing at the left samples.
-float M5BestLine(const std::vector<M5Bracket>& br, int i0, int i1, float& nx, float& ny, float& s)
+float M4BestLine(const std::vector<M4Bracket>& br, int i0, int i1, float& nx, float& ny, float& s)
 {
     float tx = br[i1].cx - br[i0].cx, ty = br[i1].cy - br[i0].cy;
     float len = std::sqrt(tx * tx + ty * ty);
@@ -1533,7 +1262,7 @@ float M5BestLine(const std::vector<M5Bracket>& br, int i0, int i1, float& nx, fl
         float minL = std::numeric_limits<float>::max(), maxR = -minL;
         for(int i = i0; i <= i1; i++)
         {
-            const M5Bracket& b = br[i];
+            const M4Bracket& b = br[i];
             minL = std::min(minL, c * (float(b.lx) + 0.5f) + sn * (float(b.ly) + 0.5f));
             maxR = std::max(maxR, c * (float(b.rx) + 0.5f) + sn * (float(b.ry) + 0.5f));
         }
@@ -1574,7 +1303,7 @@ float M5BestLine(const std::vector<M5Bracket>& br, int i0, int i1, float& nx, fl
 }
 
 /// Keep only the points that can bound a line: the upper hull when the points must lie below it, else the lower.
-void M5Hull(std::vector<AaSeg::Pt>& p, bool upper)
+void M4Hull(std::vector<AaSeg::Pt>& p, bool upper)
 {
     std::sort(p.begin(), p.end(), [](const AaSeg::Pt& a, const AaSeg::Pt& b) { return (a.u < b.u) || ((a.u == b.u) && (a.v < b.v)); });
     std::vector<AaSeg::Pt> h;
@@ -1597,7 +1326,7 @@ void M5Hull(std::vector<AaSeg::Pt>& p, bool upper)
 
 /// Every line v = a + b u that keeps the colour A points below it and the colour B points above is possible; take the
 /// middle of those and work out how far either way the line could lie at three places along it. False when none is.
-bool M5Estimate(AaSeg& s)
+bool M4Estimate(AaSeg& s)
 {
     auto alo = [&](float b)
     {
@@ -1684,7 +1413,7 @@ bool M5Estimate(AaSeg& s)
 }
 
 /// Fold the last round's probe results into each segment's bounds and re-estimate its line.
-void M5FoldSegments(ViewData* vd)
+void M4FoldSegments(ViewData* vd)
 {
     for(AaSeg& s : vd->aaSegs)
     {
@@ -1694,24 +1423,24 @@ void M5FoldSegments(ViewData* vd)
         for(const AaSeg::Pt& p : s.fresh)
             (p.b ? s.hullB : s.hullA).push_back(p);
         s.fresh.clear();
-        M5Hull(s.hullA, true);
-        M5Hull(s.hullB, false);
-        if(!M5Estimate(s))
+        M4Hull(s.hullA, true);
+        M4Hull(s.hullB, false);
+        if(!M4Estimate(s))
         {
             // a probe that contradicts the rest: keep the line as it was, and probe this segment no more
             s.hullA = keepA;
             s.hullB = keepB;
-            M5Estimate(s);
+            M4Estimate(s);
             s.state = 1;
         }
     }
 }
 
-bool M5StationOk(const AaSeg& s, float u);
+bool M4StationOk(const AaSeg& s, float u);
 
 /// Choose the segments to probe this round, best first, before any ray is traced for them: a probe at the end where
 /// the line is least certain is worth the contrast, times how uncertain it is, times how many pixels the line crosses.
-void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabledIn)
+void M4PlanSegments(ViewData* vd, const M4Options& o, bool enabledIn)
 {
     const POVRect& area = vd->GetRenderArea();
     // what the edge probes may still spend, once the noise tier's share is set aside
@@ -1727,7 +1456,7 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabledIn)
             const float wavg = 0.25f * (s.w[0] + 2.0f * s.w[1] + s.w[2]);
             if(s.state || (wavg <= o.gapMin))
                 continue;
-            bucket[i] = M5Bucket(s.contrast * wavg * std::max(1.0f, s.length));
+            bucket[i] = M4Bucket(s.contrast * wavg * std::max(1.0f, s.length));
             hist[bucket[i]]++;
             total++;
         }
@@ -1775,7 +1504,7 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabledIn)
                     if(off > 0.4f * len)
                         break;
                     u = lowEnd ? (s.uLo + off) : (s.uHi - off);
-                    found = M5StationOk(s, u);
+                    found = M4StationOk(s, u);
                 }
             }
         }
@@ -1798,7 +1527,7 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabledIn)
 }
 
 /// The colours either side of a segment's line, near a position along it.
-void M5LocalColours(const AaSeg& s, float u, RGBTColour& a, RGBTColour& b)
+void M4LocalColours(const AaSeg& s, float u, RGBTColour& a, RGBTColour& b)
 {
     const size_t n = s.bu.size();
     const size_t k = size_t(std::lower_bound(s.bu.begin(), s.bu.end(), u) - s.bu.begin());
@@ -1817,7 +1546,7 @@ void M5LocalColours(const AaSeg& s, float u, RGBTColour& a, RGBTColour& b)
 
 /// Whether the colours either side of a segment stay the same for a few samples each way of u, so that a probe there
 /// can be told apart by them; through a checkerboard's corners they swap, and no probe should land near one.
-bool M5StationOk(const AaSeg& s, float u)
+bool M4StationOk(const AaSeg& s, float u)
 {
     const size_t n = s.bu.size();
     if(n == 0)
@@ -1832,7 +1561,7 @@ bool M5StationOk(const AaSeg& s, float u)
     return true;
 }
 
-void M5SortBrackets(AaSeg& s)
+void M4SortBrackets(AaSeg& s)
 {
     std::vector<size_t> idx(s.bu.size());
     for(size_t i = 0; i < idx.size(); i++)
@@ -1852,7 +1581,7 @@ void M5SortBrackets(AaSeg& s)
 }
 
 /// Where a segment's line ends, and which way it runs on out of that end.
-void M5SegEnd(const AaSeg& s, int end, float& px, float& py, float& dx, float& dy)
+void M4SegEnd(const AaSeg& s, int end, float& px, float& py, float& dx, float& dy)
 {
     const float u = end ? s.uHi : s.uLo;
     const float v = s.a + s.b * u;
@@ -1872,7 +1601,7 @@ void M5SegEnd(const AaSeg& s, int end, float& px, float& py, float& dx, float& d
 
 /// Join b onto a when one line can still keep both their colour A samples on one side and their colour B samples on
 /// the other; the colours themselves may swap across the join, as they do through a checkerboard's corners.
-bool M5TryJoin(const AaSeg& a, const AaSeg& b, AaSeg& out)
+bool M4TryJoin(const AaSeg& a, const AaSeg& b, AaSeg& out)
 {
     out = a;
     const bool flip = (a.nx * b.nx + a.ny * b.ny) < 0.0f;
@@ -1893,8 +1622,8 @@ bool M5TryJoin(const AaSeg& a, const AaSeg& b, AaSeg& out)
             (toB ? out.hullB : out.hullA).push_back(AaSeg::Pt { u, v, std::uint8_t(toB ? 1 : 0) });
         }
     }
-    M5Hull(out.hullA, true);
-    M5Hull(out.hullB, false);
+    M4Hull(out.hullA, true);
+    M4Hull(out.hullB, false);
 
     float u1, v1, u2, v2;
     toA(b.uLo, b.a + b.b * b.uLo, u1, v1);
@@ -1909,18 +1638,18 @@ bool M5TryJoin(const AaSeg& a, const AaSeg& b, AaSeg& out)
         out.bA.push_back(flip ? b.bB[k] : b.bA[k]);
         out.bB.push_back(flip ? b.bA[k] : b.bB[k]);
     }
-    M5SortBrackets(out);
+    M4SortBrackets(out);
 
     const float la = a.length, lb = b.length;
     out.contrast = (a.contrast * la + b.contrast * lb) / std::max(1.0e-3f, la + lb);
     out.length = out.uHi - out.uLo;
     out.probes = std::uint8_t(std::min(255, int(a.probes) + int(b.probes)));
-    return M5Estimate(out);
+    return M4Estimate(out);
 }
 
 /// Lines run on through a junction: where two segments end close together heading the same way, and one line
 /// fits the samples of both, they are one segment, so the whole edge is pinned down by every sample along it.
-void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
+void M4JoinSegments(ViewData* vd, float reach, float turn, float lateral)
 {
     std::vector<AaSeg>& segs = vd->aaSegs;
     const float cell = 4.0f;
@@ -1935,7 +1664,7 @@ void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
             for(int e = 0; e < 2; e++)
             {
                 float px, py, dx, dy;
-                M5SegEnd(segs[i], e, px, py, dx, dy);
+                M4SegEnd(segs[i], e, px, py, dx, dy);
                 grid[key(int(std::floor(px / cell)), int(std::floor(py / cell)))].push_back(std::make_pair(int(i), e));
             }
         }
@@ -1946,7 +1675,7 @@ void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
             for(int e1 = 0; (e1 < 2) && !touched[i] && (segs[i].state != 2); e1++)
             {
                 float px, py, dx, dy;
-                M5SegEnd(segs[i], e1, px, py, dx, dy);
+                M4SegEnd(segs[i], e1, px, py, dx, dy);
                 const float inv = 1.0f / std::sqrt(1.0f + segs[i].b * segs[i].b);
                 const float nlx = (segs[i].nx - segs[i].b * segs[i].tx) * inv, nly = (segs[i].ny - segs[i].b * segs[i].ty) * inv;
                 int bestJ = -1;
@@ -1964,7 +1693,7 @@ void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
                             if((j == int(i)) || (segs[size_t(j)].state == 2) || touched[size_t(j)])
                                 continue;
                             float qx, qy, ex, ey;
-                            M5SegEnd(segs[size_t(j)], cand.second, qx, qy, ex, ey);
+                            M4SegEnd(segs[size_t(j)], cand.second, qx, qy, ex, ey);
                             const float d2 = (qx - px) * (qx - px) + (qy - py) * (qy - py);
                             if((d2 > bestD) || (dx * ex + dy * ey > -turn) || (std::fabs((qx - px) * nlx + (qy - py) * nly) > lateral))
                                 continue;
@@ -1976,7 +1705,7 @@ void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
                 if(bestJ < 0)
                     continue;
                 AaSeg joined;
-                if(M5TryJoin(segs[i], segs[size_t(bestJ)], joined))
+                if(M4TryJoin(segs[i], segs[size_t(bestJ)], joined))
                 {
                     segs[i] = std::move(joined);
                     AaSeg& dead = segs[size_t(bestJ)];
@@ -1992,9 +1721,9 @@ void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
     }
 }
 
-/// Method 5 without windows: find every contour in the centre samples, cut it into the longest straight runs the
+/// Method 4 without windows: find every contour in the centre samples, cut it into the longest straight runs the
 /// samples allow, and give each pixel the line of the run it lies most inside of.
-void M5ChainFit(ViewData* vd, const M5Options& o)
+void M4ChainFit(ViewData* vd, const M4Options& o)
 {
     vd->aaSegs.clear();
     const POVRect& area = vd->GetRenderArea();
@@ -2153,7 +1882,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
     std::vector<float> weight(size_t(w) * size_t(h), 0.0f), weight2(size_t(w) * size_t(h), 0.0f);
     std::vector<std::pair<size_t, int>> overshoot;
     std::vector<size_t> chain;
-    std::vector<M5Bracket> br;
+    std::vector<M4Bracket> br;
     std::vector<std::uint8_t> weak(size_t(w) * size_t(h), 0);
     auto markWeak = [&](int a, int b)
     {
@@ -2212,7 +1941,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
         {
             const int ia = std::max(0, i - 1), ib = std::min(m - 1, i + 1);
             const float tx = br[size_t(ib)].cx - br[size_t(ia)].cx, ty = br[size_t(ib)].cy - br[size_t(ia)].cy;
-            M5Bracket& b = br[size_t(i)];
+            M4Bracket& b = br[size_t(i)];
             const float side = (float(b.lx) + 0.5f - b.cx) * ty - (float(b.ly) + 0.5f - b.cy) * tx;
             if(side < 0.0f)
             {
@@ -2221,7 +1950,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
             }
         }
         float nx, ny, s;
-        auto feasible = [&](int a, int b) { return M5BestLine(br, a, b, nx, ny, s) >= 0.0f; };
+        auto feasible = [&](int a, int b) { return M4BestLine(br, a, b, nx, ny, s) >= 0.0f; };
 
         int i0 = 0;
         while(i0 < m - 1)
@@ -2290,7 +2019,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
 
             if(good - i0 + 1 >= o.lmin)
             {
-                M5BestLine(br, i0, good, nx, ny, s);
+                M4BestLine(br, i0, good, nx, ny, s);
                 const float tx = -ny, ty = nx;
                 float uA = tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy, uB = tx * br[size_t(good)].cx + ty * br[size_t(good)].cy;
                 if(uA > uB)
@@ -2313,24 +2042,24 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                     sg.length = uHi - uLo;
                     for(int i = i0; i <= good; i++)
                     {
-                        const M5Bracket& bk = br[size_t(i)];
+                        const M4Bracket& bk = br[size_t(i)];
                         const float ax = float(bk.rx) + 0.5f, ay = float(bk.ry) + 0.5f, bx = float(bk.lx) + 0.5f, by = float(bk.ly) + 0.5f;
                         sg.hullA.push_back(AaSeg::Pt { tx * ax + ty * ay - uc, nx * ax + ny * ay - s, 0 });
                         sg.hullB.push_back(AaSeg::Pt { tx * bx + ty * by - uc, nx * bx + ny * by - s, 1 });
                     }
-                    M5Hull(sg.hullA, true);
-                    M5Hull(sg.hullB, false);
-                    const M5Bracket& bm = br[size_t((i0 + good) / 2)];
+                    M4Hull(sg.hullA, true);
+                    M4Hull(sg.hullB, false);
+                    const M4Bracket& bm = br[size_t((i0 + good) / 2)];
                     sg.contrast = std::sqrt(Dist2(lab(bm.lx, bm.ly), lab(bm.rx, bm.ry)));
                     for(int i = i0; i <= good; i++)
                     {
-                        const M5Bracket& bk = br[size_t(i)];
+                        const M4Bracket& bk = br[size_t(i)];
                         sg.bu.push_back(tx * bk.cx + ty * bk.cy - uc);
                         sg.bA.push_back(vd->LatticeSample(unsigned(bk.rx), unsigned(bk.ry)));
                         sg.bB.push_back(vd->LatticeSample(unsigned(bk.lx), unsigned(bk.ly)));
                     }
-                    M5SortBrackets(sg);
-                    if(!M5Estimate(sg))
+                    M4SortBrackets(sg);
+                    if(!M4Estimate(sg))
                         sg.state = 1;
                 }
             }
@@ -2364,7 +2093,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
 
     // contours too short or too ragged to fit, with no good run through them, are noise
     if(o.join)
-        M5JoinSegments(vd, o.reach, o.turn, o.lateral);
+        M4JoinSegments(vd, o.reach, o.turn, o.lateral);
 
     // each pixel takes the line of the segment it lies most inside of, after any joining
     for(size_t id = 0; id < vd->aaSegs.size(); id++)
@@ -2417,7 +2146,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
             f.seg = int(id);
             f.contrast = sg.contrast;
             f.probes = 0;
-            M5LocalColours(sg, upos, f.a, f.b);
+            M4LocalColours(sg, upos, f.a, f.b);
         };
 
         // every pixel the line passes through, column by column for a flat line, else row by row
@@ -2568,9 +2297,9 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
 }
 }
 
-void TraceTask::PlanM5(ViewData* vd, int pass, int round)
+void TraceTask::PlanM4(ViewData* vd, int pass, int round)
 {
-    const M5Options& o = M5Opts();
+    const M4Options& o = M4Opts();
     const POVRect& area = vd->GetRenderArea();
 
     if(pass == 0)
@@ -2586,7 +2315,7 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
             }
         }
         if(o.chain)
-            M5ChainFit(vd, o);
+            M4ChainFit(vd, o);
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
         vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
         vd->aaExhausted = false;
@@ -2606,7 +2335,7 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
             const double frac = (o.noiseFrac >= 0.0f) ? double(o.noiseFrac) : double(nNoise) / double(std::max<std::int64_t>(1, nFit + nNoise));
             vd->aaReserve = std::int64_t(frac * double(vd->aaBudgetLeft));
             if(o.stats)
-                std::fprintf(stderr, "AA5 pixels %.0f: fitted %lld (%.1f%%), noisy %lld (%.1f%%), segments %zu, budget %lld, reserved for noise %lld\n", pixels,
+                std::fprintf(stderr, "AA4 pixels %.0f: fitted %lld (%.1f%%), noisy %lld (%.1f%%), segments %zu, budget %lld, reserved for noise %lld\n", pixels,
                              (long long)nFit, 100.0 * double(nFit) / pixels, (long long)nNoise, 100.0 * double(nNoise) / pixels, vd->aaSegs.size(),
                              (long long)vd->aaBudgetLeft, (long long)vd->aaReserve);
         }
@@ -2618,10 +2347,10 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
 
     if(o.chain)
     {
-        M5FoldSegments(vd);
+        M4FoldSegments(vd);
         if(probe)
         {
-            M5PlanSegments(vd, o, enabled);
+            M4PlanSegments(vd, o, enabled);
             return;
         }
     }
@@ -2635,10 +2364,10 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
                 return -1;
             const float ext = 0.5f * (std::fabs(f.nx) + std::fabs(f.ny));
             const float gap = std::min(f.hi, ext) - std::max(f.lo, -ext);
-            return (gap > o.gapMin) ? M5Bucket(f.contrast * gap) : -1;
+            return (gap > o.gapMin) ? M4Bucket(f.contrast * gap) : -1;
         }
         // a noisy pixel's next sample is worth less for each it already has
-        return ((f.kind == 2) && (f.probes < 250)) ? M5Bucket(f.contrast / (1.0f + float(f.probes))) : -1;
+        return ((f.kind == 2) && (f.probes < 250)) ? M4Bucket(f.contrast / (1.0f + float(f.probes))) : -1;
     };
 
     std::int64_t hist[256] = {};
@@ -2694,9 +2423,9 @@ void TraceTask::PlanM5(ViewData* vd, int pass, int round)
         vd->aaExhausted = true;
 }
 
-void TraceTask::FitPixelM5(unsigned int x, unsigned int y, AaFit& fit)
+void TraceTask::FitPixelM4(unsigned int x, unsigned int y, AaFit& fit)
 {
-    const M5Options& o = M5Opts();
+    const M4Options& o = M4Opts();
     const POVRect& area = GetViewData()->GetRenderArea();
     const int h = o.window / 2;
     const float thr2 = float(aaThreshold * aaThreshold);
@@ -2862,7 +2591,7 @@ void TraceTask::FitPixelM5(unsigned int x, unsigned int y, AaFit& fit)
     fit.b = cb;
 }
 
-void TraceTask::ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit)
+void TraceTask::ProbePixelM4(unsigned int x, unsigned int y, AaFit& fit)
 {
     const float ext = 0.5f * (std::fabs(fit.nx) + std::fabs(fit.ny));
     const float lo = std::max(fit.lo, -ext), hi = std::min(fit.hi, ext);
@@ -2892,7 +2621,7 @@ void TraceTask::ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit)
     const float u = 0.5f * (ulo + uhi) + (vdc - 0.5f) * (uhi - ulo);
 
     RGBTColour col;
-    TraceSample(DBL(x) + 0.5 + sm * fit.nx + u * tx, DBL(y) + 0.5 + sm * fit.ny + u * ty, x, y, col);
+    TraceSample(DBL(x) + 0.5 + sm * fit.nx + u * tx, DBL(y) + 0.5 + sm * fit.ny + u * ty, col);
 
     // a probe on the first colour's side puts the edge beyond it, otherwise before it
     const OkLab pa = ToOkLab(fit.a), pb = ToOkLab(fit.b), pc = ToOkLab(col);
@@ -2908,7 +2637,7 @@ void TraceTask::ProbePixelM5(unsigned int x, unsigned int y, AaFit& fit)
     fit.probes++;
 }
 
-void TraceTask::ProbeSegmentsM5()
+void TraceTask::ProbeSegmentsM4()
 {
     ViewData* vd = GetViewData();
     radiosity.BeforeTile(0, RadiosityFunction::FINAL_TRACE);
@@ -2921,11 +2650,11 @@ void TraceTask::ProbeSegmentsM5()
         const float px = s.cx + s.probeU * s.tx + s.probeV * s.nx, py = s.cy + s.probeU * s.ty + s.probeV * s.ny;
 
         RGBTColour col;
-        TraceSample(px, py, unsigned(px), unsigned(py), col);
+        TraceSample(px, py, col);
 
         // which side of the line the point is on, by whether it is nearer the colour of one side or the other
         RGBTColour ca, cb;
-        M5LocalColours(s, s.probeU, ca, cb);
+        M4LocalColours(s, s.probeU, ca, cb);
         const OkLab pa = ToOkLab(ca), pb = ToOkLab(cb), pc = ToOkLab(col);
         const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
         const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
@@ -2938,11 +2667,11 @@ void TraceTask::ProbeSegmentsM5()
     GetViewDataPtr()->AfterTile();
 }
 
-void TraceTask::ProgressiveM5()
+void TraceTask::ProgressiveM4()
 {
-    if((aaPass == 2) && M5Opts().chain)
+    if((aaPass == 2) && M4Opts().chain)
     {
-        ProbeSegmentsM5();
+        ProbeSegmentsM4();
         return;
     }
     const bool traces = (aaPass == 2) || (aaPass == 3);
@@ -2966,12 +2695,12 @@ void TraceTask::ProgressiveM5()
                 switch(aaPass)
                 {
                     case 1:
-                        if(!M5Opts().chain)
-                            FitPixelM5(x, y, fit);
+                        if(!M4Opts().chain)
+                            FitPixelM4(x, y, fit);
                         break;
                     case 2:
                         if(fit.planned)
-                            ProbePixelM5(x, y, fit);
+                            ProbePixelM4(x, y, fit);
                         break;
                     case 3:
                         if(fit.planned)
@@ -2991,7 +2720,7 @@ void TraceTask::ProgressiveM5()
                             ox -= std::floor(ox);
                             oy -= std::floor(oy);
                             RGBTColour extra;
-                            TraceSample(DBL(x) + ox, DBL(y) + oy, x, y, extra);
+                            TraceSample(DBL(x) + ox, DBL(y) + oy, extra);
                             GetViewData()->AaExtra(x, y) += extra;
                             fit.probes++;
                         }
@@ -3018,7 +2747,7 @@ void TraceTask::ProgressiveM5()
                             }
                             else
                                 s = 0.5f * (fit.lo + fit.hi);
-                            const double f = M5Coverage(nx, ny, s);
+                            const double f = M4Coverage(nx, ny, s);
 
                             // two lines of different directions both crossing the pixel: a junction, up to four regions
                             bool twoLines = false;
@@ -3030,7 +2759,7 @@ void TraceTask::ProgressiveM5()
                                 n2x = (g2.nx - g2.b * g2.tx) * inv2;
                                 n2y = (g2.ny - g2.b * g2.ty) * inv2;
                                 s2 = g2.a * inv2 - (n2x * (float(x) + 0.5f - g2.cx) + n2y * (float(y) + 0.5f - g2.cy));
-                                const float c2 = M5Coverage(n2x, n2y, s2);
+                                const float c2 = M4Coverage(n2x, n2y, s2);
                                 twoLines = (std::fabs(nx * n2x + ny * n2y) < 0.95f) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
                             }
 
@@ -3053,7 +2782,7 @@ void TraceTask::ProgressiveM5()
                                         qw[q] += wgt;
                                     }
                                 }
-                                M5Poly sq;
+                                M4Poly sq;
                                 sq.n = 4;
                                 const float cxs[4] = { -0.5f, 0.5f, 0.5f, -0.5f }, cys[4] = { -0.5f, -0.5f, 0.5f, 0.5f };
                                 for(int k = 0; k < 4; k++)
@@ -3065,7 +2794,7 @@ void TraceTask::ProgressiveM5()
                                 col.Clear();
                                 for(int q = 0; q < 4; q++)
                                 {
-                                    const double ar = double(M5PolyArea(M5Clip(M5Clip(sq, nx, ny, s, (q & 1) != 0), n2x, n2y, s2, (q & 2) != 0)));
+                                    const double ar = double(M4PolyArea(M4Clip(M4Clip(sq, nx, ny, s, (q & 1) != 0), n2x, n2y, s2, (q & 2) != 0)));
                                     if(ar < 1.0e-4)
                                         continue;
                                     int src = q;
@@ -3089,7 +2818,7 @@ void TraceTask::ProgressiveM5()
                             col = col * (1.0 / double(fit.probes + 1));
                             GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
                         }
-                        if(M5Opts().map)
+                        if(M4Opts().map)
                         {
                             // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got
                             const float p = mapProbes;

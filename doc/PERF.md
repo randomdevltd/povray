@@ -939,32 +939,25 @@ Four-threaded counts on the shared box spread by 20–30% between runs of one bu
 
 ### Anti-aliasing method 4
 
-`+AM4` (with `+PR`) refines only pixels that differ from a neighbour, by OKLab distance, so `+A0.02` is about just
-noticeable. Each pair of neighbours over the threshold gets one probe at their shared edge midpoint or corner; the pixel
-the probe does not match refines, splitting the half or quadrant facing the other pixel and bisecting while adjacent
-samples differ, down to `+R`. A grainy pixel's pair is probed twice, with each pixel's own draws, so grain alone is not
-refined; sub-samples keep their pixel's draws (`-AKG` turns both off). The pair tests are a pass of their own and keep
-two bytes a pixel; with grain kept, one more.
+`+AM4` (with `+PR`) spends a sample budget, `+AB` extra samples per pixel on average, where it helps most. It fits
+straight edges to the centre samples already traced (no rays), traces probes only where a fitted line is still
+uncertain, and averages extra samples into pixels whose neighbourhood is too noisy to fit. Each pass is planned up
+front: candidates go into priority buckets and whole buckets are taken best-first until the budget is reached, so
+the last bucket may overshoot, and the image does not depend on the thread count. The fit and planning passes are
+single-threaded and cost about 2,000–4,000 instructions a pixel over plain progressive rendering, and about 140 bytes
+a pixel of memory.
 
-Counters on `scenes/advanced/chess2.pov` with focal blur off, 1280×960, `+R3`; the error is the mean OKLab distance to a
-37-sample reference (`+AM1 +A0 +R6 -J`) and the share of pixels off by more than 0.02:
+A checkerboard floor with a mirror sphere, 640×480, `+A0.02`, mean absolute error against a 144-sample reference:
 
-| | `+A` | pixels supersampled | samples | rays | mean error | over 0.02 |
-|---|---|---|---|---|---|---|
-| none | | | | 2,387,198 | 0.00814 | 10.99% |
-| method 1 | 0.3 / 0.1 / 0.03 | 13.8% / 32.9% / 50.8% | 1,524,492 / 3,637,935 / 5,618,592 | 5,610,801 / 10,655,017 / 15,411,042 | 0.00416 / 0.00278 / 0.00233 | 5.21% / 2.59% / 2.36% |
-| method 2 | 0.3 / 0.1 / 0.03 | | 1,777,767 / 4,600,690 / 8,219,076 | 6,032,729 / 12,649,168 / 21,353,919 | 0.00421 / 0.00233 / 0.00155 | 4.72% / 1.37% / 0.89% |
-| method 4 | 0.1 / 0.05 / 0.02 | 8.5% / 19.6% / 34.6% | 2,040,654 / 6,196,653 / 15,361,848 | 6,823,933 / 15,285,926 / 35,557,553 | 0.00463 / 0.00320 / 0.00188 | 6.44% / 2.46% / 0.70% |
+| | extra samples/px | sphere | far floor | near floor | all pixels |
+|---|---|---|---|---|---|
+| none | 0 | 0.0433 | 0.0199 | 0.0108 | 0.0413 |
+| method 2 (`+A0.1 +R3`) | 3.56 | 0.0094 | 0.0039 | 0.0017 | 0.0109 |
+| method 4, `+AB1` | 1.0 | 0.0201 | 0.0050 | 0.0019 | 0.0158 |
+| method 4, `+AB2` | 2.0 | 0.0151 | 0.0040 | 0.0017 | 0.0114 |
+| method 4, `+AB4` | 2.8 | 0.0122 | 0.0034 | 0.0015 | 0.0089 |
 
-Methods 1 and 2 ran with `+PR`; in block order at 0.3 they trace 5,575,663 and 6,934,156 rays. On this scene method 4
-costs more rays than method 2 for the same mean error: the marble board and reflections keep adjacent samples apart, so
-bisection runs to the depth cap, about 20 samples per refined pixel. On a clean edge it is the other way round: the
-emissive disc of `tests/render/antialias_m4.pov` at 320×240, `+A0.02 +R3`, refines 0.92% of pixels for 91,407 rays and
-a mean error of 0.00004 (0.05% over 0.02), where method 2 traces 85,929 rays for 0.00020 (0.39%). A checkerboard of
-one-pixel squares keeps full contrast (method 2 at the same settings: 85%), and a plane whose only variation is `crand`
-comes out bit for bit as without anti-aliasing, at 4.9 probes a pixel. Focal blur is not marked grainy, so method 4
-refines its noise like any contended pair.
-
+The mirror sphere's noisy reflection takes most of the budget and stays worse than method 2 at every budget tried.
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
