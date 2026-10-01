@@ -99,7 +99,8 @@ struct AaSeg final
     float contrast = 0, length = 0;
     std::vector<Pt> hullA, hullB;   ///< Upper hull of the colour A points, lower hull of the colour B ones: all that bound the line.
     std::vector<Pt> fresh;          ///< Probe results not yet folded into the hulls.
-    RGBTColour ca[2], cb[2];        ///< Colours on each side at the low and high end.
+    std::vector<float> bu;          ///< The samples either side of the line, by position along it: u, colour A, colour B.
+    std::vector<RGBTColour> bA, bB;
     float w[3] = { 0, 0, 0 };       ///< How far the line could lie from its estimate at the low end, middle and high end.
     float probeU = 0, probeV = 0;   ///< Where the planner wants the next probe.
     std::uint8_t probes = 0;

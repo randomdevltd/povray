@@ -42,6 +42,7 @@
 // C++ standard header files
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <string>
@@ -1362,6 +1363,10 @@ struct M5Options final
     float ceps = 0.002f;            ///< Chain mode: differences below this are rounding, whatever their neighbours.
     float kappa = 2.0f;             ///< Chain mode: a link is a contour crossing when it jumps this many times its neighbours' ramp.
     bool map = false;               ///< Write where the samples went instead of the image.
+    bool join = false;              ///< Chain mode: join collinear segments through junctions (worse than not, so far).
+    float reach = 4.0f;             ///< Join: how far apart two segment ends may be, in pixels.
+    float turn = 0.94f;             ///< Join: how nearly opposite their outward directions must be (cosine).
+    float lateral = 1.0f;           ///< Join: how far one end may sit off the other's line, in pixels.
 };
 
 const M5Options& M5Opts()
@@ -1396,6 +1401,10 @@ const M5Options& M5Opts()
                     else if(key == "CEPS")   o.ceps = float(v);
                     else if(key == "KAPPA")  o.kappa = float(v);
                     else if(key == "MAP")    o.map = (v != 0.0);
+                    else if(key == "JOIN")   o.join = (v != 0.0);
+                    else if(key == "REACH")  o.reach = float(v);
+                    else if(key == "TURN")   o.turn = float(v);
+                    else if(key == "LATERAL") o.lateral = float(v);
                 }
                 pos = end + 1;
             }
@@ -1625,15 +1634,24 @@ void M5FoldSegments(ViewData* vd)
     {
         if(s.fresh.empty())
             continue;
+        const std::vector<AaSeg::Pt> keepA = s.hullA, keepB = s.hullB;
         for(const AaSeg::Pt& p : s.fresh)
             (p.b ? s.hullB : s.hullA).push_back(p);
         s.fresh.clear();
         M5Hull(s.hullA, true);
         M5Hull(s.hullB, false);
         if(!M5Estimate(s))
+        {
+            // a probe that contradicts the rest: keep the line as it was, and probe this segment no more
+            s.hullA = keepA;
+            s.hullB = keepB;
+            M5Estimate(s);
             s.state = 1;
+        }
     }
 }
+
+bool M5StationOk(const AaSeg& s, float u);
 
 /// Choose the segments to probe this round, best first, before any ray is traced for them: a probe at the end where
 /// the line is least certain is worth the contrast, times how uncertain it is, times how many pixels the line crosses.
@@ -1684,11 +1702,26 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabled)
         AaSeg& s = vd->aaSegs[i];
         const float len = s.uHi - s.uLo;
         float u = 0.5f * (s.uLo + s.uHi);
+        bool found = (len < 4.0f);
         if(len >= 4.0f)
         {
+            // at whichever end is less certain, else the other, as near the end as the colours there stay steady
             const float inset = std::min(2.0f, 0.25f * len);
-            u = (s.w[0] >= s.w[2]) ? (s.uLo + inset) : (s.uHi - inset);
+            for(int e = 0; (e < 2) && !found; e++)
+            {
+                const bool lowEnd = (e == 0) == (s.w[0] >= s.w[2]);
+                for(int step = 0; (step < 6) && !found; step++)
+                {
+                    const float off = inset + 2.0f * float(step);
+                    if(off > 0.4f * len)
+                        break;
+                    u = lowEnd ? (s.uLo + off) : (s.uHi - off);
+                    found = M5StationOk(s, u);
+                }
+            }
         }
+        if(!found)
+            continue;
         const float v = s.a + s.b * u;
         const float px = s.cx + u * s.tx + v * s.nx, py = s.cy + u * s.ty + v * s.ny;
         if((px < float(area.left)) || (px >= float(area.right) + 1.0f) || (py < float(area.top)) || (py >= float(area.bottom) + 1.0f))
@@ -1703,6 +1736,201 @@ void M5PlanSegments(ViewData* vd, const M5Options& o, bool enabled)
     vd->aaBudgetLeft -= admitted;
     if(cut)
         vd->aaExhausted = true;
+}
+
+/// The colours either side of a segment's line, near a position along it.
+void M5LocalColours(const AaSeg& s, float u, RGBTColour& a, RGBTColour& b)
+{
+    const size_t n = s.bu.size();
+    const size_t k = size_t(std::lower_bound(s.bu.begin(), s.bu.end(), u) - s.bu.begin());
+    const size_t lo = (k > 1) ? (k - 1) : 0, hi = std::min(n, k + 2);
+    a.Clear();
+    b.Clear();
+    for(size_t i = lo; i < hi; i++)
+    {
+        a += s.bA[i];
+        b += s.bB[i];
+    }
+    const double inv = 1.0 / double(std::max<size_t>(1, hi - lo));
+    a = a * inv;
+    b = b * inv;
+}
+
+/// Whether the colours either side of a segment stay the same for a few samples each way of u, so that a probe there
+/// can be told apart by them; through a checkerboard's corners they swap, and no probe should land near one.
+bool M5StationOk(const AaSeg& s, float u)
+{
+    const size_t n = s.bu.size();
+    if(n == 0)
+        return false;
+    const size_t k = std::min(n - 1, size_t(std::lower_bound(s.bu.begin(), s.bu.end(), u) - s.bu.begin()));
+    const size_t lo = (k > 4) ? (k - 4) : 0, hi = std::min(n, k + 5);
+    auto diff = [](const RGBTColour& p, const RGBTColour& q) { return std::fabs(p.red() - q.red()) + std::fabs(p.green() - q.green()) + std::fabs(p.blue() - q.blue()); };
+    const float span = diff(s.bA[k], s.bB[k]);
+    for(size_t i = lo; i < hi; i++)
+        if((diff(s.bA[i], s.bA[k]) > 0.3f * span) || (diff(s.bB[i], s.bB[k]) > 0.3f * span))
+            return false;
+    return true;
+}
+
+void M5SortBrackets(AaSeg& s)
+{
+    std::vector<size_t> idx(s.bu.size());
+    for(size_t i = 0; i < idx.size(); i++)
+        idx[i] = i;
+    std::sort(idx.begin(), idx.end(), [&](size_t p, size_t q) { return s.bu[p] < s.bu[q]; });
+    std::vector<float> bu(idx.size());
+    std::vector<RGBTColour> bA(idx.size()), bB(idx.size());
+    for(size_t i = 0; i < idx.size(); i++)
+    {
+        bu[i] = s.bu[idx[i]];
+        bA[i] = s.bA[idx[i]];
+        bB[i] = s.bB[idx[i]];
+    }
+    s.bu.swap(bu);
+    s.bA.swap(bA);
+    s.bB.swap(bB);
+}
+
+/// Where a segment's line ends, and which way it runs on out of that end.
+void M5SegEnd(const AaSeg& s, int end, float& px, float& py, float& dx, float& dy)
+{
+    const float u = end ? s.uHi : s.uLo;
+    const float v = s.a + s.b * u;
+    px = s.cx + u * s.tx + v * s.nx;
+    py = s.cy + u * s.ty + v * s.ny;
+    dx = s.tx + s.b * s.nx;
+    dy = s.ty + s.b * s.ny;
+    const float l = std::sqrt(dx * dx + dy * dy);
+    dx /= l;
+    dy /= l;
+    if(!end)
+    {
+        dx = -dx;
+        dy = -dy;
+    }
+}
+
+/// Join b onto a when one line can still keep both their colour A samples on one side and their colour B samples on
+/// the other; the colours themselves may swap across the join, as they do through a checkerboard's corners.
+bool M5TryJoin(const AaSeg& a, const AaSeg& b, AaSeg& out)
+{
+    out = a;
+    const bool flip = (a.nx * b.nx + a.ny * b.ny) < 0.0f;
+    auto toA = [&](float u, float v, float& ua, float& va)
+    {
+        const float px = b.cx + u * b.tx + v * b.nx - a.cx, py = b.cy + u * b.ty + v * b.ny - a.cy;
+        ua = px * a.tx + py * a.ty;
+        va = px * a.nx + py * a.ny;
+    };
+    for(int side = 0; side < 2; side++)
+    {
+        const std::vector<AaSeg::Pt>& src = side ? b.hullB : b.hullA;
+        const bool toB = (side == 1) != flip;
+        for(const AaSeg::Pt& p : src)
+        {
+            float u, v;
+            toA(p.u, p.v, u, v);
+            (toB ? out.hullB : out.hullA).push_back(AaSeg::Pt { u, v, std::uint8_t(toB ? 1 : 0) });
+        }
+    }
+    M5Hull(out.hullA, true);
+    M5Hull(out.hullB, false);
+
+    float u1, v1, u2, v2;
+    toA(b.uLo, b.a + b.b * b.uLo, u1, v1);
+    toA(b.uHi, b.a + b.b * b.uHi, u2, v2);
+    out.uLo = std::min(out.uLo, std::min(u1, u2));
+    out.uHi = std::max(out.uHi, std::max(u1, u2));
+    for(size_t k = 0; k < b.bu.size(); k++)
+    {
+        float u, v;
+        toA(b.bu[k], 0.0f, u, v);
+        out.bu.push_back(u);
+        out.bA.push_back(flip ? b.bB[k] : b.bA[k]);
+        out.bB.push_back(flip ? b.bA[k] : b.bB[k]);
+    }
+    M5SortBrackets(out);
+
+    const float la = a.length, lb = b.length;
+    out.contrast = (a.contrast * la + b.contrast * lb) / std::max(1.0e-3f, la + lb);
+    out.length = out.uHi - out.uLo;
+    out.probes = std::uint8_t(std::min(255, int(a.probes) + int(b.probes)));
+    return M5Estimate(out);
+}
+
+/// Lines run on through a junction: where two segments end close together heading the same way, and one line
+/// fits the samples of both, they are one segment, so the whole edge is pinned down by every sample along it.
+void M5JoinSegments(ViewData* vd, float reach, float turn, float lateral)
+{
+    std::vector<AaSeg>& segs = vd->aaSegs;
+    const float cell = 4.0f;
+    auto key = [](int gx, int gy) { return (std::uint64_t(std::uint32_t(gx)) << 32) | std::uint64_t(std::uint32_t(gy)); };
+    for(int pass = 0; pass < 4; pass++)
+    {
+        std::unordered_map<std::uint64_t, std::vector<std::pair<int, int>>> grid;
+        for(size_t i = 0; i < segs.size(); i++)
+        {
+            if(segs[i].state == 2)
+                continue;
+            for(int e = 0; e < 2; e++)
+            {
+                float px, py, dx, dy;
+                M5SegEnd(segs[i], e, px, py, dx, dy);
+                grid[key(int(std::floor(px / cell)), int(std::floor(py / cell)))].push_back(std::make_pair(int(i), e));
+            }
+        }
+        std::vector<std::uint8_t> touched(segs.size(), 0);
+        bool changed = false;
+        for(size_t i = 0; i < segs.size(); i++)
+        {
+            for(int e1 = 0; (e1 < 2) && !touched[i] && (segs[i].state != 2); e1++)
+            {
+                float px, py, dx, dy;
+                M5SegEnd(segs[i], e1, px, py, dx, dy);
+                const float inv = 1.0f / std::sqrt(1.0f + segs[i].b * segs[i].b);
+                const float nlx = (segs[i].nx - segs[i].b * segs[i].tx) * inv, nly = (segs[i].ny - segs[i].b * segs[i].ty) * inv;
+                int bestJ = -1;
+                float bestD = reach * reach;
+                for(int gx = -1; gx <= 1; gx++)
+                {
+                    for(int gy = -1; gy <= 1; gy++)
+                    {
+                        auto it = grid.find(key(int(std::floor(px / cell)) + gx, int(std::floor(py / cell)) + gy));
+                        if(it == grid.end())
+                            continue;
+                        for(const auto& cand : it->second)
+                        {
+                            const int j = cand.first;
+                            if((j == int(i)) || (segs[size_t(j)].state == 2) || touched[size_t(j)])
+                                continue;
+                            float qx, qy, ex, ey;
+                            M5SegEnd(segs[size_t(j)], cand.second, qx, qy, ex, ey);
+                            const float d2 = (qx - px) * (qx - px) + (qy - py) * (qy - py);
+                            if((d2 > bestD) || (dx * ex + dy * ey > -turn) || (std::fabs((qx - px) * nlx + (qy - py) * nly) > lateral))
+                                continue;
+                            bestD = d2;
+                            bestJ = j;
+                        }
+                    }
+                }
+                if(bestJ < 0)
+                    continue;
+                AaSeg joined;
+                if(M5TryJoin(segs[i], segs[size_t(bestJ)], joined))
+                {
+                    segs[i] = std::move(joined);
+                    AaSeg& dead = segs[size_t(bestJ)];
+                    dead.state = 2;
+                    dead.hullA.clear(); dead.hullB.clear(); dead.bu.clear(); dead.bA.clear(); dead.bB.clear();
+                    touched[i] = touched[size_t(bestJ)] = 1;
+                    changed = true;
+                }
+            }
+        }
+        if(!changed)
+            break;
+    }
 }
 
 /// Method 5 without windows: find every contour in the centre samples, cut it into the longest straight runs the
@@ -1851,7 +2079,6 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
     std::vector<float> weight(size_t(w) * size_t(h), 0.0f);
     std::vector<size_t> chain;
     std::vector<M5Bracket> br;
-    std::vector<RGBTColour> cumL, cumR;
     std::vector<std::uint8_t> weak(size_t(w) * size_t(h), 0);
     auto markWeak = [&](int a, int b)
     {
@@ -1918,14 +2145,6 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 std::swap(b.ly, b.ry);
             }
         }
-        cumL.assign(size_t(m) + 1, RGBTColour());
-        cumR.assign(size_t(m) + 1, RGBTColour());
-        for(int i = 0; i < m; i++)
-        {
-            cumL[size_t(i) + 1] = cumL[size_t(i)] + vd->LatticeSample(unsigned(br[size_t(i)].lx), unsigned(br[size_t(i)].ly));
-            cumR[size_t(i) + 1] = cumR[size_t(i)] + vd->LatticeSample(unsigned(br[size_t(i)].rx), unsigned(br[size_t(i)].ry));
-        }
-
         float nx, ny, s;
         auto feasible = [&](int a, int b) { return M5BestLine(br, a, b, nx, ny, s) >= 0.0f; };
 
@@ -1968,6 +2187,32 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 }
             }
 
+            // the brackets at a corner belong to the line the contour turns onto; leave them out of this run, since a
+            // few of them can pin its end up to a pixel from where the line really is
+            const bool atEnd = (good >= m - 1);
+            if(good - i0 + 1 > o.lmin)
+            {
+                const int qa = i0 + (good - i0) / 4, qb = good - (good - i0) / 4;
+                float rx = br[size_t(qb)].cx - br[size_t(qa)].cx, ry = br[size_t(qb)].cy - br[size_t(qa)].cy;
+                const float rl = std::sqrt(rx * rx + ry * ry);
+                if(rl > 1.0e-3f)
+                {
+                    rx /= rl;
+                    ry /= rl;
+                    auto turned = [&](int i)
+                    {
+                        const int ia = std::max(0, i - 1), ib = std::min(m - 1, i + 1);
+                        const float dx = br[size_t(ib)].cx - br[size_t(ia)].cx, dy = br[size_t(ib)].cy - br[size_t(ia)].cy;
+                        const float dl = std::sqrt(dx * dx + dy * dy);
+                        return (dl > 1.0e-3f) && (std::fabs(dx * ry - dy * rx) / dl > 0.77f);
+                    };
+                    for(int k = 0; (k < 3) && (good - i0 + 1 > o.lmin) && turned(good); k++)
+                        good--;
+                    for(int k = 0; (k < 3) && (good - i0 + 1 > o.lmin) && turned(i0); k++)
+                        i0++;
+                }
+            }
+
             if(good - i0 + 1 >= o.lmin)
             {
                 M5BestLine(br, i0, good, nx, ny, s);
@@ -1975,12 +2220,10 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 float uA = tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy, uB = tx * br[size_t(good)].cx + ty * br[size_t(good)].cy;
                 if(uA > uB)
                     std::swap(uA, uB);
-                const float uLo = uA - 0.5f, uHi = uB + 0.5f, uMid = 0.5f * (uLo + uHi), half = 0.5f * (uHi - uLo);
-                const float ext = 0.5f * (std::fabs(nx) + std::fabs(ny));
+                const float uLo = uA - 0.5f, uHi = uB + 0.5f;
 
                 // the run as a segment: the samples either side of it, in a frame with its line as the u axis
                 const float uc = 0.5f * (uA + uB);
-                const int segId = int(vd->aaSegs.size());
                 vd->aaSegs.emplace_back();
                 {
                     AaSeg& sg = vd->aaSegs.back();
@@ -2004,84 +2247,22 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                     M5Hull(sg.hullB, false);
                     const M5Bracket& bm = br[size_t((i0 + good) / 2)];
                     sg.contrast = std::sqrt(Dist2(lab(bm.lx, bm.ly), lab(bm.rx, bm.ry)));
-                    auto mean = [&](const std::vector<RGBTColour>& cum, int a, int b) { return (cum[size_t(b) + 1] - cum[size_t(a)]) * (1.0 / double(b - a + 1)); };
-                    const int firstEnd = std::min(good, i0 + 5), lastStart = std::max(i0, good - 5);
-                    const bool forward = (tx * br[size_t(i0)].cx + ty * br[size_t(i0)].cy) <= (tx * br[size_t(good)].cx + ty * br[size_t(good)].cy);
-                    sg.ca[forward ? 0 : 1] = mean(cumR, i0, firstEnd);
-                    sg.cb[forward ? 0 : 1] = mean(cumL, i0, firstEnd);
-                    sg.ca[forward ? 1 : 0] = mean(cumR, lastStart, good);
-                    sg.cb[forward ? 1 : 0] = mean(cumL, lastStart, good);
+                    for(int i = i0; i <= good; i++)
+                    {
+                        const M5Bracket& bk = br[size_t(i)];
+                        sg.bu.push_back(tx * bk.cx + ty * bk.cy - uc);
+                        sg.bA.push_back(vd->LatticeSample(unsigned(bk.rx), unsigned(bk.ry)));
+                        sg.bB.push_back(vd->LatticeSample(unsigned(bk.lx), unsigned(bk.ly)));
+                    }
+                    M5SortBrackets(sg);
                     if(!M5Estimate(sg))
                         sg.state = 1;
-                }
-
-                auto visit = [&](int px, int py)
-                {
-                    if((px < x0) || (px >= x0 + w) || (py < y0) || (py >= y0 + h) || noisy[at(px, py)])
-                        return;
-                    const float cx = float(px) + 0.5f, cy = float(py) + 0.5f;
-                    const float sRel = s - (nx * cx + ny * cy);
-                    if(std::fabs(sRel) > ext + 1.0e-3f)
-                        return;
-                    const float upos = tx * cx + ty * cy;
-                    const float wt = std::max(0.001f, 1.0f - std::fabs(upos - uMid) / half);
-                    if(wt <= weight[at(px, py)])
-                        return;
-                    weight[at(px, py)] = wt;
-
-                    int lo = i0, hi = good;
-                    while(lo < hi)
-                    {
-                        const int mid = (lo + hi) / 2;
-                        if(tx * br[size_t(mid)].cx + ty * br[size_t(mid)].cy < upos)
-                            lo = mid + 1;
-                        else
-                            hi = mid;
-                    }
-                    const int ka = std::max(i0, lo - 8), kb = std::min(good, lo + 8);
-                    const double inv = 1.0 / double(kb - ka + 1);
-                    AaFit& f = vd->Fit(unsigned(px), unsigned(py));
-                    f.kind = 1;
-                    f.seg = segId;
-                    f.b = (cumL[size_t(kb) + 1] - cumL[size_t(ka)]) * inv;
-                    f.a = (cumR[size_t(kb) + 1] - cumR[size_t(ka)]) * inv;
-                    f.contrast = std::sqrt(Dist2(lab(br[size_t(lo)].lx, br[size_t(lo)].ly), lab(br[size_t(lo)].rx, br[size_t(lo)].ry)));
-                    f.probes = 0;
-                };
-
-                // every pixel the run's line passes through, column by column for a flat line, else row by row
-                float ax = nx * s + tx * uLo, ay = ny * s + ty * uLo, bx = nx * s + tx * uHi, by = ny * s + ty * uHi;
-                if(std::fabs(ny) >= std::fabs(nx))
-                {
-                    const float xmin = std::min(ax, bx), xmax = std::max(ax, bx);
-                    for(int i = int(std::floor(xmin)); i <= int(std::floor(xmax)); i++)
-                    {
-                        const float xa = std::max(xmin, float(i)), xb = std::min(xmax, float(i + 1));
-                        if(xb < xa)
-                            continue;
-                        const float ya = (s - nx * xa) / ny, yb = (s - nx * xb) / ny;
-                        for(int j = int(std::floor(std::min(ya, yb))); j <= int(std::floor(std::max(ya, yb))); j++)
-                            visit(i, j);
-                    }
-                }
-                else
-                {
-                    const float ymin = std::min(ay, by), ymax = std::max(ay, by);
-                    for(int j = int(std::floor(ymin)); j <= int(std::floor(ymax)); j++)
-                    {
-                        const float ya = std::max(ymin, float(j)), yb = std::min(ymax, float(j + 1));
-                        if(yb < ya)
-                            continue;
-                        const float xa = (s - ny * ya) / nx, xb = (s - ny * yb) / nx;
-                        for(int i = int(std::floor(std::min(xa, xb))); i <= int(std::floor(std::max(xa, xb))); i++)
-                            visit(i, j);
-                    }
                 }
             }
             else
                 markWeak(i0, good);
 
-            if(good >= m - 1)
+            if(atEnd || (good >= m - 1))
                 break;
             // the next run starts inside this one, so every pixel has a run it is well inside of
             i0 = std::max(i0 + 1, good - std::max(1, (good - i0) / 4));
@@ -2103,6 +2284,75 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
         {
             walk(id);
             process();
+        }
+    }
+
+    // contours too short or too ragged to fit, with no good run through them, are noise
+    if(o.join)
+        M5JoinSegments(vd, o.reach, o.turn, o.lateral);
+
+    // each pixel takes the line of the segment it lies most inside of, after any joining
+    for(size_t id = 0; id < vd->aaSegs.size(); id++)
+    {
+        const AaSeg& sg = vd->aaSegs[id];
+        if(sg.state == 2)
+            continue;
+        const float inv = 1.0f / std::sqrt(1.0f + sg.b * sg.b);
+        const float nx = (sg.nx - sg.b * sg.tx) * inv, ny = (sg.ny - sg.b * sg.ty) * inv;
+        const float s = sg.a * inv + nx * sg.cx + ny * sg.cy;
+        const float ext = 0.5f * (std::fabs(nx) + std::fabs(ny));
+        const float uMid = 0.5f * (sg.uLo + sg.uHi), half = 0.5f * (sg.uHi - sg.uLo);
+
+        auto visit = [&](int px, int py)
+        {
+            if((px < x0) || (px >= x0 + w) || (py < y0) || (py >= y0 + h) || noisy[at(px, py)])
+                return;
+            const float pcx = float(px) + 0.5f, pcy = float(py) + 0.5f;
+            if(std::fabs(s - (nx * pcx + ny * pcy)) > ext + 1.0e-3f)
+                return;
+            const float upos = (pcx - sg.cx) * sg.tx + (pcy - sg.cy) * sg.ty;
+            const float wt = std::max(0.001f, 1.0f - std::fabs(upos - uMid) / half);
+            if(wt <= weight[at(px, py)])
+                return;
+            weight[at(px, py)] = wt;
+            AaFit& f = vd->Fit(unsigned(px), unsigned(py));
+            f.kind = 1;
+            f.seg = int(id);
+            f.contrast = sg.contrast;
+            f.probes = 0;
+            M5LocalColours(sg, upos, f.a, f.b);
+        };
+
+        // every pixel the line passes through, column by column for a flat line, else row by row
+        const float ax = sg.cx + (sg.uLo - 0.5f) * sg.tx + (sg.a + sg.b * (sg.uLo - 0.5f)) * sg.nx;
+        const float ay = sg.cy + (sg.uLo - 0.5f) * sg.ty + (sg.a + sg.b * (sg.uLo - 0.5f)) * sg.ny;
+        const float bx = sg.cx + (sg.uHi + 0.5f) * sg.tx + (sg.a + sg.b * (sg.uHi + 0.5f)) * sg.nx;
+        const float by = sg.cy + (sg.uHi + 0.5f) * sg.ty + (sg.a + sg.b * (sg.uHi + 0.5f)) * sg.ny;
+        if(std::fabs(ny) >= std::fabs(nx))
+        {
+            const float xmin = std::min(ax, bx), xmax = std::max(ax, bx);
+            for(int i = int(std::floor(xmin)); i <= int(std::floor(xmax)); i++)
+            {
+                const float xa = std::max(xmin, float(i)), xb = std::min(xmax, float(i + 1));
+                if(xb < xa)
+                    continue;
+                const float ya = (s - nx * xa) / ny, yb = (s - nx * xb) / ny;
+                for(int j = int(std::floor(std::min(ya, yb))); j <= int(std::floor(std::max(ya, yb))); j++)
+                    visit(i, j);
+            }
+        }
+        else
+        {
+            const float ymin = std::min(ay, by), ymax = std::max(ay, by);
+            for(int j = int(std::floor(ymin)); j <= int(std::floor(ymax)); j++)
+            {
+                const float ya = std::max(ymin, float(j)), yb = std::min(ymax, float(j + 1));
+                if(yb < ya)
+                    continue;
+                const float xa = (s - ny * ya) / nx, xb = (s - ny * yb) / nx;
+                for(int i = int(std::floor(std::min(xa, xb))); i <= int(std::floor(std::max(xa, xb))); i++)
+                    visit(i, j);
+            }
         }
     }
 
@@ -2461,8 +2711,9 @@ void TraceTask::ProbeSegmentsM5()
         TraceSample(px, py, unsigned(px), unsigned(py), col);
 
         // which side of the line the point is on, by whether it is nearer the colour of one side or the other
-        const float t = (s.uHi > s.uLo) ? std::min(1.0f, std::max(0.0f, (s.probeU - s.uLo) / (s.uHi - s.uLo))) : 0.5f;
-        const OkLab pa = ToOkLab(s.ca[0] * (1.0 - t) + s.ca[1] * t), pb = ToOkLab(s.cb[0] * (1.0 - t) + s.cb[1] * t), pc = ToOkLab(col);
+        RGBTColour ca, cb;
+        M5LocalColours(s, s.probeU, ca, cb);
+        const OkLab pa = ToOkLab(ca), pb = ToOkLab(cb), pc = ToOkLab(col);
         const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
         const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
         const float score = (vv > 0.0f) ? ((pc.l - pa.l) * v[0] + (pc.a - pa.a) * v[1] + (pc.b - pa.b) * v[2] + (pc.t - pa.t) * v[3]) / vv : 0.0f;
