@@ -87,7 +87,7 @@ class TraceTask final : public RenderTask
         /// Probe rounds queued for method 4; the planner may stop earlier.
         static constexpr int kM4Rounds = 12;
         /// Rounds of extra samples for noisy pixels, each adding at most one a pixel.
-        static constexpr int kM4NoiseRounds = 16;
+        static constexpr int kM4NoiseRounds = 64;
 
         virtual void Run() override;
         virtual void Stopped() override;

@@ -1106,6 +1106,7 @@ struct M4Options final
     float roughRho = 0.3f;          ///< Share of rough links in the halo window above which flat pixels there join the noise tier.
     bool cv = true;                 ///< Resolve: keep a pixel's own samples and add the fit's coverage correction, rather than replace them.
     bool quad = false;              ///< Chain mode: fit runs of a contour with parabolas, so curves need not be cut into chords.
+    bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
     float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
 };
 
@@ -1155,6 +1156,7 @@ const M4Options& M4Opts()
                     else if(key == "ROUGHRHO") o.roughRho = float(v);
                     else if(key == "CV")     o.cv = (v != 0.0);
                     else if(key == "QUAD")   o.quad = (v != 0.0);
+                    else if(key == "STRIPS") o.strips = (v != 0.0);
                     else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
@@ -2953,7 +2955,7 @@ void TraceTask::ProgressiveM4()
                                 M4LineAt(g2, float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
                                 s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
                                 const float c2 = M4Coverage(n2x, n2y, s2);
-                                twoLines = (std::fabs(nx * n2x + ny * n2y) < 0.95f) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
+                                twoLines = ((std::fabs(nx * n2x + ny * n2y) < 0.95f) || o4.strips) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
                             }
 
                             if(twoLines)
