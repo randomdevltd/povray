@@ -735,6 +735,8 @@ void View::StartRender(POVMS_Object& renderOptions)
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
     aaconfidence = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasConfidence, 0.9f), 0.0f, 1.0f);
     aaBudget = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasBudget, 0.0f), 0.0f, 1.0e9f);
+    viewData.textureFilterScale = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false) ?
+                                  clip(renderOptions.TryGetFloat(kPOVAttrib_TextureFilterScale, 1.0f), 0.0f, 64.0f) : 0.0f;
     if(renderOptions.TryGetBool(kPOVAttrib_Jitter, true) == true)
         jitterscale = clip(renderOptions.TryGetFloat(kPOVAttrib_JitterAmount, 1.0f), 0.0f, 1.0f);
     else

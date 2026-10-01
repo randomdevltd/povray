@@ -748,6 +748,98 @@ void Trace::ComputeAverageTextureColours(MathColour& resultColour, ColourChannel
     }
 }
 
+bool Trace::ComputePixelFootprint(const Ray& ray, const Intersection& isect, const vector<const TEXTURE *>& warps,
+                                  const Vector3d& ipoint, const Vector3d& rawnormal, Vector3d& footX, Vector3d& footY) const
+{
+    // taps are re-warped from the world point, so only filter where that reproduces the point the texture sees
+    if (Test_Flag(isect.Object, UV_FLAG))
+        return false;
+    Vector3d p = isect.IPoint;
+    for (const TEXTURE *warp : warps)
+    {
+        if (warp->Type == UV_MAP_PATTERN)
+            return false;
+        Warp_EPoint(p, p, warp);
+    }
+    if ((p - ipoint).length() > 1.0e-9 * (1.0 + ipoint.length()))
+        return false;
+
+    const DBL dn = dot(ray.Direction, rawnormal);
+    if (fabs(dn) < 1.0e-12)
+        return false;
+
+    const Vector3d dPdx = ray.dOdx + isect.Depth * ray.dDdx;
+    const Vector3d dPdy = ray.dOdy + isect.Depth * ray.dDdy;
+    footX = dPdx - (dot(dPdx, rawnormal) / dn) * ray.Direction;
+    footY = dPdy - (dot(dPdy, rawnormal) / dn) * ray.Direction;
+
+    // grazing hits stretch the footprint without bound; cap it at 64 pixel widths across the view
+    const DBL capX = 64.0 * dPdx.length(), capY = 64.0 * dPdy.length();
+    const DBL lenX = footX.length(), lenY = footY.length();
+    if (lenX > capX)
+        footX *= capX / lenX;
+    if (lenY > capY)
+        footY *= capY / lenY;
+    footX *= textureFilterScale;
+    footY *= textureFilterScale;
+
+    const DBL tiny = 1.0e-9 * (1.0 + isect.IPoint.length());
+    return (footX.length() > tiny) || (footY.length() > tiny);
+}
+
+bool Trace::ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, const vector<const TEXTURE *>& warps,
+                                   const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray)
+{
+    static const DBL kRotatedGrid[4][2] = { { -0.375, -0.125 }, { 0.125, -0.375 }, { 0.375, 0.125 }, { -0.125, 0.375 } };
+    const DBL kSpread = 0.01;
+    TransColour sum, first, tap;
+    bool found = false;
+    int taps = 0;
+    DBL spread = 0.0;
+
+    auto sample = [&](DBL u, DBL v)
+    {
+        Vector3d p = isect.IPoint + u * footX + v * footY;
+        for (const TEXTURE *warp : warps)
+            Warp_EPoint(p, p, warp);
+        tap.Clear();
+        found = Compute_Pigment(tap, pigment, p, &isect, &ray, threadData) || found;
+        sum += tap;
+        if (taps++ == 0)
+            first = tap;
+        else
+        {
+            const TransColour d = tap - first;
+            spread = max(spread, max(DBL(d.colour().MaxAbs()), max(fabs(DBL(d.filter())), fabs(DBL(d.transm())))));
+        }
+    };
+
+    const DBL lenX = footX.length(), lenY = footY.length();
+    const DBL aniso = max(lenX, lenY) / max(min(lenX, lenY), 1.0e-6 * max(lenX, lenY));
+
+    // a few agreeing taps can all land on one colour of a fine pattern, so confirm with the mirrored grid
+    for (int i = 0; i < 4; i++)
+        sample(kRotatedGrid[i][0], kRotatedGrid[i][1]);
+    if ((spread <= kSpread) && (aniso <= 2.0))
+        for (int i = 0; i < 4; i++)
+            sample(-kRotatedGrid[i][0], kRotatedGrid[i][1]);
+
+    if ((spread > kSpread) || (aniso > 2.0))
+    {
+        // a sheared lattice: rows across the short side, columns along the long side growing with anisotropy
+        const int nLong = clip(int(ceil(4.0 * aniso)), 4, 32);
+        const int nShort = clip(64 / nLong, 2, 4);
+        const int nu = (lenX >= lenY) ? nLong : nShort;
+        const int nv = (lenX >= lenY) ? nShort : nLong;
+        for (int j = 0; j < nv; j++)
+            for (int i = 0; i < nu; i++)
+                sample((i + (j + 0.5) / nv) / nu - 0.5, (j + 0.5) / nv - 0.5);
+    }
+
+    colour = sum / DBL(taps);
+    return found;
+}
+
 void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resultTransm, const TEXTURE *texture, vector<const TEXTURE *>& warps, const Vector3d& ipoint,
                                   const Vector3d& rawnormal, Ray& ray, COLC weight, Intersection& isect)
 {
@@ -820,6 +912,10 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
 
     SubsurfaceLayers subsurfaceLayers;
 
+    Vector3d footX, footY;
+    const bool filterPigments = (textureFilterScale > 0.0) && ray.hasDifferentials && ray.IsPrimaryRay() &&
+                                ComputePixelFootprint(ray, isect, warps, ipoint, rawnormal, footX, footY);
+
     for (layer_number = 0, layer = texture; (layer != nullptr) && (trans > ray.GetTicket().adcBailout); layer_number++, layer = layer->Next)
     {
         // Get perturbed surface normal.
@@ -847,7 +943,11 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
 
         // Get surface colour.
         new_Weight = weight * trans;
-        colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
+        if (filterPigments && (layer->Pigment->Type != PLAIN_PATTERN) && (layer->Pigment->Type != UV_MAP_PATTERN) &&
+            !(qualityFlags.quickColour && layer->Pigment->Quick_Colour.IsValid()))
+            colour_found = ComputeFilteredPigment(layCol, layer->Pigment, warps, footX, footY, isect, ray);
+        else
+            colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
 
         // If a valid color was returned set one_colour_found to true.
         // An invalid color is returned if a surface point is outside

@@ -229,6 +229,8 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
 
     { "Test_Abort_Count",    kPOVAttrib_TestAbortCount,     kPOVMSType_Int },
     { "Test_Abort",          kPOVAttrib_TestAbort,          kPOVMSType_Bool },
+    { "Texture_Filter_Scale",kPOVAttrib_TextureFilterScale, kPOVMSType_Float },
+    { "Texture_Filter",      kPOVAttrib_TextureFilter,      kPOVMSType_Bool },
 
     { "User_Abort_Command",  kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },
     { "User_Abort_Return",   kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },
@@ -345,6 +347,7 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
     { "STP", kPOVAttrib_FrameStep,          kPOVMSType_Int,         kNoParameter },
     { "SU",  kNoParameter,                  kNoParameter,           kPOVAttrib_SplitUnions },
 
+    { "TF",  kNoParameter,                  kNoParameter,           kPOVAttrib_TextureFilter },
     { "TH",  kPOVAttrib_DitherMethod,       kUseSpecialHandler,     kPOVAttrib_Dither,              kCmdOptFlag_Optional },
 
     { "UA",  kNoParameter,                  kNoParameter,           kPOVAttrib_OutputAlpha },

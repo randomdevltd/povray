@@ -228,6 +228,9 @@ class Trace
 
         virtual ~Trace();
 
+        /// Make camera rays average their pigments over this multiple of the pixel footprint; zero turns it off.
+        void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
+
         /// Trace a ray.
         ///
         /// Call this if transmittance matters.
@@ -340,6 +343,8 @@ class Trace
         unsigned int maxFoundTraceLevel;
         /// Various quality-related flags.
         QualityFlags qualityFlags;
+        /// Pixel footprint scale that camera ray hits average their pigments over; zero turns filtering off.
+        DBL textureFilterScale = 0.0;
 
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;
@@ -493,6 +498,14 @@ class Trace
         virtual void ComputeLightedTexture(MathColour& resultColour, ColourChannel& resultTransm, const TEXTURE *texture, std::vector<const TEXTURE *>& warps,
                                            const Vector3d& ipoint, const Vector3d& rawnormal, Ray& ray, COLC weight,
                                            Intersection& isect);
+
+        /// World-space footprint of the ray's image pixel on the tangent plane at the hit; false when it has none.
+        bool ComputePixelFootprint(const Ray& ray, const Intersection& isect, const std::vector<const TEXTURE *>& warps,
+                                   const Vector3d& ipoint, const Vector3d& rawnormal, Vector3d& footX, Vector3d& footY) const;
+
+        /// Average a pigment over the pixel footprint with adaptively added, deterministic taps.
+        bool ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, const std::vector<const TEXTURE *>& warps,
+                                    const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray);
 
         /// Compute the effective filtering effect of a simple or layered texture.
         ///

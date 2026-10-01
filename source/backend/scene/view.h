@@ -350,6 +350,8 @@ class ViewData final
         DBL aaFraction = 0.0;
         DBL aaThr = 0.0;
         int aaDepth = 3;                ///< Method 4: +R, the deepest a bisection may split.
+        /// Pixel footprint scale camera rays filter pigments over; zero when texture filtering is off.
+        DBL textureFilterScale = 0.0;
         /// Method 4, chain mode: the fitted segments, and the ones the planner chose to probe this round.
         std::vector<AaSeg> aaSegs;
         std::vector<std::uint32_t> aaProbeList;
