@@ -2301,6 +2301,8 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
         const float nx = (sg.nx - sg.b * sg.tx) * inv, ny = (sg.ny - sg.b * sg.ty) * inv;
         const float s = sg.a * inv + nx * sg.cx + ny * sg.cy;
         const float ext = 0.5f * (std::fabs(nx) + std::fabs(ny));
+        // probes can move the line anywhere the bounds allow, so own every pixel it might come to cross
+        const float slack = 0.5f * std::max(sg.w[0], std::max(sg.w[1], sg.w[2])) + 1.0e-3f;
         const float uMid = 0.5f * (sg.uLo + sg.uHi), half = 0.5f * (sg.uHi - sg.uLo);
 
         auto visit = [&](int px, int py)
@@ -2308,7 +2310,7 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
             if((px < x0) || (px >= x0 + w) || (py < y0) || (py >= y0 + h) || noisy[at(px, py)])
                 return;
             const float pcx = float(px) + 0.5f, pcy = float(py) + 0.5f;
-            if(std::fabs(s - (nx * pcx + ny * pcy)) > ext + 1.0e-3f)
+            if(std::fabs(s - (nx * pcx + ny * pcy)) > ext + slack + 1.0e-3f)
                 return;
             const float upos = (pcx - sg.cx) * sg.tx + (pcy - sg.cy) * sg.ty;
             const float wt = std::max(0.001f, 1.0f - std::fabs(upos - uMid) / half);
@@ -2337,7 +2339,8 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 if(xb < xa)
                     continue;
                 const float ya = (s - nx * xa) / ny, yb = (s - nx * xb) / ny;
-                for(int j = int(std::floor(std::min(ya, yb))); j <= int(std::floor(std::max(ya, yb))); j++)
+                const float reachY = slack / std::fabs(ny);
+                for(int j = int(std::floor(std::min(ya, yb) - reachY)); j <= int(std::floor(std::max(ya, yb) + reachY)); j++)
                     visit(i, j);
             }
         }
@@ -2350,7 +2353,8 @@ void M5ChainFit(ViewData* vd, const M5Options& o)
                 if(yb < ya)
                     continue;
                 const float xa = (s - ny * ya) / nx, xb = (s - ny * yb) / nx;
-                for(int i = int(std::floor(std::min(xa, xb))); i <= int(std::floor(std::max(xa, xb))); i++)
+                const float reachX = slack / std::fabs(nx);
+                for(int i = int(std::floor(std::min(xa, xb) - reachX)); i <= int(std::floor(std::max(xa, xb) + reachX)); i++)
                     visit(i, j);
             }
         }
@@ -2805,8 +2809,12 @@ void TraceTask::ProgressiveM5()
                             else
                                 s = 0.5f * (fit.lo + fit.hi);
                             const double f = M5Coverage(nx, ny, s);
-                            col = fit.a * (1.0 - f);
-                            col += fit.b * f;
+                            // a pixel the final line does not cross stays as it was sampled
+                            if((fit.seg < 0) || ((f > 0.0) && (f < 1.0)))
+                            {
+                                col = fit.a * (1.0 - f);
+                                col += fit.b * f;
+                            }
                             if(probes > 0)
                                 GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
                         }
