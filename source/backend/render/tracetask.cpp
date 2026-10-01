@@ -1910,16 +1910,24 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
     auto at = [&](int x, int y) { return size_t(x - x0) + size_t(y - y0) * size_t(w); };
     auto lab = [&](int x, int y) { return vd->AaLabAt(unsigned(x), unsigned(y)); };
 
-    // squared distance to the east and south neighbours; with textures filtered, none across a link where one surface's
-    // pigment changes, since the filter has already averaged that edge over each pixel; lighting edges stay
+    // squared distance to the east and south neighbours; with textures filtered, none across a link on one surface where
+    // the pigment explains the change, since the filter has already averaged it over each pixel; a change of lighting
+    // (a shadow edge, a highlight) changes the colour more than the pigment, and stays
     const bool filtered = (vd->textureFilterScale > 0.0) && vd->HasAaHits();
+    auto luma = [](float r, float g, float b) { return std::max(1.0e-4f, 0.2126f * r + 0.7152f * g + 0.0722f * b); };
     auto resolved = [&](int xa, int ya, int xb, int yb)
     {
         if(!filtered || (vd->AaHit(unsigned(xa), unsigned(ya)) != vd->AaHit(unsigned(xb), unsigned(yb))) || (vd->AaHit(unsigned(xa), unsigned(ya)) == 0))
             return false;
         const float* p = vd->AaPigmentAt(unsigned(xa), unsigned(ya));
         const float* q = vd->AaPigmentAt(unsigned(xb), unsigned(yb));
-        return std::max(std::fabs(p[0] - q[0]), std::max(std::fabs(p[1] - q[1]), std::fabs(p[2] - q[2]))) > 0.02f;
+        if(std::max(std::fabs(p[0] - q[0]), std::max(std::fabs(p[1] - q[1]), std::fabs(p[2] - q[2]))) < 1.0e-4f)
+            return false;
+        const RGBTColour& ca = vd->LatticeSample(unsigned(xa), unsigned(ya));
+        const RGBTColour& cb = vd->LatticeSample(unsigned(xb), unsigned(yb));
+        const float lit = std::log(luma(ca.red(), ca.green(), ca.blue()) / luma(cb.red(), cb.green(), cb.blue()));
+        const float pig = std::log(luma(p[0], p[1], p[2]) / luma(q[0], q[1], q[2]));
+        return std::fabs(lit - pig) < 0.1f;
     };
     std::vector<float> dE(size_t(w) * size_t(h), 0.0f), dS(size_t(w) * size_t(h), 0.0f);
     for(int y = y0; y < y0 + h; y++)
