@@ -15,8 +15,11 @@
   .card:hover { border-color: var(--accent); }
   .card img { width: 100%; height: auto; display: block; background: var(--bg); }
   .card span { padding: 4px 8px 0; font-weight: 600; }
-  .card em { padding: 0 8px 6px; font-style: normal; color: var(--bad); min-height: 1em; }
-  .fail { border-color: #4a2a2a; }
+  .card small { padding: 0 8px; color: var(--dim); }
+  .card em { padding: 0 8px 6px; font-style: normal; color: var(--accent); min-height: 1em; }
+  .card canvas { width: 100%; image-rendering: pixelated; }
+  .errors { border-color: #6a2a2a; }
+  .errors em { color: var(--bad); }
   nav { color: var(--dim); }
 </style>
 </head>
@@ -24,8 +27,12 @@
 <h1>skein-lab gallery</h1>
 <nav><a href="index.html">viewer</a> · click a shape to open it with its source and metrics</nav>
 <div id="grid" class="grid"></div>
-<h2>failure gallery — the self-intersection detector at work</h2>
-<div id="failures" class="grid"></div>
+<h2>stress tests at 480×1200 (default-grid versions are in the main grid)</h2>
+<div id="stress" class="grid"></div>
+<h2>handled overlaps: self-overlapping solids resolved by the nonzero winding rule (slice: winding 0 dark, 1 tan, 2 orange, -1 blue)</h2>
+<div id="overlaps" class="grid"></div>
+<h2>errors: non-orientable closed surfaces have no inside</h2>
+<div id="errors" class="grid"></div>
 <script type="module" src="gallery.js"></script>
 </body>
 </html>

@@ -18,6 +18,8 @@ function geometries(m: Mesh) {
   return [surf, caps];
 }
 
+export const withGrid = (model: Model, grid?: [number, number]): Model => (grid ? parts(model).map((sh) => ({ ...sh, grid })) : model);
+
 export function modelGroup(model: Model, o: { wire?: boolean; normals?: boolean; coarse?: number } = {}) {
   const group = new THREE.Group();
   for (const sh of parts(model)) {

@@ -53,5 +53,14 @@ export function intersectingPairs(m: Mesh): [number, number][] {
   return hits;
 }
 
-export const selfIntersections = (model: Model, n = 40): number =>
-  countSelfIntersections(merge(parts(model).map((sh) => buildMesh(sh, n, n, false))));
+export function intersections(model: Model, n = 40): { self: number; contacts: number } {
+  const meshes = parts(model).map((sh) => buildMesh(sh, n, n, false));
+  const owner: number[] = [];
+  meshes.forEach((m, k) => owner.push(...new Array<number>(m.indices.length / 3).fill(k)));
+  let self = 0, contacts = 0;
+  for (const [a, b] of intersectingPairs(merge(meshes))) owner[a] === owner[b] ? self++ : contacts++;
+  return { self, contacts };
+}
+
+export const selfIntersections = (model: Model, n = 40): number => intersections(model, n).self;
+export const contacts = (model: Model, n = 40): number => intersections(model, n).contacts;

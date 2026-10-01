@@ -1,6 +1,6 @@
 import { Sample } from './surface.ts';
 import type { Op } from './surface.ts';
-import { add, normalize, rotate as turn, sub } from './vec.ts';
+import { add, cross, dot, normalize, reject, rotate as turn, scale as times, sub } from './vec.ts';
 import type { Vec3 } from './vec.ts';
 import { field, isConstant } from './value.ts';
 import type { Value } from './value.ts';
@@ -37,3 +37,26 @@ export function applyMatrix(m: Matrix, p: Vec3): Vec3 {
 }
 
 export const matrix = (m: Value<Matrix>): Op => pointwise(m, (p, k) => applyMatrix(k, p));
+
+export interface BendOptions {
+  origin?: Vec3;
+  side?: Vec3;
+  toward?: Vec3;
+  radius: Value<number>;
+  angle?: Value<number>;
+}
+
+export function bend(o: BendOptions): Op {
+  const origin = o.origin ?? [0, 0, 0], n = normalize(o.toward ?? [0, 0, 1]);
+  const e = normalize(reject(o.side ?? [1, 0, 0], n)), a = cross(n, e);
+  const radius = field(o.radius), limit = field(o.angle ?? Infinity);
+  return (prev) => (u, v) => {
+    const s = new Sample(prev, u, v), d = sub(s.p, origin);
+    const rho = dot(d, e);
+    if (rho <= 0) return s.p;
+    const R = radius(s), h = dot(d, n), phi = Math.min(rho / R, limit(s)), extra = rho - phi * R;
+    const c = Math.cos(phi), sn = Math.sin(phi);
+    const radial = add(times(e, (R - h) * sn), times(n, R - (R - h) * c));
+    return add(add(origin, times(a, dot(d, a))), add(radial, add(times(e, extra * c), times(n, extra * sn))));
+  };
+}

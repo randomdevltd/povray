@@ -1,6 +1,6 @@
 import { normalAt, ops, unitQuad } from './surface.ts';
 import type { Op, Surface } from './surface.ts';
-import { add, cross, dist, dot, norm, scale, sub } from './vec.ts';
+import { add, cross, dist, dot, norm, normalize, scale, sub } from './vec.ts';
 import type { Vec3 } from './vec.ts';
 
 export type End = 'open' | 'flat' | 'pole';
@@ -47,11 +47,38 @@ export interface Mesh {
   grid: Vec3[][];
 }
 
+function minimumArea(ring: Vec3[]): [number, number, number][] {
+  const n = ring.length, cost = Array.from({ length: n }, () => new Float64Array(n)), pick = Array.from({ length: n }, () => new Int32Array(n));
+  const tri = (i: number, k: number, j: number) => norm(cross(sub(ring[k], ring[i]), sub(ring[j], ring[i])));
+  for (let gap = 2; gap < n; gap++)
+    for (let i = 0; i + gap < n; i++) {
+      const j = i + gap;
+      cost[i][j] = Infinity;
+      for (let k = i + 1; k < j; k++) {
+        const c = cost[i][k] + cost[k][j] + tri(i, k, j);
+        if (c < cost[i][j]) [cost[i][j], pick[i][j]] = [c, k];
+      }
+    }
+  const out: [number, number, number][] = [];
+  const walk = (i: number, j: number): void => {
+    if (j - i < 2) return;
+    const k = pick[i][j];
+    out.push([i, k, j]);
+    walk(i, k);
+    walk(k, j);
+  };
+  walk(0, n - 1);
+  return out;
+}
+
 function earClip(ring: Vec3[]): [number, number, number][] {
   let n: Vec3 = [0, 0, 0];
   ring.forEach((p, i) => (n = add(n, cross(p, ring[(i + 1) % ring.length]))));
-  const e1 = sub(ring[1], ring[0]), e2 = cross(n, e1);
-  const pts = ring.map((p) => [dot(p, e1), dot(p, e2)]);
+  const centre = scale(ring.reduce((a, p) => add(a, p), [0, 0, 0] as Vec3), 1 / ring.length), unit = scale(n, 1 / (norm(n) || 1));
+  const extent = Math.max(...ring.map((p) => dist(p, centre)));
+  if (Math.max(...ring.map((p) => Math.abs(dot(sub(p, centre), unit)))) > 0.01 * extent) return minimumArea(ring);
+  const e1 = normalize(sub(ring[1], ring[0])), e2 = cross(unit, e1);
+  const pts = ring.map((p) => [dot(sub(p, centre), e1), dot(sub(p, centre), e2)]);
   const area2 = (a: number, b: number, c: number) =>
     (pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1]) - (pts[c][0] - pts[a][0]) * (pts[b][1] - pts[a][1]);
   const span = Math.max(...pts.map(([x, y]) => Math.abs(x) + Math.abs(y)));
@@ -68,7 +95,7 @@ function earClip(ring: Vec3[]): [number, number, number][] {
       idx.splice(k, 1);
       clipped = true;
     }
-    if (!clipped) break;
+    if (!clipped) return minimumArea(ring);
   }
   if (idx.length === 3) out.push([idx[0], idx[1], idx[2]]);
   return out;
@@ -167,12 +194,14 @@ export function seamGap(sh: Shape, m: Mesh): number {
 }
 
 export function merge(meshes: Mesh[]): Mesh {
-  let offset = 0;
-  const idx: number[] = [], pos: number[] = [];
+  const positions = new Float64Array(meshes.reduce((a, m) => a + m.positions.length, 0));
+  const indices = new Uint32Array(meshes.reduce((a, m) => a + m.indices.length, 0));
+  let p = 0, q = 0;
   for (const m of meshes) {
-    for (const k of m.indices) idx.push(k + offset);
-    pos.push(...m.positions);
-    offset += m.positions.length / 3;
+    positions.set(m.positions, p);
+    for (let k = 0; k < m.indices.length; k++) indices[q + k] = m.indices[k] + p / 3;
+    p += m.positions.length;
+    q += m.indices.length;
   }
-  return { positions: new Float64Array(pos), normals: new Float32Array(pos.length), indices: new Uint32Array(idx), surfaceTris: 0, closed: false, grid: [] };
+  return { positions, normals: new Float32Array(positions.length), indices, surfaceTris: 0, closed: false, grid: [] };
 }

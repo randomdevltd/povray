@@ -36,3 +36,20 @@ export function tubeUV(u: number, v: number, length: number, scale = 1): Vec3 {
   const a = 2 * Math.PI * u, r = scale / (2 * Math.PI);
   return [r * Math.cos(a), r * Math.sin(a), scale * length * v];
 }
+
+const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+
+export function noise(p: Vec3): number {
+  const [x, y, z] = p, ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const fx = fade(x - ix), fy = fade(y - iy), fz = fade(z - iz);
+  const at = (i: number, j: number, k: number) => 2 * hash(ix + i, iy + j, iz + k, 3) - 1;
+  const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+  const plane = (k: number) => mix(mix(at(0, 0, k), at(1, 0, k), fx), mix(at(0, 1, k), at(1, 1, k), fx), fy);
+  return mix(plane(0), plane(1), fz);
+}
+
+export function fbm(p: Vec3, octaves = 4): number {
+  let sum = 0, amp = 0.5, f = 1;
+  for (let o = 0; o < octaves; o++, amp /= 2, f *= 2.03) sum += amp * noise([p[0] * f, p[1] * f, p[2] * f]);
+  return sum;
+}

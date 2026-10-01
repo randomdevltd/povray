@@ -142,3 +142,92 @@ then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/gallery.
 - **Topology flags** (`wrap`, `ends`, `shift`, `flip`, `grid`) are an object literal here; in POV they would be
   keywords inside the object block, which is probably easier to read than the TS form.
 - **Models as arrays** map directly onto `union { }`.
+
+## Round 3: everyday objects, stress tests, winding-rule solids
+
+### Decisions
+
+- **`bend` primitive added** (hinge deformer: roll onto a tangent cylinder past a plane, arc length kept,
+  optional angle limit, then straight). Without it, page turning and corner curl had to rotate about a line
+  *inside* the sheet, which fans a thick slab around the hinge (888-1514 self-overlaps on the thin page) and
+  is not isometric. A real roll needs each point's original in-plane distance after it has moved, which
+  ops cannot see. Used by pageturn, pagecurl, pagecurlthin, wizardhat.
+- **`noise` / `fbm` added** (smooth value noise). Boulder, paper ball, hat crumple and the horn/trunk
+  octaves need smooth multi-octave noise; cellular noise alone gives cones.
+- **Self-intersection is handled, not forbidden.** A closed oriented result is a solid by the nonzero
+  winding rule. `union` volume integrates exactly along a 256² grid of +x rays (signed crossings);
+  divergence `volume` stays as the signed integral. The 40² count is now "self-overlaps (handled)"
+  (informational), split from `contacts` between parts of a composite (union joints).
+- **Orientability is the error.** Edge-consistency propagation over the welded mesh: Klein is closed and
+  non-orientable (error, no union); Möbius is open and non-orientable (reported, not an error).
+- **Caps:** non-planar cap rings (displaced or bent ends) use a minimum-area triangulation (O(n³) DP);
+  planar ones keep ear clipping, now in a normalised, centred basis with a stall fallback.
+
+### Bugs found and fixed
+
+- **Tentacle cap missing since round 2.** The ear-clip tolerance was scale-inconsistent (unnormalised,
+  uncentred basis); on the small tip ring every ear looked collinear and the clipper silently returned
+  nothing. Volume moved 0.4385 → 0.4389; the mesh had 64 boundary edges. Found by the new orientation pass.
+- **Displaced capped ends** (horn base, trunk ends, staff foot) make non-planar caps that graze the wall:
+  the 40² detector said 0, 80² and 160² found 6 and 75 on the trunk. Fixed in the examples by fading the
+  displacement to zero at capped ends (or using poles).
+- **Aeroplane wings were inside out** (airfoil listed clockwise): negative volume per part, nothing else
+  showed it. Curve sections must run counter-clockwise; nothing checks this.
+- **`merge` overflowed the stack** on big meshes (array spread); now typed-array copies.
+
+### Winding-rule behaviour
+
+- **Inverted regions cancel.** The spindle torus's inner lemon is swept with negative orientation, so its
+  winding is +1 (apple) − 1 = 0: the nonzero rule makes the lemon a *cavity*, and union = divergence
+  (11.838). The slice cutaway shows the hole. Expected from the rule, surprising to an author.
+- **Overlaps add.** Fat knot: union 80.889 vs divergence 81.036 (winding 2 in the overlaps). Head and
+  aeroplane (embedded parts) union 2.981 / 0.483 vs divergence 3.051 / 0.507.
+- **Exactly coincident sheets work.** A tube bent 1.25 turns overlaps itself exactly: union 9.864 vs
+  analytic 9.870 (0.056%), divergence 12.329. The two coincident chord sets cross each other, so the 40²
+  self-overlap count is large while the union is right.
+- **Grazing contact** (spindle apex, cap/wall slivers on the thin page) produces large self-overlap counts
+  with no volume effect; the count is not a severity measure.
+- **Thin features under-sample**: 256² rays give union 0.3-0.9% low on thin walls (box 0.1249 vs 0.1260,
+  chain 0.6700 vs 0.6718).
+
+### Stress tests (ram's horn, elephant trunk)
+
+- **Defaults:** library grid 160 × 160 (examples may override); self-overlap test 40²; gallery thumbnails
+  at half grid; the viewer builds the example's grid, `?grid=WxH` overrides it.
+- **Build cost (Node, with FD normals):** 160² 0.5 s / 0.9 s (horn / trunk, 25.6k verts, 51k tris);
+  320×800 5.5 / 9.1 s; 480×1200 12.8 / 21.8 s (576k verts, 1.15M tris); 640×1600 24.7 / 42.5 s
+  (1.02M verts, 2.05M tris). Browser at 480×1200: 12-17 s mesh + 8-11 s metrics. Interactive (under ~2 s)
+  tops out near 160×400; 320×800 is usable for inspection.
+- **Normals:** mean angle between FD vertex normals and the mesh's face normals falls with resolution
+  (horn 8.6° → 2.3°; trunk 35° → 9.3° at 640×1600). ~3% of horn vertices stay above 30° at every grid:
+  the growth-ring sawtooth steps, where the surface is discontinuous and the FD normal (h = 1e-5) takes
+  one side. FD normals themselves hold up; the steps render as small flaps at 160² and slits at 480×1200.
+- **Stair-stepping:** horn's finest octave (wavelength 0.025 on a 6.7 × 2.2 surface) stops stepping
+  between 320×800 (p95 deviation 24°) and 480×1200 (6.2°), clean at 640×1600 (2.5°): about 4-5 samples
+  per finest wavelength. The trunk's finest octave (fbm at 122/unit, crack width 0.006) is not resolved at
+  640×1600 (p95 33°); by the same rule it needs about 1200 × 2400 (≈2.9M verts), not measured.
+- **Coarse detector:** at 40² it cannot see detail-scale problems; it missed the trunk's cap grazing that
+  80² and 160² found. It is a gross-overlap check only.
+
+### Friction and limits (round 3)
+
+- **Branching needs composites**: aeroplane (6 parts), balloon dog (10), arm (7: arm, palm, 5 fingers),
+  head (6), staff (fork as a second part), basket handle, trumpet valves. Parts interpenetrate at the
+  joints; the result is a union by the winding rule, not a blended surface (no fillets).
+- **Thin closed solids** work as a square-section slab (fold with `ngon(4)` and `twist: π/4`, then scale);
+  `start` shifts the parameterisation while `twist` rotates the section, an easy mix-up. A radial
+  superellipsoid slab was tried and rejected: the outer half of each face gets almost no samples (a lens,
+  volume 0.0043 instead of 0.0075).
+- **Thin bent slabs defeat the coarse detector**: chord sag at 40² (≈0.011) exceeds the 0.008 page
+  thickness, so faces cross in the mesh, not in the shape (pagecurlthin: 135 at 40², 72 sliver contacts at
+  160²). It sits in the overlap section, flagged.
+- **Open versions used** for page turning, corner curl, crumpled page and paper plane (single sheet,
+  labelled "open surface (later version)"); closed thin shown for the corner curl (pagecurlthin), leaf
+  (flattened lathe), box and basket (closed lathe profiles).
+- **Lathe-around-a-path** is how a thin-walled tube (trumpet) would be closed, but the lip turnarounds
+  need a piecewise profile; the trumpet stayed an open tube.
+- **Square containers via polar `ngon` scaling** thicken the walls by √2 at the corners.
+- **Displacement on both faces of a thin solid** moves them in opposite directions (the leaf veins first
+  crossed the faces, 340 overlaps); thin-solid detail must be a space warp (`translate` by a field).
+- **Curve-section orientation is unchecked**; a clockwise curve gives an inside-out solid silently.
+- **Near-duplicates:** pagecurl and pagecurlthin share the `curl` op by import; finger is reused by arm.

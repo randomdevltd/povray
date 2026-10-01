@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } fro
 
 mkdirSync('dist', { recursive: true });
 await build({ entryPoints: ['web/main.ts', 'web/gallery.ts'], bundle: true, format: 'esm', target: 'es2022', outdir: 'dist', minify: true, splitting: true });
-for (const page of ['index.html', 'gallery.html']) copyFileSync(`web/${page}`, `dist/${page}`);
+for (const page of ['index.html', 'gallery.html', 'stress.html']) copyFileSync(`web/${page}`, `dist/${page}`);
 const sources = Object.fromEntries(
   readdirSync('examples').filter((f) => f !== 'index.ts').map((f) => [f.replace(/\.ts$/, ''), readFileSync(`examples/${f}`, 'utf8')]),
 );

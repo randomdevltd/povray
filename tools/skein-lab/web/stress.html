@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skein-lab stress</title>
+<style>
+  :root { --bg: #15171c; --ink: #d8dce4; --dim: #8a90a0; --accent: #e0a458; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 16px; color: var(--accent); margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  figure { margin: 0; }
+  img { width: 100%; display: block; border: 1px solid #2c313b; }
+  figcaption { color: var(--dim); padding: 4px 0 8px; }
+</style>
+</head>
+<body>
+<h1>stress tests: default grid (160×160) vs 480×1200, close-up on the finest octave</h1>
+<div class="grid">
+  <figure><img src="../shots/ramshorn-160-close.png"><figcaption>ram's horn, 160×160</figcaption></figure>
+  <figure><img src="../shots/ramshorn-480x1200-close.png"><figcaption>ram's horn, 480×1200</figcaption></figure>
+  <figure><img src="../shots/trunk-160-close.png"><figcaption>elephant trunk, 160×160</figcaption></figure>
+  <figure><img src="../shots/trunk-480x1200-close.png"><figcaption>elephant trunk, 480×1200</figcaption></figure>
+</div>
+</body>
+</html>

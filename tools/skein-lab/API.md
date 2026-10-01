@@ -66,6 +66,18 @@ matrix([[0, -1, 0, 2], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])  // 4x4 affine
 
 Constant arguments take a fast path that never builds a sample.
 
+### `bend({ origin, side, toward, radius, angle })`
+Hinge deformer: points past the plane through `origin` facing `side` are rolled onto a cylinder of
+`radius` that touches the sheet along the hinge, curling `toward`; arc length is kept, and past
+`angle` (default unlimited) the sheet continues straight. Points behind the hinge are untouched.
+`radius` and `angle` are values. Thickness is kept, so it bends closed thin slabs too.
+
+```ts
+bend({ origin: [0.6, 0.45, 0], side: [1, 1, 0], radius: 0.07 })                 // corner curl
+bend({ origin: [-0.425, 0, 0], side: X, radius: ({ v }) => 0.2 + 0.25 * v, angle: 2.1 })  // page turning
+bend({ origin: [0, 1.5, 0], side: Y, toward: X, radius: 0.35, angle: 1.7 })     // droop the tip of a hat
+```
+
 ## Surface ops
 
 ### `fold(options)`
@@ -127,10 +139,22 @@ natural / periodic C2 spline), `arclength` (reparameterise by length). Points ma
 
 Sections: `circle(r)`, `ngon(n, r)`, `superellipse(p, a, b)` (polar, for `radius`), `star(points, outer, inner)`
 (a closed 2D path, for `curve`). Paths: `helix(radius, height, turns)`, `torusKnot(p, q, R, r)`.
-Noise: `cells(p)` → `{ f1, f2 }`, `crackle(p, width)`, `tubeUV(u, v, length, scale)` (seamless in u).
+Noise: `cells(p)` → `{ f1, f2 }`, `crackle(p, width)`, `noise(p)` (smooth value noise in [-1, 1]),
+`fbm(p, octaves)`, `tubeUV(u, v, length, scale)` (seamless in u). All deterministic.
 Constants: `X`, `Y`, `Z`. Vectors: `add sub dot cross norm dist normalize lerp`.
 
 ## Metrics
 
-`measure(model)` → `{ area, volume, seamGap, selfIntersections }`. `buildMesh(shape, nu?, nv?)`,
-`area`, `volume` (closed results only), `seamGap`, `selfIntersections(model, n = 40)`.
+`measure(model)` → `{ area, volume, union, seamGap, selfIntersections, contacts, orientable, open }`.
+
+- `volume`: divergence-theorem volume (counts overlapping regions once per covering, so twice where a
+  surface overlaps itself).
+- `union`: volume of the solid under the **nonzero winding rule**, by exact crossing integration along a
+  256² grid of rays (`unionVolume(model, rays)`); `null` for open or non-orientable results.
+- `selfIntersections`: informational count of intersecting triangle pairs within each part on a 40² mesh
+  ("self-overlaps (handled)"); `contacts`: pairs between different parts (union joints).
+- `orientable` / `open`: from edge-consistency propagation over the welded mesh (`orientation(mesh)`).
+  A closed non-orientable result (Klein) is the one error: it has no inside.
+- `windingSlice(model, z, n)`: winding numbers on a plane, for cutaways.
+
+`buildMesh(shape, nu?, nv?)`, `area`, `volume`, `seamGap`, `intersections(model, n)`, `orientationOf(model)`.

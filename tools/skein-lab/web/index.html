@@ -18,6 +18,7 @@
   dt { color: var(--dim); }
   .nav { color: var(--accent); display: block; margin-bottom: 8px; }
   .bad { color: #e06c6c; }
+  .warn { color: #e0a458; }
   dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   pre { margin: 0; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
   #view { position: relative; min-width: 0; }
@@ -32,14 +33,20 @@
   <label>example <select id="example"></select></label>
   <label><input type="checkbox" id="wire"> wireframe</label>
   <label><input type="checkbox" id="normals"> normal shading</label>
+  <label><input type="checkbox" id="slice"> winding slice</label>
   <dl>
     <dt>grid</dt><dd id="m-grid"></dd>
     <dt>area</dt><dd id="m-area"></dd>
-    <dt>volume</dt><dd id="m-volume"></dd>
+    <dt>volume (div.)</dt><dd id="m-volume"></dd>
+    <dt>union volume</dt><dd id="m-union"></dd>
     <dt>seam gap</dt><dd id="m-seam"></dd>
-    <dt>self-x (40²)</dt><dd id="m-self"></dd>
+    <dt>self-overlaps (handled)</dt><dd id="m-self"></dd>
+    <dt>part contacts</dt><dd id="m-contacts"></dd>
+    <dt>orientable</dt><dd id="m-orient"></dd>
     <dt>build</dt><dd id="m-time"></dd>
   </dl>
+  <canvas id="slicecanvas" hidden style="width:100%;margin-top:12px;image-rendering:pixelated"></canvas>
+  <div id="slicenote" style="color:var(--dim);font-size:12px"></div>
 </aside>
 <div id="view"><div id="status"></div></div>
 <section><pre id="source"></pre></section>
