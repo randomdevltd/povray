@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { selfIntersections } from '../src/index.ts';
-import { examples } from '../examples/index.ts';
+import { examples, failures } from '../examples/index.ts';
 
 test('a tube fatter than half the strand spacing is caught intersecting itself', () => {
   const n = selfIntersections(examples.fatknot);
@@ -9,10 +9,14 @@ test('a tube fatter than half the strand spacing is caught intersecting itself',
   assert.ok(n > 0);
 });
 
-test('the clean examples report no self-intersections', () => {
-  for (const name of ['sphere', 'torus', 'frustum', 'log', 'knot', 'curl', 'column'] as const) {
-    const n = selfIntersections(examples[name]);
-    console.log(`${name}: ${n}`);
-    assert.equal(n, 0, name);
-  }
+test('the figure-eight Klein bottle is caught', () => {
+  const n = selfIntersections(examples.klein);
+  console.log(`klein: ${n} intersecting triangle pairs`);
+  assert.ok(n > 0);
+});
+
+test('every example outside the failure gallery reports no self-intersections', () => {
+  const dirty = Object.entries(examples).filter(([name]) => !failures.includes(name)).map(([name, m]) => [name, selfIntersections(m)] as const).filter(([, n]) => n > 0);
+  console.log(`clean gallery: ${Object.keys(examples).length - failures.length} examples, dirty: ${JSON.stringify(dirty)}`);
+  assert.deepEqual(dirty, []);
 });

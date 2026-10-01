@@ -16,6 +16,8 @@
   select { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); padding: 4px; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin-top: 18px; }
   dt { color: var(--dim); }
+  .nav { color: var(--accent); display: block; margin-bottom: 8px; }
+  .bad { color: #e06c6c; }
   dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
   pre { margin: 0; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
   #view { position: relative; min-width: 0; }
@@ -26,6 +28,7 @@
 <body>
 <aside>
   <h1>skein-lab</h1>
+  <a class="nav" href="gallery.html">gallery</a>
   <label>example <select id="example"></select></label>
   <label><input type="checkbox" id="wire"> wireframe</label>
   <label><input type="checkbox" id="normals"> normal shading</label>

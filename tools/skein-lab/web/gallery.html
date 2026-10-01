@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skein-lab gallery</title>
+<style>
+  :root { --bg: #15171c; --panel: #1d2027; --ink: #d8dce4; --dim: #8a90a0; --line: #2c313b; --accent: #e0a458; --bad: #e06c6c; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 16px; color: var(--accent); margin: 0 0 4px; }
+  h2 { font-size: 13px; color: var(--dim); font-weight: 500; margin: 20px 0 8px; }
+  a { color: var(--ink); text-decoration: none; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
+  .card:hover { border-color: var(--accent); }
+  .card img { width: 100%; height: auto; display: block; background: var(--bg); }
+  .card span { padding: 4px 8px 0; font-weight: 600; }
+  .card em { padding: 0 8px 6px; font-style: normal; color: var(--bad); min-height: 1em; }
+  .fail { border-color: #4a2a2a; }
+  nav { color: var(--dim); }
+</style>
+</head>
+<body>
+<h1>skein-lab gallery</h1>
+<nav><a href="index.html">viewer</a> · click a shape to open it with its source and metrics</nav>
+<div id="grid" class="grid"></div>
+<h2>failure gallery — the self-intersection detector at work</h2>
+<div id="failures" class="grid"></div>
+<script type="module" src="gallery.js"></script>
+</body>
+</html>

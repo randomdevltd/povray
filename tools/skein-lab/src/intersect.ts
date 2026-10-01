@@ -1,9 +1,9 @@
-import { buildMesh } from './mesh.ts';
-import type { Mesh, Shape } from './mesh.ts';
+import { buildMesh, merge, parts } from './mesh.ts';
+import type { Mesh, Model } from './mesh.ts';
 import { cross, dot, sub } from './vec.ts';
 import type { Vec3 } from './vec.ts';
 
-const EPS = 1e-9;
+const EPS = -1e-12;
 
 function segmentHitsTriangle(p: Vec3, q: Vec3, a: Vec3, b: Vec3, c: Vec3): boolean {
   const d = sub(q, p), e1 = sub(b, a), e2 = sub(c, a);
@@ -11,11 +11,11 @@ function segmentHitsTriangle(p: Vec3, q: Vec3, a: Vec3, b: Vec3, c: Vec3): boole
   if (Math.abs(det) < 1e-18) return false;
   const f = 1 / det, s = sub(p, a);
   const bu = f * dot(s, h);
-  if (bu <= EPS || bu >= 1 - EPS) return false;
+  if (bu < EPS || bu > 1 - EPS) return false;
   const qv = cross(s, e1), bv = f * dot(d, qv);
-  if (bv <= EPS || bu + bv >= 1 - EPS) return false;
+  if (bv < EPS || bu + bv > 1 - EPS) return false;
   const t = f * dot(e2, qv);
-  return t > EPS && t < 1 - EPS;
+  return t >= EPS && t <= 1 - EPS;
 }
 
 function trianglesIntersect(A: Vec3[], B: Vec3[]): boolean {
@@ -26,7 +26,9 @@ function trianglesIntersect(A: Vec3[], B: Vec3[]): boolean {
   return false;
 }
 
-export function countSelfIntersections(m: Mesh): number {
+export const countSelfIntersections = (m: Mesh): number => intersectingPairs(m).length;
+
+export function intersectingPairs(m: Mesh): [number, number][] {
   const nt = m.indices.length / 3;
   const tri: Vec3[][] = [], box: number[][] = [], idx: number[][] = [];
   for (let t = 0; t < nt; t++) {
@@ -37,7 +39,7 @@ export function countSelfIntersections(m: Mesh): number {
     box.push([0, 1, 2].flatMap((a) => [Math.min(...vs.map((v) => v[a])), Math.max(...vs.map((v) => v[a]))]));
   }
   const order = [...Array(nt).keys()].sort((a, b) => box[a][0] - box[b][0]);
-  let hits = 0;
+  const hits: [number, number][] = [];
   for (let x = 0; x < nt; x++) {
     const i = order[x], bi = box[i];
     for (let y = x + 1; y < nt; y++) {
@@ -45,10 +47,11 @@ export function countSelfIntersections(m: Mesh): number {
       if (bj[0] > bi[1]) break;
       if (bj[2] > bi[3] || bj[3] < bi[2] || bj[4] > bi[5] || bj[5] < bi[4]) continue;
       if (idx[i].some((k) => idx[j].includes(k))) continue;
-      if (trianglesIntersect(tri[i], tri[j])) hits++;
+      if (trianglesIntersect(tri[i], tri[j])) hits.push([i, j]);
     }
   }
   return hits;
 }
 
-export const selfIntersections = (sh: Shape, n = 40): number => countSelfIntersections(buildMesh(sh, n, n, false));
+export const selfIntersections = (model: Model, n = 40): number =>
+  countSelfIntersections(merge(parts(model).map((sh) => buildMesh(sh, n, n, false))));

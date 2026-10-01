@@ -26,3 +26,13 @@ test('twist does move points: the parameterisation differs', () => {
   const twisted = shape({}, fold({ radius: ({ v }) => [1, 5 * v, 0] })).surface;
   assert.ok(dist(plain(0.1, 0.5), twisted(0.1, 0.5)) > 0.5);
 });
+
+test('radius as [r, angle, axial], as { radius, angle, axial }, and as named twist/axial options agree', () => {
+  const a = shape({}, fold({ radius: ({ v }) => [0.7, 2 * v, 0.1 * v] })).surface;
+  const b = shape({}, fold({ radius: ({ v }) => ({ radius: 0.7, angle: 2 * v, axial: 0.1 * v }) })).surface;
+  const c = shape({}, fold({ radius: 0.7, twist: ({ v }) => 2 * v, axial: ({ v }) => 0.1 * v })).surface;
+  for (const [u, v] of [[0.1, 0.2], [0.8, 0.9]]) {
+    assert.ok(dist(a(u, v), b(u, v)) < 1e-12);
+    assert.ok(dist(a(u, v), c(u, v)) < 1e-12);
+  }
+});

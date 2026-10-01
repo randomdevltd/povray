@@ -1,5 +1,7 @@
-import { cross, norm, sub, scale, add } from './vec.ts';
+import { add, cross, lerp, norm, scale, sub } from './vec.ts';
 import type { Vec3 } from './vec.ts';
+import { field } from './value.ts';
+import type { Field, Value } from './value.ts';
 
 export type Surface = (u: number, v: number) => Vec3;
 export type Op = (prev: Surface) => Surface;
@@ -41,8 +43,6 @@ export class Sample {
   get n(): Vec3 { return (this.#n ??= normalAt(this.#prev, this.u, this.v)); }
 }
 
-export type Field<T> = (s: Sample) => T;
-
 export const ops = (...list: Op[]): Op => (prev) => list.reduce((s, op) => op(s), prev);
 
 export function fn(...f: [Field<Vec3>] | [Field<number>, Field<number>, Field<number>]): Op {
@@ -50,15 +50,30 @@ export function fn(...f: [Field<Vec3>] | [Field<number>, Field<number>, Field<nu
   return (prev) => (u, v) => g(new Sample(prev, u, v));
 }
 
-export const displace = (f: Field<number>): Op => (prev) => (u, v) => {
-  const s = new Sample(prev, u, v);
-  return add(s.p, scale(s.n, f(s)));
-};
+export function displace(amount: Value<number>): Op {
+  const f = field(amount);
+  return (prev) => (u, v) => {
+    const s = new Sample(prev, u, v);
+    return add(s.p, scale(s.n, f(s)));
+  };
+}
 
-export function spherical(radius: number | Field<number> = 1): Op {
-  const r = typeof radius === 'number' ? () => radius : radius;
+export function spherical(radius: Value<number> = 1): Op {
+  const r = field(radius);
   return fn((s) => {
     const theta = 2 * Math.PI * s.u, phi = Math.PI * s.v, k = r(s);
     return [k * Math.sin(phi) * Math.cos(theta), -k * Math.cos(phi), -k * Math.sin(phi) * Math.sin(theta)];
   });
+}
+
+export function morph(keys: Op[], t: Value<number>): Op {
+  const w = field(t);
+  return (prev) => {
+    const ss = keys.map((k) => k(prev));
+    return (u, v) => {
+      const f = Math.min(1, Math.max(0, w(new Sample(prev, u, v)))) * (ss.length - 1);
+      const i = Math.min(ss.length - 2, Math.floor(f));
+      return lerp(ss[i](u, v), ss[i + 1](u, v), f - i);
+    };
+  };
 }

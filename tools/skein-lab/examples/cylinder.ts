@@ -2,5 +2,5 @@ import { shape, scale, fold } from '../src/index.ts';
 
 export default shape({ wrap: 'u', ends: 'flat' },
   scale([1, 2, 1]),
-  fold({ radius: ({ v }) => 1 - 0.75 * v }),
+  fold({ radius: 0.5 }),
 );
