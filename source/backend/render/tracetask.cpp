@@ -2366,8 +2366,18 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
             const float gap = std::min(f.hi, ext) - std::max(f.lo, -ext);
             return (gap > o.gapMin) ? M4Bucket(f.contrast * gap) : -1;
         }
-        // a noisy pixel's next sample is worth less for each it already has
-        return ((f.kind == 2) && (f.probes < 250)) ? M4Bucket(f.contrast / (1.0f + float(f.probes))) : -1;
+        // a noisy pixel's next sample is worth the drop it should make to the standard error of its mean: the spread of
+        // its samples so far (what its neighbours differ by until there are three), over root n against root n + 1
+        if((f.kind != 2) || (f.probes >= 250))
+            return -1;
+        const float n = float(f.probes) + 1.0f;
+        float sd = 0.5f * f.contrast;
+        if(f.probes >= 2)
+        {
+            const float sum2 = f.sumLab[0] * f.sumLab[0] + f.sumLab[1] * f.sumLab[1] + f.sumLab[2] * f.sumLab[2] + f.sumLab[3] * f.sumLab[3];
+            sd = std::sqrt(std::max(0.0f, f.sumSq - sum2 / n) / (n - 1.0f));
+        }
+        return M4Bucket(sd * (1.0f / std::sqrt(n) - 1.0f / std::sqrt(n + 1.0f)));
     };
 
     std::int64_t hist[256] = {};
@@ -2722,6 +2732,19 @@ void TraceTask::ProgressiveM4()
                             RGBTColour extra;
                             TraceSample(DBL(x) + ox, DBL(y) + oy, extra);
                             GetViewData()->AaExtra(x, y) += extra;
+                            const float* centre = GetViewData()->AaLabAt(x, y);
+                            if(fit.probes == 0)
+                            {
+                                for(int c = 0; c < 4; c++)
+                                    fit.sumLab[c] = centre[c];
+                                fit.sumSq = centre[0] * centre[0] + centre[1] * centre[1] + centre[2] * centre[2] + centre[3] * centre[3];
+                            }
+                            const OkLab le = ToOkLab(extra);
+                            fit.sumLab[0] += le.l;
+                            fit.sumLab[1] += le.a;
+                            fit.sumLab[2] += le.b;
+                            fit.sumLab[3] += le.t;
+                            fit.sumSq += le.l * le.l + le.a * le.a + le.b * le.b + le.t * le.t;
                             fit.probes++;
                         }
                         break;

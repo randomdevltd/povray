@@ -84,6 +84,8 @@ struct AaFit final
     std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours.
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
     std::uint8_t probes = 0;        ///< Probes traced so far.
+    float sumLab[4] = { 0, 0, 0, 0 };   ///< Noisy pixel: OkLab sum over its samples, the centre one included.
+    float sumSq = 0;                ///< Noisy pixel: sum of the squares of those OkLab values.
     std::int32_t seg = -1;          ///< Chain mode: the segment whose line this pixel takes, or -1.
     std::int32_t seg2 = -1;         ///< Chain mode: a second segment whose line may also cross it.
     RGBTColour a, b;                ///< Colours on the two sides.
