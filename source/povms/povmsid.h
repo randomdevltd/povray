@@ -395,6 +395,8 @@ enum
     kPOVAttrib_Quality               = 'Qual',
     kPOVAttrib_HighReproducibility   = 'HRep',
     kPOVAttrib_StochasticSeed        = 'Seed',
+    kPOVAttrib_TextureFilter         = 'TxFi',
+    kPOVAttrib_TextureFilterScale    = 'TxFS',
 
     kPOVAttrib_Bounding              = 'Boun',
     kPOVAttrib_BoundingMethod        = 'BdMe',

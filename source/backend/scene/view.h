@@ -342,6 +342,8 @@ class ViewData final
         bool aaExhausted = false;
         DBL aaFraction = 0.0;
         DBL aaThr = 0.0;
+        /// Pixel footprint scale camera rays filter pigments over; zero when texture filtering is off.
+        DBL textureFilterScale = 0.0;
         /// Method 4, chain mode: the fitted segments, and the ones the planner chose to probe this round.
         std::vector<AaSeg> aaSegs;
         std::vector<std::uint32_t> aaProbeList;

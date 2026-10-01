@@ -150,6 +150,7 @@ void Ray::SetFlags(RayType rt, bool shadowTest, bool photon, bool radiosity, boo
     radiosityRay = radiosity;
     monochromaticRay = monochromatic;
     pretraceRay = pretrace;
+    hasDifferentials = false;
 }
 
 void Ray::SetFlags(RayType rt, const Ray& other)
@@ -163,6 +164,7 @@ void Ray::SetFlags(RayType rt, const Ray& other)
     radiosityRay = other.IsRadiosityRay();
     monochromaticRay = other.IsMonochromaticRay();
     pretraceRay = other.IsPretraceRay();
+    hasDifferentials = false;
 }
 
 }

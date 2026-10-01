@@ -960,6 +960,27 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
     ray.Direction.normalize();
     ray.SetKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ray.Origin), ray.Direction));
 
+    if ((textureFilterScale > 0.0) && !useFocalBlur && (camera.Tnormal == nullptr) && !pretrace)
+    {
+        // how origin and direction move for a step of one image pixel, wherever in the pixel this sample lies
+        const Vector3d stepX = cameraRight / width, stepY = cameraUp / -height;
+        if (camera.Type == PERSPECTIVE_CAMERA)
+        {
+            const DBL len = (cameraDirection + x0 * cameraRight + y0 * cameraUp).length();
+            ray.dOdx = ray.dOdy = Vector3d(0.0);
+            ray.dDdx = (stepX - dot(ray.Direction, stepX) * ray.Direction) / len;
+            ray.dDdy = (stepY - dot(ray.Direction, stepY) * ray.Direction) / len;
+            ray.hasDifferentials = true;
+        }
+        else if (camera.Type == ORTHOGRAPHIC_CAMERA)
+        {
+            ray.dOdx = stepX;
+            ray.dOdy = stepY;
+            ray.dDdx = ray.dDdy = Vector3d(0.0);
+            ray.hasDifferentials = true;
+        }
+    }
+
     return true;
 }
 
