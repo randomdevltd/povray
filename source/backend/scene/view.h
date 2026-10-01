@@ -342,6 +342,9 @@ class ViewData final
         AaFit& Fit(unsigned int x, unsigned int y) { return aaFit[x + y * latticeWidth]; }
         /// Method 4: a noisy pixel's extra sample.
         RGBTColour& AaExtra(unsigned int x, unsigned int y) { return aaExtra[x + y * latticeWidth]; }
+        std::uint32_t& AaHit(unsigned int x, unsigned int y) { return aaHit[x + y * latticeWidth]; }
+        bool HasAaHits() const { return !aaHit.empty(); }
+        float* AaPigmentAt(unsigned int x, unsigned int y) { return &aaPigment[3 * (size_t(x) + size_t(y) * latticeWidth)]; }
         /// Method 4: samples the planner may still commit; a pass that would go past it is the last.
         std::int64_t aaBudgetLeft = 0;
         std::int64_t aaReserve = 0;     ///< Budget the edge probes leave for the noise tier.
@@ -440,6 +443,8 @@ class ViewData final
         std::vector<float> aaLab;
         std::vector<AaFit> aaFit;
         std::vector<RGBTColour> aaExtra;
+        std::vector<std::uint32_t> aaHit;   ///< Method 4: the object a pixel's centre ray hit, 0 for none.
+        std::vector<float> aaPigment;       ///< Method 4: that hit's top layer pigment, RGB.
 
         /// functions to compute the X & Y block
         void getBlockXY(const unsigned int nb, unsigned int &x, unsigned int &y);

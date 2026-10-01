@@ -924,7 +924,17 @@ void TraceTask::ProgressiveLevel()
                 GetViewDataPtr()->Stats()[Number_Of_Pixels]++;
 
                 if(keep)
+                {
                     GetViewData()->LatticeSample(x, y) = col;
+                    if(tracingMethod == 4)
+                    {
+                        GetViewData()->AaHit(x, y) = trace.primaryObject ? ((std::uint32_t(reinterpret_cast<std::uintptr_t>(trace.primaryObject) >> 4)) | 1u) : 0u;
+                        float* pig = GetViewData()->AaPigmentAt(x, y);
+                        pig[0] = float(trace.primaryPigment.colour().Red());
+                        pig[1] = float(trace.primaryPigment.colour().Green());
+                        pig[2] = float(trace.primaryPigment.colour().Blue());
+                    }
+                }
                 positions.push_back(Vector2d(x, y));
                 colors.push_back(col);
 
@@ -1900,15 +1910,25 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
     auto at = [&](int x, int y) { return size_t(x - x0) + size_t(y - y0) * size_t(w); };
     auto lab = [&](int x, int y) { return vd->AaLabAt(unsigned(x), unsigned(y)); };
 
-    // squared distance to the east and south neighbours
+    // squared distance to the east and south neighbours; with textures filtered, none across a link where one surface's
+    // pigment changes, since the filter has already averaged that edge over each pixel; lighting edges stay
+    const bool filtered = (vd->textureFilterScale > 0.0) && vd->HasAaHits();
+    auto resolved = [&](int xa, int ya, int xb, int yb)
+    {
+        if(!filtered || (vd->AaHit(unsigned(xa), unsigned(ya)) != vd->AaHit(unsigned(xb), unsigned(yb))) || (vd->AaHit(unsigned(xa), unsigned(ya)) == 0))
+            return false;
+        const float* p = vd->AaPigmentAt(unsigned(xa), unsigned(ya));
+        const float* q = vd->AaPigmentAt(unsigned(xb), unsigned(yb));
+        return std::max(std::fabs(p[0] - q[0]), std::max(std::fabs(p[1] - q[1]), std::fabs(p[2] - q[2]))) > 0.02f;
+    };
     std::vector<float> dE(size_t(w) * size_t(h), 0.0f), dS(size_t(w) * size_t(h), 0.0f);
     for(int y = y0; y < y0 + h; y++)
     {
         for(int x = x0; x < x0 + w; x++)
         {
-            if(x + 1 < x0 + w)
+            if((x + 1 < x0 + w) && !resolved(x, y, x + 1, y))
                 dE[at(x, y)] = Dist2(lab(x, y), lab(x + 1, y));
-            if(y + 1 < y0 + h)
+            if((y + 1 < y0 + h) && !resolved(x, y, x, y + 1))
                 dS[at(x, y)] = Dist2(lab(x, y), lab(x, y + 1));
         }
     }

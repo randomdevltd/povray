@@ -166,6 +166,11 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
         bestisect.Depth = maxDepth;
 
     found = FindIntersection(bestisect, ray, precond, postcond);
+    if (ray.IsPrimaryRay())
+    {
+        primaryObject = found ? bestisect.Object : nullptr;
+        primaryPigment.Clear();
+    }
 
     // Check if we're busy shooting too many radiosity sample rays at an unimportant object
     if (ray.GetTicket().radiosityImportanceQueried >= 0.0)
@@ -948,6 +953,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             colour_found = ComputeFilteredPigment(layCol, layer->Pigment, warps, footX, footY, isect, ray);
         else
             colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
+        if ((layer_number == 0) && ray.IsPrimaryRay())
+            primaryPigment = layCol;
 
         // If a valid color was returned set one_colour_found to true.
         // An invalid color is returned if a surface point is outside

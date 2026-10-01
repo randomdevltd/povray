@@ -231,6 +231,10 @@ class Trace
         /// Make camera rays average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
 
+        /// The object the last primary ray hit, and its top layer's pigment there.
+        const void *primaryObject = nullptr;
+        TransColour primaryPigment;
+
         /// Trace a ray.
         ///
         /// Call this if transmittance matters.

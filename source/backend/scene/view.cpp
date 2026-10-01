@@ -1551,6 +1551,8 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
             viewData.aaLab.assign(count * 4, 0.0f);
             viewData.aaFit.assign(count, AaFit());
             viewData.aaExtra.assign(count, RGBTColour());
+            viewData.aaHit.assign(count, 0);
+            viewData.aaPigment.assign(count * 3, 0.0f);
             viewData.aaFraction = aaBudget;
             viewData.aaThr = aaThreshold;
             viewData.aaDepth = int(aaDepth);
