@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <cstdlib>
 #include <limits>
 #include <string>
@@ -1106,7 +1107,7 @@ struct M4Options final
     bool chain = true;              ///< Fit whole contours instead of a window round each pixel.
     int lmin = 4;                   ///< Shortest run of crossings a chain segment may be fitted to.
     float rho = 0.35f;              ///< Share of contended links in a 5x5 window above which it is noise.
-    float ceps = 0.03f;             ///< Chain mode: differences below this are rounding, whatever their neighbours.
+    float ceps = 0.01f;             ///< Chain mode: differences below this are rounding, whatever their neighbours.
     float kappa = 2.0f;             ///< Chain mode: a link is a contour crossing when it jumps this many times its neighbours' ramp.
     bool map = false;               ///< Write where the samples went instead of the image.
     bool join = false;              ///< Chain mode: join collinear segments through junctions (worse than not, so far).
@@ -1127,6 +1128,7 @@ struct M4Options final
     bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
     bool bisect = false;            ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
     bool keepGrain = true;          ///< Sub-samples take their pixel's centre random draws, so grain alone never looks like detail.
+    bool ridge = true;              ///< Chain mode: fit lines a pixel or two wide, which no contour of centre samples describes.
     bool explore = false;           ///< Bisection: flat pixels in a moderately dense halo get one probe first, not bisection; a find spreads.
     float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
 };
@@ -1182,6 +1184,7 @@ const M4Options& M4Opts()
                     else if(key == "BISECT") o.bisect = (v != 0.0);
                     else if(key == "KG")     o.keepGrain = (v != 0.0);
                     else if(key == "EXPLORE") o.explore = (v != 0.0);
+                    else if(key == "RIDGE")  o.ridge = (v != 0.0);
                     else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
@@ -2534,6 +2537,250 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
 }
 }
 
+namespace
+{
+/// Thin lines: centre samples that differ from both neighbours along an axis, where those two agree, are dashes of a line
+/// narrower than two pixels. Dashes close in position and colour are grouped, each group is fitted with a line, split in
+/// two while one line does not fit, and the pixels the line crosses take its strip coverage. Returns the pixels taken.
+std::int64_t M4RidgeFit(ViewData* vd)
+{
+    const POVRect& area = vd->GetRenderArea();
+    const int x0 = int(area.left), y0 = int(area.top), w = int(area.GetWidth()), h = int(area.GetHeight());
+    const float thr = float(vd->aaThr), thr2 = thr * thr;
+    auto at = [&](int x, int y) { return size_t(x - x0) + size_t(y - y0) * size_t(w); };
+    auto lab = [&](int x, int y) { return vd->AaLabAt(unsigned(x), unsigned(y)); };
+    auto inside = [&](int x, int y) { return (x >= x0) && (x < x0 + w) && (y >= y0) && (y < y0 + h); };
+
+    struct Dash { int x, y; };
+    std::vector<Dash> dashes;
+    std::vector<std::int32_t> dashAt(size_t(w) * size_t(h), -1);
+    static const int axes[4][2] = { { 1, 0 }, { 0, 1 }, { 1, 1 }, { 1, -1 } };
+    for(int y = y0; y < y0 + h; y++)
+    {
+        for(int x = x0; x < x0 + w; x++)
+        {
+            if(vd->Fit(unsigned(x), unsigned(y)).seg >= 0)
+                continue;
+            for(const auto& a : axes)
+            {
+                if(!inside(x - a[0], y - a[1]) || !inside(x + a[0], y + a[1]))
+                    continue;
+                const float dA = Dist2(lab(x, y), lab(x - a[0], y - a[1])), dB = Dist2(lab(x, y), lab(x + a[0], y + a[1]));
+                const float dN = Dist2(lab(x - a[0], y - a[1]), lab(x + a[0], y + a[1]));
+                const float dm = std::min(dA, dB);
+                if((dm > 4.0f * thr2) && (dN < 0.25f * dm))
+                {
+                    dashAt[at(x, y)] = std::int32_t(dashes.size());
+                    dashes.push_back(Dash { x, y });
+                    break;
+                }
+            }
+        }
+    }
+    if(dashes.empty())
+        return 0;
+
+    // group dashes of one colour that lie within three pixels of each other
+    std::vector<std::int32_t> parent(dashes.size());
+    for(size_t i = 0; i < parent.size(); i++)
+        parent[i] = std::int32_t(i);
+    std::function<std::int32_t(std::int32_t)> find = [&](std::int32_t i) { while(parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    for(size_t i = 0; i < dashes.size(); i++)
+    {
+        for(int dy = -3; dy <= 3; dy++)
+        {
+            for(int dx = -3; dx <= 3; dx++)
+            {
+                if(!inside(dashes[i].x + dx, dashes[i].y + dy))
+                    continue;
+                const std::int32_t j = dashAt[at(dashes[i].x + dx, dashes[i].y + dy)];
+                if((j < 0) || (size_t(j) <= i))
+                    continue;
+                if(Dist2(lab(dashes[i].x, dashes[i].y), lab(dashes[j].x, dashes[j].y)) < 4.0f * thr2)
+                    parent[find(std::int32_t(i))] = find(j);
+            }
+        }
+    }
+    std::unordered_map<std::int32_t, std::vector<std::int32_t>> groups;
+    for(size_t i = 0; i < dashes.size(); i++)
+        groups[find(std::int32_t(i))].push_back(std::int32_t(i));
+
+    std::int64_t taken = 0;
+    std::vector<std::uint8_t> done(size_t(w) * size_t(h), 0);
+    std::function<void(std::vector<std::int32_t>&, int)> fitLeaf = [&](std::vector<std::int32_t>& pts, int depth)
+    {
+        const size_t n = pts.size();
+        if(n < 4)
+            return;
+        double cx = 0, cy = 0;
+        for(std::int32_t i : pts) { cx += dashes[i].x + 0.5; cy += dashes[i].y + 0.5; }
+        cx /= double(n); cy /= double(n);
+        double sxx = 0, sxy = 0, syy = 0;
+        for(std::int32_t i : pts)
+        {
+            const double ux = dashes[i].x + 0.5 - cx, uy = dashes[i].y + 0.5 - cy;
+            sxx += ux * ux; sxy += ux * uy; syy += uy * uy;
+        }
+        sxx /= double(n); sxy /= double(n); syy /= double(n);
+        const double tr = sxx + syy, det = sxx * syy - sxy * sxy, disc = std::sqrt(std::max(0.0, 0.25 * tr * tr - det));
+        const double l1 = 0.5 * tr + disc, l2 = std::max(0.0, 0.5 * tr - disc);
+        double dx = sxy, dy = l1 - sxx;
+        if(std::fabs(dx) + std::fabs(dy) < 1.0e-12) { dx = 1.0; dy = 0.0; }
+        const double dl = std::sqrt(dx * dx + dy * dy);
+        dx /= dl; dy /= dl;
+        double lo = 1.0e30, hi = -1.0e30;
+        for(std::int32_t i : pts)
+        {
+            const double u = (dashes[i].x + 0.5 - cx) * dx + (dashes[i].y + 0.5 - cy) * dy;
+            lo = std::min(lo, u); hi = std::max(hi, u);
+        }
+        const double length = hi - lo + 1.0;
+        if((std::sqrt(l2) > 0.6) || (length < 4.0) || (std::sqrt(l1) < 4.0 * std::sqrt(l2)))
+        {
+            if((n < 8) || (depth > 6))
+                return;
+            std::vector<std::pair<double, std::int32_t>> order;
+            for(std::int32_t i : pts)
+                order.push_back(std::make_pair((dashes[i].x + 0.5 - cx) * dx + (dashes[i].y + 0.5 - cy) * dy, i));
+            std::sort(order.begin(), order.end());
+            std::vector<std::int32_t> a, b;
+            for(size_t k = 0; k < order.size(); k++)
+                (k < order.size() / 2 ? a : b).push_back(order[k].second);
+            fitLeaf(a, depth + 1);
+            fitLeaf(b, depth + 1);
+            return;
+        }
+
+        const float nx = float(-dy), ny = float(dx);
+        RGBTColour cc;
+        cc.Clear();
+        float labC[4] = { 0, 0, 0, 0 }, labB[4] = { 0, 0, 0, 0 };
+        int nb = 0;
+        for(std::int32_t i : pts)
+        {
+            cc += vd->LatticeSample(unsigned(dashes[i].x), unsigned(dashes[i].y));
+            for(int k = 0; k < 4; k++)
+                labC[k] += lab(dashes[i].x, dashes[i].y)[k];
+            const int ax = int(std::floor(dashes[i].x + 0.5 + 2.0 * nx)), ay = int(std::floor(dashes[i].y + 0.5 + 2.0 * ny));
+            const int bx = int(std::floor(dashes[i].x + 0.5 - 2.0 * nx)), by = int(std::floor(dashes[i].y + 0.5 - 2.0 * ny));
+            if(inside(ax, ay) && inside(bx, by))
+            {
+                for(int k = 0; k < 4; k++)
+                    labB[k] += 0.5f * (lab(ax, ay)[k] + lab(bx, by)[k]);
+                nb++;
+            }
+        }
+        cc = cc * (1.0 / double(n));
+        if(nb == 0)
+            return;
+        for(int k = 0; k < 4; k++)
+        {
+            labC[k] /= float(n);
+            labB[k] /= float(nb);
+        }
+        // one background colour all along the line: the two sides of a step edge, or a checker's seam, give a spread of them
+        float spreadB = 0.0f;
+        for(std::int32_t i : pts)
+        {
+            const int ax = int(std::floor(dashes[i].x + 0.5 + 2.0 * nx)), ay = int(std::floor(dashes[i].y + 0.5 + 2.0 * ny));
+            const int bx = int(std::floor(dashes[i].x + 0.5 - 2.0 * nx)), by = int(std::floor(dashes[i].y + 0.5 - 2.0 * ny));
+            if(!inside(ax, ay) || !inside(bx, by))
+                continue;
+            float mid[4];
+            for(int k = 0; k < 4; k++)
+                mid[k] = 0.5f * (lab(ax, ay)[k] + lab(bx, by)[k]);
+            spreadB += Dist2(mid, labB);
+        }
+        if(spreadB / float(nb) > 4.0f * thr2)
+            return;
+        // every pixel in the strip's neighbourhood that shows the line's colour counts towards its width, not only the dashes
+        int hits = 0, strangers = 0, region = 0;
+        for(int py = int(std::floor(cy - std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) - 2.0)); py <= int(std::ceil(cy + std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) + 2.0)); py++)
+        {
+            for(int px = int(std::floor(cx - std::fabs(dx) * std::max(std::fabs(lo), std::fabs(hi)) - 2.0)); px <= int(std::ceil(cx + std::fabs(dx) * std::max(std::fabs(lo), std::fabs(hi)) + 2.0)); px++)
+            {
+                if(!inside(px, py))
+                    continue;
+                const double qx = px + 0.5 - cx, qy = py + 0.5 - cy;
+                const double u = qx * dx + qy * dy, v = qx * nx + qy * ny;
+                if((u < lo - 0.5) || (u > hi + 0.5) || (std::fabs(v) > 1.5))
+                    continue;
+                const float dC = Dist2(lab(px, py), labC), dB = Dist2(lab(px, py), labB);
+                if(dC < dB)
+                    hits++;
+                if(std::min(dC, dB) > 4.0f * thr2)
+                    strangers++;
+                region++;
+            }
+        }
+        if(float(strangers) > 0.15f * float(region))
+            return;
+        // a line stands alone; texture is crowded with other dashes within a few pixels of it
+        {
+            std::vector<std::int32_t> mine(pts);
+            std::sort(mine.begin(), mine.end());
+            int others = 0;
+            for(int py = int(std::floor(cy - std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) - 5.0)); py <= int(std::ceil(cy + std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) + 5.0)); py++)
+            {
+                for(int px = int(std::floor(cx - std::fabs(dx) * std::max(std::fabs(lo), std::fabs(hi)) - 5.0)); px <= int(std::ceil(cx + std::fabs(dx) * std::max(std::fabs(lo), std::fabs(hi)) + 5.0)); px++)
+                {
+                    if(!inside(px, py) || (dashAt[at(px, py)] < 0) || std::binary_search(mine.begin(), mine.end(), dashAt[at(px, py)]))
+                        continue;
+                    const double qx = px + 0.5 - cx, qy = py + 0.5 - cy;
+                    const double u = qx * dx + qy * dy, v = qx * nx + qy * ny;
+                    if((u >= lo - 2.0) && (u <= hi + 2.0) && (std::fabs(v) <= 4.0))
+                        others++;
+                }
+            }
+            if(float(others) > 0.5f * float(n))
+                return;
+        }
+        const float width = float(std::min(1.6, std::max(0.2, double(hits) / length)));
+
+        // every pixel the strip, extended a pixel at each end, can touch
+        const int reach = int(std::ceil(width * 0.5 + 1.0));
+        const double ex = std::fabs(dx) * std::max(std::fabs(lo), std::fabs(hi)) + reach + 1.0;
+        const double ey = std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) + reach + 1.0;
+        for(int py = int(std::floor(cy - ey)); py <= int(std::ceil(cy + ey)); py++)
+        {
+            for(int px = int(std::floor(cx - ex)); px <= int(std::ceil(cx + ex)); px++)
+            {
+                if(!inside(px, py) || done[at(px, py)])
+                    continue;
+                const double qx = px + 0.5 - cx, qy = py + 0.5 - cy;
+                const double u = qx * dx + qy * dy, v = qx * nx + qy * ny;
+                if((u < lo - 1.0) || (u > hi + 1.0) || (std::fabs(v) > 0.5 * width + 0.5 * (std::fabs(nx) + std::fabs(ny)) + 1.0e-3))
+                    continue;
+                AaFit& f = vd->Fit(unsigned(px), unsigned(py));
+                if(f.seg >= 0)
+                    continue;
+                // the background either side of the line, two pixels off it, must agree
+                const int ax = int(std::floor(px + 0.5 + 2.0 * nx)), ay = int(std::floor(py + 0.5 + 2.0 * ny));
+                const int bx = int(std::floor(px + 0.5 - 2.0 * nx)), by = int(std::floor(py + 0.5 - 2.0 * ny));
+                if(!inside(ax, ay) || !inside(bx, by) || (Dist2(lab(ax, ay), lab(bx, by)) > 9.0f * thr2))
+                    continue;
+                f.kind = 3;
+                f.seg = -1;
+                f.seg2 = -1;
+                f.explore = 0;
+                f.nx = nx; f.ny = ny;
+                f.lo = float(-(qx * nx + qy * ny));
+                f.hi = width;
+                f.width = width;
+                f.a = (vd->LatticeSample(unsigned(ax), unsigned(ay)) + vd->LatticeSample(unsigned(bx), unsigned(by))) * 0.5;
+                f.b = cc;
+                f.contrast = std::sqrt(Dist2(lab(ax, ay), lab(px, py)));
+                done[at(px, py)] = 1;
+                taken++;
+            }
+        }
+    };
+    for(auto& g : groups)
+        fitLeaf(g.second, 0);
+    return taken;
+}
+}
+
 void TraceTask::PlanM4(ViewData* vd, int pass, int round)
 {
     const M4Options& o = M4Opts();
@@ -2601,6 +2848,9 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         }
         if(o.chain)
             M4ChainFit(vd, o);
+        const std::int64_t nRidge = (o.chain && o.ridge) ? M4RidgeFit(vd) : 0;
+        if(o.stats)
+            std::fprintf(stderr, "AA4 thin lines: %lld pixels\n", (long long)nRidge);
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
         vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
         vd->aaExhausted = (std::getenv("POV_AA4_REPLAY") != nullptr);
@@ -3174,6 +3424,22 @@ void TraceTask::ProgressiveM4()
                             fit.kind = 2;
                             GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
                         }
+                        else if(fit.kind == 3)
+                        {
+                            // a line a pixel or two wide: the pixel keeps its sample and gains the strip coverage its centre sample did not show
+                            const OkLab pa = ToOkLab(fit.a), pb = ToOkLab(fit.b), po = ToOkLab(col);
+                            const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+                            const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+                            const bool centreOn = (vv > 0.0f) && (((po.l - pa.l) * v[0] + (po.a - pa.a) * v[1] + (po.b - pa.b) * v[2] + (po.t - pa.t) * v[3]) >= 0.5f * vv);
+                            const double f = double(M4Coverage(fit.nx, fit.ny, fit.lo - 0.5f * fit.hi)) - double(M4Coverage(fit.nx, fit.ny, fit.lo + 0.5f * fit.hi));
+                            const RGBTColour own = col;
+                            col += (fit.b - fit.a) * (f - (centreOn ? 1.0 : 0.0));
+                            const RGBTColour ends[2] = { fit.a, fit.b };
+                            const double ew[2] = { 1.0, 1.0 };
+                            col = M4Bounded(col, own, ends, ew, 2);
+                            mapGreen = 0.5f;
+                            GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                        }
                         else if(fit.kind == 1)
                         {
                             float nx = fit.nx, ny = fit.ny, s;
@@ -3329,8 +3595,8 @@ void TraceTask::ProgressiveM4()
                         {
                             // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got
                             const float p = mapProbes;
-                            col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : 0.0f, (fit.kind == 1) ? mapGreen : 0.0f,
-                                             (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : 0.0f, 0.0f);
+                            col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : ((fit.kind == 3) ? 1.0f : 0.0f), (fit.kind == 1) ? mapGreen : 0.0f,
+                                             (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : ((fit.kind == 3) ? 1.0f : 0.0f), 0.0f);
                         }
                         pixels.push_back(col);
                     }

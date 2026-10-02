@@ -85,7 +85,8 @@ struct AaFit final
     float nx = 0, ny = 0;           ///< Unit normal, pointing at colour B.
     float lo = 0, hi = 0;           ///< The edge lies between these offsets along the normal from the pixel centre.
     float contrast = 0;             ///< OkLab distance between the two colours.
-    std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours.
+    float width = 0;                ///< Kind 3, a thin line: its width; lo is then the offset of its centre along the normal.
+    std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours, 3 a thin line.
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
     std::int16_t leaf = -1;         ///< Bisection: the leaf the planner chose to split.
     std::uint8_t explore = 0;       ///< Exploration: 1 suspect, 2 next to a find, 3 probed and agreed, 4 probed and differed.
