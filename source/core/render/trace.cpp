@@ -69,6 +69,17 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/box.h"
 #include "core/shape/csg.h"
+#include "core/shape/cone.h"
+#include "core/shape/disc.h"
+#include "core/shape/isosurface.h"
+#include "core/shape/lemon.h"
+#include "core/shape/ovus.h"
+#include "core/shape/plane.h"
+#include "core/shape/polynomial.h"
+#include "core/shape/quadric.h"
+#include "core/shape/sphere.h"
+#include "core/shape/superellipsoid.h"
+#include "core/shape/torus.h"
 #include "core/support/imageutil.h"
 #include "core/support/statistics.h"
 
@@ -796,6 +807,19 @@ bool Trace::TransferDifferentials(const Ray& ray, const Intersection& isect, con
 
 void Trace::ComputeNormalDifferentials(const Intersection& isect, const Vector3d& rawnormal, SurfaceDifferentials& diff)
 {
+    // only shapes whose normal depends on the point alone; others cache state for the exact hit (height fields,
+    // meshes, blobs, patches) and are treated as flat, which errs sharp
+    const ObjectBase *obj = isect.Object;
+    const bool analytic = dynamic_cast<const Sphere*>(obj) || dynamic_cast<const Plane*>(obj) || dynamic_cast<const Quadric*>(obj) ||
+                          dynamic_cast<const Poly*>(obj) || dynamic_cast<const Torus*>(obj) || dynamic_cast<const Cone*>(obj) ||
+                          dynamic_cast<const Disc*>(obj) || dynamic_cast<const Superellipsoid*>(obj) || dynamic_cast<const Ovus*>(obj) ||
+                          dynamic_cast<const Lemon*>(obj) || dynamic_cast<const IsoSurface*>(obj);
+    if (!analytic)
+    {
+        diff.dNdx = diff.dNdy = Vector3d(0.0);
+        diff.haveNormal = true;
+        return;
+    }
     Intersection probe(isect);
     auto normalAt = [&](const Vector3d& offset) -> Vector3d
     {

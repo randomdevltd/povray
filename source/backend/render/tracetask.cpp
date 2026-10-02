@@ -2534,6 +2534,54 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
 
     if(pass == 0)
     {
+        // POV_AA4_DUMP writes the centre samples method 4 starts from; POV_AA4_REPLAY loads such a file over a render
+        // of the same size, so the fit can be studied on another scene's pixels without tracing them
+        const char* replay = std::getenv("POV_AA4_REPLAY");
+        const char* dump = std::getenv("POV_AA4_DUMP");
+        if(replay || dump)
+        {
+            std::FILE* f = std::fopen(replay ? replay : dump, replay ? "rb" : "wb");
+            std::uint32_t head[3] = { area.GetWidth(), area.GetHeight(), vd->HasAaHits() ? 1u : 0u };
+            if(f && (replay ? (std::fread(head, sizeof(head), 1, f) == 1) && (head[0] == area.GetWidth()) && (head[1] == area.GetHeight())
+                            : (std::fwrite(head, sizeof(head), 1, f) == 1)))
+            {
+                for(unsigned int y = area.top; y <= area.bottom; y++)
+                {
+                    for(unsigned int x = area.left; x <= area.right; x++)
+                    {
+                        float rec[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+                        std::uint32_t hit = 0;
+                        if(replay)
+                        {
+                            if((std::fread(rec, sizeof(rec), 1, f) != 1) || (std::fread(&hit, sizeof(hit), 1, f) != 1))
+                                break;
+                            vd->LatticeSample(x, y) = RGBTColour(rec[0], rec[1], rec[2], rec[3]);
+                            if(vd->HasAaHits() && head[2])
+                            {
+                                vd->AaHit(x, y) = hit;
+                                std::copy(rec + 4, rec + 7, vd->AaPigmentAt(x, y));
+                            }
+                        }
+                        else
+                        {
+                            const RGBTColour& c = vd->LatticeSample(x, y);
+                            rec[0] = c.red(); rec[1] = c.green(); rec[2] = c.blue(); rec[3] = c.transm();
+                            if(vd->HasAaHits())
+                            {
+                                hit = vd->AaHit(x, y);
+                                std::copy(vd->AaPigmentAt(x, y), vd->AaPigmentAt(x, y) + 3, rec + 4);
+                            }
+                            std::fwrite(rec, sizeof(rec), 1, f);
+                            std::fwrite(&hit, sizeof(hit), 1, f);
+                        }
+                    }
+                }
+            }
+            else
+                std::fprintf(stderr, "AA4 %s %s failed\n", replay ? "replay" : "dump", replay ? replay : dump);
+            if(f)
+                std::fclose(f);
+        }
         for(unsigned int y = area.top; y <= area.bottom; y++)
         {
             for(unsigned int x = area.left; x <= area.right; x++)
@@ -2548,7 +2596,7 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
             M4ChainFit(vd, o);
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
         vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
-        vd->aaExhausted = false;
+        vd->aaExhausted = (std::getenv("POV_AA4_REPLAY") != nullptr);
         vd->aaReserve = 0;
         if(o.chain)
         {
