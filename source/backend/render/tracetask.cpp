@@ -1112,6 +1112,7 @@ struct M4Options final
     bool chain = true;              ///< Fit whole contours instead of a window round each pixel.
     int lmin = 4;                   ///< Shortest run of crossings a chain segment may be fitted to.
     float rho = 0.35f;              ///< Share of contended links in a 5x5 window above which it is noise.
+    float ridgeBridge = 2.5f;       ///< Thin lines: how far past its last dash a fitted line still gives coverage, to span gaps.
     float ceps = 0.01f;             ///< Chain mode: differences below this are rounding, whatever their neighbours.
     float kappa = 2.0f;             ///< Chain mode: a link is a contour crossing when it jumps this many times its neighbours' ramp.
     bool map = false;               ///< Write where the samples went instead of the image.
@@ -1133,6 +1134,7 @@ struct M4Options final
     bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
     bool bisect = true;             ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
     bool keepGrain = true;          ///< Sub-samples take their pixel's centre random draws, so grain alone never looks like detail.
+    int ridgeReach = 6;             ///< Thin lines: how far apart, in pixels, two dashes of one line may be.
     bool ridge = true;              ///< Chain mode: fit lines a pixel or two wide, which no contour of centre samples describes.
     bool explore = false;           ///< Bisection: flat pixels in a moderately dense halo get one probe first, not bisection; a find spreads.
     float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
@@ -1190,6 +1192,8 @@ const M4Options& M4Opts()
                     else if(key == "KG")     o.keepGrain = (v != 0.0);
                     else if(key == "EXPLORE") o.explore = (v != 0.0);
                     else if(key == "RIDGE")  o.ridge = (v != 0.0);
+                    else if(key == "REACHR") o.ridgeReach = int(v);
+                    else if(key == "BRIDGE") o.ridgeBridge = float(v);
                     else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
@@ -2547,8 +2551,9 @@ namespace
 /// Thin lines: centre samples that differ from both neighbours along an axis, where those two agree, are dashes of a line
 /// narrower than two pixels. Dashes close in position and colour are grouped, each group is fitted with a line, split in
 /// two while one line does not fit, and the pixels the line crosses take its strip coverage. Returns the pixels taken.
-std::int64_t M4RidgeFit(ViewData* vd)
+std::int64_t M4RidgeFit(ViewData* vd, int reachPx, float bridge)
 {
+    int why[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };   // leaves: 0 taken, 1 too few, 2 poor line, 3 no background, 4 background varies, 5 strangers, 6 crowded, 7 pixels refused
     const POVRect& area = vd->GetRenderArea();
     const int x0 = int(area.left), y0 = int(area.top), w = int(area.GetWidth()), h = int(area.GetHeight());
     const float thr = float(vd->aaThr), thr2 = thr * thr;
@@ -2592,9 +2597,9 @@ std::int64_t M4RidgeFit(ViewData* vd)
     std::function<std::int32_t(std::int32_t)> find = [&](std::int32_t i) { while(parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
     for(size_t i = 0; i < dashes.size(); i++)
     {
-        for(int dy = -3; dy <= 3; dy++)
+        for(int dy = -reachPx; dy <= reachPx; dy++)
         {
-            for(int dx = -3; dx <= 3; dx++)
+            for(int dx = -reachPx; dx <= reachPx; dx++)
             {
                 if(!inside(dashes[i].x + dx, dashes[i].y + dy))
                     continue;
@@ -2616,7 +2621,10 @@ std::int64_t M4RidgeFit(ViewData* vd)
     {
         const size_t n = pts.size();
         if(n < 4)
+        {
+            why[1]++;
             return;
+        }
         double cx = 0, cy = 0;
         for(std::int32_t i : pts) { cx += dashes[i].x + 0.5; cy += dashes[i].y + 0.5; }
         cx /= double(n); cy /= double(n);
@@ -2643,7 +2651,10 @@ std::int64_t M4RidgeFit(ViewData* vd)
         if((std::sqrt(l2) > 0.6) || (length < 4.0) || (std::sqrt(l1) < 4.0 * std::sqrt(l2)))
         {
             if((n < 8) || (depth > 6))
+            {
+                why[2]++;
                 return;
+            }
             std::vector<std::pair<double, std::int32_t>> order;
             for(std::int32_t i : pts)
                 order.push_back(std::make_pair((dashes[i].x + 0.5 - cx) * dx + (dashes[i].y + 0.5 - cy) * dy, i));
@@ -2677,7 +2688,10 @@ std::int64_t M4RidgeFit(ViewData* vd)
         }
         cc = cc * (1.0 / double(n));
         if(nb == 0)
+        {
+            why[3]++;
             return;
+        }
         for(int k = 0; k < 4; k++)
         {
             labC[k] /= float(n);
@@ -2697,7 +2711,10 @@ std::int64_t M4RidgeFit(ViewData* vd)
             spreadB += Dist2(mid, labB);
         }
         if(spreadB / float(nb) > 4.0f * thr2)
+        {
+            why[4]++;
             return;
+        }
         // every pixel in the strip's neighbourhood that shows the line's colour counts towards its width, not only the dashes
         int hits = 0, strangers = 0, region = 0;
         for(int py = int(std::floor(cy - std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) - 2.0)); py <= int(std::ceil(cy + std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) + 2.0)); py++)
@@ -2719,7 +2736,10 @@ std::int64_t M4RidgeFit(ViewData* vd)
             }
         }
         if(float(strangers) > 0.15f * float(region))
+        {
+            why[5]++;
             return;
+        }
         // a line stands alone; texture is crowded with other dashes within a few pixels of it
         {
             std::vector<std::int32_t> mine(pts);
@@ -2738,14 +2758,18 @@ std::int64_t M4RidgeFit(ViewData* vd)
                 }
             }
             if(float(others) > 0.5f * float(n))
+            {
+                why[6]++;
                 return;
+            }
         }
+        why[0]++;
         const float width = float(std::min(1.6, std::max(0.2, double(hits) / length)));
 
         // every pixel the strip, extended a pixel at each end, can touch
         const int reach = int(std::ceil(width * 0.5 + 1.0));
-        const double ex = std::fabs(dx) * std::max(std::fabs(lo), std::fabs(hi)) + reach + 1.0;
-        const double ey = std::fabs(dy) * std::max(std::fabs(lo), std::fabs(hi)) + reach + 1.0;
+        const double ex = std::fabs(dx) * (std::max(std::fabs(lo), std::fabs(hi)) + bridge) + reach + 1.0;
+        const double ey = std::fabs(dy) * (std::max(std::fabs(lo), std::fabs(hi)) + bridge) + reach + 1.0;
         for(int py = int(std::floor(cy - ey)); py <= int(std::ceil(cy + ey)); py++)
         {
             for(int px = int(std::floor(cx - ex)); px <= int(std::ceil(cx + ex)); px++)
@@ -2754,7 +2778,7 @@ std::int64_t M4RidgeFit(ViewData* vd)
                     continue;
                 const double qx = px + 0.5 - cx, qy = py + 0.5 - cy;
                 const double u = qx * dx + qy * dy, v = qx * nx + qy * ny;
-                if((u < lo - 1.0) || (u > hi + 1.0) || (std::fabs(v) > 0.5 * width + 0.5 * (std::fabs(nx) + std::fabs(ny)) + 1.0e-3))
+                if((u < lo - bridge) || (u > hi + bridge) || (std::fabs(v) > 0.5 * width + 0.5 * (std::fabs(nx) + std::fabs(ny)) + 1.0e-3))
                     continue;
                 AaFit& f = vd->Fit(unsigned(px), unsigned(py));
                 if(f.seg >= 0)
@@ -2782,6 +2806,9 @@ std::int64_t M4RidgeFit(ViewData* vd)
     };
     for(auto& g : groups)
         fitLeaf(g.second, 0);
+    if(M4Opts().stats)
+        std::fprintf(stderr, "AA4 thin-line groups: %zu dashes in %zu groups; leaves taken %d, too few %d, poor line %d, no background %d, background varies %d, strangers %d, crowded %d\n",
+                     dashes.size(), groups.size(), why[0], why[1], why[2], why[3], why[4], why[5], why[6]);
     return taken;
 }
 }
@@ -2853,7 +2880,7 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         }
         if(o.chain)
             M4ChainFit(vd, o);
-        const std::int64_t nRidge = (o.chain && o.ridge) ? M4RidgeFit(vd) : 0;
+        const std::int64_t nRidge = (o.chain && o.ridge) ? M4RidgeFit(vd, o.ridgeReach, o.ridgeBridge) : 0;
         if(o.stats)
             std::fprintf(stderr, "AA4 thin lines: %lld pixels\n", (long long)nRidge);
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
