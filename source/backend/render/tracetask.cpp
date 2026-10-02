@@ -1106,7 +1106,7 @@ struct M4Options final
     bool chain = true;              ///< Fit whole contours instead of a window round each pixel.
     int lmin = 4;                   ///< Shortest run of crossings a chain segment may be fitted to.
     float rho = 0.35f;              ///< Share of contended links in a 5x5 window above which it is noise.
-    float ceps = 0.002f;            ///< Chain mode: differences below this are rounding, whatever their neighbours.
+    float ceps = 0.03f;             ///< Chain mode: differences below this are rounding, whatever their neighbours.
     float kappa = 2.0f;             ///< Chain mode: a link is a contour crossing when it jumps this many times its neighbours' ramp.
     bool map = false;               ///< Write where the samples went instead of the image.
     bool join = false;              ///< Chain mode: join collinear segments through junctions (worse than not, so far).
@@ -1119,6 +1119,7 @@ struct M4Options final
     bool stats = false;             ///< Print how the pixels were classified.
     int halo = 3;                   ///< Chain mode: radius within which dense contours make flat pixels worth a sample; 0 for none.
     float haloRho = 0.12f;          ///< Share of contour links in that window above which it counts as dense.
+    float haloHi = 0.30f;           ///< Above this share a flat pixel joins the noise tier; between the two it is explored with one probe.
     float rough = 0.06f;            ///< Chain mode: links differing by at least this, whatever their neighbours, count towards roughness; 0 for none.
     float roughRho = 0.3f;          ///< Share of rough links in the halo window above which flat pixels there join the noise tier.
     bool cv = true;                 ///< Resolve: keep a pixel's own samples and add the fit's coverage correction, rather than replace them.
@@ -1126,6 +1127,7 @@ struct M4Options final
     bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
     bool bisect = false;            ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
     bool keepGrain = true;          ///< Sub-samples take their pixel's centre random draws, so grain alone never looks like detail.
+    bool explore = false;           ///< Bisection: flat pixels in a moderately dense halo get one probe first, not bisection; a find spreads.
     float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
 };
 
@@ -1170,6 +1172,7 @@ const M4Options& M4Opts()
                     else if(key == "NOISEFRAC") o.noiseFrac = float(v);
                     else if(key == "STATS")  o.stats = (v != 0.0);
                     else if(key == "HALO")   o.halo = int(v);
+                    else if(key == "HALOHI") o.haloHi = float(v);
                     else if(key == "HALORHO") o.haloRho = float(v);
                     else if(key == "ROUGH")  o.rough = float(v);
                     else if(key == "ROUGHRHO") o.roughRho = float(v);
@@ -1178,6 +1181,7 @@ const M4Options& M4Opts()
                     else if(key == "STRIPS") o.strips = (v != 0.0);
                     else if(key == "BISECT") o.bisect = (v != 0.0);
                     else if(key == "KG")     o.keepGrain = (v != 0.0);
+                    else if(key == "EXPLORE") o.explore = (v != 0.0);
                     else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
@@ -2518,8 +2522,11 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
                 }
                 if((density > o.haloRho) || ((o.rough > 0.0f) && (rdensity > o.roughRho)))
                 {
-                    f.kind = 2;
                     f.contrast = 0.05f * std::max(density, rdensity);
+                    if(o.bisect && o.explore && (density <= o.haloHi) && (rdensity <= o.roughRho + 0.2f))
+                        f.explore = 1;
+                    else
+                        f.kind = 2;
                 }
             }
         }
@@ -2643,12 +2650,39 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         bisectScore.assign(size_t(w) * area.GetHeight(), 0.0f);
         const float thr2 = float(vd->aaThr * vd->aaThr);
         const float minSize = 1.0f / float(1 << std::max(1, std::min(8, vd->aaDepth)));
+        // a probe that found something makes its pixel a bisection and its flat neighbours worth a probe of their own
+        for(unsigned int y = area.top; y <= area.bottom; y++)
+        {
+            for(unsigned int x = area.left; x <= area.right; x++)
+            {
+                AaFit& f = vd->Fit(x, y);
+                if(f.explore != 4)
+                    continue;
+                f.explore = 3;
+                f.kind = 2;
+                for(int dy = -1; dy <= 1; dy++)
+                    for(int dx = -1; dx <= 1; dx++)
+                        if((int(x) + dx >= int(area.left)) && (int(x) + dx <= int(area.right)) && (int(y) + dy >= int(area.top)) && (int(y) + dy <= int(area.bottom)))
+                        {
+                            AaFit& g = vd->Fit(unsigned(int(x) + dx), unsigned(int(y) + dy));
+                            if((g.kind == 0) && (g.explore < 2))
+                                g.explore = 2;
+                        }
+            }
+        }
         for(unsigned int y = area.top; y <= area.bottom; y++)
         {
             for(unsigned int x = area.left; x <= area.right; x++)
             {
                 AaFit& f = vd->Fit(x, y);
                 f.leaf = -1;
+                if((f.kind == 0) && ((f.explore == 2) || ((f.explore == 1) && ((((x * 73856093u) ^ (y * 19349663u)) & 3u) == 0))))
+                {
+                    // a probe is worth less than an edge, and a probe beside a find more than a guess
+                    f.leaf = 0;
+                    bisectScore[(x - area.left) + (y - area.top) * w] = (f.explore == 2) ? 2.0f * std::sqrt(thr2) : 0.5f * std::sqrt(thr2);
+                    continue;
+                }
                 const bool broken = (f.kind == 1) && (f.seg >= 0) && (vd->aaSegs[size_t(f.seg)].state == 3);
                 if((f.kind != 2) && !broken)
                     continue;
@@ -3062,7 +3096,17 @@ void TraceTask::ProgressiveM4()
                             ProbePixelM4(x, y, fit);
                         break;
                     case 3:
-                        if(fit.planned && M4Opts().bisect)
+                        if(fit.planned && M4Opts().bisect && (fit.kind == 0) && ((fit.explore == 1) || (fit.explore == 2)))
+                        {
+                            const unsigned hsh = (x * 2654435761u) ^ (y * 40503u);
+                            RGBTColour probe;
+                            TraceSample(DBL(x) + 0.25 + 0.5 * double(hsh & 255u) / 255.0, DBL(y) + 0.25 + 0.5 * double((hsh >> 8) & 255u) / 255.0, probe);
+                            const OkLab l = ToOkLab(probe);
+                            const float pl[4] = { l.l, l.a, l.b, l.t };
+                            fit.explore = (Dist2(pl, GetViewData()->AaLabAt(x, y)) > float(aaThreshold * aaThreshold)) ? 4 : 3;
+                            fit.probes = std::uint8_t(std::min(250, int(fit.probes) + 1));
+                        }
+                        else if(fit.planned && M4Opts().bisect)
                         {
                             std::vector<AaCell>& cells = GetViewData()->aaCells.at(x + y * GetViewData()->GetWidth());
                             const AaCell parent = cells[size_t(fit.leaf)];

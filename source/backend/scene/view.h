@@ -88,6 +88,7 @@ struct AaFit final
     std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours.
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
     std::int16_t leaf = -1;         ///< Bisection: the leaf the planner chose to split.
+    std::uint8_t explore = 0;       ///< Exploration: 1 suspect, 2 next to a find, 3 probed and agreed, 4 probed and differed.
     std::uint8_t probes = 0;        ///< Probes traced so far.
     float sumLab[4] = { 0, 0, 0, 0 };   ///< Noisy pixel: OkLab sum over its samples, the centre one included.
     float sumSq = 0;                ///< Noisy pixel: sum of the squares of those OkLab values.
