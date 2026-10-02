@@ -1107,6 +1107,7 @@ struct M4Options final
     bool cv = true;                 ///< Resolve: keep a pixel's own samples and add the fit's coverage correction, rather than replace them.
     bool quad = false;              ///< Chain mode: fit runs of a contour with parabolas, so curves need not be cut into chords.
     bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
+    bool bisect = false;            ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
     float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
 };
 
@@ -1157,6 +1158,7 @@ const M4Options& M4Opts()
                     else if(key == "CV")     o.cv = (v != 0.0);
                     else if(key == "QUAD")   o.quad = (v != 0.0);
                     else if(key == "STRIPS") o.strips = (v != 0.0);
+                    else if(key == "BISECT") o.bisect = (v != 0.0);
                     else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
@@ -1561,8 +1563,21 @@ void M4FoldSegments(ViewData* vd)
         if(s.fresh.empty())
             continue;
         const std::vector<AaSeg::Pt> keepA = s.hullA, keepB = s.hullB;
+        bool third = false;
         for(const AaSeg::Pt& p : s.fresh)
-            (p.b ? s.hullB : s.hullA).push_back(p);
+        {
+            if(p.b == 2)
+                third = true;
+            else
+                (p.b ? s.hullB : s.hullA).push_back(p);
+        }
+        if(third)
+        {
+            // two colours do not describe this edge: bisection takes its pixels
+            s.fresh.clear();
+            s.state = 3;
+            continue;
+        }
         s.fresh.clear();
         if(!M4Opts().quad)
         {
@@ -1579,11 +1594,11 @@ void M4FoldSegments(ViewData* vd)
         }
         if(!ok)
         {
-            // a probe that contradicts the rest: keep the line as it was, and probe this segment no more
+            // a probe that contradicts the rest: keep the line as it was, probe this segment no more, and let bisection have it
             s.hullA = keepA;
             s.hullB = keepB;
             M4Estimate(s);
-            s.state = 1;
+            s.state = 3;
         }
     }
 }
@@ -2531,6 +2546,67 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
     }
 
     // a candidate's priority is what is still unknown about it, worked out before anything is traced for it
+    // bisection: every pixel no fit holds gets one leaf, its centre sample, then each round its leaf most unlike a touching
+    // cell (a sibling leaf or a neighbouring pixel's centre), weighted by its size, is the one to split
+    std::vector<float> bisectScore;
+    if(o.bisect && !probe)
+    {
+        const unsigned int w = area.GetWidth();
+        bisectScore.assign(size_t(w) * area.GetHeight(), 0.0f);
+        const float thr2 = float(vd->aaThr * vd->aaThr);
+        const float minSize = 1.0f / float(1 << std::max(1, std::min(8, vd->aaDepth)));
+        for(unsigned int y = area.top; y <= area.bottom; y++)
+        {
+            for(unsigned int x = area.left; x <= area.right; x++)
+            {
+                AaFit& f = vd->Fit(x, y);
+                f.leaf = -1;
+                const bool broken = (f.kind == 1) && (f.seg >= 0) && (vd->aaSegs[size_t(f.seg)].state == 3);
+                if((f.kind != 2) && !broken)
+                    continue;
+                const std::uint32_t key = x + y * vd->GetWidth();
+                auto it = vd->aaCells.find(key);
+                if(it == vd->aaCells.end())
+                {
+                    AaCell c { 0.0f, 0.0f, 1.0f, vd->LatticeSample(x, y), {} };
+                    const float* l = vd->AaLabAt(x, y);
+                    for(int k = 0; k < 4; k++)
+                        c.lab[k] = l[k];
+                    it = vd->aaCells.emplace(key, std::vector<AaCell>(1, c)).first;
+                }
+                const std::vector<AaCell>& cells = it->second;
+                float best = 0.0f;
+                for(size_t i = 0; i < cells.size(); i++)
+                {
+                    const AaCell& c = cells[i];
+                    if(c.size <= minSize * 1.01f)
+                        continue;
+                    float far2 = 0.0f;
+                    auto touch = [&](float ox, float oy, float os, const float* lab)
+                    {
+                        if((std::fabs(ox - c.x) <= 0.5f * (os + c.size) + 1.0e-4f) && (std::fabs(oy - c.y) <= 0.5f * (os + c.size) + 1.0e-4f))
+                            far2 = std::max(far2, Dist2(lab, c.lab));
+                    };
+                    for(size_t j = 0; j < cells.size(); j++)
+                        if(j != i)
+                            touch(cells[j].x, cells[j].y, cells[j].size, cells[j].lab);
+                    for(int dy = -1; dy <= 1; dy++)
+                        for(int dx = -1; dx <= 1; dx++)
+                            if(((dx != 0) || (dy != 0)) && (int(x) + dx >= int(area.left)) && (int(x) + dx <= int(area.right)) && (int(y) + dy >= int(area.top)) && (int(y) + dy <= int(area.bottom)))
+                                touch(float(dx), float(dy), 1.0f, vd->AaLabAt(unsigned(int(x) + dx), unsigned(int(y) + dy)));
+                    if(far2 < thr2)
+                        continue;
+                    const float score = c.size * std::sqrt(far2);
+                    if(score > best)
+                    {
+                        best = score;
+                        f.leaf = std::int16_t(i);
+                    }
+                }
+                bisectScore[(x - area.left) + (y - area.top) * w] = best;
+            }
+        }
+    }
     auto bucketOf = [&](const AaFit& f) -> int
     {
         if(probe)
@@ -2541,6 +2617,8 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
             const float gap = std::min(f.hi, ext) - std::max(f.lo, -ext);
             return (gap > o.gapMin) ? M4Bucket(f.contrast * gap) : -1;
         }
+        if(o.bisect)
+            return (f.leaf >= 0) ? M4Bucket(bisectScore[&f - &vd->Fit(area.left, area.top)]) : -1;
         // a noisy pixel's next sample is worth the drop it should make to the standard error of its mean: the spread of
         // its samples so far (what its neighbours differ by until there are three), over root n against root n + 1
         if((f.kind != 2) || (f.probes >= 250))
@@ -2584,7 +2662,7 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         for(int b = 255; b >= 0; b--)
         {
             cum += hist[b];
-            if(cum >= vd->aaBudgetLeft)
+            if(cum * ((o.bisect && !probe) ? 4 : 1) >= vd->aaBudgetLeft)
             {
                 threshold = b;
                 admitted = cum;
@@ -2603,7 +2681,7 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
             f.planned = ((b >= 0) && (b >= threshold)) ? 1 : 0;
         }
     }
-    vd->aaBudgetLeft -= admitted;
+    vd->aaBudgetLeft -= (o.bisect && !probe) ? 4 * admitted : admitted;
     if(cut)
         vd->aaExhausted = true;
 }
@@ -2844,7 +2922,12 @@ void TraceTask::ProbeSegmentsM4()
         const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
         const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
         const float score = (vv > 0.0f) ? ((pc.l - pa.l) * v[0] + (pc.a - pa.a) * v[1] + (pc.b - pa.b) * v[2] + (pc.t - pa.t) * v[3]) / vv : 0.0f;
-        s.fresh.push_back(AaSeg::Pt { s.probeU, s.probeV, std::uint8_t(score >= 0.5f ? 1 : 0) });
+        // a colour well off the way from one side's to the other's is a third colour, such as a highlight along the edge
+        const float t = std::min(1.0f, std::max(0.0f, score));
+        const float off[4] = { pc.l - pa.l - t * v[0], pc.a - pa.a - t * v[1], pc.b - pa.b - t * v[2], pc.t - pa.t - t * v[3] };
+        const float off2 = off[0] * off[0] + off[1] * off[1] + off[2] * off[2] + off[3] * off[3];
+        const bool third = M4Opts().bisect && (off2 > std::max(float(aaThreshold * aaThreshold), 0.0625f * vv));
+        s.fresh.push_back(AaSeg::Pt { s.probeU, s.probeV, std::uint8_t(third ? 2 : (score >= 0.5f ? 1 : 0)) });
         s.probes++;
         Cooperate();
     }
@@ -2888,7 +2971,25 @@ void TraceTask::ProgressiveM4()
                             ProbePixelM4(x, y, fit);
                         break;
                     case 3:
-                        if(fit.planned)
+                        if(fit.planned && M4Opts().bisect)
+                        {
+                            std::vector<AaCell>& cells = GetViewData()->aaCells.at(x + y * GetViewData()->GetWidth());
+                            const AaCell parent = cells[size_t(fit.leaf)];
+                            const float q = 0.25f * parent.size;
+                            for(int k = 0; k < 4; k++)
+                            {
+                                AaCell c { parent.x + ((k & 1) ? q : -q), parent.y + ((k & 2) ? q : -q), 0.5f * parent.size, RGBTColour(), {} };
+                                TraceSample(DBL(x) + 0.5 + c.x, DBL(y) + 0.5 + c.y, c.col);
+                                const OkLab l = ToOkLab(c.col);
+                                c.lab[0] = l.l; c.lab[1] = l.a; c.lab[2] = l.b; c.lab[3] = l.t;
+                                if(k == 0)
+                                    cells[size_t(fit.leaf)] = c;
+                                else
+                                    cells.push_back(c);
+                            }
+                            fit.probes = std::uint8_t(std::min(250, int(fit.probes) + 4));
+                        }
+                        else if(fit.planned)
                         {
                             // Halton 2,3 from this pixel's own count, shifted by a fixed amount per pixel so neighbours differ
                             auto halton = [](unsigned index, unsigned base)
@@ -2929,7 +3030,16 @@ void TraceTask::ProgressiveM4()
                         RGBTColour col = GetViewData()->LatticeSample(x, y);
                         float mapProbes = float(fit.probes);
                         float mapGreen = 0.25f;
-                        if(fit.kind == 1)
+                        auto bisected = o4.bisect ? GetViewData()->aaCells.find(x + y * GetViewData()->GetWidth()) : GetViewData()->aaCells.end();
+                        if((bisected != GetViewData()->aaCells.end()) && (bisected->second.size() > 1))
+                        {
+                            col.Clear();
+                            for(const AaCell& c : bisected->second)
+                                col += c.col * double(c.size * c.size);
+                            fit.kind = 2;
+                            GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                        }
+                        else if(fit.kind == 1)
                         {
                             float nx = fit.nx, ny = fit.ny, s;
                             int probes = fit.probes;

@@ -52,6 +52,7 @@
 #include <mutex>
 #include <thread>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -76,6 +77,9 @@ namespace pov
 using namespace pov_base;
 
 /// Method 4: an edge fitted to the centre samples around a pixel, without tracing a ray.
+/// Method 4: one leaf of a pixel's bisection, a square of side size around (x, y) from the pixel centre, and its sample.
+struct AaCell final { float x, y, size; RGBTColour col; float lab[4]; };
+
 struct AaFit final
 {
     float nx = 0, ny = 0;           ///< Unit normal, pointing at colour B.
@@ -83,6 +87,7 @@ struct AaFit final
     float contrast = 0;             ///< OkLab distance between the two colours.
     std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours.
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
+    std::int16_t leaf = -1;         ///< Bisection: the leaf the planner chose to split.
     std::uint8_t probes = 0;        ///< Probes traced so far.
     float sumLab[4] = { 0, 0, 0, 0 };   ///< Noisy pixel: OkLab sum over its samples, the centre one included.
     float sumSq = 0;                ///< Noisy pixel: sum of the squares of those OkLab values.
@@ -340,9 +345,11 @@ class ViewData final
         /// Method 4: samples the planner may still commit; a pass that would go past it is the last.
         std::int64_t aaBudgetLeft = 0;
         std::int64_t aaReserve = 0;     ///< Budget the edge probes leave for the noise tier.
+        std::unordered_map<std::uint32_t, std::vector<AaCell>> aaCells;    ///< Bisection leaves, by pixel index; made by the planner only.
         bool aaExhausted = false;
         DBL aaFraction = 0.0;
         DBL aaThr = 0.0;
+        int aaDepth = 3;                ///< Method 4: +R, the deepest a bisection may split.
         /// Method 4, chain mode: the fitted segments, and the ones the planner chose to probe this round.
         std::vector<AaSeg> aaSegs;
         std::vector<std::uint32_t> aaProbeList;
