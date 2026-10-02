@@ -979,6 +979,23 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
             ray.dDdx = ray.dDdy = Vector3d(0.0);
             ray.hasDifferentials = true;
         }
+        else if (!differentialProbe)
+        {
+            // any other projection: the camera's own rays one pixel over, taken as differences
+            Ray rx(ray), ry(ray);
+            differentialProbe = true;
+            const bool okX = CreateCameraRay(rx, x + 1.0, y, width, height, ray_number);
+            const bool okY = okX && CreateCameraRay(ry, x, y + 1.0, width, height, ray_number);
+            differentialProbe = false;
+            if (okY)
+            {
+                ray.dOdx = rx.Origin - ray.Origin;
+                ray.dOdy = ry.Origin - ray.Origin;
+                ray.dDdx = rx.Direction - ray.Direction;
+                ray.dDdy = ry.Direction - ray.Direction;
+                ray.hasDifferentials = true;
+            }
+        }
     }
 
     return true;

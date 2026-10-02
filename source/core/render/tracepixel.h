@@ -91,6 +91,9 @@ class TracePixel final : public Trace
         /// @param[out] colour  Computed colour of the (sub-)pixel.
         void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour);
     private:
+        /// Set while a camera ray is made only to measure its neighbour's differentials.
+        bool differentialProbe = false;
+
         // Focal blur data
         class FocalBlurData final
         {
