@@ -843,6 +843,8 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, 
     static const DBL kRotatedGrid[4][2] = { { -0.375, -0.125 }, { 0.125, -0.375 }, { 0.375, 0.125 }, { -0.125, 0.375 } };
     const DBL kSpread = 0.01;
     TransColour sum, first, tap;
+    MathColour premultiplied;
+    DBL opacity = 0.0;
     bool found = false;
     int taps = 0;
     DBL spread = 0.0;
@@ -855,6 +857,8 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, 
         tap.Clear();
         found = Compute_Pigment(tap, pigment, p, &isect, &ray, threadData) || found;
         sum += tap;
+        premultiplied += tap.colour() * tap.Opacity();
+        opacity += tap.Opacity();
         if (taps++ == 0)
             first = tap;
         else
@@ -887,6 +891,9 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, 
     }
 
     colour = sum / DBL(taps);
+    // averaged premultiplied, so the colour that shows, colour times opacity, is the footprint's true mean
+    if (opacity > 1.0e-6 * DBL(taps))
+        colour.colour() = premultiplied / opacity;
     return found;
 }
 

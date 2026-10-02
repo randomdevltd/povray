@@ -978,7 +978,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
         shiftKey = true;
     }
 
-    if ((textureFilterScale > 0.0) && !useFocalBlur && (camera.Tnormal == nullptr) && !pretrace)
+    if ((textureFilterScale > 0.0) && (camera.Tnormal == nullptr) && !pretrace)
     {
         // how origin and direction move for a step of one image pixel, wherever in the pixel this sample lies
         const Vector3d stepX = cameraRight / width, stepY = cameraUp / -height;
@@ -997,7 +997,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
             ray.dDdx = ray.dDdy = Vector3d(0.0);
             ray.hasDifferentials = true;
         }
-        else if (!differentialProbe)
+        else if (!differentialProbe && !useFocalBlur)
         {
             // any other projection: the camera's own rays one pixel over, taken as differences
             Ray rx(ray), ry(ray);
