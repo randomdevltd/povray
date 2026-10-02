@@ -316,6 +316,7 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     // TODO: this could be initialised someplace more suitable
     GetViewDataPtr()->qualityFlags = vd->GetQualityFeatureFlags();
     trace.SetTextureFilterScale(vd->textureFilterScale);
+    trace.SetTextureFilterTaps(vd->textureFilterTaps);
 }
 
 TraceTask::~TraceTask()
@@ -1083,12 +1084,16 @@ TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
 
 namespace { bool M4KeepGrain(); }
 
-void TraceTask::TraceSample(DBL x, DBL y, RGBTColour& col)
+void TraceTask::TraceSample(DBL x, DBL y, RGBTColour& col, DBL footprint, int category)
 {
+    if(category >= 0)
+        GetViewData()->aaSpent[category]++;
+    trace.footprintFraction = footprint;
     if(M4KeepGrain())
         trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col, Vector2d(std::floor(x) + 0.5, std::floor(y) + 0.5));
     else
         trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+    trace.footprintFraction = 1.0;
     GetViewDataPtr()->Stats()[Number_Of_Samples]++;
     Cooperate();
 }
@@ -1124,9 +1129,9 @@ struct M4Options final
     float rough = 0.06f;            ///< Chain mode: links differing by at least this, whatever their neighbours, count towards roughness; 0 for none.
     float roughRho = 0.3f;          ///< Share of rough links in the halo window above which flat pixels there join the noise tier.
     bool cv = true;                 ///< Resolve: keep a pixel's own samples and add the fit's coverage correction, rather than replace them.
-    bool quad = false;              ///< Chain mode: fit runs of a contour with parabolas, so curves need not be cut into chords.
+    bool quad = true;               ///< Chain mode: fit runs of a contour with parabolas, so curves need not be cut into chords.
     bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
-    bool bisect = false;            ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
+    bool bisect = true;             ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
     bool keepGrain = true;          ///< Sub-samples take their pixel's centre random draws, so grain alone never looks like detail.
     bool ridge = true;              ///< Chain mode: fit lines a pixel or two wide, which no contour of centre samples describes.
     bool explore = false;           ///< Bisection: flat pixels in a moderately dense halo get one probe first, not bisection; a find spreads.
@@ -2854,6 +2859,9 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         const double pixels = double(area.GetWidth()) * double(area.GetHeight());
         vd->aaBudgetLeft = std::max<std::int64_t>(1, std::int64_t(std::ceil(pixels * vd->aaFraction)));
         vd->aaExhausted = (std::getenv("POV_AA4_REPLAY") != nullptr);
+        vd->aaSpentPrinted = false;
+        for(auto& c : vd->aaSpent)
+            c = 0;
         vd->aaReserve = 0;
         if(o.chain)
         {
@@ -3259,7 +3267,7 @@ void TraceTask::ProbePixelM4(unsigned int x, unsigned int y, AaFit& fit)
     const float u = 0.5f * (ulo + uhi) + (vdc - 0.5f) * (uhi - ulo);
 
     RGBTColour col;
-    TraceSample(DBL(x) + 0.5 + sm * fit.nx + u * tx, DBL(y) + 0.5 + sm * fit.ny + u * ty, col);
+    TraceSample(DBL(x) + 0.5 + sm * fit.nx + u * tx, DBL(y) + 0.5 + sm * fit.ny + u * ty, col, 0.25, 0);
 
     // a probe on the first colour's side puts the edge beyond it, otherwise before it
     const OkLab pa = ToOkLab(fit.a), pb = ToOkLab(fit.b), pc = ToOkLab(col);
@@ -3288,7 +3296,7 @@ void TraceTask::ProbeSegmentsM4()
         const float px = s.cx + s.probeU * s.tx + s.probeV * s.nx, py = s.cy + s.probeU * s.ty + s.probeV * s.ny;
 
         RGBTColour col;
-        TraceSample(px, py, col);
+        TraceSample(px, py, col, 0.25, 0);
 
         // which side of the line the point is on, by whether it is nearer the colour of one side or the other
         RGBTColour ca, cb;
@@ -3317,6 +3325,9 @@ void TraceTask::ProgressiveM4()
         ProbeSegmentsM4();
         return;
     }
+    if((aaPass == 4) && M4Opts().stats && !GetViewData()->aaSpentPrinted.exchange(true))
+        std::fprintf(stderr, "AA4 spent: edge probes %lld, noisy pixels %lld, exploring %lld\n", (long long)GetViewData()->aaSpent[0].load(),
+                     (long long)GetViewData()->aaSpent[1].load(), (long long)GetViewData()->aaSpent[2].load());
     const bool traces = (aaPass == 2) || (aaPass == 3);
     POVRect rect;
     vector<RGBTColour> pixels;
@@ -3350,7 +3361,7 @@ void TraceTask::ProgressiveM4()
                         {
                             const unsigned hsh = (x * 2654435761u) ^ (y * 40503u);
                             RGBTColour probe;
-                            TraceSample(DBL(x) + 0.25 + 0.5 * double(hsh & 255u) / 255.0, DBL(y) + 0.25 + 0.5 * double((hsh >> 8) & 255u) / 255.0, probe);
+                            TraceSample(DBL(x) + 0.25 + 0.5 * double(hsh & 255u) / 255.0, DBL(y) + 0.25 + 0.5 * double((hsh >> 8) & 255u) / 255.0, probe, 0.25, 2);
                             const OkLab l = ToOkLab(probe);
                             const float pl[4] = { l.l, l.a, l.b, l.t };
                             fit.explore = (Dist2(pl, GetViewData()->AaLabAt(x, y)) > float(aaThreshold * aaThreshold)) ? 4 : 3;
@@ -3364,7 +3375,7 @@ void TraceTask::ProgressiveM4()
                             for(int k = 0; k < 4; k++)
                             {
                                 AaCell c { parent.x + ((k & 1) ? q : -q), parent.y + ((k & 2) ? q : -q), 0.5f * parent.size, RGBTColour(), {} };
-                                TraceSample(DBL(x) + 0.5 + c.x, DBL(y) + 0.5 + c.y, c.col);
+                                TraceSample(DBL(x) + 0.5 + c.x, DBL(y) + 0.5 + c.y, c.col, double(c.size), 1);
                                 const OkLab l = ToOkLab(c.col);
                                 c.lab[0] = l.l; c.lab[1] = l.a; c.lab[2] = l.b; c.lab[3] = l.t;
                                 if(k == 0)
@@ -3391,7 +3402,7 @@ void TraceTask::ProgressiveM4()
                             ox -= std::floor(ox);
                             oy -= std::floor(oy);
                             RGBTColour extra;
-                            TraceSample(DBL(x) + ox, DBL(y) + oy, extra);
+                            TraceSample(DBL(x) + ox, DBL(y) + oy, extra, 0.5, 1);
                             GetViewData()->AaExtra(x, y) += extra;
                             const float* centre = GetViewData()->AaLabAt(x, y);
                             if(fit.probes == 0)

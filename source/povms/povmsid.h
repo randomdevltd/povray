@@ -397,6 +397,7 @@ enum
     kPOVAttrib_StochasticSeed        = 'Seed',
     kPOVAttrib_TextureFilter         = 'TxFi',
     kPOVAttrib_TextureFilterScale    = 'TxFS',
+    kPOVAttrib_TextureFilterTaps     = 'TxFT',
 
     kPOVAttrib_Bounding              = 'Boun',
     kPOVAttrib_BoundingMethod        = 'BdMe',

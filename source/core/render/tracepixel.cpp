@@ -981,7 +981,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
     if ((textureFilterScale > 0.0) && (camera.Tnormal == nullptr) && !pretrace)
     {
         // how origin and direction move for a step of one image pixel, wherever in the pixel this sample lies
-        const Vector3d stepX = cameraRight / width, stepY = cameraUp / -height;
+        const Vector3d stepX = cameraRight * (footprintFraction / width), stepY = cameraUp * (footprintFraction / -height);
         if (camera.Type == PERSPECTIVE_CAMERA)
         {
             const DBL len = (cameraDirection + x0 * cameraRight + y0 * cameraUp).length();
@@ -1007,10 +1007,10 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
             differentialProbe = false;
             if (okY)
             {
-                ray.dOdx = rx.Origin - ray.Origin;
-                ray.dOdy = ry.Origin - ray.Origin;
-                ray.dDdx = rx.Direction - ray.Direction;
-                ray.dDdy = ry.Direction - ray.Direction;
+                ray.dOdx = (rx.Origin - ray.Origin) * footprintFraction;
+                ray.dOdy = (ry.Origin - ray.Origin) * footprintFraction;
+                ray.dDdx = (rx.Direction - ray.Direction) * footprintFraction;
+                ray.dDdy = (ry.Direction - ray.Direction) * footprintFraction;
                 ray.hasDifferentials = true;
             }
         }

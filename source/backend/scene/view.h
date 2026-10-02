@@ -357,6 +357,11 @@ class ViewData final
         int aaDepth = 3;                ///< Method 4: +R, the deepest a bisection may split.
         /// Pixel footprint scale camera rays filter pigments over; zero when texture filtering is off.
         DBL textureFilterScale = 0.0;
+        /// Taps a texture filter starts with: 8, or 3 (the centre and two corners) where cheaper is wanted.
+        int textureFilterTaps = 8;
+        /// Method 4: extra samples spent on edge probes, on bisecting or averaging noisy pixels, and on exploring.
+        std::atomic<std::int64_t> aaSpent[3] = { { 0 }, { 0 }, { 0 } };
+        std::atomic<bool> aaSpentPrinted { false };
         /// Method 4, chain mode: the fitted segments, and the ones the planner chose to probe this round.
         std::vector<AaSeg> aaSegs;
         std::vector<std::uint32_t> aaProbeList;

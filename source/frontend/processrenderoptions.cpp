@@ -230,6 +230,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Test_Abort_Count",    kPOVAttrib_TestAbortCount,     kPOVMSType_Int },
     { "Test_Abort",          kPOVAttrib_TestAbort,          kPOVMSType_Bool },
     { "Texture_Filter_Scale",kPOVAttrib_TextureFilterScale, kPOVMSType_Float },
+    { "Texture_Filter_Taps", kPOVAttrib_TextureFilterTaps, kPOVMSType_Int },
     { "Texture_Filter",      kPOVAttrib_TextureFilter,      kPOVMSType_Bool },
 
     { "User_Abort_Command",  kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },

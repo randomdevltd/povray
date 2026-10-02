@@ -230,6 +230,7 @@ class Trace
 
         /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
+        void SetTextureFilterTaps(int taps) { textureFilterTaps = taps; }
 
         /// The object the last primary ray hit, and its top layer's pigment there.
         const void *primaryObject = nullptr;
@@ -356,6 +357,7 @@ class Trace
         QualityFlags qualityFlags;
         /// Pixel footprint scale that hits of rays with differentials average their pigments over; zero turns filtering off.
         DBL textureFilterScale = 0.0;
+        int textureFilterTaps = 8;
 
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;

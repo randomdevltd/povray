@@ -44,6 +44,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -895,14 +896,27 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, 
     const DBL lenX = footX.length(), lenY = footY.length();
     const DBL aniso = max(lenX, lenY) / max(min(lenX, lenY), 1.0e-6 * max(lenX, lenY));
 
-    // a few agreeing taps can all land on one colour of a fine pattern, so confirm with the mirrored grid
-    for (int i = 0; i < 4; i++)
-        sample(kRotatedGrid[i][0], kRotatedGrid[i][1]);
-    if ((spread <= kSpread) && (aniso <= 2.0))
-        for (int i = 0; i < 4; i++)
-            sample(-kRotatedGrid[i][0], kRotatedGrid[i][1]);
+    // the cheap start: the centre and two opposite corners, which are enough where all three agree
+    bool early = false;
+    if (textureFilterTaps <= 3)
+    {
+        sample(0.0, 0.0);
+        sample(-0.35, -0.35);
+        sample(0.35, 0.35);
+        early = (spread <= kSpread) && (aniso <= 2.0);
+    }
 
-    if ((spread > kSpread) || (aniso > 2.0))
+    if (!early)
+    {
+        // a few agreeing taps can all land on one colour of a fine pattern, so confirm with the mirrored grid
+        for (int i = 0; i < 4; i++)
+            sample(kRotatedGrid[i][0], kRotatedGrid[i][1]);
+        if ((spread <= kSpread) && (aniso <= 2.0))
+            for (int i = 0; i < 4; i++)
+                sample(-kRotatedGrid[i][0], kRotatedGrid[i][1]);
+    }
+
+    if (!early && ((spread > kSpread) || (aniso > 2.0)))
     {
         // a sheared lattice: rows across the short side, columns along the long side growing with anisotropy
         const int nLong = clip(int(ceil(4.0 * aniso)), 4, 32);

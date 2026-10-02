@@ -737,6 +737,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     aaBudget = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasBudget, 0.0f), 0.0f, 1.0e9f);
     viewData.textureFilterScale = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false) ?
                                   clip(renderOptions.TryGetFloat(kPOVAttrib_TextureFilterScale, 1.0f), 0.0f, 64.0f) : 0.0f;
+    viewData.textureFilterTaps = clip(renderOptions.TryGetInt(kPOVAttrib_TextureFilterTaps, 8), 3, 8);
     if(renderOptions.TryGetBool(kPOVAttrib_Jitter, true) == true)
         jitterscale = clip(renderOptions.TryGetFloat(kPOVAttrib_JitterAmount, 1.0f), 0.0f, 1.0f);
     else

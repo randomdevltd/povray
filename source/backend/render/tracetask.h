@@ -174,7 +174,7 @@ class TraceTask final : public RenderTask
         void ProbePixelM4(unsigned int x, unsigned int y, AaFit& fit);
         void ProbeSegmentsM4();
         OkLab ToOkLab(const RGBTColour& col);
-        void TraceSample(DBL x, DBL y, RGBTColour& col);
+        void TraceSample(DBL x, DBL y, RGBTColour& col, DBL footprint = 1.0, int category = -1);
 
         void NonAdaptiveSupersamplingForOnePixel(DBL x, DBL y, RGBTColour& leftcol, RGBTColour& topcol, RGBTColour& curcol, bool& sampleleft, bool& sampletop, bool& samplecurrent);
         void SupersampleOnePixel(DBL x, DBL y, RGBTColour& col);
