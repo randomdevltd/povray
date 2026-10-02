@@ -3054,12 +3054,58 @@ void TraceTask::ProgressiveM4()
                             }
                             else
                                 s = 0.5f * (fit.lo + fit.hi);
+
+                            // a line must put this pixel's own 3x3 samples on the sides their colours say; where the
+                            // run's line has turned away from the curve, try the second line, else keep the sample
+                            bool trusted = true, secondTaken = false;
+                            if(fit.seg >= 0)
+                            {
+                                const POVRect& area = GetViewData()->GetRenderArea();
+                                const OkLab pa = ToOkLab(fit.a), pb = ToOkLab(fit.b);
+                                const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+                                const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+                                auto fits = [&](float lx, float ly, float ls)
+                                {
+                                    for(int dy = -1; dy <= 1; dy++)
+                                    {
+                                        for(int dx = -1; dx <= 1; dx++)
+                                        {
+                                            const int qx = int(x) + dx, qy = int(y) + dy;
+                                            if((qx < int(area.left)) || (qx > int(area.right)) || (qy < int(area.top)) || (qy > int(area.bottom)) || (vv <= 0.0f))
+                                                continue;
+                                            const float* l = GetViewData()->AaLabAt(unsigned(qx), unsigned(qy));
+                                            const float t = ((l[0] - pa.l) * v[0] + (l[1] - pa.a) * v[1] + (l[2] - pa.b) * v[2] + (l[3] - pa.t) * v[3]) / vv;
+                                            if(std::fabs(t - 0.5f) < 0.25f)
+                                                continue;
+                                            const float side = lx * float(dx) + ly * float(dy) - ls;
+                                            if((std::fabs(side) > 0.05f) && ((side > 0.0f) != (t > 0.5f)))
+                                                return false;
+                                        }
+                                    }
+                                    return true;
+                                };
+                                if(!fits(nx, ny, s))
+                                {
+                                    trusted = false;
+                                    if(fit.seg2 >= 0)
+                                    {
+                                        float n2x, n2y, s2;
+                                        M4LineAt(GetViewData()->aaSegs[size_t(fit.seg2)], float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
+                                        s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
+                                        if(fits(n2x, n2y, s2))
+                                        {
+                                            nx = n2x; ny = n2y; s = s2;
+                                            trusted = secondTaken = true;
+                                        }
+                                    }
+                                }
+                            }
                             const double f = M4Coverage(nx, ny, s);
 
                             // two lines of different directions both crossing the pixel: a junction, up to four regions
                             bool twoLines = false;
                             float n2x = 0.0f, n2y = 0.0f, s2 = 0.0f;
-                            if((fit.seg >= 0) && (fit.seg2 >= 0))
+                            if(trusted && !secondTaken && (fit.seg >= 0) && (fit.seg2 >= 0))
                             {
                                 const AaSeg& g2 = GetViewData()->aaSegs[size_t(fit.seg2)];
                                 M4LineAt(g2, float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
@@ -3114,6 +3160,8 @@ void TraceTask::ProgressiveM4()
                                     col = M4Bounded(own + col - centreModel, own, qc, qw);
                             }
                             // a pixel the final line does not cross stays as it was sampled
+                            else if(!trusted)
+                                mapGreen = 0.5f;
                             else if(o4.cv && ((fit.seg < 0) || ((f > 0.0) && (f < 1.0))))
                             {
                                 // the pixel keeps its own sample; the fit adds what the rest of its area, beyond the centre's side, contributes
