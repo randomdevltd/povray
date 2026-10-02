@@ -89,6 +89,8 @@ class TracePixel final : public Trace
         /// @param[in]  width   Horizontal size of the image in pixels.
         /// @param[in]  height  Vertical size of the image in pixels.
         /// @param[out] colour  Computed colour of the (sub-)pixel.
+        /// Trace a sub-pixel with the random draws of the camera ray through `keyAt`, typically its pixel's centre.
+        void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour, const Vector2d& keyAt);
         void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour);
     private:
         /// Set while a camera ray is made only to measure its neighbour's differentials.
@@ -153,6 +155,9 @@ class TracePixel final : public Trace
         GenericScalarFunctionInstancePtr mpCameraDirectionFn[3];
 
         bool CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number);
+        /// While set, camera rays take the path key of the camera ray this far away in the image.
+        bool shiftKey = false;
+        Vector2d keyShift;
 
         void InitRayContainerState(Ray& ray, bool compute = false);
         void InitRayContainerStateTree(Ray& ray, BBOX_TREE *node);

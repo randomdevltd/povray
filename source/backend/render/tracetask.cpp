@@ -928,7 +928,8 @@ void TraceTask::ProgressiveLevel()
                     GetViewData()->LatticeSample(x, y) = col;
                     if(tracingMethod == 4)
                     {
-                        GetViewData()->AaHit(x, y) = trace.primaryObject ? ((std::uint32_t(reinterpret_cast<std::uintptr_t>(trace.primaryObject) >> 4)) | 1u) : 0u;
+                        GetViewData()->AaHit(x, y) = (trace.primaryObject ? ((std::uint32_t(reinterpret_cast<std::uintptr_t>(trace.primaryObject) >> 4) & 0x7fffffffu) | 1u) : 0u) |
+                                                     (trace.Grainy() ? 0x80000000u : 0u);
                         float* pig = GetViewData()->AaPigmentAt(x, y);
                         pig[0] = float(trace.primaryPigment.colour().Red());
                         pig[1] = float(trace.primaryPigment.colour().Green());
@@ -1079,9 +1080,14 @@ TraceTask::OkLab TraceTask::ToOkLab(const RGBTColour& col)
     return OkLabOf(GetViewData(), col);
 }
 
+namespace { bool M4KeepGrain(); }
+
 void TraceTask::TraceSample(DBL x, DBL y, RGBTColour& col)
 {
-    trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+    if(M4KeepGrain())
+        trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col, Vector2d(std::floor(x) + 0.5, std::floor(y) + 0.5));
+    else
+        trace(x, y, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
     GetViewDataPtr()->Stats()[Number_Of_Samples]++;
     Cooperate();
 }
@@ -1119,6 +1125,7 @@ struct M4Options final
     bool quad = false;              ///< Chain mode: fit runs of a contour with parabolas, so curves need not be cut into chords.
     bool strips = false;            ///< Resolve: two nearly parallel lines crossing a pixel bound a strip, as a thin feature does.
     bool bisect = false;            ///< Pixels no fit holds (noisy, contradicted) are bisected where their samples differ, not averaged.
+    bool keepGrain = true;          ///< Sub-samples take their pixel's centre random draws, so grain alone never looks like detail.
     float bend = 2.0f;              ///< Quad: margin a parabola must gain over a line, per pixel of its sag, to be preferred.
 };
 
@@ -1170,6 +1177,7 @@ const M4Options& M4Opts()
                     else if(key == "QUAD")   o.quad = (v != 0.0);
                     else if(key == "STRIPS") o.strips = (v != 0.0);
                     else if(key == "BISECT") o.bisect = (v != 0.0);
+                    else if(key == "KG")     o.keepGrain = (v != 0.0);
                     else if(key == "BEND")   o.bend = float(v);
                 }
                 pos = end + 1;
@@ -1180,6 +1188,8 @@ const M4Options& M4Opts()
     }();
     return options;
 }
+
+bool M4KeepGrain() { return M4Opts().keepGrain; }
 
 inline float Dist2(const float* a, const float* b)
 {
@@ -1917,7 +1927,8 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
     auto luma = [](float r, float g, float b) { return std::max(1.0e-4f, 0.2126f * r + 0.7152f * g + 0.0722f * b); };
     auto resolved = [&](int xa, int ya, int xb, int yb)
     {
-        if(!filtered || (vd->AaHit(unsigned(xa), unsigned(ya)) != vd->AaHit(unsigned(xb), unsigned(yb))) || (vd->AaHit(unsigned(xa), unsigned(ya)) == 0))
+        const std::uint32_t ha = vd->AaHit(unsigned(xa), unsigned(ya)) & 0x7fffffffu, hb = vd->AaHit(unsigned(xb), unsigned(yb)) & 0x7fffffffu;
+        if(!filtered || (ha != hb) || (ha == 0))
             return false;
         const float* p = vd->AaPigmentAt(unsigned(xa), unsigned(ya));
         const float* q = vd->AaPigmentAt(unsigned(xb), unsigned(yb));
@@ -2604,6 +2615,7 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
                     it = vd->aaCells.emplace(key, std::vector<AaCell>(1, c)).first;
                 }
                 const std::vector<AaCell>& cells = it->second;
+                const bool grainy = vd->HasAaHits() && ((vd->AaHit(x, y) & 0x80000000u) != 0);
                 float best = 0.0f;
                 for(size_t i = 0; i < cells.size(); i++)
                 {
@@ -2619,9 +2631,11 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
                     for(size_t j = 0; j < cells.size(); j++)
                         if(j != i)
                             touch(cells[j].x, cells[j].y, cells[j].size, cells[j].lab);
+                    // a grainy pixel with grain kept looks at its neighbours, whose grain differs, only for its first
+                    // split; after it, leaves are judged against their siblings alone, which share its draws
                     for(int dy = -1; dy <= 1; dy++)
                         for(int dx = -1; dx <= 1; dx++)
-                            if(((dx != 0) || (dy != 0)) && (int(x) + dx >= int(area.left)) && (int(x) + dx <= int(area.right)) && (int(y) + dy >= int(area.top)) && (int(y) + dy <= int(area.bottom)))
+                            if((!o.keepGrain || (cells.size() == 1) || !grainy) && ((dx != 0) || (dy != 0)) && (int(x) + dx >= int(area.left)) && (int(x) + dx <= int(area.right)) && (int(y) + dy >= int(area.top)) && (int(y) + dy <= int(area.bottom)))
                                 touch(float(dx), float(dy), 1.0f, vd->AaLabAt(unsigned(int(x) + dx), unsigned(int(y) + dy)));
                     if(far2 < thr2)
                         continue;

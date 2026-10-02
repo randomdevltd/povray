@@ -309,6 +309,14 @@ void TracePixel::SetupCamera(const Camera& cam)
         focalBlurData = new FocalBlurData(camera, threadData);
 }
 
+void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour, const Vector2d& keyAt)
+{
+    shiftKey = true;
+    keyShift = keyAt - Vector2d(x, y);
+    (*this)(x, y, width, height, colour);
+    shiftKey = false;
+}
+
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
     ClearGrain();
@@ -959,6 +967,16 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
 
     ray.Direction.normalize();
     ray.SetKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ray.Origin), ray.Direction));
+
+    if (shiftKey && !differentialProbe)
+    {
+        shiftKey = false;
+        TraceTicket keyTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
+        Ray keyRay(keyTicket);
+        if (CreateCameraRay(keyRay, x + keyShift[X], y + keyShift[Y], width, height, ray_number))
+            ray.SetKey(keyRay.GetKey());
+        shiftKey = true;
+    }
 
     if ((textureFilterScale > 0.0) && !useFocalBlur && (camera.Tnormal == nullptr) && !pretrace)
     {
