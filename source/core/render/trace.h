@@ -228,7 +228,7 @@ class Trace
 
         virtual ~Trace();
 
-        /// Make camera rays average their pigments over this multiple of the pixel footprint; zero turns it off.
+        /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
 
         /// Trace a ray.
@@ -292,6 +292,13 @@ class Trace
                 weight(w), normal(n), reflec(r), reflex(x) { }
         };
 
+        /// How a hit point and its unperturbed normal change per image pixel step in x and y.
+        struct SurfaceDifferentials final
+        {
+            Vector3d dPdx, dPdy, dNdx, dNdy;
+            bool haveNormal = false;
+        };
+
         typedef std::vector<const TEXTURE*> TextureVectorData;
         typedef RefPool<TextureVectorData> TextureVectorPool;
         typedef Ref<TextureVectorData, RefClearContainer<TextureVectorData>> TextureVector;
@@ -343,7 +350,7 @@ class Trace
         unsigned int maxFoundTraceLevel;
         /// Various quality-related flags.
         QualityFlags qualityFlags;
-        /// Pixel footprint scale that camera ray hits average their pigments over; zero turns filtering off.
+        /// Pixel footprint scale that hits of rays with differentials average their pigments over; zero turns filtering off.
         DBL textureFilterScale = 0.0;
 
         /// Bounding slabs priority queue.
@@ -499,9 +506,15 @@ class Trace
                                            const Vector3d& ipoint, const Vector3d& rawnormal, Ray& ray, COLC weight,
                                            Intersection& isect);
 
-        /// World-space footprint of the ray's image pixel on the tangent plane at the hit; false when it has none.
-        bool ComputePixelFootprint(const Ray& ray, const Intersection& isect, const std::vector<const TEXTURE *>& warps,
-                                   const Vector3d& ipoint, const Vector3d& rawnormal, Vector3d& footX, Vector3d& footY) const;
+        /// Transfer the ray's differentials to the tangent plane at the hit; false when the ray has none or grazes it.
+        bool TransferDifferentials(const Ray& ray, const Intersection& isect, const Vector3d& rawnormal, SurfaceDifferentials& diff) const;
+
+        /// Derivative of the unperturbed normal across the footprint, by central differences of the object's own normal.
+        void ComputeNormalDifferentials(const Intersection& isect, const Vector3d& rawnormal, SurfaceDifferentials& diff);
+
+        /// World-space footprint of the ray's image pixel at the hit to filter pigments over; false when it has none.
+        bool ComputePixelFootprint(const Intersection& isect, const std::vector<const TEXTURE *>& warps, const Vector3d& ipoint,
+                                   const SurfaceDifferentials& diff, Vector3d& footX, Vector3d& footY) const;
 
         /// Average a pigment over the pixel footprint with adaptively added, deterministic taps.
         bool ComputeFilteredPigment(TransColour& colour, const PIGMENT *pigment, const std::vector<const TEXTURE *>& warps,
@@ -551,9 +564,10 @@ class Trace
         /// @param[in]      rawnormal       Geometric (possibly smoothed) surface normal.
         /// @param[out]     colour          Computed colour.
         /// @param[in]      weight          Importance of this computation.
+        /// @param[in]      diff            Differentials at the hit for the reflected ray to carry, or `nullptr`.
         ///
         void ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray& ray, const Vector3d& normal,
-                               const Vector3d& rawnormal, MathColour& colour, COLC weight);
+                               const Vector3d& rawnormal, MathColour& colour, COLC weight, const SurfaceDifferentials *diff = nullptr);
 
         /// Compute the refraction contribution.
         ///
@@ -568,10 +582,12 @@ class Trace
         /// @param[out]     colour          Computed colour.
         /// @param[out]     transm          Computed transmittance.
         /// @param[in]      weight          Importance of this computation.
+        /// @param[in]      diff            Differentials at the hit for the refracted ray to carry, or `nullptr`.
         /// @return                         `true` if total internal reflection _did_ occur.
         ///
         bool ComputeRefraction(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray,
-                               const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight);
+                               const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight,
+                               const SurfaceDifferentials *diff = nullptr);
 
         /// Compute the contribution of a single refracted ray.
         ///
@@ -589,11 +605,12 @@ class Trace
         /// @param[out]     colour          Computed colour.
         /// @param[out]     transm          Computed transmittance.
         /// @param[in]      weight          Importance of this computation.
+        /// @param[in]      diff            Differentials at the hit for the refracted ray to carry, or `nullptr`.
         /// @return                         `true` if total internal reflection _did_ occur.
         ///
         bool TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, double ior, double n,
                                 const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal,
-                                MathColour& colour, ColourChannel& transm, COLC weight);
+                                MathColour& colour, ColourChannel& transm, COLC weight, const SurfaceDifferentials *diff = nullptr);
 
     ///
     /// @}

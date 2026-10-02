@@ -748,8 +748,69 @@ void Trace::ComputeAverageTextureColours(MathColour& resultColour, ColourChannel
     }
 }
 
-bool Trace::ComputePixelFootprint(const Ray& ray, const Intersection& isect, const vector<const TEXTURE *>& warps,
-                                  const Vector3d& ipoint, const Vector3d& rawnormal, Vector3d& footX, Vector3d& footY) const
+// Direction differential of d mirrored about the unit normal n (Igehy 1999).
+static Vector3d ReflectDifferential(const Vector3d& d, const Vector3d& dd, const Vector3d& n, const Vector3d& dn)
+{
+    return dd - 2.0 * (dot(d, n) * dn + (dot(dd, n) + dot(d, dn)) * n);
+}
+
+// Give a derived ray differentials, spreading at most one radian per pixel step so a focus or a grazing bend stays bounded.
+static void SetRayDifferentials(Ray& nray, const Vector3d& dOdx, const Vector3d& dOdy, const Vector3d& dDdx, const Vector3d& dDdy)
+{
+    const DBL lenX = dDdx.length(), lenY = dDdy.length();
+    nray.hasDifferentials = std::isfinite(lenX) && std::isfinite(lenY) && std::isfinite(dOdx.length()) && std::isfinite(dOdy.length());
+    nray.dOdx = dOdx;
+    nray.dOdy = dOdy;
+    nray.dDdx = (lenX > 1.0) ? dDdx / lenX : dDdx;
+    nray.dDdy = (lenY > 1.0) ? dDdy / lenY : dDdy;
+}
+
+bool Trace::TransferDifferentials(const Ray& ray, const Intersection& isect, const Vector3d& rawnormal, SurfaceDifferentials& diff) const
+{
+    if (!ray.hasDifferentials)
+        return false;
+    const DBL dn = dot(ray.Direction, rawnormal);
+    if (fabs(dn) < 1.0e-12)
+        return false;
+
+    const Vector3d dPdx = ray.dOdx + isect.Depth * ray.dDdx;
+    const Vector3d dPdy = ray.dOdy + isect.Depth * ray.dDdy;
+    diff.dPdx = dPdx - (dot(dPdx, rawnormal) / dn) * ray.Direction;
+    diff.dPdy = dPdy - (dot(dPdy, rawnormal) / dn) * ray.Direction;
+
+    // grazing hits stretch the footprint without bound; cap it at 64 pixel widths across the view
+    const DBL capX = 64.0 * dPdx.length(), capY = 64.0 * dPdy.length();
+    const DBL lenX = diff.dPdx.length(), lenY = diff.dPdy.length();
+    if (lenX > capX)
+        diff.dPdx *= capX / lenX;
+    if (lenY > capY)
+        diff.dPdy *= capY / lenY;
+    diff.haveNormal = false;
+    return true;
+}
+
+void Trace::ComputeNormalDifferentials(const Intersection& isect, const Vector3d& rawnormal, SurfaceDifferentials& diff)
+{
+    Intersection probe(isect);
+    auto normalAt = [&](const Vector3d& offset) -> Vector3d
+    {
+        Vector3d n;
+        probe.IPoint = isect.IPoint + offset;
+        probe.haveLocalIPoint = false;
+        isect.Object->Normal(n, &probe, threadData);
+        const DBL len = n.length();
+        if (!(len > 1.0e-12))
+            return rawnormal;
+        n /= len;
+        return (dot(n, rawnormal) < 0.0) ? -n : n;
+    };
+    diff.dNdx = normalAt(0.5 * diff.dPdx) - normalAt(-0.5 * diff.dPdx);
+    diff.dNdy = normalAt(0.5 * diff.dPdy) - normalAt(-0.5 * diff.dPdy);
+    diff.haveNormal = true;
+}
+
+bool Trace::ComputePixelFootprint(const Intersection& isect, const vector<const TEXTURE *>& warps, const Vector3d& ipoint,
+                                  const SurfaceDifferentials& diff, Vector3d& footX, Vector3d& footY) const
 {
     // taps are re-warped from the world point, so only filter where that reproduces the point the texture sees
     if (Test_Flag(isect.Object, UV_FLAG))
@@ -764,24 +825,8 @@ bool Trace::ComputePixelFootprint(const Ray& ray, const Intersection& isect, con
     if ((p - ipoint).length() > 1.0e-9 * (1.0 + ipoint.length()))
         return false;
 
-    const DBL dn = dot(ray.Direction, rawnormal);
-    if (fabs(dn) < 1.0e-12)
-        return false;
-
-    const Vector3d dPdx = ray.dOdx + isect.Depth * ray.dDdx;
-    const Vector3d dPdy = ray.dOdy + isect.Depth * ray.dDdy;
-    footX = dPdx - (dot(dPdx, rawnormal) / dn) * ray.Direction;
-    footY = dPdy - (dot(dPdy, rawnormal) / dn) * ray.Direction;
-
-    // grazing hits stretch the footprint without bound; cap it at 64 pixel widths across the view
-    const DBL capX = 64.0 * dPdx.length(), capY = 64.0 * dPdy.length();
-    const DBL lenX = footX.length(), lenY = footY.length();
-    if (lenX > capX)
-        footX *= capX / lenX;
-    if (lenY > capY)
-        footY *= capY / lenY;
-    footX *= textureFilterScale;
-    footY *= textureFilterScale;
+    footX = diff.dPdx * textureFilterScale;
+    footY = diff.dPdy * textureFilterScale;
 
     const DBL tiny = 1.0e-9 * (1.0 + isect.IPoint.length());
     return (footX.length() > tiny) || (footY.length() > tiny);
@@ -912,9 +957,16 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
 
     SubsurfaceLayers subsurfaceLayers;
 
+    SurfaceDifferentials hitDiff;
     Vector3d footX, footY;
-    const bool filterPigments = (textureFilterScale > 0.0) && ray.hasDifferentials && ray.IsPrimaryRay() &&
-                                ComputePixelFootprint(ray, isect, warps, ipoint, rawnormal, footX, footY);
+    const bool haveDiff = (textureFilterScale > 0.0) && TransferDifferentials(ray, isect, rawnormal, hitDiff);
+    const bool filterPigments = haveDiff && ComputePixelFootprint(isect, warps, ipoint, hitDiff, footX, footY);
+    auto secondaryDiff = [&]() -> const SurfaceDifferentials *
+    {
+        if (haveDiff && !hitDiff.haveNormal)
+            ComputeNormalDifferentials(isect, rawnormal, hitDiff);
+        return haveDiff ? &hitDiff : nullptr;
+    };
 
     for (layer_number = 0, layer = texture; (layer != nullptr) && (trans > ray.GetTicket().adcBailout); layer_number++, layer = layer->Next)
     {
@@ -1225,7 +1277,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         {
             const double share = ray.GetTicket().radiosityShare;
             ray.GetTicket().radiosityShare = share * roulette;
-            tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight);
+            tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight,
+                                            secondaryDiff());
             ray.GetTicket().radiosityShare = share;
             rfrCol *= roulette;
         }
@@ -1305,7 +1358,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     {
                         const double share = ray.GetTicket().radiosityShare;
                         ray.GetTicket().radiosityShare = share * roulette;
-                        ComputeReflection(layer->Finish, isect.IPoint, ray, (*listWNRX)[i].normal, rawnormal, rflCol, (*listWNRX)[i].weight);
+                        ComputeReflection(layer->Finish, isect.IPoint, ray, (*listWNRX)[i].normal, rawnormal, rflCol, (*listWNRX)[i].weight,
+                                          secondaryDiff());
                         ray.GetTicket().radiosityShare = share;
                     }
 
@@ -1408,10 +1462,13 @@ void Trace::ComputeShadowTexture(MathColour& filtercolour, const TEXTURE *textur
     filtercolour = tmpCol * refraction;
 }
 
-void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, COLC weight)
+void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, COLC weight,
+                              const SurfaceDifferentials *diff)
 {
     Ray nray(ray);
     double n, n2;
+    const Vector3d *mirror = &normal;
+    bool mirrorAgain = false;
 
     nray.SetFlags(Ray::ReflectionRay, ray);
     nray.SetKey(ray.NextChildKey(kDrawReflection));
@@ -1435,6 +1492,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
             // reflected inside rear virtual surface. Reflect Ray using Raw_Normal
             n = -2.0 * dot(ray.Direction, rawnormal);
             nray.Direction = ray.Direction + n * rawnormal;
+            mirror = &rawnormal;
         }
         else
         {
@@ -1442,7 +1500,22 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
             // n = dot(nray.Direction, rawnormal); - kept the old n around
             n *= -2.0;
             nray.Direction += n * rawnormal;
+            mirrorAgain = true;
         }
+    }
+
+    if (diff != nullptr)
+    {
+        const DBL s = ((mirror == &normal) && (dot(normal, rawnormal) < 0.0)) ? -1.0 : 1.0;
+        Vector3d dDdx = ReflectDifferential(ray.Direction, ray.dDdx, *mirror, s * diff->dNdx);
+        Vector3d dDdy = ReflectDifferential(ray.Direction, ray.dDdy, *mirror, s * diff->dNdy);
+        if (mirrorAgain)
+        {
+            const Vector3d once = ray.Direction - 2.0 * dot(ray.Direction, normal) * normal;
+            dDdx = ReflectDifferential(once, dDdx, rawnormal, diff->dNdx);
+            dDdy = ReflectDifferential(once, dDdy, rawnormal, diff->dNdy);
+        }
+        SetRayDifferentials(nray, diff->dPdx, diff->dPdy, dDdx, dDdy);
     }
 
     nray.Direction.normalize();
@@ -1468,7 +1541,8 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
     ray.GetTicket().alphaBackground = alphaBackground;
 }
 
-bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight)
+bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight,
+                              const SurfaceDifferentials *diff)
 {
     Ray nray(ray);
     Vector3d localnormal;
@@ -1549,6 +1623,8 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
     {
         // Only transmit the ray.
         nray.Direction = ray.Direction;
+        if (diff != nullptr)
+            SetRayDifferentials(nray, diff->dPdx, diff->dPdy, ray.dDdx, ray.dDdy);
         // Trace a transmitted ray.
         threadData->Stats()[Transmitted_Rays_Traced]++;
 
@@ -1572,9 +1648,9 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
 
         // TODO FIXME: also for first radiosity pass ? (see line 3272 of v3.6 lighting.cpp)
         if(!haveDispersion) // TODO FIXME - radiosity: || (!isFinalTrace)
-            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ior, n, normal, rawnormal, localnormal, colour, transm, weight);
+            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ior, n, normal, rawnormal, localnormal, colour, transm, weight, diff);
         else if(ray.IsMonochromaticRay())
-            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ray.GetSpectralBand().GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, colour, transm, weight);
+            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ray.GetSpectralBand().GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, colour, transm, weight, diff);
         else
         {
             colour.Clear();
@@ -1590,7 +1666,7 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
                 nray.SetSpectralBand(spectralBand);
                 nray.SetKey(DeriveKey(refractionKey, kDrawRefraction, i));
 
-                (void)TraceRefractionRay(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, tempTransm, weight);
+                (void)TraceRefractionRay(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, tempTransm, weight, diff);
 
                 colour += tempColour * spectralBand.GetHue();
                 transm += tempTransm;
@@ -1604,7 +1680,8 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
     return totalReflection;
 }
 
-bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, double ior, double n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, ColourChannel& transm, COLC weight)
+bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, double ior, double n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, ColourChannel& transm, COLC weight,
+                               const SurfaceDifferentials *diff)
 {
     // Compute refrated ray direction using Heckbert's method.
     double t = 1.0 + Sqr(ior) * (Sqr(n) - 1.0);
@@ -1615,15 +1692,28 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
 
         // Total internal reflection occures.
         threadData->Stats()[Internal_Reflected_Rays_Traced]++;
-        ComputeReflection(finish, ipoint, ray, normal, rawnormal, tempcolour, weight);
+        ComputeReflection(finish, ipoint, ray, normal, rawnormal, tempcolour, weight, diff);
         colour += tempcolour;
 
         return true;
     }
 
-    t = ior * n - sqrt(t);
+    const double root = sqrt(t);
+    t = ior * n - root;
 
     nray.Direction = ior * ray.Direction + t * localnormal;
+
+    // Igehy's refraction differential, with n = -D.N and t = ior n - root
+    if ((diff != nullptr) && (root > 1.0e-6))
+    {
+        const DBL s = (dot(localnormal, rawnormal) < 0.0) ? -1.0 : 1.0;
+        auto refract = [&](const Vector3d& dD, const Vector3d& dN) -> Vector3d
+        {
+            const DBL dn = -(dot(dD, localnormal) + s * dot(ray.Direction, dN));
+            return ior * dD + ((ior - Sqr(ior) * n / root) * dn) * localnormal + (t * s) * dN;
+        };
+        SetRayDifferentials(nray, diff->dPdx, diff->dPdy, refract(ray.dDdx, diff->dNdx), refract(ray.dDdy, diff->dNdy));
+    }
 
     // Trace a refracted ray.
     threadData->Stats()[Refracted_Rays_Traced]++;

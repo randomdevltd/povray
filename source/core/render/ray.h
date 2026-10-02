@@ -128,7 +128,7 @@ class Ray final : public BasicRay
 
         /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
         Vector3d dOdx, dOdy, dDdx, dDdy;
-        /// Set on camera rays only; @ref SetFlags clears it, so no derived ray inherits it.
+        /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
         bool hasDifferentials = false;
 
     private:
