@@ -3078,7 +3078,7 @@ void TraceTask::ProgressiveM4()
                                             if(std::fabs(t - 0.5f) < 0.25f)
                                                 continue;
                                             const float side = lx * float(dx) + ly * float(dy) - ls;
-                                            if((std::fabs(side) > 0.05f) && ((side > 0.0f) != (t > 0.5f)))
+                                            if((std::fabs(side) > 0.3f) && ((side > 0.0f) != (t > 0.5f)))
                                                 return false;
                                         }
                                     }
