@@ -1,5 +1,5 @@
 import { shape, fold, path, spline, spherical, scale, translate, rotate, X, Y, Z } from '../src/index.ts';
-import { finger } from './finger.ts';
+import { digit as finger } from './digit.ts';
 
 const bone = path([0, 3, 0], [0, 1.8, 0.1], [0.05, 1.45, 0.25], [0.15, 0.4, 0.6], { interp: 'catmull', arclength: true });
 const muscle = spline([0, 0.24], [0.25, 0.22], [0.45, 0.13], [0.6, 0.16], [1, 0.09]);

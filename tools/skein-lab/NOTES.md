@@ -211,7 +211,7 @@ then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/gallery.
 
 ### Friction and limits (round 3)
 
-- **Branching needs composites**: aeroplane (6 parts), balloon dog (10), arm (7: arm, palm, 5 fingers),
+- **Branching needs composites**: aeroplane (6 parts), balloon dog (10), arm (7: arm, palm, 5 digits),
   head (6), staff (fork as a second part), basket handle, trumpet valves. Parts interpenetrate at the
   joints; the result is a union by the winding rule, not a blended surface (no fillets).
 - **Thin closed solids** work as a square-section slab (fold with `ngon(4)` and `twist: π/4`, then scale);
@@ -230,4 +230,4 @@ then `python3 -m http.server -b 127.0.0.1 PORT` from `dist/` and open `/gallery.
 - **Displacement on both faces of a thin solid** moves them in opposite directions (the leaf veins first
   crossed the faces, 340 overlaps); thin-solid detail must be a space warp (`translate` by a field).
 - **Curve-section orientation is unchecked**; a clockwise curve gives an inside-out solid silently.
-- **Near-duplicates:** pagecurl and pagecurlthin share the `curl` op by import; finger is reused by arm.
+- **Near-duplicates:** pagecurl and pagecurlthin share the `curl` op by import; the `digit` factory (examples/digit.ts, not in the gallery) builds the arm's fingers; the gallery shows a big toe (one closed sheet, nail as a raised displaced plate) instead of a lone finger.

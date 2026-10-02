@@ -53,7 +53,7 @@ import paperplane from './paperplane.ts';
 import aeroplane from './aeroplane.ts';
 import balloondog from './balloondog.ts';
 import sock from './sock.ts';
-import finger from './finger.ts';
+import bigtoe from './bigtoe.ts';
 import arm from './arm.ts';
 import head from './head.ts';
 import mobius from './mobius.ts';
@@ -71,7 +71,7 @@ export const examples: Record<string, Model> = {
   chain, spring, rope, dna, tentacle, horn, croissant, elbow,
   curl, scroll, shell, ramp, ribbon, box, mushroom, trumpet,
   basket, frame, boulder, splat, leaf, pageturn, pagecurl,
-  crumpledpage, paperball, paperplane, aeroplane, balloondog, sock, finger, arm,
+  crumpledpage, paperball, paperplane, aeroplane, balloondog, sock, bigtoe, arm,
   head, ramshorn, trunk, wizardhat, staff, mobius, klein, fatknot, pagecurlthin,
 };
 
