@@ -312,6 +312,14 @@ void TracePixel::SetupCamera(const Camera& cam)
         focalBlurData = new FocalBlurData(camera, threadData);
 }
 
+void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour, const Vector2d& keyAt)
+{
+    shiftKey = true;
+    keyShift = keyAt - Vector2d(x, y);
+    (*this)(x, y, width, height, colour);
+    shiftKey = false;
+}
+
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
     ClearGrain();
@@ -982,10 +990,20 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
     ray.Direction.normalize();
     ray.SetKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ray.Origin), ray.Direction));
 
+    if (shiftKey && !differentialProbe)
+    {
+        shiftKey = false;
+        TraceTicket keyTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
+        Ray keyRay(keyTicket);
+        if (CreateCameraRay(keyRay, x + keyShift[X], y + keyShift[Y], width, height, ray_number))
+            ray.SetKey(keyRay.GetKey());
+        shiftKey = true;
+    }
+
     if ((textureFilterScale > 0.0) && (camera.Tnormal == nullptr) && !pretrace)
     {
         // how origin and direction move for a step of one image pixel, wherever in the pixel this sample lies
-        const Vector3d stepX = cameraRight * (1.0 / width), stepY = cameraUp * (1.0 / -height);
+        const Vector3d stepX = cameraRight * (footprintFraction / width), stepY = cameraUp * (footprintFraction / -height);
         if (camera.Type == PERSPECTIVE_CAMERA)
         {
             const DBL len = (cameraDirection + x0 * cameraRight + y0 * cameraUp).length();
@@ -1011,10 +1029,10 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
             differentialProbe = false;
             if (okY)
             {
-                ray.dOdx = rx.Origin - ray.Origin;
-                ray.dOdy = ry.Origin - ray.Origin;
-                ray.dDdx = rx.Direction - ray.Direction;
-                ray.dDdy = ry.Direction - ray.Direction;
+                ray.dOdx = (rx.Origin - ray.Origin) * footprintFraction;
+                ray.dOdy = (ry.Origin - ray.Origin) * footprintFraction;
+                ray.dDdx = (rx.Direction - ray.Direction) * footprintFraction;
+                ray.dDdy = (ry.Direction - ray.Direction) * footprintFraction;
                 ray.hasDifferentials = true;
             }
         }

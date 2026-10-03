@@ -43,9 +43,12 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 // POV-Ray header files (base module)
+#include "base/types.h"
 #include "base/image/colourspace_fwd.h"
 
 // POV-Ray header files (core module)
@@ -58,6 +61,8 @@
 
 namespace pov
 {
+
+struct AaFit;
 
 #ifdef PROFILE_INTERSECTIONS
     // NB not thread-safe (and not intended to be)
@@ -73,8 +78,16 @@ class TraceTask final : public RenderTask
         TraceTask(ViewData *vd, unsigned int tm, DBL js,
                   DBL aat, DBL aac, unsigned int aad, pov_base::GammaCurvePtr& aag,
                   unsigned int ps, bool psc, bool contributesToImage, bool hr, size_t seed,
-                  int level = -1, unsigned int ls = 0, bool lf = false);
+                  int level = -1, unsigned int ls = 0, bool lf = false,
+                  DBL aab = 0.0, int aap = 0, int aar = 0);
         virtual ~TraceTask() override;
+
+        /// Method 4, between passes on one thread: pass 0 prepares, 2 chooses the probes of a round, 3 the noisy pixels to average.
+        static void PlanM4(ViewData* vd, int pass, int round);
+        /// Probe rounds queued for method 4; the planner may stop earlier.
+        static constexpr int kM4Rounds = 12;
+        /// Rounds of extra samples for noisy pixels, each adding at most one a pixel.
+        static constexpr int kM4NoiseRounds = 64;
 
         virtual void Run() override;
         virtual void Stopped() override;
@@ -120,6 +133,7 @@ class TraceTask final : public RenderTask
         DBL aaThreshold;
         DBL aaConfidence;
         unsigned int aaDepth;
+        DBL aaBudget;
         unsigned int previewSize;
         bool previewSkipCorner;
         bool passContributesToImage;    ///< Pass computes pixels for the final image.
@@ -129,6 +143,11 @@ class TraceTask final : public RenderTask
         int progressLevel;              ///< Pass of a progressive render, or -1 for a render in block order.
         unsigned int latticeStep;       ///< Sample spacing of a progressive level; 0 for its anti-aliasing pass.
         bool latticeFirst;              ///< The first level, which also traces the points of the coarser lattice.
+        int aaPass;                     ///< Method 4's pass: 1 fit, 2 probe, 3 noise average, 4 resolve.
+        int aaRound;                    ///< Method 4's probe round.
+
+        /// A colour in OKLab, with its transmittance.
+        struct OkLab final { float l, a, b, t; };
 
         /// tracing core
         TracePixel trace;
@@ -148,6 +167,14 @@ class TraceTask final : public RenderTask
         void ProgressiveRefineM1();
         void ProgressiveRefineM2();
         bool DiffersFromSample(const RGBTColour& gcCur, unsigned int x, unsigned int y);
+
+        static OkLab OkLabOf(ViewData* vd, const RGBTColour& col);
+        void ProgressiveM4();
+        void FitPixelM4(unsigned int x, unsigned int y, AaFit& fit);
+        void ProbePixelM4(unsigned int x, unsigned int y, AaFit& fit);
+        void ProbeSegmentsM4();
+        OkLab ToOkLab(const RGBTColour& col);
+        void TraceSample(DBL x, DBL y, RGBTColour& col, DBL footprint = 1.0, int category = -1);
 
         void NonAdaptiveSupersamplingForOnePixel(DBL x, DBL y, RGBTColour& leftcol, RGBTColour& topcol, RGBTColour& curcol, bool& sampleleft, bool& sampletop, bool& samplecurrent);
         void SupersampleOnePixel(DBL x, DBL y, RGBTColour& col);

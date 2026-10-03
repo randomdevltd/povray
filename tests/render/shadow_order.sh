@@ -15,8 +15,13 @@ render full -a +wt1
 render window -a +wt1 +sr$((H - ROWS + 1)) +er$H
 render four -a +wt4 +bs8
 render order -a +wt4 +rp5 +bs5
+render am4one +pr +am4 +a0.02 +ab1 +wt1
+render am4four +pr +am4 +a0.02 +ab1 +wt4 +bs8
+render am4order +pr +am4 +a0.02 +ab1 +wt4 +rp5 +bs5
 same full window
 same full four
 same full order
+same am4one am4four
+same am4one am4order
 rm -f shadow_order_*.ppm shadow_order_*.px
 echo "shadow_order: shadows are the same in a window, on any thread count and in any block order"
