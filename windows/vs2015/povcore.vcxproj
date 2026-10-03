@@ -455,6 +455,7 @@
     <ClCompile Include="..\..\source\core\shape\plane.cpp" />
     <ClCompile Include="..\..\source\core\shape\polynomial.cpp" />
     <ClCompile Include="..\..\source\core\shape\polygon.cpp" />
+    <ClCompile Include="..\..\source\core\shape\portal.cpp" />
     <ClCompile Include="..\..\source\core\shape\prism.cpp" />
     <ClCompile Include="..\..\source\core\shape\quadric.cpp" />
     <ClCompile Include="..\..\source\core\shape\sor.cpp" />
@@ -549,6 +550,7 @@
     <ClInclude Include="..\..\source\core\shape\plane.h" />
     <ClInclude Include="..\..\source\core\shape\polynomial.h" />
     <ClInclude Include="..\..\source\core\shape\polygon.h" />
+    <ClInclude Include="..\..\source\core\shape\portal.h" />
     <ClInclude Include="..\..\source\core\shape\prism.h" />
     <ClInclude Include="..\..\source\core\shape\quadric.h" />
     <ClInclude Include="..\..\source\core\shape\sor.h" />

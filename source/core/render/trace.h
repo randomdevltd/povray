@@ -69,11 +69,24 @@ namespace pov
 /// @{
 
 class PhotonGatherer;
+class Portal;
 struct ScreenPattern;
 
 struct NoSomethingFlagRayObjectCondition final  : public RayObjectCondition
 {
     virtual bool operator()(const Ray& ray, ConstObjectPtr object, double) const override;
+};
+
+struct HasInteriorPointObjectCondition final : public PointObjectCondition
+{
+    virtual bool operator()(const Vector3d& point, ConstObjectPtr object) const override;
+};
+
+struct ContainingInteriorsPointObjectCondition final : public PointObjectCondition
+{
+    ContainingInteriorsPointObjectCondition(RayInteriorVector& ci) : containingInteriors(ci) {}
+    virtual bool operator()(const Vector3d& point, ConstObjectPtr object) const override;
+    RayInteriorVector &containingInteriors;
 };
 
 struct LitInterval final
@@ -244,9 +257,11 @@ class Trace
         ///                                 without a change in direction; this governs trace level handling.
         /// @param[in]      maxDepth        Objects at or beyond this distance won't be hit by the ray (ignored if
         ///                                 < EPSILON).
+        /// @param[in]      missOpen        Whether a ray that hits nothing returns at once, leaving sky and atmosphere to the caller.
         /// @return                         The distance to the nearest object hit.
         ///
-        virtual double TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth = 0.0);
+        virtual double TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth = 0.0,
+                                bool missOpen = false);
 /*
         /// Trace a ray.
         ///
@@ -267,6 +282,8 @@ class Trace
         bool FindIntersection(Intersection& isect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, double closest = HUGE_VAL);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
+        /// Adds the interiors of the objects containing a point.
+        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found);
 
         unsigned int GetHighestTraceLevel();
 
@@ -533,6 +550,12 @@ class Trace
     ///
     /// @{
     ///
+
+        /// Shades a hit on a portal: the view beyond it where it is open and entered, the ray going on past it elsewhere.
+        void TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight);
+        /// Traces the view through a portal entered at a hit; false where it leaves nothing to show.
+        bool TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, COLC weight,
+                             MathColour& view, ColourChannel& transm);
 
         /// Compute the refraction contribution.
         ///

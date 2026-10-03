@@ -86,6 +86,8 @@ class Ray final : public BasicRay
         void AppendInteriors(RayInteriorVector&);
         bool RemoveInterior(const Interior *i);
         void ClearInteriors() { interiors.clear(); }
+        /// Forgets what the ray was inside, open air included.
+        void ResetInteriors() { interiors.clear(); hollowRay = true; }
 
         bool IsInterior(const Interior *i) const;
         const RayInteriorVector& GetInteriors() const { return interiors; }

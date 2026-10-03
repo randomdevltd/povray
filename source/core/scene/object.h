@@ -115,6 +115,7 @@ namespace pov
 #define IGNORE_RADIOSITY_FLAG     0x04000000L ///< Object doesn't receive ambient light from radiosity.
 #define NO_RADIOSITY_FLAG         0x08000000L ///< Object doesn't catch radiosity rays (i.e. is invisible to radiosity).
 #define CUTAWAY_TEXTURES_FLAG     0x10000000L ///< Object (or any of its parents) has cutaway_textures set.
+#define PORTAL_FLAG               0x20000000L ///< Object is a @ref Portal; it stamps itself as the CSG of its hits.
 
 #define Set_Flag(Object, Flag)     \
     { (Object)->Flags |=  (Flag); }
@@ -150,7 +151,7 @@ namespace pov
 #define TEXTURED_OBJECT             0x0002u ///< Object has texture, possibly in children.
 #define IS_COMPOUND_OBJECT          0x0004u ///< Object has children field.
 #define STURM_OK_OBJECT             0x0008u ///< Object accepts the `sturm` parameter.
-// 0x0010u currently not used
+#define HOLDS_PORTAL_OBJECT         0x0010u ///< Object is or holds a @ref Portal.
 #define LIGHT_SOURCE_OBJECT         0x0020u ///< Object is to be linked in frame.light_sources.
 // 0x0040u currently not used
 // 0x0080u currently not used
@@ -163,7 +164,7 @@ namespace pov
 #define IS_CSG_OBJECT               0x4000u ///< Object is a CSG and not some other compound object.
 #define POTENTIAL_OBJECT            0x8000u ///< Object has an intrinsic potential field associated.
 
-#define CHILDREN_FLAGS (PATCH_OBJECT+TEXTURED_OBJECT)  ///< Reverse inherited flags.
+#define CHILDREN_FLAGS (PATCH_OBJECT+TEXTURED_OBJECT+HOLDS_PORTAL_OBJECT)  ///< Reverse inherited flags.
 
 /// @}
 ///

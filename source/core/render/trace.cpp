@@ -50,6 +50,7 @@
 #include "base/povassert.h"
 
 // POV-Ray header files (core module)
+#include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/radiosity.h"
@@ -69,6 +70,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/box.h"
 #include "core/shape/csg.h"
+#include "core/shape/portal.h"
 #include "core/support/imageutil.h"
 #include "core/support/statistics.h"
 
@@ -140,7 +142,178 @@ Trace::~Trace()
 {
 }
 
-double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth)
+namespace
+{
+struct PortalNesting final
+{
+    TraceThreadData *thread;
+    explicit PortalNesting(TraceThreadData *t) : thread(t) { ++t->portalDepth; }
+    ~PortalNesting() { --thread->portalDepth; }
+};
+
+void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread)
+{
+    if (!Inside_BBox(point, node->BBox))
+        return;
+    if (node->Entries == 0)
+    {
+        ObjectPtr object = ObjectPtr(node->Node);
+        if ((object->interior != nullptr) && object->Inside(point, thread))
+            found.push_back(object->interior.get());
+    }
+    else
+        for (int i = 0; i < node->Entries; i++)
+            FindContainingInteriorsTree(point, node->Node[i], found, thread);
+}
+}
+
+void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found)
+{
+    if (sceneData->boundingMethod == 2)
+    {
+        HasInteriorPointObjectCondition precond;
+        ContainingInteriorsPointObjectCondition postcond(found);
+        BSPInsideCondFunctor ifn(point, sceneData->objects, threadData, precond, postcond);
+
+        mailbox.clear();
+        (*sceneData->tree)(point, ifn, mailbox);
+
+        // test infinite objects
+        for (std::vector<ObjectPtr>::iterator object = sceneData->objects.begin() + sceneData->numberOfFiniteObjects; object != sceneData->objects.end(); object++)
+            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+                found.push_back((*object)->interior.get());
+    }
+    else if ((sceneData->boundingMethod == 0) || (sceneData->boundingSlabs == nullptr))
+    {
+        for (std::vector<ObjectPtr>::iterator object = sceneData->objects.begin(); object != sceneData->objects.end(); object++)
+            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+                found.push_back((*object)->interior.get());
+    }
+    else
+        FindContainingInteriorsTree(point, sceneData->boundingSlabs, found, threadData);
+}
+
+void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight)
+{
+    Vector3d rawnormal;
+    isect.Object->Normal(rawnormal, &isect, threadData);
+    if (Test_Flag(isect.Object, INVERTED_FLAG))
+        rawnormal.invert();
+
+    const bool entered = portal.Admits(rawnormal, ray.Direction);
+    if (dot(rawnormal, ray.Direction) > 0.0)
+        rawnormal.invert();
+
+    double open = 0.0;
+    MathColour tint(1.0);
+    if (entered)
+    {
+        open = 1.0;
+        TransColour opening;
+        bool found;
+        {
+            ActiveTraceScope activeTrace(threadData, this, weight);
+            found = (portal.pigment != nullptr) && Compute_Pigment(opening, portal.pigment, isect.IPoint, &isect, &ray, threadData);
+        }
+        if (found)
+        {
+            open = std::max(0.0, std::min(1.0, double(opening.Opacity())));
+            tint = opening.colour();
+        }
+    }
+
+    MathColour view;
+    ColourChannel viewTransm = 0.0;
+    if ((open > 0.0) && !TracePortalView(portal, isect, ray, rawnormal, weight * open, view, viewTransm))
+        open = 0.0;
+
+    colour = tint * view * open;
+    transm = viewTransm * open;
+    if (open < 1.0)
+    {
+        Ray nray(ray);
+        nray.Origin = isect.IPoint;
+        MathColour past;
+        ColourChannel pastTransm = 0.0;
+        TraceRay(nray, past, pastTransm, weight * (1.0 - open), true);
+        colour += past * (1.0 - open);
+        transm += pastTransm * (1.0 - open);
+    }
+}
+
+bool Trace::TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, COLC weight,
+                            MathColour& view, ColourChannel& transm)
+{
+    const TraceTicket& ticket = ray.GetTicket();
+    const unsigned int limit = (portal.maxDepth > 0) ? portal.maxDepth : ticket.maxAllowedTraceLevel;
+    if ((threadData->portalDepth >= limit) ||
+        (threadData->screenTraceLevels + ticket.traceLevel + threadData->screenDepth + threadData->portalDepth >= NESTED_VIEW_DEPTH_LIMIT))
+    {
+        TransColour fallback;
+        if ((portal.fallback == nullptr) || !Compute_Pigment(fallback, portal.fallback, isect.IPoint, &isect, &ray, threadData))
+            return false;
+        view = fallback.colour();
+        return true;
+    }
+
+    Vector3d bent = ray.Direction;
+    if (portal.perturb != nullptr)
+    {
+        Vector3d normal = rawnormal;
+        Perturb_Normal(normal, portal.perturb, isect.IPoint, &isect, &ray, threadData);
+        bent += (normal.normalized() - rawnormal) * portal.perturbAmount;
+        // As reflection does with its raw normal: a view bent back out of the surface is mirrored in again.
+        const double out = dot(bent, rawnormal);
+        if (out > -EPSILON)
+            bent -= (2.0 * out + EPSILON) * rawnormal;
+        bent.normalize();
+    }
+
+    Vector3d origin, direction;
+    MTransPoint(origin, isect.IPoint, &portal.map);
+    MTransDirection(direction, bent, &portal.map);
+
+    Ray nray(ray);
+    nray.Origin = origin;
+    nray.Direction = direction.normalized();
+    nray.ResetInteriors();
+    RayInteriorVector containing;
+    FindContainingInteriors(origin, containing);
+    nray.AppendInteriors(containing);
+
+    if (!portal.exit)
+    {
+        PortalNesting nesting(threadData);
+        TraceRay(nray, view, transm, weight, true);
+        return true;
+    }
+
+    // Across the body the view reaches only as far as the ray would have crossed it, then resumes beyond the body.
+    const double chord = portal.Chord(ray, isect.IPoint, threadData);
+    if (chord < 0.0)
+        return false;
+    Vector3d stretch;
+    MTransDirection(stretch, ray.Direction, &portal.map);
+    const double reach = chord * stretch.length();
+    PortalNesting nesting(threadData);
+    if ((reach >= EPSILON) && (TraceRay(nray, view, transm, weight, true, reach, true) < HUGE_VAL))
+        return true;
+    Ray resumed(ray);
+    resumed.Origin = isect.IPoint + ray.Direction * chord;
+    TraceRay(resumed, view, transm, weight, true);
+    if ((reach >= EPSILON) && qualityFlags.media && !nray.IsPhotonRay() && nray.IsHollowRay())
+    {
+        Intersection across;
+        across.Depth = reach;
+        across.Object = nullptr;
+        media.ComputeMedia(sceneData->atmosphere, nray, across, view, transm);
+        if (sceneData->fog != nullptr)
+            ComputeFog(nray, across, view, transm);
+    }
+    return true;
+}
+
+double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth, bool missOpen)
 {
     Intersection bestisect;
     bool found;
@@ -166,6 +339,8 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
         bestisect.Depth = maxDepth;
 
     found = FindIntersection(bestisect, ray, precond, postcond);
+    if (!found && missOpen)
+        return HUGE_VAL;
 
     // Check if we're busy shooting too many radiosity sample rays at an unimportant object
     if (ray.GetTicket().radiosityImportanceQueried >= 0.0)
@@ -207,7 +382,9 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
             ComputeFog(ray, bestisect, colour, transm);
     }
 
-    if(found)
+    if (found && (bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
+        TracePortal(*static_cast<const Portal *>(bestisect.Csg), bestisect, ray, colour, transm, weight);
+    else if(found)
         ComputeTextureColour(bestisect, colour, transm, ray, weight, false);
     else
         ComputeSky(ray, colour, transm);
