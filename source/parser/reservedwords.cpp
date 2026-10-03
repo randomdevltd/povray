@@ -449,6 +449,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { RADIAL_TOKEN,                 "radial" },
     { RADIANS_TOKEN,                "radians" },
     { RADIOSITY_TOKEN,              "radiosity" },
+    { RADIOSITY_SIZE_TOKEN,         "radiosity_size" },
     { RADIUS_TOKEN,                 "radius" },
     { RAINBOW_TOKEN,                "rainbow" },
     { RAMP_WAVE_TOKEN,              "ramp_wave" },

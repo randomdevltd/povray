@@ -463,6 +463,8 @@ void Parser::Run()
     }
 
     sceneData->parsedMaxTraceLevel = Max_Trace_Level;
+    if (sceneData->parsedCamera.No_Radiosity || (sceneData->parsedCamera.Radiosity_Width > 0))
+        Warning("radiosity_size and no_radiosity apply only to a screen's camera; the render's camera ignores them.");
 
     if (sceneData->clocklessAnimation == true)
     {
@@ -1392,6 +1394,14 @@ void Parser::Parse_Camera (Camera& Cam)
                 Compose_Transforms(New.Trans, &Local_Trans);
             END_CASE
 
+            CASE (RADIOSITY_SIZE_TOKEN)
+                Parse_Camera_Radiosity_Size(New);
+            END_CASE
+
+            CASE (NO_RADIOSITY_TOKEN)
+                New.No_Radiosity = true;
+            END_CASE
+
             OTHERWISE
                 UNGET
                 EXIT
@@ -2184,6 +2194,14 @@ bool Parser::Parse_Camera_Mods(Camera& New)
             Parse_End();
         END_CASE
 
+        CASE (RADIOSITY_SIZE_TOKEN)
+            Parse_Camera_Radiosity_Size(New);
+        END_CASE
+
+        CASE (NO_RADIOSITY_TOKEN)
+            New.No_Radiosity = true;
+        END_CASE
+
         OTHERWISE
             UNGET
             return false;
@@ -2191,6 +2209,16 @@ bool Parser::Parse_Camera_Mods(Camera& New)
     END_EXPECT
 
     return true;
+}
+
+void Parser::Parse_Camera_Radiosity_Size(Camera& New)
+{
+    Vector2d size;
+    Parse_UV_Vect(size);
+    if ((size.x() < 1.0) || (size.y() < 1.0) || (size.x() > 65535.0) || (size.y() > 65535.0))
+        Error("radiosity_size needs a width and height from 1 to 65535 pixels.");
+    New.Radiosity_Width = (unsigned int)(size.x() + 0.5);
+    New.Radiosity_Height = (unsigned int)(size.y() + 0.5);
 }
 
 //******************************************************************************

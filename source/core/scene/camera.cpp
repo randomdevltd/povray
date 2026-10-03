@@ -259,6 +259,9 @@ void Camera::Init()
     Face_Distribution_Method = 0;
     Smooth = false;
     Max_Ray_Distance = 0.0;
+    Radiosity_Width = 0;
+    Radiosity_Height = 0;
+    No_Radiosity = false;
 
     for (unsigned int i = 0; i < 3; ++i)
     {
@@ -366,6 +369,9 @@ Camera& Camera::operator=(const Camera& src)
     Face_Distribution_Method = src.Face_Distribution_Method;
     Rays_Per_Pixel = src.Rays_Per_Pixel;
     Max_Ray_Distance = src.Max_Ray_Distance;
+    Radiosity_Width = src.Radiosity_Width;
+    Radiosity_Height = src.Radiosity_Height;
+    No_Radiosity = src.No_Radiosity;
     Mesh_Index = src.Mesh_Index;
     for (int i = 0; i < 10; i++)
     {

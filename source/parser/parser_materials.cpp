@@ -1606,7 +1606,7 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
                     Error("screen needs a camera.");
                 pattern->pProjection = projection;
                 for (const std::shared_ptr<const Camera>& seen : sceneData->screenCameras)
-                    if (seen->SameView(*projection))
+                    if (seen->SameView(*projection) && (seen->No_Radiosity == projection->No_Radiosity))
                     {
                         pattern->pProjection = seen;
                         break;

@@ -296,8 +296,18 @@ RadiosityRecursionSettings* SceneRadiositySettings::GetRecursionSettings(bool fi
     return recSettings;
 }
 
+static RadiosityRecursionSettings* ScaleReuse(RadiosityRecursionSettings* settings, unsigned int depths, double reuse)
+{
+    for (unsigned int depth = 0; depth < depths; depth++)
+    {
+        settings[depth].minReuseFactor *= reuse;
+        settings[depth].maxReuseFactor *= reuse;
+    }
+    return settings;
+}
+
 RadiosityFunction::RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadData *td, const SceneRadiositySettings& rs,
-                                     RadiosityCache& rc, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera) :
+                                     RadiosityCache& rc, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera, double reuse) :
     threadData(td),
     trace(sd, td, GetRadiosityQualityFlags(rs, QualityFlags(9)), cf, media, *this), // TODO FIXME - the only reason we can safely hard-code level-9 quality here is because radiosity happens to be disabled at lower settings
     media(td, &trace, &photonGatherer),
@@ -313,7 +323,7 @@ RadiosityFunction::RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadD
     tileId(0),
     cacheBlockPool(nullptr),
     settings(rs),
-    recursionSettings(rs.GetRecursionSettings(ft))
+    recursionSettings(ScaleReuse(rs.GetRecursionSettings(ft), rs.recursionLimit, reuse))
 {
     if (!isFinalTrace)
         errorBound *= rs.lowErrorFactor;
@@ -546,7 +556,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
     RecursionParameters& param = recursionParameters[ticket.radiosityRecursionDepth];
     const RadiosityRecursionSettings& recSettings = recursionSettings[ticket.radiosityRecursionDepth];
 
-    DBL to_eye = (this->cameraPosition - ipoint).length();
+    DBL to_eye = (((ticket.radiosityEye != nullptr) ? *ticket.radiosityEye : cameraPosition) - ipoint).length();
     DBL reuse_dist_min      = to_eye * recSettings.minReuseFactor;
     DBL maximum_distance    = to_eye * recSettings.maxReuseFactor;
     if (recSettings.maxReuseFactor >= HUGE_VAL)

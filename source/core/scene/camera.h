@@ -121,6 +121,9 @@ public:
     std::vector<unsigned int> V_Xref[10];   // used to speed up location of a matching face for distribution #3
     DBL Max_Ray_Distance;                   // if not 0.0, then maximum distance to look along the ray for an intersection
     // end of mesh camera declarations
+    unsigned int Radiosity_Width;           // [screen cameras] radiosity pretrace frame size; 0 takes the render's
+    unsigned int Radiosity_Height;
+    bool No_Radiosity;                      // [screen cameras] no radiosity pretrace, and its view is shaded without radiosity
 
     Camera();
     Camera(const Camera& src);

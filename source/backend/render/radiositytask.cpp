@@ -88,14 +88,40 @@ RadiosityTask::RadiosityTask(ViewData *vd, DBL ptsz, DBL ptesz, unsigned int pts
 {
 }
 
+RadiosityTask::RadiosityTask(ViewData *vd, std::shared_ptr<ScreenPretrace> sp, size_t seed) :
+    RenderTask(vd, seed, "Radiosity", vd->GetViewId()),
+    trace(vd->GetSceneData(), &sp->camera, GetViewDataPtr(), vd->GetSceneData()->parsedMaxTraceLevel, vd->GetSceneData()->parsedAdcBailout,
+          vd->GetQualityFeatureFlags(), cooperate, media, radiosity, !vd->GetSceneData()->radiositySettings.vainPretrace),
+    cooperate(*this),
+    media(GetViewDataPtr(), &trace, &photonGatherer),
+    radiosity(vd->GetSceneData(), GetViewDataPtr(),
+              vd->GetSceneData()->radiositySettings, vd->GetRadiosityCache(), cooperate, false, sp->camera.Location, sp->reuse),
+    photonGatherer(&vd->GetSceneData()->surfacePhotonMap, vd->GetSceneData()->photonSettings),
+    pretraceStep(RadiosityFunction::PRETRACE_FIRST),
+    pretraceStepCount(sp->steps),
+    pretraceStartSize(sp->startSize),
+    pretraceEndSize(sp->endSize),
+    pretraceCoverage(vd->GetSceneData()->radiositySettings.nearestCountAPT),
+    nominalThreads(0),
+    screen(sp)
+{
+}
+
 RadiosityTask::~RadiosityTask()
 {
 }
 
+bool RadiosityTask::NextBlock(POVRect& rect, unsigned int& serial, ViewData::BlockInfo*& blockInfo)
+{
+    if (screen)
+        return screen->NextBlock(rect, serial, blockInfo);
+    return GetViewData()->GetNextRectangle(rect, serial, blockInfo, nominalThreads);
+}
+
 void RadiosityTask::Run()
 {
-    DBL width = GetViewData()->GetWidth();
-    DBL height = GetViewData()->GetHeight();
+    DBL width = screen ? screen->width : GetViewData()->GetWidth();
+    DBL height = screen ? screen->height : GetViewData()->GetHeight();
 
     POVRect rect;
     std::vector<Vector2d> pixelpositions;
@@ -106,7 +132,7 @@ void RadiosityTask::Run()
 
     ViewData::BlockInfo* pInfo;
 
-    while(GetViewData()->GetNextRectangle(rect, serial, pInfo, nominalThreads) == true)
+    while(NextBlock(rect, serial, pInfo))
     {
         RadiosityBlockInfo* pBlockInfo = dynamic_cast<RadiosityBlockInfo*>(pInfo);
         if (!pBlockInfo)
@@ -252,11 +278,54 @@ void RadiosityTask::Run()
         }
 
         GetViewDataPtr()->AfterTile();
-        if(pixelpositions.size() > 0)
+        if (screen)
+            screen->DoneBlock(serial, pBlockInfo);
+        else if(pixelpositions.size() > 0)
             GetViewData()->CompletedRectangle(rect, serial, pixelpositions, pixelcolors, int(ceil(pretraceSize)), false, false, progressWeight, pBlockInfo);
         else
             GetViewData()->CompletedRectangle(rect, serial, progressWeight, pBlockInfo);
     }
+}
+
+ScreenPretrace::ScreenPretrace(const Camera& cam, unsigned int w, unsigned int h, DBL start, DBL end, unsigned int n, DBL r,
+                               unsigned int block) :
+    camera(cam), width(w), height(h), steps(n), startSize(start), endSize(end), reuse(r),
+    blockSize(max(1u, block)), blocksX((w + blockSize - 1) / blockSize), blocksY((h + blockSize - 1) / blockSize), next(0),
+    state(blocksX * blocksY, kFresh), pending(blocksX * blocksY, nullptr)
+{
+}
+
+ScreenPretrace::~ScreenPretrace()
+{
+    for (ViewData::BlockInfo *blockInfo : pending)
+        delete blockInfo;
+}
+
+bool ScreenPretrace::NextBlock(POVRect& rect, unsigned int& serial, ViewData::BlockInfo*& blockInfo)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    const unsigned int count = state.size();
+    for (unsigned int tried = 0; tried < count; tried++)
+    {
+        serial = next;
+        next = (next + 1) % count;
+        if ((state[serial] != kFresh) && (state[serial] != kWaiting))
+            continue;
+        state[serial] = kBusy;
+        blockInfo = pending[serial];
+        pending[serial] = nullptr;
+        const unsigned int x = serial % blocksX, y = serial / blocksX;
+        rect = POVRect(x * blockSize, y * blockSize, min((x + 1) * blockSize, width) - 1, min((y + 1) * blockSize, height) - 1);
+        return true;
+    }
+    return false;
+}
+
+void ScreenPretrace::DoneBlock(unsigned int serial, ViewData::BlockInfo* blockInfo)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    state[serial] = (blockInfo != nullptr) ? kWaiting : kDone;
+    pending[serial] = blockInfo;
 }
 
 void RadiosityTask::Stopped()

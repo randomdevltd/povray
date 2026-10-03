@@ -178,11 +178,14 @@ struct TraceTicket final
     /// share of its radiosity sample that a ray below a gather ray carries, for Russian roulette
     double radiosityShare;
 
+    /// eye whose distance spaces radiosity samples; null takes the radiosity functor's camera
+    const Vector3d *radiosityEye;
+
     TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
                 float riq = -1.0, float rq = 1.0):
         traceLevel(0), maxAllowedTraceLevel(mtl), maxFoundTraceLevel(0), adcBailout(adcb), alphaBackground(ab),
         radiosityRecursionDepth(rrd), subsurfaceRecursionDepth(ssrd), radiosityImportanceQueried(riq),
-        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0)
+        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0), radiosityEye(nullptr)
     {}
 };
 

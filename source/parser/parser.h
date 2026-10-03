@@ -811,6 +811,7 @@ class Parser final
         void Parse_User_Defined_Camera (Camera& Cam);
         void Parse_Camera(Camera& Cam);
         bool Parse_Camera_Mods(Camera& Cam);
+        void Parse_Camera_Radiosity_Size(Camera& New);
         void Parse_Frame();
 
         void Link(ObjectPtr New_Object, std::vector<ObjectPtr>& Object_List_Root);
