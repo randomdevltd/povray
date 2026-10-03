@@ -195,6 +195,12 @@
   <td><div class="divh4"><a title="3.2.8.8.5" href="#r3_2_8_8_5">Common Properties</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.2.8.8.6" href="#r3_2_8_8_6">Sampling Method 4</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh4"><a title="3.2.8.8.7" href="#r3_2_8_8_7">Texture Filtering and Comparing the Methods</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.2.8.9" href="#r3_2_8_9">Radiosity Options</a></div></td>
 </tr>
 <tr>
@@ -205,6 +211,9 @@
 </tr>
 <tr>
   <td><div class="divh4"><a title="3.2.8.9.3" href="#r3_2_8_9_3">Radiosity Vain Pretrace</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.2.8.10" href="#r3_2_8_10">Progressive Rendering</a></div></td>
 </tr>
 <tr>
   <td><div class="divh1">&nbsp;</div></td>
@@ -3207,12 +3216,22 @@ specify <code>Split_Unions=on</code> or use <code> +SU</code>. The default is
 
 <tr>
 <td><code>Sampling_Method=</code>n</td>
-<td>Sets aa-sampling method (either <code>1</code>, <code>2</code> or <code>3</code> the later is <font class="New">New</font> in version 3.8 )</td>
+<td>Sets aa-sampling method (either <code>1</code>, <code>2</code>, <code>3</code> or <code>4</code>; <code>3</code> is <font class="New">New</font> in version 3.8, <code>4</code> needs <code>+PR</code>, see <a href="#r3_2_8_10">Progressive Rendering</a>)</td>
 </tr>
 
 <tr>
 <td><code>+AM</code>n</td>
 <td>Same as <code>Sampling_Method=</code>n</td>
+</tr>
+
+<tr>
+<td><code>Antialias_Budget=</code>n.n</td>
+<td>Method 4: the extra samples to spend, per pixel on average (<code>1.0</code> is one extra sample per pixel)</td>
+</tr>
+
+<tr>
+<td><code>+AB</code>n.n</td>
+<td>Same as <code>Antialias_Budget=</code>n.n</td>
 </tr>
 
 <tr>
@@ -3295,7 +3314,7 @@ set off</td>
 <p>The ray-tracing process is in effect a discrete, digital sampling of the image with typically one sample per pixel. Such sampling can introduce a variety of errors. This includes a jagged, stair-step appearance in sloping or curved lines, a broken look for thin lines, moir&eacute; patterns of interference and lost detail or missing objects, which are so small they reside between adjacent pixels. The effect that is responsible for those errors is called <em>aliasing</em>.</p>
 <p>Anti-aliasing is any technique used to help eliminate such errors or to reduce the negative impact they have on the image. In general, anti-aliasing makes the ray-traced image look <em> smoother</em>. The <code>Antialias=on</code> option or <code>+A</code> option turns on POV-Ray's anti-aliasing system.</p>
 <p>When anti-aliasing is turned on, POV-Ray attempts to reduce the errors by shooting more than one viewing ray into each pixel and averaging the results to determine the pixel's apparent color. This technique is called super-sampling and can improve the appearance of the final image but it drastically increases the time required to render a scene since many more calculations have to be done.</p>
-<p>POV-Ray gives you the option to use one of three sampling methods. Two alternate super-sampling methods and one over-sampling method. The <code>Sampling_Method=</code><em>n</em> option or <code>+AM</code><em>n</em> option selects either type <code>1</code>, type <code>2</code> or type <code>3</code>. Selecting one of those methods does not turn on anti-aliasing. This has to be done by using the <code>+A</code> command line option or <code>Antialias=on</code> option.</p>
+<p>POV-Ray gives you the option to use one of four sampling methods. Two alternate super-sampling methods, one over-sampling method and one budgeted edge-fitting method. The <code>Sampling_Method=</code><em>n</em> option or <code>+AM</code><em>n</em> option selects type <code>1</code>, <code>2</code>, <code>3</code> or <code>4</code>. Selecting one of those methods does not turn on anti-aliasing. This has to be done by using the <code>+A</code> command line option or <code>Antialias=on</code> option.</p>
 
 </div>
 <a name="r3_2_8_8_1"></a>
@@ -3305,6 +3324,7 @@ set off</td>
   <li>Type 1: an adaptive non-recursive super-sampling method. It is <em>adaptive</em> because not every pixel is super-sampled</li>
   <li>Type 2: an adaptive <em>and</em> recursive super-sampling method. It is <em>recursive</em> because the pixel is sub-divided recursively. The <em>adaptive</em> nature of type 2 is the variable recursion depth</li>
   <li>Type 3: an adaptive non-recursive stochastic oversampling method. The <em>adaptive</em> nature of type 3 is <em>confidence</em> and <em>threshold</em></li>
+  <li>Type 4: a budgeted method that fits edges to the samples already traced and spends a fixed number of extra samples where they help most. It needs <a href="#r3_2_8_10">progressive rendering</a> (<code>+PR</code>)</li>
 </ul>
 
 </div>
@@ -3425,6 +3445,84 @@ jittered area lights, subsurface light transport, or micro-normals based blurred
 <p class="Note"><strong>Note:</strong> The <code><a href="r3_4.html#r3_4_2_2_3">mesh_camera</a></code> feature added in version 3.7 also makes extreme super-sampling possible.  See the distribution file <code>~scenes/camera/mesh_camera/ess/README.txt</code> for additional information.</p>
 
 </div>
+<a name="r3_2_8_8_6"></a>
+<div class="content-level-h5" contains="Sampling Method 4" id="r3_2_8_8_6">
+<h5>3.2.8.8.6 Sampling Method 4</h5>
+<p><code>+AM4</code> spends a fixed budget of extra samples where they help most, instead of super-sampling every pixel that differs from a neighbour. It is used as <code>+PR +AM4 +A0.03 +AB1</code>. <code>Antialias_Budget=</code><em>n.n</em> or <code>+AB</code><em>n.n</em> is the average number of extra samples per pixel; it is a target, so the last pass may overshoot it. <code>+A</code> sets the colour difference, in OKLab, that counts as a spike, a thin line or a noisy pixel (about 0.02 is just noticeable), and <code>+R</code> limits how deeply a noisy pixel is bisected. It requires <code>+PR</code> and is refused without it, because it is built from extra passes of the <a href="#r3_2_8_10">progressive rendering</a> and needs its whole-frame first stage (see <a href="#r3_2_8_10">3.2.8.10</a>).</p>
+<p>The render runs in these passes, each over the whole frame:</p>
+<ol>
+  <li><em>Centre samples.</em> One ray per pixel over the whole frame, which is the last level of a <a href="#r3_2_8_10">progressive rendering</a>.</li>
+  <li><em>Fit.</em> Without tracing a ray, edges are fitted to the centre samples: contours are followed through the pixels and fitted with straight runs, or with parabolas where no line fits; lines one or two pixels wide are fitted as thin lines; isolated outlier pixels (spikes) are marked. This pass runs on one thread, so the image does not depend on the thread count.</li>
+  <li><em>Probes.</em> Extra samples are traced only where a fitted edge is still uncertain, in rounds, best candidates first.</li>
+  <li><em>Noise.</em> Pixels that no fit explains, such as noisy reflections or grain, are bisected or averaged with the remaining budget, spikes first.</li>
+  <li><em>Resolve.</em> Each pixel keeps its own centre sample and gains the fit's coverage correction, limited to the local colour range. Because the pixel's own sample is kept, per-pixel random grain survives instead of being smoothed.</li>
+</ol>
+<p>Nothing in the picture changes during passes 2 to 4, so a snapshot of a running render shows the plain one-sample image until the resolve.</p>
+</div>
+<a name="r3_2_8_8_7"></a>
+<div class="content-level-h5" contains="Texture Filtering and Comparing the Methods" id="r3_2_8_8_7">
+<h5>3.2.8.8.7 Texture Filtering and Comparing the Methods</h5>
+<p>Anti-aliasing samples the image; <em>texture filtering</em> (<code>+TF</code>, see <a href="#r3_2_8_3">Quality Settings</a>) instead averages each pigment over the area a pixel covers on the surface, using ray differentials, so a pattern that runs off to the horizon is smoothed without extra rays. It works with every sampling method. With method 4 the filter takes care of pigment edges on one object, and the fit is left with silhouette, shadow and highlight edges.</p>
+<p>The picture below renders the stock <code>Checkered_plane.pov</code> (a polished sphere on a checkerboard) at 400x300 and shows three details, enlarged three times, for five settings.</p>
+<table class="centered" width="1074px" cellpadding="0" cellspacing="10">
+  <tr>
+    <td><img class="center" width="1074px" src="images/aa_methods_compare.png"></td>
+  </tr>
+  <tr>
+    <td>
+      <p class="caption">No anti-aliasing, <code>+TF</code> alone, method 2 (<code>+A0.1 +AM2 +R3</code>), method 4 (<code>+PR +A0.03 +AM4 +AB1 +R3</code>) and method 4 with <code>+TF</code>.</p>
+    </td>
+  </tr>
+</table>
+<p>Texture filtering alone removes the checker aliasing, both on the plane and in the reflection, which the sampling methods only partly do at this budget. Methods 2 and 4 both smooth the geometric edges. Method 4 with <code>+TF</code> gives the cleanest result of the five.</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+  <tr><th>Setting</th><th>CPU seconds, mirror sphere 400x300</th></tr>
+  <tr><td>No anti-aliasing</td><td>0.22</td></tr>
+  <tr><td><code>+TF</code> only</td><td>0.30</td></tr>
+  <tr><td>Method 2 (<code>+A0.1 +AM2 +R3</code>)</td><td>0.42</td></tr>
+  <tr><td>Method 4 (<code>+AB1</code>)</td><td>4.5</td></tr>
+  <tr><td>Method 4 (<code>+AB1</code>) with <code>+TF</code></td><td>5.1</td></tr>
+</table>
+<p>This scene is so cheap to trace that method 4's planning, which is single-threaded and costs a few CPU seconds per 100,000 pixels, dominates. Method 4 pays off where rays are expensive. On three of the busiest stock scenes at 1280x720 it costs a fraction of method 2:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+  <tr><th>CPU seconds, 1280x720</th><th>No AA</th><th>Method 2 (<code>+A0.1 +AM2 +R3</code>)</th><th>Method 4 <code>+AB0.25</code></th><th>Method 4 <code>+AB1</code></th></tr>
+  <tr><td>chess2</td><td>120</td><td>735</td><td>207</td><td>338</td></tr>
+  <tr><td>benchmark</td><td>246</td><td>1933</td><td>310</td><td>520</td></tr>
+  <tr><td>balcony</td><td>39</td><td>240</td><td>64</td><td>84</td></tr>
+</table>
+<p>Method 4 needs 16 to 28 percent of method 2's time at <code>+AB0.25</code> and 27 to 46 percent at <code>+AB1</code> here, with silhouettes and curves as smooth. It is weaker on one-pixel lines that cross a changing background, and on noisy reflections, which stay partly speckled at small budgets.</p>
+<p>The three pictures below put the results side by side: an unscaled crop of the frame rendered with method 2 and with method 4 at <code>+AB1</code> (shown pixel for pixel, so the anti-aliasing is not blurred by resizing), and below it two details, enlarged three times without smoothing, from each. The CPU times are for the whole 1280x720 frame.</p>
+<table class="centered" width="978px" cellpadding="0" cellspacing="10">
+  <tr>
+    <td><img class="center" width="978px" src="images/aa_stock_chess2.png"></td>
+  </tr>
+  <tr>
+    <td>
+      <p class="caption">chess2: gold crown and pawn base. Both settings draw the edges alike; method 4 keeps the fine grain of the out-of-focus areas that method 2 smooths.</p>
+    </td>
+  </tr>
+</table>
+<table class="centered" width="978px" cellpadding="0" cellspacing="10">
+  <tr>
+    <td><img class="center" width="978px" src="images/aa_stock_benchmark.png"></td>
+  </tr>
+  <tr>
+    <td>
+      <p class="caption">benchmark: checker dome edge against the sky and a mountain peak. The edges are as smooth as method 2's, at a quarter of the time.</p>
+    </td>
+  </tr>
+</table>
+<table class="centered" width="978px" cellpadding="0" cellspacing="10">
+  <tr>
+    <td><img class="center" width="978px" src="images/aa_stock_balcony.png"></td>
+  </tr>
+  <tr>
+    <td>
+      <p class="caption">balcony: cliff edge and the tablecloth hem. Silhouettes match; method 4 keeps the cloth weave, but its sea comes out sparklier than method 2's.</p>
+    </td>
+  </tr>
+</table>
+</div>
 <a name="r3_2_8_9"></a>
 <div class="content-level-h4" contains="Radiosity Options" id="r3_2_8_9">
 <h4>3.2.8.9 Radiosity Options</h4>
@@ -3464,6 +3562,27 @@ Radiosity_Vain_Pretrace=bool	turns vain pretrace on/off
 <p class="Note"><strong>Note:</strong> With vain pretrace off, preview will look remarkably odd during the radiosity pretrace phase; this is normal, and no reason to be alarmed.</p>
 <p>At the moment, turning vain pretrace off will affect only classic lighting computations (diffuse lighting, highlights and iridescence); other features expendable during pretrace may follow in future versions.</p></div>
 
+</div>
+<a name="r3_2_8_10"></a>
+<div class="content-level-h4" contains="Progressive Rendering" id="r3_2_8_10">
+<h4>3.2.8.10 Progressive Rendering</h4>
+<table class="centered" width="622px" cellpadding="0" cellspacing="10">
+<tr>
+<td width="30%"><code>Progressive_Render=</code>bool</td>
+<td width="70%">Turns progressive rendering on/off</td>
+</tr>
+<tr>
+<td><code>+PR</code></td>
+<td>Same as <code>Progressive_Render=on</code></td>
+</tr>
+<tr>
+<td><code>-PR</code></td>
+<td>Same as <code>Progressive_Render=off</code></td>
+</tr>
+</table>
+<p>Progressive rendering replaces the mosaic preview. The whole frame is rendered at doubling resolution, first with large blocks and then finer, down to every pixel, and each pixel is traced once. The picture is therefore always a complete best-so-far image rather than a partly finished one, which makes it useful for watching a long render and for taking a snapshot of it while it runs. A render stopped part way continues with <code>+C</code> from the level and block where it stopped, without a new radiosity pretrace.</p>
+<p>Anti-aliasing runs after the last level, for sampling methods 1, 2 and 4; method 3 is not available with progressive rendering. Any <code>+A</code> or <code>+R</code> value given then applies to that anti-aliasing pass. The samples of the last level are kept, one per pixel (16 bytes) for the whole frame.</p>
+<p><a href="#r3_2_8_8_6">Sampling method 4</a> needs this: it fits edges across the whole image from the centre sample of every pixel, and plans where to spend its budget over the whole frame. A normal render works one block at a time and compares a pixel only with the pixels before it, so it never has all the samples at once. Progressive rendering supplies them, and its sync points between levels are where method 4 plans. Nothing in method 4 depends on watching the picture progress; it requires <code>+PR</code> because it is built on this machinery.</p>
 </div>
 
 </div>
