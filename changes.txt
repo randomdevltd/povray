@@ -108,6 +108,10 @@ New Features
   - The parser now checks for proper balancing of `#end` directives, braces,
     parentheses etc. within each include file, and will report any imbalance
     via warnings or, in case of `#end`, outright errors.
+  - The `screen` pigment pattern shows what a second camera sees, traced while
+    the surface is shaded, and the `portal` object leads rays entering its body
+    to somewhere else in the scene, with lights shining through it. Both are
+    described in the "Portals and Screens" chapter of the reference.
 
 Performance Improvements
 ------------------------

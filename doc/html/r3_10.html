@@ -1,0 +1,1029 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+<!--  This file copyright Persistence of Vision Raytracer Pty. Ltd. 2009-2011  -->
+
+<html lang="en">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<title>Reference Section 10</title>
+<link rel="StyleSheet" href="povray.css" type="text/css">
+<link rel="shortcut icon" href="favicon.ico">
+
+<!--  NOTE: In order to help users find information about POV-Ray using web      -->
+<!--  search engines, we ask that you *not* let them index documentation         -->
+<!--  mirrors because effectively, when searching, users will get hundreds of    -->
+<!--  results containing the same information! For this reason, these meta tags  -->
+<!--  below disable archiving of this page by search engines.                    -->
+
+<meta name="robots" content="noarchive">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+</head>
+<body>
+
+<div class="Page">
+
+<!-- NavPanel Begin -->
+<div class="NavPanel">
+<table class="NavTable">
+<tr>
+  <td class="FixedPanelHeading"><a title="3.10" href="#r3_10">Portals and Screens</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.10.1" href="#r3_10_1">First Principles</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.1.1" href="#r3_10_1_1">A Screen Without Screens</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.1.2" href="#r3_10_1_2">A Portal Without Portals</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.1.3" href="#r3_10_1_3">Tracing the View Live</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.1.4" href="#r3_10_1_4">Rays and Light</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.10.2" href="#r3_10_2">The Screen Pattern</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.2.1" href="#r3_10_2_1">The Window</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.2.2" href="#r3_10_2_2">perturb</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.2.3" href="#r3_10_2_3">Nesting, max_trace_level and fallback</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.2.4" href="#r3_10_2_4">Shadows, Photons and Where a Screen Is Traced</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.2.5" href="#r3_10_2_5">Screen Cameras and Radiosity</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.2.6" href="#r3_10_2_6">Shared Views</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.10.3" href="#r3_10_3">The Portal Object</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.1" href="#r3_10_3_1">The Body and the Map</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.2" href="#r3_10_3_2">Mouths and Sides</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.3" href="#r3_10_3_3">far, near and far off</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.4" href="#r3_10_3_4">pigment</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.5" href="#r3_10_3_5">perturb</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.6" href="#r3_10_3_6">exit</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.7" href="#r3_10_3_7">Nesting and fallback</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.8" href="#r3_10_3_8">Lights Through Portals</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.9" href="#r3_10_3_9">Straight Light and Shadows</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.10" href="#r3_10_3_10">Object Modifiers and Placement</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.10.4" href="#r3_10_4">Global Settings and Options</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.10.5" href="#r3_10_5">Use Cases</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.1" href="#r3_10_5_1">A Television</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.2" href="#r3_10_5_2">A Wall of Security Cameras</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.3" href="#r3_10_5_3">Video Feedback</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.4" href="#r3_10_5_4">A Magic Book</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.5" href="#r3_10_5_5">A Doorway Pair</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.6" href="#r3_10_5_6">A Wormhole Tunnel</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.7" href="#r3_10_5_7">A Miniature World in a Glass Jar</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.8" href="#r3_10_5_8">A Candle Through a Doorway</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.9" href="#r3_10_5_9">A Halftone Poster</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.10.6" href="#r3_10_6">Errors, Warnings and Limits</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.6.1" href="#r3_10_6_1">Errors</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.6.2" href="#r3_10_6_2">Warnings</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.6.3" href="#r3_10_6_3">Known Limits</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.6.4" href="#r3_10_6_4">The Images in This Chapter</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+</table>
+</div>
+<!-- NavPanel End -->
+
+<div class="Content">
+<table class="HeaderFooter" width="100%">
+<tr>
+  <td colspan=5 align="left" class="HeaderFooter">
+    POV-Ray for Unix <strong class="HeaderFooter">version 3.8</strong>
+  </td>
+</tr>
+<tr >
+  <td colspan=5>
+    <hr align="right" width="70%">
+  </td>
+</tr>
+<tr>
+  <td width="30%"></td>
+  <td class="NavBar"><a href="index.html" title="The Front Door">Home</a></td>
+  <td class="NavBar"><a href="u1_0.html" title="Unix Table of Contents">POV-Ray for Unix</a></td>
+  <td class="NavBar"><a href="t2_0.html" title="Tutorial Table of Contents">POV-Ray Tutorial</a></td>
+  <td class="NavBar"><a href="r3_0.html" title="Reference Table of Contents">POV-Ray Reference</a></td>
+</tr>
+</table>
+
+<a name="r3_10"></a>
+<div class="content-level-h2" contains="Portals and Screens" id="r3_10">
+<h2>3.10 Portals and Screens</h2>
+<p>A <code>screen</code> is a pigment that shows what a camera sees. A <code>portal</code> is an object whose body leads somewhere else in the scene: a ray that enters it carries on from another place. Both trace their view while the render is running, as part of the ray that met them, so a television can show the room it stands in, a doorway can open onto a coast a thousand units away, and a glass jar can hold a small copy of the room around it.</p>
+<p>This chapter starts with the problems these two features solve and how they were solved before, then describes every option of the <code>screen</code> pattern and the <code>portal</code> object with its default and the messages it can raise, the global settings that change how they behave, a set of use cases, and the errors, warnings and known limits.</p>
+<p>Quick Links:</p>
+<ul>
+  <li><a href="r3_10.html#r3_10_1">First Principles</a></li>
+  <li><a href="r3_10.html#r3_10_2">The Screen Pattern</a></li>
+  <li><a href="r3_10.html#r3_10_3">The Portal Object</a></li>
+  <li><a href="r3_10.html#r3_10_4">Global Settings and Options</a></li>
+  <li><a href="r3_10.html#r3_10_5">Use Cases</a></li>
+  <li><a href="r3_10.html#r3_10_6">Errors, Warnings and Limits</a></li>
+</ul></div>
+
+<a name="r3_10_1"></a>
+<div class="content-level-h3" contains="First Principles" id="r3_10_1">
+<h3>3.10.1 First Principles</h3>
+<p>This section says what a screen and a portal are for and what they replace. The syntax is in <a href="r3_10.html#r3_10_2">The Screen Pattern</a> and <a href="r3_10.html#r3_10_3">The Portal Object</a>.</p>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_o_intro.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Left: a set whose screen shows a second camera's view of two balls behind the render's camera. Right: a doorway that is a portal onto a sea at sunset, far away in the same scene.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_1_1"></a>
+<div class="content-level-h4" contains="A Screen Without Screens" id="r3_10_1_1">
+<h4>3.10.1.1 A Screen Without Screens</h4>
+<p>Before the <code>screen</code> pattern, a television, a monitor or a picture of another part of the scene took two renders. The first renders the scene from the second camera and saves the image to a file; the second render maps that file onto the surface with <code>image_map</code>:</p>
+<pre>
+// Render 1, saved as tv.png: the scene from the set's camera.
+camera { location &lt;0, 1.3, -7.6&gt; look_at &lt;0, 0.75, -11.5&gt; right x * 4 / 3 angle 55 }
+
+// Render 2: the scene from the render's camera, with the picture on the set.
+box { &lt;0, 0, 0&gt;, &lt;1, 1, 0.01&gt; pigment { image_map { png "tv.png" } } scale &lt;1.5, 1.125, 1&gt; }
+</pre>
+<p>That works for one still picture, and it costs:</p>
+<ul>
+  <li><strong>Two renders and a file between them.</strong> Every change to the scene means rendering the picture again before the scene that shows it, and the two scene files have to agree.</li>
+  <li><strong>A fixed resolution.</strong> The picture has the pixels it was rendered with. Close to the screen they show as blocks; far away they are wasted work and alias.</li>
+  <li><strong>A stale picture.</strong> In an animation the picture is out of date as soon as anything moves, unless every frame is rendered twice.</li>
+  <li><strong>No screen that shows itself.</strong> A set that is in its own camera's view (video feedback) needs the picture of the scene that contains the picture: you have to render, map, and render again, once for every level of nesting.</li>
+  <li><strong>Different light.</strong> The picture was lit by another render: its radiosity, its sampling and its noise are those of that render, not the one it appears in.</li>
+</ul></div>
+
+<a name="r3_10_1_2"></a>
+<div class="content-level-h4" contains="A Portal Without Portals" id="r3_10_1_2">
+<h4>3.10.1.2 A Portal Without Portals</h4>
+<p>There has been no direct way to make an opening in one place show, and lead to, another. The usual substitutes are:</p>
+<ul>
+  <li><strong>Duplicated geometry.</strong> Build the far room again behind the doorway, transformed to line up with it, and hide it everywhere else. The copy doubles the parse and the memory, and anything that changes in one copy has to be changed in the other.</li>
+  <li><strong>Mirrors and CSG tricks.</strong> A mirror shows a reflected copy, never a different place, and the view comes back toward the viewer. Cutting a window into one object and placing another scene behind it works only where the two never overlap in space.</li>
+  <li><strong>A screen.</strong> A picture of the far place shows it, but a picture is flat: it does not change as the viewer moves, and nothing can be seen through it at an angle.</li>
+</ul></div>
+
+<a name="r3_10_1_3"></a>
+<div class="content-level-h4" contains="Tracing the View Live" id="r3_10_1_3">
+<h4>3.10.1.3 Tracing the View Live</h4>
+<p>Both features trace their view when the ray that meets them is shaded, inside the same render:</p>
+<ul>
+  <li><strong>One render.</strong> There is no intermediate file and no second scene. Moving anything changes every view of it in the same frame.</li>
+  <li><strong>The resolution follows the render.</strong> A screen is looked up exactly where each sample of the render meets it, so anti-aliasing refines its picture where the render's own pixels need it, and nothing is resampled from a fixed image.</li>
+  <li><strong>Nesting.</strong> A view can contain the thing that shows it: a set in its own camera's view, two doorways facing each other, a jar holding a copy of the room that holds the jar. Each nesting is limited, and you choose what is shown at the limit.</li>
+  <li><strong>One light.</strong> A view is lit by the same lights and the same radiosity cache as the rest of the render.</li>
+  <li><strong>A portal is one object and one map.</strong> A doorway, a window onto another world, a miniature in a glass jar or a wormhole is the shape of the opening and a transformation saying where it leads; nothing is copied.</li>
+</ul></div>
+
+<a name="r3_10_1_4"></a>
+<div class="content-level-h4" contains="Rays and Light" id="r3_10_1_4">
+<h4>3.10.1.4 Rays and Light</h4>
+<p>It helps to think of both features in terms of rays rather than of walking through a door.</p>
+<ul>
+  <li><strong>A screen</strong> is a picture. When a ray meets a surface whose pigment is a screen, POV-Ray looks up the point's position in the screen's unit square, shoots a ray from the screen's camera through that point of the camera's frame, and uses the colour it brings back. The incoming ray's direction does not matter: a screen looks the same from any angle, like a painted picture.</li>
+  <li><strong>A portal</strong> is a way through. When a ray enters an open side of a portal's body at a point, it continues from the <em>mapped</em> point, in the mapped direction, as though space were glued together at the mouth. What the ray then hits is what you see in the mouth, so the view changes with the viewer's position, as through a real opening.</li>
+  <li><strong>Light follows sight.</strong> A point that can see a lamp through a portal is lit by that lamp through the portal, and light that would enter a portal comes out somewhere else, so the mouth casts a shadow where it was. A screen is a picture: it lights nothing around it, except through radiosity as any glowing surface does, and it stops light like any opaque surface.</li>
+</ul></div>
+
+<a name="r3_10_2"></a>
+<div class="content-level-h3" contains="The Screen Pattern" id="r3_10_2">
+<h3>3.10.2 The Screen Pattern</h3>
+<p>The <code>screen</code> pattern is a pigment pattern whose colour at a point is what a camera sees at the matching point of its frame. Its syntax is:</p>
+<pre>
+pigment {
+  screen {
+    camera { CAMERA_ITEMS... }
+    [perturb { PIGMENT_BODY }]
+    [fallback { PIGMENT_BODY }]
+    [max_trace_level LEVEL]
+  }
+  [PIGMENT_MODIFIERS...]
+}
+</pre>
+<table width="100%" class="option-list">
+<tr><td><code>camera { }</code></td><td>Required. The camera whose view is shown: any camera a scene can have except a <code>mesh_camera</code>, written out or as a declared camera with more items after it, such as <code>camera { View no_radiosity }</code>. Focal blur and a camera <code>normal</code> work as they do for the render's camera. It is not the render's camera and does not replace it. Two screen-only camera items, <code>radiosity_size</code> and <code>no_radiosity</code>, are described in <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>.</td></tr>
+<tr><td><code>perturb { }</code></td><td>Optional, none by default. A pigment whose red and green, at each point, are added to the point's x and y before the view is looked up, so the picture is shifted, bent or distorted. Blue, filter and transmit are ignored.</td></tr>
+<tr><td><code>fallback { }</code></td><td>Optional. The pigment shown, at the point's own position, where the view cannot be traced because views are nested too deep. Without one the screen is black there.</td></tr>
+<tr><td><code>max_trace_level</code></td><td>Optional, from 1 to 256; by default the scene's <code>max_trace_level</code>. How many screen views may be open around this one before it shows its fallback instead.</td></tr>
+</table>
+<p>A <code>screen</code> is an ordinary pigment in every other way: it can be one layer of a layered texture under a glossy clear layer, be scaled, rotated, warped and turbulated, and appear inside a <code>pigment_map</code>, an <code>average</code> or a <code>pigment_pattern</code>. A screen is usually given <code>finish { emission 1 diffuse 0 }</code>, so that its picture shows as it was traced rather than being lit again by the scene's lights.</p>
+<p><code>screen</code>, <code>perturb</code> and <code>fallback</code> are reserved words; <code>screen</code> may appear only in a pigment.</p></div>
+
+<a name="r3_10_2_1"></a>
+<div class="content-level-h4" contains="The Window" id="r3_10_2_1">
+<h4>3.10.2.1 The Window</h4>
+<p>The view is looked up at the point's x and y, as <code>image_map</code> is: x runs from 0 at the left edge of the camera's frame to 1 at its right edge, and y from 0 at the bottom to 1 at the top. The point's z is ignored. Scale and translate the pigment to place this unit square, the <em>window</em>, on the surface; the camera's frame is stretched to fill it, so give the camera the same shape as the window. A camera's <code>right</code> vector follows the output image's aspect ratio unless it is written, so for a window <code>W</code> wide and <code>H</code> high write <code>right x * W / H</code> and <code>up y</code>.</p>
+<p>Outside the window the screen is clear: it returns a fully transmitting colour there, as an <code>image_map</code> with <code>once</code> does outside its image, and whatever is under it shows through.</p>
+<p>Inside the window the picture is opaque. The view's background is opaque even under <code>+UA</code>, when the render's own background is transparent, so a screen showing only sky still hides what is behind it.</p>
+<pre>
+box
+{
+    &lt;-1.2, 0, 0&gt;, &lt;1.2, 1.5, 0.01&gt;
+    pigment
+    {
+        screen { camera { location &lt;100, 1.2, -5&gt; look_at &lt;100, 0.8, 0&gt; right x * 4 / 3 angle 40 } }
+        scale &lt;1.2, 0.9, 1&gt; translate &lt;-0.6, 0.3, 0&gt;
+    }
+    finish { emission 1 diffuse 0 }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td style="background: repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 16px 16px">
+    <img class="center" width="320px" src="images/portal_r_screen_window.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Rendered with <code>+UA</code> (the checkerboard is the page behind the image). The panel is outlined; only its middle is the window. The picture, sky and all, is opaque; outside the window the panel is clear, so the ring behind it and the transparent background show.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_2_2"></a>
+<div class="content-level-h4" contains="perturb" id="r3_10_2_2">
+<h4>3.10.2.2 perturb</h4>
+<p>The <code>perturb</code> pigment is evaluated in the window's own coordinates, where the window runs from 0 to 1 whatever the screen pigment's transformations, and its red and green are added to x and y. Values are in window units: 0.1 moves the lookup a tenth of the window. A smooth pigment bends the picture, a noisy one breaks it up. The example below shifts each row sideways by a sine of its height, like a set losing its tracking; <a href="r3_10.html#r3_10_5_1">A Television</a> uses a cubic function of the distance from the centre for the barrel distortion of a curved tube.</p>
+<pre>
+screen
+{
+    camera { View }
+    perturb { user_defined { function { 0.03 * sin(y * 60) }, function { 0 }, function { 0 } } }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_screen_perturb.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">The same view on two sets; the right one's perturb shifts each row of the picture sideways.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_2_3"></a>
+<div class="content-level-h4" contains="Nesting, max_trace_level and fallback" id="r3_10_2_3">
+<h4>3.10.2.3 Nesting, max_trace_level and fallback</h4>
+<p>A screen's view may show a surface with a screen on it, including the screen itself. Every view traced inside another view is one level of nesting. A screen traces its view only while fewer than its <code>max_trace_level</code> screen views are already open around it, counting views of every screen; past that it shows its <code>fallback</code> pigment, or black without one. The limit is checked against the screen being looked at, so screens with different limits can share a scene.</p>
+<p>The fallback is looked up at the point's window position, so a pattern in it fills the innermost picture. A noisy pigment looks like a set with no signal:</p>
+<pre>
+#declare View = camera { location &lt;0, 0.95, -4.4&gt; look_at &lt;0, 0.8, 0&gt; right x * 4 / 3 angle 50 };
+camera { View }
+#declare Static = pigment { cells scale &lt;1 / 96, 1 / 72, 1&gt; color_map { [0 rgb 0.05] [1 rgb 0.9] } };
+object { Panel(1.6, 1.2, pigment { screen { camera { View } max_trace_level 2 } }, &lt;0.25, 0.35, 0.6&gt;) translate &lt;-0.95, 0.2, 0&gt; }
+object { Panel(1.6, 1.2, pigment { screen { camera { View } max_trace_level 2 fallback { Static } } }, &lt;0.6, 0.3, 0.2&gt;) translate &lt;0.95, 0.2, 0&gt; }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_screen_fallback.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Two monitors showing the render's own view, nested two deep. At the limit the left one is black and the right one shows its fallback.</p>
+  </td>
+</tr>
+</table>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_screen_depth.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Three monitors, each showing a camera aimed at itself, with <code>max_trace_level</code> 1, 2 and 4 from left to right. Count the frames: each level is one more picture inside the last, and the innermost screen is black.</p>
+  </td>
+</tr>
+</table>
+<p>A view is traced as a continuation of the ray that met the screen. It inherits that ray's weight, so <code>adc_bailout</code> ends faint views early; its limit on reflection and refraction, which starts again from zero inside each view; and its radiosity and subsurface depth. Trace levels and nested views of every kind together are capped by the compile-time <a href="r3_10.html#r3_10_4">NESTED_VIEW_DEPTH_LIMIT</a>; at that cap a screen shows its fallback too.</p></div>
+
+<a name="r3_10_2_4"></a>
+<div class="content-level-h4" contains="Shadows, Photons and Where a Screen Is Traced" id="r3_10_2_4">
+<h4>3.10.2.4 Shadows, Photons and Where a Screen Is Traced</h4>
+<ul>
+  <li><strong>Shadows and photons.</strong> A shadow ray or a photon meeting a screen inside its window sees an opaque black picture, without tracing anything, so a set casts a shadow like any opaque surface whatever its picture shows. Outside the window the screen is clear to shadow rays and photons as it is to sight.</li>
+  <li><strong>Surface pigments only.</strong> The view is traced only when a surface is being shaded and its pigment is evaluated: a texture layer's pigment, including a <code>pigment_map</code>, <code>average</code> or <code>pigment_pattern</code> inside it, as in <a href="r3_10.html#r3_10_5_9">A Halftone Poster</a>. Where a pigment is evaluated without a surface being shaded, such as a <code>pigment_pattern</code> used in a <code>normal</code>, a pigment turned into a function, or a density, the screen traces nothing and returns no colour.</li>
+  <li><strong>Cost.</strong> Each render thread makes one tracer for each screen camera the first time it needs it, and a view costs what its rays cost. Scenes with no screens render exactly as before.</li>
+</ul></div>
+
+<a name="r3_10_2_5"></a>
+<div class="content-level-h4" contains="Screen Cameras and Radiosity" id="r3_10_2_5">
+<h4>3.10.2.5 Screen Cameras and Radiosity</h4>
+<p>A screen's view is lit by the same radiosity as the rest of the render: one cache serves the render's camera and every screen camera. Radiosity spaces its samples by the distance from the eye; in a screen's view the eye is the screen's camera, so a surface seen through a screen is sampled as densely as that view needs, not as the distant render camera would.</p>
+<p>After the render's own pretrace, each screen camera that shows a different view from the render's camera gets a pretrace pass of its own, coarse to fine like the main one, over its own frame. It fills the shared cache without producing pixels, so the cache already holds what the view needs when the final render reaches the screen. A screen that shows the render's own view adds no pass.</p>
+<p>Two camera items control this, and apply only to a screen's camera:</p>
+<table width="100%" class="option-list">
+<tr><td><code>radiosity_size &lt;W, H&gt;</code></td><td>The frame of the camera's pretrace pass, in pixels, each from 1 to 65535 (rounded to whole pixels); the render's size by default. The pass uses the render's <code>pretrace_start</code> and <code>pretrace_end</code> spacing and widens its reuse distances by the ratio of the sizes, so a smaller <code>radiosity_size</code> is cheaper and correspondingly coarser. Use it for a small or distant screen. A size outside the range is an error.</td></tr>
+<tr><td><code>no_radiosity</code></td><td>No pretrace pass for this camera, and its view is shaded with radiosity off, so what it shows gets no bounce light. The render's own view is not affected. As a camera item it is unrelated to the <a href="r3_5.html#r3_5_1_5_10">no_radiosity object modifier</a>.</td></tr>
+</table>
+<p>Either item on the render's own camera draws a warning and is ignored.</p>
+<pre>
+pigment { screen { camera { location &lt;0, 1.3, -9&gt; look_at &lt;0, 1.0, -16&gt; right x * 4 / 3 angle 55 radiosity_size &lt;8, 6&gt; } } }
+pigment { screen { camera { location &lt;40, 1.3, -9&gt; look_at &lt;40, 1.0, -16&gt; right x * 4 / 3 angle 55 no_radiosity } } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_screen_radiosity.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Three identical corners behind the render's camera, each lit by one lamp, seen only by the screens' cameras. Left: the default pretrace. Middle: <code>radiosity_size &lt;8, 6&gt;</code>, a far cheaper pass whose wider reuse lifts the shadows a little. Right: <code>no_radiosity</code>: no bounce light, black shadows.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_2_6"></a>
+<div class="content-level-h4" contains="Shared Views" id="r3_10_2_6">
+<h4>3.10.2.6 Shared Views</h4>
+<p>Screens whose cameras show the same view share one camera: one tracer on each render thread and one radiosity pass. Cameras are compared by content (placement, type, angles, focal blur, distance limit), so two screens with the same camera written out twice share it. A camera with a <code>normal</code> or with user-defined functions only matches itself, never a copy, and a camera with <code>no_radiosity</code> only matches another with <code>no_radiosity</code>. <code>radiosity_size</code> is not compared: cameras that share a view share one pass at the largest <code>radiosity_size</code> any of them asks for.</p></div>
+
+<a name="r3_10_3"></a>
+<div class="content-level-h3" contains="The Portal Object" id="r3_10_3">
+<h3>3.10.3 The Portal Object</h3>
+<p>A <code>portal</code> is an object whose body leads elsewhere. A ray entering an open side of the body continues from the mapped point, in the mapped direction. A portal has no look of its own: it is a way through, not a surface. Glass, a frame or a sheen is a separate object of the same shape.</p>
+<pre>
+portal {
+  BODY
+  to { TRANSFORMATIONS... }
+  [PORTAL_OPTIONS...]
+  [OBJECT_MODIFIERS...]
+}
+BODY:
+  OBJECT | OBJECT_IDENTIFIER
+PORTAL_OPTIONS:
+  MOUTH_OPTION | near { MOUTH_OPTION... } | far { MOUTH_OPTION... } | far [on | off] |
+  exit | perturb { normal { NORMAL_BODY } [AMOUNT] } | max_trace_level LEVEL | fallback { PIGMENT_BODY }
+MOUTH_OPTION:
+  front [on | off] | back [on | off] | no_lights [on | off] | pigment { PIGMENT_BODY }
+</pre>
+<p>The body comes first. <code>to { }</code> and the options may follow in any order, but all of them come before the object modifiers. A switch written without <code>on</code> or <code>off</code> means <code>on</code>.</p>
+<table width="100%" class="option-list">
+<tr><td><code>to { }</code></td><td>Required. Transformations that carry the body, as written, to its image: where views come out. See <a href="r3_10.html#r3_10_3_1">The Body and the Map</a>.</td></tr>
+<tr><td><code>front</code></td><td>Default <code>on</code> for both mouths. Whether a ray entering the front side goes through.</td></tr>
+<tr><td><code>back</code></td><td>Default <code>off</code> for both mouths. Whether a ray entering the back side goes through. See <a href="r3_10.html#r3_10_3_2">Mouths and Sides</a>.</td></tr>
+<tr><td><code>pigment { }</code></td><td>Default none: fully open and untinted. Its opacity says how open the mouth is, its colour tints the view. See <a href="r3_10.html#r3_10_3_4">pigment</a>.</td></tr>
+<tr><td><code>no_lights</code></td><td>Default off: lights shine through. See <a href="r3_10.html#r3_10_3_8">Lights Through Portals</a>.</td></tr>
+<tr><td><code>near { }</code>, <code>far { }</code></td><td>Mouth options for one mouth only, overriding those written for the portal. Each may be written once.</td></tr>
+<tr><td><code>far</code></td><td>Default <code>on</code>: the body's image is a second mouth leading back. <code>far off</code> makes the portal one-way.</td></tr>
+<tr><td><code>exit</code></td><td>Default off. For a finite closed solid: a view ends where the ray would have left the body, and resumes beyond it. See <a href="r3_10.html#r3_10_3_6">exit</a>.</td></tr>
+<tr><td><code>perturb { }</code></td><td>Default none. Bends the view by a normal pattern, times <code>AMOUNT</code> (default 1). See <a href="r3_10.html#r3_10_3_5">perturb</a>.</td></tr>
+<tr><td><code>max_trace_level</code></td><td>From 1 to 256; by default the scene's <code>max_trace_level</code>. How deep views through portals may nest. See <a href="r3_10.html#r3_10_3_7">Nesting and fallback</a>.</td></tr>
+<tr><td><code>fallback { }</code></td><td>Default none. The pigment shown where views nest too deep; without one the portal is absent there.</td></tr>
+</table>
+<p><code>portal</code>, <code>to</code>, <code>near</code>, <code>far</code>, <code>exit</code>, <code>front</code>, <code>back</code>, <code>no_lights</code>, <code>perturb</code> and <code>fallback</code> are reserved words.</p></div>
+
+<a name="r3_10_3_1"></a>
+<div class="content-level-h4" contains="The Body and the Map" id="r3_10_3_1">
+<h4>3.10.3.1 The Body and the Map</h4>
+<p>The body is any object, or a declared object's identifier. It cannot be a portal, hold a portal or be a light source. A <code>union</code> anywhere in the body becomes a <code>merge</code> when the portal is parsed, so the faces inside the union, which a ray would otherwise meet on its way through, do not act as more mouths.</p>
+<p><code>to { }</code> holds transformations (<code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>matrix</code>, <code>transform</code>) applied to the body <em>as written in the portal</em>. The result is the body's image. A ray entering the body at a point continues from that point's image, in the direction's image: a <code>scale</code> in the map makes the far side bigger or smaller, a <code>rotate</code> turns it. The map is fixed in world space. Transformations written after the options, on the portal as an object, move only the body, and its image stays where <code>to { }</code> put it, so a portal moved by a transformation still leads to the same place. The mouth pigments, the <code>perturb</code> and the <code>fallback</code> are written for the body as written and move with it; the far mouth's are carried to it by the map.</p>
+<pre>
+// A doorway at x = 1.5 whose views come out at x = 1000, the same way up and facing the same way.
+portal { object { Door(1.2, 2.1) translate &lt;1.5, 0, 0&gt; } to { translate &lt;998.5, 0, 0&gt; } far off }
+</pre></div>
+
+<a name="r3_10_3_2"></a>
+<div class="content-level-h4" contains="Mouths and Sides" id="r3_10_3_2">
+<h4>3.10.3.2 Mouths and Sides</h4>
+<p>A portal has two mouths. The <em>near mouth</em> is the body. The <em>far mouth</em> is its image under the map, leading back by the inverse map, and it exists by default, so a portal is two-way unless <code>far off</code> says otherwise.</p>
+<p>Each mouth has a front side and a back side, and each side is open or closed. A ray goes through only where it enters an open side; where it meets a closed side the mouth is not there for it, and it goes on as if the body were absent. By default the front is open and the back closed, so a portal seen from behind is not there.</p>
+<ul>
+  <li><strong>A closed solid</strong> is a finite object with an inside, such as a box, a sphere or a CSG of them. Its front is its outside, met by a ray coming from outside; its back faces are those met from inside.</li>
+  <li><strong>A surface</strong> is anything else: a disc, a polygon, a triangle, a mesh, a patch, or an infinite object such as a plane. Its front is the side its normal points to, met by a ray travelling against the normal. A disc's front is the side its normal vector points to; a polygon's is the side from which its points run clockwise. If a mouth turns out to face the wrong way, swap <code>front</code> and <code>back</code>.</li>
+</ul>
+<p>The far mouth of a surface faces where views through the near mouth come out: its front is on that side, so looking back into it, from where the views arrive, leads back through the near mouth's front. The far mouth of a closed solid is the image of the solid, front outside, like the near one.</p>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_sides.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Three doorways seen from the front (lower row) and three seen from behind (upper row), each leading to the sea. Left: the default, front on and back off. Middle: <code>front off back on</code>. Right: both on. A closed side is not there: the wall or the platform shows instead.</p>
+  </td>
+</tr>
+</table>
+<p>A closed solid is entered from any side of it. In the scene below the sphere and its far mouth are three units apart: looking into the left sphere shows what is behind the right one, and looking into the right one, which is the far mouth, shows what is behind the left. A ray that goes into one sphere comes out of the other's surface, crosses its inside, and leaves through its back faces, which are closed, so it goes on.</p>
+<pre>
+cone { &lt;-1.5, 0, 2&gt;, 0.6, &lt;-1.5, 1.8, 2&gt;, 0 pigment { rgb &lt;0.2, 0.35, 0.95&gt; } }
+box { &lt;-0.5, 0, -0.5&gt;, &lt;0.5, 1, 0.5&gt; rotate 30 * y translate &lt;1.5, 0, 2&gt; pigment { rgb &lt;0.9, 0.2, 0.15&gt; } }
+portal { sphere { &lt;-1.5, 1.1, 0&gt;, 0.75 } to { translate 3 * x } no_lights }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_volume.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A portal sphere and its far mouth, each ringed for clarity: the cone and the box trade places.</p>
+  </td>
+</tr>
+</table>
+<p>A mouth with no open side is not made. A portal none of whose mouths has an open side draws a warning and is left out of the scene.</p></div>
+
+<a name="r3_10_3_3"></a>
+<div class="content-level-h4" contains="far, near and far off" id="r3_10_3_3">
+<h4>3.10.3.3 far, near and far off</h4>
+<p>Mouth options written for the portal apply to both mouths. Written in <code>near { }</code> or <code>far { }</code> they apply to that mouth only and override the portal's. <code>far off</code> removes the far mouth; it cannot be combined with a <code>far { }</code> block.</p>
+<pre>
+portal { object { Door(1.0, 1.9) translate XA * x } to { translate -XA * x rotate 180 * y translate XB * x } }
+portal { object { Door(1.0, 1.9) translate XA * x } to { translate -XA * x rotate 180 * y translate XB * x } far off }
+</pre>
+<p>Here the map turns the doorway round and moves it along: views entering A head away from the camera and come out of B heading towards it, so both mouths face the camera, and each shows the other side of the room, behind the camera, as seen from the other.</p>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_far.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Two doorway pairs, A then B from left to right. The left pair has its far mouth (the default), so both doorways show the orange wall behind the camera; the right pair is <code>far off</code>, so its B is an empty frame. The bright patches on the floor are the room's lamp shining out of the mouths: see <a href="r3_10.html#r3_10_3_8">Lights Through Portals</a>.</p>
+  </td>
+</tr>
+</table>
+<pre>
+portal
+{
+    object { Door(1.0, 1.9) translate -1.1 * x }
+    to { translate 1.1 * x rotate 180 * y translate 1.1 * x }
+    pigment { rgb &lt;1, 0.6, 0.3&gt; }
+    far { pigment { rgb &lt;0.45, 0.7, 1&gt; } }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_near_far.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">One doorway pair: the portal's pigment tints both mouths orange, and <code>far { }</code> overrides it with blue for the far mouth. The light coming out of each mouth is tinted the same way.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_4"></a>
+<div class="content-level-h4" contains="pigment" id="r3_10_3_4">
+<h4>3.10.3.4 pigment</h4>
+<p>A mouth's pigment says how open the mouth is at each point. Its opacity (one minus filter and transmit) is the share of the ray that goes through; the rest goes on past the body as if the mouth were closed, and the two are mixed. Its colour tints the view. With no pigment, or <code>rgb 1</code>, the mouth is fully open and untinted; <code>rgbt &lt;1, 1, 1, 0.5&gt;</code> is half open; <code>rgbt 1</code> is shut. A pattern varies the opening over the mouth.</p>
+<p>The pigment is part of the portal's options, so it is written before any transformation; a <code>pigment</code>, <code>texture</code>, <code>interior</code> or <code>material</code> among the object modifiers is an error, since a portal has no surface to give it to.</p>
+<pre>
+#declare Opening = array[4]
+{
+    pigment { rgb 1 },
+    pigment { rgbt &lt;1, 1, 1, 0.5&gt; },
+    pigment { rgb &lt;0.4, 0.6, 1&gt; },
+    pigment { gradient y color_map { [0 rgbt &lt;1, 1, 1, 1&gt;] [1 rgb 1] } scale 1.8 }
+};
+portal { object { Door(1.1, 1.8) translate X * x } to { translate Far - X * x } far off pigment { Opening[I] } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_pigment.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Four doorways onto the sea in a brick wall: open; half open; tinted blue; and a gradient, shut at the foot and open at the head.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_5"></a>
+<div class="content-level-h4" contains="perturb" id="r3_10_3_5">
+<h4>3.10.3.5 perturb</h4>
+<p><code>perturb { normal { NORMAL_BODY } [AMOUNT] }</code> bends each view by the difference between the perturbed normal and the body's true normal, times <code>AMOUNT</code> (1 by default), like looking through rippled water or old glass. A view bent so far that it would turn back out of the surface is mirrored back in, as reflection does. An <code>AMOUNT</code> of 0 is an error: leave the <code>perturb</code> out instead. The perturbation does not change the colour; a <code>normal</code> on the glass in front of the portal is the way to give the opening a visible ripple as well.</p>
+<pre>
+portal { object { Door(1.4, 2.0) translate 1.0 * x } to { translate Far - 1.0 * x } far off perturb { normal { ripples 0.35 scale 0.25 translate &lt;1, 1, 0&gt; } } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_perturb.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">The same doorway onto the sea twice; the right one bends its view with rippled normals.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_6"></a>
+<div class="content-level-h4" contains="exit" id="r3_10_3_6">
+<h4>3.10.3.6 exit</h4>
+<p>Without <code>exit</code>, a view through a portal carries on into the target for as far as it goes. With <code>exit</code>, on a body that is a finite closed solid, the view reaches only across the image of the body: as far as the ray would have crossed the body itself, scaled by the map. If it finds nothing there, the ray resumes beyond the body, where it would have left it, with the fog and atmospheric media of that stretch applied. So the target is seen only inside the body, as a miniature in a glass ball.</p>
+<p><code>exit</code> needs a finite closed solid, and it implies <code>far off</code>: <code>exit</code> with a far mouth (<code>far on</code> or a <code>far { }</code> block) or with <code>back on</code> is an error. Lights reach out of an exit portal only from inside the body's image.</p>
+<pre>
+portal { sphere { &lt;X, 1.1, 0&gt;, 0.485 } to { translate &lt;-X, -1.1, 0&gt; scale S / 0.485 * 0.45 translate Island + &lt;0, 0.6, 0&gt; } exit }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_exit.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Two glass balls, each a portal onto the same island scaled up twenty times. Left: without <code>exit</code> the view runs on to the island's horizon and sky. Right: with <code>exit</code> it ends at the glass and the room behind shows, so the island is a miniature inside the ball.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_7"></a>
+<div class="content-level-h4" contains="Nesting and fallback" id="r3_10_3_7">
+<h4>3.10.3.7 Nesting and fallback</h4>
+<p>A view through a portal may meet a portal again, including the same one. Each view through a portal inside another is one level of nesting, counted over all portals. A portal leads its view on only while fewer than its <code>max_trace_level</code> portal views are open around it; past that it shows its <code>fallback</code> pigment, evaluated at the point where the ray met it, or, without one, it is absent there and the ray goes on past the body. Going through a portal does not use up a trace level for reflection and refraction, but it does count, with trace levels and screen views, towards the <a href="r3_10.html#r3_10_4">NESTED_VIEW_DEPTH_LIMIT</a>, which ends nesting the same way.</p>
+<pre>
+portal { object { Door(1.2, 1.8) translate -1.2 * x } to { translate -3 * z } far off max_trace_level 3 }
+portal { object { Door(1.2, 1.8) translate 1.2 * x } to { translate -3 * z } far off max_trace_level 3 fallback { rgb &lt;1, 0.85, 0.2&gt; } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_depth.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Each doorway leads to a point three units in front of itself, so its view shows it again, smaller. Left: after three levels the portal is absent and the wall behind shows. Right: its yellow fallback shows instead.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_8"></a>
+<div class="content-level-h4" contains="Lights Through Portals" id="r3_10_3_8">
+<h4>3.10.3.8 Lights Through Portals</h4>
+<p>A point is lit by the lights it can see through a portal. For each mouth and each light, POV-Ray makes the light's <em>image</em>: the light carried back through the mouth's map. Point, spot, cylinder, parallel and area lights all have images. A point is lit by an image along the straight path to it, when that path enters an open side of the mouth as a camera ray would. The two pieces of the path, up to the mouth and from the mapped crossing to the real light, are each shadow-tested in their own part of the scene and attenuated by the media there.</p>
+<ul>
+  <li>The light keeps its own cone, measured on the last piece, and fades over the whole length of the path, as if the two pieces were one.</li>
+  <li>The mouth's pigment at the crossing tints the light by its colour and scales it by its opacity.</li>
+  <li>An area light is sampled through its image at every point of its own grid, with its jitter and adaptive subdivision, so the soft shadow cast through a portal is the one the light would cast there.</li>
+  <li>Images are made from real lights only, so a light path crosses at most one portal, and portals inside portals cannot multiply light.</li>
+  <li>A light with <code>projected_through</code> gets no image, and draws a warning.</li>
+</ul>
+<p><code>no_lights</code>, written for the portal or for one mouth, turns this off for it: no light comes out of that mouth, by an image or straight (see the next section). It does not change the view.</p>
+<pre>
+light_source
+{
+    Far + &lt;0.3, 1.2, 1.8&gt; rgb &lt;1, 0.6, 0.25&gt; * 4 fade_distance 1 fade_power 2
+    looks_like { sphere { 0, 0.08 pigment { rgb &lt;1, 0.8, 0.5&gt; } finish { emission 1 diffuse 0 } } }
+}
+object { Frame(1.0, 2.0, &lt;0.2, 0.3, 0.28&gt;) }
+portal { Door(1.0, 2.0) to { translate Far } far off }
+</pre>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_lights.png">
+  </td>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_lights_off.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="2">
+    <p class="caption">A doorway onto a lamp in a closed room far away, in a dim room. Left: the lamp's light comes out of the doorway onto the floor and the ball. Right: the same with <code>no_lights</code>; only the view goes through.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_9"></a>
+<div class="content-level-h4" contains="Straight Light and Shadows" id="r3_10_3_9">
+<h4>3.10.3.9 Straight Light and Shadows</h4>
+<p>Light that travels straight from a light to a point can meet a mouth on the way. If it enters an open side of the mouth and the partner mouth can carry it out, the light is <em>diverted</em>: it goes through and comes out of the partner, so it does not reach the point, and the mouth casts a shadow, dimmed by its opacity. The partner can carry it out when it exists, its lights are on, and the side the light would come out of is open.</p>
+<p>That side has the <strong>same name</strong> between a surface and its image (light entering a surface's front comes out of its image's front, which faces where views come out) and the <strong>opposite name</strong> between two closed solids (light entering the outside of one comes out of the inside of the other, which is its back). Without a far mouth, with the partner's matching side shut, or with the partner's lights off, a mouth lets straight light pass and casts no shadow. Light already coming through a portal is diverted in the same way by every other mouth on either piece of its path.</p>
+<pre>
+#declare Disc = disc { &lt;0, 1, 0&gt;, -z, 0.8 };
+object { Disc translate -2.2 * x pigment { rgb 0.9 } }
+portal { Disc to { translate Far } }
+portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt; - 2.2 * x } far off }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_r_shadows.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">One lamp behind three discs: a plain disc; a portal disc with its far mouth; and one with <code>far off</code>. The light entering the middle mouth comes out of its far mouth, far away, so it casts a shadow like the plain disc; the right one lets the light pass.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_3_10"></a>
+<div class="content-level-h4" contains="Object Modifiers and Placement" id="r3_10_3_10">
+<h4>3.10.3.10 Object Modifiers and Placement</h4>
+<ul>
+  <li><strong>Transformations</strong> move the body only; see <a href="r3_10.html#r3_10_3_1">The Body and the Map</a>.</li>
+  <li><strong><code>no_image</code>, <code>no_reflection</code> and <code>no_radiosity</code></strong> work as on any object, for both mouths, and a portal takes them from the union that directly holds it, so a portal can be hidden from the camera and still be seen in a mirror.</li>
+  <li><strong><code>clipped_by</code> and <code>bounded_by</code></strong> apply to both mouths; the far mouth's are carried by the map.</li>
+  <li><strong>A look</strong>: <code>texture</code>, <code>pigment</code>, <code>normal</code>, <code>finish</code>, <code>interior</code> or <code>material</code> among the modifiers is an error. Put glass or a frame on a separate object; the macro <code>Inset</code> in <code>tests/render/portal.inc</code> shrinks a shape by a fraction about its centre, for a portal a hair inside its glass.</li>
+  <li><strong>Shadows</strong>: a portal's body casts no shadow of its own and photons pass it by; the only shadow a mouth casts is light it diverts.</li>
+  <li><strong>Unions</strong>: a portal may be a part of a union at any depth. It cannot be part of an <code>intersection</code>, <code>difference</code> or <code>merge</code>, and a union that holds a portal cannot be clipped; both are errors.</li>
+  <li><strong>The camera inside</strong>: the inside of a closed portal body is a region that is not there, since every ray into it goes elsewhere. A render camera or a screen camera inside one draws a warning; place the camera at the target instead.</li>
+  <li><strong>Placed twice</strong>: a declared portal placed again with the same target draws a warning, since the far mouths of the two coincide.</li>
+</ul></div>
+
+<a name="r3_10_4"></a>
+<div class="content-level-h3" contains="Global Settings and Options" id="r3_10_4">
+<h3>3.10.4 Global Settings and Options</h3>
+<p>These settings and options change how screens and portals behave.</p>
+<table width="100%" class="option-list">
+<tr><td><code>max_trace_level</code></td><td>Global setting, 5 by default. The default nesting limit of every screen and portal, as well as the limit on reflection and refraction, which starts again inside each screen view and is not used up by going through a portal. A scene of nested glass jars, where each level costs two glass crossings, wants more: <code>global_settings { max_trace_level 16 }</code>.</td></tr>
+<tr><td><code>adc_bailout</code></td><td>Global setting. A view carries the weight of the ray that met it, times the mouth's opacity for a portal, so a faint view ends as any faint ray does. Lower it to let dim views nest deeper: <code>global_settings { adc_bailout 0.002 }</code>.</td></tr>
+<tr><td><code>radiosity { }</code></td><td>One cache is shared by the render's camera and every screen camera, with a pretrace pass for each distinct screen camera; see <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>. Radiosity samples see through portals, but light that came through a portal adds no bounce light (see <a href="r3_10.html#r3_10_6_3">Known Limits</a>).</td></tr>
+<tr><td>Anti-aliasing, <code>+A</code></td><td>Every anti-aliasing sample of the render looks the screen up again, so its picture is anti-aliased by the render's own sampling, and only where the render refines. With texture footprint filtering (<code>+TF</code>) a screen is sampled across the pixel's footprint like any pigment. A footprint does not carry through a portal or across its body: the view through a mouth is traced sharp.</td></tr>
+<tr><td>Alpha, <code>+UA</code></td><td>A screen's picture is opaque, sky included. A portal's view keeps the alpha of what it shows, so sky seen through a mouth is as transparent as sky seen directly.</td></tr>
+<tr><td><code>NESTED_VIEW_DEPTH_LIMIT</code></td><td>Compile-time constant in <code>source/core/configcore.h</code>, 512 by default. Caps trace levels plus nested screen and portal views along any path, to bound the stack: each level costs about 3.5 KB. Past it, screens and portals behave as at their own limits. It can be changed only by rebuilding POV-Ray.</td></tr>
+</table></div>
+
+<a name="r3_10_5"></a>
+<div class="content-level-h3" contains="Use Cases" id="r3_10_5">
+<h3>3.10.5 Use Cases</h3>
+<p>Each of these is a short scene; the excerpt shows the part that matters. The full scenes are in <code>doc/portals</code> and <code>tests/render</code> in the source.</p></div>
+
+<a name="r3_10_5_1"></a>
+<div class="content-level-h4" contains="A Television" id="r3_10_5_1">
+<h4>3.10.5.1 A Television</h4>
+<p>A television is a screen on a slightly convex glass front, with a clear glossy layer over the picture. The macro <code>TV</code> in <code>tests/render/tv.inc</code> builds one; its picture here is a camera in a studio elsewhere in the scene, lit by a <code>light_group</code> of its own, and a <code>perturb</code> that grows with the cube of the distance from the centre gives the barrel distortion of a curved tube.</p>
+<pre>
+#declare Broadcast = pigment
+{
+    screen
+    {
+        camera { location S + &lt;0, 1.2, -3&gt; look_at S + &lt;0, 1.15, 0&gt; right x * 4 / 3 angle 40 }
+        perturb
+        {
+            user_defined
+            {
+                function { 1.2 * (x - 0.5) * (pow(x - 0.5, 2) + pow(y - 0.5, 2)) },
+                function { 1.2 * (y - 0.5) * (pow(x - 0.5, 2) + pow(y - 0.5, 2)) },
+                function { 0 }
+            }
+        }
+    }
+};
+object { TV(1.2, 0.9, Broadcast) translate &lt;0.2, 0.62, -0.1&gt; }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w01_television.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A television showing a broadcast from a studio elsewhere in the scene.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_2"></a>
+<div class="content-level-h4" contains="A Wall of Security Cameras" id="r3_10_5_2">
+<h4>3.10.5.2 A Wall of Security Cameras</h4>
+<p>Six monitors, each a screen on its own camera, watch a courtyard the render's camera never sees. Each camera is a separate view, so each has its own tracer and, with radiosity, its own pretrace pass.</p>
+<pre>
+#for (I, 0, 5)
+    #local Place = &lt;-1.35 + 1.35 * mod(I, 3), 0.95 + 1.05 * (1 - floor(I / 3)), 0&gt;;
+    box { &lt;0, 0, -0.03&gt;, &lt;1.2, 0.9, -0.02&gt; pigment { screen { camera { Cams[I] } } scale &lt;1.2, 0.9, 1&gt; }
+          finish { emission 1 diffuse 0 } translate Place - 0.6 * x }
+#end
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w02_security.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A wall of security monitors.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_3"></a>
+<div class="content-level-h4" contains="Video Feedback" id="r3_10_5_3">
+<h4>3.10.5.3 Video Feedback</h4>
+<p>A camera, slightly rolled, looks at a set that shows that camera's view: each picture holds a smaller, turned copy of itself, down to the screen's <code>max_trace_level</code>, where a <code>fallback</code> of <code>cells</code> shows static. The scene is <code>tests/render/screen_feedback.pov</code>, rendered here with <code>Declare=Depth=12</code>.</p>
+<pre>
+screen
+{
+    camera { View }
+    max_trace_level Depth
+    fallback { cells scale &lt;1 / 96, 1 / 72, 1&gt; color_map { [0 rgb 0.05] [1 rgb 0.9] } }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w03_feedback.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Video feedback twelve levels deep.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_4"></a>
+<div class="content-level-h4" contains="A Magic Book" id="r3_10_5_4">
+<h4>3.10.5.4 A Magic Book</h4>
+<p>The picture on a page is a portal, a quad just above the paper, onto a meadow 25 times larger than the page, far away and lit by a <code>light_group</code> of its own. The map is fixed in world space, so the meadow stays put however the book is tilted. The scene is <code>tests/render/portal_book.pov</code>.</p>
+<pre>
+portal
+{
+    polygon { 5, &lt;0.35, 0.1605, -0.9&gt;, &lt;0.35, 0.1605, 0.9&gt;, &lt;1.65, 0.1605, 0.9&gt;, &lt;1.65, 0.1605, -0.9&gt;, &lt;0.35, 0.1605, -0.9&gt; }
+    to { translate &lt;-0.35, -0.161, 0.9&gt; rotate &lt;-90, 0, 0&gt; translate &lt;-0.65, -0.9, 0&gt; scale Zoom translate &lt;MeadowX, Zoom, 0&gt; }
+    far off
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w04_book.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A picture in a book that is a way into a meadow.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_5"></a>
+<div class="content-level-h4" contains="A Doorway Pair" id="r3_10_5_5">
+<h4>3.10.5.5 A Doorway Pair</h4>
+<p>A door in the back wall of a blue room opens into an orange room a thousand units away, and the orange room's door leads back. The map turns the doorway round, so views going out through the blue room's door come into the orange room. The orange room's lamp shines through into the blue room.</p>
+<pre>
+portal { object { Door(1.0, 2.1) translate &lt;0.8, 0, 3.1&gt; } to { translate &lt;-0.8, 0, -3.1&gt; rotate 180 * y translate Warm + &lt;0.8, 0, 3.1&gt; } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w05_doorways.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">Through the door of the blue room, the orange room.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_6"></a>
+<div class="content-level-h4" contains="A Wormhole Tunnel" id="r3_10_5_6">
+<h4>3.10.5.6 A Wormhole Tunnel</h4>
+<p>The far end of a short stone tunnel is a portal onto the sea at sunset: there is light at the end of the tunnel. The far mouth leads back, so from the sea the tunnel can be seen, and walked, the other way.</p>
+<pre>
+portal { object { Door(2.0, 2.2) translate 5.9 * z } to { translate Far - 5.9 * z } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w06_wormhole.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A tunnel on a hillside that ends at the sea.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_7"></a>
+<div class="content-level-h4" contains="A Miniature World in a Glass Jar" id="r3_10_5_7">
+<h4>3.10.5.7 A Miniature World in a Glass Jar</h4>
+<p>A bell jar on a plinth holds the room it stands in, four times smaller: a person looking at a bell jar on a plinth, inside which is a person looking at a bell jar. The portal is a hair inside the glass, maps the jar's cavity onto the room scaled about the jar's base, and uses <code>exit</code> so each miniature ends at its glass. The scene is <code>tests/render/portal_belljar.pov</code>.</p>
+<pre>
+portal { Mouth to { translate -Base scale S translate &lt;B.x, -0.01, B.z&gt; } exit max_trace_level Depth }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w07_jar.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A room in a bell jar, in a bell jar.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_8"></a>
+<div class="content-level-h4" contains="A Candle Through a Doorway" id="r3_10_5_8">
+<h4>3.10.5.8 A Candle Through a Doorway</h4>
+<p>The doorway pair at night: both lamps are out and a candle burns in the orange room near its door. The candle's light comes through the doorway into the dark blue room, in the shape of the door, as light through a real opening would. The scene is the doorway pair with <code>Declare=Night=1</code>.</p>
+<pre>
+light_source
+{
+    Warm + &lt;-0.6, 0.98, 0.6&gt; rgb &lt;1, 0.6, 0.25&gt; * 6 fade_distance 0.8 fade_power 2
+    looks_like { sphere { 0, 0.035 pigment { rgb &lt;1, 0.8, 0.4&gt; } finish { emission 1 diffuse 0 } } }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w08_candle.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A candle in one room lighting another through a doorway.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_5_9"></a>
+<div class="content-level-h4" contains="A Halftone Poster" id="r3_10_5_9">
+<h4>3.10.5.9 A Halftone Poster</h4>
+<p>A screen inside a <code>pigment_pattern</code> gives the brightness of its view as a pattern value, and a <code>pigment_map</code> picks, for each band of brightness, a grid of black dots of one size: a poster printed in halftone, live, from a camera behind the render's.</p>
+<pre>
+#macro Dots(R)
+    function { sqrt(pow(x - floor(x) - 0.5, 2) + pow(y - floor(y) - 0.5, 2)) } color_map { [R rgb 0.04] [R rgb 0.92] } scale &lt;1 / 40, 1 / 30, 1&gt;
+#end
+#declare Print = pigment
+{
+    pigment_pattern { screen { camera { location &lt;0.3, 1.0, -4.5&gt; look_at &lt;0.3, 0.55, -7.2&gt; right x * 4 / 3 angle 45 } } }
+    pigment_map
+    {
+        #for (K, 0, 7)
+            [K / 8 Dots(sqrt((1 - (K + 0.5) / 8) / pi))]
+            [(K + 1) / 8 Dots(sqrt((1 - (K + 0.5) / 8) / pi))]
+        #end
+    }
+};
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/portal_w09_halftone.png">
+  </td>
+</tr>
+<tr>
+  <td colspan="1">
+    <p class="caption">A halftone print of three white shapes behind the camera.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_10_6"></a>
+<div class="content-level-h3" contains="Errors, Warnings and Limits" id="r3_10_6">
+<h3>3.10.6 Errors, Warnings and Limits</h3>
+<p>All of these are reported when the scene is parsed.</p></div>
+
+<a name="r3_10_6_1"></a>
+<div class="content-level-h4" contains="Errors" id="r3_10_6_1">
+<h4>3.10.6.1 Errors</h4>
+<table width="100%" class="option-list">
+<tr><td><code>screen takes only one camera.</code><br><code>screen takes only one perturb.</code><br><code>screen takes only one fallback.</code></td><td>Each may be given once.</td></tr>
+<tr><td><code>screen needs a camera.</code></td><td>The <code>camera { }</code> is required.</td></tr>
+<tr><td><code>mesh_camera cannot be a screen's camera.</code></td><td>Any other camera type may be used.</td></tr>
+<tr><td><code>screen max_trace_level: ...</code></td><td>The level is outside 1 to 256.</td></tr>
+<tr><td><code>Keyword 'screen' can only be used in a pigment statement.</code></td><td>A screen in a normal, a density or another pattern block.</td></tr>
+<tr><td><code>radiosity_size needs a width and height from 1 to 65535 pixels.</code></td><td>On any camera.</td></tr>
+<tr><td><code>portal needs a to { } placing the image of its body.</code></td><td>The map is required.</td></tr>
+<tr><td><code>A portal's body cannot be or hold a portal, or be a light source.</code></td><td>Portals do not nest in bodies.</td></tr>
+<tr><td><code>portal takes only one to.</code>, <code>... only one near.</code>, <code>... only one far { }.</code>, <code>... only one far on or far off.</code>, <code>... only one fallback.</code>, <code>... only one perturb.</code></td><td>Each may be given once.</td></tr>
+<tr><td><code>portal takes only one front.</code> (or <code>back</code>, <code>no_lights</code>, <code>pigment</code>); the same with <code>near</code> or <code>far</code></td><td>A mouth option given twice in the same place. Once for the portal and once in <code>near { }</code> is allowed: that is an override.</td></tr>
+<tr><td><code>near { } takes only front, back, pigment and no_lights.</code> (or <code>far { }</code>)</td><td>Anything else in a mouth block.</td></tr>
+<tr><td><code>portal max_trace_level: ...</code></td><td>The level is outside 1 to 256.</td></tr>
+<tr><td><code>far off and a far { } block cannot be combined.</code></td><td>Remove one.</td></tr>
+<tr><td><code>portal exit needs a body that is a finite closed solid.</code></td><td><code>exit</code> on a surface or an infinite object.</td></tr>
+<tr><td><code>exit and a far mouth cannot be combined.</code></td><td><code>exit</code> with <code>far on</code> or a <code>far { }</code> block.</td></tr>
+<tr><td><code>exit and back on cannot be combined: a view leaving the body has nowhere to go.</code></td><td><code>exit</code> with the near mouth's back open.</td></tr>
+<tr><td><code>A portal's perturb amount cannot be 0; leave the perturb out instead.</code></td><td></td></tr>
+<tr><td><code>portal takes no texture, interior or material, and its pigment goes before any transform; give its look to a separate object of the same shape.</code></td><td>A look among the object modifiers, including a <code>pigment</code> written after a transformation.</td></tr>
+<tr><td><code>A portal cannot be part of an intersection, difference or merge.</code></td><td>Only unions may hold portals.</td></tr>
+<tr><td><code>A union holding a portal cannot be clipped.</code></td><td>Clip the portal itself instead.</td></tr>
+</table></div>
+
+<a name="r3_10_6_2"></a>
+<div class="content-level-h4" contains="Warnings" id="r3_10_6_2">
+<h4>3.10.6.2 Warnings</h4>
+<table width="100%" class="option-list">
+<tr><td><code>radiosity_size and no_radiosity apply only to a screen's camera; the render's camera ignores them.</code></td><td>Either item on the render's camera.</td></tr>
+<tr><td><code>The portal at line N of FILE has no open side, so nothing goes through it.</code></td><td>Every side of both mouths is closed; the portal is left out.</td></tr>
+<tr><td><code>A camera is inside the body of the portal at line N of FILE, a region that is not there; place the camera at the target instead.</code></td><td>The render's camera or a screen's camera is inside a closed portal body.</td></tr>
+<tr><td><code>The portal at line N of FILE is placed more than once with the same target, so its far mouths coincide.</code></td><td>A declared portal used twice; give each copy its own <code>to { }</code>.</td></tr>
+<tr><td><code>A light with projected_through does not shine through portals.</code></td><td>Such lights get no image.</td></tr>
+</table></div>
+
+<a name="r3_10_6_3"></a>
+<div class="content-level-h4" contains="Known Limits" id="r3_10_6_3">
+<h4>3.10.6.3 Known Limits</h4>
+<ul>
+  <li><strong>Photons</strong> pass portals by: caustics and photon light do not go through a mouth, and a screen is opaque black to them.</li>
+  <li><strong>Media scattering, subsurface scattering and radiosity gathers</strong> do not see light that came through a portal. Media along a light's path through a portal still attenuates it, and radiosity samples see surfaces through a portal, but those surfaces show no light that reached them through one.</li>
+  <li><strong><code>projected_through</code> lights</strong> get no image, so they do not shine through portals (with a warning).</li>
+  <li><strong>One portal per light path.</strong> Light reaches a point through at most one portal; a lamp seen through two portals in a row does not light it.</li>
+  <li><strong>A mouth with no open side is not made</strong>, and a portal with no open side at all is left out with a warning.</li>
+  <li><strong>The matching side for straight light</strong> is the same side between a surface and its image but the opposite side between two closed solids; a mouth whose partner's matching side is shut, or whose partner has <code>no_lights</code>, lets straight light pass and casts no shadow.</li>
+  <li><strong>Cost.</strong> Every light gets an image for every mouth that lets light out; a bounding box test rejects most of them before a ray is cast. Every shadow ray tests the bounding box of every mouth that can divert light, so the cost grows with the number of mouths; use <code>no_lights</code> on mouths that need not carry light.</li>
+  <li><strong>Footprints</strong> end at a portal: texture filtering does not carry through a mouth.</li>
+</ul></div>
+
+<a name="r3_10_6_4"></a>
+<div class="content-level-h4" contains="The Images in This Chapter" id="r3_10_6_4">
+<h4>3.10.6.4 The Images in This Chapter</h4>
+<p>Every image in this chapter is made by <code>doc/portals/render.sh</code> from its scene in <code>doc/portals</code> or <code>tests/render</code>, at 320 by 240 pixels, with a fixed stochastic seed (<code>+SS1</code>). They were rendered by the build of commit 1d5be977. Picture noise, where there is any, differs slightly between builds, so a regenerated image may differ in its last bit without anything having changed.</p></div>
+
+
+</div>
+
+</div>
+</body>
+</html>

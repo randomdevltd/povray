@@ -204,6 +204,9 @@
   <td><div class="divh4"><a title="3.5.1.5.11" href="#r3_5_1_5_11">Sturm Object Modifier</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.5.1.6" href="#r3_5_1_6">Portal</a></div></td>
+</tr>
+<tr>
   <td><div class="divh1">&nbsp;</div></td>
 </tr>
 <tr>
@@ -252,7 +255,7 @@
 <h3>3.5.1 Object</h3>
 
 
-<p>Objects are the building blocks of your scene. There are a lot of different types of objects supported by POV-Ray. In the following sections, we describe <a href="r3_5.html#r3_5_1_1">Finite Solid Primitives</a>, <a href="r3_5.html#r3_5_1_2">Finite Patch Primitives</a> and <a href="r3_5.html#r3_5_1_3">Infinite Solid Primitives</a>. These primitive shapes may be combined into complex shapes using <a href="r3_5.html#r3_5_1_4">Constructive Solid Geometry</a> (also known as CSG).</p>
+<p>Objects are the building blocks of your scene. There are a lot of different types of objects supported by POV-Ray. In the following sections, we describe <a href="r3_5.html#r3_5_1_1">Finite Solid Primitives</a>, <a href="r3_5.html#r3_5_1_2">Finite Patch Primitives</a> and <a href="r3_5.html#r3_5_1_3">Infinite Solid Primitives</a>. These primitive shapes may be combined into complex shapes using <a href="r3_5.html#r3_5_1_4">Constructive Solid Geometry</a> (also known as CSG). A <a href="r3_5.html#r3_5_1_6">portal</a> is an object that leads rays somewhere else in the scene.</p>
 <p>
 The basic syntax of an object is a keyword describing its type, some floats,
 vectors or other parameters which further define its location and/or shape
@@ -262,7 +265,7 @@ is:</p>
 <pre>
 OBJECT:
   FINITE_SOLID_OBJECT | FINITE_PATCH_OBJECT | 
-  INFINITE_SOLID_OBJECT | CSG_OBJECT | LIGHT_SOURCE |
+  INFINITE_SOLID_OBJECT | CSG_OBJECT | LIGHT_SOURCE | PORTAL |
   object { OBJECT_IDENTIFIER [OBJECT_MODIFIERS...] }
 FINITE_SOLID_OBJECT:
   BLOB | BOX | CONE | CYLINDER | HEIGHT_FIELD | ISOSURFACE | JULIA_FRACTAL |
@@ -3979,6 +3982,21 @@ be used.</p>
 <li>sor</li>
 <li>torus</li>
 </ul></div>
+
+<a name="r3_5_1_6"></a>
+<div class="content-level-h4" contains="Portal" id="r3_5_1_6">
+<h4>3.5.1.6 Portal</h4>
+<p>A <code>portal</code> is an object whose body leads elsewhere: a ray that enters an open side of the body continues from the mapped point, in the mapped direction. It has no look of its own. Its body's image under the map is a second mouth leading back, unless it is turned off, and light follows sight through it.</p>
+<pre>
+portal {
+  BODY
+  to { TRANSFORMATIONS... }
+  [PORTAL_OPTIONS...]
+  [OBJECT_MODIFIERS...]
+}
+</pre>
+<p>The portal has a chapter of its own, with the screen pattern: see <a href="r3_10.html#r3_10_3">The Portal Object</a>.</p>
+</div>
 
 </div>
 
