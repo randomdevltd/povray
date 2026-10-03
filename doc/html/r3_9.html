@@ -1,0 +1,2716 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+<!--  This file copyright Persistence of Vision Raytracer Pty. Ltd. 2009-2011  -->
+
+<html lang="en">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<title>Reference Section 9</title>
+<link rel="StyleSheet" href="povray.css" type="text/css">
+<link rel="shortcut icon" href="favicon.ico">
+
+<!--  NOTE: In order to help users find information about POV-Ray using web      -->
+<!--  search engines, we ask that you *not* let them index documentation         -->
+<!--  mirrors because effectively, when searching, users will get hundreds of    -->
+<!--  results containing the same information! For this reason, these meta tags  -->
+<!--  below disable archiving of this page by search engines.                    -->
+
+<meta name="robots" content="noarchive">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+</head>
+<body>
+
+<div class="Page">
+
+<!-- NavPanel Begin -->
+<div class="NavPanel">
+<table class="NavTable">
+<tr>
+  <td class="FixedPanelHeading"><a title="3.9" href="#r3_9">Skein</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.1" href="#r3_9_1">First Principles</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.1.1" href="#r3_9_1_1">A Chain of Steps on a Sheet</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.1.2" href="#r3_9_1_2">Skein and Parametric</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.1.3" href="#r3_9_1_3">Topology and Solids</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.1.4" href="#r3_9_1_4">The Universal Inputs</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.2" href="#r3_9_2">The Skein Object</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.2.1" href="#r3_9_2_1">Declared Groups</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.3" href="#r3_9_3">Skein Examples</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.1" href="#r3_9_3_1">A Tube and a Taper</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.2" href="#r3_9_3_2">A Vase</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.3" href="#r3_9_3_3">A Torus</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.4" href="#r3_9_3_4">A Twisted Column</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.5" href="#r3_9_3_5">A Thick Sheet</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.6" href="#r3_9_3_6">A Rock</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.7" href="#r3_9_3_7">A Folded Sheet</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.8" href="#r3_9_3_8">A Spring</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.9" href="#r3_9_3_9">Star and Hexagon Sections</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.10" href="#r3_9_3_10">A Sheet from an Image</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.11" href="#r3_9_3_11">Blending Two Sections</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.12" href="#r3_9_3_12">One Group, Two Objects</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.3.13" href="#r3_9_3_13">A Curled Page</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.4" href="#r3_9_4">Skein Expressions</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.1" href="#r3_9_4_1">Transform Steps</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.2" href="#r3_9_4_2">extrude</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.3" href="#r3_9_4_3">crease</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.4" href="#r3_9_4_4">curl</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.5" href="#r3_9_4_5">bend</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.6" href="#r3_9_4_6">displace</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.7" href="#r3_9_4_7">sample</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.8" href="#r3_9_4_8">envelope</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.4.9" href="#r3_9_4_9">expression_map</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.5" href="#r3_9_5">Skein Axes</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.6" href="#r3_9_6">Skein Values</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.7" href="#r3_9_7">Map Modifiers</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.1" href="#r3_9_7_1">linear</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.2" href="#r3_9_7_2">sin and cos</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.3" href="#r3_9_7_3">range</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.4" href="#r3_9_7_4">path</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.5" href="#r3_9_7_5">length</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.6" href="#r3_9_7_6">atan2</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.7" href="#r3_9_7_7">cells</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.8" href="#r3_9_7_8">image</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.9" href="#r3_9_7_9">noise</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.7.10" href="#r3_9_7_10">fbm</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.8" href="#r3_9_8">Paths</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.8.1" href="#r3_9_8_1">Paths of Numbers</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.8.2" href="#r3_9_8_2">sample_path</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.9" href="#r3_9_9">Errors and Limits</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.9.1" href="#r3_9_9_1">Known Issues</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.9.10" href="#r3_9_10">Performance</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.10.1" href="#r3_9_10_1">Reading the Statistics</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.10.2" href="#r3_9_10_2">Stacked Expressions and Final Transforms</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.10.3" href="#r3_9_10_3">Known Slow Cases</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.9.10.4" href="#r3_9_10_4">When a Render Is Slow</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+</table>
+</div>
+<!-- NavPanel End -->
+
+<div class="Content">
+<table class="HeaderFooter" width="100%">
+<tr>
+  <td colspan=5 align="left" class="HeaderFooter">
+    POV-Ray for Unix <strong class="HeaderFooter">version 3.8</strong>
+  </td>
+</tr>
+<tr >
+  <td colspan=5>
+    <hr align="right" width="70%">
+  </td>
+</tr>
+<tr>
+  <td width="30%"></td>
+  <td class="NavBar"><a href="index.html" title="The Front Door">Home</a></td>
+  <td class="NavBar"><a href="u1_0.html" title="Unix Table of Contents">POV-Ray for Unix</a></td>
+  <td class="NavBar"><a href="t2_0.html" title="Tutorial Table of Contents">POV-Ray Tutorial</a></td>
+  <td class="NavBar"><a href="r3_0.html" title="Reference Table of Contents">POV-Ray Reference</a></td>
+</tr>
+</table>
+
+<a name="r3_9"></a>
+<div class="content-level-h2" contains="Skein" id="r3_9">
+<h2>3.9 Skein</h2>
+<p class="Warning"><strong>Warning:</strong> Skein is a beta feature. Its syntax, parameter names and behaviour are subject to significant change, and it probably contains more bugs than are listed here. Scenes written for it may need updating in later releases. See <a href="r3_9.html#r3_9_9_1">Known Issues</a>.</p>
+<p>A <code>skein</code> is a surface, or a solid, made by taking a flat unit square and carrying it through a chain of small steps: roll it into a tube, bend the tube, thicken it, ripple it. Each step takes the surface made so far and returns a new one, so you build a shape the way you would describe it, one operation at a time, instead of writing a single formula for the whole surface.</p>
+<p>This chapter starts with the ideas behind the object and how it differs from the <code>parametric</code> object, then describes the <code>skein</code> statement itself, works through a set of short examples, gives a reference for every step, axis, value and map modifier, and ends with the errors and limits and with what makes a skein slow to render.</p>
+<p>Quick Links:</p>
+<ul>
+  <li><a href="r3_9.html#r3_9_1">First Principles</a></li>
+  <li><a href="r3_9.html#r3_9_2">The Skein Object</a></li>
+  <li><a href="r3_9.html#r3_9_3">Skein Examples</a></li>
+  <li><a href="r3_9.html#r3_9_4">Skein Expressions</a></li>
+  <li><a href="r3_9.html#r3_9_5">Skein Axes</a></li>
+  <li><a href="r3_9.html#r3_9_6">Skein Values</a></li>
+  <li><a href="r3_9.html#r3_9_7">Map Modifiers</a></li>
+  <li><a href="r3_9.html#r3_9_8">Paths</a></li>
+  <li><a href="r3_9.html#r3_9_9">Errors and Limits</a></li>
+  <li><a href="r3_9.html#r3_9_10">Performance</a></li>
+</ul></div>
+
+<a name="r3_9_1"></a>
+<div class="content-level-h3" contains="First Principles" id="r3_9_1">
+<h3>3.9.1 First Principles</h3>
+<p>This section explains what a skein is and why it is a primitive of its own. The syntax is in <a href="r3_9.html#r3_9_2">The Skein Object</a>; you can skip ahead to the <a href="r3_9.html#r3_9_3">examples</a> and come back.</p></div>
+
+<a name="r3_9_1_1"></a>
+<div class="content-level-h4" contains="A Chain of Steps on a Sheet" id="r3_9_1_1">
+<h4>3.9.1.1 A Chain of Steps on a Sheet</h4>
+<p>Every skein starts as the unit square. A point on it has two <em>surface coordinates</em>, <code>u</code> and <code>v</code>, each running from 0 to 1, and it starts at the position <code>&lt;u, v, 0&gt;</code>: a flat sheet one unit wide in x and one unit tall in y, lying in the plane z = 0.</p>
+<p>The <code>expressions</code> block lists the steps. Each step is applied to every point of the sheet, in the order written: it takes the point as the steps before it left it, and moves it. A skein with no steps is the flat sheet; a skein with one <code>extrude</code> step is that sheet rolled round the y axis into a tube; add a second <code>extrude</code> about the x axis and the tube is rolled again into a torus; add a <code>displace</code> step and the torus is rippled along its surface.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 3.6, -5&gt; look_at &lt;0, 0, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    extrude { radius 0.4 }
+    extrude { axis x  radius 1.2 }
+    displace map { uv.u  sin { frequency 8  amplitude 0.05 } }
+  }
+  closed uv
+  rotate z*90
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_o_intro.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">The sheet rolled into a tube, the tube rolled into a ring, the ring rippled round its tube.</p>
+  </td>
+</tr>
+</table>
+<p>Because each step is small and does one thing, the steps compose: the same handful of steps make tubes, vases, tori, springs, knots, folded paper, rolled scrolls, leaves and rocks. A group of steps can be declared once and used as a step in other skeins, so a cross section, a profile or a whole construction can be reused like any other identifier.</p>
+<p>The values that control a step, such as a radius or an angle, need not be constants. In this chapter a <em>value</em> is any of: a number; a function of the surface coordinates, the point and its normal; a <code>map</code> of those inputs through a chain of modifiers; a <code>path</code> of numbers; or a sum, product, minimum or maximum of values. Every one of them can read the same three inputs, described in <a href="r3_9.html#r3_9_1_4">The Universal Inputs</a>, and the forms are listed in <a href="r3_9.html#r3_9_6">Skein Values</a>. A radius that depends on <code>v</code> gives a taper or a vase profile; a radius that reads its section further round as <code>v</code> grows gives a twist.</p>
+<p>POV-Ray does not turn a skein into a mesh. It divides the unit square into patches, bounds each patch from the steps themselves, and for each ray solves for the exact <code>u</code> and <code>v</code> where the ray meets the surface. The point, the normal and the surface coordinates of a hit are those of the surface itself, so a skein is smooth at any distance and <code>uv_mapping</code> follows it exactly. You never give a bounding object, an accuracy or a gradient: the bounds are worked out from the steps.</p></div>
+
+<a name="r3_9_1_2"></a>
+<div class="content-level-h4" contains="Skein and Parametric" id="r3_9_1_2">
+<h4>3.9.1.2 Skein and Parametric</h4>
+<p>The <a href="r3_5.html#r3_5_1_1_11">parametric</a> object also maps two parameters onto a surface, so it is worth being clear about what is different.</p>
+<p>A <code>parametric</code> is given as three functions, x(u, v), y(u, v) and z(u, v), that describe the whole surface at once, over a range of u and v that you choose. To render it you also supply a <code>contained_by</code> object, and usually a <code>max_gradient</code> and an <code>accuracy</code>; a <code>max_gradient</code> that is too small leaves holes. The result is always a thin shell with no inside: <code>inside()</code> does not accept it, as it is not a solid object, and in CSG it cannot cut or be cut as a solid. The parametric object knows nothing about which of its edges meet, where it closes to a point, or which way is out.</p>
+<p>A skein differs in each of these:</p>
+<table width="100%" class="option-list">
+<tr><td><strong>How the surface is given</strong></td><td>A parametric needs one formula per coordinate for the finished shape. A skein is a chain of steps, each a small change to the surface so far; a bend, a fold or a thickening is a step you add, not a rewrite of the formulas.</td></tr>
+<tr><td><strong>Parameter range</strong></td><td>A parametric takes the range you give. A skein's u and v always run from 0 to 1.</td></tr>
+<tr><td><strong>Bounds and accuracy</strong></td><td>A parametric needs <code>contained_by</code>, <code>max_gradient</code> and <code>accuracy</code>. A skein needs nothing: its bounds come from the steps, and hits are solved on the exact surface.</td></tr>
+<tr><td><strong>Topology</strong></td><td>A parametric has none. A skein states which edges join (<code>closed u</code>, <code>v</code> or <code>uv</code>) and what happens at the ends of a tube (<code>ends flat</code>, <code>pole</code>, <code>open</code> or <code>sealed</code>), and POV-Ray checks those claims when the scene is parsed.</td></tr>
+<tr><td><strong>Inside</strong></td><td>A parametric is always hollow: <code>inside()</code> refuses it, and media inside it is not drawn. A closed skein is a solid: <code>inside()</code>, CSG and media all work with it.</td></tr>
+<tr><td><strong>Thickness</strong></td><td>A parametric is a shell of zero thickness. A skein's <code>envelope</code> step turns a sheet into a solid with two faces and rounded or flat edges.</td></tr>
+<tr><td><strong>Reuse</strong></td><td>A parametric can reuse declared functions. A skein can also reuse whole groups of steps.</td></tr>
+</table>
+<p>In the scene below the same unit sphere is made both ways, given the bounding settings a parametric needs, and the front half of each is cut away with <code>difference</code>. The parametric sphere on the left cannot take part: POV-Ray warns that patch objects are not allowed in the intersection a <code>difference</code> makes, and almost nothing of the sphere is drawn. The skein sphere on the right is a solid, so the cut leaves a flat face. The <code>#debug</code> line prints 1: the centre of the skein sphere is inside it.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 1.8, -5&gt; look_at &lt;0, 0, 0&gt; angle 50 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare P = parametric {
+  function { sin(u)*cos(v) }
+  function { cos(u) }
+  function { sin(u)*sin(v) }
+  &lt;0, 0&gt;, &lt;pi, 2*pi&gt;
+  contained_by { sphere { 0, 1.1 } }
+  max_gradient 2
+  accuracy 0.0001
+  precompute 10 x, y, z
+}
+#declare S = skein {
+  expressions {
+    extrude { radius function(v) { sin(pi*v) } }
+    translate { y function(v) { -cos(pi*v) - v } }
+  }
+  closed u
+  ends pole
+}
+#debug concat("inside(skein, origin) = ", str(inside(S, &lt;0, 0, 0&gt;), 0, 0), "\n")
+difference { object { P } box { &lt;-2, -2, -2&gt;, &lt;2, 2, 0&gt; } pigment { rgb &lt;0.8, 0.45, 0.25&gt; } translate -1.2*x }
+difference { object { S } box { &lt;-2, -2, -2&gt;, &lt;2, 2, 0&gt; } pigment { rgb &lt;0.3, 0.55, 0.75&gt; } translate 1.2*x }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_o_parametric.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">Left: a parametric sphere cannot be cut by difference, and almost nothing of it is drawn. Right: a skein sphere with its front half cut away is solid.</p>
+  </td>
+</tr>
+</table>
+<p>These differences are why the skein is a primitive of its own rather than an extension of <code>parametric</code>. Composition, topology and an inside test all depend on knowing how the surface was built: which steps close a seam, which edges meet at a pole, and how each step moves a point, its slopes and its bounds. A single set of three formulas carries none of that.</p></div>
+
+<a name="r3_9_1_3"></a>
+<div class="content-level-h4" contains="Topology and Solids" id="r3_9_1_3">
+<h4>3.9.1.3 Topology and Solids</h4>
+<p>The steps say where each point goes; they do not say which edges of the square meet. You state that beside the steps:</p>
+<ul>
+  <li><code>closed u</code> says that the edge u = 0 and the edge u = 1 are the same points: the sheet has been rolled round until those edges meet, as an <code>extrude</code> does. <code>closed v</code> says the same of v = 0 and v = 1, and <code>closed uv</code> says both, as for a torus. POV-Ray checks the claim when it parses the skein and stops with an error naming the gap if the edges do not meet.</li>
+  <li><code>ends</code> says what happens at the two ends of a tube, the rings at v = 0 and v = 1, when u is closed and v is not: <code>flat</code> closes the end with a flat cap, <code>pole</code> says the end ring closes to a single point (as at the pole of a sphere), <code>sealed</code> says the end ring folds flat onto itself (as where a thickened sheet tapers to nothing), and <code>open</code> leaves it open.</li>
+</ul>
+<p>A skein whose surface closes all the way round is a <em>solid</em>: one with <code>closed uv</code>, or with <code>closed u</code> and both ends <code>flat</code>, <code>pole</code> or <code>sealed</code>. A solid skein has a working inside test, so it can be used in CSG, with <code>inside()</code>, with <code>interior</code> and media, and anywhere else POV-Ray needs to know whether a point is inside an object. A skein that is not closed is a surface with no inside, a patch object like a disc or a triangle: <code>inside()</code> does not accept it, and it cannot act as a solid in CSG.</p>
+<p>Which side is the outside is worked out for you, so a cross section traced in either direction gives the same solid. A closed skein may pass through itself: a point counts as inside when the surface winds around it, and only the crossings between inside and outside are reported, so sheets buried inside the solid are not seen.</p>
+<p>A surface that has no consistent inside, such as a M&ouml;bius strip or a Klein bottle, cannot be a solid. Its seam does not join edge to edge the same way round, so <code>closed</code> is refused with a seam error; left open, such a surface renders as a surface with no inside.</p></div>
+
+<a name="r3_9_1_4"></a>
+<div class="content-level-h4" contains="The Universal Inputs" id="r3_9_1_4">
+<h4>3.9.1.4 The Universal Inputs</h4>
+<p>Every value in every step can read the same three inputs:</p>
+<ul>
+  <li><code>uv</code>, the surface coordinates <code>u</code> and <code>v</code> of the point, from 0 to 1. Steps move points; they never change a point's u and v.</li>
+  <li><code>pos</code>, the point as the steps before this one left it: <code>pos.x</code>, <code>pos.y</code> and <code>pos.z</code>.</li>
+  <li><code>norm</code>, the unit normal of the surface at that point, as the steps before this one left it: <code>norm.x</code>, <code>norm.y</code> and <code>norm.z</code>.</li>
+</ul>
+<p>The single members also have short names: <code>u</code>, <code>v</code>, <code>x</code>, <code>y</code>, <code>z</code>, <code>nx</code>, <code>ny</code> and <code>nz</code>. A step's own internal coordinates, such as the angle an <code>extrude</code> has turned through, are deliberately not inputs. That keeps every value meaning the same thing wherever you write it: a value that works in one step works in any other, and a declared group behaves the same in every skein that uses it. When you need such a quantity, compute it from the inputs: the angle of a point round the y axis is the <code>atan2</code> of its <code>pos.z</code> and <code>pos.x</code>, and on the first extrude it is simply <code>u</code> times the arc.</p>
+<p>The normal is computed only when some value reads it.</p></div>
+
+<a name="r3_9_2"></a>
+<div class="content-level-h3" contains="The Skein Object" id="r3_9_2">
+<h3>3.9.2 The Skein Object</h3>
+<p>The syntax of the <code>skein</code> object is:</p>
+<pre>
+SKEIN:
+  skein {
+    expressions { STEP... }
+    [closed u | v | uv]
+    [ends END [, END]]
+    [OBJECT_MODIFIERS...]
+    }
+  |
+  skein { SKEIN_IDENTIFIER [OBJECT_MODIFIERS...] }
+STEP:
+  scale VECTOR [about VECTOR] | rotate VECTOR [about VECTOR] |
+  translate VECTOR | matrix &lt;...&gt; | transform TRANSFORM |
+  translate { ... } | scale { ... } | rotate { ... } |
+  extrude { ... } | crease { ... } | curl { ... } | bend { ... } |
+  displace VALUE | sample { ... } | envelope { ... } |
+  expression_map { ... } | EXPRESSIONS_IDENTIFIER
+END:
+  flat | pole | open | sealed
+VALUE:
+  FLOAT | function(INPUTS) { ... } | FUNCTION_IDENTIFIER |
+  path { ... } | map { ... } |
+  sum { VALUE... } | product { VALUE... } | min { VALUE... } | max { VALUE... }
+EXPRESSIONS_DECLARATION:
+  #declare IDENTIFIER = expressions { STEP... }
+</pre>
+<p><strong>VALUE is not just a number.</strong> Wherever this chapter's syntax says <em>VALUE</em>, the property takes a number or any of the other forms above, and may vary over the surface: a function such as <code>function(v) { 0.5 - 0.3*v }</code>, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values. They are described in <a href="r3_9.html#r3_9_6">Skein Values</a>. Wherever the syntax says <em>FLOAT</em> or <em>VECTOR</em>, only a constant is accepted, as elsewhere in POV-Ray.</p>
+<p>The <code>expressions</code> block is required, and there is only one. Its steps are described in <a href="r3_9.html#r3_9_4">Skein Expressions</a>. <code>closed</code> and <code>ends</code> are optional; the skein is not closed by default and its ends are <code>open</code>. <code>expressions</code>, <code>closed</code> and <code>ends</code> come first, in any order, and the object modifiers follow them.</p>
+<table width="100%" class="option-list">
+<tr><td><code>expressions { STEP... }</code></td><td>Required. The steps that carry the unit square to the finished surface, applied in order.</td></tr>
+<tr><td><code>closed u | v | uv</code></td><td>Optional. The edges that meet: u = 0 with u = 1, v = 0 with v = 1, or both. Checked at parse time.</td></tr>
+<tr><td><code>ends END [, END]</code></td><td>Optional, default <code>open</code>. What happens at the ring v = 0 and the ring v = 1. One word sets both ends; two words, separated by a comma, set v = 0 then v = 1. Ends apply only when u is closed and v is not; anywhere else they are ignored with a warning.</td></tr>
+</table>
+<p>The four kinds of end are:</p>
+<table width="100%" class="option-list">
+<tr><td><code>flat</code></td><td>A flat cap in the plane of the end ring. The ring must be planar and must wind once around its centre, so that every direction from the centre meets it once (a star-shaped section). On the cap, u is that of the ring at the same angle and v is the end's, 0 or 1.</td></tr>
+<tr><td><code>pole</code></td><td>The end ring closes to a single point, as when a radius reaches zero.</td></tr>
+<tr><td><code>sealed</code></td><td>The end ring folds onto itself, front face meeting back face, as an <code>envelope</code> whose thickness reaches zero at that end does. No cap is added.</td></tr>
+<tr><td><code>open</code></td><td>No cap. The end is left open.</td></tr>
+</table>
+<p>A skein is a solid when it is <code>closed uv</code>, or <code>closed u</code> with both ends <code>flat</code>, <code>pole</code> or <code>sealed</code>; otherwise it is a surface with no inside (see <a href="r3_9.html#r3_9_1_3">Topology and Solids</a>).</p>
+<p>A skein takes the usual object modifiers: transformations, textures, <code>interior_texture</code>, <code>interior</code>, <code>hollow</code>, <code>double_illuminate</code>, <code>clipped_by</code>, <code>bounded_by</code> and the rest. <code>uv_mapping</code> uses the skein's own u and v, so an image or pattern wraps the surface however the steps have moved it. A solid skein works in every CSG operation. A declared skein can be reused with <code>object { Name }</code> or with <code>skein { Name ... }</code> followed by more modifiers.</p>
+<p>Angles in the steps are in degrees, as for <code>rotate</code>. Inside a function body the usual function rules apply, so <code>sin</code> and <code>cos</code> take radians there. The <code>sin</code> and <code>cos</code> map modifiers take their <code>frequency</code> and <code>phase</code> in cycles, as patterns do.</p>
+<p>Only <code>skein</code> is a reserved word. The words used inside a skein, such as <code>extrude</code>, <code>closed</code>, <code>pole</code> or <code>arc</code>, are recognised only there, so a scene can still use them as its own identifiers.</p>
+<p>The following scene cuts a quarter out of a solid skein torus with <code>difference</code>, and prints the result of <code>inside()</code> at a point within the tube:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;1.2, 3.5, -5.5&gt; look_at &lt;0, 0, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Ring = skein {
+  expressions {
+    extrude { radius 0.4 }
+    extrude { axis x  radius 1.2 }
+  }
+  closed uv
+  rotate z*90
+}
+
+difference {
+  object { Ring }
+  box { &lt;0, -1, -2&gt;, &lt;2, 1, 0&gt; }
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+}
+#debug concat("inside(Ring, &lt;1.2, 0, 0&gt;) = ", str(inside(Ring, &lt;1.2, 0, 0&gt;), 0, 0), "\n")
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_o_csg.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A skein torus is a solid: a box cut out of it leaves flat faces.</p>
+  </td>
+</tr>
+</table>
+<p>And because a closed skein has an inside, it can hold media. This sphere glows with emitting media:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 1.5, -4&gt; look_at &lt;0, 0, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.1, 0.1, 0.12&gt; }
+
+skein {
+  expressions {
+    extrude { radius function(v) { sin(pi*v) } }
+    translate { y function(v) { -cos(pi*v) - v } }
+  }
+  closed u
+  ends pole
+  pigment { rgbt 1 }
+  hollow
+  interior { media { emission &lt;0.8, 0.5, 0.2&gt; } }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_o_media.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A closed skein filled with emitting media.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_2_1"></a>
+<div class="content-level-h4" contains="Declared Groups" id="r3_9_2_1">
+<h4>3.9.2.1 Declared Groups</h4>
+<p>A group of steps can be declared with <code>expressions</code> and used as a step by its name:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -7&gt; look_at &lt;0, 0.9, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Tube = expressions { scale &lt;1, 2, 1&gt;  extrude { radius 0.4 } }
+
+skein { expressions { Tube } closed u  ends flat  pigment { rgb &lt;0.8, 0.45, 0.25&gt; } translate -1.2*x }
+skein {
+  expressions { Tube }
+  closed u
+  ends flat
+  rotate z*90
+  translate &lt;1.8, 0.6, 0&gt;
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_o_groups.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">One declared group of steps used by two skeins, the second turned on its side by object transforms.</p>
+  </td>
+</tr>
+</table>
+<p>Using a group is the same as writing its steps in its place. A group can use other groups, can be copied with <code>#declare</code>, passed to and returned from macros, used in any number of skeins, and used as an item of an <code>expression_map</code>. Each skein that uses a group keeps its own copy, so a group that contains function values can be shared freely.</p></div>
+
+<a name="r3_9_3"></a>
+<div class="content-level-h3" contains="Skein Examples" id="r3_9_3">
+<h3>3.9.3 Skein Examples</h3>
+<p>These short scenes show the steps working together. Each is a complete scene; each image was rendered from the scene above it.</p></div>
+
+<a name="r3_9_3_1"></a>
+<div class="content-level-h4" contains="A Tube and a Taper" id="r3_9_3_1">
+<h4>3.9.3.1 A Tube and a Taper</h4>
+<p><code>extrude</code> rolls the sheet round the y axis. The sheet's x, from 0 to 1, becomes the angle, all the way round; its y is kept as the height, which is why the sheet is first scaled to the height wanted. With a constant radius the result is a tube; with a radius that depends on <code>v</code> it tapers. <code>closed u</code> says the seam meets, and <code>ends flat</code> caps both ends, so both are solids.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -6&gt; look_at &lt;0, 0.9, 0&gt; angle 34 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.5 }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.8, 0.45, 0.25&gt; }
+  translate -0.7*x
+}
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius function(v) { 0.5 - 0.3*v } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+  translate 0.7*x
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w01_tube.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube, and a tube whose radius shrinks along v.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_2"></a>
+<div class="content-level-h4" contains="A Vase" id="r3_9_3_2">
+<h4>3.9.3.2 A Vase</h4>
+<p>A radius given as a <code>path</code> of numbers is read along <code>v</code>, so the path is the vase's profile, from the base up. The base is capped and the top left open with <code>ends flat, open</code>; an open skein has no inside, so <code>interior_texture</code> colours the inner face.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 3.4, -5.2&gt; look_at &lt;0, 1, 0&gt; angle 38 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2.2, 1&gt;
+    extrude { radius path { natural_spline 0.35, 0.55, 0.6, 0.42, 0.22, 0.26, 0.38 } }
+  }
+  closed u
+  ends flat, open
+  texture { pigment { rgb &lt;0.2, 0.42, 0.55&gt; } finish { phong 0.6 } }
+  interior_texture { pigment { rgb &lt;0.85, 0.82, 0.75&gt; } }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w02_vase.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A vase whose profile is a natural spline through seven radii.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_3"></a>
+<div class="content-level-h4" contains="A Torus" id="r3_9_3_3">
+<h4>3.9.3.3 A Torus</h4>
+<p>A torus is a tube rolled into a ring: a second <code>extrude</code>, about the x axis, turns the tube's height into the angle round the ring. Both directions now close, so the skein is <code>closed uv</code>. The ring lies around the x axis; the <code>rotate</code> stands it on the y axis for the picture.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 3.2, -4.2&gt; look_at &lt;0, 0, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    extrude { radius 0.4 }
+    extrude { axis x  radius 1.2 }
+  }
+  closed uv
+  rotate z*90
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+  finish { phong 0.5 }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w03_torus.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A torus: an extrude of an extrude.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_4"></a>
+<div class="content-level-h4" contains="A Twisted Column" id="r3_9_3_4">
+<h4>3.9.3.4 A Twisted Column</h4>
+<p>A radius that depends on <code>u</code> gives a cross section that is not round: here a square, as the polar form of a regular polygon. Reading that section further round as <code>v</code> grows twists it: the radius at <code>u</code> is the square's radius at <code>u - v/4</code> turns, so the column turns a quarter turn from bottom to top within the one <code>extrude</code>. The 1 added inside <code>mod</code> keeps its argument positive, since <code>mod</code> keeps the sign of a negative argument.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius function(u, v) { 0.45*cos(pi/4) / cos(mod(2*pi*(1 + u - v/4), pi/2) - pi/4) } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.9, 0.88, 0.8&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w04_column.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A square column twisted by reading its section further round as v grows.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_5"></a>
+<div class="content-level-h4" contains="A Thick Sheet" id="r3_9_3_5">
+<h4>3.9.3.5 A Thick Sheet</h4>
+<p><code>envelope</code> turns a sheet into a solid. Here the sheet is first waved along its length by a <code>translate</code> whose z depends on <code>v</code>, then given a thickness of 0.12 with rounded edges. The envelope doubles the u direction, front face then back face, and <code>closed u</code> joins them round the rounded edges; <code>ends flat</code> caps the two remaining ends.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -6.5&gt; look_at &lt;0, 1.2, 0&gt; angle 38 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;1.6, 2.4, 1&gt;
+    translate { z function(v) { 0.15*sin(3*pi*v) } }
+    envelope { thickness 0.12  edge round }
+  }
+  closed u
+  ends flat
+  rotate y*-35
+  pigment { rgb &lt;0.55, 0.7, 0.45&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w05_slab.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A waved sheet thickened into a solid by envelope.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_6"></a>
+<div class="content-level-h4" contains="A Rock" id="r3_9_3_6">
+<h4>3.9.3.6 A Rock</h4>
+<p>A sphere is an extrude whose radius is sin(&pi;v), with a <code>translate</code> whose y is -cos(&pi;v) - v, so that each ring, which the extrude left at height v, sits at height -cos(&pi;v); both ends close to a point, so they are <code>pole</code> ends. A <code>displace</code> by a fractal noise of the point's position then roughens it into a rock. The displacement moves each point along the surface normal.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 1.5, -4.2&gt; look_at &lt;0, 0, 0&gt; angle 38 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    extrude { radius function(v) { sin(pi*v) } }
+    translate { y function(v) { -cos(pi*v) - v } }
+    displace map { pos  fbm { octaves 3  frequency 2  amplitude 0.1 } }
+  }
+  closed u
+  ends pole
+  pigment { rgb &lt;0.6, 0.58, 0.55&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w06_rock.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A sphere displaced by three octaves of noise.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_7"></a>
+<div class="content-level-h4" contains="A Folded Sheet" id="r3_9_3_7">
+<h4>3.9.3.7 A Folded Sheet</h4>
+<p><code>crease</code> bends a sheet over a turning circle along a hinge: the material on one side of the hinge stays where it is, the rest rolls round a circle of the given radius until it has turned through the angle, then runs on straight. A crease keeps the length of the material, so the stripes, which are evenly spaced in u, stay evenly spaced round the fold. A sheet is not a solid, so it uses <code>double_illuminate</code> to light both sides.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;2.6, 2, -1.2&gt; look_at &lt;0, 0.7, 0.3&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;2, 1.4, 1&gt;
+    crease { axis y  radius 0.12  angle 110 }
+  }
+  texture {
+    uv_mapping
+    pigment { gradient x  color_map { [0.5 rgb 0.95] [0.5 rgb &lt;0.8, 0.3, 0.25&gt;] }  scale 0.1 }
+  }
+  double_illuminate
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w07_fold.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A sheet creased through 110 degrees over a radius of 0.12.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_8"></a>
+<div class="content-level-h4" contains="A Spring" id="r3_9_3_8">
+<h4>3.9.3.8 A Spring</h4>
+<p><code>bend</code> with <code>along</code> carries a straight tube onto a curve. The curve here is a helix, given as three functions of a parameter <code>t</code> from 0 to 1. Material is placed by length, a distance d along the tube landing at distance d along the curve, so the tube is made exactly as long as the helix, which the scene works out from the helix's radius, height and number of turns.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -6&gt; look_at &lt;0, 1, 0&gt; angle 38 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare R = 0.6;
+#declare H = 2;
+#declare Turns = 3;
+#declare Len = sqrt(pow(2*pi*Turns*R, 2) + H*H);
+
+skein {
+  expressions {
+    scale &lt;1, Len, 1&gt;
+    extrude { radius 0.08 }
+    bend {
+      along function(t) { R*cos(2*pi*Turns*t) },
+            function(t) { H*t },
+            function(t) { R*sin(2*pi*Turns*t) }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.75, 0.75, 0.8&gt; }
+  finish { phong 0.8 }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w08_spring.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube bent along a helix.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_9"></a>
+<div class="content-level-h4" contains="Star and Hexagon Sections" id="r3_9_3_9">
+<h4>3.9.3.9 Star and Hexagon Sections</h4>
+<p>A cross section can come from a <code>map</code> as well as a function. On the left the radius is a <code>map</code> of <code>u</code> through a <code>cos</code> of five cycles, offset by 0.45: a five-pointed star. On the right a function gives the polar form of a regular hexagon. Both are star-shaped, so <code>ends flat</code> can cap them.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -4.6&gt; look_at &lt;0, 0.2, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 0.5, 1&gt;
+    extrude { radius map { uv.u  cos { frequency 5  amplitude 0.15 }  linear { offset 0.45 } } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.85, 0.6, 0.2&gt; }
+  translate -0.75*x
+}
+
+skein {
+  expressions {
+    scale &lt;1, 0.5, 1&gt;
+    extrude { radius function(u) { 0.5*cos(pi/6) / cos(mod(2*pi*u, pi/3) - pi/6) } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.35, 0.6, 0.45&gt; }
+  translate 0.75*x
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w09_sections.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A five-lobed section from a cos map, and a hexagonal section from a function.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_10"></a>
+<div class="content-level-h4" contains="A Sheet from an Image" id="r3_9_3_10">
+<h4>3.9.3.10 A Sheet from an Image</h4>
+<p>The <code>image</code> map modifier reads an image's brightness at two inputs. Fed the surface coordinates <code>uv</code>, it covers the sheet once, and <code>displace</code> lifts the sheet by it, like a <code>height_field</code>. The flat sheet's normal points along +z, so the displacement is along z; the transforms on the object centre and size the sheet and turn it to lie in the xz plane with the displacement pointing up. <code>Mount1.png</code> is one of the images in POV-Ray's include directory.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -3.4&gt; look_at &lt;0, 0, 0.2&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    displace map { uv  image { png "Mount1.png" }  linear { scale 0.3 } }
+  }
+  translate &lt;-0.5, -0.5, 0&gt;
+  scale &lt;3, 3, 1&gt;
+  rotate x*-90
+  pigment { rgb &lt;0.55, 0.6, 0.45&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w10_terrain.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A sheet displaced by the brightness of an image.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_11"></a>
+<div class="content-level-h4" contains="Blending Two Sections" id="r3_9_3_11">
+<h4>3.9.3.11 Blending Two Sections</h4>
+<p>An <code>expression_map</code> blends whole chains of steps the way a <code>pigment_map</code> blends pigments. Driven by <code>v</code>, it gives the round section below 0.2, the square one above 0.8, and a blend of the two points in between. The object's <code>scale</code> sets the height.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.8, -5.2&gt; look_at &lt;0, 1, 0&gt; angle 34 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Round = expressions { extrude { radius 0.45 } }
+#declare Square = expressions {
+  extrude { radius function(u) { 0.45*cos(pi/4) / cos(mod(2*pi*u, pi/2) - pi/4) } }
+}
+
+skein {
+  expressions {
+    expression_map { [0.2 Round] [0.8 Square] }
+  }
+  closed u
+  ends flat
+  scale &lt;1, 2, 1&gt;
+  pigment { rgb &lt;0.7, 0.5, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w11_morph.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube that changes from a round section to a square one.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_12"></a>
+<div class="content-level-h4" contains="One Group, Two Objects" id="r3_9_3_12">
+<h4>3.9.3.12 One Group, Two Objects</h4>
+<p>A declared group of steps is reused here for both links of a chain. Each skein stretches its copy into an oval with an object <code>scale</code>, and the second also turns and lifts it with object transforms.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 1, -6&gt; look_at &lt;0, 0.55, 0&gt; angle 34 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Link = expressions {
+  extrude { radius 0.12 }
+  extrude { axis x  radius 0.45 }
+}
+
+skein { expressions { Link } closed uv  scale &lt;1, 1.6, 1&gt;  rotate y*-35  pigment { rgb &lt;0.8, 0.7, 0.4&gt; } }
+skein {
+  expressions { Link }
+  closed uv
+  scale &lt;1, 1.6, 1&gt;
+  rotate y*90
+  translate &lt;0, 1.1, 0&gt;
+  rotate y*-35
+  pigment { rgb &lt;0.4, 0.6, 0.8&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w12_links.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">Two chain links from one declared group of steps.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_3_13"></a>
+<div class="content-level-h4" contains="A Curled Page" id="r3_9_3_13">
+<h4>3.9.3.13 A Curled Page</h4>
+<p><code>curl</code> rolls a sheet up round a straight pivot. Here the pivot runs diagonally across the top right corner of a page, 0.05 in front of it, so the corner beyond the pivot rolls toward the camera; the travel moves the pivot further from the page as it rolls, 0.03 each turn, so each turn of the roll is wider than the last. The page is a declared group of steps, and the stripes are a <code>uv_mapping</code> texture, so they roll with the paper.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0.5, 0.9, -1.9&gt; look_at &lt;0.05, 0.55, 0&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.32, 0.36, 0.4&gt; }
+
+#declare Sheet = expressions { translate &lt;-0.5, 0, 0&gt;  scale &lt;0.85, 1.1, 1&gt; }
+
+skein {
+  expressions {
+    Sheet
+    curl {
+      pivot path { &lt;0.3, 0.6, -0.05&gt;, &lt;-0.7, 1.6, -0.05&gt; }
+      travel path { 0, &lt;0, 0, 0&gt;, 2, &lt;0, 0, -0.06&gt; }
+    }
+  }
+  texture {
+    uv_mapping
+    pigment { gradient y  color_map { [0 rgb 0.96] [0.92 rgb 0.96] [0.92 rgb &lt;0.55, 0.65, 0.85&gt;] [1 rgb &lt;0.55, 0.65, 0.85&gt;] }  scale 1/24 }
+    finish { diffuse 0.9 }
+  }
+  double_illuminate
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_w13_page.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A page whose corner curls toward the reader.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4"></a>
+<div class="content-level-h3" contains="Skein Expressions" id="r3_9_4">
+<h3>3.9.4 Skein Expressions</h3>
+<p>The steps of an <code>expressions</code> block, in the order this section describes them:</p>
+<table class="tablelist">
+<tr valign="top">
+<td width="33%">
+<code><a href="r3_9.html#r3_9_4_1">scale</a></code><br>
+<code><a href="r3_9.html#r3_9_4_1">rotate</a></code><br>
+<code><a href="r3_9.html#r3_9_4_1">translate</a></code><br>
+<code><a href="r3_9.html#r3_9_4_1">matrix</a></code><br>
+<code><a href="r3_9.html#r3_9_4_1">transform</a></code><br>
+</td>
+<td width="33%">
+<code><a href="r3_9.html#r3_9_4_2">extrude</a></code><br>
+<code><a href="r3_9.html#r3_9_4_3">crease</a></code><br>
+<code><a href="r3_9.html#r3_9_4_4">curl</a></code><br>
+<code><a href="r3_9.html#r3_9_4_5">bend</a></code><br>
+<code><a href="r3_9.html#r3_9_4_6">displace</a></code><br>
+</td>
+<td width="33%">
+<code><a href="r3_9.html#r3_9_4_7">sample</a></code><br>
+<code><a href="r3_9.html#r3_9_4_8">envelope</a></code><br>
+<code><a href="r3_9.html#r3_9_4_9">expression_map</a></code><br>
+<code><a href="r3_9.html#r3_9_2_1">a declared group</a></code><br>
+</td>
+</tr>
+</table>
+<p>Wherever a property below is a <em>VALUE</em>, it takes a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values, as listed in <a href="r3_9.html#r3_9_6">Skein Values</a>, and may vary over the surface. Wherever it is a <em>FLOAT</em> or a <em>VECTOR</em>, it takes a constant only. Wherever it is an <em>AXIS</em>, it takes any of the forms in <a href="r3_9.html#r3_9_5">Skein Axes</a>.</p></div>
+
+<a name="r3_9_4_1"></a>
+<div class="content-level-h4" contains="Transform Steps" id="r3_9_4_1">
+<h4>3.9.4.1 Transform Steps</h4>
+<pre>
+scale VECTOR [about VECTOR]
+rotate VECTOR [about VECTOR]
+translate VECTOR
+matrix &lt;Val00, Val01, Val02, Val10, Val11, Val12, Val20, Val21, Val22, Val30, Val31, Val32&gt;
+transform TRANSFORM_IDENTIFIER | transform { TRANSFORMATION... }
+
+translate { [x VALUE] [y VALUE] [z VALUE] }
+scale { [x VALUE] [y VALUE] [z VALUE] [about VECTOR] }
+rotate { [axis VECTOR] [angle VALUE] [about VECTOR] }
+</pre>
+<p>The plain forms are POV-Ray's own transformations, applied to the points of the surface. They take constants only, the same arguments as the object modifiers of the same names: <code>scale</code> takes a vector or a single float, <code>rotate</code> a vector of angles in degrees. <code>about</code>, after a plain <code>scale</code> or <code>rotate</code>, applies it about that point instead of the origin.</p>
+<p>A transform step is for material that a later step works on. Here <code>translate</code> centres the unit sheet on the y axis and <code>scale</code> sizes it, so that the crease after them folds it down the middle:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 38 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;2, 1.4, 1&gt;
+    crease { axis y  radius 0.1  angle 90 }
+  }
+  pigment { rgb &lt;0.8, 0.45, 0.25&gt; }
+  double_illuminate
+}
+</pre>
+<p>A constant rotation that would come last in the list belongs on the object instead, written before its texture: the picture is the same and the render is faster (see <a href="r3_9.html#r3_9_10_2">Performance</a>). A final <code>translate</code> or <code>scale</code> along the axes costs the same either way.</p>
+<p>The braces forms take a <em>VALUE</em> for each component, a number or a function, <code>map</code>, <code>path</code>, <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code>, so the transformation can change over the surface:</p>
+<table width="100%" class="option-list">
+<tr><td><code>translate { x VALUE }</code></td><td>Moves the point by the value along x. Likewise <code>y</code> and <code>z</code>. Each defaults to 0. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>scale { x VALUE }</code></td><td>Multiplies the point's x by the value, measured from the <code>about</code> point. Likewise <code>y</code> and <code>z</code>. Each defaults to 1. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>scale { about VECTOR }</code></td><td>The point the scale is measured from, a constant vector. Default <code>&lt;0, 0, 0&gt;</code>.</td></tr>
+<tr><td><code>rotate { axis VECTOR }</code></td><td>The direction of the line to turn about, a constant vector. Default <code>y</code>. It must not have zero length.</td></tr>
+<tr><td><code>rotate { angle VALUE }</code></td><td>The angle to turn, in degrees, the same way <code>rotate</code> turns about that direction. Default 0. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>rotate { about VECTOR }</code></td><td>A point on the line to turn about, a constant vector. Default <code>&lt;0, 0, 0&gt;</code>.</td></tr>
+</table>
+<p>Every property is optional. A braces form whose values are all constants is the same as the plain form.</p>
+<p>A sway, where x follows a sine of <code>v</code>:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.2, -6&gt; look_at &lt;0, 1.2, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2.5, 1&gt;
+    extrude { radius 0.2 }
+    translate { x map { uv.v  sin { frequency 1.5  amplitude 0.3 } } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_translate.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube swayed by a translate whose x follows a sine of v.</p>
+  </td>
+</tr>
+</table>
+<p>A barrel, scaled out from a line through <code>&lt;0.3, 0, 0&gt;</code>; the tube's axis is at the origin, so it bulges more on one side:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.3 }
+    scale {
+      x function(v) { 1 + 0.6*sin(pi*v) }
+      z function(v) { 1 + 0.6*sin(pi*v) }
+      about &lt;0.3, 0, 0&gt;
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.55, 0.7, 0.45&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_scale.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube scaled in x and z by a value of v, about a point off its axis.</p>
+  </td>
+</tr>
+</table>
+<p>A corkscrew: a thin tube turned about a line through <code>&lt;0.35, 0, 0&gt;</code> by an angle that grows with <code>v</code>:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -6&gt; look_at &lt;0, 1.2, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2.5, 1&gt;
+    extrude { radius 0.15 }
+    rotate { axis y  angle function(v) { 360*v }  about &lt;0.35, 0, 0&gt; }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.8, 0.45, 0.25&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_rotate.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A thin tube turned by a full turn along its height about a line beside it.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4_2"></a>
+<div class="content-level-h4" contains="extrude" id="r3_9_4_2">
+<h4>3.9.4.2 extrude</h4>
+<pre>
+extrude { [axis x | y] [radius VALUE] [arc VALUE] }
+</pre>
+<p><code>extrude</code> brings the surface round a straight line, turning one direction of it into the angle round that line. It makes tubes, cones, vases, fans and, applied twice, tori.</p>
+<table width="100%" class="option-list">
+<tr><td><code>axis x | y</code></td><td>The line to bring the surface round: the x axis or the y axis, through the origin. Default <code>y</code>. Any other direction is an error; to follow a curve, extrude about a straight axis and then use <code>bend</code> with <code>along</code>.</td></tr>
+<tr><td><code>radius VALUE</code></td><td>How far from the line the surface sits. Default 1. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values. A value that varies gives a taper, a profile, a section that is not round, or, read further round as <code>v</code> grows, a twist.</td></tr>
+<tr><td><code>arc VALUE</code></td><td>How far round the line the surface goes, in degrees. Default 360. Less than 360 leaves it open; more overlaps it. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+</table>
+<p>With <code>axis y</code> the incoming x becomes the angle: x = 0 is at angle 0, along +x, and x = 1 is at the full <code>arc</code>, turning the way <code>rotate</code> turns about y. The incoming y is kept as the height along the axis, and the incoming z is added to the radius, so a sheet already lifted off the plane z = 0 sits further out. With <code>axis x</code> the roles move round: the incoming y becomes the angle, starting along +y and turning the way <code>rotate</code> turns about x; the incoming x is kept as the position along the axis; and the incoming z is taken off the radius.</p>
+<p>So on the plain unit sheet, an extrude about y closes u and an extrude about x closes v. Because the incoming coordinate that becomes the angle runs from 0 to 1, most extrudes start with a <code>scale</code> to set the length along the axis, and with an <code>arc</code> of 360 a tube needs <code>closed u</code>.</p>
+<p>The radius is set per point, and the material is stretched round to fit it. That is the difference from <code>crease</code>, which keeps the length of the material it bends. A section given by a radius must be star-shaped: each angle has one radius.</p>
+<p>An <code>arc</code> that varies along the height fans the shape out:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.8, -5.5&gt; look_at &lt;0, 0.9, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.8  arc function(v) { 90 + 180*v } }
+  }
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+  double_illuminate
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_extrude.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">An open extrude whose arc grows from 90 to 270 degrees along v.</p>
+  </td>
+</tr>
+</table>
+<p>For an extrude about x, see <a href="r3_9.html#r3_9_3_3">A Torus</a>.</p></div>
+
+<a name="r3_9_4_3"></a>
+<div class="content-level-h4" contains="crease" id="r3_9_4_3">
+<h4>3.9.4.3 crease</h4>
+<pre>
+crease { axis AXIS  radius VALUE  [angle VALUE] }
+</pre>
+<p><code>crease</code> bends the surface along a line, its <em>hinge</em>, over a turning circle, as a sheet of metal is bent over a former. A small radius gives a sharp crease and a large one a gentle curve.</p>
+<p>A crease is a <em>fold</em>: the material turns through an angle and runs on straight, as in a paper aeroplane. To <em>roll</em> a sheet up, round and round a centre that moves as it goes, as in a scroll or a curled page corner, use <a href="r3_9.html#r3_9_4_4">curl</a>.</p>
+<table width="100%" class="option-list">
+<tr><td><code>axis AXIS</code></td><td>Required. The hinge: any form in <a href="r3_9.html#r3_9_5">Skein Axes</a>, straight or curved.</td></tr>
+<tr><td><code>radius VALUE</code></td><td>Required. The radius of the turning circle. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values. Its sign says which way the material turns. Here radius means how tight the turn is, not, as on <code>extrude</code>, how far the material sits from the line.</td></tr>
+<tr><td><code>angle VALUE</code></td><td>Optional. How far round the turning circle the material goes, in degrees, before it carries on straight. Without it, the material keeps rolling round the circle. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+</table>
+<p>A crease works in three parts. Material on one side of the hinge is left exactly as it was. Past the hinge, it rolls onto the turning circle: the angle a point has turned through is its distance past the hinge divided by the radius, so the length of the material is kept, 10 units of sheet giving 10 units of curve. Once it has turned through <code>angle</code> it leaves the circle and runs straight on along the tangent. A point already lying off the sheet, as on a thick surface, turns on a correspondingly smaller or larger circle, so the inner face of a thick sheet is compressed and the outer face stretched, as in real material.</p>
+<p><strong>Which half moves.</strong> The hinge has a direction, from its first point to its last, or the direction of a vector axis. For a sheet in the xy plane with the hinge along +y, the half on the +x side of the hinge moves and the -x half stays. Reversing the hinge, with <code>axis -y</code> or a path written the other way round, moves the other half.</p>
+<p><strong>Which way it turns.</strong> A positive radius turns the moving half toward +z for a hinge that lies in the xy plane; in general toward z made square to the hinge, or toward +x when the hinge runs along z. A negative radius turns it the other way, by the same amount. A radius that passes through zero gives a sharp crease there, which only makes sense with an <code>angle</code>.</p>
+<p><strong>Straight and curved hinges.</strong> A hinge given as a vector is the line through the origin in that direction. A <code>path</code> of two or more points on one straight line, with linear interpolation, no handles, and not closed, is the whole straight line through them, however far the points reach; it lets you place a straight hinge anywhere. Every other axis is a curved hinge. A curved hinge is read as running along y: the place on the hinge a point turns about is found from the point's own y coordinate, and past an open end of the hinge it carries on straight along its end tangent. To crease along a curve running in another direction, turn the sheet so the curve runs along y first.</p>
+<p><code>radius</code> and <code>angle</code> are values, so they can change along the hinge. On a sheet with a hinge along y, a value of <code>v</code> changes along the hinge: here the turning circle widens from bottom to top.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;2.6, 2, -1.2&gt; look_at &lt;0, 0.7, 0.3&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;2, 1.4, 1&gt;
+    crease { axis y  radius function(v) { 0.05 + 0.4*v }  angle 150 }
+  }
+  texture {
+    uv_mapping
+    pigment { gradient x  color_map { [0.5 rgb 0.95] [0.5 rgb &lt;0.3, 0.55, 0.75&gt;] }  scale 0.1 }
+  }
+  double_illuminate
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_crease.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A crease whose radius grows along the hinge, from 0.05 at the bottom to 0.45 at the top.</p>
+  </td>
+</tr>
+</table>
+<p>A straight hinge placed with a path, running diagonally across the top right corner, and a negative radius, which turns the corner over toward the camera:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0.3, 1.2, -3.4&gt; look_at &lt;0, 0.7, 0&gt; angle 42 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;2, 1.4, 1&gt;
+    crease { axis path { &lt;1, 0.6, 0&gt;, &lt;0.2, 1.4, 0&gt; }  radius -0.1  angle 160 }
+  }
+  pigment { rgb &lt;0.9, 0.88, 0.8&gt; }
+  double_illuminate
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_crease_path.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A corner turned over through 160 degrees about a diagonal hinge given as a two-point path.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4_4"></a>
+<div class="content-level-h4" contains="curl" id="r3_9_4_4">
+<h4>3.9.4.4 curl</h4>
+<pre>
+curl { pivot AXIS  travel path { PATH_ITEMS... } }
+</pre>
+<p><code>curl</code> rolls the sheet up around a straight line, its <em>pivot</em>, keeping the length of the material. The pivot moves as the roll goes on, following the <code>travel</code> path, and its distance from the sheet is the radius of the roll, so a pivot that moves away from the sheet makes each turn wider than the one before: a scroll. A pivot that moves along its own line instead winds a strip into a coil spring, and a short roll at the corner of a sheet is a curled page.</p>
+<p>A <code>curl</code> is a <em>roll</em>, not a fold. A <a href="r3_9.html#r3_9_4_3">crease</a> turns the material through a given angle over a turning circle that stays in one place, then runs on straight, as in a paper aeroplane. A curl winds the material round and round a centre that moves as it goes, as in a scroll, a coil spring or a curled page corner, and it has no angle: the roll goes on for as long as there is material.</p>
+<table width="100%" class="option-list">
+<tr><td><code>pivot AXIS</code></td><td>Required. The line the sheet rolls around. It must be straight: a <code>path</code> of two or more points on one straight line, with linear interpolation, no handles, and not closed, or a <code>sample_path</code> that is straight once it is placed on the surface. Its height above the sheet is the radius the roll starts with.</td></tr>
+<tr><td><code>travel path { }</code></td><td>Required. A path of vectors: how far the pivot has moved from where it started, as the roll goes on, read in turns of the roll.</td></tr>
+</table>
+<p><strong>The radius.</strong> The roll starts with a radius equal to the pivot's height above the sheet. For a <code>path</code>, the height is measured from the plane through the origin that faces z made square to the pivot: for a pivot parallel to the xy plane, from the plane z = 0, so the sheet should lie in that plane when it reaches the curl. For a <code>sample_path</code>, the height is the third number of each point, the distance out from the surface, and it must be the same at every point; the sheet can then be anywhere. A pivot below the sheet, with a negative height, rolls the sheet the other way. A pivot given as a vector is the line through the origin in that direction, which lies in the sheet's plane, so it is refused as a pivot on the sheet.</p>
+<p><strong>Which half rolls, and which way.</strong> The pivot has a direction T, from its first point to its last, and a normal N, which is z made square to T (x when the pivot runs along z), as for a crease. The half of the sheet on the T &times; N side of the pivot rolls up; the other half is left exactly as it was. For a sheet in the xy plane, a pivot running along +y rolls the +x half, one along -y the -x half, one along +x the -y half and one along -x the +y half; reversing the order of the pivot's points rolls the other half. A pivot above the sheet, at positive z, rolls the material up toward +z, round the pivot; a pivot below the sheet rolls it toward -z.</p>
+<p><strong>The travel.</strong> The travel is read in turns: its parameter 0 is the start of the roll, 1 is one full turn, 2 two turns. Only the displacement counts, the path's value at a parameter less its value at 0, so the path may start anywhere. Past the ends of an open path the pivot holds still, so the roll carries on at its last radius; a closed path repeats. A path of two points with no parameter values moves the pivot over the first turn only; to keep a scroll widening for three turns, give the last point the parameter 3, as in <code>path { 0, &lt;0, 0, 0&gt;, 3, &lt;0, 0, 0.15&gt; }</code>, which widens the radius by 0.05 each turn. The direction of the travel is in the scene's coordinates:</p>
+<ul>
+  <li>Away from the sheet, toward the side the pivot is on, the radius grows: each turn is wider than the last, a scroll. Toward the sheet it shrinks, and it must stay above zero.</li>
+  <li>Along the pivot, each turn is carried sideways: a helix, so a long, narrow strip winds into a coil spring.</li>
+  <li>Along the sheet, past the pivot, the roll slides forward as it turns.</li>
+</ul>
+<p><strong>Length.</strong> As with a crease, the material keeps its length: a point a distance d past the pivot lands a distance d along the rolled curve, so stripes evenly spaced on the sheet stay evenly spaced round the roll. A point already lying off the sheet, as on a thick sheet, moves along the roll's normal with it, so the inner face of a thick roll is the tighter one. To roll a sheet that is to be thick, it is simplest to curl the thin sheet and thicken it afterwards with an <a href="r3_9.html#r3_9_4_8">envelope</a>, as the examples do.</p>
+<p>The roll is worked out once, when the scene is parsed, as far as the sheet entering the curl reaches past the pivot; any material beyond that runs straight on along the roll's last tangent. A roll of more than 256 turns is refused.</p>
+<p><strong>Limits.</strong> Each turn of a roll is a circle whose radius is the pivot's height at that point of the roll, so as the pivot rises, every turn still touches the sheet along the line beneath the pivot: the turns of a scroll are not nested apart but all meet there. A scroll left as a thin sheet renders correctly, but a scroll of more than about one turn that is then thickened overlaps itself along that line and is not a closed solid. A travel along the pivot carries the material sideways from the moment it leaves the sheet, which leaves a kink where the roll starts.</p>
+<p>A scroll: a sheet 3 units long rolled up from x = -0.4, the radius starting at 0.08 and growing by 0.05 each turn for up to four turns; the 1.9 units of sheet past the pivot run out after a little over two. The <code>Travel</code> macro writes the travel for a number of turns and a step each turn. The last <code>rotate</code> lays the sheet in the xz plane with the roll rising above it, and the camera looks along the roll; <code>interior_texture</code> colours the inner face of the sheet.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;-0.2, 0.5, -2.4&gt; look_at &lt;-0.75, 0.12, -0.6&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#macro Travel(Turns, Step) path { 0, &lt;0, 0, 0&gt;, Turns, Step*Turns } #end
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;3, 1.2, 1&gt;
+    curl { pivot path { &lt;-0.4, 0, 0.08&gt;, &lt;-0.4, 1, 0.08&gt; }  travel Travel(4, &lt;0, 0, 0.05&gt;) }
+  }
+  texture { pigment { rgb &lt;0.93, 0.86, 0.68&gt; } }
+  interior_texture { pigment { rgb &lt;0.75, 0.55, 0.35&gt; } }
+  double_illuminate
+  rotate -90*x
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_curl_scroll.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A scroll: each turn wider than the last, and every turn touching the sheet beneath the pivot.</p>
+  </td>
+</tr>
+</table>
+<p>A coil spring: a strip 5 long and 0.12 wide, rolled round a pivot along y that travels 0.3 along y each turn, then given a thickness by an <code>envelope</code> that rounds off at the strip's edges.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;-0.6, 1.0, -2.6&gt; look_at &lt;-1.75, 0.12, -0.6&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#macro Travel(Turns, Step) path { 0, &lt;0, 0, 0&gt;, Turns, Step*Turns } #end
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;5, 0.12, 1&gt;
+    curl { pivot path { &lt;-1.5, 0, 0.15&gt;, &lt;-1.5, 1, 0.15&gt; }  travel Travel(5, &lt;0, 0.3, 0&gt;) }
+    envelope { thickness function(uv) { 0.012*pow(1 - pow(2*uv.v - 1, 8), 0.25) }  edge round }
+  }
+  closed u
+  ends sealed
+  pigment { rgb &lt;0.93, 0.86, 0.68&gt; }
+  rotate -90*x
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_curl_coil.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A coil spring: a strip rolled by a curl whose travel runs along the pivot.</p>
+  </td>
+</tr>
+</table>
+<p>With a travel too small to matter, the radius is all but constant: the roll is almost exactly a crease of that radius with no <code>angle</code>, which keeps rolling round its circle. Here a sheet rolls a little under one turn, and is thickened:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0.9, 1.0, -2.4&gt; look_at &lt;-0.25, 0.1, -0.6&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;2, 1.2, 1&gt;
+    curl { pivot path { &lt;0.15, 0, 0.15&gt;, &lt;0.15, 1, 0.15&gt; }  travel path { &lt;0, 0, 0&gt;, &lt;0, 0, 0.001&gt; } }
+    envelope { thickness function(uv) { 0.012*pow(1 - pow(2*uv.v - 1, 8), 0.25) }  edge round }
+  }
+  closed u
+  ends sealed
+  pigment { rgb &lt;0.93, 0.86, 0.68&gt; }
+  rotate -90*x
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_curl_roll.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A roll of near-constant radius, from a travel of 0.001 over the first turn.</p>
+  </td>
+</tr>
+</table>
+<p>See also <a href="r3_9.html#r3_9_3_13">A Curled Page</a>, where the pivot runs diagonally across the corner of a page.</p></div>
+
+<a name="r3_9_4_5"></a>
+<div class="content-level-h4" contains="bend" id="r3_9_4_5">
+<h4>3.9.4.5 bend</h4>
+<pre>
+bend {
+  [axis AXIS]
+  [rotate { angle VALUE }]
+  [translate VALUE]
+  [scale VALUE]
+  [along AXIS]
+  }
+</pre>
+<p><code>bend</code> moves material that is already there, relative to an axis. It does not build anything: the axis only says where the line the material moves about lies. At least one of <code>rotate</code>, <code>translate</code>, <code>scale</code> and <code>along</code> must be given; they may come in any order.</p>
+<table width="100%" class="option-list">
+<tr><td><code>axis AXIS</code></td><td>The line the material moves about. Default <code>y</code>, the y axis through the origin.</td></tr>
+<tr><td><code>rotate { angle VALUE }</code></td><td>Turns the material about the axis, in degrees, the way <code>rotate</code> turns about that direction. Default 0. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>translate VALUE</code></td><td>Moves the material along the axis by the value. Default 0. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>scale VALUE</code></td><td>Multiplies the material's distance out from the axis. Default 1. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>along AXIS</code></td><td>Carries the material from the axis onto another line, so that a straight shape follows a curve.</td></tr>
+</table>
+<p>The turn and the scale act on the material's offset from the axis, and the shift is added along the axis after them. All three take values, so they can vary from point to point: a turn that grows along the axis is a twist, a scale that shrinks is a taper, and a shift that grows with the angle round a coil is the coil's climb.</p>
+<p><strong>A straight axis adds nothing.</strong> About a straight axis, <code>rotate</code>, <code>translate</code> and <code>scale</code> do exactly what the plain <a href="r3_9.html#r3_9_4_1">transform steps</a> with the same values do, so there a <code>bend</code> is only another way to write them; and a twist or a taper of an extruded column is written most simply inside the <code>extrude</code>'s radius, as in <a href="r3_9.html#r3_9_3_4">A Twisted Column</a>. They differ only about a curved axis: there each point finds its place on the axis from its own y coordinate, and turns about the axis's direction there, moves along it, or scales out from it. This gives a twist about a curved line, which <code>rotate</code>, with its fixed axis, cannot.</p>
+<p><strong>along.</strong> Material at a distance d along <code>axis</code> is carried to the point at distance d along the <code>along</code> line, measured along the curve, and turned to the line's direction there, carrying its cross section with it. Because places are matched by length, it does not matter how the curve's parameter is spaced, but the material must be as long as the stretch of curve it is to cover. Material reaching past the end of an open curve carries on straight along the tangent there; on a closed curve it wraps round. A straight path used with <code>along</code> carries the cross section turned a quarter turn about the axis compared with the same line given as a vector, because a path and a vector start their frames from different directions.</p>
+<p>The next two examples use a straight axis to show the syntax; each could be written with the plain steps. A twist and a taper together, on a hexagonal column:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius function(u) { 0.4*cos(pi/6) / cos(mod(2*pi*u, pi/3) - pi/6) } }
+    bend {
+      axis y
+      rotate { angle function(v) { 120*v } }
+      scale function(v) { 1 - 0.5*v }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.9, 0.88, 0.8&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_bend_twist.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A hexagonal column twisted and tapered by one bend.</p>
+  </td>
+</tr>
+</table>
+<p>A coil spring: a thin tube rolled five times round the x axis by an <code>extrude</code> with an <code>arc</code> of five turns, then made to climb along the axis by a <code>translate</code> that grows with <code>v</code>:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 1.8, -4.5&gt; look_at &lt;0, 0.6, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    extrude { radius 0.08 }
+    extrude { axis x  radius 0.6  arc 5*360 }
+    bend { axis x  translate function(v) { 1.25*v } }
+  }
+  closed u
+  ends flat
+  rotate z*90
+  pigment { rgb &lt;0.75, 0.75, 0.8&gt; }
+  finish { phong 0.8 }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_bend_coil.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A coil from an extrude of five turns and a bend that climbs along its axis.</p>
+  </td>
+</tr>
+</table>
+<p>A tube 3 units long carried along a <code>path</code> of about the same length:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 0.6, -4&gt; look_at &lt;0, 0.5, 0&gt; angle 42 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 3, 1&gt;
+    extrude { radius 0.1 }
+    bend { along path { cubic_spline &lt;-1, 0, 0&gt;, &lt;-0.3, 0.8, 0&gt;, &lt;0.4, 0.2, 0&gt;, &lt;1, 1, 0&gt; } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.8, 0.45, 0.25&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_bend_along.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A straight tube bent along a cubic path.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4_6"></a>
+<div class="content-level-h4" contains="displace" id="r3_9_4_6">
+<h4>3.9.4.6 displace</h4>
+<pre>
+displace VALUE
+</pre>
+<p><code>displace</code> moves each point along the normal of the surface by the value, which is a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values. The normal is the one the surface had before this step: on the plain unit sheet it points along +z, and on the wall of an extrude it points outward, so a positive value makes a tube fatter.</p>
+<p>Several <code>displace</code> steps in a row each follow the normal of the surface the step before produced, which is not the same as one displacement by the total: the later ones are bent by the earlier ones. To add several values along one normal, displace by their <code>sum</code>.</p>
+<p>A displacement must leave a <code>flat</code> end planar, so at a flat end it should fall to zero or move the end ring only within its plane; a displacement that jumps, rather than changing smoothly, tears the surface.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.45 }
+    displace map { uv.u  cos { frequency 12  amplitude 0.03 } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.9, 0.88, 0.8&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_displace.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube fluted by a displacement that follows a cosine of u.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4_7"></a>
+<div class="content-level-h4" contains="sample" id="r3_9_4_7">
+<h4>3.9.4.7 sample</h4>
+<pre>
+sample { at &lt;VALUE, VALUE&gt; }
+</pre>
+<p><code>sample</code> evaluates the surface made so far at other surface coordinates and carries on from that point. The two values give the new u and the new v; each is a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values, evaluated at the incoming point, so they can read its <code>uv</code>, <code>pos</code> and <code>norm</code>. The steps after <code>sample</code>, and any <code>uv_mapping</code> texture, still see the skein's own u and v. The coordinates are used as given: to wrap or clamp them into 0 to 1, put them through a <code>map</code> with <code>range</code>.</p>
+<p>That makes <code>sample</code> the tool for reparameterising a surface: mirroring it, shearing it, or showing only part of it. Here the tube's own shape is unchanged, since a tube is the same shape at any angle, but each point of the surface is taken from further round as v grows, so the u and v that the texture sees twist round the tube:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.5 }
+    sample { at &lt;function(u, v) { u + 0.5*v }, function(v) { v }&gt; }
+  }
+  closed u
+  ends flat
+  texture {
+    uv_mapping
+    pigment { checker rgb 0.95, rgb &lt;0.8, 0.3, 0.25&gt;  scale &lt;1/8, 1/4, 1&gt; }
+  }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_sample.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A round tube whose surface coordinates are sheared by sample: the shape is unchanged, the uv-mapped checker twists.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4_8"></a>
+<div class="content-level-h4" contains="envelope" id="r3_9_4_8">
+<h4>3.9.4.8 envelope</h4>
+<pre>
+envelope { thickness VALUE  [axis u | v]  [edge round | flat] }
+</pre>
+<p><code>envelope</code> turns a sheet into a solid in one step, by giving it two faces.</p>
+<table width="100%" class="option-list">
+<tr><td><code>thickness VALUE</code></td><td>Required. The distance between the two faces. A <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values. Its <code>uv</code>, <code>pos</code> and <code>norm</code> are those of the sheet.</td></tr>
+<tr><td><code>axis u | v</code></td><td>The surface direction that is doubled. Default <code>u</code>.</td></tr>
+<tr><td><code>edge round | flat</code></td><td>Joins the two faces at the edges of the sheet: <code>round</code> with a half circle whose radius is half the thickness, <code>flat</code> with a straight face. By default there is no edge, and the faces must meet by themselves where the thickness reaches zero.</td></tr>
+</table>
+<p>The envelope doubles one surface direction. The first half of it is the front face, the sheet moved half the thickness along its normal; the second half is the back face, the same sheet run backwards and moved half the thickness the other way. Steps before the envelope are evaluated for each face at the sheet's own coordinates, and the steps after it see the doubled surface.</p>
+<p>With an <code>edge</code>, a rim joins the faces at the far edge of the sheet; and when the doubled direction is also <code>closed</code>, a second rim joins them at the near edge, so the cross section is a closed loop. Without an <code>edge</code>, the faces must meet where they turn back, so the thickness must be zero there; POV-Ray reports the gap otherwise. A thickness that falls to zero at the other two edges closes those with <code>ends sealed</code>.</p>
+<p>A leaf, whose width and thickness both fall to zero at the tip and the stem:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 1.2, -4&gt; look_at &lt;0, 1, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale { x function(v) { 0.8*sin(pi*v) } }
+    scale &lt;1, 2, 1&gt;
+    envelope { thickness function(uv) { 0.12*sin(pi*uv.v) }  edge round }
+  }
+  closed u
+  ends sealed
+  rotate y*-30
+  pigment { rgb &lt;0.4, 0.65, 0.35&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_envelope.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A leaf: a sheet narrowed toward both ends and thickened by an envelope that tapers to zero, sealed at both ends.</p>
+  </td>
+</tr>
+</table>
+<p>With <code>axis v</code> the envelope gives a tube a wall. The tube is closed in u by its extrude, the envelope doubles v with a flat edge at each end of the wall, and <code>closed uv</code> makes the result a solid pipe:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -4.2&gt; look_at &lt;0, 0.4, 0&gt; angle 40 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 0.6, 1&gt;
+    extrude { radius 0.6 }
+    envelope { thickness 0.1  axis v  edge flat }
+  }
+  closed uv
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_envelope_v.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube given a wall 0.1 thick by an envelope along v.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_4_9"></a>
+<div class="content-level-h4" contains="expression_map" id="r3_9_4_9">
+<h4>3.9.4.9 expression_map</h4>
+<pre>
+expression_map {
+  [DRIVER]
+  [FLOAT[,] ITEM] ...
+  }
+DRIVER:
+  INPUT | VALUE
+ITEM:
+  STEP | expressions { STEP... } | EXPRESSIONS_IDENTIFIER
+</pre>
+<p><code>expression_map</code> blends whole chains of steps, the way a <code>pigment_map</code> blends pigments. Each entry is a constant stop and an item: a single step, an <code>expressions { }</code> block, or a declared group. At each point the driver is evaluated and looked up among the entries' stops: below the first stop the first item is used, above the last the last item, and between two stops the two neighbouring items are both applied to the incoming point and their results blended in proportion. Two entries with the same stop make a hard step from one item to the next.</p>
+<table width="100%" class="option-list">
+<tr><td><code>DRIVER</code></td><td>Optional, default <code>v</code>. Either one input, named as in a map (<code>u</code>, <code>v</code>, <code>uv.u</code>, <code>pos.y</code>, <code>nz</code> and so on), or a <a href="r3_9.html#r3_9_6">value</a>: a number, a function, a <code>map</code>, a <code>path</code> of numbers, or a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code> of values.</td></tr>
+<tr><td><code>[FLOAT ITEM]</code></td><td>At least one. The stop is a constant number; the stops must not decrease from one entry to the next. A comma between the stop and the item is optional.</td></tr>
+</table>
+<p>Entries made from the same declared group are evaluated once, so holding an item over a range with two entries costs nothing extra. <code>blend_mode</code> and <code>blend_gamma</code> are not accepted.</p>
+<p>Here the driver is the height of the incoming point, and the second item is a single step written inline:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.8, -5.2&gt; look_at &lt;0, 1, 0&gt; angle 34 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Round = expressions { extrude { radius 0.45 } }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    expression_map {
+      pos.y
+      [0.6 Round]
+      [1.4 extrude { radius map { uv.u  cos { frequency 6  amplitude 0.1 }  linear { offset 0.4 } } }]
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.7, 0.5, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_expression_map.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube that changes from round to six-lobed with height.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_5"></a>
+<div class="content-level-h3" contains="Skein Axes" id="r3_9_5">
+<h3>3.9.5 Skein Axes</h3>
+<p>An <em>AXIS</em> is a line, straight or curved. It is wanted by <code>crease</code> (its hinge), by <code>curl</code> (its pivot, which must be straight) and by <code>bend</code> (its <code>axis</code> and its <code>along</code>), and takes these forms:</p>
+<pre>
+AXIS:
+  VECTOR |
+  path { PATH_ITEMS... } |
+  sample_path { PATH_ITEMS... } |
+  function(T) { ... }, function(T) { ... }, function(T) { ... }
+</pre>
+<table width="100%" class="option-list">
+<tr><td><code>VECTOR</code></td><td>A straight line through the origin in that direction, such as <code>x</code>, <code>y</code> or <code>&lt;1, 1, 0&gt;</code>. It must not have zero length.</td></tr>
+<tr><td><code>path { }</code></td><td>A line through points in space; the points must be vectors. See <a href="r3_9.html#r3_9_8">Paths</a>.</td></tr>
+<tr><td><code>sample_path { }</code></td><td>A line placed on the surface itself: each point is two surface coordinates and a distance out along the normal. See <a href="r3_9.html#r3_9_8_2">sample_path</a>.</td></tr>
+<tr><td><code>function(T) { }, ...</code></td><td>Three functions of one parameter, separated by commas, giving the x, y and z of a curve as the parameter runs from 0 to 1. The parameter can have any name.</td></tr>
+</table>
+<p><code>extrude</code>'s <code>axis</code> is not an <em>AXIS</em>: it is only <code>x</code> or <code>y</code>.</p>
+<p>A curved axis carries a frame along it, which turns as little as possible from one point to the next, and a cross section carried along the axis turns with that frame. A path is evaluated directly; an axis given by functions is slower, because the functions are run for every point.</p>
+<p>See <a href="r3_9.html#r3_9_3_8">A Spring</a> for an axis given by three functions, <a href="r3_9.html#r3_9_4_5">bend</a> and <a href="r3_9.html#r3_9_4_3">crease</a> for paths, and <a href="r3_9.html#r3_9_8_2">sample_path</a> for an axis placed on the surface.</p></div>
+
+<a name="r3_9_6"></a>
+<div class="content-level-h3" contains="Skein Values" id="r3_9_6">
+<h3>3.9.6 Skein Values</h3>
+<p>Wherever a step's property is a <em>VALUE</em>, it takes any of the following. Every one of them is evaluated for each point of the surface, and can read the <a href="r3_9.html#r3_9_1_4">universal inputs</a>.</p>
+<pre>
+VALUE:
+  FLOAT |
+  function(INPUTS) { FUNCTION_BODY } |
+  FUNCTION_IDENTIFIER |
+  path { NUMBERS... } |
+  map { MAP_ITEMS... } |
+  sum { VALUE... } | product { VALUE... } |
+  min { VALUE... } | max { VALUE... }
+INPUTS:
+  INPUT [, INPUT]...
+INPUT:
+  uv | pos | norm | u | v | x | y | z | nx | ny | nz
+</pre>
+<table width="100%" class="option-list">
+<tr><td><code>FLOAT</code></td><td>Any float expression, which is the same at every point.</td></tr>
+<tr><td><code>function(INPUTS) { }</code></td><td>An inline function. Its parameter list names the inputs it reads: the groups <code>uv</code>, <code>pos</code> and <code>norm</code>, whose members are written <code>uv.u</code>, <code>pos.x</code>, <code>norm.z</code> and so on, or the single inputs <code>u</code>, <code>v</code>, <code>x</code>, <code>y</code>, <code>z</code>, <code>nx</code>, <code>ny</code> and <code>nz</code>. List them in any order, each once. The parameter list is required. The body is an ordinary function body, so it can use the built-in functions, declared functions and pattern functions; its <code>sin</code> and <code>cos</code> take radians.</td></tr>
+<tr><td><code>FUNCTION_IDENTIFIER</code></td><td>A declared function, named without parentheses. Its parameters must be named from <code>u</code>, <code>v</code>, <code>x</code>, <code>y</code>, <code>z</code>, <code>nx</code>, <code>ny</code> and <code>nz</code>, and they are fed by name; a function declared without a parameter list takes <code>x</code>, <code>y</code> and <code>z</code>. A declared function cannot take both <code>u</code> and <code>x</code>, or both <code>v</code> and <code>y</code>; write such a function inline. A declared function written with arguments, as in <code>F(0.5)</code>, is an ordinary float expression.</td></tr>
+<tr><td><code>path { }</code></td><td>A path whose points are numbers, read at <code>v</code>: the first point at v = 0 and the last at v = 1. To read a path at anything else, use the <a href="r3_9.html#r3_9_7_4">path map modifier</a>. See <a href="r3_9.html#r3_9_8">Paths</a>.</td></tr>
+<tr><td><code>map { }</code></td><td>One or more inputs passed through a chain of modifiers. See <a href="r3_9.html#r3_9_7">Map Modifiers</a>.</td></tr>
+<tr><td><code>sum { }</code>, <code>product { }</code>, <code>min { }</code>, <code>max { }</code></td><td>The sum, product, minimum or maximum of one or more values, all evaluated at the same point. Entries may be separated by commas. <code>min</code> and <code>max</code> give a crease in the surface where two entries cross.</td></tr>
+</table>
+<p>These words start a value only when a <code>{</code> follows them, so <code>min(0.1, 0.2)</code> is still the ordinary float function, and a float that happens to be declared as <code>product</code> still reads as a float.</p>
+<p>A skein can hold at most 32 function values in all, inline or declared, counting those inside <code>sum</code>, <code>product</code>, <code>min</code> and <code>max</code> and inside <code>expression_map</code> items. Numbers, paths and maps are evaluated directly and do not count; they are also the faster choice where they will do. Functions given as an <em>AXIS</em> do not count either.</p>
+<p>A sum of a number, a declared function and a map:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Bulge = function(v) { 0.15*sin(pi*v) }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude {
+      radius sum {
+        0.3
+        Bulge
+        map { uv.u  cos { frequency 6  amplitude 0.04 } }
+      }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_values.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A radius that is a sum of a constant, a bulge along v and a ripple round u.</p>
+  </td>
+</tr>
+</table>
+<p>A product of a <code>max</code> and a map: a cone cut off at a radius of 0.25, rippled by a factor that varies round it:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude {
+      radius product {
+        max { 0.25, function(v) { 0.6 - 0.6*v } }
+        map { uv.u  cos { frequency 8  amplitude 0.08 }  linear { offset 1 } }
+      }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.55, 0.7, 0.45&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_values_minmax.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A radius that is the product of a clipped cone and a ripple.</p>
+  </td>
+</tr>
+</table>
+<p>A declared function of <code>y</code>, fed the incoming point's height, and an inline function reading the normal and the point. The second displacement only pushes out the side of the tube whose normal faces +x:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+#declare Wave = function(y) { 0.03*(1 - cos(4*pi*y)) }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.4 }
+    displace Wave
+    displace function(norm, pos) { 0.04*max(0, norm.x)*(1 + sin(10*pos.y)) }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_function_inputs.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">Two displacements: one from a declared function of y, one from an inline function of the normal and the point.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7"></a>
+<div class="content-level-h3" contains="Map Modifiers" id="r3_9_7">
+<h3>3.9.7 Map Modifiers</h3>
+<pre>
+map { MAP_ITEMS... }
+MAP_ITEMS:
+  INPUT... MODIFIER... [INPUT... MODIFIER...]...
+INPUT:
+  uv | pos | norm | uv.u | uv.v | pos.x | pos.y | pos.z |
+  norm.x | norm.y | norm.z | u | v | x | y | z | nx | ny | nz
+MODIFIER:
+  linear [{ ... }] | sin [{ ... }] | cos [{ ... }] | range [{ ... }] |
+  path { ... } | length | atan2 | cells [{ ... }] |
+  image { ... } | noise [{ ... }] | fbm [{ ... }]
+</pre>
+<p>A <code>map</code> passes its inputs through a chain of built-in modifiers, read from left to right. Each input puts its value on a list; each modifier takes as many values as it needs from the end of the list and puts its result back. <code>uv</code> puts both surface coordinates on the list, and <code>pos</code> and <code>norm</code> put three values each. When the map ends, exactly one value must be left, which is the map's value. Commas between items are optional.</p>
+<p>So <code>map { uv.v  linear { scale 2 } }</code> is twice v; <code>map { pos.x, pos.z  length }</code> is the distance from the y axis; and each input can have its own chain before a modifier combines it with others, as in the <a href="r3_9.html#r3_9_7_8">image</a> example.</p>
+<p>Maps are evaluated, differentiated and bounded directly, without running a function, which makes them faster and more reliable than an equivalent function. At most eight values can be waiting on the list at once.</p>
+<p>The modifiers and the number of values each takes:</p>
+<table width="100%" class="option-list">
+<tr><td><code>linear</code></td><td>1</td><td><em>scale</em> &times; value + <em>offset</em></td></tr>
+<tr><td><code>sin</code>, <code>cos</code></td><td>1</td><td>a sine or cosine wave of the value</td></tr>
+<tr><td><code>range</code></td><td>1</td><td>maps one range onto another, wrapping, mirroring or clamping first</td></tr>
+<tr><td><code>path</code></td><td>1</td><td>a path of numbers read at the value</td></tr>
+<tr><td><code>length</code></td><td>2</td><td>the length of the pair</td></tr>
+<tr><td><code>atan2</code></td><td>2</td><td>the angle of the pair, in radians</td></tr>
+<tr><td><code>cells</code></td><td>2</td><td>a cellular pattern in the plane</td></tr>
+<tr><td><code>image</code></td><td>2</td><td>an image's brightness</td></tr>
+<tr><td><code>noise</code></td><td>3</td><td>POV-Ray's noise</td></tr>
+<tr><td><code>fbm</code></td><td>3</td><td>several octaves of that noise</td></tr>
+</table></div>
+
+<a name="r3_9_7_1"></a>
+<div class="content-level-h4" contains="linear" id="r3_9_7_1">
+<h4>3.9.7.1 linear</h4>
+<pre>
+linear [{ [scale FLOAT] [offset FLOAT] }]
+</pre>
+<p>Takes one value, a, and gives <em>scale</em> &times; a + <em>offset</em>. <code>scale</code> defaults to 1 and <code>offset</code> to 0. Here the radius falls from 0.5 at the bottom to 0.2 at the top:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius map { uv.v  linear { scale -0.3  offset 0.5 } } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.8, 0.45, 0.25&gt; }
+}
+</pre></div>
+
+<a name="r3_9_7_2"></a>
+<div class="content-level-h4" contains="sin and cos" id="r3_9_7_2">
+<h4>3.9.7.2 sin and cos</h4>
+<pre>
+sin [{ [frequency FLOAT] [amplitude FLOAT] [phase FLOAT] }]
+cos [{ [frequency FLOAT] [amplitude FLOAT] [phase FLOAT] }]
+</pre>
+<p>Take one value, a, and give <em>amplitude</em> &times; sin(2&pi;(<em>frequency</em> &times; a + <em>phase</em>)), or the same with cos. <code>frequency</code> is in cycles per unit of the value and <code>phase</code> in cycles, as for patterns. <code>frequency</code> and <code>amplitude</code> default to 1, <code>phase</code> to 0. A whole number of cycles of <code>u</code> meets itself across a closed seam.</p>
+<p>A sine in x and a cosine in z, both of <code>v</code>, wind a thin tube into a helix:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.2, -6&gt; look_at &lt;0, 1.2, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2.5, 1&gt;
+    extrude { radius 0.12 }
+    translate {
+      x map { uv.v  sin { frequency 2  amplitude 0.35 } }
+      z map { uv.v  cos { frequency 2  amplitude 0.35  phase 0.5 } }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_sincos.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube moved in x by a sine and in z by a cosine of v.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_3"></a>
+<div class="content-level-h4" contains="range" id="r3_9_7_3">
+<h4>3.9.7.3 range</h4>
+<pre>
+range [{ [from FLOAT, FLOAT] [to FLOAT, FLOAT] [repeat | mirror | clamp] }]
+</pre>
+<p>Takes one value and maps the <code>from</code> range onto the <code>to</code> range. Both default to 0, 1. Without a method the mapping is a plain straight-line one, and values outside the <code>from</code> range map outside the <code>to</code> range. A method first brings a value that lies outside the <code>from</code> range back into it:</p>
+<table width="100%" class="option-list">
+<tr><td><code>repeat</code></td><td>Wraps round: with the default ranges 1.25 becomes 0.25.</td></tr>
+<tr><td><code>mirror</code></td><td>Reflects back and forth: 1.25 becomes 0.75.</td></tr>
+<tr><td><code>clamp</code></td><td>Holds at the ends of the range: 1.25 becomes 1.</td></tr>
+</table>
+<p>The <code>from</code> range must not have zero width. Either range may run backwards: <code>range { to 1, 0 }</code> turns a value of 0 to 1 into 1 to 0. On a closed u, <code>repeat</code> with a whole number of copies meets itself at the seam, and so does <code>mirror</code> with an even number.</p>
+<p>On the left, <code>v</code> is clamped to the range 0.3 to 0.7 and mapped onto radii from 0.5 down to 0.25, so the radius holds, falls, and holds again. On the right, <code>v</code> is scaled to three times its range and mirrored before the same mapping, so the radius runs down and back three times. <code>repeat</code> in its place would make the radius jump back at each copy, which tears the surface.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -6&gt; look_at &lt;0, 1, 0&gt; angle 38 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius map { uv.v  range { from 0.3, 0.7  clamp }  range { to 0.5, 0.25 } } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+  translate -0.7*x
+}
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius map { uv.v  linear { scale 3 }  range { mirror }  range { to 0.5, 0.25 } } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.55, 0.7, 0.45&gt; }
+  translate 0.7*x
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_range.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">Left: range clamp holds the radius outside 0.3 to 0.7. Right: range mirror gives a zigzag profile.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_4"></a>
+<div class="content-level-h4" contains="path" id="r3_9_7_4">
+<h4>3.9.7.4 path</h4>
+<pre>
+path { PATH_ITEMS... }
+</pre>
+<p>Takes one value and reads a path of numbers at it: the path's first point at 0 and its last at 1, unless the points give their own parameter values. Past its ends, an open path holds its end values and a closed path repeats. The path's syntax is in <a href="r3_9.html#r3_9_8">Paths</a>; it must have numbers, not vectors, as points. Here a closed path read round <code>u</code> gives a three-lobed section with no seam:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude {
+      radius map {
+        uv.u
+        path { natural_spline 0.5, 0.35, 0.5, 0.35, 0.5, 0.35  closed }
+      }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.7, 0.5, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_path.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A section from a closed natural spline read at u.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_5"></a>
+<div class="content-level-h4" contains="length" id="r3_9_7_5">
+<h4>3.9.7.5 length</h4>
+<pre>
+length
+</pre>
+<p>Takes two values, a and b, and gives the length of the pair, sqrt(a&sup2; + b&sup2;). It has no properties. The distance from the origin in the plane of the sheet, through a sine, makes ripples:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -3.4&gt; look_at &lt;0, 0, 0.2&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, -0.5, 0&gt;
+    scale &lt;3, 3, 1&gt;
+    displace map { pos.x, pos.y  length  sin { frequency 3  amplitude 0.04 } }
+  }
+  rotate x*-90
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_length.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">Ripples: a sine of the distance from the centre of the sheet.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_6"></a>
+<div class="content-level-h4" contains="atan2" id="r3_9_7_6">
+<h4>3.9.7.6 atan2</h4>
+<pre>
+atan2
+</pre>
+<p>Takes two values, a then b, and gives atan2(a, b), the angle of the point (b, a) in radians, from -&pi; to &pi;. It has no properties. So <code>pos.y, pos.x  atan2</code> is the angle of the point round the z axis. Scaled from radians to turns and put through a sine of eight cycles, it makes eight spokes:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -3.4&gt; look_at &lt;0, 0, 0.2&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, -0.5, 0&gt;
+    scale &lt;3, 3, 1&gt;
+    displace map { pos.y, pos.x  atan2  linear { scale 1/(2*pi) }  sin { frequency 8  amplitude 0.04 } }
+  }
+  rotate x*-90
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_atan2.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">Spokes: a sine of the angle round the centre of the sheet.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_7"></a>
+<div class="content-level-h4" contains="cells" id="r3_9_7_7">
+<h4>3.9.7.7 cells</h4>
+<pre>
+cells [{ [frequency FLOAT] [amplitude FLOAT] [form &lt;FLOAT, FLOAT&gt;] }]
+</pre>
+<p>Takes two values, a point in a plane, and gives a cellular pattern: <em>amplitude</em> &times; (<em>f1 weight</em> &times; F1 + <em>f2 weight</em> &times; F2), where F1 and F2 are the distances to the nearest and second nearest of a set of random points, about one to each unit square, and the input is first multiplied by <em>frequency</em>. The random points are those of the <code>crackle</code> pattern.</p>
+<table width="100%" class="option-list">
+<tr><td><code>frequency</code></td><td>Multiplies the input; more cells per unit. Default 1.</td></tr>
+<tr><td><code>amplitude</code></td><td>Multiplies the result. Default 1.</td></tr>
+<tr><td><code>form</code></td><td>The weights of F1 and F2, as in <code>crackle</code>'s <code>form</code>. Default <code>&lt;1, 0&gt;</code>, the distance to the nearest point; <code>&lt;-1, 1&gt;</code> is near zero along the cell borders, giving cracks.</td></tr>
+</table>
+<p>The pattern is smooth within a cell and creased along the cell borders.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -3.4&gt; look_at &lt;0, 0, 0.2&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    displace map { uv  cells { frequency 6  amplitude 0.08  form &lt;-1, 1&gt; } }
+  }
+  translate &lt;-0.5, -0.5, 0&gt;
+  scale &lt;3, 3, 1&gt;
+  rotate x*-90
+  pigment { rgb &lt;0.6, 0.58, 0.55&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_cells.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A sheet raised by the cells pattern with form &lt;-1, 1&gt;: low along the cell borders.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_8"></a>
+<div class="content-level-h4" contains="image" id="r3_9_7_8">
+<h4>3.9.7.8 image</h4>
+<pre>
+image { BITMAP_TYPE "filename" [interpolate 2 | 3] }
+image { FUNCTION_IMAGE [interpolate 2 | 3] }
+</pre>
+<p>Takes two values, a point on the image, and gives the image's brightness there, from 0 to 1. The image is read as for an <code>image_map</code>, by file type and name, or from a function image. The first value runs across the image from left to right and the second up it, one copy of the image to each unit; outside 0 to 1 the image repeats. Colour images are reduced to their grey value.</p>
+<table width="100%" class="option-list">
+<tr><td><code>interpolate 2 | 3</code></td><td>2, bilinear, the default here; 3, bicubic, which is smooth across the pixels. Without interpolation a displacement would tear, so no other value is accepted.</td></tr>
+</table>
+<p>Each input can have its own chain before the image, here to tile the image twice in each direction, mirrored so the copies meet without a seam:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -3.4&gt; look_at &lt;0, 0, 0.2&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    displace map {
+      uv.u  linear { scale 2 }  range { mirror }
+      uv.v  linear { scale 2 }  range { mirror }
+      image { png "plasma3.png"  interpolate 3 }
+      linear { scale 0.15 }
+    }
+  }
+  translate &lt;-0.5, -0.5, 0&gt;
+  scale &lt;3, 3, 1&gt;
+  rotate x*-90
+  pigment { rgb &lt;0.55, 0.6, 0.45&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_image.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A sheet displaced by an image tiled with range mirror and read with bicubic interpolation.</p>
+  </td>
+</tr>
+</table>
+<p>See also <a href="r3_9.html#r3_9_3_10">A Sheet from an Image</a>.</p></div>
+
+<a name="r3_9_7_9"></a>
+<div class="content-level-h4" contains="noise" id="r3_9_7_9">
+<h4>3.9.7.9 noise</h4>
+<pre>
+noise [{ [frequency FLOAT] [amplitude FLOAT] }]
+</pre>
+<p>Takes three values, a point, and gives POV-Ray's noise at that point multiplied by <em>frequency</em>, centred on zero: values from -<em>amplitude</em> to +<em>amplitude</em>. It is the same noise the <code>bozo</code> pattern uses. <code>frequency</code> and <code>amplitude</code> default to 1. It uses the default noise generator, whatever <code>global_settings { noise_generator }</code> says.</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.4, -5.5&gt; look_at &lt;0, 1, 0&gt; angle 36 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 2, 1&gt;
+    extrude { radius 0.45 }
+    displace map { pos  noise { frequency 4  amplitude 0.05 } }
+  }
+  closed u
+  pigment { rgb &lt;0.8, 0.45, 0.25&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_noise.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube displaced by noise of its position.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_7_10"></a>
+<div class="content-level-h4" contains="fbm" id="r3_9_7_10">
+<h4>3.9.7.10 fbm</h4>
+<pre>
+fbm [{ [octaves INT] [lacunarity FLOAT] [gain FLOAT] [frequency FLOAT] [amplitude FLOAT] }]
+</pre>
+<p>Takes three values, a point, and gives a sum of several layers, or octaves, of the same noise as <code>noise</code>. Each octave's frequency is the previous one's times <em>lacunarity</em>, and its amplitude the previous one's times <em>gain</em>.</p>
+<table width="100%" class="option-list">
+<tr><td><code>octaves</code></td><td>The number of layers, a whole number from 1 to 32. Default 4.</td></tr>
+<tr><td><code>lacunarity</code></td><td>The frequency multiplier from one octave to the next. Default 2.</td></tr>
+<tr><td><code>gain</code></td><td>The amplitude multiplier from one octave to the next. Default 0.5.</td></tr>
+<tr><td><code>frequency</code></td><td>The frequency of the first octave. Default 1.</td></tr>
+<tr><td><code>amplitude</code></td><td>The amplitude of the first octave. Default 1.</td></tr>
+</table>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 2.6, -3.4&gt; look_at &lt;0, 0, 0.2&gt; angle 45 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, -0.5, 0&gt;
+    scale &lt;3, 3, 1&gt;
+    displace map { pos  fbm { octaves 5  lacunarity 2  gain 0.5  frequency 1  amplitude 0.25 } }
+  }
+  rotate x*-90
+  pigment { rgb &lt;0.55, 0.6, 0.45&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_map_fbm.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A sheet displaced by five octaves of noise.</p>
+  </td>
+</tr>
+</table>
+<p>See also <a href="r3_9.html#r3_9_3_6">A Rock</a>.</p></div>
+
+<a name="r3_9_8"></a>
+<div class="content-level-h3" contains="Paths" id="r3_9_8">
+<h3>3.9.8 Paths</h3>
+<pre>
+path { PATH_ITEMS... }
+PATH_ITEMS:
+  [linear_spline | quadratic_spline | cubic_spline | natural_spline]
+  POINT [, POINT]...
+  [closed] [arclength]
+POINT:
+  FLOAT |
+  [FLOAT,] VECTOR [handle VECTOR | handles VECTOR, VECTOR]
+</pre>
+<p>A <code>path</code> is a series of points joined into a curve. Its points are either all numbers, a path of values, or vectors, a path through space. A path of numbers is a <em>VALUE</em>, read at <code>v</code>, and the <code>path</code> map modifier reads one at anything; a path of vectors is an <em>AXIS</em>. At least two points are needed. Commas between items are optional.</p>
+<table width="100%" class="option-list">
+<tr><td><code>linear_spline</code></td><td>Straight lines between the points. The default.</td></tr>
+<tr><td><code>quadratic_spline</code></td><td>Each segment follows the parabola through the previous point, its own start and the next point, as for POV-Ray's <code>spline</code>.</td></tr>
+<tr><td><code>cubic_spline</code></td><td>A smooth curve through the points (Catmull-Rom), with its slopes taken from the neighbouring points.</td></tr>
+<tr><td><code>natural_spline</code></td><td>The smoothest curve through the points, whose curvature also changes smoothly; on a closed path it runs smoothly through the join.</td></tr>
+<tr><td><code>closed</code></td><td>The path runs from its last point back to its first, and repeats outside its range instead of holding its ends.</td></tr>
+<tr><td><code>arclength</code></td><td>Respaces a path of vectors so that equal steps of its parameter are equal distances along it. Paths of numbers cannot use it.</td></tr>
+<tr><td><code>FLOAT, VECTOR</code></td><td>A number before a vector point is the parameter at which the path reaches that point. Give one for every point or for none; they must increase, and on a closed path start at 0 and stay below 1, where it closes. Without them the points are spread evenly from 0 to 1. A path of numbers cannot give parameter values.</td></tr>
+<tr><td><code>handle VECTOR</code></td><td>After a vector point: the direction the curve leaves the point in, as an offset from it, as in a drawing program. It arrives from the opposite direction, so the curve passes through the point smoothly.</td></tr>
+<tr><td><code>handles VECTOR, VECTOR</code></td><td>After a vector point: separate offsets for the curve arriving at the point and for the curve leaving it, so the curve can turn a corner there.</td></tr>
+</table>
+<p>A handle overrides the interpolation on its side of the point; where there is no handle the interpolation keyword decides. Outside its parameter range, an open path holds its end value and a closed path repeats.</p>
+<p>A path through space with parameter values, handles and <code>arclength</code>, used as a <code>bend</code>'s <code>along</code>. The tube, 3.8 units long, is longer than the path, and the material that reaches past the end of the open path carries on straight along the path's end tangent:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0.2, 0.6, -4.4&gt; look_at &lt;0.2, 0.45, 0&gt; angle 42 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 3.8, 1&gt;
+    extrude { radius 0.08 }
+    bend {
+      along path {
+        cubic_spline
+        0,   &lt;-1.2, 0, 0&gt;
+        0.3, &lt;-0.4, 1, 0&gt;  handle &lt;0.4, 0, 0&gt;
+        1,   &lt;1.2, 0.4, 0&gt;  handles &lt;-0.3, 0.6, 0&gt;, &lt;0.3, -0.6, 0&gt;
+        arclength
+      }
+    }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.3, 0.55, 0.75&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_path.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A tube along a path whose points carry parameter values and handles, running on straight past the path's end.</p>
+  </td>
+</tr>
+</table>
+<p>Paths of numbers as values: a profile read at v, summed with a closed path read round u in a map, and a climb along the axis read at v:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;0, 3.2, -3.6&gt; look_at &lt;0, 0.2, 0&gt; angle 42 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    scale &lt;1, 0.3, 1&gt;
+    extrude {
+      radius sum {
+        path { linear_spline 0.6, 0.7, 0.6 }
+        map { uv.u  path { linear_spline 0, 0.12, 0, 0.12, 0, 0.12  closed } }
+      }
+    }
+    translate { y path { quadratic_spline 0, 0.1, 0.4 } }
+  }
+  closed u
+  ends flat
+  pigment { rgb &lt;0.85, 0.65, 0.3&gt; }
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_path_closed.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A short column whose radius and climb are paths of v, with three ridges from a closed path read at u.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_8_1"></a>
+<div class="content-level-h4" contains="Paths of Numbers" id="r3_9_8_1">
+<h4>3.9.8.1 Paths of Numbers</h4>
+<p>A path whose points are all numbers is a curve of values, such as a profile. Used directly as a value it is read at <code>v</code>; in a map, the <code>path</code> modifier reads it at any value. Its points cannot have parameter values or handles, and <code>arclength</code> does not apply.</p>
+<p>See <a href="r3_9.html#r3_9_3_2">A Vase</a> and <a href="r3_9.html#r3_9_7_4">the path map modifier</a>.</p></div>
+
+<a name="r3_9_8_2"></a>
+<div class="content-level-h4" contains="sample_path" id="r3_9_8_2">
+<h4>3.9.8.2 sample_path</h4>
+<pre>
+sample_path { PATH_ITEMS... }
+</pre>
+<p>A <code>sample_path</code> is an axis placed on the surface rather than in space. It is written like a path of vectors, but each point is <code>&lt;u, v, distance&gt;</code>: a place on the surface entering the step, given by its surface coordinates, and a distance out from the surface along its normal there. It lets you place a hinge or an axis against the surface without working out where the steps before have put it. POV-Ray places it when the scene is parsed. As a <code>curl</code>'s pivot, the distance is the radius the roll starts with, and must be the same at every point.</p>
+<p>Here a sheet is first rippled, and the hinge of a crease is placed on it at u = 0.75, the whole way along v:</p>
+<pre>
+#version 3.8;
+global_settings { assumed_gamma 1 }
+camera { location &lt;1.6, 1.6, -3.2&gt; look_at &lt;0, 0.6, 0&gt; angle 42 }
+light_source { &lt;-4, 6, -5&gt; rgb 1 }
+light_source { &lt;5, 2, -3&gt; rgb 0.4 }
+background { rgb &lt;0.85, 0.88, 0.92&gt; }
+
+skein {
+  expressions {
+    translate &lt;-0.5, 0, 0&gt;
+    scale &lt;2, 1.4, 1&gt;
+    displace function(u, v) { 0.05*sin(6*pi*u)*sin(pi*v) }
+    crease { axis sample_path { &lt;0.75, 0, 0&gt;, &lt;0.75, 1, 0&gt; }  radius -0.1  angle 90 }
+  }
+  pigment { rgb &lt;0.9, 0.88, 0.8&gt; }
+  double_illuminate
+}
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td>
+    <img class="center" width="320px" src="images/skein_r_sample_path.png">
+  </td>
+</tr>
+<tr>
+  <td>
+    <p class="caption">A rippled sheet creased along a sample_path placed on its surface.</p>
+  </td>
+</tr>
+</table></div>
+
+<a name="r3_9_9"></a>
+<div class="content-level-h3" contains="Errors and Limits" id="r3_9_9">
+<h3>3.9.9 Errors and Limits</h3>
+<p>POV-Ray checks a skein when it parses it and stops with an error that names the step and the problem. The checks a scene author is most likely to meet are:</p>
+<ul>
+  <li><strong>Seams.</strong> With <code>closed</code>, the edges that are said to meet must meet. The error gives the gap and where along the edge it is largest.</li>
+  <li><strong>Ends.</strong> A <code>flat</code> end must be planar and must wind once round its centre; a <code>pole</code> end must close to a point; a <code>sealed</code> end must fold flat onto itself. A displacement or a twist that tilts an end ring out of its plane breaks a flat end; fade it to zero toward the end.</li>
+  <li><strong>Non-orientable surfaces.</strong> A M&ouml;bius strip or a Klein bottle has no consistent inside. Its seam joins the edges the wrong way round, so <code>closed</code> is refused with a seam error. Without <code>closed</code> it parses and renders as an open surface.</li>
+  <li><strong>Envelopes.</strong> Without an <code>edge</code>, the thickness must reach zero where the two faces meet.</li>
+  <li><strong>Required properties.</strong> <code>expressions</code> in a skein; <code>axis</code> and <code>radius</code> in a <code>crease</code>; <code>pivot</code> and <code>travel</code> in a <code>curl</code>; one of <code>rotate</code>, <code>translate</code>, <code>scale</code> and <code>along</code> in a <code>bend</code>; <code>thickness</code> in an <code>envelope</code>; at least one entry in an <code>expression_map</code> and in a <code>sum</code>, <code>product</code>, <code>min</code> or <code>max</code>.</li>
+  <li><strong>Functions.</strong> An inline function needs a parameter list naming its inputs; its parameters must be inputs, each named once, at most eight. A skein holds at most 32 function values.</li>
+  <li><strong>Maps.</strong> A modifier needs as many values as it takes; a map must end with exactly one value; at most eight values can wait on the list.</li>
+  <li><strong>Paths.</strong> At least two points; parameter values for all points or none, increasing; a <code>sample_path</code>, an <code>along</code> and a curved axis need vector points, a value needs number points.</li>
+  <li><strong>Order.</strong> The entries of an <code>expression_map</code> must not decrease.</li>
+  <li><strong>Curls.</strong> The pivot must be a straight line, not on the sheet, and a <code>sample_path</code> pivot must be straight once placed and the same height above the surface all along; <code>travel</code> must be a path of vectors. The travel must not bring the radius down to zero, nor slide the pivot along the sheet faster than the roll turns, so that the sheet would double back. A roll may not go on for more than 256 turns, and the sheet entering the curl must have a bounded extent past the pivot.</li>
+</ul>
+<p>Some limits are not errors but are worth knowing:</p>
+<ul>
+  <li>A single skein is one sheet, so it cannot make a shape with more than one hole through it, or one that branches. Build those as a <code>union</code> of skeins.</li>
+  <li>A skein is slower to render than a dedicated primitive of the same shape: a skein torus takes about ten times as long as a <code>torus</code>. Steps with function values cost more than steps with numbers, maps and paths, and an axis given by functions costs more than a path. See <a href="r3_9.html#r3_9_10">Performance</a>.</li>
+  <li>Where a value is a function that POV-Ray cannot bound exactly, such as a function of <code>pos</code> or <code>norm</code>, or one using <code>cos</code>, <code>mod</code> or <code>pow</code>, its range over each patch is found by sampling. A feature smaller than the sampling, such as a narrow spike, can be missed. Maps and paths are always bounded exactly.</li>
+  <li>Rays that only graze a very thin solid, or a crease, can occasionally miss it; a ray that cannot be resolved counts as a miss rather than a false hit.</li>
+</ul></div>
+
+<a name="r3_9_9_1"></a>
+<div class="content-level-h4" contains="Known Issues" id="r3_9_9_1">
+<h4>3.9.9.1 Known Issues</h4>
+<p>These are known problems in the current version of the skein. Slow and stalling cases are in <a href="r3_9.html#r3_9_10_3">Known Slow Cases</a>.</p>
+<ul>
+  <li><strong>Thickened scrolls.</strong> Every turn of a <code>curl</code> touches the sheet along the line beneath the pivot, so a scroll of more than about one turn that is thickened afterwards overlaps itself there and is not a closed solid. Leave a scroll as a thin sheet.</li>
+  <li><strong><code>envelope</code> along v on a curved profile.</strong> An <code>envelope</code> with <code>axis v</code> on an <code>extrude</code> whose radius is curved along v can take very long to render, or stall: a radius of 0.1 + 1.1 sin(&pi;v/2), thickened along v, is one such. A radius that is linear in v, or the same envelope along u, renders normally.</li>
+  <li><strong>Very rough displacement is slow.</strong> A sphere displaced by five octaves of <code>fbm</code> took about half an hour to render at 320 by 240 pixels.</li>
+  <li><strong><code>ends flat</code> needs a star-shaped section.</strong> A flat cap needs an end ring that winds once round its centre, so it cannot cap a section that is not star-shaped, such as a C-shaped beam. Close such an end with another object.</li>
+  <li><strong><code>closed</code> and <code>ends</code> after object modifiers.</strong> They must come inside the skein block before any object modifier; written after one, they stop the parse with the error <code>No matching }, undeclared identifier found instead</code>, which does not name the cause.</li>
+  <li><strong><code>inside()</code> and open skeins.</strong> <code>inside()</code> is not available for a skein that is not closed: it stops with <code>Solid object identifier expected</code>.</li>
+</ul></div>
+
+<a name="r3_9_10"></a>
+<div class="content-level-h3" contains="Performance" id="r3_9_10">
+<h3>3.9.10 Performance</h3>
+<p>How long a skein takes to render depends far more on how it is built than on how large it is in the picture, and a few ways of building one cost far more than they look. This section is for the moment a render takes much longer than you expected: what to look at, what causes it, and what to change.</p>
+<p>The figures below were measured on test scenes, each described with its figures, on small frames, with one build of POV-Ray on one machine. They show proportions, not times to expect on other hardware.</p></div>
+
+<a name="r3_9_10_1"></a>
+<div class="content-level-h4" contains="Reading the Statistics" id="r3_9_10_1">
+<h4>3.9.10.1 Reading the Statistics</h4>
+<p>When a scene holds a skein, the render statistics include these lines:</p>
+<table width="100%" class="option-list">
+<tr><td><code>Skein Bound</code></td><td>The patch enclosures tested against rays, and how many of them the ray met. POV-Ray divides the surface into patches and splits a patch the ray may meet into four smaller ones, until it can solve for the hit or the patch is as small as it goes.</td></tr>
+<tr><td><code>Skein Newton steps</code></td><td>The steps of the solver that finds the exact <code>u</code> and <code>v</code> of a hit.</td></tr>
+<tr><td><code>Skein evaluations</code></td><td>The times the chain of steps was evaluated at one point.</td></tr>
+<tr><td><code>Skein unresolved</code></td><td>Patches split as far as they go without the solver settling whether the ray meets them there. Such a patch counts as a miss. A large count means the solver is struggling: its enclosures are too loose to rule patches out, and each ray pays for many small patches.</td></tr>
+<tr><td><code>Function VM calls</code></td><td>Runs of user functions, including the function values of a skein's steps.</td></tr>
+</table>
+<p>A simple skein, such as a torus, needs about ten Newton steps for each ray that reaches it and has few or no unresolved patches. Render a slow scene at a tiny size first, 64 by 48 pixels or less, and compare these lines as you change it.</p></div>
+
+<a name="r3_9_10_2"></a>
+<div class="content-level-h4" contains="Stacked Expressions and Final Transforms" id="r3_9_10_2">
+<h4>3.9.10.2 Stacked Expressions and Final Transforms</h4>
+<p><strong>Every expression costs, and the cost compounds.</strong> Each step after the first works on what the steps before it made, and POV-Ray bounds each patch by carrying an enclosure through the chain, each step's built from the one before. A step that bends, folds, rolls or displaces makes that enclosure looser, and it seems that the looseness of each step is carried into the next and grows there, so the cost of a chain of such steps is multiplied, not added. A shape built from many stacked folds, bends or displacements can be orders of magnitude slower than the same kind of shape made with a few.</p>
+<p>On a test scene, a flat sheet 3 units by 1 carrying k creases one after another, alternately up and down, each through 25 degrees over a radius of 0.04, rendered at 40 by 30 pixels without antialiasing, measured:</p>
+<table width="100%" class="option-list">
+<tr><td><strong>creases</strong></td><td><strong>bound tests</strong></td><td><strong>Newton steps</strong></td><td><strong>unresolved patches</strong></td><td><strong>trace time</strong></td></tr>
+<tr><td>0</td><td>708</td><td>236</td><td>0</td><td>0.00 s</td></tr>
+<tr><td>1</td><td>1.7 million</td><td>3.4 million</td><td>1.2 million</td><td>0.64 s</td></tr>
+<tr><td>2</td><td>6.6 million (4.0&times;)</td><td>14 million (4.1&times;)</td><td>4.9 million</td><td>4.3 s (6.7&times;)</td></tr>
+<tr><td>3</td><td>85.6 million (12.9&times;)</td><td>173 million (12.3&times;)</td><td>63.7 million</td><td>73.8 s (17.3&times;)</td></tr>
+<tr><td>4, 5, 6</td><td colspan=4>did not finish within 150 s</td></tr>
+</table>
+<p>The factor in brackets, against the row above, itself grows with each crease added. A paper aeroplane model built from five stacked creases took about 0.12 to 0.14 seconds a pixel at 320 by 240 pixels, hours for one frame, and logged about 350 thousand unresolved patches in an 8 by 8 pixel test.</p>
+<p>So:</p>
+<ul>
+  <li>Build with as few bending, folding, rolling and displacing steps as the shape needs.</li>
+  <li>Where a value can say it, do the work inside one step rather than adding another: a twist of an extruded column is a radius read further round as <code>v</code> grows, as in <a href="r3_9.html#r3_9_3_4">A Twisted Column</a>, not an extra <code>bend</code>; several displacements along one normal are one <code>displace</code> by a <code>sum</code>.</li>
+  <li>Preview at a tiny size first and watch the statistics before rendering a full frame.</li>
+</ul>
+<p><strong>A final rotation belongs on the object.</strong> A constant <code>rotate</code>, or a <code>matrix</code> or <code>transform</code> that rotates, at the end of the <code>expressions</code> list gives the same picture as the same rotation written on the object, but it costs far more. A rotated enclosure's axis-aligned box is looser than the enclosure itself, while a rotation on the object turns the ray once instead. A <code>translate</code>, or a <code>scale</code> along the axes, does not loosen an enclosure, and moving one made no measurable difference. Measured on a torus made of two extrudes at 200 by 150 pixels, one transform as the last step against the same transform on the object, with identical images:</p>
+<table width="100%" class="option-list">
+<tr><td><strong>last step</strong></td><td><strong>bound tests</strong></td><td><strong>Newton steps</strong></td><td><strong>unresolved patches</strong></td></tr>
+<tr><td><code>rotate &lt;25, 35, 10&gt;</code></td><td>4.2 times</td><td>3.3 times</td><td>13.9 times</td></tr>
+<tr><td><code>rotate &lt;0, 0, 40&gt;</code></td><td>4.1 times</td><td>2.4 times</td><td>6.5 times</td></tr>
+<tr><td><code>translate &lt;0.2, 0.1, 0&gt;</code></td><td>1.0 times</td><td>1.0 times</td><td>1.0 times</td></tr>
+<tr><td><code>scale &lt;1.3, 0.8, 1.1&gt;</code></td><td>1.0 times</td><td>0.95 times</td><td>0.6 times</td></tr>
+</table>
+<p>On a twisted column (a <code>scale</code>, an <code>extrude</code> and a <code>bend</code> that turns it), a <code>translate</code> and a <code>rotate</code> at the end took 5.5 times the bound tests, 5.2 times the Newton steps, 7.7 times the unresolved patches and 9.6 times the trace time, 0.79 s against 0.08 s. Eight <code>rotate</code> steps of 5 degrees each about one axis at the end of the torus took only 1.5 times the bound tests and 1.4 times the Newton steps: a rotation costs by how far it turns the box, and rotations do not multiply the cost the way folds do.</p>
+<p>Keep a transform in the list only where it places material for a later step, as a <code>translate</code> and <code>scale</code> before a <code>crease</code> do. Move a rotation that comes last onto the object, and write it <em>before</em> the object's <code>texture</code> or <code>pigment</code>: a transform written after the texture also moves the texture, which a step in the list never did, and only then is the picture unchanged. A <code>translate</code> or <code>scale</code> may stay in the list.</p></div>
+
+<a name="r3_9_10_3"></a>
+<div class="content-level-h4" contains="Known Slow Cases" id="r3_9_10_3">
+<h4>3.9.10.3 Known Slow Cases</h4>
+<ul>
+  <li><strong>Rough displacement.</strong> A displacement with fine detail makes every patch hard to bound. A sphere displaced by five octaves of <code>fbm</code> with an amplitude of 0.3 took 142 million Newton steps and 28 minutes at 320 by 240 pixels. Use fewer octaves or a smaller amplitude, or add fine detail with a <code>normal</code> pattern instead.</li>
+  <li><strong><code>envelope</code> along v on a curved profile.</strong> On an <code>extrude</code> whose radius is 0.1 + 1.1 sin(&pi;v/2), an <code>envelope</code> with <code>axis v</code> took 1.4 million Newton steps and logged 416 thousand unresolved patches at 8 by 8 pixels, against about 1,000 Newton steps for a radius that is linear in v. The same envelope along u is fine. With a <code>bend</code>'s <code>translate</code> added as well, the render did not finish. Prefer an envelope along u, or a profile that is linear in v.</li>
+  <li><strong>Creases.</strong> Scenes with creases log very large unresolved counts. At 320 by 240 pixels with antialiasing, the crease example in <a href="r3_9.html#r3_9_4_3">crease</a> logged about 85 million unresolved patches and 244 million Newton steps, and <a href="r3_9.html#r3_9_3_7">A Folded Sheet</a> about 41 million and 122 million.</li>
+  <li><strong>A skein against a primitive.</strong> A torus at 1280 by 960 pixels, on one thread, cost about ten times the <code>torus</code> primitive and 1.4 times as long as a tuned <code>isosurface</code> without antialiasing (1.2 times with it). Where a primitive makes the shape, use it.</li>
+  <li><strong>Function values.</strong> A user function runs in POV-Ray's function virtual machine every time the chain is evaluated, and shows in <code>Function VM calls</code>. The range of a function that POV-Ray cannot bound exactly, such as one using <code>cos</code>, <code>mod</code> or <code>pow</code> or reading <code>pos</code> or <code>norm</code>, is found by sampling each patch, which costs evaluations and is not a proven bound. Steps with function values also skip a quick test, against a slab about each patch's tangent plane, that otherwise rules out rays passing near a patch. Numbers, maps and paths avoid the first two costs; use them where they will do.</li>
+  <li><strong>Large images.</strong> An <code>image</code> map modifier keeps about 15 bytes in memory for each pixel of its image, so a very large image is heavy. Use an image no larger than the detail the surface shows.</li>
+</ul></div>
+
+<a name="r3_9_10_4"></a>
+<div class="content-level-h4" contains="When a Render Is Slow" id="r3_9_10_4">
+<h4>3.9.10.4 When a Render Is Slow</h4>
+<ul>
+  <li>Render at a tiny size, 64 by 48 pixels or less, and read <code>Skein Newton steps</code>, <code>Skein evaluations</code> and <code>Skein unresolved</code> in the statistics.</li>
+  <li>Count the bending, folding, rolling and displacing steps. Each one multiplies the cost of those after it; take out any whose work a value in another step can do.</li>
+  <li>Move a rotation at the end of the list onto the object, before its texture.</li>
+  <li>Look for an <code>envelope</code> along v on a curved profile, and for a rough or many-octave displacement.</li>
+  <li>Prefer numbers, maps and paths to functions in the values.</li>
+</ul></div>
+
+</div>
+
+</div>
+</body>
+</html>

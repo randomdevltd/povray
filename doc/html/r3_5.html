@@ -90,6 +90,9 @@
   <td><div class="divh4"><a title="3.5.1.1.18" href="#r3_5_1_1_18">Torus</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.5.1.1.19" href="#r3_5_1_1_19">Skein</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.5.1.2" href="#r3_5_1_2">Finite Patch Primitives</a></div></td>
 </tr>
 <tr>
@@ -315,7 +318,7 @@ in the scene.</p></div>
 <h4>3.5.1.1 Finite Solid Primitives</h4>
 <p>There are seventeen different solid finite primitive shapes: <a href="r3_5.html#r3_5_1_1_1">blob</a>, <a href="r3_5.html#r3_5_1_1_2">box</a>,
 <a href="r3_5.html#r3_5_1_1_3">cone</a>, <a href="r3_5.html#r3_5_1_1_4">cylinder</a>, <a href="r3_5.html#r3_5_1_1_5">height field</a>, <a href="r3_5.html#r3_5_1_1_6">isosurface</a>, <a href="r3_5.html#r3_5_1_1_7">Julia fractal</a>, <a href="r3_5.html#r3_5_1_1_8">lathe</a>, <a href="r3_5.html#r3_5_1_1_10">ovus</a>, <a href="r3_5.html#r3_5_1_1_11">parametric</a>, <a href="r3_5.html#r3_5_1_1_12">prism</a>, <a href="r3_5.html#r3_5_1_1_13">sphere</a>, <a href="r3_5.html#r3_5_1_1_14">sphere_sweep</a>, <a href="r3_5.html#r3_5_1_1_15">superellipsoid</a>, <a href="r3_5.html#r3_5_1_1_16">surface of revolution</a>, <a href="r3_5.html#r3_5_1_1_17">text</a> and <a href="r3_5.html#r3_5_1_1_18">torus</a>. These have a
-well-defined <em>inside</em> and can be used in CSG: see <a href="r3_5.html#r3_5_1_4">Constructive Solid Geometry</a>. They are finite and respond to automatic bounding. You may specify an interior for these objects.</p></div>
+well-defined <em>inside</em> and can be used in CSG: see <a href="r3_5.html#r3_5_1_4">Constructive Solid Geometry</a>. They are finite and respond to automatic bounding. You may specify an interior for these objects. A <a href="r3_5.html#r3_5_1_1_19">skein</a> is one of them when its surface closes; one that does not close is a patch.</p></div>
 
 <a name="r3_5_1_1_1"></a>
 <div class="content-level-h5" contains="Blob" id="r3_5_1_1_1">
@@ -1857,6 +1860,21 @@ sticking through the hole.</p>
 </table>
 
 <p>If additional accuracy is required you can add the <code><a href="r3_5.html#r3_5_1_5_11">sturm</a></code> object modifier.</p></div>
+
+<a name="r3_5_1_1_19"></a>
+<div class="content-level-h5" contains="Skein" id="r3_5_1_1_19">
+<h5>3.5.1.1.19 Skein</h5>
+<p class="Warning"><strong>Warning:</strong> Skein is a beta feature. Its syntax, parameter names and behaviour are subject to significant change, and it probably contains more bugs than are listed here. Scenes written for it may need updating in later releases.</p>
+<p>A <code>skein</code> is a surface or a solid made by carrying the unit square through a chain of steps: an <code>extrude</code> that rolls it into a tube, a <code>bend</code> that twists it or carries it along a path, a <code>crease</code> that folds it, a <code>curl</code> that rolls it up, a <code>displace</code>, an <code>envelope</code> that gives it thickness, and others. Each step takes the surface made so far and returns a new one, and every step's values can vary over the surface. A skein whose surface closes is a solid with a working inside test; one that does not is a patch.</p>
+<pre>
+skein {
+  expressions { STEP... }
+  [closed u | v | uv]
+  [ends flat | pole | open | sealed [, flat | pole | open | sealed]]
+  [OBJECT_MODIFIERS...]
+  }
+</pre>
+<p>The skein has a chapter of its own: see <a href="r3_9.html#r3_9">Skein</a>, which starts with how it differs from the <a href="r3_5.html#r3_5_1_1_11">parametric</a> object.</p></div>
 
 <a name="r3_5_1_2"></a>
 <div class="content-level-h4" contains="Finite Patch Primitives" id="r3_5_1_2">
