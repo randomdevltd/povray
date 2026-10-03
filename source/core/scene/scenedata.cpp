@@ -117,6 +117,9 @@ SceneData::~SceneData()
 {
     lightSources.clear();
     lightGroupLightSources.clear();
+    for (LightSource *image : portalLights)
+        Destroy_Object(image);
+    portalLights.clear();
     Destroy_Skysphere(skysphere);
     while (fog != nullptr)
     {

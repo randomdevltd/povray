@@ -1745,6 +1745,18 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         for(int i = 0; i < object->LLights.size(); i++)
             ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
+
+    // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
+    if(!sceneData->portalLights.empty() && !eye.IsRadiosityRay())
+    {
+        if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
+            for(const LightSource *light : threadData->lightSources)
+                for(const LightSource *image : light->portalImages)
+                    ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+        for(const LightSource *light : object->LLights)
+            for(const LightSource *image : light->portalImages)
+                ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+    }
 }
 
 // A uniform number in [0,1) from the bits of a point, a direction and a salt, the same whatever thread draws it.
@@ -2069,6 +2081,239 @@ bool Trace::ComputeOneLightReach(const LightSource &lightsource, const FINISH *f
     return true;
 }
 
+namespace
+{
+bool SegmentMeetsBox(const Vector3d& origin, const Vector3d& direction, double length, const BoundingBox& box, double grow)
+{
+    double from = 0.0, to = length;
+    for (int i = 0; i < 3; i++)
+    {
+        const double low = box.lowerLeft[i] - grow, high = box.lowerLeft[i] + box.size[i] + grow;
+        if (fabs(direction[i]) < EPSILON)
+        {
+            if ((origin[i] < low) || (origin[i] > high))
+                return false;
+            continue;
+        }
+        double a = (low - origin[i]) / direction[i], b = (high - origin[i]) / direction[i];
+        if (a > b)
+            std::swap(a, b);
+        from = max(from, a);
+        to = min(to, b);
+        if (from > to)
+            return false;
+    }
+    return true;
+}
+}
+
+void Trace::ComputePortalDiffuseLight(const LightSource& image, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
+                                      const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
+                                      ConstObjectPtr object, double relativeIor)
+{
+    double depth;
+    Ray lightsourceray(eye);
+    ComputeOneWhiteLightRay(image, depth, lightsourceray, ipoint);
+
+    // Sample rays fan out to the light's extent; those of tilted parallel or cylinder area lights are not bounded so.
+    double spread = 0.0;
+    if (image.Area_Light)
+        spread = (image.Parallel || (image.Light_Type == CYLINDER_SOURCE)) ? BOUND_HUGE : 2.0 * max(image.Axis1.length(), image.Axis2.length());
+    if ((depth <= 0.0) || !SegmentMeetsBox(ipoint, lightsourceray.Direction, depth, image.portal->BBox, spread))
+        return;
+
+    bool backside = false;
+    if (!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && !image.Use_Full_Area_Lighting && (dot(layer_normal, lightsourceray.Direction) < EPSILON))
+    {
+        if (finish->DiffuseBack == 0.0)
+            return;
+        backside = true;
+    }
+
+    // As for a light seen straight, an area light's points share the fade and cone of its centre, or of each lightlet.
+    MathColour lightcolour = image.colour;
+    if (image.Area_Light && qualityFlags.areaLights && !image.Use_Full_Area_Lighting)
+    {
+        Intersection crossing;
+        if (FindPortalCrossing(*image.portal, lightsourceray, depth, crossing))
+        {
+            Vector3d target;
+            MTransPoint(target, crossing.IPoint, &image.portal->map);
+            Ray beyond(lightsourceray);
+            double farDepth;
+            ComputeOneWhiteLightRay(*image.imageOf, farDepth, beyond, target);
+            lightcolour *= Attenuate_Light(image.imageOf, beyond, crossing.Depth + farDepth);
+        }
+        else
+            lightcolour *= Attenuate_Light(&image, lightsourceray, depth);
+    }
+    TraceShadowRay(image, depth, lightsourceray, ipoint, lightcolour);
+    ComputeOneLightContribution(image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor,
+                                depth, lightsourceray, lightcolour, backside);
+}
+
+bool Trace::FindPortalCrossing(const Portal& portal, const Ray& ray, double reach, Intersection& crossing)
+{
+    if (!SegmentMeetsBox(ray.Origin, ray.Direction, reach, portal.BBox, 0.0))
+        return false;
+    IStack stack(threadData->stackPool);
+    if (!const_cast<Portal&>(portal).All_Intersections(ray, stack, threadData))
+        return false;
+
+    bool found = false;
+    crossing.Depth = reach;
+    for (; stack->size() > 0; stack->pop())
+    {
+        Intersection& hit = stack->top();
+        if ((hit.Depth <= SMALL_TOLERANCE) || (hit.Depth >= crossing.Depth))
+            continue;
+        Vector3d normal;
+        hit.Object->Normal(normal, &hit, threadData);
+        if (Test_Flag(hit.Object, INVERTED_FLAG))
+            normal.invert();
+        if (portal.Admits(normal, ray.Direction))
+        {
+            crossing = hit;
+            found = true;
+        }
+    }
+    return found;
+}
+
+void Trace::TracePortalLightShadowRay(const LightSource &image, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour,
+                                      const Vector3d& offset)
+{
+    const Portal& portal = *image.portal;
+    const LightSource& light = *image.imageOf;
+    const double reach = lightsourcedepth;
+    lightsourcedepth = 0.0;
+
+    Intersection crossing;
+    if (!FindPortalCrossing(portal, lightsourceray, reach, crossing) ||
+        (portal.exit && (reach - crossing.Depth > portal.Chord(lightsourceray, crossing.IPoint, threadData))))
+    {
+        lightcolour.Clear();
+        return;
+    }
+
+    double open = 1.0;
+    TransColour opening;
+    bool found;
+    {
+        ActiveTraceScope noTracer(threadData, nullptr, 1.0);
+        found = (portal.pigment != nullptr) && Compute_Pigment(opening, portal.pigment, crossing.IPoint, &crossing, &lightsourceray, threadData);
+    }
+    if (found)
+    {
+        open = std::max(0.0, std::min(1.0, double(opening.Opacity())));
+        lightcolour *= opening.colour();
+    }
+
+    Vector3d target, lightOffset;
+    MTransPoint(target, crossing.IPoint, &portal.map);
+    MTransDirection(lightOffset, offset, &portal.map);
+    Ray beyond(lightsourceray);
+    double farDepth;
+    ComputeOneWhiteLightRay(light, farDepth, beyond, target, lightOffset);
+    if ((open <= 0.0) || (farDepth <= 0.0))
+    {
+        lightcolour.Clear();
+        return;
+    }
+    lightcolour *= open;
+    if (!image.Area_Light || !qualityFlags.areaLights)
+        lightcolour *= Attenuate_Light(&light, beyond, crossing.Depth + farDepth);
+    if (lightcolour.IsNearZero(EPSILON) || !qualityFlags.shadows || (light.Light_Type == FILL_LIGHT_SOURCE))
+        return;
+
+    DivertPortalLight(lightsourceray, crossing.Depth, lightcolour, &portal);
+    DivertPortalLight(beyond, farDepth, lightcolour, &portal);
+    if (lightcolour.IsNearZero(EPSILON))
+        return;
+    double hereDepth = crossing.Depth;
+    Ray here(lightsourceray);
+    TracePointLightShadowRay(image, hereDepth, here, lightcolour);
+    if (lightcolour.IsNearZero(EPSILON))
+        return;
+    AttenuatePortalLightPiece(light, here, hereDepth, lightcolour);
+
+    RayInteriorVector containing;
+    FindContainingInteriors(target, containing);
+    beyond.ResetInteriors();
+    beyond.AppendInteriors(containing);
+    TracePointLightShadowRay(image, farDepth, beyond, lightcolour);
+    AttenuatePortalLightPiece(light, beyond, farDepth, lightcolour);
+}
+
+void Trace::AttenuatePortalLightPiece(const LightSource& light, Ray& piece, double depth, MathColour& lightcolour)
+{
+    if ((depth <= SHADOW_TOLERANCE) || !light.Media_Interaction || !light.Media_Attenuation || lightcolour.IsNearZero(EPSILON))
+        return;
+    Intersection end;
+    end.Depth = depth;
+    end.Object = nullptr;
+    ComputeShadowMedia(piece, end, lightcolour, true);
+}
+
+void Trace::TraceSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour,
+                                 const Vector3d& offset)
+{
+    if (sceneData->portalMouths.empty())
+        TracePointLightShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour);
+    else if (lightsource.portal != nullptr)
+        TracePortalLightShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
+    else
+    {
+        DivertPortalLight(lightsourceray, lightsourcedepth, lightcolour, nullptr);
+        if (!lightcolour.IsNearZero(EPSILON))
+            TracePointLightShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour);
+    }
+}
+
+void Trace::DivertPortalLight(const Ray& ray, double reach, MathColour& lightcolour, const Portal *crossed)
+{
+    for (const Portal *mouth : sceneData->portalMouths)
+    {
+        if ((crossed != nullptr) && ((mouth == crossed) || (mouth == crossed->partner)))
+            continue;
+        if (!mouth->Diverts(true) && !mouth->Diverts(false))
+            continue;
+        if (!SegmentMeetsBox(ray.Origin, ray.Direction, reach, mouth->BBox, 0.0))
+            continue;
+        IStack stack(threadData->stackPool);
+        if (!const_cast<Portal *>(mouth)->All_Intersections(ray, stack, threadData))
+            continue;
+        for (; stack->size() > 0; stack->pop())
+        {
+            Intersection& hit = stack->top();
+            if ((hit.Depth <= SHADOW_TOLERANCE) || (hit.Depth >= reach - SHADOW_TOLERANCE))
+                continue;
+            Vector3d normal;
+            hit.Object->Normal(normal, &hit, threadData);
+            if (Test_Flag(hit.Object, INVERTED_FLAG))
+                normal.invert();
+            // A shadow ray runs from the lit point to the light, so the light enters by the side the ray leaves.
+            if (!mouth->Diverts(mouth->EntersFront(normal, -ray.Direction)))
+                continue;
+            double open = 1.0;
+            TransColour opening;
+            bool found;
+            {
+                ActiveTraceScope noTracer(threadData, nullptr, 1.0);
+                found = (mouth->pigment != nullptr) && Compute_Pigment(opening, mouth->pigment, hit.IPoint, &hit, &ray, threadData);
+            }
+            if (found)
+                open = std::max(0.0, std::min(1.0, double(opening.Opacity())));
+            lightcolour *= 1.0 - open;
+        }
+        if (lightcolour.IsNearZero(EPSILON))
+        {
+            lightcolour.Clear();
+            return;
+        }
+    }
+}
+
 void Trace::TestOneLightShadow(const LightSource &lightsource, double lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, int light_index)
 {
     // If light source was not blocked by any intervening object, then
@@ -2342,7 +2587,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     else if(lightsource.Area_Light && qualityFlags.areaLights)
         TraceAreaLightShadowRay(lightsource, newdepth, newray, point, colour);
     else
-        TracePointLightShadowRay(lightsource, newdepth, newray, colour);
+        TraceSampleShadowRay(lightsource, newdepth, newray, colour, Vector3d(0.0));
 
     // If there's some distance left for the ray to reach the light source
     // we have to apply atmospheric stuff to this part of the ray.
@@ -2653,11 +2898,12 @@ void Trace::TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double
             }
 
             // Recalculate the light source ray but not the colour
-            ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, AreaLightOffset(lightsource, jitter_u, jitter_v, axis1, axis2));
+            const Vector3d offset = AreaLightOffset(lightsource, jitter_u, jitter_v, axis1, axis2);
+            ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, offset);
 
             sample_Colour[i] = lightcolour;
 
-            TracePointLightShadowRay(lightsource, lightsourcedepth, lsr, sample_Colour[i]);
+            TraceSampleShadowRay(lightsource, lightsourcedepth, lsr, sample_Colour[i], offset);
             lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
 
             lightGrid[u * lightsource.Area_Size2 + v] = sample_Colour[i];
@@ -2745,8 +2991,9 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
     u = AreaGridCoordinate(sample[U], lightsource.Area_Size1, lightsource.Jitter);
     v = AreaGridCoordinate(sample[V], lightsource.Area_Size2, lightsource.Jitter);
 
-    ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, AreaLightOffset(lightsource, u, v, axis1, axis2));
-    TracePointLightShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour);
+    const Vector3d offset = AreaLightOffset(lightsource, u, v, axis1, axis2);
+    ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, offset);
+    TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
 }
 
 Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2)

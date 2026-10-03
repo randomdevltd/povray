@@ -7,6 +7,8 @@
 #ifndef (Rad) #declare Rad = 0; #end              // 1: radiosity on
 #ifndef (Ior) #declare Ior = 1.1; #end            // refractive index of the glass
 #ifndef (Gloss) #declare Gloss = 0.25; #end       // strongest reflection of the glass, at grazing angles
+#ifndef (Lamp) #declare Lamp = 0; #end            // 1: the room dimmed, and a lamp whose image lies in the jar shines out through it
+#ifndef (NoLights) #declare NoLights = 0; #end    // 1: no light through the jar
 global_settings
 {
     assumed_gamma 1.0 max_trace_level 16 adc_bailout 0.002   // each nested jar costs two glass crossings
@@ -26,8 +28,10 @@ box { < 6, 0, -6.2>, < 6.2, 6.5, 6.2> pigment { Paint } }
 box { <-6.2, 0, 6>, < 6.2, 6.5, 6.2> pigment { Paint } }
 box { <-6.2, 0, -6.2>, < 6.2, 6.5, -6> pigment { Paint } }
 box { <-6.2, 6.5, -6.2>, < 6.2, 6.7, 6.2> pigment { rgb 0.95 } }
-light_source { <0, 6.0, -1> rgb 1.1 }
-light_source { <-4, 4.5, -4> rgb 0.35 shadowless }
+#declare Room = (Lamp ? 0.3 : 1);
+light_source { <0, 6.0, -1> rgb 1.1 * Room }
+light_source { <-4, 4.5, -4> rgb 0.35 * Room shadowless }
+#if (Lamp) light_source { <0.9, 2.6, 0.6> rgb <1, 0.6, 0.3> * 1.5 fade_distance 1.5 fade_power 2 } #end
 
 // The plinth: a turned white marble pedestal with a footed base, beads, a vase shaft, neck rings and a flared top at 1.1.
 #declare Marble = texture
@@ -75,7 +79,7 @@ difference
     texture { pigment { rgbt 1 } finish { diffuse 0 specular 1 roughness 0.001 reflection { 0.02, Gloss fresnel on } } }
     interior { ior Ior fade_distance 0.5 fade_power 1 fade_color <0.7, 0.95, 0.85> }
 }
-portal { Mouth to { translate -Base scale S translate <B.x, -0.01, B.z> } exit max_trace_level Depth }  // the floor a hair above the base
+portal { Mouth to { translate -Base scale S translate <B.x, -0.01, B.z> } exit max_trace_level Depth #if (NoLights) no_lights #end }  // the floor a hair above the base
 
 // A person looking down at the jar: simple shapes, close to the plinth.
 #declare Skin = pigment { rgb <0.85, 0.62, 0.48> };
