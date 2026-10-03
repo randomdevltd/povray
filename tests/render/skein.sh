@@ -15,6 +15,11 @@ W=96; H=72
 "$POVRAY" +i"$SRCDIR/tests/render/skein_crease_axis.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
 "$POVRAY" +i"$SRCDIR/tests/render/skein_curl.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
 "$POVRAY" +i"$SRCDIR/tests/render/skein_blend.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
+# boxes past a crease's arc must shrink with the patch: unresolved patches stay in the hundreds (300000 without that)
+"$POVRAY" +i"$SRCDIR/tests/render/skein_crease_tail.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w24 +h24 -d -p -v -gp -f +wt1 > skein_crease_tail.log 2>&1 || { cat skein_crease_tail.log; exit 1; }
+unresolved=$(sed -n 's/^Skein unresolved: *//p' skein_crease_tail.log)
+echo "skein_crease_tail: ${unresolved:-no statistics} unresolved patches"
+test "${unresolved:-1000000}" -lt 5000
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/skein_shapes.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +wt1 +fp +o"skein_$name.ppm" "$@"

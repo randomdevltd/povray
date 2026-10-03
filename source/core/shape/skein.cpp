@@ -1943,7 +1943,8 @@ class Evaluator final
             const Interval reach(std::max(0.0, rho.lo), rho.hi), arm = R - h;
             const DBL least = R.hi > 0.0 ? reach.lo / R.hi : reach.lo > 0.0 ? BOUND_HUGE : 0.0, most = R.lo > 0.0 ? reach.hi / R.lo : BOUND_HUGE;
             const Interval phi(std::min(least, limit.lo), std::min(most, limit.hi));
-            const Interval c = Cosine(phi), sn = Sine(phi), extra(0.0, std::max(0.0, reach.hi - phi.lo * R.lo));
+            const DBL tail = limit.lo >= 0.0 ? std::max(0.0, reach.lo - R.hi * limit.hi) : 0.0;
+            const Interval c = Cosine(phi), sn = Sine(phi), extra(tail, std::max(0.0, reach.hi - phi.lo * R.lo));
             e = arm * sn + extra * c;
             n = R - arm * c + extra * sn;
         }
