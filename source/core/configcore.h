@@ -134,6 +134,12 @@
     #define MAX_TRACE_LEVEL_LIMIT 256
 #endif
 
+/// @def NESTED_VIEW_DEPTH_LIMIT
+/// Upper bound for trace levels plus views nested through `screen` patterns; each costs about 3.5 KB of stack.
+#ifndef NESTED_VIEW_DEPTH_LIMIT
+    #define NESTED_VIEW_DEPTH_LIMIT 512
+#endif
+
 //******************************************************************************
 ///
 /// @name Various Numerical Constants

@@ -395,6 +395,25 @@ Camera& Camera::operator=(const Camera& src)
     return *this;
 }
 
+static bool SameVector(const Vector3d& a, const Vector3d& b)
+{
+    return (a.x() == b.x()) && (a.y() == b.y()) && (a.z() == b.z());
+}
+
+bool Camera::SameView(const Camera& other) const
+{
+    for (unsigned int i = 0; i < 3; ++i)
+        if ((Location_Fn[i] != other.Location_Fn[i]) || (Direction_Fn[i] != other.Direction_Fn[i]))
+            return false;
+    return SameVector(Location, other.Location) && SameVector(Direction, other.Direction) && SameVector(Up, other.Up) &&
+           SameVector(Right, other.Right) && SameVector(Sky, other.Sky) && (Type == other.Type) && (Angle == other.Angle) &&
+           (H_Angle == other.H_Angle) && (V_Angle == other.V_Angle) && (Aperture == other.Aperture) &&
+           (Focal_Distance == other.Focal_Distance) && (Blur_Samples == other.Blur_Samples) &&
+           (Blur_Samples_Min == other.Blur_Samples_Min) && (Confidence == other.Confidence) && (Variance == other.Variance) &&
+           (Max_Ray_Distance == other.Max_Ray_Distance) && (Tnormal == other.Tnormal) && (Bokeh == other.Bokeh) &&
+           Meshes.empty() && other.Meshes.empty();
+}
+
 Camera::Camera(const Camera& src)
 {
     Tnormal = nullptr;

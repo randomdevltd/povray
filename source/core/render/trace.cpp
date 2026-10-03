@@ -847,7 +847,10 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
 
         // Get surface colour.
         new_Weight = weight * trans;
-        colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
+        {
+            ActiveTraceScope activeTrace(threadData, this, new_Weight);
+            colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
+        }
 
         // If a valid color was returned set one_colour_found to true.
         // An invalid color is returned if a surface point is outside

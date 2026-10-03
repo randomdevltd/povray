@@ -62,6 +62,7 @@
 #include "core/material/warp.h"
 #include "core/math/matrix.h"
 #include "core/scene/atmosphere.h"
+#include "core/scene/camera.h"
 #include "core/scene/object.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
@@ -1551,6 +1552,68 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
             New->Type = IMAGE_MAP_PATTERN;
             New->pattern = PatternPtr(new ColourImagePattern());
             Parse_Image_Map (reinterpret_cast<PIGMENT *>(New));
+        END_CASE
+
+        CASE (SCREEN_TOKEN)
+            {
+                if (TPat_Type != kBlendMapType_Pigment)
+                    Only_In("screen","pigment");
+                New->Type = COLOUR_PATTERN;
+                shared_ptr<ScreenPattern> pattern(new ScreenPattern());
+                std::shared_ptr<Camera> projection;
+                Parse_Begin();
+                EXPECT
+                    CASE (CAMERA_TOKEN)
+                        if (projection)
+                            Error("screen takes only one camera.");
+                        projection = std::make_shared<Camera>();
+                        Parse_Camera(*projection);
+                        if (projection->Type == MESH_CAMERA)
+                            Error("mesh_camera cannot be a screen's camera.");
+                    END_CASE
+
+                    CASE (PERTURB_TOKEN)
+                        if (pattern->pPerturb != nullptr)
+                            Error("screen takes only one perturb.");
+                        pattern->pPerturb = Create_Pigment();
+                        Parse_Begin();
+                        Parse_Pigment(&(pattern->pPerturb));
+                        Post_Pigment(pattern->pPerturb);
+                        Parse_End();
+                    END_CASE
+
+                    CASE (FALLBACK_TOKEN)
+                        if (pattern->pFallback != nullptr)
+                            Error("screen takes only one fallback.");
+                        pattern->pFallback = Create_Pigment();
+                        Parse_Begin();
+                        Parse_Pigment(&(pattern->pFallback));
+                        Post_Pigment(pattern->pFallback);
+                        Parse_End();
+                    END_CASE
+
+                    CASE (MAX_TRACE_LEVEL_TOKEN)
+                        pattern->maxDepth = Parse_Int_With_Range(1, MAX_TRACE_LEVEL_LIMIT, "screen max_trace_level");
+                    END_CASE
+
+                    OTHERWISE
+                        UNGET
+                        EXIT
+                    END_CASE
+                END_EXPECT
+                Parse_End();
+                if (!projection)
+                    Error("screen needs a camera.");
+                pattern->pProjection = projection;
+                for (const std::shared_ptr<const Camera>& seen : sceneData->screenCameras)
+                    if (seen->SameView(*projection))
+                    {
+                        pattern->pProjection = seen;
+                        break;
+                    }
+                sceneData->screenCameras.push_back(projection);
+                New->pattern = pattern;
+            }
         END_CASE
 
         CASE (BUMP_MAP_TOKEN)

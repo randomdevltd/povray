@@ -1136,6 +1136,31 @@ struct ColourImagePattern final : public ColourPattern, public ImagePatternImpl
     virtual bool HasTransparency() const override;
 };
 
+/// Implements the `screen` pattern: the colour is what a projection sees, looked up at the point's x and y in the
+/// unit square (as `image_map` does). The incident angle is ignored.
+struct ScreenPattern final : public ColourPattern
+{
+    /// The view shown; shared between copies of the pattern, and by the tracers that render it.
+    std::shared_ptr<const Camera> pProjection;
+    /// Deepest nesting of screen views; 0 takes the trace level.
+    unsigned int maxDepth = 0;
+    /// Optional field bending the view: its red and green at a window point shift where the projection is sampled.
+    PIGMENT *pPerturb = nullptr;
+    /// Optional pigment shown at the window point instead of the view where screens nest too deep; black when absent.
+    PIGMENT *pFallback = nullptr;
+
+    ScreenPattern() = default;
+    ScreenPattern(const ScreenPattern& obj);
+    ScreenPattern& operator=(const ScreenPattern&) = delete;
+    virtual ~ScreenPattern() override;
+    virtual PatternPtr Clone() const override { return BasicPattern::Clone(*this); }
+    virtual bool Evaluate(TransColour& result, const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const override;
+    virtual bool HasTransparency() const override;
+};
+
+/// Traces a screen's view at window point (u, v) through the tracer shading the surface; false where screens nest too deep.
+bool TraceScreenView(const ScreenPattern& screen, double u, double v, const Ray& ray, TraceThreadData *thread, TransColour& result);
+
 
 //******************************************************************************
 // Legacy Global Functions

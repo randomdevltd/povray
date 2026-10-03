@@ -69,6 +69,7 @@ namespace pov
 /// @{
 
 class PhotonGatherer;
+struct ScreenPattern;
 
 struct NoSomethingFlagRayObjectCondition final  : public RayObjectCondition
 {
@@ -265,6 +266,9 @@ class Trace
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
 
         unsigned int GetHighestTraceLevel();
+
+        /// Traces a `screen`'s view at window point (u, v), v up; false where screens nest too deep to trace.
+        bool TraceScreen(const ScreenPattern& screen, double u, double v, const Ray& ray, COLC weight, TransColour& result);
 
         /// Whether a random draw has shaped a trace's result since the last @ref ClearGrain(): partly shadowed
         /// jittered area lights, media, `crand`, rainbow jitter and subsurface light.
@@ -949,6 +953,11 @@ class Trace
         SubsurfaceCloud ssltClouds[2];
         /// The finished cells this thread has used, so it need not ask the shared cache again.
         std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
+
+        struct ScreenViews;
+        struct ScreenViewsDeleter final { void operator()(ScreenViews *views) const; };
+        /// Tracers for the views shown on screens, made when first seen.
+        std::unique_ptr<ScreenViews, ScreenViewsDeleter> screenViews;
 
         double ComputeFt(double cos_angle, double eta);
         void ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v);

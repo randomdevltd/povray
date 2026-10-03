@@ -130,6 +130,8 @@ public:
     void Scale(const Vector3d& Vector);
     void Rotate(const Vector3d& Vector);
     void Translate(const Vector3d& Vector);
+    /// Whether this camera takes the same picture as another, judged by content; perturbed or function-defined views never match a copy.
+    bool SameView(const Camera& other) const;
 
 private:
     void Init();

@@ -142,6 +142,15 @@ class TraceThreadData : public ThreadData
         /// Salt of every path key, so that renders with different seeds draw independently.
         size_t stochasticRandomSeedBase;
 
+        /// The tracer currently evaluating a surface pigment, for patterns that trace views (`screen`); null elsewhere.
+        Trace *activeTrace = nullptr;
+        /// Importance of that pigment's surface, which the views it traces carry on.
+        double activeWeight = 1.0;
+        /// Number of `screen` views currently being traced, one inside the other.
+        unsigned int screenDepth = 0;
+        /// Trace levels the rays that met those screens had reached, summed.
+        unsigned int screenTraceLevels = 0;
+
         // TODO FIXME - thread-local copy of lightsources. we need this
         // because various parts of the lighting code seem to make changes
         // to the lightsource object passed to them (this is not confined
@@ -216,6 +225,20 @@ class TraceThreadData : public ThreadData
 
         /// current tile index (for crackle cache expiry)
         size_t progress_index;
+};
+
+/// Makes a tracer, or none, the one `screen` patterns trace through, for the scope of a pigment evaluation.
+struct ActiveTraceScope final
+{
+    TraceThreadData *thread;
+    Trace *trace;
+    double weight;
+    ActiveTraceScope(TraceThreadData *t, Trace *active, double w) : thread(t), trace(t->activeTrace), weight(t->activeWeight)
+    {
+        t->activeTrace = active;
+        t->activeWeight = w;
+    }
+    ~ActiveTraceScope() { thread->activeTrace = trace; thread->activeWeight = weight; }
 };
 
 struct IsoShadowWindow final

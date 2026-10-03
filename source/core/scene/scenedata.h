@@ -221,6 +221,8 @@ class SceneData
         Camera parsedCamera; // TODO - handle differently or move to parser
         bool clocklessAnimation; // TODO - this is support for an experimental feature and may be changed or removed
         std::vector<Camera> cameras; // TODO - this is support for an experimental feature and may be changed or removed
+        /// The cameras of the scene's screens, one per screen block parsed.
+        std::vector<std::shared_ptr<const Camera>> screenCameras;
 
         // this is for fractal support
         int Fractal_Iteration_Stack_Length; // TODO - move somewhere else

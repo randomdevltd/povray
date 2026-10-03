@@ -43,6 +43,8 @@
 namespace pov
 {
 
+class Camera;
+
 class GenericFunctionContext;
 typedef GenericFunctionContext* GenericFunctionContextPtr;
 
@@ -59,6 +61,8 @@ using ConstObjectPtr = const ObjectBase*;
 class PhotonShootingUnit;
 
 class SceneData;
+
+class Trace;
 
 class TraceThreadData;
 
