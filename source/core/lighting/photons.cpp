@@ -129,7 +129,7 @@ PhotonTrace::~PhotonTrace()
 {
 }
 
-DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth)
+DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth, bool)
 {
     Intersection bestisect;
     bool found;

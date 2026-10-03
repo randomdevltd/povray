@@ -150,6 +150,8 @@ class TraceThreadData : public ThreadData
         unsigned int screenDepth = 0;
         /// Trace levels the rays that met those screens had reached, summed.
         unsigned int screenTraceLevels = 0;
+        /// Number of `portal` jumps currently being traced, one inside the other.
+        unsigned int portalDepth = 0;
 
         // TODO FIXME - thread-local copy of lightsources. we need this
         // because various parts of the lighting code seem to make changes

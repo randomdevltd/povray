@@ -331,7 +331,7 @@ class PhotonTrace final : public Trace
         PhotonTrace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFlags& qf, Trace::CooperateFunctor& cf);
         virtual ~PhotonTrace() override;
 
-        virtual DBL TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth = 0.0) override;
+        virtual DBL TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth = 0.0, bool missOpen = false) override;
     protected:
         virtual void ComputeLightedTexture(MathColour& LightCol, ColourChannel&, const TEXTURE *Texture, std::vector<const TEXTURE *>& warps, const Vector3d& ipoint, const Vector3d& rawnormal, Ray& ray, COLC weight, Intersection& isect) override;
         bool ComputeRefractionForPhotons(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, COLC weight);

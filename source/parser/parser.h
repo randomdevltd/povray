@@ -90,6 +90,7 @@ struct GenericSpline;
 class ImageData;
 class Mesh;
 struct PavementPattern;
+class Portal;
 struct SkeinAxis;
 struct SkeinData;
 struct SkeinImage;
@@ -672,6 +673,9 @@ class Parser final
         bool Destroying_Frame;
 
         Camera Default_Camera;
+        /// The far mouths of portals made while post-processing an object, to link with it; and all made so far.
+        std::vector<Portal*> mPortalImages;
+        std::vector<const Portal*> mPortalImagesMade;
 
         // tokenize.h/tokenize.cpp
         typedef enum cond_type
@@ -765,6 +769,8 @@ class Parser final
         ObjectPtr Parse_Cone(void);
         ObjectPtr Parse_CSG(int CSG_Type);
         ObjectPtr Parse_Light_Group(void);
+        ObjectPtr Parse_Portal(void);
+        void Check_Portal_Cameras();
         ObjectPtr Parse_Cylinder(void);
         ObjectPtr Parse_Disc(void);
         ObjectPtr Parse_Julia_Fractal(void);

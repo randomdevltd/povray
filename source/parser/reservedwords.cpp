@@ -109,6 +109,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { AUTOSTOP_TOKEN,               "autostop" },
     { AVERAGE_TOKEN,                "average" },
 
+    { BACK_TOKEN,                   "back" },
     { BACKGROUND_TOKEN,             "background" },
     { BEZIER_SPLINE_TOKEN,          "bezier_spline" },
     { BICUBIC_PATCH_TOKEN,          "bicubic_patch" },
@@ -222,6 +223,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { EVALUATE_TOKEN,               "evaluate" },
     { EXP_TOKEN,                    "exp" },
     { EXPAND_THRESHOLDS_TOKEN,      "expand_thresholds" },
+    { EXIT_TOKEN,                   "exit" },
     { EXPONENT_TOKEN,               "exponent" },
     { EXR_TOKEN,                    "exr" },
     { EXTERIOR_TOKEN,               "exterior" },
@@ -255,6 +257,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { FORM_TOKEN,                   "form" },
     { FREQUENCY_TOKEN,              "frequency" },
     { FRESNEL_TOKEN,                "fresnel" },
+    { FRONT_TOKEN,                  "front" },
     { FUNCTION_TOKEN,               "function" },
 
     { GAMMA_TOKEN,                  "gamma" },
@@ -359,6 +362,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { MORTAR_TOKEN,                 "mortar" },
 
     { NATURAL_SPLINE_TOKEN,         "natural_spline" },
+    { NEAR_TOKEN,                   "near" },
     { NEAREST_COUNT_TOKEN,          "nearest_count" },
     { NO_TOKEN,                     "no" },
     { NO_BUMP_SCALE_TOKEN,          "no_bump_scale" },
@@ -421,6 +425,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { POLY_WAVE_TOKEN,              "poly_wave" },
     { POLYGON_TOKEN,                "polygon" },
     { POLYNOMIAL_TOKEN,             "polynomial" },
+    { PORTAL_TOKEN,                 "portal" },
     { POT_TOKEN,                    "pot" },
     { POTENTIAL_TOKEN,              "potential" },
     { POVM_TOKEN,                   "povm" },
@@ -564,6 +569,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { TILE2_TOKEN,                  "tile2" },
     { TILES_TOKEN,                  "tiles" },
     { TILING_TOKEN,                 "tiling" },
+    { TO_TOKEN,                     "to" },
     { TOLERANCE_TOKEN,              "tolerance" },
     { TOROIDAL_TOKEN,               "toroidal" },
     { TORUS_TOKEN,                  "torus" },

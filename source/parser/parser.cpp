@@ -98,6 +98,7 @@
 #include "core/shape/plane.h"
 #include "core/shape/polynomial.h"
 #include "core/shape/polygon.h"
+#include "core/shape/portal.h"
 #include "core/shape/prism.h"
 #include "core/shape/quadric.h"
 #include "core/shape/sor.h"
@@ -463,6 +464,7 @@ void Parser::Run()
     }
 
     sceneData->parsedMaxTraceLevel = Max_Trace_Level;
+    Check_Portal_Cameras();
     if (sceneData->parsedCamera.No_Radiosity || (sceneData->parsedCamera.Radiosity_Width > 0))
         Warning("radiosity_size and no_radiosity apply only to a screen's camera; the render's camera ignores them.");
 
@@ -2223,6 +2225,43 @@ void Parser::Parse_Camera_Radiosity_Size(Camera& New)
 
 //******************************************************************************
 
+static bool ContainsPortal(ConstObjectPtr object)
+{
+    return (object->Type & HOLDS_PORTAL_OBJECT) != 0;
+}
+
+// A clipped union stamps itself on its hits, hiding a portal inside it.
+static bool ClippedUnionHoldsPortal(ConstObjectPtr object)
+{
+    if (!ContainsPortal(object) || Test_Flag(object, PORTAL_FLAG))
+        return false;
+    if (!object->Clip.empty() && (dynamic_cast<const CSGUnion *>(object) != nullptr) && (dynamic_cast<const CSGMerge *>(object) == nullptr))
+        return true;
+    if (const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object))
+        for (ConstObjectPtr child : compound->children)
+            if (ClippedUnionHoldsPortal(child))
+                return true;
+    return false;
+}
+
+// A portal body's unions become merges, so the faces inside them lead nowhere.
+static ObjectPtr MergeUnions(ObjectPtr object)
+{
+    CSG *csg = dynamic_cast<CSG *>(object);
+    if ((csg == nullptr) || (object->Type & (LIGHT_GROUP_OBJECT | LT_SRC_UNION_OBJECT)))
+        return object;
+    for (ObjectPtr& child : csg->children)
+        child = MergeUnions(child);
+    CSGUnion *join = dynamic_cast<CSGUnion *>(csg);
+    if ((join == nullptr) || (dynamic_cast<CSGMerge *>(csg) != nullptr))
+        return object;
+    CSGMerge *merge = new CSGMerge(*join, true);
+    merge->Type = join->Type;
+    merge->do_split = join->do_split;
+    Destroy_Object(join);
+    return merge;
+}
+
 ObjectPtr Parser::Parse_CSG(int CSG_Type)
 {
     CSG *Object;
@@ -2247,6 +2286,8 @@ ObjectPtr Parser::Parse_CSG(int CSG_Type)
     {
         if((CSG_Type & CSG_INTERSECTION_TYPE) && (Local->Type & PATCH_OBJECT))
             Warning("Patch objects not allowed in intersection.");
+        if (!(CSG_Type & CSG_UNION_TYPE) && ContainsPortal(Local))
+            Error("A portal cannot be part of an intersection, difference or merge.");
         Object_Count++;
 
         if((CSG_Type & CSG_DIFFERENCE_TYPE) && (Object_Count > 1))
@@ -2386,6 +2427,227 @@ ObjectPtr Parser::Parse_Disc ()
     Parse_Object_Mods (reinterpret_cast<ObjectPtr>(Object));
 
     return (reinterpret_cast<ObjectPtr>(Object));
+}
+
+//******************************************************************************
+
+ObjectPtr Parser::Parse_Portal()
+{
+    Portal *Object = new Portal();
+    Object->origin = "portal at line " + std::to_string(CurrentFilePosition().line);
+    if (HaveCurrentFile())
+        Object->origin += " of " + UCS2toSysString(CurrentFileName());
+
+    Parse_Begin();
+    if (AllowToken(OBJECT_ID_TOKEN))
+        Object->body = Copy_Object(CurrentTokenDataPtr<ObjectPtr>());
+    else
+        Object->body = Parse_Object();
+    if (Object->body == nullptr)
+        Expectation_Error("object");
+    if (ContainsPortal(Object->body) || (Object->body->Type & LIGHT_SOURCE_OBJECT))
+        Error("A portal's body cannot be or hold a portal, or be a light source.");
+    Object->body = MergeUnions(Object->body);
+    Object->body->Type |= IS_CHILD_OBJECT;
+
+    struct Mouth
+    {
+        int front = -1, back = -1;
+        PIGMENT *pigment = nullptr;
+    };
+    Mouth outer, nearMouth, farMouth;
+    bool haveTarget = false, haveNear = false, haveFarBlock = false, haveFarSwitch = false;
+    auto parseMouthOption = [&](Mouth& mouth, const char *where) -> bool
+    {
+        auto parseSwitch = [&](int& value, const char *name)
+        {
+            if (value >= 0)
+                Error("%s takes only one %s.", where, name);
+            value = (Allow_Float(1.0) > 0.0) ? 1 : 0;
+        };
+        EXPECT_ONE
+            CASE (FRONT_TOKEN)
+                parseSwitch(mouth.front, "front");
+            END_CASE
+
+            CASE (BACK_TOKEN)
+                parseSwitch(mouth.back, "back");
+            END_CASE
+
+            CASE (PIGMENT_TOKEN)
+                if (mouth.pigment != nullptr)
+                    Error("%s takes only one pigment.", where);
+                mouth.pigment = Create_Pigment();
+                Parse_Begin();
+                Parse_Pigment(&mouth.pigment);
+                Parse_End();
+            END_CASE
+
+            OTHERWISE
+                UNGET
+                return false;
+            END_CASE
+        END_EXPECT
+        return true;
+    };
+    auto parseMouthBlock = [&](Mouth& mouth, const char *where)
+    {
+        Parse_Begin();
+        while (parseMouthOption(mouth, where))
+            ;
+        if (!Peek_Token(RIGHT_CURLY_TOKEN))
+            Error("%s { } takes only front, back and pigment.", where);
+        Parse_End();
+    };
+    EXPECT
+        CASE (NEAR_TOKEN)
+            if (haveNear)
+                Error("portal takes only one near.");
+            haveNear = true;
+            parseMouthBlock(nearMouth, "near");
+        END_CASE
+
+        CASE (FAR_TOKEN)
+            if (Peek_Token(LEFT_CURLY_TOKEN))
+            {
+                if (haveFarBlock)
+                    Error("portal takes only one far { }.");
+                haveFarBlock = true;
+                parseMouthBlock(farMouth, "far");
+            }
+            else
+            {
+                if (haveFarSwitch)
+                    Error("portal takes only one far on or far off.");
+                haveFarSwitch = true;
+                Object->farMouth = (Allow_Float(1.0) > 0.0);
+            }
+        END_CASE
+
+        CASE (TO_TOKEN)
+            if (haveTarget)
+                Error("portal takes only one to.");
+            haveTarget = true;
+            Parse_Transform_Block(&Object->map);
+        END_CASE
+
+        CASE (FALLBACK_TOKEN)
+            if (Object->fallback != nullptr)
+                Error("portal takes only one fallback.");
+            Object->fallback = Create_Pigment();
+            Parse_Begin();
+            Parse_Pigment(&Object->fallback);
+            Parse_End();
+        END_CASE
+
+        CASE (MAX_TRACE_LEVEL_TOKEN)
+            Object->maxDepth = Parse_Int_With_Range(1, MAX_TRACE_LEVEL_LIMIT, "portal max_trace_level");
+        END_CASE
+
+        CASE (EXIT_TOKEN)
+            if (!IsClosedSolid(Object->body))
+                Error("portal exit needs a body that is a finite closed solid.");
+            Object->exit = true;
+        END_CASE
+
+        CASE (PERTURB_TOKEN)
+            if (Object->perturb != nullptr)
+                Error("portal takes only one perturb.");
+            Parse_Begin();
+            GET(NORMAL_TOKEN);
+            Parse_Begin();
+            Parse_Tnormal(&Object->perturb);
+            Parse_End();
+            Object->perturbAmount = Allow_Float(1.0);
+            if (Object->perturbAmount == 0.0)
+                Error("A portal's perturb amount cannot be 0; leave the perturb out instead.");
+            Parse_End();
+        END_CASE
+
+        OTHERWISE
+            UNGET
+            if (!parseMouthOption(outer, "portal"))
+                EXIT
+        END_CASE
+    END_EXPECT
+
+    if (!haveTarget)
+        Error("portal needs a to { } placing the image of its body.");
+    if (haveFarBlock && !Object->farMouth)
+        Error("far off and a far { } block cannot be combined.");
+    if (Object->exit)
+    {
+        if (haveFarBlock || (haveFarSwitch && Object->farMouth))
+            Error("exit and a far mouth cannot be combined.");
+        Object->farMouth = false;
+    }
+
+    auto pick = [](int mouth, int outerValue, bool byDefault) { return (mouth >= 0) ? (mouth > 0) : (outerValue >= 0) ? (outerValue > 0) : byDefault; };
+    Object->front = pick(nearMouth.front, outer.front, true);
+    Object->back = pick(nearMouth.back, outer.back, false);
+    Object->farFront = pick(farMouth.front, outer.front, true);
+    Object->farBack = pick(farMouth.back, outer.back, false);
+    if (!Object->farFront && !Object->farBack)
+        Object->farMouth = false;
+    Object->pigment = (nearMouth.pigment != nullptr) ? nearMouth.pigment : Copy_Pigment(outer.pigment);
+    if (Object->farMouth)
+        Object->farPigment = (farMouth.pigment != nullptr) ? farMouth.pigment : Copy_Pigment(outer.pigment);
+    else
+        Destroy_Pigment(farMouth.pigment);
+    Destroy_Pigment(outer.pigment);
+
+    if (Object->exit && Object->back)
+        Error("exit and back on cannot be combined: a view leaving the body has nowhere to go.");
+    if (!Object->AnySideOpen() && (!Object->farMouth || (!Object->farFront && !Object->farBack)))
+        Warning("The %s has no open side, so nothing goes through it.", Object->origin.c_str());
+
+    Object->Compute_BBox();
+    Parse_Object_Mods(Object);
+
+    if ((Object->Texture != nullptr) || (Object->Interior_Texture != nullptr) || (Object->interior != nullptr))
+        Error("portal takes no texture, interior or material, and its pigment goes before any transform; give its look to a "
+              "separate object of the same shape.");
+
+    return Object;
+}
+
+//******************************************************************************
+
+void Parser::Check_Portal_Cameras()
+{
+    for (ObjectPtr object : sceneData->objects)
+    {
+        if (!Test_Flag(object, PORTAL_FLAG) || !IsClosedSolid(static_cast<Portal *>(object)->body))
+            continue;
+        const Portal *portal = static_cast<Portal *>(object);
+        bool inside = Inside_Object(sceneData->parsedCamera.Location, portal->body, &mThreadData);
+        for (const std::shared_ptr<const Camera>& camera : sceneData->screenCameras)
+            inside = inside || Inside_Object(camera->Location, portal->body, &mThreadData);
+        if (inside)
+            Warning("A camera is inside the body of the %s, a region that is not there; place the camera at the target instead.",
+                    portal->origin.c_str());
+    }
+}
+
+//******************************************************************************
+
+static bool DropShutPortal(ObjectPtr object)
+{
+    if (!Test_Flag(object, PORTAL_FLAG) || static_cast<Portal *>(object)->AnySideOpen())
+        return false;
+    Portal *portal = static_cast<Portal *>(object);
+    if (portal->partner != nullptr)
+        const_cast<Portal *>(portal->partner)->partner = nullptr;
+    Destroy_Object(object);
+    return true;
+}
+
+static void DropShutPortals(ObjectPtr object)
+{
+    if (((object->Type & HOLDS_PORTAL_OBJECT) == 0) || (dynamic_cast<CSGUnion *>(object) == nullptr))
+        return;
+    std::vector<ObjectPtr>& children = static_cast<CSGUnion *>(object)->children;
+    children.erase(std::remove_if(children.begin(), children.end(), DropShutPortal), children.end());
 }
 
 //******************************************************************************
@@ -3121,6 +3383,7 @@ ObjectPtr Parser::Parse_Light_Group()
             Local->Type |= LIGHT_GROUP_LIGHT_OBJECT;
         Local->Type |= IS_CHILD_OBJECT;
         Link(Local, Object->children);
+        Object->Type |= (Local->Type & HOLDS_PORTAL_OBJECT);
     }
 
     Promote_Local_Lights(Object); // in core/lighting/lightgroup.cpp [trf]
@@ -6389,6 +6652,10 @@ ObjectPtr Parser::Parse_Object ()
             Object = Parse_Light_Group ();
         END_CASE
 
+        CASE (PORTAL_TOKEN)
+            Object = Parse_Portal ();
+        END_CASE
+
         CASE (COMPOSITE_TOKEN)
             VersionWarning(150, "Use union instead of composite.");
             Object = Parse_CSG (CSG_UNION_TYPE);
@@ -6678,8 +6945,14 @@ void Parser::Parse_Frame ()
             if (Object == nullptr)
                 Expectation_Error ("object or directive");
             Post_Process (Object, nullptr);
-            Remove_Subsurface_Without_Inside (Object);
-            Link_To_Frame (Object);
+            if (!DropShutPortal(Object))
+            {
+                Remove_Subsurface_Without_Inside (Object);
+                Link_To_Frame (Object);
+            }
+            for (Portal *image : mPortalImages)
+                Link_To_Frame(image);
+            mPortalImages.clear();
         END_CASE
     END_EXPECT
 }
@@ -9033,6 +9306,39 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             Post_Process(*Sib, Object);
         }
+        DropShutPortals(Object);
+        return;
+    }
+
+    if (Test_Flag(Object, PORTAL_FLAG))
+    {
+        Portal *portal = static_cast<Portal *>(Object);
+        if (Parent != nullptr)
+            Object->Flags |= Parent->Flags & (NO_IMAGE_FLAG | NO_REFLECTION_FLAG | NO_RADIOSITY_FLAG);
+        Portal *image = portal->farMouth ? portal->MakeImage() : nullptr;
+        if (image != nullptr)
+        {
+            for (const Portal *other : mPortalImagesMade)
+                if ((other->origin == image->origin) && ((other->BBox.lowerLeft - image->BBox.lowerLeft).lengthSqr() == 0.0) &&
+                    ((other->BBox.size - image->BBox.size).lengthSqr() == 0.0))
+                {
+                    Warning("The %s is placed more than once with the same target, so its far mouths coincide.", portal->origin.c_str());
+                    break;
+                }
+            portal->partner = image;
+            mPortalImages.push_back(image);
+            mPortalImagesMade.push_back(image);
+        }
+        for (Portal *mouth : { portal, image })
+        {
+            if (mouth == nullptr)
+                continue;
+            for (PIGMENT *pigment : { mouth->pigment, mouth->fallback })
+                if (pigment != nullptr)
+                    Post_Pigment(pigment);
+            if (mouth->perturb != nullptr)
+                Post_Tnormal(mouth->perturb);
+        }
         return;
     }
 
@@ -9295,6 +9601,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             Post_Process(*Sib, Object);
         }
+        DropShutPortals(Object);
     }
 
     // Test whether the object is finite or infinite. [DB 9/94]
@@ -9494,6 +9801,9 @@ void Parser::Link_To_Frame(ObjectPtr Object)
 {
     if (Object == nullptr)
         return;
+
+    if (ClippedUnionHoldsPortal(Object))
+        Error("A union holding a portal cannot be clipped.");
 
     /* Remove bounding object if object is cheap to intersect. [DB 8/94]  */
 

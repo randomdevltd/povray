@@ -991,77 +991,10 @@ void TracePixel::InitRayContainerState(Ray& ray, bool compute)
     {
         precomputeContainingInteriors = false;
         containingInteriors.clear();
-
-        if(sceneData->boundingMethod == 2)
-        {
-            HasInteriorPointObjectCondition precond;
-            ContainingInteriorsPointObjectCondition postcond(containingInteriors);
-            BSPInsideCondFunctor ifn(ray.Origin, sceneData->objects, threadData, precond, postcond);
-
-            mailbox.clear();
-            (*sceneData->tree)(ray.Origin, ifn, mailbox);
-
-            // test infinite objects
-            for(std::vector<ObjectPtr>::iterator object = sceneData->objects.begin() + sceneData->numberOfFiniteObjects; object != sceneData->objects.end(); object++)
-                if (((*object)->interior != nullptr) && Inside_BBox(ray.Origin, (*object)->BBox) && (*object)->Inside(ray.Origin, threadData))
-                    containingInteriors.push_back((*object)->interior.get());
-        }
-        else if ((sceneData->boundingMethod == 0) || (sceneData->boundingSlabs == nullptr))
-        {
-            for(std::vector<ObjectPtr>::iterator object = sceneData->objects.begin(); object != sceneData->objects.end(); object++)
-                if (((*object)->interior != nullptr) && Inside_BBox(ray.Origin, (*object)->BBox) && (*object)->Inside(ray.Origin, threadData))
-                    containingInteriors.push_back((*object)->interior.get());
-        }
-        else
-        {
-            InitRayContainerStateTree(ray, sceneData->boundingSlabs);
-        }
+        FindContainingInteriors(ray.Origin, containingInteriors);
     }
 
     ray.AppendInteriors(containingInteriors);
-}
-
-/*****************************************************************************
-*
-* METHOD
-*
-*   InitRayContainerStateTree
-*
-* AUTHOR
-*
-*   Dieter Bayer
-*
-* DESCRIPTION
-*
-*   Step down the bounding box hierarchy and test for all node wether
-*   the ray's origin is inside or not. If it's inside a node descend
-*   further. If a leaf is reached and the ray's origin is inside the
-*   leaf object insert the objects data into the ray's containing lists.
-*
-* CHANGES
-*
-*   Mar 1996 : Creation.
-*
-******************************************************************************/
-
-void TracePixel::InitRayContainerStateTree(Ray& ray, BBOX_TREE *node)
-{
-    /* Check current node. */
-    if(!Inside_BBox(ray.Origin, node->BBox))
-        return;
-    if(node->Entries == 0)
-    {
-        /* This is a leaf so test contained object. */
-        ObjectPtr object = ObjectPtr(node->Node);
-        if ((object->interior != nullptr) && object->Inside(ray.Origin, threadData))
-            containingInteriors.push_back(object->interior.get());
-    }
-    else
-    {
-        /* This is a node containing leaves to be checked. */
-        for(int i = 0; i < node->Entries; i++)
-            InitRayContainerStateTree(ray, node->Node[i]);
-    }
 }
 
 void TracePixel::TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
@@ -1399,7 +1332,7 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const R
     const unsigned int limit = (screen.maxDepth > 0) ? screen.maxDepth : ticket.maxAllowedTraceLevel;
 
     if ((threadData->screenDepth >= limit) ||
-        (threadData->screenTraceLevels + ticket.traceLevel + threadData->screenDepth >= NESTED_VIEW_DEPTH_LIMIT))
+        (threadData->screenTraceLevels + ticket.traceLevel + threadData->screenDepth + threadData->portalDepth >= NESTED_VIEW_DEPTH_LIMIT))
         return false;
 
     if (!screenViews)

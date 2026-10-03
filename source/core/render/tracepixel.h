@@ -63,18 +63,6 @@ namespace pov
 ///
 /// @{
 
-struct HasInteriorPointObjectCondition final : public PointObjectCondition
-{
-    virtual bool operator()(const Vector3d& point, ConstObjectPtr object) const override;
-};
-
-struct ContainingInteriorsPointObjectCondition final : public PointObjectCondition
-{
-    ContainingInteriorsPointObjectCondition(RayInteriorVector& ci) : containingInteriors(ci) {}
-    virtual bool operator()(const Vector3d& point, ConstObjectPtr object) const override;
-    RayInteriorVector &containingInteriors;
-};
-
 class TracePixel final : public Trace
 {
     public:
@@ -154,7 +142,6 @@ class TracePixel final : public Trace
         bool CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number);
 
         void InitRayContainerState(Ray& ray, bool compute = false);
-        void InitRayContainerStateTree(Ray& ray, BBOX_TREE *node);
 
         void TraceSamples(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
                           float *quality = nullptr);

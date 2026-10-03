@@ -113,6 +113,9 @@
     <ClCompile Include="..\..\source\core\shape\polygon.cpp">
       <Filter>Core Source\Shape</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\source\core\shape\portal.cpp">
+      <Filter>Core Source\Shape</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\source\core\shape\prism.cpp">
       <Filter>Core Source\Shape</Filter>
     </ClCompile>
@@ -338,6 +341,9 @@
       <Filter>Core Headers\Shape</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\core\shape\polygon.h">
+      <Filter>Core Headers\Shape</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\core\shape\portal.h">
       <Filter>Core Headers\Shape</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\core\shape\prism.h">
