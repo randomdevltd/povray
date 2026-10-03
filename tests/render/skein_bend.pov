@@ -160,7 +160,7 @@ PairCheck("along the bend's own axis is the identity", Self, Plain, 1e-7, 1)
 
 // a straight path is the same rigid motion, a quarter turn about the axis: a path's frame starts at z where a direction's starts at x
 #declare Line = skein { expressions { Oval  bend { axis y  along path { <0, 0, 0>, <0, 1.6, 0> } } } closed u  ends flat }
-#declare Quarter = skein { expressions { Oval  rotate y*-90 } closed u  ends flat }
+#declare Quarter = skein { expressions { Oval } closed u  ends flat  rotate y*-90 }
 PairCheck("along a straight path is a quarter turn about the axis", Line, Quarter, 1e-7, 1)
 #declare LineBox = vlength(min_extent(Line) - min_extent(Quarter)) + vlength(max_extent(Line) - max_extent(Quarter));
 #debug concat("along a straight path: box differs from the quarter turn by ", str(LineBox, 0, 15), "\n")
@@ -202,7 +202,7 @@ PairCheck("along a straight path is a quarter turn about the axis", Line, Quarte
 // material past an open path's ends runs on straight along the end tangent, hit by every ray and inside() there
 #declare Long = expressions { scale <1, 3, 1>  translate <0, -1, 0>  extrude { radius 0.1 } }
 #declare Runon = skein { expressions { Long  bend { axis y  along path { <0, 0, 0>, <1, 0, 0> } } } closed u  ends flat }
-#declare Laid = skein { expressions { Long  rotate z*-90 } closed u  ends flat }
+#declare Laid = skein { expressions { Long } closed u  ends flat  rotate z*-90 }
 PairCheck("a tube 3 long along a path 1 long runs on straight past both ends", Runon, Laid, 1e-7, 1)
 
 // a polyline's run-on follows its end segments: below 0 back along the first, past 0.5 + sqrt(1/2) on along the last
