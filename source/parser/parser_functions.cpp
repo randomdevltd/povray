@@ -41,6 +41,7 @@
 
 // C++ variants of C standard header files
 #include <cmath>
+#include <cstring>
 
 // C++ standard header files
 //  (none at the moment)
@@ -415,6 +416,9 @@ TokenId Parser::expr_get_token()
         case IDENTIFIER_TOKEN:
             return FLOAT_ID_TOKEN;
 
+        case T_TOKEN:
+            return mFunctionGroups != nullptr ? FLOAT_ID_TOKEN : T_TOKEN;
+
         case CLOCK_TOKEN:
             mToken.Token_Float = clockValue;
             return FLOAT_TOKEN;
@@ -441,6 +445,25 @@ TokenId Parser::expr_get_token()
             else
                 return CurrentTrueTokenId();
     }
+}
+
+
+/// Reads `group.member` as the one parameter name "group.member" when `name` is a group of a grouped function.
+std::string Parser::expr_group_member(std::string name)
+{
+    const FNGroup *group = mFunctionGroups;
+    while ((group->name != nullptr) && (name != group->name))
+        ++group;
+    if (group->name == nullptr)
+        return name;
+    Get_Token();
+    if (CurrentTrueTokenId() != PERIOD_TOKEN)
+        Error("'%s' is an input group; name one of its members, as in %s.%c.", group->name, group->name, group->members[0]);
+    Get_Token();
+    const std::string member = CurrentTokenText();
+    if ((member.size() != 1) || (strchr(group->members, member[0]) == nullptr))
+        Error("'%s' has no member '%s'.", group->name, member.c_str());
+    return name + "." + member;
 }
 
 
@@ -750,6 +773,10 @@ bool Parser::expr_put(ExprNode *&current, int stage, int op)
     if(op == OP_CONSTANT)
     {
         node->number = mToken.Token_Float;
+    }
+    else if((op == OP_VARIABLE) && (mFunctionGroups != nullptr))
+    {
+        node->variable = POV_STRDUP(expr_group_member(CurrentTokenText()).c_str());
     }
     else
     {

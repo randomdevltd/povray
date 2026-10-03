@@ -105,6 +105,13 @@ enum
 
 void FNCode_Copy(FunctionCode *, FunctionCode *);
 
+/// A parameter group: `name` expands to one parameter per character of `members`, read as `name.m`.
+struct FNGroup final
+{
+    const char *name;
+    const char *members;
+};
+
 struct ExprNode final
 {
     ExprNode *parent;
@@ -133,6 +140,8 @@ class FNCode final
         FNCode(Parser *, FunctionCode *, bool, const char *);
 
         void Parameter();
+        /// Parses a parameter list in which each group in `groups` (ended by a null name) expands to its members; every parameter is then read from the stack, so none aliases another.
+        void GroupedParameter(const FNGroup *groups);
         void Compile(ExprNode *);
 
 #if (DEBUG_FLOATFUNCTION == 1)
@@ -149,6 +158,7 @@ class FNCode final
         unsigned int stack_pointer;
         unsigned int parameter_stack_pointer;
         int level;
+        bool grouped;
 
         #if (DEBUG_FLOATFUNCTION == 1)
 

@@ -580,6 +580,10 @@ enum
     kPOVAttrib_FunctionVMCalls       = 'FVMC',
     kPOVAttrib_FunctionVMInstrEst    = 'FVMI',
 
+    kPOVAttrib_SkeinNewtonIterations = 'SkNI',
+    kPOVAttrib_SkeinEvaluations      = 'SkEv',
+    kPOVAttrib_SkeinUnresolved       = 'SkUr',
+
     kPOVAttrib_CrackleCacheTest      = 'CrCT',
     kPOVAttrib_CrackleCacheTestSuc   = 'CrCS',
 

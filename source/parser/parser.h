@@ -90,6 +90,12 @@ struct GenericSpline;
 class ImageData;
 class Mesh;
 struct PavementPattern;
+struct SkeinAxis;
+struct SkeinData;
+struct SkeinImage;
+struct SkeinPath;
+struct SkeinStep;
+struct SkeinValue;
 struct TilingPattern;
 struct TrueTypeFont;
 
@@ -614,6 +620,7 @@ class Parser final
         bool expr_new(ExprNode *&current, int stage, int op);
         bool expr_ret(ExprNode *&current, int stage, int op);
         bool expr_err(ExprNode *&current, int stage, int op);
+        std::string expr_group_member(std::string name);
 
         std::shared_ptr<SceneData> sceneData;
 
@@ -642,6 +649,7 @@ class Parser final
 
         boost::intrusive_ptr<FunctionVM> mpFunctionVM;
         FPUContext *fnVMContext;
+        const FNGroup *mFunctionGroups = nullptr;
 
         bool Had_Max_Trace_Level;
         int Max_Trace_Level;
@@ -822,6 +830,29 @@ class Parser final
 
         ObjectPtr Parse_Sphere_Sweep(void);
         bool Parse_Three_UVCoords(Vector2d& UV1, Vector2d& UV2, Vector2d& UV3);
+
+        // parser_skein.cpp
+        ObjectPtr Parse_Skein();
+        void *Parse_Skein_Group();
+        void Parse_Skein_Expressions(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Step(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Blend(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Transform(std::vector<SkeinStep>& steps, TokenId id);
+        void Parse_Skein_Fold(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Axial(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Axis(Vector3d& axis, std::shared_ptr<SkeinAxis>& curve, const char *where);
+        void Parse_Skein_Bend(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Curl(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Sample(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Envelope(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Value(SkeinValue& value, const char *where);
+        void Parse_Skein_Function(SkeinValue& value, const char *where, bool axis);
+        void Parse_Skein_Map(SkeinValue& value);
+        std::shared_ptr<SkeinImage> Parse_Skein_Image();
+        bool Parse_Skein_Followed_By(TokenId next);
+        bool Parse_Skein_Next_Is(TokenId next);
+        void Parse_Skein_Inputs(SkeinValue& value, const FunctionCode *compiled, const char *where, bool declared);
+        std::shared_ptr<SkeinPath> Parse_Skein_Path(bool fromSurface = false);
 
         // tokenize.h/tokenize.cpp
         void UngetRawToken(const RawToken& rawToken);
