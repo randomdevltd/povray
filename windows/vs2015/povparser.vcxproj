@@ -408,6 +408,7 @@
     <ClCompile Include="..\..\source\parser\parser_materials.cpp" />
     <ClCompile Include="..\..\source\parser\parser_obj.cpp" />
     <ClCompile Include="..\..\source\parser\parser_povm.cpp" />
+    <ClCompile Include="..\..\source\parser\parser_skein.cpp" />
     <ClCompile Include="..\..\source\parser\parser_strings.cpp" />
     <ClCompile Include="..\..\source\parser\parser_tokenizer.cpp" />
     <ClCompile Include="..\..\source\parser\reservedwords.cpp" />

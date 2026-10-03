@@ -458,6 +458,7 @@
     <ClCompile Include="..\..\source\core\shape\prism.cpp" />
     <ClCompile Include="..\..\source\core\shape\quadric.cpp" />
     <ClCompile Include="..\..\source\core\shape\sor.cpp" />
+    <ClCompile Include="..\..\source\core\shape\skein.cpp" />
     <ClCompile Include="..\..\source\core\shape\sphere.cpp" />
     <ClCompile Include="..\..\source\core\shape\spheresweep.cpp" />
     <ClCompile Include="..\..\source\core\shape\superellipsoid.cpp" />
@@ -551,6 +552,7 @@
     <ClInclude Include="..\..\source\core\shape\prism.h" />
     <ClInclude Include="..\..\source\core\shape\quadric.h" />
     <ClInclude Include="..\..\source\core\shape\sor.h" />
+    <ClInclude Include="..\..\source\core\shape\skein.h" />
     <ClInclude Include="..\..\source\core\shape\sphere.h" />
     <ClInclude Include="..\..\source\core\shape\spheresweep.h" />
     <ClInclude Include="..\..\source\core\shape\superellipsoid.h" />

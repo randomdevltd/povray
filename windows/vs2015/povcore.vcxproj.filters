@@ -101,6 +101,9 @@
     <ClCompile Include="..\..\source\core\shape\lemon.cpp">
       <Filter>Core Source\Shape</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\source\core\shape\skein.cpp">
+      <Filter>Core Source\Shape</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\source\core\shape\mesh.cpp">
       <Filter>Core Source\Shape</Filter>
     </ClCompile>
@@ -323,6 +326,9 @@
       <Filter>Core Headers\Shape</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\core\shape\lemon.h">
+      <Filter>Core Headers\Shape</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\core\shape\skein.h">
       <Filter>Core Headers\Shape</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\core\shape\mesh.h">

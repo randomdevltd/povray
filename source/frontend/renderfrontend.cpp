@@ -1772,6 +1772,17 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
             tsb->printf("Function VM calls:  %15.0f\n", POVMSLongToCDouble(l2));
     }
 
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_SkeinNewtonIterations, &l);
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_SkeinEvaluations, &l2);
+    if((POVMSLongToCDouble(l) > 0.5) || (POVMSLongToCDouble(l2) > 0.5))
+    {
+        tsb->printf("----------------------------------------------------------------------------\n");
+        tsb->printf("Skein Newton steps: %15.0f\n", POVMSLongToCDouble(l));
+        tsb->printf("Skein evaluations:  %15.0f\n", POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_SkeinUnresolved, &l);
+        tsb->printf("Skein unresolved:   %15.0f\n", POVMSLongToCDouble(l));
+    }
+
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_CrackleCacheTest, &l);
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_CrackleCacheTestSuc, &l2);
     if((POVMSLongToCDouble(l) > 0.5) || (POVMSLongToCDouble(l2) > 0.5))

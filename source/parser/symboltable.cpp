@@ -269,6 +269,7 @@ void* SymbolTable::Copy_Identifier(void* Data, int Type)
             std::memcpy(reinterpret_cast<void*>(New), reinterpret_cast<void*>(Data), len * sizeof(UCS2));
             break;
         case ARRAY_ID_TOKEN:
+        case EXPRESSIONS_ID_TOKEN:
             New = CloneData<Assignable>(Data);
             break;
         case DICTIONARY_ID_TOKEN:
@@ -379,6 +380,7 @@ void SymbolTable::Destroy_Ident_Data(void *Data, int Type)
             POV_FREE(Data);
             break;
         case ARRAY_ID_TOKEN:
+        case EXPRESSIONS_ID_TOKEN:
             DeleteData<Assignable>(Data);
             break;
         case DICTIONARY_ID_TOKEN:

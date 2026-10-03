@@ -108,6 +108,9 @@ enum
     kPOVList_Stat_RBezierTest,
     kPOVList_Stat_OvusTest,
     kPOVList_Stat_LemonTest,
+    kPOVList_Stat_SkeinTest,
+    kPOVList_Stat_SkeinBoundTest,
+    kPOVList_Stat_SkeinNewtonTest,
     kPOVList_Stat_Last
 };
 
@@ -210,6 +213,15 @@ typedef enum INTSTATS
     Ray_Triangle_Tests_Succeeded,
     Ray_TTF_Tests,
     Ray_TTF_Tests_Succeeded,
+    Ray_Skein_Tests,
+    Ray_Skein_Tests_Succeeded,
+    Skein_Bound_Tests,
+    Skein_Bound_Tests_Succeeded,
+    Skein_Newton_Solves,
+    Skein_Newton_Solves_Succeeded,
+    Skein_Newton_Iterations,
+    Skein_Surface_Evaluations,
+    Skein_Unresolved_Patches,
 
     /* crackle cache */
     CrackleCache_Tests,

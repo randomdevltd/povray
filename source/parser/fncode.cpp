@@ -115,6 +115,7 @@ FNCode::FNCode(Parser *pa, FunctionCode *f, bool is_local, const char *n)
     max_stack_size = 0;
     stack_pointer = 0;
     parameter_stack_pointer = 0;
+    grouped = false;
 
     parser = pa;
     functionVM = parser->GetFunctionVM();
@@ -206,6 +207,34 @@ void FNCode::Parameter()
     }
     else
         parser->Unget_Token();
+}
+
+void FNCode::GroupedParameter(const FNGroup *groups)
+{
+    grouped = true;
+    parser->Parse_Paren_Begin();
+    do
+    {
+        parser->Get_Token();
+        const TokenId id = parser->CurrentTrueTokenId();
+        if ((id != IDENTIFIER_TOKEN) && (id != X_TOKEN) && (id != Y_TOKEN) && (id != Z_TOKEN) &&
+            (id != U_TOKEN) && (id != V_TOKEN) && (id != T_TOKEN))
+            parser->Expectation_Error("parameter identifier");
+        const std::string name = parser->CurrentTokenText();
+        const FNGroup *group = groups;
+        while ((group->name != nullptr) && (name != group->name))
+            ++group;
+        const std::string members = group->name != nullptr ? group->members : std::string(1, '\0');
+        for (char member : members)
+        {
+            if (function->parameter_cnt == MAX_FUNCTION_PARAMETER_LIST)
+                parser->Error("Too many function parameters.");
+            const std::string full = member != '\0' ? name + "." + member : name;
+            function->parameter[function->parameter_cnt++] = POV_STRDUP(full.c_str());
+        }
+    }
+    while (parser->Parse_Comma());
+    parser->Parse_Paren_End();
 }
 
 
@@ -1711,7 +1740,7 @@ void FNCode::compile_variable(char *name)
     unsigned int i = 0, found = MAX_K;
 
     // first, handle register parameters x,y,z,u and v
-    if(name[1] == '\0')
+    if(!grouped && (name[1] == '\0'))
     {
         if((name[0] == 'x') || (name[0] == 'u'))
         {
@@ -1752,6 +1781,8 @@ void FNCode::compile_variable(char *name)
         }
     }
 
+    if(grouped)
+        parser->Error("'%s' is not a parameter of this function; list it, or its group as in function(uv, pos, norm).", name);
     parser->Expectation_Error("parameter identifier or floating-point constant identifier");
 }
 
@@ -1789,6 +1820,9 @@ void FNCode::compile_parameters()
     bool had_x = false;
     bool had_y = false;
     bool had_z = false;
+
+    if(grouped)
+        return;
 
     // if it is a function with default parameters, add them
     if(function->parameter_cnt == 0)

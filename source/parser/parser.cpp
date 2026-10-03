@@ -6295,6 +6295,10 @@ ObjectPtr Parser::Parse_Object ()
             Object = Parse_Torus ();
         END_CASE
 
+        CASE (SKEIN_TOKEN)
+            Object = Parse_Skein ();
+        END_CASE
+
         /* Parse lathe primitive. [DB 8/94] */
 
         CASE (LATHE_TOKEN)
@@ -8387,7 +8391,7 @@ bool Parser::Parse_RValue (TokenId Previous, TokenId *NumberPtr, void **DataPtr,
         CASE4 (SLOPE_MAP_ID_TOKEN,NORMAL_MAP_ID_TOKEN,TEXTURE_MAP_ID_TOKEN,ARRAY_ID_TOKEN)
         CASE4 (PIGMENT_MAP_ID_TOKEN, MEDIA_ID_TOKEN,INTERIOR_ID_TOKEN,DENSITY_ID_TOKEN)
         CASE4 (DENSITY_MAP_ID_TOKEN, RAINBOW_ID_TOKEN, FOG_ID_TOKEN, SKYSPHERE_ID_TOKEN)
-        CASE3 (MATERIAL_ID_TOKEN, STRING_ID_TOKEN, DICTIONARY_ID_TOKEN)
+        CASE4 (MATERIAL_ID_TOKEN, STRING_ID_TOKEN, DICTIONARY_ID_TOKEN, EXPRESSIONS_ID_TOKEN)
             if ((ParFlag) && PassParameterByReference (old_table_index))
             {
                 // pass by reference
@@ -8408,7 +8412,14 @@ bool Parser::Parse_RValue (TokenId Previous, TokenId *NumberPtr, void **DataPtr,
         END_CASE
 
         CASE (IDENTIFIER_TOKEN)
-            if (allowUndefined)
+            if (CurrentTokenText() == "expressions")
+            {
+                Temp_Data  = Parse_Skein_Group();
+                *NumberPtr = EXPRESSIONS_ID_TOKEN;
+                Test_Redefine(Previous,NumberPtr,*DataPtr, allow_redefine);
+                *DataPtr   = Temp_Data;
+            }
+            else if (allowUndefined)
             {
                 Found = false;
                 UNGET

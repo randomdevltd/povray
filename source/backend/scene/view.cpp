@@ -1329,6 +1329,9 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_IsoFindRoot, stats[Ray_IsoSurface_Find_Root]);
     renderStats.SetLong(kPOVAttrib_FunctionVMCalls, stats[Ray_Function_VM_Calls]);
     renderStats.SetLong(kPOVAttrib_FunctionVMInstrEst, stats[Ray_Function_VM_Instruction_Est]);
+    renderStats.SetLong(kPOVAttrib_SkeinNewtonIterations, stats[Skein_Newton_Iterations]);
+    renderStats.SetLong(kPOVAttrib_SkeinEvaluations, stats[Skein_Surface_Evaluations]);
+    renderStats.SetLong(kPOVAttrib_SkeinUnresolved, stats[Skein_Unresolved_Patches]);
     renderStats.SetLong(kPOVAttrib_PolynomTest, stats[Polynomials_Tested]);
     renderStats.SetLong(kPOVAttrib_RootsEliminated, stats[Roots_Eliminated]);
     renderStats.SetLong(kPOVAttrib_CallsToNoise, stats[Calls_To_Noise]);

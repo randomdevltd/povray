@@ -57,6 +57,9 @@
     <ClCompile Include="..\..\source\parser\parser_strings.cpp">
       <Filter>Parser Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\source\parser\parser_skein.cpp">
+      <Filter>Parser Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\source\parser\parser_materials.cpp">
       <Filter>Parser Source</Filter>
     </ClCompile>
