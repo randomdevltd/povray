@@ -250,6 +250,10 @@ class Trace
         /// Start each filtered pigment with 3 taps, or with 8 (the default).
         void SetTextureFilterTaps(int taps) { textureFilterTaps = taps; }
 
+        /// The object the last primary ray hit, and its top layer's pigment there.
+        const void *primaryObject = nullptr;
+        TransColour primaryPigment;
+
         /// Trace a ray.
         ///
         /// Call this if transmittance matters.

@@ -77,6 +77,11 @@ class TracePixel final : public Trace
         /// @param[in]  width   Horizontal size of the image in pixels.
         /// @param[in]  height  Vertical size of the image in pixels.
         /// @param[out] colour  Computed colour of the (sub-)pixel.
+        /// Trace a sub-pixel with the random draws of the camera ray through `keyAt`, typically its pixel's centre.
+        void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour, const Vector2d& keyAt);
+
+        /// The share of a pixel's footprint a sample stands for, so a sub-pixel sample filters textures over its own area.
+        DBL footprintFraction = 1.0;
         void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour);
         /// Traces the view a screen shows at window point (x, y), y down, carrying on the state of the ray that met it.
         void TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour);
@@ -143,6 +148,9 @@ class TracePixel final : public Trace
         GenericScalarFunctionInstancePtr mpCameraDirectionFn[3];
 
         bool CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number);
+        /// While set, camera rays take the path key of the camera ray this far away in the image.
+        bool shiftKey = false;
+        Vector2d keyShift;
 
         void InitRayContainerState(Ray& ray, bool compute = false);
 

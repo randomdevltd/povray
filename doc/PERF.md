@@ -937,6 +937,28 @@ shadow.
 
 Four-threaded counts on the shared box spread by 20–30% between runs of one build, so these are single-threaded.
 
+### Anti-aliasing method 4
+
+`+AM4` (with `+PR`) spends a sample budget, `+AB` extra samples per pixel on average, where it helps most. It fits
+straight edges to the centre samples already traced (no rays), traces probes only where a fitted line is still
+uncertain, and averages extra samples into pixels whose neighbourhood is too noisy to fit. Each pass is planned up
+front: candidates go into priority buckets and whole buckets are taken best-first until the budget is reached, so
+the last bucket may overshoot, and the image does not depend on the thread count. The fit and planning passes are
+single-threaded and cost about 2,000–4,000 instructions a pixel over plain progressive rendering, and about 140 bytes
+a pixel of memory.
+
+A checkerboard floor with a mirror sphere, 640×480, `+A0.02`, mean absolute error against a 144-sample reference:
+
+| | extra samples/px | sphere | far floor | near floor | all pixels |
+|---|---|---|---|---|---|
+| none | 0 | 0.0433 | 0.0199 | 0.0108 | 0.0413 |
+| method 2 (`+A0.1 +R3`) | 3.56 | 0.0094 | 0.0039 | 0.0017 | 0.0109 |
+| method 4, `+AB1` | 1.0 | 0.0201 | 0.0050 | 0.0019 | 0.0158 |
+| method 4, `+AB2` | 2.0 | 0.0151 | 0.0040 | 0.0017 | 0.0114 |
+| method 4, `+AB4` | 2.8 | 0.0122 | 0.0034 | 0.0015 | 0.0089 |
+
+The mirror sphere's noisy reflection takes most of the budget and stays worse than method 2 at every budget tried.
+
 ## Texture filtering
 
 `+TF` evaluates each filtered pigment 8 times where the first eight taps agree and the footprint is near round, and at

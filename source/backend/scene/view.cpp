@@ -42,6 +42,7 @@
 // C++ standard header files
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 
 // Boost header files
 #include <boost/bind.hpp>
@@ -760,6 +761,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     DBL aathreshold = 0.3;
     DBL aaconfidence = 0.9;
     unsigned int aadepth = 3;
+    DBL aaBudget = 0.0;
     DBL aaGammaValue = 1.0;
     GammaCurvePtr aaGammaCurve;
     unsigned int previewstartsize = 0;
@@ -775,11 +777,12 @@ void View::StartRender(POVMS_Object& renderOptions)
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
 
     if(renderOptions.TryGetBool(kPOVAttrib_Antialias, false) == true)
-        tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 3); // TODO FIXME - magic number in clip
+        tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 4); // TODO FIXME - magic number in clip
 
     aadepth = clip((unsigned int)renderOptions.TryGetInt(kPOVAttrib_AntialiasDepth, 3), 1u, 9u);
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
     aaconfidence = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasConfidence, 0.9f), 0.0f, 1.0f);
+    aaBudget = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasBudget, 0.0f), 0.0f, 1.0e9f);
     viewData.textureFilterScale = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false) ?
                                   clip(renderOptions.TryGetFloat(kPOVAttrib_TextureFilterScale, 1.0f), 0.0f, 64.0f) : 0.0f;
     viewData.textureFilterTaps = (renderOptions.TryGetInt(kPOVAttrib_TextureFilterTaps, 8) <= 3) ? 3 : 8;
@@ -803,7 +806,9 @@ void View::StartRender(POVMS_Object& renderOptions)
     bool progressive = renderOptions.TryGetBool(kPOVAttrib_ProgressiveRender, false) &&
                        !renderOptions.TryGetBool(kPOVAttrib_RealTimeRaytracing, false);
     if (progressive && (tracingmethod == 3))
-        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1 and 2 only.");
+        throw POV_EXCEPTION(kParamErr, "Progressive rendering supports anti-aliasing methods 1, 2 and 4 only.");
+    if (!progressive && (tracingmethod == 4))
+        throw POV_EXCEPTION(kParamErr, "Anti-aliasing method 4 needs progressive rendering (+PR).");
     bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
 
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
@@ -1245,7 +1250,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     if (progressive)
         QueueProgressiveRender(renderOptions, tracingmethod, jitterscale, aathreshold, aaconfidence, aadepth, aaGammaCurve,
                                highReproducibility, seed, maxRenderThreads, renderOptions.TryGetInt(kPOVAttrib_ProgressLevel, 0),
-                               progressSkipList);
+                               progressSkipList, aaBudget);
     // do render with mosaic preview
     else if(previewstartsize > 1)
     {
@@ -1368,6 +1373,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
     // basic tracing stats
     renderStats.SetLong(kPOVAttrib_Pixels, stats[Number_Of_Pixels]);
     renderStats.SetLong(kPOVAttrib_PixelSamples, stats[Number_Of_Samples]);
+    renderStats.SetLong(kPOVAttrib_PixelsSupersampled, stats[Number_Of_Pixels_Supersampled]);
     renderStats.SetLong(kPOVAttrib_Rays, stats[Number_Of_Rays]);
     renderStats.SetLong(kPOVAttrib_RaysSaved, stats[ADC_Saves]);
 
@@ -1569,7 +1575,8 @@ void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, un
 
 void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,
                                   DBL aaConfidence, unsigned int aaDepth, GammaCurvePtr& aaGamma, bool highReproducibility,
-                                  size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip)
+                                  size_t seed, int maxRenderThreads, int resumeLevel, shared_ptr<ViewData::BlockIdSet> resumeSkip,
+                                  DBL aaBudget)
 {
     const bool corners = (tracingMethod == 2);
     unsigned int maxStep = 1;
@@ -1596,12 +1603,22 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
                 throw POV_EXCEPTION(kInvalidDataSizeErr, "Lattice samples from the render state file do not match the image size.");
             samples.Get(kPOVMSType_VectorFloat, &viewData.latticeSamples[0], &len);
         }
+        if (tracingMethod == 4)
+        {
+            viewData.EnsureLatticeSamples(latticeWidth, latticeHeight);
+            viewData.StartAaState();
+            viewData.aaFraction = aaBudget;
+            viewData.aaThr = aaThreshold;
+            viewData.aaDepth = int(aaDepth);
+        }
     }
 
     shared_ptr<ViewData::BlockIdSet> noSkip(new ViewData::BlockIdSet());
     bool firstPass = true;
     unsigned int step = maxStep;
-    for (int level = 0; level <= levels; level++, step >>= 1)
+    // method 4 has its own anti-aliasing passes after the lattice levels
+    const int lastLevel = (tracingMethod == 4) ? (levels - 1) : levels;
+    for (int level = 0; level <= lastLevel; level++, step >>= 1)
     {
         bool refine = (level == levels);
         if ((level < resumeLevel) || (refine && (tracingMethod == 0)))
@@ -1614,10 +1631,155 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         for (int i = 0; i < maxRenderThreads; i++)
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
                 &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0
+                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, aaBudget
                 ))));
         renderTasks.AppendSync();
     }
+
+    if (tracingMethod == 4)
+    {
+        // fit edges to the samples already traced, then rounds of probes the planner picks, then noise, then the image;
+        // none of it is saved, so a continued render repeats it and only the last pass skips the blocks already written
+        int aaLevel = levels;
+        auto addPass = [&](int pass, int round, bool plan, shared_ptr<ViewData::BlockIdSet> skip)
+        {
+            if (plan)
+            {
+                renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, pass, round));
+                renderTasks.AppendSync();
+            }
+            renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skip, false));
+            renderTasks.AppendSync();
+            for (int i = 0; i < maxRenderThreads; i++)
+                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
+                    &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
+                    0, false, true, highReproducibility, seed, aaLevel, 0, false, aaBudget, pass, round
+                    ))));
+            renderTasks.AppendSync();
+            aaLevel++;
+        };
+        renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 0, 0));
+        renderTasks.AppendSync();
+        addPass(1, 0, false, noSkip);
+        for (int round = 0; round < TraceTask::kM4Rounds; round++)
+            addPass(2, round, true, noSkip);
+        for (int round = 0; round < TraceTask::kM4NoiseRounds; round++)
+            addPass(3, round, true, noSkip);
+        addPass(4, 0, false, (aaLevel == resumeLevel) ? resumeSkip : noSkip);
+        renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 5, 0));
+        renderTasks.AppendSync();
+    }
+}
+
+void ViewData::StartAaState()
+{
+    aaLeft = renderArea.left;
+    aaTop = renderArea.top;
+    aaWidth = renderArea.GetWidth();
+    const size_t count = size_t(renderArea.GetWidth()) * size_t(renderArea.GetHeight());
+    aaHit.assign(count, 0);
+    if ((textureFilterScale > 0.0) || std::getenv("POV_AA4_DUMP"))
+        aaPigment.assign(count * 3, 0.0f);
+    else
+        std::vector<float>().swap(aaPigment);
+    EndAaPlan();
+}
+
+void ViewData::StartAaPlan(bool extra)
+{
+    const size_t count = aaHit.size();
+    aaLab.assign(count * 4, 0.0f);
+    aaFit.assign(count, AaFit());
+    if (extra)
+        aaExtra.assign(count, RGBTColour());
+    else
+        std::vector<RGBTColour>().swap(aaExtra);
+    std::vector<std::unique_ptr<AaCell[]>>().swap(aaChunks);
+    aaLeafEnd = aaLeafLive = aaLeafDead = 0;
+}
+
+void ViewData::EndAaPlan()
+{
+    std::vector<float>().swap(aaLab);
+    std::vector<AaFit>().swap(aaFit);
+    std::deque<AaGeom>().swap(aaGeom);
+    std::vector<RGBTColour>().swap(aaExtra);
+    std::vector<std::unique_ptr<AaCell[]>>().swap(aaChunks);
+    aaLeafEnd = aaLeafLive = aaLeafDead = 0;
+    std::vector<AaSeg>().swap(aaSegs);
+    std::vector<std::uint32_t>().swap(aaProbeList);
+}
+
+void ViewData::StartAaGeometry(bool dense)
+{
+    std::deque<AaGeom>().swap(aaGeom);
+    if (!dense)
+        return;
+    aaGeom.assign(aaFit.size(), AaGeom());
+    for (size_t i = 0; i < aaFit.size(); i++)
+        aaFit[i].geo = std::int32_t(i);
+}
+
+void ViewData::ReserveAaSplits(const std::vector<size_t>& split)
+{
+    const size_t chunk = size_t(1) << kAaChunkBits;
+    // runs left behind by moves are reclaimed once they pass half the live leaves: every run slides down, in order, in place
+    if (aaLeafDead > aaLeafLive / 2)
+    {
+        std::vector<std::pair<std::int32_t, std::uint32_t>> runs;
+        for (size_t i = 0; i < aaFit.size(); i++)
+            if (aaFit[i].cells >= 0)
+                runs.emplace_back(aaFit[i].cells, std::uint32_t(i));
+        std::sort(runs.begin(), runs.end());
+        size_t to = 0;
+        for (const auto& r : runs)
+        {
+            AaFit& f = aaFit[r.second];
+            if ((to & (chunk - 1)) + f.nCells > chunk)
+                to = (to | (chunk - 1)) + 1;
+            const AaCell* from = Leaves(f);
+            f.cells = std::int32_t(to);
+            std::copy(from, from + f.nCells, Leaves(f));
+            to += f.nCells;
+        }
+        aaChunks.resize((to + chunk - 1) >> kAaChunkBits);
+        aaLeafEnd = to;
+        aaLeafDead = 0;
+    }
+    for (size_t i : split)
+    {
+        AaFit& f = aaFit[i];
+        const size_t n = (f.cells >= 0) ? f.nCells : 1;
+        if ((aaLeafEnd & (chunk - 1)) + n + 3 > chunk)
+            aaLeafEnd = (aaLeafEnd | (chunk - 1)) + 1;
+        while (aaChunks.size() <= (aaLeafEnd >> kAaChunkBits))
+            aaChunks.emplace_back(new AaCell[chunk]);
+        const AaCell* from = Leaves(f);
+        const AaCell centre = from ? AaCell() : CentreLeaf(aaLeft + unsigned(i % aaWidth), aaTop + unsigned(i / aaWidth));
+        f.cells = std::int32_t(aaLeafEnd);
+        std::copy(from ? from : &centre, from ? from + n : &centre + 1, Leaves(f));
+        aaLeafDead += from ? n : 0;
+        aaLeafLive += from ? 3 : 4;
+        f.nCells = std::uint16_t(n);
+        aaLeafEnd += n + 3;
+    }
+}
+
+void ViewData::AaStateBytes(double bytes[8]) const
+{
+    bytes[0] = double(latticeSamples.size()) * sizeof(RGBTColour);
+    bytes[1] = double(aaLab.size()) * sizeof(float);
+    bytes[2] = double(aaFit.size()) * sizeof(AaFit);
+    bytes[3] = double(aaExtra.size()) * sizeof(RGBTColour);
+    bytes[4] = double(aaHit.size()) * sizeof(std::uint32_t);
+    bytes[5] = double(aaPigment.size()) * sizeof(float);
+    bytes[6] = double(aaChunks.size()) * double(size_t(1) << kAaChunkBits) * sizeof(AaCell);
+    bytes[7] = double(aaGeom.size()) * sizeof(AaGeom);
+}
+
+void View::PlanAntialias(TaskQueue&, int pass, int round)
+{
+    TraceTask::PlanM4(&viewData, pass, round);
 }
 
 void View::StartLevel(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress)

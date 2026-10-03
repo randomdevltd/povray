@@ -108,6 +108,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Antialias",           kPOVAttrib_Antialias,          kPOVMSType_Bool },
     { "Antialias_Confidence",kPOVAttrib_AntialiasConfidence,kPOVMSType_Float },
     { "Antialias_Depth",     kPOVAttrib_AntialiasDepth,     kPOVMSType_Int },
+    { "Antialias_Budget",    kPOVAttrib_AntialiasBudget,    kPOVMSType_Float },
     { "Antialias_Gamma",     kPOVAttrib_AntialiasGamma,     kPOVMSType_Float },
     { "Antialias_Threshold", kPOVAttrib_AntialiasThreshold, kPOVMSType_Float },
     { "Append_File",         kPOVAttrib_AppendConsoleFiles, kPOVMSType_Bool },
@@ -267,6 +268,7 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
 {
     //       Parameter setting              Parameter type          Boolean setting
 
+    { "AB",  kPOVAttrib_AntialiasBudget,    kPOVMSType_Float,       kNoParameter },
     { "AC",  kPOVAttrib_AntialiasConfidence,kPOVMSType_Float,       kNoParameter },
     { "AG",  kPOVAttrib_AntialiasGamma,     kPOVMSType_Float,       kNoParameter },
     { "AM",  kPOVAttrib_SamplingMethod,     kPOVMSType_Int,         kNoParameter },
