@@ -1,4 +1,4 @@
-// Dark skin over bright flesh: a body with a thin ear and a finger, lit from behind and from the side.
+// Dark skin over bright flesh: an apple with a stalk and a thin leaf, lit from behind and from the side.
 // Case 0: a dark pigment; 1: a half-transparent blue layer over a flesh layer; 2: a dark pigment with a flesh colour;
 // 3: flesh with veins below the surface; 4: the veins glowing; 5: the skin's thickness as a pattern; 6: a flesh pigment,
 // no skin. Sub=0: no subsurface; Flat=1: plain veins and glow, to time the lookups without their pattern.
@@ -32,9 +32,9 @@ global_settings { assumed_gamma 1.0 mm_per_unit 40 #if (Sub) subsurface { sample
 } }
 #declare Body = union {
   sphere { 0, 0.5 }
-  sphere { 0, 1 scale <0.26, 0.34, 0.03> rotate z * -30 translate <0.4, 0.55, 0> }
-  cylinder { <0.3, -0.2, 0>, <0.85, -0.05, 0>, 0.05 }
-  sphere { <0.85, -0.05, 0>, 0.05 }
+  sphere { 0, 1 scale <0.26, 0.34, 0.03> rotate z * -55 translate <0.4, 0.8, 0> }
+  cylinder { <0.02, 0.45, 0>, <0.12, 0.85, 0>, 0.05 }
+  sphere { <0.12, 0.85, 0>, 0.05 }
 }
 #if (Case = 6)
   #declare T = texture { pigment { rgb Flesh } finish { Plain } }

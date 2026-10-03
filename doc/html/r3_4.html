@@ -2549,6 +2549,10 @@ on any surface.  To speed up rendering, you can take objects out of this
 category.  You do this with the line: <code>photons{collect off}</code>.  If you use
 this syntax, caustics from photons will not appear on the object.  This will
 save both memory and computational time during rendering.</p>
+<p>Photons that land on an object with a <code>subsurface</code> finish do not
+appear on its surface: they enter the material and spread through its subsurface
+light transport instead. See <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light
+Transport</a>.</p>
 
 <p>Category 2 - Objects that cause photon caustics</p>
 
