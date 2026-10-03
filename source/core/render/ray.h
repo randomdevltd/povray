@@ -128,6 +128,11 @@ class Ray final : public BasicRay
         /// A key for the next child of a kind whose place among its siblings is its only index.
         std::uint64_t NextChildKey(std::uint64_t kind) const { return DeriveKey(key, kind, children++); }
 
+        /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
+        Vector3d dOdx, dOdy, dDdx, dDdy;
+        /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
+        bool hasDifferentials = false;
+
     private:
 
         RayInteriorVector interiors;

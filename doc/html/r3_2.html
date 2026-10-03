@@ -2942,6 +2942,32 @@ are used only at 5 or below.</td>
 
 <p>The default is 9 if not specified.</p>
 
+<table width="100%" class="option-list">
+<tr>
+<td width="30%"><code>Texture_Filter=</code>bool</td>
+<td width="70%">Average pigments over each pixel's footprint (default off) <font class="New">New</font> in version 3.8</td>
+</tr>
+
+<tr>
+<td><code>+TF</code></td>
+<td>Same as <code>Texture_Filter=on</code></td>
+</tr>
+
+<tr>
+<td><code>Texture_Filter_Scale=</code>n.n</td>
+<td>Scale the footprint (default 1.0, at most 64)</td>
+</tr>
+
+<tr>
+<td><code>Texture_Filter_Taps=</code>n</td>
+<td>Taps a filtered pigment starts with: 8 (default) or 3</td>
+</tr>
+</table>
+
+<p>With <code>+TF</code>, camera rays carry how their origin and direction change from one pixel to the next. Where such a ray hits a surface, each texture layer's pigment is averaged over the area the pixel covers there, so fine or distant patterns, such as a checker running to the horizon, are smoothed instead of aliasing. Reflected and refracted rays spawned by a filtered ray are filtered too.</p>
+<p>Plain pigments, uv-mapped textures and normals are not filtered, nor are shadow, photon, radiosity and subsurface rays. With focal blur, only perspective and orthographic cameras are filtered, and cameras with a normal block are not; nor is anything seen through a portal.</p>
+<p><code>Texture_Filter_Taps=3</code> starts each filtered pigment with three taps and adds the rest only where they disagree, which can save time on expensive pigments; any value of 3 or less means 3, any other 8.</p>
+
 </div>
 <a name="r3_2_8_4"></a>
 <div class="content-level-h4" contains="Automatic Bounding Control" id="r3_2_8_4">

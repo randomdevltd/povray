@@ -982,6 +982,44 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
     ray.Direction.normalize();
     ray.SetKey(DeriveKey(DeriveKey(threadData->stochasticRandomSeedBase, ray.Origin), ray.Direction));
 
+    if ((textureFilterScale > 0.0) && (camera.Tnormal == nullptr) && !pretrace)
+    {
+        // how origin and direction move for a step of one image pixel, wherever in the pixel this sample lies
+        const Vector3d stepX = cameraRight * (1.0 / width), stepY = cameraUp * (1.0 / -height);
+        if (camera.Type == PERSPECTIVE_CAMERA)
+        {
+            const DBL len = (cameraDirection + x0 * cameraRight + y0 * cameraUp).length();
+            ray.dOdx = ray.dOdy = Vector3d(0.0);
+            ray.dDdx = (stepX - dot(ray.Direction, stepX) * ray.Direction) / len;
+            ray.dDdy = (stepY - dot(ray.Direction, stepY) * ray.Direction) / len;
+            ray.hasDifferentials = true;
+        }
+        else if (camera.Type == ORTHOGRAPHIC_CAMERA)
+        {
+            ray.dOdx = stepX;
+            ray.dOdy = stepY;
+            ray.dDdx = ray.dDdy = Vector3d(0.0);
+            ray.hasDifferentials = true;
+        }
+        else if (!differentialProbe && !useFocalBlur)
+        {
+            // any other projection: the camera's own rays one pixel over, taken as differences
+            Ray rx(ray), ry(ray);
+            differentialProbe = true;
+            const bool okX = CreateCameraRay(rx, x + 1.0, y, width, height, ray_number);
+            const bool okY = okX && CreateCameraRay(ry, x, y + 1.0, width, height, ray_number);
+            differentialProbe = false;
+            if (okY)
+            {
+                ray.dOdx = rx.Origin - ray.Origin;
+                ray.dOdy = ry.Origin - ray.Origin;
+                ray.dDdx = rx.Direction - ray.Direction;
+                ray.dDdy = ry.Direction - ray.Direction;
+                ray.hasDifferentials = true;
+            }
+        }
+    }
+
     return true;
 }
 

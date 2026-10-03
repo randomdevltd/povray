@@ -937,6 +937,26 @@ shadow.
 
 Four-threaded counts on the shared box spread by 20–30% between runs of one build, so these are single-threaded.
 
+## Texture filtering
+
+`+TF` evaluates each filtered pigment 8 times where the first eight taps agree and the footprint is near round, and at
+most 72 times (the eight, or only the first four when those already disagree, then a lattice of up to 64 along a stretched or disagreeing footprint); with
+`Texture_Filter_Taps=3`, 3 times where the first three agree and at most 75. No extra rays are traced, so scenes whose
+time goes to intersections and lighting barely notice it. With it off, no differentials are computed. On a checker
+plane running to the horizon, 640×480, one ray a pixel, the mean OkLab error against a 64-sample reference falls from
+9.2 to 3.1 (×1000), and to 3.3 with three starting taps.
+
+Diffuse, ambient, emitted and radiosity light are linear in the pigment, so lighting the averaged pigment gives the
+mean colour supersampling gives. A layer that filters or transmits needs three means, not one: its colour weighted by
+its opacity (its own light), its opacity, and colour × filter + transmit (what reaches the layers and objects behind
+it). One averaged colour cannot stand for both: on a plane of the stock `T_Wood20`, a half-filtering grain over wood,
+it tints the wood by the grain's opaque streaks, mean green −14% and blue −20% against a 64-sample reference (OkLab
+20.8 ×1000); the three means leave 0.2, and opaque pigments are unchanged to the byte. Still approximate: layers are
+averaged apart, so light through an upper layer times the layer under it is a product of means, exact only where the
+two patterns are unrelated; metallic reflection reads the averaged colour; `texture_map` and `material_map` pick their
+texture at the hit point (aliased like an unfiltered ray, not biased). Scenes with `assumed_gamma` other than 1
+average, like antialiasing, in their working space.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
