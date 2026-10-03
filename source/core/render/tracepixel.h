@@ -81,6 +81,9 @@ class TracePixel final : public Trace
         /// Traces the view a screen shows at window point (x, y), y down, carrying on the state of the ray that met it.
         void TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour);
     private:
+        /// Set while a camera ray is made only to measure its neighbour's differentials.
+        bool differentialProbe = false;
+
         // Focal blur data
         class FocalBlurData final
         {

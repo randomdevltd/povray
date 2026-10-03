@@ -1265,6 +1265,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     MathColour C0, Light_Colour;
     MathColour Emission, Extinction, Scattering;
     Ray Light_Ray(ray);
+    Light_Ray.hasDifferentials = false;
 
     threadData->Stats()[Media_Samples]++;
 

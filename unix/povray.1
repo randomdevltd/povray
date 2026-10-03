@@ -219,6 +219,19 @@ jittered from their true centers.
 \fBR\fP\fIn\fP or \fBAntialias_Depth\fP=\fIinteger\fP
 Set the maximum recursion depth for antialiased pixel sub\-sampling.
 .TP
+\fBTF\fP or \fBTexture_Filter\fP=\fIbool\fP \fBTexture_Filter_Scale\fP=\fIfloat\fP \fBTexture_Filter_Taps\fP=\fIinteger\fP
+Average each pigment over the area a pixel covers on the surface, so fine or distant
+patterns do not alias (default off). Camera rays and the reflected and refracted rays they
+spawn are filtered; plain pigments, uv\-mapped textures, normals, and shadow, photon, radiosity
+and subsurface rays are not, nor is focal blur with cameras other than perspective and
+orthographic, nor are cameras with a normal block or anything seen through a portal. \fBTexture_Filter_Scale\fP scales that area (default 1.0, at most 64).
+\fBTexture_Filter_Taps\fP is 8 (default) to start each filtered pigment with eight taps, or 3
+to start with three and add the rest only where they disagree; 3 or less means 3, more means 8.
+Lighting is linear in the pigment, so the mean colour matches supersampling, and a layer that
+filters or transmits keeps what it lets through apart from its own colour. Layers are averaged
+apart, which is exact only where their patterns are unrelated; metallic reflection reads the
+averaged colour; \fBtexture_map\fP and \fBmaterial_map\fP pick their texture at the hit point.
+.TP
 \fBUA\fP or \fBOutput_Alpha\fP=\fIbool\fP
 Use alpha channel for transparency mask.
 .TP

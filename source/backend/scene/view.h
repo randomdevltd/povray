@@ -291,6 +291,11 @@ class ViewData final
         RGBTColour& LatticeSample(unsigned int x, unsigned int y) { return latticeSamples[x + y * latticeWidth]; }
         bool KeepsLatticeSamples() const { return latticeSamplesActive; }
 
+        /// Pixel footprint scale camera rays filter pigments over; zero when texture filtering is off.
+        DBL textureFilterScale = 0.0;
+        /// Taps a texture filter starts with: 8, or 3 (the centre and two corners); any value up to 3 means 3, any other 8.
+        int textureFilterTaps = 8;
+
         /**
          *  Get the value of the real-time raytracing option
          *  @return                 true if RTR was requested in render options

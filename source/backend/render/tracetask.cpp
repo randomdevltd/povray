@@ -307,6 +307,8 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
 #endif
     // TODO: this could be initialised someplace more suitable
     GetViewDataPtr()->qualityFlags = vd->GetQualityFeatureFlags();
+    trace.SetTextureFilterScale(vd->textureFilterScale);
+    trace.SetTextureFilterTaps(vd->textureFilterTaps);
 }
 
 TraceTask::~TraceTask()
