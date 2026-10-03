@@ -1397,10 +1397,10 @@ skein {
     scale &lt;3, 1.2, 1&gt;
     curl { pivot path { &lt;-0.4, 0, 0.08&gt;, &lt;-0.4, 1, 0.08&gt; }  travel Travel(4, &lt;0, 0, 0.05&gt;) }
   }
+  rotate -90*x
   texture { pigment { rgb &lt;0.93, 0.86, 0.68&gt; } }
   interior_texture { pigment { rgb &lt;0.75, 0.55, 0.35&gt; } }
   double_illuminate
-  rotate -90*x
 }
 </pre>
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
@@ -1435,8 +1435,8 @@ skein {
   }
   closed u
   ends sealed
-  pigment { rgb &lt;0.93, 0.86, 0.68&gt; }
   rotate -90*x
+  pigment { rgb &lt;0.93, 0.86, 0.68&gt; }
 }
 </pre>
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
@@ -1469,8 +1469,8 @@ skein {
   }
   closed u
   ends sealed
-  pigment { rgb &lt;0.93, 0.86, 0.68&gt; }
   rotate -90*x
+  pigment { rgb &lt;0.93, 0.86, 0.68&gt; }
 }
 </pre>
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
@@ -2675,16 +2675,7 @@ skein {
   <li>Where a value can say it, do the work inside one step rather than adding another: a twist of an extruded column is a radius read further round as <code>v</code> grows, as in <a href="r3_9.html#r3_9_3_4">A Twisted Column</a>, not an extra <code>bend</code>; several displacements along one normal are one <code>displace</code> by a <code>sum</code>.</li>
   <li>Preview at a tiny size first and watch the statistics before rendering a full frame.</li>
 </ul>
-<p><strong>A final rotation belongs on the object.</strong> A constant <code>rotate</code>, or a <code>matrix</code> or <code>transform</code> that rotates, at the end of the <code>expressions</code> list gives the same picture as the same rotation written on the object, but it costs far more. A rotated enclosure's axis-aligned box is looser than the enclosure itself, while a rotation on the object turns the ray once instead. A <code>translate</code>, or a <code>scale</code> along the axes, does not loosen an enclosure, and moving one made no measurable difference. Measured on a torus made of two extrudes at 200 by 150 pixels, one transform as the last step against the same transform on the object, with identical images:</p>
-<table width="100%" class="option-list">
-<tr><td><strong>last step</strong></td><td><strong>bound tests</strong></td><td><strong>Newton steps</strong></td><td><strong>unresolved patches</strong></td></tr>
-<tr><td><code>rotate &lt;25, 35, 10&gt;</code></td><td>4.2 times</td><td>3.3 times</td><td>13.9 times</td></tr>
-<tr><td><code>rotate &lt;0, 0, 40&gt;</code></td><td>4.1 times</td><td>2.4 times</td><td>6.5 times</td></tr>
-<tr><td><code>translate &lt;0.2, 0.1, 0&gt;</code></td><td>1.0 times</td><td>1.0 times</td><td>1.0 times</td></tr>
-<tr><td><code>scale &lt;1.3, 0.8, 1.1&gt;</code></td><td>1.0 times</td><td>0.95 times</td><td>0.6 times</td></tr>
-</table>
-<p>On a twisted column (a <code>scale</code>, an <code>extrude</code> and a <code>bend</code> that turns it), a <code>translate</code> and a <code>rotate</code> at the end took 5.5 times the bound tests, 5.2 times the Newton steps, 7.7 times the unresolved patches and 9.6 times the trace time, 0.79 s against 0.08 s. Eight <code>rotate</code> steps of 5 degrees each about one axis at the end of the torus took only 1.5 times the bound tests and 1.4 times the Newton steps: a rotation costs by how far it turns the box, and rotations do not multiply the cost the way folds do.</p>
-<p>Keep a transform in the list only where it places material for a later step, as a <code>translate</code> and <code>scale</code> before a <code>crease</code> do. Move a rotation that comes last onto the object, and write it <em>before</em> the object's <code>texture</code> or <code>pigment</code>: a transform written after the texture also moves the texture, which a step in the list never did, and only then is the picture unchanged. A <code>translate</code> or <code>scale</code> may stay in the list.</p></div>
+<p><strong>Transform the object, not the list.</strong> A constant rotation at the end of the <code>expressions</code> list gives the same picture as the same rotation on the object but loosens every patch's enclosure, costing 3 to 14 times as much on test scenes; a final <code>translate</code>, or a <code>scale</code> along the axes, costs nothing. Keep a transform in the list only where it places material for a later step, and write final transforms on the object, before its texture, since one written after the texture moves the texture too.</p></div>
 
 <a name="r3_9_10_3"></a>
 <div class="content-level-h4" contains="Known Slow Cases" id="r3_9_10_3">
