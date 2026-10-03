@@ -2687,12 +2687,12 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         // if there was an object in the light source shadow cache, check that first
         if (cacheObject != nullptr)
         {
-            // An opaque blocker is found as well by any hit short of the light as by the nearest.
-            const double limit = lightsourcedepth - projectedDepth;
+            // Same window as the walk below, so a thread's earlier rays cannot change what shadows this one.
+            const double limit = std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth);
             const IsoShadowWindow window(threadData, SHADOW_TOLERANCE, limit);
             if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(lightsourceray, &boundedIntersection, threadData) &&
-                 (boundedIntersection.Depth < limit)) ||
-                FindIntersection(cacheObject, boundedIntersection, lightsourceray, limit))
+                 (boundedIntersection.Depth > SHADOW_TOLERANCE) && (boundedIntersection.Depth < limit)) ||
+                FindIntersection(cacheObject, boundedIntersection, lightsourceray, postcond, limit))
             {
                 if(!Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG))
                 {
