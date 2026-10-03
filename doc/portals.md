@@ -32,9 +32,13 @@ the errors and warnings in 3.10.6, and the known limits.
 - Straight light is diverted only when the partner mouth exists, has its lights on, and has the
   matching side open: the same side name between a surface and its image, the opposite between two
   closed solids. `no_lights` on a mouth stops light coming out of that mouth.
+- A mouth's shadow follows its partner's `no_lights`, not its own. A closed-solid portal with the
+  default sides casts no shadow, since the far solid's back is shut; `far { back on }` gives it one.
 - Light images are made from real lights only, so a light path crosses at most one portal.
 - Screens share a camera when their views match by content; `radiosity_size` is not compared, and
-  a shared pretrace pass takes the largest size asked for.
+  a shared pretrace pass takes the largest width and height asked for, an unsized camera asking for
+  the render's size. A smaller size moves samples from the pretrace into the final render; it barely
+  changes the picture.
 
 ## The images
 
@@ -48,13 +52,14 @@ With no image names it renders all of them; otherwise only those named (for exam
 
 Names follow the skein chapter: `portal_o_*` for the overview, `portal_r_*` for reference
 examples of one setting each, and `portal_wNN_*` for the worked use cases. Scenes are in
-`doc/portals` (shared parts in `portals.inc`), except four that reuse the render fixtures in
-`tests/render`: `portal_w03_feedback` (`screen_feedback.pov`, `Declare=Depth=12`),
-`portal_w04_book` (`portal_book.pov`), `portal_w07_jar` (`portal_belljar.pov`) and the `TV`
-macro from `tv.inc`. `portal_w08_candle` is `portal_w05_doorways.pov` with `Declare=Night=1`, and
+`doc/portals` (shared parts in `portals.inc`, which also pulls in the `TV` macro from
+`tests/render/tv.inc`), except three images that reuse the render fixtures in `tests/render`:
+`portal_w03_feedback` (`screen_feedback.pov`, `Declare=Depth=12`), `portal_w04_book`
+(`portal_book.pov`) and `portal_w07_jar` (`portal_belljar.pov`). `portal_w08_candle` is `portal_w05_doorways.pov` with `Declare=Night=1`, and
 `portal_r_lights_off` is `portal_r_lights.pov` with `Declare=NoLights=1`.
 
-The images in the chapter were rendered by the build of commit 1d5be977. The whole set takes a few
-seconds. Picture noise from area lights and radiosity differs slightly between builds even with a
+The images in the chapter were rendered by the build of commit 1d5be977. The whole set took about
+25 s of wall time as one render-queue job, about 6 s of it tracing; the rest is starting and parsing
+26 renders. Picture noise from area lights and radiosity differs slightly between builds even with a
 fixed seed, so regenerated images can differ in their last bits without any change in behaviour;
 compare by eye, or regenerate the whole set on one build.

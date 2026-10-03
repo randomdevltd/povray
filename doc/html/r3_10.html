@@ -199,12 +199,12 @@
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_o_intro.png">
+    <img class="center" width="320px" src="images/portal_o_intro.png" alt="A screen and a portal in one room">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
-    <p class="caption">Left: a set whose screen shows a second camera's view of two balls behind the render's camera. Right: a doorway that is a portal onto a sea at sunset, far away in the same scene.</p>
+  <td>
+    <p class="caption">A screen and a portal in one room. Left: a set whose screen shows a second camera's view of two balls behind the render's camera. Right: a doorway that is a portal onto a sea at sunset, far away in the same scene.</p>
   </td>
 </tr>
 </table></div>
@@ -223,7 +223,7 @@ box { &lt;0, 0, 0&gt;, &lt;1, 1, 0.01&gt; pigment { image_map { png "tv.png" } }
 <p>That works for one still picture, and it costs:</p>
 <ul>
   <li><strong>Two renders and a file between them.</strong> Every change to the scene means rendering the picture again before the scene that shows it, and the two scene files have to agree.</li>
-  <li><strong>A fixed resolution.</strong> The picture has the pixels it was rendered with. Close to the screen they show as blocks; far away they are wasted work and alias.</li>
+  <li><strong>A fixed resolution.</strong> The picture has the pixels it was rendered with. Close to the screen they show as blocks, or as blur with <code>interpolate</code>; far away they are wasted work and alias.</li>
   <li><strong>A stale picture.</strong> In an animation the picture is out of date as soon as anything moves, unless every frame is rendered twice.</li>
   <li><strong>No screen that shows itself.</strong> A set that is in its own camera's view (video feedback) needs the picture of the scene that contains the picture: you have to render, map, and render again, once for every level of nesting.</li>
   <li><strong>Different light.</strong> The picture was lit by another render: its radiosity, its sampling and its noise are those of that render, not the one it appears in.</li>
@@ -249,7 +249,8 @@ box { &lt;0, 0, 0&gt;, &lt;1, 1, 0.01&gt; pigment { image_map { png "tv.png" } }
   <li><strong>Nesting.</strong> A view can contain the thing that shows it: a set in its own camera's view, two doorways facing each other, a jar holding a copy of the room that holds the jar. Each nesting is limited, and you choose what is shown at the limit.</li>
   <li><strong>One light.</strong> A view is lit by the same lights and the same radiosity cache as the rest of the render.</li>
   <li><strong>A portal is one object and one map.</strong> A doorway, a window onto another world, a miniature in a glass jar or a wormhole is the shape of the opening and a transformation saying where it leads; nothing is copied.</li>
-</ul></div>
+</ul>
+<p>The price is paid during the render instead: a screen traces a whole view ray, with everything that ray goes on to meet, for every sample of the render that lands on it, and a portal carries every ray that enters it on into the other place.</p></div>
 
 <a name="r3_10_1_4"></a>
 <div class="content-level-h4" contains="Rays and Light" id="r3_10_1_4">
@@ -258,7 +259,7 @@ box { &lt;0, 0, 0&gt;, &lt;1, 1, 0.01&gt; pigment { image_map { png "tv.png" } }
 <ul>
   <li><strong>A screen</strong> is a picture. When a ray meets a surface whose pigment is a screen, POV-Ray looks up the point's position in the screen's unit square, shoots a ray from the screen's camera through that point of the camera's frame, and uses the colour it brings back. The incoming ray's direction does not matter: a screen looks the same from any angle, like a painted picture.</li>
   <li><strong>A portal</strong> is a way through. When a ray enters an open side of a portal's body at a point, it continues from the <em>mapped</em> point, in the mapped direction, as though space were glued together at the mouth. What the ray then hits is what you see in the mouth, so the view changes with the viewer's position, as through a real opening.</li>
-  <li><strong>Light follows sight.</strong> A point that can see a lamp through a portal is lit by that lamp through the portal, and light that would enter a portal comes out somewhere else, so the mouth casts a shadow where it was. A screen is a picture: it lights nothing around it, except through radiosity as any glowing surface does, and it stops light like any opaque surface.</li>
+  <li><strong>Light follows sight.</strong> A point that can see a lamp through a portal is lit by that lamp through the portal (through one portal at most), and light that would enter a portal can come out somewhere else instead, so a mouth can cast a shadow; <a href="r3_10.html#r3_10_3_9">Straight Light and Shadows</a> says when it does. A screen is a picture: it lights nothing around it, except through radiosity as any glowing surface does, and it stops light like any opaque surface.</li>
 </ul></div>
 
 <a name="r3_10_2"></a>
@@ -279,7 +280,7 @@ pigment {
 <table width="100%" class="option-list">
 <tr><td><code>camera { }</code></td><td>Required. The camera whose view is shown: any camera a scene can have except a <code>mesh_camera</code>, written out or as a declared camera with more items after it, such as <code>camera { View no_radiosity }</code>. Focal blur and a camera <code>normal</code> work as they do for the render's camera. It is not the render's camera and does not replace it. Two screen-only camera items, <code>radiosity_size</code> and <code>no_radiosity</code>, are described in <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>.</td></tr>
 <tr><td><code>perturb { }</code></td><td>Optional, none by default. A pigment whose red and green, at each point, are added to the point's x and y before the view is looked up, so the picture is shifted, bent or distorted. Blue, filter and transmit are ignored.</td></tr>
-<tr><td><code>fallback { }</code></td><td>Optional. The pigment shown, at the point's own position, where the view cannot be traced because views are nested too deep. Without one the screen is black there.</td></tr>
+<tr><td><code>fallback { }</code></td><td>Optional. The pigment shown, looked up at the point's window position, where the view cannot be traced because views are nested too deep. Without one the screen is black there.</td></tr>
 <tr><td><code>max_trace_level</code></td><td>Optional, from 1 to 256; by default the scene's <code>max_trace_level</code>. How many screen views may be open around this one before it shows its fallback instead.</td></tr>
 </table>
 <p>A <code>screen</code> is an ordinary pigment in every other way: it can be one layer of a layered texture under a glossy clear layer, be scaled, rotated, warped and turbulated, and appear inside a <code>pigment_map</code>, an <code>average</code> or a <code>pigment_pattern</code>. A screen is usually given <code>finish { emission 1 diffuse 0 }</code>, so that its picture shows as it was traced rather than being lit again by the scene's lights.</p>
@@ -305,13 +306,13 @@ box
 </pre>
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
-  <td style="background: repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 16px 16px">
-    <img class="center" width="320px" src="images/portal_r_screen_window.png">
+  <td>
+    <img class="center" width="320px" src="images/portal_r_screen_window.png" alt="A panel rendered with +UA, outlined; only its middle is the window">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
-    <p class="caption">Rendered with <code>+UA</code> (the checkerboard is the page behind the image). The panel is outlined; only its middle is the window. The picture, sky and all, is opaque; outside the window the panel is clear, so the ring behind it and the transparent background show.</p>
+  <td>
+    <p class="caption">A panel rendered with <code>+UA</code>, outlined; only its middle is the window. The picture, sky and all, is opaque; outside the window the panel is clear, so the ring behind it shows, and so does the page through the transparent background.</p>
   </td>
 </tr>
 </table></div>
@@ -330,11 +331,11 @@ screen
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_screen_perturb.png">
+    <img class="center" width="320px" src="images/portal_r_screen_perturb.png" alt="The same view on two sets; the right one&#x27;s perturb shifts each row of the picture sideways">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">The same view on two sets; the right one's perturb shifts each row of the picture sideways.</p>
   </td>
 </tr>
@@ -355,11 +356,11 @@ object { Panel(1.6, 1.2, pigment { screen { camera { View } max_trace_level 2 fa
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_screen_fallback.png">
+    <img class="center" width="320px" src="images/portal_r_screen_fallback.png" alt="Two monitors showing the render&#x27;s own view, nested two deep">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Two monitors showing the render's own view, nested two deep. At the limit the left one is black and the right one shows its fallback.</p>
   </td>
 </tr>
@@ -367,11 +368,11 @@ object { Panel(1.6, 1.2, pigment { screen { camera { View } max_trace_level 2 fa
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_screen_depth.png">
+    <img class="center" width="320px" src="images/portal_r_screen_depth.png" alt="Three monitors, each showing a camera aimed at itself, with max_trace_level 1, 2 and 4 from left to right">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Three monitors, each showing a camera aimed at itself, with <code>max_trace_level</code> 1, 2 and 4 from left to right. Count the frames: each level is one more picture inside the last, and the innermost screen is black.</p>
   </td>
 </tr>
@@ -394,7 +395,7 @@ object { Panel(1.6, 1.2, pigment { screen { camera { View } max_trace_level 2 fa
 <p>After the render's own pretrace, each screen camera that shows a different view from the render's camera gets a pretrace pass of its own, coarse to fine like the main one, over its own frame. It fills the shared cache without producing pixels, so the cache already holds what the view needs when the final render reaches the screen. A screen that shows the render's own view adds no pass.</p>
 <p>Two camera items control this, and apply only to a screen's camera:</p>
 <table width="100%" class="option-list">
-<tr><td><code>radiosity_size &lt;W, H&gt;</code></td><td>The frame of the camera's pretrace pass, in pixels, each from 1 to 65535 (rounded to whole pixels); the render's size by default. The pass uses the render's <code>pretrace_start</code> and <code>pretrace_end</code> spacing and widens its reuse distances by the ratio of the sizes, so a smaller <code>radiosity_size</code> is cheaper and correspondingly coarser. Use it for a small or distant screen. A size outside the range is an error.</td></tr>
+<tr><td><code>radiosity_size &lt;W, H&gt;</code></td><td>The frame of the camera's pretrace pass, in pixels, each from 1 to 65535 (rounded to whole pixels); the render's size by default. The pass uses the render's <code>pretrace_start</code> and <code>pretrace_end</code> spacing and widens its reuse distances by the ratio of the sizes, so a smaller <code>radiosity_size</code> takes fewer samples before the render starts. The samples it leaves out are taken during the final render, where the view needs them, so it moves work from the pretrace into the render rather than changing the picture much. Use it for a small or distant screen. A size outside the range is an error.</td></tr>
 <tr><td><code>no_radiosity</code></td><td>No pretrace pass for this camera, and its view is shaded with radiosity off, so what it shows gets no bounce light. The render's own view is not affected. As a camera item it is unrelated to the <a href="r3_5.html#r3_5_1_5_10">no_radiosity object modifier</a>.</td></tr>
 </table>
 <p>Either item on the render's own camera draws a warning and is ignored.</p>
@@ -405,20 +406,26 @@ pigment { screen { camera { location &lt;40, 1.3, -9&gt; look_at &lt;40, 1.0, -1
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_screen_radiosity.png">
+    <img class="center" width="320px" src="images/portal_r_screen_radiosity.png" alt="Three identical corners behind the render&#x27;s camera, each lit by one lamp, seen only by the screens&#x27; cameras">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
-    <p class="caption">Three identical corners behind the render's camera, each lit by one lamp, seen only by the screens' cameras. Left: the default pretrace. Middle: <code>radiosity_size &lt;8, 6&gt;</code>, a far cheaper pass whose wider reuse lifts the shadows a little. Right: <code>no_radiosity</code>: no bounce light, black shadows.</p>
+  <td>
+    <p class="caption">Three identical corners behind the render's camera, each lit by one lamp, seen only by the screens' cameras. Left: the default pretrace. Middle: <code>radiosity_size &lt;8, 6&gt;</code>, the same picture from a smaller pass (see the table below). Right: <code>no_radiosity</code>: no bounce light, black shadows.</p>
   </td>
 </tr>
+</table>
+<p>What <code>radiosity_size</code> changes is where the work is done, not the picture. Rendering this scene at 320 by 240 with the middle screen's camera at the default size and then at <code>&lt;8, 6&gt;</code>:</p>
+<table width="100%" class="option-list">
+<tr><td><strong>middle camera</strong></td><td><strong>radiosity samples, all passes</strong></td><td><strong>taken during the final render</strong></td><td><strong>change in the picture</strong></td></tr>
+<tr><td>default (320 by 240)</td><td>14,435</td><td>308</td><td></td></tr>
+<tr><td><code>radiosity_size &lt;8, 6&gt;</code></td><td>10,967</td><td>565</td><td>mean 0.03 of 255, at most 14 on isolated pixels</td></tr>
 </table></div>
 
 <a name="r3_10_2_6"></a>
 <div class="content-level-h4" contains="Shared Views" id="r3_10_2_6">
 <h4>3.10.2.6 Shared Views</h4>
-<p>Screens whose cameras show the same view share one camera: one tracer on each render thread and one radiosity pass. Cameras are compared by content (placement, type, angles, focal blur, distance limit), so two screens with the same camera written out twice share it. A camera with a <code>normal</code> or with user-defined functions only matches itself, never a copy, and a camera with <code>no_radiosity</code> only matches another with <code>no_radiosity</code>. <code>radiosity_size</code> is not compared: cameras that share a view share one pass at the largest <code>radiosity_size</code> any of them asks for.</p></div>
+<p>Screens whose cameras show the same view share one camera: one tracer on each render thread and one radiosity pass. Cameras are compared by content (placement, type, angles, focal blur, distance limit), so two screens with the same camera written out twice share it. A camera with a <code>normal</code> or with user-defined functions only matches itself, never a copy, and a camera with <code>no_radiosity</code> only matches another with <code>no_radiosity</code>. <code>radiosity_size</code> is not compared: cameras that share a view share one pass, as wide as the widest and as tall as the tallest frame any of them asks for, where a camera without <code>radiosity_size</code> asks for the render's size. So one screen without it makes the shared pass full size.</p></div>
 
 <a name="r3_10_3"></a>
 <div class="content-level-h3" contains="The Portal Object" id="r3_10_3">
@@ -472,17 +479,17 @@ portal { object { Door(1.2, 2.1) translate &lt;1.5, 0, 0&gt; } to { translate &l
 <p>Each mouth has a front side and a back side, and each side is open or closed. A ray goes through only where it enters an open side; where it meets a closed side the mouth is not there for it, and it goes on as if the body were absent. By default the front is open and the back closed, so a portal seen from behind is not there.</p>
 <ul>
   <li><strong>A closed solid</strong> is a finite object with an inside, such as a box, a sphere or a CSG of them. Its front is its outside, met by a ray coming from outside; its back faces are those met from inside.</li>
-  <li><strong>A surface</strong> is anything else: a disc, a polygon, a triangle, a mesh, a patch, or an infinite object such as a plane. Its front is the side its normal points to, met by a ray travelling against the normal. A disc's front is the side its normal vector points to; a polygon's is the side from which its points run clockwise. If a mouth turns out to face the wrong way, swap <code>front</code> and <code>back</code>.</li>
+  <li><strong>A surface</strong> is anything else: a disc, a polygon, a triangle, a mesh without an <code>inside_vector</code> (with one, a mesh is a closed solid), a patch, or an infinite object such as a plane. Its front is the side its normal points to, met by a ray travelling against the normal. A disc's front is the side its normal vector points to; a polygon's is the side from which its points run clockwise. If a mouth turns out to face the wrong way, swap <code>front</code> and <code>back</code>.</li>
 </ul>
 <p>The far mouth of a surface faces where views through the near mouth come out: its front is on that side, so looking back into it, from where the views arrive, leads back through the near mouth's front. The far mouth of a closed solid is the image of the solid, front outside, like the near one.</p>
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_sides.png">
+    <img class="center" width="320px" src="images/portal_r_sides.png" alt="Three doorways seen from the front (lower row) and three seen from behind (upper row), each leading to the sea">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Three doorways seen from the front (lower row) and three seen from behind (upper row), each leading to the sea. Left: the default, front on and back off. Middle: <code>front off back on</code>. Right: both on. A closed side is not there: the wall or the platform shows instead.</p>
   </td>
 </tr>
@@ -496,11 +503,11 @@ portal { sphere { &lt;-1.5, 1.1, 0&gt;, 0.75 } to { translate 3 * x } no_lights 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_volume.png">
+    <img class="center" width="320px" src="images/portal_r_volume.png" alt="A portal sphere and its far mouth, each ringed for clarity: the cone and the box trade places">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A portal sphere and its far mouth, each ringed for clarity: the cone and the box trade places.</p>
   </td>
 </tr>
@@ -519,11 +526,11 @@ portal { object { Door(1.0, 1.9) translate XA * x } to { translate -XA * x rotat
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_far.png">
+    <img class="center" width="320px" src="images/portal_r_far.png" alt="Two doorway pairs, A then B from left to right">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Two doorway pairs, A then B from left to right. The left pair has its far mouth (the default), so both doorways show the orange wall behind the camera; the right pair is <code>far off</code>, so its B is an empty frame. The bright patches on the floor are the room's lamp shining out of the mouths: see <a href="r3_10.html#r3_10_3_8">Lights Through Portals</a>.</p>
   </td>
 </tr>
@@ -540,11 +547,11 @@ portal
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_near_far.png">
+    <img class="center" width="320px" src="images/portal_r_near_far.png" alt="One doorway pair: the portal&#x27;s pigment tints both mouths orange, and far { } overrides it with blue for the far mouth">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">One doorway pair: the portal's pigment tints both mouths orange, and <code>far { }</code> overrides it with blue for the far mouth. The light coming out of each mouth is tinted the same way.</p>
   </td>
 </tr>
@@ -568,11 +575,11 @@ portal { object { Door(1.1, 1.8) translate X * x } to { translate Far - X * x } 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_pigment.png">
+    <img class="center" width="320px" src="images/portal_r_pigment.png" alt="Four doorways onto the sea in a brick wall: open; half open; tinted blue; and a gradient, shut at the foot and open at the head">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Four doorways onto the sea in a brick wall: open; half open; tinted blue; and a gradient, shut at the foot and open at the head.</p>
   </td>
 </tr>
@@ -588,11 +595,11 @@ portal { object { Door(1.4, 2.0) translate 1.0 * x } to { translate Far - 1.0 * 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_perturb.png">
+    <img class="center" width="320px" src="images/portal_r_perturb.png" alt="The same doorway onto the sea twice; the right one bends its view with rippled normals">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">The same doorway onto the sea twice; the right one bends its view with rippled normals.</p>
   </td>
 </tr>
@@ -609,12 +616,12 @@ portal { sphere { &lt;X, 1.1, 0&gt;, 0.485 } to { translate &lt;-X, -1.1, 0&gt; 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_exit.png">
+    <img class="center" width="320px" src="images/portal_r_exit.png" alt="Two glass balls, each a portal onto the same island, scaled up about 18.6 times">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
-    <p class="caption">Two glass balls, each a portal onto the same island scaled up twenty times. Left: without <code>exit</code> the view runs on to the island's horizon and sky. Right: with <code>exit</code> it ends at the glass and the room behind shows, so the island is a miniature inside the ball.</p>
+  <td>
+    <p class="caption">Two glass balls, each a portal onto the same island, scaled up about 18.6 times. Left: without <code>exit</code> the view runs on to the island's horizon and sky. Right: with <code>exit</code> it ends at the glass and the room behind shows, so the island is a miniature inside the ball.</p>
   </td>
 </tr>
 </table></div>
@@ -630,11 +637,11 @@ portal { object { Door(1.2, 1.8) translate 1.2 * x } to { translate -3 * z } far
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_depth.png">
+    <img class="center" width="320px" src="images/portal_r_depth.png" alt="Each doorway leads to a point three units in front of itself, so its view shows it again, smaller">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Each doorway leads to a point three units in front of itself, so its view shows it again, smaller. Left: after three levels the portal is absent and the wall behind shows. Right: its yellow fallback shows instead.</p>
   </td>
 </tr>
@@ -651,7 +658,7 @@ portal { object { Door(1.2, 1.8) translate 1.2 * x } to { translate -3 * z } far
   <li>Images are made from real lights only, so a light path crosses at most one portal, and portals inside portals cannot multiply light.</li>
   <li>A light with <code>projected_through</code> gets no image, and draws a warning.</li>
 </ul>
-<p><code>no_lights</code>, written for the portal or for one mouth, turns this off for it: no light comes out of that mouth, by an image or straight (see the next section). It does not change the view.</p>
+<p><code>no_lights</code> on a mouth stops light coming out of that mouth: no light shines out of it by an image, and straight light entering its <em>partner</em> is no longer carried to it, so the partner lets that light pass and casts no shadow (see the next section). A mouth's own shadow therefore follows its partner's setting: <code>near { no_lights }</code> keeps the near mouth's shadow and removes the far mouth's, and <code>no_lights</code> written for the portal removes both. It does not change the view.</p>
 <pre>
 light_source
 {
@@ -661,19 +668,23 @@ light_source
 object { Frame(1.0, 2.0, &lt;0.2, 0.3, 0.28&gt;) }
 portal { Door(1.0, 2.0) to { translate Far } far off }
 </pre>
-<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<p>Below, a doorway onto a lamp in a closed room far away, in a dim room, with and without <code>no_lights</code>.</p>
+<table class="centered" width="670px" cellpadding="0" cellspacing="10">
 <tr>
-  <td>
-    <img class="center" width="320px" src="images/portal_r_lights.png">
-  </td>
-  <td>
-    <img class="center" width="320px" src="images/portal_r_lights_off.png">
-  </td>
+<td>
+  <img class="leftpanel" width="320px" src="images/portal_r_lights.png" alt="The lamp&#x27;s light comes out of the doorway onto the floor and the ball">
+</td>
+<td>
+  <img class="rightpanel" width="320px" src="images/portal_r_lights_off.png" alt="With no_lights: only the view goes through">
+</td>
 </tr>
 <tr>
-  <td colspan="2">
-    <p class="caption">A doorway onto a lamp in a closed room far away, in a dim room. Left: the lamp's light comes out of the doorway onto the floor and the ball. Right: the same with <code>no_lights</code>; only the view goes through.</p>
-  </td>
+<td>
+  <p class="caption">The lamp's light comes out of the doorway onto the floor and the ball.</p>
+</td>
+<td>
+  <p class="caption">With <code>no_lights</code>: only the view goes through.</p>
+</td>
 </tr>
 </table></div>
 
@@ -682,6 +693,7 @@ portal { Door(1.0, 2.0) to { translate Far } far off }
 <h4>3.10.3.9 Straight Light and Shadows</h4>
 <p>Light that travels straight from a light to a point can meet a mouth on the way. If it enters an open side of the mouth and the partner mouth can carry it out, the light is <em>diverted</em>: it goes through and comes out of the partner, so it does not reach the point, and the mouth casts a shadow, dimmed by its opacity. The partner can carry it out when it exists, its lights are on, and the side the light would come out of is open.</p>
 <p>That side has the <strong>same name</strong> between a surface and its image (light entering a surface's front comes out of its image's front, which faces where views come out) and the <strong>opposite name</strong> between two closed solids (light entering the outside of one comes out of the inside of the other, which is its back). Without a far mouth, with the partner's matching side shut, or with the partner's lights off, a mouth lets straight light pass and casts no shadow. Light already coming through a portal is diverted in the same way by every other mouth on either piece of its path.</p>
+<p>With the default sides, then, a surface portal casts a shadow and a closed-solid portal does not: light entering the near solid's outside would come out of the far solid's inside, and the back is closed by default. Opening the far mouth's back, <code>far { back on }</code>, lets the solid divert light and cast a shadow; it also makes a view that crosses the far solid's inside lead back again.</p>
 <pre>
 #declare Disc = disc { &lt;0, 1, 0&gt;, -z, 0.8 };
 object { Disc translate -2.2 * x pigment { rgb 0.9 } }
@@ -691,12 +703,12 @@ portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt;
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_r_shadows.png">
+    <img class="center" width="320px" src="images/portal_r_shadows.png" alt="Three discs lit from in front by one parallel light: a plain disc; a portal disc with its far mouth; and one with far off">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
-    <p class="caption">One lamp behind three discs: a plain disc; a portal disc with its far mouth; and one with <code>far off</code>. The light entering the middle mouth comes out of its far mouth, far away, so it casts a shadow like the plain disc; the right one lets the light pass.</p>
+  <td>
+    <p class="caption">Three discs lit from in front by one parallel light: a plain disc; a portal disc with its far mouth; and one with <code>far off</code>. The light entering the middle mouth comes out of its far mouth, far away, so it casts the same shadow as the plain disc; the right one lets the light pass.</p>
   </td>
 </tr>
 </table></div>
@@ -759,11 +771,11 @@ object { TV(1.2, 0.9, Broadcast) translate &lt;0.2, 0.62, -0.1&gt; }
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w01_television.png">
+    <img class="center" width="320px" src="images/portal_w01_television.png" alt="A television showing a broadcast from a studio elsewhere in the scene">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A television showing a broadcast from a studio elsewhere in the scene.</p>
   </td>
 </tr>
@@ -783,11 +795,11 @@ object { TV(1.2, 0.9, Broadcast) translate &lt;0.2, 0.62, -0.1&gt; }
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w02_security.png">
+    <img class="center" width="320px" src="images/portal_w02_security.png" alt="A wall of security monitors">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A wall of security monitors.</p>
   </td>
 </tr>
@@ -808,11 +820,11 @@ screen
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w03_feedback.png">
+    <img class="center" width="320px" src="images/portal_w03_feedback.png" alt="Video feedback twelve levels deep">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Video feedback twelve levels deep.</p>
   </td>
 </tr>
@@ -833,11 +845,11 @@ portal
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w04_book.png">
+    <img class="center" width="320px" src="images/portal_w04_book.png" alt="A picture in a book that is a way into a meadow">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A picture in a book that is a way into a meadow.</p>
   </td>
 </tr>
@@ -853,11 +865,11 @@ portal { object { Door(1.0, 2.1) translate &lt;0.8, 0, 3.1&gt; } to { translate 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w05_doorways.png">
+    <img class="center" width="320px" src="images/portal_w05_doorways.png" alt="Through the door of the blue room, the orange room">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">Through the door of the blue room, the orange room.</p>
   </td>
 </tr>
@@ -873,11 +885,11 @@ portal { object { Door(2.0, 2.2) translate 5.9 * z } to { translate Far - 5.9 * 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w06_wormhole.png">
+    <img class="center" width="320px" src="images/portal_w06_wormhole.png" alt="A tunnel on a hillside that ends at the sea">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A tunnel on a hillside that ends at the sea.</p>
   </td>
 </tr>
@@ -893,11 +905,11 @@ portal { Mouth to { translate -Base scale S translate &lt;B.x, -0.01, B.z&gt; } 
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w07_jar.png">
+    <img class="center" width="320px" src="images/portal_w07_jar.png" alt="A room in a bell jar, in a bell jar">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A room in a bell jar, in a bell jar.</p>
   </td>
 </tr>
@@ -917,11 +929,11 @@ light_source
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w08_candle.png">
+    <img class="center" width="320px" src="images/portal_w08_candle.png" alt="A candle in one room lighting another through a doorway">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A candle in one room lighting another through a doorway.</p>
   </td>
 </tr>
@@ -950,11 +962,11 @@ light_source
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
 <tr>
   <td>
-    <img class="center" width="320px" src="images/portal_w09_halftone.png">
+    <img class="center" width="320px" src="images/portal_w09_halftone.png" alt="A halftone print of three white shapes behind the camera">
   </td>
 </tr>
 <tr>
-  <td colspan="1">
+  <td>
     <p class="caption">A halftone print of three white shapes behind the camera.</p>
   </td>
 </tr>
@@ -1011,15 +1023,15 @@ light_source
   <li><strong><code>projected_through</code> lights</strong> get no image, so they do not shine through portals (with a warning).</li>
   <li><strong>One portal per light path.</strong> Light reaches a point through at most one portal; a lamp seen through two portals in a row does not light it.</li>
   <li><strong>A mouth with no open side is not made</strong>, and a portal with no open side at all is left out with a warning.</li>
-  <li><strong>The matching side for straight light</strong> is the same side between a surface and its image but the opposite side between two closed solids; a mouth whose partner's matching side is shut, or whose partner has <code>no_lights</code>, lets straight light pass and casts no shadow.</li>
-  <li><strong>Cost.</strong> Every light gets an image for every mouth that lets light out; a bounding box test rejects most of them before a ray is cast. Every shadow ray tests the bounding box of every mouth that can divert light, so the cost grows with the number of mouths; use <code>no_lights</code> on mouths that need not carry light.</li>
+  <li><strong>The matching side for straight light</strong> is the same side between a surface and its image but the opposite side between two closed solids; a mouth whose partner's matching side is shut, or whose partner has <code>no_lights</code>, lets straight light pass and casts no shadow, so a closed-solid portal casts none with the default sides.</li>
+  <li><strong>Cost.</strong> Every light gets an image for every mouth that lets light out; a bounding box test rejects most of them before a ray is cast. Every shadow ray tests the bounding box of every mouth that can divert light, so the cost grows with the number of mouths. A mouth stops diverting light when its partner has <code>no_lights</code>; <code>no_lights</code> written for the whole portal takes both mouths out of these tests.</li>
   <li><strong>Footprints</strong> end at a portal: texture filtering does not carry through a mouth.</li>
 </ul></div>
 
 <a name="r3_10_6_4"></a>
 <div class="content-level-h4" contains="The Images in This Chapter" id="r3_10_6_4">
 <h4>3.10.6.4 The Images in This Chapter</h4>
-<p>Every image in this chapter is made by <code>doc/portals/render.sh</code> from its scene in <code>doc/portals</code> or <code>tests/render</code>, at 320 by 240 pixels, with a fixed stochastic seed (<code>+SS1</code>). They were rendered by the build of commit 1d5be977. Picture noise, where there is any, differs slightly between builds, so a regenerated image may differ in its last bit without anything having changed.</p></div>
+<p>Every image in this chapter is made by <code>doc/portals/render.sh</code> in the source from its scene in <code>doc/portals</code> or <code>tests/render</code>, at 320 by 240 pixels, with a fixed stochastic seed (<code>+SS1</code>); <code>doc/portals.md</code> says how to regenerate them. Picture noise, where there is any, differs slightly between builds, so a regenerated image may differ in its last bits without anything having changed.</p></div>
 
 
 </div>
