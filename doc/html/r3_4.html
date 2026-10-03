@@ -162,6 +162,9 @@
   <td><div class="divh3"><a title="3.4.2.5" href="#r3_4_2_5">Camera Identifiers</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.2.6" href="#r3_4_2_6">Screen Cameras</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.3" href="#r3_4_3">Lighting Types</a></strong></div></td>
 </tr>
 <tr>
@@ -274,6 +277,9 @@
 </tr>
 <tr>
   <td><div class="divh5"><a title="3.4.3.3.4.6" href="#r3_4_3_3_4_6">Subsurface and Radiosity</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.4.3.3.4.7" href="#r3_4_3_3_4_7">Screens, Portals and Radiosity</a></div></td>
 </tr>
 <tr>
   <td><div class="divh4"><a title="3.4.3.3.5" href="#r3_4_3_3_5">Tips on Radiosity</a></div></td>
@@ -657,7 +663,8 @@ CAMERA_MODIFIER:
   blur_samples [MIN_SAMPLES,] MAX_SAMPLES | aperture Size |
   focal_point &lt;Point&gt; | confidence Blur_Confidence |
   variance Blur_Variance | [bokeh { pigment { BOKEH } }] |
-  NORMAL | TRANSFORMATION | [MESHCAM_SMOOTH]
+  NORMAL | TRANSFORMATION | [MESHCAM_SMOOTH] |
+  radiosity_size &lt;Width, Height&gt; | no_radiosity
 MESHCAM_MODIFIERS:
   rays per pixel Value,
   distribution type Value,
@@ -1556,6 +1563,17 @@ camera {
 </pre>
 
 <p class="Note"><strong>Note:</strong> Only camera transformations can be added to an already declared camera. Camera behaviour changing keywords are not allowed, as they are needed in an earlier stage for resolving the keyword order dependencies.</p></div>
+
+<a name="r3_4_2_6"></a>
+<div class="content-level-h4" contains="Screen Cameras" id="r3_4_2_6">
+<h4>3.4.2.6 Screen Cameras</h4>
+<p>A camera inside a <a href="r3_10.html#r3_10_2">screen</a> pattern shows its view on a surface, traced while the render runs, and is not the render's camera. Two camera items apply only to such a camera, and control the radiosity pretrace that POV-Ray runs for it:</p>
+<pre>
+camera { ... radiosity_size &lt;Width, Height&gt; }
+camera { ... no_radiosity }
+</pre>
+<p><code>radiosity_size</code> sets the frame, in pixels from 1 to 65535 each, of the pretrace pass made for that camera, the render's size by default; a smaller frame is cheaper and coarser. <code>no_radiosity</code> makes no pass for that camera and shades its view with radiosity off. Unlike other camera behaviour keywords, both may follow a declared camera's identifier, as in <code>camera { View no_radiosity }</code>. On the render's own camera either one draws a warning and is ignored. See <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>.</p>
+</div>
 
 <a name="r3_4_3"></a>
 <div class="content-level-h3" contains="Lighting Types" id="r3_4_3">
@@ -2466,6 +2484,13 @@ default { radiosity { importance DEFAULT_IMPORTANCE } }
 <p>See the section <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light Transport</a> for more information about the role of <code>subsurface</code> in the global settings block.</p>
 
 </div>
+<a name="r3_4_3_3_4_7"></a>
+<div class="content-level-h6" contains="Screens, Portals and Radiosity" id="r3_4_3_3_4_7">
+<h6>3.4.3.3.4.7 Screens, Portals and Radiosity</h6>
+<p>One radiosity cache serves the render's camera and the camera of every <a href="r3_10.html#r3_10_2">screen</a>. Sample spacing in a screen's view is measured from that screen's camera, and after the render's own pretrace each distinct screen camera gets a pretrace pass of its own, sized by its <a href="r3_4.html#r3_4_2_6">radiosity_size</a> or skipped with <code>no_radiosity</code>. See <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>.</p>
+<p>Radiosity samples see through <a href="r3_10.html#r3_10_3">portals</a>, but a surface shaded for a radiosity sample is not lit by lights shining through a portal, so such light adds no bounce light.</p>
+</div>
+
 <a name="r3_4_3_3_5"></a>
 <div class="content-level-h5" contains="Tips on Radiosity" id="r3_4_3_3_5">
 <h5>3.4.3.3.5 Tips on Radiosity</h5>

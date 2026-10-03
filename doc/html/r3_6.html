@@ -318,6 +318,9 @@
   <td><div class="divh4"><a title="3.6.2.4.4" href="#r3_6_2_4_4">User Defined Pattern</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.6.2.4.5" href="#r3_6_2_4_5">Screen Pattern</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.6.2.5" href="#r3_6_2_5">Pattern Modifiers</a></div></td>
 </tr>
 <tr>
@@ -4358,6 +4361,7 @@ slope {
 <code><a href="r3_6.html#r3_6_2_1_19">pigment_pattern</a></code><br>
 </td>
 <td width="15%">
+<code><a href="r3_6.html#r3_6_2_4_5">screen</a></code><br>
 <code><a href="r3_6.html#r3_6_2_3_2">slope</a></code><br>
 </td>
 </tr>
@@ -4570,6 +4574,23 @@ pigment {
 
 <p>The pattern is similar to <code><a href="r3_6.html#r3_6_2_6">image_map</a></code> in that it directly specifies <em>colors</em> rather than using a <code><a href="r3_6.html#r3_6_1_1_2">color_map</a></code> or <code><a href="r3_6.html#r3_6_1_1_3">pigment_map</a></code>.</p>
 <p>The user defined pattern functionality also extends to density blocks, of course using only the red, green and blue function values. See also: <a href="r3_7.html#r3_7_2_4">Density</a></p></div>
+
+<a name="r3_6_2_4_5"></a>
+<div class="content-level-h5" contains="Screen Pattern" id="r3_6_2_4_5">
+<h5>3.6.2.4.5 Screen Pattern</h5>
+<p>The <code>screen</code> pattern is a pigment whose colour is what a camera sees. The point's x and y, from 0 to 1, pick a point of the camera's frame, as <code>image_map</code> does, and the view through it is traced when the surface is shaded; outside that unit square the screen is clear. It may be used only in a pigment.</p>
+<pre>
+pigment {
+  screen {
+    camera { CAMERA_ITEMS... }
+    [perturb { PIGMENT_BODY }]
+    [fallback { PIGMENT_BODY }]
+    [max_trace_level LEVEL]
+  }
+}
+</pre>
+<p>The screen has a chapter of its own, with the portal object: see <a href="r3_10.html#r3_10_2">The Screen Pattern</a>.</p>
+</div>
 
 <a name="r3_6_2_5"></a>
 <div class="content-level-h4" contains="Pattern Modifiers" id="r3_6_2_5">
