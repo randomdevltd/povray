@@ -68,6 +68,12 @@ The public focused-caustic fixture adds about 44% instructions with the default 
 to supply previously missing light; finer spacing trades additional gathers and memory for accuracy.
 See [the model, fixtures and measured costs](SUBSURFACE_PHOTONS.md).
 
+Each photon deposit's boundary check (a ray through the receiver and two inside tests) is now computed once per receiver
+and render and reused by every later gather, instead of once per gather. On the leaf fixture at 96x72 with 20000
+photons the photon share of trace CPU falls 21x on an isosurface receiver (234 s to 10.9 s), 4.3x on a closed mesh,
+2.1x on a CSG with holes and 1.4x on the analytic lens. Images are identical except 51 pixels of the isosurface,
+where the root solve shifts 108 of 16.9 million accepted deposits across the match tolerance (at most 130 of 65535).
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

@@ -40,12 +40,15 @@
 #include "core/configcore.h"
 
 // C++ variants of C standard header files
+#include <cstdint>
+
 // C++ standard header files
 #include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 // Boost header files
@@ -60,6 +63,9 @@
 
 namespace pov
 {
+
+class PhotonMap;
+struct Photon;
 
 //##############################################################################
 ///
@@ -173,10 +179,40 @@ struct SubsurfaceCellKeyHash final
     size_t operator()(const SubsurfaceCellKey& k) const;
 };
 
+/// Each photon's recovered deposit boundary on each receiver, shared by all render threads without locks.
+/// Normals are kept folded onto the unit octahedron in two floats, and a photon off the receiver's boundary keeps none.
+class SubsurfacePhotonBoundaries final
+{
+    public:
+        /// The photon's index in the map and the receiver as one key; false when the table cannot hold it.
+        bool Key(const PhotonMap& map, const Photon* photon, const void* receiver, std::uint64_t& key);
+        bool Find(std::uint64_t key, float folded[2]) const;
+        /// Stores the first boundary computed for key; a slot another thread holds, or a full table, keeps nothing.
+        void Store(std::uint64_t key, const float folded[2]);
+        static void Fold(const Vector3d& normal, bool valid, float folded[2]);
+        static bool Unfold(const float folded[2], Vector3d& normal);
+
+    private:
+        struct Slot final
+        {
+            std::atomic<std::uint64_t> word{0}; ///< 0 empty, else key * 2, plus 1 once folded is written
+            float folded[2];
+        };
+        static const int kReceivers = 64;
+        std::once_flag once;
+        std::unique_ptr<Slot[]> slots;
+        std::uint64_t mask = 0;
+        unsigned int blockSize = 0;
+        std::vector<std::pair<std::uintptr_t, std::uint32_t>> blocks; ///< block start and id, by address
+        std::atomic<const void*> receivers[kReceivers] = {};
+        void Allocate(const PhotonMap& map);
+};
+
 /// Irradiance clouds built on demand and shared by all render threads, up to a point budget.
 class SubsurfaceCache final
 {
     public:
+        SubsurfacePhotonBoundaries photonBoundaries;
         /// The cell for key, and whether the caller is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
         /// Reserves room for points; false once the budget is spent.

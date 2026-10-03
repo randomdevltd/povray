@@ -37,15 +37,18 @@
 #include "core/lighting/subsurface.h"
 
 // C++ variants of C standard header files
+#include <cmath>
+
 // C++ standard header files
 #include <algorithm>
 #include <functional>
+#include <limits>
 
 // POV-Ray header files (base module)
 #include "base/mathutil.h"
 
 // POV-Ray header files (core module)
-//  (none at the moment)
+#include "core/lighting/photons.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -129,6 +132,124 @@ size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
     for (int v : { k.sizeLevel, k.x, k.y, k.z, int(k.radiosity), int(k.photons) })
         h = h * 1000003u ^ std::hash<int>()(v);
     return h;
+}
+
+// Slots of 16 bytes: at most 64 MiB, or about 32 bytes per photon below that.
+static const std::uint64_t kBoundarySlotsMin = std::uint64_t(1) << 12, kBoundarySlotsMax = std::uint64_t(1) << 22;
+static const int kBoundaryProbes = 32;
+
+static std::uint64_t MixBoundaryKey(std::uint64_t key)
+{
+    key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9u;
+    key = (key ^ (key >> 27)) * 0x94d049bb133111ebu;
+    return key ^ (key >> 31);
+}
+
+void SubsurfacePhotonBoundaries::Allocate(const PhotonMap& map)
+{
+    std::uint64_t count = kBoundarySlotsMin;
+    while ((count < kBoundarySlotsMax) && (count < 2 * std::uint64_t(std::max(map.numPhotons, 0))))
+        count *= 2;
+    slots.reset(new Slot[count]);
+    mask = count - 1;
+    blockSize = PhotonMap::GetBlockSize();
+    for (std::uint32_t id = 0; id < map.mBlockList.size(); id++)
+        blocks.emplace_back(reinterpret_cast<std::uintptr_t>(map.GetBlockStart(id)), id);
+    std::sort(blocks.begin(), blocks.end());
+}
+
+bool SubsurfacePhotonBoundaries::Key(const PhotonMap& map, const Photon* photon, const void* receiver, std::uint64_t& key)
+{
+    std::call_once(once, [&]() { Allocate(map); });
+    std::uintptr_t address = reinterpret_cast<std::uintptr_t>(photon);
+    auto block = std::upper_bound(blocks.begin(), blocks.end(), std::make_pair(address, std::numeric_limits<std::uint32_t>::max()));
+    if (block == blocks.begin())
+        return false;
+    --block;
+    std::uintptr_t offset = address - block->first;
+    if ((offset % sizeof(Photon) != 0) || (offset / sizeof(Photon) >= blockSize))
+        return false;
+    std::uint64_t index = std::uint64_t(block->second) * blockSize + offset / sizeof(Photon);
+    for (int id = 0; id < kReceivers; id++)
+    {
+        const void* expected = receivers[id].load(std::memory_order_acquire);
+        if ((expected == nullptr) && receivers[id].compare_exchange_strong(expected, receiver, std::memory_order_acq_rel))
+            expected = receiver;
+        if (expected == receiver)
+        {
+            key = (std::uint64_t(id + 1) << 32) | index;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SubsurfacePhotonBoundaries::Find(std::uint64_t key, float folded[2]) const
+{
+    for (std::uint64_t i = MixBoundaryKey(key), probe = 0; probe < kBoundaryProbes; i++, probe++)
+    {
+        const Slot& slot = slots[i & mask];
+        std::uint64_t word = slot.word.load(std::memory_order_acquire);
+        if ((word >> 1) == key)
+        {
+            if ((word & 1) == 0)
+                return false;
+            std::copy(slot.folded, slot.folded + 2, folded);
+            return true;
+        }
+        if (word == 0)
+            return false;
+    }
+    return false;
+}
+
+void SubsurfacePhotonBoundaries::Store(std::uint64_t key, const float folded[2])
+{
+    for (std::uint64_t i = MixBoundaryKey(key), probe = 0; probe < kBoundaryProbes; i++, probe++)
+    {
+        Slot& slot = slots[i & mask];
+        std::uint64_t word = slot.word.load(std::memory_order_relaxed);
+        if ((word == 0) && slot.word.compare_exchange_strong(word, key << 1, std::memory_order_relaxed))
+        {
+            std::copy(folded, folded + 2, slot.folded);
+            slot.word.store((key << 1) | 1, std::memory_order_release);
+            return;
+        }
+        if ((word >> 1) == key)
+            return;
+    }
+}
+
+void SubsurfacePhotonBoundaries::Fold(const Vector3d& normal, bool valid, float folded[2])
+{
+    double l1 = valid ? fabs(normal[X]) + fabs(normal[Y]) + fabs(normal[Z]) : 0.0;
+    if (!(l1 > 0.0) || !std::isfinite(l1))
+    {
+        folded[0] = folded[1] = 2.0f;
+        return;
+    }
+    double u = normal[X] / l1, v = normal[Y] / l1;
+    if (normal[Z] < 0.0)
+    {
+        double w = u;
+        u = std::copysign(1.0 - fabs(v), w);
+        v = std::copysign(1.0 - fabs(w), v);
+    }
+    folded[0] = float(u);
+    folded[1] = float(v);
+}
+
+bool SubsurfacePhotonBoundaries::Unfold(const float folded[2], Vector3d& normal)
+{
+    double u = folded[0], v = folded[1], z = 1.0 - fabs(u) - fabs(v);
+    if (fabs(u) > 1.0)
+        return false;
+    if (z < 0.0)
+        normal = Vector3d(std::copysign(1.0 - fabs(v), u), std::copysign(1.0 - fabs(u), v), z);
+    else
+        normal = Vector3d(u, v, z);
+    normal.normalize();
+    return true;
 }
 
 std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey& key, bool& build)

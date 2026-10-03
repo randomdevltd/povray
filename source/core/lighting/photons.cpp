@@ -2058,6 +2058,16 @@ const Photon& PhotonMap::GetPhoton(unsigned int blockId, unsigned int indexInBlo
     return (*mBlockList[blockId])[indexInBlock];
 }
 
+unsigned int PhotonMap::GetBlockSize()
+{
+    return PHOTON_BLOCK_SIZE;
+}
+
+const Photon* PhotonMap::GetBlockStart(unsigned int blockId) const
+{
+    return &GetPhoton(blockId, 0);
+}
+
 
 /**************************************************************
 

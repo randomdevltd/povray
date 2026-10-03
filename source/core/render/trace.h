@@ -69,6 +69,7 @@ namespace pov
 /// @{
 
 class PhotonGatherer;
+struct Photon;
 class Portal;
 struct ScreenPattern;
 
@@ -1079,6 +1080,10 @@ class Trace
         bool UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const;
         bool RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double radius,
                                              Vector3d& outward, TraceTicket& ticket);
+        bool ProbeSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double tolerance,
+                                           double probe, Vector3d& outward, TraceTicket& ticket);
+        bool SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incoming, ObjectPtr receiver, double rootTolerance,
+                                     Vector3d& outward, TraceTicket& ticket);
         MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, double eta, ObjectPtr receiver,
                                                      PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud);
         bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,

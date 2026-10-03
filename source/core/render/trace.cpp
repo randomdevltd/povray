@@ -4958,17 +4958,33 @@ static double SubsurfaceRootTolerance(ConstObjectPtr object)
     return tolerance;
 }
 
+static double SubsurfacePhotonTolerance(const Vector3d& location, double rootTolerance)
+{
+    double scale = max(1.0, max(fabs(location[X]), max(fabs(location[Y]), fabs(location[Z]))));
+    return max(max(1e-7, 2.0 * std::numeric_limits<PhotonScalar>::epsilon() * scale), rootTolerance);
+}
+
+static double SubsurfacePhotonProbe(ConstObjectPtr receiver, double tolerance, double radius)
+{
+    double extent = max(double(receiver->BBox.size[X]), max(double(receiver->BBox.size[Y]), double(receiver->BBox.size[Z])));
+    return max(1e-3, max(4.0 * tolerance, max(0.05 * radius, min(extent, 1e6) * 1e-4)));
+}
+
 bool Trace::RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& n, ObjectPtr receiver, double radius,
                                              Vector3d& outward, TraceTicket& ticket)
 {
-    double scale = max(1.0, max(fabs(location[X]), max(fabs(location[Y]), fabs(location[Z]))));
-    double tolerance = max(max(1e-7, 2.0 * std::numeric_limits<PhotonScalar>::epsilon() * scale), SubsurfaceRootTolerance(receiver));
+    double tolerance = SubsurfacePhotonTolerance(location, SubsurfaceRootTolerance(receiver));
     if (!(tolerance < 0.01 * radius))
         return false;
+    return ProbeSubsurfacePhotonBoundary(location, n, receiver, tolerance, SubsurfacePhotonProbe(receiver, tolerance, radius), outward, ticket);
+}
+
+bool Trace::ProbeSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& n, ObjectPtr receiver, double tolerance,
+                                           double probe, Vector3d& outward, TraceTicket& ticket)
+{
+    double scale = max(1.0, max(fabs(location[X]), max(fabs(location[Y]), fabs(location[Z]))));
     SubsurfacePhotonBoundaryProbe probeState(threadData->subsurfacePhotonBoundaryProbe);
     // Recover the deposit boundary without changing the on-disk photon layout.
-    double extent = max(double(receiver->BBox.size[X]), max(double(receiver->BBox.size[Y]), double(receiver->BBox.size[Z])));
-    double probe = max(1e-3, max(4.0 * tolerance, max(0.05 * radius, min(extent, 1e6) * 1e-4)));
     Ray ray(ticket, location + n * probe, -n, Ray::SubsurfaceRay);
     IStack hits(stackPool);
     if (!receiver->All_Intersections(ray, hits, threadData))
@@ -5011,6 +5027,49 @@ bool Trace::RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vect
     return true;
 }
 
+// One answer per photon and receiver: find the surface along the photon's own incoming ray, then probe along its normal.
+bool Trace::SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incoming, ObjectPtr receiver, double rootTolerance,
+                                    Vector3d& outward, TraceTicket& ticket)
+{
+    SubsurfacePhotonBoundaries* table = threadData->subsurfaceCache ? &threadData->subsurfaceCache->photonBoundaries : nullptr;
+    std::uint64_t key = 0;
+    bool keyed = table && table->Key(sceneData->surfacePhotonMap, &photon, receiver, key);
+    float folded[2];
+    if (keyed && table->Find(key, folded))
+        threadData->Stats()[Subsurface_Photon_Boundaries_Reused]++;
+    else
+    {
+        threadData->Stats()[Subsurface_Photon_Boundaries_Computed]++;
+        Vector3d location(photon.Loc);
+        double tolerance = SubsurfacePhotonTolerance(location, rootTolerance);
+        double probe = SubsurfacePhotonProbe(receiver, tolerance, sceneData->surfacePhotonMap.minGatherRad);
+        Vector3d axis = incoming, found;
+        {
+            SubsurfacePhotonBoundaryProbe probeState(threadData->subsurfacePhotonBoundaryProbe);
+            Ray ray(ticket, location + incoming * probe, -incoming, Ray::SubsurfaceRay);
+            IStack hits(stackPool);
+            Intersection nearest;
+            double best = HUGE_VAL;
+            if (receiver->All_Intersections(ray, hits, threadData))
+                for (; !hits->empty(); hits->pop())
+                    if ((hits->top().Depth > 0.0) && ((hits->top().IPoint - location).length() < best))
+                    {
+                        nearest = hits->top();
+                        best = (nearest.IPoint - location).length();
+                    }
+            Vector3d surface = (best < HUGE_VAL) ? SubsurfacePhotonNormal(nearest, threadData) : Vector3d(0.0);
+            double length = surface.length();
+            if ((length > 0.0) && std::isfinite(length))
+                axis = surface / length;
+        }
+        bool valid = ProbeSubsurfacePhotonBoundary(location, axis, receiver, tolerance, probe, found, ticket);
+        SubsurfacePhotonBoundaries::Fold(found, valid, folded);
+        if (keyed)
+            table->Store(key, folded);
+    }
+    return SubsurfacePhotonBoundaries::Unfold(folded, outward);
+}
+
 MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, double eta, ObjectPtr receiver,
                                                   PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud)
 {
@@ -5035,6 +5094,7 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
     threadData->Stats()[Subsurface_Photon_Radius_Sum] += radius;
     threadData->Stats()[Subsurface_Photon_Radius_Squared_Sum] += Sqr(radius);
     threadData->Stats()[Subsurface_Photon_Candidates] += gatherer.gatheredPhotons.numFound;
+    double rootTolerance = SubsurfaceRootTolerance(receiver);
     for (int i = 0; i < gatherer.gatheredPhotons.numFound; i++)
     {
         const Photon& photon = *gatherer.gatheredPhotons.photonGatherList[i];
@@ -5045,7 +5105,8 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
         if (!(cosine > EPSILON) || !(Sqr(eta) + Sqr(cosine) > 1.0))
             continue;
         Vector3d outward;
-        if (!RecoverSubsurfacePhotonBoundary(Vector3d(photon.Loc), n, receiver, radius, outward, ticket))
+        if (!(SubsurfacePhotonTolerance(Vector3d(photon.Loc), rootTolerance) < 0.01 * radius) ||
+            !SubsurfacePhotonDeposit(photon, incoming, receiver, rootTolerance, outward, ticket))
             continue;
         if ((dot(n, outward) < 0.5) || !(dot(outward, incoming) > EPSILON))
             continue;
