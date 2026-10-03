@@ -260,6 +260,8 @@ void Parser::Run()
                 sceneData->lightGroupLightSources[i]->index = i;
                 sceneData->lightGroupLightSources[i]->lightGroupLight = true;
             }
+
+            Make_Portal_Lights();
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
         // (both to the user interface and "upward" to the calling code)
@@ -675,6 +677,10 @@ void Parser::Destroy_Frame()
             Destroy_Object(*i);
         sceneData->lightGroupLightSources.clear();
     }
+
+    for (LightSource *image : sceneData->portalLights)
+        Destroy_Object(image);
+    sceneData->portalLights.clear();
 }
 
 //******************************************************************************
@@ -2452,7 +2458,7 @@ ObjectPtr Parser::Parse_Portal()
 
     struct Mouth
     {
-        int front = -1, back = -1;
+        int front = -1, back = -1, lights = -1;
         PIGMENT *pigment = nullptr;
     };
     Mouth outer, nearMouth, farMouth;
@@ -2472,6 +2478,12 @@ ObjectPtr Parser::Parse_Portal()
 
             CASE (BACK_TOKEN)
                 parseSwitch(mouth.back, "back");
+            END_CASE
+
+            CASE (NO_LIGHTS_TOKEN)
+                if (mouth.lights >= 0)
+                    Error("%s takes only one no_lights.", where);
+                mouth.lights = (Allow_Float(1.0) > 0.0) ? 0 : 1;
             END_CASE
 
             CASE (PIGMENT_TOKEN)
@@ -2496,7 +2508,7 @@ ObjectPtr Parser::Parse_Portal()
         while (parseMouthOption(mouth, where))
             ;
         if (!Peek_Token(RIGHT_CURLY_TOKEN))
-            Error("%s { } takes only front, back and pigment.", where);
+            Error("%s { } takes only front, back, pigment and no_lights.", where);
         Parse_End();
     };
     EXPECT
@@ -2585,8 +2597,10 @@ ObjectPtr Parser::Parse_Portal()
     auto pick = [](int mouth, int outerValue, bool byDefault) { return (mouth >= 0) ? (mouth > 0) : (outerValue >= 0) ? (outerValue > 0) : byDefault; };
     Object->front = pick(nearMouth.front, outer.front, true);
     Object->back = pick(nearMouth.back, outer.back, false);
+    Object->lights = pick(nearMouth.lights, outer.lights, true);
     Object->farFront = pick(farMouth.front, outer.front, true);
     Object->farBack = pick(farMouth.back, outer.back, false);
+    Object->farLights = pick(farMouth.lights, outer.lights, true);
     if (!Object->farFront && !Object->farBack)
         Object->farMouth = false;
     Object->pigment = (nearMouth.pigment != nullptr) ? nearMouth.pigment : Copy_Pigment(outer.pigment);
@@ -2648,6 +2662,59 @@ static void DropShutPortals(ObjectPtr object)
         return;
     std::vector<ObjectPtr>& children = static_cast<CSGUnion *>(object)->children;
     children.erase(std::remove_if(children.begin(), children.end(), DropShutPortal), children.end());
+}
+
+static void CollectPortals(ObjectPtr object, std::vector<const Portal *>& portals)
+{
+    if (Test_Flag(object, PORTAL_FLAG))
+    {
+        const Portal *portal = static_cast<const Portal *>(object);
+        if (portal->AnySideOpen())
+            portals.push_back(portal);
+    }
+    else if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            CollectPortals(child, portals);
+}
+
+void Parser::Make_Portal_Lights()
+{
+    for (ObjectPtr object : sceneData->objects)
+        CollectPortals(object, sceneData->portalMouths);
+    std::vector<const Portal *> portals;
+    for (const Portal *portal : sceneData->portalMouths)
+        if (portal->lights)
+            portals.push_back(portal);
+    if (portals.empty())
+        return;
+
+    bool projected = false;
+    for (std::vector<LightSource *> *lights : { &sceneData->lightSources, &sceneData->lightGroupLightSources })
+    {
+        for (LightSource *light : *lights)
+        {
+            if (light->Projected_Through_Object != nullptr)
+            {
+                projected = true;
+                continue;
+            }
+            for (const Portal *portal : portals)
+            {
+                LightSource *image = portal->LightImage(light);
+                // An exit view ends where it leaves the body, so a light reaches through only from inside the body's image.
+                if (portal->exit && !light->Area_Light && !Inside_Object(image->Center, portal->body, &mThreadData))
+                {
+                    Destroy_Object(image);
+                    continue;
+                }
+                image->index = 0x100000 + sceneData->portalLights.size();
+                sceneData->portalLights.push_back(image);
+                light->portalImages.push_back(image);
+            }
+        }
+    }
+    if (projected)
+        Warning("A light with projected_through does not shine through portals.");
 }
 
 //******************************************************************************

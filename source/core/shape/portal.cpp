@@ -68,9 +68,11 @@ Portal::Portal() :
     front(true),
     back(false),
     reversed(false),
+    lights(true),
     farMouth(true),
     farFront(true),
     farBack(false),
+    farLights(true),
     farPigment(nullptr),
     partner(nullptr)
 {
@@ -104,9 +106,11 @@ ObjectPtr Portal::Copy()
     New->front = front;
     New->back = back;
     New->reversed = reversed;
+    New->lights = lights;
     New->farMouth = farMouth;
     New->farFront = farFront;
     New->farBack = farBack;
+    New->farLights = farLights;
     New->farPigment = Copy_Pigment(farPigment);
     New->origin = origin;
     return New;
@@ -213,6 +217,7 @@ Portal *Portal::MakeImage() const
     // A mirrored triangle takes its normal from its vertices, turning it the other way.
     if ((det < 0.0) && (dynamic_cast<const Triangle *>(body) != nullptr))
         image->reversed = !image->reversed;
+    image->lights = farLights;
     image->farMouth = false;
     image->partner = this;
     image->origin = "far mouth of the " + origin;
@@ -249,6 +254,27 @@ double Portal::Chord(const Ray& ray, const Vector3d& entry, TraceThreadData *Thr
         if (!Inside_Object(entry + probe.Direction * (0.5 * (depths[i] + depths[i + 1])), body, Thread))
             return depths[i];
     return (count > 0) ? depths[count - 1] : -1.0;
+}
+
+LightSource *Portal::LightImage(const LightSource *light) const
+{
+    LightSource *image = static_cast<LightSource *>(Copy_Object(const_cast<LightSource *>(light)));
+    for (ObjectPtr child : image->children)
+        Destroy_Object(child);
+    image->children.clear();
+    if (image->Projected_Through_Object != nullptr)
+        Destroy_Object(image->Projected_Through_Object);
+    image->Projected_Through_Object = nullptr;
+    image->portalImages.clear();
+
+    TRANSFORM back;
+    std::copy(&map.inverse[0][0], &map.inverse[0][0] + 16, &back.matrix[0][0]);
+    std::copy(&map.matrix[0][0], &map.matrix[0][0] + 16, &back.inverse[0][0]);
+    image->Transform(&back);
+    image->imageOf = light;
+    image->portal = this;
+    image->lightGroupLight = true;
+    return image;
 }
 
 bool IsClosedSolid(ConstObjectPtr object)

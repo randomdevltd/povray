@@ -1,5 +1,5 @@
 // Two doorways in a room's walls, joined by one map: in through A's front, out of B's front into the room, and back.
-// Views: 1 into A, 2 into B, 3 at A from outside the room, 4 at B from outside, 5 from above.
+// Views: 1 into A, 2 into B, 3 at A from outside the room, 4 at B from outside, 5 from above (Lit 1: a candle by each).
 #version 3.8;
 #ifndef (View) #declare View = 1; #end
 #ifndef (TwoWay) #declare TwoWay = 1; #end        // 0: A alone (far off); 1: B's sides set; 2: B by default
@@ -7,6 +7,8 @@
 #ifndef (AB) #declare AB = 0; #end
 #ifndef (BF) #declare BF = 1; #end
 #ifndef (BB) #declare BB = 0; #end
+#ifndef (Lit) #declare Lit = 0; #end
+#ifndef (NoLights) #declare NoLights = 0; #end
 global_settings { assumed_gamma 1.0 }
 
 #switch (View)
@@ -31,9 +33,17 @@ box { <-12, 0, 12>, <12, 4, 12.2> pigment { rgb <0.1, 0.8, 0.85> } }
 sphere { <-3.4, 0.4, 0.9>, 0.4 pigment { rgb <0.95, 0.85, 0.1> } }
 cylinder { <-0.9, 0, 3.3>, <-0.9, 1.3, 3.3>, 0.3 pigment { rgb <0.8, 0.2, 0.7> } }
 
-light_source { <-10, 30, -20> rgb 0.8 }
-light_source { <1, 2.8, 0> rgb 0.4 }
-light_source { <15, 25, 25> rgb 0.3 shadowless }
+#if (Lit)
+    light_source { <0, 30, 0> rgb 0.1 shadowless }
+    light_source { <-4.4, 1.4, -1.5> rgb <1, 0.45, 0.1> * 2.5 fade_distance 1.2 fade_power 2 }
+    light_source { <1.5, 1.4, 4.4> rgb <0.15, 0.45, 1> * 2.5 fade_distance 1.2 fade_power 2 }
+    box { <-4.7, 0, -0.85>, <-4.6, 1.8, -0.75> pigment { rgb 0.3 } }
+    box { <0.75, 0, 4.6>, <0.85, 1.8, 4.7> pigment { rgb 0.3 } }
+#else
+    light_source { <-10, 30, -20> rgb 0.8 }
+    light_source { <1, 2.8, 0> rgb 0.4 }
+    light_source { <15, 25, 25> rgb 0.3 shadowless }
+#end
 
 portal
 {
@@ -44,4 +54,5 @@ portal
         #case (0) far off #break
         #case (1) far { front BF back BB } #break
     #end
+    #if (NoLights) no_lights #end
 }

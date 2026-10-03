@@ -640,6 +640,10 @@ class Trace
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
                                          ConstObjectPtr object, double relativeIor, double lightsourcedepth, Ray& lightsourceray,
                                          const MathColour& lightcolour, bool backside);
+        /// Adds the classic lighting of a light as seen through a portal; `image` is the light under the portal's inverse map.
+        void ComputePortalDiffuseLight(const LightSource& image, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
+                                       const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
+                                       ConstObjectPtr object, double relativeIor);
         /// Whether to trace a reflection or refraction of this weight spawned by `ray`; below a gather ray, one whose share
         /// of its sample is under the ADC bailout survives in proportion to it, and `scale` compensates.
         bool SurvivesRadiosityRoulette(const Ray& ray, const Vector3d& point, double weight, unsigned int salt, double& scale);
@@ -671,6 +675,19 @@ class Trace
         void TraceShadowRay(const LightSource &light, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour,
                             const Vector2d* areaSample = nullptr);
         void TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour);
+        /// Shadow-tests one point of a light, `offset` from its centre: straight, or across the portal of an image.
+        void TraceSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour,
+                                  const Vector3d& offset);
+        /// Carries a light image's sample across its portal: the crossing, the pigment, the light's own cone and fade over the
+        /// unfolded path, and shadows on both sides of the crossing; dark where the ray does not enter the portal.
+        void TracePortalLightShadowRay(const LightSource &image, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour,
+                                       const Vector3d& offset);
+        /// Attenuates light through the media along one piece of a path through a portal, as a straight shadow ray is.
+        void AttenuatePortalLightPiece(const LightSource& light, Ray& piece, double depth, MathColour& lightcolour);
+        /// Dims straight light at each side short of `reach` that hands it to a partner, except `crossed` and its partner.
+        void DivertPortalLight(const Ray& ray, double reach, MathColour& lightcolour, const Portal *crossed);
+        /// The nearest hit on a portal's body short of `reach` through an open side, as a camera ray would enter it.
+        bool FindPortalCrossing(const Portal& portal, const Ray& ray, double reach, Intersection& crossing);
         void TraceAreaLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                      const Vector3d& ipoint, MathColour& lightcolour);
         void TraceAreaLightSubsetShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,

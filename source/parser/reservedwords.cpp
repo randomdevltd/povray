@@ -367,6 +367,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { NO_TOKEN,                     "no" },
     { NO_BUMP_SCALE_TOKEN,          "no_bump_scale" },
     { NO_IMAGE_TOKEN,               "no_image" },
+    { NO_LIGHTS_TOKEN,              "no_lights" },
     { NO_RADIOSITY_TOKEN,           "no_radiosity" },
     { NO_REFLECTION_TOKEN,          "no_reflection" },
     { NO_SHADOW_TOKEN,              "no_shadow" },

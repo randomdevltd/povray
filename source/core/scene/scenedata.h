@@ -98,6 +98,10 @@ class SceneData
         std::vector<LightSource*> lightSources;
         /// list of all lights that are part of light groups
         std::vector<LightSource*> lightGroupLightSources;
+        /// lights as seen through portals, owned here; empty when no light reaches through a portal
+        std::vector<LightSource*> portalLights;
+        /// every portal mouth with an open side; empty in a scene without portals
+        std::vector<const Portal*> portalMouths;
         /// factory generating contexts for legacy VM-based functions in scene
         GenericFunctionContextFactoryIPtr functionContextFactory;
         /// atmosphere index of refraction

@@ -770,6 +770,7 @@ class Parser final
         ObjectPtr Parse_CSG(int CSG_Type);
         ObjectPtr Parse_Light_Group(void);
         ObjectPtr Parse_Portal(void);
+        void Make_Portal_Lights();
         void Check_Portal_Cameras();
         ObjectPtr Parse_Cylinder(void);
         ObjectPtr Parse_Disc(void);

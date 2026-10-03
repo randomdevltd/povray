@@ -170,6 +170,8 @@ namespace pov
 ///
 //******************************************************************************
 
+class Portal;
+
 /// Abstract base class for all geometric objects.
 class ObjectBase
 {
@@ -336,6 +338,10 @@ class LightSource final : public CompoundObject
         bool Media_Attenuation : 1;
         bool Media_Interaction : 1;
         bool lightGroupLight : 1;
+
+        std::vector<const LightSource *> portalImages; ///< this light as seen through each portal; the scene owns them
+        const LightSource *imageOf = nullptr;           ///< in an image, the light it shows
+        const Portal *portal = nullptr;                 ///< in an image, the portal it is seen through
 
         LightSource();
         virtual ~LightSource() override;

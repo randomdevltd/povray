@@ -70,9 +70,11 @@ class Portal final : public ObjectBase
         bool front;             ///< whether a view entering the front side goes through
         bool back;              ///< whether a view entering the back side goes through; a volume's back faces are met from inside
         bool reversed;          ///< whether the front faces away from the normal, as an image of a surface faces where views come out
+        bool lights;            ///< whether lights shine through it
         bool farMouth;          ///< whether the body's image is a mouth leading back
         bool farFront;
         bool farBack;
+        bool farLights;
         PIGMENT *farPigment;
         const Portal *partner;  ///< the other mouth, once made
         std::string origin;     ///< where it was written, for messages
@@ -105,6 +107,17 @@ class Portal final : public ObjectBase
             return (facing < 0.0);
         }
         bool AnySideOpen() const { return front || back; }
+        /// Whether straight light entering this side is carried away: the partner's side it comes out of is open and shines.
+        /// That side has the same name between a surface and its image, and the opposite name between two solids.
+        bool Diverts(bool frontSide) const
+        {
+            if (!(frontSide ? front : back) || (partner == nullptr) || !partner->lights)
+                return false;
+            const bool partnerFront = (reversed == partner->reversed) ? !frontSide : frontSide;
+            return partnerFront ? partner->front : partner->back;
+        }
+        /// A light as seen through this portal: its geometry under the inverse map, without looks_like or projected_through.
+        LightSource *LightImage(const LightSource *light) const;
 };
 
 /// Whether an object's inside test describes a finite closed solid.
