@@ -194,6 +194,9 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
        --------------------------------------------- */
     i = 0;
     notComputed = true;
+    std::vector<Interior*> originInteriors;
+    Vector3d lastOrigin;
+    bool haveOrigin = false;
     const std::uint64_t comboKey = DeriveKey(renderDataPtr->stochasticRandomSeedBase, kDrawPhoton, combo.serial);
     std::uint64_t thetaIndex = 0;
     for(theta=combo.mintheta; theta<combo.maxtheta; theta+=combo.dtheta, thetaIndex++)
@@ -371,11 +374,20 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
                     //Initialize_Ray_Containers(&ray);
                     ray.ClearInteriors ();
 
-                    for(std::vector<ObjectPtr>::iterator object = GetSceneData()->objects.begin(); object != GetSceneData()->objects.end(); object++)
+                    // Photons leaving the same point start inside the same objects, so test each origin once.
+                    if (!haveOrigin || ray.Origin[X] != lastOrigin[X] || ray.Origin[Y] != lastOrigin[Y] || ray.Origin[Z] != lastOrigin[Z])
                     {
-                        if ((*object)->Inside(ray.Origin, renderDataPtr) && ((*object)->interior != nullptr))
-                            ray.AppendInterior((*object)->interior.get());
+                        originInteriors.clear();
+                        for(std::vector<ObjectPtr>::iterator object = GetSceneData()->objects.begin(); object != GetSceneData()->objects.end(); object++)
+                        {
+                            if ((*object)->Inside(ray.Origin, renderDataPtr) && ((*object)->interior != nullptr))
+                                originInteriors.push_back((*object)->interior.get());
+                        }
+                        lastOrigin = ray.Origin;
+                        haveOrigin = true;
                     }
+                    for (Interior* interior : originInteriors)
+                        ray.AppendInterior(interior);
 
                     notComputed = false;
                     //disp_elem = 0;   /* for dispersion */
