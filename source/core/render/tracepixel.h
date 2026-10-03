@@ -90,6 +90,8 @@ class TracePixel final : public Trace
         /// @param[in]  height  Vertical size of the image in pixels.
         /// @param[out] colour  Computed colour of the (sub-)pixel.
         void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour);
+        /// Traces the view a screen shows at window point (x, y), y down, carrying on the state of the ray that met it.
+        void TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour);
     private:
         // Focal blur data
         class FocalBlurData final
@@ -154,7 +156,10 @@ class TracePixel final : public Trace
         void InitRayContainerState(Ray& ray, bool compute = false);
         void InitRayContainerStateTree(Ray& ray, BBOX_TREE *node);
 
-        void TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height);
+        void TraceSamples(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
+                          float *quality = nullptr);
+        void TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
+                                   float *quality);
         void JitterCameraRay(Ray& ray, DBL x, DBL y, size_t ray_number);
 };
 

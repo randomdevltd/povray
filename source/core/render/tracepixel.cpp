@@ -45,6 +45,8 @@
 #include <cstring>
 
 // C++ standard header files
+#include <map>
+#include <utility>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -52,6 +54,7 @@
 
 // POV-Ray header files (core module)
 #include "core/material/normal.h"
+#include "core/material/pattern.h"
 #include "core/material/pigment.h"
 #include "core/math/chi2.h"
 #include "core/math/jitter.h"
@@ -346,13 +349,29 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
         sceneData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
         subsurfaceCameraSet = true;
     }
+    TraceSamples(colour, x, y, width, height, TraceTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha), 1.0);
+}
+
+void TracePixel::TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour)
+{
+    // Opaque, with radiosity bounces, quality and subsurface levels carried across views.
+    TraceTicket ticket(parent.maxAllowedTraceLevel, parent.adcBailout, false, parent.radiosityRecursionDepth, parent.subsurfaceRecursionDepth,
+                       -1.0, parent.radiosityQuality);
+    ticket.radiosityShare = parent.radiosityShare;
+    ClearGrain();
+    TraceSamples(colour, x, y, 1.0, 1.0, ticket, weight, &parent.radiosityQuality);
+}
+
+void TracePixel::TraceSamples(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
+                              float *quality)
+{
     if(useFocalBlur == false)
     {
         colour.Clear();
         int numTraced = 0;
         for (size_t rayno = 0; rayno < camera.Rays_Per_Pixel; rayno++)
         {
-            TraceTicket ticket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
+            TraceTicket ticket(start);
             Ray ray(ticket);
 
             if (CreateCameraRay(ray, x, y, width, height, rayno) == true)
@@ -360,9 +379,11 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
                 MathColour col;
                 ColourChannel transm = 0.0;
 
-                TraceRay(ray, col, transm, 1.0, false, camera.Max_Ray_Distance);
+                TraceRay(ray, col, transm, weight, false, camera.Max_Ray_Distance);
                 colour += RGBTColour(ToRGBColour(col), transm);
                 numTraced++;
+                if (quality != nullptr)
+                    *quality = min(*quality, ticket.radiosityQuality);
             }
         }
         if (numTraced)
@@ -371,7 +392,7 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
             colour.transm() = 1.0;
     }
     else
-        TraceRayWithFocalBlur(colour, x, y, width, height);
+        TraceRayWithFocalBlur(colour, x, y, width, height, start, weight, quality);
 }
 
 bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number)
@@ -1042,7 +1063,8 @@ void TracePixel::InitRayContainerStateTree(Ray& ray, BBOX_TREE *node)
     }
 }
 
-void TracePixel::TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height)
+void TracePixel::TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
+                                       float *quality)
 {
     int nr;     // Number of current samples.
     int level;  // Index into number of samples list.
@@ -1053,7 +1075,7 @@ void TracePixel::TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL wid
     RGBTColour C, V1, S1, S2;
     int seed = int((x-0.5) * 313.0 + 11.0) + int((y-0.5) * 311.0 + 17.0);
 
-    TraceTicket ticket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
+    TraceTicket ticket(start);
     Ray ray(ticket);
 
     colour.Clear();
@@ -1103,7 +1125,7 @@ void TracePixel::TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL wid
 
                 MathColour tempC;
                 ColourChannel tempT = 0.0;
-                TraceRay(ray, tempC, tempT, 1.0, false, camera.Max_Ray_Distance);
+                TraceRay(ray, tempC, tempT, weight, false, camera.Max_Ray_Distance);
                 C = RGBTColour(ToRGBColour(tempC), tempT);
 
                 colour += C;
@@ -1137,6 +1159,8 @@ void TracePixel::TraceRayWithFocalBlur(RGBTColour& colour, DBL x, DBL y, DBL wid
     while(nr < camera.Blur_Samples);
 
     colour /= (DBL)nr;
+    if (quality != nullptr)
+        *quality = min(*quality, ticket.radiosityQuality);
 }
 
 void TracePixel::JitterCameraRay(Ray& ray, DBL x, DBL y, size_t ray_number)
@@ -1345,6 +1369,66 @@ TracePixel::FocalBlurData::~FocalBlurData()
 {
     delete[] Sample_Grid;
     delete[] Sample_Threshold;
+}
+
+namespace
+{
+struct ScreenNesting final
+{
+    TraceThreadData *thread;
+    unsigned int levels;
+    ScreenNesting(TraceThreadData *t, unsigned int l) : thread(t), levels(l) { ++t->screenDepth; t->screenTraceLevels += l; }
+    ~ScreenNesting() { --thread->screenDepth; thread->screenTraceLevels -= levels; }
+};
+}
+
+struct Trace::ScreenViews final
+{
+    std::map<std::pair<const Camera*, bool>, std::unique_ptr<TracePixel>> byProjection;
+};
+
+void Trace::ScreenViewsDeleter::operator()(ScreenViews *views) const
+{
+    delete views;
+}
+
+bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const Ray& ray, COLC weight, TransColour& result)
+{
+    const TraceTicket& ticket = ray.GetTicket();
+    const unsigned int limit = (screen.maxDepth > 0) ? screen.maxDepth : ticket.maxAllowedTraceLevel;
+
+    if ((threadData->screenDepth >= limit) ||
+        (threadData->screenTraceLevels + ticket.traceLevel + threadData->screenDepth >= NESTED_VIEW_DEPTH_LIMIT))
+        return false;
+
+    if (!screenViews)
+        screenViews.reset(new ScreenViews());
+    std::unique_ptr<TracePixel>& view = screenViews->byProjection[std::make_pair(screen.pProjection.get(), ray.IsPretraceRay())];
+    if (!view)
+    {
+        QualityFlags viewFlags(qualityFlags);
+        view.reset(new TracePixel(sceneData, screen.pProjection.get(), threadData, ticket.maxAllowedTraceLevel, ticket.adcBailout,
+                                  viewFlags, cooperate, media, radiosity, ray.IsPretraceRay()));
+    }
+
+    RGBTColour colour;
+    {
+        ScreenNesting nesting(threadData, ticket.traceLevel);
+        // Only pigments the view's own tracer shades may trace further views.
+        ActiveTraceScope noTracer(threadData, nullptr, 1.0);
+        view->TraceView(u, 1.0 - v, const_cast<TraceTicket&>(ticket), weight, colour);
+    }
+
+    if (view->Grainy())
+        MarkGrain();
+
+    result = ToTransColour(RGBFTColour(colour));
+    return true;
+}
+
+bool TraceScreenView(const ScreenPattern& screen, double u, double v, const Ray& ray, TraceThreadData *thread, TransColour& result)
+{
+    return thread->activeTrace->TraceScreen(screen, u, v, ray, thread->activeWeight, result);
 }
 
 }

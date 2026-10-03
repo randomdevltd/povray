@@ -638,6 +638,71 @@ bool ColourImagePattern::HasTransparency() const
 }
 
 
+ScreenPattern::ScreenPattern(const ScreenPattern& obj) :
+    ColourPattern(obj),
+    pProjection(obj.pProjection),
+    maxDepth(obj.maxDepth)
+{
+    if (obj.pPerturb)
+        pPerturb = Copy_Pigment(obj.pPerturb);
+    if (obj.pFallback)
+        pFallback = Copy_Pigment(obj.pFallback);
+}
+
+ScreenPattern::~ScreenPattern()
+{
+    if (pPerturb)
+        Destroy_Pigment(pPerturb);
+    if (pFallback)
+        Destroy_Pigment(pFallback);
+}
+
+bool ScreenPattern::Evaluate(TransColour& result, const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
+{
+    if ((pRay == nullptr) || !pProjection)
+        return false;
+
+    // Outside the window the screen is clear, as `image_map` is outside its map.
+    if ((EPoint[X] < 0.0) || (EPoint[X] > 1.0) || (EPoint[Y] < 0.0) || (EPoint[Y] > 1.0))
+    {
+        result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 1.0));
+        return false;
+    }
+
+    // The picture is opaque to light, so shadow and photon rays never trace the view.
+    if (pRay->IsShadowTestRay() || pRay->IsPhotonRay())
+    {
+        result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 0.0));
+        return true;
+    }
+
+    // Only a tracer that is shading a surface traces the view.
+    if (pThread->activeTrace == nullptr)
+        return false;
+
+    RGBColour shift(0.0);
+    if (pPerturb)
+    {
+        TransColour field;
+        if (Compute_Pigment(field, pPerturb, EPoint, pIsection, pRay, pThread))
+            shift = ToRGBColour(field.colour());
+    }
+
+    if (TraceScreenView(*this, EPoint[X] + shift.red(), EPoint[Y] + shift.green(), *pRay, pThread, result))
+        return true;
+    if (pFallback)
+        return Compute_Pigment(result, pFallback, EPoint, pIsection, pRay, pThread);
+    result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 0.0));
+    return true;
+}
+
+
+bool ScreenPattern::HasTransparency() const
+{
+    return (pFallback != nullptr) && (pFallback->Flags & HAS_FILTER);
+}
+
+
 DensityFilePattern::DensityFilePattern() :
     densityFile(nullptr)
 {}
