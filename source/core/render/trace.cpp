@@ -807,7 +807,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     radiosity_back_done = false;
 
     // This block just sets up radiosity for the code inside the loop, which is first-time-through.
-    radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) &&
+    radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
                        (radiosity.CheckRadiosityTraceLevel(ray.GetTicket()) == true) &&
                        (Test_Flag(isect.Object, IGNORE_RADIOSITY_FLAG) == false);
 
@@ -5249,7 +5249,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double      sigma_prime_s_mean  = sigma_prime_s.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_t_mean  = sigma_a_mean + sigma_prime_s_mean;
 
-    bool radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) &&
+    bool radiosity_needed = (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
                             (sceneData->subsurfaceUseRadiosity == true) &&
                             (radiosity.CheckRadiosityTraceLevel(Eye.GetTicket()) == true) &&
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);

@@ -269,8 +269,10 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         //      cf      - the cooperate functor (whatever that is - some thing that handles inter-thread communication?)
         //      ft      - whether this is the final trace (i.e. not a radiosity pretrace step)
         //      camera  - position of the camera
+        //      reuse   - factor on the minimum and maximum reuse distances, coarser above 1
         RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadData *td,
-                          const SceneRadiositySettings& rs, RadiosityCache& rc, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera);
+                          const SceneRadiositySettings& rs, RadiosityCache& rc, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera,
+                          double reuse = 1.0);
         virtual ~RadiosityFunction() override;
 
         // looks up the ambient value for a certain point

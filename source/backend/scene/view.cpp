@@ -705,6 +705,53 @@ bool View::CheckCameraHollowObject(const Vector3d& point)
     return false;
 }
 
+// One pretrace per distinct screen camera besides the render's, at the render's pixel spacing over the camera's radiosity_size frame,
+// so a smaller frame takes fewer, wider-spaced samples.
+static vector<shared_ptr<ScreenPretrace>> ScreenPretraces(ViewData& viewData, unsigned int blockSize)
+{
+    const SceneRadiositySettings& settings = viewData.GetSceneData()->radiositySettings;
+    vector<shared_ptr<const Camera>> cameras;
+    vector<std::pair<unsigned int, unsigned int>> sizes;
+    for (const shared_ptr<const Camera>& camera : viewData.GetSceneData()->screenCameras)
+    {
+        if (camera->No_Radiosity || camera->SameView(viewData.GetCamera()))
+            continue;
+        const unsigned int width = camera->Radiosity_Width ? camera->Radiosity_Width : viewData.GetWidth();
+        const unsigned int height = camera->Radiosity_Height ? camera->Radiosity_Height : viewData.GetHeight();
+        size_t i = 0;
+        while ((i < cameras.size()) && !cameras[i]->SameView(*camera))
+            i++;
+        if (i == cameras.size())
+        {
+            cameras.push_back(camera);
+            sizes.emplace_back(width, height);
+        }
+        else
+            sizes[i] = std::make_pair(max(sizes[i].first, width), max(sizes[i].second, height));
+    }
+
+    vector<shared_ptr<ScreenPretrace>> passes;
+    const DBL renderSize = DBL(max(viewData.GetWidth(), viewData.GetHeight()));
+    for (size_t i = 0; i < cameras.size(); i++)
+    {
+        const DBL frameSize = DBL(max(sizes[i].first, sizes[i].second));
+        const DBL endSize = max(1.0, renderSize * settings.pretraceEnd);
+        DBL startSize = renderSize * settings.pretraceStart;
+        while ((startSize > frameSize) && (startSize * 0.5 >= endSize))
+            startSize *= 0.5;
+        int steps = (int)floor(log(startSize / endSize) / log(2.0) + (1.0 - EPSILON)) + 1;
+        if (steps > int(RadiosityFunction::PRETRACE_MAX - RadiosityFunction::PRETRACE_FIRST - 1))
+        {
+            steps = RadiosityFunction::PRETRACE_MAX - RadiosityFunction::PRETRACE_FIRST - 1;
+            startSize = endSize * pow(2.0, (double)steps);
+        }
+        if (steps > 0)
+            passes.push_back(std::make_shared<ScreenPretrace>(*cameras[i], sizes[i].first, sizes[i].second, startSize, endSize,
+                                                              steps, renderSize / frameSize, blockSize));
+    }
+    return passes;
+}
+
 void View::StartRender(POVMS_Object& renderOptions)
 {
     unsigned int tracingmethod = 0;
@@ -1179,6 +1226,13 @@ void View::StartRender(POVMS_Object& renderOptions)
             renderTasks.AppendFunction(boost::bind(&View::SetNextRectangle, this, _1, blockskiplist, nextblock));
 
             // wait for block size counter and block skip list reset to finish
+            renderTasks.AppendSync();
+        }
+
+        for (const shared_ptr<ScreenPretrace>& pass : ScreenPretraces(viewData, viewData.blockSize))
+        {
+            for (int i = 0; i < (highReproducibility ? 1 : maxRenderThreads); i++)
+                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new RadiosityTask(&viewData, pass, seed))));
             renderTasks.AppendSync();
         }
 

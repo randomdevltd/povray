@@ -354,10 +354,11 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
 
 void TracePixel::TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour)
 {
-    // Opaque, with radiosity bounces, quality and subsurface levels carried across views.
+    // Opaque, with radiosity bounces, quality and subsurface levels carried across views; samples spaced from this eye.
     TraceTicket ticket(parent.maxAllowedTraceLevel, parent.adcBailout, false, parent.radiosityRecursionDepth, parent.subsurfaceRecursionDepth,
                        -1.0, parent.radiosityQuality);
     ticket.radiosityShare = parent.radiosityShare;
+    ticket.radiosityEye = &camera.Location;
     ClearGrain();
     TraceSamples(colour, x, y, 1.0, 1.0, ticket, weight, &parent.radiosityQuality);
 }
@@ -1407,6 +1408,7 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const R
     if (!view)
     {
         QualityFlags viewFlags(qualityFlags);
+        viewFlags.radiosity = viewFlags.radiosity && !screen.pProjection->No_Radiosity;
         view.reset(new TracePixel(sceneData, screen.pProjection.get(), threadData, ticket.maxAllowedTraceLevel, ticket.adcBailout,
                                   viewFlags, cooperate, media, radiosity, ray.IsPretraceRay()));
     }
