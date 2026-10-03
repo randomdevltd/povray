@@ -2617,7 +2617,7 @@ std::int64_t M4RidgeFit(ViewData* vd, int reachPx, float bridge)
 
     std::int64_t taken = 0;
     std::vector<std::uint8_t> done(size_t(w) * size_t(h), 0);
-    std::function<void(std::vector<std::int32_t>&, int)> fitLeaf = [&](std::vector<std::int32_t>& pts, int depth)
+    std::function<void(std::vector<std::int32_t>&)> acceptLine = [&](std::vector<std::int32_t>& pts)
     {
         const size_t n = pts.size();
         if(n < 4)
@@ -2650,20 +2650,7 @@ std::int64_t M4RidgeFit(ViewData* vd, int reachPx, float bridge)
         const double length = hi - lo + 1.0;
         if((std::sqrt(l2) > 0.6) || (length < 4.0) || (std::sqrt(l1) < 4.0 * std::sqrt(l2)))
         {
-            if((n < 8) || (depth > 6))
-            {
-                why[2]++;
-                return;
-            }
-            std::vector<std::pair<double, std::int32_t>> order;
-            for(std::int32_t i : pts)
-                order.push_back(std::make_pair((dashes[i].x + 0.5 - cx) * dx + (dashes[i].y + 0.5 - cy) * dy, i));
-            std::sort(order.begin(), order.end());
-            std::vector<std::int32_t> a, b;
-            for(size_t k = 0; k < order.size(); k++)
-                (k < order.size() / 2 ? a : b).push_back(order[k].second);
-            fitLeaf(a, depth + 1);
-            fitLeaf(b, depth + 1);
+            why[2]++;
             return;
         }
 
@@ -2804,8 +2791,79 @@ std::int64_t M4RidgeFit(ViewData* vd, int reachPx, float bridge)
             }
         }
     };
+    // a group may hold several lines, crossing or one beyond another: take the line most dashes lie on, fit it, remove its
+    // dashes and go on with the rest
+    std::function<void(std::vector<std::int32_t>&, int)> fitGroup = [&](std::vector<std::int32_t>& pts, int depth)
+    {
+        if(pts.size() < 4)
+        {
+            why[1]++;
+            return;
+        }
+        if((pts.size() > 64) && (depth < 8))
+        {
+            double minX = 1e30, maxX = -1e30, minY = 1e30, maxY = -1e30;
+            for(std::int32_t i : pts)
+            {
+                minX = std::min(minX, double(dashes[i].x)); maxX = std::max(maxX, double(dashes[i].x));
+                minY = std::min(minY, double(dashes[i].y)); maxY = std::max(maxY, double(dashes[i].y));
+            }
+            const bool alongX = (maxX - minX) >= (maxY - minY);
+            std::vector<std::int32_t> sorted(pts);
+            std::sort(sorted.begin(), sorted.end(), [&](std::int32_t a, std::int32_t b) { return alongX ? (dashes[a].x < dashes[b].x) : (dashes[a].y < dashes[b].y); });
+            std::vector<std::int32_t> a(sorted.begin(), sorted.begin() + sorted.size() / 2), b(sorted.begin() + sorted.size() / 2, sorted.end());
+            fitGroup(a, depth + 1);
+            fitGroup(b, depth + 1);
+            return;
+        }
+        std::vector<std::int32_t> rest(pts);
+        while(rest.size() >= 4)
+        {
+            std::vector<std::int32_t> best;
+            double bestSpan = 0.0;
+            for(size_t a = 0; a < rest.size(); a++)
+            {
+                for(size_t b = a + 1; b < rest.size(); b++)
+                {
+                    const double ex = dashes[rest[b]].x - dashes[rest[a]].x, ey = dashes[rest[b]].y - dashes[rest[a]].y;
+                    const double el = std::sqrt(ex * ex + ey * ey);
+                    if(el < 3.0)
+                        continue;
+                    std::vector<std::int32_t> in;
+                    double lo = 1e30, hi = -1e30;
+                    for(std::int32_t i : rest)
+                    {
+                        const double qx = dashes[i].x - dashes[rest[a]].x, qy = dashes[i].y - dashes[rest[a]].y;
+                        if(std::fabs(qx * ey - qy * ex) / el <= 0.7)
+                        {
+                            in.push_back(i);
+                            const double u = (qx * ex + qy * ey) / el;
+                            lo = std::min(lo, u); hi = std::max(hi, u);
+                        }
+                    }
+                    if((in.size() > best.size()) || ((in.size() == best.size()) && (hi - lo > bestSpan)))
+                    {
+                        best.swap(in);
+                        bestSpan = hi - lo;
+                    }
+                }
+            }
+            if(best.size() < 4)
+            {
+                why[1]++;
+                break;
+            }
+            acceptLine(best);
+            std::vector<std::int32_t> left;
+            std::sort(best.begin(), best.end());
+            for(std::int32_t i : rest)
+                if(!std::binary_search(best.begin(), best.end(), i))
+                    left.push_back(i);
+            rest.swap(left);
+        }
+    };
     for(auto& g : groups)
-        fitLeaf(g.second, 0);
+        fitGroup(g.second, 0);
     if(M4Opts().stats)
         std::fprintf(stderr, "AA4 thin-line groups: %zu dashes in %zu groups; leaves taken %d, too few %d, poor line %d, no background %d, background varies %d, strangers %d, crowded %d\n",
                      dashes.size(), groups.size(), why[0], why[1], why[2], why[3], why[4], why[5], why[6]);
