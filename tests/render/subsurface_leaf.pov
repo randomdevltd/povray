@@ -22,13 +22,15 @@
 #ifndef (Fill) #declare Fill = 1; #end
 #ifndef (Gloss) #declare Gloss = 0; #end              // photons also add a specular highlight, which would mimic diffusion
 #ifndef (Collect) #declare Collect = 1; #end        // 0: the leaf ignores photons, as a control
+#ifndef (Receiver) #declare Receiver = 0; #end      // 1 isosurface, 2 closed mesh, 3 CSG with holes: the same leaf as other receivers
+#ifndef (PhotonRadius) #declare PhotonRadius = (Receiver = 1 ? 0.05 : 0.025); #end
 #ifndef (FrontX) #declare FrontX = -2.45; #end        // each spectrum lands about 1.65 units on from its prism
 #ifndef (BackX) #declare BackX = 2.45; #end
 #ifndef (PrismDist) #declare PrismDist = 2.2; #end
 global_settings {
   assumed_gamma 1.0 mm_per_unit 20 max_trace_level 12
   subsurface { method Method samples Samples, Single }
-  #if (Front | Back) photons { count PhotonCount gather 0, 20000 radius 0.025 autostop 0 } #end
+  #if (Front | Back) photons { count PhotonCount gather 0, 20000 radius PhotonRadius autostop 0 } #end
 }
 
 camera { location <0.3, 1.6, -5.4> look_at <0, 1.6, 0> angle 34 right x * image_width / image_height }
@@ -62,11 +64,60 @@ plane { y, 0                                  // dry mud: dark cracks round pale
 // and 1.24 wide, with a middle 0.06 thick (1.2 mm), the wall thins toward the rim as 1 - r^2.
 #ifndef (Mid) #declare Mid = 0.06; #end
 #declare LensR = (1 + (Mid / 2) * (Mid / 2)) / Mid;
+#switch (Receiver)
+#case (1)                                           // photon radius must exceed 400 times the accuracy
+  #declare Half = 1.5;
+  #declare Width = function(x) { 0.62 * pow(max(1 - x * x / (Half * Half), 0.0001), 0.7) }
+  #declare Thick = function(x, z) { 0.026 * max(1 - x * x / (Half * Half), 0.0001) * max(1 - z * z / (Width(x) * Width(x)), 0.0001) + 0.003 }
+  #declare Arch = function(x, z) { 0.05 * x * x + 0.03 * z * z }
+  #declare LeafShape = isosurface {
+    function { max(abs(y - Arch(x, z)) - Thick(x, z), abs(z) - Width(x)) }
+    contained_by { box { <-1.55, -0.3, -0.75>, <1.55, 0.7, 0.75> } }
+    max_gradient 6 accuracy 0.0001
+  }
+#break
+#case (2)
+  #declare Rings = 40; #declare Spokes = 128;
+  #declare Face = function(r) { sqrt(LensR * LensR - r * r) - (LensR - Mid / 2) }
+  #macro V(S, I, J) (I = 0 ? S : (I = Rings ? 2 + 2 * (Rings - 1) * Spokes + mod(J, Spokes) : 2 + (S * (Rings - 1) + I - 1) * Spokes + mod(J, Spokes))) #end
+  #declare LeafShape = mesh2 {
+    vertex_vectors { 2 + (2 * Rings - 1) * Spokes, <0, Face(0), 0>, <0, -Face(0), 0>
+      #for (S, 0, 1) #for (I, 1, Rings - 1) #for (J, 0, Spokes - 1)
+        , <I / Rings * cos(2 * pi * J / Spokes), (1 - 2 * S) * Face(I / Rings), I / Rings * sin(2 * pi * J / Spokes)>
+      #end #end #end
+      #for (J, 0, Spokes - 1) , <cos(2 * pi * J / Spokes), 0, sin(2 * pi * J / Spokes)> #end
+    }
+    face_indices { 2 * Spokes * (2 * Rings - 1)
+      #for (S, 0, 1) #for (J, 0, Spokes - 1)
+        , <V(S, 0, 0), V(S, 1, J), V(S, 1, J + 1)>
+        #for (I, 1, Rings - 1) , <V(S, I, J), V(S, I + 1, J), V(S, I + 1, J + 1)>, <V(S, I, J), V(S, I + 1, J + 1), V(S, I, J + 1)> #end
+      #end #end
+    }
+    inside_vector <0.13, 1, 0.07>
+    scale <1.5, 1, 0.62>
+  }
+#break
+#case (3)
+  #declare LeafShape = difference {
+    intersection {
+      sphere { <0, LensR - Mid / 2, 0>, LensR }
+      sphere { <0, -(LensR - Mid / 2), 0>, LensR }
+    }
+    #local Holes = seed(7);
+    #for (I, 0, 11)
+      #local A = 2 * pi * rand(Holes); #local D = 0.2 + 0.6 * rand(Holes);
+      cylinder { <D * cos(A), -1, D * sin(A)>, <D * cos(A), 1, D * sin(A)>, 0.03 + 0.04 * rand(Holes) }
+    #end
+    scale <1.5, 1, 0.62>
+  }
+#break
+#else
 #declare LeafShape = intersection {
   sphere { <0, LensR - Mid / 2, 0>, LensR }
   sphere { <0, -(LensR - Mid / 2), 0>, LensR }
   scale <1.5, 1, 0.62>
 }
+#end
 
 // Cells: thin dark walls where the voronoi distance is small, a bright speckled chlorophyll interior elsewhere, the
 // whole field distorted over several octaves.

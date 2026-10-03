@@ -218,6 +218,10 @@ class PhotonMap final
         Photon& GetPhoton(unsigned int photonId);
         const Photon& GetPhoton(unsigned int photonId) const;
 
+        /// Photons are stored in blocks of this many, so a photon's index is its block's id times this plus its offset.
+        static unsigned int GetBlockSize();
+        const Photon* GetBlockStart(unsigned int blockId) const;
+
     protected:
 
         /* ------------------------------------------------------ */

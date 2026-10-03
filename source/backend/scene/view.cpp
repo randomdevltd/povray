@@ -1358,10 +1358,12 @@ void View::GetStatistics(POVMS_Object& renderStats)
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
         double mean = double(stats[Subsurface_Photon_Radius_Sum]) / photonGathers;
         double variance = max(0.0, double(stats[Subsurface_Photon_Radius_Squared_Sum]) / photonGathers - Sqr(mean));
-        messages.Info("Entry gathers: cloud %.0f, sampled %.0f, fallback %.0f; searches %.0f; deposits %.0f/%.0f accepted; radius %.6g +/- %.6g.",
+        messages.Info("Entry gathers: cloud %.0f, sampled %.0f, fallback %.0f; searches %.0f; deposits %.0f/%.0f accepted; boundaries %.0f computed, %.0f reused; "
+                      "radius %.6g +/- %.6g.",
                       double(stats[Subsurface_Photon_Cloud_Gathers]), double(stats[Subsurface_Photon_Sample_Gathers]),
                       double(stats[Subsurface_Photon_Fallbacks]), double(stats[Subsurface_Photon_Searches]),
-                      double(stats[Subsurface_Photon_Accepted]), double(stats[Subsurface_Photon_Candidates]), mean, sqrt(variance));
+                      double(stats[Subsurface_Photon_Accepted]), double(stats[Subsurface_Photon_Candidates]),
+                      double(stats[Subsurface_Photon_Boundaries_Computed]), double(stats[Subsurface_Photon_Boundaries_Reused]), mean, sqrt(variance));
     }
 
     if (stats[Subsurface_Cloud_Attempts] > 0)

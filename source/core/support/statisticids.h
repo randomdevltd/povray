@@ -280,6 +280,8 @@ typedef enum INTSTATS
     Subsurface_Photon_Candidates,
     Subsurface_Photon_Accepted,
     Subsurface_Photon_Fallbacks,
+    Subsurface_Photon_Boundaries_Computed,
+    Subsurface_Photon_Boundaries_Reused,
     Subsurface_Walls,
     Subsurface_Thin_Walls,
     Subsurface_Cloud_Attempts,
