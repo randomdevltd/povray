@@ -180,7 +180,7 @@
 <a name="r3_10"></a>
 <div class="content-level-h2" contains="Portals and Screens" id="r3_10">
 <h2>3.10 Portals and Screens</h2>
-<p>A <code>screen</code> is a pigment that shows what a camera sees. A <code>portal</code> is an object whose body leads somewhere else in the scene: a ray that enters it carries on from another place. Both trace their view while the render is running, as part of the ray that met them, so a television can show the room it stands in, a doorway can open onto a coast a thousand units away, and a glass jar can hold a small copy of the room around it.</p>
+<p>A <code>screen</code> is a pigment that shows what a camera sees: where a ray meets it, a new ray is traced from that camera, inheriting only the weight, limits and depth counters of the ray that met the screen. A <code>portal</code> is an object whose body leads somewhere else in the scene: a ray that enters it carries on from another place. Both trace their view while the render is running, so a television can show the room it stands in, a doorway can open onto a coast a thousand units away, and a glass jar can hold a small copy of the room around it.</p>
 <p>This chapter starts with the problems these two features solve and how they were solved before, then describes every option of the <code>screen</code> pattern and the <code>portal</code> object with its default and the messages it can raise, the global settings that change how they behave, a set of use cases, and the errors, warnings and known limits.</p>
 <p>Quick Links:</p>
 <ul>
@@ -377,7 +377,7 @@ object { Panel(1.6, 1.2, pigment { screen { camera { View } max_trace_level 2 fa
   </td>
 </tr>
 </table>
-<p>A view is traced as a continuation of the ray that met the screen. It inherits that ray's weight, so <code>adc_bailout</code> ends faint views early; its limit on reflection and refraction, which starts again from zero inside each view; and its radiosity and subsurface depth. Trace levels and nested views of every kind together are capped by the compile-time <a href="r3_10.html#r3_10_4">NESTED_VIEW_DEPTH_LIMIT</a>; at that cap a screen shows its fallback too.</p></div>
+<p>A view is not a continuation of the ray that met the screen: it is traced with new rays from the screen's camera, through the point of the camera's frame that the ray met, and nothing of that ray's path or direction carries on. It inherits that ray's weight, so <code>adc_bailout</code> ends faint views early; its limit on reflection and refraction, which starts again from zero inside each view; and its radiosity and subsurface depth. Trace levels and nested views of every kind together are capped by the compile-time <a href="r3_10.html#r3_10_4">NESTED_VIEW_DEPTH_LIMIT</a>; at that cap a screen shows its fallback too.</p></div>
 
 <a name="r3_10_2_4"></a>
 <div class="content-level-h4" contains="Shadows, Photons and Where a Screen Is Traced" id="r3_10_2_4">
