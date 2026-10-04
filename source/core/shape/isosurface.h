@@ -47,7 +47,9 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <functional>
 #include <memory>
+#include <string>
 
 // Boost header files
 #include <boost/intrusive_ptr.hpp>
@@ -98,6 +100,13 @@ struct ISO_Pair final
 
 struct ISO_Max_Gradient;
 struct ISO_ThreadData;
+class MeshBuilder;
+
+/// What building an isosurface_mesh found and spent.
+struct IsoSurfaceMeshReport final
+{
+    size_t openEdges = 0, peakBytes = 0, rangeCells = 0, sampledCells = 0, missedCells = 0;
+};
 
 class IsoSurface final : public ObjectBase
 {
@@ -132,6 +141,13 @@ class IsoSurface final : public ObjectBase
         virtual void Compute_BBox() override;
 
         virtual void DispatchShutdownMessages(GenericMessenger& messenger) override;
+
+        static const size_t kMaxMeshTriangles = 2000000;
+
+        /// Builds a triangle mesh of the surface in `contained_by`: cells no smaller than `minSize`, split while the normal turns more than
+        /// `maxAngle` degrees across one; returns an error message, empty on success.
+        std::string Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, MeshBuilder& mesh, IsoSurfaceMeshReport& report,
+                               const std::function<void()>& progress) const;
 
     protected:
         bool Function_Find_Root(ISO_ThreadData& itd, const Vector3d&, const Vector3d&, DBL*, DBL*, DBL& max_gradient, bool in_shadow_test, TraceThreadData* pThreadData);

@@ -250,6 +250,31 @@ private:
         static UV_HASH_TABLE **UV_Hash_Table;
 };
 
+/// Fills a mesh's own arrays as triangles arrive, one vertex per distinct position, normal and uv, so the mesh needs no index lists.
+class MeshBuilder final
+{
+    public:
+
+        MeshBuilder(Mesh& mesh, bool uv);
+
+        MeshIndex Vertex(const Vector3d& p, const Vector3d& n, const Vector2d& uv = Vector2d());
+        /// Adds a triangle unless its corners, as stored, are degenerate; returns whether it was added.
+        bool Triangle(MeshIndex a, MeshIndex b, MeshIndex c);
+        MeshIndex Vertices() const { return vertices; }
+        MeshIndex Triangles() const { return triangles; }
+        /// Bytes the finished mesh holds, or (with `spare`) the arrays hold now.
+        size_t Bytes(bool spare = false) const;
+        /// Trims the arrays, sets up every triangle and, for a closed mesh, an inside vector.
+        void Finish(bool closed);
+
+    private:
+
+        Mesh& mesh;
+        MESH_DATA& data;
+        bool uv;
+        MeshIndex vertices = 0, triangles = 0, vertexRoom = 0, triangleRoom = 0;
+};
+
 /// @}
 ///
 //##############################################################################
