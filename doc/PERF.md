@@ -76,7 +76,8 @@ where the root solve shifts 108 of 16.9 million accepted deposits across the mat
 
 ## Ordinary photon gathering
 
-On `lights/phot_met_glass.pov` at 960×480, one thread, `+PR -A`, shooting used about 0.15 CPU seconds,
+On `lights/phot_met_glass.pov` at 960×480, one thread, `+PR -A`, photon preparation used about 0.15 CPU seconds
+(0.113 shooting and 0.038 map preparation in a diagnostic split),
 while tracing used a median 4.512 CPU seconds with photons and 0.709 without them. Raising the gather cap
 from 100 to 400 raised trace CPU to 14.201 seconds, with the same 465,290 gather calls. The search and
 per-photon work deserve attention before the shooting scheduler on a scene like this. These are
