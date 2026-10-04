@@ -2318,9 +2318,9 @@ void PhotonGatherer::gatherPhotonsRec(int start, int end)
 
     // find distance in DimToUse (largest of the photon's dimensions) from pt
     delta=(*pt_s)[DimToUse]-photon->Loc[DimToUse];
-    dSqr = Sqr(delta);
+    const DBL splitDistanceSquared = Sqr(delta);
 
-    if (dSqr<dmax_s)
+    if (splitDistanceSquared<dmax_s)
     {
         // it fits DimToUse distance - maybe we can use this photon
 
@@ -2352,10 +2352,7 @@ void PhotonGatherer::gatherPhotonsRec(int start, int end)
         if(dSqr < dmax_s)
         {
             if (gatheredPhotons.numFound+1>TargetNum_s)
-            {
                 FullPQInsert(photon, dSqr);
-                sqrt_dmax_s = sqrt(dmax_s);
-            }
             else
                 PQInsert(photon, dSqr);
         }
@@ -2380,30 +2377,18 @@ void PhotonGatherer::gatherPhotonsRec(int start, int end)
     if(delta<0)
     {
         // on left - go left first
-        if ((*pt_s)[DimToUse]-sqrt_dmax_s < photon->Loc[DimToUse])
-        {
-            if (mid-1>=start)
-                gatherPhotonsRec(start, mid - 1);
-        }
-        if ((*pt_s)[DimToUse]+sqrt_dmax_s > photon->Loc[DimToUse])
-        {
-            if(end>=mid+1)
-                gatherPhotonsRec(mid + 1, end);
-        }
+        if (mid-1>=start)
+            gatherPhotonsRec(start, mid - 1);
+        if (splitDistanceSquared < dmax_s && end>=mid+1)
+            gatherPhotonsRec(mid + 1, end);
     }
     else
     {
         // on right - go right first
-        if ((*pt_s)[DimToUse]+sqrt_dmax_s > photon->Loc[DimToUse])
-        {
-            if(end>=mid+1)
-                gatherPhotonsRec(mid + 1, end);
-        }
-        if ((*pt_s)[DimToUse]-sqrt_dmax_s < photon->Loc[DimToUse])
-        {
-            if (mid-1>=start)
-                gatherPhotonsRec(start, mid - 1);
-        }
+        if(end>=mid+1 && dmax_s > 0)
+            gatherPhotonsRec(mid + 1, end);
+        if (splitDistanceSquared < dmax_s && mid-1>=start)
+            gatherPhotonsRec(start, mid - 1);
     }
 }
 
@@ -2462,6 +2447,8 @@ int PhotonGatherer::gatherPhotons(const Vector3d* pt, DBL Size, DBL *r, const Ve
     gatherPhotonsRec(0, map->numPhotons-1);
 
     // set the radius variable
+    if (dmax_s < size_sq_s)
+        sqrt_dmax_s = sqrt(dmax_s);
     *r = sqrt_dmax_s;
 
     if(gatheredPhotons.numFound>0)
