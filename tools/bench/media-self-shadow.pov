@@ -13,6 +13,8 @@
 #ifndef (Group) #declare Group = 1; #end
 #ifndef (Glow) #declare Glow = 0.25; #end
 #ifndef (Ext) #declare Ext = 0.4; #end
+#ifndef (Fast) #declare Fast = 0; #end
+#ifndef (CellSize) #declare CellSize = 0.1; #end
 global_settings { assumed_gamma 1.0 max_trace_level 10 }
 camera { perspective location <0, 2.1, -4.2> look_at <0, 0.6, 0> angle 60 right x * 16 / 9 up y }
 light_source { <-300, 400, -200>, rgb 0.6 parallel point_at <0, 0, 0> }
@@ -39,6 +41,7 @@ object { Floor pigment { rgb <0.35, 0.3, 0.25> } }
   pigment { rgbt 1 }
   interior {
     media {
+      #if (Fast) method 4 resolution CellSize #else method 3 #end
       scattering { 1, <0.80, 0.86, 0.92> * Glow extinction Ext }
       density {
         gradient y
@@ -48,7 +51,7 @@ object { Floor pigment { rgb <0.35, 0.3, 0.25> } }
       }
       #if (Bozo) density { bozo density_map { [0 rgb 0.7] [1 rgb 1] } scale 0.1 } #end
       density { function { max(0, 1 - sqrt(x * x + z * z) / 3.9) } }
-      method 3 intervals Intervals samples Samples
+      intervals Intervals samples Samples
     }
   }
   #if (!Shadow) no_shadow #end
