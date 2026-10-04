@@ -2805,6 +2805,45 @@ ObjectPtr Parser::Parse_Isosurface()
 
     Object = new IsoSurface();
 
+    Parse_Isosurface_Body(Object, nullptr, nullptr);
+
+    Parse_Object_Mods (reinterpret_cast<ObjectPtr>(Object));
+
+    return (reinterpret_cast<ObjectPtr>(Object));
+}
+
+ObjectPtr Parser::Parse_Isosurface_Mesh()
+{
+    Parse_Begin();
+
+    const auto start = std::chrono::steady_clock::now();
+    std::unique_ptr<IsoSurface> iso(new IsoSurface());
+    DBL minSize = -1.0, maxAngle = 10.0;
+    Parse_Isosurface_Body(iso.get(), &minSize, &maxAngle);
+
+    std::unique_ptr<Mesh> object(new Mesh());
+    MeshBuilder built(*object, false);
+    IsoSurfaceMeshReport report;
+    const std::string problem = iso->Tessellate(GetParserDataPtr(), minSize, maxAngle, built, report,
+                                                [this]() { mProgressReporter.ReportProgress(mTokenCount); });
+    if (!problem.empty())
+        Error("%s", problem.c_str());
+    iso.reset();
+    if (report.missedCells > 0)
+        Warning("isosurface_mesh: max_gradient is too low; %d cells it ruled out touch the surface.", int(report.missedCells));
+    const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
+    Debug_Info("isosurface_mesh: %d triangles, %d vertices, %d open edges, %d bytes (%.1f per triangle), %d bytes peak, %.3f s; "
+               "%d cells range-checked, %d sampled\n", int(built.Triangles()), int(built.Vertices()), int(report.openEdges), int(built.Bytes()),
+               DBL(built.Bytes()) / built.Triangles(), int(report.peakBytes), seconds, int(report.rangeCells), int(report.sampledCells));
+
+    object->Compute_BBox();
+    Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object.get()));
+    object->Build_Mesh_BBox_Tree();
+    return reinterpret_cast<ObjectPtr>(object.release());
+}
+
+void Parser::Parse_Isosurface_Body(IsoSurface *Object, DBL *minSize, DBL *maxAngle)
+{
     GET(FUNCTION_TOKEN);
 
     Object->Function = new FunctionVM::CustomFunction(fnVMContext->functionvm.get(), Parse_Function());
@@ -2852,8 +2891,23 @@ ObjectPtr Parser::Parse_Isosurface()
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if ((minSize != nullptr) && (CurrentTokenText() == "min_size"))
+            {
+                *minSize = Parse_Float();
+                if (*minSize < 0.0)
+                    Error("isosurface_mesh: min_size cannot be negative.");
+            }
+            else if ((maxAngle != nullptr) && (CurrentTokenText() == "max_angle"))
+            {
+                *maxAngle = Parse_Float();
+                if (!(*maxAngle > 0.0))
+                    Error("isosurface_mesh: max_angle must be above 0.");
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -2867,10 +2921,6 @@ ObjectPtr Parser::Parse_Isosurface()
         Warning("Isosurface 'max_gradient' is not positive. Using 1.1 (default).");
         Object->max_gradient = 1.1;
     }
-
-    Parse_Object_Mods (reinterpret_cast<ObjectPtr>(Object));
-
-    return (reinterpret_cast<ObjectPtr>(Object));
 }
 
 //******************************************************************************
@@ -6661,6 +6711,10 @@ ObjectPtr Parser::Parse_Object ()
 
         CASE (SKEIN_MESH_TOKEN)
             Object = Parse_Skein_Mesh ();
+        END_CASE
+
+        CASE (ISOSURFACE_MESH_TOKEN)
+            Object = Parse_Isosurface_Mesh ();
         END_CASE
 
         /* Parse lathe primitive. [DB 8/94] */

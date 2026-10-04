@@ -88,6 +88,7 @@ class Blob_Element;
 struct ContainedByShape;
 struct GenericSpline;
 class ImageData;
+class IsoSurface;
 class Mesh;
 struct PavementPattern;
 class Portal;
@@ -834,6 +835,8 @@ class Parser final
         void Set_CSG_Tree_Flag(ObjectPtr, unsigned int, int);
 
         ObjectPtr Parse_Isosurface();
+        ObjectPtr Parse_Isosurface_Mesh();
+        void Parse_Isosurface_Body(IsoSurface *object, DBL *minSize, DBL *maxAngle);
         ObjectPtr Parse_Parametric();
         void ParseContainedBy(std::shared_ptr<ContainedByShape>& container, ObjectPtr obj);
 

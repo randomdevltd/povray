@@ -822,7 +822,31 @@ isosurface {
 
 <p><em>Isosurfaces</em> can be used in CSG shapes since they are solid finite objects - if not finite by themselves, they are through the cross section with the container. By default POV-Ray searches only for the first surface which the ray intersects. However, when using an <code>isosurface</code> in CSG operations, the other surfaces must also be found. Consequently, the keyword <code>max_trace</code> followed by an integer value, must be added to the <code>isosurface</code> statement. To check for all surfaces, use the keyword <code>all_intersections</code> instead. With <code>max_trace</code> it only checks until that number is reached.</p>
 <p class="Note"><strong>Note:</strong> The current implementation has a <em>limit</em> of 10 <em>intersections</em> in all cases.</p>
-<p>By default, the inside of an <code>isosurface</code> is defined as the set of all points inside the <code>contained_by</code> shape where the function values are below the threshold. <font class="New">New</font> in version 3.8 this can be changed via the <code>polarity</code> keyword. Specifying a <em>positive</em> setting or <code>on</code> will instead cause function values <em>above</em> the threshold to be considered inside. Specifying a <em>negative</em> setting or <code>off</code> will give the default behavior.</div>
+<p>By default, the inside of an <code>isosurface</code> is defined as the set of all points inside the <code>contained_by</code> shape where the function values are below the threshold. <font class="New">New</font> in version 3.8 this can be changed via the <code>polarity</code> keyword. Specifying a <em>positive</em> setting or <code>on</code> will instead cause function values <em>above</em> the threshold to be considered inside. Specifying a <em>negative</em> setting or <code>off</code> will give the default behavior.</p>
+
+<h6>Isosurface Mesh</h6>
+<p><code>isosurface_mesh</code> takes everything an <code>isosurface</code> takes and builds a triangle mesh of its surface when the scene is parsed. The result is a <code>mesh2</code> in every respect: it can be declared, used with <code>object</code>, copied, transformed and textured, and a closed one works in CSG. A mesh renders far faster than the isosurface it was made from, and every copy of a declared <code>isosurface_mesh</code> shares one set of triangles, so it suits quick iteration and distant copies.</p>
+<pre>
+isosurface_mesh {
+  function { FUNCTION_ITEMS }
+  [contained_by { SPHERE | BOX }]
+  [threshold FLOAT_VALUE]
+  [max_gradient FLOAT_VALUE]
+  [open]
+  [polarity FLOAT_VALUE]
+  [min_size S]
+  [max_angle A]
+  [OBJECT_MODIFIERS...]
+}
+</pre>
+<p>The mesh is built on an octree of cubes over the <code>contained_by</code> shape. A cube in which the function cannot reach the threshold is left whole: range arithmetic proves it when the function uses only <code>+</code>, <code>-</code>, <code>*</code>, division by a constant, <code>abs</code>, <code>min</code>, <code>max</code> and functions made of these; otherwise one sample at the cube's centre and <code>max_gradient</code> decide, as the isosurface itself trusts <code>max_gradient</code>. Other cubes split:</p>
+<table width="100%" class="option-list">
+<tr><td><code>max_angle</code></td><td>Degrees, default 10. A cube splits while the function's gradient turns more than this across it, unless the turn is a crease or a corner (two or three groups of nearly equal gradients far apart), which the cube's vertex can sit on. A smaller angle follows curves more closely with more triangles.</td></tr>
+<tr><td><code>min_size</code></td><td>Object units, default a thousandth of the container's largest side. No cube splits smaller than this. Thin parts and small pieces inside one cube can be missed.</td></tr>
+</table>
+<p>Each cube that the surface passes through has one vertex, placed where the tangent planes at the surface's crossings of the cube's edges meet (dual contouring), so flat faces, sharp edges and corners come out exact at any cube size. The vertex is then moved onto the surface along the gradient, and its normal is the gradient there; triangles that span a crease take separate normals on either side. Each cube edge the surface crosses joins the vertices of the cubes around it, so cubes of different sizes meet without cracks. Where the surface meets the container the mesh is closed by the container, as the isosurface is, and is given an inside vector; with <code>open</code> it stops at the container instead, and the cubes along that rim split down to <code>min_size</code>. The mesh has no uv coordinates.</p>
+<p>A sphere of radius 1 at the default <code>max_angle</code> is 6348 triangles within 0.002 of the true surface, built in 0.04 seconds; a cube turned off the axes is 408 triangles with its edges and corners exact; a sphere displaced by <code>f_noise3d</code> is 136,000 triangles built in about 2.5 seconds, and renders five times faster than the isosurface. The finished mesh takes about 24 bytes per triangle; building it takes more for a while, about 450 bytes per triangle for the noisy sphere. A mesh may hold at most two million triangles; a <code>min_size</code> and <code>max_angle</code> that would need more stop the parse with an error. Each <code>isosurface_mesh</code> writes one line to the debug stream with its triangles, vertices, open edges, size in bytes, peak memory while building, build time, and how many cubes range arithmetic checked and how many a sample judged. If a cube ruled out by a sample turns out to touch the surface, a warning says <code>max_gradient</code> is too low.</p>
+<p>An <code>isosurface_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>isosurface_mesh</code> twice. It is built again each time the scene is parsed, so every run and every frame of an animation pays the build once; the time saved in tracing grows with the size of the image and with the number of copies.</p></div>
 
 <a name="r3_5_1_1_7"></a>
 <div class="content-level-h5" contains="Julia Fractal" id="r3_5_1_1_7">

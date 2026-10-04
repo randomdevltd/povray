@@ -967,6 +967,97 @@ void Mesh::Finish_Mesh_Data()
     Data->Texture23Ind.Finish(Data->Triangles, n, false, Three_Tex_Triangle);
 }
 
+MeshBuilder::MeshBuilder(Mesh& m, bool withUV) :
+    mesh(m), data(*(m.Data = new MESH_DATA())), uv(withUV)
+{
+    data.References = 1;
+}
+
+MeshIndex MeshBuilder::Vertex(const Vector3d& p, const Vector3d& n, const Vector2d& uvs)
+{
+    if (vertices == vertexRoom)
+    {
+        if (vertexRoom >= MESH_MAX_VERTICES / 2)
+            throw POV_EXCEPTION(kOutOfMemoryErr, "Too many mesh vertices.");
+        vertexRoom = std::max(MeshIndex(1024), 2 * vertexRoom);
+        data.Vertices = reinterpret_cast<MeshVector *>(POV_REALLOC(data.Vertices, vertexRoom * sizeof(MeshVector), "triangle mesh data"));
+        data.Normals = reinterpret_cast<MeshVector *>(POV_REALLOC(data.Normals, vertexRoom * sizeof(MeshVector), "triangle mesh data"));
+        if (uv)
+            data.UVCoords = reinterpret_cast<MeshUVVector *>(POV_REALLOC(data.UVCoords, vertexRoom * sizeof(MeshUVVector), "triangle mesh data"));
+    }
+    data.Vertices[vertices] = MeshVector(p);
+    data.Normals[vertices] = MeshVector(n);
+    if (uv)
+        data.UVCoords[vertices] = MeshUVVector(uvs);
+    return vertices++;
+}
+
+bool MeshBuilder::Triangle(MeshIndex a, MeshIndex b, MeshIndex c)
+{
+    const Vector3d p0(data.Vertices[a]), p1(data.Vertices[b]), p2(data.Vertices[c]);
+    if (cross(p1 - p0, p2 - p0).lengthSqr() == 0.0)
+        return false;
+    if (triangles == triangleRoom)
+    {
+        if (triangleRoom >= MESH_MAX_VERTICES / 2)
+            throw POV_EXCEPTION(kOutOfMemoryErr, "Too many mesh triangles.");
+        triangleRoom = std::max(MeshIndex(1024), 2 * triangleRoom);
+        data.Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_REALLOC(data.Triangles, triangleRoom * sizeof(MESH_TRIANGLE), "triangle mesh data"));
+    }
+    MESH_TRIANGLE& t = data.Triangles[triangles++];
+    mesh.Init_Mesh_Triangle(&t);
+    t.SetP(0, a);
+    t.SetP(1, b);
+    t.SetP(2, c);
+    return true;
+}
+
+size_t MeshBuilder::Bytes(bool spare) const
+{
+    const size_t v = size_t(spare ? vertexRoom : vertices), t = size_t(spare ? triangleRoom : triangles);
+    return v * (2 * sizeof(MeshVector) + (uv ? sizeof(MeshUVVector) : 0)) + t * sizeof(MESH_TRIANGLE) + (uv ? 0 : sizeof(MeshUVVector));
+}
+
+void MeshBuilder::Finish(bool closed)
+{
+    if ((vertices == 0) || (triangles == 0))
+        return;
+    data.Vertices = reinterpret_cast<MeshVector *>(POV_REALLOC(data.Vertices, vertices * sizeof(MeshVector), "triangle mesh data"));
+    data.Normals = reinterpret_cast<MeshVector *>(POV_REALLOC(data.Normals, vertices * sizeof(MeshVector), "triangle mesh data"));
+    data.Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_REALLOC(data.Triangles, triangles * sizeof(MESH_TRIANGLE), "triangle mesh data"));
+    if (uv)
+        data.UVCoords = reinterpret_cast<MeshUVVector *>(POV_REALLOC(data.UVCoords, vertices * sizeof(MeshUVVector), "triangle mesh data"));
+    else
+    {
+        data.UVCoords = reinterpret_cast<MeshUVVector *>(POV_MALLOC(sizeof(MeshUVVector), "triangle mesh data"));
+        data.UVCoords[0] = MeshUVVector(0.0, 0.0);
+    }
+    vertexRoom = vertices;
+    triangleRoom = triangles;
+    data.Number_Of_Vertices = data.Number_Of_Normals = vertices;
+    data.Number_Of_UVCoords = uv ? vertices : 1;
+    data.Number_Of_Triangles = triangles;
+    data.NormalInd.byVertex = true;
+    data.UVInd.byVertex = uv;
+    for (MeshIndex i = 0; i < triangles; ++i)
+    {
+        MESH_TRIANGLE& t = data.Triangles[i];
+        const MeshIndex a = t.P(0), b = t.P(1), c = t.P(2);
+        const bool smooth = (Vector3d(data.Normals[a] - data.Normals[b]).lengthSqr() > EPSILON) ||
+                            (Vector3d(data.Normals[a] - data.Normals[c]).lengthSqr() > EPSILON);
+        mesh.Compute_Mesh_Triangle(&t, i, smooth, Vector3d(data.Vertices[a]), Vector3d(data.Vertices[b]), Vector3d(data.Vertices[c]));
+    }
+    mesh.Finish_Mesh_Data();
+    mesh.has_inside_vector = closed;
+    if (closed)
+    {
+        data.Inside_Vect = Vector3d(0.5381, 0.6012, 0.5907).normalized();
+        mesh.Type &= ~PATCH_OBJECT;
+    }
+    else
+        mesh.Type |= PATCH_OBJECT;
+}
+
 bool Mesh::Vertices_Finite() const
 {
     // By bit pattern: -ffast-math folds std::isfinite to true.
