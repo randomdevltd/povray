@@ -1090,6 +1090,21 @@ The initial unrestricted SIMD selection regressed noise-only fixtures by 5–7%;
 still regressed the nested cloud by 4%. The conservative gate avoids those measured regressions.
 Actual multi-point noise remains a separate kernel experiment.
 
+On the current `performance` base, three full renders of each build at `+PR -A +WT1`, minus a
+matching one-pixel parse run, measured the following user-space instructions. The function fixtures
+were 240×180; the stock `interior/media/micro.pov` scene was rendered at the same size. The
+four-volume scene was one complete 96×54 render per build, with the same parse subtraction. All
+compared 16-bit pixel payloads matched, and no counter events were multiplexed.
+
+| Scene | Base G instructions | This change | Difference |
+|---|---:|---:|---:|
+| Function density, SIMD maths (case 7) | 17.455 | 12.205 | −30.08% |
+| Function density, noise plus maths (case 1) | 15.444 | 11.944 | −22.66% |
+| Function density, noise only (case 0) | 8.837 | 8.557 | −3.16% |
+| Function density, nested cloud (case 3) | 32.673 | 32.394 | −0.85% |
+| Stock `micro.pov` media scene | 24.225 | 24.225 | 0.00% |
+| Four overlapping volumes, two media-aware lights (`media-combined.pov`) | 3872.078 | 2913.591 | −24.75% |
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
