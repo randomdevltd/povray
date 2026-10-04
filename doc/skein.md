@@ -1515,6 +1515,12 @@ normalize(x Tu + y Tv + z N), as a normal map's channels; nothing else rotates. 
   folded centre: the incoming slopes' interval reach (sampled at 3 by 3 with a 1.5 margin when they are not exact)
   times the half widths. That shrinks with the patch, which is the wizard-hat lesson; a blended field adds its
   largest loop gap's slope. The box is a cube, not oriented, so it is up to about 1.7 times the patch's own.
+- **Checks.** `skein_fold.pov` (400 rays each): a 120 degree hinge by x, y, z and by perturb against `crease`, 0.058e-9 in
+  points and 0.069e-9 in normals; thickened by an envelope, 0.196e-9 and 3.849e-9, inside() 216 of 216; a 180 degree
+  hinge by perturb, 0.301e-9 and 0.700e-9; a torus folded to its own normals, 3.243e-9 and 4.340e-9, inside() 216 of 216.
+  Box cost (`skein_fold_box.pov`, rows 12 and 13 of 24 by 24): 284 unresolved patches and 10742 bound tests in 0.08 s;
+  with a box that does not shrink, 5582614 and 7445214 in 147 s. The whole 24 by 24 view: 2532 unresolved and 104644
+  bound tests, against 142 and 16042 for the same view as a `crease`, whose box is exact.
 - **Values** of a fold take no function slots: nothing encloses them, so no patch samples the chain for them.
 
 ### Review fixes: the function context, copied axes and the check guards
