@@ -9585,6 +9585,10 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     if (Object->interior != nullptr)
         Object->interior->PostProcess();
 
+    if ((Object->interior != nullptr) && ((Parent == nullptr) || (Parent->Type & LIGHT_GROUP_OBJECT)))
+        for (Media& medium : Object->interior->media)
+            medium.SetFastContainer(Object);
+
     if ((Object->Texture == nullptr) &&
         !(Object->Type & TEXTURED_OBJECT) &&
         !(Object->Type & LIGHT_SOURCE_OBJECT))

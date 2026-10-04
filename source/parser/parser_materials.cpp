@@ -36,6 +36,8 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
 
+#include <cmath>
+
 // C++ variants of C standard header files
 // C++ standard header files
 //  (none at the moment)
@@ -3639,6 +3641,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     TRANSFORM Local_Trans;
     Vector3d Local_Vector;
     MATRIX Local_Matrix;
+    bool resolutionSpecified = false;
 
     Parse_Begin();
 
@@ -3646,13 +3649,13 @@ void Parser::Parse_Media(vector<Media>& medialist)
         IMediaObj = CurrentTokenData<Media>();
     else
     {
-        /* as of v3.5, the default media method is now 3 */
+        /* v3.5 defaults to method 3; v4.0 defaults to prepared method 4. */
         if (sceneData->EffectiveLanguageVersion() >= 350)
         {
             IMedia->Intervals = 1;
             IMedia->Min_Samples = 10;
             IMedia->Max_Samples = 10;
-            IMedia->Sample_Method = 3;
+            IMedia->Sample_Method = (sceneData->EffectiveLanguageVersion() >= 400) ? 4 : 3;
         }
     }
 
@@ -3680,14 +3683,21 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (METHOD_TOKEN)
             IMedia->Sample_Method = (int)Parse_Float();
-            if (IMedia->Sample_Method != 1 && IMedia->Sample_Method!= 2 && IMedia->Sample_Method!= 3)
+            if (IMedia->Sample_Method < 1 || IMedia->Sample_Method > 4)
             {
-                Error("Sample method choices are 1, 2, or 3.");
+                Error("Sample method choices are 1, 2, 3, or 4.");
             }
         END_CASE
 
         CASE (JITTER_TOKEN)
             IMedia->Jitter = Parse_Float();
+        END_CASE
+
+        CASE (RESOLUTION_TOKEN)
+            resolutionSpecified = true;
+            IMedia->FastResolution = Parse_Float();
+            if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
+                Error("media resolution needs a finite positive scene-unit width.");
         END_CASE
 
         CASE (AA_THRESHOLD_TOKEN)
@@ -3805,6 +3815,9 @@ void Parser::Parse_Media(vector<Media>& medialist)
     END_EXPECT
 
     Parse_End();
+
+    if (resolutionSpecified && IMedia->Sample_Method != 4)
+        Error("media resolution requires method 4.");
 
     medialist.push_back(IMediaObj);
 }
