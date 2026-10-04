@@ -505,6 +505,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { SINT8_TOKEN,                  "sint8" },
     { SIZE_TOKEN,                   "size" },
     { SKEIN_TOKEN,                  "skein" },
+    { SKEIN_MESH_TOKEN,             "skein_mesh" },
     { SKY_TOKEN,                    "sky" },
     { SKYSPHERE_TOKEN,              "sky_sphere" },
     { SLICE_TOKEN,                  "slice" },

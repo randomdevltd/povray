@@ -91,6 +91,7 @@ class ImageData;
 class Mesh;
 struct PavementPattern;
 class Portal;
+class Skein;
 struct SkeinAxis;
 struct SkeinData;
 struct SkeinImage;
@@ -841,6 +842,8 @@ class Parser final
 
         // parser_skein.cpp
         ObjectPtr Parse_Skein();
+        ObjectPtr Parse_Skein_Mesh();
+        void Parse_Skein_Body(Skein *object, DBL *minSize, DBL *maxAngle);
         void *Parse_Skein_Group();
         void Parse_Skein_Expressions(std::vector<SkeinStep>& steps);
         void Parse_Skein_Step(std::vector<SkeinStep>& steps);
