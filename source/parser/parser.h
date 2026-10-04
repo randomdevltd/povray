@@ -851,6 +851,7 @@ class Parser final
         void Parse_Skein_Axis(Vector3d& axis, std::shared_ptr<SkeinAxis>& curve, const char *where);
         void Parse_Skein_Bend(std::vector<SkeinStep>& steps);
         void Parse_Skein_Curl(std::vector<SkeinStep>& steps);
+        void Parse_Skein_Conform(std::vector<SkeinStep>& steps);
         void Parse_Skein_Sample(std::vector<SkeinStep>& steps);
         void Parse_Skein_Envelope(std::vector<SkeinStep>& steps);
         void Parse_Skein_Value(SkeinValue& value, const char *where);
