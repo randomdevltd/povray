@@ -3869,7 +3869,10 @@ object {
   My_Thing
   no_shadow
   }
-</pre></div>
+</pre>
+<p>Photons skip a <code>no_shadow</code> object as if it were not there, unless it is a photon target
+or has <code>photons { <a href="r3_4.html#r3_4_3_4_4">pass_through</a> off }</code>.
+A photon target with <code>no_shadow</code> still receives the photons shot at it.</p></div>
 
 <a name="r3_5_1_5_7"></a>
 <div class="content-level-h5" contains="No Image Object Modifier" id="r3_5_1_5_7">
@@ -3887,8 +3890,9 @@ OBJECT {
 <br>You can use any combination of no_image, no_reflection and no_shadow with your object.</p>
 <p>When <code>no_image</code> is used, the object will not be seen by
 the camera, either directly or through transparent/refractive objects. However,
-it will still cast shadows, and show up in reflections (unless <code>no_reflection
-</code> and/or <code>no_shadow</code> is used also).</p>
+it will still cast shadows, show up in reflections (unless <code>no_reflection
+</code> and/or <code>no_shadow</code> is used also) and receive photons, so a
+hidden photon target such as a lens still casts its caustic.</p>
 
 <p>Using these three keywords you can produce interesting effects like a sphere
 casting a rectangular shadow, a cube that shows up as a cone in mirrors,

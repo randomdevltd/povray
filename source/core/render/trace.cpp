@@ -114,7 +114,7 @@ bool NoSomethingFlagRayObjectCondition::operator()(const Ray& ray, ConstObjectPt
         return false;
     if(ray.IsRadiosityRay() && Test_Flag(object, NO_RADIOSITY_FLAG))
         return false;
-    if(ray.IsPhotonRay() && Test_Flag(object, NO_SHADOW_FLAG))
+    if(ray.IsPhotonRay() && Hidden_From_Photons(object))
         return false;
     return true;
 }

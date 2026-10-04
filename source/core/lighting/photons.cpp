@@ -181,7 +181,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
                     {
                         // We did *not* hit *the* photon target
 
-                        if ( Test_Flag(bestisect.Object, PH_PASSTHRU_FLAG) //||
+                        if ( Photon_Pass_Through(bestisect.Object) //||
                         //  ( Check_No_Shadow_Group(Best_Intersection.Object, photonOptions.Light) &&
                         //  !Check_Light_Group(Best_Intersection.Object, photonOptions.Light) )
                         )
@@ -208,7 +208,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
                 {
                     // We did *not* hit a photon target
 
-                    if ( Test_Flag(bestisect.Object, PH_PASSTHRU_FLAG) //||
+                    if ( Photon_Pass_Through(bestisect.Object) //||
                     //  ( Check_No_Shadow_Group(Best_Intersection.Object, photonOptions.Light) &&
                     //  !Check_Light_Group(Best_Intersection.Object, photonOptions.Light) )
                     )

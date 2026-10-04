@@ -629,6 +629,7 @@ check: all
 	sh \$(top_srcdir)/tests/render/texture_filter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/antialias_m4.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_photon_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/photon_hidden_target.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 
 # Install scripts in povlibdir.
 nobase_povlib_SCRIPTS = `echo $scriptfiles`

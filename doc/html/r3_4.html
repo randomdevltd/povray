@@ -2787,11 +2787,12 @@ object <strong>unaffected</strong> on their way to a target object. Once a
 photon hits the target object, it will ignore the <code>pass_through</code> 
 flag. This is basically a photon version of the <code>no_shadow</code> 
 keyword, with the exception that media within the object will still be 
-affected by the photons (unless that media specifies collect off). If you 
-use the <code>no_shadow</code> keyword, the object will be tagged as 
-<code>pass_through</code> automatically. You can then turn off 
-<code>pass_through</code> if necessary by simply using <code>photons { 
-pass_through off }</code>.</p>
+affected by the photons (unless that media specifies collect off). Photons 
+skip an object that uses the <code>no_shadow</code> keyword as if it were not 
+there, unless the object is a target or has <code>photons { pass_through off 
+}</code>. A target with <code>no_shadow</code> receives the photons shot at it 
+and lets photons shot at other targets through, as <code>pass_through</code> 
+does. <code>no_image</code> does not affect photons.</p>
 
 <p class="Note"><strong>Note:</strong> Photons will not be shot at an object unless you
 specify the <code>target</code> keyword. Simply turning refraction on will not
