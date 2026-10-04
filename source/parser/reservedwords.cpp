@@ -302,6 +302,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { IRID_TOKEN,                   "irid" },
     { IRID_WAVELENGTH_TOKEN,        "irid_wavelength" },
     { ISOSURFACE_TOKEN,             "isosurface" },
+    { ISOSURFACE_MESH_TOKEN,        "isosurface_mesh" },
 
     { JITTER_TOKEN,                 "jitter" },
     { JPEG_TOKEN,                   "jpeg" },
