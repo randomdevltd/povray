@@ -39,11 +39,13 @@
 // C++ variants of C standard header files
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 
 // C++ standard header files
 #include <algorithm>
+#include <chrono>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -150,6 +152,11 @@ Trace::Trace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFl
 
 Trace::~Trace()
 {
+    if (photonGathersMeasured)
+        std::fprintf(stderr, "Photon gather phases: %llu calls, %llu search-ns, %llu shade-ns\n",
+                     static_cast<unsigned long long>(photonGathersMeasured),
+                     static_cast<unsigned long long>(photonSearchNs),
+                     static_cast<unsigned long long>(photonShadeNs));
 }
 
 namespace
@@ -2186,10 +2193,13 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
     // statistics
     threadData->Stats()[Gather_Performed_Count]++;
 
+    const auto searchStart = std::chrono::steady_clock::now();
     if(gatherer.gathered)
         r = gatherer.alreadyGatheredRadius;
     else
         r = gatherer.gatherPhotonsAdaptive(&IPoint, &Layer_Normal, true);
+    const auto shadeStart = std::chrono::steady_clock::now();
+    photonSearchNs += std::chrono::duration_cast<std::chrono::nanoseconds>(shadeStart - searchStart).count();
 
     n = gatherer.gatheredPhotons.numFound;
     const std::uint64_t photonKey = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
@@ -2286,6 +2296,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 
     // add photon contribution to total lighting
     colour += tmpCol;
+    photonShadeNs += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - shadeStart).count();
+    ++photonGathersMeasured;
 }
 
 // see Diffuse_One_Light in the v3.6 code (lighting.cpp)

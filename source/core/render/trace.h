@@ -1045,6 +1045,9 @@ class Trace
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
         std::unique_ptr<PhotonGatherer> ssltPhotonGatherers[2];
+        std::uint64_t photonSearchNs = 0;
+        std::uint64_t photonShadeNs = 0;
+        std::uint64_t photonGathersMeasured = 0;
         /// The finished cells this thread has used, so it need not ask the shared cache again.
         std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
 
