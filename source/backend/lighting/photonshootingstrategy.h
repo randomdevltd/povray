@@ -44,9 +44,11 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
-#include <cstdint>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -78,6 +80,7 @@ class PhotonShootingStrategy final
         void beginUnit(PhotonShootingUnit& unit, ViewThreadData* worker);
         void recordRing(PhotonShootingUnit& unit, ViewThreadData* worker, DBL theta);
         void finishShooting();
+        bool pastCutoff(std::uint64_t ringIndex) const;
 
         virtual ~PhotonShootingStrategy();
 
@@ -104,6 +107,12 @@ class PhotonShootingStrategy final
         DBL fullMaxTheta = 0;
         bool split = false;
         std::vector<UnitProgress> progress;
+        std::vector<DBL> thetaValues;
+        std::unique_ptr<std::atomic<unsigned char>[]> ringStates;
+        std::atomic<std::uint64_t> cutoffIndex{std::numeric_limits<std::uint64_t>::max()};
+        std::size_t completedPrefix = 0;
+        bool prefixHasHit = false;
+        std::mutex resultMutex;
         std::vector<PhotonShootingUnit*>::iterator iter;
         std::mutex nextUnitMutex;
 

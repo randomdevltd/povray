@@ -92,7 +92,7 @@ void PhotonShootingStrategy::start()
                     break;
                 next = after;
             }
-            if (next >= combo.maxtheta && theta.size() > 1)
+            if (next >= combo.maxtheta && theta.size() >= 512)
             {
                 fullMaxTheta = combo.maxtheta;
                 const std::size_t chunks = std::min(theta.size(), std::size_t(threads) * 4);
@@ -112,6 +112,10 @@ void PhotonShootingStrategy::start()
                 }
                 delete whole;
                 units = std::move(divided);
+                thetaValues = std::move(theta);
+                ringStates.reset(new std::atomic<unsigned char>[thetaValues.size()]);
+                for (std::size_t i = 0; i < thetaValues.size(); ++i)
+                    ringStates[i].store(0, std::memory_order_relaxed);
                 split = true;
             }
         }
@@ -136,11 +140,32 @@ void PhotonShootingStrategy::beginUnit(PhotonShootingUnit& unit, ViewThreadData*
 
 void PhotonShootingStrategy::recordRing(PhotonShootingUnit& unit, ViewThreadData* worker, DBL theta)
 {
-    if (!split)
+    if (!split || autoStopPercent >= 1)
         return;
-    progress[unit.recordIndex].rings.push_back({theta, worker->hitObject != 0,
+    UnitProgress& record = progress[unit.recordIndex];
+    record.rings.push_back({theta, worker->hitObject != 0,
         worker->surfacePhotonMap->numPhotons, worker->mediaPhotonMap->numPhotons,
         worker->Stats()[Number_Of_Photons_Shot]});
+    const std::size_t ringIndex = unit.lightAndObject.thetaIndexBase + record.rings.size() - 1;
+    POV_ASSERT(ringIndex < thetaValues.size());
+    ringStates[ringIndex].store(worker->hitObject ? 1 : 2, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(resultMutex);
+    while (completedPrefix < thetaValues.size() &&
+           cutoffIndex.load(std::memory_order_relaxed) == std::numeric_limits<std::uint64_t>::max())
+    {
+        const unsigned char state = ringStates[completedPrefix].load(std::memory_order_acquire);
+        if (state == 0)
+            break;
+        prefixHasHit |= state == 1;
+        if (prefixHasHit && state == 2 && thetaValues[completedPrefix] > autoStopPercent * fullMaxTheta)
+            cutoffIndex.store(completedPrefix, std::memory_order_release);
+        ++completedPrefix;
+    }
+}
+
+bool PhotonShootingStrategy::pastCutoff(std::uint64_t ringIndex) const
+{
+    return split && ringIndex > cutoffIndex.load(std::memory_order_acquire);
 }
 
 void PhotonShootingStrategy::finishShooting()
@@ -190,6 +215,8 @@ PhotonShootingUnit* PhotonShootingStrategy::getNextUnit()
 {
     std::lock_guard<std::mutex> lock(nextUnitMutex);
     if (iter == units.end())
+        return nullptr;
+    if (pastCutoff((*iter)->lightAndObject.thetaIndexBase))
         return nullptr;
     PhotonShootingUnit* unit = *iter;
     iter++;

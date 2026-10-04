@@ -202,6 +202,8 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
     std::uint64_t thetaIndex = combo.thetaIndexBase;
     for(theta=combo.mintheta; theta<combo.maxtheta; theta+=combo.dtheta, thetaIndex++)
     {
+        if (combo.parallelChunk && strategy->pastCutoff(thetaIndex))
+            break;
         const std::uint64_t thetaKey = DeriveKey(comboKey, kDrawPhoton, thetaIndex);
         Cooperate();
         SendProgress();
