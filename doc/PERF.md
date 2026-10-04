@@ -74,6 +74,32 @@ photons the photon share of trace CPU falls 21x on an isosurface receiver (234 s
 2.1x on a CSG with holes and 1.4x on the analytic lens. Images are identical except 51 pixels of the isosurface,
 where the root solve shifts 108 of 16.9 million accepted deposits across the match tolerance (at most 130 of 65535).
 
+## Ordinary photon gathering
+
+On `lights/phot_met_glass.pov` at 960×480, one thread, `+PR -A`, shooting used about 0.15 CPU seconds,
+while tracing used a median 4.512 CPU seconds with photons and 0.709 without them. Raising the gather cap
+from 100 to 400 raised trace CPU to 14.201 seconds, with the same 465,290 gather calls. The search and
+per-photon work deserve attention before the shooting scheduler on a scene like this. These are
+phase timings from the render statistics, not a function-level profile.
+
+Surface shading now reuses a gatherer for each recursion level of a tracer and resets it at each hit.
+Adaptive radius retries reuse their scratch arrays. The photon map records the stored photons' bounds
+when its tree is built; a gather whose furthest possible radius cannot reach those bounds returns empty.
+This is exact for a spherical or flattened gather, including a failed first radius followed by retries.
+Maps without prepared bounds keep the existing search.
+
+| Scene and gather cap | Base trace CPU | Gatherer reuse | Reuse and reach check |
+|---|---:|---:|---:|
+| `phot_met_glass`, cap 100, 960×480 | 4.512 s | 4.381 s | 4.387 s |
+| `phot_met_glass`, cap 400, 960×480 | 14.201 s | 14.095 s | — |
+| `glassthing`, 960×480 | 8.685 s | 8.443 s | 8.433 s |
+| `tools/bench/photon-sparse-caustic.pov`, 1920×960 | — | 1.596 s | 1.212 s |
+
+The two `phot_met_glass` rows are medians of three alternating renders per build; the other rows are
+single runs. Reach checks help when a large receiver extends well past a small caustic patch and are
+neutral in these stock scenes. Decoded pixels matched across builds on all listed scenes. Every
+render used `+PR` without anti-aliasing.
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

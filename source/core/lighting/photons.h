@@ -198,6 +198,8 @@ class PhotonMap final
         DBL minGatherRadMult;   /* minimum gather radius multiplier (for speed adjustments) */
         DBL gatherRadStep;      /* step size for gather expansion */
         int gatherNumSteps;     /* maximum times to perform 'gather' */
+        Vector3d boundsMin, boundsMax;
+        bool hasBounds = false;
 
         PhotonMap();
         ~PhotonMap();
@@ -304,6 +306,7 @@ class PhotonGatherer final
         DBL alreadyGatheredRadius;
 
         GatheredPhotons gatheredPhotons;
+        std::unique_ptr<GatheredPhotons> savedGatheredPhotons;
 
         PhotonGatherer(PhotonMap *map, ScenePhotonSettings& photonSettings);
 

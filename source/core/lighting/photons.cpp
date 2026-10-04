@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -1307,6 +1308,7 @@ Photon* PhotonMap::AllocatePhoton()
     // but we have a different map for each thread, so there's no danger there...
 
     int i,j;
+    hasBounds = false;
 
     // array mapping function
 
@@ -1330,6 +1332,7 @@ the merge is complete.
 */
 void PhotonMap::mergeMap(PhotonMap* map)
 {
+    hasBounds = false;
     int thisi = GetIndexInBlock(numPhotons);
     int thisj = GetBlockId(numPhotons);
 
@@ -1836,6 +1839,20 @@ void PhotonMap::buildTree()
     std::vector<Photon> photons(numPhotons);
     for (int i = 0; i < numPhotons; i++)
         photons[i] = GetPhoton(i);
+    hasBounds = numPhotons > 0;
+    if (hasBounds)
+    {
+        boundsMin = boundsMax = Vector3d(photons[0].Loc);
+        for (const Photon& photon : photons)
+            for (int axis = X; axis <= Z; ++axis)
+            {
+                const double coordinate = photon.Loc[axis];
+                if (!std::isfinite(coordinate))
+                    hasBounds = false;
+                boundsMin[axis] = std::min(boundsMin[axis], coordinate);
+                boundsMax[axis] = std::max(boundsMax[axis], coordinate);
+            }
+    }
     std::sort(photons.begin(), photons.end(), PhotonPrecedes);
     for (int i = 0; i < numPhotons; i++)
         GetPhoton(i) = photons[i];
@@ -2471,6 +2488,24 @@ DBL PhotonGatherer::gatherPhotonsAdaptive(const Vector3d* pt, const Vector3d* no
     DBL prevDensity, thisDensity;
     bool expanded = false;
 
+    if (map->hasBounds && map->minGatherRad > 0.0)
+    {
+        const DBL maxRadius = std::max(map->minGatherRad,
+            map->minGatherRad + std::max(0, map->gatherNumSteps - 1) * map->gatherRadStep);
+        bool outside = false;
+        for (int axis = X; axis <= Z; ++axis)
+            outside |= ((*pt)[axis] + maxRadius < map->boundsMin[axis] ||
+                        (*pt)[axis] - maxRadius > map->boundsMax[axis]);
+        if (outside)
+        {
+            adaptiveSearches = 0;
+            gatheredPhotons.numFound = 0;
+            gathered = true;
+            alreadyGatheredRadius = map->minGatherRad;
+            return alreadyGatheredRadius;
+        }
+    }
+
     adaptiveSearches = 1;
     // first try at gathering
     num=gatherPhotons(pt, Size, &radius, norm, flatten);
@@ -2488,8 +2523,9 @@ DBL PhotonGatherer::gatherPhotonsAdaptive(const Vector3d* pt, const Vector3d* no
         int tempn;
 
         // save out the current set in case we want to revert
-        GatheredPhotons savedGatheredPhotons(photonSettings.maxGatherCount);
-        savedGatheredPhotons.swapWith(gatheredPhotons);
+        if (!savedGatheredPhotons)
+            savedGatheredPhotons.reset(new GatheredPhotons(photonSettings.maxGatherCount));
+        savedGatheredPhotons->swapWith(gatheredPhotons);
 
         // increase the size
         Size+=map->gatherRadStep;
@@ -2537,7 +2573,7 @@ DBL PhotonGatherer::gatherPhotonsAdaptive(const Vector3d* pt, const Vector3d* no
         else
         {
             // put the old gathered photons back
-            savedGatheredPhotons.swapWith(gatheredPhotons);
+            savedGatheredPhotons->swapWith(gatheredPhotons);
             // we're done - break out of the loop
             break;
         }
