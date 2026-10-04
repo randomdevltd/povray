@@ -288,7 +288,7 @@ skein {
 </table>
 <p>Because each step is small and does one thing, the steps compose: the same handful of steps make tubes, vases, tori, springs, knots, folded paper, rolled scrolls, leaves and rocks. A group of steps can be declared once and used as a step in other skeins, so a cross section, a profile or a whole construction can be reused like any other identifier.</p>
 <p>The values that control a step, such as a radius or an angle, need not be constants. In this chapter a <em>value</em> is any of: a number; a function of the surface coordinates, the point and its normal; a <code>map</code> of those inputs through a chain of modifiers; a <code>path</code> of numbers; or a sum, product, minimum or maximum of values. Every one of them can read the same three inputs, described in <a href="r3_9.html#r3_9_1_4">The Universal Inputs</a>, and the forms are listed in <a href="r3_9.html#r3_9_6">Skein Values</a>. A radius that depends on <code>v</code> gives a taper or a vase profile; a radius that reads its section further round as <code>v</code> grows gives a twist.</p>
-<p>POV-Ray does not turn a skein into a mesh. It divides the unit square into patches, bounds each patch from the steps themselves, and for each ray solves for the exact <code>u</code> and <code>v</code> where the ray meets the surface. The point, the normal and the surface coordinates of a hit are those of the surface itself, so a skein is smooth at any distance and <code>uv_mapping</code> follows it exactly. You never give a bounding object, an accuracy or a gradient: the bounds are worked out from the steps.</p></div>
+<p>POV-Ray does not turn a skein into a mesh unless asked to with <a href="r3_9.html#r3_9_2_2"><code>skein_mesh</code></a>. It divides the unit square into patches, bounds each patch from the steps themselves, and for each ray solves for the exact <code>u</code> and <code>v</code> where the ray meets the surface. The point, the normal and the surface coordinates of a hit are those of the surface itself, so a skein is smooth at any distance and <code>uv_mapping</code> follows it exactly. You never give a bounding object, an accuracy or a gradient: the bounds are worked out from the steps.</p></div>
 
 <a name="r3_9_1_2"></a>
 <div class="content-level-h4" contains="Skein and Parametric" id="r3_9_1_2">
@@ -552,7 +552,25 @@ skein_mesh {
 </table>
 <p>Vertices lie exactly on the surface, vertex normals are the skein's own normals, and each vertex carries the skein's (u, v) as its uv vector, so <code>uv_mapping</code> textures land as they do on the skein. Where the normal turns more than <code>max_angle</code> at a corner, as at a crease, the triangles on either side take separate normals. Wrapped seams, poles and sealed ends share their vertex positions, <code>ends flat</code> caps are filled from the end ring, and cells of different sizes share the vertices along their common edges, so the mesh has no cracks; a closed skein's mesh is given an inside vector automatically.</p>
 <p>A curved surface split to an angle A (in radians) stays within about L A / 8 of its triangles, where L is a triangle's size. A torus of radii 2 and 0.5 at the default <code>max_angle</code> is 8192 triangles, lies within 0.0036 of the true surface, and takes about 0.02 seconds to build. A mesh may hold at most two million triangles; a <code>min_size</code> and <code>max_angle</code> that would need more stop the parse with an error. Each <code>skein_mesh</code> writes one line to the debug stream with its triangles, vertices, open edges, size in bytes and build time.</p>
-<p>A <code>skein_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>skein_mesh</code> twice.</p></div>
+<p>A <code>skein_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>skein_mesh</code> twice. It is built again each time the scene is parsed. When to use a mesh rather than the skein itself is covered under <a href="r3_5.html#r3_5_1_2_4_1">Meshes Built From Other Objects</a>.</p>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/skein_mesh_hat_skein.png"></td>
+  <td><img class="center" width="320px" src="images/skein_mesh_hat_default.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">The same hat as a skein (left, 92.5 seconds to trace at 320x240) and as a <code>skein_mesh</code> at the default <code>max_angle</code> (right, about 2 seconds to build and 0.03 seconds to trace).</p></td>
+</tr>
+</table>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/skein_mesh_hat_coarse.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">At <code>max_angle 30</code> the silhouette holds and the finest dents go.</p></td>
+</tr>
+</table>
+</div>
 
 <a name="r3_9_3"></a>
 <div class="content-level-h3" contains="Skein Examples" id="r3_9_3">
