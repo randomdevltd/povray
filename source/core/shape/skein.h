@@ -204,12 +204,23 @@ struct SkeinRoll final
     DBL Section(DBL phi, Vector3d c[3]) const;
 };
 
+/// A `fold`'s solve: the starting point and form as parsed, and once prepared a lattice of anchors holding the folded point and the
+/// rotation of the tangent plane there (three rows each), integrated from `from`; `exact` when every lattice loop closes.
+struct SkeinFold final
+{
+    Vector2d from;
+    bool perturb = false, ready = false, exact = true;
+    int cells = 0;
+    DBL scale = 1.0, gap = 0.0;
+    std::vector<Vector3d> points, turns;
+};
+
 struct SkeinBlend;
 
 /// One map of the unit square's image.
 struct SkeinStep final
 {
-    enum Kind { kAffine, kFold, kDisplace, kTranslate, kScale, kRotate, kBend, kSample, kEnvelope, kBlend, kAxialStep, kCurl };
+    enum Kind { kAffine, kFold, kDisplace, kTranslate, kScale, kRotate, kBend, kSample, kEnvelope, kBlend, kAxialStep, kCurl, kConform };
     enum Role { kRadius = 0, kArc = 2, kAmount = 0, kAngle = 0, kLimit = 1, kShift = 1, kRadial = 2, kThickness = 0, kAtU = 0, kAtV = 1, kDriver = 0 };
     enum Edge : unsigned char { kNoEdge, kRoundEdge, kFlatEdge };
 
@@ -222,6 +233,8 @@ struct SkeinStep final
     std::shared_ptr<SkeinAxis> target;
     std::shared_ptr<SkeinBlend> blend;
     std::shared_ptr<const SkeinRoll> roll;
+    /// The solve of a `fold` (kind kConform; `value` holds its x, y and z).
+    std::shared_ptr<const SkeinFold> fold;
     bool normal = false;
     bool alongV = false;
     Edge edge = kNoEdge;
