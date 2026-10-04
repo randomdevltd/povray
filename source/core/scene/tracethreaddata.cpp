@@ -92,7 +92,16 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
     realTime = 0;
 
     for(std::vector<LightSource *>::iterator it = sceneData->lightSources.begin(); it != sceneData->lightSources.end(); it++)
-        lightSources.push_back(static_cast<LightSource *> (Copy_Object(*it)));
+    {
+        LightSource *light = static_cast<LightSource *>(Copy_Object(*it));
+        if (light->Photon_Only)
+        {
+            // Shadow caches index lights by their original scene positions.
+            light->colour.Clear();
+            light->Media_Interaction = false;
+        }
+        lightSources.push_back(light);
+    }
 
     // all of these are for photons
     LightSource *photonLight = nullptr;

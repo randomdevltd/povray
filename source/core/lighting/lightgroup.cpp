@@ -114,8 +114,12 @@ void Promote_Local_Lights(CSG *Object)
     {
         if(((*curObject)->Type & LIGHT_GROUP_LIGHT_OBJECT) == LIGHT_GROUP_LIGHT_OBJECT)
         {
-            lights.push_back(reinterpret_cast<LightSource *>(*curObject));
-            light_counter++;
+            LightSource *light = reinterpret_cast<LightSource *>(*curObject);
+            if (!light->Photon_Only)
+            {
+                lights.push_back(light);
+                light_counter++;
+            }
         }
         else
             object_counter++;

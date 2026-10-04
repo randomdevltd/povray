@@ -2693,6 +2693,8 @@ void Parser::Make_Portal_Lights()
     {
         for (LightSource *light : *lights)
         {
+            if (light->Photon_Only)
+                continue;
             if (light->Projected_Through_Object != nullptr)
             {
                 projected = true;
@@ -3755,6 +3757,10 @@ ObjectPtr Parser::Parse_Light_Source ()
 
         CASE (SHADOWLESS_TOKEN)
             Object->Light_Type = FILL_LIGHT_SOURCE;
+        END_CASE
+
+        CASE (PHOTON_ONLY_TOKEN)
+            Object->Photon_Only = Allow_Float(1.0) > 0.0;
         END_CASE
 
         CASE (PARALLEL_TOKEN)
