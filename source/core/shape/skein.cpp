@@ -83,9 +83,13 @@ const DBL kNearRoot = 1.0e-4;
 const DBL kAxisStep = 1.0e-5;
 const int kRollCells = 1024;
 const DBL kMaxRollTurns = 256.0;
-const int kFoldCells = 16;
-const int kFoldDepth = 24;
+const int kFoldColumns = 64;
+const int kFoldRows = 128;
+const int kFoldBand = 8;
+const int kFoldDepth = 40;
+const int kFoldBudget = 3000;
 const DBL kFoldTolerance = 1.0e-11;
+const DBL kFoldLooseTolerance = 1.0e-10;
 const DBL kFoldClosure = 1.0e-9;
 const Vector3d kInsideDirection(0.5381, 0.6012, 0.5907);
 
@@ -1158,15 +1162,17 @@ class Evaluator final
             return std::string();
         }
 
-        /// Prepares a fold at step `index` of a scope: solves it from `from` along that row to each lattice column, then up and down
-        /// each column, and measures how far each lattice loop fails to close.
-        void BuildFold(SkeinStep& s, const Scope& sc, int index)
+        /// Prepares a fold at step `index` of a scope: solves it from `from` along that row to each column of the table, then up and
+        /// down each column, and measures how far each loop across a pair of columns fails to close.
+        void BuildFold(SkeinStep& s, const Scope& sc, int index, const std::function<void()>& cooperate)
         {
             auto fold = std::make_shared<SkeinFold>(*s.fold);
             const Stage st{ &sc, index };
-            const int n = kFoldCells, side = n + 1;
+            const int nc = kFoldColumns, nr = kFoldRows, width = nc + 1;
             fold->ready = false;
-            fold->cells = n;
+            fold->columns = nc;
+            fold->rows = nr;
+            fold->bands = nr / kFoldBand;
             s.fold = fold;
             Vector3d lo(BOUND_HUGE), hi(-BOUND_HUGE);
             for (int j = 0; j <= 8; ++j)
@@ -1180,57 +1186,72 @@ class Evaluator final
                         hi[k] = std::max(hi[k], K.p[k]);
                     }
                 }
-            fold->scale = std::max((hi - lo).length(), 1.0e-9);
+            fold->scale = (hi - lo).length() < 1.0e9 ? std::max((hi - lo).length(), 1.0e-9) : 1.0;
+            fold->tolerance = kFoldTolerance * fold->scale;
             FoldState origin;
             origin.t = 0.0;
             FoldPoint(s, st, fold->from[X], fold->from[Y], origin.s);
             origin.Q = Shortest(origin.s.n, origin.s.m, origin.s.x);
             origin.P = origin.s.p;
-            std::vector<FoldState> row(side), grid(side * side);
-            std::vector<Vector2d> at(side * side);
-            const int firstU = std::min(n, int(ceil(fold->from[X] * n))), firstV = std::min(n, int(ceil(fold->from[Y] * n)));
+            std::vector<FoldState> row(width), grid(width * (nr + 1));
+            const int firstU = std::min(nc, int(ceil(fold->from[X] * nc))), firstV = std::min(nr, int(ceil(fold->from[Y] * nr)));
             for (int dir = 0; dir < 2; ++dir)
             {
                 FoldState cur = origin;
                 Vector2d from = fold->from;
-                for (int i = dir == 0 ? firstU : firstU - 1; (i >= 0) && (i <= n); i += dir == 0 ? 1 : -1)
+                for (int i = dir == 0 ? firstU : firstU - 1; (i >= 0) && (i <= nc); i += dir == 0 ? 1 : -1)
                 {
-                    const Vector2d to(DBL(i) / n, fold->from[Y]);
+                    const Vector2d to(DBL(i) / nc, fold->from[Y]);
                     cur = Walk(s, st, from, cur, to);
                     from = to;
                     row[i] = cur;
                 }
             }
-            for (int i = 0; i <= n; ++i)
+            for (int i = 0; i <= nc; ++i)
+            {
+                if (cooperate)
+                    cooperate();
                 for (int dir = 0; dir < 2; ++dir)
                 {
                     FoldState cur = row[i];
-                    Vector2d from(DBL(i) / n, fold->from[Y]);
-                    for (int j = dir == 0 ? firstV : firstV - 1; (j >= 0) && (j <= n); j += dir == 0 ? 1 : -1)
+                    Vector2d from(DBL(i) / nc, fold->from[Y]);
+                    for (int k = dir == 0 ? firstV : firstV - 1; (k >= 0) && (k <= nr); k += dir == 0 ? 1 : -1)
                     {
-                        const Vector2d to(DBL(i) / n, DBL(j) / n);
+                        const Vector2d to(DBL(i) / nc, DBL(k) / nr);
                         cur = Walk(s, st, from, cur, to);
                         from = to;
-                        grid[j * side + i] = cur;
-                        at[j * side + i] = to;
+                        grid[k * width + i] = cur;
                     }
                 }
+            }
             DBL gap = 0.0;
-            for (int j = 0; j <= n; ++j)
-                for (int i = 0; i < n; ++i)
+            std::vector<DBL> edges(nc * (fold->bands + 1), 0.0);
+            for (int b = 0; b <= fold->bands; ++b)
+            {
+                if (cooperate)
+                    cooperate();
+                const int k = b * kFoldBand;
+                for (int i = 0; i < nc; ++i)
                 {
-                    const FoldState& a = grid[j * side + i];
-                    const FoldState& b = grid[j * side + i + 1];
-                    const FoldState c = Walk(s, st, at[j * side + i], a, at[j * side + i + 1]);
+                    const FoldState& a = grid[k * width + i];
+                    const FoldState& e = grid[k * width + i + 1];
+                    const FoldState c = Walk(s, st, Vector2d(DBL(i) / nc, DBL(k) / nr), a, Vector2d(DBL(i + 1) / nc, DBL(k) / nr));
                     DBL turn = 0.0;
                     for (int r = 0; r < 3; ++r)
-                        for (int k = 0; k < 3; ++k)
-                            turn = std::max(turn, fabs(c.Q.m[r][k] - b.Q.m[r][k]));
-                    gap = std::max(gap, std::max((c.P - b.P).length(), turn * fold->scale / n));
+                        for (int q = 0; q < 3; ++q)
+                            turn = std::max(turn, fabs(c.Q.m[r][q] - e.Q.m[r][q]));
+                    const DBL g = std::max((c.P - e.P).length(), turn * fold->scale / nc);
+                    edges[b * nc + i] = g == g ? g : BOUND_HUGE;
+                    gap = std::max(gap, edges[b * nc + i]);
                 }
-            fold->points.resize(side * side);
-            fold->turns.resize(3 * side * side);
-            for (int k = 0; k < side * side; ++k)
+            }
+            fold->gaps.assign(nc * fold->bands, 0.0);
+            for (int b = 0; b < fold->bands; ++b)
+                for (int i = 0; i < nc; ++i)
+                    fold->gaps[b * nc + i] = std::max(edges[b * nc + i], edges[(b + 1) * nc + i]);
+            fold->points.resize(grid.size());
+            fold->turns.resize(3 * grid.size());
+            for (size_t k = 0; k < grid.size(); ++k)
             {
                 fold->points[k] = grid[k].P;
                 for (int r = 0; r < 3; ++r)
@@ -1238,6 +1259,7 @@ class Evaluator final
             }
             fold->gap = gap;
             fold->exact = gap <= kFoldClosure * fold->scale;
+            fold->tolerance = (fold->exact ? kFoldTolerance : kFoldLooseTolerance) * fold->scale;
             fold->ready = true;
             s.fold = fold;
         }
@@ -1383,6 +1405,16 @@ class Evaluator final
                 v -= floor(v);
             Jet K;
             Prefix(*st.scope, st.index, u, v, K, nullptr, true);
+            if (!(K.pu.lengthSqr() + K.pv.lengthSqr() < BOUND_HUGE))
+            {
+                // why: an edge where a value's slope is infinite or undefined takes the slopes from just inside (doc/skein.md, fold)
+                Jet L;
+                Prefix(*st.scope, st.index, u + (u < 0.5 ? 1.0e-6 : -1.0e-6), v + (v < 0.5 ? 1.0e-6 : -1.0e-6), L, nullptr, true);
+                K.pu = L.pu;
+                K.pv = L.pv;
+                if (!(K.p.lengthSqr() < BOUND_HUGE))
+                    K.p = L.p;
+            }
             f.p = K.p;
             f.pu = K.pu;
             f.pv = K.pv;
@@ -1472,7 +1504,7 @@ class Evaluator final
             b.s = q[16];
             b.Q = Q;
             b.P = a.P + K;
-            const DBL tol = kFoldTolerance * s.fold->scale;
+            const DBL tol = s.fold->tolerance;
             return force || (((K - G).length() <= tol) && (fabs(psi[16] - coarse) * length <= tol));
         }
 
@@ -1483,13 +1515,94 @@ class Evaluator final
             return d > 1.0e-12 ? dot(cross(a, b), db) / d : 0.0;
         }
 
-        void FoldRun(const SkeinStep& s, const Stage& st, const Vector2d& o, const Vector2d& d, const FoldState& a, DBL t1, int depth, FoldState& b)
+        /// How far a straight step from `l` to `r` strays from the run at its middle `c`: the incoming point's bow, plus the turn of
+        /// either normal off the step's own and the chord's error over the turn between its ends, along the step's length.
+        static DBL Stray(const FoldSample& l, const FoldSample& c, const FoldSample& r)
         {
-            if (FoldPanel(s, st, o, d, a, t1, depth >= kFoldDepth, b))
+            const DBL length = (r.p - l.p).length();
+            Vector3d mm = l.m + r.m, nn = l.n + r.n;
+            const DBL turn = (mm.length() > 0.0 ? (c.m - mm.normalized()).length() : 2.0) + (nn.length() > 0.0 ? (c.n - nn.normalized()).length() : 2.0);
+            const DBL swing = (r.m - l.m).lengthSqr() + (r.n - l.n).lengthSqr();
+            const DBL stray = (c.p - (l.p + r.p) * 0.5).length() + length * (turn + 0.125 * swing);
+            return stray == stray ? stray : BOUND_HUGE;
+        }
+
+        /// One straight step from `a` to the sample `r` at `t`: the least turns of both normals, the incoming chord by the trapezium.
+        static FoldState Step(const FoldState& a, DBL t, const FoldSample& r)
+        {
+            FoldState b;
+            b.t = t;
+            b.s = r;
+            b.Q = Shortest(a.s.m, r.m, r.x) * a.Q * Shortest(a.s.n, r.n, r.x).Transposed();
+            const Vector3d chord = r.p - a.s.p;
+            b.P = a.P + (a.Q * chord + b.Q * chord) * 0.5;
+            return b;
+        }
+
+        /// Carries `a` to `t1` by panels; where one fails, the field is halved toward its least smooth point until a straight step
+        /// across that bracket is within tolerance, so a kink or jump costs a bisection of the field, not of the integral.
+        void FoldRun(const SkeinStep& s, const Stage& st, const Vector2d& o, const Vector2d& d, const FoldState& a, DBL t1, int depth, int& budget, FoldState& b)
+        {
+            budget -= 16;
+            if (FoldPanel(s, st, o, d, a, t1, (depth >= kFoldDepth) || (budget <= 0), b))
                 return;
-            FoldState middle;
-            FoldRun(s, st, o, d, a, 0.5 * (a.t + t1), depth + 1, middle);
-            FoldRun(s, st, o, d, middle, t1, depth + 1, b);
+            // why: a step across the bracket is as wrong as its stop allows and moves with the point, so it stops far below a panel's
+            const DBL tol = (s.fold->exact ? 1.0e-6 : 1.0e-3) * s.fold->tolerance;
+            DBL tl = a.t, tr = t1, tc = 0.5 * (a.t + t1);
+            FoldSample L = a.s, R, C, A, B;
+            FoldPoint(s, st, o[X] + tr * d[X], o[Y] + tr * d[Y], R);
+            FoldPoint(s, st, o[X] + tc * d[X], o[Y] + tc * d[Y], C);
+            DBL before = BOUND_HUGE;
+            while ((budget > 0) && (tr - tl > 1.0e-15) && (Stray(L, C, R) > tol))
+            {
+                const DBL dl = (C.m - L.m).length() + (C.n - L.n).length(), dr = (R.m - C.m).length() + (R.n - C.n).length();
+                const DBL span = (R.m - L.m).length() + (R.n - L.n).length(), last = before;
+                before = span;
+                if ((span > 0.75 * last) && ((dl > 4.0 * dr) || (dr > 4.0 * dl)))
+                {
+                    // a jump keeps its size as the bracket halves; it lies in the half whose ends differ, so one sample halves it
+                    if (dl > dr)
+                    {
+                        tr = tc;
+                        R = C;
+                    }
+                    else
+                    {
+                        tl = tc;
+                        L = C;
+                    }
+                    tc = 0.5 * (tl + tr);
+                    FoldPoint(s, st, o[X] + tc * d[X], o[Y] + tc * d[Y], C);
+                    --budget;
+                    continue;
+                }
+                const DBL ta = 0.5 * (tl + tc), tb = 0.5 * (tc + tr);
+                FoldPoint(s, st, o[X] + ta * d[X], o[Y] + ta * d[Y], A);
+                FoldPoint(s, st, o[X] + tb * d[X], o[Y] + tb * d[Y], B);
+                budget -= 2;
+                if (Stray(L, A, C) >= Stray(C, B, R))
+                {
+                    tr = tc;
+                    R = C;
+                    tc = ta;
+                    C = A;
+                }
+                else
+                {
+                    tl = tc;
+                    L = C;
+                    tc = tb;
+                    C = B;
+                }
+            }
+            FoldState left = a;
+            if (tl > a.t)
+                FoldRun(s, st, o, d, a, tl, depth + 1, budget, left);
+            const FoldState right = Step(left, tr, R);
+            if (tr < t1)
+                FoldRun(s, st, o, d, right, t1, depth + 1, budget, b);
+            else
+                b = right;
         }
 
         /// Carries a solved state at (u, v) `from` straight to `to`.
@@ -1499,55 +1612,54 @@ class Evaluator final
             start.t = 0.0;
             if ((to[X] == from[X]) && (to[Y] == from[Y]))
                 return start;
-            FoldRun(s, st, from, to - from, start, 1.0, 0, end);
+            int budget = kFoldBudget;
+            FoldRun(s, st, from, to - from, start, 1.0, 0, budget, end);
             return end;
         }
 
-        /// The solve carried from lattice anchor (i, j) to (u, v).
-        FoldState FromAnchor(const SkeinStep& s, const Stage& st, int i, int j, DBL u, DBL v)
+        /// The solve carried from table entry (i, k) to (u, v).
+        FoldState FromEntry(const SkeinStep& s, const Stage& st, int i, int k, DBL u, DBL v)
         {
             const SkeinFold& f = *s.fold;
-            const int k = j * (f.cells + 1) + i;
-            const Vector2d at(DBL(i) / f.cells, DBL(j) / f.cells);
+            const int at = k * (f.columns + 1) + i;
+            const Vector2d from(DBL(i) / f.columns, DBL(k) / f.rows);
             FoldState a;
             a.t = 0.0;
-            FoldPoint(s, st, at[X], at[Y], a.s);
+            FoldPoint(s, st, from[X], from[Y], a.s);
             for (int r = 0; r < 3; ++r)
                 for (int c = 0; c < 3; ++c)
-                    a.Q.m[r][c] = f.turns[3 * k + r][c];
-            a.P = f.points[k];
-            return Walk(s, st, at, a, Vector2d(u, v));
+                    a.Q.m[r][c] = f.turns[3 * at + r][c];
+            a.P = f.points[at];
+            return Walk(s, st, from, a, Vector2d(u, v));
         }
 
-        /// Folds the surface to its new normals: from the nearest anchor when every lattice loop closes, else blended bilinearly from
-        /// the four around the point so the surface stays whole; its slopes are the incoming ones turned with the tangent plane.
+        /// Folds the surface to its new normals: from the nearest table entry when every loop closes; else along the row from the
+        /// column on each side, each taken up its column from the table, blended across so the surface stays whole (doc/skein.md, fold).
         void Conform(const SkeinStep& s, const Stage& st, DBL u, DBL v, Jet& J)
         {
             const SkeinFold& f = *s.fold;
             if (!f.ready)
                 return;
-            const int n = f.cells;
+            const int nc = f.columns, nr = f.rows, k = std::min(nr, std::max(0, int(floor(v * nr + 0.5))));
             if (f.exact)
             {
-                const int i = std::min(n, std::max(0, int(floor(u * n + 0.5)))), j = std::min(n, std::max(0, int(floor(v * n + 0.5))));
-                const FoldState e = FromAnchor(s, st, i, j, u, v);
+                const FoldState e = FromEntry(s, st, std::min(nc, std::max(0, int(floor(u * nc + 0.5)))), k, u, v);
                 J.p = e.P;
                 J.pu = e.Q * e.s.pu;
                 J.pv = e.Q * e.s.pv;
                 return;
             }
-            const int i = std::min(n - 1, std::max(0, int(floor(u * n)))), j = std::min(n - 1, std::max(0, int(floor(v * n))));
-            const DBL a = u * n - i, b = v * n - j;
-            J.p = J.pu = J.pv = Vector3d(0.0);
-            for (int c = 0; c < 4; ++c)
-            {
-                const int di = c & 1, dj = c >> 1;
-                const DBL wa = di ? a : 1.0 - a, wb = dj ? b : 1.0 - b;
-                const FoldState e = FromAnchor(s, st, i + di, j + dj, u, v);
-                J.p += e.P * (wa * wb);
-                J.pu += e.Q * e.s.pu * (wa * wb) + e.P * ((di ? n : -n) * wb);
-                J.pv += e.Q * e.s.pv * (wa * wb) + e.P * ((dj ? n : -n) * wa);
-            }
+            const int i = std::min(nc - 1, std::max(0, int(floor(u * nc))));
+            const DBL a = u * nc - i;
+            const Vector2d left(DBL(i) / nc, v), right(DBL(i + 1) / nc, v), at(u, v);
+            const FoldState L = FromEntry(s, st, i, k, left[X], v), R = FromEntry(s, st, i + 1, k, right[X], v);
+            const FoldState here = Walk(s, st, left, L, at), there = Walk(s, st, at, here, right);
+            const Turn3 shift = R.Q * there.Q.Transposed();
+            const Vector3d P = R.P - shift * (there.P - here.P);
+            const Turn3 Q = shift * here.Q;
+            J.p = here.P * (1.0 - a) + P * a;
+            J.pu = here.Q * here.s.pu * (1.0 - a) + Q * here.s.pu * a + (P - here.P) * DBL(nc);
+            J.pv = here.Q * here.s.pv * (1.0 - a) + Q * here.s.pv * a;
         }
 
         /// Encloses a fold over a patch: the folded centre, padded by the longest path to a corner, since folding keeps lengths along
@@ -1598,7 +1710,15 @@ class Evaluator final
             const DBL ru = 0.5 * (u1 - u0), rv = 0.5 * (v1 - v0);
             DBL reach = ru * su + rv * sv + 1.0e-12 * f.scale;
             if (!f.exact)
-                reach += (ru + rv) * 6.0 * f.cells * f.gap;
+            {
+                const int nc = f.columns, i0 = std::max(0, int(floor(u0 * nc))), i1 = std::min(nc - 1, int(floor(u1 * nc)));
+                const int b0 = std::max(0, int(floor(v0 * f.bands))), b1 = std::min(f.bands - 1, int(floor(v1 * f.bands)));
+                DBL gap = (i0 > i1) || (b0 > b1) ? f.gap : 0.0;
+                for (int b = b0; b <= b1; ++b)
+                    for (int i = i0; i <= i1; ++i)
+                        gap = std::max(gap, f.gaps[b * nc + i]);
+                reach += (ru + rv) * 2.0 * nc * gap;
+            }
             DBL u = 0.5 * (u0 + u1), v = 0.5 * (v0 + v1);
             if (flags & 1)
                 u -= floor(u);
@@ -3918,7 +4038,7 @@ ObjectPtr Skein::Copy()
     return New;
 }
 
-std::string Skein::Prepare(TraceThreadData *thread)
+std::string Skein::Prepare(TraceThreadData *thread, const std::function<void()>& cooperate)
 {
     SkeinData& d = *data;
     d.slots.clear();
@@ -4004,7 +4124,7 @@ std::string Skein::Prepare(TraceThreadData *thread)
             if ((s.kind == SkeinStep::kCurl) && failure.empty())
                 failure = ev.BuildRoll(s, sc, i);
             if (s.kind == SkeinStep::kConform)
-                ev.BuildFold(s, sc, i);
+                ev.BuildFold(s, sc, i, cooperate);
             if (s.blend)
                 for (SkeinBlend::Entry& e : s.blend->entries)
                 {
@@ -4073,6 +4193,8 @@ std::string Skein::Prepare(TraceThreadData *thread)
     for (int j = 0; j < d.gridV; ++j)
         for (int i = 0; i < d.gridU; ++i)
         {
+            if (cooperate)
+                cooperate();
             SkeinData::Patch p;
             p.u0 = linesU[i];
             p.u1 = linesU[i + 1];
@@ -4090,11 +4212,15 @@ std::string Skein::Prepare(TraceThreadData *thread)
 
     DBL flux = 0.0;
     for (int j = 0; j < 64; ++j)
+    {
+        if (cooperate)
+            cooperate();
         for (int i = 0; i < 64; ++i)
         {
             ev.Eval((i + 0.5) / 64.0, (j + 0.5) / 64.0, J);
             flux += dot(J.p - middle, cross(J.pu, J.pv));
         }
+    }
     d.orientation = flux >= 0.0 ? 1.0 : -1.0;
 
     for (int e = 0; e < 2; ++e)

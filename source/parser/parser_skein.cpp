@@ -190,7 +190,7 @@ ObjectPtr Parser::Parse_Skein()
     if ((!data.wrapU || data.wrapV) && ((data.ends[0] != SkeinData::kOpen) || (data.ends[1] != SkeinData::kOpen)))
         Warning("skein: ends apply only when u is closed and v is not; they are ignored here.");
 
-    const std::string problem = object->Prepare(GetParserDataPtr());
+    const std::string problem = object->Prepare(GetParserDataPtr(), [this]() { mProgressReporter.ReportProgress(mTokenCount); });
     if (!problem.empty())
         Error("%s", problem.c_str());
     if (!data.closed)

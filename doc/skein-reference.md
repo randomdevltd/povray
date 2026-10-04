@@ -243,11 +243,11 @@ A fold to the incoming surface's own normals is the identity.
 
 **What is best effort.** Other fields (a dome on a flat sheet, noise) have no surface that
 keeps every length, so the result depends on the path it was solved along. It is never
-refused. The convention: from `from` along its row to each column of a 16 by 16 lattice
-of the sheet, then up and down each column; a point between lattice points is the
-bilinear blend of the four around it, so the surface stays whole. Whether the field
-closed is measured at Prepare: when every lattice loop closes, a point is solved from the
-nearest lattice point alone.
+refused. The convention: from `from` along its row to each of 65 columns across the sheet,
+then up and down each column; a point between columns is solved along its row from the
+column on each side and the two blended, so the surface stays whole. Whether the field
+closed is measured at Prepare: when every loop across the columns closes, a point is
+solved from the nearest tabulated point alone.
 
 **How the turn is chosen.** At `from`, the tangent plane takes the shortest turn to the new
 normal (a half turn about the incoming u direction if the new normal is exactly the
@@ -258,13 +258,13 @@ the sheet flat back on itself with no ambiguity, by `perturb` (`z` negative) or 
 the jump, and a jump of exactly 180 degrees a half turn about the u direction.
 
 **Not guaranteed.** The folded sheet may pass through itself, as paper folded flat
-touches itself. A field with a jump costs far more to solve than one that turns over a
-width, since the solve subdivides to find the jump.
+touches itself. A kink or a jump in the field is found by bisecting the field and crossed
+in one step, so a crumpled sheet of jumps and kinks costs a few times a smooth one.
 
-**Cost.** Each evaluation integrates from a lattice point, so a fold costs about 16 to 60
-evaluations of the surface entering it, more near a narrow hinge. Enclosures are the
-folded centre of a patch padded by the longest path to its corners, which shrink with
-the patch.
+**Cost.** Each evaluation integrates from a tabulated point (or three short runs when the
+field does not close), so a fold costs some tens to a few hundred evaluations of the
+surface entering it. Enclosures are the folded centre of a patch padded by the longest
+path to its corners, which shrink with the patch.
 
 `crease`, `curl`, `bend` and `extrude` are unchanged; a fold is the general form a
 crease's or a roll's normals can be given in, and an extrusion is a fold followed by a

@@ -26,6 +26,11 @@ test "${unresolved:-1000000}" -lt 5000
 unresolved=$(sed -n 's/^Skein unresolved: *//p' skein_fold_box.log)
 echo "skein_fold_box: ${unresolved:-no statistics} unresolved patches"
 test "${unresolved:-1000000}" -lt 3000
+# a fold's kinks and jumps are bisected in the field: crumpled facets cost 1.6 million evaluations here (170 million halving the integral)
+"$POVRAY" +i"$SRCDIR/tests/render/skein_fold_crumple.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w24 +h24 +sr12 +er13 -d -p -v -gp -f +wt1 > skein_fold_crumple.log 2>&1 || { cat skein_fold_crumple.log; exit 1; }
+evaluations=$(sed -n 's/^Skein evaluations: *//p' skein_fold_crumple.log)
+echo "skein_fold_crumple: ${evaluations:-no statistics} evaluations"
+test "${evaluations:-1000000000}" -lt 5000000
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/skein_shapes.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +wt1 +fp +o"skein_$name.ppm" "$@"
