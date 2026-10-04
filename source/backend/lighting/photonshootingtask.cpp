@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdio>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -146,6 +147,8 @@ void PhotonShootingTask::Finish()
     GetViewDataPtr()->timeType = TraceThreadData::kPhotonTime;
     GetViewDataPtr()->realTime = ConsumedRealTime();
     GetViewDataPtr()->cpuTime = ConsumedCPUTime();
+    std::fprintf(stderr, "Photon phase shooting: %lld CPU-ms, %lld wall-ms\n",
+                 static_cast<long long>(ConsumedCPUTime()), static_cast<long long>(ConsumedRealTime()));
 }
 
 

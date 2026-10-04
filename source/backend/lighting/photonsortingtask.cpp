@@ -38,7 +38,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <cstdio>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -149,6 +149,8 @@ void PhotonSortingTask::Finish()
     GetViewDataPtr()->timeType = TraceThreadData::kPhotonTime;
     GetViewDataPtr()->realTime = ConsumedRealTime();
     GetViewDataPtr()->cpuTime = ConsumedCPUTime();
+    std::fprintf(stderr, "Photon phase map preparation: %lld CPU-ms, %lld wall-ms\n",
+                 static_cast<long long>(ConsumedCPUTime()), static_cast<long long>(ConsumedRealTime()));
 }
 
 
