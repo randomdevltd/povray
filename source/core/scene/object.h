@@ -348,6 +348,7 @@ class LightSource final : public CompoundObject
         bool Circular : 1;
         bool Parallel : 1;
         bool Photon_Area_Light : 1;
+        bool Photon_Only : 1;
         bool Media_Attenuation : 1;
         bool Media_Interaction : 1;
         bool lightGroupLight : 1;

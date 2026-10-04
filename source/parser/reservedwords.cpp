@@ -414,6 +414,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { PHONG_TOKEN,                  "phong" },
     { PHONG_SIZE_TOKEN,             "phong_size" },
     { PHOTONS_TOKEN,                "photons" },
+    { PHOTON_ONLY_TOKEN,            "photon_only" },
     { PI_TOKEN,                     "pi" },
     { PIGMENT_TOKEN,                "pigment" },
     { PIGMENT_MAP_TOKEN,            "pigment_map" },

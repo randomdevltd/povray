@@ -385,6 +385,7 @@ LightSource::LightSource() : CompoundObject(LIGHT_OBJECT)
     Circular   = false;
     Parallel   = false;
     Photon_Area_Light = false;
+    Photon_Only = false;
 
     Area_Size1 = 0;
     Area_Size2 = 0;
