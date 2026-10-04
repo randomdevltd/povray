@@ -1325,6 +1325,18 @@ Photon* PhotonMap::AllocatePhoton()
     return &GetPhoton(j, i);
 }
 
+void PhotonMap::truncate(int count)
+{
+    POV_ASSERT(count >= 0 && count <= numPhotons);
+    const std::size_t blocks = (std::size_t(count) + PHOTON_BLOCK_SIZE - 1) / PHOTON_BLOCK_SIZE;
+    while (mBlockList.size() > blocks)
+    {
+        delete mBlockList.back();
+        mBlockList.pop_back();
+    }
+    numPhotons = count;
+}
+
 /*
 Merge the parameter photon map into this photon map.
 "Delete" the contents of the parameter photon map after

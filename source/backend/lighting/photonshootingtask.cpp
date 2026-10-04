@@ -125,8 +125,8 @@ void PhotonShootingTask::Run()
     PhotonShootingUnit* unit = strategy->getNextUnit();
     while(unit)
     {
-        //ShootPhotonsAtObject(unit->lightAndObject.target, unit->lightAndObject.light);
-        ShootPhotonsAtObject(unit->lightAndObject);
+        strategy->beginUnit(*unit, GetViewDataPtr());
+        ShootPhotonsAtObject(*unit);
         unit = strategy->getNextUnit();
     }
 
@@ -153,8 +153,9 @@ void PhotonShootingTask::Finish()
 
 
 
-void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
+void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
 {
+    LightTargetCombo& combo = unit.lightAndObject;
     MathColour colour;             /* light color */
     MathColour photonColour;       /* photon color */
     ColourChannel dummyTransm;
@@ -198,7 +199,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
     Vector3d lastOrigin;
     bool haveOrigin = false;
     const std::uint64_t comboKey = DeriveKey(renderDataPtr->stochasticRandomSeedBase, kDrawPhoton, combo.serial);
-    std::uint64_t thetaIndex = 0;
+    std::uint64_t thetaIndex = combo.thetaIndexBase;
     for(theta=combo.mintheta; theta<combo.maxtheta; theta+=combo.dtheta, thetaIndex++)
     {
         const std::uint64_t thetaKey = DeriveKey(comboKey, kDrawPhoton, thetaIndex);
@@ -416,7 +417,8 @@ void PhotonShootingTask::ShootPhotonsAtObject(LightTargetCombo& combo)
         /* suggested by Pabs, we only use autostop if we have it it once */
         if (renderDataPtr->hitObject) hitAtLeastOnce=true;
 
-        if (hitAtLeastOnce && !renderDataPtr->hitObject && renderDataPtr->photonTargetObject)
+        strategy->recordRing(unit, renderDataPtr, theta);
+        if (!combo.parallelChunk && hitAtLeastOnce && !renderDataPtr->hitObject && renderDataPtr->photonTargetObject)
             if (theta > GetSceneData()->photonSettings.autoStopPercent*combo.maxtheta)
                 break;
     } /* end of rays loop */

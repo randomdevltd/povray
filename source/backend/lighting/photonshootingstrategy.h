@@ -46,6 +46,7 @@
 // C++ standard header files
 #include <memory>
 #include <mutex>
+#include <cstdint>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -60,9 +61,12 @@
 namespace pov
 {
 
+class ViewThreadData;
+
 class PhotonShootingStrategy final
 {
     public:
+        PhotonShootingStrategy(int threads, DBL autoStopPercent): threads(threads), autoStopPercent(autoStopPercent) {}
         ObjectPtr obj;
         LightSource *light;
 
@@ -71,10 +75,35 @@ class PhotonShootingStrategy final
         void createUnitsForCombo(ObjectPtr obj, LightSource* light, std::shared_ptr<SceneData> sceneData);
         void start();
         PhotonShootingUnit* getNextUnit();
+        void beginUnit(PhotonShootingUnit& unit, ViewThreadData* worker);
+        void recordRing(PhotonShootingUnit& unit, ViewThreadData* worker, DBL theta);
+        void finishShooting();
 
         virtual ~PhotonShootingStrategy();
 
     private:
+        struct RingProgress
+        {
+            DBL theta;
+            bool hit;
+            int surfaceEnd;
+            int mediaEnd;
+            std::uint64_t shotsEnd;
+        };
+        struct UnitProgress
+        {
+            ViewThreadData* worker = nullptr;
+            int surfaceStart = 0;
+            int mediaStart = 0;
+            std::uint64_t shotsStart = 0;
+            std::vector<RingProgress> rings;
+        };
+
+        int threads;
+        DBL autoStopPercent;
+        DBL fullMaxTheta = 0;
+        bool split = false;
+        std::vector<UnitProgress> progress;
         std::vector<PhotonShootingUnit*>::iterator iter;
         std::mutex nextUnitMutex;
 

@@ -119,6 +119,7 @@ void PhotonSortingTask::Run()
 
     if (strategy != nullptr)
     {
+        strategy->finishShooting();
         delete strategy;
         sortPhotonMap();
     }

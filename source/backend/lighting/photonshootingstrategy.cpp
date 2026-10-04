@@ -40,7 +40,9 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
+#include <cmath>
+#include <utility>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -57,6 +59,9 @@
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
 #include "core/support/octree.h"
+#include "core/support/statistics.h"
+
+#include "backend/scene/viewthreaddata.h"
 
 // POV-Ray header files (POVMS module)
 // POV-Ray header files (backend module)
@@ -70,7 +75,115 @@ namespace pov
 
 void PhotonShootingStrategy::start()
 {
+    if (units.size() == 1 && threads > 1)
+    {
+        PhotonShootingUnit* whole = units.front();
+        const LightTargetCombo& combo = whole->lightAndObject;
+        if (combo.light->Parallel && std::isfinite(combo.dtheta) && combo.dtheta > 0 &&
+            std::isfinite(combo.maxtheta))
+        {
+            std::vector<DBL> theta;
+            DBL next = combo.mintheta;
+            while (next < combo.maxtheta && theta.size() < 1000000)
+            {
+                theta.push_back(next);
+                const DBL after = next + combo.dtheta;
+                if (after <= next)
+                    break;
+                next = after;
+            }
+            if (next >= combo.maxtheta && theta.size() > 1)
+            {
+                fullMaxTheta = combo.maxtheta;
+                const std::size_t chunks = std::min(theta.size(), std::size_t(threads) * 4);
+                std::vector<PhotonShootingUnit*> divided;
+                divided.reserve(chunks);
+                for (std::size_t i = 0; i < chunks; ++i)
+                {
+                    const std::size_t begin = i * theta.size() / chunks;
+                    const std::size_t end = (i + 1) * theta.size() / chunks;
+                    auto* unit = new PhotonShootingUnit(combo.light, combo.target);
+                    unit->lightAndObject = combo;
+                    unit->lightAndObject.mintheta = theta[begin];
+                    unit->lightAndObject.maxtheta = end < theta.size() ? theta[end] : fullMaxTheta;
+                    unit->lightAndObject.thetaIndexBase = begin;
+                    unit->lightAndObject.parallelChunk = true;
+                    divided.push_back(unit);
+                }
+                delete whole;
+                units = std::move(divided);
+                split = true;
+            }
+        }
+    }
+    for (std::size_t i = 0; i < units.size(); ++i)
+        units[i]->recordIndex = i;
+    if (split)
+        progress.resize(units.size());
     iter = units.begin();
+}
+
+void PhotonShootingStrategy::beginUnit(PhotonShootingUnit& unit, ViewThreadData* worker)
+{
+    if (!split)
+        return;
+    UnitProgress& record = progress[unit.recordIndex];
+    record.worker = worker;
+    record.surfaceStart = worker->surfacePhotonMap->numPhotons;
+    record.mediaStart = worker->mediaPhotonMap->numPhotons;
+    record.shotsStart = worker->Stats()[Number_Of_Photons_Shot];
+}
+
+void PhotonShootingStrategy::recordRing(PhotonShootingUnit& unit, ViewThreadData* worker, DBL theta)
+{
+    if (!split)
+        return;
+    progress[unit.recordIndex].rings.push_back({theta, worker->hitObject != 0,
+        worker->surfacePhotonMap->numPhotons, worker->mediaPhotonMap->numPhotons,
+        worker->Stats()[Number_Of_Photons_Shot]});
+}
+
+void PhotonShootingStrategy::finishShooting()
+{
+    if (!split)
+        return;
+    bool hit = false;
+    std::size_t stopUnit = progress.size();
+    std::size_t stopRing = 0;
+    for (std::size_t u = 0; u < progress.size(); ++u)
+    {
+        for (std::size_t r = 0; r < progress[u].rings.size(); ++r)
+        {
+            const RingProgress& ring = progress[u].rings[r];
+            hit |= ring.hit;
+            if (hit && !ring.hit && ring.theta > autoStopPercent * fullMaxTheta)
+            {
+                stopUnit = u;
+                stopRing = r;
+                break;
+            }
+        }
+        if (stopUnit != progress.size())
+            break;
+    }
+    if (stopUnit == progress.size())
+        return;
+    // Each worker receives chunks in order, so discard later chunks first.
+    for (std::size_t u = progress.size(); u-- > stopUnit; )
+    {
+        const UnitProgress& record = progress[u];
+        if (record.worker == nullptr)
+            continue;
+        const bool last = u == stopUnit;
+        const int surface = last ? record.rings[stopRing].surfaceEnd : record.surfaceStart;
+        const int media = last ? record.rings[stopRing].mediaEnd : record.mediaStart;
+        const std::uint64_t shots = last ? record.rings[stopRing].shotsEnd : record.shotsStart;
+        record.worker->surfacePhotonMap->truncate(surface);
+        record.worker->mediaPhotonMap->truncate(media);
+        record.worker->Stats()[Number_Of_Photons_Shot] = shots;
+        record.worker->Stats()[Number_Of_Photons_Stored] = surface;
+        record.worker->Stats()[Number_Of_Media_Photons_Stored] = media;
+    }
 }
 
 PhotonShootingUnit* PhotonShootingStrategy::getNextUnit()

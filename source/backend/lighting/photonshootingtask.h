@@ -76,7 +76,7 @@ class PhotonShootingTask final : public RenderTask
 
         void SendProgress();
 
-        void ShootPhotonsAtObject(LightTargetCombo& combo);
+        void ShootPhotonsAtObject(PhotonShootingUnit& unit);
         DBL computeAttenuation(const LightSource* Light, const Ray& ray, DBL dist_of_initial_from_center);
 
         PhotonMap* getMediaPhotonMap();

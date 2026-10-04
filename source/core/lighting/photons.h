@@ -214,6 +214,7 @@ class PhotonMap final
         void setGatherOptions(ScenePhotonSettings& photonSettings, bool mediaMap);
 
         Photon* AllocatePhoton();
+        void truncate(int count);
 
         void mergeMap(PhotonMap* map);
 
@@ -387,6 +388,8 @@ class LightTargetCombo final
         ShootingDirection shootingDirection;
         /// Place among all light and target pairs, which keys its photons.
         std::uint64_t serial = 0;
+        std::uint64_t thetaIndexBase = 0;
+        bool parallelChunk = false;
 
         int computeMergedFlags();
         void computeAnglesAndDeltas(std::shared_ptr<SceneData> sceneData);
@@ -398,6 +401,7 @@ class PhotonShootingUnit final
     public:
         PhotonShootingUnit(LightSource* light, ObjectPtr target):lightAndObject(light,target) {}
         LightTargetCombo lightAndObject;
+        std::size_t recordIndex = 0;
 };
 
 

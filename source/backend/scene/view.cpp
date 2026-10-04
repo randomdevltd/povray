@@ -1129,7 +1129,8 @@ void View::StartRender(POVMS_Object& renderOptions)
         }
         else
         {
-            PhotonShootingStrategy* strategy = new PhotonShootingStrategy();
+            PhotonShootingStrategy* strategy = new PhotonShootingStrategy(maxRenderThreads,
+                viewData.GetSceneData()->photonSettings.autoStopPercent);
 
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new PhotonEstimationTask(
                 &viewData, seed
