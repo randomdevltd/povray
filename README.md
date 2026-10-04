@@ -1,6 +1,9 @@
 [POV-Ray](http://www.povray.org/) - The Persistence of Vision Raytracer
 =======================================================================
 
+This unofficial fork is developing POV-Ray 4.0. Scenes using `#version 4.0;` opt into
+new language defaults; scenes declaring earlier versions retain their compatibility defaults.
+
 [![Quick Tests](https://github.com/POV-Ray/povray/actions/workflows/test_build_quick.yml/badge.svg)](https://github.com/POV-Ray/povray/actions/workflows/test_build_quick.yml)
 [![Code Analysis](https://github.com/POV-Ray/povray/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/POV-Ray/povray/actions/workflows/codeql-analysis.yml)
 [![Maintenance Status](https://img.shields.io/maintenance/yes/2024.svg)](README.md "Last edited 2024-11-03")
@@ -138,4 +141,3 @@ We prefer that you contact us via the forums mentioned at the head of this docum
 If the matter is one that requires direct email contact (and this generally will NOT
 include tech support requests, though exceptions are made for package maintainers)
 you may use the address listed at the bottom of https://www.povray.org/povlegal.html.
-

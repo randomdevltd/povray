@@ -4453,6 +4453,8 @@ VERSION_DIRECTIVE:
 
 <p>New defaults require that the language version is explicitly set to 3.8 or higher via the <code>#version</code> directive the <code>Version=</code>n.n INI setting or the <code>+MV</code>n.n command-line option. Otherwise POV-Ray will fall back to legacy defaults for backwards compatibility.</p>
 
+<p><code>#version 4.0;</code> selects the 4.0 language defaults. Subsurface scattering uses method 2 when its method is omitted; scenes declaring an earlier language version retain method 1. An explicit <code>subsurface { method INT }</code> overrides either default.</p>
+
 <p>If you do need to do some processing before you decide on a version compatibility option start your scene with the following
 construct:</p>
 <pre>
