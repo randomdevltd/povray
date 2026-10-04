@@ -168,8 +168,8 @@ object { LeafShape
     projected_through { box { <X - 0.15, 0.7, min(Z - 0.9 * Dir, Z - 0.88 * Dir)>, <X + 0.15, 2.5, max(Z - 0.9 * Dir, Z - 0.88 * Dir)> } }
     photons { refraction on reflection off }
   }
-  // An unseen wall in front of the light stops its ordinary light reaching anything; its photons pass through it.
-  box { <X - 12, -1, min(-Dir * 19.5, -Dir * 19.4)>, <X + 12, 8, max(-Dir * 19.5, -Dir * 19.4)> pigment { rgb 0 } no_image no_reflection photons { pass_through } }
+  // An unseen wall in front of the light stops its ordinary light reaching anything; its photons start past the aperture and never meet it.
+  box { <X - 12, -1, min(-Dir * 19.5, -Dir * 19.4)>, <X + 12, 8, max(-Dir * 19.5, -Dir * 19.4)> pigment { rgb 0 } no_image no_reflection }
 #end
 #if (Front) PrismBeam(FrontX, 1, FrontPower) #end
 #if (Back) PrismBeam(BackX, -1, BackPower) #end
