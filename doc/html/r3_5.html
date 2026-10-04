@@ -824,6 +824,7 @@ isosurface {
 <p class="Note"><strong>Note:</strong> The current implementation has a <em>limit</em> of 10 <em>intersections</em> in all cases.</p>
 <p>By default, the inside of an <code>isosurface</code> is defined as the set of all points inside the <code>contained_by</code> shape where the function values are below the threshold. <font class="New">New</font> in version 3.8 this can be changed via the <code>polarity</code> keyword. Specifying a <em>positive</em> setting or <code>on</code> will instead cause function values <em>above</em> the threshold to be considered inside. Specifying a <em>negative</em> setting or <code>off</code> will give the default behavior.</p>
 
+<a name="r3_5_1_1_6_1"></a>
 <h6>Isosurface Mesh</h6>
 <p><code>isosurface_mesh</code> takes everything an <code>isosurface</code> takes and builds a triangle mesh of its surface when the scene is parsed. The result is a <code>mesh2</code> in every respect: it can be declared, used with <code>object</code>, copied, transformed and textured, and a closed one works in CSG. A mesh renders far faster than the isosurface it was made from, and every copy of a declared <code>isosurface_mesh</code> shares one set of triangles, so it suits quick iteration and distant copies.</p>
 <pre>
@@ -846,7 +847,63 @@ isosurface_mesh {
 </table>
 <p>Each cube that the surface passes through has one vertex, placed where the tangent planes at the surface's crossings of the cube's edges meet (dual contouring), so flat faces, sharp edges and corners come out exact at any cube size. The vertex is then moved onto the surface along the gradient, and its normal is the gradient there; triangles that span a crease take separate normals on either side. Each cube edge the surface crosses joins the vertices of the cubes around it, so cubes of different sizes meet without cracks. Where the surface meets the container the mesh is closed by the container, as the isosurface is, and is given an inside vector; with <code>open</code> it stops at the container instead, and the cubes along that rim split down to <code>min_size</code>. The mesh has no uv coordinates.</p>
 <p>A sphere of radius 1 at the default <code>max_angle</code> is 6348 triangles within 0.002 of the true surface, built in 0.04 seconds; a cube turned off the axes is 408 triangles with its edges and corners exact; a sphere displaced by <code>f_noise3d</code> is 136,000 triangles built in about 2.5 seconds, and renders five times faster than the isosurface. The finished mesh takes about 24 bytes per triangle; building it takes more for a while, about 450 bytes per triangle for the noisy sphere. A mesh may hold at most two million triangles; a <code>min_size</code> and <code>max_angle</code> that would need more stop the parse with an error. Each <code>isosurface_mesh</code> writes one line to the debug stream with its triangles, vertices, open edges, size in bytes, peak memory while building, build time, and how many cubes range arithmetic checked and how many a sample judged. If a cube ruled out by a sample turns out to touch the surface, a warning says <code>max_gradient</code> is too low.</p>
-<p>An <code>isosurface_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>isosurface_mesh</code> twice. It is built again each time the scene is parsed, so every run and every frame of an animation pays the build once; the time saved in tracing grows with the size of the image and with the number of copies.</p></div>
+<p>An <code>isosurface_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>isosurface_mesh</code> twice. It is built again each time the scene is parsed, so every run and every frame of an animation pays the build once; the time saved in tracing grows with the size of the image and with the number of copies.</p>
+<p>The mesh is a single object however many separate pieces the isosurface has: every piece is closed, so <code>inside</code> and CSG work across all of them, and unlike the isosurface it needs no <code>all_intersections</code> to be cut by CSG. When to use a mesh rather than the isosurface itself is covered under <a href="r3_5.html#r3_5_1_2_4_1">Meshes Built From Other Objects</a>.</p>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/isomesh_noisy_iso.png"></td>
+  <td><img class="center" width="320px" src="images/isomesh_noisy_mesh.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">A sphere displaced by <code>f_noise3d</code>: the isosurface (left, 1.1 seconds to trace at 480x360) and its mesh (right, 135,734 triangles, 2.4 seconds to build, 0.2 seconds to trace).</p></td>
+</tr>
+</table>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/isomesh_rock_iso.png"></td>
+  <td><img class="center" width="320px" src="images/isomesh_rock_mesh.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">A heavy function (a twisted rounded box, four octaves of noise and an image map): 46.6 seconds to trace as an isosurface at 480x360; 39 seconds to build and 0.2 seconds to trace as a mesh at <code>max_angle 20</code>. At 960x720 the isosurface takes 147 seconds and the mesh still 39.6.</p></td>
+</tr>
+</table>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/isomesh_field_iso.png"></td>
+  <td><img class="center" width="320px" src="images/isomesh_field_mesh.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">Thirty copies of that rock at 960x720 with antialiasing and shadows: 5 minutes 4 seconds as isosurfaces, 40 seconds from one declared mesh shared by every copy.</p></td>
+</tr>
+</table>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/isomesh_parts_iso.png"></td>
+  <td><img class="center" width="320px" src="images/isomesh_parts_mesh.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">Separate pieces, down to a sphere of radius 0.02 inside one octree cube, are all found.</p></td>
+</tr>
+</table>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/isomesh_csg_spheres_iso.png"></td>
+  <td><img class="center" width="320px" src="images/isomesh_csg_spheres_mesh.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">A slab minus five separate spheres: the isosurface (with <code>all_intersections</code>) and the mesh agree.</p></td>
+</tr>
+</table>
+<table class="centered" width="680px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="320px" src="images/isomesh_csg_noise_iso.png"></td>
+  <td><img class="center" width="320px" src="images/isomesh_csg_noise_mesh.png"></td>
+</tr>
+<tr>
+  <td colspan="2"><p class="caption">A slab minus thresholded noise, many separate islands: the isosurface (with <code>all_intersections</code>) and the mesh.</p></td>
+</tr>
+</table>
+</div>
 
 <a name="r3_5_1_1_7"></a>
 <div class="content-level-h5" contains="Julia Fractal" id="r3_5_1_1_7">
@@ -2241,7 +2298,28 @@ index following the face-index vector for that triangle.</p>
 <p>To specify three textures for vertex-texture interpolation, specify three integer
 texture indices (separated by commas) following the face-index vector for that triangle.</p>
 
-<p>Vertex-texture interpolation and textures for an individual triangle can be mixed in the same mesh.</p></div>
+<p>Vertex-texture interpolation and textures for an individual triangle can be mixed in the same mesh.</p>
+
+<a name="r3_5_1_2_4_1"></a>
+<h6>Meshes Built From Other Objects</h6>
+<p>Two objects build a <code>mesh2</code> at parse time from a slower shape: <a href="r3_9.html#r3_9_2_2"><code>skein_mesh</code></a> from a skein and <a href="r3_5.html#r3_5_1_1_6_1"><code>isosurface_mesh</code></a> from an isosurface. Each takes everything the original takes plus <code>max_angle</code> and <code>min_size</code>, and the result is an ordinary mesh: declared once, every copy shares its data.</p>
+<p>The cost moves from tracing to parsing. The original is solved for every ray; the mesh is built once per parse and then traces like any mesh, so the trade depends on how many rays the shape receives.</p>
+<p>Use the mesh</p>
+<ul>
+<li>for many copies of one shape: the build is paid once and each copy is nearly free (thirty heavy isosurfaces: 5 minutes as isosurfaces, 40 seconds as one shared mesh);</li>
+<li>for large images, antialiasing, area lights, reflections or radiosity: every extra ray costs the original another solve, while the build does not grow;</li>
+<li>while iterating on camera, lights and materials around a shape that is not changing;</li>
+<li>for distant copies, where triangles cannot show, keeping the original for the ones close to the camera;</li>
+<li>in CSG with an isosurface, which needs no <code>all_intersections</code> as a mesh.</li>
+</ul>
+<p>Keep the original</p>
+<ul>
+<li>when the shape changes every frame: the mesh is rebuilt on every parse, so an animated function or clock-driven skein pays the build each frame;</li>
+<li>for close-ups and the finest detail: the original is exact at any distance, the mesh only within <code>max_angle</code>;</li>
+<li>for one small render of one object, where the build can cost as much as the trace;</li>
+<li>when memory is short: a mesh takes about 24 to 32 bytes a triangle, and while it is built about 240 (skein) or 450 (isosurface) bytes a triangle; a fine mesh of a detailed surface can reach millions of triangles, and more than 2 million stops the parse;</li>
+<li>for an isosurface that needs uv coordinates (the mesh has none) or an <code>open</code> container (its rim is refined down to <code>min_size</code>).</li>
+</ul></div>
 
 <a name="r3_5_1_2_5"></a>
 <div class="content-level-h5" contains="Polygon" id="r3_5_1_2_5">
