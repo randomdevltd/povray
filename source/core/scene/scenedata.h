@@ -44,6 +44,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
 #include <map>
 #include <string>
 #include <vector>
@@ -86,6 +87,7 @@ class SubsurfaceCache;
 class SceneData
 {
     public:
+        mutable std::atomic<unsigned> mediaWarningFlags{0};
 
         typedef std::map<std::string, std::string> DeclaredVariablesMap;
 

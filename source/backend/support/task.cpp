@@ -49,6 +49,7 @@
 #include "base/povassert.h"
 #include "base/timer.h"
 #include "base/types.h"
+#include "core/scene/tracethreaddata.h"
 
 // POV-Ray header files (core module)
 // POV-Ray header files (POVMS module)
@@ -298,7 +299,10 @@ void Task::Cleanup ()
 SceneTask::SceneTask(ThreadData *td, const boost::function1<void, Exception&>& f, const char* sn, std::shared_ptr<BackendSceneData> sd, RenderBackend::ViewId vid) :
     Task(td, f),
     mpMessageFactory(new MessageFactory(sd->warningLevel, sn, sd->backendAddress, sd->frontendAddress, sd->sceneId, vid))
-{}
+{
+    if (auto data = dynamic_cast<TraceThreadData*>(td))
+        data->mediaMessages = mpMessageFactory;
+}
 
 SceneTask::~SceneTask()
 {

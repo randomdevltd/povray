@@ -1037,6 +1037,8 @@ void PhotonMediaFunction::addMediaPhoton(const Vector3d& Point, const Vector3d& 
 
 void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, const Ray& ray, const Intersection& isect, MathColour& colour)
 {
+    if (ray.IsPhotonRay())
+        PreparedResolution(medias, ray);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
