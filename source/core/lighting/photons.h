@@ -295,6 +295,7 @@ class PhotonGatherer final
         DBL size_sq_s;   // search radius squared
         DBL Size_s;      // search radius (static)
         DBL sqrt_dmax_s, dmax_s;      // dynamic search radius... current maximum
+        bool radiusDirty = false;
         int TargetNum_s; // how many to gather
         const Vector3d *pt_s;       // point around which we are gathering
         const Vector3d *norm_s;     // surface normal
@@ -316,6 +317,7 @@ class PhotonGatherer final
 
         void PQInsert(Photon *photon, DBL d);
         void FullPQInsert(Photon *photon, DBL d);
+        DBL currentRadius();
 };
 
 class PhotonMediaFunction final : public MediaFunction
