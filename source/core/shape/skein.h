@@ -274,6 +274,15 @@ struct SkeinData final
     SkeinData& operator=(const SkeinData&) = delete;
 };
 
+/// A skein's triangle mesh with one entry per distinct corner, so positions, normals and uv share the triangles' indices.
+struct SkeinMesh final
+{
+    std::vector<SnglVector3d> points, normals;
+    std::vector<Vector2d> uvs;
+    std::vector<int> triangles;
+    size_t openEdges = 0;
+};
+
 /// A surface or solid made by mapping the unit square through a chain of steps.
 class Skein final : public ObjectBase
 {
@@ -298,6 +307,12 @@ class Skein final : public ObjectBase
 
         /// Checks the topology and builds bounds and caps; returns an error message, empty when usable.
         std::string Prepare(TraceThreadData *thread);
+
+        static const size_t kMaxMeshTriangles = 2000000;
+
+        /// Tessellates the prepared skein: no edge shorter than `minSize` where avoidable, no turn over `maxAngle` degrees across a triangle;
+        /// returns an error message, empty on success.
+        std::string Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, SkeinMesh& mesh) const;
 
         struct Crossing { DBL t, u, v; Vector3d normal; int sign; };
         static const int kMaxCrossings = 64;

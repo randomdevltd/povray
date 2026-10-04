@@ -301,6 +301,34 @@ input a distribution is its cumulative form, or the inverse of it, rather than i
 
 ---
 
+## skein_mesh
+
+A `mesh2` built from a skein at parse time: quicker to render, and its copies share one
+set of triangles, so it suits iteration and distant copies.
+
+```
+skein_mesh { <everything a skein takes>  [min_size S]  [max_angle A]  <object modifiers> }
+```
+
+| property | type | what it does |
+|---|---|---|
+| `max_angle` | degrees, default 10 | a cell of (u, v) splits along u or v while the normal, or an edge, turns more than this across it |
+| `min_size` | object units, default a thousandth of the skein's size | no split that would make edges shorter than this; it wins over `max_angle`, so a sharp crease becomes a strip of this width with flat normals |
+
+Vertices lie on the surface, vertex normals are the skein's own (split where a corner's
+normal turns more than `max_angle` from its triangle's face), and uv vectors are the
+skein's (u, v), so `uv_mapping` works. Wrapped seams, poles and sealed ends share vertex
+positions, `ends flat` caps are fans from the end ring, and neighbouring cells of different
+sizes share their edge vertices: a closed skein gives a closed mesh, with `inside_vector`
+set. More than 2,000,000 triangles is a parse error. Each build writes a line to the debug
+stream: triangles, vertices, open edges, bytes and seconds.
+
+Chosen, not decided: the base lattice is the skein's patch grid rounded down to a power of
+two, refined by halving; one vertex per distinct position, normal and uv, so the mesh needs
+no index lists.
+
+---
+
 ## Unchanged by all of this
 
 `scale`, `rotate`, `translate`, `matrix`, `transform`, `displace`, `sample`, `envelope`,
@@ -326,3 +354,4 @@ input a distribution is its cumulative form, or the inverse of it, rather than i
 | `bend` — run-on past the end of an open `along` path | fixed and checked (`65e2514c`) |
 | remapping an axis input | to do |
 | distribution curves | to do |
+| `skein_mesh` | built and checked (`skein_mesh_check.pov`) |

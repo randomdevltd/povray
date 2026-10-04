@@ -37,6 +37,7 @@
 #include "parser/parser.h"
 
 // C++ standard header files
+#include <chrono>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -49,6 +50,7 @@
 
 // POV-Ray header files (core module)
 #include "core/math/matrix.h"
+#include "core/shape/mesh.h"
 #include "core/shape/skein.h"
 #include "core/support/imageutil.h"
 
@@ -131,6 +133,87 @@ ObjectPtr Parser::Parse_Skein()
         return reinterpret_cast<ObjectPtr>(object);
 
     object = new Skein();
+    Parse_Skein_Body(object, nullptr, nullptr);
+    if (!object->data->closed)
+        object->Type |= PATCH_OBJECT;
+
+    object->Compute_BBox();
+    Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object));
+    return reinterpret_cast<ObjectPtr>(object);
+}
+
+ObjectPtr Parser::Parse_Skein_Mesh()
+{
+    Parse_Begin();
+
+    const auto start = std::chrono::steady_clock::now();
+    std::unique_ptr<Skein> skein(new Skein());
+    DBL minSize = -1.0, maxAngle = 10.0;
+    Parse_Skein_Body(skein.get(), &minSize, &maxAngle);
+    if (minSize < 0.0)
+        minSize = 1.0e-3 * skein->data->size;
+    SkeinMesh built;
+    const std::string problem = skein->Tessellate(GetParserDataPtr(), minSize, maxAngle, built);
+    if (!problem.empty())
+        Error("%s", problem.c_str());
+    const bool closed = skein->data->closed;
+    skein.reset();
+
+    Mesh *object = new Mesh();
+    object->Data = new MESH_DATA();
+    object->Data->References = 1;
+    MESH_DATA& data = *object->Data;
+    const int vertices = int(built.points.size()), triangles = int(built.triangles.size() / 3);
+    data.Vertices = reinterpret_cast<MeshVector *>(POV_MALLOC(vertices * sizeof(MeshVector), "triangle mesh data"));
+    std::copy(built.points.begin(), built.points.end(), data.Vertices);
+    std::vector<SnglVector3d>().swap(built.points);
+    data.Normals = reinterpret_cast<MeshVector *>(POV_MALLOC(vertices * sizeof(MeshVector), "triangle mesh data"));
+    std::copy(built.normals.begin(), built.normals.end(), data.Normals);
+    std::vector<SnglVector3d>().swap(built.normals);
+    data.UVCoords = reinterpret_cast<MeshUVVector *>(POV_MALLOC(vertices * sizeof(MeshUVVector), "triangle mesh data"));
+    std::copy(built.uvs.begin(), built.uvs.end(), data.UVCoords);
+    std::vector<Vector2d>().swap(built.uvs);
+    data.Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_MALLOC(triangles * sizeof(MESH_TRIANGLE), "triangle mesh data"));
+    data.Number_Of_Vertices = data.Number_Of_Normals = data.Number_Of_UVCoords = vertices;
+    data.Number_Of_Triangles = triangles;
+    data.NormalInd.byVertex = true;
+    data.UVInd.byVertex = true;
+    for (int i = 0; i < triangles; ++i)
+    {
+        MESH_TRIANGLE& t = data.Triangles[i];
+        object->Init_Mesh_Triangle(&t);
+        const int *k = &built.triangles[3 * i];
+        for (int c = 0; c < 3; ++c)
+            t.SetP(c, k[c]);
+        const bool smooth = (Vector3d(data.Normals[k[0]] - data.Normals[k[1]]).lengthSqr() > EPSILON) ||
+                            (Vector3d(data.Normals[k[0]] - data.Normals[k[2]]).lengthSqr() > EPSILON);
+        object->Compute_Mesh_Triangle(&t, i, smooth, Vector3d(data.Vertices[k[0]]), Vector3d(data.Vertices[k[1]]), Vector3d(data.Vertices[k[2]]));
+    }
+    std::vector<int>().swap(built.triangles);
+    object->Finish_Mesh_Data();
+    if (closed)
+    {
+        data.Inside_Vect = Vector3d(0.5381, 0.6012, 0.5907).normalized();
+        object->has_inside_vector = true;
+        object->Type &= ~PATCH_OBJECT;
+    }
+    else
+    {
+        object->has_inside_vector = false;
+        object->Type |= PATCH_OBJECT;
+    }
+    const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
+    Debug_Info("skein_mesh: %d triangles, %d vertices, %d open edges, %d bytes, %.3f s\n", triangles, vertices, int(built.openEdges),
+               int(vertices * (2 * sizeof(MeshVector) + sizeof(MeshUVVector)) + triangles * sizeof(MESH_TRIANGLE)), seconds);
+
+    object->Compute_BBox();
+    Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object));
+    object->Build_Mesh_BBox_Tree();
+    return reinterpret_cast<ObjectPtr>(object);
+}
+
+void Parser::Parse_Skein_Body(Skein *object, DBL *minSize, DBL *maxAngle)
+{
     object->data = std::make_shared<SkeinData>();
     SkeinData& data = *object->data;
     bool haveExpressions = false;
@@ -178,6 +261,18 @@ ObjectPtr Parser::Parse_Skein()
             if (Parse_Comma())
                 data.ends[1] = parseEnd();
         }
+        else if ((minSize != nullptr) && (word == "min_size"))
+        {
+            *minSize = Parse_Float();
+            if (*minSize < 0.0)
+                Error("skein_mesh: min_size cannot be negative.");
+        }
+        else if ((maxAngle != nullptr) && (word == "max_angle"))
+        {
+            *maxAngle = Parse_Float();
+            if (!(*maxAngle > 0.0))
+                Error("skein_mesh: max_angle must be above 0.");
+        }
         else
         {
             Unget_Token();
@@ -193,12 +288,6 @@ ObjectPtr Parser::Parse_Skein()
     const std::string problem = object->Prepare(GetParserDataPtr());
     if (!problem.empty())
         Error("%s", problem.c_str());
-    if (!data.closed)
-        object->Type |= PATCH_OBJECT;
-
-    object->Compute_BBox();
-    Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object));
-    return reinterpret_cast<ObjectPtr>(object);
 }
 
 void *Parser::Parse_Skein_Group()
