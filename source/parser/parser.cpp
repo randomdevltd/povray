@@ -6657,6 +6657,10 @@ ObjectPtr Parser::Parse_Object ()
             Object = Parse_Skein ();
         END_CASE
 
+        CASE (SKEIN_MESH_TOKEN)
+            Object = Parse_Skein_Mesh ();
+        END_CASE
+
         /* Parse lathe primitive. [DB 8/94] */
 
         CASE (LATHE_TOKEN)
