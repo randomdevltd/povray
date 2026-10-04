@@ -553,6 +553,8 @@ void Parser::Frame_Init()
 
 void Parser::InitDefaults(int version)
 {
+    if (!sceneData->explicitSubsurfaceMethod && !defaultsModified)
+        sceneData->subsurfaceMethod = (version >= 400) ? kSubsurfaceMethodPointCloud : kSubsurfaceMethodSampled;
     // Initialize defaults depending on version:
     // As of v3.8...
     //   - pigment defaults to `rgb <1,1,1>`
@@ -7557,6 +7559,7 @@ void Parser::Parse_Global_Settings()
 
                 CASE (METHOD_TOKEN)
                     sceneData->subsurfaceMethod = Parse_Int_With_Range(kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, "subsurface method");
+                    sceneData->explicitSubsurfaceMethod = true;
                 END_CASE
 
                 CASE (ERROR_BOUND_TOKEN)
