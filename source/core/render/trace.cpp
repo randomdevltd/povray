@@ -2844,6 +2844,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     double newdepth;
     Intersection isect;
     Ray newray(lightsourceray);
+    newray.SetMediaLight(&lightsource);
 
     // Store current depth and ray because they will be modified.
     newdepth = depth;

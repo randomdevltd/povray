@@ -472,6 +472,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { REFRACTION_TOKEN,             "refraction" },
     { RENDER_TOKEN,                 "render" },
     { REPEAT_TOKEN,                 "repeat" },
+    { RESOLUTION_TOKEN,             "resolution" },
     { RGB_TOKEN,                    "rgb" },
     { RGBF_TOKEN,                   "rgbf" },
     { RGBFT_TOKEN,                  "rgbft" },

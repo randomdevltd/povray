@@ -119,6 +119,8 @@ class Ray final : public BasicRay
         DBL GetMediaErrorBudget() const { return mediaErrorBudget; }
         void SetMediaErrorBudget(DBL value) const { mediaErrorBudget = value; }
         void ResetMediaErrorBudget() { mediaErrorBudget = 1.0 / 1024.0; }
+        const LightSource *GetMediaLight() const { return mediaLight; }
+        void SetMediaLight(const LightSource *light) { mediaLight = light; }
 
         /// The path key this ray's random draws are hashed from.
         std::uint64_t GetKey() const { return key; }
@@ -141,6 +143,7 @@ class Ray final : public BasicRay
         std::uint64_t key = 0;
         mutable std::uint32_t children = 0;
         mutable DBL mediaErrorBudget = 0.0;
+        const LightSource *mediaLight = nullptr;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;

@@ -141,6 +141,7 @@ typedef TEXTURE* TexturePtr;
 class Media final
 {
     public:
+        class FastCache;
         int Type;
         int Intervals;
         int Min_Samples;
@@ -169,6 +170,8 @@ class Media final
         int AA_Level;
 
         std::vector<PIGMENT*> Density;
+        DBL FastResolution;
+        std::shared_ptr<FastCache> fastCache;
 
         Media();
         Media(const Media&);
@@ -179,6 +182,7 @@ class Media final
         void Transform(const TRANSFORM *trans);
 
         void PostProcess();
+        void SetFastContainer(ObjectPtr object);
 };
 
 /// @}
