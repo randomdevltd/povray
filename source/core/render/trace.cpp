@@ -161,6 +161,14 @@ struct PortalNesting final
     ~PortalNesting() { --thread->portalDepth; }
 };
 
+struct SurfacePhotonGatherNesting final
+{
+    size_t& depth;
+    bool active;
+    SurfacePhotonGatherNesting(size_t& d, bool enabled) : depth(d), active(enabled) { if (active) ++depth; }
+    ~SurfacePhotonGatherNesting() { if (active) --depth; }
+};
+
 void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread)
 {
     if (!Inside_BBox(point, node->BBox))
@@ -1144,7 +1152,10 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     MathColour ambBackCol;
     bool one_colour_found, colour_found;
     bool tir_occured;
-    std::unique_ptr<PhotonGatherer> surfacePhotonGatherer(nullptr);
+    PhotonGatherer *surfacePhotonGatherer = nullptr;
+    const bool gatherSurfacePhotons = sceneData->photonSettings.photonsEnabled && sceneData->surfacePhotonMap.numPhotons > 0;
+    const size_t gatherIndex = surfacePhotonGatherDepth;
+    SurfacePhotonGatherNesting gatherNesting(surfacePhotonGatherDepth, gatherSurfacePhotons);
 
     double relativeIor;
     ComputeRelativeIOR(ray, isect.Object->interior.get(), relativeIor);
@@ -1187,8 +1198,13 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     // phong and specular for these textures.
     one_colour_found = false;
 
-    if(sceneData->photonSettings.photonsEnabled && sceneData->surfacePhotonMap.numPhotons > 0)
-        surfacePhotonGatherer.reset(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
+    if(gatherSurfacePhotons)
+    {
+        if(gatherIndex == surfacePhotonGatherers.size())
+            surfacePhotonGatherers.emplace_back(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
+        surfacePhotonGatherer = surfacePhotonGatherers[gatherIndex].get();
+        surfacePhotonGatherer->gathered = false;
+    }
 
     SubsurfaceLayers subsurfaceLayers;
 
