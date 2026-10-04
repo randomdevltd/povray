@@ -40,6 +40,7 @@
 #include "core/configcore.h"
 
 // C++ standard header files
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -204,12 +205,24 @@ struct SkeinRoll final
     DBL Section(DBL phi, Vector3d c[3]) const;
 };
 
+/// A `fold`'s solve: as parsed, and once prepared a table of columns of entries (folded point, tangent-plane rotation as three rows)
+/// solved from `from` along its row then each column; `exact` when every loop across the columns closes, `gaps` how far each fails.
+struct SkeinFold final
+{
+    Vector2d from;
+    bool perturb = false, ready = false, exact = true;
+    int columns = 0, rows = 0, bands = 0;
+    DBL scale = 1.0, gap = 0.0, tolerance = 0.0;
+    std::vector<Vector3d> points, turns;
+    std::vector<DBL> gaps;
+};
+
 struct SkeinBlend;
 
 /// One map of the unit square's image.
 struct SkeinStep final
 {
-    enum Kind { kAffine, kFold, kDisplace, kTranslate, kScale, kRotate, kBend, kSample, kEnvelope, kBlend, kAxialStep, kCurl };
+    enum Kind { kAffine, kFold, kDisplace, kTranslate, kScale, kRotate, kBend, kSample, kEnvelope, kBlend, kAxialStep, kCurl, kConform };
     enum Role { kRadius = 0, kArc = 2, kAmount = 0, kAngle = 0, kLimit = 1, kShift = 1, kRadial = 2, kThickness = 0, kAtU = 0, kAtV = 1, kDriver = 0 };
     enum Edge : unsigned char { kNoEdge, kRoundEdge, kFlatEdge };
 
@@ -222,6 +235,8 @@ struct SkeinStep final
     std::shared_ptr<SkeinAxis> target;
     std::shared_ptr<SkeinBlend> blend;
     std::shared_ptr<const SkeinRoll> roll;
+    /// The solve of a `fold` (kind kConform; `value` holds its x, y and z).
+    std::shared_ptr<const SkeinFold> fold;
     bool normal = false;
     bool alongV = false;
     Edge edge = kNoEdge;
@@ -297,7 +312,8 @@ class Skein final : public ObjectBase
         virtual void Compute_BBox() override;
 
         /// Checks the topology and builds bounds and caps; returns an error message, empty when usable.
-        std::string Prepare(TraceThreadData *thread);
+        /// `cooperate`, when given, is called now and then and may throw to stop a long Prepare.
+        std::string Prepare(TraceThreadData *thread, const std::function<void()>& cooperate = nullptr);
 
         struct Crossing { DBL t, u, v; Vector3d normal; int sign; };
         static const int kMaxCrossings = 64;

@@ -214,6 +214,64 @@ variation lives on `crease`'s `radius` and `angle` instead.
 
 ---
 
+## fold
+
+Folds the surface so its normal at each point is a new one you give, keeping lengths
+along the surface: a bending, never a stretch. The fold is solved outward from one point
+of the sheet, `from`, which stays where it is.
+
+```
+fold { from <U, V>  x V  y V  z V }
+fold { from <U, V>  perturb { x V  y V  [z V] } }
+```
+
+| property | type | what it does |
+|---|---|---|
+| `from` | `<u, v>`, required | where the solve starts: that point keeps its place and its tangent plane turns straight to the new normal there |
+| `x`, `y`, `z` | values, each 0 when left out | the new normal in space, as `translate { x ... y ... z ... }` takes its parts. Its length does not matter |
+| `perturb` | `x`, `y` and `z`, values; `z` defaults to 1 | the new normal in the surface's own frame, as a normal map gives it: `x` along the incoming u direction, `y` along its v direction (both made square to the normal) and `z` along the incoming normal. `perturb { }` keeps the surface as it is |
+
+Give either `x`, `y` and `z` or a `perturb`, not both. The values take the same inputs as
+any other: `uv`, and `pos` and `norm` of the surface entering the fold. A new normal of
+zero length keeps the incoming one there.
+
+**What is exact.** When the new normals are those of a surface that the incoming one can
+be bent into without stretching (a developable field: one straight hinge, a stack of
+creases, a paper dart), the fold is that surface, whichever way it is solved. A fold
+whose normal is the hinge's normal is that `crease` to 1e-8 (`tests/render/skein_fold.pov`).
+A fold to the incoming surface's own normals is the identity.
+
+**What is best effort.** Other fields (a dome on a flat sheet, noise) have no surface that
+keeps every length, so the result depends on the path it was solved along. It is never
+refused. The convention: from `from` along its row to each of 65 columns across the sheet,
+then up and down each column; a point between columns is solved along its row from the
+column on each side and the two blended, so the surface stays whole. Whether the field
+closed is measured at Prepare: when every loop across the columns closes, a point is
+solved from the nearest tabulated point alone.
+
+**How the turn is chosen.** At `from`, the tangent plane takes the shortest turn to the new
+normal (a half turn about the incoming u direction if the new normal is exactly the
+opposite). Everywhere else the turn is carried from point to point along the solve, so
+it is continuous: a normal that swings smoothly through 180 degrees across a hinge folds
+the sheet flat back on itself with no ambiguity, by `perturb` (`z` negative) or by `x`,
+`y` and `z`. A normal that jumps (a hinge of zero width) takes the shortest turn across
+the jump, and a jump of exactly 180 degrees a half turn about the u direction.
+
+**Not guaranteed.** The folded sheet may pass through itself, as paper folded flat
+touches itself. A kink or a jump in the field is found by bisecting the field and crossed
+in one step, so a crumpled sheet of jumps and kinks costs a few times a smooth one.
+
+**Cost.** Each evaluation integrates from a tabulated point (or three short runs when the
+field does not close), so a fold costs some tens to a few hundred evaluations of the
+surface entering it. Enclosures are the folded centre of a patch padded by the longest
+path to its corners, which shrink with the patch.
+
+`crease`, `curl`, `bend` and `extrude` are unchanged; a fold is the general form a
+crease's or a roll's normals can be given in, and an extrusion is a fold followed by a
+displacement.
+
+---
+
 ## bend
 
 Moves material that is already there, relative to a line. Unlike the three above it does
@@ -324,5 +382,6 @@ input a distribution is its cumulative form, or the inverse of it, rather than i
 | `curl` | built and checked; in this merge and in the manual |
 | `expression_map` — every entry sampled for its box (a repeated declared group with a function value) | fixed and checked (`749667f3`) |
 | `bend` — run-on past the end of an open `along` path | fixed and checked (`65e2514c`) |
+| `fold` — a new normal per point, by `x`, `y` and `z` or `perturb` | built and checked |
 | remapping an axis input | to do |
 | distribution curves | to do |

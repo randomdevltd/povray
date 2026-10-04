@@ -1483,6 +1483,65 @@ as `path { 0, <0, 0, 0>, N, N*<step> }` by a scene macro, so a scroll of N turns
   toward the corner (R0 0.09, 0.04 a turn toward the sheet, `pageB.png`, `pageB_end.png`) reads much the same and was
   not taken.
 
+### `fold`: a new normal per point
+
+```
+fold { from <U, V>  x V  y V  z V }                // the new normal in space
+fold { from <U, V>  perturb { x V  y V  [z V] } }  // in the tangent frame (u direction, v direction, normal), z 1 by default
+```
+
+The owner's API (2026-10-03/04): the surface is distorted to conform to new normals given per point, keeping local
+relative position as far as it can, solved from one uv origin. `perturb` is shorthand for a computed normal,
+normalize(x Tu + y Tv + z N), as a normal map's channels; nothing else rotates. The C++ is `kConform`,
+`Parse_Skein_Conform`, `Evaluator::BuildFold`, `FoldPoint`, `FoldPanel`, `Conform`, `ConformBox` and `SkeinFold`.
+
+- **The turn.** A normal alone does not say how the tangent plane spins about it, and after two hinges that are not
+  parallel the shortest turn from the incoming normal is far off (29 degrees after two creases, measured in the
+  proposal). So the rotation Q of the tangent plane is carried along the solve: between two nearby samples the
+  incoming and the new normals each move by their least rotation, Q' = R(m0 -> m1) Q R(n0 -> n1)^T. That is exact for
+  a normal moving on a great circle (every straight hinge), and continuous through 180 degrees. For a normal moving on
+  any other path the least rotations spin about the normal by the path's swept area; within a Gauss-Kronrod panel that
+  spin is integrated from the polynomial through the panel's normals, d psi = (a x m) . dm / (1 + a . m) with a the
+  panel's first normal, for the new normals less the incoming ones. With the spin added, a developable field (a cone,
+  a crease stack) is solved to the panel tolerance whatever the path, and the identity stays exactly the identity.
+- **The point.** S' = S'(from) + the integral of Q dS along a straight run in (u, v), by Gauss-Kronrod 15 panels
+  (Kronrod against Gauss, and the spin from all 17 points against that from the Gauss 7 and the ends, both to 1e-11 of
+  the sheet's size). The slopes are Q S_u and Q S_v: no second derivatives.
+- **Kinks and jumps.** A panel that fails does not halve blindly. The field alone is bisected toward the half whose
+  midpoint strays further from a straight step (the incoming point's bow, the turn of either normal off the step's,
+  and the chord's error over the turn), with one sample a halving once the change across the bracket stops shrinking
+  (a jump); the bracket is crossed by one least-turn step and the run carries on in panels either side. The step stops
+  at 1e-6 of the panel tolerance for an exact fold, since its error moves with the point and an envelope differences
+  the fold over 1e-8, and at 1e-3 for a blended one. A run spends at most 3000 samples. An incoming slope that is
+  infinite or undefined (an outline like pow(sin(pi v), 0.8) at its tips) is taken from 1e-6 inside.
+- **The table (Prepare).** 65 columns, u = i/64, each tabulated at v = k/128: solved from `from` along its row to each
+  column, then up and down each column; every eighth row is solved again across each pair of columns to measure how far
+  the loops fail to close. When none fails by more than 1e-9 of the size the field is developable and a point is solved
+  from its nearest entry; otherwise from the entry nearest it on the column each side, along the row through it to the
+  other column, the two blended linearly across, which keeps the surface whole (the columns are consistent by
+  construction, and the blend matches each column at its own u), at a looser 1e-10. Prepare calls the parser's progress
+  report between columns and patches, so a cancel stops it.
+- **Enclosure.** Folding keeps lengths, so a patch lies within the longest path from its centre to its corners of the
+  folded centre: the incoming slopes' interval reach (sampled at 3 by 3 with a 1.5 margin when they are not exact)
+  times the half widths. That shrinks with the patch, which is the wizard-hat lesson; a blended field adds the slope of
+  the largest loop gap among the cells the patch covers. The box is a cube, not oriented, so it is up to about 1.7 times the patch's own.
+- **Checks.** `skein_fold.pov` (400 rays each): a 120 degree hinge by x, y, z and by perturb against `crease`, 0.058e-9 in
+  points and 0.069e-9 in normals; thickened by an envelope, 0.196e-9 and 3.849e-9, inside() 216 of 216; a 180 degree
+  hinge by perturb, 0.301e-9 and 0.700e-9; a torus folded to its own normals, 3.243e-9 and 4.340e-9, inside() 216 of 216.
+  Box cost (`skein_fold_box.pov`, rows 12 and 13 of 24 by 24): 284 unresolved patches and 10742 bound tests in 0.08 s;
+  with a box that does not shrink, 5582614 and 7445214 in 147 s. The whole 24 by 24 view: 2532 unresolved and 104644
+  bound tests, against 142 and 16042 for the same view as a `crease`, whose box is exact.
+- **Cost of discontinuities (2026-10-04).** Single pixels at 320 by 240, one thread, before and after: a crumpled sheet
+  whose crackle facets tilt with sign jumps and eased kinks, Prepare 20.4 s to 2.4 s and 36 to 80 s a pixel to 0.09 to
+  0.39 s; jumps only, 5.1 s to 0.8 s and 8 to 32 s to 0.05 to 0.19 s; kinks only, 9.3 s to 1.4 s and 1.8 to 2.5 s to
+  0.04 to 0.07 s; a leaf whose outline has an infinite slope at its tips never finished parsing (over 9 minutes, deaf to
+  a cancel) and now takes 1.1 s (curl) and 1.8 s (cup). A 90 degree hinge, 0.05 s to 0.09 s Prepare, the larger table;
+  a smooth cup unchanged. Newton's success on the crumpled sheet rose from 0.7 to 2.4% to 13 to 19%: its failures were
+  loose blended boxes (the worst cell's gap applied everywhere), not the creases. `skein_fold_crumple.pov` (rows 12 and
+  13 of 24 by 24, in `skein.sh` with a ceiling of 5 million): 1591179 evaluations and 2.1 s, against 170226611 and 227 s
+  halving the integral.
+- **Values** of a fold take no function slots: nothing encloses them, so no patch samples the chain for them.
+
 ### Review fixes: the function context, copied axes and the check guards
 
 - **A function axis inside an `expression_map` entry**, in a skein with no function values, left the evaluator

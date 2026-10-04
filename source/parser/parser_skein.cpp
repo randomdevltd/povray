@@ -190,7 +190,7 @@ ObjectPtr Parser::Parse_Skein()
     if ((!data.wrapU || data.wrapV) && ((data.ends[0] != SkeinData::kOpen) || (data.ends[1] != SkeinData::kOpen)))
         Warning("skein: ends apply only when u is closed and v is not; they are ignored here.");
 
-    const std::string problem = object->Prepare(GetParserDataPtr());
+    const std::string problem = object->Prepare(GetParserDataPtr(), [this]() { mProgressReporter.ReportProgress(mTokenCount); });
     if (!problem.empty())
         Error("%s", problem.c_str());
     if (!data.closed)
@@ -263,6 +263,8 @@ void Parser::Parse_Skein_Step(std::vector<SkeinStep>& steps)
                 Parse_Skein_Axial(steps);
             else if (CurrentTokenText() == "curl")
                 Parse_Skein_Curl(steps);
+            else if (CurrentTokenText() == "fold")
+                Parse_Skein_Conform(steps);
             else if (CurrentTokenText() == "displace")
             {
                 steps.push_back(SkeinStep());
@@ -276,7 +278,7 @@ void Parser::Parse_Skein_Step(std::vector<SkeinStep>& steps)
             else if (CurrentTokenText() == "expression_map")
                 Parse_Skein_Blend(steps);
             else
-                Expectation_Error("skein expression: scale, rotate, translate, matrix, transform, extrude, crease, curl, bend, displace, sample, envelope, expression_map or an expressions group");
+                Expectation_Error("skein expression: scale, rotate, translate, matrix, transform, extrude, crease, curl, fold, bend, displace, sample, envelope, expression_map or an expressions group");
             return;
     }
     if ((id == SCALE_TOKEN) || (id == ROTATE_TOKEN))
@@ -780,6 +782,72 @@ void Parser::Parse_Skein_Curl(std::vector<SkeinStep>& steps)
         step.value[SkeinStep::kRadius].constant = radius;
     }
     step.roll = roll;
+    steps.push_back(step);
+}
+
+// why: the new normal is three values, as translate takes them, or a perturb in the tangent frame; solved at Prepare (doc/skein.md, fold)
+void Parser::Parse_Skein_Conform(std::vector<SkeinStep>& steps)
+{
+    SkeinStep step;
+    step.kind = SkeinStep::kConform;
+    std::shared_ptr<SkeinFold> fold = std::make_shared<SkeinFold>();
+    bool haveFrom = false, haveNormal = false;
+    const char *where[2][3] = { { "fold x", "fold y", "fold z" }, { "fold perturb x", "fold perturb y", "fold perturb z" } };
+
+    Parse_Begin();
+    for (;;)
+    {
+        Get_Token();
+        if (CurrentTrueTokenId() == RIGHT_CURLY_TOKEN)
+        {
+            Unget_Token();
+            break;
+        }
+        const UTF8String word = CurrentTokenText();
+        if (word == "from")
+        {
+            Parse_UV_Vect(fold->from);
+            haveFrom = true;
+        }
+        else if (((word == "x") || (word == "y") || (word == "z")) && !fold->perturb)
+        {
+            Parse_Skein_Value(step.value[word[0] - 'x'], where[0][word[0] - 'x']);
+            haveNormal = true;
+        }
+        else if ((word == "perturb") && !haveNormal && !fold->perturb)
+        {
+            fold->perturb = true;
+            step.value[2].constant = 1.0;
+            Parse_Begin();
+            for (;;)
+            {
+                Get_Token();
+                if (CurrentTrueTokenId() == RIGHT_CURLY_TOKEN)
+                {
+                    Unget_Token();
+                    break;
+                }
+                const UTF8String part = CurrentTokenText();
+                if ((part == "x") || (part == "y") || (part == "z"))
+                    Parse_Skein_Value(step.value[part[0] - 'x'], where[1][part[0] - 'x']);
+                else
+                    Expectation_Error("fold perturb parameter: x, y or z");
+            }
+            Parse_End();
+        }
+        else
+            Expectation_Error(fold->perturb ? "fold parameter: from (a perturb takes the place of x, y and z)" :
+                              haveNormal ? "fold parameter: from, x, y or z (not a perturb as well)" : "fold parameter: from, x, y, z or perturb");
+    }
+    Parse_End();
+
+    if (!haveFrom)
+        Error("skein fold: from <u, v> is required.");
+    if (!haveNormal && !fold->perturb)
+        Error("skein fold: give the new normal as x, y and z, or as a perturb.");
+    if ((fold->from[X] < 0.0) || (fold->from[X] > 1.0) || (fold->from[Y] < 0.0) || (fold->from[Y] > 1.0))
+        Error("skein fold: from <%g, %g> is off the sheet; u and v run from 0 to 1.", fold->from[X], fold->from[Y]);
+    step.fold = fold;
     steps.push_back(step);
 }
 
