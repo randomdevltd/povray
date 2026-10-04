@@ -3545,11 +3545,13 @@ ObjectPtr Parser::Parse_Light_Group()
                     if((int)Allow_Float(1.0))
                     {
                         Set_Flag(Object, PH_PASSTHRU_FLAG);
+                        Clear_Flag(Object, PH_PASSTHRU_OFF_FLAG);
                         CheckPassThru(reinterpret_cast<ObjectPtr>(Object), PH_PASSTHRU_FLAG);
                     }
                     else
                     {
                         Clear_Flag(Object, PH_PASSTHRU_FLAG);
+                        Set_Flag(Object, PH_PASSTHRU_OFF_FLAG);
                     }
                 END_CASE
 
@@ -7613,11 +7615,13 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
                     if((int)Allow_Float(1.0))
                     {
                         Set_Flag(Object, PH_PASSTHRU_FLAG);
+                        Clear_Flag(Object, PH_PASSTHRU_OFF_FLAG);
                         CheckPassThru(Object, PH_PASSTHRU_FLAG);
                     }
                     else
                     {
                         Clear_Flag(Object, PH_PASSTHRU_FLAG);
+                        Set_Flag(Object, PH_PASSTHRU_OFF_FLAG);
                     }
                 END_CASE
 
@@ -9476,6 +9480,10 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             Set_Flag(Object, PH_PASSTHRU_FLAG);
             CheckPassThru(Object, PH_PASSTHRU_FLAG);
+        }
+        else if (Test_Flag(Parent, PH_PASSTHRU_OFF_FLAG) && !Test_Flag(Object, PH_PASSTHRU_FLAG))
+        {
+            Set_Flag(Object, PH_PASSTHRU_OFF_FLAG);
         }
 
         if (Test_Flag(Parent, PH_RFL_ON_FLAG))

@@ -85,7 +85,7 @@ inline bool Test_Ray_Flags(const Ray& ray, ConstObjectPtr obj)
                (!Test_Flag(obj, NO_IMAGE_FLAG) || ray.IsImageRay() == false || ray.IsPrimaryRay() == true) &&
                (!Test_Flag(obj, NO_REFLECTION_FLAG) || ray.IsReflectionRay() == false) &&
                (!Test_Flag(obj, NO_RADIOSITY_FLAG) || ray.IsRadiosityRay() == false) ) ||
-             ( ray.IsPhotonRay() && !Test_Flag(obj, NO_SHADOW_FLAG) ) );
+             ( ray.IsPhotonRay() && !Hidden_From_Photons(obj) ) );
 }
 
 inline bool Test_Ray_Flags_Shadow(const Ray& ray, ConstObjectPtr obj)
@@ -95,7 +95,7 @@ inline bool Test_Ray_Flags_Shadow(const Ray& ray, ConstObjectPtr obj)
                (!Test_Flag(obj, NO_IMAGE_FLAG) || ray.IsImageRay() == false) &&
                (!Test_Flag(obj, NO_REFLECTION_FLAG) || ray.IsReflectionRay() == false) &&
                (!Test_Flag(obj, NO_RADIOSITY_FLAG) || ray.IsRadiosityRay() == false) ) ||
-             ( ray.IsPhotonRay() && !Test_Flag(obj, NO_SHADOW_FLAG) ) ||
+             ( ray.IsPhotonRay() && !Hidden_From_Photons(obj) ) ||
              ( ray.IsShadowTestRay() && !Test_Flag(obj, NO_SHADOW_FLAG) ) );
 }
 

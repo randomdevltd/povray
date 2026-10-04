@@ -116,6 +116,7 @@ namespace pov
 #define NO_RADIOSITY_FLAG         0x08000000L ///< Object doesn't catch radiosity rays (i.e. is invisible to radiosity).
 #define CUTAWAY_TEXTURES_FLAG     0x10000000L ///< Object (or any of its parents) has cutaway_textures set.
 #define PORTAL_FLAG               0x20000000L ///< Object is a @ref Portal; it stamps itself as the CSG of its hits.
+#define PH_PASSTHRU_OFF_FLAG      0x40000000L ///< `pass_through off` given, so `no_shadow` does not imply pass-through.
 
 #define Set_Flag(Object, Flag)     \
     { (Object)->Flags |=  (Flag); }
@@ -290,6 +291,18 @@ class ObjectBase
 
         explicit ObjectBase(const ObjectBase&) { }
 };
+
+/// Photon rays skip the object: `no_shadow` implies pass-through unless it is a target or has `pass_through off`.
+inline bool Hidden_From_Photons(const ObjectBase *o)
+{
+    return (o->Flags & (NO_SHADOW_FLAG | PH_TARGET_FLAG | PH_PASSTHRU_OFF_FLAG)) == NO_SHADOW_FLAG;
+}
+
+/// Photons on their way to a target pass the object unaffected.
+inline bool Photon_Pass_Through(const ObjectBase *o)
+{
+    return Test_Flag(o, PH_PASSTHRU_FLAG) || ((o->Flags & (NO_SHADOW_FLAG | PH_PASSTHRU_OFF_FLAG)) == NO_SHADOW_FLAG);
+}
 
 /// Convenience class to derive patch objects from.
 class NonsolidObject : public ObjectBase
