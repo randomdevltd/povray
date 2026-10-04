@@ -50,6 +50,7 @@
 
 // POV-Ray header files (base module)
 #include "base/types.h"
+#include "base/messenger.h"
 #include "base/colour.h"
 
 // POV-Ray header files (core module)
@@ -122,6 +123,8 @@ class TraceThreadData : public ThreadData
 
         /// Depths between which an opaque blocker ends a shadow ray, so an opaque isosurface may report any root
         /// there rather than the first; both zero where the first is needed.
+        GenericMessenger* mediaMessages = nullptr;
+
         double isoShadowFrom;
         double isoShadowTo;
 
