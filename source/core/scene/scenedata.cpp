@@ -93,6 +93,7 @@ SceneData::SceneData() :
     subsurfaceSamplesSingle = 50;
     subsurfaceUseRadiosity = false;
     subsurfaceMethod = kSubsurfaceMethodSampled;
+    explicitSubsurfaceMethod = false;
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;
 

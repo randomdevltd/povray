@@ -164,6 +164,7 @@ class SceneData
         bool subsurfaceUseRadiosity;
         /// how subsurface light is found where a finish does not say: kSubsurfaceMethodSampled or kSubsurfaceMethodPointCloud
         int subsurfaceMethod;
+        bool explicitSubsurfaceMethod;
         /// point-cloud method: how coarsely far groups of points may be summed as one
         double subsurfaceErrorBound;
         /// point-cloud method: point spacing relative to the automatic spacing
