@@ -546,6 +546,9 @@ bool TransformWarp::WarpPoint(Vector3d& TPoint) const
 
 bool GenericTurbulenceWarp::WarpPoint(Vector3d& TPoint) const
 {
+    // Kept, not removed at parse: a later turbulence on a copy of the pattern inherits its octaves, omega and lambda.
+    if (Turbulence.IsNull())
+        return true;
     Vector3d PTurbulence;
     DTurbulence (PTurbulence, TPoint, this);
     TPoint += PTurbulence * Turbulence;
