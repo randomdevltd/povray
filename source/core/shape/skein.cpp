@@ -42,7 +42,10 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <functional>
+#include <unordered_map>
 
 // POV-Ray header files (base module)
 #include "base/mathutil.h"
@@ -84,6 +87,10 @@ const DBL kAxisStep = 1.0e-5;
 const int kRollCells = 1024;
 const DBL kMaxRollTurns = 256.0;
 const Vector3d kInsideDirection(0.5381, 0.6012, 0.5907);
+const int kMeshDepth = 22;
+const DBL kMeshNudge = 0.01;
+const DBL kMeshSpread = 1.5;
+const DBL kMeshCrease = 3.0;
 
 struct Jet { Vector3d p, pu, pv; };
 struct Dual { DBL x, u, v; };
@@ -2823,6 +2830,328 @@ DBL Flatness(Evaluator& ev, const SkeinData::Patch& p)
     return cone > 2.0 * kPatchTurn ? 2.0 : sin(std::min(0.5 * M_PI, 2.5 * cone));
 }
 
+/// Angle between two vectors, 0 when either vanishes.
+DBL Angle(const Vector3d& a, const Vector3d& b)
+{
+    const DBL l = a.length() * b.length();
+    return l > 0.0 ? acos(std::min(1.0, std::max(-1.0, dot(a, b) / l))) : 0.0;
+}
+
+/// Tessellates a prepared skein on a dyadic (u, v) lattice: a cell splits along u or v while the normal or an edge turns more than the
+/// limit there, until its edges would fall below the smallest size. A leaf with a neighbour's vertices on its edges fans from its centre.
+class Mesher final
+{
+    public:
+
+        Mesher(const SkeinData& d, TraceThreadData *t, DBL size, DBL angle, SkeinMesh& m) :
+            data(d), ev(d, t), minSize(size), maxAngle(angle * kRadiansPerDegree), out(m)
+        {}
+
+        std::string Run()
+        {
+            const int baseU = Power(std::max(data.wrapU ? 4 : 1, data.gridU)), baseV = Power(std::max(data.wrapV ? 4 : 1, data.gridV));
+            Nu = baseU << kMeshDepth;
+            Nv = baseV << kMeshDepth;
+            for (int e = 0; e < 2; ++e)
+            {
+                const bool ring = data.wrapU && !data.wrapV;
+                pole[e] = ring && ((data.ends[e] == SkeinData::kPole) || ((data.ends[e] == SkeinData::kFlat) && !data.caps[e].present));
+                sealed[e] = ring && (data.ends[e] == SkeinData::kSealed);
+            }
+            std::vector<Cell> stack, leaves;
+            for (int j = 0; j < baseV; ++j)
+                for (int i = 0; i < baseU; ++i)
+                    stack.push_back(Cell{ i << kMeshDepth, (i + 1) << kMeshDepth, j << kMeshDepth, (j + 1) << kMeshDepth });
+            while (!stack.empty())
+            {
+                const Cell c = stack.back();
+                stack.pop_back();
+                const bool su = Split(c, true), sv = Split(c, false);
+                if (!su && !sv)
+                {
+                    leaves.push_back(c);
+                    if (2 * leaves.size() > Skein::kMaxMeshTriangles)
+                        return TooMany();
+                    continue;
+                }
+                const int im = su ? (c.i0 + c.i1) / 2 : c.i1, jm = sv ? (c.j0 + c.j1) / 2 : c.j1;
+                stack.push_back(Cell{ c.i0, im, c.j0, jm });
+                if (su)
+                    stack.push_back(Cell{ im, c.i1, c.j0, jm });
+                if (sv)
+                    stack.push_back(Cell{ c.i0, im, jm, c.j1 });
+                if (su && sv)
+                    stack.push_back(Cell{ im, c.i1, jm, c.j1 });
+            }
+            for (const Cell& c : leaves)
+                for (int k = 0; k < 4; ++k)
+                {
+                    const int i = (k & 1) ? c.i1 : c.i0, j = (k & 2) ? c.j1 : c.j0;
+                    rows[WrapJ(j)].push_back(i);
+                    cols[WrapI(i)].push_back(j);
+                    if (sealed[0] && (j == 0))
+                        rows[j].push_back(Nu - WrapI(i));
+                    if (sealed[1] && (j == Nv))
+                        rows[j].push_back(Nu - WrapI(i));
+                }
+            for (auto *lines : { &rows, &cols })
+                for (auto& line : *lines)
+                {
+                    std::sort(line.second.begin(), line.second.end());
+                    line.second.erase(std::unique(line.second.begin(), line.second.end()), line.second.end());
+                }
+            std::vector<std::pair<int, int>> loop;
+            for (const Cell& c : leaves)
+            {
+                loop.clear();
+                Edge(loop, true, c.j0, c.i0, c.i1);
+                Edge(loop, false, c.i1, c.j0, c.j1);
+                Edge(loop, true, c.j1, c.i1, c.i0);
+                Edge(loop, false, c.i0, c.j1, c.j0);
+                if (loop.size() == 4)
+                {
+                    const Corner a = Lattice(c.i0, c.j0), b = Lattice(c.i1, c.j0), d = Lattice(c.i1, c.j1), e = Lattice(c.i0, c.j1);
+                    if ((d.p - a.p).length() <= (e.p - b.p).length())
+                    {
+                        Emit(a, b, d);
+                        Emit(a, d, e);
+                    }
+                    else
+                    {
+                        Emit(a, b, e);
+                        Emit(b, d, e);
+                    }
+                    continue;
+                }
+                Corner centre;
+                centre.u = 0.5 * (DBL(c.i0) + DBL(c.i1)) / Nu;
+                centre.v = 0.5 * (DBL(c.j0) + DBL(c.j1)) / Nv;
+                Jet J;
+                ev.Eval(centre.u, centre.v, J);
+                centre.p = J.p;
+                centre.n = SurfaceNormal(data, ev, centre.u, centre.v, J);
+                centre.weld = centre.id = Unique();
+                for (size_t k = 0; k < loop.size(); ++k)
+                    Emit(centre, Lattice(loop[k].first, loop[k].second), Lattice(loop[(k + 1) % loop.size()].first, loop[(k + 1) % loop.size()].second));
+                if (out.triangles.size() > 3 * Skein::kMaxMeshTriangles)
+                    return TooMany();
+            }
+            for (int e = 0; e < 2; ++e)
+            {
+                const SkeinData::Cap& cap = data.caps[e];
+                if (!cap.present)
+                    continue;
+                const int j = e ? Nv : 0;
+                const std::vector<int>& ring = rows[j];
+                Corner centre;
+                centre.p = cap.centre;
+                centre.n = cap.normal;
+                centre.v = cap.v;
+                centre.exact = true;
+                centre.weld = Unique();
+                for (size_t k = 0; k + 1 < ring.size(); ++k)
+                {
+                    Corner a = Lattice(ring[k], j), b = Lattice(ring[k + 1], j);
+                    a.n = b.n = cap.normal;
+                    a.exact = b.exact = true;
+                    centre.u = 0.5 * (a.u + b.u);
+                    centre.id = Unique();
+                    Emit(centre, a, b);
+                }
+            }
+            if (out.triangles.empty())
+                return "skein_mesh: no triangles; the skein has no area.";
+            std::vector<Cell>().swap(leaves);
+            decltype(cache)().swap(cache);
+            decltype(rows)().swap(rows);
+            decltype(cols)().swap(cols);
+            decltype(vertices)().swap(vertices);
+            std::sort(edges.begin(), edges.end());
+            out.openEdges = 0;
+            for (size_t k = 0, n; k < edges.size(); k += n)
+            {
+                for (n = 1; (k + n < edges.size()) && (edges[k + n] == edges[k]); ++n) {}
+                out.openEdges += (n == 1);
+            }
+            return std::string();
+        }
+
+    private:
+
+        struct Sample { SnglVector3d p, n; };
+        struct Cell { int i0, i1, j0, j1; };
+        struct Corner { Vector3d p, n; DBL u = 0.0, v = 0.0; std::uint64_t weld = 0, id = 0; bool lattice = false, exact = false; };
+        struct VertexKey
+        {
+            std::uint64_t id;
+            std::uint32_t n[3];
+            bool operator==(const VertexKey& o) const { return (id == o.id) && (n[0] == o.n[0]) && (n[1] == o.n[1]) && (n[2] == o.n[2]); }
+        };
+        struct VertexHash
+        {
+            size_t operator()(const VertexKey& k) const { return size_t(k.id * 0x9E3779B97F4A7C15ull ^ (std::uint64_t(k.n[0]) << 1) ^ (std::uint64_t(k.n[1]) << 21) ^ (std::uint64_t(k.n[2]) << 42)); }
+        };
+
+        static int Power(int n) { int p = 1; while (2 * p <= n) p *= 2; return p; }
+        static std::uint64_t Key(int i, int j) { return (std::uint64_t(std::uint32_t(i)) << 32) | std::uint32_t(j); }
+
+        std::string TooMany() const
+        {
+            return Format("skein_mesh: more than %g million triangles at this min_size and max_angle; raise either (min_size is %g).", 1.0e-6 * Skein::kMaxMeshTriangles, minSize);
+        }
+
+        int WrapI(int i) const { return data.wrapU && (i == Nu) ? 0 : i; }
+        int WrapJ(int j) const { return data.wrapV && (j == Nv) ? 0 : j; }
+        std::uint64_t Unique() { return (std::uint64_t(1) << 63) | unique++; }
+
+        /// The lattice point's position key: seams wrap, a pole row is one point and a sealed row folds u onto 1 - u.
+        std::uint64_t Weld(int i, int j) const
+        {
+            i = WrapI(i);
+            j = WrapJ(j);
+            for (int e = 0; e < 2; ++e)
+                if (j == (e ? Nv : 0))
+                {
+                    if (pole[e])
+                        i = 0;
+                    else if (sealed[e])
+                        i = std::min(i, Nu - i);
+                }
+            return Key(i, j);
+        }
+
+        const Sample& At(int i, int j)
+        {
+            i = WrapI(i);
+            j = WrapJ(j);
+            auto found = cache.find(Key(i, j));
+            if (found != cache.end())
+                return found->second;
+            const DBL u = DBL(i) / Nu, v = DBL(j) / Nv;
+            Jet J;
+            ev.Eval(u, v, J);
+            Sample& s = cache[Key(i, j)];
+            s.p = SnglVector3d(J.p);
+            s.n = SnglVector3d(SurfaceNormal(data, ev, u, v, J));
+            return s;
+        }
+
+        Corner Lattice(int i, int j)
+        {
+            const std::uint64_t weld = Weld(i, j);
+            Corner c;
+            c.p = Vector3d(At(int(weld >> 32), int(weld & 0xFFFFFFFFu)).p);
+            c.n = Vector3d(At(i, j).n);
+            c.u = DBL(i) / Nu;
+            c.v = DBL(j) / Nv;
+            c.weld = weld;
+            c.id = Key(i, j);
+            c.lattice = true;
+            return c;
+        }
+
+        /// Whether a cell splits along u (or v): the normal or an edge turns more than the limit, and the halves stay above the smallest size.
+        bool Split(const Cell& c, bool alongU)
+        {
+            if ((alongU ? c.i1 - c.i0 : c.j1 - c.j0) < 2)
+                return false;
+            const int im = (c.i0 + c.i1) / 2, jm = (c.j0 + c.j1) / 2;
+            DBL turn = 0.0, length = 0.0;
+            for (int k = 0; k < 3; ++k)
+            {
+                const int across = alongU ? (k == 0 ? c.j0 : k == 1 ? jm : c.j1) : (k == 0 ? c.i0 : k == 1 ? im : c.i1);
+                const Vector3d a = Vector3d(alongU ? At(c.i0, across).p : At(across, c.j0).p), an = Vector3d(alongU ? At(c.i0, across).n : At(across, c.j0).n);
+                const Vector3d m = Vector3d(alongU ? At(im, across).p : At(across, jm).p), mn = Vector3d(alongU ? At(im, across).n : At(across, jm).n);
+                const Vector3d b = Vector3d(alongU ? At(c.i1, across).p : At(across, c.j1).p), bn = Vector3d(alongU ? At(c.i1, across).n : At(across, c.j1).n);
+                turn = std::max(turn, std::max(Angle(an, mn) + Angle(mn, bn), 2.0 * Angle(m - a, b - m)));
+                length = std::max(length, (m - a).length() + (b - m).length());
+            }
+            return (turn > maxAngle) && (0.5 * length >= minSize);
+        }
+
+        /// Appends the corner at `from` and every vertex strictly between `from` and `to` on a row (or column) of the lattice.
+        void Edge(std::vector<std::pair<int, int>>& loop, bool row, int line, int from, int to)
+        {
+            loop.push_back(row ? std::make_pair(from, line) : std::make_pair(line, from));
+            const std::vector<int>& set = row ? rows[WrapJ(line)] : cols[WrapI(line)];
+            auto lo = std::upper_bound(set.begin(), set.end(), std::min(from, to)), hi = std::lower_bound(set.begin(), set.end(), std::max(from, to));
+            if (from < to)
+                for (auto it = lo; it < hi; ++it)
+                    loop.push_back(row ? std::make_pair(*it, line) : std::make_pair(line, *it));
+            else
+                for (auto it = hi; it > lo; --it)
+                    loop.push_back(row ? std::make_pair(*(it - 1), line) : std::make_pair(line, *(it - 1)));
+        }
+
+        /// Adds a triangle unless degenerate, wound so the mesh's face normal points out. Where corner normals spread wider than a smooth cell's,
+        /// a corner on a crease takes the surface's normal just inside the triangle, and a triangle still spanning a crease takes the face's.
+        void Emit(const Corner& a, const Corner& b, const Corner& c)
+        {
+            if ((a.weld == b.weld) || (b.weld == c.weld) || (c.weld == a.weld))
+                return;
+            const Corner *k[3] = { &a, &b, &c };
+            const Vector3d p0 = Vector3d(SnglVector3d(a.p)), p1 = Vector3d(SnglVector3d(b.p)), p2 = Vector3d(SnglVector3d(c.p));
+            const Vector3d raw = cross(p1 - p0, p2 - p0);
+            if (raw.length() == 0.0)
+                return;
+            const Vector3d face = raw.normalized() * data.orientation;
+            Vector3d n[3] = { a.n, b.n, c.n };
+            if (!a.exact && (Spread(n) > kMeshSpread * maxAngle))
+            {
+                const DBL uc = (a.u + b.u + c.u) / 3.0, vc = (a.v + b.v + c.v) / 3.0;
+                for (int i = 0; i < 3; ++i)
+                    if (k[i]->lattice)
+                    {
+                        const DBL u = ev.WrapU(k[i]->u + kMeshNudge * (uc - k[i]->u)), v = ev.WrapV(k[i]->v + kMeshNudge * (vc - k[i]->v));
+                        Jet J;
+                        ev.Eval(u, v, J);
+                        const Vector3d inside = SurfaceNormal(data, ev, u, v, J);
+                        if (Angle(inside, n[i]) > maxAngle)
+                            n[i] = inside;
+                    }
+                if (Spread(n) > kMeshCrease * maxAngle)
+                    n[0] = n[1] = n[2] = face;
+            }
+            const int order[2][3] = { { 0, 1, 2 }, { 0, 2, 1 } };
+            const int *o = order[dot(raw, a.exact ? a.n : face) > 0.0 ? 1 : 0];
+            for (int i = 0; i < 3; ++i)
+                out.triangles.push_back(Vertex(*k[o[i]], n[o[i]]));
+            for (int e = 0; e < 3; ++e)
+                edges.push_back(std::make_pair(std::min(k[e]->weld, k[(e + 1) % 3]->weld), std::max(k[e]->weld, k[(e + 1) % 3]->weld)));
+        }
+
+        static DBL Spread(const Vector3d *n) { return std::max(Angle(n[0], n[1]), std::max(Angle(n[1], n[2]), Angle(n[2], n[0]))); }
+
+        int Vertex(const Corner& c, const Vector3d& normal)
+        {
+            const SnglVector3d n(normal);
+            const SNGL bits[3] = { n[X], n[Y], n[Z] };
+            VertexKey key{ c.id, { 0, 0, 0 } };
+            std::memcpy(key.n, bits, sizeof(key.n));
+            auto found = vertices.find(key);
+            if (found != vertices.end())
+                return found->second;
+            const int index = int(out.points.size());
+            vertices[key] = index;
+            out.points.push_back(SnglVector3d(c.p));
+            out.normals.push_back(n);
+            out.uvs.push_back(Vector2d(c.u, c.v));
+            return index;
+        }
+
+        const SkeinData& data;
+        Evaluator ev;
+        const DBL minSize, maxAngle;
+        SkeinMesh& out;
+        int Nu = 0, Nv = 0;
+        bool pole[2] = { false, false }, sealed[2] = { false, false };
+        std::uint64_t unique = 0;
+        std::unordered_map<std::uint64_t, Sample> cache;
+        std::unordered_map<int, std::vector<int>> rows, cols;
+        std::unordered_map<VertexKey, int, VertexHash> vertices;
+        std::vector<std::pair<std::uint64_t, std::uint64_t>> edges;
+};
+
 }
 // end of anonymous namespace
 
@@ -3666,6 +3995,12 @@ std::string Skein::Prepare(TraceThreadData *thread)
 
     d.closed = (d.wrapU && d.wrapV) || (d.wrapU && (d.ends[0] != SkeinData::kOpen) && (d.ends[1] != SkeinData::kOpen));
     return std::string();
+}
+
+std::string Skein::Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, SkeinMesh& mesh) const
+{
+    Mesher mesher(*data, thread, minSize, maxAngle, mesh);
+    return mesher.Run();
 }
 
 int Skein::FindCrossings(const Vector3d& P, const Vector3d& D, DBL tMin, Crossing *out, TraceThreadData *thread) const
