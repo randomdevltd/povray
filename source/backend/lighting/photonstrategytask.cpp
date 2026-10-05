@@ -40,6 +40,8 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 // POV-Ray header files (base module)
@@ -139,10 +141,36 @@ void PhotonStrategyTask::Run()
         SendProgress();
     }
 */
+    WarnAboutTinySpacing();
+
     // good idea to make sure all warnings and errors arrive frontend now [trf]
     Cooperate();
 
     strategy->start();
+}
+
+void PhotonStrategyTask::WarnAboutTinySpacing()
+{
+    constexpr DBL kWarnRings = 262144.0;
+    std::size_t offenders = 0;
+    DBL worst = 0;
+    for (const PhotonShootingUnit* unit : strategy->units)
+    {
+        const LightTargetCombo& combo = unit->lightAndObject;
+        if (!(combo.dtheta > 0) || !std::isfinite(combo.maxtheta))
+            continue;
+        const DBL rings = (combo.maxtheta - combo.mintheta) / combo.dtheta;
+        if (rings > kWarnRings)
+        {
+            ++offenders;
+            worst = std::max(worst, rings);
+        }
+    }
+    if (offenders > 0)
+        mpMessageFactory->Warning(kWarningGeneral, "Photon spacing is extremely small for %u light/target pair(s): "
+            "up to %.3g rings, about %.3g photons, will be shot for one pair. "
+            "Check photons { spacing } or { count } and any object photons { density }.",
+            unsigned(offenders), worst, 3.14159 * worst * worst);
 }
 
 void PhotonStrategyTask::Stopped()
