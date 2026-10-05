@@ -16,7 +16,7 @@ offline() {
 }
 for mode in -pr +pr; do
     # a second link keeps the whole render's state after the render deletes it
-    rm -f snapshot_*.ppm snapshot_*.px snapshot_*.png snapshot_*.pov-state*
+    rm -f snapshot_*.ppm snapshot_*.px snapshot_*.png snapshot_*.heat.txt snapshot_*.pov-state*
     : > snapshot_whole.pov-state
     ln snapshot_whole.pov-state snapshot_kept.pov-state
     render whole $mode +SNsnapshot_whole.png
@@ -50,5 +50,5 @@ for mode in -pr +pr; do
         echo "snapshot $mode: a state file wider than +W should be refused"; exit 1
     fi
 done
-rm -f snapshot_*.ppm snapshot_*.px snapshot_*.png snapshot_*.pov-state*
+rm -f snapshot_*.ppm snapshot_*.px snapshot_*.png snapshot_*.heat.txt snapshot_*.pov-state*
 echo "snapshot: a state file's snapshot matches the render's, and a continued render is unchanged"
