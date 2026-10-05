@@ -63,9 +63,10 @@ changes about as many.
 
 ## Render statistics counters
 
-The tuned release build compiles the render counters out. Define `POV_RENDER_STATS=1` for a benchmark build;
-debug builds enable them by default. A build without them says that render statistics are disabled instead of
-printing a table of zeros. Parser and phase timings remain available.
+The tuned `unix/Containerfile` build compiles the render counters out. Other release, test and debug builds retain
+them; define `POV_RENDER_STATS=0` for another tuned build or `POV_RENDER_STATS=1` for its benchmark counterpart.
+A build without them says that render statistics are disabled instead of printing a table of zeros. Parser and
+phase timings remain available.
 
 The table compares matched GCC 15 `-O3 -march=native -flto=4` builds with counters on and off. Each result is the
 median of four alternating `+WT1 +PR -A` runs minus a matching one-pixel parse. Instruction counters were not

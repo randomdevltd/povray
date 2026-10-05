@@ -833,11 +833,7 @@
 
 /// Whether render statistics counters are collected in tracing hot paths.
 #ifndef POV_RENDER_STATS
-    #if POV_DEBUG || defined(_DEBUG)
-        #define POV_RENDER_STATS 1
-    #else
-        #define POV_RENDER_STATS 0
-    #endif
+    #define POV_RENDER_STATS 1
 #endif
 
 /// @def POV_COLOURSPACE_DEBUG
