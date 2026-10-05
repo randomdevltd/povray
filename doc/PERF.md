@@ -61,6 +61,25 @@ Single-threaded renders repeat bit for bit. Against 3.8 master this branch chang
 same depth from both, and which one supplies the normal depends on the order they are tested in. PGO alone
 changes about as many.
 
+## Render statistics counters
+
+The tuned release build compiles the render counters out. Define `POV_RENDER_STATS=1` for a benchmark build;
+debug builds enable them by default. A build without them says that render statistics are disabled instead of
+printing a table of zeros. Parser and phase timings remain available.
+
+The table compares matched GCC 15 `-O3 -march=native -flto=4` builds with counters on and off. Each result is the
+median of four alternating `+WT1 +PR -A` runs minus a matching one-pixel parse. Instruction counters were not
+multiplexed.
+
+| Public scene | Size | Counters on, Ginst | Counters off, Ginst | Change |
+|---|---:|---:|---:|---:|
+| `tools/bench/mesh-features.pov` | 1280×960 | 14.569 | 14.475 | −0.65% |
+| `tools/bench/media-shafts.pov` | 120×90 | 22.494 | 22.448 | −0.20% |
+| `tools/bench/radiosity-lawn.pov` | 320×200 | 21.312 | 21.064 | −1.16% |
+| `tools/bench/sslt-skin.pov` | 320×240 | 6.849 | 6.711 | −2.03% |
+
+Decoded 8-bit PNG pixels were identical between the two builds for all four scenes.
+
 ## Subsurface photons
 
 Multiple-scattering diffusion now receives incident surface photons with methods 1 and 2.

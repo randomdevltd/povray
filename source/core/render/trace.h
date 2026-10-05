@@ -413,6 +413,8 @@ class Trace
         IndexedVectorGeneratorPtr ssltUniformDirections;
         /// Whether a random draw has shaped the result since @ref ClearGrain().
         bool grain = false;
+        /// Ray count used only to preserve the cooperative-yield cadence when statistics are disabled.
+        POV_ULONG cooperateCounter = 0;
         /// The subsurface cache's camera, once set: where it is, and a pixel's span as size plus angle times distance.
         Vector3d ssltCameraLocation;
         double ssltPixelSize = 0.0, ssltPixelAngle = 0.0;
