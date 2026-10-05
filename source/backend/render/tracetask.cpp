@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -82,6 +83,26 @@ namespace pov
 using std::min;
 using std::max;
 using std::vector;
+
+class BlockTimer final
+{
+    public:
+        BlockTimer() : started(Last()) { }
+        POV_LONG Elapsed() const
+        {
+            const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+            const POV_LONG elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - started).count();
+            Last() = now;
+            return std::max<POV_LONG>(1, elapsed);
+        }
+    private:
+        static std::chrono::steady_clock::time_point& Last()
+        {
+            static thread_local std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+            return last;
+        }
+        std::chrono::steady_clock::time_point started;
+};
 
 #ifdef PROFILE_INTERSECTIONS
     bool gDoneBSP;
@@ -461,6 +482,7 @@ void TraceTask::SimpleSamplingM0()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         pixels.clear();
@@ -500,7 +522,8 @@ void TraceTask::SimpleSamplingM0()
         radiosity.AfterTile();
 
         GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, passContributesToImage, passCompletesImage);
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, passContributesToImage, passCompletesImage,
+                                          1.0f, nullptr, -1, blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -516,6 +539,7 @@ void TraceTask::SimpleSamplingM0P()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         unsigned int px = (rect.GetWidth() + previewSize - 1) / previewSize;
@@ -565,7 +589,8 @@ void TraceTask::SimpleSamplingM0P()
 
         GetViewDataPtr()->AfterTile();
         if(pixelpositions.size() > 0)
-            GetViewData()->CompletedRectangle(rect, serial, pixelpositions, pixelcolors, previewSize, passContributesToImage, passCompletesImage);
+            GetViewData()->CompletedRectangle(rect, serial, pixelpositions, pixelcolors, previewSize, passContributesToImage,
+                                              passCompletesImage, 1.0f, nullptr, -1, blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -580,6 +605,7 @@ void TraceTask::NonAdaptiveSupersamplingM1()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         SmartBlock pixels(rect.left, rect.top, rect.GetWidth(), rect.GetHeight());
@@ -648,7 +674,8 @@ void TraceTask::NonAdaptiveSupersamplingM1()
         radiosity.AfterTile();
 
         GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels.GetPixels(), 1, passContributesToImage, passCompletesImage);
+        GetViewData()->CompletedRectangle(rect, serial, pixels.GetPixels(), 1, passContributesToImage, passCompletesImage,
+                                          1.0f, nullptr, -1, blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -665,6 +692,7 @@ void TraceTask::AdaptiveSupersamplingM2()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         SmartBlock pixels(rect.left, rect.top, rect.GetWidth(), rect.GetHeight());
@@ -703,7 +731,8 @@ void TraceTask::AdaptiveSupersamplingM2()
         radiosity.AfterTile();
 
         GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels.GetPixels(), 1, passContributesToImage, passCompletesImage);
+        GetViewData()->CompletedRectangle(rect, serial, pixels.GetPixels(), 1, passContributesToImage, passCompletesImage,
+                                          1.0f, nullptr, -1, blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -737,6 +766,7 @@ void TraceTask::StochasticSupersamplingM3()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         pixels.clear();
@@ -881,7 +911,8 @@ void TraceTask::StochasticSupersamplingM3()
         radiosity.AfterTile();
 
         GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, passContributesToImage, passCompletesImage);
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, passContributesToImage, passCompletesImage,
+                                          1.0f, nullptr, -1, blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -899,6 +930,7 @@ void TraceTask::ProgressiveLevel()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         positions.clear();
@@ -955,7 +987,8 @@ void TraceTask::ProgressiveLevel()
             GetViewData()->CompletedRectangle(rect, serial, 0.0f);
         else
             GetViewData()->CompletedRectangle(rect, serial, positions, colors, latticeStep, true, true,
-                                              float(positions.size()) / float(rect.GetArea()), nullptr, progressLevel);
+                                              float(positions.size()) / float(rect.GetArea()), nullptr, progressLevel,
+                                              blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -977,6 +1010,7 @@ void TraceTask::ProgressiveRefineM1()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         pixels.clear();
@@ -1005,7 +1039,8 @@ void TraceTask::ProgressiveRefineM1()
         radiosity.AfterTile();
 
         GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel,
+                                          blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -1025,6 +1060,7 @@ void TraceTask::ProgressiveRefineM2()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
 
         pixels.clear();
@@ -1062,7 +1098,8 @@ void TraceTask::ProgressiveRefineM2()
         radiosity.AfterTile();
 
         GetViewDataPtr()->AfterTile();
-        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel,
+                                          blockTimer.Elapsed());
 
         Cooperate();
     }
@@ -3954,6 +3991,7 @@ void TraceTask::ProgressiveM4()
 
     while(GetViewData()->GetNextRectangle(rect, serial) == true)
     {
+        BlockTimer blockTimer;
         if(traces)
             radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
         pixels.clear();
@@ -4260,7 +4298,8 @@ void TraceTask::ProgressiveM4()
 
         GetViewDataPtr()->AfterTile();
         if(aaPass == 4)
-            GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel);
+            GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel,
+                                              blockTimer.Elapsed());
         else
             GetViewData()->CompletedRectangle(rect, serial, 0.0f);
 
