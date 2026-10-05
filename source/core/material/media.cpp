@@ -289,7 +289,10 @@ bool Media::FastCache::CameraDensityAt(const Vector3d& point, MathColour& result
     for (int axis = 0; axis < 3; axis++)
     {
         if ((point[axis] < low[axis]) || (point[axis] > low[axis] + size[axis]))
-            return false;
+        {
+            result.Clear();
+            return true;
+        }
         base[axis] = std::max(0, std::min(n[axis] - 1,
                     int(floor((point[axis] - low[axis]) * n[axis] / size[axis] - 0.5))));
     }
@@ -716,16 +719,18 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
     if (preparedResolution > 0.0)
         PreparedRange(medias, ray, preparedFrom, preparedTo);
     const DBL fastStep = ray.IsShadowTestRay() ? preparedResolution : preparedResolution / 3.0;
-    const bool withinStepLimit = fastStep > 0.0 && (preparedTo - preparedFrom) / fastStep <= 4096.0;
+    const bool withinStepLimit = fastStep > 0.0 &&
+        PreparedSteps(medias, ray, preparedFrom, preparedTo, preparedResolution) <= 4096.0;
     const bool fieldsPrepared = preparedResolution > 0.0 && (withinStepLimit || ray.IsShadowTestRay()) && PrepareFields(medias, ray);
     const bool fastPrepared = withinStepLimit && fieldsPrepared;
     if (fastPrepared && preparedTo <= preparedFrom)
         return;
-    if (fastStep > 0.0 && !withinStepLimit && !ray.IsShadowTestRay())
+    if (fastStep > 0.0 && !withinStepLimit && !ray.IsShadowTestRay() &&
+        !(threadData->GetSceneData()->mediaWarningFlags.load(std::memory_order_relaxed) & kFastLength))
     {
         char detail[256];
         std::snprintf(detail, sizeof(detail),
-            "Ray length %.9g at step %.9g exceeds 4096 prepared steps (%zu active media). Increase resolution or split long containers.",
+            "Ray span %.9g with finest step %.9g exceeds 4096 prepared steps (%zu active media). Increase resolution or split long containers.",
             preparedTo - preparedFrom, fastStep, medias.size());
         WarnFastMedia(threadData, *medias.front(), kFastLength, detail,
                       medias.front()->fastCache ? medias.front()->fastCache->container : nullptr);
@@ -751,12 +756,15 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
                                  0, 0));
 
     if (fastPrepared)
+    {
         for (MediaInterval& interval : mediaintervals)
         {
             interval.s0 = std::max(interval.s0, preparedFrom);
             interval.s1 = std::max(interval.s0, std::min(interval.s1, preparedTo));
             interval.ds = interval.s1 - interval.s0;
         }
+        SplitPreparedIntervals(medias, ray, mediaintervals);
+    }
 
     minSamples = IMedia->Min_Samples;
 
@@ -1016,6 +1024,76 @@ void MediaFunction::PreparedRange(MediaVector& medias, const Ray& ray, DBL& from
     to = std::max(first, last);
 }
 
+DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution)
+{
+    const DBL divisor = ray.IsShadowTestRay() ? 1.0 : 3.0;
+    DBL count = 2.0 * medias.size() + 1.0;
+    for (Media* medium : medias)
+    {
+        if (ray.IsShadowTestRay() && !medium->use_extinction)
+            continue;
+        if (medium->Density.empty())
+        {
+            if (!ray.IsShadowTestRay() && (medium->use_scattering || medium->use_emission))
+                return ceil((to - from) * divisor / resolution);
+            continue;
+        }
+        DBL entry = from, exit = to;
+        if (medium->fastCache->Segment(ray, entry, exit))
+            count += ceil((exit - entry) * divisor / medium->FastResolution);
+    }
+    return count;
+}
+
+void MediaFunction::SplitPreparedIntervals(MediaVector& medias, const Ray& ray, MediaIntervalVector& intervals)
+{
+    if (medias.size() == 1)
+        return;
+    MediaIntervalVector split;
+    for (const MediaInterval& interval : intervals)
+    {
+        if (interval.ds <= 0.0)
+            continue;
+        vector<DBL> cuts{interval.s0, interval.s1};
+        for (Media* medium : medias)
+        {
+            if (medium->Density.empty() || (ray.IsShadowTestRay() && !medium->use_extinction))
+                continue;
+            DBL from = interval.s0, to = interval.s1;
+            if (medium->fastCache->Segment(ray, from, to))
+            {
+                cuts.push_back(from);
+                cuts.push_back(to);
+            }
+        }
+        std::sort(cuts.begin(), cuts.end());
+        for (size_t i = 1; i < cuts.size(); i++)
+            if (cuts[i] > cuts[i - 1])
+                split.push_back(MediaInterval(interval.lit, 0, cuts[i - 1], cuts[i], cuts[i] - cuts[i - 1], interval.l0, interval.l1));
+    }
+    intervals = split;
+}
+
+DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const MediaInterval& interval, DBL fallback)
+{
+    DBL step = interval.ds;
+    for (Media* medium : medias)
+    {
+        if (ray.IsShadowTestRay() && !medium->use_extinction)
+            continue;
+        if (medium->Density.empty())
+        {
+            if (!ray.IsShadowTestRay() && (medium->use_scattering || medium->use_emission))
+                step = std::min(step, fallback);
+            continue;
+        }
+        DBL from = interval.s0, to = interval.s1;
+        if (medium->fastCache->Segment(ray, from, to))
+            step = std::min(step, medium->FastResolution / (ray.IsShadowTestRay() ? 1.0 : 3.0));
+    }
+    return step;
+}
+
 bool MediaFunction::PrepareFields(MediaVector& medias, const Ray& ray)
 {
     bool ready = true;
@@ -1030,7 +1108,8 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
     const bool method3 = (IMedia->Sample_Method == 3 || IMedia->Sample_Method == 4);
     const int points = method3 ? 2 * max((IMedia->Min_Samples + 1) / 2, 1) + 1 : max(IMedia->Min_Samples, 1);
     const DBL resolution = PreparedResolution(medias, ray);
-    const bool withinStepLimit = resolution > 0.0 && (mediaintervals.back().s1 - mediaintervals.front().s0) / resolution <= 4096.0;
+    const bool withinStepLimit = resolution > 0.0 &&
+        PreparedSteps(medias, ray, mediaintervals.front().s0, mediaintervals.back().s1, resolution) <= 4096.0;
     if (withinStepLimit && PrepareFields(medias, ray))
     {
         threadData->Stats()[Media_Intervals] += mediaintervals.size();
@@ -1068,7 +1147,8 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
         MathColour depth;
         if (!dark && (interval.ds > 0.0))
         {
-            const int count = std::max(1, int(ceil(interval.ds / resolution)));
+            const DBL width = PreparedStep(medias, ray, interval, resolution);
+            const int count = std::max(1, int(ceil(interval.ds / width)));
             const DBL step = interval.ds / count;
             for (int j = 0; j < count; j++)
             {
@@ -1326,7 +1406,13 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
 {
     for (MediaInterval& interval : mediaintervals)
     {
-        const int count = std::max(1, int(ceil(interval.ds / resolution)));
+        if (interval.ds <= 0.0)
+        {
+            interval.samples = 1;
+            continue;
+        }
+        const DBL width = PreparedStep(medias, ray, interval, resolution);
+        const int count = std::max(1, int(ceil(interval.ds / width)));
         const DBL step = interval.ds / count;
         if (step <= 0.0)
         {
@@ -1880,13 +1966,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     {
         P = H;
 
-        if (prepared && (*i)->fastCache &&
-            ((P[X] < (*i)->fastCache->low[X]) || (P[Y] < (*i)->fastCache->low[Y]) || (P[Z] < (*i)->fastCache->low[Z]) ||
-             (P[X] > (*i)->fastCache->low[X] + (*i)->fastCache->size[X]) ||
-             (P[Y] > (*i)->fastCache->low[Y] + (*i)->fastCache->size[Y]) ||
-             (P[Z] > (*i)->fastCache->low[Z] + (*i)->fastCache->size[Z])))
-            C0.Clear();
-        else if (!prepared || ray.IsPhotonRay() || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
+        if (!prepared || ray.IsPhotonRay() || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
             Evaluate_Density_Pigment((*i)->Density, P, C0, threadData);
 
         Extinction += C0 * (*i)->Extinction;
@@ -1904,7 +1984,10 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     if(sample_method != 3)
         mediainterval.od += SampOptDepth;
 
-    if(!ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay())
+    const bool emptyScattering = prepared && Scattering.IsZero();
+    if (emptyScattering && !ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && mediainterval.lit)
+        lightSampleIndex++;
+    if(!ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && !emptyScattering)
     {
         if(mediainterval.lit)
         {

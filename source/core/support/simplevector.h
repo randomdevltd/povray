@@ -728,6 +728,7 @@ public:
     inline PooledSimpleVector& operator=(const PooledSimpleVector& o)
     {
         *mpVector = *o.mpVector;
+        return *this;
     }
 
     // assign() not supported

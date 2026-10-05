@@ -112,6 +112,9 @@ class MediaFunction : public Trace::MediaFunctor
                                             const ExtinctionPlan *plan, bool method3, int points);
         DBL PreparedResolution(MediaVector& medias, const Ray& ray);
         bool PrepareFields(MediaVector& medias, const Ray& ray);
+        DBL PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution);
+        void SplitPreparedIntervals(MediaVector& medias, const Ray& ray, MediaIntervalVector& intervals);
+        DBL PreparedStep(MediaVector& medias, const Ray& ray, const MediaInterval& interval, DBL fallback);
         void PreparedRange(MediaVector& medias, const Ray& ray, DBL& from, DBL& to);
         void ComputeMediaFieldTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, DBL resolution);
         /// ComputeMediaTransmittance where every density bounds its extinction along a segment; rayLo and rayHi bound the ray.
