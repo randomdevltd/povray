@@ -831,6 +831,11 @@
     #define POV_DEBUG 0
 #endif
 
+/// Whether render statistics counters are collected in tracing hot paths.
+#ifndef POV_RENDER_STATS
+    #define POV_RENDER_STATS 1
+#endif
+
 /// @def POV_COLOURSPACE_DEBUG
 /// Enable run-time sanity checks for colour space handling.
 ///

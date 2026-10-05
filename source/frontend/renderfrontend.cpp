@@ -1683,6 +1683,13 @@ void ParserStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
 
 void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
 {
+#if !POV_RENDER_STATS
+    tsb->printf("----------------------------------------------------------------------------\n");
+    tsb->printf("Render Statistics\n");
+    tsb->printf("  Disabled in this build.\n");
+    tsb->printf("----------------------------------------------------------------------------\n");
+    return;
+#endif
     POVMSObject msgobj(cppmsg());
     POVMSObjectPtr msg = &msgobj;
     POVMSAttribute attr;

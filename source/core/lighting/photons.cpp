@@ -137,7 +137,11 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
     NoSomethingFlagRayObjectCondition precond;
     TrueRayObjectCondition postcond;
 
+#if POV_RENDER_STATS
     POV_ULONG nrays = threadData->Stats()[Number_Of_Rays]++;
+#else
+    POV_ULONG nrays = cooperateCounter++;
+#endif
     if(((unsigned char) nrays & 0x0f) == 0x00)
         cooperate();
 

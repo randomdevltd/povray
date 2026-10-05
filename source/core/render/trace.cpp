@@ -341,7 +341,11 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     NoSomethingFlagRayObjectCondition precond;
     TrueRayObjectCondition postcond;
 
+#if POV_RENDER_STATS
     POV_ULONG nrays = threadData->Stats()[Number_Of_Rays]++;
+#else
+    POV_ULONG nrays = cooperateCounter++;
+#endif
     if(ray.IsPrimaryRay() || (((unsigned char) nrays & 0x0f) == 0x00))
         cooperate();
 
