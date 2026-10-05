@@ -43,8 +43,13 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <map>
 #include <memory>
+#include <numeric>
 #include <random>
+#include <sstream>
 
 #ifndef LIBPNG_MISSING
 #include <png.h>
@@ -635,6 +640,25 @@ static unsigned char ProgressiveLattice(POVMS_Object& ropts)
     return (ropts.TryGetBool(kPOVAttrib_Antialias, false) && (ropts.TryGetInt(kPOVAttrib_SamplingMethod, 1) == 2)) ? 2 : 1;
 }
 
+static unsigned int ProgressiveLevelCount(POVMS_Object& ropts)
+{
+    if (!ropts.TryGetBool(kPOVAttrib_ProgressiveRender, false))
+        return 1;
+    unsigned int step = 1;
+    while (step < max(ropts.TryGetInt(kPOVAttrib_Width, 160), ropts.TryGetInt(kPOVAttrib_Height, 120)))
+        step <<= 1;
+    unsigned int levels = 1;
+    while (step > 1)
+    {
+        levels++;
+        step >>= 1;
+    }
+    if (!ropts.TryGetBool(kPOVAttrib_Antialias, false))
+        return levels;
+    const int method = ropts.TryGetInt(kPOVAttrib_SamplingMethod, 1);
+    return (method == 4) ? 0 : levels + 1;
+}
+
 void RenderFrontendBase::NewBackup(POVMS_Object& ropts, ViewData& vd, const Path& outputpath)
 {
     vd.imageBackup.reset();
@@ -652,6 +676,9 @@ void RenderFrontendBase::NewBackup(POVMS_Object& ropts, ViewData& vd, const Path
         memset(&hdr, 0, sizeof(hdr));
         memcpy(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig));
         hdr.reserved[0] = ProgressiveLattice(ropts);
+        const unsigned int levels = ProgressiveLevelCount(ropts);
+        hdr.reserved[1] = levels & 0xff;
+        hdr.reserved[2] = (levels >> 8) & 0xff;
         memcpy(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver));
         if(vd.imageBackup->write(&hdr, sizeof(hdr)) == false)
             throw POV_EXCEPTION(kFileDataErr, "Cannot write header to render state output file.");
@@ -930,7 +957,17 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
 
     const unsigned int finalWidth = ropts.TryGetInt(kPOVAttrib_Width, 160);
     const unsigned int finalHeight = ropts.TryGetInt(kPOVAttrib_Height, 120);
-    const unsigned int lattice = ropts.TryGetBool(kPOVAttrib_ProgressiveRender, false) ? ((ropts.TryGetBool(kPOVAttrib_Antialias, false) && (ropts.TryGetInt(kPOVAttrib_SamplingMethod, 1) == 2)) ? 1u : 0u) : 0u;
+    unsigned int lattice = 0;
+
+    struct LevelTiming final
+    {
+        POV_LONG microseconds = 0;
+        unsigned int blocks = 0;
+    };
+    std::map<int, LevelTiming> levelTimings;
+    std::vector<float> heat(size_t(finalWidth) * finalHeight, 0.0f);
+    POV_LONG elapsedMicroseconds = 0;
+    unsigned int expectedLevels = 0;
 
     struct Bounds final
     {
@@ -985,6 +1022,11 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
         Backup_File_Header hdr;
         if (!in.read(&hdr, sizeof(hdr)) || (memcmp(hdr.sig, RENDER_STATE_SIG, sizeof(hdr.sig)) != 0) || (memcmp(hdr.ver, RENDER_STATE_VER, sizeof(hdr.ver)) != 0))
             throw POV_EXCEPTION(kFileDataErr, "Not a render state file of this version of POV-Ray.");
+        if (!fill)
+        {
+            expectedLevels = unsigned(hdr.reserved[1]) | (unsigned(hdr.reserved[2]) << 8);
+            lattice = (hdr.reserved[0] == 2) ? 1u : 0u;
+        }
 
         bool outside = false;
         bool corrupt = false;
@@ -994,6 +1036,25 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
             {
                 POVMS_Message msg;
                 msg.Read(in);
+                if (!fill && msg.Exist(kPOVAttrib_BlockTime) && msg.Exist(kPOVAttrib_BlockRect))
+                {
+                    std::vector<POVMSInt> timedRect(msg.GetIntVector(kPOVAttrib_BlockRect));
+                    POV_LONG microseconds = msg.GetLong(kPOVAttrib_BlockTime);
+                    if ((timedRect.size() == 4) && (microseconds > 0) && (timedRect[0] >= 0) && (timedRect[1] >= 0) &&
+                        (timedRect[2] >= timedRect[0]) && (timedRect[3] >= timedRect[1]) &&
+                        (unsigned(timedRect[2]) < finalWidth) && (unsigned(timedRect[3]) < finalHeight))
+                    {
+                        const unsigned int area = unsigned(timedRect[2] - timedRect[0] + 1) * unsigned(timedRect[3] - timedRect[1] + 1);
+                        const double perPixel = double(microseconds) / area;
+                        for (int y = timedRect[1]; y <= timedRect[3]; y++)
+                            for (int x = timedRect[0]; x <= timedRect[2]; x++)
+                                heat[size_t(y) * finalWidth + x] += perPixel;
+                        const int level = msg.TryGetInt(kPOVAttrib_ProgressLevel, 0);
+                        levelTimings[level].microseconds += microseconds;
+                        levelTimings[level].blocks++;
+                        elapsedMicroseconds += microseconds;
+                    }
+                }
                 POVMSInt pixelSize = msg.TryGetInt(kPOVAttrib_PixelSize, 1);
                 corrupt = (pixelSize < 1);
                 if (corrupt)
@@ -1062,6 +1123,62 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
 
     readState(true);
 
+    SnapshotCanvas heatCanvas;
+    heatCanvas.width = canvas.width;
+    heatCanvas.height = canvas.height;
+    heatCanvas.offsetX = canvas.offsetX;
+    heatCanvas.offsetY = canvas.offsetY;
+    heatCanvas.alpha = true;
+    heatCanvas.gamma = NeutralGammaCurve::Get();
+    heatCanvas.rgba.assign(size_t(heatCanvas.width) * heatCanvas.height * 4, 0);
+
+    std::map<float, size_t> heatDistribution;
+    size_t timedPixels = 0;
+    for (unsigned int y = 0; y < heatCanvas.height; y++)
+        for (unsigned int x = 0; x < heatCanvas.width; x++)
+        {
+            const float value = heat[size_t(y + heatCanvas.offsetY) * finalWidth + x + heatCanvas.offsetX];
+            if (value > 0.0f)
+            {
+                heatDistribution[value]++;
+                timedPixels++;
+            }
+        }
+    double scale = 0.0;
+    const size_t scalePixel = size_t(std::floor(0.95 * timedPixels));
+    size_t seenPixels = 0;
+    for (const auto& value : heatDistribution)
+    {
+        seenPixels += value.second;
+        if (seenPixels > scalePixel)
+        {
+            scale = value.first;
+            break;
+        }
+    }
+    auto heatColour = [](double t, unsigned char* rgba)
+    {
+        const double stops[5][3] = { { 0, 0, 0 }, { 0, 32, 160 }, { 0, 220, 255 }, { 255, 224, 0 }, { 255, 32, 0 } };
+        const double p = clip(t, 0.0, 1.0) * 4.0;
+        const int a = std::min(3, int(p));
+        const double f = p - a;
+        for (int c = 0; c < 3; c++)
+            rgba[c] = static_cast<unsigned char>(stops[a][c] + f * (stops[a + 1][c] - stops[a][c]) + 0.5);
+        rgba[3] = 255;
+    };
+    if (scale > 0.0)
+    {
+        const double divisor = std::log1p(100.0);
+        for (unsigned int y = 0; y < heatCanvas.height; y++)
+            for (unsigned int x = 0; x < heatCanvas.width; x++)
+            {
+                const double value = heat[size_t(y + heatCanvas.offsetY) * finalWidth + x + heatCanvas.offsetX];
+                if (value > 0.0)
+                    heatColour(std::log1p(100.0 * value / scale) / divisor,
+                               &heatCanvas.rgba[(size_t(y) * heatCanvas.width + x) * 4]);
+            }
+    }
+
     UCS2String temp = snapshotFile + SysToUCS2String("." + std::to_string(std::random_device()()) + ".tmp");
     try
     {
@@ -1082,6 +1199,70 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
     {
         pov_base::Filesystem::DeleteFile(temp);
         throw POV_EXCEPTION(kFileDataErr, "Cannot rename snapshot to " + UCS2toSysString(snapshotFile) + ".");
+    }
+
+    const UCS2String heatFile = snapshotFile + u".heat.png";
+    temp = heatFile + SysToUCS2String("." + std::to_string(std::random_device()()) + ".tmp");
+    try
+    {
+        std::unique_ptr<OStream> file(NewOStream(Path(temp), POV_File_Image_PNG, false));
+        if ((file == nullptr) || !*file)
+            throw POV_EXCEPTION(kCannotOpenFileErr, "Cannot create heat map file " + UCS2toSysString(temp) + ".");
+        WriteSnapshotPng(*file, heatCanvas);
+        file->flush();
+        if (!*file)
+            throw POV_EXCEPTION(kFileDataErr, "Cannot write heat map file " + UCS2toSysString(temp) + ".");
+    }
+    catch(pov_base::Exception&)
+    {
+        pov_base::Filesystem::DeleteFile(temp);
+        throw;
+    }
+    if (!ReplaceSnapshot(temp, heatFile))
+    {
+        pov_base::Filesystem::DeleteFile(temp);
+        throw POV_EXCEPTION(kFileDataErr, "Cannot rename heat map to " + UCS2toSysString(heatFile) + ".");
+    }
+
+    double remainingMicroseconds = -1.0;
+    if ((expectedLevels > 0) && !levelTimings.empty())
+    {
+        const unsigned int blockSize = clip(unsigned(ropts.TryGetInt(kPOVAttrib_RenderBlockSize, 32)), 4u, max(finalWidth, finalHeight));
+        const unsigned int blocks = ((finalWidth + blockSize - 1) / blockSize) * ((finalHeight + blockSize - 1) / blockSize);
+        const int level = levelTimings.rbegin()->first;
+        const LevelTiming& current = levelTimings.rbegin()->second;
+        const double mean = current.blocks ? double(current.microseconds) / current.blocks : 0.0;
+        remainingMicroseconds = mean * ((current.blocks < blocks) ? (blocks - current.blocks) : 0);
+        for (int future = level + 1; future < int(expectedLevels); future++)
+            remainingMicroseconds += mean * blocks * std::pow(4.0, future - level);
+    }
+
+    std::ostringstream report;
+    report << std::fixed << std::setprecision(6)
+           << "elapsed_trace_thread_seconds=" << double(elapsedMicroseconds) / 1000000.0 << "\n"
+           << "remaining_trace_thread_seconds_estimate=";
+    if (remainingMicroseconds >= 0.0)
+        report << remainingMicroseconds / 1000000.0;
+    else
+        report << "unknown";
+    report << "\nheat_scale_p95_microseconds_per_pixel=" << scale << "\n"
+           << "heat_scale=log1p(100*time_per_pixel/p95)/log(101),clipped\n"
+           << "timed_block_records=" << std::accumulate(levelTimings.begin(), levelTimings.end(), 0u,
+                [](unsigned int n, const std::pair<const int, LevelTiming>& level) { return n + level.second.blocks; }) << "\n";
+
+    const UCS2String reportFile = snapshotFile + u".heat.txt";
+    const UCS2String reportTemp = reportFile + SysToUCS2String("." + std::to_string(std::random_device()()) + ".tmp");
+    const std::string text = report.str();
+    {
+        OStream reportStream(reportTemp.c_str());
+        if (!reportStream || !reportStream.write(text.data(), text.size()))
+            throw POV_EXCEPTION(kFileDataErr, "Cannot write heat map scale file " + UCS2toSysString(reportTemp) + ".");
+        reportStream.flush();
+    }
+    if (!ReplaceSnapshot(reportTemp, reportFile))
+    {
+        pov_base::Filesystem::DeleteFile(reportTemp);
+        throw POV_EXCEPTION(kFileDataErr, "Cannot rename heat map scale file to " + UCS2toSysString(reportFile) + ".");
     }
 }
 

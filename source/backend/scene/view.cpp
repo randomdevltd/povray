@@ -408,7 +408,7 @@ bool ViewData::GetNextRectangle(POVRect& rect, unsigned int& serial, BlockInfo*&
     return true;
 }
 
-void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<RGBTColour>& pixels, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel)
+void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<RGBTColour>& pixels, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel, POV_LONG blockTime)
 {
     if (realTimeRaytracing == true)
     {
@@ -458,6 +458,12 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
             pixelblockmsg.SetInt(kPOVAttrib_PixelSize, size);
             if (progressLevel >= 0)
                 pixelblockmsg.SetInt(kPOVAttrib_ProgressLevel, progressLevel);
+            if (blockTime > 0)
+            {
+                pixelblockmsg.SetLong(kPOVAttrib_BlockTime, blockTime);
+                vector<POVMSInt> blockRect { POVMSInt(rect.left), POVMSInt(rect.top), POVMSInt(rect.right), POVMSInt(rect.bottom) };
+                pixelblockmsg.SetIntVector(kPOVAttrib_BlockRect, blockRect);
+            }
             pixelblockmsg.SetInt(kPOVAttrib_Left, rect.left);
             pixelblockmsg.SetInt(kPOVAttrib_Top, rect.top);
             pixelblockmsg.SetInt(kPOVAttrib_Right, rect.right);
@@ -480,7 +486,7 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
     CompletedRectangle(rect, serial, completion, blockInfo);
 }
 
-void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<Vector2d>& positions, const vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel)
+void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<Vector2d>& positions, const vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel, POV_LONG blockTime)
 {
     try
     {
@@ -529,6 +535,12 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
             pixelblockmsg.SetInt(kPOVAttrib_Top, renderArea.top);
             pixelblockmsg.SetInt(kPOVAttrib_Right, renderArea.right);
             pixelblockmsg.SetInt(kPOVAttrib_Bottom, renderArea.bottom);
+        }
+        if (blockTime > 0)
+        {
+            pixelblockmsg.SetLong(kPOVAttrib_BlockTime, blockTime);
+            vector<POVMSInt> blockRect { POVMSInt(rect.left), POVMSInt(rect.top), POVMSInt(rect.right), POVMSInt(rect.bottom) };
+            pixelblockmsg.SetIntVector(kPOVAttrib_BlockRect, blockRect);
         }
 
         pixelblockmsg.SetInt(kPOVAttrib_ViewId, viewId);

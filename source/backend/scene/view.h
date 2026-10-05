@@ -237,7 +237,7 @@ class ViewData final
          */
         void CompletedRectangle(const POVRect& rect, unsigned int serial, const std::vector<RGBTColour>& pixels,
                                 unsigned int size, bool relevant, bool complete, float completion = 1.0,
-                                BlockInfo* blockInfo = nullptr, int progressLevel = -1);
+                                BlockInfo* blockInfo = nullptr, int progressLevel = -1, POV_LONG blockTime = 0);
 
         /**
          *  Called to (fully or partially) complete rendering of a specific sub-rectangle of the view.
@@ -258,7 +258,7 @@ class ViewData final
          */
         void CompletedRectangle(const POVRect& rect, unsigned int serial, const std::vector<Vector2d>& positions,
                                 const std::vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete,
-                                float completion = 1.0, BlockInfo* blockInfo = nullptr, int progressLevel = -1);
+                                float completion = 1.0, BlockInfo* blockInfo = nullptr, int progressLevel = -1, POV_LONG blockTime = 0);
 
         /**
          *  Called to (fully or partially) complete rendering of a specific sub-rectangle of the view without updating pixel data.

@@ -418,6 +418,8 @@ enum
     kPOVAttrib_PreviewStartSize      = 'PStS',
     kPOVAttrib_PreviewEndSize        = 'PEnS',
     kPOVAttrib_ProgressiveRender     = 'PgRn',
+    kPOVAttrib_BlockTime             = 'BlTm',  ///< (Long) Microseconds spent tracing this block.
+    kPOVAttrib_BlockRect             = 'BlRc',  ///< (IntVector) Rectangle covered by the block timing.
     kPOVAttrib_SnapshotFile          = 'SnFi',  ///< (UCS2String) PNG receiving the pixels rendered so far.
     kPOVAttrib_SnapshotInterval      = 'SnIv',  ///< (Int) Seconds between snapshots while rendering; 0 for none.
     kPOVAttrib_SnapshotFrom          = 'SnFr',  ///< (UCS2String) Render state file to write a snapshot from, without rendering.

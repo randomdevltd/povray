@@ -27,6 +27,10 @@ A render continued with `+C` writes snapshots the same way. The snapshot needs t
 when output goes to standard output or `Create_Continue_Trace_Log=off`; the render then warns and carries on.
 `SIGUSR1` without `Snapshot_File` is ignored.
 
+Each snapshot also writes `<file>.heat.png` and `<file>.heat.txt`. The PNG shows tracing time per pixel for every
+finished block, accumulated across progressive levels and across a `+C` continuation. The text file records the
+colour scale, summed trace-thread time and an estimated remaining trace-thread time.
+
 ## From the state file alone
 
     povray +W1920 +H1080 Snapshot_From=scene.pov-state +SNscene-wip.png
@@ -52,6 +56,19 @@ The state file sits beside the output image and takes its name with `.pov-state`
 - Colours are converted from the working gamma: the scene's `assumed_gamma` while rendering, 1.0 when written from
   the state file alone, as scenes of version 3.7 and later assume by default.
 
+## Timing heat map
+
+Each rendered block records its tracing-thread elapsed time in microseconds. Edge blocks are compared by time per
+pixel, and progressive levels add to the same output pixels. The palette runs from blue through cyan and yellow to
+red. Its logarithmic scale puts the 95th percentile at the hot end and retains contrast when regions differ by
+orders of magnitude; the exact scale in microseconds per pixel is in `<file>.heat.txt`. Untimed pixels are transparent.
+
+The elapsed figure is the sum of block time across tracing threads, not process wall time. The remaining figure uses
+the mean block time at the latest level and the known number of levels, scaling finer future levels by their sample
+density. It is an estimate, especially before an expensive region has rendered. Method 4's adaptive passes do not
+have a fixed work count, so its remaining estimate is reported as unknown. An offline snapshot with a non-default
+`+BS` should be given the render's block size for the estimate; the heat image itself is fully recorded in the state.
+
 ## Safety
 
 The PNG is written to `<file>.<random>.tmp` in the same directory and renamed over `<file>`, so a reader sees either
@@ -61,6 +78,12 @@ file format.
 
 ## Cost
 
-Each snapshot reads the whole state file and holds 4 bytes per pixel (about 33 MB at 3840×2160) while it is written.
-During a render it runs on the frontend thread, which buffers the render's results meanwhile; rendering itself does
-not stop.
+Each timed state record adds 48 bytes. At the default 32-pixel block size that is 48 bytes per block per progressive
+level. Each snapshot reads the whole state file and holds 12 bytes per pixel for the snapshot, accumulated time and
+heat map (about 100 MB at 3840×2160) while it is written. During a render it runs on the frontend thread, which
+buffers the render's results meanwhile; rendering itself does not stop.
+
+Timing takes one steady-clock read per finished block after one initialization per tracing thread. On
+`tools/bench/mesh-features.pov` at 1280×960, `+WT1 -A`, medians of four alternating runs minus a one-pixel parse were
+13.533 G instructions without timing and 13.509 G with it in block order (−0.18%), and 14.416 G against 14.438 G
+with `+PR` (+0.15%). The changes straddle zero at less than 0.2%, so there is no measurable instruction overhead.

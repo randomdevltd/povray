@@ -16,7 +16,7 @@ offline() {
 }
 for mode in -pr +pr; do
     # a second link keeps the whole render's state after the render deletes it
-    rm -f snapshot_*.pov-state*
+    rm -f snapshot_*.ppm snapshot_*.px snapshot_*.png snapshot_*.pov-state*
     : > snapshot_whole.pov-state
     ln snapshot_whole.pov-state snapshot_kept.pov-state
     render whole $mode +SNsnapshot_whole.png
@@ -26,6 +26,8 @@ for mode in -pr +pr; do
         echo "snapshot $mode: writing a snapshot changed the state file"; exit 1
     fi
     cmp snapshot_whole.png snapshot_kept.png
+    cmp snapshot_whole.png.heat.png snapshot_kept.png.heat.png
+    grep -q '^timed_block_records=[1-9]' snapshot_kept.png.heat.txt
     # cut at record boundaries, each record starting with its POVMS header, so the cut does not depend on record sizes
     records=$(grep -boa POVRAYMS snapshot_kept.pov-state | cut -d: -f1)
     count=$(echo "$records" | wc -l)
@@ -42,6 +44,8 @@ for mode in -pr +pr; do
     pixels whole; pixels resumed
     cmp snapshot_whole.px snapshot_resumed.px
     cmp snapshot_whole.png snapshot_resumed.png
+    test "$(sed -n 's/^timed_block_records=//p' snapshot_whole.png.heat.txt)" = \
+         "$(sed -n 's/^timed_block_records=//p' snapshot_resumed.png.heat.txt)"
     if "$POVRAY" +w$((W - 1)) +h$H -d -p -v -gp Snapshot_From=snapshot_kept.pov-state +SNsnapshot_bad.png 2> /dev/null; then
         echo "snapshot $mode: a state file wider than +W should be refused"; exit 1
     fi
