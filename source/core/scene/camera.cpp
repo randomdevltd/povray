@@ -247,6 +247,10 @@ void Camera::Init()
     /* Default view angle for spherical camera. [MH 6/99] */
     H_Angle = 360;
     V_Angle = 180;
+    Projection = CYLINDRICAL_EQUIRECTANGULAR;
+    Latitude_Lower = -90.0;
+    Latitude_Upper = 90.0;
+    Latitude_Range = false;
 
     /* Do not perturb primary rays by default. [DB 7/94] */
     Tnormal = nullptr;
@@ -349,6 +353,10 @@ Camera& Camera::operator=(const Camera& src)
     Angle = src.Angle;
     H_Angle = src.H_Angle;
     V_Angle = src.V_Angle;
+    Projection = src.Projection;
+    Latitude_Lower = src.Latitude_Lower;
+    Latitude_Upper = src.Latitude_Upper;
+    Latitude_Range = src.Latitude_Range;
 
     if (Tnormal != nullptr)
         Destroy_Tnormal(Tnormal);
@@ -413,7 +421,9 @@ bool Camera::SameView(const Camera& other) const
             return false;
     return SameVector(Location, other.Location) && SameVector(Direction, other.Direction) && SameVector(Up, other.Up) &&
            SameVector(Right, other.Right) && SameVector(Sky, other.Sky) && (Type == other.Type) && (Angle == other.Angle) &&
-           (H_Angle == other.H_Angle) && (V_Angle == other.V_Angle) && (Aperture == other.Aperture) &&
+           (H_Angle == other.H_Angle) && (V_Angle == other.V_Angle) && (Projection == other.Projection) &&
+           (Latitude_Lower == other.Latitude_Lower) && (Latitude_Upper == other.Latitude_Upper) &&
+           (Latitude_Range == other.Latitude_Range) && (Aperture == other.Aperture) &&
            (Focal_Distance == other.Focal_Distance) && (Blur_Samples == other.Blur_Samples) &&
            (Blur_Samples_Min == other.Blur_Samples_Min) && (Confidence == other.Confidence) && (Variance == other.Variance) &&
            (Max_Ray_Distance == other.Max_Ray_Distance) && (Tnormal == other.Tnormal) && (Bokeh == other.Bokeh) &&

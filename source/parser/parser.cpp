@@ -1681,6 +1681,43 @@ void Parser::Parse_Camera (Camera& Cam)
                             Error("Negative vertical angle not allowed.");
                     END_CASE
 
+                    CASE (LATITUDE_TOKEN)
+                        New.Latitude_Lower = Parse_Float();
+                        Parse_Comma();
+                        New.Latitude_Upper = Parse_Float();
+                        if ((New.Latitude_Lower < -90.0) || (New.Latitude_Upper > 90.0) ||
+                            (New.Latitude_Lower >= New.Latitude_Upper))
+                            Error("Camera latitude range must increase from -90 through 90 degrees.");
+                        New.Latitude_Range = true;
+                    END_CASE
+
+                    CASE (PROJECTION_TOKEN)
+                        EXPECT
+                            CASE (MERCATOR_TOKEN)
+                                New.Projection = CYLINDRICAL_MERCATOR;
+                                EXIT
+                            END_CASE
+                            CASE (MILLER_TOKEN)
+                                New.Projection = CYLINDRICAL_MILLER;
+                                EXIT
+                            END_CASE
+                            CASE (CYLINDRICAL_STEREOGRAPHIC_TOKEN)
+                                New.Projection = CYLINDRICAL_STEREOGRAPHIC;
+                                EXIT
+                            END_CASE
+                            CASE (CYLINDRICAL_EQUAL_AREA_TOKEN)
+                                New.Projection = CYLINDRICAL_EQUAL_AREA;
+                                EXIT
+                            END_CASE
+                            CASE (SPHERICAL_TOKEN)
+                                New.Projection = CYLINDRICAL_EQUIRECTANGULAR;
+                                EXIT
+                            END_CASE
+                            OTHERWISE
+                                Expectation_Error("cylindrical projection profile");
+                        END_EXPECT
+                    END_CASE
+
                     CASE6(PERSPECTIVE_TOKEN, ORTHOGRAPHIC_TOKEN, FISHEYE_TOKEN, ULTRA_WIDE_ANGLE_TOKEN, OMNIMAX_TOKEN, PANORAMIC_TOKEN)
                     CASE3(CYLINDER_TOKEN, MESH_CAMERA_TOKEN, USER_DEFINED_TOKEN)
                         Expectation_Error("spherical camera modifier");
@@ -1692,6 +1729,11 @@ void Parser::Parse_Camera (Camera& Cam)
                             EXIT
                     END_CASE
                 END_EXPECT
+                if ((New.Projection != CYLINDRICAL_EQUIRECTANGULAR) && !New.Latitude_Range)
+                    Error("A non-equirectangular spherical camera projection needs a latitude range.");
+                if ((New.Projection == CYLINDRICAL_MERCATOR) &&
+                    ((New.Latitude_Lower <= -90.0) || (New.Latitude_Upper >= 90.0)))
+                    Error("Mercator latitude must stay strictly between -90 and 90 degrees.");
                 break;
 
             case MESH_CAMERA:
