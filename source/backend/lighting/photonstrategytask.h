@@ -73,6 +73,7 @@ class PhotonStrategyTask final : public RenderTask
         virtual void Finish() override;
 
         void SendProgress();
+        void WarnAboutTinySpacing();
 
         void SearchThroughObjectsCreateUnits(std::vector<ObjectPtr>& Objects, LightSource *Light);
     private:

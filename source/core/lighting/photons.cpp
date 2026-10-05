@@ -1327,6 +1327,35 @@ Photon* PhotonMap::AllocatePhoton()
     return &GetPhoton(j, i);
 }
 
+void PhotonMap::truncate(int count)
+{
+    POV_ASSERT(count >= 0 && count <= numPhotons);
+    const std::size_t blocks = (std::size_t(count) + PHOTON_BLOCK_SIZE - 1) / PHOTON_BLOCK_SIZE;
+    while (mBlockList.size() > blocks)
+    {
+        delete mBlockList.back();
+        mBlockList.pop_back();
+    }
+    numPhotons = count;
+}
+
+void PhotonMap::eraseRanges(std::vector<std::pair<int, int>> ranges)
+{
+    std::sort(ranges.begin(), ranges.end());
+    int source = 0;
+    int destination = 0;
+    for (const auto& range : ranges)
+    {
+        POV_ASSERT(source <= range.first && range.first <= range.second && range.second <= numPhotons);
+        while (source < range.first)
+            GetPhoton(destination++) = GetPhoton(source++);
+        source = range.second;
+    }
+    while (source < numPhotons)
+        GetPhoton(destination++) = GetPhoton(source++);
+    truncate(destination);
+}
+
 /*
 Merge the parameter photon map into this photon map.
 "Delete" the contents of the parameter photon map after

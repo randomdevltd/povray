@@ -44,6 +44,9 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -60,9 +63,12 @@
 namespace pov
 {
 
+class ViewThreadData;
+
 class PhotonShootingStrategy final
 {
     public:
+        PhotonShootingStrategy(int threads, DBL autoStopPercent): threads(threads), autoStopPercent(autoStopPercent) {}
         ObjectPtr obj;
         LightSource *light;
 
@@ -71,10 +77,46 @@ class PhotonShootingStrategy final
         void createUnitsForCombo(ObjectPtr obj, LightSource* light, std::shared_ptr<SceneData> sceneData);
         void start();
         PhotonShootingUnit* getNextUnit();
+        void beginUnit(PhotonShootingUnit& unit, ViewThreadData* worker);
+        void beginRing(PhotonShootingUnit& unit, ViewThreadData* worker);
+        void recordRing(PhotonShootingUnit& unit, ViewThreadData* worker);
+        void finishShooting();
+        bool pastCutoff(std::uint64_t comboSerial, std::uint64_t ringIndex) const;
 
         virtual ~PhotonShootingStrategy();
 
     private:
+        struct RingProgress
+        {
+            int surfaceStart;
+            int surfaceEnd;
+            int mediaStart;
+            int mediaEnd;
+            std::uint64_t shotsStart;
+            std::uint64_t shotsEnd;
+        };
+        struct UnitProgress
+        {
+            ViewThreadData* worker = nullptr;
+            std::vector<RingProgress> rings;
+        };
+        struct ComboProgress
+        {
+            std::size_t ringCount = 0;
+            std::size_t firstPastStop = 0;
+            std::unique_ptr<std::atomic<unsigned char>[]> ringStates;
+            std::atomic<std::uint64_t> cutoffIndex{std::numeric_limits<std::uint64_t>::max()};
+            std::atomic<std::uint64_t> earliestHitIndex{std::numeric_limits<std::uint64_t>::max()};
+            std::atomic<std::uint64_t> earliestEmptyIndex{std::numeric_limits<std::uint64_t>::max()};
+            std::size_t completedPrefix = 0;
+            bool prefixHasHit = false;
+            std::mutex resultMutex;
+        };
+
+        int threads;
+        DBL autoStopPercent;
+        std::vector<UnitProgress> progress;
+        std::vector<std::unique_ptr<ComboProgress>> comboProgress;
         std::vector<PhotonShootingUnit*>::iterator iter;
         std::mutex nextUnitMutex;
 
