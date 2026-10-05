@@ -81,17 +81,20 @@ enum FastMediaWarning
 static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reason,
                           const char* detail, ObjectPtr container = nullptr)
 {
-    if (!td->mediaMessages || (td->GetSceneData()->mediaWarningFlags.load(std::memory_order_relaxed) & reason) ||
-        (td->GetSceneData()->mediaWarningFlags.fetch_or(reason, std::memory_order_relaxed) & reason))
+    const bool fieldFailure = (reason == kFastField) || (reason == kFastGrid);
+    if (!td->mediaMessages || (!fieldFailure &&
+        ((td->GetSceneData()->mediaWarningFlags.load(std::memory_order_relaxed) & reason) ||
+         (td->GetSceneData()->mediaWarningFlags.fetch_or(reason, std::memory_order_relaxed) & reason))))
         return;
     Vector3d low, high;
     if (container)
         Make_min_max_from_BBox(low, high, container->BBox);
     td->mediaMessages->Warning(kWarningGeneral,
         "Media method 4 is using classic sampling: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. "
-        "This can be much slower; further warnings for this reason are suppressed.",
+        "This can be much slower. %s",
         detail, media.FastResolution, low[X], low[Y], low[Z], high[X], high[Y], high[Z],
-        container ? "" : " (unavailable)");
+        container ? "" : " (unavailable)",
+        fieldFailure ? "This warning is reported once for this prepared field." : "Further warnings for this reason are suppressed.");
 }
 
 class Media::FastCache final
