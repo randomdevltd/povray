@@ -937,7 +937,7 @@ light_source
 <a name="r3_10_5_10"></a>
 <div class="content-level-h4" contains="Projection Gallery and Live World Map" id="r3_10_5_10">
 <h4>3.10.5.10 Projection Gallery and Live World Map</h4>
-<p>A gallery wall compares six live panoramic photographs of one hidden scene using cameras from <code>projections.inc</code>: equirectangular, Mercator, Miller, cylindrical stereographic and equal-area profiles, followed by a Mercator camera whose origins move around an outward cylinder.</p>
+<p>A gallery wall compares eight live panoramic photographs of one hidden scene: five cylindrical profiles from <code>projections.inc</code>, a Mercator camera whose origins move around an outward cylinder, a twisted Mercator, and an outside-in turntable camera.</p>
 <pre>
 #include "projections.inc"
 #declare View = CylindricalProjectionCamera(
@@ -947,8 +947,8 @@ light_source
 pigment { screen { camera { View } } }
 </pre>
 <table class="centered" width="340px" cellpadding="0" cellspacing="10">
-<tr><td><img class="center" width="320px" src="images/portal_w10_projection_gallery.png" alt="Six live panoramic photographs using different projections"></td></tr>
-<tr><td><p class="caption">The same hidden scene through five vertical maps and an outward origin cylinder.</p></td></tr>
+<tr><td><img class="center" width="320px" src="images/portal_w10_projection_gallery.png" alt="Eight live panoramic photographs using standard and arbitrary function projections"></td></tr>
+<tr><td><p class="caption">Five cylindrical profiles, an outward origin cylinder, a twisted Mercator and an outside-in turntable view.</p></td></tr>
 </table>
 <p>An inward origin sphere performs the inverse job. A Mercator screen camera begins at every mapped point on a sphere just outside a procedural globe and fires toward its centre. The resulting live map textures a curled, thickened <code>skein_mesh</code> page on the table beside that globe.</p>
 <pre>
