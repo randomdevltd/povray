@@ -321,7 +321,17 @@ skein's (u, v), so `uv_mapping` works. Wrapped seams, poles and sealed ends shar
 positions, `ends flat` caps are fans from the end ring, and neighbouring cells of different
 sizes share their edge vertices: a closed skein gives a closed mesh, with `inside_vector`
 set. More than 2,000,000 triangles is a parse error. Each build writes a line to the debug
-stream: triangles, vertices, open edges, bytes and seconds.
+stream: triangles, vertices, open edges, bytes, wall and CPU seconds, and build threads.
+
+Each complete mesh build runs on one of the `+WT` workers; `+WT1` is
+serial. The parser continues after publishing the declaration. Copies, transforms, textures
+and instances do not wait, but `trace`, `inside`, extent queries and mesh cameras join the
+build when they need its geometry. All remaining builds join after the last scene token.
+
+A function that maps a skein cannot sample a `screen` pigment: its geometry must agree
+for camera rays, photons and mesh preparation. That is an error for both `skein` and
+`skein_mesh`. Either object's finished surface may have a `screen` pigment, which is
+evaluated normally when rendered.
 
 Chosen, not decided: the base lattice is the skein's patch grid rounded down to a power of
 two, refined by halving; one vertex per distinct position, normal and uv, so the mesh needs

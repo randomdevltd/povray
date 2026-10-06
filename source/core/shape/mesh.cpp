@@ -145,6 +145,7 @@ UV_HASH_TABLE **Mesh::UV_Hash_Table;
 
 bool Mesh::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
+    Resolve();
     Thread->Stats()[Ray_Mesh_Tests]++;
 
     if (Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread))
@@ -268,6 +269,7 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
 
 bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 {
+    Resolve();
     bool inside;
     MeshIndex i;
     unsigned int found;
@@ -351,6 +353,7 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 
 void Mesh::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread) const
 {
+    Resolve();
     Vector3d IPoint;
     const MESH_TRIANGLE *Triangle;
 
@@ -707,7 +710,8 @@ ObjectPtr Mesh::Copy()
     New->Trans = Copy_Transform(Trans);
 
     New->Data = Data;
-    New->Data->References++;
+    if (New->Data != nullptr)
+        New->Data->References++;
 
     /* NK 1999 copy textures */
     if (Textures != nullptr)
@@ -763,7 +767,7 @@ Mesh::~Mesh()
         POV_FREE(Textures);
     }
 
-    if (--(Data->References) == 0)
+    if ((Data != nullptr) && (--(Data->References) == 0))
     {
         delete Data->FlatTree;
 
@@ -791,6 +795,28 @@ Mesh::~Mesh()
 
         delete Data;
     }
+}
+
+void Mesh::SetDeferred(const std::shared_ptr<DeferredMeshState>& state)
+{
+    deferred = state;
+}
+
+bool Mesh::Resolve() const
+{
+    if (!deferred)
+        return false;
+    const std::shared_ptr<Mesh> built = deferred->result.get();
+    Mesh *self = const_cast<Mesh *>(this);
+    self->Data = built->Data;
+    self->Data->References++;
+    self->has_inside_vector = built->has_inside_vector;
+    self->Type = (self->Type & ~PATCH_OBJECT) | (built->Type & PATCH_OBJECT);
+    self->BBox = built->BBox;
+    if (self->Trans != nullptr)
+        Recompute_BBox(&self->BBox, self->Trans);
+    self->deferred.reset();
+    return true;
 }
 
 
@@ -827,6 +853,7 @@ Mesh::~Mesh()
 
 void Mesh::Compute_BBox()
 {
+    Resolve();
     MeshIndex i;
     Vector3d P1, P2, P3;
     Vector3d mins, maxs;
@@ -1060,6 +1087,7 @@ void MeshBuilder::Finish(bool closed)
 
 bool Mesh::Vertices_Finite() const
 {
+    Resolve();
     // By bit pattern: -ffast-math folds std::isfinite to true.
     for (MeshIndex i = 0; i < Data->Number_Of_Vertices; ++i)
         for (int d = X; d <= Z; ++d)
@@ -1492,6 +1520,7 @@ void Mesh::get_triangle_bbox(const MESH_TRIANGLE *Triangle, BoundingBox *BBox) c
 
 void Mesh::Build_Mesh_BBox_Tree()
 {
+    Resolve();
     if (!Test_Flag(this, HIERARCHY_FLAG))
     {
         return;
@@ -1583,6 +1612,7 @@ bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DB
 
 bool Mesh::Shadow_Hint_Intersection(const Ray& ray, Intersection *isect, TraceThreadData *Thread)
 {
+    Resolve();
     BasicRay New_Ray;
     const DBL len = mesh_ray(ray, New_Ray);
     const int o = octant(New_Ray.Direction);
@@ -2332,6 +2362,7 @@ bool Mesh::IsOpaque() const
 
 void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
 {
+    Resolve();
     DBL w1, w2, w3, t1, t2;
     Vector3d vA, vB;
     Vector3d Side1, Side2;
@@ -2455,6 +2486,7 @@ bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats, DBL de
 
 void Mesh::Determine_Textures(Intersection *isect, bool hitinside, WeightedTextureVector& textures, TraceThreadData *Threaddata)
 {
+    Resolve();
     const MESH_TRIANGLE *tri = reinterpret_cast<const MESH_TRIANGLE *>(isect->Pointer);
     const size_t index = size_t(tri - Data->Triangles);
 

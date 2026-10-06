@@ -249,6 +249,7 @@ Density of instruction set: 916 / 1024 = 0.8945
 #include "base/povassert.h"
 
 // POV-Ray header files (core module)
+#include "core/material/pigment.h"
 #include "core/math/simd.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/statistics.h"
@@ -265,6 +266,84 @@ namespace pov
 using std::min;
 using std::max;
 using std::vector;
+
+boost::intrusive_ptr<FunctionVM> FunctionVM::Snapshot(const std::vector<FUNCTION>& roots)
+{
+    std::vector<bool> reachable(functions.size(), false);
+    std::function<void(FUNCTION)> visit = [&](FUNCTION fn)
+    {
+        if ((fn >= functions.size()) || reachable[fn] || (functions[fn].reference_count == 0))
+            return;
+        reachable[fn] = true;
+        const FunctionCode& code = functions[fn].fn;
+        for (unsigned int pc = 0; pc < code.program_size; ++pc)
+            if (GET_OP(code.program[pc]) == OPCODE_CALL)
+                visit(GET_K(code.program[pc]));
+    };
+    for (FUNCTION root : roots)
+        visit(root);
+
+    boost::intrusive_ptr<FunctionVM> copy(new FunctionVM());
+    copy->Reset();
+    copy->globals = globals;
+    copy->consts = consts;
+    copy->nextUnreferenced = MAX_K;
+    copy->functions.resize(functions.size());
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        const FunctionEntry& source = functions[i];
+        FunctionEntry& target = copy->functions[i];
+        target.reference_count = 0;
+        target.next_unreferenced = MAX_K;
+        if (!reachable[i])
+            continue;
+        target.fn = FunctionCode();
+        target.fn.program = nullptr;
+        std::fill(target.fn.parameter, target.fn.parameter + MAX_FUNCTION_PARAMETER_LIST, nullptr);
+        std::fill(target.fn.localvar, target.fn.localvar + MAX_FUNCTION_PARAMETER_LIST, nullptr);
+        target.fn.private_data = nullptr;
+        target.fn.program_size = source.fn.program_size;
+        target.fn.return_size = source.fn.return_size;
+        target.fn.parameter_cnt = source.fn.parameter_cnt;
+        target.fn.localvar_cnt = source.fn.localvar_cnt;
+        target.fn.sourceInfo = source.fn.sourceInfo;
+        target.fn.flags = source.fn.flags;
+        target.fn.private_copy_method = source.fn.private_copy_method;
+        target.fn.private_destroy_method = source.fn.private_destroy_method;
+        std::copy(source.fn.localvar_pos, source.fn.localvar_pos + MAX_FUNCTION_PARAMETER_LIST, target.fn.localvar_pos);
+        if (source.fn.program != nullptr)
+        {
+            target.fn.program = reinterpret_cast<Instruction *>(POV_MALLOC(sizeof(Instruction) * source.fn.program_size, "fn: snapshot program"));
+            std::memcpy(target.fn.program, source.fn.program, sizeof(Instruction) * source.fn.program_size);
+        }
+        for (unsigned int k = 0; k < source.fn.parameter_cnt; ++k)
+        {
+            if (source.fn.parameter[k] != nullptr)
+                target.fn.parameter[k] = POV_STRDUP(source.fn.parameter[k]);
+        }
+        for (unsigned int k = 0; k < source.fn.localvar_cnt; ++k)
+        {
+            if (source.fn.localvar[k] != nullptr)
+                target.fn.localvar[k] = POV_STRDUP(source.fn.localvar[k]);
+        }
+        if ((source.fn.private_data != nullptr) && (source.fn.private_copy_method != nullptr))
+            target.fn.private_data = source.fn.private_copy_method(source.fn.private_data);
+        target.ops = source.ops;
+        target.range = source.range;
+        target.batchDepth = source.batchDepth;
+        target.batchStack = source.batchStack;
+        target.batchMath = source.batchMath;
+    }
+    for (FUNCTION root : roots)
+        if ((root < copy->functions.size()) && reachable[root])
+            ++copy->functions[root].reference_count;
+    for (size_t i = 0; i < functions.size(); ++i)
+        if (reachable[i])
+            for (unsigned int pc = 0; pc < functions[i].fn.program_size; ++pc)
+                if (GET_OP(functions[i].fn.program[pc]) == OPCODE_CALL)
+                    ++copy->functions[GET_K(functions[i].fn.program[pc])].reference_count;
+    return copy;
+}
 
 /*****************************************************************************
 * Local preprocessor defines
@@ -767,6 +846,38 @@ bool FunctionVM::EvaluateRange(FUNCTION fn, const Vector3d& a, const Vector3d& b
     lo = values[plan.result].lo;
     hi = values[plan.result].hi;
     return true;
+}
+
+bool FunctionVM::RequiresRayContext(FUNCTION fn) const
+{
+    std::vector<unsigned char> state(functions.size(), 0);
+    std::function<bool(FUNCTION)> visit = [&](FUNCTION current) -> bool
+    {
+        if (current >= functions.size())
+            return false;
+        if (state[current] != 0)
+            return state[current] == 2;
+        state[current] = 1;
+        const FunctionEntry& entry = functions[current];
+        for (size_t pc = 0; pc < entry.ops.size(); ++pc)
+        {
+            const VMOp& op = entry.ops[pc];
+            if ((((op.code == VM_TRAP) && (op.k == 77)) || ((op.code == VM_TRAPS) && (op.k == 0))) &&
+                PigmentRequiresRayContext(reinterpret_cast<const PIGMENT *>(entry.fn.private_data)))
+                return state[current] = 2;
+            if ((op.code == VM_CALL) && visit(op.k))
+                return state[current] = 2;
+            if ((op.code == VM_CALLF) && (pc + 1 < entry.ops.size()))
+            {
+                if (visit(entry.ops[pc + 1].k))
+                    return state[current] = 2;
+                pc += 2;
+            }
+        }
+        state[current] = 3;
+        return false;
+    };
+    return visit(fn);
 }
 
 /*****************************************************************************
@@ -1449,6 +1560,11 @@ FUNCTION FunctionVM::AddFunction(FunctionCode *f)
 
 void FunctionVM::RemoveFunction(FUNCTION fn)
 {
+    RemoveFunctionInternal(fn);
+}
+
+void FunctionVM::RemoveFunctionInternal(FUNCTION fn)
+{
     if(fn >= functions.size())
         return;
 
@@ -1465,7 +1581,7 @@ void FunctionVM::RemoveFunction(FUNCTION fn)
             for(i = 0; i < f.fn.program_size; i++)
             {
                 if(GET_OP(f.fn.program[i]) == OPCODE_CALL)
-                    RemoveFunction(GET_K(f.fn.program[i]));
+                    RemoveFunctionInternal(GET_K(f.fn.program[i]));
             }
             FNCode_Delete(&(f.fn));
             vector<VMOp>().swap(functions[fn].ops);
@@ -2274,13 +2390,18 @@ FunctionVM::CustomFunction::~CustomFunction()
 GenericFunctionContextPtr FunctionVM::CustomFunction::AcquireContext(TraceThreadData* pThreadData)
 {
     FPUContext* pContext = nullptr;
-    if (pThreadData->functionContextPool.empty())
-        pContext = new FPUContext(mpVm.get(), pThreadData);
-    else
+    for (auto i = pThreadData->functionContextPool.rbegin(); i != pThreadData->functionContextPool.rend(); ++i)
     {
-        pContext = GetFPUContextPtr(pThreadData->functionContextPool.back());
-        pThreadData->functionContextPool.pop_back();
+        FPUContext *candidate = GetFPUContextPtr(*i);
+        if (candidate->functionvm.get() == mpVm.get())
+        {
+            pContext = candidate;
+            pThreadData->functionContextPool.erase(std::next(i).base());
+            break;
+        }
     }
+    if (pContext == nullptr)
+        pContext = new FPUContext(mpVm.get(), pThreadData);
     return pContext;
 }
 
@@ -2332,6 +2453,11 @@ GenericScalarFunctionPtr FunctionVM::CustomFunction::Clone() const
 bool FunctionVM::CustomFunction::EvaluateRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const
 {
     return mpVm->EvaluateRange(*mpFn, a, b, lo, hi);
+}
+
+bool FunctionVM::CustomFunction::RequiresRayContext() const
+{
+    return mpVm->RequiresRayContext(*mpFn);
 }
 
 const CustomFunctionSourceInfo* FunctionVM::CustomFunction::GetSourceInfo() const

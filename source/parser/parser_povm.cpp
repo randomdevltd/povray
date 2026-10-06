@@ -47,6 +47,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cstdarg>
 #include <limits>
 #include <memory>
 #include <string>
@@ -94,6 +95,16 @@ using std::uint64_t;
 
 namespace
 {
+
+std::runtime_error PovmError(const char *format, ...)
+{
+    char text[512];
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(text, sizeof(text), format, args);
+    va_end(args);
+    return std::runtime_error(text);
+}
 
 const char POVM_MAGIC[4] = { 'P', 'O', 'V', 'M' };
 const uint32_t POVM_VERSION = 1;
@@ -469,45 +480,58 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
     if (file == nullptr)
         Error("Cannot open povm file '%s'.", name.c_str());
 
+    Vector3d insideVect(0.0, 0.0, 0.0);
+    if (AllowToken(INSIDE_VECTOR_TOKEN))
+        Parse_Vector(insideVect);
+    const bool solid = !insideVect.IsNearNull(EPSILON);
+    std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
+        [this, file, name, found, insideVect](TraceThreadData *, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+        {
+    std::shared_ptr<Mesh> result(new Mesh());
+    Mesh *mesh = result.get();
+    PovmTreeKey key;
+
     mesh->Data = new MESH_DATA();
     mesh->Data->References = 1;
     MESH_DATA& data = *mesh->Data;
 
     unsigned char header[POVM_HEADER_BYTES];
     if (!file->read(header, sizeof(header)) || (std::memcmp(header, POVM_MAGIC, sizeof(POVM_MAGIC)) != 0))
-        Error("'%s' is not a povm file.", name.c_str());
+        throw PovmError("'%s' is not a povm file.", name.c_str());
     const uint32_t version = Word(header + 4), flags = Word(header + 8);
     const uint64_t vertices = Word(header + 12), normals = Word(header + 16), uvs = Word(header + 20), faces = Word(header + 24);
     if (version != POVM_VERSION)
-        Error("povm file '%s' has version %u; this build reads version %u.", name.c_str(), version, POVM_VERSION);
+        throw PovmError("povm file '%s' has version %u; this build reads version %u.", name.c_str(), version, POVM_VERSION);
     if ((flags & ~(POVM_NORMAL_INDICES | POVM_UV_INDICES)) != 0)
-        Error("povm file '%s' has unknown flags 0x%x.", name.c_str(), flags);
+        throw PovmError("povm file '%s' has unknown flags 0x%x.", name.c_str(), flags);
     const bool normalIndices = (flags & POVM_NORMAL_INDICES) != 0, uvIndices = (flags & POVM_UV_INDICES) != 0;
     if ((vertices == 0) || (faces == 0))
-        Error("povm file '%s' has no vertices or no faces.", name.c_str());
+        throw PovmError("povm file '%s' has no vertices or no faces.", name.c_str());
     if (vertices >= uint64_t(MESH_MAX_VERTICES))
-        Error("Too many vertices in povm file '%s'.", name.c_str());
+        throw PovmError("Too many vertices in povm file '%s'.", name.c_str());
     if ((faces > uint64_t(std::numeric_limits<MeshIndex>::max()) / 3) || (normals > uint64_t(std::numeric_limits<MeshIndex>::max())) ||
         (uvs > uint64_t(std::numeric_limits<MeshIndex>::max())))
-        Error("Too many faces, normals or uvs in povm file '%s'.", name.c_str());
+        throw PovmError("Too many faces, normals or uvs in povm file '%s'.", name.c_str());
     if (normalIndices ? (normals == 0) : ((normals != 0) && (normals != vertices)))
-        Error("povm file '%s' needs normal indices unless it has one normal per vertex.", name.c_str());
+        throw PovmError("povm file '%s' needs normal indices unless it has one normal per vertex.", name.c_str());
     if (uvIndices ? (uvs == 0) : ((uvs != 0) && (uvs != vertices)))
-        Error("povm file '%s' needs uv indices unless it has one uv per vertex.", name.c_str());
+        throw PovmError("povm file '%s' needs uv indices unless it has one uv per vertex.", name.c_str());
 
     const uint64_t expected = POVM_HEADER_BYTES + 12 * (vertices + normals) + 8 * uvs +
                               12 * faces * (1 + int(normalIndices) + int(uvIndices));
     if (!file->seekg(0, IOBase::seek_end))
-        Error("Cannot read povm file '%s'.", name.c_str());
+        throw PovmError("Cannot read povm file '%s'.", name.c_str());
     const uint64_t bytes = uint64_t(file->tellg());
     if ((bytes != expected) || !file->seekg(POVM_HEADER_BYTES))
-        Error("povm file '%s' has %llu bytes where its header needs %llu.", name.c_str(),
+        throw PovmError("povm file '%s' has %llu bytes where its header needs %llu.", name.c_str(),
               (unsigned long long)bytes, (unsigned long long)expected);
 
     uint64_t hash = Hash_Bytes(header, sizeof(header), 0);
     const auto read = [&](void *dst, size_t words) {
+        if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+            throw PovmError("Mesh build cancelled.");
         if (!file->read(dst, words * 4))
-            Error("Cannot read povm file '%s'.", name.c_str());
+            throw PovmError("Cannot read povm file '%s'.", name.c_str());
         hash = Hash_Bytes(dst, words * 4, hash);
         To_Host_Order(dst, words);
     };
@@ -522,7 +546,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
         data.Normals = reinterpret_cast<MeshVector *>(POV_MALLOC(normals * sizeof(MeshVector), "triangle mesh data"));
         read(data.Normals, 3 * normals);
         if (!Finite(&data.Normals[0][X], 3 * normals))
-            Error("Mesh normal is infinite or not a number in povm file '%s'.", name.c_str());
+            throw PovmError("Mesh normal is infinite or not a number in povm file '%s'.", name.c_str());
         bool foundZeroNormal = false;
         for (uint64_t i = 0; i < normals; ++i)
         {
@@ -530,7 +554,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
             if ((fabs(n[X]) < EPSILON) && (fabs(n[Y]) < EPSILON) && (fabs(n[Z]) < EPSILON))
             {
                 if (!foundZeroNormal)
-                    Warning("Normal vector in povm file '%s' cannot be zero - changing it to <1,0,0>.", name.c_str());
+                    state.warnings.push_back("Normal vector in povm file '" + name + "' cannot be zero - changing it to <1,0,0>.");
                 foundZeroNormal = true;
                 n[X] = 1.0;
             }
@@ -551,7 +575,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
         chunk.resize(2 * n);
         read(chunk.data(), 2 * n);
         if (!Finite(chunk.data(), 2 * n))
-            Error("Mesh uv is infinite or not a number in povm file '%s'.", name.c_str());
+            throw PovmError("Mesh uv is infinite or not a number in povm file '%s'.", name.c_str());
         for (uint64_t i = 0; i < n; ++i)
             data.UVCoords[done + i] = MeshUVVector(chunk[2 * i], chunk[2 * i + 1]);
         done += n;
@@ -563,14 +587,14 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
     read(data.Triangles, 3 * faces);
     for (uint64_t i = 0; i < faces; ++i)
         if (std::max({ data.Triangles[i].Word[0], data.Triangles[i].Word[1], data.Triangles[i].Word[2] }) >= vertices)
-            Error("Mesh face index out of range in povm file '%s'.", name.c_str());
+            throw PovmError("Mesh face index out of range in povm file '%s'.", name.c_str());
 
     const auto readColumn = [&](MeshIndexColumn& column, uint64_t count, const char *what) {
         column.values.resize(3 * faces);
         read(column.values.data(), 3 * faces);
         for (const MeshIndex v : column.values)
             if (uint32_t(v) >= count)
-                Error("Mesh %s index out of range in povm file '%s'.", what, name.c_str());
+                throw PovmError("Mesh %s index out of range in povm file '%s'.", what, name.c_str());
     };
     if (normalIndices)
         readColumn(data.NormalInd, normals, "normal");
@@ -591,6 +615,8 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
 
     for (MeshIndex i = 0; i < data.Number_Of_Triangles; ++i)
     {
+        if (((i & 0xFFFF) == 0) && mMeshBuildCancelled.load(std::memory_order_relaxed))
+            throw PovmError("Mesh build cancelled.");
         MESH_TRIANGLE& t = data.Triangles[i];
         const Vector3d P1(data.Vertices[t.P1()]), P2(data.Vertices[t.P2()]), P3(data.Vertices[t.P3()]);
         bool smooth = false;
@@ -604,9 +630,6 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
         mesh->Compute_Mesh_Triangle(&t, i, smooth, P1, P2, P3);
     }
 
-    Vector3d insideVect(0.0, 0.0, 0.0);
-    if (AllowToken(INSIDE_VECTOR_TOKEN))
-        Parse_Vector(insideVect);
     if (insideVect.IsNearNull(EPSILON))
     {
         mesh->has_inside_vector = false;
@@ -623,7 +646,42 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
     mesh->Number_Of_Textures = 0;
     mesh->Finish_Mesh_Data();
     if (!mesh->Vertices_Finite())
-        Error("Mesh vertex is infinite or not a number.");
+        throw PovmError("Mesh vertex is infinite or not a number.");
+    mesh->Compute_BBox();
+
+    const uint32_t triangleCount = uint32_t(data.Number_Of_Triangles);
+    const std::string treePath = UCS2toSysString(key.path);
+    const TreeRead cached = Read_Tree(key, triangleCount, data.FlatTree);
+    if (cached == TreeRead::Corrupt)
+        state.warnings.push_back("Mesh tree cache '" + treePath + "' is corrupt; rebuilding it.");
+    if (cached != TreeRead::Loaded)
+    {
+        mesh->Build_Mesh_BBox_Tree();
+        switch (Write_Tree(key, triangleCount, *data.FlatTree))
+        {
+            case TreeWrite::Written:
+            case TreeWrite::Busy:
+                break;
+            case TreeWrite::Held:
+                state.warnings.push_back("Mesh tree cache '" + treePath + ".tmp' exists, so another render is writing the cache; delete it if no render is running.");
+                break;
+            case TreeWrite::Invalid:
+                state.warnings.push_back("The tree built for '" + treePath + "' failed its own checks and is not cached.");
+                break;
+            case TreeWrite::Failed:
+                state.warnings.push_back("Cannot write mesh tree cache '" + treePath + "'; the tree is built for this render only.");
+                break;
+        }
+    }
+    return result;
+        });
+
+    Make_BBox(mesh->BBox, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    mesh->has_inside_vector = solid;
+    if (solid)
+        mesh->Type &= ~PATCH_OBJECT;
+    mesh->SetDeferred(deferred);
+    key.path.clear();
 }
 
 void Parser::Povm_Mesh_Tree(Mesh *mesh, const PovmTreeKey& key)

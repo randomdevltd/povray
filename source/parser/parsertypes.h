@@ -198,7 +198,8 @@ struct ParserOptions final
     bool    useClock;
     DBL     clock;
     size_t  randomSeed;
-    ParserOptions(bool uc, DBL c, size_t rs) : useClock(uc), clock(c), randomSeed(rs) {}
+    unsigned int workThreads;
+    ParserOptions(bool uc, DBL c, size_t rs, unsigned int wt) : useClock(uc), clock(c), randomSeed(rs), workThreads(wt) {}
 };
 
 //------------------------------------------------------------------------------

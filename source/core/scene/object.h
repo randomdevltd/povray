@@ -238,6 +238,7 @@ class ObjectBase
         /// @return True if object parameters are within reasonable limits.
         ///
         virtual bool Precompute() { return true; }
+        virtual bool Resolve() const { return false; }
 
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) = 0; // could be "const", if it wasn't for isosurface max_gradient estimation stuff
         /// Any hit on the part that blocked this thread's last shadow ray in a similar direction, if this ray crosses it too.
@@ -322,6 +323,15 @@ class CompoundObject : public ObjectBase
         CompoundObject(int t) : ObjectBase(t) {}
         CompoundObject(int t, CompoundObject& o, bool transplant) : ObjectBase(t, o, transplant), children(o.children) { if (transplant) o.children.clear(); }
         std::vector<ObjectPtr> children;
+        virtual bool Resolve() const override
+        {
+            bool changed = false;
+            for (ObjectPtr child : children)
+                changed = child->Resolve() || changed;
+            if (changed)
+                const_cast<CompoundObject *>(this)->Compute_BBox();
+            return changed;
+        }
         virtual ObjectPtr Invert() override;
 };
 

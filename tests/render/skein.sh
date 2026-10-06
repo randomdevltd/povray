@@ -8,6 +8,15 @@ W=96; H=72
 "$POVRAY" +i"$SRCDIR/tests/render/skein_syntax.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
 "$POVRAY" +i"$SRCDIR/tests/render/skein_crease.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
 "$POVRAY" +i"$SRCDIR/tests/render/skein_values.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
+for check in 0 1 2 3 6 7 8; do
+    "$POVRAY" +i"$SRCDIR/tests/render/mesh_screen_context.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f Declare=Check=$check
+done
+for check in 4 5 9 10 11 12; do
+    if "$POVRAY" +i"$SRCDIR/tests/render/mesh_screen_context.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f Declare=Check=$check > mesh_screen.log 2>&1; then
+        cat mesh_screen.log; echo "mesh screen sample: parse unexpectedly succeeded"; exit 1
+    fi
+    grep -q "cannot sample a screen pigment" mesh_screen.log || { cat mesh_screen.log; exit 1; }
+done
 "$POVRAY" +i"$SRCDIR/tests/render/skein_envelope.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
 "$POVRAY" +i"$SRCDIR/tests/render/skein_csg.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
 "$POVRAY" +i"$SRCDIR/tests/render/skein_sample_path.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f
@@ -20,10 +29,12 @@ W=96; H=72
 unresolved=$(sed -n 's/^Skein unresolved: *//p' skein_crease_tail.log)
 echo "skein_crease_tail: ${unresolved:-no statistics} unresolved patches"
 test "${unresolved:-1000000}" -lt 5000
-# skein_mesh: five meshes, each closed; the torus at max_angle 10 is 64 by 64 cells, built once though used four times
+# skein_mesh: six meshes, each closed; the torus at max_angle 10 is 64 by 64 cells, built once though used four times
 "$POVRAY" +i"$SRCDIR/tests/render/skein_mesh_check.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f > skein_mesh.log 2>&1 || { cat skein_mesh.log; exit 1; }
 grep -q "^skein_mesh: 8192 triangles, 4225 vertices, 0 open edges" skein_mesh.log || { cat skein_mesh.log; echo "skein_mesh: the torus is not 8192 triangles on 4225 vertices, closed"; exit 1; }
-test "$(grep -c '^skein_mesh: .* 0 open edges' skein_mesh.log)" = 5 || { cat skein_mesh.log; echo "skein_mesh: not five closed meshes"; exit 1; }
+test "$(grep -c '^skein_mesh: .* 0 open edges' skein_mesh.log)" = 6 || { cat skein_mesh.log; echo "skein_mesh: not six closed meshes"; exit 1; }
+"$POVRAY" +i"$SRCDIR/tests/render/deferred_mesh_check.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f +wt4 > deferred_mesh.log 2>&1 || { cat deferred_mesh.log; exit 1; }
+test "$(grep -c '^skein_mesh: .* 0 open edges' deferred_mesh.log)" = 2 || { cat deferred_mesh.log; echo "deferred mesh: redeclaration did not build twice"; exit 1; }
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/skein_shapes.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +wt1 +fp +o"skein_$name.ppm" "$@"

@@ -60,6 +60,7 @@
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
+#include "core/support/parallel.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -1225,11 +1226,18 @@ class IsoMesher final
 {
     public:
 
-        IsoMesher(const IsoSurface& s, TraceThreadData *t, DBL size, DBL angle, MeshBuilder& m, IsoSurfaceMeshReport& r, const std::function<void()>& p) :
-            iso(s), fn(s.Function, t), box(dynamic_cast<const ContainedByBox *>(s.container.get())),
+        IsoMesher(const IsoSurface& s, const std::vector<TraceThreadData *>& threads, DBL size, DBL angle, MeshBuilder& m, IsoSurfaceMeshReport& r, const std::function<void()>& p) :
+            iso(s), box(dynamic_cast<const ContainedByBox *>(s.container.get())),
             ball(dynamic_cast<const ContainedBySphere *>(s.container.get())), unit(size), maxAngle(angle * M_PI / 180.0),
             slope(s.max_gradient), out(m), report(r), progress(p)
-        {}
+        {
+            for (TraceThreadData *thread : threads)
+                functions.emplace_back(new GenericScalarFunctionInstance(s.Function, thread));
+            rangeCells.assign(threads.size(), 0);
+            sampledCells.assign(threads.size(), 0);
+            stackPeaks.assign(threads.size(), 0);
+            samples.resize(threads.size());
+        }
 
         std::string Run()
         {
@@ -1252,36 +1260,60 @@ class IsoMesher final
                 cells[a] = n << depth;
                 origin[a] = 0.5 * (lo[a] + hi[a] - n * root) + kMeshOffset * unit;
             }
+            std::vector<Cell> roots;
             for (int i = 0; i < cells[X]; i += Size(0))
                 for (int j = 0; j < cells[Y]; j += Size(0))
                     for (int k = 0; k < cells[Z]; k += Size(0))
-                        stack.push_back(Cell{ { i, j, k }, 0 });
-
-            size_t maybe = 0, visited = 0;
-            while (!stack.empty())
+                        roots.push_back(Cell{ { i, j, k }, 0 });
+            std::vector<std::vector<std::pair<std::uint64_t, Leaf>>> rootLeaves(roots.size());
+            std::atomic<size_t> maybe(0);
+            std::atomic<bool> tooMany(false);
+            ParallelFor(roots.size(), functions.size(), [&](size_t root, size_t worker)
             {
-                const Cell c = stack.back();
-                stack.pop_back();
-                if ((++visited % kMeshProgress) == 0)
+                std::vector<Cell> stack(1, roots[root]);
+                size_t visited = 0;
+                while (!stack.empty() && !tooMany.load(std::memory_order_relaxed))
                 {
-                    progress();
-                    Peak();
+                    stackPeaks[worker] = std::max(stackPeaks[worker], stack.capacity() * sizeof(Cell));
+                    const Cell c = stack.back();
+                    stack.pop_back();
+                    if ((functions.size() == 1) && ((++visited % kMeshProgress) == 0))
+                        progress();
+                    const int size = Size(c.level);
+                    const Kind kind = Classify(c.at, size, worker);
+                    if ((kind == kMaybe) && Split(c.at, size, worker))
+                    {
+                        const int half = size / 2;
+                        for (int k = 0; k < 8; ++k)
+                            stack.push_back(Cell{ { c.at[0] + ((k & 1) ? half : 0), c.at[1] + ((k & 2) ? half : 0), c.at[2] + ((k & 4) ? half : 0) }, c.level + 1 });
+                        continue;
+                    }
+                    if (kind != kProved)
+                        rootLeaves[root].push_back(std::make_pair(Key(c.at), Leaf{ -1, std::uint8_t(c.level), kind }));
+                    if ((kind == kMaybe) && (maybe.fetch_add(1, std::memory_order_relaxed) + 1 > 2 * IsoSurface::kMaxMeshTriangles))
+                        tooMany.store(true, std::memory_order_relaxed);
                 }
-                const int size = Size(c.level);
-                const Kind kind = Classify(c.at, size);
-                if ((kind == kMaybe) && Split(c.at, size))
-                {
-                    const int half = size / 2;
-                    for (int k = 0; k < 8; ++k)
-                        stack.push_back(Cell{ { c.at[0] + ((k & 1) ? half : 0), c.at[1] + ((k & 2) ? half : 0), c.at[2] + ((k & 4) ? half : 0) }, c.level + 1 });
-                    continue;
-                }
-                if (kind != kProved)
-                    leaves[Key(c.at)] = Leaf{ -1, std::uint8_t(c.level), kind };
-                if ((kind == kMaybe) && (++maybe > 2 * IsoSurface::kMaxMeshTriangles))
-                    return TooMany();
+            }, progress);
+            if (tooMany.load(std::memory_order_relaxed))
+                return TooMany();
+            rootLeafBytes = rootLeaves.capacity() * sizeof(decltype(rootLeaves)::value_type);
+            for (const auto& root : rootLeaves)
+                rootLeafBytes += root.capacity() * sizeof(std::pair<std::uint64_t, Leaf>);
+            Peak();
+            for (size_t worker = 1; worker < samples.size(); ++worker)
+            {
+                samples[0].insert(samples[worker].begin(), samples[worker].end());
+                std::unordered_map<std::uint64_t, Sample>().swap(samples[worker]);
             }
-            std::vector<Cell>().swap(stack);
+            for (const auto& root : rootLeaves)
+                for (const auto& leaf : root)
+                    leaves.insert(leaf);
+            decltype(rootLeaves)().swap(rootLeaves);
+            rootLeafBytes = 0;
+            for (size_t count : rangeCells)
+                report.rangeCells += count;
+            for (size_t count : sampledCells)
+                report.sampledCells += count;
             Peak();
 
             const std::string problem = Contour();
@@ -1289,7 +1321,7 @@ class IsoMesher final
                 return problem;
             Peak();
             decltype(leaves)().swap(leaves);
-            decltype(samples)().swap(samples);
+            std::unordered_map<std::uint64_t, Sample>().swap(samples[0]);
             if (quads.empty())
                 return "isosurface_mesh: no surface inside contained_by.";
 
@@ -1382,7 +1414,12 @@ class IsoMesher final
 
         void Peak()
         {
-            const size_t bytes = MapBytes(leaves) + MapBytes(samples) + MapBytes(ids) + stack.capacity() * sizeof(Cell) + qefs.capacity() * sizeof(Qef) +
+            size_t sampleBytes = 0, stackBytes = 0;
+            for (const auto& cache : samples)
+                sampleBytes += MapBytes(cache);
+            for (size_t bytes : stackPeaks)
+                stackBytes += bytes;
+            const size_t bytes = MapBytes(leaves) + sampleBytes + MapBytes(ids) + stackBytes + rootLeafBytes + qefs.capacity() * sizeof(Qef) +
                                  quads.capacity() * sizeof(Quad) + 2 * where.capacity() * sizeof(Vector3d) + edges.capacity() * sizeof(std::uint64_t) + out.Bytes(true);
             report.peakBytes = std::max(report.peakBytes, bytes);
         }
@@ -1421,7 +1458,7 @@ class IsoMesher final
         }
 
         /// The field meshed: the isosurface's function, inside where negative, cut by its container; `f` gets the function's part alone.
-        void Field(const Vector3d *p, int n, DBL *g, DBL *f = nullptr)
+        void Field(const Vector3d *p, int n, DBL *g, DBL *f = nullptr, size_t worker = 0)
         {
             DBL x[7], y[7], z[7], v[7];
             for (int i = 0; i < n; ++i)
@@ -1430,7 +1467,7 @@ class IsoMesher final
                 y[i] = p[i][Y];
                 z[i] = p[i][Z];
             }
-            fn.Evaluate(x, y, z, v, n);
+            functions[worker]->Evaluate(x, y, z, v, n);
             for (int i = 0; i < n; ++i)
             {
                 const DBL fp = iso.positivePolarity ? iso.threshold - v[i] : v[i] - iso.threshold;
@@ -1440,7 +1477,7 @@ class IsoMesher final
             }
         }
 
-        Vector3d Gradient(const Vector3d& p)
+        Vector3d Gradient(const Vector3d& p, size_t worker = 0)
         {
             Vector3d q[6];
             for (int a = 0; a < 3; ++a)
@@ -1450,21 +1487,22 @@ class IsoMesher final
                 q[2 * a + 1][a] -= step;
             }
             DBL g[6];
-            Field(q, 6, g);
+            Field(q, 6, g, nullptr, worker);
             return Vector3d(g[0] - g[1], g[2] - g[3], g[4] - g[5]) / (2.0 * step);
         }
 
-        Sample& Corner(const int *at, bool withNormal)
+        Sample& Corner(const int *at, bool withNormal, size_t worker = 0)
         {
             const std::uint64_t key = Key(at);
-            auto found = samples.find(key);
-            Sample *s = (found != samples.end()) ? &found->second : nullptr;
+            std::unordered_map<std::uint64_t, Sample>& cache = samples[worker];
+            auto found = cache.find(key);
+            Sample *s = (found != cache.end()) ? &found->second : nullptr;
             const Vector3d p = Point(at);
             if (!s)
             {
-                s = &samples[key];
+                s = &cache[key];
                 s->normal = false;
-                Field(&p, 1, &s->g);
+                Field(&p, 1, &s->g, nullptr, worker);
             }
             if (withNormal && !s->normal)
             {
@@ -1472,7 +1510,7 @@ class IsoMesher final
                 DBL g[3];
                 for (int a = 0; a < 3; ++a)
                     q[a][a] += step;
-                Field(q, 3, g);
+                Field(q, 3, g, nullptr, worker);
                 for (int a = 0; a < 3; ++a)
                     s->n[a] = float((g[a] - s->g) / step);
                 s->normal = true;
@@ -1480,7 +1518,7 @@ class IsoMesher final
             return *s;
         }
 
-        Kind Classify(const int *at, int size)
+        Kind Classify(const int *at, int size, size_t worker)
         {
             const int far[3] = { at[0] + size, at[1] + size, at[2] + size };
             const Vector3d lo = Point(at), hi = Point(far);
@@ -1491,7 +1529,7 @@ class IsoMesher final
             const bool ranged = iso.Function->EvaluateRange(lo, hi, flo, fhi);
             if (ranged)
             {
-                ++report.rangeCells;
+                ++rangeCells[worker];
                 if (iso.positivePolarity)
                 {
                     const DBL t = iso.threshold - fhi;
@@ -1506,10 +1544,10 @@ class IsoMesher final
             }
             else
             {
-                ++report.sampledCells;
+                ++sampledCells[worker];
                 const Vector3d centre = 0.5 * (lo + hi);
                 DBL g, f;
-                Field(&centre, 1, &g, &f);
+                Field(&centre, 1, &g, &f, worker);
                 const DBL r = slope * 0.5 * (hi - lo).length();
                 flo = f - r;
                 fhi = f + r;
@@ -1521,7 +1559,7 @@ class IsoMesher final
 
         /// Whether the gradient at the cell's corners and centre turns more than the limit, unless it falls into two or three tight
         /// groups far apart, a crease or corner that the cell's vertex can sit on; an open rim is always split.
-        bool Split(const int *at, int size)
+        bool Split(const int *at, int size, size_t worker)
         {
             if (size == 1)
                 return false;
@@ -1529,10 +1567,10 @@ class IsoMesher final
             for (int k = 0; k < 8; ++k)
             {
                 const int c[3] = { at[0] + ((k & 1) ? size : 0), at[1] + ((k & 2) ? size : 0), at[2] + ((k & 4) ? size : 0) };
-                const Sample& s = Corner(c, true);
+                const Sample& s = Corner(c, true, worker);
                 n[k] = Vector3d(s.n[0], s.n[1], s.n[2]);
             }
-            n[8] = Gradient(Point(at) + Vector3d(0.5 * size * unit));
+            n[8] = Gradient(Point(at) + Vector3d(0.5 * size * unit), worker);
             DBL turn = 0.0;
             for (int a = 0; a < 9; ++a)
                 for (int b = a + 1; b < 9; ++b)
@@ -1625,10 +1663,16 @@ class IsoMesher final
         std::string Contour()
         {
             size_t triangles = 0, seen = 0;
-            for (auto& entry : leaves)
+            std::vector<std::uint64_t> keys;
+            keys.reserve(leaves.size());
+            for (const auto& entry : leaves)
+                keys.push_back(entry.first);
+            std::sort(keys.begin(), keys.end());
+            for (std::uint64_t key : keys)
             {
                 if ((++seen % kMeshProgress) == 0)
                     progress();
+                auto& entry = *leaves.find(key);
                 if (entry.second.kind != kMaybe)
                     continue;
                 int at[3];
@@ -1790,7 +1834,7 @@ class IsoMesher final
         }
 
         const IsoSurface& iso;
-        GenericScalarFunctionInstance fn;
+        std::vector<std::unique_ptr<GenericScalarFunctionInstance>> functions;
         const ContainedByBox *box;
         const ContainedBySphere *ball;
         DBL unit, maxAngle, slope, step = 0.0;
@@ -1799,9 +1843,10 @@ class IsoMesher final
         const std::function<void()>& progress;
         Vector3d origin;
         int depth = 0, cells[3] = { 0, 0, 0 };
-        std::vector<Cell> stack;
         std::unordered_map<std::uint64_t, Leaf> leaves;
-        std::unordered_map<std::uint64_t, Sample> samples;
+        std::vector<std::unordered_map<std::uint64_t, Sample>> samples;
+        std::vector<size_t> rangeCells, sampledCells, stackPeaks;
+        size_t rootLeafBytes = 0;
         std::vector<Qef> qefs;
         std::vector<Quad> quads;
         std::vector<Vector3d> where, normal;
@@ -1812,10 +1857,10 @@ class IsoMesher final
 }
 // end of anonymous namespace
 
-std::string IsoSurface::Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, MeshBuilder& mesh, IsoSurfaceMeshReport& report,
+std::string IsoSurface::Tessellate(const std::vector<TraceThreadData *>& threads, DBL minSize, DBL maxAngle, MeshBuilder& mesh, IsoSurfaceMeshReport& report,
                                    const std::function<void()>& progress) const
 {
-    IsoMesher mesher(*this, thread, minSize, maxAngle, mesh, report, progress);
+    IsoMesher mesher(*this, threads, minSize, maxAngle, mesh, report, progress);
     return mesher.Run();
 }
 

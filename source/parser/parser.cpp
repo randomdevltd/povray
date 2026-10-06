@@ -47,6 +47,7 @@
 // C++ standard header files
 #include <algorithm>
 #include <map>
+#include <sstream>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -55,6 +56,7 @@
 #include "base/povassert.h"
 #include "base/stringutilities.h"
 #include "base/types.h"
+#include "base/timer.h"
 #include "base/image/colourspace.h"
 #include "base/image/image.h"
 
@@ -110,6 +112,7 @@
 #include "core/shape/truetype.h"
 #include "core/support/imageutil.h"
 #include "core/support/octree.h"
+#include "core/support/statistics.h"
 
 // POV-Ray header files (VM module)
 #include "vm/fnpovfpu.h"
@@ -129,6 +132,12 @@ using std::min;
 using std::max;
 using std::shared_ptr;
 using std::vector;
+
+struct IsoMeshBuildSource final
+{
+    std::shared_ptr<IsoSurface> iso;
+    std::shared_ptr<GenericScalarFunction> originalFunction;
+};
 
 /*****************************************************************************
 * Local preprocessor defines
@@ -153,6 +162,8 @@ Parser::Parser(shared_ptr<SceneData> sd, const Options& opts,
     Debug_Message_Buffer(mf),
     mpFunctionVM(new FunctionVM),
     fnVMContext(new FPUContext(mpFunctionVM.get(), GetParserDataPtr())),
+    mMeshThreadCount(opts.workThreads),
+    mRandomSeed(opts.randomSeed),
     Destroying_Frame(false),
     mTokenCount(0),
     mTokensSinceLastProgressReport(0),
@@ -179,8 +190,122 @@ Parser::Parser(shared_ptr<SceneData> sd, const Options& opts,
 
 Parser::~Parser()
 {
+    for (const std::shared_ptr<DeferredMeshState>& build : mMeshBuilds)
+        if (build->result.valid())
+            build->result.wait();
+    {
+        std::lock_guard<std::mutex> lock(mMeshBuildMutex);
+        mMeshBuildStopping = true;
+    }
+    mMeshBuildReady.notify_all();
+    for (std::thread& worker : mMeshWorkers)
+        worker.join();
+    for (const std::unique_ptr<TraceThreadData>& worker : mMeshThreadData)
+        mThreadData.Stats() += worker->Stats();
+    mMeshThreadData.clear();
     // NB: We need to keep fnVMContext around until all functions have been destroyed.
     delete fnVMContext;
+}
+
+std::shared_ptr<DeferredMeshState> Parser::QueueMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
+                                                         const std::shared_ptr<void>& keepAlive)
+{
+    if (mMeshWorkers.size() < mMeshThreadCount)
+    {
+        if (mMeshWorkers.empty())
+            mMeshThreadData.reserve(mMeshThreadCount);
+        const unsigned int i = mMeshWorkers.size();
+        mMeshThreadData.emplace_back(new TraceThreadData(sceneData, mRandomSeed + i + 1, false));
+        TraceThreadData *threadData = mMeshThreadData.back().get();
+        mMeshWorkers.emplace_back([this, threadData]()
+        {
+            for (;;)
+            {
+                MeshBuildTask task;
+                {
+                    std::unique_lock<std::mutex> lock(mMeshBuildMutex);
+                    mMeshBuildReady.wait(lock, [this]() { return mMeshBuildStopping || !mMeshBuildQueue.empty(); });
+                    if (mMeshBuildStopping && mMeshBuildQueue.empty())
+                        return;
+                    task = mMeshBuildQueue.front();
+                    mMeshBuildQueue.pop_front();
+                }
+                try
+                {
+                    if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+                        throw std::runtime_error("Mesh build cancelled.");
+                    Timer timer;
+                    std::shared_ptr<Mesh> mesh = task.work(threadData, *task.state);
+                    if (timer.HasValidThreadCPUTime())
+                        task.state->cpuTime = timer.ElapsedThreadCPUTime();
+                    task.promise->set_value(mesh);
+                }
+                catch (...)
+                {
+                    task.promise->set_exception(std::current_exception());
+                }
+            }
+        });
+    }
+    std::shared_ptr<DeferredMeshState> state(new DeferredMeshState());
+    state->keepAlive = keepAlive;
+    if (HaveCurrentMessageContext())
+        state->source = SourceInfo(CurrentMessageContext());
+    std::shared_ptr<std::promise<std::shared_ptr<Mesh>>> promise(new std::promise<std::shared_ptr<Mesh>>());
+    state->result = promise->get_future().share();
+    {
+        std::lock_guard<std::mutex> lock(mMeshBuildMutex);
+        mMeshBuildQueue.push_back(MeshBuildTask{work, state, promise});
+        mMeshBuilds.push_back(state);
+    }
+    mMeshBuildReady.notify_one();
+    return state;
+}
+
+void Parser::FinishMeshBuilds()
+{
+    for (const std::shared_ptr<DeferredMeshState>& build : mMeshBuilds)
+    {
+        try
+        {
+            while (build->result.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+                mProgressReporter.ReportProgress(mTokenCount);
+        }
+        catch (...)
+        {
+            mMeshBuildCancelled.store(true, std::memory_order_relaxed);
+            throw;
+        }
+        try
+        {
+            build->result.get();
+        }
+        catch (const std::exception& error)
+        {
+            mMeshBuildCancelled.store(true, std::memory_order_relaxed);
+            Error(build->source, "%s", error.what());
+        }
+        for (const std::string& warning : build->warnings)
+            Warning("%s", warning.c_str());
+        if (build->cpuTime >= 0)
+            mMeshBuildCpuTime += build->cpuTime;
+        if (!build->debug.empty())
+            Debug_Info("%s", build->debug.c_str());
+    }
+    for (ObjectPtr object : sceneData->objects)
+        Resolve_Mesh_Geometry(object);
+}
+
+void Parser::Resolve_Mesh_Geometry(ObjectPtr object)
+{
+    if (Mesh *mesh = dynamic_cast<Mesh *>(object))
+        mesh->Resolve();
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+    {
+        for (ObjectPtr child : compound->children)
+            Resolve_Mesh_Geometry(child);
+        compound->Compute_BBox();
+    }
 }
 
 /* Parse the file. */
@@ -243,6 +368,8 @@ void Parser::Run()
 
             Parse_Frame();
 
+            FinishMeshBuilds();
+
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
                 i->PostProcess();
@@ -298,6 +425,7 @@ void Parser::Run()
         }
         catch (std::exception& e)
         {
+            mMeshBuildCancelled.store(true, std::memory_order_relaxed);
             // Some other exceptional situation occurred in a library or some such and couldn't be handled gracefully;
             // handle it now by failing with a corresponding parse error
             Error(e.what());
@@ -1243,7 +1371,10 @@ void Parser::Parse_Mesh_Camera (Camera& Cam)
 
     unsigned int faces = 0;
     for (std::vector<ObjectPtr>::const_iterator it = Cam.Meshes.begin(); it != Cam.Meshes.end(); it++)
+    {
+        static_cast<const Mesh *>(*it)->Resolve();
         Cam.Mesh_Index.push_back(faces += static_cast<const Mesh *>(*it)->Data->Number_Of_Triangles);
+    }
 
     if (Cam.Face_Distribution_Method == 3)
     {
@@ -2456,6 +2587,7 @@ ObjectPtr Parser::Parse_Portal()
     if (ContainsPortal(Object->body) || (Object->body->Type & LIGHT_SOURCE_OBJECT))
         Error("A portal's body cannot be or hold a portal, or be a light source.");
     Object->body = MergeUnions(Object->body);
+    Resolve_Mesh_Geometry(Object->body);
     Object->body->Type |= IS_CHILD_OBJECT;
 
     struct Mouth
@@ -2820,30 +2952,59 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
 {
     Parse_Begin();
 
-    const auto start = std::chrono::steady_clock::now();
-    std::unique_ptr<IsoSurface> iso(new IsoSurface());
+    std::shared_ptr<IsoSurface> iso(new IsoSurface());
     DBL minSize = -1.0, maxAngle = 10.0;
     Parse_Isosurface_Body(iso.get(), &minSize, &maxAngle);
+    iso->Compute_BBox();
+    FunctionVM::CustomFunction *function = dynamic_cast<FunctionVM::CustomFunction *>(iso->Function);
+    POV_PARSER_ASSERT(function != nullptr);
+    const FUNCTION functionId = function->Id();
+    boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(std::vector<FUNCTION>(1, functionId));
+    std::shared_ptr<IsoMeshBuildSource> source(new IsoMeshBuildSource());
+    source->iso = iso;
+    source->originalFunction.reset(iso->Function);
+    iso->Function = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(functionId));
+    std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
+        [this, iso, minSize, maxAngle](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+        {
+            const auto start = std::chrono::steady_clock::now();
+            std::shared_ptr<Mesh> object(new Mesh());
+            MeshBuilder built(*object, false);
+            IsoSurfaceMeshReport report;
+            const std::vector<TraceThreadData *> threads(1, thread);
+            const std::string problem = iso->Tessellate(threads, minSize, maxAngle, built, report, [this]()
+            {
+                if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+                    throw std::runtime_error("Mesh build cancelled.");
+            });
+            if (!problem.empty())
+                throw std::runtime_error(problem);
+            if (report.missedCells > 0)
+            {
+                std::ostringstream warning;
+                warning << "isosurface_mesh: max_gradient is too low; " << report.missedCells << " cells it ruled out touch the surface.";
+                state.warnings.push_back(warning.str());
+            }
+            object->Compute_BBox();
+            object->Build_Mesh_BBox_Tree();
+            const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
+            std::ostringstream debug;
+            debug << "isosurface_mesh: " << built.Triangles() << " triangles, " << built.Vertices() << " vertices, " << report.openEdges
+                  << " open edges, " << built.Bytes() << " bytes (" << (DBL(built.Bytes()) / built.Triangles()) << " per triangle), "
+                  << report.peakBytes << " bytes peak, " << seconds << " s wall; " << report.rangeCells << " cells range-checked, "
+                  << report.sampledCells << " sampled\n";
+            state.debug = debug.str();
+            return object;
+        }, source);
 
-    std::unique_ptr<Mesh> object(new Mesh());
-    MeshBuilder built(*object, false);
-    IsoSurfaceMeshReport report;
-    const std::string problem = iso->Tessellate(GetParserDataPtr(), minSize, maxAngle, built, report,
-                                                [this]() { mProgressReporter.ReportProgress(mTokenCount); });
-    if (!problem.empty())
-        Error("%s", problem.c_str());
-    iso.reset();
-    if (report.missedCells > 0)
-        Warning("isosurface_mesh: max_gradient is too low; %d cells it ruled out touch the surface.", int(report.missedCells));
-    const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
-    Debug_Info("isosurface_mesh: %d triangles, %d vertices, %d open edges, %d bytes (%.1f per triangle), %d bytes peak, %.3f s; "
-               "%d cells range-checked, %d sampled\n", int(built.Triangles()), int(built.Vertices()), int(report.openEdges), int(built.Bytes()),
-               DBL(built.Bytes()) / built.Triangles(), int(report.peakBytes), seconds, int(report.rangeCells), int(report.sampledCells));
-
-    object->Compute_BBox();
-    Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object.get()));
-    object->Build_Mesh_BBox_Tree();
-    return reinterpret_cast<ObjectPtr>(object.release());
+    Mesh *object = new Mesh();
+    object->BBox = iso->BBox;
+    object->has_inside_vector = iso->closed;
+    if (iso->closed)
+        object->Type &= ~PATCH_OBJECT;
+    object->SetDeferred(deferred);
+    Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object));
+    return reinterpret_cast<ObjectPtr>(object);
 }
 
 void Parser::Parse_Isosurface_Body(IsoSurface *Object, DBL *minSize, DBL *maxAngle)
@@ -2851,6 +3012,8 @@ void Parser::Parse_Isosurface_Body(IsoSurface *Object, DBL *minSize, DBL *maxAng
     GET(FUNCTION_TOKEN);
 
     Object->Function = new FunctionVM::CustomFunction(fnVMContext->functionvm.get(), Parse_Function());
+    if (Object->Function->RequiresRayContext())
+        Error("Isosurface geometry cannot sample a screen pigment.");
 
     EXPECT
         CASE(CONTAINED_BY_TOKEN)
@@ -4459,14 +4622,19 @@ ObjectPtr Parser::Parse_Mesh2()
     Object = new Mesh();
 
     PovmTreeKey povm;
+    bool deferredPovm = false;
     if (AllowToken(POVM_TOKEN))
+    {
         Parse_Povm (Object, povm);
+        deferredPovm = true;
+    }
     else
         Parse_Mesh2 (Object);
 
     // Create bounding box.
 
-    Object->Compute_BBox();
+    if (!deferredPovm)
+        Object->Compute_BBox();
 
     // Parse object modifiers.
 
@@ -4474,9 +4642,9 @@ ObjectPtr Parser::Parse_Mesh2()
 
     // Create bounding box tree.
 
-    if (povm.path.empty())
+    if (!deferredPovm && povm.path.empty())
         Object->Build_Mesh_BBox_Tree();
-    else
+    else if (!deferredPovm)
         Povm_Mesh_Tree (Object, povm);
 
     return Object;
@@ -5284,6 +5452,9 @@ ObjectPtr Parser::Parse_Parametric(void)
     Object = new Parametric();
 
     Parse_FunctionOrContentList(Object->Function, 3);
+    for (GenericScalarFunctionPtr function : Object->Function)
+        if (function->RequiresRayContext())
+            Error("Parametric geometry cannot sample a screen pigment.");
 
     Parse_UV_Vect(tempUV);
     Object->umin = tempUV[U];
@@ -7977,6 +8148,13 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
      * Assign bounding objects' bounding box to object
      * if object's bounding box is larger. [DB 9/94]
      */
+
+    if ((!Object->Bound.empty() || !Object->Clip.empty()))
+        Resolve_Mesh_Geometry(Object);
+    for (ObjectPtr bound : Object->Bound)
+        Resolve_Mesh_Geometry(bound);
+    for (ObjectPtr clip : Object->Clip)
+        Resolve_Mesh_Geometry(clip);
 
     if(!Object->Bound.empty())
     {

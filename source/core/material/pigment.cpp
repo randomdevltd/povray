@@ -465,6 +465,31 @@ bool Compute_Pigment (TransColour& colour, const PIGMENT *Pigment, const Vector3
     return Pigment->Blend_Map->Compute (colour, value, TPoint, Intersect, ray, Thread);
 }
 
+bool PigmentRequiresRayContext(const PIGMENT *pigment)
+{
+    if (pigment == nullptr)
+        return false;
+    if (dynamic_cast<const ScreenPattern *>(pigment->pattern.get()) != nullptr)
+        return true;
+    if (const FunctionPattern *pattern = dynamic_cast<const FunctionPattern *>(pigment->pattern.get()))
+        if ((pattern->pFn != nullptr) && pattern->pFn->RequiresRayContext())
+            return true;
+    if (const PigmentPattern *pattern = dynamic_cast<const PigmentPattern *>(pigment->pattern.get()))
+        if (PigmentRequiresRayContext(pattern->pPigment))
+            return true;
+    if (const ColourFunctionPattern *pattern = dynamic_cast<const ColourFunctionPattern *>(pigment->pattern.get()))
+        for (GenericScalarFunctionPtr function : pattern->pFn)
+            if ((function != nullptr) && function->RequiresRayContext())
+                return true;
+    const PigmentBlendMap *map = dynamic_cast<const PigmentBlendMap *>(pigment->Blend_Map.get());
+    if (map == nullptr)
+        return false;
+    for (const PigmentBlendMapEntry& entry : map->Blend_Map_Entries)
+        if (PigmentRequiresRayContext(entry.Vals))
+            return true;
+    return false;
+}
+
 
 void GenericPigmentBlendMap::Blend(TransColour& result, const TransColour& colour1, DBL weight1, const TransColour& colour2, DBL weight2, TraceThreadData *thread)
 {

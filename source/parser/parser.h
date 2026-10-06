@@ -47,8 +47,15 @@
 
 // C++ standard header files
 #include <chrono>
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 // Boost headers
@@ -90,6 +97,7 @@ struct GenericSpline;
 class ImageData;
 class IsoSurface;
 class Mesh;
+struct DeferredMeshState;
 struct PavementPattern;
 class Portal;
 class Skein;
@@ -410,6 +418,11 @@ class Parser final
         void Cleanup();
 
         inline TraceThreadData *GetParserDataPtr() { return &mThreadData; }
+        POV_LONG MeshBuildCPUTime() const { return mMeshBuildCpuTime; }
+        std::shared_ptr<DeferredMeshState> QueueMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
+                                                         const std::shared_ptr<void>& keepAlive = std::shared_ptr<void>());
+        void FinishMeshBuilds();
+        void Resolve_Mesh_Geometry(ObjectPtr object);
 
         // parse.h/parse.cpp
         void Parse_Error (TokenId Token_Id);
@@ -652,6 +665,23 @@ class Parser final
 
         boost::intrusive_ptr<FunctionVM> mpFunctionVM;
         FPUContext *fnVMContext;
+        std::vector<std::unique_ptr<TraceThreadData>> mMeshThreadData;
+        struct MeshBuildTask
+        {
+            std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)> work;
+            std::shared_ptr<DeferredMeshState> state;
+            std::shared_ptr<std::promise<std::shared_ptr<Mesh>>> promise;
+        };
+        std::deque<MeshBuildTask> mMeshBuildQueue;
+        std::vector<std::thread> mMeshWorkers;
+        std::vector<std::shared_ptr<DeferredMeshState>> mMeshBuilds;
+        std::mutex mMeshBuildMutex;
+        std::condition_variable mMeshBuildReady;
+        bool mMeshBuildStopping = false;
+        std::atomic<bool> mMeshBuildCancelled{false};
+        POV_LONG mMeshBuildCpuTime = 0;
+        unsigned int mMeshThreadCount;
+        size_t mRandomSeed;
         const FNGroup *mFunctionGroups = nullptr;
 
         bool Had_Max_Trace_Level;

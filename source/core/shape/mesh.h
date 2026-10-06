@@ -44,7 +44,9 @@
 
 // C++ standard header files
 #include <cstdint>
+#include <future>
 #include <memory>
+#include <string>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -114,6 +116,18 @@ private:
     void SetFlag(int w, int bit, bool b) { Word[w] = (Word[w] & ~(std::uint32_t(1) << bit)) | (std::uint32_t(b) << bit); }
 };
 using MESH_TRIANGLE = Mesh_Triangle_Struct; ///< @deprecated
+
+class Mesh;
+
+struct DeferredMeshState final
+{
+    std::shared_future<std::shared_ptr<Mesh>> result;
+    std::shared_ptr<void> keepAlive;
+    SourceInfo source;
+    std::string debug;
+    std::vector<std::string> warnings;
+    POV_LONG cpuTime = -1;
+};
 
 /// Indices a triangle may carry beyond its vertices, `width` per triangle, stored only once triangles differ.
 struct MeshIndexColumn final
@@ -202,6 +216,10 @@ class Mesh final : public ObjectBase
         virtual void Compute_BBox() override;
         virtual bool IsOpaque() const override;
 
+        void SetDeferred(const std::shared_ptr<DeferredMeshState>& state);
+        virtual bool Resolve() const override;
+        bool Pending() const { return deferred != nullptr; }
+
         void Create_Mesh_Hash_Tables();
 
         /// @note The method may decide to re-order the vertices without notice.
@@ -243,6 +261,7 @@ class Mesh final : public ObjectBase
         static MeshIndex mesh_hash(HASH_TABLE **Hash_Table, MeshIndex *Number, MeshIndex *Max, MeshVector **Elements, const Vector3d& aPoint);
 
 private:
+        std::shared_ptr<DeferredMeshState> deferred;
         // these are used temporarily during parsing and are destroyed
         // when the parser has finished constructing the object
         static HASH_TABLE **Vertex_Hash_Table;

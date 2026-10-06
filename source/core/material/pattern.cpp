@@ -655,8 +655,24 @@ ScreenPattern::~ScreenPattern()
 
 bool ScreenPattern::Evaluate(TransColour& result, const Vector3d& EPoint, const Intersection *pIsection, const Ray *pRay, TraceThreadData *pThread) const
 {
-    if ((pRay == nullptr) || !pProjection)
+    if (!pProjection)
         return false;
+
+    auto fallback = [&]() -> bool
+    {
+        if (pFallback)
+            return Compute_Pigment(result, pFallback, EPoint, pIsection, pRay, pThread);
+        result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 0.0));
+        return true;
+    };
+
+    if ((pRay != nullptr) && pRay->IsShadowTestRay())
+    {
+        result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 0.0));
+        return true;
+    }
+    if ((pRay == nullptr) || pRay->IsPhotonRay() || (pThread->activeTrace == nullptr))
+        return fallback();
 
     // Outside the window the screen is clear, as `image_map` is outside its map.
     if ((EPoint[X] < 0.0) || (EPoint[X] > 1.0) || (EPoint[Y] < 0.0) || (EPoint[Y] > 1.0))
@@ -665,23 +681,9 @@ bool ScreenPattern::Evaluate(TransColour& result, const Vector3d& EPoint, const 
         return false;
     }
 
-    // The picture is opaque to light, so shadow and photon rays never trace the view.
-    if (pRay->IsShadowTestRay() || pRay->IsPhotonRay())
-    {
-        result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 0.0));
-        return true;
-    }
-
-    // Only a tracer that is shading a surface traces the view.
-    if (pThread->activeTrace == nullptr)
-        return false;
-
     if (TraceScreenView(*this, EPoint[X], EPoint[Y], pIsection, *pRay, pThread, result))
         return true;
-    if (pFallback)
-        return Compute_Pigment(result, pFallback, EPoint, pIsection, pRay, pThread);
-    result = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 0.0));
-    return true;
+    return fallback();
 }
 
 

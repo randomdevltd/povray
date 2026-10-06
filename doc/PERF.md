@@ -1117,6 +1117,40 @@ compared 16-bit pixel payloads matched, and no counter events were multiplexed.
 | Stock `micro.pov` media scene | 24.225 | 24.225 | 0.00% |
 | Four overlapping volumes, two media-aware lights (`media-combined.pov`) | 3872.078 | 2913.591 | −24.75% |
 
+## Parallel parse-time mesh construction
+
+Each complete `isosurface_mesh`, `skein_mesh` or binary `.povm` load is a task on a pool sized by `+WT`. One task has
+one thread context. Generated meshes evaluate their frozen function
+state there; `.povm` tasks read and validate the file, prepare its triangles, and load or build its cached bounding
+tree there. Parser tokens, declarations and object modifiers remain on the parser thread.
+
+A declaration publishes a deferred mesh immediately. Copying, instancing, transforming and texturing it do not
+wait. Operations that actually inspect geometry (`trace`, `inside`, extents and mesh cameras) join that build;
+otherwise the parser joins all builds after the last token. Diagnostics are emitted in declaration order. Each
+generated build gets a frozen function-VM snapshot, so later function declarations and assignments neither race nor
+wait for it. Reusing a declaration shares its completed mesh data; redeclaring it creates a distinct task and leaves
+earlier instances attached to the earlier result.
+
+One isolated run of `tools/bench/parse-mesh-generation.pov`, native optimized build:
+
+| Fixture | Work | `+WT1` wall / CPU | `+WT4` wall / CPU | Wall difference |
+|---|---:|---:|---:|---:|
+| eight skein tori, `max_angle 1` | 8 × 262,144 triangles | 5.649 / 5.695 s | 1.663 / 6.235 s | -70.6% |
+| eight noise-displaced isosurfaces | 8 × 135,734 triangles | 15.463 / not recorded | 15.780 / not recorded | +2.0% |
+
+The isosurface fixture saturated the test host: four concurrent builds each slowed by about four times and
+used 267 MB peak instead of 119 MB, so concurrency did not reduce latency there. The skein fixture scaled strongly.
+This is workload- and machine-dependent; `+WT` controls the memory/throughput tradeoff, while `+WT1`
+retains serial construction.
+
+The render checks build the same triangle and vertex counts at one and four threads and repeat their ray, normal,
+inside and chord-error comparisons. The skein check also builds an image-sampled mesh. A separate fixture instances
+pending meshes, redeclares the same name with changing geometry options, and observes distinct 262,144- and
+131,072-triangle results. `.povm` checks cover the final barrier and an immediate `max_extent` barrier.
+
+Other ordinary `mesh`/`mesh2` syntax remains on the parser thread because token consumption, texture ownership and
+vertex hashing are interleaved. Image and font loading are also outside this pool.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it

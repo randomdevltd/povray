@@ -56,6 +56,7 @@
 #include "core/material/pattern.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
+#include "core/support/parallel.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -2843,9 +2844,13 @@ class Mesher final
 {
     public:
 
-        Mesher(const SkeinData& d, TraceThreadData *t, DBL size, DBL angle, SkeinMesh& m) :
-            data(d), ev(d, t), minSize(size), maxAngle(angle * kRadiansPerDegree), out(m)
-        {}
+        Mesher(const SkeinData& d, const std::vector<TraceThreadData *>& threads, DBL size, DBL angle, SkeinMesh& m, const std::function<void()>& p) :
+            data(d), minSize(size), maxAngle(angle * kRadiansPerDegree), out(m), progress(p)
+        {
+            for (TraceThreadData *thread : threads)
+                evaluators.emplace_back(new Evaluator(d, thread));
+            caches.resize(threads.size());
+        }
 
         std::string Run()
         {
@@ -2858,31 +2863,52 @@ class Mesher final
                 pole[e] = ring && ((data.ends[e] == SkeinData::kPole) || ((data.ends[e] == SkeinData::kFlat) && !data.caps[e].present));
                 sealed[e] = ring && (data.ends[e] == SkeinData::kSealed);
             }
-            std::vector<Cell> stack, leaves;
+            std::vector<Cell> roots, leaves;
             for (int j = 0; j < baseV; ++j)
                 for (int i = 0; i < baseU; ++i)
-                    stack.push_back(Cell{ i << kMeshDepth, (i + 1) << kMeshDepth, j << kMeshDepth, (j + 1) << kMeshDepth });
-            while (!stack.empty())
+                    roots.push_back(Cell{ i << kMeshDepth, (i + 1) << kMeshDepth, j << kMeshDepth, (j + 1) << kMeshDepth });
+            std::vector<std::vector<Cell>> rootLeaves(roots.size());
+            std::atomic<size_t> leafCount(0);
+            std::atomic<bool> tooMany(false);
+            ParallelFor(roots.size(), evaluators.size(), [&](size_t root, size_t worker)
             {
-                const Cell c = stack.back();
-                stack.pop_back();
-                const bool su = Split(c, true), sv = Split(c, false);
-                if (!su && !sv)
+                std::vector<Cell> stack(1, roots[root]);
+                std::vector<Cell>& mine = rootLeaves[root];
+                size_t visited = 0;
+                while (!stack.empty() && !tooMany.load(std::memory_order_relaxed))
                 {
-                    leaves.push_back(c);
-                    if (2 * leaves.size() > Skein::kMaxMeshTriangles)
-                        return TooMany();
-                    continue;
+                    if ((evaluators.size() == 1) && ((++visited % 65536) == 0))
+                        progress();
+                    const Cell c = stack.back();
+                    stack.pop_back();
+                    const bool su = Split(c, true, worker), sv = Split(c, false, worker);
+                    if (!su && !sv)
+                    {
+                        mine.push_back(c);
+                        if (2 * leafCount.fetch_add(1, std::memory_order_relaxed) + 2 > Skein::kMaxMeshTriangles)
+                            tooMany.store(true, std::memory_order_relaxed);
+                        continue;
+                    }
+                    const int im = su ? (c.i0 + c.i1) / 2 : c.i1, jm = sv ? (c.j0 + c.j1) / 2 : c.j1;
+                    stack.push_back(Cell{ c.i0, im, c.j0, jm });
+                    if (su)
+                        stack.push_back(Cell{ im, c.i1, c.j0, jm });
+                    if (sv)
+                        stack.push_back(Cell{ c.i0, im, jm, c.j1 });
+                    if (su && sv)
+                        stack.push_back(Cell{ im, c.i1, jm, c.j1 });
                 }
-                const int im = su ? (c.i0 + c.i1) / 2 : c.i1, jm = sv ? (c.j0 + c.j1) / 2 : c.j1;
-                stack.push_back(Cell{ c.i0, im, c.j0, jm });
-                if (su)
-                    stack.push_back(Cell{ im, c.i1, c.j0, jm });
-                if (sv)
-                    stack.push_back(Cell{ c.i0, im, jm, c.j1 });
-                if (su && sv)
-                    stack.push_back(Cell{ im, c.i1, jm, c.j1 });
+            }, progress);
+            if (tooMany.load(std::memory_order_relaxed))
+                return TooMany();
+            for (size_t worker = 1; worker < caches.size(); ++worker)
+            {
+                caches[0].insert(caches[worker].begin(), caches[worker].end());
+                std::unordered_map<std::uint64_t, Sample>().swap(caches[worker]);
             }
+            for (size_t root = roots.size(); root > 0; --root)
+                leaves.insert(leaves.end(), rootLeaves[root - 1].begin(), rootLeaves[root - 1].end());
+            decltype(rootLeaves)().swap(rootLeaves);
             for (const Cell& c : leaves)
                 for (int k = 0; k < 4; ++k)
                 {
@@ -2927,9 +2953,9 @@ class Mesher final
                 centre.u = 0.5 * (DBL(c.i0) + DBL(c.i1)) / Nu;
                 centre.v = 0.5 * (DBL(c.j0) + DBL(c.j1)) / Nv;
                 Jet J;
-                ev.Eval(centre.u, centre.v, J);
+                evaluators[0]->Eval(centre.u, centre.v, J);
                 centre.p = J.p;
-                centre.n = SurfaceNormal(data, ev, centre.u, centre.v, J);
+                centre.n = SurfaceNormal(data, *evaluators[0], centre.u, centre.v, J);
                 centre.weld = centre.id = Unique();
                 for (size_t k = 0; k < loop.size(); ++k)
                     Emit(centre, Lattice(loop[k].first, loop[k].second), Lattice(loop[(k + 1) % loop.size()].first, loop[(k + 1) % loop.size()].second));
@@ -2962,7 +2988,6 @@ class Mesher final
             if (out.triangles.empty())
                 return "skein_mesh: no triangles; the skein has no area.";
             std::vector<Cell>().swap(leaves);
-            decltype(cache)().swap(cache);
             decltype(rows)().swap(rows);
             decltype(cols)().swap(cols);
             decltype(vertices)().swap(vertices);
@@ -3020,19 +3045,21 @@ class Mesher final
             return Key(i, j);
         }
 
-        const Sample& At(int i, int j)
+        const Sample& At(int i, int j, size_t worker = 0)
         {
             i = WrapI(i);
             j = WrapJ(j);
-            auto found = cache.find(Key(i, j));
+            const std::uint64_t key = Key(i, j);
+            std::unordered_map<std::uint64_t, Sample>& cache = caches[worker];
+            auto found = cache.find(key);
             if (found != cache.end())
                 return found->second;
             const DBL u = DBL(i) / Nu, v = DBL(j) / Nv;
             Jet J;
-            ev.Eval(u, v, J);
-            Sample& s = cache[Key(i, j)];
+            evaluators[worker]->Eval(u, v, J);
+            Sample& s = cache[key];
             s.p = SnglVector3d(J.p);
-            s.n = SnglVector3d(SurfaceNormal(data, ev, u, v, J));
+            s.n = SnglVector3d(SurfaceNormal(data, *evaluators[worker], u, v, J));
             return s;
         }
 
@@ -3051,7 +3078,7 @@ class Mesher final
         }
 
         /// Whether a cell splits along u (or v): the normal or an edge turns more than the limit, and the halves stay above the smallest size.
-        bool Split(const Cell& c, bool alongU)
+        bool Split(const Cell& c, bool alongU, size_t worker)
         {
             if ((alongU ? c.i1 - c.i0 : c.j1 - c.j0) < 2)
                 return false;
@@ -3060,9 +3087,9 @@ class Mesher final
             for (int k = 0; k < 3; ++k)
             {
                 const int across = alongU ? (k == 0 ? c.j0 : k == 1 ? jm : c.j1) : (k == 0 ? c.i0 : k == 1 ? im : c.i1);
-                const Vector3d a = Vector3d(alongU ? At(c.i0, across).p : At(across, c.j0).p), an = Vector3d(alongU ? At(c.i0, across).n : At(across, c.j0).n);
-                const Vector3d m = Vector3d(alongU ? At(im, across).p : At(across, jm).p), mn = Vector3d(alongU ? At(im, across).n : At(across, jm).n);
-                const Vector3d b = Vector3d(alongU ? At(c.i1, across).p : At(across, c.j1).p), bn = Vector3d(alongU ? At(c.i1, across).n : At(across, c.j1).n);
+                const Vector3d a = Vector3d(alongU ? At(c.i0, across, worker).p : At(across, c.j0, worker).p), an = Vector3d(alongU ? At(c.i0, across, worker).n : At(across, c.j0, worker).n);
+                const Vector3d m = Vector3d(alongU ? At(im, across, worker).p : At(across, jm, worker).p), mn = Vector3d(alongU ? At(im, across, worker).n : At(across, jm, worker).n);
+                const Vector3d b = Vector3d(alongU ? At(c.i1, across, worker).p : At(across, c.j1, worker).p), bn = Vector3d(alongU ? At(c.i1, across, worker).n : At(across, c.j1, worker).n);
                 turn = std::max(turn, std::max(Angle(an, mn) + Angle(mn, bn), 2.0 * Angle(m - a, b - m)));
                 length = std::max(length, (m - a).length() + (b - m).length());
             }
@@ -3102,10 +3129,10 @@ class Mesher final
                 for (int i = 0; i < 3; ++i)
                     if (k[i]->lattice)
                     {
-                        const DBL u = ev.WrapU(k[i]->u + kMeshNudge * (uc - k[i]->u)), v = ev.WrapV(k[i]->v + kMeshNudge * (vc - k[i]->v));
+                        const DBL u = evaluators[0]->WrapU(k[i]->u + kMeshNudge * (uc - k[i]->u)), v = evaluators[0]->WrapV(k[i]->v + kMeshNudge * (vc - k[i]->v));
                         Jet J;
-                        ev.Eval(u, v, J);
-                        const Vector3d inside = SurfaceNormal(data, ev, u, v, J);
+                        evaluators[0]->Eval(u, v, J);
+                        const Vector3d inside = SurfaceNormal(data, *evaluators[0], u, v, J);
                         if (Angle(inside, n[i]) > maxAngle)
                             n[i] = inside;
                     }
@@ -3140,13 +3167,14 @@ class Mesher final
         }
 
         const SkeinData& data;
-        Evaluator ev;
+        std::vector<std::unique_ptr<Evaluator>> evaluators;
         const DBL minSize, maxAngle;
         SkeinMesh& out;
+        const std::function<void()>& progress;
         int Nu = 0, Nv = 0;
         bool pole[2] = { false, false }, sealed[2] = { false, false };
         std::uint64_t unique = 0;
-        std::unordered_map<std::uint64_t, Sample> cache;
+        std::vector<std::unordered_map<std::uint64_t, Sample>> caches;
         std::unordered_map<int, std::vector<int>> rows, cols;
         std::unordered_map<VertexKey, int, VertexHash> vertices;
         std::vector<std::pair<std::uint64_t, std::uint64_t>> edges;
@@ -3214,6 +3242,46 @@ bool SkeinValue::ReadsNormal() const
             if (e.ReadsNormal())
                 return true;
     return false;
+}
+
+bool SkeinData::RequiresRayContext() const
+{
+    std::function<bool(const SkeinValue&)> value = [&](const SkeinValue& v) -> bool
+    {
+        if ((v.kind == SkeinValue::kFunction) && v.function->RequiresRayContext())
+            return true;
+        if (v.kind == SkeinValue::kSum)
+            for (const SkeinValue& entry : v.sum->entries)
+                if (value(entry))
+                    return true;
+        return false;
+    };
+    auto axis = [](const std::shared_ptr<SkeinAxis>& a) -> bool
+    {
+        if (!a)
+            return false;
+        for (const std::shared_ptr<GenericScalarFunction>& function : a->functions)
+            if (function && function->RequiresRayContext())
+                return true;
+        return false;
+    };
+    std::function<bool(const std::vector<SkeinStep>&)> steps = [&](const std::vector<SkeinStep>& list) -> bool
+    {
+        for (const SkeinStep& step : list)
+        {
+            for (const SkeinValue& v : step.value)
+                if (value(v))
+                    return true;
+            if (axis(step.curve) || axis(step.target))
+                return true;
+            if (step.blend)
+                for (const SkeinBlend::Entry& entry : step.blend->entries)
+                    if (steps(entry.steps))
+                        return true;
+        }
+        return false;
+    };
+    return steps(this->steps);
 }
 
 std::string SkeinPath::Build(const std::vector<Point>& points, Interpolation interpolation)
@@ -3997,9 +4065,10 @@ std::string Skein::Prepare(TraceThreadData *thread)
     return std::string();
 }
 
-std::string Skein::Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, SkeinMesh& mesh) const
+std::string Skein::Tessellate(const std::vector<TraceThreadData *>& threads, DBL minSize, DBL maxAngle, SkeinMesh& mesh,
+                              const std::function<void()>& progress) const
 {
-    Mesher mesher(*data, thread, minSize, maxAngle, mesh);
+    Mesher mesher(*data, threads, minSize, maxAngle, mesh, progress);
     return mesher.Run();
 }
 

@@ -50,6 +50,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 // Boost header files
 #include <boost/intrusive_ptr.hpp>
@@ -146,7 +147,7 @@ class IsoSurface final : public ObjectBase
 
         /// Builds a triangle mesh of the surface in `contained_by`: cells no smaller than `minSize`, split while the normal turns more than
         /// `maxAngle` degrees across one; returns an error message, empty on success.
-        std::string Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, MeshBuilder& mesh, IsoSurfaceMeshReport& report,
+        std::string Tessellate(const std::vector<TraceThreadData *>& threads, DBL minSize, DBL maxAngle, MeshBuilder& mesh, IsoSurfaceMeshReport& report,
                                const std::function<void()>& progress) const;
 
     protected:

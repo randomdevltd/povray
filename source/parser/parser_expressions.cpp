@@ -68,6 +68,7 @@
 #include "core/scene/object.h"
 #include "core/scene/scenedata.h"
 #include "core/shape/heightfield.h"
+#include "core/shape/mesh.h"
 #include "core/support/imageutil.h"
 
 // POV-Ray header files (VM module)
@@ -176,6 +177,7 @@ void Parser::Parse_Trace(Vector3d& Res)
 
     if (Object == nullptr)
         Error ("Object identifier expected.");
+    Resolve_Mesh_Geometry(Object);
 
     Parse_Comma();
 
@@ -222,6 +224,7 @@ int Parser::Parse_Inside()
 
     if (Object == nullptr)
         Error ("Object identifier expected.");
+    Resolve_Mesh_Geometry(Object);
     if ((Object->Type & PATCH_OBJECT) == PATCH_OBJECT)
         Error ("Solid object identifier expected.");
 
@@ -1068,7 +1071,10 @@ void Parser::Parse_Num_Factor (EXPRESS& Express,int *Terms)
                     {
                         Object = CurrentTokenDataPtr<ObjectPtr>();
                         if (Object)
+                        {
+                            Resolve_Mesh_Geometry(Object);
                             Vect = Vector3d(Object->BBox.lowerLeft);
+                        }
                     }
                     else
                     {
@@ -1084,7 +1090,10 @@ void Parser::Parse_Num_Factor (EXPRESS& Express,int *Terms)
                         CASE (OBJECT_ID_TOKEN)
                             Object = CurrentTokenDataPtr<ObjectPtr>();
                             if ( Object )
+                            {
+                                Resolve_Mesh_Geometry(Object);
                                 Vect = Vector3d(Object->BBox.lowerLeft+Object->BBox.size);
+                            }
                         END_CASE
 
                         // JN2007: Image map dimensions:
