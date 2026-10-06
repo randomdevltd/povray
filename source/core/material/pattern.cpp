@@ -643,16 +643,12 @@ ScreenPattern::ScreenPattern(const ScreenPattern& obj) :
     pProjection(obj.pProjection),
     maxDepth(obj.maxDepth)
 {
-    if (obj.pPerturb)
-        pPerturb = Copy_Pigment(obj.pPerturb);
     if (obj.pFallback)
         pFallback = Copy_Pigment(obj.pFallback);
 }
 
 ScreenPattern::~ScreenPattern()
 {
-    if (pPerturb)
-        Destroy_Pigment(pPerturb);
     if (pFallback)
         Destroy_Pigment(pFallback);
 }
@@ -680,15 +676,7 @@ bool ScreenPattern::Evaluate(TransColour& result, const Vector3d& EPoint, const 
     if (pThread->activeTrace == nullptr)
         return false;
 
-    RGBColour shift(0.0);
-    if (pPerturb)
-    {
-        TransColour field;
-        if (Compute_Pigment(field, pPerturb, EPoint, pIsection, pRay, pThread))
-            shift = ToRGBColour(field.colour());
-    }
-
-    if (TraceScreenView(*this, EPoint[X] + shift.red(), EPoint[Y] + shift.green(), *pRay, pThread, result))
+    if (TraceScreenView(*this, EPoint[X], EPoint[Y], pIsection, *pRay, pThread, result))
         return true;
     if (pFallback)
         return Compute_Pigment(result, pFallback, EPoint, pIsection, pRay, pThread);

@@ -10,9 +10,13 @@ render() {
 render mercator 1
 render progressive 1 +pr
 render miller 2 +pr
+render origin_cylinder 5 +pr
 cmp cylindrical_mercator.px cylindrical_progressive.px
 if cmp -s cylindrical_mercator.px cylindrical_miller.px; then
     echo "cylindrical projection profiles produced the same pixels"; exit 1
+fi
+if cmp -s cylindrical_mercator.px cylindrical_origin_cylinder.px; then
+    echo "the outward origin cylinder produced the single-centre pixels"; exit 1
 fi
 rm -f cylindrical_*.ppm cylindrical_*.px cylindrical_*.pov-state*
 echo "cylindrical projections: profiles differ, and progressive Mercator matches block order"

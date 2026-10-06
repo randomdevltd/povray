@@ -1,39 +1,24 @@
-// Profile 0 is equirectangular; 1 Mercator; 2 Miller; 3 stereographic; 4 equal-area; 5 circular pushbroom.
+// Profile 0 is equirectangular; 1 Mercator; 2 Miller; 3 stereographic; 4 equal-area; 5 outward origin cylinder.
 #version 4.0;
 #ifndef (Profile) #declare Profile = 1; #end
 #ifndef (Relayout) #declare Relayout = 0; #end
 global_settings { assumed_gamma 1.0 }
+#include "projections.inc"
 
-#if (Profile = 5)
-  #declare Longitude = function(x) { (x + 0.5) * tau }
-  camera {
-    user_defined
-    location {
-      function { 18 * sin(Longitude(x)) }
-      function { 1.2 }
-      function { 18 * cos(Longitude(x)) }
-    }
-    direction {
-      function { -sin(Longitude(x)) }
-      function { 3 * y }
-      function { -cos(Longitude(x)) }
-    }
-  }
+#if (Profile = 0)
+  #declare Projection = CylindricalProjectionCamera(ProjectionEquirectangular, -64, 77, ProjectionSingleOrigin, 0, 0, <0, 1.2, 0>, z, x, y);
+#elseif (Profile = 1)
+  #declare Projection = CylindricalProjectionCamera(ProjectionMercator, -64, 77, ProjectionSingleOrigin, 0, 0, <0, 1.2, 0>, z, x, y);
+#elseif (Profile = 2)
+  #declare Projection = CylindricalProjectionCamera(ProjectionMiller, -64, 77, ProjectionSingleOrigin, 0, 0, <0, 1.2, 0>, z, x, y);
+#elseif (Profile = 3)
+  #declare Projection = CylindricalProjectionCamera(ProjectionStereographic, -64, 77, ProjectionSingleOrigin, 0, 0, <0, 1.2, 0>, z, x, y);
+#elseif (Profile = 4)
+  #declare Projection = CylindricalProjectionCamera(ProjectionEqualArea, -64, 77, ProjectionSingleOrigin, 0, 0, <0, 1.2, 0>, z, x, y);
 #else
-  camera {
-    spherical
-    angle 360
-    #switch (Profile)
-      #case (1) projection mercator #break
-      #case (2) projection miller #break
-      #case (3) projection cylindrical_stereographic #break
-      #case (4) projection cylindrical_equal_area #break
-    #end
-    latitude -64, 77
-    location <0, 1.2, 0>
-    look_at <0, 1.2, 1>
-  }
+  #declare Projection = CylindricalProjectionCamera(ProjectionMercator, -35, 40, ProjectionCylinderOrigin, 4, 0, <0, 1.2, 0>, z, x, y);
 #end
+camera { Projection }
 
 sky_sphere { pigment { gradient y colour_map { [0.49 rgb <0.6, 0.75, 1>] [0.5 rgb <0.08, 0.15, 0.3>] } } }
 plane { y, 0 pigment { checker rgb 0.18 rgb 0.7 scale 0.5 } finish { diffuse 0.8 } }

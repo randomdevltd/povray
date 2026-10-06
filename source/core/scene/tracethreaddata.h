@@ -151,6 +151,9 @@ class TraceThreadData : public ThreadData
         Trace *activeTrace = nullptr;
         /// Importance of that pigment's surface, which the views it traces carry on.
         double activeWeight = 1.0;
+        /// A ray-producing pigment's footprint in its own lookup coordinates.
+        bool activePatternFootprint = false;
+        Vector2d activePatternFootX, activePatternFootY;
         /// Number of `screen` views currently being traced, one inside the other.
         unsigned int screenDepth = 0;
         /// Trace levels the rays that met those screens had reached, summed.

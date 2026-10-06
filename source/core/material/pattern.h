@@ -1145,8 +1145,6 @@ struct ScreenPattern final : public ColourPattern
     std::shared_ptr<const Camera> pProjection;
     /// Deepest nesting of screen views; 0 takes the trace level.
     unsigned int maxDepth = 0;
-    /// Optional field bending the view: its red and green at a window point shift where the projection is sampled.
-    PIGMENT *pPerturb = nullptr;
     /// Optional pigment shown at the window point instead of the view where screens nest too deep; black when absent.
     PIGMENT *pFallback = nullptr;
 
@@ -1160,7 +1158,8 @@ struct ScreenPattern final : public ColourPattern
 };
 
 /// Traces a screen's view at window point (u, v) through the tracer shading the surface; false where screens nest too deep.
-bool TraceScreenView(const ScreenPattern& screen, double u, double v, const Ray& ray, TraceThreadData *thread, TransColour& result);
+bool TraceScreenView(const ScreenPattern& screen, double u, double v, const Intersection *isect, const Ray& ray,
+                     TraceThreadData *thread, TransColour& result);
 
 
 //******************************************************************************

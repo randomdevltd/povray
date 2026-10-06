@@ -1028,13 +1028,18 @@ bool Trace::ComputePixelFootprint(const Intersection& isect, const vector<const 
                                   const SurfaceDifferentials& diff, Vector3d& footX, Vector3d& footY) const
 {
     // taps are re-warped from the world point, so only filter where that reproduces the point the texture sees
-    if (Test_Flag(isect.Object, UV_FLAG))
-        return false;
+    bool uvMapped = Test_Flag(isect.Object, UV_FLAG);
+    for (const TEXTURE *warp : warps)
+        uvMapped = uvMapped || (warp->Type == UV_MAP_PATTERN);
+    if (uvMapped)
+    {
+        footX = diff.dPdx * textureFilterScale;
+        footY = diff.dPdy * textureFilterScale;
+        return true;
+    }
     Vector3d p = isect.IPoint;
     for (const TEXTURE *warp : warps)
     {
-        if (warp->Type == UV_MAP_PATTERN)
-            return false;
         Warp_EPoint(p, p, warp);
     }
     if ((p - ipoint).length() > 1.0e-9 * (1.0 + ipoint.length()))
@@ -1063,10 +1068,31 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, co
     auto sample = [&](DBL u, DBL v)
     {
         Vector3d p = isect.IPoint + u * footX + v * footY;
+        Intersection tapIsect(isect);
+        tapIsect.IPoint = p;
+        tapIsect.haveLocalIPoint = false;
+        bool uvMapped = Test_Flag(isect.Object, UV_FLAG);
+        if (uvMapped)
+        {
+            Vector2d uv;
+            tapIsect.Object->UVCoord(uv, &tapIsect);
+            p = Vector3d(uv[X], uv[Y], 0.0);
+        }
         for (const TEXTURE *warp : warps)
-            Warp_EPoint(p, p, warp);
+            if (warp->Type == UV_MAP_PATTERN)
+            {
+                if (!uvMapped)
+                {
+                    Vector2d uv;
+                    tapIsect.Object->UVCoord(uv, &tapIsect);
+                    p = Vector3d(uv[X], uv[Y], 0.0);
+                    uvMapped = true;
+                }
+            }
+            else
+                Warp_EPoint(p, p, warp);
         tap.Clear();
-        found = Compute_Pigment(tap, pigment, p, &isect, &ray, threadData) || found;
+        found = Compute_Pigment(tap, pigment, p, &tapIsect, &ray, threadData) || found;
         sum += tap;
         const DBL att = legacy ? DBL(tap.LegacyOpacity()) : DBL(tap.Opacity());
         premultiplied += tap.colour() * att;
@@ -1250,11 +1276,64 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         layMeans.filters = false;
         {
             ActiveTraceScope activeTrace(threadData, this, new_Weight);
-            if (filterPigments && (layer->Pigment->Type != PLAIN_PATTERN) && (layer->Pigment->Type != UV_MAP_PATTERN) &&
+            const bool screen = dynamic_cast<const ScreenPattern *>(layer->Pigment->pattern.get()) != nullptr;
+            const bool savedPatternFootprint = threadData->activePatternFootprint;
+            const Vector2d savedFootX = threadData->activePatternFootX, savedFootY = threadData->activePatternFootY;
+            bool uvLookup = Test_Flag(isect.Object, UV_FLAG);
+            for (const TEXTURE *warp : warps)
+                uvLookup = uvLookup || (warp->Type == UV_MAP_PATTERN);
+            if (screen && haveDiff && !uvLookup)
+            {
+                auto lookupPoint = [&](const Vector3d& offset)
+                {
+                    Vector3d point = isect.IPoint + offset;
+                    for (const TEXTURE *warp : warps)
+                        Warp_EPoint(point, point, warp);
+                    Warp_EPoint(point, point, layer->Pigment);
+                    return point;
+                };
+                const Vector3d topLeft = lookupPoint(-0.5 * textureFilterScale * (hitDiff.dPdx + hitDiff.dPdy));
+                const Vector3d topRight = lookupPoint(0.5 * textureFilterScale * (hitDiff.dPdx - hitDiff.dPdy));
+                const Vector3d bottomLeft = lookupPoint(0.5 * textureFilterScale * (-hitDiff.dPdx + hitDiff.dPdy));
+                const Vector3d bottomRight = lookupPoint(0.5 * textureFilterScale * (hitDiff.dPdx + hitDiff.dPdy));
+                threadData->activePatternFootX = Vector2d(0.5 * (topRight[X] + bottomRight[X] - topLeft[X] - bottomLeft[X]),
+                                                           0.5 * (topRight[Y] + bottomRight[Y] - topLeft[Y] - bottomLeft[Y]));
+                threadData->activePatternFootY = Vector2d(0.5 * (bottomLeft[X] + bottomRight[X] - topLeft[X] - topRight[X]),
+                                                           0.5 * (bottomLeft[Y] + bottomRight[Y] - topLeft[Y] - topRight[Y]));
+                threadData->activePatternFootprint = true;
+            }
+            else if (screen && haveDiff && uvLookup)
+            {
+                auto lookupPoint = [&](const Vector3d& offset)
+                {
+                    Intersection probe(isect);
+                    probe.IPoint = isect.IPoint + offset;
+                    probe.haveLocalIPoint = false;
+                    Vector2d uv;
+                    probe.Object->UVCoord(uv, &probe);
+                    Vector3d point(uv[X], uv[Y], 0.0);
+                    Warp_EPoint(point, point, layer->Pigment);
+                    return point;
+                };
+                const Vector3d topLeft = lookupPoint(-0.5 * textureFilterScale * (hitDiff.dPdx + hitDiff.dPdy));
+                const Vector3d topRight = lookupPoint(0.5 * textureFilterScale * (hitDiff.dPdx - hitDiff.dPdy));
+                const Vector3d bottomLeft = lookupPoint(0.5 * textureFilterScale * (-hitDiff.dPdx + hitDiff.dPdy));
+                const Vector3d bottomRight = lookupPoint(0.5 * textureFilterScale * (hitDiff.dPdx + hitDiff.dPdy));
+                threadData->activePatternFootX = Vector2d(0.5 * (topRight[X] + bottomRight[X] - topLeft[X] - bottomLeft[X]),
+                                                           0.5 * (topRight[Y] + bottomRight[Y] - topLeft[Y] - bottomLeft[Y]));
+                threadData->activePatternFootY = Vector2d(0.5 * (bottomLeft[X] + bottomRight[X] - topLeft[X] - topRight[X]),
+                                                           0.5 * (bottomLeft[Y] + bottomRight[Y] - topLeft[Y] - topRight[Y]));
+                threadData->activePatternFootprint = true;
+            }
+            if (filterPigments && !screen &&
+                (layer->Pigment->Type != PLAIN_PATTERN) && (layer->Pigment->Type != UV_MAP_PATTERN) &&
                 !(qualityFlags.quickColour && layer->Pigment->Quick_Colour.IsValid()))
                 colour_found = ComputeFilteredPigment(layCol, layMeans, layer->Pigment, warps, footX, footY, isect, ray);
             else
                 colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
+            threadData->activePatternFootprint = savedPatternFootprint;
+            threadData->activePatternFootX = savedFootX;
+            threadData->activePatternFootY = savedFootY;
         }
         if ((layer_number == 0) && ray.IsPrimaryRay())
             primaryPigment = layCol;
@@ -5744,7 +5823,8 @@ void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vec
 }
 
 // Fixes the object's cloud and collects the cells within reach of the exit point; false where no cloud can serve.
-bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud)
+bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const SubsurfaceProfile& profile,
+                                const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud)
 {
     cloud.object = SubsurfaceObject(out);
     cloud.edge = false;
@@ -5766,7 +5846,12 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile
         ssltCameraKnown = threadData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle);
 
     // Diffusion that stays within about a pixel is taken as lit like the exit point.
-    double footprint = ssltPixelSize + (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle;
+    SurfaceDifferentials diff;
+    double footprint;
+    if (TransferDifferentials(eye, out, out.INormal, diff))
+        footprint = min(diff.dPdx.length(), diff.dPdy.length());
+    else
+        footprint = ssltPixelSize + (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle;
     cloud.footprint = footprint * mm;
     cloud.local = (1.0 / sigmaMin / mm < footprint);
     if (cloud.local)
@@ -6526,13 +6611,13 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     MathColour cloudDiffuse;
     if ((method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed))
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
-    bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
+    bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     const bool photonSamples = cloudData.photons && !cloud;
     if (photonSamples && (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed))
     {
         cloudData.photons = false;
-        cloud = OpenSubsurfaceCloud(out, profile, lights, cloudData) &&
+        cloud = OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     }
     const bool photonsOnly = cloud && photonSamples;

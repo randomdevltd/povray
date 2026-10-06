@@ -8,14 +8,13 @@ render() {
     name=$1; scene=$2; shift 2
     case "$ONLY" in "  "|*" $name "*) ;; *) return 0 ;; esac
     echo "== $name"
-    "$POVRAY" +i"$scene" +L"$DOC" +L"$FIX" +L"$SRCDIR/distribution/include" +w320 +h240 +a0.1 +am2 +r3 -j +ss1 +wt2 \
+    "$POVRAY" +i"$scene" +L"$DOC" +L"$FIX" +L"$SRCDIR/distribution/include" +w320 +h240 +a0.1 +am2 +r3 +tf -j +ss1 +wt2 \
         -d -p -v +fn +o"$OUT/$name.png" "$@" || FAILED="$FAILED $name"
 }
 
 render portal_o_intro "$DOC/portal_o_intro.pov"
 
 render portal_r_screen_window "$DOC/portal_r_screen_window.pov" +ua
-render portal_r_screen_perturb "$DOC/portal_r_screen_perturb.pov"
 render portal_r_screen_fallback "$DOC/portal_r_screen_fallback.pov"
 render portal_r_screen_depth "$DOC/portal_r_screen_depth.pov"
 render portal_r_screen_radiosity "$DOC/portal_r_screen_radiosity.pov"
@@ -40,5 +39,7 @@ render portal_w06_wormhole "$DOC/portal_w06_wormhole.pov"
 render portal_w07_jar "$FIX/portal_belljar.pov"
 render portal_w08_candle "$DOC/portal_w05_doorways.pov" Declare=Night=1
 render portal_w09_halftone "$DOC/portal_w09_halftone.pov"
+render portal_w10_projection_gallery "$DOC/portal_w10_projection_gallery.pov"
+render portal_w11_world_map "$DOC/portal_w11_world_map.pov"
 
 if [ -n "$FAILED" ]; then echo "failed:$FAILED"; exit 1; fi
