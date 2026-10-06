@@ -2,7 +2,6 @@
 #version 3.8;
 global_settings { assumed_gamma 1.0 }
 #include "portals.inc"
-#include "projections.inc"
 
 camera { location <0, 1.7, -4.3> look_at <0, 1.45, 0> angle 55 }
 light_source { <-3, 4, -5> rgb 0.6 }
@@ -44,17 +43,13 @@ light_group
     global_lights off
 }
 
-#declare MercatorForward = vnormalize(<2.5, -0.8, 3>);
-#declare MercatorRight = vnormalize(vcross(y, MercatorForward));
-#declare MercatorUp = vcross(MercatorForward, MercatorRight);
-#declare MercatorView = MercatorCamera(P + <-2.5, 1.6, -3>, MercatorForward, MercatorRight, MercatorUp, -55, 65);
 #declare Cams = array[6]
 {
     camera { location P + <0, 3, -12> look_at P + <0, 0.5, 0> right x * 4 / 3 angle 55 },
     camera { fisheye location P + <0, 8, -0.5> look_at P right x * 4 / 3 angle 180 },
     camera { ultra_wide_angle location P + <9, 4, 9> look_at P + <0, 0.5, 0> right x * 4 / 3 angle 150 },
     camera { panoramic location P + <7, 1.5, -7> look_at P + <4, 0.7, -3> right x * 4 / 3 },
-    camera { MercatorView },
+    camera { spherical angle 180, 120 location P + <-2.5, 1.6, -3> look_at P + <0, 0.8, 0> },
     camera { orthographic location P + <-10, 5, 8> look_at P + <-2, 1, 0> right 12 * x up 9 * y }
 };
 #for (I, 0, 5)
