@@ -27,6 +27,7 @@ for mode in -pr +pr; do
     fi
     cmp snapshot_whole.png snapshot_kept.png
     cmp snapshot_whole.png.heat.png snapshot_kept.png.heat.png
+    grep -q '^heat_scale_p95_microseconds_per_sample=' snapshot_kept.png.heat.txt
     grep -q '^timed_block_records=[1-9]' snapshot_kept.png.heat.txt
     # cut at record boundaries, each record starting with its POVMS header, so the cut does not depend on record sizes
     records=$(grep -boa POVRAYMS snapshot_kept.pov-state | cut -d: -f1)

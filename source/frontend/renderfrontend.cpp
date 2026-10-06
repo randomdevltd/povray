@@ -966,6 +966,7 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
     };
     std::map<int, LevelTiming> levelTimings;
     std::vector<float> heat(size_t(finalWidth) * finalHeight, 0.0f);
+    std::vector<float> heatWork(size_t(finalWidth) * finalHeight, 0.0f);
     POV_LONG elapsedMicroseconds = 0;
     unsigned int expectedLevels = 0;
 
@@ -1046,9 +1047,15 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
                     {
                         const unsigned int area = unsigned(timedRect[2] - timedRect[0] + 1) * unsigned(timedRect[3] - timedRect[1] + 1);
                         const double perPixel = double(microseconds) / area;
+                        double completion = 1.0;
+                        if (msg.GetIdentifier() == kPOVMsgIdent_PixelSet)
+                            completion = double(msg.GetIntVector(kPOVAttrib_PixelPositions).size() / 2) / area;
                         for (int y = timedRect[1]; y <= timedRect[3]; y++)
                             for (int x = timedRect[0]; x <= timedRect[2]; x++)
+                            {
                                 heat[size_t(y) * finalWidth + x] += perPixel;
+                                heatWork[size_t(y) * finalWidth + x] += completion;
+                            }
                         const int level = msg.TryGetInt(kPOVAttrib_ProgressLevel, 0);
                         levelTimings[level].microseconds += microseconds;
                         levelTimings[level].blocks++;
@@ -1137,7 +1144,8 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
     for (unsigned int y = 0; y < heatCanvas.height; y++)
         for (unsigned int x = 0; x < heatCanvas.width; x++)
         {
-            const float value = heat[size_t(y + heatCanvas.offsetY) * finalWidth + x + heatCanvas.offsetX];
+            const size_t pixel = size_t(y + heatCanvas.offsetY) * finalWidth + x + heatCanvas.offsetX;
+            const float value = heatWork[pixel] > 0.0f ? heat[pixel] / heatWork[pixel] : 0.0f;
             if (value > 0.0f)
             {
                 heatDistribution[value]++;
@@ -1172,7 +1180,8 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
         for (unsigned int y = 0; y < heatCanvas.height; y++)
             for (unsigned int x = 0; x < heatCanvas.width; x++)
             {
-                const double value = heat[size_t(y + heatCanvas.offsetY) * finalWidth + x + heatCanvas.offsetX];
+                const size_t pixel = size_t(y + heatCanvas.offsetY) * finalWidth + x + heatCanvas.offsetX;
+                const double value = heatWork[pixel] > 0.0f ? heat[pixel] / heatWork[pixel] : 0.0;
                 if (value > 0.0)
                     heatColour(std::log1p(100.0 * value / scale) / divisor,
                                &heatCanvas.rgba[(size_t(y) * heatCanvas.width + x) * 4]);
@@ -1245,8 +1254,8 @@ void WriteRenderSnapshot(const UCS2String& stateFile, const UCS2String& snapshot
         report << remainingMicroseconds / 1000000.0;
     else
         report << "unknown";
-    report << "\nheat_scale_p95_microseconds_per_pixel=" << scale << "\n"
-           << "heat_scale=log1p(100*time_per_pixel/p95)/log(101),clipped\n"
+    report << "\nheat_scale_p95_microseconds_per_sample=" << scale << "\n"
+           << "heat_scale=log1p(100*time_per_completed_sample/p95)/log(101),clipped\n"
            << "timed_block_records=" << std::accumulate(levelTimings.begin(), levelTimings.end(), 0u,
                 [](unsigned int n, const std::pair<const int, LevelTiming>& level) { return n + level.second.blocks; }) << "\n";
 
