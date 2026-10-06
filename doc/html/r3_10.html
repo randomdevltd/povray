@@ -746,7 +746,7 @@ object { TV(1.2, 0.9, Broadcast) translate &lt;0.2, 0.62, -0.1&gt; }
 <a name="r3_10_5_2"></a>
 <div class="content-level-h4" contains="A Wall of Security Cameras" id="r3_10_5_2">
 <h4>3.10.5.2 A Wall of Security Cameras</h4>
-<p>Six monitors, each a screen on its own camera, watch a courtyard the render's camera never sees. Their cameras use perspective, fisheye, ultra-wide, panoramic, Mercator and orthographic projections to show that a screen accepts every camera type except <code>mesh_camera</code>. Each camera is a separate view, so each has its own tracer and, with radiosity, its own pretrace pass.</p>
+<p>Six monitors, each a screen on its own camera, watch a courtyard the render's camera never sees. Their cameras use the standard perspective, fisheye, ultra-wide, panoramic, spherical and orthographic projections. Each camera is a separate view, so each has its own tracer and, with radiosity, its own pretrace pass.</p>
 <pre>
 #for (I, 0, 5)
     #local Place = &lt;-1.35 + 1.35 * mod(I, 3), 0.95 + 1.05 * (1 - floor(I / 3)), 0&gt;;
