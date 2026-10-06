@@ -58,7 +58,7 @@
 namespace pov
 {
 
-TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
+TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed, bool copyLights) :
     sceneData(sd),
     qualityFlags(9),
     stochasticRandomSeedBase(seed),
@@ -91,6 +91,7 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed) :
     cpuTime = 0;
     realTime = 0;
 
+    if (copyLights)
     for(std::vector<LightSource *>::iterator it = sceneData->lightSources.begin(); it != sceneData->lightSources.end(); it++)
     {
         LightSource *light = static_cast<LightSource *>(Copy_Object(*it));

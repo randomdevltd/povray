@@ -678,6 +678,7 @@ public:
     }
     virtual GenericCustomFunction* Clone() const = 0;
     virtual bool EvaluateRange(const Vector3d& a, const Vector3d& b, RETURN_T& lo, RETURN_T& hi) const { return false; }
+    virtual bool RequiresRayContext() const { return false; }
     virtual const CustomFunctionSourceInfo* GetSourceInfo() const { return nullptr; }
 };
 

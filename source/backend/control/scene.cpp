@@ -182,7 +182,8 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     // do parsing
     sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(parserTasks.AppendTask(new ParserTask(
-        sceneData, pov_parser::ParserOptions(bool(parseOptions.Exist(kPOVAttrib_Clock)), parseOptions.TryGetFloat(kPOVAttrib_Clock, 0.0), seed)
+        sceneData, pov_parser::ParserOptions(bool(parseOptions.Exist(kPOVAttrib_Clock)), parseOptions.TryGetFloat(kPOVAttrib_Clock, 0.0), seed,
+                                             clip<int>(parseOptions.TryGetInt(kPOVAttrib_MaxRenderThreads, 1), 1, SIGNED16_MAX))
         ))));
 
     // wait for parsing

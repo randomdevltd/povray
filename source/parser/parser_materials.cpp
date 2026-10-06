@@ -251,6 +251,11 @@ ImageData *Parser::Parse_Image(int Legal, bool GammaCorrect)
             Unget_Token();
 
             fnPtr = Parse_DeclareFunction(&token_id, nullptr, false);
+            if (mpFunctionVM->RequiresRayContext(*fnPtr))
+            {
+                mpFunctionVM->DestroyFunction(fnPtr);
+                Error("A function image cannot sample a screen pigment.");
+            }
             Make_Pattern_Image(image, fnPtr, token_id);
         END_CASE
 

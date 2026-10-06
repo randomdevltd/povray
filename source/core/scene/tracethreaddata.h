@@ -112,7 +112,7 @@ class TraceThreadData : public ThreadData
         /// @param  sd      Scene data defining scene attributes.
         /// @param  seed    Seed for the stochastic random number generator;
         ///                 should be unique for each render.
-        TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed);
+        TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed, bool copyLights = true);
 
         /// Destructor.
         virtual ~TraceThreadData() override;

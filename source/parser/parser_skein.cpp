@@ -38,10 +38,12 @@
 
 // C++ standard header files
 #include <chrono>
+#include <ctime>
 #include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
+#include <sstream>
 
 // POV-Ray header files (base module)
 #include "base/fileutil.h"
@@ -76,6 +78,46 @@ struct SkeinGroup final : public Assignable
     std::vector<SkeinStep> steps;
     virtual SkeinGroup *Clone() const override { return new SkeinGroup(*this); }
 };
+
+struct SkeinMeshBuildSource final
+{
+    std::shared_ptr<Skein> skein;
+    std::vector<std::shared_ptr<GenericScalarFunction>> originalFunctions;
+};
+
+void CollectSkeinValueFunctions(const SkeinValue& value, std::vector<FUNCTION>& functions)
+{
+    if (value.kind == SkeinValue::kFunction)
+    {
+        const FunctionVM::CustomFunction *function = dynamic_cast<const FunctionVM::CustomFunction *>(value.function.get());
+        POV_PARSER_ASSERT(function != nullptr);
+        functions.push_back(function->Id());
+    }
+    if (value.kind == SkeinValue::kSum)
+        for (const SkeinValue& entry : value.sum->entries)
+            CollectSkeinValueFunctions(entry, functions);
+}
+
+void CollectSkeinFunctions(const std::vector<SkeinStep>& steps, std::vector<FUNCTION>& functions)
+{
+    for (const SkeinStep& step : steps)
+    {
+        for (const SkeinValue& value : step.value)
+            CollectSkeinValueFunctions(value, functions);
+        for (const std::shared_ptr<SkeinAxis>& axis : { step.curve, step.target })
+            if (axis)
+                for (const std::shared_ptr<GenericScalarFunction>& value : axis->functions)
+                    if (value)
+                    {
+                        const FunctionVM::CustomFunction *function = dynamic_cast<const FunctionVM::CustomFunction *>(value.get());
+                        POV_PARSER_ASSERT(function != nullptr);
+                        functions.push_back(function->Id());
+                    }
+        if (step.blend)
+            for (const SkeinBlend::Entry& entry : step.blend->entries)
+                CollectSkeinFunctions(entry.steps, functions);
+    }
+}
 
 /// The input a function parameter or map word names (`uv.u` or its shorthand `u`), or -1.
 int SkeinInput(const std::string& name)
@@ -120,6 +162,50 @@ void Splice(std::vector<SkeinStep>& steps, const SkeinGroup& group)
             steps.push_back(s);
 }
 
+void RebindSkeinValue(SkeinValue& value, FunctionVM *vm, std::vector<std::shared_ptr<GenericScalarFunction>>& originals)
+{
+    if (value.kind == SkeinValue::kFunction)
+    {
+        FunctionVM::CustomFunction *function = dynamic_cast<FunctionVM::CustomFunction *>(value.function.get());
+        POV_PARSER_ASSERT(function != nullptr);
+        const FUNCTION id = function->Id();
+        originals.push_back(value.function);
+        value.function = std::shared_ptr<GenericScalarFunction>(new FunctionVM::CustomFunction(vm, new FUNCTION(id)));
+    }
+    if (value.kind == SkeinValue::kSum)
+        for (SkeinValue& entry : value.sum->entries)
+            RebindSkeinValue(entry, vm, originals);
+}
+
+void RebindSkeinAxis(const std::shared_ptr<SkeinAxis>& axis, FunctionVM *vm, std::vector<std::shared_ptr<GenericScalarFunction>>& originals)
+{
+    if (!axis)
+        return;
+    for (std::shared_ptr<GenericScalarFunction>& value : axis->functions)
+        if (value)
+        {
+            FunctionVM::CustomFunction *function = dynamic_cast<FunctionVM::CustomFunction *>(value.get());
+            POV_PARSER_ASSERT(function != nullptr);
+            const FUNCTION id = function->Id();
+            originals.push_back(value);
+            value = std::shared_ptr<GenericScalarFunction>(new FunctionVM::CustomFunction(vm, new FUNCTION(id)));
+        }
+}
+
+void RebindSkeinSteps(std::vector<SkeinStep>& steps, FunctionVM *vm, std::vector<std::shared_ptr<GenericScalarFunction>>& originals)
+{
+    for (SkeinStep& step : steps)
+    {
+        for (SkeinValue& value : step.value)
+            RebindSkeinValue(value, vm, originals);
+        RebindSkeinAxis(step.curve, vm, originals);
+        RebindSkeinAxis(step.target, vm, originals);
+        if (step.blend)
+            for (SkeinBlend::Entry& entry : step.blend->entries)
+                RebindSkeinSteps(entry.steps, vm, originals);
+    }
+}
+
 }
 // end of anonymous namespace
 
@@ -146,69 +232,89 @@ ObjectPtr Parser::Parse_Skein_Mesh()
 {
     Parse_Begin();
 
-    const auto start = std::chrono::steady_clock::now();
-    std::unique_ptr<Skein> skein(new Skein());
+    std::shared_ptr<Skein> skein(new Skein());
     DBL minSize = -1.0, maxAngle = 10.0;
     Parse_Skein_Body(skein.get(), &minSize, &maxAngle);
     if (minSize < 0.0)
         minSize = 1.0e-3 * skein->data->size;
-    SkeinMesh built;
-    const std::string problem = skein->Tessellate(GetParserDataPtr(), minSize, maxAngle, built);
-    if (!problem.empty())
-        Error("%s", problem.c_str());
     const bool closed = skein->data->closed;
-    skein.reset();
+    std::vector<FUNCTION> functions;
+    CollectSkeinFunctions(skein->data->steps, functions);
+    boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(functions);
+    std::shared_ptr<SkeinMeshBuildSource> source(new SkeinMeshBuildSource());
+    source->skein = skein;
+    RebindSkeinSteps(skein->data->steps, functionVM.get(), source->originalFunctions);
+    std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
+        [this, skein, minSize, maxAngle, closed](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+        {
+            const auto start = std::chrono::steady_clock::now();
+            SkeinMesh built;
+            const std::vector<TraceThreadData *> threads(1, thread);
+            const std::string problem = skein->Tessellate(threads, minSize, maxAngle, built, [this]()
+            {
+                if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+                    throw std::runtime_error("Mesh build cancelled.");
+            });
+            if (!problem.empty())
+                throw std::runtime_error(problem);
+            std::shared_ptr<Mesh> object(new Mesh());
+            object->Data = new MESH_DATA();
+            object->Data->References = 1;
+            MESH_DATA& data = *object->Data;
+            const int vertices = int(built.points.size()), triangles = int(built.triangles.size() / 3);
+            data.Vertices = reinterpret_cast<MeshVector *>(POV_MALLOC(vertices * sizeof(MeshVector), "triangle mesh data"));
+            std::copy(built.points.begin(), built.points.end(), data.Vertices);
+            std::vector<SnglVector3d>().swap(built.points);
+            data.Normals = reinterpret_cast<MeshVector *>(POV_MALLOC(vertices * sizeof(MeshVector), "triangle mesh data"));
+            std::copy(built.normals.begin(), built.normals.end(), data.Normals);
+            std::vector<SnglVector3d>().swap(built.normals);
+            data.UVCoords = reinterpret_cast<MeshUVVector *>(POV_MALLOC(vertices * sizeof(MeshUVVector), "triangle mesh data"));
+            std::copy(built.uvs.begin(), built.uvs.end(), data.UVCoords);
+            std::vector<Vector2d>().swap(built.uvs);
+            data.Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_MALLOC(triangles * sizeof(MESH_TRIANGLE), "triangle mesh data"));
+            data.Number_Of_Vertices = data.Number_Of_Normals = data.Number_Of_UVCoords = vertices;
+            data.Number_Of_Triangles = triangles;
+            data.NormalInd.byVertex = true;
+            data.UVInd.byVertex = true;
+            for (int i = 0; i < triangles; ++i)
+            {
+                MESH_TRIANGLE& t = data.Triangles[i];
+                object->Init_Mesh_Triangle(&t);
+                const int *k = &built.triangles[3 * i];
+                for (int c = 0; c < 3; ++c)
+                    t.SetP(c, k[c]);
+                const bool smooth = (Vector3d(data.Normals[k[0]] - data.Normals[k[1]]).lengthSqr() > EPSILON) ||
+                                    (Vector3d(data.Normals[k[0]] - data.Normals[k[2]]).lengthSqr() > EPSILON);
+                object->Compute_Mesh_Triangle(&t, i, smooth, Vector3d(data.Vertices[k[0]]), Vector3d(data.Vertices[k[1]]), Vector3d(data.Vertices[k[2]]));
+            }
+            std::vector<int>().swap(built.triangles);
+            object->Finish_Mesh_Data();
+            if (closed)
+            {
+                data.Inside_Vect = Vector3d(0.5381, 0.6012, 0.5907).normalized();
+                object->has_inside_vector = true;
+                object->Type &= ~PATCH_OBJECT;
+            }
+            object->Compute_BBox();
+            object->Build_Mesh_BBox_Tree();
+            const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
+            std::ostringstream debug;
+            debug << "skein_mesh: " << triangles << " triangles, " << vertices << " vertices, " << built.openEdges << " open edges, "
+                  << (vertices * (2 * sizeof(MeshVector) + sizeof(MeshUVVector)) + triangles * sizeof(MESH_TRIANGLE)) << " bytes, "
+                  << seconds << " s wall\n";
+            state.debug = debug.str();
+            return object;
+        }, source);
 
     Mesh *object = new Mesh();
-    object->Data = new MESH_DATA();
-    object->Data->References = 1;
-    MESH_DATA& data = *object->Data;
-    const int vertices = int(built.points.size()), triangles = int(built.triangles.size() / 3);
-    data.Vertices = reinterpret_cast<MeshVector *>(POV_MALLOC(vertices * sizeof(MeshVector), "triangle mesh data"));
-    std::copy(built.points.begin(), built.points.end(), data.Vertices);
-    std::vector<SnglVector3d>().swap(built.points);
-    data.Normals = reinterpret_cast<MeshVector *>(POV_MALLOC(vertices * sizeof(MeshVector), "triangle mesh data"));
-    std::copy(built.normals.begin(), built.normals.end(), data.Normals);
-    std::vector<SnglVector3d>().swap(built.normals);
-    data.UVCoords = reinterpret_cast<MeshUVVector *>(POV_MALLOC(vertices * sizeof(MeshUVVector), "triangle mesh data"));
-    std::copy(built.uvs.begin(), built.uvs.end(), data.UVCoords);
-    std::vector<Vector2d>().swap(built.uvs);
-    data.Triangles = reinterpret_cast<MESH_TRIANGLE *>(POV_MALLOC(triangles * sizeof(MESH_TRIANGLE), "triangle mesh data"));
-    data.Number_Of_Vertices = data.Number_Of_Normals = data.Number_Of_UVCoords = vertices;
-    data.Number_Of_Triangles = triangles;
-    data.NormalInd.byVertex = true;
-    data.UVInd.byVertex = true;
-    for (int i = 0; i < triangles; ++i)
-    {
-        MESH_TRIANGLE& t = data.Triangles[i];
-        object->Init_Mesh_Triangle(&t);
-        const int *k = &built.triangles[3 * i];
-        for (int c = 0; c < 3; ++c)
-            t.SetP(c, k[c]);
-        const bool smooth = (Vector3d(data.Normals[k[0]] - data.Normals[k[1]]).lengthSqr() > EPSILON) ||
-                            (Vector3d(data.Normals[k[0]] - data.Normals[k[2]]).lengthSqr() > EPSILON);
-        object->Compute_Mesh_Triangle(&t, i, smooth, Vector3d(data.Vertices[k[0]]), Vector3d(data.Vertices[k[1]]), Vector3d(data.Vertices[k[2]]));
-    }
-    std::vector<int>().swap(built.triangles);
-    object->Finish_Mesh_Data();
+    object->BBox = skein->BBox;
     if (closed)
     {
-        data.Inside_Vect = Vector3d(0.5381, 0.6012, 0.5907).normalized();
         object->has_inside_vector = true;
         object->Type &= ~PATCH_OBJECT;
     }
-    else
-    {
-        object->has_inside_vector = false;
-        object->Type |= PATCH_OBJECT;
-    }
-    const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
-    Debug_Info("skein_mesh: %d triangles, %d vertices, %d open edges, %d bytes, %.3f s\n", triangles, vertices, int(built.openEdges),
-               int(vertices * (2 * sizeof(MeshVector) + sizeof(MeshUVVector)) + triangles * sizeof(MESH_TRIANGLE)), seconds);
-
-    object->Compute_BBox();
+    object->SetDeferred(deferred);
     Parse_Object_Mods(reinterpret_cast<ObjectPtr>(object));
-    object->Build_Mesh_BBox_Tree();
     return reinterpret_cast<ObjectPtr>(object);
 }
 
@@ -284,6 +390,8 @@ void Parser::Parse_Skein_Body(Skein *object, DBL *minSize, DBL *maxAngle)
         Error("skein: an expressions block is required.");
     if ((!data.wrapU || data.wrapV) && ((data.ends[0] != SkeinData::kOpen) || (data.ends[1] != SkeinData::kOpen)))
         Warning("skein: ends apply only when u is closed and v is not; they are ignored here.");
+    if (data.RequiresRayContext())
+        Error("Skein geometry cannot sample a screen pigment.");
 
     const std::string problem = object->Prepare(GetParserDataPtr());
     if (!problem.empty())

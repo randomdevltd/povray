@@ -40,6 +40,7 @@
 #include "core/configcore.h"
 
 // C++ standard header files
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -272,6 +273,7 @@ struct SkeinData final
     SkeinData() = default;
     SkeinData(const SkeinData&) = delete;
     SkeinData& operator=(const SkeinData&) = delete;
+    bool RequiresRayContext() const;
 };
 
 /// A skein's triangle mesh with one entry per distinct corner, so positions, normals and uv share the triangles' indices.
@@ -312,7 +314,8 @@ class Skein final : public ObjectBase
 
         /// Tessellates the prepared skein: no edge shorter than `minSize` where avoidable, no turn over `maxAngle` degrees across a triangle;
         /// returns an error message, empty on success.
-        std::string Tessellate(TraceThreadData *thread, DBL minSize, DBL maxAngle, SkeinMesh& mesh) const;
+        std::string Tessellate(const std::vector<TraceThreadData *>& threads, DBL minSize, DBL maxAngle, SkeinMesh& mesh,
+                               const std::function<void()>& progress) const;
 
         struct Crossing { DBL t, u, v; Vector3d normal; int sign; };
         static const int kMaxCrossings = 64;

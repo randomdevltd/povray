@@ -102,6 +102,12 @@ MeshCheck("envelope slab mesh, front, back, flat rims and caps", Slab, SlabMesh,
 #declare TaperedMesh = skein_mesh { expressions { scale <2, 1, 1>  envelope { thickness function(uv) { Taper(uv.u, uv.v) } } } closed u  ends sealed }
 ClosedCheck("tapered envelope mesh, sealed ends", TaperedMesh)
 
+#declare ImageMesh = skein_mesh {
+  expressions { extrude { radius sum { 0.4  map { uv  image { png "Mount1.png" }  linear { scale 0.1 } } } }  extrude { axis x radius 2 } }
+  closed uv  min_size 0.02  max_angle 15
+}
+ClosedCheck("image-sampled mesh", ImageMesh)
+
 #if (Failures > 0)
   #error concat("skein_mesh_check: ", str(Failures, 0, 0), " meshes outside tolerance\n")
 #end
