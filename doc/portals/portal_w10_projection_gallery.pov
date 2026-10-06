@@ -1,4 +1,4 @@
-// Four live panoramic photographs of one hidden scene, each using a different cylindrical projection.
+// Eight live panoramic photographs of one hidden scene, including two arbitrary function cameras.
 #version 4.0;
 global_settings { assumed_gamma 1.0 }
 #include "portals.inc"
@@ -30,15 +30,45 @@ light_group {
 #declare Projection3 = CylindricalProjectionCamera(ProjectionStereographic, -58, 72, ProjectionSingleOrigin, 0, 0, P, z, x, y);
 #declare Projection4 = CylindricalProjectionCamera(ProjectionEqualArea, -58, 72, ProjectionSingleOrigin, 0, 0, P, z, x, y);
 #declare Projection5 = CylindricalProjectionCamera(ProjectionMercator, -35, 40, ProjectionCylinderOrigin, 4, 0, P, z, x, y);
-#declare Cams = array[6] {
-  camera { Projection0 }, camera { Projection1 }, camera { Projection2 },
-  camera { Projection3 }, camera { Projection4 }, camera { Projection5 }
+#declare TwistY0 = asinh(tan(radians(-58)));
+#declare TwistY1 = asinh(tan(radians(72)));
+#declare TwistLat = function(v) { atan(sinh(TwistY0 + (v + 0.5) * (TwistY1 - TwistY0))) };
+#declare TwistLon = function(u, v) { 2 * pi * u + 0.7 * sin(2 * pi * v) };
+#declare Projection6 = camera {
+  user_defined location P
+  direction {
+    function { sin(TwistLon(x, y)) * cos(TwistLat(y)) }
+    function { sin(TwistLat(y)) }
+    function { cos(TwistLon(x, y)) * cos(TwistLat(y)) }
+  }
 };
-#declare Frames = array[6] { <0.22, 0.45, 0.9>, <0.9, 0.32, 0.16>, <0.2, 0.72, 0.4>, <0.72, 0.3, 0.82>, <0.85, 0.68, 0.12>, <0.1, 0.72, 0.72> };
-#for (I, 0, 5)
-  #local Place = <-2.35 + 2.35 * mod(I, 3), 0.65 + 2.15 * (1 - floor(I / 3)), 0>;
+#declare TurnLon = function(u) { 2 * pi * u };
+#declare TurnX = P.x;
+#declare TurnY = P.y;
+#declare TurnZ = P.z;
+#declare Projection7 = camera {
+  user_defined
+  location {
+    function { TurnX + 12 * sin(TurnLon(x)) }
+    function { TurnY }
+    function { TurnZ + 12 * cos(TurnLon(x)) }
+  }
+  direction {
+    function { -sin(TurnLon(x)) }
+    function { 2.2 * y }
+    function { -cos(TurnLon(x)) }
+  }
+};
+#declare Cams = array[8] {
+  camera { Projection0 }, camera { Projection1 }, camera { Projection2 },
+  camera { Projection3 }, camera { Projection4 }, camera { Projection5 },
+  camera { Projection6 }, camera { Projection7 }
+};
+#declare Frames = array[8] { <0.22, 0.45, 0.9>, <0.9, 0.32, 0.16>, <0.2, 0.72, 0.4>, <0.72, 0.3, 0.82>, <0.85, 0.68, 0.12>, <0.1, 0.72, 0.72>, <0.95, 0.35, 0.62>, <0.35, 0.85, 0.9> };
+#for (I, 0, 7)
+  #local Place = <-2.7 + 1.8 * mod(I, 4), 0.65 + 2.15 * (1 - floor(I / 4)), 0>;
   object {
-    Panel(2.15, 1.075, pigment { screen { camera { Cams[I] } } scale <2.15, 1.075, 1> }, Frames[I])
+    Panel(1.65, 1.075, pigment { screen { camera { Cams[I] } } scale <1.65, 1.075, 1> }, Frames[I])
     translate Place
   }
 #end
