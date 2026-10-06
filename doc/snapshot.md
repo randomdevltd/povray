@@ -59,9 +59,10 @@ The state file sits beside the output image and takes its name with `.pov-state`
 ## Timing heat map
 
 Each rendered block records its tracing-thread elapsed time in microseconds. Edge blocks are compared by time per
-pixel, and progressive levels add to the same output pixels. The palette runs from blue through cyan and yellow to
-red. Its logarithmic scale puts the 95th percentile at the hot end and retains contrast when regions differ by
-orders of magnitude; the exact scale in microseconds per pixel is in `<file>.heat.txt`. Untimed pixels are transparent.
+completed sample. Progressive levels add their time and sample density separately, so a region does not become hotter
+merely because it has finished an additional level. The palette runs from blue through cyan and yellow to red. Its
+logarithmic scale puts the 95th percentile at the hot end and retains contrast when regions differ by orders of
+magnitude; the exact scale in microseconds per completed sample is in `<file>.heat.txt`. Untimed pixels are transparent.
 
 The elapsed figure is the sum of block time across tracing threads, not process wall time. The remaining figure uses
 the mean block time at the latest level and the known number of levels, scaling finer future levels by their sample
@@ -79,9 +80,9 @@ file format.
 ## Cost
 
 Each timed state record adds 48 bytes. At the default 32-pixel block size that is 48 bytes per block per progressive
-level. Each snapshot reads the whole state file and holds 12 bytes per pixel for the snapshot, accumulated time and
-heat map (about 100 MB at 3840×2160) while it is written. During a render it runs on the frontend thread, which
-buffers the render's results meanwhile; rendering itself does not stop.
+level. Each snapshot reads the whole state file and holds 16 bytes per pixel for the snapshot, accumulated time,
+sample density and heat map (about 133 MB at 3840×2160) while it is written. During a render it runs on the frontend
+thread, which buffers the render's results meanwhile; rendering itself does not stop.
 
 Timing takes one steady-clock read per finished block after one initialization per tracing thread. On
 `tools/bench/mesh-features.pov` at 1280×960, `+WT1 -A`, medians of four alternating runs minus a one-pixel parse were
