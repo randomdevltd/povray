@@ -51,9 +51,6 @@
   <td><div class="divh3"><a title="3.10.2.1" href="#r3_10_2_1">The Window</a></div></td>
 </tr>
 <tr>
-  <td><div class="divh3"><a title="3.10.2.2" href="#r3_10_2_2">perturb</a></div></td>
-</tr>
-<tr>
   <td><div class="divh3"><a title="3.10.2.3" href="#r3_10_2_3">Nesting, max_trace_level and fallback</a></div></td>
 </tr>
 <tr>
@@ -130,6 +127,9 @@
 </tr>
 <tr>
   <td><div class="divh3"><a title="3.10.5.9" href="#r3_10_5_9">A Halftone Poster</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.5.10" href="#r3_10_5_10">Projection Gallery and Live World Map</a></div></td>
 </tr>
 <tr>
   <td><div class="divh2"><strong><a title="3.10.6" href="#r3_10_6">Errors, Warnings and Limits</a></strong></div></td>
@@ -270,7 +270,6 @@ box { &lt;0, 0, 0&gt;, &lt;1, 1, 0.01&gt; pigment { image_map { png "tv.png" } }
 pigment {
   screen {
     camera { CAMERA_ITEMS... }
-    [perturb { PIGMENT_BODY }]
     [fallback { PIGMENT_BODY }]
     [max_trace_level LEVEL]
   }
@@ -279,12 +278,11 @@ pigment {
 </pre>
 <table width="100%" class="option-list">
 <tr><td><code>camera { }</code></td><td>Required. The camera whose view is shown: any camera a scene can have except a <code>mesh_camera</code>, written out or as a declared camera with more items after it, such as <code>camera { View no_radiosity }</code>. Focal blur and a camera <code>normal</code> work as they do for the render's camera. It is not the render's camera and does not replace it. Two screen-only camera items, <code>radiosity_size</code> and <code>no_radiosity</code>, are described in <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>.</td></tr>
-<tr><td><code>perturb { }</code></td><td>Optional, none by default. A pigment whose red and green, at each point, are added to the point's x and y before the view is looked up, so the picture is shifted, bent or distorted. Blue, filter and transmit are ignored.</td></tr>
 <tr><td><code>fallback { }</code></td><td>Optional. The pigment shown, looked up at the point's window position, where the view cannot be traced because views are nested too deep. Without one the screen is black there.</td></tr>
 <tr><td><code>max_trace_level</code></td><td>Optional, from 1 to 256; by default the scene's <code>max_trace_level</code>. How many screen views may be open around this one before it shows its fallback instead.</td></tr>
 </table>
 <p>A <code>screen</code> is an ordinary pigment in every other way: it can be one layer of a layered texture under a glossy clear layer, be scaled, rotated, warped and turbulated, and appear inside a <code>pigment_map</code>, an <code>average</code> or a <code>pigment_pattern</code>. A screen is usually given <code>finish { emission 1 diffuse 0 }</code>, so that its picture shows as it was traced rather than being lit again by the scene's lights.</p>
-<p><code>screen</code>, <code>perturb</code> and <code>fallback</code> are reserved words; <code>screen</code> may appear only in a pigment.</p></div>
+<p><code>screen</code> and <code>fallback</code> are reserved words; <code>screen</code> may appear only in a pigment.</p></div>
 
 <a name="r3_10_2_1"></a>
 <div class="content-level-h4" contains="The Window" id="r3_10_2_1">
@@ -313,30 +311,6 @@ box
 <tr>
   <td>
     <p class="caption">A panel rendered with <code>+UA</code>, outlined; only its middle is the window. The picture, sky and all, is opaque; outside the window the panel is clear, so the ring behind it shows, and so does the page through the transparent background.</p>
-  </td>
-</tr>
-</table></div>
-
-<a name="r3_10_2_2"></a>
-<div class="content-level-h4" contains="perturb" id="r3_10_2_2">
-<h4>3.10.2.2 perturb</h4>
-<p>The <code>perturb</code> pigment is evaluated in the window's own coordinates, where the window runs from 0 to 1 whatever the screen pigment's transformations, and its red and green are added to x and y. Values are in window units: 0.1 moves the lookup a tenth of the window. A smooth pigment bends the picture, a noisy one breaks it up. The example below shifts each row sideways by a sine of its height, like a set losing its tracking; <a href="r3_10.html#r3_10_5_1">A Television</a> uses a cubic function of the distance from the centre for the barrel distortion of a curved tube.</p>
-<pre>
-screen
-{
-    camera { View }
-    perturb { user_defined { function { 0.03 * sin(y * 60) }, function { 0 }, function { 0 } } }
-}
-</pre>
-<table class="centered" width="340px" cellpadding="0" cellspacing="10">
-<tr>
-  <td>
-    <img class="center" width="320px" src="images/portal_r_screen_perturb.png" alt="The same view on two sets; the right one&#x27;s perturb shifts each row of the picture sideways">
-  </td>
-</tr>
-<tr>
-  <td>
-    <p class="caption">The same view on two sets; the right one's perturb shifts each row of the picture sideways.</p>
   </td>
 </tr>
 </table></div>
@@ -735,7 +709,7 @@ portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt;
 <tr><td><code>max_trace_level</code></td><td>Global setting, 5 by default. The default nesting limit of every screen and portal, as well as the limit on reflection and refraction, which starts again inside each screen view and is not used up by going through a portal. A scene of nested glass jars, where each level costs two glass crossings, wants more: <code>global_settings { max_trace_level 16 }</code>.</td></tr>
 <tr><td><code>adc_bailout</code></td><td>Global setting. A view carries the weight of the ray that met it, times the mouth's opacity for a portal, so a faint view ends as any faint ray does. Lower it to let dim views nest deeper: <code>global_settings { adc_bailout 0.002 }</code>.</td></tr>
 <tr><td><code>radiosity { }</code></td><td>One cache is shared by the render's camera and every screen camera, with a pretrace pass for each distinct screen camera; see <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>. Radiosity samples see through portals, but light that came through a portal adds no bounce light (see <a href="r3_10.html#r3_10_6_3">Known Limits</a>).</td></tr>
-<tr><td>Anti-aliasing, <code>+A</code></td><td>Every anti-aliasing sample of the render looks the screen up again, so its picture is anti-aliased by the render's own sampling, and only where the render refines. With texture footprint filtering (<code>+TF</code>) a screen is sampled across the pixel's footprint like any pigment. A footprint does not carry through a portal or across its body: the view through a mouth is traced sharp.</td></tr>
+<tr><td>Anti-aliasing, <code>+A</code></td><td>Every anti-aliasing sample of the render looks the screen up again, so its picture is anti-aliased by the render's own sampling, and only where the render refines. With texture footprint filtering (<code>+TF</code>) the screen traces one ray carrying the surface's transformed footprint into its camera; textures seen there filter over that footprint. A footprint does not carry through a portal or across its body.</td></tr>
 <tr><td>Alpha, <code>+UA</code></td><td>A screen's picture is opaque, sky included. A portal's view keeps the alpha of what it shows, so sky seen through a mouth is as transparent as sky seen directly.</td></tr>
 <tr><td><code>NESTED_VIEW_DEPTH_LIMIT</code></td><td>Compile-time constant in <code>source/core/configcore.h</code>, 512 by default. Caps trace levels plus nested screen and portal views along any path, to bound the stack: each level costs about 3.5 KB. Past it, screens and portals behave as at their own limits. It can be changed only by rebuilding POV-Ray.</td></tr>
 </table></div>
@@ -748,23 +722,11 @@ portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt;
 <a name="r3_10_5_1"></a>
 <div class="content-level-h4" contains="A Television" id="r3_10_5_1">
 <h4>3.10.5.1 A Television</h4>
-<p>A television is a screen on a slightly convex glass front, with a clear glossy layer over the picture. The macro <code>TV</code> in <code>tests/render/tv.inc</code> builds one; its picture here is a camera in a studio elsewhere in the scene, lit by a <code>light_group</code> of its own, and a <code>perturb</code> that grows with the cube of the distance from the centre gives the barrel distortion of a curved tube.</p>
+<p>A television is a screen on a slightly convex glass front, with a clear glossy layer over the picture. The macro <code>TV</code> in <code>tests/render/tv.inc</code> builds one; its picture here is a camera in a studio elsewhere in the scene, lit by a <code>light_group</code> of its own.</p>
 <pre>
 #declare Broadcast = pigment
 {
-    screen
-    {
-        camera { location S + &lt;0, 1.2, -3&gt; look_at S + &lt;0, 1.15, 0&gt; right x * 4 / 3 angle 40 }
-        perturb
-        {
-            user_defined
-            {
-                function { 1.2 * (x - 0.5) * (pow(x - 0.5, 2) + pow(y - 0.5, 2)) },
-                function { 1.2 * (y - 0.5) * (pow(x - 0.5, 2) + pow(y - 0.5, 2)) },
-                function { 0 }
-            }
-        }
-    }
+    screen { camera { location S + &lt;0, 1.2, -3&gt; look_at S + &lt;0, 1.15, 0&gt; right x * 4 / 3 angle 40 } }
 };
 object { TV(1.2, 0.9, Broadcast) translate &lt;0.2, 0.62, -0.1&gt; }
 </pre>
@@ -784,7 +746,7 @@ object { TV(1.2, 0.9, Broadcast) translate &lt;0.2, 0.62, -0.1&gt; }
 <a name="r3_10_5_2"></a>
 <div class="content-level-h4" contains="A Wall of Security Cameras" id="r3_10_5_2">
 <h4>3.10.5.2 A Wall of Security Cameras</h4>
-<p>Six monitors, each a screen on its own camera, watch a courtyard the render's camera never sees. Each camera is a separate view, so each has its own tracer and, with radiosity, its own pretrace pass.</p>
+<p>Six monitors, each a screen on its own camera, watch a courtyard the render's camera never sees. Their cameras use perspective, fisheye, ultra-wide, panoramic, Mercator and orthographic projections to show that a screen accepts every camera type except <code>mesh_camera</code>. Each camera is a separate view, so each has its own tracer and, with radiosity, its own pretrace pass.</p>
 <pre>
 #for (I, 0, 5)
     #local Place = &lt;-1.35 + 1.35 * mod(I, 3), 0.95 + 1.05 * (1 - floor(I / 3)), 0&gt;;
@@ -972,6 +934,34 @@ light_source
 </tr>
 </table></div>
 
+<a name="r3_10_5_10"></a>
+<div class="content-level-h4" contains="Projection Gallery and Live World Map" id="r3_10_5_10">
+<h4>3.10.5.10 Projection Gallery and Live World Map</h4>
+<p>A gallery wall compares six live panoramic photographs of one hidden scene using cameras from <code>projections.inc</code>: equirectangular, Mercator, Miller, cylindrical stereographic and equal-area profiles, followed by a Mercator camera whose origins move around an outward cylinder.</p>
+<pre>
+#include "projections.inc"
+#declare View = CylindricalProjectionCamera(
+  ProjectionMercator, -35, 40, ProjectionCylinderOrigin, 4, 0,
+  P, z, x, y
+);
+pigment { screen { camera { View } } }
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr><td><img class="center" width="320px" src="images/portal_w10_projection_gallery.png" alt="Six live panoramic photographs using different projections"></td></tr>
+<tr><td><p class="caption">The same hidden scene through five vertical maps and an outward origin cylinder.</p></td></tr>
+</table>
+<p>An inward origin sphere performs the inverse job. A Mercator screen camera begins at every mapped point on a sphere just outside a procedural globe and fires toward its centre. The resulting live map textures a curled, thickened <code>skein_mesh</code> page on the table beside that globe.</p>
+<pre>
+#declare MapView = CylindricalProjectionCamera(
+  ProjectionMercator, -75, 75, ProjectionSphereOrigin, 0.78, 1,
+  GlobeCentre, z, x, y
+);
+</pre>
+<table class="centered" width="340px" cellpadding="0" cellspacing="10">
+<tr><td><img class="center" width="320px" src="images/portal_w11_world_map.png" alt="A live Mercator map on a curled page beside its globe"></td></tr>
+<tr><td><p class="caption">A globe sampled inward into a live Mercator map on a curled skein envelope.</p></td></tr>
+</table></div>
+
 <a name="r3_10_6"></a>
 <div class="content-level-h3" contains="Errors, Warnings and Limits" id="r3_10_6">
 <h3>3.10.6 Errors, Warnings and Limits</h3>
@@ -981,7 +971,7 @@ light_source
 <div class="content-level-h4" contains="Errors" id="r3_10_6_1">
 <h4>3.10.6.1 Errors</h4>
 <table width="100%" class="option-list">
-<tr><td><code>screen takes only one camera.</code><br><code>screen takes only one perturb.</code><br><code>screen takes only one fallback.</code></td><td>Each may be given once.</td></tr>
+<tr><td><code>screen takes only one camera.</code><br><code>screen takes only one fallback.</code></td><td>Each may be given once.</td></tr>
 <tr><td><code>screen needs a camera.</code></td><td>The <code>camera { }</code> is required.</td></tr>
 <tr><td><code>mesh_camera cannot be a screen's camera.</code></td><td>Any other camera type may be used.</td></tr>
 <tr><td><code>screen max_trace_level: ...</code></td><td>The level is outside 1 to 256.</td></tr>

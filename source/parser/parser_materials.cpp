@@ -1574,16 +1574,6 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
                             Error("mesh_camera cannot be a screen's camera.");
                     END_CASE
 
-                    CASE (PERTURB_TOKEN)
-                        if (pattern->pPerturb != nullptr)
-                            Error("screen takes only one perturb.");
-                        pattern->pPerturb = Create_Pigment();
-                        Parse_Begin();
-                        Parse_Pigment(&(pattern->pPerturb));
-                        Post_Pigment(pattern->pPerturb);
-                        Parse_End();
-                    END_CASE
-
                     CASE (FALLBACK_TOKEN)
                         if (pattern->pFallback != nullptr)
                             Error("screen takes only one fallback.");

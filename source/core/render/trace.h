@@ -298,7 +298,8 @@ class Trace
         unsigned int GetHighestTraceLevel();
 
         /// Traces a `screen`'s view at window point (u, v), v up; false where screens nest too deep to trace.
-        bool TraceScreen(const ScreenPattern& screen, double u, double v, const Ray& ray, COLC weight, TransColour& result);
+        bool TraceScreen(const ScreenPattern& screen, double u, double v, const Intersection *isect, const Ray& ray,
+                         COLC weight, TransColour& result);
 
         /// Whether a random draw has shaped a trace's result since the last @ref ClearGrain(): partly shadowed
         /// jittered area lights, media, `crand`, rainbow jitter and subsurface light.
@@ -1101,7 +1102,8 @@ class Trace
         void CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
         void LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
         void CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double from, double to, std::vector<Intersection>& hits, TraceTicket& ticket);
-        bool OpenSubsurfaceCloud(const Intersection& out, const SubsurfaceProfile& profile, const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud);
+        bool OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const SubsurfaceProfile& profile,
+                                 const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud);
         bool GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre, double radius);
         const SubsurfaceCell *FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q);
         bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);

@@ -85,6 +85,8 @@ class TracePixel final : public Trace
         void operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour);
         /// Traces the view a screen shows at window point (x, y), y down, carrying on the state of the ray that met it.
         void TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour);
+        void TraceView(DBL x, DBL y, const Vector2d& footX, const Vector2d& footY, TraceTicket& parent, COLC weight,
+                       RGBTColour& colour);
     private:
         /// Set while a camera ray is made only to measure its neighbour's differentials.
         bool differentialProbe = false;

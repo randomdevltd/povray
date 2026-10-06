@@ -82,15 +82,6 @@ namespace pov
 #define MESH_CAMERA            12
 #define USER_DEFINED_CAMERA    13
 
-enum CylindricalProjection
-{
-    CYLINDRICAL_EQUIRECTANGULAR,
-    CYLINDRICAL_MERCATOR,
-    CYLINDRICAL_MILLER,
-    CYLINDRICAL_STEREOGRAPHIC,
-    CYLINDRICAL_EQUAL_AREA
-};
-
 /*****************************************************************************
 * Global typedefs
 ******************************************************************************/
@@ -114,9 +105,6 @@ public:
     DBL Angle;                      // Viewing angle.
     DBL H_Angle;                    // Spherical horizontal viewing angle
     DBL V_Angle;                    // Spherical verticle viewing angle
-    CylindricalProjection Projection;
-    DBL Latitude_Lower, Latitude_Upper;
-    bool Latitude_Range;
     TNORMAL *Tnormal;               // Primary ray pertubation.
     TRANSFORM *Trans;               // Used only to record the user's input
     PIGMENT *Bokeh;                 // Pigment to use for the bokeh

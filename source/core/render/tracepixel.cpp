@@ -89,52 +89,6 @@ const int HexGrid4Size = 37;
 // Grid size (n x n) used while jittering focal blur sub-pixel position.
 const int SUB_PIXEL_GRID_SIZE = 16;
 
-static DBL ProjectLatitude(DBL latitude, CylindricalProjection projection)
-{
-    switch (projection)
-    {
-        case CYLINDRICAL_MERCATOR:      return asinh(tan(latitude));
-        case CYLINDRICAL_MILLER:        return 1.25 * asinh(tan(0.8 * latitude));
-        case CYLINDRICAL_STEREOGRAPHIC: return 2.0 * tan(0.5 * latitude);
-        case CYLINDRICAL_EQUAL_AREA:    return sin(latitude);
-        default:                        return latitude;
-    }
-}
-
-static DBL UnprojectLatitude(DBL ordinate, CylindricalProjection projection)
-{
-    switch (projection)
-    {
-        case CYLINDRICAL_MERCATOR:      return atan(sinh(ordinate));
-        case CYLINDRICAL_MILLER:        return atan(sinh(ordinate / 1.25)) / 0.8;
-        case CYLINDRICAL_STEREOGRAPHIC: return 2.0 * atan(0.5 * ordinate);
-        case CYLINDRICAL_EQUAL_AREA:    return asin(clip(ordinate, -1.0, 1.0));
-        default:                        return ordinate;
-    }
-}
-
-static DBL CameraLatitude(const Camera& camera, DBL row, DBL height)
-{
-    const DBL lower = camera.Latitude_Lower * M_PI_180;
-    const DBL upper = camera.Latitude_Upper * M_PI_180;
-    const DBL top = ProjectLatitude(upper, camera.Projection);
-    const DBL bottom = ProjectLatitude(lower, camera.Projection);
-    return UnprojectLatitude(top + (bottom - top) * row / height, camera.Projection);
-}
-
-static DBL CylindricalPixelAngle(const Camera& camera, DBL width, DBL height)
-{
-    DBL angle = camera.H_Angle * M_PI_180 / width;
-    DBL previous = CameraLatitude(camera, 0.0, height);
-    for (int i = 1; i <= 64; i++)
-    {
-        const DBL latitude = CameraLatitude(camera, height * i / 64.0, height);
-        angle = min(angle, fabs(latitude - previous) * 64.0 / height);
-        previous = latitude;
-    }
-    return angle;
-}
-
 static const Vector2d Grid1[Grid1Size] =
 {
     Vector2d(-0.25,  0.25),
@@ -386,10 +340,7 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
                     pixelSize = min(camera.Right.length() / width, camera.Up.length() / height);
                     break;
                 case SPHERICAL_CAMERA:
-                    if ((camera.Projection == CYLINDRICAL_EQUIRECTANGULAR) && !camera.Latitude_Range)
-                        pixelAngle = min(camera.H_Angle / width, camera.V_Angle / height) * M_PI_180;
-                    else
-                        pixelAngle = CylindricalPixelAngle(camera, width, height);
+                    pixelAngle = min(camera.H_Angle / width, camera.V_Angle / height) * M_PI_180;
                     break;
                 case FISHEYE_CAMERA:
                 case ULTRA_WIDE_ANGLE_CAMERA:
@@ -417,7 +368,49 @@ void TracePixel::TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTC
     ticket.radiosityShare = parent.radiosityShare;
     ticket.radiosityEye = &camera.Location;
     ClearGrain();
+    differentialProbe = true;
     TraceSamples(colour, x, y, 1.0, 1.0, ticket, weight, &parent.radiosityQuality);
+    differentialProbe = false;
+}
+
+void TracePixel::TraceView(DBL x, DBL y, const Vector2d& footX, const Vector2d& footY, TraceTicket& parent, COLC weight,
+                           RGBTColour& colour)
+{
+    TraceTicket ticket(parent.maxAllowedTraceLevel, parent.adcBailout, false, parent.radiosityRecursionDepth, parent.subsurfaceRecursionDepth,
+                       -1.0, parent.radiosityQuality);
+    ticket.radiosityShare = parent.radiosityShare;
+    ticket.radiosityEye = &camera.Location;
+    ClearGrain();
+    colour.Clear();
+
+    Ray ray(ticket), topLeft(ticket), topRight(ticket), bottomLeft(ticket), bottomRight(ticket);
+    differentialProbe = true;
+    const bool centre = CreateCameraRay(ray, x, y, 1.0, 1.0, 0);
+    const bool a = centre && CreateCameraRay(topLeft, x - 0.5 * footX[X] - 0.5 * footY[X],
+                                            y - 0.5 * footX[Y] - 0.5 * footY[Y], 1.0, 1.0, 0);
+    const bool b = a && CreateCameraRay(topRight, x + 0.5 * footX[X] - 0.5 * footY[X],
+                                       y + 0.5 * footX[Y] - 0.5 * footY[Y], 1.0, 1.0, 0);
+    const bool c = b && CreateCameraRay(bottomLeft, x - 0.5 * footX[X] + 0.5 * footY[X],
+                                       y - 0.5 * footX[Y] + 0.5 * footY[Y], 1.0, 1.0, 0);
+    const bool d = c && CreateCameraRay(bottomRight, x + 0.5 * footX[X] + 0.5 * footY[X],
+                                       y + 0.5 * footX[Y] + 0.5 * footY[Y], 1.0, 1.0, 0);
+    differentialProbe = false;
+    if (!d)
+    {
+        colour.transm() = 1.0;
+        return;
+    }
+
+    ray.dOdx = 0.5 * (topRight.Origin + bottomRight.Origin - topLeft.Origin - bottomLeft.Origin);
+    ray.dOdy = 0.5 * (bottomLeft.Origin + bottomRight.Origin - topLeft.Origin - topRight.Origin);
+    ray.dDdx = 0.5 * (topRight.Direction + bottomRight.Direction - topLeft.Direction - bottomLeft.Direction);
+    ray.dDdy = 0.5 * (bottomLeft.Direction + bottomRight.Direction - topLeft.Direction - topRight.Direction);
+    ray.hasDifferentials = true;
+    MathColour col;
+    ColourChannel transm = 0.0;
+    TraceRay(ray, col, transm, weight, false, camera.Max_Ray_Distance);
+    colour = RGBTColour(ToRGBColour(col), transm);
+    parent.radiosityQuality = min(parent.radiosityQuality, ticket.radiosityQuality);
 }
 
 void TracePixel::TraceSamples(RGBTColour& colour, DBL x, DBL y, DBL width, DBL height, const TraceTicket& start, COLC weight,
@@ -768,10 +761,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
             y0 = 0.5 - y / height;
 
             // get angle in radians
-            if ((camera.Projection == CYLINDRICAL_EQUIRECTANGULAR) && !camera.Latitude_Range)
-                y0 *= (camera.V_Angle / 360) * TWO_M_PI;
-            else
-                y0 = CameraLatitude(camera, y, height);
+            y0 *= (camera.V_Angle / 360) * TWO_M_PI;
             x0 *= (camera.H_Angle / 360) * TWO_M_PI;
 
             // find latitude for y in 3D space
@@ -1073,18 +1063,21 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
         }
         else if (!differentialProbe && !useFocalBlur)
         {
-            // any other projection: the camera's own rays one pixel over, taken as differences
-            Ray rx(ray), ry(ray);
+            // any other projection: difference the camera's rays at the four pixel corners
+            Ray topLeft(ray), topRight(ray), bottomLeft(ray), bottomRight(ray);
             differentialProbe = true;
-            const bool okX = CreateCameraRay(rx, x + 1.0, y, width, height, ray_number);
-            const bool okY = okX && CreateCameraRay(ry, x, y + 1.0, width, height, ray_number);
+            const bool okTopLeft = CreateCameraRay(topLeft, x - 0.5, y - 0.5, width, height, ray_number);
+            const bool okTopRight = okTopLeft && CreateCameraRay(topRight, x + 0.5, y - 0.5, width, height, ray_number);
+            const bool okBottomLeft = okTopRight && CreateCameraRay(bottomLeft, x - 0.5, y + 0.5, width, height, ray_number);
+            const bool okBottomRight = okBottomLeft && CreateCameraRay(bottomRight, x + 0.5, y + 0.5, width, height, ray_number);
             differentialProbe = false;
-            if (okY)
+            if (okBottomRight)
             {
-                ray.dOdx = (rx.Origin - ray.Origin) * footprintFraction;
-                ray.dOdy = (ry.Origin - ray.Origin) * footprintFraction;
-                ray.dDdx = (rx.Direction - ray.Direction) * footprintFraction;
-                ray.dDdy = (ry.Direction - ray.Direction) * footprintFraction;
+                const DBL scale = 0.5 * footprintFraction;
+                ray.dOdx = (topRight.Origin + bottomRight.Origin - topLeft.Origin - bottomLeft.Origin) * scale;
+                ray.dOdy = (bottomLeft.Origin + bottomRight.Origin - topLeft.Origin - topRight.Origin) * scale;
+                ray.dDdx = (topRight.Direction + bottomRight.Direction - topLeft.Direction - bottomLeft.Direction) * scale;
+                ray.dDdy = (bottomLeft.Direction + bottomRight.Direction - topLeft.Direction - topRight.Direction) * scale;
                 ray.hasDifferentials = true;
             }
         }
@@ -1434,7 +1427,8 @@ void Trace::ScreenViewsDeleter::operator()(ScreenViews *views) const
     delete views;
 }
 
-bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const Ray& ray, COLC weight, TransColour& result)
+bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const Intersection *isect, const Ray& ray, COLC weight,
+                        TransColour& result)
 {
     const TraceTicket& ticket = ray.GetTicket();
     const unsigned int limit = (screen.maxDepth > 0) ? screen.maxDepth : ticket.maxAllowedTraceLevel;
@@ -1452,6 +1446,8 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const R
         viewFlags.radiosity = viewFlags.radiosity && !screen.pProjection->No_Radiosity;
         view.reset(new TracePixel(sceneData, screen.pProjection.get(), threadData, ticket.maxAllowedTraceLevel, ticket.adcBailout,
                                   viewFlags, cooperate, media, radiosity, ray.IsPretraceRay()));
+        view->SetTextureFilterScale(textureFilterScale);
+        view->SetTextureFilterTaps(textureFilterTaps);
     }
 
     RGBTColour colour;
@@ -1459,7 +1455,13 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const R
         ScreenNesting nesting(threadData, ticket.traceLevel);
         // Only pigments the view's own tracer shades may trace further views.
         ActiveTraceScope noTracer(threadData, nullptr, 1.0);
-        view->TraceView(u, 1.0 - v, const_cast<TraceTicket&>(ticket), weight, colour);
+        if (threadData->activePatternFootprint)
+            view->TraceView(u, 1.0 - v,
+                            Vector2d(threadData->activePatternFootX[X], -threadData->activePatternFootX[Y]),
+                            Vector2d(threadData->activePatternFootY[X], -threadData->activePatternFootY[Y]),
+                            const_cast<TraceTicket&>(ticket), weight, colour);
+        else
+            view->TraceView(u, 1.0 - v, const_cast<TraceTicket&>(ticket), weight, colour);
     }
 
     if (view->Grainy())
@@ -1469,9 +1471,10 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const R
     return true;
 }
 
-bool TraceScreenView(const ScreenPattern& screen, double u, double v, const Ray& ray, TraceThreadData *thread, TransColour& result)
+bool TraceScreenView(const ScreenPattern& screen, double u, double v, const Intersection *isect, const Ray& ray,
+                     TraceThreadData *thread, TransColour& result)
 {
-    return thread->activeTrace->TraceScreen(screen, u, v, ray, thread->activeWeight, result);
+    return thread->activeTrace->TraceScreen(screen, u, v, isect, ray, thread->activeWeight, result);
 }
 
 }

@@ -1,4 +1,4 @@
-// A television showing a broadcast from a studio elsewhere in the scene, through a convex tube with barrel distortion.
+// A television showing a broadcast from a studio elsewhere in the scene through a convex tube.
 #version 3.8;
 global_settings { assumed_gamma 1.0 }
 #include "portals.inc"
@@ -25,18 +25,6 @@ light_group
 }
 #declare Broadcast = pigment
 {
-    screen
-    {
-        camera { location S + <0, 1.2, -3> look_at S + <0, 1.15, 0> right x * 4 / 3 angle 40 }
-        perturb
-        {
-            user_defined
-            {
-                function { 1.2 * (x - 0.5) * (pow(x - 0.5, 2) + pow(y - 0.5, 2)) },
-                function { 1.2 * (y - 0.5) * (pow(x - 0.5, 2) + pow(y - 0.5, 2)) },
-                function { 0 }
-            }
-        }
-    }
+    screen { camera { location S + <0, 1.2, -3> look_at S + <0, 1.15, 0> right x * 4 / 3 angle 40 } }
 };
 object { TV(1.2, 0.9, Broadcast) translate <0.2, 0.62, -0.1> }
