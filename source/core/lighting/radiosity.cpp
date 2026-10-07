@@ -307,12 +307,13 @@ static RadiosityRecursionSettings* ScaleReuse(RadiosityRecursionSettings* settin
 }
 
 RadiosityFunction::RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadData *td, const SceneRadiositySettings& rs,
-                                     RadiosityCache& rc, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera, double reuse) :
+                                     const RadiosityCaches& caches, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera, double reuse) :
     threadData(td),
     trace(sd, td, GetRadiosityQualityFlags(rs, QualityFlags(9)), cf, media, *this), // TODO FIXME - the only reason we can safely hard-code level-9 quality here is because radiosity happens to be disabled at lower settings
     media(td, &trace, &photonGatherer),
-    photonGatherer(&sd->surfacePhotonMap, sd->photonSettings),
-    radiosityCache(rc),
+    photonGatherer(&sd->GetPreparedSet(0).surfacePhotonMap, sd->photonSettings),
+    radiosityCaches(caches),
+    cacheBlockPools(caches.size(), nullptr),
     errorBound(rs.errorBound),
     isFinalTrace(ft),
     cameraPosition(camera),
@@ -321,7 +322,6 @@ RadiosityFunction::RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadD
     topLevelQueryCount(0),
     topLevelReuse(0.0),
     tileId(0),
-    cacheBlockPool(nullptr),
     settings(rs),
     recursionSettings(ScaleReuse(rs.GetRecursionSettings(ft), rs.recursionLimit, reuse))
 {
@@ -331,11 +331,7 @@ RadiosityFunction::RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadD
 
 RadiosityFunction::~RadiosityFunction()
 {
-    if (cacheBlockPool != nullptr) // shouldn't happen normally, but does happen when render is aborted
-    {
-        radiosityCache.ReleaseBlockPool(cacheBlockPool);
-        cacheBlockPool = nullptr;
-    }
+    AfterTile();
 
     delete[] recursionSettings;
     delete[] recursionParameters;
@@ -382,15 +378,28 @@ void RadiosityFunction::BeforeTile(int id, unsigned int pts)
     for (unsigned int depth = 0; depth < settings.recursionLimit; depth ++)
         recursionParameters[depth].directionGenerator.Reset(settings.directionPoolSize);
 
-    POV_RADIOSITY_ASSERT(cacheBlockPool == nullptr);
-    cacheBlockPool = radiosityCache.AcquireBlockPool();
 }
 
 void RadiosityFunction::AfterTile()
 {
-    // release block pool, just in case this happens to be the last tile for this thread
-    radiosityCache.ReleaseBlockPool(cacheBlockPool);
-    cacheBlockPool = nullptr;
+    for (size_t id = 0; id < cacheBlockPools.size(); ++id)
+        if (cacheBlockPools[id] != nullptr)
+        {
+            Cache(id).ReleaseBlockPool(cacheBlockPools[id]);
+            cacheBlockPools[id] = nullptr;
+        }
+}
+
+RadiosityCache& RadiosityFunction::Cache(size_t id)
+{
+    return *radiosityCaches.at(id);
+}
+
+RadiosityCache::BlockPool* RadiosityFunction::Pool(size_t id)
+{
+    if (cacheBlockPools[id] == nullptr)
+        cacheBlockPools[id] = Cache(id).AcquireBlockPool();
+    return cacheBlockPools[id];
 }
 
 void RadiosityFunction::ComputeAmbient(const Vector3d& ipoint, const Vector3d& raw_normal, const Vector3d& layer_normal, DBL brilliance, MathColour& ambient_colour, DBL weight, TraceTicket& ticket)
@@ -410,7 +419,7 @@ void RadiosityFunction::ComputeAmbient(const Vector3d& ipoint, const Vector3d& r
     if(weight < WEIGHT_ERROR_BOUND_OFFSET)
         temp_error_bound += (WEIGHT_ERROR_BOUND_OFFSET - weight);
 
-    reuse = radiosityCache.FindReusableBlock(threadData->Stats(), temp_error_bound * recSettings.errorBoundFactor, ipoint, effectiveNormal, tmpBrilliance, ambient_colour, ticket.radiosityRecursionDepth, pretraceStep, tileId);
+    reuse = Cache(ticket.preparedSetId).FindReusableBlock(threadData->Stats(), temp_error_bound * recSettings.errorBoundFactor, ipoint, effectiveNormal, tmpBrilliance, ambient_colour, ticket.radiosityRecursionDepth, pretraceStep, tileId);
 
     if (ticket.radiosityRecursionDepth == 0)
     {
@@ -473,7 +482,7 @@ void RadiosityFunction::ComputeAmbient(const Vector3d& ipoint, const Vector3d& r
 
 // Pretrace and loaded samples only (a final-trace query from tile -1, which no sample has); if none is near, wider
 // bounds, then deeper bounces.
-bool RadiosityFunction::LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour)
+bool RadiosityFunction::LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour, size_t preparedSetId)
 {
     if (!isFinalTrace)
         return false;
@@ -481,7 +490,7 @@ bool RadiosityFunction::LookupPretraceAmbient(const Vector3d& ipoint, const Vect
     {
         for (DBL widen = 1.0; widen <= 4.0; widen *= 2.0)
         {
-            if (radiosityCache.FindReusableBlock(threadData->Stats(), errorBound * recursionSettings[depth].errorBoundFactor * widen, ipoint, normal, 1.0,
+            if (Cache(preparedSetId).FindReusableBlock(threadData->Stats(), errorBound * recursionSettings[depth].errorBoundFactor * widen, ipoint, normal, 1.0,
                                                  ambient_colour, depth, FINAL_TRACE, -1) > 0.0)
             {
                 ambient_colour = (ambient_colour * (1.0f - settings.grayThreshold)) + (settings.grayThreshold * ambient_colour.Greyscale());
@@ -761,7 +770,7 @@ double RadiosityFunction::GatherLight(const Vector3d& ipoint, const Vector3d& ra
         // TODO CLARIFY - [CLi] not perfectly sure yet when to use raw_normal instead of layer_normal; maybe just interpolate
         unsigned int okCountNonRaw = okCount - okCountRaw;
         bool fileUnderRawNormal = (okCountRaw > okCountNonRaw);
-        radiosityCache.AddBlock(cacheBlockPool, &(threadData->Stats()), ipoint, (fileUnderRawNormal ? raw_normal : layer_normal), brilliance, min_dist_vec,
+        Cache(ticket.preparedSetId).AddBlock(Pool(ticket.preparedSetId), &(threadData->Stats()), ipoint, (fileUnderRawNormal ? raw_normal : layer_normal), brilliance, min_dist_vec,
                                 dxs, dys, dzs, illuminance, mean_dist, smallest_dist, qualitySum/okCount,
                                 ticket.radiosityRecursionDepth, pretraceStep, tileId);
     }

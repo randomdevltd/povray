@@ -49,6 +49,7 @@
 
 // POV-Ray header files (core module)
 #include "core/core_fwd.h"
+#include "core/scene/tagfilter.h"
 #include "core/bounding/boundingbox.h"
 #include "core/colour/spectral.h"
 #include "core/math/randomsequence.h"
@@ -122,6 +123,9 @@ class Ray final : public BasicRay
         const LightSource *GetMediaLight() const { return mediaLight; }
         void SetMediaLight(const LightSource *light) { mediaLight = light; }
 
+        PreparedSetId GetPreparedSetId() const { return preparedSetId; }
+        void SetPreparedSetId(PreparedSetId view) { preparedSetId = view; }
+
         /// The path key this ray's random draws are hashed from.
         std::uint64_t GetKey() const { return key; }
         void SetKey(std::uint64_t k) { key = k; children = 0; }
@@ -144,6 +148,7 @@ class Ray final : public BasicRay
         mutable std::uint32_t children = 0;
         mutable DBL mediaErrorBudget = 0.0;
         const LightSource *mediaLight = nullptr;
+        PreparedSetId preparedSetId = 0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;

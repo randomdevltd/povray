@@ -61,7 +61,7 @@ namespace pov
 class BoundingTask final : public SceneTask
 {
     public:
-        BoundingTask(std::shared_ptr<BackendSceneData> sd, unsigned int bt, size_t seed);
+        BoundingTask(std::shared_ptr<BackendSceneData> sd, unsigned int bt, size_t seed, size_t preparedSetId = 0);
         virtual ~BoundingTask() override;
 
         virtual void Run() override;
@@ -74,6 +74,7 @@ class BoundingTask final : public SceneTask
     private:
         std::shared_ptr<BackendSceneData> sceneData;
         unsigned int boundingThreshold;
+        size_t preparedSetId;
 
         void SendFatalError(pov_base::Exception& e);
 };

@@ -42,6 +42,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
 #include <memory>
 
 // POV-Ray header files (base module)
@@ -74,6 +75,16 @@ namespace pov
 
 using std::vector;
 
+namespace
+{
+bool PhotonLightAffectsTarget(ConstObjectPtr object, const LightSource* light)
+{
+    if (!light->lightGroupLight)
+        return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
+    return std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end();
+}
+}
+
 PhotonEstimationTask::PhotonEstimationTask(ViewData *vd, size_t seed) :
     RenderTask(vd, seed, "Photon"),
     cooperate(*this)
@@ -97,14 +108,15 @@ void PhotonEstimationTask::Run()
 
     //  COUNT THE PHOTONS
     DBL factor;
-    photonCountEstimate = 0.0;
-
-    // global lights
+    DBL largestSetEstimate = 0.0;
     GetViewDataPtr()->Light_Is_Global = true;
-    for(vector<LightSource *>::iterator Light = GetSceneData()->lightSources.begin(); Light != GetSceneData()->lightSources.end(); Light++)
+    for (const auto& preparedSet : GetSceneData()->preparedSets)
     {
-        if((*Light)->Light_Type != FILL_LIGHT_SOURCE)
-            SearchThroughObjectsEstimatePhotons(GetSceneData()->objects, *Light);
+        photonCountEstimate = 0.0;
+        for (LightSource *light : preparedSet->lights)
+            if (light->Light_Type != FILL_LIGHT_SOURCE)
+                SearchThroughObjectsEstimatePhotons(preparedSet->objects, light);
+        largestSetEstimate = std::max(largestSetEstimate, photonCountEstimate);
     }
 
     // light_group lights
@@ -121,7 +133,8 @@ void PhotonEstimationTask::Run()
     }
     */
 
-    factor = (DBL)photonCountEstimate/GetSceneData()->photonSettings.surfaceCount;
+    photonCountEstimate = largestSetEstimate;
+    factor = photonCountEstimate/GetSceneData()->photonSettings.surfaceCount;
     factor = sqrt(factor);
     GetSceneData()->photonSettings.surfaceSeparation *= factor;
 
@@ -155,7 +168,7 @@ void PhotonEstimationTask::SearchThroughObjectsEstimatePhotons(vector<ObjectPtr>
             !((*Sib)->Type & LIGHT_SOURCE_OBJECT))
         {
             /* do not shoot photons if global lights are turned off for ObjectPtr */
-            if(!Test_Flag((*Sib), NO_GLOBAL_LIGHTS_FLAG))
+            if (PhotonLightAffectsTarget(*Sib, Light))
             {
                 EstimatePhotonsForObjectAndLight((*Sib), Light);
             }

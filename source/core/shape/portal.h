@@ -76,6 +76,12 @@ class Portal final : public ObjectBase
         bool farBack;
         bool farLights;
         PIGMENT *farPigment;
+        TagFilter frontFilterTags;     ///< view entered through this mouth's front
+        TagFilter backFilterTags;      ///< view entered through this mouth's back
+        TagFilter farFrontFilterTags;  ///< view entered through the far mouth's front
+        TagFilter farBackFilterTags;   ///< view entered through the far mouth's back
+        mutable PreparedSetId frontPreparedSetId = 0;
+        mutable PreparedSetId backPreparedSetId = 0;
         const Portal *partner;  ///< the other mouth, once made
         std::string origin;     ///< where it was written, for messages
 

@@ -285,6 +285,22 @@ void Parser::Get_Token ()
                     Write_Token(mToken.raw);
                     break;
 
+                case TAGS_TOKEN:
+                case ANY_TOKEN:
+                case NONE_TOKEN:
+                case FILTER_TAGS_TOKEN:
+                case FRONT_FILTER_TAGS_TOKEN:
+                case BACK_FILTER_TAGS_TOKEN:
+                    if (!parseRawIdentifiers && (sceneData->EffectiveLanguageVersion() >= 400))
+                        Write_Token(mToken.raw);
+                    else
+                    {
+                        if (sceneData->EffectiveLanguageVersion() < 400)
+                            mToken.raw.isReservedWord = false;
+                        Read_Symbol(mToken.raw);
+                    }
+                    break;
+
                 case HASH_TOKEN:
                     if (IsEndOfInvokedMacro())
                     {

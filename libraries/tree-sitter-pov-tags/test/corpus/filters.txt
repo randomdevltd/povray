@@ -1,0 +1,48 @@
+==================
+Operator precedence
+==================
+"room*" | "hero" & !none
+---
+(source_file (or_expression (string) (and_expression (string) (not_expression (none)))))
+
+==================
+Parenthesized filter declaration
+==================
+filter_tags { !("hidden" | none) & any }
+---
+(source_file (filter_tags (and_expression (not_expression (parenthesized_expression (or_expression (string) (none)))) (any))))
+
+==================
+Tag declaration with trailing comma
+==================
+tags { "left", "right", }
+---
+(source_file (tags (string) (string)))
+
+==================
+Empty tags
+==================
+tags {}
+---
+(source_file (tags))
+
+==================
+Comments and repeated negation
+==================
+/* filter */ !!any // end
+---
+(source_file (comment) (not_expression (not_expression (any))) (comment))
+
+==================
+Quoted escapes
+==================
+"line\nquote\"backslash\\"
+---
+(source_file (string))
+
+==================
+Left associative conjunction
+==================
+any & none & "*"
+---
+(source_file (and_expression (and_expression (any) (none)) (string)))

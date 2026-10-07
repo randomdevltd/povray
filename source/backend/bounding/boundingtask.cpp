@@ -149,10 +149,11 @@ class BSPProgress final : public BSPTree::Progress
         BSPProgress() = delete;
 };
 
-BoundingTask::BoundingTask(std::shared_ptr<BackendSceneData> sd, unsigned int bt, size_t seed) :
+BoundingTask::BoundingTask(std::shared_ptr<BackendSceneData> sd, unsigned int bt, size_t seed, size_t view) :
     SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), seed), boost::bind(&BoundingTask::SendFatalError, this, _1), "Bounding", sd),
     sceneData(sd),
-    boundingThreshold(bt)
+    boundingThreshold(bt),
+    preparedSetId(view)
 {
 }
 
@@ -167,33 +168,35 @@ void BoundingTask::AppendObject(ObjectPtr p)
 
 void BoundingTask::Run()
 {
-    if((sceneData->objects.size() < boundingThreshold) || (sceneData->boundingMethod == 0))
+    PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    view.boundingMethod = sceneData->boundingMethod;
+    if((view.objects.size() < boundingThreshold) || (view.boundingMethod == 0))
     {
-        SceneObjects objects(sceneData->objects);
-        sceneData->boundingMethod = 0;
-        sceneData->numberOfFiniteObjects = objects.finite.size();
-        sceneData->numberOfInfiniteObjects = objects.infinite.size() - objects.numLights;
+        SceneObjects objects(view.objects);
+        view.boundingMethod = 0;
+        view.numberOfFiniteObjects = objects.finite.size();
+        view.numberOfInfiniteObjects = objects.infinite.size() - objects.numLights;
         return;
     }
 
-    switch(sceneData->boundingMethod)
+    switch(view.boundingMethod)
     {
         case 2:
         {
             // new BSP tree code
-            SceneObjects objects(sceneData->objects);
+            SceneObjects objects(view.objects);
             BSPProgress progress(sceneData->sceneId, sceneData->frontendAddress, *this);
 
-            sceneData->objects.clear();
-            sceneData->objects.insert(sceneData->objects.end(), objects.finite.begin(), objects.finite.end());
-            sceneData->objects.insert(sceneData->objects.end(), objects.infinite.begin(), objects.infinite.end());
-            sceneData->numberOfFiniteObjects = objects.finite.size();
-            sceneData->numberOfInfiniteObjects = objects.infinite.size() - objects.numLights;
-            sceneData->tree = new BSPTree(sceneData->bspMaxDepth, sceneData->bspObjectIsectCost, sceneData->bspBaseAccessCost, sceneData->bspChildAccessCost, sceneData->bspMissChance);
-            sceneData->tree->build(progress, objects,
-                                   sceneData->nodes, sceneData->splitNodes, sceneData->objectNodes, sceneData->emptyNodes,
-                                   sceneData->maxObjects, sceneData->averageObjects, sceneData->maxDepth, sceneData->averageDepth,
-                                   sceneData->aborts, sceneData->averageAborts, sceneData->averageAbortObjects, sceneData->inputFile);
+            view.objects.clear();
+            view.objects.insert(view.objects.end(), objects.finite.begin(), objects.finite.end());
+            view.objects.insert(view.objects.end(), objects.infinite.begin(), objects.infinite.end());
+            view.numberOfFiniteObjects = objects.finite.size();
+            view.numberOfInfiniteObjects = objects.infinite.size() - objects.numLights;
+            view.tree = new BSPTree(sceneData->bspMaxDepth, sceneData->bspObjectIsectCost, sceneData->bspBaseAccessCost, sceneData->bspChildAccessCost, sceneData->bspMissChance);
+            view.tree->build(progress, objects,
+                             view.nodes, view.splitNodes, view.objectNodes, view.emptyNodes,
+                             view.maxObjects, view.averageObjects, view.maxDepth, view.averageDepth,
+                             view.aborts, view.averageAborts, view.averageAbortObjects, sceneData->inputFile);
             break;
         }
         case 1:
@@ -201,10 +204,10 @@ void BoundingTask::Run()
             // old bounding box code
             unsigned int numberOfLightSources;
 
-            Build_Bounding_Slabs(&(sceneData->boundingSlabs), sceneData->objects, sceneData->numberOfFiniteObjects,
-                                 sceneData->numberOfInfiniteObjects, numberOfLightSources);
-            delete sceneData->flatSlabs;
-            sceneData->flatSlabs = Build_Flat_BBox_Tree(sceneData->boundingSlabs);
+            Build_Bounding_Slabs(&(view.boundingSlabs), view.objects, view.numberOfFiniteObjects,
+                                 view.numberOfInfiniteObjects, numberOfLightSources);
+            delete view.flatSlabs;
+            view.flatSlabs = Build_Flat_BBox_Tree(view.boundingSlabs);
             break;
         }
     }

@@ -251,6 +251,11 @@
     <ClCompile Include="..\..\source\core\scene\camera.cpp">
       <Filter>Core Source\Scene</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\source\core\scene\tagfilter.cpp">
+      <Filter>Core Source\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\libraries\tree-sitter\lib\src\lib.c" />
+    <ClCompile Include="..\..\libraries\tree-sitter-pov-tags\src\parser.c" />
     <ClCompile Include="..\..\source\core\math\spline.cpp">
       <Filter>Core Source\Math</Filter>
     </ClCompile>
@@ -485,6 +490,9 @@
       <Filter>Core Headers\Scene</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\core\scene\camera.h">
+      <Filter>Core Headers\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\source\core\scene\tagfilter.h">
       <Filter>Core Headers\Scene</Filter>
     </ClInclude>
     <ClInclude Include="..\..\source\core\math\spline.h">

@@ -51,6 +51,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/material/texture.h"
+#include "core/scene/tagfilter.h"
 
 namespace pov
 {
@@ -191,6 +192,7 @@ class ObjectBase
         double RadiosityImportance;
         bool RadiosityImportanceSet;
         unsigned int Flags;
+        std::vector<std::string> tags;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -216,7 +218,7 @@ class ObjectBase
             Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags),
-            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox)
+            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags)
         {
             if (transplant)
             {

@@ -12,3 +12,6 @@ libraries/openexr/*.h   linguist-language=C++
 
 # Do not auto-merge version number file.
 source/base/version.h   -merge
+
+# Preserve the upstream runtime byte for byte, including its whitespace.
+libraries/tree-sitter/lib/src/** whitespace=-blank-at-eol,-blank-at-eof

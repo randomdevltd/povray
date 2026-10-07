@@ -263,3 +263,4 @@ $RECYCLE.BIN/
 # Used specifically by our own workflows
 /artifact*
 /tools/bench/pcount
+/tests/prepared-sets/

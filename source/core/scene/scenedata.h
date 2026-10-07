@@ -46,16 +46,20 @@
 // C++ standard header files
 #include <atomic>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 // POV-Ray header files (base module)
 #include "base/image/colourspace_fwd.h"
 
 // POV-Ray header files (core module)
 #include "core/lighting/radiosity.h"
+#include "core/bounding/boundingbox_fwd.h"
 #include "core/scene/atmosphere_fwd.h"
 #include "core/scene/camera.h"
+#include "core/scene/tagfilter.h"
 #include "core/shape/truetype.h"
 
 namespace pov
@@ -71,6 +75,26 @@ using namespace pov_base;
 
 class BSPTree;
 class SubsurfaceCache;
+
+struct PreparedSet final
+{
+    std::vector<ObjectPtr> objects;
+    std::vector<LightSource*> lights;
+    std::unordered_set<ConstObjectPtr> participatingObjects;
+    PhotonMap surfacePhotonMap;
+    PhotonMap mediaPhotonMap;
+    std::string photonKey;
+    unsigned int boundingMethod = 0;
+    unsigned int numberOfFiniteObjects = 0;
+    unsigned int numberOfInfiniteObjects = 0;
+    BBOX_TREE *boundingSlabs = nullptr;
+    FlatBBoxTree *flatSlabs = nullptr;
+    BSPTree *tree = nullptr;
+    unsigned int nodes = 0, splitNodes = 0, objectNodes = 0, emptyNodes = 0, maxObjects = 0, maxDepth = 0, aborts = 0;
+    float averageObjects = 0.0f, averageDepth = 0.0f, averageAborts = 0.0f, averageAbortObjects = 0.0f;
+
+    ~PreparedSet();
+};
 
 /// Class holding scene specific data.
 ///
@@ -96,6 +120,19 @@ class SceneData
 
         /// list of all shape objects
         std::vector<ObjectPtr> objects;
+        TagFilter defaultFilterTags;
+        TagFilter parseFilterTags;
+        std::vector<std::unique_ptr<PreparedSet>> preparedSets;
+        std::map<TagFilter, PreparedSetId> preparedSetFilters;
+        unsigned int maxPreparedSetFiniteObjects = 0;
+
+        TagFilter EffectiveFilterTags(const TagFilter& requested) const;
+        PreparedSetId RegisterPreparedSet(const TagFilter& filter);
+        PreparedSetId FindPreparedSet(const TagFilter& filter) const;
+        PreparedSet& GetPreparedSet(PreparedSetId index) { return *preparedSets.at(index); }
+        const PreparedSet& GetPreparedSet(PreparedSetId index) const { return *preparedSets.at(index); }
+        bool InPreparedSet(ConstObjectPtr object, PreparedSetId index) const;
+        void FinalizeScreenCameras();
         /// list of all global light sources
         std::vector<LightSource*> lightSources;
         /// list of all lights that are part of light groups
@@ -220,10 +257,10 @@ class SceneData
         /// radiosity settings
         SceneRadiositySettings radiositySettings;
 
-        /// generated surface photon map data // TODO FIXME - technically camera-independent, but computed for every view [trf]
-        PhotonMap surfacePhotonMap;
-        /// generated media photon map data // TODO FIXME - technically camera-independent, but computed for every view [trf]
-        PhotonMap mediaPhotonMap;
+        double surfacePhotonMinGatherRad = 0.0;
+        double surfacePhotonMinGatherRadMult = 1.0;
+        double mediaPhotonMinGatherRad = 0.0;
+        double mediaPhotonMinGatherRadMult = 1.0;
 
         ScenePhotonSettings photonSettings; // TODO FIXME - is modified! [trf]
 
@@ -247,6 +284,7 @@ class SceneData
         std::vector<Camera> cameras; // TODO - this is support for an experimental feature and may be changed or removed
         /// The cameras of the scene's screens, one per screen block parsed.
         std::vector<std::shared_ptr<const Camera>> screenCameras;
+        std::vector<std::weak_ptr<const Camera>> screenCameraCandidates;
 
         // this is for fractal support
         int Fractal_Iteration_Stack_Length; // TODO - move somewhere else

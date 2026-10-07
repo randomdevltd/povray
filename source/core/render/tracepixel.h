@@ -133,6 +133,7 @@ class TracePixel final : public Trace
         DBL aspectRatio;
         /// camera
         Camera camera;
+        PreparedSetId preparedSetId = 0;
         /// scene data
         std::shared_ptr<SceneData> sceneData;
         /// thread data

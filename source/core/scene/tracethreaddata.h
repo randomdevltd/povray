@@ -59,6 +59,7 @@
 #include "core/math/randomsequence_fwd.h"
 #include "core/math/vector.h"
 #include "core/scene/scenedata_fwd.h"
+#include "core/scene/tagfilter.h"
 #include "core/support/cracklecache_fwd.h"
 #include "core/support/statistics_fwd.h"
 
@@ -183,8 +184,11 @@ class TraceThreadData : public ThreadData
         int passThruThis;           // is this a pass-through object encountered before the target?
         int passThruPrev;           // was the previous object a pass-through object encountered before the target?
         bool Light_Is_Global;       // is the current light global? (not part of a light_group?)
-        PhotonMap* surfacePhotonMap;
-        PhotonMap* mediaPhotonMap;
+        PhotonMap& SurfacePhotonMap(PreparedSetId preparedSetId);
+        PhotonMap& MediaPhotonMap(PreparedSetId preparedSetId);
+        PhotonMap* FindSurfacePhotonMap(PreparedSetId preparedSetId) const;
+        PhotonMap* FindMediaPhotonMap(PreparedSetId preparedSetId) const;
+        std::size_t PhotonMapSetCount() const;
 
         CrackleCache* mpCrackleCache;
 
@@ -238,6 +242,8 @@ class TraceThreadData : public ThreadData
 
         /// current tile index (for crackle cache expiry)
         size_t progress_index;
+        std::vector<std::unique_ptr<PhotonMap>> surfacePhotonMaps;
+        std::vector<std::unique_ptr<PhotonMap>> mediaPhotonMaps;
 };
 
 /// Makes a tracer, or none, the one `screen` patterns trace through, for the scope of a pigment evaluation.

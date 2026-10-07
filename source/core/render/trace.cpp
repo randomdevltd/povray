@@ -148,7 +148,7 @@ Trace::Trace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFl
         it->resize(max(1, (int) threadData->lightSources.size()));
 
     if(sceneData->boundingMethod == 2)
-        mailbox = BSPTree::Mailbox(sceneData->numberOfFiniteObjects);
+        mailbox = BSPTree::Mailbox(sceneData->maxPreparedSetFiniteObjects);
 }
 
 Trace::~Trace()
@@ -162,6 +162,14 @@ struct PortalNesting final
     TraceThreadData *thread;
     explicit PortalNesting(TraceThreadData *t) : thread(t) { ++t->portalDepth; }
     ~PortalNesting() { --thread->portalDepth; }
+};
+
+struct PreparedSetTicketScope final
+{
+    TraceTicket& ticket;
+    size_t previous;
+    PreparedSetTicketScope(TraceTicket& t, size_t view) : ticket(t), previous(t.preparedSetId) { ticket.preparedSetId = view; }
+    ~PreparedSetTicketScope() { ticket.preparedSetId = previous; }
 };
 
 struct SurfacePhotonGatherNesting final
@@ -193,30 +201,31 @@ bool Trace::InteriorMediaReach(const Ray& ray) const
     return ray.IsHollowRay() || !sceneData->solidBlocksInteriorMedia;
 }
 
-void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found)
+void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId)
 {
-    if (sceneData->boundingMethod == 2)
+    const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    if (view.boundingMethod == 2)
     {
         HasInteriorPointObjectCondition precond;
         ContainingInteriorsPointObjectCondition postcond(found);
-        BSPInsideCondFunctor ifn(point, sceneData->objects, threadData, precond, postcond);
+        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, precond, postcond);
 
         mailbox.clear();
-        (*sceneData->tree)(point, ifn, mailbox);
+        (*view.tree)(point, ifn, mailbox);
 
         // test infinite objects
-        for (std::vector<ObjectPtr>::iterator object = sceneData->objects.begin() + sceneData->numberOfFiniteObjects; object != sceneData->objects.end(); object++)
+        for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin() + view.numberOfFiniteObjects; object != view.objects.end(); object++)
             if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
-    else if ((sceneData->boundingMethod == 0) || (sceneData->boundingSlabs == nullptr))
+    else if ((view.boundingMethod == 0) || (view.boundingSlabs == nullptr))
     {
-        for (std::vector<ObjectPtr>::iterator object = sceneData->objects.begin(); object != sceneData->objects.end(); object++)
+        for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin(); object != view.objects.end(); object++)
             if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else
-        FindContainingInteriorsTree(point, sceneData->boundingSlabs, found, threadData);
+        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData);
 }
 
 void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight)
@@ -226,7 +235,8 @@ void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, Mat
     if (Test_Flag(isect.Object, INVERTED_FLAG))
         rawnormal.invert();
 
-    const bool entered = portal.Admits(rawnormal, ray.Direction);
+    const bool frontSide = portal.EntersFront(rawnormal, ray.Direction);
+    const bool entered = frontSide ? portal.front : portal.back;
     if (dot(rawnormal, ray.Direction) > 0.0)
         rawnormal.invert();
 
@@ -250,7 +260,7 @@ void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, Mat
 
     MathColour view;
     ColourChannel viewTransm = 0.0;
-    if ((open > 0.0) && !TracePortalView(portal, isect, ray, rawnormal, weight * open, view, viewTransm))
+    if ((open > 0.0) && !TracePortalView(portal, isect, ray, rawnormal, frontSide, weight * open, view, viewTransm))
         open = 0.0;
 
     colour = tint * view * open;
@@ -267,8 +277,8 @@ void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, Mat
     }
 }
 
-bool Trace::TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, COLC weight,
-                            MathColour& view, ColourChannel& transm)
+bool Trace::TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, bool frontSide,
+                            COLC weight, MathColour& view, ColourChannel& transm)
 {
     const TraceTicket& ticket = ray.GetTicket();
     const unsigned int limit = (portal.maxDepth > 0) ? portal.maxDepth : ticket.maxAllowedTraceLevel;
@@ -306,7 +316,8 @@ bool Trace::TracePortalView(const Portal& portal, Intersection& isect, const Ray
     nray.Direction = direction.normalized();
     nray.ResetInteriors();
     RayInteriorVector containing;
-    FindContainingInteriors(origin, containing);
+    nray.SetPreparedSetId(frontSide ? portal.frontPreparedSetId : portal.backPreparedSetId);
+    FindContainingInteriors(origin, containing, nray.GetPreparedSetId());
     nray.AppendInteriors(containing);
 
     if (!portal.exit)
@@ -344,6 +355,7 @@ bool Trace::TracePortalView(const Portal& portal, Intersection& isect, const Ray
 
 double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth, bool missOpen)
 {
+    PreparedSetTicketScope preparedSetScope(ray.GetTicket(), ray.GetPreparedSetId());
     Intersection bestisect;
     bool found;
     NoSomethingFlagRayObjectCondition precond;
@@ -620,19 +632,20 @@ double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colou
 
 bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)
 {
-    switch(sceneData->boundingMethod)
+    PreparedSet& view = sceneData->GetPreparedSet(ray.GetPreparedSetId());
+    switch(view.boundingMethod)
     {
         case 2:
         {
-            BSPIntersectFunctor ifn(bestisect, ray, sceneData->objects, threadData);
+            BSPIntersectFunctor ifn(bestisect, ray, view.objects, threadData);
             bool found = false;
 
             mailbox.clear();
 
-            found = (*(sceneData->tree))(ray, ifn, mailbox, bestisect.Depth);
+            found = (*(view.tree))(ray, ifn, mailbox, bestisect.Depth);
 
             // test infinite objects
-            for(vector<ObjectPtr>::iterator it = sceneData->objects.begin() + sceneData->numberOfFiniteObjects; it != sceneData->objects.end(); it++)
+            for(vector<ObjectPtr>::iterator it = view.objects.begin() + view.numberOfFiniteObjects; it != view.objects.end(); it++)
             {
                 Intersection isect;
 
@@ -647,17 +660,17 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)
         }
         case 1:
         {
-            if (sceneData->flatSlabs != nullptr)
-                return (Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, ray, &bestisect, threadData));
-            if (sceneData->boundingSlabs != nullptr)
-                return (Intersect_BBox_Tree(priorityQueue, sceneData->boundingSlabs, ray, &bestisect, threadData));
+            if (view.flatSlabs != nullptr)
+                return (Intersect_Flat_BBox_Tree(*view.flatSlabs, ray, &bestisect, threadData));
+            if (view.boundingSlabs != nullptr)
+                return (Intersect_BBox_Tree(priorityQueue, view.boundingSlabs, ray, &bestisect, threadData));
         }
         // FALLTHROUGH
         case 0:
         {
             bool found = false;
 
-            for(vector<ObjectPtr>::iterator it = sceneData->objects.begin(); it != sceneData->objects.end(); it++)
+            for(vector<ObjectPtr>::iterator it = view.objects.begin(); it != view.objects.end(); it++)
             {
                 Intersection isect;
 
@@ -675,21 +688,27 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)
     return false;
 }
 
+bool Trace::InPreparedSet(ConstObjectPtr object, const Ray& ray) const
+{
+    return sceneData->InPreparedSet(object, ray.GetPreparedSetId());
+}
+
 bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition)
 {
-    switch(sceneData->boundingMethod)
+    PreparedSet& view = sceneData->GetPreparedSet(ray.GetPreparedSetId());
+    switch(view.boundingMethod)
     {
         case 2:
         {
-            BSPIntersectCondFunctor ifn(bestisect, ray, sceneData->objects, threadData, precondition, postcondition);
+            BSPIntersectCondFunctor ifn(bestisect, ray, view.objects, threadData, precondition, postcondition);
             bool found = false;
 
             mailbox.clear();
 
-            found = (*(sceneData->tree))(ray, ifn, mailbox, bestisect.Depth);
+            found = (*(view.tree))(ray, ifn, mailbox, bestisect.Depth);
 
             // test infinite objects
-            for(vector<ObjectPtr>::iterator it = sceneData->objects.begin() + sceneData->numberOfFiniteObjects; it != sceneData->objects.end(); it++)
+            for(vector<ObjectPtr>::iterator it = view.objects.begin() + view.numberOfFiniteObjects; it != view.objects.end(); it++)
             {
                 if(precondition(ray, *it, 0.0) == true)
                 {
@@ -707,17 +726,17 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray, const RayO
         }
         case 1:
         {
-            if (sceneData->flatSlabs != nullptr)
-                return (Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, ray, &bestisect, precondition, postcondition, threadData));
-            if (sceneData->boundingSlabs != nullptr)
-                return (Intersect_BBox_Tree(priorityQueue, sceneData->boundingSlabs, ray, &bestisect, precondition, postcondition, threadData));
+            if (view.flatSlabs != nullptr)
+                return (Intersect_Flat_BBox_Tree(*view.flatSlabs, ray, &bestisect, precondition, postcondition, threadData));
+            if (view.boundingSlabs != nullptr)
+                return (Intersect_BBox_Tree(priorityQueue, view.boundingSlabs, ray, &bestisect, precondition, postcondition, threadData));
         }
         // FALLTHROUGH
         case 0:
         {
             bool found = false;
 
-            for(vector<ObjectPtr>::iterator it = sceneData->objects.begin(); it != sceneData->objects.end(); it++)
+            for(vector<ObjectPtr>::iterator it = view.objects.begin(); it != view.objects.end(); it++)
             {
                 if(precondition(ray, *it, 0.0) == true)
                 {
@@ -1359,7 +1378,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     bool one_colour_found, colour_found;
     bool tir_occured;
     PhotonGatherer *surfacePhotonGatherer = nullptr;
-    const bool gatherSurfacePhotons = sceneData->photonSettings.photonsEnabled && sceneData->surfacePhotonMap.numPhotons > 0;
+    PhotonMap& photonMap = sceneData->GetPreparedSet(ray.GetPreparedSetId()).surfacePhotonMap;
+    const bool gatherSurfacePhotons = sceneData->photonSettings.photonsEnabled && photonMap.numPhotons > 0;
     const size_t gatherIndex = surfacePhotonGatherDepth;
     SurfacePhotonGatherNesting gatherNesting(surfacePhotonGatherDepth, gatherSurfacePhotons);
 
@@ -1408,8 +1428,9 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     if(gatherSurfacePhotons)
     {
         if(gatherIndex == surfacePhotonGatherers.size())
-            surfacePhotonGatherers.emplace_back(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
+            surfacePhotonGatherers.emplace_back(new PhotonGatherer(&photonMap, sceneData->photonSettings));
         surfacePhotonGatherer = surfacePhotonGatherers[gatherIndex].get();
+        surfacePhotonGatherer->map = &photonMap;
         surfacePhotonGatherer->gathered = false;
     }
 
@@ -1730,7 +1751,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 }
             }
 
-            if(sceneData->photonSettings.photonsEnabled && sceneData->surfacePhotonMap.numPhotons > 0)
+            if(gatherSurfacePhotons)
             {
                 // NK phmap - now do the same for the photons in the area
                 if(!Test_Flag(isect.Object, PH_IGNORE_PHOTONS_FLAG))
@@ -2218,14 +2239,16 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
         for(int i = 0; i < threadData->lightSources.size(); i++)
-            ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
+            if (InPreparedSet(threadData->lightSources[i], eye))
+                ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
     }
 
     // local light sources from a light group, if any
     if(!object->LLights.empty())
     {
         for(int i = 0; i < object->LLights.size(); i++)
-            ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+            if (InPreparedSet(object->LLights[i], eye))
+                ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
 
     // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
@@ -2234,10 +2257,12 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
             for(const LightSource *light : threadData->lightSources)
                 for(const LightSource *image : light->portalImages)
-                    ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+                    if (InPreparedSet(image->portal, eye))
+                        ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
         for(const LightSource *light : object->LLights)
             for(const LightSource *image : light->portalImages)
-                ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+                if (InPreparedSet(image->portal, eye))
+                    ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
 }
 
@@ -2325,10 +2350,12 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
         for(int i = 0; i < threadData->lightSources.size(); i++)
-            consider(*threadData->lightSources[i], i);
+            if (InPreparedSet(threadData->lightSources[i], eye))
+                consider(*threadData->lightSources[i], i);
     }
     for(int i = 0; i < object->LLights.size(); i++)
-        consider(*object->LLights[i], -1);
+        if (InPreparedSet(object->LLights[i], eye))
+            consider(*object->LLights[i], -1);
 
     const size_t end = lightCandidates.size();
     const size_t order = lightOrder.size();
@@ -2405,7 +2432,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
     int expanded = false;
     double att;  // attenuation for lambertian compensation & filters
 
-    if (!sceneData->photonSettings.photonsEnabled || sceneData->surfacePhotonMap.numPhotons<1)
+    if (!sceneData->photonSettings.photonsEnabled || gatherer.map->numPhotons<1)
         return;
 
     if ((Finish->Diffuse == 0.0) && (Finish->DiffuseBack == 0.0) && (Finish->Specular == 0.0) && (Finish->Phong == 0.0))
@@ -2697,6 +2724,17 @@ void Trace::TracePortalLightShadowRay(const LightSource &image, double& lightsou
     MTransPoint(target, crossing.IPoint, &portal.map);
     MTransDirection(lightOffset, offset, &portal.map);
     Ray beyond(lightsourceray);
+    Vector3d portalNormal;
+    crossing.Object->Normal(portalNormal, &crossing, threadData);
+    if (Test_Flag(crossing.Object, INVERTED_FLAG))
+        portalNormal.invert();
+    beyond.SetPreparedSetId(portal.EntersFront(portalNormal, lightsourceray.Direction) ?
+        portal.frontPreparedSetId : portal.backPreparedSetId);
+    if (!InPreparedSet(&light, beyond))
+    {
+        lightcolour.Clear();
+        return;
+    }
     double farDepth;
     ComputeOneWhiteLightRay(light, farDepth, beyond, target, lightOffset);
     if ((open <= 0.0) || (farDepth <= 0.0))
@@ -2722,7 +2760,7 @@ void Trace::TracePortalLightShadowRay(const LightSource &image, double& lightsou
     AttenuatePortalLightPiece(light, here, hereDepth, lightcolour);
 
     RayInteriorVector containing;
-    FindContainingInteriors(target, containing);
+    FindContainingInteriors(target, containing, beyond.GetPreparedSetId());
     beyond.ResetInteriors();
     beyond.AppendInteriors(containing);
     TracePointLightShadowRay(image, farDepth, beyond, lightcolour);
@@ -2758,6 +2796,8 @@ void Trace::DivertPortalLight(const Ray& ray, double reach, MathColour& lightcol
 {
     for (const Portal *mouth : sceneData->portalMouths)
     {
+        if (!InPreparedSet(mouth, ray))
+            continue;
         if ((crossed != nullptr) && ((mouth == crossed) || (mouth == crossed->partner)))
             continue;
         if (!mouth->Diverts(true) && !mouth->Diverts(false))
@@ -3168,6 +3208,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             cacheObject = lightSourceLevel1ShadowCache[lightsource.index];
         else if (lightSourceOtherShadowCache[lightsource.index] != nullptr)
             cacheObject = lightSourceOtherShadowCache[lightsource.index];
+        if ((cacheObject != nullptr) && !InPreparedSet(cacheObject, lightsourceray))
+            cacheObject = nullptr;
 
         // if there was an object in the light source shadow cache, check that first
         if (cacheObject != nullptr)
@@ -3216,11 +3258,12 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
 
         threadData->Stats()[Shadow_Ray_Tests]++;
 
-        if (qualityFlags.shadows && (sceneData->boundingMethod == 1) && (sceneData->flatSlabs != nullptr))
+        const PreparedSet& shadowView = sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId());
+        if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
         {
             OpaqueShadowStopCondition stop(std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth));
             const IsoShadowWindow window(threadData, SHADOW_TOLERANCE, stop.farthest);
-            foundIntersection = Intersect_Flat_BBox_Tree(*sceneData->flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
+            foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
         }
         else
             foundIntersection = FindIntersection(boundedIntersection, lightsourceray, precond, postcond);
@@ -3548,7 +3591,7 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     // 4) LightA has photon refraction set to "off"
     // 5) Neither GlassSphereB nor LightA has photon refraction set to "on"
     if((sceneData->photonSettings.photonsEnabled == true) &&
-        (sceneData->surfacePhotonMap.numPhotons > 0) &&
+        (sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0) &&
         (!threadData->litObjectIgnoresPhotons) &&
         (Test_Flag(isect.Object,PH_TARGET_FLAG)) &&
         (!Test_Flag(isect.Object,PH_RFR_OFF_FLAG)) &&
@@ -5157,14 +5200,16 @@ ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
 }
 
 // The global lights unless the object turns them off, then those of its light group.
-void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights)
+void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId)
 {
     lights.clear();
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
         for(int i = 0; i < threadData->lightSources.size(); i++)
-            lights.push_back(threadData->lightSources[i]);
+            if (sceneData->InPreparedSet(threadData->lightSources[i], preparedSetId))
+                lights.push_back(threadData->lightSources[i]);
     for(int i = 0; i < object->LLights.size(); i++)
-        lights.push_back(object->LLights[i]);
+        if (sceneData->InPreparedSet(object->LLights[i], preparedSetId))
+            lights.push_back(object->LLights[i]);
 }
 
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.
@@ -5450,10 +5495,10 @@ static Vector3d SubsurfacePhotonNormal(Intersection& hit, TraceThreadData* data)
     return normal;
 }
 
-bool Trace::SubsurfacePhotonsEnabled(ConstObjectPtr receiver) const
+bool Trace::SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId preparedSetId) const
 {
     return sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
-           (sceneData->surfacePhotonMap.numPhotons > 0) && !Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
+           (sceneData->GetPreparedSet(preparedSetId).surfacePhotonMap.numPhotons > 0) && !Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
 }
 
 bool Trace::UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const
@@ -5566,9 +5611,10 @@ bool Trace::ProbeSubsurfacePhotonBoundary(const Vector3d& location, const Vector
 bool Trace::SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incoming, ObjectPtr receiver, double rootTolerance,
                                     Vector3d& outward, TraceTicket& ticket)
 {
-    SubsurfacePhotonBoundaries* table = threadData->subsurfaceCache ? &threadData->subsurfaceCache->photonBoundaries : nullptr;
+    const PhotonMap& map = sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap;
+    SubsurfacePhotonBoundaries* table = threadData->subsurfaceCache ? &threadData->subsurfaceCache->PhotonBoundaries(map) : nullptr;
     std::uint64_t key = 0;
-    bool keyed = table && table->Key(sceneData->surfacePhotonMap, &photon, receiver, key);
+    bool keyed = table && table->Key(map, &photon, receiver, key);
     float folded[2];
     if (keyed && table->Find(key, folded))
         threadData->Stats()[Subsurface_Photon_Boundaries_Reused]++;
@@ -5577,7 +5623,7 @@ bool Trace::SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incomi
         threadData->Stats()[Subsurface_Photon_Boundaries_Computed]++;
         Vector3d location(photon.Loc);
         double tolerance = SubsurfacePhotonTolerance(location, rootTolerance);
-        double probe = SubsurfacePhotonProbe(receiver, tolerance, sceneData->surfacePhotonMap.minGatherRad);
+        double probe = SubsurfacePhotonProbe(receiver, tolerance, map.minGatherRad);
         Vector3d axis = incoming, found;
         {
             SubsurfacePhotonBoundaryProbe probeState(threadData->subsurfacePhotonBoundaryProbe);
@@ -5609,8 +5655,8 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
                                                   PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud)
 {
     MathColour irradiance;
-    const PhotonMap& map = sceneData->surfacePhotonMap;
-    if (!SubsurfacePhotonsEnabled(receiver) || !(eta > 0.0) || !std::isfinite(eta) ||
+    const PhotonMap& map = sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap;
+    if (!SubsurfacePhotonsEnabled(receiver, ticket.preparedSetId) || !(eta > 0.0) || !std::isfinite(eta) ||
         !(map.minGatherRad > 0.0) || !std::isfinite(map.minGatherRad) || !(map.gatherRadStep >= 0.0) ||
         !std::isfinite(map.gatherRadStep) || (map.gatherNumSteps < 1))
         return irradiance;
@@ -6012,6 +6058,7 @@ void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
             lock.unlock();
             // A shared cell comes out the same whichever ray needed it first, so its jobs trace from a ticket of their own.
             TraceTicket jobTicket(sceneData->parsedMaxTraceLevel, sceneData->parsedAdcBailout);
+            jobTicket.preparedSetId = cloud.preparedSetId;
             try
             {
                 CellQuality quality(qualityFlags);
@@ -6162,7 +6209,7 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     std::unique_ptr<PhotonGatherer> gatherer;
     if (key.photons)
-        gatherer.reset(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
+        gatherer.reset(new PhotonGatherer(&sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap, sceneData->photonSettings));
     for (int k = first; k < last; k++)
     {
         SubsurfacePoint& point = cell.points[k];
@@ -6197,7 +6244,7 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         }
         point.id = k;
         MathColour ambient;
-        if (key.radiosity && radiosity.LookupPretraceAmbient(point.position, normal, ambient))
+        if (key.radiosity && radiosity.LookupPretraceAmbient(point.position, normal, ambient, ticket.preparedSetId))
             for (int j = 0; j < MathColour::channels; j++)
                 cell.ambient[k * MathColour::channels + j] = ambient[j];
     }
@@ -6266,13 +6313,14 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
                                 const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud)
 {
     cloud.object = SubsurfaceObject(out);
+    cloud.preparedSetId = eye.GetPreparedSetId();
     cloud.edge = false;
     if (cloud.photons && !UniformSubsurfacePhotonReceiver(cloud.object, cloud.object))
         return false;
     if (cloud.object->interior == nullptr)
         return false;
     // Cloud points hold a shadow per light of the whole object, which a part in a light group of its own cannot use.
-    CollectSubsurfaceLights(cloud.object, cloud.lights);
+    CollectSubsurfaceLights(cloud.object, cloud.lights, eye.GetPreparedSetId());
     if (cloud.lights != lights)
         return false;
     double mm = sceneData->mmPerUnit;
@@ -6359,7 +6407,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     for (int cy = lo[Y]; cy <= hi[Y]; cy++)
     for (int cz = lo[Z]; cz <= hi[Z]; cz++)
     {
-        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.photons, cloud.radiosity, cloud.medium };
+        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.photons, cloud.radiosity, cloud.medium, cloud.preparedSetId };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
@@ -7034,7 +7082,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);
 
     std::vector<const LightSource*> lights;
-    CollectSubsurfaceLights(out.Object, lights);
+    CollectSubsurfaceLights(out.Object, lights, Eye.GetPreparedSetId());
 
     // Shading points the cloud cannot serve, and radiosity in the pretrace (the cache still filling), use method 1.
     int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
@@ -7044,7 +7092,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     cloudData.radiosity = cloudRadiosity;
-    cloudData.photons = SubsurfacePhotonsEnabled(out.Object);
+    cloudData.photons = SubsurfacePhotonsEnabled(out.Object, Eye.GetPreparedSetId());
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
@@ -7070,7 +7118,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         if (photonSamples)
         {
             if (!gatherer)
-                gatherer.reset(new PhotonGatherer(&sceneData->surfacePhotonMap, sceneData->photonSettings));
+                gatherer.reset(new PhotonGatherer(&sceneData->GetPreparedSet(Eye.GetPreparedSetId()).surfacePhotonMap, sceneData->photonSettings));
+            gatherer->map = &sceneData->GetPreparedSet(Eye.GetPreparedSetId()).surfacePhotonMap;
             if (method == kSubsurfaceMethodPointCloud)
                 threadData->Stats()[Subsurface_Photon_Fallbacks]++;
             projectedPhotons = ComputeProjectedSubsurfacePhotons(out, sampleBase, profile, flesh, ftOut, sceneData->subsurfaceSamplesDiffuse, *gatherer,

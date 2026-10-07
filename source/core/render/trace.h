@@ -195,12 +195,13 @@ struct TraceTicket final
 
     /// eye whose distance spaces radiosity samples; null takes the radiosity functor's camera
     const Vector3d *radiosityEye;
+    PreparedSetId preparedSetId;
 
     TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
                 float riq = -1.0, float rq = 1.0):
         traceLevel(0), maxAllowedTraceLevel(mtl), maxFoundTraceLevel(0), adcBailout(adcb), alphaBackground(ab),
         radiosityRecursionDepth(rrd), subsurfaceRecursionDepth(ssrd), radiosityImportanceQueried(riq),
-        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0), radiosityEye(nullptr)
+        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0), radiosityEye(nullptr), preparedSetId(0)
     {}
 };
 
@@ -238,7 +239,7 @@ class Trace
                 virtual void ComputeAmbient(const Vector3d& ipoint, const Vector3d& raw_normal, const Vector3d& layer_normal, double brilliance, MathColour& ambient_colour, double weight, TraceTicket& ticket) { }
                 virtual bool CheckRadiosityTraceLevel(const TraceTicket& ticket) { return false; }
                 virtual bool IsFinalTrace() const { return false; } ///< whether the pretrace's samples are all there
-                virtual bool LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour) { return false; }
+                virtual bool LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour, PreparedSetId preparedSetId) { return false; }
         };
 
         /// @todo TraceThreadData already holds a reference to SceneData.
@@ -293,8 +294,9 @@ class Trace
         bool FindIntersection(Intersection& isect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, double closest = HUGE_VAL);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
+        bool InPreparedSet(ConstObjectPtr object, const Ray& ray) const;
         /// Adds the interiors of the objects containing a point.
-        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found);
+        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId = 0);
         /// Whether interior media on the ray's interiors are integrated: a non-hollow one hides them only before version 4.0.
         bool InteriorMediaReach(const Ray& ray) const;
 
@@ -605,8 +607,8 @@ class Trace
         /// Shades a hit on a portal: the view beyond it where it is open and entered, the ray going on past it elsewhere.
         void TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight);
         /// Traces the view through a portal entered at a hit; false where it leaves nothing to show.
-        bool TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, COLC weight,
-                             MathColour& view, ColourChannel& transm);
+        bool TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, bool frontSide,
+                             COLC weight, MathColour& view, ColourChannel& transm);
 
         /// Compute the refraction contribution.
         ///
@@ -1084,6 +1086,7 @@ class Trace
         /// An object's irradiance cloud as one shading point sees it: its levels, lights and the cells within reach.
         struct SubsurfaceCloud
         {
+            PreparedSetId preparedSetId = 0;
             ObjectPtr object = nullptr;
             const SubsurfaceFlesh *flesh = nullptr;
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
@@ -1139,7 +1142,7 @@ class Trace
                                          std::uint64_t key);
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key);
-        bool SubsurfacePhotonsEnabled(ConstObjectPtr receiver) const;
+        bool SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId preparedSetId) const;
         bool UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const;
         bool RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double radius,
                                              Vector3d& outward, TraceTicket& ticket);
@@ -1169,7 +1172,7 @@ class Trace
         bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
-        void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights);
+        void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
                                   std::uint64_t key);

@@ -75,7 +75,7 @@ class PhotonStrategyTask final : public RenderTask
         void SendProgress();
         void WarnAboutTinySpacing();
 
-        void SearchThroughObjectsCreateUnits(std::vector<ObjectPtr>& Objects, LightSource *Light);
+        void SearchThroughObjectsCreateUnits(std::vector<ObjectPtr>& Objects, LightSource *Light, PreparedSetId preparedSetId);
     private:
         class CooperateFunction final : public Trace::CooperateFunctor
         {

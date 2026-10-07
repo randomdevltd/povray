@@ -167,10 +167,11 @@ struct SubsurfaceCellKey final
     bool photons;
     bool radiosity; ///< whether its points carry the radiosity cache's light as well as the lights'
     const void *medium; ///< the texture layer whose flesh and skin its points look up where light enters, or null
+    size_t preparedSetId;
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
-               medium == o.medium && photons == o.photons;
+               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId;
     }
 };
 
@@ -212,7 +213,7 @@ class SubsurfacePhotonBoundaries final
 class SubsurfaceCache final
 {
     public:
-        SubsurfacePhotonBoundaries photonBoundaries;
+        SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
         /// The cell for key, and whether the caller is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
         /// Reserves room for points; false once the budget is spent.
@@ -225,6 +226,8 @@ class SubsurfaceCache final
     private:
         mutable std::mutex mutex;
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
+        std::mutex photonBoundariesMutex;
+        std::unordered_map<const PhotonMap*, std::unique_ptr<SubsurfacePhotonBoundaries>> photonBoundaries;
         size_t reserved = 0;
         bool cameraSet = false;
         Vector3d cameraLocation;

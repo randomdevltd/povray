@@ -38,7 +38,13 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <map>
+#include <iomanip>
+#include <sstream>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -60,6 +66,7 @@
 // POV-Ray header files (backend module)
 #include "backend/control/messagefactory.h"
 #include "backend/lighting/photonshootingstrategy.h"
+#include "backend/lighting/photonshootingtask.h"
 #include "backend/scene/backendscenedata.h"
 #include "backend/scene/view.h"
 #include "backend/scene/viewthreaddata.h"
@@ -70,6 +77,35 @@
 namespace pov
 {
 
+namespace
+{
+bool LegacyPhotonMapEligible(const SceneData& scene)
+{
+    if (scene.preparedSets.size() != 1)
+        return false;
+    for (const auto& alias : scene.preparedSetFilters)
+        if (alias.first.specified)
+            return false;
+    return true;
+}
+
+std::string PhotonSettingsKey(const ScenePhotonSettings& settings)
+{
+    std::ostringstream key;
+    key << std::setprecision(std::numeric_limits<DBL>::max_digits10)
+        << "count=" << settings.surfaceCount << ';';
+    if (settings.surfaceCount == 0)
+        key << "spacing=" << settings.surfaceSeparation << ';';
+    key << "trace=" << settings.Max_Trace_Level
+        << ";adc=" << settings.adcBailout
+        << ";jitter=" << settings.jitter
+        << ";autostop=" << settings.autoStopPercent
+        << ";mediaSpacing=" << settings.mediaSpacingFactor
+        << ";mediaSteps=" << settings.maxMediaSteps;
+    return key.str();
+}
+}
+
 /*
     If you pass a nullptr for the "strategy" parameter, then this will
     load the photon map from a file.
@@ -79,12 +115,11 @@ namespace pov
       3) compute gather options
       4) clean up memory (delete the non-merged maps and delete the strategy)
 */
-PhotonSortingTask::PhotonSortingTask(ViewData *vd, const std::vector<PhotonMap*>& surfaceMaps,
-                                     const std::vector<PhotonMap*>& mediaMaps, PhotonShootingStrategy* strategy,
+PhotonSortingTask::PhotonSortingTask(ViewData *vd, const std::vector<PhotonShootingTask*>& shootingTasks,
+                                     PhotonShootingStrategy* strategy,
                                      size_t seed) :
     RenderTask(vd, seed, "Photon"),
-    surfaceMaps(surfaceMaps),
-    mediaMaps(mediaMaps),
+    shootingTasks(shootingTasks),
     strategy(strategy),
     cooperate(*this)
 {
@@ -129,10 +164,13 @@ void PhotonSortingTask::Run()
             mpMessageFactory->Error(POV_EXCEPTION_STRING("Failed to load photon map from disk"), "Could not load photon map (%s)",GetSceneData()->photonSettings.fileName.c_str());
 
         // set photon options automatically
-        if (GetSceneData()->surfacePhotonMap.numPhotons>0)
-            GetSceneData()->surfacePhotonMap.setGatherOptions(GetSceneData()->photonSettings,false);
-        if (GetSceneData()->mediaPhotonMap.numPhotons>0)
-            GetSceneData()->mediaPhotonMap.setGatherOptions(GetSceneData()->photonSettings,true);
+        for (const auto& set : GetSceneData()->preparedSets)
+        {
+            if (set->surfacePhotonMap.numPhotons > 0)
+                set->surfacePhotonMap.setGatherOptions(GetSceneData()->photonSettings, false);
+            if (set->mediaPhotonMap.numPhotons > 0)
+                set->mediaPhotonMap.setGatherOptions(GetSceneData()->photonSettings, true);
+        }
     }
 
     // good idea to make sure all warnings and errors arrive frontend now [trf]
@@ -155,31 +193,28 @@ void PhotonSortingTask::Finish()
 
 void PhotonSortingTask::sortPhotonMap()
 {
-    std::vector<PhotonMap*>::iterator mapIter;
-    for(mapIter = surfaceMaps.begin(); mapIter != surfaceMaps.end(); mapIter++)
+    for (PreparedSetId id = 0; id < GetSceneData()->preparedSets.size(); ++id)
     {
-        GetSceneData()->surfacePhotonMap.mergeMap(*mapIter);
-        //delete (*mapIter);
-    }
-    for(mapIter = mediaMaps.begin(); mapIter != mediaMaps.end(); mapIter++)
-    {
-        GetSceneData()->mediaPhotonMap.mergeMap(*mapIter);
-        //delete (*mapIter);
-    }
-
-    /* now actually build the kd-tree by sorting the array of photons */
-    if (GetSceneData()->surfacePhotonMap.numPhotons>0)
-    {
-    //povwin::WIN32_DEBUG_FILE_OUTPUT("\n\nsurfacePhotonMap.buildTree about to be called\n");
-
-        GetSceneData()->surfacePhotonMap.buildTree();
-        GetSceneData()->surfacePhotonMap.setGatherOptions(GetSceneData()->photonSettings,false);
-//      povwin::WIN32_DEBUG_FILE_OUTPUT("gatherNumSteps: %d\n",GetSceneData()->surfacePhotonMap.gatherNumSteps);
-//      povwin::WIN32_DEBUG_FILE_OUTPUT("gatherRadStep: %lf\n",GetSceneData()->surfacePhotonMap.gatherRadStep);
-//      povwin::WIN32_DEBUG_FILE_OUTPUT("minGatherRad: %lf\n",GetSceneData()->surfacePhotonMap.minGatherRad);
-//      povwin::WIN32_DEBUG_FILE_OUTPUT("minGatherRadMult: %lf\n",GetSceneData()->surfacePhotonMap.minGatherRadMult);
-//      povwin::WIN32_DEBUG_FILE_OUTPUT("numBlocks: %d\n",GetSceneData()->surfacePhotonMap.numBlocks);
-//      povwin::WIN32_DEBUG_FILE_OUTPUT("numPhotons: %d\n",GetSceneData()->surfacePhotonMap.numPhotons);
+        PreparedSet& set = GetSceneData()->GetPreparedSet(id);
+        set.surfacePhotonMap.truncate(0);
+        set.mediaPhotonMap.truncate(0);
+        for (PhotonShootingTask* task : shootingTasks)
+        {
+            if (PhotonMap* map = task->getSurfacePhotonMap(id))
+                set.surfacePhotonMap.mergeMap(map);
+            if (PhotonMap* map = task->getMediaPhotonMap(id))
+                set.mediaPhotonMap.mergeMap(map);
+        }
+        if (set.surfacePhotonMap.numPhotons > 0)
+        {
+            set.surfacePhotonMap.buildTree();
+            set.surfacePhotonMap.setGatherOptions(GetSceneData()->photonSettings, false);
+        }
+        if (set.mediaPhotonMap.numPhotons > 0)
+        {
+            set.mediaPhotonMap.buildTree();
+            set.mediaPhotonMap.setGatherOptions(GetSceneData()->photonSettings, true);
+        }
     }
 
 #ifdef GLOBAL_PHOTONS
@@ -191,18 +226,14 @@ void PhotonSortingTask::sortPhotonMap()
     }
 #endif
 
-    /* ----------- media photons ------------- */
-    if (GetSceneData()->mediaPhotonMap.numPhotons>0)
-    {
-        GetSceneData()->mediaPhotonMap.buildTree();
-        GetSceneData()->mediaPhotonMap.setGatherOptions(GetSceneData()->photonSettings,true);
-    }
-
-    if (GetSceneData()->surfacePhotonMap.numPhotons+
+    int totalPhotons = 0;
+    for (const auto& set : GetSceneData()->preparedSets)
+        totalPhotons += set->surfacePhotonMap.numPhotons + set->mediaPhotonMap.numPhotons;
+    if (totalPhotons+
 #ifdef GLOBAL_PHOTONS
         globalPhotonMap.numPhotons+
 #endif
-        GetSceneData()->mediaPhotonMap.numPhotons > 0)
+        0 > 0)
     {
         /* should we save the photon map now that it is built? */
         if (!GetSceneData()->photonSettings.fileName.empty() && !GetSceneData()->photonSettings.loadFile)
@@ -236,89 +267,56 @@ void PhotonSortingTask::sortPhotonMap()
 */
 bool PhotonSortingTask::save()
 {
-    Photon *ph;
-    FILE *f;
-    int i;
-    size_t err;
-    int numph;
-
-    f = fopen(GetSceneData()->photonSettings.fileName.c_str(), "wb");
+    FILE *f = fopen(GetSceneData()->photonSettings.fileName.c_str(), "wb");
     if (!f)
         return false;
-
-    /* caustic photons */
-    numph = GetSceneData()->surfacePhotonMap.numPhotons;
-    fwrite(&numph, sizeof(numph),1,f);
-    if ((numph > 0) && !GetSceneData()->surfacePhotonMap.mBlockList.empty())
+    auto writeValue = [f](const void *value, std::size_t size)
     {
-        for(i=0; i<numph; i++)
-        {
-            ph = &GetSceneData()->surfacePhotonMap.GetPhoton(i);
-            err = fwrite(ph, sizeof(Photon), 1, f);
-
-            if (err<=0)
-            {
-                /* fwrite returned an error! */
-                fclose(f);
+        return fwrite(value, size, 1, f) == 1;
+    };
+    auto writeMap = [&](const PhotonMap& map)
+    {
+        const std::int32_t count = map.numPhotons;
+        if (!writeValue(&count, sizeof(count)))
+            return false;
+        for (std::int32_t i = 0; i < count; ++i)
+            if (!writeValue(&map.GetPhoton(i), sizeof(Photon)))
                 return false;
-            }
-        }
+        return true;
+    };
+
+    bool ok = true;
+    if (LegacyPhotonMapEligible(*GetSceneData()))
+    {
+        const PreparedSet& set = GetSceneData()->GetPreparedSet(0);
+        ok = writeMap(set.surfacePhotonMap) && writeMap(set.mediaPhotonMap);
     }
     else
     {
-        mpMessageFactory->PossibleError("Photon map for surface is empty.");
-    }
-
-#ifdef GLOBAL_PHOTONS
-    /* global photons */
-    numph = globalPhotonMap.numPhotons;
-    fwrite(&numph, sizeof(numph),1,f);
-    if ((numph > 0) && !globalPhotonMap.mBlockList.empty())
-    {
-        for(i=0; i<numph; i++)
+        static const unsigned char magic[8] = {'P','O','V','P','H','M','2',0};
+        const std::uint32_t version = 1;
+        const std::uint32_t setCount = GetSceneData()->preparedSets.size();
+        ok = writeValue(magic, sizeof(magic)) && writeValue(&version, sizeof(version)) && writeValue(&setCount, sizeof(setCount));
+        const std::string settingsKey = PhotonSettingsKey(GetSceneData()->photonSettings);
+        const std::uint32_t settingsLength = settingsKey.size();
+        ok = ok && writeValue(&settingsLength, sizeof(settingsLength));
+        if (settingsLength > 0)
+            ok = ok && writeValue(settingsKey.data(), settingsLength);
+        std::vector<const PreparedSet*> sets;
+        for (const auto& set : GetSceneData()->preparedSets)
+            sets.push_back(set.get());
+        std::sort(sets.begin(), sets.end(), [](const PreparedSet* a, const PreparedSet* b) { return a->photonKey < b->photonKey; });
+        for (const PreparedSet* set : sets)
         {
-            ph = &globalPhotonMap.GetPhoton(i);
-            err = fwrite(ph, sizeof(Photon), 1, f);
-
-            if (err<=0)
-            {
-                /* fwrite returned an error! */
-                fclose(f);
-                return false;
-            }
+            const std::uint32_t keyLength = set->photonKey.size();
+            ok = ok && writeValue(&keyLength, sizeof(keyLength));
+            if (keyLength > 0)
+                ok = ok && writeValue(set->photonKey.data(), keyLength);
+            ok = ok && writeMap(set->surfacePhotonMap) && writeMap(set->mediaPhotonMap);
         }
     }
-    else
-    {
-        mpMessageFactory->PossibleError("Global photon map is empty.");
-    }
-#endif
-
-    /* media photons */
-    numph = GetSceneData()->mediaPhotonMap.numPhotons;
-    fwrite(&numph, sizeof(numph),1,f);
-    if ((numph > 0) && !GetSceneData()->mediaPhotonMap.mBlockList.empty())
-    {
-        for(i=0; i<numph; i++)
-        {
-            ph = &GetSceneData()->mediaPhotonMap.GetPhoton(i);
-            err = fwrite(ph, sizeof(Photon), 1, f);
-
-            if (err<=0)
-            {
-                /* fwrite returned an error! */
-                fclose(f);
-                return false;
-            }
-        }
-    }
-    else
-    {
-        mpMessageFactory->PossibleError("Photon map for media is empty.");
-    }
-
-    fclose(f);
-    return true;
+    const bool closed = fclose(f) == 0;
+    return ok && closed;
 }
 
 /* loadPhotonMap()
@@ -337,74 +335,102 @@ bool PhotonSortingTask::save()
 */
 bool PhotonSortingTask::load()
 {
-    int i;
-    size_t err;
-    Photon *ph;
-    FILE *f;
-    int numph;
-
     if (!GetSceneData()->photonSettings.photonsEnabled) return false;
 
     mpMessageFactory->Warning(kWarningGeneral,"Starting the load of photon file %s\n",GetSceneData()->photonSettings.fileName.c_str());
 
-    f = fopen(GetSceneData()->photonSettings.fileName.c_str(), "rb");
+    FILE *f = fopen(GetSceneData()->photonSettings.fileName.c_str(), "rb");
     if (!f)
         return false;
-
-    fread(&numph, sizeof(numph),1,f);
-
-    for(i=0; i<numph; i++)
+    auto readValue = [f](void *value, std::size_t size)
     {
-        ph = GetSceneData()->surfacePhotonMap.AllocatePhoton();
-        err = fread(ph, sizeof(Photon), 1, f);
-
-        if (err<=0)
-        {
-            /* fread returned an error! */
-            fclose(f);
+        return fread(value, size, 1, f) == 1;
+    };
+    auto readMap = [&](PhotonMap& map)
+    {
+        std::int32_t count;
+        if (!readValue(&count, sizeof(count)) || count < 0)
             return false;
-        }
-    }
+        const long position = ftell(f);
+        if (position < 0 || fseek(f, 0, SEEK_END) != 0)
+            return false;
+        const long end = ftell(f);
+        if (end < position || fseek(f, position, SEEK_SET) != 0 ||
+            std::uint64_t(count) > std::uint64_t(end - position) / sizeof(Photon))
+            return false;
+        for (std::int32_t i = 0; i < count; ++i)
+            if (!readValue(map.AllocatePhoton(), sizeof(Photon)))
+                return false;
+        return true;
+    };
 
-    if (!feof(f)) /* for backwards file format compatibility */
+    static const unsigned char magic[8] = {'P','O','V','P','H','M','2',0};
+    unsigned char prefix[8];
+    bool ok = readValue(prefix, sizeof(prefix));
+    if (ok && std::memcmp(prefix, magic, sizeof(magic)) == 0)
     {
-
-#ifdef GLOBAL_PHOTONS
-        /* global photons */
-        fread(&numph, sizeof(numph),1,f);
-        for(i=0; i<numph; i++)
+        std::uint32_t version, setCount, settingsLength;
+        ok = readValue(&version, sizeof(version)) && version == 1 && readValue(&setCount, sizeof(setCount));
+        ok = ok && readValue(&settingsLength, sizeof(settingsLength)) && settingsLength <= 1024 * 1024;
+        std::string settingsKey(settingsLength, '\0');
+        if (ok && settingsLength > 0)
+            ok = readValue(&settingsKey[0], settingsLength);
+        ok = ok && settingsKey == PhotonSettingsKey(GetSceneData()->photonSettings);
+        std::map<std::string, PreparedSet*> expected;
+        for (const auto& set : GetSceneData()->preparedSets)
+            ok = ok && expected.emplace(set->photonKey, set.get()).second;
+        std::map<std::string, std::pair<std::unique_ptr<PhotonMap>, std::unique_ptr<PhotonMap>>> loaded;
+        for (std::uint32_t i = 0; ok && i < setCount; ++i)
         {
-            ph = GetSceneData()->globalPhotonMap.AllocatePhoton();
-            err = fread(ph, sizeof(Photon), 1, f);
-
-            if (err<=0)
-            {
-                /* fread returned an error! */
-                fclose(f);
-                return false;
-            }
+            std::uint32_t keyLength;
+            ok = readValue(&keyLength, sizeof(keyLength)) && keyLength <= 1024 * 1024;
+            std::string key(keyLength, '\0');
+            if (ok && keyLength > 0)
+                ok = readValue(&key[0], keyLength);
+            auto maps = std::make_pair(std::unique_ptr<PhotonMap>(new PhotonMap()), std::unique_ptr<PhotonMap>(new PhotonMap()));
+            ok = ok && readMap(*maps.first) && readMap(*maps.second) && loaded.emplace(key, std::move(maps)).second;
         }
-#endif
-
-        /* media photons */
-        fread(&numph, sizeof(numph),1,f);
-        for(i=0; i<numph; i++)
-        {
-            ph = GetSceneData()->mediaPhotonMap.AllocatePhoton();
-            err = fread(ph, sizeof(Photon), 1, f);
-
-            if (err<=0)
+        ok = ok && loaded.size() == expected.size();
+        for (const auto& item : expected)
+            ok = ok && loaded.find(item.first) != loaded.end();
+        if (ok)
+            for (const auto& item : expected)
             {
-                /* fread returned an error! */
-                fclose(f);
-                return false;
+                auto found = loaded.find(item.first);
+                item.second->surfacePhotonMap.truncate(0);
+                item.second->mediaPhotonMap.truncate(0);
+                item.second->surfacePhotonMap.mergeMap(found->second.first.get());
+                item.second->mediaPhotonMap.mergeMap(found->second.second.get());
             }
-        }
-
     }
-
-    fclose(f);
-    return true;
+    else
+    {
+        const bool eligible = LegacyPhotonMapEligible(*GetSceneData());
+        if (!eligible)
+            mpMessageFactory->PossibleError("A legacy photon map cannot be loaded into filtered or multiple prepared sets; regenerate the map.");
+        ok = ok && eligible && fseek(f, 0, SEEK_SET) == 0;
+        PhotonMap surface, media;
+        ok = ok && readMap(surface);
+        if (ok)
+        {
+            const int next = fgetc(f);
+            if (next != EOF)
+            {
+                ungetc(next, f);
+                ok = readMap(media);
+            }
+        }
+        if (ok)
+        {
+            PreparedSet& set = GetSceneData()->GetPreparedSet(0);
+            set.surfacePhotonMap.truncate(0);
+            set.mediaPhotonMap.truncate(0);
+            set.surfacePhotonMap.mergeMap(&surface);
+            set.mediaPhotonMap.mergeMap(&media);
+        }
+    }
+    const bool closed = fclose(f) == 0;
+    return ok && closed;
 }
 
 }

@@ -51,13 +51,123 @@
 // POV-Ray header files (core module)
 #include "core/material/noise.h"
 #include "core/material/pattern.h"
+#include "core/bounding/boundingbox.h"
+#include "core/bounding/bsptree.h"
 #include "core/scene/atmosphere.h"
+#include "core/scene/object.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
 
 namespace pov
 {
+
+PreparedSet::~PreparedSet()
+{
+    if (boundingSlabs != nullptr)
+        Destroy_BBox_Tree(boundingSlabs);
+    delete flatSlabs;
+    delete tree;
+}
+
+TagFilter SceneData::EffectiveFilterTags(const TagFilter& requested) const
+{
+    return requested.specified ? requested : defaultFilterTags;
+}
+
+namespace
+{
+void CollectParticipatingObjects(ObjectPtr object, std::unordered_set<ConstObjectPtr>& objects)
+{
+    if (!objects.insert(object).second)
+        return;
+    if (const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            CollectParticipatingObjects(child, objects);
+}
+}
+
+PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
+{
+    auto found = preparedSetFilters.find(filter);
+    if (found != preparedSetFilters.end())
+        return found->second;
+    std::unique_ptr<PreparedSet> set(new PreparedSet());
+    std::ostringstream key;
+    auto appendTags = [&](const std::vector<std::string>& tags) {
+        key << ':' << tags.size() << ':';
+        for (const std::string& tag : tags)
+            key << tag.size() << ':' << tag;
+        key << ';';
+    };
+    for (size_t ordinal = 0; ordinal < objects.size(); ++ordinal)
+    {
+        ObjectPtr object = objects[ordinal];
+        if (MatchesTags(object->tags, filter))
+        {
+            set->objects.push_back(object);
+            CollectParticipatingObjects(object, set->participatingObjects);
+            key << 'o' << ordinal;
+            appendTags(object->tags);
+        }
+    }
+    for (const auto *sources : { &lightSources, &lightGroupLightSources })
+        for (size_t ordinal = 0; ordinal < sources->size(); ++ordinal)
+        {
+            LightSource *light = (*sources)[ordinal];
+            if (set->participatingObjects.count(light) != 0)
+            {
+                set->lights.push_back(light);
+                key << (sources == &lightSources ? 'g' : 'l') << ordinal;
+                appendTags(light->tags);
+            }
+        }
+    for (size_t i = 0; i < preparedSets.size(); ++i)
+        if ((preparedSets[i]->objects == set->objects) && (preparedSets[i]->lights == set->lights))
+        {
+            preparedSetFilters.emplace(filter, i);
+            return i;
+        }
+    set->surfacePhotonMap.minGatherRad = surfacePhotonMinGatherRad;
+    set->surfacePhotonMap.minGatherRadMult = surfacePhotonMinGatherRadMult;
+    set->mediaPhotonMap.minGatherRad = mediaPhotonMinGatherRad;
+    set->mediaPhotonMap.minGatherRadMult = mediaPhotonMinGatherRadMult;
+    set->photonKey = key.str();
+    const PreparedSetId id = preparedSets.size();
+    preparedSets.push_back(std::move(set));
+    preparedSetFilters.emplace(filter, id);
+    return id;
+}
+
+PreparedSetId SceneData::FindPreparedSet(const TagFilter& filter) const
+{
+    return preparedSetFilters.at(filter);
+}
+
+bool SceneData::InPreparedSet(ConstObjectPtr object, PreparedSetId index) const
+{
+    if (const LightSource *light = dynamic_cast<const LightSource *>(object))
+    {
+        if (light->imageOf != nullptr)
+            light = light->imageOf;
+        const auto& sources = light->lightGroupLight ? lightGroupLightSources : lightSources;
+        if (light->index >= sources.size())
+            return false;
+        object = sources[light->index];
+    }
+    return GetPreparedSet(index).participatingObjects.count(object) != 0;
+}
+
+void SceneData::FinalizeScreenCameras()
+{
+    screenCameras.clear();
+    std::unordered_set<const Camera*> seen;
+    for (const std::weak_ptr<const Camera>& candidate : screenCameraCandidates)
+        if (std::shared_ptr<const Camera> camera = candidate.lock())
+            if (seen.insert(camera.get()).second)
+                screenCameras.push_back(std::move(camera));
+    screenCameraCandidates.clear();
+}
 
 SceneData::SceneData() :
     fog(nullptr),
@@ -124,6 +234,7 @@ SceneData::SceneData() :
 
 SceneData::~SceneData()
 {
+    preparedSets.clear();
     lightSources.clear();
     lightGroupLightSources.clear();
     for (LightSource *image : portalLights)

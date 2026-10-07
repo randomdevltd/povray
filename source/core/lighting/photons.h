@@ -331,7 +331,7 @@ class PhotonMediaFunction final : public MediaFunction
     private:
         std::shared_ptr<SceneData> sceneData;
 
-        void addMediaPhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol, DBL depthDiff);
+        void addMediaPhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol, DBL depthDiff, PreparedSetId preparedSetId);
 };
 
 class PhotonTrace final : public Trace
@@ -352,7 +352,8 @@ class PhotonTrace final : public Trace
         PhotonMediaFunction mediaPhotons;
         RadiosityFunctor noRadiosity;
 
-        void addSurfacePhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol);
+        bool PhotonLightAffectsObject(ConstObjectPtr object) const;
+        void addSurfacePhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol, PreparedSetId preparedSetId);
 };
 
 /* ------------------------------------------------------ */
@@ -400,8 +401,9 @@ class LightTargetCombo final
 class PhotonShootingUnit final
 {
     public:
-        PhotonShootingUnit(LightSource* light, ObjectPtr target):lightAndObject(light,target) {}
+        PhotonShootingUnit(LightSource* light, ObjectPtr target, PreparedSetId setId):lightAndObject(light,target),preparedSetId(setId) {}
         LightTargetCombo lightAndObject;
+        PreparedSetId preparedSetId;
         std::size_t recordIndex = 0;
 };
 

@@ -1958,14 +1958,14 @@ void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, Li
         {
             for(vector<LightSource *>::iterator i(threadData->lightSources.begin()); i != threadData->lightSources.end(); i++)
             {
-                if((*i)->Media_Interaction == true)
+                if(((*i)->Media_Interaction == true) && trace->InPreparedSet(*i, ray))
                     ComputeOneMediaLightInterval(*i, lights, ray, isect);
             }
         }
 
         for(vector<LightSource *>::iterator i(isect.Object->LLights.begin()); i != isect.Object->LLights.end(); i++)
         {
-            if((*i)->Media_Interaction == true)
+            if(((*i)->Media_Interaction == true) && trace->InPreparedSet(*i, ray))
                 ComputeOneMediaLightInterval(*i, lights, ray, isect);
         }
     }
@@ -1973,7 +1973,7 @@ void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, Li
     {
         for(vector<LightSource *>::iterator i(threadData->lightSources.begin()); i != threadData->lightSources.end(); i++)
         {
-            if((*i)->Media_Interaction == true)
+            if(((*i)->Media_Interaction == true) && trace->InPreparedSet(*i, ray))
                 ComputeOneMediaLightInterval(*i, lights, ray, isect);
         }
     }
@@ -2395,6 +2395,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         }
 
         // process media photons whether or not the interval is directly lit
+        if (photonGatherer != nullptr)
+            photonGatherer->map = &sceneData->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap;
         if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0))
         {
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);

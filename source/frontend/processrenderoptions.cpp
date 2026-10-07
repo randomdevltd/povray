@@ -152,6 +152,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Fatal_Error_Return",  kPOVAttrib_FatalErrorCommand,  kUseSpecialHandler },
     { "Fatal_File",          kPOVAttrib_FatalFile,          kPOVMSType_UCS2String },
     { "Field_Render",        kPOVAttrib_FieldRender,        kPOVMSType_Bool },
+    { "Filter_Tags",         kPOVAttrib_FilterTags,         kPOVMSType_CString, kINIOptFlag_RawExpression },
     { "File_Gamma",          kPOVAttrib_FileGamma,          kUseSpecialHandler },
     { "Final_Clock",         kPOVAttrib_FinalClock,         kPOVMSType_Float },
     { "Final_Frame",         kPOVAttrib_FinalFrame,         kPOVMSType_Int },

@@ -240,6 +240,7 @@ void TracePixel::SetupCamera(const Camera& cam)
 {
     bool normalise = false;
     camera = cam;
+    preparedSetId = sceneData->FindPreparedSet(sceneData->EffectiveFilterTags(camera.filterTags));
     useFocalBlur = false;
     precomputeContainingInteriors = true;
     cameraDirection = camera.Direction;
@@ -455,6 +456,7 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
 
     // Set ray flags
     ray.SetFlags(Ray::PrimaryRay, false, false, false, false, pretrace);
+    ray.SetPreparedSetId(preparedSetId);
 
     // Create primary ray according to the camera used.
     ray.Origin = cameraLocation;
@@ -1092,7 +1094,7 @@ void TracePixel::InitRayContainerState(Ray& ray, bool compute)
     {
         precomputeContainingInteriors = false;
         containingInteriors.clear();
-        FindContainingInteriors(ray.Origin, containingInteriors);
+        FindContainingInteriors(ray.Origin, containingInteriors, ray.GetPreparedSetId());
     }
 
     ray.AppendInteriors(containingInteriors);

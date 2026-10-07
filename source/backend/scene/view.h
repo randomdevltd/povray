@@ -347,6 +347,8 @@ class ViewData final
          *  @return                 Radiosity cache.
          */
         RadiosityCache& GetRadiosityCache();
+        RadiosityCache& GetRadiosityCache(const Camera& camera);
+        const RadiosityCaches& GetRadiosityCaches() const { return radiosityCaches; }
 
         /// Sample of a progressive render's lattice (pixel centres, or pixel corners for method 2), kept for anti-aliasing.
         void ActivateLatticeSamples() { latticeSamplesActive = true; }
@@ -511,8 +513,7 @@ class ViewData final
         /// camera of this view
         Camera camera;
         std::shared_ptr<SubsurfaceCache> subsurfaceCache;
-        /// generated radiosity data
-        RadiosityCache radiosityCache;
+        RadiosityCaches radiosityCaches;
         /// scene data
         std::shared_ptr<BackendSceneData> sceneData;
         /// view id

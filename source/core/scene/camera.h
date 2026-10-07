@@ -51,6 +51,7 @@
 // POV-Ray header files (core module)
 #include "core/math/vector.h"
 #include "core/material/normal.h"
+#include "core/scene/tagfilter.h"
 
 namespace pov
 {
@@ -124,6 +125,8 @@ public:
     unsigned int Radiosity_Width;           // [screen cameras] radiosity pretrace frame size; 0 takes the render's
     unsigned int Radiosity_Height;
     bool No_Radiosity;                      // [screen cameras] no radiosity pretrace, and its view is shaded without radiosity
+    std::vector<std::string> tags;
+    TagFilter filterTags;
 
     Camera();
     Camera(const Camera& src);
@@ -134,7 +137,7 @@ public:
     void Rotate(const Vector3d& Vector);
     void Translate(const Vector3d& Vector);
     /// Whether this camera takes the same picture as another, judged by content; perturbed or function-defined views never match a copy.
-    bool SameView(const Camera& other) const;
+    bool SameView(const Camera& other, bool compareFilters = true) const;
 
 private:
     void Init();

@@ -4,6 +4,9 @@
 This unofficial fork is developing POV-Ray 4.0. Scenes using `#version 4.0;` opt into
 new language defaults; scenes declaring earlier versions retain their compatibility defaults.
 
+[Render tags](doc/render-tags.md) select geometry for cameras, screens and portals,
+with Boolean filters and an optional command-line scene filter.
+
 [![Quick Tests](https://github.com/POV-Ray/povray/actions/workflows/test_build_quick.yml/badge.svg)](https://github.com/POV-Ray/povray/actions/workflows/test_build_quick.yml)
 [![Code Analysis](https://github.com/POV-Ray/povray/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/POV-Ray/povray/actions/workflows/codeql-analysis.yml)
 [![Maintenance Status](https://img.shields.io/maintenance/yes/2024.svg)](README.md "Last edited 2024-11-03")

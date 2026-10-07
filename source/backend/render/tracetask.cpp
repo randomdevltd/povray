@@ -313,8 +313,8 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     aaRound(aar),
     media(GetViewDataPtr(), &trace, &photonGatherer),
     radiosity(vd->GetSceneData(), GetViewDataPtr(),
-              vd->GetSceneData()->radiositySettings, vd->GetRadiosityCache(), cooperate, true, vd->GetCamera().Location),
-    photonGatherer(&vd->GetSceneData()->mediaPhotonMap, vd->GetSceneData()->photonSettings)
+              vd->GetSceneData()->radiositySettings, vd->GetRadiosityCaches(), cooperate, true, vd->GetCamera().Location),
+    photonGatherer(&vd->GetSceneData()->GetPreparedSet(0).mediaPhotonMap, vd->GetSceneData()->photonSettings)
 {
 #ifdef PROFILE_INTERSECTIONS
     Rectangle ra = vd->GetRenderArea();

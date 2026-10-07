@@ -63,6 +63,7 @@
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/csg.h"
+#include "core/shape/portal.h"
 #include "core/support/octree.h"
 #include "core/support/statistics.h"
 
@@ -122,12 +123,20 @@ private:
 
 PhotonTrace::PhotonTrace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFlags& qf, Trace::CooperateFunctor& cf) :
     Trace(sd, td, qf, cf, mediaPhotons, noRadiosity),
-    mediaPhotons(sd, td, this, new PhotonGatherer(&sd->mediaPhotonMap, sd->photonSettings))
+    mediaPhotons(sd, td, this, nullptr)
 {
 }
 
 PhotonTrace::~PhotonTrace()
 {
+}
+
+bool PhotonTrace::PhotonLightAffectsObject(ConstObjectPtr object) const
+{
+    const LightSource* light = threadData->photonSourceLight;
+    if (!light->lightGroupLight)
+        return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
+    return std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end();
 }
 
 DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth, bool)
@@ -207,6 +216,12 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
     PreferOpaqueCoincident(ray, bestisect, weight);
+    if ((bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
+    {
+        ColourChannel transm = 0.0;
+        TracePortal(*static_cast<const Portal *>(bestisect.Csg), bestisect, ray, colour, transm, weight);
+        return true;
+    }
     {
         // NK phmap
         int oldptflag = threadData->passThruPrev;
@@ -394,9 +409,9 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
 
     if ((ray.GetTicket().traceLevel > 1) && !threadData->passThruPrev &&
         !Test_Flag(isect.Object,PH_IGNORE_PHOTONS_FLAG) &&
-        Check_Photon_Light_Group(isect.Object))
+        PhotonLightAffectsObject(isect.Object))
     {
-        addSurfacePhoton(isect.IPoint, ray.Origin, LightCol);
+        addSurfacePhoton(isect.IPoint, ray.Origin, LightCol, ray.GetPreparedSetId());
     }
 
 #ifndef PT_FILTER_BEFORE_TARGET
@@ -873,7 +888,7 @@ bool PhotonTrace::TraceRefractionRayForPhotons(const FINISH* finish, const Vecto
 
 ******************************************************************************/
 
-void PhotonTrace::addSurfacePhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol)
+void PhotonTrace::addSurfacePhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol, PreparedSetId preparedSetId)
 {
     // TODO FIXME - this seems to have a lot in common with addMediaPhoton()
     Photon *photon;
@@ -907,7 +922,7 @@ void PhotonTrace::addSurfacePhoton(const Vector3d& Point, const Vector3d& Origin
     else
 #endif
     {
-        map = (threadData->surfacePhotonMap);
+        map = &threadData->SurfacePhotonMap(preparedSetId);
         threadData->Stats()[Number_Of_Photons_Stored]++;
     }
 
@@ -964,7 +979,7 @@ PhotonMediaFunction::PhotonMediaFunction(std::shared_ptr<SceneData> sd, TraceThr
 
 ******************************************************************************/
 
-void PhotonMediaFunction::addMediaPhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol, DBL depthDiff)
+void PhotonMediaFunction::addMediaPhoton(const Vector3d& Point, const Vector3d& Origin, const MathColour& LightCol, DBL depthDiff, PreparedSetId preparedSetId)
 {
     // TODO FIXME - this seems to have a lot in common with addSurfacePhoton()
     Photon *photon;
@@ -1000,7 +1015,7 @@ void PhotonMediaFunction::addMediaPhoton(const Vector3d& Point, const Vector3d& 
 
     threadData->Stats()[Number_Of_Media_Photons_Stored]++;
 
-    photon = threadData->mediaPhotonMap->AllocatePhoton();
+    photon = threadData->MediaPhotonMap(preparedSetId).AllocatePhoton();
 
     // convert photon from three floats to 4 bytes
     photon->colour = PhotonColour(ToRGBColour(LightCol2));
@@ -1190,7 +1205,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                 Vector3d TempPoint;
                 TempPoint = ray.Evaluate(d0*(*i).ds+(*i).s0);
 
-                addMediaPhoton(TempPoint, ray.Origin, PhotonColour, d0*(*i).ds+(*i).s0);
+                addMediaPhoton(TempPoint, ray.Origin, PhotonColour, d0*(*i).ds+(*i).s0, ray.GetPreparedSetId());
             }
         }
     }
