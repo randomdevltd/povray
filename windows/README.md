@@ -46,20 +46,27 @@ These groups provide the best means for support with relation to this subject.
 Compilers
 =========
 
-Visual Studio 2015
+Visual Studio 2019
 ------------------
 
 Currently the only officially supported means of building the Windows
-version of POV-Ray is via the provided Visual Studio 2015 solution.
+version of POV-Ray is via the provided solution in `windows/vs2015`.
 
-You will need Visual Studio 2015 (Community Edition will suffice) or later.
+You will need Visual Studio 2019 version 16.8 (Community Edition will suffice)
+or later, with the v142 C++ toolset and a Windows 10 SDK. The directory name is
+retained for existing build scripts. The bundled Tree-sitter runtime and generated
+tag-filter parser compile as C11 without C++ precompiled headers. No Node.js or
+Rust installation is needed for ordinary builds.
+
+All projects in the solution use v142 so the renderer and its linked libraries
+share one toolchain. This deliberately replaces the former v140/VS2015 floor;
+only the bundled parser/runtime sources enable C11 compilation explicitly.
 
 Earlier Versions of Visual Studio
 ---------------------------------
 
-Due to the free availability of Visual Studio 2015 Community Edition
-and better performance of the generated binaries, we have ceased support
-for earlier versions of Visual Studio.
+The bundled C11 parser runtime requires Visual Studio 2019 version 16.8 or later.
+Earlier toolchains are no longer supported.
 
 
 
@@ -169,46 +176,8 @@ in mind' at the end.
 Building for Legacy Windows Versions
 ------------------------------------
 
-By default, binaries generated with Visual Studio 2015 will only run on
-Windows Vista or later. Visual Studio 2015 can be used to generate binaries
-compatible with Windows versions as early as Windows XP (SP3 required),
-but the procedure is a bit tricky, and the following description is therefore
-aimed at people with in-depth knowledge of Visual Studio and its toolchain.
-
-You will need Visual Studio 2015 (again Community Edition will suffice)
-_Update 1_ or later, with the following optional features installed:
-
--   Programming Languages / Visual C++ / Windows XP Support for C++
--   Windows and Web Development / Universal Windows App Development Tools /
-    Windows 10 SDK (10.0.10586)
-
-(Later Windows 10 SDKs may also work, but will require you to modify the
-settings shown below accordingly.)
-
-To enable XP compatibility, you will have to either edit or override the
-following properties in _all_ Visual Studio project files:
-
--   `PlatformToolset` must be set to `v140_xp`.
--   `TargetUniversalCRTVersion` must be set to `10.0.10568.0`.
-
-The latter is the tricky part, as the property cannot be accessed via
-the IDE, and while there are multiple approaches to achieve this (e.g.
-via a user property file, or by manually editing the default in
-`%ProgramFiles(x86)%\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.Cpp.Common.props`)
-we highly recommend running the build from the command line using the
-`msbuild.exe` command-line tool, making use of its `/p:` command-line
-option to override the properties in question.
-
-For details on the use of the command-line build tool, please consult
-Microsoft's official documentation.
-
-**Attention:** Failure to override the `TargetUniversalCRTVersion` property
-will result in binaries that _appear_ to be XP-compatible at first glance,
-but exhibit erroneous behaviour due to a bug in the UCRT library used
-by default (10.0.10240.0). Telltale symptoms will be POV-Ray resetting the
-master `povray.ini` back to its defaults, and complaining that it can't find
-`colors.inc`, each time it is started.
-
+Windows XP builds using the retired v140_xp toolset are no longer supported.
+Use the current Windows SDK and the v142 toolset described above.
 
 About the Editor DLL's
 ======================
@@ -373,4 +342,3 @@ Thanks
 The POV-Team would like to thank all those who have assisted in bringing
 POV-Ray v3.8 and its predecessors to the public - you know who you are,
 and we salute you.
-

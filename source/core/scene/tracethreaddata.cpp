@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -117,9 +118,6 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed, boo
 
     progress_index = 0;
 
-    surfacePhotonMap = new PhotonMap();
-    mediaPhotonMap = new PhotonMap();
-
     numberOfWaves = sd->numberOfWaves;
     Initialize_Waves(waveFrequencies, waveSources, numberOfWaves);
 }
@@ -132,13 +130,44 @@ TraceThreadData::~TraceThreadData()
     POV_FREE(Blob_Coefficients);
     POV_FREE(Blob_Queue);
     Fractal::Free_Iteration_Stack(Fractal_IStack);
-    delete surfacePhotonMap;
-    delete mediaPhotonMap;
     delete[] Blob_Intervals;
     for(std::vector<LightSource *>::iterator it = lightSources.begin(); it != lightSources.end(); it++)
         Destroy_Object(*it);
     delete mpCrackleCache;
     delete mpRenderStats;
+}
+
+PhotonMap& TraceThreadData::SurfacePhotonMap(PreparedSetId preparedSetId)
+{
+    if (surfacePhotonMaps.size() <= preparedSetId)
+        surfacePhotonMaps.resize(preparedSetId + 1);
+    if (!surfacePhotonMaps[preparedSetId])
+        surfacePhotonMaps[preparedSetId].reset(new PhotonMap());
+    return *surfacePhotonMaps[preparedSetId];
+}
+
+PhotonMap& TraceThreadData::MediaPhotonMap(PreparedSetId preparedSetId)
+{
+    if (mediaPhotonMaps.size() <= preparedSetId)
+        mediaPhotonMaps.resize(preparedSetId + 1);
+    if (!mediaPhotonMaps[preparedSetId])
+        mediaPhotonMaps[preparedSetId].reset(new PhotonMap());
+    return *mediaPhotonMaps[preparedSetId];
+}
+
+PhotonMap* TraceThreadData::FindSurfacePhotonMap(PreparedSetId preparedSetId) const
+{
+    return preparedSetId < surfacePhotonMaps.size() ? surfacePhotonMaps[preparedSetId].get() : nullptr;
+}
+
+PhotonMap* TraceThreadData::FindMediaPhotonMap(PreparedSetId preparedSetId) const
+{
+    return preparedSetId < mediaPhotonMaps.size() ? mediaPhotonMaps[preparedSetId].get() : nullptr;
+}
+
+std::size_t TraceThreadData::PhotonMapSetCount() const
+{
+    return std::max(surfacePhotonMaps.size(), mediaPhotonMaps.size());
 }
 
 void TraceThreadData::AfterTile()

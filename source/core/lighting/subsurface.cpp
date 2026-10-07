@@ -128,10 +128,20 @@ static const size_t kSubsurfacePointBudget = size_t(1) << 20;
 
 size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
-    size_t h = std::hash<const void*>()(k.object) ^ (std::hash<const void*>()(k.medium) * 31u);
+    size_t h = std::hash<const void*>()(k.object) ^ (std::hash<const void*>()(k.medium) * 31u) ^
+               (std::hash<size_t>()(k.preparedSetId) * 65599u);
     for (int v : { k.sizeLevel, k.x, k.y, k.z, int(k.radiosity), int(k.photons) })
         h = h * 1000003u ^ std::hash<int>()(v);
     return h;
+}
+
+SubsurfacePhotonBoundaries& SubsurfaceCache::PhotonBoundaries(const PhotonMap& map)
+{
+    std::lock_guard<std::mutex> lock(photonBoundariesMutex);
+    auto& entry = photonBoundaries[&map];
+    if (!entry)
+        entry.reset(new SubsurfacePhotonBoundaries());
+    return *entry;
 }
 
 // Slots of 16 bytes: at most 64 MiB, or about 32 bytes per photon below that.

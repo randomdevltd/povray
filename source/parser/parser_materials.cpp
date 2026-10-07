@@ -1574,7 +1574,7 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
                     CASE (CAMERA_TOKEN)
                         if (projection)
                             Error("screen takes only one camera.");
-                        projection = std::make_shared<Camera>();
+                        projection = std::make_shared<Camera>(Default_Camera);
                         Parse_Camera(*projection);
                         if (projection->Type == MESH_CAMERA)
                             Error("mesh_camera cannot be a screen's camera.");
@@ -1601,15 +1601,18 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
                 END_EXPECT
                 Parse_End();
                 if (!projection)
-                    Error("screen needs a camera.");
+                    projection = std::make_shared<Camera>(Default_Camera);
                 pattern->pProjection = projection;
-                for (const std::shared_ptr<const Camera>& seen : sceneData->screenCameras)
-                    if (seen->SameView(*projection) && (seen->No_Radiosity == projection->No_Radiosity))
-                    {
-                        pattern->pProjection = seen;
-                        break;
-                    }
-                sceneData->screenCameras.push_back(projection);
+                for (const std::weak_ptr<const Camera>& candidate : sceneData->screenCameraCandidates)
+                    if (std::shared_ptr<const Camera> seen = candidate.lock())
+                        if (seen->SameView(*projection) && (seen->No_Radiosity == projection->No_Radiosity) &&
+                            (seen->Radiosity_Width == projection->Radiosity_Width) &&
+                            (seen->Radiosity_Height == projection->Radiosity_Height))
+                        {
+                            pattern->pProjection = seen;
+                            break;
+                        }
+                sceneData->screenCameraCandidates.push_back(pattern->pProjection);
                 New->pattern = pattern;
             }
         END_CASE

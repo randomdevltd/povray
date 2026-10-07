@@ -42,7 +42,9 @@
 // C++ standard header files
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
+#include <sstream>
 
 // Boost header files
 #include <boost/bind.hpp>
@@ -123,10 +125,11 @@ ViewData::ViewData(shared_ptr<BackendSceneData> sd) :
     latticeWidth(0),
     latticeSamplesActive(false),
     renderArea(0, 0, 159, 119),
-    radiosityCache(sd->radiositySettings),
     sceneData(sd),
     qualityFlags(9)
 {
+    for (size_t id = 0; id < sd->preparedSets.size(); ++id)
+        radiosityCaches.push_back(std::make_shared<RadiosityCache>(sd->radiositySettings));
 }
 
 ViewData::~ViewData()
@@ -624,7 +627,28 @@ const QualityFlags& ViewData::GetQualityFeatureFlags() const
 
 RadiosityCache& ViewData::GetRadiosityCache()
 {
-    return radiosityCache;
+    return GetRadiosityCache(camera);
+}
+
+RadiosityCache& ViewData::GetRadiosityCache(const Camera& selectedCamera)
+{
+    return *radiosityCaches.at(sceneData->FindPreparedSet(
+        sceneData->EffectiveFilterTags(selectedCamera.filterTags)));
+}
+
+static Path RadiosityCachePath(const SceneData& scene, const PreparedSet& set, const Path& base)
+{
+    const bool partitioned = scene.preparedSets.size() > 1 || scene.parseFilterTags.specified ||
+        std::any_of(scene.preparedSetFilters.begin(), scene.preparedSetFilters.end(),
+                    [](const std::pair<const TagFilter, PreparedSetId>& entry) { return entry.first.specified; });
+    if (!partitioned)
+        return base;
+    std::uint64_t hash = UINT64_C(14695981039346656037);
+    for (unsigned char ch : set.photonKey)
+        hash = (hash ^ ch) * UINT64_C(1099511628211);
+    std::ostringstream suffix;
+    suffix << std::hex << hash;
+    return Path(UCS2toSysString(base()) + ".set-" + suffix.str());
 }
 
 View::View(shared_ptr<BackendSceneData> sd, unsigned int width, unsigned int height, RenderBackend::ViewId vid) :
@@ -640,7 +664,7 @@ View::View(shared_ptr<BackendSceneData> sd, unsigned int width, unsigned int hei
     POV_MEM_STATS_RENDER_BEGIN();
 
     if(sd->boundingMethod == 2)
-        mailbox = BSPTree::Mailbox(sd->numberOfFiniteObjects);
+        mailbox = BSPTree::Mailbox(sd->maxPreparedSetFiniteObjects);
 }
 
 View::~View()
@@ -712,28 +736,29 @@ ConstObjectPtr View::FindCameraObject(const Vector3d& point, const ObjectMatch& 
         return (object->interior != nullptr) && match(object) &&
                Inside_BBox(point, object->BBox) && object->Inside(point, &threadData);
     };
+    PreparedSet& groupView = sd->GetPreparedSet(sd->FindPreparedSet(sd->EffectiveFilterTags(viewData.GetCamera().filterTags)));
 
-    if(sd->boundingMethod == 2)
+    if(groupView.boundingMethod == 2)
     {
         HasInteriorPointObjectCondition precond;
         MatchingPointObjectCondition postcond(match);
-        BSPInsideCondFunctor ifn(point, sd->objects, &threadData, precond, postcond);
+        BSPInsideCondFunctor ifn(point, groupView.objects, &threadData, precond, postcond);
 
         mailbox.clear();
-        if ((*sd->tree)(point, ifn, mailbox, true))
+        if ((*groupView.tree)(point, ifn, mailbox, true))
             return postcond.found;
-        for(vector<ObjectPtr>::iterator object = sd->objects.begin() + sd->numberOfFiniteObjects; object != sd->objects.end(); object++)
+        for(vector<ObjectPtr>::iterator object = groupView.objects.begin() + groupView.numberOfFiniteObjects; object != groupView.objects.end(); object++)
             if (solid(*object))
                 return *object;
     }
-    else if ((sd->boundingMethod == 0) || (sd->boundingSlabs == nullptr))
+    else if ((groupView.boundingMethod == 0) || (groupView.boundingSlabs == nullptr))
     {
-        for(vector<ObjectPtr>::const_iterator object = sd->objects.begin(); object != sd->objects.end(); object++)
+        for(vector<ObjectPtr>::const_iterator object = groupView.objects.begin(); object != groupView.objects.end(); object++)
             if (solid(*object))
                 return *object;
     }
     else
-        return FindCameraObject(point, sd->boundingSlabs, match);
+        return FindCameraObject(point, groupView.boundingSlabs, match);
 
     return nullptr;
 }
@@ -745,14 +770,18 @@ static vector<shared_ptr<ScreenPretrace>> ScreenPretraces(ViewData& viewData, un
     const SceneRadiositySettings& settings = viewData.GetSceneData()->radiositySettings;
     vector<shared_ptr<const Camera>> cameras;
     vector<std::pair<unsigned int, unsigned int>> sizes;
+    const auto& scene = viewData.GetSceneData();
+    const auto setFor = [&](const Camera& camera) {
+        return scene->FindPreparedSet(scene->EffectiveFilterTags(camera.filterTags));
+    };
     for (const shared_ptr<const Camera>& camera : viewData.GetSceneData()->screenCameras)
     {
-        if (camera->No_Radiosity || camera->SameView(viewData.GetCamera()))
+        if (camera->No_Radiosity || (camera->SameView(viewData.GetCamera(), false) && setFor(*camera) == setFor(viewData.GetCamera())))
             continue;
         const unsigned int width = camera->Radiosity_Width ? camera->Radiosity_Width : viewData.GetWidth();
         const unsigned int height = camera->Radiosity_Height ? camera->Radiosity_Height : viewData.GetHeight();
         size_t i = 0;
-        while ((i < cameras.size()) && !cameras[i]->SameView(*camera))
+        while ((i < cameras.size()) && (!cameras[i]->SameView(*camera, false) || setFor(*cameras[i]) != setFor(*camera)))
             i++;
         if (i == cameras.size())
         {
@@ -863,33 +892,41 @@ void View::StartRender(POVMS_Object& renderOptions)
         MessageFactory messageFactory(viewData.GetSceneData()->warningLevel, "Radiosity",
                                       viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
                                       viewData.sceneData->sceneId, viewData.viewId);
-        long loaded = -1;
-        if(loadRadiosityCache)
+        const auto& scene = viewData.GetSceneData();
+        skipPretrace = resumeRadiosity;
+        for (size_t id = 0; id < scene->preparedSets.size(); ++id)
         {
-            loaded = viewData.radiosityCache.Load(radiosityFile);
-            if (loaded > 0)
-                messageFactory.Info("Loaded %ld radiosity samples from '%s'.", loaded, UCS2toSysString(radiosityFile()).c_str());
-            else
-                messageFactory.Warning(kWarningGeneral, "No radiosity samples loaded: '%s' %s.", UCS2toSysString(radiosityFile()).c_str(),
-                                       (loaded < 0 ? "cannot be read" : "holds none"));
-            loadRadiosityCache = (loaded > 0);
+            const auto& set = scene->preparedSets[id];
+            const auto cachePath = [&](const Path& base) {
+                return RadiosityCachePath(*scene, *set, base);
+            };
+            RadiosityCache& cache = *viewData.radiosityCaches[id];
+            const Path file = cachePath(radiosityFile);
+            long loaded = -1;
+            if (loadRadiosityCache)
+            {
+                loaded = cache.Load(file);
+                if (loaded > 0)
+                    messageFactory.Info("Loaded %ld radiosity samples from '%s'.", loaded, UCS2toSysString(file()).c_str());
+                else
+                    messageFactory.Warning(kWarningGeneral, "No radiosity samples loaded: '%s' %s.", UCS2toSysString(file()).c_str(),
+                                           (loaded < 0 ? "cannot be read" : "holds none"));
+            }
+            if (resumeRadiosity)
+            {
+                const Path resumeFile = saveRadiosityCache ? file : cachePath(radiosityStateFile);
+                if (!(loadRadiosityCache && saveRadiosityCache))
+                    loaded = cache.Load(resumeFile);
+                skipPretrace = skipPretrace && loaded > 0;
+                if (loaded <= 0)
+                    messageFactory.Warning(kWarningGeneral, "No radiosity samples of the interrupted render in '%s'; pretracing again.",
+                                           UCS2toSysString(resumeFile()).c_str());
+            }
+            if (saveRadiosityCache)
+                cache.InitAutosave(file, loaded > 0);
+            else if (!radiosityStateFile.Empty())
+                cache.InitAutosave(cachePath(radiosityStateFile), loaded > 0);
         }
-        if (resumeRadiosity)
-        {
-            Path resumeFile = saveRadiosityCache ? radiosityFile : radiosityStateFile;
-            if (!(renderOptions.TryGetBool(kPOVAttrib_RadiosityFromFile, false) && saveRadiosityCache))
-                loaded = viewData.radiosityCache.Load(resumeFile);
-            skipPretrace = (loaded > 0);
-            if (skipPretrace)
-                messageFactory.Info("Continuing with %ld radiosity samples from '%s'; no pretrace.", loaded, UCS2toSysString(resumeFile()).c_str());
-            else
-                messageFactory.Warning(kWarningGeneral, "No radiosity samples of the interrupted render in '%s'; pretracing again.",
-                                       UCS2toSysString(resumeFile()).c_str());
-        }
-        if(saveRadiosityCache)
-            viewData.radiosityCache.InitAutosave(radiosityFile, loadRadiosityCache || resumeRadiosity); // if we loaded the file, add to existing data
-        else if (!radiosityStateFile.Empty())
-            viewData.radiosityCache.InitAutosave(radiosityStateFile, resumeRadiosity);
     }
 
     viewData.GetSceneData()->radiositySettings.vainPretrace = renderOptions.TryGetBool(kPOVAttrib_RadiosityVainPretrace, true);
@@ -1181,13 +1218,12 @@ void View::StartRender(POVMS_Object& renderOptions)
     {
         if (!viewData.GetSceneData()->photonSettings.fileName.empty() && viewData.GetSceneData()->photonSettings.loadFile)
         {
-            vector<PhotonMap*> surfaceMaps;
-            vector<PhotonMap*> mediaMaps;
+            vector<PhotonShootingTask*> photonWorkers;
 
             // when we pass a null parameter for the "strategy" (last parameter),
             // then this will LOAD the photon map
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new PhotonSortingTask(
-                &viewData, surfaceMaps, mediaMaps, nullptr, seed
+                &viewData, photonWorkers, nullptr, seed
                 ))));
             // wait for photons to finish
             renderTasks.AppendSync();
@@ -1209,14 +1245,12 @@ void View::StartRender(POVMS_Object& renderOptions)
             // wait for photons to finish
             renderTasks.AppendSync();
 
-            vector<PhotonMap*> surfaceMaps;
-            vector<PhotonMap*> mediaMaps;
+            vector<PhotonShootingTask*> photonWorkers;
 
             for(int i = 0; i < maxRenderThreads; i++)
             {
                 PhotonShootingTask* task = new PhotonShootingTask(&viewData, strategy, seed);
-                surfaceMaps.push_back(task->getSurfacePhotonMap());
-                mediaMaps.push_back(task->getMediaPhotonMap());
+                photonWorkers.push_back(task);
                 viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(task)));
             }
             // wait for photons to finish
@@ -1224,7 +1258,7 @@ void View::StartRender(POVMS_Object& renderOptions)
 
             // this merges the maps, sorts, computes gather options, and then cleans up memory
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new PhotonSortingTask(
-                &viewData, surfaceMaps, mediaMaps, strategy, seed
+                &viewData, photonWorkers, strategy, seed
                 ))));
             // wait for photons to finish
             renderTasks.AppendSync();
@@ -1895,8 +1929,12 @@ void View::StartLevel(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, bool kee
 
 void View::EndRadiosityStateFile(TaskQueue&, Path file)
 {
-    viewData.radiosityCache.EndAutosave();
-    pov_base::Filesystem::DeleteFile(file());
+    for (size_t id = 0; id < viewData.GetSceneData()->preparedSets.size(); ++id)
+    {
+        const auto& set = viewData.GetSceneData()->preparedSets[id];
+        viewData.radiosityCaches[id]->EndAutosave();
+        pov_base::Filesystem::DeleteFile(RadiosityCachePath(*viewData.GetSceneData(), *set, file)());
+    }
 }
 
 void View::RenderControlThread()

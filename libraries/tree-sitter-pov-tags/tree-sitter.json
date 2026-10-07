@@ -1,0 +1,14 @@
+{
+  "grammars": [{
+    "name": "pov_tags",
+    "camelcase": "PovTags",
+    "scope": "source.pov-tags",
+    "path": ".",
+    "file-types": ["pov-tags"]
+  }],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "AGPL-3.0-or-later",
+    "description": "POV-Ray render tag filters"
+  }
+}

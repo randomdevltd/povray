@@ -250,6 +250,8 @@ class RadiosityCache final
         static bool AverageNearBlock(ot_block_struct *block, void *void_info);
 };
 
+using RadiosityCaches = std::vector<std::shared_ptr<RadiosityCache>>;
+
 class RadiosityFunction final : public Trace::RadiosityFunctor
 {
     public:
@@ -265,13 +267,13 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         //      sd      - pointer to the scene data
         //      td      - pointer to the thread-specific data
         //      rs      - the radiosity settings as parsed from the scene file
-        //      rc      - the radiosity cache to retrieve previously computed samples from, and store newly computed samples in
+        //      caches  - view-owned radiosity caches indexed by prepared set
         //      cf      - the cooperate functor (whatever that is - some thing that handles inter-thread communication?)
         //      ft      - whether this is the final trace (i.e. not a radiosity pretrace step)
         //      camera  - position of the camera
         //      reuse   - factor on the minimum and maximum reuse distances, coarser above 1
         RadiosityFunction(std::shared_ptr<SceneData> sd, TraceThreadData *td,
-                          const SceneRadiositySettings& rs, RadiosityCache& rc, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera,
+                          const SceneRadiositySettings& rs, const RadiosityCaches& caches, Trace::CooperateFunctor& cf, bool ft, const Vector3d& camera,
                           double reuse = 1.0);
         virtual ~RadiosityFunction() override;
 
@@ -288,7 +290,7 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         virtual bool CheckRadiosityTraceLevel(const TraceTicket& ticket) override;
 
         virtual bool IsFinalTrace() const override { return isFinalTrace; }
-        virtual bool LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour) override;
+        virtual bool LookupPretraceAmbient(const Vector3d& ipoint, const Vector3d& normal, MathColour& ambient_colour, size_t preparedSetId) override;
 
         // retrieves top level statistics information to drive pretrace re-iteration
         virtual void GetTopLevelStats(long& queryCount, float& reuse);
@@ -349,8 +351,10 @@ class RadiosityFunction final : public Trace::RadiosityFunctor
         // Local data
 
         TraceThreadData *threadData;
-        RadiosityCache& radiosityCache;     // this is where we retrieve previously computed samples from, and store newly computed samples in
-        RadiosityCache::BlockPool* cacheBlockPool;
+        const RadiosityCaches& radiosityCaches;
+        std::vector<RadiosityCache::BlockPool*> cacheBlockPools;
+        RadiosityCache& Cache(size_t id);
+        RadiosityCache::BlockPool* Pool(size_t id);
         DBL errorBound;                     // the error_bound setting
         bool isFinalTrace;
         unsigned int pretraceStep;

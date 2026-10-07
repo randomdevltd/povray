@@ -51,6 +51,7 @@
 
 // POV-Ray header files (core module)
 #include "core/scene/tracethreaddata.h"
+#include "core/shape/portal.h"
 
 // POV-Ray header files (POVMS module)
 #include "povms/povmscpp.h"
@@ -147,6 +148,8 @@ void Scene::StartParser(POVMS_Object& parseOptions)
     sceneData->bspMissChance = clip<float>(parseOptions.TryGetFloat(kPOVAttrib_BSP_MissChance, 0.0f), 0.0f, 1.0f - EPSILON);
 
     sceneData->realTimeRaytracing = parseOptions.TryGetBool(kPOVAttrib_RealTimeRaytracing, false);
+    if (parseOptions.Exist(kPOVAttrib_FilterTags))
+        sceneData->parseFilterTags = ParseTagFilter(parseOptions.GetString(kPOVAttrib_FilterTags));
 
     if(parseOptions.Exist(kPOVAttrib_Declare) == true)
     {
@@ -189,25 +192,59 @@ void Scene::StartParser(POVMS_Object& parseOptions)
     // wait for parsing
     parserTasks.AppendSync();
 
-    // do bounding - we always call this even if the bounding is turned off
-    // because it also generates object statistics
-    sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(parserTasks.AppendTask(new BoundingTask(
-        sceneData,
-        clip<int>(parseOptions.TryGetInt(kPOVAttrib_BoundingThreshold, DEFAULT_AUTO_BOUNDINGTHRESHOLD),1,SIGNED16_MAX),
-        seed
-        ))));
+    const unsigned int boundingThreshold = clip<int>(parseOptions.TryGetInt(kPOVAttrib_BoundingThreshold,
+        DEFAULT_AUTO_BOUNDINGTHRESHOLD), 1, SIGNED16_MAX);
+    const unsigned int workers = clip<int>(parseOptions.TryGetInt(kPOVAttrib_MaxRenderThreads, 1), 1, SIGNED16_MAX);
+    parserTasks.AppendFunction(boost::bind(&Scene::PrepareSetBounds, this, _1, boundingThreshold, seed, workers));
+}
 
-    // wait for bounding
-    parserTasks.AppendSync();
+void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, size_t seed, unsigned int workers)
+{
+    // Parser teardown has released rejected roots, unused declarations and default materials.
+    sceneData->FinalizeScreenCameras();
+    sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(sceneData->parsedCamera.filterTags));
+    for (const Camera& camera : sceneData->cameras)
+        sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(camera.filterTags));
+    for (const std::shared_ptr<const Camera>& camera : sceneData->screenCameras)
+        sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(camera->filterTags));
+    for (const Portal *portal : sceneData->portalMouths)
+    {
+        portal->frontPreparedSetId = sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(portal->frontFilterTags));
+        portal->backPreparedSetId = sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(portal->backFilterTags));
+    }
 
-    // wait for bounding to finish
-    parserTasks.AppendSync();
+    for (size_t view = 0; view < sceneData->preparedSets.size(); ++view)
+    {
+        sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(taskq.AppendTask(new BoundingTask(
+            sceneData, boundingThreshold, seed + view, view))));
+        if (((view + 1) % workers) == 0)
+            taskq.AppendSync();
+    }
+    if ((sceneData->preparedSets.size() % workers) != 0)
+        taskq.AppendSync();
+    taskq.AppendFunction(boost::bind(&Scene::FinishSetBounds, this, _1));
+}
 
-    // send statistics
-    parserTasks.AppendFunction(boost::bind(&Scene::SendStatistics, this, _1));
-
-    // send done message and compatibility data
-    parserTasks.AppendFunction(boost::bind(&Scene::SendDoneMessage, this, _1));
+void Scene::FinishSetBounds(TaskQueue& taskq)
+{
+    PreparedSet& mainView = sceneData->GetPreparedSet(0);
+    sceneData->numberOfFiniteObjects = mainView.numberOfFiniteObjects;
+    sceneData->numberOfInfiniteObjects = mainView.numberOfInfiniteObjects;
+    sceneData->nodes = mainView.nodes;
+    sceneData->splitNodes = mainView.splitNodes;
+    sceneData->objectNodes = mainView.objectNodes;
+    sceneData->emptyNodes = mainView.emptyNodes;
+    sceneData->maxObjects = mainView.maxObjects;
+    sceneData->maxDepth = mainView.maxDepth;
+    sceneData->aborts = mainView.aborts;
+    sceneData->averageObjects = mainView.averageObjects;
+    sceneData->averageDepth = mainView.averageDepth;
+    sceneData->averageAborts = mainView.averageAborts;
+    sceneData->averageAbortObjects = mainView.averageAbortObjects;
+    for (const std::unique_ptr<PreparedSet>& view : sceneData->preparedSets)
+        sceneData->maxPreparedSetFiniteObjects = max(sceneData->maxPreparedSetFiniteObjects, view->numberOfFiniteObjects);
+    taskq.AppendFunction(boost::bind(&Scene::SendStatistics, this, _1));
+    taskq.AppendFunction(boost::bind(&Scene::SendDoneMessage, this, _1));
 }
 
 void Scene::StopParser()

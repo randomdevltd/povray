@@ -57,6 +57,7 @@
 
 // POV-Ray header files (core module)
 #include "core/core_fwd.h"
+#include "core/scene/tagfilter.h"
 
 // POV-Ray header files (backend module)
 //  (none at the moment)
@@ -76,7 +77,7 @@ class PhotonShootingStrategy final
         std::vector<PhotonShootingUnit*> units;
         std::string report;
 
-        void createUnitsForCombo(ObjectPtr obj, LightSource* light, std::shared_ptr<SceneData> sceneData);
+        void createUnitsForCombo(ObjectPtr obj, LightSource* light, PreparedSetId preparedSetId, std::shared_ptr<SceneData> sceneData);
         void start();
         PhotonShootingUnit* getNextUnit();
         void beginUnit(PhotonShootingUnit& unit, ViewThreadData* worker);
@@ -90,10 +91,10 @@ class PhotonShootingStrategy final
     private:
         struct RingProgress
         {
-            int surfaceStart;
-            int surfaceEnd;
-            int mediaStart;
-            int mediaEnd;
+            std::vector<int> surfaceStart;
+            std::vector<int> surfaceEnd;
+            std::vector<int> mediaStart;
+            std::vector<int> mediaEnd;
             std::uint64_t shotsStart;
             std::uint64_t shotsEnd;
         };

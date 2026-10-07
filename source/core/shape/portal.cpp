@@ -112,6 +112,10 @@ ObjectPtr Portal::Copy()
     New->farBack = farBack;
     New->farLights = farLights;
     New->farPigment = Copy_Pigment(farPigment);
+    New->frontFilterTags = frontFilterTags;
+    New->backFilterTags = backFilterTags;
+    New->farFrontFilterTags = farFrontFilterTags;
+    New->farBackFilterTags = farBackFilterTags;
     New->origin = origin;
     return New;
 }
@@ -210,6 +214,10 @@ Portal *Portal::MakeImage() const
     image->exit = exit;
     image->front = farFront;
     image->back = farBack;
+    image->frontFilterTags = farFrontFilterTags;
+    image->backFilterTags = farBackFilterTags;
+    image->farFrontFilterTags = frontFilterTags;
+    image->farBackFilterTags = backFilterTags;
     image->reversed = !IsClosedSolid(body);
     const MATRIX& m = map.matrix;
     const double det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
@@ -222,6 +230,7 @@ Portal *Portal::MakeImage() const
     image->partner = this;
     image->origin = "far mouth of the " + origin;
     image->Flags = Flags;
+    image->tags = tags;
     if (!Bound.empty())
         image->Bound = Copy_Objects(const_cast<std::vector<ObjectPtr>&>(Bound));
     if (!Clip.empty())

@@ -64,6 +64,7 @@ using namespace pov_base;
 
 enum {
     kINIOptFlag_SuppressWrite   = 0x0001,   ///< Suppress when writing complete list of options
+    kINIOptFlag_RawExpression   = 0x0002,
 };
 
 enum {

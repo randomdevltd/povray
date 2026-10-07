@@ -1568,6 +1568,14 @@ void Parser::Parse_Camera (Camera& Cam)
                 New.No_Radiosity = true;
             END_CASE
 
+            CASE (TAGS_TOKEN)
+                Parse_Tags(New.tags);
+            END_CASE
+
+            CASE (FILTER_TAGS_TOKEN)
+                Parse_Filter_Tags(New.filterTags);
+            END_CASE
+
             OTHERWISE
                 UNGET
                 EXIT
@@ -2007,6 +2015,14 @@ void Parser::Parse_Camera (Camera& Cam)
     else // old style syntax [mesh camera and user-defined camera not supported]
     {
         EXPECT
+            CASE (TAGS_TOKEN)
+                Parse_Tags(New.tags);
+            END_CASE
+
+            CASE (FILTER_TAGS_TOKEN)
+                Parse_Filter_Tags(New.filterTags);
+            END_CASE
+
             CASE (PERSPECTIVE_TOKEN)
                 New.Type = PERSPECTIVE_CAMERA;
             END_CASE
@@ -2368,6 +2384,14 @@ bool Parser::Parse_Camera_Mods(Camera& New)
             New.No_Radiosity = true;
         END_CASE
 
+        CASE (TAGS_TOKEN)
+            Parse_Tags(New.tags);
+        END_CASE
+
+        CASE (FILTER_TAGS_TOKEN)
+            Parse_Filter_Tags(New.filterTags);
+        END_CASE
+
         OTHERWISE
             UNGET
             return false;
@@ -2385,6 +2409,95 @@ void Parser::Parse_Camera_Radiosity_Size(Camera& New)
         Error("radiosity_size needs a width and height from 1 to 65535 pixels.");
     New.Radiosity_Width = (unsigned int)(size.x() + 0.5);
     New.Radiosity_Height = (unsigned int)(size.y() + 0.5);
+}
+
+static void MergeTags(std::vector<std::string>& tags, const std::vector<std::string>& added)
+{
+    tags.insert(tags.end(), added.begin(), added.end());
+    std::sort(tags.begin(), tags.end());
+    tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
+}
+
+void Parser::Parse_Tags(std::vector<std::string>& tags)
+{
+    std::vector<std::string> added;
+    Parse_Begin();
+    while (!Peek_Token(RIGHT_CURLY_TOKEN))
+    {
+        char *name = Parse_C_String();
+        const std::string value(name);
+        POV_FREE(name);
+        if (value.empty())
+            Error("A tag cannot be empty.");
+        if (value.find('*') != std::string::npos)
+            Error("'*' is a filter wildcard and cannot be assigned as a tag.");
+        added.push_back(value);
+        if (!AllowToken(COMMA_TOKEN) && !Peek_Token(RIGHT_CURLY_TOKEN))
+            Expectation_Error("comma or }");
+    }
+    Parse_End();
+    MergeTags(tags, added);
+}
+
+void Parser::Parse_Filter_Tags(TagFilter& filter)
+{
+    std::string expression;
+    Parse_Begin();
+    while (!AllowToken(RIGHT_CURLY_TOKEN))
+    {
+        Get_Token();
+        switch (CurrentTrueTokenId())
+        {
+            case ANY_TOKEN: expression += "any"; break;
+            case NONE_TOKEN: expression += "none"; break;
+            case LEFT_PAREN_TOKEN: expression += '('; break;
+            case RIGHT_PAREN_TOKEN: expression += ')'; break;
+            case AMPERSAND_TOKEN: expression += '&'; break;
+            case BAR_TOKEN: expression += '|'; break;
+            case EXCLAMATION_TOKEN: expression += '!'; break;
+            case END_OF_FILE_TOKEN: Expectation_Error("filter expression or }"); break;
+            default:
+            {
+                UNGET
+                char *value = Parse_C_String();
+                expression += '"';
+                for (const char *p = value; *p; ++p)
+                {
+                    switch (*p)
+                    {
+                        case '\\': expression += "\\\\"; break;
+                        case '"': expression += "\\\""; break;
+                        case '\n': expression += "\\n"; break;
+                        case '\r': expression += "\\r"; break;
+                        case '\t': expression += "\\t"; break;
+                        case '\b': expression += "\\b"; break;
+                        case '\f': expression += "\\f"; break;
+                        default:
+                            if (static_cast<unsigned char>(*p) < 0x20)
+                            {
+                                POV_FREE(value);
+                                Error("Unsupported control character in filter tag.");
+                            }
+                            expression += *p;
+                    }
+                }
+                expression += '"';
+                POV_FREE(value);
+                break;
+            }
+        }
+        expression += ' ';
+    }
+    Unget_Token();
+    Parse_End();
+    try
+    {
+        filter = ParseTagFilter(expression);
+    }
+    catch (const std::runtime_error& error)
+    {
+        Error("Invalid filter_tags expression: %s", error.what());
+    }
 }
 
 //******************************************************************************
@@ -2619,6 +2732,7 @@ ObjectPtr Parser::Parse_Portal()
     {
         int front = -1, back = -1, lights = -1;
         PIGMENT *pigment = nullptr;
+        TagFilter filterTags, frontFilterTags, backFilterTags;
     };
     Mouth outer, nearMouth, farMouth;
     bool haveTarget = false, haveNear = false, haveFarBlock = false, haveFarSwitch = false;
@@ -2654,6 +2768,18 @@ ObjectPtr Parser::Parse_Portal()
                 Parse_End();
             END_CASE
 
+            CASE (FILTER_TAGS_TOKEN)
+                Parse_Filter_Tags(mouth.filterTags);
+            END_CASE
+
+            CASE (FRONT_FILTER_TAGS_TOKEN)
+                Parse_Filter_Tags(mouth.frontFilterTags);
+            END_CASE
+
+            CASE (BACK_FILTER_TAGS_TOKEN)
+                Parse_Filter_Tags(mouth.backFilterTags);
+            END_CASE
+
             OTHERWISE
                 UNGET
                 return false;
@@ -2667,7 +2793,7 @@ ObjectPtr Parser::Parse_Portal()
         while (parseMouthOption(mouth, where))
             ;
         if (!Peek_Token(RIGHT_CURLY_TOKEN))
-            Error("%s { } takes only front, back, pigment and no_lights.", where);
+            Error("%s { } takes only front, back, pigment, no_lights and tag-filter options.", where);
         Parse_End();
     };
     EXPECT
@@ -2735,6 +2861,12 @@ ObjectPtr Parser::Parse_Portal()
             Parse_End();
         END_CASE
 
+        CASE (TAGS_TOKEN)
+        {
+            Parse_Tags(Object->tags);
+        }
+        END_CASE
+
         OTHERWISE
             UNGET
             if (!parseMouthOption(outer, "portal"))
@@ -2760,6 +2892,21 @@ ObjectPtr Parser::Parse_Portal()
     Object->farFront = pick(farMouth.front, outer.front, true);
     Object->farBack = pick(farMouth.back, outer.back, false);
     Object->farLights = pick(farMouth.lights, outer.lights, true);
+    auto pickGroups = [](const TagFilter& side, const Mouth& mouth, const TagFilter& outerSide,
+                         const Mouth& outerMouth)
+    {
+        if (side.specified)
+            return side;
+        if (mouth.filterTags.specified)
+            return mouth.filterTags;
+        if (outerSide.specified)
+            return outerSide;
+        return outerMouth.filterTags;
+    };
+    Object->frontFilterTags = pickGroups(nearMouth.frontFilterTags, nearMouth, outer.frontFilterTags, outer);
+    Object->backFilterTags = pickGroups(nearMouth.backFilterTags, nearMouth, outer.backFilterTags, outer);
+    Object->farFrontFilterTags = pickGroups(farMouth.frontFilterTags, farMouth, outer.frontFilterTags, outer);
+    Object->farBackFilterTags = pickGroups(farMouth.backFilterTags, farMouth, outer.backFilterTags, outer);
     if (!Object->farFront && !Object->farBack)
         Object->farMouth = false;
     Object->pigment = (nearMouth.pigment != nullptr) ? nearMouth.pigment : Copy_Pigment(outer.pigment);
@@ -2794,8 +2941,9 @@ void Parser::Check_Portal_Cameras()
             continue;
         const Portal *portal = static_cast<Portal *>(object);
         bool inside = Inside_Object(sceneData->parsedCamera.Location, portal->body, &mThreadData);
-        for (const std::shared_ptr<const Camera>& camera : sceneData->screenCameras)
-            inside = inside || Inside_Object(camera->Location, portal->body, &mThreadData);
+        for (const std::weak_ptr<const Camera>& candidate : sceneData->screenCameraCandidates)
+            if (std::shared_ptr<const Camera> camera = candidate.lock())
+                inside = inside || Inside_Object(camera->Location, portal->body, &mThreadData);
         if (inside)
             Warning("A camera is inside the body of the %s, a region that is not there; place the camera at the target instead.",
                     portal->origin.c_str());
@@ -3778,6 +3926,12 @@ ObjectPtr Parser::Parse_Light_Group()
             // TODO FIXME -- shouldn't we set NO_GLOBAL_LIGHTS_SET_FLAG here?
         END_CASE
 
+        CASE (TAGS_TOKEN)
+        {
+            Parse_Tags(Object->tags);
+        }
+        END_CASE
+
         CASE(PHOTONS_TOKEN)
             Parse_Begin();
             EXPECT
@@ -4118,6 +4272,12 @@ ObjectPtr Parser::Parse_Light_Source ()
 
         CASE (MEDIA_INTERACTION_TOKEN)
             Object->Media_Interaction = Allow_Float(1.0) > 0.0;
+        END_CASE
+
+        CASE (TAGS_TOKEN)
+        {
+            Parse_Tags(Object->tags);
+        }
         END_CASE
 
         CASE (TRANSLATE_TOKEN)
@@ -7254,6 +7414,11 @@ void Parser::Parse_Frame ()
         END_CASE
 
         CASE (CAMERA_TOKEN)
+        {
+            Camera candidate = (sceneData->EffectiveLanguageVersion() >= 350) ? Default_Camera : sceneData->parsedCamera;
+            Parse_Camera(candidate);
+            if (!MatchesTags(candidate.tags, sceneData->parseFilterTags))
+                break;
             if (sceneData->EffectiveLanguageVersion() >= 350)
             {
                 if (sceneData->clocklessAnimation == false)
@@ -7261,13 +7426,12 @@ void Parser::Parse_Frame ()
                     if (had_camera == true)
                         Warning("More than one camera in scene. Ignoring previous camera(s).");
                 }
-                had_camera = true;
-                sceneData->parsedCamera = Default_Camera;
             }
-
-            Parse_Camera(sceneData->parsedCamera);
+            had_camera = true;
+            sceneData->parsedCamera = candidate;
             if (sceneData->clocklessAnimation == true)
                 sceneData->cameras.push_back(sceneData->parsedCamera);
+        }
         END_CASE
 
         CASE (DECLARE_TOKEN)
@@ -7329,6 +7493,11 @@ void Parser::Parse_Frame ()
             Object = Parse_Object();
             if (Object == nullptr)
                 Expectation_Error ("object or directive");
+            if (!MatchesTags(Object->tags, sceneData->parseFilterTags))
+            {
+                Destroy_Object(Object);
+                break;
+            }
             Post_Process (Object, nullptr);
             if (!DropShutPortal(Object))
             {
@@ -7340,6 +7509,11 @@ void Parser::Parse_Frame ()
             mPortalImages.clear();
         END_CASE
     END_EXPECT
+    if (!had_camera && sceneData->parseFilterTags.specified)
+    {
+        sceneData->parsedCamera = Default_Camera;
+        Render_Info("No camera survived Filter_Tags; using the default camera.\n");
+    }
 }
 
 //******************************************************************************
@@ -7348,6 +7522,10 @@ void Parser::Parse_Global_Settings()
 {
     Parse_Begin();
     EXPECT
+        CASE (FILTER_TAGS_TOKEN)
+            Parse_Filter_Tags(sceneData->defaultFilterTags);
+        END_CASE
+
         CASE (IRID_WAVELENGTH_TOKEN)
             Parse_Wavelengths (sceneData->iridWavelengths);
         END_CASE
@@ -7481,18 +7659,18 @@ void Parser::Parse_Global_Settings()
             sceneData->photonSettings.surfaceCount = 0;
             //  sceneData->photonSettings.globalCount = 0;
 
-            sceneData->surfacePhotonMap.minGatherRad = -1;
+            sceneData->surfacePhotonMinGatherRad = -1;
 
             Parse_Begin();
             EXPECT
                 CASE(RADIUS_TOKEN)
-                    sceneData->surfacePhotonMap.minGatherRad = Allow_Float(-1.0);
+                    sceneData->surfacePhotonMinGatherRad = Allow_Float(-1.0);
                     Parse_Comma();
-                    sceneData->surfacePhotonMap.minGatherRadMult = Allow_Float(1.0);
+                    sceneData->surfacePhotonMinGatherRadMult = Allow_Float(1.0);
                     Parse_Comma();
-                    sceneData->mediaPhotonMap.minGatherRad = Allow_Float(-1.0);
+                    sceneData->mediaPhotonMinGatherRad = Allow_Float(-1.0);
                     Parse_Comma();
-                    sceneData->mediaPhotonMap.minGatherRadMult = Allow_Float(1.0);
+                    sceneData->mediaPhotonMinGatherRadMult = Allow_Float(1.0);
                 END_CASE
 
                 CASE(SPACING_TOKEN)
@@ -7880,6 +8058,12 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
     char *s;
 
     EXPECT_CAT
+        CASE(TAGS_TOKEN)
+        {
+            Parse_Tags(Object->tags);
+        }
+        END_CASE
+
         CASE(UV_MAPPING_TOKEN)
             /* if no texture than allow uv_mapping
                otherwise, warn user */
@@ -9717,6 +9901,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         return;
     }
+    if (Parent != nullptr)
+        Object->tags = Parent->tags;
 
     if (Object->Type & LT_SRC_UNION_OBJECT)
     {
@@ -9732,7 +9918,9 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         Portal *portal = static_cast<Portal *>(Object);
         if (Parent != nullptr)
+        {
             Object->Flags |= Parent->Flags & (NO_IMAGE_FLAG | NO_REFLECTION_FLAG | NO_RADIOSITY_FLAG);
+        }
         Portal *image = portal->farMouth ? portal->MakeImage() : nullptr;
         if (image != nullptr)
         {
@@ -10374,6 +10562,7 @@ void Parser::Link_To_Frame(ObjectPtr Object)
     {
         // Child is no longer inside a CSG object.
         (*This_Sib)->Type &= ~IS_CHILD_OBJECT;
+        (*This_Sib)->tags = Object->tags;
         Link_To_Frame(*This_Sib);
     }
 

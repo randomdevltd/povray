@@ -631,7 +631,7 @@ int ProcessOptions::Output_INI_Option(INI_Parser_Table *option, POVMSObjectPtr o
                 bufptr = new char[l];
                 bufptr[0] = 0;
                 if(POVMSAttr_Get(&item, kPOVMSType_CString, bufptr, &l) == 0)
-                    file->printf("%s=\"%s\"\n", option->keyword, bufptr);
+                    file->printf((option->flags & kINIOptFlag_RawExpression) ? "%s=%s\n" : "%s=\"%s\"\n", option->keyword, bufptr);
                 delete[] bufptr;
             }
             (void)POVMSAttr_Delete(&item);
@@ -820,10 +820,11 @@ int ProcessOptions::Parse_INI_Option(ITextStream *file, POVMSObjectPtr obj)
     // currently shellout commands are in that category since they may contain quoted paths or
     // quoted/escaped options. We only apply this special case here, where we know the input data
     // is a file (as it's also possible to specify INI options on the command-line).
-    if (toupper(table->keyword[strlen(table->keyword) - 1]) == 'D' && // the command and return keywords have the same kPOVAttrib_ values; we only want the command
+    if ((table->flags & kINIOptFlag_RawExpression) ||
+        (toupper(table->keyword[strlen(table->keyword) - 1]) == 'D' && // the command and return keywords have the same kPOVAttrib_ values; we only want the command
         (table->key == kPOVAttrib_PostFrameCommand || table->key == kPOVAttrib_PreFrameCommand ||
          table->key == kPOVAttrib_PostSceneCommand || table->key == kPOVAttrib_PreSceneCommand ||
-         table->key == kPOVAttrib_UserAbortCommand || table->key == kPOVAttrib_FatalErrorCommand))
+         table->key == kPOVAttrib_UserAbortCommand || table->key == kPOVAttrib_FatalErrorCommand)))
     {
         value = Parse_Raw_INI_String(file);
     }
@@ -1111,11 +1112,13 @@ char *ProcessOptions::Parse_Raw_INI_String(ITextStream *file)
                 break;
 
             case '"':
-                inDQ = !inDQ;
+                if (!inSQ)
+                    inDQ = !inDQ;
                 break;
 
             case '\'':
-                inSQ = !inSQ;
+                if (!inDQ)
+                    inSQ = !inSQ;
                 break ;
 
             default:
@@ -1352,7 +1355,9 @@ int ProcessOptions::Parse_CL_Option(const char *&commandline, POVMSObjectPtr obj
 
     // if the string is quoted, parse it matching quotes
     chr = *commandline;
-    if((chr == '\"') || (chr == '\''))
+    if (table->flags & kINIOptFlag_RawExpression)
+        value = Parse_CL_String(commandline, 0);
+    else if((chr == '\"') || (chr == '\''))
     {
         commandline++;
 

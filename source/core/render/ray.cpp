@@ -45,6 +45,7 @@
 
 // POV-Ray header files (core module)
 #include "core/material/interior.h"
+#include "core/render/trace.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -53,7 +54,7 @@ namespace pov
 {
 
 Ray::Ray(TraceTicket& ticket, RayType rt, bool shadowTest, bool photon, bool radiosity, bool monochromatic, bool pretrace) :
-    ticket(ticket)
+    ticket(ticket), preparedSetId(ticket.preparedSetId)
 {
     SetFlags(rt, shadowTest, photon, radiosity, monochromatic, pretrace);
     hollowRay = true;
@@ -62,7 +63,7 @@ Ray::Ray(TraceTicket& ticket, RayType rt, bool shadowTest, bool photon, bool rad
 
 Ray::Ray(TraceTicket& ticket, const Vector3d& ov, const Vector3d& dv, RayType rt, bool shadowTest, bool photon, bool radiosity, bool monochromatic, bool pretrace) :
     BasicRay(ov, dv),
-    ticket(ticket)
+    ticket(ticket), preparedSetId(ticket.preparedSetId)
 {
     SetFlags(rt, shadowTest, photon, radiosity, monochromatic, pretrace);
     hollowRay = true;
@@ -155,6 +156,7 @@ void Ray::SetFlags(RayType rt, bool shadowTest, bool photon, bool radiosity, boo
 
 void Ray::SetFlags(RayType rt, const Ray& other)
 {
+    preparedSetId = other.preparedSetId;
     primaryRay = (rt == PrimaryRay);
     reflectionRay = (rt == ReflectionRay) || ((rt == RefractionRay) && other.IsReflectionRay()); // TODO FIXME - just a kludge for now! [CLi]
     refractionRay = (rt == RefractionRay) || ((rt == ReflectionRay) && other.IsRefractionRay()); // TODO FIXME - just a kludge for now! [CLi]

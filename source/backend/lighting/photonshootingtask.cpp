@@ -88,14 +88,14 @@ PhotonShootingTask::~PhotonShootingTask()
 }
 
 
-PhotonMap* PhotonShootingTask::getMediaPhotonMap()
+PhotonMap* PhotonShootingTask::getMediaPhotonMap(PreparedSetId preparedSetId)
 {
-    return GetViewDataPtr()->mediaPhotonMap;
+    return &GetViewDataPtr()->MediaPhotonMap(preparedSetId);
 }
 
-PhotonMap* PhotonShootingTask::getSurfacePhotonMap()
+PhotonMap* PhotonShootingTask::getSurfacePhotonMap(PreparedSetId preparedSetId)
 {
-    return GetViewDataPtr()->surfacePhotonMap;
+    return &GetViewDataPtr()->SurfacePhotonMap(preparedSetId);
 }
 
 void PhotonShootingTask::SendProgress(void)
@@ -108,7 +108,15 @@ void PhotonShootingTask::SendProgress(void)
         // the totals should be combined and sent from a single thread.
         timer.Reset();
         POVMS_Object obj(kPOVObjectClass_PhotonProgress);
-        obj.SetInt(kPOVAttrib_CurrentPhotonCount, GetViewDataPtr()->surfacePhotonMap->numPhotons + GetViewDataPtr()->mediaPhotonMap->numPhotons);
+        int count = 0;
+        for (PreparedSetId id = 0; id < GetViewDataPtr()->PhotonMapSetCount(); ++id)
+        {
+            PhotonMap* surface = GetViewDataPtr()->FindSurfacePhotonMap(id);
+            PhotonMap* media = GetViewDataPtr()->FindMediaPhotonMap(id);
+            count += surface ? surface->numPhotons : 0;
+            count += media ? media->numPhotons : 0;
+        }
+        obj.SetInt(kPOVAttrib_CurrentPhotonCount, count);
         RenderBackend::SendViewOutput(GetViewData()->GetViewId(), GetSceneData()->frontendAddress, kPOVMsgIdent_Progress, obj);
     }
 }
@@ -179,6 +187,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
     /* set global variable stuff */
     renderDataPtr->photonSourceLight = combo.light;
     renderDataPtr->photonTargetObject = combo.target;
+    renderDataPtr->Light_Is_Global = !combo.light->lightGroupLight;
 
     /* first, check on various flags... make sure all is a go for this ObjectPtr */
     mergedFlags = combo.computeMergedFlags();
@@ -264,6 +273,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
                 {
                     TraceTicket ticket(maxTraceLevel, adcBailout);
                     Ray ray(ticket);
+                    ray.SetPreparedSetId(unit.preparedSetId);
                     ray.SetKey(DeriveKey(photonKey, kDrawPhoton, 2 + std::uint64_t(area_x) * y_samples + area_y));
 
                     ray.Origin = combo.light->Center;
@@ -383,7 +393,8 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
                     if (!haveOrigin || ray.Origin[X] != lastOrigin[X] || ray.Origin[Y] != lastOrigin[Y] || ray.Origin[Z] != lastOrigin[Z])
                     {
                         originInteriors.clear();
-                        for(std::vector<ObjectPtr>::iterator object = GetSceneData()->objects.begin(); object != GetSceneData()->objects.end(); object++)
+                        PreparedSet& view = GetSceneData()->GetPreparedSet(unit.preparedSetId);
+                        for(std::vector<ObjectPtr>::iterator object = view.objects.begin(); object != view.objects.end(); object++)
                         {
                             if ((*object)->Inside(ray.Origin, renderDataPtr) && ((*object)->interior != nullptr))
                                 originInteriors.push_back((*object)->interior.get());

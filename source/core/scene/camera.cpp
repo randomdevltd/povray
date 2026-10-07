@@ -262,6 +262,8 @@ void Camera::Init()
     Radiosity_Width = 0;
     Radiosity_Height = 0;
     No_Radiosity = false;
+    tags.clear();
+    filterTags = TagFilter();
 
     for (unsigned int i = 0; i < 3; ++i)
     {
@@ -372,6 +374,8 @@ Camera& Camera::operator=(const Camera& src)
     Radiosity_Width = src.Radiosity_Width;
     Radiosity_Height = src.Radiosity_Height;
     No_Radiosity = src.No_Radiosity;
+    tags = src.tags;
+    filterTags = src.filterTags;
     Mesh_Index = src.Mesh_Index;
     for (int i = 0; i < 10; i++)
     {
@@ -406,7 +410,7 @@ static bool SameVector(const Vector3d& a, const Vector3d& b)
     return (a.x() == b.x()) && (a.y() == b.y()) && (a.z() == b.z());
 }
 
-bool Camera::SameView(const Camera& other) const
+bool Camera::SameView(const Camera& other, bool compareFilters) const
 {
     for (unsigned int i = 0; i < 3; ++i)
         if ((Location_Fn[i] != other.Location_Fn[i]) || (Direction_Fn[i] != other.Direction_Fn[i]))
@@ -417,6 +421,7 @@ bool Camera::SameView(const Camera& other) const
            (Focal_Distance == other.Focal_Distance) && (Blur_Samples == other.Blur_Samples) &&
            (Blur_Samples_Min == other.Blur_Samples_Min) && (Confidence == other.Confidence) && (Variance == other.Variance) &&
            (Max_Ray_Distance == other.Max_Ray_Distance) && (Tnormal == other.Tnormal) && (Bokeh == other.Bokeh) &&
+           (!compareFilters || (filterTags == other.filterTags)) &&
            Meshes.empty() && other.Meshes.empty();
 }
 

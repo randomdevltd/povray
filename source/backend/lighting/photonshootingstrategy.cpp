@@ -234,7 +234,7 @@ void PhotonShootingStrategy::start()
             comboUnits.reserve(chunks);
             for (std::size_t i = 0; i < chunks; ++i)
             {
-                auto* unit = new PhotonShootingUnit(combo.light, combo.target);
+                auto* unit = new PhotonShootingUnit(combo.light, combo.target, whole->preparedSetId);
                 unit->lightAndObject = combo;
                 unit->lightAndObject.mintheta = chunkTheta[i];
                 unit->lightAndObject.maxtheta = i + 1 < chunks ? chunkTheta[i + 1] : combo.maxtheta;
@@ -275,8 +275,22 @@ void PhotonShootingStrategy::beginRing(PhotonShootingUnit& unit, ViewThreadData*
     if (!unit.lightAndObject.parallelChunk || autoStopPercent >= 1)
         return;
     UnitProgress& record = progress[unit.recordIndex];
-    record.rings.push_back({worker->surfacePhotonMap->numPhotons, 0,
-        worker->mediaPhotonMap->numPhotons, 0, worker->Stats()[Number_Of_Photons_Shot], 0});
+    RingProgress ring;
+    const std::size_t setCount = worker->GetSceneData()->preparedSets.size();
+    ring.surfaceStart.resize(setCount);
+    ring.surfaceEnd.resize(setCount);
+    ring.mediaStart.resize(setCount);
+    ring.mediaEnd.resize(setCount);
+    for (PreparedSetId id = 0; id < setCount; ++id)
+    {
+        PhotonMap* surface = worker->FindSurfacePhotonMap(id);
+        PhotonMap* media = worker->FindMediaPhotonMap(id);
+        ring.surfaceStart[id] = surface ? surface->numPhotons : 0;
+        ring.mediaStart[id] = media ? media->numPhotons : 0;
+    }
+    ring.shotsStart = worker->Stats()[Number_Of_Photons_Shot];
+    ring.shotsEnd = 0;
+    record.rings.push_back(std::move(ring));
 }
 
 void PhotonShootingStrategy::recordRing(PhotonShootingUnit& unit, ViewThreadData* worker)
@@ -285,8 +299,13 @@ void PhotonShootingStrategy::recordRing(PhotonShootingUnit& unit, ViewThreadData
         return;
     UnitProgress& record = progress[unit.recordIndex];
     RingProgress& ring = record.rings.back();
-    ring.surfaceEnd = worker->surfacePhotonMap->numPhotons;
-    ring.mediaEnd = worker->mediaPhotonMap->numPhotons;
+    for (PreparedSetId id = 0; id < ring.surfaceEnd.size(); ++id)
+    {
+        PhotonMap* surface = worker->FindSurfacePhotonMap(id);
+        PhotonMap* media = worker->FindMediaPhotonMap(id);
+        ring.surfaceEnd[id] = surface ? surface->numPhotons : 0;
+        ring.mediaEnd[id] = media ? media->numPhotons : 0;
+    }
     ring.shotsEnd = worker->Stats()[Number_Of_Photons_Shot];
     const std::size_t ringIndex = unit.lightAndObject.thetaIndexBase + record.rings.size() - 1;
     ComboProgress& state = *comboProgress[unit.lightAndObject.serial];
@@ -356,13 +375,19 @@ void PhotonShootingStrategy::finishShooting()
             const std::uint64_t index = unit.lightAndObject.thetaIndexBase + r;
             if (index <= cutoff)
                 continue;
-            if (ring.surfaceEnd > ring.surfaceStart)
-                surfaceRemovals.push_back({record.worker->surfacePhotonMap, ring.surfaceStart, ring.surfaceEnd});
-            if (ring.mediaEnd > ring.mediaStart)
-                mediaRemovals.push_back({record.worker->mediaPhotonMap, ring.mediaStart, ring.mediaEnd});
+            for (PreparedSetId id = 0; id < ring.surfaceEnd.size(); ++id)
+            {
+                if (ring.surfaceEnd[id] > ring.surfaceStart[id])
+                    surfaceRemovals.push_back({record.worker->FindSurfacePhotonMap(id), ring.surfaceStart[id], ring.surfaceEnd[id]});
+                if (ring.mediaEnd[id] > ring.mediaStart[id])
+                    mediaRemovals.push_back({record.worker->FindMediaPhotonMap(id), ring.mediaStart[id], ring.mediaEnd[id]});
+            }
             record.worker->Stats()[Number_Of_Photons_Shot] -= ring.shotsEnd - ring.shotsStart;
-            record.worker->Stats()[Number_Of_Photons_Stored] -= ring.surfaceEnd - ring.surfaceStart;
-            record.worker->Stats()[Number_Of_Media_Photons_Stored] -= ring.mediaEnd - ring.mediaStart;
+            for (PreparedSetId id = 0; id < ring.surfaceEnd.size(); ++id)
+            {
+                record.worker->Stats()[Number_Of_Photons_Stored] -= ring.surfaceEnd[id] - ring.surfaceStart[id];
+                record.worker->Stats()[Number_Of_Media_Photons_Stored] -= ring.mediaEnd[id] - ring.mediaStart[id];
+            }
         }
     }
     auto eraseDescending = [](std::vector<Removal>& removals)
@@ -397,9 +422,9 @@ PhotonShootingUnit* PhotonShootingStrategy::getNextUnit()
     return unit;
 }
 
-void PhotonShootingStrategy::createUnitsForCombo(ObjectPtr obj, LightSource* light, std::shared_ptr<SceneData> sceneData)
+void PhotonShootingStrategy::createUnitsForCombo(ObjectPtr obj, LightSource* light, PreparedSetId preparedSetId, std::shared_ptr<SceneData> sceneData)
 {
-    PhotonShootingUnit* unit = new PhotonShootingUnit(light, obj);
+    PhotonShootingUnit* unit = new PhotonShootingUnit(light, obj, preparedSetId);
     unit->lightAndObject.computeAnglesAndDeltas(sceneData);
     unit->lightAndObject.serial = units.size();
     units.push_back(unit);

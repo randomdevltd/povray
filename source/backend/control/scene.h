@@ -201,6 +201,8 @@ class Scene final
          *  @param   taskq          The task queue that executed this method.
          */
         void SendDoneMessage(TaskQueue& taskq);
+        void PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, size_t seed, unsigned int workers);
+        void FinishSetBounds(TaskQueue& taskq);
 
         /**
          *  Thread controlling the parser task queue.

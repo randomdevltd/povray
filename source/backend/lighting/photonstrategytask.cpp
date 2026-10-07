@@ -76,6 +76,16 @@ namespace pov
 
 using std::vector;
 
+namespace
+{
+bool PhotonLightAffectsTarget(ConstObjectPtr object, const LightSource* light)
+{
+    if (!light->lightGroupLight)
+        return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
+    return std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end();
+}
+}
+
 PhotonStrategyTask::PhotonStrategyTask(ViewData *vd, PhotonShootingStrategy* strategy, size_t seed) :
     RenderTask(vd, seed, "Photon"),
     strategy(strategy),
@@ -95,7 +105,10 @@ void PhotonStrategyTask::SendProgress(void)
     {
         timer.Reset();
         POVMS_Object obj(kPOVObjectClass_PhotonProgress);
-        obj.SetInt(kPOVAttrib_CurrentPhotonCount, GetSceneData()->surfacePhotonMap.numPhotons + GetSceneData()->mediaPhotonMap.numPhotons);
+        int count = 0;
+        for (const auto& set : GetSceneData()->preparedSets)
+            count += set->surfacePhotonMap.numPhotons + set->mediaPhotonMap.numPhotons;
+        obj.SetInt(kPOVAttrib_CurrentPhotonCount, count);
         RenderBackend::SendViewOutput(GetViewData()->GetViewId(), GetSceneData()->frontendAddress, kPOVMsgIdent_Progress, obj);
     }
 }
@@ -109,18 +122,18 @@ void PhotonStrategyTask::Run()
 
     /*  loop through global light sources  */
     GetViewDataPtr()->Light_Is_Global = true;
-    for(vector<LightSource *>::iterator Light = GetSceneData()->lightSources.begin(); Light != GetSceneData()->lightSources.end(); Light++)
+    for (PreparedSetId preparedSetId = 0; preparedSetId < GetSceneData()->preparedSets.size(); ++preparedSetId)
     {
-        if ((*Light)->Light_Type != FILL_LIGHT_SOURCE)
+        PreparedSet& set = GetSceneData()->GetPreparedSet(preparedSetId);
+        for (LightSource *light : set.lights)
         {
-            if ((*Light)->Light_Type == CYLINDER_SOURCE && !(*Light)->Parallel)
+            if (light->Light_Type == FILL_LIGHT_SOURCE)
+                continue;
+            if (light->Light_Type == CYLINDER_SOURCE && !light->Parallel)
                 mpMessageFactory->Warning(kWarningGeneral,"Cylinder lights should be parallel when used with photons.");
-
-            /* do object-specific lighting */
-            SearchThroughObjectsCreateUnits(GetSceneData()->objects, (*Light));
+            SearchThroughObjectsCreateUnits(set.objects, light, preparedSetId);
+            Cooperate();
         }
-
-        Cooperate();
     }
 
     // loop through light_group light sources
@@ -208,7 +221,7 @@ void PhotonStrategyTask::Finish()
 
 ******************************************************************************/
 
-void PhotonStrategyTask::SearchThroughObjectsCreateUnits(vector<ObjectPtr>& Objects, LightSource *Light)
+void PhotonStrategyTask::SearchThroughObjectsCreateUnits(vector<ObjectPtr>& Objects, LightSource *Light, PreparedSetId preparedSetId)
 {
     std::shared_ptr<SceneData> sceneData = GetSceneData();
 
@@ -219,9 +232,9 @@ void PhotonStrategyTask::SearchThroughObjectsCreateUnits(vector<ObjectPtr>& Obje
            !((*Sib)->Type & LIGHT_SOURCE_OBJECT))
         {
             /* do not shoot photons if global lights are turned off for ObjectPtr */
-            if(!Test_Flag((*Sib), NO_GLOBAL_LIGHTS_FLAG))
+            if (PhotonLightAffectsTarget(*Sib, Light))
             {
-                strategy->createUnitsForCombo((*Sib), Light, sceneData);
+                strategy->createUnitsForCombo((*Sib), Light, preparedSetId, sceneData);
             }
 
             Cooperate();
@@ -230,7 +243,7 @@ void PhotonStrategyTask::SearchThroughObjectsCreateUnits(vector<ObjectPtr>& Obje
         /* if it has children, check them too */
         else if(((*Sib)->Type & IS_COMPOUND_OBJECT))
         {
-            SearchThroughObjectsCreateUnits((reinterpret_cast<CSG *>(*Sib))->children, Light);
+            SearchThroughObjectsCreateUnits((reinterpret_cast<CSG *>(*Sib))->children, Light, preparedSetId);
         }
     }
 }

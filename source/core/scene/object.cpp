@@ -592,6 +592,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Clip    = Old->Clip;
     New->BBox    = Old->BBox;
     New->Flags   = Old->Flags;
+    New->tags = Old->tags;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;

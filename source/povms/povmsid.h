@@ -370,6 +370,7 @@ enum
     kPOVAttrib_Declare               = 'Decl',
     kPOVAttrib_Clock                 = 'Clck',
     kPOVAttrib_ClocklessAnimation    = 'Ckla',
+    kPOVAttrib_FilterTags            = 'FiTa',
     kPOVAttrib_RealTimeRaytracing    = 'RTRa',
     kPOVAttrib_Version               = 'Vers',
 

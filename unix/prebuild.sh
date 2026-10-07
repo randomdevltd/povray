@@ -611,6 +611,9 @@ SUBDIRS = source vfe platform unix
 EXTRA_DIST = \\
   bootstrap kde_install.sh \\
   doc icons include ini scenes scripts libraries/xsimd \\
+  libraries/tree-sitter libraries/tree-sitter-pov-tags \\
+  tools/bench/check-prepared-sets.sh tools/bench/check-prepared-sets.mk \\
+  tools/bench/check-prepared-sets.cpp \\
   povray.ini.in changes.txt revision.txt
 
 # Additional files to clean with 'make distclean'.
@@ -620,11 +623,13 @@ CONFIG_CLEAN_FILES =
 # Render a test scene for 'make check'.
 # This is meant to run before 'make install'.
 check: all
+	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/snapshot.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/cylindrical_projection.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/render_tags.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/skein.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/isosurface_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/mesh_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -835,7 +840,16 @@ noinst_LIBRARIES = libpovray.a
 
 # Source files.
 libpovray_a_SOURCES = \\
-  `echo $files`
+  `echo $files` \\
+  ../libraries/tree-sitter/lib/src/lib.c \\
+  ../libraries/tree-sitter-pov-tags/src/parser.c
+
+AM_CFLAGS = -std=c11 -D_DEFAULT_SOURCE
+
+check_PROGRAMS = tagfilter-test
+TESTS = tagfilter-test
+tagfilter_test_SOURCES = ../libraries/tree-sitter-pov-tags/test/tagfilter.cpp
+tagfilter_test_LDADD = libpovray.a
 
 cppflags_platformcpu = 
 if BUILD_x86
@@ -846,6 +860,7 @@ endif
 AM_CPPFLAGS = \\
   -I\$(top_srcdir)/unix/povconfig \\
   -I\$(top_srcdir)/libraries/xsimd/include \\
+  -I\$(top_srcdir)/libraries/tree-sitter/lib/include \\
   -I\$(top_srcdir)/platform/unix \\
   \$(cppflags_platformcpu) \\
   -I\$(top_srcdir)/unix \\
