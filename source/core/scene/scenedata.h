@@ -80,7 +80,14 @@ struct PreparedSet final
 {
     std::vector<ObjectPtr> objects;
     std::vector<LightSource*> lights;
-    std::unordered_set<ConstObjectPtr> participatingObjects;
+    /// indices into SceneData::lightSources (and each thread's copies) of the global lights in this set
+    std::vector<unsigned int> globalLights;
+    /// membership by LightSource::index, consulted only where a portal crossing changes set
+    std::vector<bool> globalLightIn, groupLightIn;
+    std::vector<const LightSource*> globalPortalImages;
+    /// by group light index: that light's images through portals in this set
+    std::vector<std::vector<const LightSource*>> groupPortalImages;
+    std::vector<const Portal*> portalMouths;
     PhotonMap surfacePhotonMap;
     PhotonMap mediaPhotonMap;
     std::string photonKey;
@@ -131,7 +138,7 @@ class SceneData
         PreparedSetId FindPreparedSet(const TagFilter& filter) const;
         PreparedSet& GetPreparedSet(PreparedSetId index) { return *preparedSets.at(index); }
         const PreparedSet& GetPreparedSet(PreparedSetId index) const { return *preparedSets.at(index); }
-        bool InPreparedSet(ConstObjectPtr object, PreparedSetId index) const;
+        bool LightInPreparedSet(const LightSource& light, PreparedSetId index) const;
         void FinalizeScreenCameras();
         /// list of all global light sources
         std::vector<LightSource*> lightSources;

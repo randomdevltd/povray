@@ -1218,7 +1218,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     {
         if (!viewData.GetSceneData()->photonSettings.fileName.empty() && viewData.GetSceneData()->photonSettings.loadFile)
         {
-            vector<PhotonShootingTask*> photonWorkers;
+            vector<ViewThreadData*> photonWorkers;
 
             // when we pass a null parameter for the "strategy" (last parameter),
             // then this will LOAD the photon map
@@ -1245,13 +1245,12 @@ void View::StartRender(POVMS_Object& renderOptions)
             // wait for photons to finish
             renderTasks.AppendSync();
 
-            vector<PhotonShootingTask*> photonWorkers;
+            vector<ViewThreadData*> photonWorkers;
 
             for(int i = 0; i < maxRenderThreads; i++)
             {
-                PhotonShootingTask* task = new PhotonShootingTask(&viewData, strategy, seed);
-                photonWorkers.push_back(task);
-                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(task)));
+                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new PhotonShootingTask(&viewData, strategy, seed))));
+                photonWorkers.push_back(viewThreadData.back());
             }
             // wait for photons to finish
             renderTasks.AppendSync();

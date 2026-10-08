@@ -115,11 +115,11 @@ std::string PhotonSettingsKey(const ScenePhotonSettings& settings)
       3) compute gather options
       4) clean up memory (delete the non-merged maps and delete the strategy)
 */
-PhotonSortingTask::PhotonSortingTask(ViewData *vd, const std::vector<PhotonShootingTask*>& shootingTasks,
+PhotonSortingTask::PhotonSortingTask(ViewData *vd, const std::vector<ViewThreadData*>& shooters,
                                      PhotonShootingStrategy* strategy,
                                      size_t seed) :
     RenderTask(vd, seed, "Photon"),
-    shootingTasks(shootingTasks),
+    shooters(shooters),
     strategy(strategy),
     cooperate(*this)
 {
@@ -198,11 +198,11 @@ void PhotonSortingTask::sortPhotonMap()
         PreparedSet& set = GetSceneData()->GetPreparedSet(id);
         set.surfacePhotonMap.truncate(0);
         set.mediaPhotonMap.truncate(0);
-        for (PhotonShootingTask* task : shootingTasks)
+        for (ViewThreadData* shooter : shooters)
         {
-            if (PhotonMap* map = task->getSurfacePhotonMap(id))
+            if (PhotonMap* map = shooter->FindSurfacePhotonMap(id))
                 set.surfacePhotonMap.mergeMap(map);
-            if (PhotonMap* map = task->getMediaPhotonMap(id))
+            if (PhotonMap* map = shooter->FindMediaPhotonMap(id))
                 set.mediaPhotonMap.mergeMap(map);
         }
         if (set.surfacePhotonMap.numPhotons > 0)

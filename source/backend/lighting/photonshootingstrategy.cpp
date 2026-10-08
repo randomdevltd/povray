@@ -59,6 +59,7 @@
 #include "core/material/texture.h"
 #include "core/math/matrix.h"
 #include "core/scene/object.h"
+#include "core/scene/scenedata.h"
 #include "core/shape/csg.h"
 #include "core/support/octree.h"
 #include "core/support/statistics.h"

@@ -1952,31 +1952,15 @@ void MediaFunction::ComputeMediaSampleInterval(LitIntervalVector& litintervals, 
 
 void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect)
 {
+    const std::vector<unsigned int>& globalLights = threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).globalLights;
+    if ((isect.Object == nullptr) || ((isect.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG))
+        for (unsigned int i : globalLights)
+            if (threadData->lightSources[i]->Media_Interaction)
+                ComputeOneMediaLightInterval(threadData->lightSources[i], lights, ray, isect);
     if (isect.Object != nullptr)
-    {
-        if((isect.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-        {
-            for(vector<LightSource *>::iterator i(threadData->lightSources.begin()); i != threadData->lightSources.end(); i++)
-            {
-                if(((*i)->Media_Interaction == true) && trace->InPreparedSet(*i, ray))
-                    ComputeOneMediaLightInterval(*i, lights, ray, isect);
-            }
-        }
-
-        for(vector<LightSource *>::iterator i(isect.Object->LLights.begin()); i != isect.Object->LLights.end(); i++)
-        {
-            if(((*i)->Media_Interaction == true) && trace->InPreparedSet(*i, ray))
-                ComputeOneMediaLightInterval(*i, lights, ray, isect);
-        }
-    }
-    else
-    {
-        for(vector<LightSource *>::iterator i(threadData->lightSources.begin()); i != threadData->lightSources.end(); i++)
-        {
-            if(((*i)->Media_Interaction == true) && trace->InPreparedSet(*i, ray))
-                ComputeOneMediaLightInterval(*i, lights, ray, isect);
-        }
-    }
+        for (LightSource *light : isect.Object->LLights)
+            if (light->Media_Interaction)
+                ComputeOneMediaLightInterval(light, lights, ray, isect);
 
     if(lights.empty() == false)
     {
@@ -2396,7 +2380,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
-            photonGatherer->map = &sceneData->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap;
+            photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
         if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0))
         {
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);

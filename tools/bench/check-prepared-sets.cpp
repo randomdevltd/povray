@@ -53,15 +53,18 @@ int main()
     Check(empty == scene.RegisterPreparedSet(ParseTagFilter("\"missing\"")), "empty results must share one set");
     Check(scene.GetPreparedSet(empty).objects.empty() && scene.GetPreparedSet(empty).lights.empty(), "empty set must contain nothing");
     const PreparedSetId groupId = scene.RegisterPreparedSet(ParseTagFilter("\"group\""));
-    Check(scene.InPreparedSet(local, groupId), "selected roots must include descendant lights regardless of child tags");
-    Check(!scene.InPreparedSet(local, redId), "local lights must not leak into unrelated sets");
+    Check(scene.LightInPreparedSet(*local, groupId), "selected roots must include descendant lights regardless of child tags");
+    Check(!scene.LightInPreparedSet(*local, redId), "local lights must not leak into unrelated sets");
     Check(scene.GetPreparedSet(groupId).lights == std::vector<LightSource*>({local}), "selected descendant lights must be prepared");
 
     LightSource clone;
     clone.index = global->index;
     clone.lightGroupLight = false;
-    Check(scene.InPreparedSet(&clone, redId), "thread light copies must resolve to their scene membership");
-    Check(!scene.InPreparedSet(&clone, empty), "thread light copies must remain excluded from empty sets");
+    Check(scene.LightInPreparedSet(clone, redId), "thread light copies must resolve to their scene membership");
+    Check(!scene.LightInPreparedSet(clone, empty), "thread light copies must remain excluded from empty sets");
+    Check(redSet.globalLights == std::vector<unsigned int>({0}), "a set lists its global lights by scene index");
+    Check(scene.GetPreparedSet(empty).globalLights.empty() && scene.GetPreparedSet(groupId).globalLights.empty(),
+          "sets without global lights list none, so render loops need no test");
     Check(scene.preparedSets.size() == 3, "only distinct memberships should allocate prepared sets");
 
     ScreenPattern kept;

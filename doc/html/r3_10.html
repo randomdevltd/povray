@@ -63,6 +63,9 @@
   <td><div class="divh3"><a title="3.10.2.6" href="#r3_10_2_6">Shared Views</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.10.2.7" href="#r3_10_2_7">Tag Filters on Screens</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.10.3" href="#r3_10_3">The Portal Object</a></strong></div></td>
 </tr>
 <tr>
@@ -94,6 +97,9 @@
 </tr>
 <tr>
   <td><div class="divh3"><a title="3.10.3.10" href="#r3_10_3_10">Object Modifiers and Placement</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.10.3.11" href="#r3_10_3_11">Tag Filters</a></div></td>
 </tr>
 <tr>
   <td><div class="divh2"><strong><a title="3.10.4" href="#r3_10_4">Global Settings and Options</a></strong></div></td>
@@ -401,6 +407,20 @@ pigment { screen { camera { location &lt;40, 1.3, -9&gt; look_at &lt;40, 1.0, -1
 <h4>3.10.2.6 Shared Views</h4>
 <p>Screens whose cameras show the same view share one camera: one tracer on each render thread and one radiosity pass. Cameras are compared by content (placement, type, angles, focal blur, distance limit), so two screens with the same camera written out twice share it. A camera with a <code>normal</code> or with user-defined functions only matches itself, never a copy, and a camera with <code>no_radiosity</code> only matches another with <code>no_radiosity</code>. <code>radiosity_size</code> is not compared: cameras that share a view share one pass, as wide as the widest and as tall as the tallest frame any of them asks for, where a camera without <code>radiosity_size</code> asks for the render's size. So one screen without it makes the shared pass full size.</p></div>
 
+<a name="r3_10_2_7"></a>
+<div class="content-level-h4" contains="Tag Filters on Screens" id="r3_10_2_7">
+<h4>3.10.2.7 Tag Filters on Screens</h4>
+<p>A screen shows the view of its camera, with the filter of that camera: its own <code>filter_tags</code>, else the <a href="r3_4.html#r3_4_1_14">global filter</a>, else all objects. It does not inherit the filter of the view that meets the screen, so a screen shows the same picture from every camera. A <code>screen</code> with no <code>camera</code> in it uses an independent copy of the default camera, including anything set by <code>#default { camera { ... } }</code>; choosing a different main camera does not change it.</p>
+<pre>
+#declare Monitor = camera {
+  location &lt;20, 0, -5&gt; look_at &lt;20, 0, 0&gt;
+  filter_tags { "monitor" }
+}
+pigment { screen { camera { Monitor } } }
+</pre>
+<p>See <a href="r3_5.html#r3_5_1_5_13">Tag Filter Expressions</a> for the filter syntax.</p>
+</div>
+
 <a name="r3_10_3"></a>
 <div class="content-level-h3" contains="The Portal Object" id="r3_10_3">
 <h3>3.10.3 The Portal Object</h3>
@@ -418,7 +438,8 @@ PORTAL_OPTIONS:
   MOUTH_OPTION | near { MOUTH_OPTION... } | far { MOUTH_OPTION... } | far [on | off] |
   exit | perturb { normal { NORMAL_BODY } [AMOUNT] } | max_trace_level LEVEL | fallback { PIGMENT_BODY }
 MOUTH_OPTION:
-  front [on | off] | back [on | off] | no_lights [on | off] | pigment { PIGMENT_BODY }
+  front [on | off] | back [on | off] | no_lights [on | off] | pigment { PIGMENT_BODY } |
+  filter_tags { TAG_FILTER } | front_filter_tags { TAG_FILTER } | back_filter_tags { TAG_FILTER }
 </pre>
 <p>The body comes first. <code>to { }</code> and the options may follow in any order, but all of them come before the object modifiers. A switch written without <code>on</code> or <code>off</code> means <code>on</code>.</p>
 <table width="100%" class="option-list">
@@ -426,6 +447,7 @@ MOUTH_OPTION:
 <tr><td><code>front</code></td><td>Default <code>on</code> for both mouths. Whether a ray entering the front side goes through.</td></tr>
 <tr><td><code>back</code></td><td>Default <code>off</code> for both mouths. Whether a ray entering the back side goes through. See <a href="r3_10.html#r3_10_3_2">Mouths and Sides</a>.</td></tr>
 <tr><td><code>pigment { }</code></td><td>Default none: fully open and untinted. Its opacity says how open the mouth is, its colour tints the view. See <a href="r3_10.html#r3_10_3_4">pigment</a>.</td></tr>
+<tr><td><code>filter_tags</code>, <code>front_filter_tags</code>, <code>back_filter_tags</code></td><td>Default none: the global filter, then all objects. Which tagged objects a view through the portal, a mouth or one side contains. See <a href="r3_10.html#r3_10_3_11">Tag Filters</a>.</td></tr>
 <tr><td><code>no_lights</code></td><td>Default off: lights shine through. See <a href="r3_10.html#r3_10_3_8">Lights Through Portals</a>.</td></tr>
 <tr><td><code>near { }</code>, <code>far { }</code></td><td>Mouth options for one mouth only, overriding those written for the portal. Each may be written once.</td></tr>
 <tr><td><code>far</code></td><td>Default <code>on</code>: the body's image is a second mouth leading back. <code>far off</code> makes the portal one-way.</td></tr>
@@ -434,7 +456,7 @@ MOUTH_OPTION:
 <tr><td><code>max_trace_level</code></td><td>From 1 to 256; by default the scene's <code>max_trace_level</code>. How deep views through portals may nest. See <a href="r3_10.html#r3_10_3_7">Nesting and fallback</a>.</td></tr>
 <tr><td><code>fallback { }</code></td><td>Default none. The pigment shown where views nest too deep; without one the portal is absent there.</td></tr>
 </table>
-<p><code>portal</code>, <code>to</code>, <code>near</code>, <code>far</code>, <code>exit</code>, <code>front</code>, <code>back</code>, <code>no_lights</code>, <code>perturb</code> and <code>fallback</code> are reserved words.</p></div>
+<p><code>portal</code>, <code>to</code>, <code>near</code>, <code>far</code>, <code>exit</code>, <code>front</code>, <code>back</code>, <code>no_lights</code>, <code>perturb</code> and <code>fallback</code> are reserved words, as are <code>filter_tags</code>, <code>front_filter_tags</code> and <code>back_filter_tags</code> from <code>#version 4.0</code>.</p></div>
 
 <a name="r3_10_3_1"></a>
 <div class="content-level-h4" contains="The Body and the Map" id="r3_10_3_1">
@@ -693,6 +715,7 @@ portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt;
 <ul>
   <li><strong>Transformations</strong> move the body only; see <a href="r3_10.html#r3_10_3_1">The Body and the Map</a>.</li>
   <li><strong><code>no_image</code>, <code>no_reflection</code> and <code>no_radiosity</code></strong> work as on any object, for both mouths, and a portal takes them from the union that directly holds it, so a portal can be hidden from the camera and still be seen in a mirror.</li>
+  <li><strong><code>tags</code></strong> label the portal object, and decide which filtered views contain its body; they do not select what its views show. See <a href="r3_10.html#r3_10_3_11">Tag Filters</a>.</li>
   <li><strong><code>clipped_by</code> and <code>bounded_by</code></strong> apply to both mouths; the far mouth's are carried by the map.</li>
   <li><strong>A look</strong>: <code>texture</code>, <code>pigment</code>, <code>normal</code>, <code>finish</code>, <code>interior</code> or <code>material</code> among the modifiers is an error. Put glass or a frame on a separate object; the macro <code>Inset</code> in <code>tests/render/portal.inc</code> shrinks a shape by a fraction about its centre, for a portal a hair inside its glass.</li>
   <li><strong>Shadows</strong>: a portal's body casts no shadow of its own and photons pass it by; the only shadow a mouth casts is light it diverts.</li>
@@ -700,6 +723,31 @@ portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt;
   <li><strong>The camera inside</strong>: the inside of a closed portal body is a region that is not there, since every ray into it goes elsewhere. A render camera or a screen camera inside one draws a warning; place the camera at the target instead.</li>
   <li><strong>Placed twice</strong>: a declared portal placed again with the same target draws a warning, since the far mouths of the two coincide.</li>
 </ul></div>
+
+<a name="r3_10_3_11"></a>
+<div class="content-level-h4" contains="Tag Filters" id="r3_10_3_11">
+<h4>3.10.3.11 Tag Filters</h4>
+<p>A view through a portal contains the objects of one tag filter, chosen by the side the ray enters. The filter is looked up in this order, and the first one written is used:</p>
+<ol>
+  <li><code>front_filter_tags</code> or <code>back_filter_tags</code>, for that side of that mouth (written in <code>near { }</code> or <code>far { }</code>);</li>
+  <li><code>filter_tags</code> in <code>near { }</code> or <code>far { }</code>, for that whole mouth;</li>
+  <li>the same options written for the portal, which apply to both mouths;</li>
+  <li>the <a href="r3_4.html#r3_4_1_14">global filter</a>;</li>
+  <li>all objects.</li>
+</ol>
+<p>The observer's own filter is never inherited: a view through a door shows what the door's filter says, whoever is looking.</p>
+<pre>
+portal {
+  Door
+  to { translate 20*x }
+  filter_tags { "rooms" }
+  near { filter_tags { "lobby" } front_filter_tags { "service" } }
+  far { back_filter_tags { "outside" } }
+  tags { "doors" }
+}
+</pre>
+<p>Each distinct selection is prepared once, with its own bounding hierarchy, photon maps and radiosity cache, and ray tracing in the view never tests what it excludes. A portal whose two sides show different parts of a scene therefore traces smaller scenes than one that shows everything. The portal object's own <code>tags</code> decide which of those views contain the portal's body. See <a href="r3_5.html#r3_5_1_5_13">Tag Filter Expressions</a> for the filter syntax.</p>
+</div>
 
 <a name="r3_10_4"></a>
 <div class="content-level-h3" contains="Global Settings and Options" id="r3_10_4">
@@ -711,6 +759,7 @@ portal { object { Disc translate 2.2 * x } to { translate Far + &lt;30, 0, 0&gt;
 <tr><td><code>radiosity { }</code></td><td>One cache is shared by the render's camera and every screen camera, with a pretrace pass for each distinct screen camera; see <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>. Radiosity samples see through portals, but light that came through a portal adds no bounce light (see <a href="r3_10.html#r3_10_6_3">Known Limits</a>).</td></tr>
 <tr><td>Anti-aliasing, <code>+A</code></td><td>Every anti-aliasing sample of the render looks the screen up again, so its picture is anti-aliased by the render's own sampling, and only where the render refines. With texture footprint filtering (<code>+TF</code>) the screen traces one ray carrying the surface's transformed footprint into its camera; textures seen there filter over that footprint. A footprint does not carry through a portal or across its body.</td></tr>
 <tr><td>Alpha, <code>+UA</code></td><td>A screen's picture is opaque, sky included. A portal's view keeps the alpha of what it shows, so sky seen through a mouth is as transparent as sky seen directly.</td></tr>
+<tr><td><code>Filter_Tags</code></td><td>Command-line and INI option. A hard limit on which tagged objects, lights, portals and cameras exist in the render, applied before any screen or portal filter. See <a href="r3_2.html#r3_2_5_5">Render Tag Filter</a>.</td></tr>
 <tr><td><code>NESTED_VIEW_DEPTH_LIMIT</code></td><td>Compile-time constant in <code>source/core/configcore.h</code>, 512 by default. Caps trace levels plus nested screen and portal views along any path, to bound the stack: each level costs about 3.5 KB. Past it, screens and portals behave as at their own limits. It can be changed only by rebuilding POV-Ray.</td></tr>
 </table></div>
 

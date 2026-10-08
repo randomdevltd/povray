@@ -135,13 +135,10 @@ Trace::Trace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFl
     radiosity(rf),
     lightColorCacheIndex(-1)
 {
-    lightSourceLevel1ShadowCache.resize(max(1, (int) threadData->lightSources.size()));
-    for(vector<ObjectPtr>::iterator i(lightSourceLevel1ShadowCache.begin()); i != lightSourceLevel1ShadowCache.end(); i++)
-        *i = nullptr;
-
-    lightSourceOtherShadowCache.resize(max(1, (int) threadData->lightSources.size()));
-    for(vector<ObjectPtr>::iterator i(lightSourceOtherShadowCache.begin()); i != lightSourceOtherShadowCache.end(); i++)
-        *i = nullptr;
+    // One shadow cache per prepared set and light, so rays alternating between sets neither check nor evict.
+    shadowCacheLights = max<size_t>(1, threadData->lightSources.size());
+    lightSourceLevel1ShadowCache.assign(shadowCacheLights * max<size_t>(1, sceneData->preparedSets.size()), nullptr);
+    lightSourceOtherShadowCache.assign(lightSourceLevel1ShadowCache.size(), nullptr);
 
     lightColorCache.resize(max(20U, sd->parsedMaxTraceLevel + 1));
     for(LightColorCacheListList::iterator it = lightColorCache.begin(); it != lightColorCache.end(); it++)
@@ -686,11 +683,6 @@ bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)
     }
 
     return false;
-}
-
-bool Trace::InPreparedSet(ConstObjectPtr object, const Ray& ray) const
-{
-    return sceneData->InPreparedSet(object, ray.GetPreparedSetId());
 }
 
 bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition)
@@ -2236,33 +2228,26 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
         reye = -eye.Direction;
 
     // global light sources, if not turned off for this object
+    const PreparedSet& view = sceneData->GetPreparedSet(eye.GetPreparedSetId());
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
-        for(int i = 0; i < threadData->lightSources.size(); i++)
-            if (InPreparedSet(threadData->lightSources[i], eye))
-                ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
+        for(unsigned int i : view.globalLights)
+            ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
     }
 
-    // local light sources from a light group, if any
-    if(!object->LLights.empty())
-    {
-        for(int i = 0; i < object->LLights.size(); i++)
-            if (InPreparedSet(object->LLights[i], eye))
-                ComputeOneDiffuseLight(*object->LLights[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
-    }
+    // local light sources from a light group, if any; a selected object's group is selected with it
+    for(LightSource *light : object->LLights)
+        ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
 
     // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
     if(!sceneData->portalLights.empty() && !eye.IsRadiosityRay())
     {
         if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-            for(const LightSource *light : threadData->lightSources)
-                for(const LightSource *image : light->portalImages)
-                    if (InPreparedSet(image->portal, eye))
-                        ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+            for(const LightSource *image : view.globalPortalImages)
+                ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
         for(const LightSource *light : object->LLights)
-            for(const LightSource *image : light->portalImages)
-                if (InPreparedSet(image->portal, eye))
-                    ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+            for(const LightSource *image : view.groupPortalImages[light->index])
+                ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
 }
 
@@ -2349,13 +2334,11 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
 
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
-        for(int i = 0; i < threadData->lightSources.size(); i++)
-            if (InPreparedSet(threadData->lightSources[i], eye))
-                consider(*threadData->lightSources[i], i);
+        for(unsigned int i : sceneData->GetPreparedSet(eye.GetPreparedSetId()).globalLights)
+            consider(*threadData->lightSources[i], i);
     }
-    for(int i = 0; i < object->LLights.size(); i++)
-        if (InPreparedSet(object->LLights[i], eye))
-            consider(*object->LLights[i], -1);
+    for(LightSource *light : object->LLights)
+        consider(*light, -1);
 
     const size_t end = lightCandidates.size();
     const size_t order = lightOrder.size();
@@ -2730,7 +2713,7 @@ void Trace::TracePortalLightShadowRay(const LightSource &image, double& lightsou
         portalNormal.invert();
     beyond.SetPreparedSetId(portal.EntersFront(portalNormal, lightsourceray.Direction) ?
         portal.frontPreparedSetId : portal.backPreparedSetId);
-    if (!InPreparedSet(&light, beyond))
+    if (!sceneData->LightInPreparedSet(light, beyond.GetPreparedSetId()))
     {
         lightcolour.Clear();
         return;
@@ -2794,10 +2777,8 @@ void Trace::TraceSampleShadowRay(const LightSource &lightsource, double& lightso
 
 void Trace::DivertPortalLight(const Ray& ray, double reach, MathColour& lightcolour, const Portal *crossed)
 {
-    for (const Portal *mouth : sceneData->portalMouths)
+    for (const Portal *mouth : sceneData->GetPreparedSet(ray.GetPreparedSetId()).portalMouths)
     {
-        if (!InPreparedSet(mouth, ray))
-            continue;
         if ((crossed != nullptr) && ((mouth == crossed) || (mouth == crossed->partner)))
             continue;
         if (!mouth->Diverts(true) && !mouth->Diverts(false))
@@ -3202,14 +3183,13 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
 
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
 
+    const size_t cacheSlot = lightsourceray.GetPreparedSetId() * shadowCacheLights + lightsource.index;
     if(lightsource.lightGroupLight == false) // we don't cache for light groups
     {
-        if ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[lightsource.index] != nullptr))
-            cacheObject = lightSourceLevel1ShadowCache[lightsource.index];
-        else if (lightSourceOtherShadowCache[lightsource.index] != nullptr)
-            cacheObject = lightSourceOtherShadowCache[lightsource.index];
-        if ((cacheObject != nullptr) && !InPreparedSet(cacheObject, lightsourceray))
-            cacheObject = nullptr;
+        if ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot] != nullptr))
+            cacheObject = lightSourceLevel1ShadowCache[cacheSlot];
+        else if (lightSourceOtherShadowCache[cacheSlot] != nullptr)
+            cacheObject = lightSourceOtherShadowCache[cacheSlot];
 
         // if there was an object in the light source shadow cache, check that first
         if (cacheObject != nullptr)
@@ -3290,9 +3270,9 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                     cacheObject = testObject;
 
                     if(lightsourceray.GetTicket().traceLevel == 2)
-                        lightSourceLevel1ShadowCache[lightsource.index] = cacheObject;
+                        lightSourceLevel1ShadowCache[cacheSlot] = cacheObject;
                     else
-                        lightSourceOtherShadowCache[lightsource.index] = cacheObject;
+                        lightSourceOtherShadowCache[cacheSlot] = cacheObject;
                 }
                 break;
             }
@@ -5204,12 +5184,9 @@ void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const Lig
 {
     lights.clear();
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-        for(int i = 0; i < threadData->lightSources.size(); i++)
-            if (sceneData->InPreparedSet(threadData->lightSources[i], preparedSetId))
-                lights.push_back(threadData->lightSources[i]);
-    for(int i = 0; i < object->LLights.size(); i++)
-        if (sceneData->InPreparedSet(object->LLights[i], preparedSetId))
-            lights.push_back(object->LLights[i]);
+        for(unsigned int i : sceneData->GetPreparedSet(preparedSetId).globalLights)
+            lights.push_back(threadData->lightSources[i]);
+    lights.insert(lights.end(), object->LLights.begin(), object->LLights.end());
 }
 
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.

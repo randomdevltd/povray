@@ -58,17 +58,18 @@
 namespace pov
 {
 
-class PhotonShootingTask;
+class ViewThreadData;
 
 class PhotonSortingTask final : public RenderTask
 {
     public:
         Timer timer;
 
-        std::vector<PhotonShootingTask*> shootingTasks;
+        /// the shooting tasks' thread data, which outlives the tasks themselves
+        std::vector<ViewThreadData*> shooters;
         PhotonShootingStrategy* strategy;
 
-        PhotonSortingTask(ViewData *vd, const std::vector<PhotonShootingTask*>& shootingTasks,
+        PhotonSortingTask(ViewData *vd, const std::vector<ViewThreadData*>& shooters,
                           PhotonShootingStrategy* strategy, size_t seed);
         virtual ~PhotonSortingTask() override;
 

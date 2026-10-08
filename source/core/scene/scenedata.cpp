@@ -55,6 +55,7 @@
 #include "core/bounding/bsptree.h"
 #include "core/scene/atmosphere.h"
 #include "core/scene/object.h"
+#include "core/shape/portal.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -93,6 +94,7 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
     if (found != preparedSetFilters.end())
         return found->second;
     std::unique_ptr<PreparedSet> set(new PreparedSet());
+    std::unordered_set<ConstObjectPtr> participating;
     std::ostringstream key;
     auto appendTags = [&](const std::vector<std::string>& tags) {
         key << ':' << tags.size() << ':';
@@ -106,7 +108,7 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
         if (MatchesTags(object->tags, filter))
         {
             set->objects.push_back(object);
-            CollectParticipatingObjects(object, set->participatingObjects);
+            CollectParticipatingObjects(object, participating);
             key << 'o' << ordinal;
             appendTags(object->tags);
         }
@@ -115,7 +117,7 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
         for (size_t ordinal = 0; ordinal < sources->size(); ++ordinal)
         {
             LightSource *light = (*sources)[ordinal];
-            if (set->participatingObjects.count(light) != 0)
+            if (participating.count(light) != 0)
             {
                 set->lights.push_back(light);
                 key << (sources == &lightSources ? 'g' : 'l') << ordinal;
@@ -133,6 +135,30 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
     set->mediaPhotonMap.minGatherRad = mediaPhotonMinGatherRad;
     set->mediaPhotonMap.minGatherRadMult = mediaPhotonMinGatherRadMult;
     set->photonKey = key.str();
+    set->globalLightIn.assign(lightSources.size(), false);
+    set->groupLightIn.assign(lightGroupLightSources.size(), false);
+    set->groupPortalImages.resize(lightGroupLightSources.size());
+    auto admitted = [&](const LightSource *image) { return participating.count(image->portal) != 0; };
+    for (size_t i = 0; i < lightSources.size(); ++i)
+        if (participating.count(lightSources[i]) != 0)
+        {
+            set->globalLights.push_back(i);
+            set->globalLightIn[i] = true;
+        }
+    for (const LightSource *light : lightSources)
+        for (const LightSource *image : light->portalImages)
+            if (admitted(image))
+                set->globalPortalImages.push_back(image);
+    for (size_t i = 0; i < lightGroupLightSources.size(); ++i)
+    {
+        set->groupLightIn[i] = (participating.count(lightGroupLightSources[i]) != 0);
+        for (const LightSource *image : lightGroupLightSources[i]->portalImages)
+            if (admitted(image))
+                set->groupPortalImages[i].push_back(image);
+    }
+    for (const Portal *mouth : portalMouths)
+        if (participating.count(mouth) != 0)
+            set->portalMouths.push_back(mouth);
     const PreparedSetId id = preparedSets.size();
     preparedSets.push_back(std::move(set));
     preparedSetFilters.emplace(filter, id);
@@ -144,18 +170,11 @@ PreparedSetId SceneData::FindPreparedSet(const TagFilter& filter) const
     return preparedSetFilters.at(filter);
 }
 
-bool SceneData::InPreparedSet(ConstObjectPtr object, PreparedSetId index) const
+bool SceneData::LightInPreparedSet(const LightSource& light, PreparedSetId index) const
 {
-    if (const LightSource *light = dynamic_cast<const LightSource *>(object))
-    {
-        if (light->imageOf != nullptr)
-            light = light->imageOf;
-        const auto& sources = light->lightGroupLight ? lightGroupLightSources : lightSources;
-        if (light->index >= sources.size())
-            return false;
-        object = sources[light->index];
-    }
-    return GetPreparedSet(index).participatingObjects.count(object) != 0;
+    const LightSource& real = (light.imageOf != nullptr) ? *light.imageOf : light;
+    const std::vector<bool>& in = real.lightGroupLight ? GetPreparedSet(index).groupLightIn : GetPreparedSet(index).globalLightIn;
+    return (real.index < in.size()) && in[real.index];
 }
 
 void SceneData::FinalizeScreenCameras()

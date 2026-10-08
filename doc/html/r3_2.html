@@ -117,6 +117,9 @@
   <td><div class="divh3"><a title="3.2.5.4" href="#r3_2_5_4">Language Version</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.2.5.5" href="#r3_2_5_5">Render Tag Filter</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.2.6" href="#r3_2_6">Shell Command Options</a></strong></div></td>
 </tr>
 <tr>
@@ -1747,6 +1750,27 @@ Multiple uses of this option switch do not override previous settings. If you sp
 </table>
 
 <p>See also: <a href="r3_3.html#r3_3_2_5">Version Directive</a></p></div>
+
+<a name="r3_2_5_5"></a>
+<div class="content-level-h4" contains="Render Tag Filter" id="r3_2_5_5">
+<h4>3.2.5.5 Render Tag Filter</h4>
+<p>Syntax:</p>
+<pre>
+Filter_Tags=TAG_FILTER
+</pre>
+<p>Limits which tagged objects, lights, portals and cameras take part in the render. The value uses the same Boolean grammar as
+<a href="r3_5.html#r3_5_1_5_13">Tag Filter Expressions</a>, and must be quoted for the shell:</p>
+<pre>
+povray +Iscene.pov 'Filter_Tags="preview" | none'
+</pre>
+<p>It is a hard limit: a camera or portal <code>filter_tags</code> can select only among what this option left in. Use
+<code>none</code> in the expression to keep untagged shared geometry and cameras. If no scene camera survives, the render uses the
+built-in default camera and says so.</p>
+<p>The filter is applied to the scene after it has been parsed, and is never visible to the scene itself: it is not an SDL
+variable, and macros, includes, <code>#if</code> and <code>#ifdef</code> run exactly as they would without it. Excluded objects are still built
+by the parser but take no part in bounding, photon or radiosity work, nor in tracing. The option is available in any
+scene language version.</p>
+</div>
 
 <a name="r3_2_6"></a>
 <div class="content-level-h3" contains="Shell Command Options" id="r3_2_6">

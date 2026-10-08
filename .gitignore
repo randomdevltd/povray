@@ -198,6 +198,7 @@ $RECYCLE.BIN/
 /unix/config/depcomp
 /unix/config/install-sh
 /unix/config/missing
+/unix/config/test-driver
 /vfe/Makefile.am
 /vfe/Makefile.in
 # Subdirectories created by unix/prebuild.sh script

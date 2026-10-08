@@ -88,16 +88,6 @@ PhotonShootingTask::~PhotonShootingTask()
 }
 
 
-PhotonMap* PhotonShootingTask::getMediaPhotonMap(PreparedSetId preparedSetId)
-{
-    return &GetViewDataPtr()->MediaPhotonMap(preparedSetId);
-}
-
-PhotonMap* PhotonShootingTask::getSurfacePhotonMap(PreparedSetId preparedSetId)
-{
-    return &GetViewDataPtr()->SurfacePhotonMap(preparedSetId);
-}
-
 void PhotonShootingTask::SendProgress(void)
 {
     if (timer.ElapsedRealTime() > 1000)
