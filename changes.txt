@@ -81,6 +81,76 @@ Changed Behaviour
     expected. Input files conforming to ASCII, UTF-8, Latin-1 or Windows-1252
     encoding will instead be auto-detected, while other encodings are currently
     unsupported.
+  - This fork identifies itself as version 4.0 (alpha). `#version 4.0` selects
+    its new language defaults: new `media` default to sampling method 4 (a
+    prepared density field, automatic resolution) instead of method 3, and
+    subsurface scattering defaults to method 2 (the point cloud) instead of
+    method 1. Scenes declaring an earlier version, and scenes that name a
+    `method`, render as before.
+  - New reserved words, in every language version: `back`, `exit`, `fallback`,
+    `far`, `front`, `isosurface_mesh`, `near`, `no_lights`, `perturb`,
+    `photon_only`, `portal`, `povm`, `radiosity_size`, `resolution`, `screen`,
+    `skein`, `skein_mesh`, `to` and `volume_sampling`. A scene that uses one
+    of them as an identifier needs it renamed. (`depth` and `spread` inside
+    `volume_sampling` are matched by their text and stay free.)
+  - Random effects (area light jitter, media, `crand`, rainbow jitter,
+    subsurface light, photons, radiosity gather directions, stochastic
+    anti-aliasing) now draw from a hash of the ray's path instead of
+    per-thread streams. An image no longer depends on the thread count, block
+    order or render window (radiosity still changes in a window, as its
+    pretrace samples only what the window shows), and a render repeats
+    exactly. Images differ from earlier versions at noise level. `+HR` is now
+    the default (`-HR` turns it off), `+SS` salts every draw so renders with
+    different seeds can be averaged, and the seed no longer comes from the
+    clock.
+  - Media: shadow rays through media integrate transmittance at the media's
+    own resolution and stop below 1/1024; with `method 1` they use their
+    sample count stratified instead of random, and with `jitter` the points of
+    `method 2` and `method 3` shadows are stratified. Each media sample tests
+    four grid-weighted points of an area light instead of the full adaptive
+    grid, which adds a little grain in dense haze lying in soft shadow.
+    Surface lighting is unchanged.
+  - Radiosity: gather rays shadow-test the brightest lights first and stand
+    one drawn light in for the faint remainder (unbiased), and the reflections
+    and refractions a gather ray spawns survive by Russian roulette. Results
+    move at noise level (typically under 0.1 levels on average).
+  - Shadows: the per-thread shadow cache accepts only the hits the full test
+    would, so a few pixels on creases and grazing lights lose a spurious
+    self-shadow and brighten slightly. A shadow ray leaving a mesh no longer
+    skips a triangle behind one of its own near hits (on a test scene 1,543 of
+    691,200 pixels darken, none by more than 5 levels), and a mesh's triangle
+    plane is recomputed from its vertices (47 of 691,200 pixels differ). A
+    see-through component of an opaque CSG object no longer casts a shadow
+    twice as dark once the object is cached.
+  - Subsurface scattering: the diffuse sum is divided by the rays cast, not
+    the rays that hit, so open surfaces such as planes no longer get twice
+    their subsurface light (closed objects are unchanged); the sample scene
+    `subsurface.pov` was rebalanced for it. Objects with no inside (meshes
+    without `inside_vector`, triangles, polygons, bicubic patches, parametric
+    surfaces) ignore subsurface with a warning. The layers of a texture are
+    blended and scattered once instead of once each.
+  - Photons: photon rays are no longer image rays, so a photon target marked
+    `no_image` or `no_shadow` now receives its photons and casts its caustic.
+    `no_shadow` still implies `pass_through` for photons unless `photons {
+    pass_through off }` is given, in either order.
+  - Radiosity cache files (`+RFO`/`+RFI`) keep nine significant digits and
+    each sample's quality and brilliance. Files from earlier versions still
+    load. A load reports how many samples it read, warns when it read none,
+    and skips malformed records.
+  - The render state file used by `+C` is now version 0002; a file from
+    another version is refused, as is continuing a render with different
+    progressive rendering or anti-aliasing settings.
+  - `SIGUSR1` no longer terminates POV-Ray: with `Snapshot_File` set it writes
+    a snapshot, otherwise it is ignored.
+  - A mesh vertex that is infinite or not a number is a parse error, and a
+    mesh can hold at most 2^30 vertices.
+  - Noise: the AVX2/FMA3 noise is now selected on any CPU that supports it,
+    AMD included (the CPU feature probe was being optimised away on AMD, which
+    got the portable noise). Noise values can differ from the portable code in
+    the last bits.
+  - Build: `configure` adds `-fno-finite-math-only`, `-fno-associative-math`
+    and `-fsigned-zeros` after `-ffast-math`, and has a new `--disable-simd`
+    option. A build made with `-ffast-math` alone renders black.
 
 New Features
 ------------
@@ -112,6 +182,45 @@ New Features
     the surface is shaded, and the `portal` object leads rays entering its body
     to somewhere else in the scene, with lights shining through it. Both are
     described in the "Portals and Screens" chapter of the reference.
+  - The `skein` object (beta) defines a surface or solid by mapping the unit
+    square through a chain of composable steps, and `skein_mesh` builds a
+    `mesh2` from one at parse time. See the "Skein" chapter of the reference.
+  - `isosurface_mesh` takes everything an `isosurface` takes and builds a
+    `mesh2` of its surface at parse time, keeping sharp edges exact. Copies of
+    a declared one share their triangles.
+  - `mesh2 { povm "file.povm" }` loads geometry from a binary file, with its
+    bounding tree cached beside it in a `.povt` file; `tools/povm` writes
+    `.povm` files and converts OBJ, `mesh` and `mesh2`. Mesh builds for
+    `skein_mesh`, `isosurface_mesh` and `.povm` run on the `+WT` worker
+    threads.
+  - `media { method 4 [resolution FLOAT] }` selects a prepared density field
+    for static media, with a cumulative optical-depth grid for parallel
+    lights; it falls back to the classic methods with a warning where it
+    cannot apply. It is the default with `#version 4.0`.
+  - Subsurface scattering: a point-cloud `method 2` (global setting
+    `subsurface { method INT spacing FLOAT error_bound FLOAT }`, or `method`
+    in a finish's `subsurface` block); `colour`, `pigment`, `emission` and
+    `thickness` items for flesh under a skin; `volume_sampling { depth FLOAT
+    spread FLOAT }` to read patterns below the surface; and incident photons
+    now light subsurface materials.
+  - Light sources take `photon_only`: the light shoots photons without
+    lighting surfaces or media directly.
+  - Anti-aliasing method 4 (`+AM4`, with `+PR`) spends a sample budget set
+    with `+AB` on fitted edges and noisy pixels.
+  - Texture filtering (`+TF`, `Texture_Filter_Scale`, `Texture_Filter_Taps`)
+    averages each pigment over the area a pixel covers on the surface, using
+    ray differentials, without extra rays.
+  - Progressive rendering (`+PR`) traces the whole frame at doubling
+    resolution, each pixel once, so the image is always a complete best-so-far
+    picture. It continues with `+C`.
+  - Render snapshots (`+SN`, `Snapshot_Interval`, `Snapshot_From`, `SIGUSR1`)
+    write the work in progress, or a state file's pixels, to a PNG, with a
+    per-block timing heat map (`.heat.png`, `.heat.txt`) beside it.
+  - The standard include file `projections.inc` provides equirectangular,
+    Mercator, Miller, stereographic and equal-area panoramic cameras with
+    optional moving ray origins.
+  - The render statistics gain a count of supersampled pixels, the progressive
+    rendering setting, and skein counters.
 
 Performance Improvements
 ------------------------
@@ -119,6 +228,104 @@ Performance Improvements
   - Significantly improved parsing speed of skipped conditional blocks (e.g. in
     `#if(false) ... #end`), especially for blocks containing few directives
     (stuff that begins with `#`).
+  - Overall, on a 74,000-object scene of meshes (trace only, 4 threads): 257.6
+    -> 122.0 Gcycles against 3.7.0 (-52.6%) and 310.5 -> 122.0 against 3.8
+    master (-61%); the whole frame at low resolution 225.8 -> 119.2 s wall
+    (-47%). On 3.7's heaviest scenes, in cycles against 3.7:
+    `stackertransp.pov` -35%, `abyss.pov` -18%, `teapot3.pov` -16%,
+    `Tango.pov` -15%, `trace-wicker.pov` -10%. The standard benchmark is
+    unchanged by bounding (+0.8%).
+  - Bounding: an exact surface-area split over all three axes builds trees
+    needing 44% fewer box tests (-20% trace, large mesh scene); trees are
+    flattened into blocks of eight child boxes tested together and walked with
+    a stack (-39% trace); each pass is sorted once, so parsing is 23% faster
+    than 3.7.
+  - Shadow rays stop at the first opaque hit (-12% trace, large mesh scene);
+    leaves are tested as soon as nothing nearer waits (-7%); leaves the flat
+    walk has box-tested skip the object's own box test (-4.5% trace
+    instructions on a 200 px close-up, -3.8% `stackertransp.pov`, -0.7%
+    standard benchmark).
+  - SIMD: a `simd::` layer over the bundled xsimd 13.2.0 tests a block's eight
+    boxes at once (trace cycles -8.2% on the mesh scene close-up, -7.9% on
+    `radiosity-lawn.pov`).
+  - Meshes, memory: the flat tree is built straight from triangle boxes,
+    triangles are 12 bytes, boxes are 16-bit steps and leaves group eight
+    (heap per triangle 159 -> 54 bytes, peak 468 -> 148 MB for a
+    1.5-million-triangle `mesh2`, for +6% trace); mesh pointer trees are freed
+    once flattened (-30% peak memory on the large scene).
+  - Meshes, speed: each thread keeps its recently tested triangles decoded and
+    tests the triangle that last blocked a shadow ray first (-3.7% trace
+    cycles on the mesh benchmark, `tools/bench/mesh-cylinder.pov`).
+  - Binary meshes: a 1.5-million-triangle `mesh2` parses in 5.0 instead of
+    11.7-12.3 Gcycles from a `.povm` file (about 2.3 times as fast), and in
+    0.17 Gcycles (about 70 times) once the `.povt` tree cache exists.
+  - Parse-time mesh builds run in parallel: eight `skein_mesh` tori of 262,144
+    triangles take 1.66 s instead of 5.65 s wall at `+WT4` (-70.6%);
+    noise-displaced `isosurface_mesh` builds gained nothing on a saturated
+    test host.
+  - Isosurfaces: the function interpreter is decoded once with computed-goto
+    dispatch, evaluates four points per call and takes its maths from xsimd,
+    and shadow rays search for any root instead of the first (`isocacti.pov`
+    78.9 -> 53.7 Gcycles, -32%; noise sphere -45%; caverns -50%).
+  - Media lit by area lights: four points per light per sample, and shadow-ray
+    transmittance at the media's own resolution. A haze window of a large
+    scene traces in 36.9 instead of 244.6 CPU-s (6.6 times), the standard
+    benchmark takes 681.8 instead of 1116.4 Gcycles (-39%), and
+    `tools/bench/media-shafts.pov` 25.8 instead of 226.3 Gcycles (8.8 times).
+  - Function densities in media evaluate four points per call through the
+    function VM (-30% instructions with SIMD maths in the density, -23% with
+    noise and maths, -25% on `tools/bench/media-combined.pov`, four
+    overlapping volumes; noise-only densities gain about 3%).
+  - Zero-amplitude `turbulence 0` warps return at once: trace CPU 23.7 -> 14.1
+    s (-40%) on `tools/bench/media-self-shadow.pov` with self-shadowing, 7.8
+    -> 5.8 s (-26%) without.
+  - Subsurface, sampled method: shadow rays are drawn by each point's
+    unshadowed contribution, area lights test one point per ray, and diffuse
+    sample rays test only the subsurface object (`tools/bench/sslt-lamps.pov`
+    18.0 -> 3.0 Gcycles, 6.0 times; `subsurface.pov` 24.8 -> 12.3, 2.0 times).
+    A layered texture scatters once (5.8 -> 3.1 Gcycles for a half-transparent
+    layer over flesh).
+  - Subsurface, point cloud (`method 2`), at the quality of method 1 with many
+    samples: 2.7 times as fast on `subsurface.pov` (46.3 -> 17.0 Gcycles) and
+    3.8 times with radiosity (86.0 -> 22.5); about equal on a slab or plane
+    and 10% slower on a small mesh needing a finer spacing.
+  - Subsurface photons: each deposit's boundary check runs once per receiver
+    and render, so the photon share of trace time falls 21 times on an
+    isosurface receiver (234 -> 10.9 s), 4.3 times on a closed mesh, 2.1 times
+    on a CSG with holes and 1.4 times on a lens.
+  - Photon gathering: gatherers are reused per recursion level and a search
+    that cannot reach the photon map's bounds returns empty
+    (`phot_met_glass.pov` -3% trace CPU; on
+    `tools/bench/photon-sparse-caustic.pov` the reach check alone takes 1.60
+    -> 1.21 s, -24%).
+  - Radiosity gather rays: shadow-testing lights brightest first with one
+    drawn light for the faint rest, and each light's ray computed once, take
+    `tools/bench/radiosity-lawn.pov` from about 34 to 16 Gcycles (2.1 times);
+    the drawn-light step alone cut a large scene's radiosity overhead by 28%
+    (57.5 -> 41.2 Gcycles). Russian roulette on gather rays' reflections and
+    refractions takes a reflective lawn from 58.4 to 43.9 Gcycles (-25%).
+  - Shadow rays skip a light's cached occluder once it has missed, in every
+    render (-8% on the lawn without radiosity, 4.45 -> 4.09 Gcycles).
+  - Radiosity cache reuse: close-ups loaded from a lower-resolution cache
+    (`+RFI`) cost 17.6 instead of 32.8 CPU-s, and a progressive render reloads
+    its cache on `+C` instead of repeating the pretrace.
+  - Progressive rendering with anti-aliasing method 2 traces 17.5-19.6% fewer
+    rays than block order (1,102,627 -> 909,592 on a plain scene), since no
+    pixel corner is traced twice.
+  - Photon shooting splits its ring sweep into chunks that idle threads pick
+    up when a scene has fewer light/target pairs than threads; output is
+    identical at any thread count.
+  - Smaller items, not separately measured: shadow-ray density bounds and
+    batching for media (images bit for bit the same); prepared media with
+    local volume steps; the deferred square root in photon gather radii; reuse
+    of function contexts in media; the bounding queue reserve and thread-local
+    mesh queue fixes; skipping boxes beyond the best hit in the pointer-tree
+    path; per-thread `sphere_sweep` scratch buffers (under 0.5%).
+  - Container build and tooling: `unix/Containerfile` makes a tuned build
+    (`-O3`, LTO, optional profile-guided optimisation, which saved 4-10% of
+    trace time when trained on similar scenes), and `tools/bench` counts
+    user-space cycles of a render minus a one-pixel render. Measurements and
+    the method are in `doc/PERF.md`.
 
 Miscellaneous Improvements
 --------------------------
@@ -170,6 +377,10 @@ Miscellaneous:
   - Eliminated use of deprecated C++ `register` keyword (except in 3rd party
     libraries bundled with the POV-Ray source code).
   - Fix long-standing bug in Julia fractal primitive using hypercomplex numbers.
+  - Fix `sphere_sweep` crashing multi-threaded renders when a later sweep had
+    more segments than the first one a thread intersected.
+  - Fix CPU feature detection (the `cpuid` probe could be optimised away),
+    which gave AMD CPUs the portable noise code.
 
 Development Related
 -------------------

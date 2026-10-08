@@ -216,6 +216,9 @@
   <td><div class="divh3"><a title="3.2.8.10" href="#r3_2_8_10">Progressive Rendering</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.2.8.11" href="#r3_2_8_11">Render Snapshots</a></div></td>
+</tr>
+<tr>
   <td><div class="divh1">&nbsp;</div></td>
 </tr>
 <tr>
@@ -945,6 +948,8 @@ specified. Some file formats (namely TGA and PNG) also store information about w
 <code>+FN</code><em>n</em>, which will override these settings. It is up to the user to make sure that all other options are set the same as the original render.</p>
 
 <p><font class="New">New</font> as of version 3.8 the <code>Create_Continue_Trace_Log</code> option was added to offer greater resource control. The user can suppress the creation of this file by simply setting the <em>ini-option</em> <code>Create_Continue_Trace_Log=false</code> or using the <code>-CC</code> command line option.</p> 
+
+<p>The state file has its own format version, which changed with <a href="#r3_2_8_10">progressive rendering</a> to record the lattice the render traces. POV-Ray refuses a state file written by another version, and refuses to continue a render whose progressive rendering (<code>+PR</code>) or anti-aliasing settings differ from those it was started with. A progressive render continues from the last level it reached and keeps its radiosity cache beside the state file (or in the <code>+RFO</code> file, if one is named), so continuing it reads the cache instead of running the radiosity pretrace again; a cache that holds no samples is pretraced again. <a href="#r3_2_8_11">Snapshots</a> can be made from the state file while the render runs.</p>
 
 <p>The <code>Create_Ini</code> option or <code>+GI</code> switch provides an easy way to create an INI file with all of the rendering options, so you can re-run files with the same options, or ensure you have all the same options when resuming. This option creates an INI file with every option set at the value used for that rendering. This includes default values which you have not specified. For example if you run POV-Ray with...</p>
 
@@ -3546,6 +3551,7 @@ Radiosity_To_File=&lt;on/off&gt;	or +RFO	to enable writing new samples to the ra
 <p class="Note"><strong>Note:</strong> The parameter names are preliminary, and may still be subject to change; there is a potential conflict between the shorthand forms.</p>
 <p>If both <code>+RFI</code> and <code>+RFO</code> are specified, new samples gathered are appended; otherwise, <code>+RFO</code> causes the file to be overwritten if it exists.</p>
 <p>New samples gathered are written whenever an SMP block is completed. Tests indicate that this is almost neutral regarding performance, compared to operation with radiosity file output disabled.</p>
+<p><font class="New">New</font> in this version the cache file keeps nine significant digits for illuminance, positions and distances, so dark samples are no longer rounded to black, and stores each sample's quality and brilliance, so that reloaded samples carry the weight they had and brilliance is respected. Files written by earlier versions lack the last two fields and still load. When a file is read, POV-Ray reports how many samples it loaded, or warns that it loaded none because the file is missing or empty. Records that cannot be trusted (malformed or non-finite values, a quality outside the range 0 to 1, a radius or brilliance that is not positive) are skipped.</p>
 
 </div>
 <a name="r3_2_8_9_3"></a>
@@ -3580,10 +3586,46 @@ Radiosity_Vain_Pretrace=bool	turns vain pretrace on/off
 <td>Same as <code>Progressive_Render=off</code></td>
 </tr>
 </table>
-<p>Progressive rendering replaces the mosaic preview. The whole frame is rendered at doubling resolution, first with large blocks and then finer, down to every pixel, and each pixel is traced once. The picture is therefore always a complete best-so-far image rather than a partly finished one, which makes it useful for watching a long render and for taking a snapshot of it while it runs. A render stopped part way continues with <code>+C</code> from the level and block where it stopped, without a new radiosity pretrace.</p>
+<p>Progressive rendering replaces the mosaic preview. The whole frame is rendered at doubling resolution, first with large blocks and then finer, down to every pixel, and each pixel is traced once. The picture is therefore always a complete best-so-far image rather than a partly finished one, which makes it useful for watching a long render and for taking a <a href="#r3_2_8_11">snapshot</a> of it while it runs. A render stopped part way continues with <code>+C</code> from the level and block where it stopped, without a new radiosity pretrace.</p>
 <p>Anti-aliasing runs after the last level, for sampling methods 1, 2 and 4; method 3 is not available with progressive rendering. Any <code>+A</code> or <code>+R</code> value given then applies to that anti-aliasing pass. The samples of the last level are kept, one per pixel (16 bytes) for the whole frame.</p>
 <p><a href="#r3_2_8_8_6">Sampling method 4</a> needs this: it fits edges across the whole image from the centre sample of every pixel, and plans where to spend its budget over the whole frame. A normal render works one block at a time and compares a pixel only with the pixels before it, so it never has all the samples at once. Progressive rendering supplies them, and its sync points between levels are where method 4 plans. Nothing in method 4 depends on watching the picture progress; it requires <code>+PR</code> because it is built on this machinery.</p>
 </div>
+
+<a name="r3_2_8_11"></a>
+<div class="content-level-h4" contains="Render Snapshots" id="r3_2_8_11">
+<h4>3.2.8.11 Render Snapshots</h4>
+<table class="centered" width="622px" cellpadding="0" cellspacing="10">
+<tr>
+<td width="30%"><code>Snapshot_File=</code>file</td>
+<td width="70%">PNG that receives the snapshot</td>
+</tr>
+<tr>
+<td><code>+SN</code>file</td>
+<td>Same as <code>Snapshot_File=</code>file</td>
+</tr>
+<tr>
+<td><code>Snapshot_Interval=</code>seconds</td>
+<td>Also write the snapshot this often while rendering; <code>0</code>, the default, for never</td>
+</tr>
+<tr>
+<td><code>Snapshot_From=</code>statefile</td>
+<td>Write the snapshot from this render state file and exit, without parsing a scene or rendering</td>
+</tr>
+</table>
+<p>A render that writes an output file keeps its progress in a render state file, which <code>+C</code> continues from (see <a href="#r3_2_2_5">Continue_Trace</a>), so the output image does not exist until the render ends. A snapshot writes the pixels in that state file to a PNG at any time: while the render runs, when it ends, or later from the state file alone.</p>
+<p>With <code>Snapshot_File</code> set, a render writes the snapshot when the process receives <code>SIGUSR1</code> (<code>kill -USR1 pid</code>; <code>SIGUSR1</code> used to terminate POV-Ray and no longer does), every <code>Snapshot_Interval</code> seconds if that is set, and once when the render finishes, fails, or is stopped with <code>SIGINT</code>, <code>SIGTERM</code> or <code>SIGQUIT</code>. A render continued with <code>+C</code> writes snapshots the same way. <code>SIGUSR1</code> without <code>Snapshot_File</code> is ignored.</p>
+<pre>
+povray +Iscene.pov +Oscene.png +W1920 +H1080 +SNscene-wip.png Snapshot_Interval=60
+</pre>
+<p>The snapshot is drawn from the state file, so it is not written when output goes to standard output or <code>Create_Continue_Trace_Log=off</code>; the render then warns and carries on.</p>
+<p>To make a snapshot without touching the render, give the state file and the render's own size:</p>
+<pre>
+povray +W1920 +H1080 Snapshot_From=scene.pov-state +SNscene-wip.png
+</pre>
+<p>This only reads the state file, so it can run while the render that owns the file is still writing it. It exits with status 0 once the PNG is in place, and non-zero with a message on standard error if the state file cannot be read or holds pixels outside <code>+W</code> by <code>+H</code>. The state file does not record the image size, so <code>+W</code> and <code>+H</code> must be the render's own, with <code>+UA</code> added if the render used it. The state file sits beside the output image and takes its name with <code>.pov-state</code> in place of the extension (<code>+Oscene.png</code> gives <code>scene.pov-state</code>); without <code>+O</code> it is named after the scene file.</p>
+<p><strong>The image.</strong> A snapshot has 8 bits per channel in RGBA and sRGB, whatever the output file type, bit depth or <code>File_Gamma</code>. Pixels not yet rendered have alpha 0; rendered pixels are opaque, or with <code>+UA</code> carry the render's alpha as the PNG output would. A render in block order shows its finished blocks. A <a href="#r3_2_8_10">progressive render</a> shows the whole frame at the finest level it has reached, each sample filling its cell. The snapshot is drawn by the same rules as the final image, so a snapshot taken during a render and one written later from the same state file are byte for byte the same. Colours are converted from the working gamma: the scene's <code>assumed_gamma</code> while rendering, and 1.0 when written from the state file alone, as scenes of version 3.7 and later assume by default. The PNG is written to a temporary file in the same directory and renamed over the old one, so a reader sees either the previous snapshot or the new one, never a partial file.</p>
+<p><strong>Timing heat map.</strong> Each snapshot also writes <code>file.heat.png</code> and <code>file.heat.txt</code>, where file is the snapshot name. The PNG shows the tracing time per pixel of every finished block, accumulated across progressive levels and across a <code>+C</code> continuation, on a palette from blue through cyan and yellow to red. Its logarithmic scale puts the 95th percentile at the hot end, and pixels that were not timed are transparent. Edge blocks are compared by time per completed sample, and progressive levels add their time and sample density separately, so a region does not look hotter merely because it has finished another level. The text file records the colour scale in microseconds per completed sample, the summed tracing time, and an estimate of the remaining tracing time. The elapsed figure is the time summed over all tracing threads, not the wall-clock time of the process. The remaining figure is an estimate, especially before an expensive region has rendered, and it is reported as unknown with sampling method 4, whose adaptive passes have no fixed amount of work. When making a snapshot from a state file alone with a non-default <code>+BS</code>, give the render's block size for the estimate; the heat image itself is fully recorded in the state file.</p>
+<p><strong>Cost.</strong> Each timed record adds 48 bytes to the state file: with the default block size of 32 pixels, 48 bytes per block per progressive level. Writing a snapshot reads the whole state file and holds 16 bytes per pixel while it works (about 133 MB at 3840 by 2160). During a render this runs on the frontend thread, which buffers the render's results meanwhile; tracing does not stop. Timing itself costs one clock read per finished block, which measured below 0.2% of instructions.</p></div>
 
 </div>
 </body>

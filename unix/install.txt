@@ -448,6 +448,21 @@ Additional POV-Ray specific options are:
     disables only the architecture-specific compiler optimizations.  Generic
     optimization flags such as "-O3" are still detected and used.
 
+--disable-simd
+    builds POV-Ray without its SIMD kernels, so that every build target runs
+    plain scalar code.  By default the kernels (block tests of the bounding
+    tree and batched function evaluation) are built with the bundled xsimd
+    library from libraries/xsimd, using the vector instructions the compiler
+    flags allow; no separate xsimd installation is needed.  Use this option to
+    rule the kernels out when tracking down a problem, or for a target without
+    usable vector instructions.
+
+    Note that when you pass compiler flags of your own in CXXFLAGS and they
+    contain -ffast-math, you should add -fno-finite-math-only as well:
+    -ffast-math alone lets the compiler assume no value is infinite, and the
+    resulting build renders every pixel black.  The flags configure detects
+    itself already include it.
+
 --disable-pipe
     disables the use of pipes for communication between the various stages
     of compilation, and use temporary files instead.  This is slower, but on

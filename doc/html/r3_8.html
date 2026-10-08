@@ -258,6 +258,9 @@
   <td><div class="divh4"><a title="3.8.1.1.32" href="#r3_8_1_1_32">Woodmaps.inc</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.8.1.1.33" href="#r3_8_1_1_33">Projections.inc</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.8.1.2" href="#r3_8_1_2">Old Files</a></div></td>
 </tr>
 <tr>
@@ -3982,6 +3985,60 @@ B series is designed for the upper layers, with semitransparent color maps. The 
 <dt><code>M_Wood1A, ..., M_Wood19A</code></dt>
 <dt><code>M_Wood1B, ..., M_Wood19B</code></dt>
 </dl></div>
+
+<a name="r3_8_1_1_33"></a>
+<div class="content-level-h5" contains="Projections.inc" id="r3_8_1_1_33">
+<h5>3.8.1.1.33 Projections.inc</h5>
+
+<p>The file projections.inc builds panoramic cameras that map the full circle of longitude and a chosen band of latitude onto the image, using the <code>user_defined</code> camera. The centre of the image looks along <code>ForwardV</code> and longitude grows towards <code>RightV</code> across the image width, so the left and right edges meet behind the camera; latitude runs from <code>Lower</code> at the bottom to <code>Upper</code> at the top.</p>
+
+<p><code>CylindricalProjectionCamera(Profile, Lower, Upper, Origin, Radius, Inward, CentreV, ForwardV, RightV, UpV)</code>: Expands to a <code>camera</code> statement, so declare the result and use it as the camera:</p>
+<pre>
+#include &quot;projections.inc&quot;
+#declare View = CylindricalProjectionCamera(
+  ProjectionMercator, -64, 77,
+  ProjectionSingleOrigin, 0, 0,
+  &lt;0, 1.2, 0&gt;, z, x, y
+);
+camera { View }
+</pre>
+<p>Parameters:</p>
+<ul>
+	<li><code>Profile</code> = How latitude is spread over the image height; one of the profile constants below.</li>
+	<li><code>Lower</code>, <code>Upper</code> = Latitude at the bottom and top of the image, in degrees. Keep them away from &plusmn;90 for the Mercator and Miller profiles, which stretch without limit towards the poles.</li>
+	<li><code>Origin</code> = Where the rays start; one of the origin constants below.</li>
+	<li><code>Radius</code> = Radius of the sphere or cylinder that the ray origins lie on. Ignored for <code>ProjectionSingleOrigin</code>.</li>
+	<li><code>Inward</code> = Zero for rays that point away from the centre; non-zero for rays that point towards it, an outside-in view of the scene around the centre.</li>
+	<li><code>CentreV</code> = The centre of the view.</li>
+	<li><code>ForwardV</code>, <code>RightV</code>, <code>UpV</code> = The basis of the view: the direction at the image centre at latitude 0, the direction that longitude increases towards, and the pole direction.</li>
+</ul>
+
+<p><code>MercatorCamera(CentreV, ForwardV, RightV, UpV, Lower, Upper)</code>: Shorthand for a Mercator camera whose rays all start at <code>CentreV</code>.</p>
+
+<p>Profile constants. The ordinate of the image height for latitude &phi; is:</p>
+<dl>
+<dt><code>ProjectionEquirectangular</code></dt>
+<dd>&phi; (equal steps of latitude; this is also what an unknown profile number gives).</dd>
+<dt><code>ProjectionMercator</code></dt>
+<dd>asinh(tan &phi;).</dd>
+<dt><code>ProjectionMiller</code></dt>
+<dd>1.25 asinh(tan 0.8&phi;).</dd>
+<dt><code>ProjectionStereographic</code></dt>
+<dd>2 tan(&phi;/2), the cylindrical stereographic projection.</dd>
+<dt><code>ProjectionEqualArea</code></dt>
+<dd>sin &phi;, the Lambert cylindrical equal-area projection.</dd>
+</dl>
+
+<p>Origin constants:</p>
+<dl>
+<dt><code>ProjectionSingleOrigin</code></dt>
+<dd>Every ray starts at <code>CentreV</code>, a true panorama from one point.</dd>
+<dt><code>ProjectionSphereOrigin</code></dt>
+<dd>Each ray starts on a sphere of radius <code>Radius</code> around <code>CentreV</code>, at the point its direction leaves from.</dd>
+<dt><code>ProjectionCylinderOrigin</code></dt>
+<dd>Each ray starts on a circle of radius <code>Radius</code> around <code>CentreV</code> in the plane of <code>ForwardV</code> and <code>RightV</code>, at its longitude: a circular pushbroom view, whose perspective changes across the image.</dd>
+</dl>
+<p>See <a href="r3_10.html#r3_10_5_10">Projection Gallery and Live World Map</a> for the profiles side by side and for moving origins used with screens. The result is an ordinary <a href="r3_4.html#r3_4_2_2_10"><code>user_defined</code> camera</a>.</p></div>
 
 <a name="r3_8_1_2"></a>
 <div class="content-level-h4" contains="Old Files" id="r3_8_1_2">
