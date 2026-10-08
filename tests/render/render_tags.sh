@@ -192,5 +192,18 @@ if cmp -s render_tags_photon_light_group.px render_tags_m1_expr9.px; then
     exit 1
 fi
 
-rm -f render_tags_*.ppm render_tags_*.px render_tags_*.log render_tags_photon_maps.ph render_tags_legacy.ph render_tags_radiosity.rca.set-* rendertags_generated.ini
+render parallel tests/render/render_tags_parallel.pov Declare=Mode=0
+render parallel_a tests/render/render_tags_parallel.pov Declare=Mode=2
+render parallel_b tests/render/render_tags_parallel.pov Declare=Mode=3
+for world in parallel parallel_a parallel_b; do
+    od -An -v -tx1 -w6 "render_tags_$world.px" | tr -d ' ' > "render_tags_$world.hex"
+done
+# Each pixel of two worlds sharing coordinates must be world a's or, through the portal, world b's.
+paste -d' ' render_tags_parallel.hex render_tags_parallel_a.hex render_tags_parallel_b.hex | awk '
+    $1 == $2 { a++; next }
+    $1 == $3 { b++; next }
+    { other++ }
+    END { if (other || a < 200 || b < 200) { printf "parallel worlds: %d from a, %d from b, %d from neither\n", a, b, other > "/dev/stderr"; exit 1 } }'
+
+rm -f render_tags_*.ppm render_tags_*.px render_tags_*.hex render_tags_*.log render_tags_photon_maps.ph render_tags_legacy.ph render_tags_radiosity.rca.set-* rendertags_generated.ini
 echo "render_tags: expressions, macros, CSG, lights, screens and portals passed"

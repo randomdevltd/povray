@@ -840,11 +840,18 @@ noinst_LIBRARIES = libpovray.a
 
 # Source files.
 libpovray_a_SOURCES = \\
-  `echo $files` \\
-  ../libraries/tree-sitter/lib/src/lib.c \\
-  ../libraries/tree-sitter-pov-tags/src/parser.c
+  `echo $files`
 
-AM_CFLAGS = -std=c11 -D_DEFAULT_SOURCE
+# Tree-sitter C is built by explicit rules: listing .c sources would make automake add a .c.o suffix
+# rule, which then wins over .cpp.o for povms.o (povms.cpp includes povms.c).
+libpovray_a_LIBADD = ts_lib.\$(OBJEXT) ts_parser.\$(OBJEXT)
+CLEANFILES = ts_lib.\$(OBJEXT) ts_parser.\$(OBJEXT)
+
+ts_lib.\$(OBJEXT): ../libraries/tree-sitter/lib/src/lib.c
+	\$(CC) \$(DEFS) \$(AM_CPPFLAGS) \$(CPPFLAGS) -I../libraries/tree-sitter/lib/src -std=c11 -D_DEFAULT_SOURCE \$(CFLAGS) -c -o \$@ ../libraries/tree-sitter/lib/src/lib.c
+
+ts_parser.\$(OBJEXT): ../libraries/tree-sitter-pov-tags/src/parser.c
+	\$(CC) \$(DEFS) \$(AM_CPPFLAGS) \$(CPPFLAGS) -std=c11 -D_DEFAULT_SOURCE \$(CFLAGS) -c -o \$@ ../libraries/tree-sitter-pov-tags/src/parser.c
 
 check_PROGRAMS = tagfilter-test
 TESTS = tagfilter-test

@@ -79,8 +79,6 @@ class PhotonShootingTask final : public RenderTask
         void ShootPhotonsAtObject(PhotonShootingUnit& unit);
         DBL computeAttenuation(const LightSource* Light, const Ray& ray, DBL dist_of_initial_from_center);
 
-        PhotonMap* getMediaPhotonMap(PreparedSetId preparedSetId);
-        PhotonMap* getSurfacePhotonMap(PreparedSetId preparedSetId);
     private:
         class CooperateFunction final : public Trace::CooperateFunctor
         {

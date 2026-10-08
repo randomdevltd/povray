@@ -149,7 +149,16 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     sceneData->realTimeRaytracing = parseOptions.TryGetBool(kPOVAttrib_RealTimeRaytracing, false);
     if (parseOptions.Exist(kPOVAttrib_FilterTags))
-        sceneData->parseFilterTags = ParseTagFilter(parseOptions.GetString(kPOVAttrib_FilterTags));
+    {
+        try
+        {
+            sceneData->parseFilterTags = ParseTagFilter(parseOptions.GetString(kPOVAttrib_FilterTags));
+        }
+        catch (const std::runtime_error& error)
+        {
+            throw POV_EXCEPTION(kParamErr, std::string("Invalid Filter_Tags: ") + error.what());
+        }
+    }
 
     if(parseOptions.Exist(kPOVAttrib_Declare) == true)
     {

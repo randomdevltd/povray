@@ -294,7 +294,6 @@ class Trace
         bool FindIntersection(Intersection& isect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, double closest = HUGE_VAL);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
-        bool InPreparedSet(ConstObjectPtr object, const Ray& ray) const;
         /// Adds the interiors of the objects containing a point.
         void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId = 0);
         /// Whether interior media on the ray's interiors are integrated: a non-hollow one hides them only before version 4.0.
@@ -415,6 +414,7 @@ class Trace
         std::vector<ObjectPtr> lightSourceLevel1ShadowCache;
         /// Light source shadow cache for shadow tests of higher trace level intersections.
         std::vector<ObjectPtr> lightSourceOtherShadowCache;
+        size_t shadowCacheLights;
         /// Sub-random uniform directions; each diffuse subsurface sample takes one at a keyed place.
         IndexedVectorGeneratorPtr ssltUniformDirections;
         /// Whether a random draw has shaped the result since @ref ClearGrain().

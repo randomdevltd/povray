@@ -7509,11 +7509,9 @@ void Parser::Parse_Frame ()
             mPortalImages.clear();
         END_CASE
     END_EXPECT
+    // parsedCamera still holds the frame's default, exactly as in a scene without a camera.
     if (!had_camera && sceneData->parseFilterTags.specified)
-    {
-        sceneData->parsedCamera = Default_Camera;
-        Render_Info("No camera survived Filter_Tags; using the default camera.\n");
-    }
+        mMessageFactory.Info("No camera survived Filter_Tags; using the default camera.");
 }
 
 //******************************************************************************

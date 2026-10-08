@@ -204,6 +204,12 @@
   <td><div class="divh4"><a title="3.5.1.5.11" href="#r3_5_1_5_11">Sturm Object Modifier</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.5.1.5.12" href="#r3_5_1_5_12">Tags Object Modifier</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh4"><a title="3.5.1.5.13" href="#r3_5_1_5_13">Tag Filter Expressions</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.5.1.6" href="#r3_5_1_6">Portal</a></div></td>
 </tr>
 <tr>
@@ -3702,10 +3708,11 @@ OBJECT_MODIFIER:
   finish { FINISH_ITEMS... } |
   photons { PHOTON_ITEMS...}
   radiosity { RADIOSITY_ITEMS...}
+  tags { "NAME" [, "NAME"...] }
   TRANSFORMATION
 </pre>
 
-<p>Transformations such as translate, rotate and scale have already been discussed. The modifiers <em><a href="r3_6.html#r3_6_1">Textures</a></em> and its parts <em><a href="r3_6.html#r3_6_1_1">Pigment</a></em>, <em><a href="r3_6.html#r3_6_1_2">Normal</a></em>, and <em><a href="r3_6.html#r3_6_1_3">Finish</a></em> as well as <em><a href="r3_7.html#r3_7_2_1">Interior</a></em>, and <em><a href="r3_7.html#r3_7_2">Media</a></em> (which is part of interior) are each in major chapters of their own below. In the sub-sections below we cover several other important modifiers: <code><a href="r3_5.html#r3_5_1_5_1">clipped_by</a></code>, <code><a href="r3_5.html#r3_5_1_5_2">bounded_by</a></code>, <code><a href="r3_5.html#r3_5_1_5_3">material</a></code>, <code><a href="r3_5.html#r3_5_1_5_5">inverse</a></code>, <code><a href="r3_5.html#r3_5_1_5_4">hollow</a></code>, <code><a href="r3_5.html#r3_5_1_5_6">no_shadow</a></code>, <code><a href="r3_5.html#r3_5_1_5_7">no_image</a></code>, <code><a href="r3_5.html#r3_5_1_5_8">no_reflection</a></code>, <code><a href="r3_5.html#r3_5_1_5_9">double_illuminate</a></code>, <code><a href="r3_5.html#r3_5_1_5_10">no_radiosity</a></code> and <code><a href="r3_5.html#r3_5_1_5_11">sturm</a></code>. Although the examples below use object statements and object identifiers, these modifiers may be used on any type of object such as sphere, box etc.</p></div>
+<p>Transformations such as translate, rotate and scale have already been discussed. The modifiers <em><a href="r3_6.html#r3_6_1">Textures</a></em> and its parts <em><a href="r3_6.html#r3_6_1_1">Pigment</a></em>, <em><a href="r3_6.html#r3_6_1_2">Normal</a></em>, and <em><a href="r3_6.html#r3_6_1_3">Finish</a></em> as well as <em><a href="r3_7.html#r3_7_2_1">Interior</a></em>, and <em><a href="r3_7.html#r3_7_2">Media</a></em> (which is part of interior) are each in major chapters of their own below. In the sub-sections below we cover several other important modifiers: <code><a href="r3_5.html#r3_5_1_5_1">clipped_by</a></code>, <code><a href="r3_5.html#r3_5_1_5_2">bounded_by</a></code>, <code><a href="r3_5.html#r3_5_1_5_3">material</a></code>, <code><a href="r3_5.html#r3_5_1_5_5">inverse</a></code>, <code><a href="r3_5.html#r3_5_1_5_4">hollow</a></code>, <code><a href="r3_5.html#r3_5_1_5_6">no_shadow</a></code>, <code><a href="r3_5.html#r3_5_1_5_7">no_image</a></code>, <code><a href="r3_5.html#r3_5_1_5_8">no_reflection</a></code>, <code><a href="r3_5.html#r3_5_1_5_9">double_illuminate</a></code>, <code><a href="r3_5.html#r3_5_1_5_10">no_radiosity</a></code>, <code><a href="r3_5.html#r3_5_1_5_11">sturm</a></code> and <code><a href="r3_5.html#r3_5_1_5_12">tags</a></code>. Although the examples below use object statements and object identifiers, these modifiers may be used on any type of object such as sphere, box etc.</p></div>
 
 <a name="r3_5_1_5_1"></a>
 <div class="content-level-h5" contains="Clipped By Object Modifier" id="r3_5_1_5_1">
@@ -4093,6 +4100,80 @@ be used.</p>
 <li>sor</li>
 <li>torus</li>
 </ul></div>
+
+<a name="r3_5_1_5_12"></a>
+<div class="content-level-h5" contains="Tags Object Modifier" id="r3_5_1_5_12">
+<h5>3.5.1.5.12 Tags Object Modifier</h5>
+
+<p>Syntax:</p>
+<pre>
+OBJECT {
+  [OBJECT_ITEMS...]
+  tags { "NAME" [, "NAME"...] }
+  }
+</pre>
+
+<p>A tag is a name attached to an object, a light source, a portal or a camera. Tags do nothing by
+themselves: a tagged object renders exactly as an untagged one. They only matter when a
+<a href="r3_5.html#r3_5_1_5_13">tag filter</a> selects which tagged things take part in a view, so one scene
+can hold several variants, rooms or levels of detail without copying any geometry.</p>
+<pre>
+sphere { 0, 1 tags { "draft", "room-a" } }
+light_source { &lt;0, 5, 0&gt;, rgb 1 tags { "room-a" } }
+</pre>
+
+<ul>
+<li>Names are case-sensitive strings. They are sorted and duplicates are dropped, so repeating a name is harmless.</li>
+<li>A name assigned with <code>tags</code> may not contain <code>*</code>; wildcards belong to filters.</li>
+<li>An empty <code>tags { }</code> means no tags, as if the modifier were absent. An untagged thing matches the filter <code>none</code>.</li>
+<li><code>tags</code> and <code>filter_tags</code> are reserved words only from <code>#version 4.0</code>. In earlier scene versions they remain ordinary identifiers.</li>
+</ul>
+
+<p>Filters select whole top-level objects. The tags of a CSG object (the <code>union</code>, <code>intersection</code>,
+<code>difference</code> or <code>merge</code> at the top of the object) decide for all of it: tags on its operands do not carve operands
+out of a difference or intersection. When a union is split for acceleration, every piece follows the decision made for the
+whole. A <code>light_group</code> is selected as a group, and its lights stay with its geometry.</p>
+</div>
+
+<a name="r3_5_1_5_13"></a>
+<div class="content-level-h5" contains="Tag Filter Expressions" id="r3_5_1_5_13">
+<h5>3.5.1.5.13 Tag Filter Expressions</h5>
+
+<p>A <em>tag filter</em> is a Boolean expression over tags. It is written as <code>filter_tags { EXPRESSION }</code>
+in a camera, a portal or its mouths, and in <a href="r3_4.html#r3_4_1_14"><code>global_settings</code></a>, and as the
+<a href="r3_2.html#r3_2_5_5">Filter_Tags</a> option on the command line. Anything the filter selects takes part in the view;
+everything else is left out of it altogether.</p>
+<pre>
+camera { location -5*z look_at 0 filter_tags { "room-*" &amp; !"draft" } }
+</pre>
+
+<p>The operators, from highest precedence to lowest:</p>
+<table width="100%" class="option-list">
+<tr><td><code>"room-a"</code></td><td>That exact tag.</td></tr>
+<tr><td><code>"room-*"</code></td><td>Any whole tag matching the pattern; <code>*</code> matches zero or more characters.</td></tr>
+<tr><td><code>any</code></td><td>Anything with at least one tag.</td></tr>
+<tr><td><code>none</code></td><td>Anything with no tags.</td></tr>
+<tr><td><code>!</code> <em>expression</em></td><td>Everything the expression does not select.</td></tr>
+<tr><td><em>left</em> <code>&amp;</code> <em>right</em></td><td>Both expressions.</td></tr>
+<tr><td><em>left</em> <code>|</code> <em>right</em></td><td>Either expression.</td></tr>
+<tr><td><code>( </code><em>expression</em><code> )</code></td><td>Explicit grouping.</td></tr>
+</table>
+<p>So <code>"a" | "b" &amp; !"c"</code> means <code>"a" | ("b" &amp; (!"c"))</code>. <code>any | none</code> selects everything and
+<code>any &amp; none</code> selects nothing. An empty expression is an error: write the selection you mean.</p>
+
+<p>Where several filters could apply, the most specific wins:</p>
+<ul>
+<li><strong>A camera</strong> uses its own <code>filter_tags</code>, then the last <code>global_settings</code> filter, then all objects. A global filter written after the camera still applies.</li>
+<li><strong>A screen</strong> uses its camera's filter in the same way. It never inherits the filter of the view that looks at it.</li>
+<li><strong>A portal side</strong> uses, in order, the side, the mouth, the portal, the global filter, all objects; see <a href="r3_10.html#r3_10_3_11">Tag Filters</a> in the portal chapter. It never inherits the observer's filter.</li>
+<li><strong>The command-line <code>Filter_Tags</code></strong> is a hard limit applied first. A camera or portal filter cannot bring back anything it excluded.</li>
+</ul>
+
+<p>Each distinct selection gets its own list of objects, its own bounding hierarchy and its own photon maps and radiosity cache, so
+light and photons from something a view excludes never reach it, and rays in that view never test it. Selections that
+resolve to the same objects and lights share one preparation, however they were written. A selection costs memory and
+preparation time in proportion to what it contains.</p>
+</div>
 
 <a name="r3_5_1_6"></a>
 <div class="content-level-h4" contains="Portal" id="r3_5_1_6">
