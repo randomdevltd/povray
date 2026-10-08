@@ -214,6 +214,8 @@ $RECYCLE.BIN/
 # Files created by configure script in specific subdirectories
 /platform/Makefile
 /source/Makefile
+/source/tagfilter-test
+/source/tagfilter-test.trs
 /unix/Makefile
 /unix/config.h
 /unix/stamp-h1
