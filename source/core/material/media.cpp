@@ -129,6 +129,7 @@ class Media::FastCache final
         bool EnsureField(Media& media, TraceThreadData *ttd);
         bool Segment(const Ray& ray, DBL& from, DBL& to) const;
         bool DensityAt(const Vector3d& point, MathColour& result) const;
+        bool Contains(const Vector3d& point) const;
         bool CameraDensityAt(const Vector3d& point, MathColour& result) const;
         bool OpticalDepth(Media& media, const LightSource& light, const Vector3d& a, const Vector3d& b,
                           MathColour& result, TraceThreadData *ttd);
@@ -214,6 +215,8 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
     for (int ch = 0; ch < MathColour::channels; ch++)
         effect = std::max(effect, DBL(std::max(fabs(media.Extinction[ch]),
                           std::max(fabs(media.Scattering[ch]), fabs(media.Emission[ch])))));
+    if (media.mix == kMediaBlendMultiply)
+        effect = std::max(effect, 1.0);
     const DBL cellWidth = std::max(cell[X], std::max(cell[Y], cell[Z]));
     for (int z = 0; z < nz; z++)
         for (int y = 0; y < ny; y++)
@@ -282,6 +285,14 @@ bool Media::FastCache::DensityAt(const Vector3d& point, MathColour& result) cons
                 result += density[(size_t(base[2] + z * (nz > 1)) * ny + base[1] + y * (ny > 1)) * nx +
                                   base[0] + x * (nx > 1)] * weight;
             }
+    return true;
+}
+
+bool Media::FastCache::Contains(const Vector3d& point) const
+{
+    for (int axis = 0; axis < 3; axis++)
+        if ((point[axis] < low[axis]) || (point[axis] > low[axis] + size[axis]))
+            return false;
     return true;
 }
 
@@ -705,7 +716,17 @@ DBL MediaFunction::ModifierResolution() const
     return resolution;
 }
 
-void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point,
+void MediaFunction::ModifierDensity(Media& medium, const Vector3d& point, ModifierSource source, MathColour& local)
+{
+    if ((source != ModifierSource::kPattern) && medium.fastCache && !medium.Density.empty() &&
+        medium.fastCache->EnsureField(medium, threadData) &&
+        ((source == ModifierSource::kCamera) ? (medium.fastCache->Contains(point) && medium.fastCache->CameraDensityAt(point, local))
+                                             : medium.fastCache->DensityAt(point, local)))
+        return;
+    Evaluate_Density_Pigment(medium.Density, point, local, threadData);
+}
+
+void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
                                             MathColour& extinction, MathColour *emission, MathColour *scattering)
 {
     const size_t n = medias.size();
@@ -721,7 +742,7 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
     {
         Media& medium = *modifier.medium;
         MathColour local;
-        Evaluate_Density_Pigment(medium.Density, point, local, threadData);
+        ModifierDensity(medium, point, source, local);
         if (medium.mix == kMediaBlendMultiply)
             for (size_t t = 0; t < modifier.below; t++)
             {
@@ -1089,7 +1110,7 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Extinction
                 densities[j * medias.size() + m] = density[j];
         }
         for(size_t j = 0; j < n; j++)
-            AddModifiedCoefficients(medias, &densities[j * medias.size()], points[j], extinction[j], nullptr, nullptr);
+            AddModifiedCoefficients(medias, &densities[j * medias.size()], points[j], ModifierSource::kPattern, extinction[j], nullptr, nullptr);
         return;
     }
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
@@ -1340,7 +1361,7 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
                         extinction += density * medium->Extinction;
                 }
                 if (modifiers != nullptr)
-                    AddModifiedCoefficients(medias, &densities[0], point, extinction, nullptr, nullptr);
+                    AddModifiedCoefficients(medias, &densities[0], point, ModifierSource::kField, extinction, nullptr, nullptr);
                 depth += extinction * step;
                 threadData->Stats()[Media_Samples]++;
                 if ((total + depth).Min() > opaque)
@@ -2162,7 +2183,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         }
     }
     if (modifiers != nullptr)
-        AddModifiedCoefficients(medias, &densityScratch[0], H, Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
+        AddModifiedCoefficients(medias, &densityScratch[0], H, (prepared && !ray.IsPhotonRay()) ? ModifierSource::kCamera : ModifierSource::kPattern,
+                                Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
                                 ray.IsShadowTestRay() ? nullptr : &Scattering);
 
     // Get estimate for the total optical depth of the current interval.

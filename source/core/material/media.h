@@ -113,8 +113,12 @@ class MediaFunction : public Trace::MediaFunctor
 
         /// The finest prepared step of the modifiers' varying densities, or HUGE_VAL.
         DBL ModifierResolution() const;
+        /// Where a modifier's density comes from: its prepared grid for camera samples or field marching, else its pattern.
+        enum class ModifierSource { kPattern, kCamera, kField };
+        /// A modifier medium's density at a point, from its prepared grid where the source allows and the grid holds it.
+        void ModifierDensity(Media& medium, const Vector3d& point, ModifierSource source, MathColour& local);
         /// Adds the media's coefficients at a point, density[i] being medias[i]'s density there, after the modifiers.
-        void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point,
+        void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
                                      MathColour& extinction, MathColour *emission, MathColour *scattering);
 
         /// The key the current ray's media draws are hashed from.
