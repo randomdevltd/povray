@@ -3997,8 +3997,17 @@ bool Trace::ChangesIndex(const Interior *interior) const
 
 void Trace::PreferOpaqueCoincident(Ray& ray, Intersection& isect, COLC weight)
 {
-    if (sceneData->legacyIorStack || !sceneData->anyOpaque || !ChangesIndex(isect.Object->interior.get()) ||
-        !SurfaceTransmits(isect, ray, weight))
+    if (sceneData->legacyIorStack || !sceneData->anyOpaque || !ChangesIndex(isect.Object->interior.get()))
+        return;
+    if (sceneData->dielectrics)
+    {
+        Vector3d normal;
+        isect.Object->Normal(normal, &isect, threadData);
+        InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal);
+        if (sidesCache[std::min<size_t>(ray.GetTicket().traceLevel, 255)].simple)
+            return;
+    }
+    if (!SurfaceTransmits(isect, ray, weight))
         return;
     const double tolerance = InterfaceTolerance(isect.IPoint, isect.Object->interior.get()), back = tolerance + MIN_ISECT_DEPTH;
     Ray probe(ray.GetTicket(), isect.IPoint - back * ray.Direction, ray.Direction);
@@ -4059,6 +4068,7 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& b
     sides.before = before;
     sides.after = before;
     sides.leave = 0.0;
+    sides.simple = false;
     auto holds = [](const RayInteriorVector& set, const Interior *i) { return std::find(set.begin(), set.end(), i) != set.end(); };
     auto place = [&](Interior *i, bool inside) {
         RayInteriorVector::iterator at = std::find(sides.after.begin(), sides.after.end(), i);
@@ -4084,6 +4094,7 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& b
     if (simple)
     {
         sides.leave = tolerance;
+        sides.simple = true;
         return;
     }
     sides.after = before;
