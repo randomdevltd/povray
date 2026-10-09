@@ -93,7 +93,7 @@ void ParserTask::Finish()
     {
         mpParser->GetParserDataPtr()->timeType  = TraceThreadData::kParseTime;
         mpParser->GetParserDataPtr()->realTime  = ConsumedRealTime();
-        mpParser->GetParserDataPtr()->cpuTime   = ConsumedCPUTime() + mpParser->MeshBuildCPUTime();
+        mpParser->GetParserDataPtr()->cpuTime   = ConsumedCPUTime();
         mpParser->Finish();
         mpParser.reset();
     }

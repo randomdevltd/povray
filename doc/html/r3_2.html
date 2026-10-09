@@ -1767,9 +1767,10 @@ povray +Iscene.pov 'Filter_Tags="preview" | none'
 <code>none</code> in the expression to keep untagged shared geometry and cameras. If no scene camera survives, the render uses the
 built-in default camera and says so.</p>
 <p>The filter is applied to the scene after it has been parsed, and is never visible to the scene itself: it is not an SDL
-variable, and macros, includes, <code>#if</code> and <code>#ifdef</code> run exactly as they would without it. Excluded objects are still built
-by the parser but take no part in bounding, photon or radiosity work, nor in tracing. The option is available in any
-scene language version.</p>
+variable, and macros, includes, <code>#if</code> and <code>#ifdef</code> run exactly as they would without it. Excluded objects take no
+part in bounding, photon or radiosity work, nor in tracing, and an <code>isosurface_mesh</code>, <code>skein_mesh</code> or
+<code>.povm</code> mesh that no remaining object uses is never built, unless the scene queried its geometry while parsing. The
+option is available in any scene language version.</p>
 <p>If <code>Filter_Tags</code> is given more than once, the first is used, as with <code>Declare</code>. A malformed expression is
 reported at the character where it goes wrong.</p>
 </div>

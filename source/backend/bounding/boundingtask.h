@@ -79,6 +79,27 @@ class BoundingTask final : public SceneTask
         void SendFatalError(pov_base::Exception& e);
 };
 
+/// Builds the deferred meshes that some prepared set uses, in parallel and once each, then rebounds what holds them.
+class MeshBuildTask final : public SceneTask
+{
+    public:
+        MeshBuildTask(std::shared_ptr<BackendSceneData> sd, size_t seed, unsigned int threads, TraceThreadData *parseData);
+        virtual ~MeshBuildTask() override;
+
+        virtual void Run() override;
+        virtual void Stopped() override;
+        virtual void Finish() override;
+
+    private:
+        std::shared_ptr<BackendSceneData> sceneData;
+        size_t seed;
+        unsigned int threads;
+        TraceThreadData *parseData;
+        POV_LONG buildCpuTime;
+
+        void SendFatalError(pov_base::Exception& e);
+};
+
 }
 // end of namespace pov
 

@@ -746,8 +746,8 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
     if (AllowToken(INSIDE_VECTOR_TOKEN))
         Parse_Vector(insideVect);
     const bool solid = !insideVect.IsNearNull(EPSILON);
-    std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
-        [this, file, name, found, insideVect](TraceThreadData *, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+    std::shared_ptr<DeferredMeshState> deferred = RecordMeshBuild(
+        [file, name, found, insideVect](TraceThreadData *, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
     std::shared_ptr<Mesh> result(new Mesh());
     Mesh *mesh = result.get();
@@ -790,7 +790,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
 
     uint64_t hash = Hash_Bytes(header, sizeof(header), 0);
     const auto read = [&](void *dst, size_t words) {
-        if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+        if (state.cancelled->load(std::memory_order_relaxed))
             throw PovmError("Mesh build cancelled.");
         if (!file->read(dst, words * 4))
             throw PovmError("Cannot read povm file '%s'.", name.c_str());
@@ -877,7 +877,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
 
     for (MeshIndex i = 0; i < data.Number_Of_Triangles; ++i)
     {
-        if (((i & 0xFFFF) == 0) && mMeshBuildCancelled.load(std::memory_order_relaxed))
+        if (((i & 0xFFFF) == 0) && state.cancelled->load(std::memory_order_relaxed))
             throw PovmError("Mesh build cancelled.");
         MESH_TRIANGLE& t = data.Triangles[i];
         const Vector3d P1(data.Vertices[t.P1()]), P2(data.Vertices[t.P2()]), P3(data.Vertices[t.P3()]);

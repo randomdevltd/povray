@@ -323,10 +323,11 @@ sizes share their edge vertices: a closed skein gives a closed mesh, with `insid
 set. More than 2,000,000 triangles is a parse error. Each build writes a line to the debug
 stream: triangles, vertices, open edges, bytes, wall and CPU seconds, and build threads.
 
-Each complete mesh build runs on one of the `+WT` workers; `+WT1` is
-serial. The parser continues after publishing the declaration. Copies, transforms, textures
-and instances do not wait, but `trace`, `inside`, extent queries and mesh cameras join the
-build when they need its geometry. All remaining builds join after the last scene token.
+The parser records each mesh build and continues. Copies, transforms, textures and instances
+do not build it, but `trace`, `inside`, extent queries and mesh cameras build it when they need
+its geometry. Every other mesh is built after parsing, once all tag filters are known, and only
+if some view keeps an object that uses it; those builds run on up to `+WT` threads, and `+WT1`
+is serial. See [render tags](render-tags.md#phases-and-deferred-meshes).
 
 A function that maps a skein cannot sample a `screen` pigment: its geometry must agree
 for camera rays, photons and mesh preparation. That is an error for both `skein` and

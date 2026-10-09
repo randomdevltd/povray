@@ -222,6 +222,10 @@ void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, s
         portal->backPreparedSetId = sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(portal->backFilterTags));
     }
 
+    // Every filter is known now, so only meshes some set uses get built; parse-time geometry queries built theirs already.
+    taskq.AppendTask(new MeshBuildTask(sceneData, seed, workers, sceneThreadData.front()));
+    taskq.AppendSync();
+
     for (size_t view = 0; view < sceneData->preparedSets.size(); ++view)
     {
         sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(taskq.AppendTask(new BoundingTask(

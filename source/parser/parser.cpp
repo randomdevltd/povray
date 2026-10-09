@@ -162,8 +162,6 @@ Parser::Parser(shared_ptr<SceneData> sd, const Options& opts,
     Debug_Message_Buffer(mf),
     mpFunctionVM(new FunctionVM),
     fnVMContext(new FPUContext(mpFunctionVM.get(), GetParserDataPtr())),
-    mMeshThreadCount(opts.workThreads),
-    mRandomSeed(opts.randomSeed),
     Destroying_Frame(false),
     mTokenCount(0),
     mTokensSinceLastProgressReport(0),
@@ -190,116 +188,50 @@ Parser::Parser(shared_ptr<SceneData> sd, const Options& opts,
 
 Parser::~Parser()
 {
-    for (const std::shared_ptr<DeferredMeshState>& build : mMeshBuilds)
-        if (build->result.valid())
-            build->result.wait();
-    {
-        std::lock_guard<std::mutex> lock(mMeshBuildMutex);
-        mMeshBuildStopping = true;
-    }
-    mMeshBuildReady.notify_all();
-    for (std::thread& worker : mMeshWorkers)
-        worker.join();
-    for (const std::unique_ptr<TraceThreadData>& worker : mMeshThreadData)
-        mThreadData.Stats() += worker->Stats();
-    mMeshThreadData.clear();
     // NB: We need to keep fnVMContext around until all functions have been destroyed.
     delete fnVMContext;
 }
 
-std::shared_ptr<DeferredMeshState> Parser::QueueMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
-                                                         const std::shared_ptr<void>& keepAlive)
+std::shared_ptr<DeferredMeshState> Parser::RecordMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
+                                                          const std::shared_ptr<void>& keepAlive)
 {
-    if (mMeshWorkers.size() < mMeshThreadCount)
-    {
-        if (mMeshWorkers.empty())
-            mMeshThreadData.reserve(mMeshThreadCount);
-        const unsigned int i = mMeshWorkers.size();
-        mMeshThreadData.emplace_back(new TraceThreadData(sceneData, mRandomSeed + i + 1, false));
-        TraceThreadData *threadData = mMeshThreadData.back().get();
-        mMeshWorkers.emplace_back([this, threadData]()
-        {
-            for (;;)
-            {
-                MeshBuildTask task;
-                {
-                    std::unique_lock<std::mutex> lock(mMeshBuildMutex);
-                    mMeshBuildReady.wait(lock, [this]() { return mMeshBuildStopping || !mMeshBuildQueue.empty(); });
-                    if (mMeshBuildStopping && mMeshBuildQueue.empty())
-                        return;
-                    task = mMeshBuildQueue.front();
-                    mMeshBuildQueue.pop_front();
-                }
-                try
-                {
-                    if (mMeshBuildCancelled.load(std::memory_order_relaxed))
-                        throw std::runtime_error("Mesh build cancelled.");
-                    Timer timer;
-                    std::shared_ptr<Mesh> mesh = task.work(threadData, *task.state);
-                    if (timer.HasValidThreadCPUTime())
-                        task.state->cpuTime = timer.ElapsedThreadCPUTime();
-                    task.promise->set_value(mesh);
-                }
-                catch (...)
-                {
-                    task.promise->set_exception(std::current_exception());
-                }
-            }
-        });
-    }
     std::shared_ptr<DeferredMeshState> state(new DeferredMeshState());
+    state->work = work;
     state->keepAlive = keepAlive;
+    state->cancelled = sceneData->meshBuildCancelled;
     if (HaveCurrentMessageContext())
         state->source = SourceInfo(CurrentMessageContext());
-    std::shared_ptr<std::promise<std::shared_ptr<Mesh>>> promise(new std::promise<std::shared_ptr<Mesh>>());
-    state->result = promise->get_future().share();
-    {
-        std::lock_guard<std::mutex> lock(mMeshBuildMutex);
-        mMeshBuildQueue.push_back(MeshBuildTask{work, state, promise});
-        mMeshBuilds.push_back(state);
-    }
-    mMeshBuildReady.notify_one();
+    sceneData->deferredMeshes.push_back(state);
     return state;
 }
 
-void Parser::FinishMeshBuilds()
-{
-    for (const std::shared_ptr<DeferredMeshState>& build : mMeshBuilds)
-    {
-        try
-        {
-            while (build->result.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
-                mProgressReporter.ReportProgress(mTokenCount);
-        }
-        catch (...)
-        {
-            mMeshBuildCancelled.store(true, std::memory_order_relaxed);
-            throw;
-        }
-        try
-        {
-            build->result.get();
-        }
-        catch (const std::exception& error)
-        {
-            mMeshBuildCancelled.store(true, std::memory_order_relaxed);
-            Error(build->source, "%s", error.what());
-        }
-        for (const std::string& warning : build->warnings)
-            Warning("%s", warning.c_str());
-        if (build->cpuTime >= 0)
-            mMeshBuildCpuTime += build->cpuTime;
-        if (!build->debug.empty())
-            Debug_Info("%s", build->debug.c_str());
-    }
-    for (ObjectPtr object : sceneData->objects)
-        Resolve_Mesh_Geometry(object);
-}
-
+// A geometry query during parsing builds the mesh now, on the parser thread; everything else waits for the scene sets.
 bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 {
     if (Mesh *mesh = dynamic_cast<Mesh *>(object))
+    {
+        if (!mesh->Pending())
+            return false;
+        DeferredMeshState& state = *mesh->Deferred();
+        if (!state.reported)
+        {
+            try
+            {
+                state.Build(GetParserDataPtr());
+            }
+            catch (const std::exception& error)
+            {
+                Error(state.source, "%s", error.what());
+            }
+            state.reported = true;
+            ++sceneData->deferredMeshesBuiltForQueries;
+            for (const std::string& warning : state.warnings)
+                Warning("%s", warning.c_str());
+            if (!state.debug.empty())
+                Debug_Info("%s", state.debug.c_str());
+        }
         return mesh->Resolve();
+    }
     bool changed = false;
     if (LightSource *light = dynamic_cast<LightSource *>(object))
         if (light->Projected_Through_Object != nullptr)
@@ -383,8 +315,6 @@ void Parser::Run()
 
             Parse_Frame();
 
-            FinishMeshBuilds();
-
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
             {
@@ -444,7 +374,6 @@ void Parser::Run()
         }
         catch (std::exception& e)
         {
-            mMeshBuildCancelled.store(true, std::memory_order_relaxed);
             // Some other exceptional situation occurred in a library or some such and couldn't be handled gracefully;
             // handle it now by failing with a corresponding parse error
             Error(e.what());
@@ -1397,7 +1326,7 @@ void Parser::Parse_Mesh_Camera (Camera& Cam)
     unsigned int faces = 0;
     for (std::vector<ObjectPtr>::const_iterator it = Cam.Meshes.begin(); it != Cam.Meshes.end(); it++)
     {
-        static_cast<const Mesh *>(*it)->Resolve();
+        Resolve_Mesh_Geometry(*it);
         Cam.Mesh_Index.push_back(faces += static_cast<const Mesh *>(*it)->Data->Number_Of_Triangles);
     }
 
@@ -3162,8 +3091,8 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
     source->iso = iso;
     source->originalFunction.reset(iso->Function);
     iso->Function = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(functionId));
-    std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
-        [this, iso, minSize, maxAngle, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+    std::shared_ptr<DeferredMeshState> deferred = RecordMeshBuild(
+        [iso, minSize, maxAngle, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
             std::string definition;
             if (cacheDir.empty() || !Describe_Isosurface_Mesh(*iso, minSize, maxAngle, definition))
@@ -3177,9 +3106,9 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
             MeshBuilder built(*object, false);
             IsoSurfaceMeshReport report;
             const std::vector<TraceThreadData *> threads(1, thread);
-            const std::string problem = iso->Tessellate(threads, minSize, maxAngle, built, report, [this]()
+            const std::string problem = iso->Tessellate(threads, minSize, maxAngle, built, report, [&state]()
             {
-                if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+                if (state.cancelled->load(std::memory_order_relaxed))
                     throw std::runtime_error("Mesh build cancelled.");
             });
             if (!problem.empty())

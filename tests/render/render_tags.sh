@@ -114,6 +114,31 @@ if cmp -s render_tags_children_all.px render_tags_children_ref_m1_s1.px; then
     exit 1
 fi
 
+# Deferred meshes are built after every filter is known, once each, and only where some view keeps them.
+meshes() {
+    tr '\n' ' ' < "render_tags_$1.log" | tr -s ' ' | grep -q "Deferred meshes: $2" || {
+        cat "render_tags_$1.log"
+        echo "deferred meshes in $1: expected $2" >&2
+        exit 1
+    }
+}
+render meshes_all tests/render/render_tags_meshes.pov
+meshes meshes_all "2 recorded, 0 built for parse-time queries, 2 built for the scene, 0 not needed"
+render meshes_cli tests/render/render_tags_meshes.pov 'Filter_Tags=!"b"'
+meshes meshes_cli "2 recorded, 0 built for parse-time queries, 1 built for the scene, 1 not needed"
+for mode in 2 3; do
+    render "meshes_mode$mode" tests/render/render_tags_meshes.pov Declare=Mode="$mode"
+    meshes "meshes_mode$mode" "2 recorded, 0 built for parse-time queries, 1 built for the scene, 1 not needed"
+    equal "meshes_mode$mode" meshes_cli
+done
+render meshes_query tests/render/render_tags_meshes.pov Declare=Mode=4 'Filter_Tags=!"b"'
+meshes meshes_query "2 recorded, 1 built for parse-time queries, 1 built for the scene, 0 not needed"
+equal meshes_query meshes_cli
+if cmp -s render_tags_meshes_all.px render_tags_meshes_cli.px; then
+    echo "mesh fixture: filtering changed nothing" >&2
+    exit 1
+fi
+
 for method in 1 2; do
     for split in 0 1; do
         render "root_m${method}_s${split}" tests/render/render_tags_roots.pov +bm"$method" +mb1 Declare=Split="$split"
