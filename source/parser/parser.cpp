@@ -313,6 +313,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
         {
             Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
             compound->Compute_BBox();
+            Update_Infinite_Flag(compound);
         }
     }
     return changed;

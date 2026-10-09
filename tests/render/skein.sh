@@ -35,6 +35,8 @@ grep -q "^skein_mesh: 8192 triangles, 4225 vertices, 0 open edges" skein_mesh.lo
 test "$(grep -c '^skein_mesh: .* 0 open edges' skein_mesh.log)" = 6 || { cat skein_mesh.log; echo "skein_mesh: not six closed meshes"; exit 1; }
 "$POVRAY" +i"$SRCDIR/tests/render/deferred_mesh_check.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f +wt4 > deferred_mesh.log 2>&1 || { cat deferred_mesh.log; exit 1; }
 test "$(grep -c '^skein_mesh: .* 0 open edges' deferred_mesh.log)" = 2 || { cat deferred_mesh.log; echo "deferred mesh: redeclaration did not build twice"; exit 1; }
+# a skein_mesh's placeholder box is infinite until it is built; the built mesh must not stay outside the bounding tree
+grep -Eq 'Infinite Objects: +0$' deferred_mesh.log || { cat deferred_mesh.log; echo "deferred mesh: a built mesh is still flagged infinite"; exit 1; }
 # a pending .povm octahedron in a translated merge or unsplit union must not be cut to the box taken before it loaded
 le32() { printf "\\$(printf %03o $(($1 & 255)))\\$(printf %03o $(($1 >> 8 & 255)))\\$(printf %03o $(($1 >> 16 & 255)))\\$(printf %03o $(($1 >> 24 & 255)))"; }
 {
