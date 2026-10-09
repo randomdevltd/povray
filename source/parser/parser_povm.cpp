@@ -209,19 +209,26 @@ int Find_Build_Id(struct dl_phdr_info *info, size_t, void *out)
         const ElfW(Phdr)& ph = info->dlpi_phdr[i];
         if (ph.p_type != PT_NOTE)
             continue;
+        // Padding aligns each field's end, counted from the note's start: an 8-aligned note's name ends at 16, not 20.
         const size_t align = (ph.p_align > 4) ? size_t(ph.p_align) : 4;
+        const auto padded = [align](size_t n) { return (n + align - 1) & ~(align - 1); };
         const unsigned char *p = reinterpret_cast<const unsigned char *>(info->dlpi_addr + ph.p_vaddr), *end = p + ph.p_memsz;
         while (size_t(end - p) >= sizeof(ElfW(Nhdr)))
         {
             const ElfW(Nhdr) *note = reinterpret_cast<const ElfW(Nhdr) *>(p);
-            const unsigned char *name = p + sizeof(ElfW(Nhdr));
-            const unsigned char *desc = name + ((note->n_namesz + align - 1) & ~(align - 1));
+            const size_t left = size_t(end - p), descAt = padded(sizeof(ElfW(Nhdr)) + note->n_namesz);
+            if (descAt + note->n_descsz > left)
+                break;
+            const unsigned char *name = p + sizeof(ElfW(Nhdr)), *desc = p + descAt;
             if ((note->n_type == NT_GNU_BUILD_ID) && (note->n_namesz == 4) && (std::memcmp(name, "GNU", 4) == 0))
             {
                 static_cast<std::string *>(out)->assign(reinterpret_cast<const char *>(desc), note->n_descsz);
                 return 1;
             }
-            p = desc + ((note->n_descsz + align - 1) & ~(align - 1));
+            const size_t next = padded(descAt + note->n_descsz);
+            if (next >= left)
+                break;
+            p += next;
         }
     }
     return 1;

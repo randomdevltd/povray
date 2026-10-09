@@ -422,7 +422,7 @@ class Parser final
         std::shared_ptr<DeferredMeshState> QueueMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
                                                          const std::shared_ptr<void>& keepAlive = std::shared_ptr<void>());
         void FinishMeshBuilds();
-        void Resolve_Mesh_Geometry(ObjectPtr object);
+        bool Resolve_Mesh_Geometry(ObjectPtr object);
 
         // parse.h/parse.cpp
         void Parse_Error (TokenId Token_Id);
