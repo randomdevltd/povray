@@ -31,8 +31,16 @@ struct TagFilter final
     }
 };
 
+/// The tags of a union that was split into its children, which each child must still satisfy.
+struct TagScope final
+{
+    std::vector<std::string> tags;
+    std::shared_ptr<const TagScope> enclosing;
+};
+
 TagFilter ParseTagFilter(const std::string& expression);
 bool MatchesTags(const std::vector<std::string>& sortedUniqueTags, const TagFilter& filter);
+void MergeTags(std::vector<std::string>& sortedUniqueTags, const std::vector<std::string>& added);
 
 }
 

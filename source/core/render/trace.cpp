@@ -2237,7 +2237,8 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
 
     // local light sources from a light group, if any; a selected object's group is selected with it
     for(LightSource *light : object->LLights)
-        ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+        if(view.UsesGroupLight(light->index))
+            ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
 
     // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
     if(!sceneData->portalLights.empty() && !eye.IsRadiosityRay())
@@ -2332,13 +2333,15 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
         }
     };
 
+    const PreparedSet& view = sceneData->GetPreparedSet(eye.GetPreparedSetId());
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
-        for(unsigned int i : sceneData->GetPreparedSet(eye.GetPreparedSetId()).globalLights)
+        for(unsigned int i : view.globalLights)
             consider(*threadData->lightSources[i], i);
     }
     for(LightSource *light : object->LLights)
-        consider(*light, -1);
+        if(view.UsesGroupLight(light->index))
+            consider(*light, -1);
 
     const size_t end = lightCandidates.size();
     const size_t order = lightOrder.size();
@@ -5183,10 +5186,13 @@ ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
 void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId)
 {
     lights.clear();
+    const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
-        for(unsigned int i : sceneData->GetPreparedSet(preparedSetId).globalLights)
+        for(unsigned int i : view.globalLights)
             lights.push_back(threadData->lightSources[i]);
-    lights.insert(lights.end(), object->LLights.begin(), object->LLights.end());
+    for(const LightSource *light : object->LLights)
+        if(view.UsesGroupLight(light->index))
+            lights.push_back(light);
 }
 
 // Lo is the sum over samples; one bend point per sample serves every channel, drawn from their mixture; see doc/PERF.md.

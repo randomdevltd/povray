@@ -71,7 +71,7 @@ povray +Iscene.pov 'Filter_Tags="preview" | none'
 
 This is a hard limit on the prepared scene: camera or portal filters cannot bring back excluded objects. It also filters tagged scene-camera candidates. `none` is often useful to retain untagged shared geometry and cameras.
 
-`Filter_Tags` is a planning option applied after entity syntax and tags are known. It is never exposed as an SDL variable or a value readable by macro logic. Tags belong to individual entities; they do not control preprocessing. Macros and includes execute normally regardless of the command-line filter.
+`Filter_Tags` is a planning option applied after entity syntax and tags are known. It is never exposed as an SDL variable or a value readable by macro logic. Tags belong to individual entities; they do not control preprocessing. Macros and includes execute normally regardless of the command-line filter. Given more than once, the first `Filter_Tags` wins, as with `Declare=`. A malformed expression is reported where it goes wrong, for example `unclosed quote at character 2 of '!"a'`.
 
 The current SDL parser constructs an object, and may load or construct its mesh, before discovering its trailing tags. Filtering therefore avoids subsequent object postprocessing, bounds preparation, radiosity and photon work, but does not yet avoid this initial construction. A macro can generate ordinary tagged objects without seeing the filter:
 
@@ -84,7 +84,21 @@ PreviewSphere(0)
 
 ## Geometry and transport
 
-Filters select top-level renderable roots. A CSG root's tags govern its whole object: child tags do not carve operands out of a difference or intersection. Splitting a union for acceleration preserves that root decision. A `light_group` is likewise selected as a group; its local lights remain associated with its geometry.
+Every object checks the filter, at every level. Its effective tags are its own and those of everything that contains it, so tagging a union tags all of it. A tagged container that the filter rejects takes all of its contents with it. An untagged container only groups: its children decide, and it disappears when none of them remain.
+
+In a `union`, `merge` or `light_group`, a rejected child is left out and the rest stay; a rejected light in a light group lights nothing. Splitting a union for acceleration keeps these decisions, since each piece still answers to the union's tags.
+
+`intersection` and `difference` treat a rejected operand as empty space. An intersection with a rejected operand is empty and renders nothing. A difference whose first operand is rejected is empty; a rejected cutter cuts nothing, leaving the shape it would have cut. `inverse` complements empty space into everything, which an intersection ignores; a union holding everything has no surface and renders nothing.
+
+```pov
+difference {
+  box { -1, 1 }
+  cylinder { -2*z, 2*z, 0.5 tags { "hole" } }
+}
+// filter_tags { !"hole" } shows the box uncut
+```
+
+A view that keeps only some of a container's children gets its own copy of the container, holding the same children.
 
 Each distinct resolved membership gets one prepared object list and bounds tree. Different expressions that select the same objects share preparation. Both classic slabs and BSP use these lists. Geometry is owned once; the prepared sets reference it.
 
@@ -100,4 +114,4 @@ The tag keywords require `#version 4.0`; earlier scene versions retain these nam
 
 Full SDL work must benchmark opaque or streamed bulk ranges, including concrete mesh construction and semantic checks. It should parse the full source with bounded bulk syntax, then skip excluded entity construction once tags are known. Macro execution should construct concrete geometry directly, with the master filter remaining outside SDL and macro logic.
 
-`tests/render/render_tags.sh` checks selection pixels, invalid syntax, ordinary macro construction, nested views and acceleration equivalence. `tools/bench/render-tags.pov` supplies three camera selections. `tools/bench/render-tags-many.pov` measures prepared-set scaling: `Declare=Count=N` varies screen count, and `Declare=Unique=0` reuses four memberships. Include parsing and preparation time and peak memory when comparing runs, in addition to trace time. Use `+PR` and compare decoded pixels.
+`tests/render/render_tags.sh` checks selection pixels, invalid syntax, ordinary macro construction, nested views, acceleration equivalence, and filtering inside light groups, unions, merges and CSG. `tools/bench/render-tags.pov` supplies three camera selections. `tools/bench/render-tags-many.pov` measures prepared-set scaling: `Declare=Count=N` varies screen count, and `Declare=Unique=0` reuses four memberships. Include parsing and preparation time and peak memory when comparing runs, in addition to trace time. Use `+PR` and compare decoded pixels.

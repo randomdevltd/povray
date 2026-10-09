@@ -76,14 +76,28 @@ using namespace pov_base;
 class BSPTree;
 class SubsurfaceCache;
 
+/// What remains of an object under a filter. An excluded object is empty space, so an excluded inverted operand, such
+/// as a difference's cutter, is everything; `Part` means some descendants were removed.
+enum class TagSelection { Empty, Everything, Whole, Part };
+
+TagSelection SelectTagged(ConstObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited = nullptr);
+bool EnclosingTagsMatch(ConstObjectPtr object, const TagFilter& filter);
+/// Destroys the descendants of a parsed root that the filter removes; the root itself is left to the caller.
+TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights);
+void ForgetLights(ObjectPtr object, const std::vector<LightSource*>& lights);
+
 struct PreparedSet final
 {
     std::vector<ObjectPtr> objects;
+    /// compounds rebuilt for this set with only the children it selects; they share those children
+    std::vector<ObjectPtr> views;
     std::vector<LightSource*> lights;
     /// indices into SceneData::lightSources (and each thread's copies) of the global lights in this set
     std::vector<unsigned int> globalLights;
     /// membership by LightSource::index, consulted only where a portal crossing changes set
     std::vector<bool> globalLightIn, groupLightIn;
+    bool groupLightsFiltered = false;
+    bool UsesGroupLight(unsigned int index) const { return !groupLightsFiltered || groupLightIn[index]; }
     std::vector<const LightSource*> globalPortalImages;
     /// by group light index: that light's images through portals in this set
     std::vector<std::vector<const LightSource*>> groupPortalImages;

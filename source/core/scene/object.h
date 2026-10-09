@@ -193,6 +193,7 @@ class ObjectBase
         bool RadiosityImportanceSet;
         unsigned int Flags;
         std::vector<std::string> tags;
+        std::shared_ptr<const TagScope> enclosingTags;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -218,7 +219,7 @@ class ObjectBase
             Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags),
-            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags)
+            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags), enclosingTags(o.enclosingTags)
         {
             if (transplant)
             {

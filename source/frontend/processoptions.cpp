@@ -1444,7 +1444,9 @@ int ProcessOptions::Process_INI_Option(INI_Parser_Table *option, char *param, PO
             err = POVMSUtil_SetBool(obj, option->key, IsTrue(param));
             break;
         case kPOVMSType_CString:
-            err = POVMSUtil_SetString(obj, option->key, param);
+            // A repeated expression keeps the first, as a repeated Declare does.
+            if (!(option->flags & kINIOptFlag_RawExpression) || (POVMSObject_Exist(obj, option->key) != kNoErr))
+                err = POVMSUtil_SetString(obj, option->key, param);
             break;
         case kPOVMSType_UCS2String:
             err = POVMSUtil_SetUTF8String(obj, option->key, param);

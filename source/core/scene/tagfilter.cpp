@@ -3,8 +3,11 @@
 #include "core/scene/tagfilter.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
+#include <iterator>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "tree_sitter/api.h"
@@ -170,6 +173,83 @@ bool Evaluate(const TagFilterNode& node, const std::vector<std::string>& tags)
     return false;
 }
 
+std::string At(std::size_t at, const std::string& expression)
+{
+    return " at character " + std::to_string(at + 1) + " of '" + expression + "'";
+}
+
+// Scans an expression the grammar rejected, token by token, to name the first error and its 1-based character.
+std::string DescribeError(TSNode root, const std::string& expression)
+{
+    static const char *const kOperand = "; expected a quoted pattern, any, none, ! or (";
+    bool operand = true;
+    unsigned depth = 0;
+    std::size_t i = 0;
+    while (i < expression.size())
+    {
+        const char c = expression[i];
+        if (std::isspace(static_cast<unsigned char>(c)))
+        {
+            ++i;
+            continue;
+        }
+        if (expression.compare(i, 2, "//") == 0)
+        {
+            i = expression.find('\n', i);
+            continue;
+        }
+        if (expression.compare(i, 2, "/*") == 0)
+        {
+            const std::size_t close = expression.find("*/", i + 2);
+            if (close == std::string::npos)
+                return "unclosed comment" + At(i, expression);
+            i = close + 2;
+            continue;
+        }
+        const std::size_t start = i;
+        std::string token(1, c);
+        if (c == '"')
+        {
+            for (++i; (i < expression.size()) && (expression[i] != '"'); ++i)
+            {
+                if (static_cast<unsigned char>(expression[i]) < 0x20)
+                    return "control character in a quoted pattern" + At(i, expression);
+                if (expression[i] == '\\')
+                {
+                    if ((i + 1 >= expression.size()) || (std::strchr("\"\\nrtbf", expression[i + 1]) == nullptr))
+                        return "unknown escape in a quoted pattern" + At(i, expression);
+                    ++i;
+                }
+            }
+            if (i >= expression.size())
+                return "unclosed quote" + At(start, expression);
+            token = expression.substr(start, ++i - start);
+        }
+        else if (std::isalnum(static_cast<unsigned char>(c)) || (c == '_'))
+        {
+            while ((i < expression.size()) && (std::isalnum(static_cast<unsigned char>(expression[i])) || (expression[i] == '_')))
+                ++i;
+            token = expression.substr(start, i - start);
+        }
+        else
+            ++i;
+        const bool word = (token[0] == '"') || (token == "any") || (token == "none");
+        if (operand && word)
+            operand = false;
+        else if (operand && ((token == "!") || (token == "(")))
+            depth += (token == "(");
+        else if (!operand && ((token == "&") || (token == "|")))
+            operand = true;
+        else if (!operand && (token == ")") && (depth > 0))
+            --depth;
+        else
+            return "unexpected '" + token + "'" + At(start, expression) + (operand ? kOperand : (depth > 0) ? "; expected &, | or )" : "; expected & or |");
+    }
+    if (operand || (depth > 0))
+        return "expression ends early" + At(expression.size(), expression) + (operand ? kOperand : "; expected )");
+    return "invalid expression" + At(ts_node_start_byte(root), expression);
+}
+
 }
 
 TagFilter ParseTagFilter(const std::string& expression)
@@ -181,12 +261,24 @@ TagFilter ParseTagFilter(const std::string& expression)
         throw std::runtime_error("Unable to initialize tag filter grammar");
     std::unique_ptr<TSTree, decltype(&ts_tree_delete)> tree(
         ts_parser_parse_string(parser.get(), nullptr, expression.data(), static_cast<uint32_t>(expression.size())), ts_tree_delete);
-    if (!tree || ts_node_has_error(ts_tree_root_node(tree.get())))
-        throw std::runtime_error("Invalid tag filter: expected quoted pattern, any, none, !, &, |, or parentheses");
+    if (!tree)
+        throw std::runtime_error("Unable to parse tag filter");
+    if (ts_node_has_error(ts_tree_root_node(tree.get())))
+        throw std::runtime_error(DescribeError(ts_tree_root_node(tree.get()), expression));
     TagFilter result;
     result.specified = true;
     result.root = BuildExpression(ts_tree_root_node(tree.get()), expression, result.expression, 0);
     return result;
+}
+
+void MergeTags(std::vector<std::string>& tags, const std::vector<std::string>& added)
+{
+    if (added.empty() || std::includes(tags.begin(), tags.end(), added.begin(), added.end()))
+        return;
+    std::vector<std::string> merged;
+    merged.reserve(tags.size() + added.size());
+    std::set_union(tags.begin(), tags.end(), added.begin(), added.end(), std::back_inserter(merged));
+    tags.swap(merged);
 }
 
 bool MatchesTags(const std::vector<std::string>& sortedUniqueTags, const TagFilter& filter)

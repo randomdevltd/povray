@@ -89,6 +89,31 @@ render macro tests/render/render_tags_macro.pov 'Filter_Tags="keep" | none'
 render macro_ref tests/render/render_tags_macro.pov Declare=Reference=1
 equal macro macro_ref
 
+render first_filter "$truth" 'Filter_Tags="a*" & !"b" | "camera"' 'Filter_Tags="b"'
+equal first_filter m1_expr8
+if "$POVRAY" +i"$SRCDIR/$truth" +w8 +h8 -d -p -f 'Filter_Tags=!"a' > render_tags_unclosed.log 2>&1; then
+    echo "unclosed quote in Filter_Tags accepted" >&2
+    exit 1
+fi
+grep -q 'unclosed quote at character 2' render_tags_unclosed.log || { cat render_tags_unclosed.log; exit 1; }
+
+# Every object answers to its own tags inside light groups, unions, merges and CSG, split or not.
+for method in 1 2; do
+    for split in 0 1; do
+        render "children_ref_m${method}_s${split}" tests/render/render_tags_children.pov +bm"$method" +mb1 Declare=Split="$split" Declare=Mode=2
+        render "children_cam_m${method}_s${split}" tests/render/render_tags_children.pov +bm"$method" +mb1 Declare=Split="$split" Declare=Mode=1
+        render "children_cli_m${method}_s${split}" tests/render/render_tags_children.pov +bm"$method" +mb1 Declare=Split="$split" \
+            'Filter_Tags=!"a" & !"lamp"'
+        equal "children_cam_m${method}_s${split}" "children_ref_m${method}_s${split}"
+        equal "children_cli_m${method}_s${split}" "children_ref_m${method}_s${split}"
+    done
+done
+render children_all tests/render/render_tags_children.pov
+if cmp -s render_tags_children_all.px render_tags_children_ref_m1_s1.px; then
+    echo "child tags changed nothing" >&2
+    exit 1
+fi
+
 for method in 1 2; do
     for split in 0 1; do
         render "root_m${method}_s${split}" tests/render/render_tags_roots.pov +bm"$method" +mb1 Declare=Split="$split"
