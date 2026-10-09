@@ -1168,8 +1168,8 @@ void View::StartRender(POVMS_Object& renderOptions)
         {
             MessageFactory messages(scene.warningLevel, "Media", viewData.sceneData->backendAddress,
                                     viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
-            messages.Warning(kWarningGeneral, "The camera is inside a %s without media declared after interior media, so by default "
-                             "(media_blend replace) it clears those media wherever it holds them. Declare it before them, or give it "
+            messages.Warning(kWarningGeneral, "The camera is inside a %s without media placed after interior media, so by default "
+                             "(media_blend replace) it clears those media wherever it holds them. Place it before them, or give it "
                              "interior { media_blend add }.", ShapeName(clear));
         }
     }

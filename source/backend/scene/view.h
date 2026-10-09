@@ -705,11 +705,6 @@ class View final
          */
         void RenderControlThread();
 
-        /**
-         *  Checks whether or not the point (camera origin) is within a hollow object.
-         *  returns true if so. comes in two versions, one for manual iteration of
-         *  the object list, and one for a bounding tree.
-         */
         /// An object containing the point that the match accepts, or nullptr.
         ConstObjectPtr FindCameraObject(const Vector3d& point, const ObjectMatch& match);
         ConstObjectPtr FindCameraObject(const Vector3d& point, const BBOX_TREE *node, const ObjectMatch& match);

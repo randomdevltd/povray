@@ -3859,10 +3859,7 @@ void Parser::Parse_Interior(InteriorPtr& interior)
     }
 
     if(!interior)
-    {
         interior = InteriorPtr(new Interior());
-        interior->mediaBlend = defaultMediaBlend;
-    }
 
     EXPECT
         CASE (IOR_TOKEN)

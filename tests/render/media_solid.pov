@@ -32,10 +32,8 @@ background { rgb 1 }
 
 #if (Varying) light_source { <-10, 20, -15> rgb 1 } #end
 
-// Declare=Blend=0 add, 1 replace, 2 subtract, 3 multiply, 4 subtract without media, 5 no media and no blend,
-// 6 two overlapping boxes each subtracting half; Sibling=1 lets the inner box poke out; InnerFirst=1 declares the inner box first.
-// Csg=1 makes the inner box an intersection with an infinite plane; Lit=1 lights the backdrop through the boxes;
-// TwoMedia=1 gives the outer box two media of 0.5 and the subtracting boxes 0.75 in all.
+// Blend=0 add, 1 replace, 2 subtract, 3 multiply, 4 subtract without media, 5 no media, 6 two half subtracts; Sibling, InnerFirst,
+// Csg (intersection with a plane), Lit (backdrop lit through the boxes) and TwoMedia (two outer media, 0.75 subtracted) vary it.
 #macro Inner(Absorption)
   #if (Csg) intersection { plane { y, 100 } #end
   box {
