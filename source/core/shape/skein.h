@@ -312,6 +312,9 @@ class Skein final : public ObjectBase
 
         static const size_t kMaxMeshTriangles = 2000000;
 
+        /// Appends every prepared input that tessellation reads; false when one of its functions cannot be described.
+        bool Describe(std::string& out) const;
+
         /// Tessellates the prepared skein: no edge shorter than `minSize` where avoidable, no turn over `maxAngle` degrees across a triangle;
         /// returns an error message, empty on success.
         std::string Tessellate(const std::vector<TraceThreadData *>& threads, DBL minSize, DBL maxAngle, SkeinMesh& mesh,

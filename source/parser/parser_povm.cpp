@@ -78,6 +78,8 @@
 
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
+#include "core/scene/scenedata.h"
+#include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
 
 #if defined(_WIN32)
@@ -474,8 +476,261 @@ TreeWrite Write_Tree(const PovmTreeKey& key, uint32_t triangles, const FlatMeshB
     return TreeWrite::Failed;
 }
 
+const char GENERATED_MAGIC[8] = { 'P', 'O', 'V', 'G', 'M', 'E', 'S', 'H' };
+const uint32_t GENERATED_VERSION = 1;
+
+/// Appends the generated mesh file's fields; Take reads them back in order, failing on a short or inconsistent file.
+struct Packer final
+{
+    std::string bytes;
+    template<typename T> void Put(const T& v) { bytes.append(reinterpret_cast<const char *>(&v), sizeof(v)); }
+    void Put(const void *p, size_t n) { Put(uint64_t(n)); bytes.append(static_cast<const char *>(p), n); }
+};
+
+struct Unpacker final
+{
+    const unsigned char *p, *end;
+    template<typename T> bool Take(T& v)
+    {
+        if (size_t(end - p) < sizeof(v))
+            return false;
+        std::memcpy(&v, p, sizeof(v));
+        p += sizeof(v);
+        return true;
+    }
+    bool Take(std::string& out)
+    {
+        uint64_t n;
+        if (!Take(n) || (uint64_t(end - p) < n))
+            return false;
+        out.assign(reinterpret_cast<const char *>(p), size_t(n));
+        p += n;
+        return true;
+    }
+    template<typename T> bool Array(T *& out, MeshIndex count)
+    {
+        uint64_t n;
+        if (!Take(n) || (n != uint64_t(count) * sizeof(T)) || (uint64_t(end - p) < n))
+            return false;
+        out = (count > 0) ? reinterpret_cast<T *>(POV_MALLOC(size_t(n), "triangle mesh data")) : nullptr;
+        if (n > 0)
+            std::memcpy(out, p, size_t(n));
+        p += n;
+        return true;
+    }
+};
+
+void Pack_Column(Packer& out, const MeshIndexColumn& c)
+{
+    out.Put(c.fill);
+    out.Put(uint8_t(c.byVertex));
+    out.Put(int32_t(c.width));
+    out.Put(c.values.data(), c.values.size() * sizeof(MeshIndex));
+}
+
+bool Unpack_Column(Unpacker& in, MeshIndexColumn& c)
+{
+    uint8_t byVertex;
+    int32_t width;
+    std::string values;
+    if (!in.Take(c.fill) || !in.Take(byVertex) || !in.Take(width) || (width != c.width) || !in.Take(values) ||
+        (values.size() % sizeof(MeshIndex) != 0))
+        return false;
+    c.byVertex = (byVertex != 0);
+    c.values.resize(values.size() / sizeof(MeshIndex));
+    std::memcpy(c.values.data(), values.data(), values.size());
+    return true;
+}
+
 }
 // end of anonymous namespace
+
+GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& definition)
+{
+    GeneratedMeshKey key;
+    if (dir.empty())
+        return key;
+    key.a = Hash_Bytes(definition.data(), definition.size(), Build_Hash());
+    key.b = Hash_Bytes(definition.data(), definition.size(), ~key.a);
+    char name[40];
+    std::snprintf(name, sizeof(name), "%016llx%016llx.povg", (unsigned long long)key.a, (unsigned long long)key.b);
+    key.path = dir;
+    if ((key.path.back() != '/') && (key.path.back() != '\\'))
+        key.path += SysToUCS2String("/");
+    key.path += SysToUCS2String(name);
+    return key;
+}
+
+GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& definition, TraceThreadData *thread)
+{
+    if (definition.empty())
+        return GeneratedMeshKey();
+    std::string full = definition;
+    Describe_Bytes(full, thread->GetSceneData()->noiseGenerator);
+    return Generated_Mesh_Key(dir, full);
+}
+
+std::shared_ptr<Mesh> Read_Generated_Mesh(const GeneratedMeshKey& key, DeferredMeshState& state)
+{
+    if (!key.Valid() || !PlatformBase::GetInstance().AllowLocalFileAccess(key.path, POV_File_Data_POVM, false))
+        return nullptr;
+    FILE *file = std::fopen(UCS2toSysString(key.path).c_str(), "rb");
+    if (file == nullptr)
+        return nullptr;
+    std::string bytes;
+    std::vector<char> chunk(1 << 20);
+    for (size_t n; (n = std::fread(chunk.data(), 1, chunk.size(), file)) > 0; )
+        bytes.append(chunk.data(), n);
+    const bool read = !std::ferror(file);
+    std::fclose(file);
+    const std::string path = UCS2toSysString(key.path);
+    uint64_t trailer;
+    if (!read || (bytes.size() < sizeof(trailer)))
+        return nullptr;
+    std::memcpy(&trailer, bytes.data() + bytes.size() - sizeof(trailer), sizeof(trailer));
+    Unpacker in { reinterpret_cast<const unsigned char *>(bytes.data()), reinterpret_cast<const unsigned char *>(bytes.data()) + bytes.size() - sizeof(trailer) };
+    char magic[8];
+    uint32_t version;
+    uint64_t build, a, b;
+    if ((Hash_Bytes(bytes.data(), bytes.size() - sizeof(trailer), 0) != trailer) || !in.Take(magic) ||
+        (std::memcmp(magic, GENERATED_MAGIC, sizeof(magic)) != 0) || !in.Take(version) || (version != GENERATED_VERSION) ||
+        !in.Take(build) || (build != Build_Hash()) || !in.Take(a) || (a != key.a) || !in.Take(b) || (b != key.b))
+    {
+        state.warnings.push_back("Generated mesh cache '" + path + "' does not match its name; rebuilding it.");
+        return nullptr;
+    }
+
+    std::shared_ptr<Mesh> mesh(new Mesh());
+    mesh->Data = new MESH_DATA();
+    mesh->Data->References = 1;
+    MESH_DATA& data = *mesh->Data;
+    uint8_t inside, patch, tree;
+    uint64_t blocks;
+    std::string debug, warning;
+    uint32_t warnings;
+    bool ok = in.Take(inside) && in.Take(patch) && in.Take(mesh->BBox) && in.Take(data.Inside_Vect) &&
+              in.Take(data.Number_Of_Vertices) && in.Take(data.Number_Of_Normals) && in.Take(data.Number_Of_UVCoords) &&
+              in.Take(data.Number_Of_Triangles) && (data.Number_Of_Vertices >= 0) && (data.Number_Of_Normals >= 0) &&
+              (data.Number_Of_UVCoords >= 0) && (data.Number_Of_Triangles >= 0) &&
+              in.Array(data.Vertices, data.Number_Of_Vertices) && in.Array(data.Normals, data.Number_Of_Normals) &&
+              in.Array(data.UVCoords, data.Number_Of_UVCoords) && in.Array(data.Triangles, data.Number_Of_Triangles) &&
+              Unpack_Column(in, data.NormalInd) && Unpack_Column(in, data.UVInd) && Unpack_Column(in, data.TextureInd) &&
+              Unpack_Column(in, data.Texture23Ind) && in.Take(tree);
+    if (ok && tree)
+    {
+        std::string raw;
+        ok = in.Take(blocks) && in.Take(raw) && (raw.size() == blocks * sizeof(FlatQBBoxBlock));
+        if (ok)
+        {
+            std::unique_ptr<FlatMeshBBoxTree> t(new FlatMeshBBoxTree);
+            t->blocks.resize(size_t(blocks));
+            std::memcpy(t->blocks.data(), raw.data(), raw.size());
+            ok = Valid_Tree(t->blocks, uint32_t(data.Number_Of_Triangles));
+            data.FlatTree = t.release();
+        }
+    }
+    ok = ok && in.Take(debug) && in.Take(warnings);
+    for (uint32_t i = 0; ok && (i < warnings); ++i)
+    {
+        ok = in.Take(warning);
+        state.warnings.push_back(warning);
+    }
+    if (!ok || (in.p != in.end))
+    {
+        state.warnings.push_back("Generated mesh cache '" + path + "' is corrupt; rebuilding it.");
+        return nullptr;
+    }
+    mesh->has_inside_vector = (inside != 0);
+    mesh->Type = patch ? (mesh->Type | PATCH_OBJECT) : (mesh->Type & ~PATCH_OBJECT);
+    state.debug = debug.empty() ? debug : debug.substr(0, debug.find_last_not_of('\n') + 1) + " (cached)\n";
+    return mesh;
+}
+
+void Write_Generated_Mesh(const GeneratedMeshKey& key, const Mesh& mesh, DeferredMeshState& state, size_t firstWarning)
+{
+    if (!key.Valid())
+        return;
+    const MESH_DATA& data = *mesh.Data;
+    Packer out;
+    out.bytes.append(GENERATED_MAGIC, sizeof(GENERATED_MAGIC));
+    out.Put(GENERATED_VERSION);
+    out.Put(Build_Hash());
+    out.Put(key.a);
+    out.Put(key.b);
+    out.Put(uint8_t(mesh.has_inside_vector));
+    out.Put(uint8_t((mesh.Type & PATCH_OBJECT) != 0));
+    out.Put(mesh.BBox);
+    out.Put(data.Inside_Vect);
+    out.Put(data.Number_Of_Vertices);
+    out.Put(data.Number_Of_Normals);
+    out.Put(data.Number_Of_UVCoords);
+    out.Put(data.Number_Of_Triangles);
+    out.Put(data.Vertices, size_t(data.Number_Of_Vertices) * sizeof(MeshVector));
+    out.Put(data.Normals, size_t(data.Number_Of_Normals) * sizeof(MeshVector));
+    out.Put(data.UVCoords, size_t(data.Number_Of_UVCoords) * sizeof(MeshUVVector));
+    out.Put(data.Triangles, size_t(data.Number_Of_Triangles) * sizeof(MESH_TRIANGLE));
+    Pack_Column(out, data.NormalInd);
+    Pack_Column(out, data.UVInd);
+    Pack_Column(out, data.TextureInd);
+    Pack_Column(out, data.Texture23Ind);
+    out.Put(uint8_t(data.FlatTree != nullptr));
+    if (data.FlatTree != nullptr)
+    {
+        out.Put(uint64_t(data.FlatTree->blocks.size()));
+        out.Put(data.FlatTree->blocks.data(), data.FlatTree->blocks.size() * sizeof(FlatQBBoxBlock));
+    }
+    out.Put(state.debug.data(), state.debug.size());
+    out.Put(uint32_t(state.warnings.size() - firstWarning));
+    for (size_t i = firstWarning; i < state.warnings.size(); ++i)
+        out.Put(state.warnings[i].data(), state.warnings[i].size());
+    out.Put(Hash_Bytes(out.bytes.data(), out.bytes.size(), 0));
+
+    const UCS2String temp = key.path + SysToUCS2String(".tmp");
+    PlatformBase& platform = PlatformBase::GetInstance();
+    const std::string path = UCS2toSysString(key.path);
+    int fd = -1;
+    if (platform.AllowLocalFileAccess(temp, POV_File_Data_POVM, true) && platform.AllowLocalFileAccess(key.path, POV_File_Data_POVM, true))
+    {
+        fd = Create_Exclusive(temp);
+        FileStat st;
+        if ((fd < 0) && (errno == EEXIST) && Stat(temp, st) && (std::difftime(std::time(nullptr), st.st_mtime) > STALE_TEMP_SECONDS))
+        {
+            Remove(temp);
+            fd = Create_Exclusive(temp);
+        }
+        if ((fd < 0) && (errno == EEXIST))
+            return;
+    }
+#if defined(_WIN32)
+    FILE *file = (fd >= 0) ? _fdopen(fd, "wb") : nullptr;
+#else
+    FILE *file = (fd >= 0) ? fdopen(fd, "wb") : nullptr;
+#endif
+    FileStat mine;
+    if ((file == nullptr) || !Stat(file, mine))
+    {
+        if (file != nullptr)
+            std::fclose(file);
+#if defined(_WIN32)
+        else if (fd >= 0) _close(fd);
+#else
+        else if (fd >= 0) close(fd);
+#endif
+        if (fd >= 0)
+            Remove(temp);
+        state.warnings.push_back("Cannot write generated mesh cache '" + path + "'; the mesh is built for this render only.");
+        return;
+    }
+    bool written = std::fwrite(out.bytes.data(), 1, out.bytes.size(), file) == out.bytes.size();
+    written = (std::fclose(file) == 0) && written;
+    if (!Same_File(temp, mine))
+        return;
+    if (!(written && Replace(temp, key.path)))
+    {
+        Remove(temp);
+        state.warnings.push_back("Cannot write generated mesh cache '" + path + "'; the mesh is built for this render only.");
+    }
+}
 
 void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
 {

@@ -1159,6 +1159,10 @@ runs on the parser thread, before the deferred build. On the displaced tube in `
 (`MeshKind=3 MeshAngle=9`, 529,540 triangles, `+WT1`) parsing drops from 44.8 to 22.0 G user cycles; a finer-relief
 tube whose grid reaches the 256-patch limit but meshes to 70k triangles drops 6×, from 60.5 to 10.0 G.
 
+With `global_settings { mesh_cache }` (doc/povm.md) a generated mesh is built once per build of POV-Ray and
+read back afterwards. A 200-pixel render of a scene with two isosurface meshes (77k and 287k triangles) and twelve
+skein meshes parses in 40.4 s uncached, 42.4 s when it fills the cache and 0.21 s from it, with identical pixels.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it

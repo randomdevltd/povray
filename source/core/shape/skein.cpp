@@ -4067,6 +4067,163 @@ std::string Skein::Prepare(TraceThreadData *thread, bool traced)
     return std::string();
 }
 
+namespace
+{
+
+/// Writes a prepared skein's inputs field by field, so no padding byte enters the description.
+struct Describer final
+{
+    std::string& out;
+
+    template<typename T> void Pod(const T& v) { out.append(reinterpret_cast<const char *>(&v), sizeof(v)); }
+    template<typename T> void Pods(const std::vector<T>& v) { Pod(v.size()); for (const T& e : v) Pod(e); }
+    void Vector(const Vector3d& v) { Pod(v[X]); Pod(v[Y]); Pod(v[Z]); }
+    void Vectors(const std::vector<Vector3d>& v) { Pod(v.size()); for (const Vector3d& e : v) Vector(e); }
+
+    bool Function(const std::shared_ptr<GenericScalarFunction>& f) { Pod(bool(f)); return !f || f->Describe(out); }
+
+    void Path(const std::shared_ptr<const SkeinPath>& p)
+    {
+        Pod(bool(p));
+        if (!p)
+            return;
+        Pod(p->dimension); Pod(p->closed); Pod(p->fromSurface); Pod(p->useArc); Pod(int(p->interp)); Pod(p->total);
+        Pod(p->raw.size());
+        for (const SkeinPath::Point& q : p->raw)
+        {
+            Vector(q.point); Vector(q.in); Vector(q.out); Pod(q.parameter); Pod(q.haveParameter); Pod(q.haveIn); Pod(q.haveOut);
+        }
+        Pods(p->knots); Vectors(p->control); Pods(p->params); Pods(p->lengths); Pods(p->speeds);
+    }
+
+    void Image(const std::shared_ptr<const SkeinImage>& i)
+    {
+        Pod(bool(i));
+        if (!i)
+            return;
+        Pod(i->width); Pod(i->height); Pod(i->bicubic); Pods(i->grey);
+    }
+
+    void Map(const std::shared_ptr<const SkeinMap>& m)
+    {
+        Pod(bool(m));
+        if (!m)
+            return;
+        Pod(m->inputs);
+        Pod(m->nodes.size());
+        for (const SkeinMap::Node& n : m->nodes)
+        {
+            Pod(int(n.op)); Pod(n.input); Pod(int(n.method)); Pod(n.a); Pod(n.b); Pod(n.c); Pod(n.d); Pod(n.count);
+            Path(n.path);
+            Image(n.image);
+        }
+    }
+
+    bool Value(const SkeinValue& v)
+    {
+        Pod(int(v.kind)); Pod(v.constant); Pods(v.inputs); Pod(v.slot);
+        Map(v.map);
+        Path(v.path);
+        Pod(bool(v.sum));
+        if (v.sum)
+        {
+            Pod(int(v.sum->op));
+            Pod(v.sum->entries.size());
+            for (const SkeinValue& e : v.sum->entries)
+                if (!Value(e))
+                    return false;
+        }
+        return Function(v.function);
+    }
+
+    bool Axis(const std::shared_ptr<SkeinAxis>& a)
+    {
+        Pod(bool(a));
+        if (!a)
+            return true;
+        Path(a->path); Path(a->source);
+        Vector(a->direction); Vector(a->e1); Vector(a->e2);
+        Pod(a->t0); Pod(a->t1); Pod(a->correction); Pod(a->turning); Pod(a->length); Pod(a->drift); Pod(a->twist);
+        Pod(a->closed); Pod(a->line);
+        Vectors(a->reference); Pods(a->arc); Pods(a->rates);
+        for (const std::shared_ptr<GenericScalarFunction>& f : a->functions)
+            if (!Function(f))
+                return false;
+        return true;
+    }
+
+    bool Roll(const std::shared_ptr<const SkeinRoll>& r)
+    {
+        Pod(bool(r));
+        if (!r)
+            return true;
+        Path(r->source); Path(r->travel);
+        for (const Vector3d *v : { &r->foot, &r->T, &r->A, &r->N, &r->start, &r->tail })
+            Vector(*v);
+        Pod(r->radius); Pod(r->step); Pod(r->speedBound); Pod(r->turnBound); Pod(r->ready);
+        Vectors(r->section);
+        Pod(r->normals.size());
+        for (const Vector2d& n : r->normals)
+        {
+            Pod(n[U]); Pod(n[V]);
+        }
+        return Axis(std::make_shared<SkeinAxis>(r->table));
+    }
+
+    bool Steps(const std::vector<SkeinStep>& steps)
+    {
+        Pod(steps.size());
+        for (const SkeinStep& s : steps)
+        {
+            Pod(int(s.kind));
+            Pod(s.affine.matrix); Pod(s.affine.inverse);
+            for (const Vector3d *v : { &s.axis, &s.along, &s.side, &s.offset, &s.origin })
+                Vector(*v);
+            Pod(s.normal); Pod(s.alongV); Pod(int(s.edge)); Pod(s.wrapIn); Pod(s.wrapOut);
+            for (const SkeinValue& v : s.value)
+                if (!Value(v))
+                    return false;
+            if (!Axis(s.curve) || !Axis(s.target) || !Roll(s.roll))
+                return false;
+            Pod(bool(s.blend));
+            if (s.blend)
+            {
+                Pod(s.blend->entries.size());
+                for (const SkeinBlend::Entry& e : s.blend->entries)
+                {
+                    Pod(e.value); Pod(e.item);
+                    if (!Steps(e.steps))
+                        return false;
+                }
+            }
+        }
+        return true;
+    }
+};
+
+}
+// end of anonymous namespace
+
+bool Skein::Describe(std::string& out) const
+{
+    const SkeinData& d = *data;
+    Describer w { out };
+    out += "skein_mesh 1";
+    if (!w.Steps(d.steps))
+        return false;
+    w.Pod(d.functionCount); w.Pod(d.readsNormal); w.Pod(d.resamples); w.Pod(d.lastNormal); w.Pod(d.wrapU); w.Pod(d.wrapV);
+    w.Pod(int(d.ends[0])); w.Pod(int(d.ends[1])); w.Pod(d.closed); w.Pod(d.provenBounds); w.Pod(d.orientation); w.Pod(d.size);
+    w.Pod(d.gridU); w.Pod(d.gridV); w.Pod(d.patches.size()); w.Pod(d.nodes.size());
+    for (const SkeinData::Cap& c : d.caps)
+    {
+        w.Pod(c.present); w.Pod(c.v); w.Pod(c.reach); w.Pod(c.turn);
+        for (const Vector3d *v : { &c.centre, &c.normal, &c.e1, &c.e2 })
+            w.Vector(*v);
+        w.Pods(c.angles);
+    }
+    return true;
+}
+
 std::string Skein::Tessellate(const std::vector<TraceThreadData *>& threads, DBL minSize, DBL maxAngle, SkeinMesh& mesh,
                               const std::function<void()>& progress) const
 {

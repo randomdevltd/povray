@@ -238,6 +238,7 @@ ObjectPtr Parser::Parse_Skein_Mesh()
     if (minSize < 0.0)
         minSize = 1.0e-3 * skein->data->size;
     const bool closed = skein->data->closed;
+    const UCS2String cacheDir = mMeshCacheDir;
     std::vector<FUNCTION> functions;
     CollectSkeinFunctions(skein->data->steps, functions);
     boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(functions);
@@ -245,8 +246,20 @@ ObjectPtr Parser::Parse_Skein_Mesh()
     source->skein = skein;
     RebindSkeinSteps(skein->data->steps, functionVM.get(), source->originalFunctions);
     std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
-        [this, skein, minSize, maxAngle, closed](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+        [this, skein, minSize, maxAngle, closed, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
+            std::string definition;
+            if (!cacheDir.empty() && skein->Describe(definition))
+            {
+                Describe_Bytes(definition, minSize);
+                Describe_Bytes(definition, maxAngle);
+            }
+            else
+                definition.clear();
+            const GeneratedMeshKey key = Generated_Mesh_Key(cacheDir, definition, thread);
+            if (std::shared_ptr<Mesh> cached = Read_Generated_Mesh(key, state))
+                return cached;
+            const size_t firstWarning = state.warnings.size();
             const auto start = std::chrono::steady_clock::now();
             SkeinMesh built;
             const std::vector<TraceThreadData *> threads(1, thread);
@@ -303,6 +316,7 @@ ObjectPtr Parser::Parse_Skein_Mesh()
                   << (vertices * (2 * sizeof(MeshVector) + sizeof(MeshUVVector)) + triangles * sizeof(MESH_TRIANGLE)) << " bytes, "
                   << seconds << " s wall\n";
             state.debug = debug.str();
+            Write_Generated_Mesh(key, *object, state, firstWarning);
             return object;
         }, source);
 

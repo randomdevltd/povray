@@ -234,6 +234,25 @@ struct PovmTreeKey final
     std::uint64_t hash = 0;
 };
 
+/// A generated mesh's file in a mesh cache, named by a hash of the build and everything that shapes the mesh.
+struct GeneratedMeshKey final
+{
+    UCS2String path;
+    std::uint64_t a = 0, b = 0;
+    bool Valid() const { return !path.empty(); }
+};
+
+/// The key for `definition` in `dir`; invalid when `dir` is empty.
+GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& definition);
+/// The cached mesh with its debug line and warnings, or null when there is none for this build.
+std::shared_ptr<Mesh> Read_Generated_Mesh(const GeneratedMeshKey& key, DeferredMeshState& state);
+/// Stores `mesh` with `state`'s debug line and the warnings from `firstWarning` on, which its build raised.
+void Write_Generated_Mesh(const GeneratedMeshKey& key, const Mesh& mesh, DeferredMeshState& state, size_t firstWarning);
+/// Appends a key ingredient's bytes to a generated mesh's definition.
+template<typename T> void Describe_Bytes(std::string& out, const T& v) { out.append(reinterpret_cast<const char *>(&v), sizeof(v)); }
+/// The key, from inside a mesh's build task, for a `definition` complete but for the noise generator that task's thread uses; invalid when `definition` is empty.
+GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& definition, TraceThreadData *thread);
+
 /*****************************************************************************
 * Global typedefs
 ******************************************************************************/
@@ -680,6 +699,7 @@ class Parser final
         std::condition_variable mMeshBuildReady;
         bool mMeshBuildStopping = false;
         std::atomic<bool> mMeshBuildCancelled{false};
+        UCS2String mMeshCacheDir; ///< `global_settings { mesh_cache }`: where generated meshes are kept between renders.
         POV_LONG mMeshBuildCpuTime = 0;
         unsigned int mMeshThreadCount;
         size_t mRandomSeed;
