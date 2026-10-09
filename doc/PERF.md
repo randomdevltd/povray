@@ -1153,6 +1153,12 @@ pending meshes, redeclares the same name with changing geometry options, and obs
 Other ordinary `mesh`/`mesh2` syntax remains on the parser thread because token consumption, texture ownership and
 vertex hashing are interleaved. Image and font loading are also outside this pool.
 
+A `skein_mesh` skips the per-patch interval ranges, flatness and bounding tree that only ray tracing a `skein` reads;
+it keeps the grid size, which sets its base lattice, so the triangles are unchanged. The rest of the preparation still
+runs on the parser thread, before the deferred build. On the displaced tube in `tools/bench/parse-mesh-generation.pov`
+(`MeshKind=3 MeshAngle=9`, 529,540 triangles, `+WT1`) parsing drops from 44.8 to 22.0 G user cycles; a finer-relief
+tube whose grid reaches the 256-patch limit but meshes to 70k triangles drops 6×, from 60.5 to 10.0 G.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
