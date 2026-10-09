@@ -2967,6 +2967,35 @@ ObjectPtr Parser::Parse_Isosurface()
     return (reinterpret_cast<ObjectPtr>(Object));
 }
 
+/// Everything an isosurface_mesh's triangles depend on but the noise generator; false when its function cannot be described.
+static bool Describe_Isosurface_Mesh(const IsoSurface& iso, DBL minSize, DBL maxAngle, std::string& out)
+{
+    out = "isosurface_mesh 1";
+    if (!iso.Function->Describe(out))
+        return false;
+    if (const ContainedByBox *box = dynamic_cast<const ContainedByBox *>(iso.container.get()))
+    {
+        Describe_Bytes(out, 'b');
+        Describe_Bytes(out, box->corner1);
+        Describe_Bytes(out, box->corner2);
+    }
+    else if (const ContainedBySphere *sphere = dynamic_cast<const ContainedBySphere *>(iso.container.get()))
+    {
+        Describe_Bytes(out, 's');
+        Describe_Bytes(out, sphere->center);
+        Describe_Bytes(out, sphere->radius);
+    }
+    else
+        return false;
+    for (const DBL v : { DBL(iso.max_gradient), iso.gradient, iso.threshold, iso.accuracy, iso.eval_param[0], iso.eval_param[1],
+                         iso.eval_param[2], DBL(iso.max_trace), DBL(iso.closed), DBL(iso.eval), DBL(iso.positivePolarity), minSize, maxAngle })
+        Describe_Bytes(out, v);
+    Describe_Bytes(out, iso.Trans != nullptr);
+    if (iso.Trans != nullptr)
+        Describe_Bytes(out, *iso.Trans);
+    return true;
+}
+
 ObjectPtr Parser::Parse_Isosurface_Mesh()
 {
     Parse_Begin();
@@ -2975,6 +3004,7 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
     DBL minSize = -1.0, maxAngle = 10.0;
     Parse_Isosurface_Body(iso.get(), &minSize, &maxAngle);
     iso->Compute_BBox();
+    const UCS2String cacheDir = mMeshCacheDir;
     FunctionVM::CustomFunction *function = dynamic_cast<FunctionVM::CustomFunction *>(iso->Function);
     POV_PARSER_ASSERT(function != nullptr);
     const FUNCTION functionId = function->Id();
@@ -2984,8 +3014,15 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
     source->originalFunction.reset(iso->Function);
     iso->Function = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(functionId));
     std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
-        [this, iso, minSize, maxAngle](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+        [this, iso, minSize, maxAngle, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
+            std::string definition;
+            if (cacheDir.empty() || !Describe_Isosurface_Mesh(*iso, minSize, maxAngle, definition))
+                definition.clear();
+            const GeneratedMeshKey key = Generated_Mesh_Key(cacheDir, definition, thread);
+            if (std::shared_ptr<Mesh> cached = Read_Generated_Mesh(key, state))
+                return cached;
+            const size_t firstWarning = state.warnings.size();
             const auto start = std::chrono::steady_clock::now();
             std::shared_ptr<Mesh> object(new Mesh());
             MeshBuilder built(*object, false);
@@ -3013,6 +3050,7 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
                   << report.peakBytes << " bytes peak, " << seconds << " s wall; " << report.rangeCells << " cells range-checked, "
                   << report.sampledCells << " sampled\n";
             state.debug = debug.str();
+            Write_Generated_Mesh(key, *object, state, firstWarning);
             return object;
         }, source);
 
@@ -7795,8 +7833,17 @@ void Parser::Parse_Global_Settings()
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "mesh_cache")
+            {
+                UCS2 *dir = Parse_String(true);
+                mMeshCacheDir = UCS2String(dir);
+                POV_FREE(dir);
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
     Parse_End();

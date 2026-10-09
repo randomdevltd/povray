@@ -306,6 +306,7 @@ class FunctionVM : public GenericFunctionContextFactory
                 virtual bool EvaluateRange(const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const override;
                 virtual bool RequiresRayContext() const override;
                 virtual const CustomFunctionSourceInfo* GetSourceInfo() const override;
+                virtual bool Describe(std::string& out) const override;
                 FUNCTION Id() const { return *mpFn; }
             protected:
                 boost::intrusive_ptr<FunctionVM> mpVm;
@@ -330,6 +331,8 @@ class FunctionVM : public GenericFunctionContextFactory
         void RemoveFunction(FUNCTION fn);
         bool EvaluateRange(FUNCTION fn, const Vector3d& a, const Vector3d& b, DBL& lo, DBL& hi) const;
         bool RequiresRayContext(FUNCTION fn) const;
+        /// Appends `fn`'s code with its constants and callees inlined; false if it reads pattern data or globals.
+        bool Describe(FUNCTION fn, std::string& out) const;
         bool CanExecuteBatch(FUNCTION fn) const;
         bool PreferBatch(FUNCTION fn) const;
         boost::intrusive_ptr<FunctionVM> Snapshot(const std::vector<FUNCTION>& roots);

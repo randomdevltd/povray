@@ -699,6 +699,8 @@ public:
     virtual bool EvaluateRange(const Vector3d& a, const Vector3d& b, RETURN_T& lo, RETURN_T& hi) const { return false; }
     virtual bool RequiresRayContext() const { return false; }
     virtual const CustomFunctionSourceInfo* GetSourceInfo() const { return nullptr; }
+    /// Appends bytes that only a function computing the same values can produce; false if this function cannot be described.
+    virtual bool Describe(std::string& out) const { return false; }
 };
 
 typedef GenericCustomFunction<double, double> GenericScalarFunction;

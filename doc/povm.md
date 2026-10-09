@@ -131,3 +131,16 @@ where SDL keeps them in double precision.
 `node --test tools/povm/test/povm.test.mjs` tests the writer and the readers. `tools/povm/test/test.sh <povray>
 [<povray built with POV_PARSER_EXPERIMENTAL_OBJ_IMPORT=1>]` renders each kind of source against its conversion and
 exercises the loader's errors and the tree cache.
+
+## The generated mesh cache
+
+    global_settings { mesh_cache "directory" }
+
+From then on, each `isosurface_mesh` and `skein_mesh` looks for its finished mesh, bounding tree included, in
+`directory` (a relative path is taken from the working directory) before building it, and stores what it builds
+there. Both happen in the mesh's build task, alongside the other deferred meshes, not on the parser thread. A file is named by a 128-bit hash of everything its triangles depend on: the build of POV-Ray, the
+function code with its constants and the functions it calls, the noise generator, the container or prepared skein,
+and the meshing options. Changing any of them makes a new name, so a stale mesh is never read. A function that
+samples a pattern or pigment cannot be described, and its mesh is built every time. Files are written through
+`<name>.tmp` like the tree cache; one that fails its checks is rebuilt with a warning. Nothing is ever removed, so
+delete old files when the directory grows; each build of POV-Ray writes its own set.

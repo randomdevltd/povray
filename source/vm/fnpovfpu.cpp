@@ -848,6 +848,56 @@ bool FunctionVM::EvaluateRange(FUNCTION fn, const Vector3d& a, const Vector3d& b
     return true;
 }
 
+bool FunctionVM::Describe(FUNCTION fn, std::string& out) const
+{
+    std::vector<int> order(functions.size(), -1);
+    int visited = 0;
+    auto put = [&out](std::uint64_t v) { out.append(reinterpret_cast<const char *>(&v), sizeof(v)); };
+    std::function<bool(FUNCTION)> visit = [&](FUNCTION current) -> bool
+    {
+        if ((current >= functions.size()) || (functions[current].reference_count == 0))
+            return false;
+        if (order[current] >= 0)
+        {
+            put(~std::uint64_t(order[current]));
+            return true;
+        }
+        order[current] = visited++;
+        const FunctionCode& f = functions[current].fn;
+        if ((f.private_data != nullptr) || ((f.program == nullptr) && (f.program_size > 0)))
+            return false;
+        put(f.program_size);
+        put(f.return_size);
+        put(f.parameter_cnt);
+        put(f.localvar_cnt);
+        put(f.flags);
+        for (unsigned int pc = 0; pc < f.program_size; ++pc)
+        {
+            const unsigned int op = GET_OP(f.program[pc]), k = GET_K(f.program[pc]), hi = op >> 6, mid = (op >> 3) & 7;
+            put(op);
+            if ((hi == 9) && (mid < 7))
+            {
+                if (k >= consts.size())
+                    return false;
+                std::uint64_t bits;
+                std::memcpy(&bits, &consts[k], sizeof(bits));
+                put(bits);
+            }
+            else if (op == OPCODE_CALL)
+            {
+                if (!visit(k))
+                    return false;
+            }
+            else if ((op == OPCODE_TRAPS) || ((op == OPCODE_TRAP) && (k == 77)) || (((hi == 11) || (hi == 12)) && (mid == 0)))
+                return false;
+            else
+                put(k);
+        }
+        return true;
+    };
+    return visit(fn);
+}
+
 bool FunctionVM::RequiresRayContext(FUNCTION fn) const
 {
     std::vector<unsigned char> state(functions.size(), 0);
@@ -2458,6 +2508,11 @@ bool FunctionVM::CustomFunction::EvaluateRange(const Vector3d& a, const Vector3d
 bool FunctionVM::CustomFunction::RequiresRayContext() const
 {
     return mpVm->RequiresRayContext(*mpFn);
+}
+
+bool FunctionVM::CustomFunction::Describe(std::string& out) const
+{
+    return mpVm->Describe(*mpFn, out);
 }
 
 const CustomFunctionSourceInfo* FunctionVM::CustomFunction::GetSourceInfo() const
