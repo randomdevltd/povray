@@ -205,11 +205,6 @@ class PhotonMap final
         PhotonMap();
         ~PhotonMap();
 
-        void swapPhotons(int a, int b);
-        void insertSort(int start, int end, int d);
-        void quickSortRec(int left, int right, int d);
-        void halfSortRec(int left, int right, int d, int mid);
-        void sortAndSubdivide(int start, int end, int /*sorted*/);
         void buildTree();
 
         void setGatherOptions(ScenePhotonSettings& photonSettings, bool mediaMap);

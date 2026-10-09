@@ -1565,278 +1565,9 @@ void ShootingDirection::compute()
 
   FUNCTION
 
-  swapPhotons
-
-  swaps two photons
-
-  Precondition:
-    photon memory initialized
-    'a' and 'b' are indexes within the range of photons in the map
-      (NO ERROR CHECKING IS DONE)
-
-  Postconditions:
-    the photons indexed by 'a' and 'b' are swapped
-
-*****************************************************************************/
-
-void PhotonMap::swapPhotons(int a, int b)
-{
-    Photon tmp;
-    Photon& phA = GetPhoton(a);
-    Photon& phB = GetPhoton(b);
-
-    tmp = phA;
-    phA = phB;
-    phB = tmp;
-}
-
-/*****************************************************************************
-
-  FUNCTION
-
-  insertSort
-  (modified from Data Structures textbook)
-
-  Preconditions:
-    photon memory initialized
-    'start' is the index of the first photon
-    'end' is the index of the last photon
-    'd' is the dimension to sort on (X, Y, or Z)
-
-  Postconditions:
-    photons from 'start' to 'end' in the map are sorted in
-    ascending order on dimension d
-******************************************************************************/
-void PhotonMap::insertSort(int start, int end, int d)
-{
-    int j,k;
-    Photon tmp;
-
-    for(k=end-1; k>=start; k--)
-    {
-        j=k+1;
-        tmp = GetPhoton(k);
-        while (tmp.Loc[d] > GetPhoton(j).Loc[d])
-        {
-            GetPhoton(j-1) = GetPhoton(j);
-            j++;
-            if (j>end) break;
-        }
-        GetPhoton(j-1) = tmp;
-    }
-}
-
-/*****************************************************************************
-
-  FUNCTION
-
-  quickSortRec
-  (modified from Data Structures textbook)
-
-  Recursive part of the quicksort routine
-  This does not sort all the way.  once this is done, insertSort
-  should be called to finish the sorting process!
-
-  Preconditions:
-    photon memory initialized
-    'left' is the index of the first photon
-    'right' is the index of the last photon
-    'd' is the dimension to sort on (X, Y, or Z)
-
-  Postconditions:
-    photons from 'left' to 'right' in the map are MOSTLY sorted in
-    ascending order on dimension d
-******************************************************************************/
-void PhotonMap::quickSortRec(int left, int right, int d)
-{
-    int j,k;
-    if(left<right)
-    {
-        swapPhotons(((left+right)>>1), left+1);
-        if (GetPhoton(left+1).Loc[d] > GetPhoton(right).Loc[d])
-            swapPhotons(left+1,right);
-        if (GetPhoton(left).Loc[d] > GetPhoton(right).Loc[d])
-            swapPhotons(left,right);
-        if (GetPhoton(left+1).Loc[d] > GetPhoton(left).Loc[d])
-            swapPhotons(left+1,left);
-
-        j=left+1; k=right;
-        while(j<=k)
-        {
-            for (j++; (j <= right) && (GetPhoton(j).Loc[d] < GetPhoton(left).Loc[d]); j++) { }
-            for (k--; (k >= left) && (GetPhoton(k).Loc[d] > GetPhoton(left).Loc[d]); k--) { }
-
-            if(j<k)
-                swapPhotons(j,k);
-        }
-
-        swapPhotons(left,k);
-        if(k-left > 10)
-        {
-            quickSortRec(left,k-1,d);
-        }
-        if(right-k > 10)
-        {
-            quickSortRec(k+1,right,d);
-        }
-        // leave the rest for insertSort
-    }
-}
-
-/*****************************************************************************
-
-  FUNCTION
-
-  halfSortRec
-  (modified quicksort algorithm)
-
-  Recursive part of the quicksort routine, but it only does half
-  the quicksort.  It only recurses one branch - the branch that contains
-  the midpoint (median).
-
-  Preconditions:
-    photon memory initialized
-    'left' is the index of the first photon
-    'right' is the index of the last photon
-    'd' is the dimension to sort on (X, Y, or Z)
-    'mid' is the index where the median will end up
-
-  Postconditions:
-    the photon at the midpoint (mid) is the median of the photons
-    when sorted on dimension d.
-******************************************************************************/
-void PhotonMap::halfSortRec(int left, int right, int d, int mid)
-{
-    int j,k;
-    if(left<right)
-    {
-        swapPhotons(((left+right)>>1), left+1);
-        if (GetPhoton(left+1).Loc[d] > GetPhoton(right).Loc[d])
-            swapPhotons(left+1,right);
-        if (GetPhoton(left).Loc[d] > GetPhoton(right).Loc[d])
-            swapPhotons(left,right);
-        if (GetPhoton(left+1).Loc[d] > GetPhoton(left).Loc[d])
-            swapPhotons(left+1,left);
-
-        j=left+1; k=right;
-        while(j<=k)
-        {
-            for (j++; (j <= right) && (GetPhoton(j).Loc[d] < GetPhoton(left).Loc[d]); j++) { }
-            for (k--; (k >= left) && (GetPhoton(k).Loc[d] > GetPhoton(left).Loc[d]); k--) { }
-
-            if(j<k)
-                swapPhotons(j,k);
-        }
-
-        // put the pivot into its position
-        swapPhotons(left,k);
-
-        // only go down the side that contains the midpoint
-        // don't do anything if the midpoint=k (the pivot, which is
-        // now in the correct position
-        if(k-left > 0 && (mid>=left) && (mid<k))
-        {
-            halfSortRec(left,k-1,d,mid);
-        }
-        else if(right-k > 0 && (mid>k) && (mid<=right))
-        {
-            halfSortRec(k+1,right,d,mid);
-        }
-    }
-}
-
-/*****************************************************************************
-
-  FUNCTION
-
-  sortAndSubdivide
-
-  Finds the dimension with the greatest range, sorts the photons on that
-  dimension.  Then it recurses on the left and right halves (keeping
-  the median photon as a pivot).  This produces a balanced kd-tree.
-
-  Preconditions:
-    photon memory initialized
-    'start' is the index of the first photon
-    'end' is the index of the last photon
-    'sorted' is the dimension that was last sorted (so we don't sort again)
-
-  Postconditions:
-    photons from 'start' to 'end' in the map are in a valid kd-tree format
-******************************************************************************/
-void PhotonMap::sortAndSubdivide(int start, int end, int /*sorted*/)
-{
-    int i,j;             // counters
-    PhotonVector3d min,max; // min/max vectors for finding range
-    int DimToUse;        // which dimension has the greatest range
-    int mid;             // index of median (middle)
-    int len;             // length of the array we're sorting
-
-    if (end==start)
-    {
-        GetPhoton(start).info = 0;
-        return;
-    }
-
-    if(end<start) return;
-
-    // loop and find greatest range
-
-    min = PhotonVector3d(1/EPSILON);  // TODO - should probably use  std::numeric_limits<PhotonScalar>::max() instead of  1/EPSILON
-    max = PhotonVector3d(-1/EPSILON); // TODO - should probably use -std::numeric_limits<PhotonScalar>::max() instead of -1/EPSILON
-
-    for(i=start; i<=end; i++)
-    {
-        for(j=X; j<=Z; j++)
-        {
-            Photon *ph = &GetPhoton(i);
-
-            if (ph->Loc[j] < min[j])
-                min[j]=ph->Loc[j];
-            if (ph->Loc[j] > max[j])
-                max[j]=ph->Loc[j];
-        }
-    }
-
-    // choose which dimension to use
-    DimToUse = X;
-    if((max[Y]-min[Y])>(max[DimToUse]-min[DimToUse]))
-        DimToUse=Y;
-    if((max[Z]-min[Z])>(max[DimToUse]-min[DimToUse]))
-        DimToUse=Z;
-
-    // find midpoint
-    mid = (end+start)>>1;
-
-    // use half of a quicksort to find the median
-    len = end-start;
-    if (len>=2)
-    {
-        // only display status every so often
-        if(len > 1000)
-        {
-//          Send_ProgressUpdate(PROGRESS_SORTING_PHOTONS);
-        }
-
-        halfSortRec(start, end, DimToUse, mid);
-        //don't do this - but why? quickSortRec(start, end, DimToUse);
-    }
-
-    // set DimToUse for the midpoint
-    GetPhoton(mid).info = DimToUse;
-
-    // now recurse to continue building the kd-tree
-    sortAndSubdivide(start, mid - 1, DimToUse);
-    sortAndSubdivide(mid + 1, end, DimToUse);
-}
-
-/*****************************************************************************
-
-  FUNCTION
-
   buildTree
 
-  Builds the kd-tree by calling sortAndSubdivide().
+  Builds the kd-tree by calling KdBuild().
 
   Preconditions:
     photon memory initialized
@@ -1846,15 +1577,20 @@ void PhotonMap::sortAndSubdivide(int start, int end, int /*sorted*/)
   Postconditions:
     photons are in a valid kd-tree format
 ******************************************************************************/
-// A total order on photons by their bits, so the tree does not depend on which thread shot which photon first.
+// Value order over all bit patterns; raw bits reverse the negatives, which made the median search quadratic.
+static std::uint32_t OrderedBits(PhotonScalar value)
+{
+    std::uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return (bits & 0x80000000u) ? ~bits : (bits | 0x80000000u);
+}
+
+// A total order on photons, so the tree does not depend on which thread shot which photon first.
 static bool PhotonPrecedes(const Photon& a, const Photon& b)
 {
     for (int k = X; k <= Z; k++)
     {
-        const PhotonScalar fa = a.Loc[k], fb = b.Loc[k];
-        std::uint32_t ba, bb;
-        std::memcpy(&ba, &fa, sizeof(ba));
-        std::memcpy(&bb, &fb, sizeof(bb));
+        const std::uint32_t ba = OrderedBits(a.Loc[k]), bb = OrderedBits(b.Loc[k]);
         if (ba != bb)
             return ba < bb;
     }
@@ -1863,6 +1599,35 @@ static bool PhotonPrecedes(const Photon& a, const Photon& b)
     if (a.phi != b.phi)
         return a.phi < b.phi;
     return std::lexicographical_compare(*a.colour, *a.colour + 4, *b.colour, *b.colour + 4);
+}
+
+static void KdBuild(std::vector<Photon>& photons, int start, int end)
+{
+    if (end < start)
+        return;
+    if (end == start)
+    {
+        photons[start].info = 0;
+        return;
+    }
+    PhotonVector3d lo(std::numeric_limits<PhotonScalar>::max()), hi(-std::numeric_limits<PhotonScalar>::max());
+    for (int i = start; i <= end; i++)
+        for (int axis = X; axis <= Z; axis++)
+        {
+            lo[axis] = std::min(lo[axis], photons[i].Loc[axis]);
+            hi[axis] = std::max(hi[axis], photons[i].Loc[axis]);
+        }
+    int dim = X;
+    if (hi[Y] - lo[Y] > hi[dim] - lo[dim])
+        dim = Y;
+    if (hi[Z] - lo[Z] > hi[dim] - lo[dim])
+        dim = Z;
+    const int mid = (start + end) >> 1;
+    std::nth_element(photons.begin() + start, photons.begin() + mid, photons.begin() + end + 1,
+        [dim](const Photon& a, const Photon& b) { return a.Loc[dim] < b.Loc[dim]; });
+    photons[mid].info = dim;
+    KdBuild(photons, start, mid - 1);
+    KdBuild(photons, mid + 1, end);
 }
 
 void PhotonMap::buildTree()
@@ -1885,11 +1650,9 @@ void PhotonMap::buildTree()
             }
     }
     std::sort(photons.begin(), photons.end(), PhotonPrecedes);
+    KdBuild(photons, 0, numPhotons - 1);
     for (int i = 0; i < numPhotons; i++)
         GetPhoton(i) = photons[i];
-
-//  Send_Progress("Sorting photons", PROGRESS_SORTING_PHOTONS);
-    sortAndSubdivide(0, numPhotons-1, X+Y+Z /* this is not X, Y, or Z */);
 }
 
 /*****************************************************************************
