@@ -291,17 +291,11 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
 
     // TODO FIXME - [CLi] for the sake of performance, this should be handled in the calling function, in case we're dealing with averaged textures!
     // Calculate participating media effects, and deposit photons in media as we go.
-    if(qualityFlags.media && !ray.GetInteriors().empty() && (ray.IsHollowRay() == true))
+    if(qualityFlags.media && !ray.GetInteriors().empty() && InteriorMediaReach(ray))
     {
-        // Calculate effects of all media we're currently in.
-
         MediaVector medialist;
-
-        for(RayInteriorVector::const_iterator i(ray.GetInteriors().begin()); i != ray.GetInteriors().end(); i++)
-        {
-            for(vector<Media>::iterator im((*i)->media.begin()); im != (*i)->media.end(); im++)
-                medialist.push_back(&(*im));
-        }
+        MediaModifierVector mods;
+        CollectInteriorMedia(ray.GetInteriors(), medialist, sceneData->mediaBlendModes ? &mods : nullptr);
 
 /*  TODO FIXME lightgroups
         if ((Trace_Level > 1) &&
@@ -312,12 +306,12 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
         if(!medialist.empty())
         {
             if((ray.GetTicket().traceLevel > 1) && !threadData->passThruPrev && (sceneData->photonSettings.maxMediaSteps > 0))
-                mediaPhotons.ComputeMediaAndDepositPhotons(medialist, ray, isect, LightCol);
+                mediaPhotons.ComputeMediaAndDepositPhotons(medialist, &mods, ray, isect, LightCol);
             else
             {
                 // compute media WITHOUT depositing photons
                 ColourChannel dummyTransm;
-                mediaPhotons.ComputeMedia(medialist, ray, isect, LightCol, dummyTransm);
+                mediaPhotons.ComputeMedia(medialist, &mods, ray, isect, LightCol, dummyTransm);
             }
         }
     }
@@ -1035,8 +1029,10 @@ void PhotonMediaFunction::addMediaPhoton(const Vector3d& Point, const Vector3d& 
 
 }
 
-void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, const Ray& ray, const Intersection& isect, MathColour& colour)
+void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray,
+                                                        const Intersection& isect, MathColour& colour)
 {
+    ModifierScope scope(*this, mods);
     if (ray.IsPhotonRay())
         PreparedResolution(medias, ray);
     LightSourceEntryVector lights;

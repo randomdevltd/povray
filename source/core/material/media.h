@@ -74,6 +74,17 @@ enum
 
 void Transform_Density(std::vector<PIGMENT*>& Density, const TRANSFORM *Trans);
 
+/// A `subtract` or `multiply` interior on a ray, and the indices of the enclosing media it changes.
+struct MediaModifier final
+{
+    Interior *interior;
+    std::vector<size_t> targets;
+};
+typedef std::vector<MediaModifier> MediaModifierVector;
+
+/// The media a ray's interiors show, in stack order; without modifiers every interior adds its media.
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers);
+
 class ExtinctionPlan;
 
 class MediaFunction : public Trace::MediaFunctor
@@ -84,7 +95,25 @@ class MediaFunction : public Trace::MediaFunctor
         virtual void ComputeMedia(std::vector<Media>& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         virtual void ComputeMedia(const RayInteriorVector& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         virtual void ComputeMedia(MediaVector& medias, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
+        void ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm);
     protected:
+        /// The current segment's subtract and multiply interiors, or nullptr.
+        const MediaModifierVector *modifiers;
+        std::vector<MathColour> modifierScratch, densityScratch;
+
+        struct ModifierScope final
+        {
+            MediaFunction& owner;
+            const MediaModifierVector *saved;
+            ModifierScope(MediaFunction& f, const MediaModifierVector *m) : owner(f), saved(f.modifiers)
+                { owner.modifiers = (m != nullptr && !m->empty()) ? m : nullptr; }
+            ~ModifierScope() { owner.modifiers = saved; }
+        };
+
+        /// Adds the media's coefficients at a point, density[i] being medias[i]'s density there, after the modifiers.
+        void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point,
+                                     MathColour& extinction, MathColour *emission, MathColour *scattering);
+
         /// The key the current ray's media draws are hashed from.
         std::uint64_t drawKey;
         /// thread data

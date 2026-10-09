@@ -604,10 +604,128 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
         Transform_Tpattern(*i, Trans);
 }
 
+namespace
+{
+
+bool Encloses(const Interior *outer, size_t o, const Interior *inner, size_t i)
+{
+    if (outer == inner)
+        return false;
+    for (int axis = 0; axis < 3; axis++)
+        if ((outer->boundsLow[axis] > inner->boundsLow[axis]) || (outer->boundsHigh[axis] < inner->boundsHigh[axis]))
+            return false;
+    for (int axis = 0; axis < 3; axis++)
+        if ((outer->boundsLow[axis] != inner->boundsLow[axis]) || (outer->boundsHigh[axis] != inner->boundsHigh[axis]))
+            return true;
+    return o < i;
+}
+
+void ClampedSubtract(MathColour& value, const MathColour& amount)
+{
+    for (int ch = 0; ch < MathColour::channels; ch++)
+        value[ch] = std::max(ColourChannel(0.0), value[ch] - amount[ch]);
+}
+
+}
+
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers)
+{
+    if (modifiers == nullptr)
+    {
+        for (size_t i = 0; i < interiors.size(); i++)
+            for (Media& medium : interiors[i]->media)
+                medias.push_back(&medium);
+        return;
+    }
+    const size_t n = interiors.size();
+    std::vector<size_t> owner;
+    for (size_t i = 0; i < n; i++)
+    {
+        const int blend = interiors[i]->mediaBlend;
+        if ((blend != kMediaBlendAdd) && (blend != kMediaBlendInner))
+            continue;
+        bool hidden = false;
+        for (size_t k = 0; (k < n) && !hidden; k++)
+            hidden = (interiors[k]->mediaBlend == kMediaBlendInner) && !interiors[k]->media.empty() &&
+                     Encloses(interiors[i], i, interiors[k], k);
+        if (hidden)
+            continue;
+        for (Media& medium : interiors[i]->media)
+        {
+            medias.push_back(&medium);
+            owner.push_back(i);
+        }
+    }
+    for (size_t i = 0; i < n; i++)
+    {
+        const int blend = interiors[i]->mediaBlend;
+        if ((blend != kMediaBlendSubtract) && (blend != kMediaBlendMultiply))
+            continue;
+        MediaModifier modifier;
+        modifier.interior = interiors[i];
+        for (size_t m = 0; m < owner.size(); m++)
+            if (Encloses(interiors[owner[m]], owner[m], interiors[i], i))
+                modifier.targets.push_back(m);
+        if (!modifier.targets.empty())
+            modifiers->push_back(modifier);
+    }
+}
+
+void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point,
+                                            MathColour& extinction, MathColour *emission, MathColour *scattering)
+{
+    const size_t n = medias.size();
+    modifierScratch.resize(3 * n);
+    MathColour *absorbing = &modifierScratch[0], *scattered = absorbing + n, *emitted = scattered + n;
+    for (size_t i = 0; i < n; i++)
+    {
+        absorbing[i] = density[i] * medias[i]->Absorption;
+        scattered[i] = density[i] * medias[i]->Scattering;
+        emitted[i] = density[i] * medias[i]->Emission;
+    }
+    for (const MediaModifier& modifier : *modifiers)
+    {
+        if (modifier.interior->media.empty())
+        {
+            if (modifier.interior->mediaBlend == kMediaBlendSubtract)
+                for (size_t t : modifier.targets)
+                    absorbing[t] = scattered[t] = emitted[t] = MathColour();
+            continue;
+        }
+        for (Media& medium : modifier.interior->media)
+        {
+            MathColour local;
+            Evaluate_Density_Pigment(medium.Density, point, local, threadData);
+            for (size_t t : modifier.targets)
+                if (modifier.interior->mediaBlend == kMediaBlendSubtract)
+                {
+                    ClampedSubtract(absorbing[t], local * medium.Absorption);
+                    ClampedSubtract(scattered[t], local * medium.Scattering);
+                    ClampedSubtract(emitted[t], local * medium.Emission);
+                }
+                else
+                {
+                    absorbing[t] *= local;
+                    scattered[t] *= local;
+                    emitted[t] *= local;
+                }
+        }
+    }
+    for (size_t i = 0; i < n; i++)
+    {
+        extinction += absorbing[i] + scattered[i] * medias[i]->sc_ext;
+        if (emission != nullptr)
+            *emission += emitted[i];
+        if (scattering != nullptr)
+            *scattering += scattered[i];
+    }
+}
+
 // Points of each area light tested per media sample; see doc/PERF.md.
 static const int kMediaAreaLightPoints = 4;
 
 MediaFunction::MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg) :
+    modifiers(nullptr),
     drawKey(0),
     threadData(td),
     trace(t),
@@ -640,19 +758,15 @@ void MediaFunction::ComputeMedia(const RayInteriorVector& mediasource, const Ray
     if(!mediasource.empty())
     {
         MediaVector medialist;
-
-        for(RayInteriorVector::const_iterator i(mediasource.begin()); i != mediasource.end(); i++)
-        {
-            for(vector<Media>::iterator im((*i)->media.begin()); im != (*i)->media.end(); im++)
-                medialist.push_back(&(*im));
-        }
+        MediaModifierVector mods;
+        CollectInteriorMedia(mediasource, medialist, threadData->GetSceneData()->mediaBlendModes ? &mods : nullptr);
 
         // Note: this version of ComputeMedia does not deposit photons. This is
         // intentional.  Even though we're processing a photon ray, we don't want
         // to deposit photons in the infinite atmosphere, only in contained
         // media, which is processed later (in ComputeLightedTexture).  [nk]
         if(!medialist.empty())
-            ComputeMedia(medialist, ray, isect, colour, transm);
+            ComputeMedia(medialist, &mods, ray, isect, colour, transm);
     }
 }
 
@@ -668,6 +782,12 @@ void MediaFunction::ComputeMedia(const RayInteriorVector& mediasource, const Ray
 
 void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm)
 {
+    ComputeMedia(medias, nullptr, ray, isect, colour, transm);
+}
+
+void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm)
+{
+    ModifierScope scope(*this, mods);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -705,6 +825,8 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
         for (vector<PIGMENT*>::iterator ii = (*i)->Density.begin(); ii != (*i)->Density.end(); ++ ii)
             all_constant_and_light_ray = all_constant_and_light_ray && ((*ii)->Type == PLAIN_PATTERN);
     }
+
+    all_constant_and_light_ray = all_constant_and_light_ray && (modifiers == nullptr);
 
     // If this is a light ray and no extinction is used we can return.
     if((ray.IsShadowTestRay()) && (!use_extinction))
@@ -785,7 +907,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
     // Sample all intervals.
     if(ray.IsShadowTestRay() && !all_constant_and_light_ray)
     {
-        bool fast = fieldsPrepared && ray.GetMediaLight() != nullptr;
+        bool fast = fieldsPrepared && (ray.GetMediaLight() != nullptr) && (modifiers == nullptr);
         if (fast)
         {
             const LightSource& light = *ray.GetMediaLight();
@@ -932,6 +1054,19 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Extinction
     }
     for(size_t j = 0; j < n; j++)
         extinction[j].Clear();
+    if(modifiers != nullptr)
+    {
+        std::vector<MathColour> densities(medias.size() * n);
+        for(size_t m = 0; m < medias.size(); m++)
+        {
+            Evaluate_Density_Pigment(medias[m]->Density, points, density, n, threadData);
+            for(size_t j = 0; j < n; j++)
+                densities[j * medias.size() + m] = density[j];
+        }
+        for(size_t j = 0; j < n; j++)
+            AddModifiedCoefficients(medias, &densities[j * medias.size()], points[j], extinction[j], nullptr, nullptr);
+        return;
+    }
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
         Evaluate_Density_Pigment((*i)->Density, points, density, n, threadData);
@@ -1125,7 +1260,7 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
                       medias.front()->fastCache ? medias.front()->fastCache->container : nullptr);
 
     ExtinctionPlan plan;
-    const bool planned = plan.Plan(medias, threadData);
+    const bool planned = (modifiers == nullptr) && plan.Plan(medias, threadData);
     MathColour lo, hi;
     DBL roundingError;
     threadData->Stats()[Media_Intervals] += mediaintervals.size();
@@ -1145,6 +1280,7 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
     const DBL opaque = log(1024.0);
     MathColour total;
     bool dark = false;
+    std::vector<MathColour> densities;
     for (MediaInterval& interval : mediaintervals)
     {
         MathColour depth;
@@ -1157,17 +1293,23 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
             {
                 const Vector3d point = ray.Evaluate(interval.s0 + (j + 0.5) * step);
                 MathColour extinction;
+                densities.clear();
                 for (Media* medium : medias)
                 {
-                    if (!medium->use_extinction)
-                        continue;
                     MathColour density;
-                    if (medium->Density.empty())
+                    if (!medium->use_extinction)
+                        density.Clear();
+                    else if (medium->Density.empty())
                         density = MathColour(1.0);
                     else if (!medium->fastCache->DensityAt(point, density))
                         density.Clear();
-                    extinction += density * medium->Extinction;
+                    if (modifiers != nullptr)
+                        densities.push_back(density);
+                    else
+                        extinction += density * medium->Extinction;
                 }
+                if (modifiers != nullptr)
+                    AddModifiedCoefficients(medias, &densities[0], point, extinction, nullptr, nullptr);
                 depth += extinction * step;
                 threadData->Stats()[Media_Samples]++;
                 if ((total + depth).Min() > opaque)
@@ -1965,12 +2107,20 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     H = ray.Evaluate(d1);
 
     // Get coefficients in current sample location.
+    if (modifiers != nullptr)
+        densityScratch.clear();
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
         P = H;
 
         if (!prepared || ray.IsPhotonRay() || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
             Evaluate_Density_Pigment((*i)->Density, P, C0, threadData);
+
+        if (modifiers != nullptr)
+        {
+            densityScratch.push_back(C0);
+            continue;
+        }
 
         Extinction += C0 * (*i)->Extinction;
 
@@ -1980,6 +2130,9 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
             Scattering += C0 * (*i)->Scattering;
         }
     }
+    if (modifiers != nullptr)
+        AddModifiedCoefficients(medias, &densityScratch[0], H, Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
+                                ray.IsShadowTestRay() ? nullptr : &Scattering);
 
     // Get estimate for the total optical depth of the current interval.
     SampOptDepth = Extinction * mediainterval.ds;

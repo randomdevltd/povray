@@ -194,10 +194,23 @@ class Media final
 /// @{
 
 class SubsurfaceInterior;
+
+/// How an interior's media combine with those of the interiors enclosing it.
+enum MediaBlend
+{
+    kMediaBlendAdd      = 0, ///< add to the enclosing media
+    kMediaBlendInner    = 1, ///< replace the enclosing media
+    kMediaBlendSubtract = 2, ///< subtract its coefficients from the enclosing media's, clamped at zero
+    kMediaBlendMultiply = 3, ///< scale the enclosing media's coefficients by its density
+};
+
 class Interior final
 {
     public:
         int  hollow, Disp_NElems;
+        int  mediaBlend;
+        /// the bounds of the objects it fills, to tell which interiors enclose which
+        Vector3d boundsLow, boundsHigh;
         SNGL IOR, Dispersion;
         SNGL Caustics, Old_Refract;
         SNGL Fade_Distance, Fade_Power;

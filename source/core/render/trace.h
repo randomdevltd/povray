@@ -294,6 +294,8 @@ class Trace
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
         /// Adds the interiors of the objects containing a point.
         void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found);
+        /// Whether interior media on the ray's interiors are integrated: a non-hollow one hides them only before version 4.0.
+        bool InteriorMediaReach(const Ray& ray) const;
 
         unsigned int GetHighestTraceLevel();
 

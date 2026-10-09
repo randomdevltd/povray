@@ -332,6 +332,8 @@ void Parser::Run()
 
             defaultsVersion = DefaultsVersion::kLegacy;
             defaultsModified = false;
+            solidMediaSeen = false;
+            defaultMediaBlend = kMediaBlendAdd;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
             InitDefaults(sceneData->EffectiveLanguageVersion());
@@ -592,6 +594,11 @@ void Parser::Run()
                 "to make your intent clear. Future versions of POV-Ray may make the presence of\n"
                 "a #version statement mandatory.");
     }
+
+    sceneData->solidBlocksInteriorMedia = (sceneData->EffectiveLanguageVersion() < 400);
+    if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
+        Warning("A non-hollow object carries interior media, which before #version 4.0 is not rendered.\n"
+                "Add 'hollow' to the object, or use #version 4.0.");
 
     sceneData->parsedMaxTraceLevel = Max_Trace_Level;
     Check_Portal_Cameras();
@@ -7100,6 +7107,22 @@ void Parser::Parse_Default ()
             Parse_Camera (Default_Camera);
         END_CASE
 
+        CASE (INTERIOR_TOKEN)
+            Parse_Begin ();
+            EXPECT
+                OTHERWISE
+                    if (CurrentTokenText() == "media_blend")
+                        defaultMediaBlend = Parse_Media_Blend ();
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
+                END_CASE
+            END_EXPECT
+            Parse_End ();
+        END_CASE
+
         OTHERWISE
             UNGET
             EXIT
@@ -9878,6 +9901,11 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         // Promote hollow flag to interior.
 
         Object->interior->hollow = (Test_Flag(Object, HOLLOW_FLAG) != false);
+        if (!Object->interior->media.empty())
+        {
+            sceneData->interiorMedia = true;
+            solidMediaSeen = solidMediaSeen || !Object->interior->hollow;
+        }
 
         // Promote finish's IOR to interior IOR.
 
@@ -9932,6 +9960,13 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     // CJC TODO FIXME: see if this can be improved, and/or if it is appropriate for all bounding systems
 
     BOUNDS_VOLUME(Volume, Object->BBox);
+    if (Object->interior != nullptr)
+    {
+        Vector3d low, high;
+        Make_min_max_from_BBox(low, high, Object->BBox);
+        Object->interior->boundsLow = min(Object->interior->boundsLow, low);
+        Object->interior->boundsHigh = max(Object->interior->boundsHigh, high);
+    }
 
     if (Volume > INFINITE_VOLUME)
     {

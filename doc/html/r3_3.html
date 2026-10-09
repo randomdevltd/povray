@@ -4389,7 +4389,7 @@ You may change the default texture, pigment, normal or finish using the language
 DEFAULT_DIRECTIVE:
   #default {DEFAULT_ITEM }
 DEFAULT_ITEM:
-  TEXTURE | PIGMENT | NORMAL | FINISH
+  TEXTURE | PIGMENT | NORMAL | FINISH | interior { media_blend add | inner | subtract | multiply }
 </pre>
 <p>For example:</p>
 <pre>
@@ -4410,6 +4410,7 @@ DEFAULT_ITEM:
 <p>This still changes the pigment of the default texture. At any time there is only one default texture made from the default pigment, normal and finish. The example above does not make a separate default for pigments alone.</p>
 <p class="Note"><strong>Note:</strong> The special textures <code>tiles</code> and <code>material_map</code>
 or a texture with a <code>texture_map</code> may not be used as defaults.</p>
+<p>An <code>interior</code> default takes only <code>media_blend</code>, which then applies to every interior created afterwards that does not set its own; see <a href="r3_7.html#r3_7_2_1_9">Media Blend</a>.</p>
 <p>You may change the defaults several times throughout a scene as you wish. Subsequent <code>#default</code> statements begin with the defaults that were in effect at the time. If you wish to reset to the original POV-Ray defaults then you should first save them as follows:</p>
 <pre>
 //At top of file
@@ -4453,6 +4454,8 @@ VERSION_DIRECTIVE:
 <p>New defaults require that the language version is explicitly set to 3.8 or higher via the <code>#version</code> directive the <code>Version=</code>n.n INI setting or the <code>+MV</code>n.n command-line option. Otherwise POV-Ray will fall back to legacy defaults for backwards compatibility.</p>
 
 <p><code>#version 4.0;</code> selects the 4.0 language defaults. Subsurface scattering uses method 2 when its method is omitted; scenes declaring an earlier language version retain method 1. An explicit <code>subsurface { method INT }</code> overrides either default.</p>
+
+<p>With <code>#version 4.0;</code> interior media also render inside objects that are not <code>hollow</code>, and inside objects nested in them; earlier versions hide them, as described in <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>.</p>
 
 <p>If you do need to do some processing before you decide on a version compatibility option start your scene with the following
 construct:</p>

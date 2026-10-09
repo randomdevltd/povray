@@ -3859,7 +3859,10 @@ void Parser::Parse_Interior(InteriorPtr& interior)
     }
 
     if(!interior)
+    {
         interior = InteriorPtr(new Interior());
+        interior->mediaBlend = defaultMediaBlend;
+    }
 
     EXPECT
         CASE (IOR_TOKEN)
@@ -3900,12 +3903,31 @@ void Parser::Parse_Interior(InteriorPtr& interior)
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "media_blend")
+                interior->mediaBlend = Parse_Media_Blend();
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
     Parse_End();
+}
+
+int Parser::Parse_Media_Blend()
+{
+    Get_Token();
+    const char *names[] = { "add", "inner", "subtract", "multiply" };
+    for (int blend = kMediaBlendAdd; blend <= kMediaBlendMultiply; blend++)
+        if (CurrentTokenText() == names[blend])
+        {
+            sceneData->mediaBlendModes = sceneData->mediaBlendModes || (blend != kMediaBlendAdd);
+            return blend;
+        }
+    Error("Expected add, inner, subtract or multiply after media_blend.");
+    return kMediaBlendAdd;
 }
 
 

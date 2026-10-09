@@ -185,6 +185,11 @@ void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, R
 }
 }
 
+bool Trace::InteriorMediaReach(const Ray& ray) const
+{
+    return ray.IsHollowRay() || !sceneData->solidBlocksInteriorMedia;
+}
+
 void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found)
 {
     if (sceneData->boundingMethod == 2)
@@ -789,7 +794,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     // TODO - For photon rays we're still potentially doing double work on media.
     // TODO - For shadow rays we're still potentially doing double work on distance-based attenuation.
     // Calculate participating media effects.
-    if(!photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && (ray.IsHollowRay() == true))
+    if(!photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
     {
         media.ComputeMedia(ray.GetInteriors(), ray, isect, tmpCol, tmpTransm);
     }
@@ -3543,7 +3548,7 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     // TODO - For photon rays we're still potentially doing double work on media.
     // TODO - For shadow rays we're still potentially doing double work on distance-based attenuation.
     // Calculate participating media effects.
-    if(qualityFlags.media && (!lightsourceray.GetInteriors().empty()) && (lightsourceray.IsHollowRay() == true))
+    if(qualityFlags.media && (!lightsourceray.GetInteriors().empty()) && InteriorMediaReach(lightsourceray))
     {
         ColourChannel dummyTransm;
         media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, isect, temp_Colour, dummyTransm);
