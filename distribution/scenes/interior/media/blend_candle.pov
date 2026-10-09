@@ -1,11 +1,12 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // A candle in a misty room lit by its own flame: the flame and its smoke add to the mist, the rising warm air subtracts it and, being thinner, bends light so the brick wall and the print behind ripple. +w360 +h480; Declare=Plume=0 stops the warm air clearing the mist, Smoke=0 drops the smoke, Shimmer=0 the heat.
-// Declare=FlameLight=0 lights the room with a point light at the wick instead of the flame's media light.
+// Declare=FlameLight=0 lights the room with a point light at the wick instead of the flame's media light; FlameSamples sets its samples.
 #version 4.0;
 #ifndef (Plume) #declare Plume = 1; #end
 #ifndef (Smoke) #declare Smoke = 1; #end
 #ifndef (Shimmer) #declare Shimmer = 1; #end
 #ifndef (FlameLight) #declare FlameLight = 1; #end
+#ifndef (FlameSamples) #declare FlameSamples = 16; #end
 #declare Wick = <0, 1.32, 0>;
 #declare WickY = Wick.y;
 #declare Back = 1.6;
@@ -55,7 +56,7 @@ sphere {
   interior {
     media {
       mix add emission rgb <14, 6, 1.6> density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-      #if (FlameLight) light_source { samples 16 brightness 400 } #end
+      #if (FlameLight) light_source { samples FlameSamples brightness 400 } #end
     }
   }
   scale <0.06, 0.16, 0.06> translate Wick + y * 0.13
