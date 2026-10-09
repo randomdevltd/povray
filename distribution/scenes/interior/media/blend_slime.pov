@@ -1,7 +1,8 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A gelatinous cube built from layered media: gel, clear bubbles, gas pockets that replace it, ooze that adds, a band that multiplies, a fizz that subtracts, veins, cell walls, eyes nested in the gas, and glowing nodules that multiply the gel's faint glow, in a torch-lit tunnel. +w480 +h360; Layers=N stops early.
+// A gelatinous cube built from layered media: gel, clear bubbles, gas pockets that replace it, ooze that adds, a band that multiplies, a fizz that subtracts, veins, cell walls, eyes nested in the gas, and glowing nodules that multiply the gel's faint glow, in a torch-lit tunnel. The gel's index wanders with its lumps, warping the dungeon seen through it. +w480 +h360; Layers=N stops early, Warp=0 keeps the gel's index even.
 #version 4.0;
 #ifndef (Layers) #declare Layers = 10; #end
+#ifndef (Warp) #declare Warp = 1; #end
 #declare R = seed(5);
 #declare Ior = 1.25;
 
@@ -56,7 +57,10 @@ blob {
     normal { bumps 0.12 scale 0.4 }
     finish { specular 0.7 roughness 0.004 reflection { 0.03, 0.8 fresnel } conserve_energy }
   }
-  interior { ior Ior Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb <0.004, 0.025, 0.003>, density { bozo turbulence 0.3 Ramp(0.6, 1.1) scale 0.8 }, -1) }
+  interior {
+    ior Ior Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb <0.004, 0.025, 0.003>, density { bozo turbulence 0.3 Ramp(0.6, 1.1) scale 0.8 }, -1)
+    #if (Warp) media { refraction 0.12 density { bozo turbulence 0.5 octaves 3 scale <0.9, 0.6, 0.9> } } #end
+  }
 }
 
 #if (Layers > 1)

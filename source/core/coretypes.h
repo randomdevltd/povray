@@ -160,6 +160,8 @@ class Media final
         MathColour Emission;
         MathColour Extinction;
         MathColour Scattering;
+        /// adds refraction x density (its channel mean) to the refractive index of the interior holding it
+        DBL Refraction;
 
         DBL Ratio;
         DBL Confidence;
@@ -185,6 +187,8 @@ class Media final
 
         void PostProcess();
         void SetFastContainer(ObjectPtr object);
+        /// Whether it only bends rays, with nothing to absorb, emit or scatter.
+        bool OnlyRefracts() const { return (Refraction != 0.0) && !use_absorption && !use_emission && !use_scattering; }
 };
 
 /// @}
@@ -217,6 +221,10 @@ class Interior final
         Vector3d boundsLow, boundsHigh;
         /// scene order: a blend acts on the media of lower-precedence interiors around it
         unsigned int precedence;
+        /// whether any of its media refract
+        bool refracting;
+        /// the shape of the object it first belonged to, for messages
+        const char *shape;
         SNGL IOR, Dispersion;
         SNGL Caustics, Old_Refract;
         SNGL Fade_Distance, Fade_Power;

@@ -2015,6 +2015,14 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
                       POVMSLongToCDouble(l), POVMSLongToCDouble(l2), POVMSLongToCDouble(l2) / POVMSLongToCDouble(l));
     }
 
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_CurvedRays, &l);
+    if(POVMSLongToCDouble(l) > 0.5)
+    {
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_RefractionSteps, &l2);
+        tsb->printf("Curved Rays:        %15.0f   Bending Steps:   %15.0f (%4.2f)\n",
+                      POVMSLongToCDouble(l), POVMSLongToCDouble(l2), POVMSLongToCDouble(l2) / POVMSLongToCDouble(l));
+    }
+
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_ShadowTest, &l);
     if(POVMSLongToCDouble(l) > 0.5)
     {

@@ -74,6 +74,8 @@ Interior::Interior()
     boundsLow = Vector3d(HUGE_VAL);
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
+    refracting = false;
+    shape = "object";
 
     subsurface = std::shared_ptr<SubsurfaceInterior>();
 }
@@ -92,6 +94,8 @@ Interior::Interior(const Interior& source)
     boundsLow = Vector3d(HUGE_VAL);
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
+    refracting = source.refracting;
+    shape = "object";
     IOR = source.IOR;
     subsurface = std::shared_ptr<SubsurfaceInterior>(source.subsurface);
     Caustics = source.Caustics;
@@ -109,8 +113,12 @@ void Interior::Transform(const TRANSFORM *trans)
 
 void Interior::PostProcess()
 {
+    refracting = false;
     for(std::vector<Media>::iterator i(media.begin());i != media.end(); i++)
+    {
         i->PostProcess();
+        refracting = refracting || (i->Refraction != 0.0);
+    }
 }
 
 /*****************************************************************************

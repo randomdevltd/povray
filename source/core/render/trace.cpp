@@ -39,6 +39,8 @@
 // C++ variants of C standard header files
 #include <cfloat>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 
@@ -56,6 +58,7 @@
 #include "core/lighting/radiosity.h"
 #include "core/lighting/subsurface.h"
 #include "core/material/interior.h"
+#include "core/material/media.h"
 #include "core/material/noise.h"
 #include "core/material/normal.h"
 #include "core/material/pattern.h"
@@ -361,12 +364,25 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
         return HUGE_VAL;
     }
 
+    if (sceneData->mediaRefraction && (maxDepth < EPSILON) && !missOpen && !ray.IsShadowTestRay() && RefractingRay(ray))
+    {
+        RefractionField field(ray.GetInteriors(), threadData);
+        if (field.Varies())
+            return TraceCurvedRay(ray, field, colour, transm, weight, continuedRay);
+    }
+
     if (maxDepth >= EPSILON)
         bestisect.Depth = maxDepth;
 
     found = FindIntersection(bestisect, ray, precond, postcond);
     if (!found && missOpen)
         return HUGE_VAL;
+    return ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay);
+}
+
+double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
+                       bool continuedRay)
+{
     if (ray.IsPrimaryRay())
     {
         primaryObject = found ? bestisect.Object : nullptr;
@@ -441,6 +457,151 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
         return HUGE_VAL;
     else
         return bestisect.Depth;
+}
+
+bool Trace::RefractingRay(const Ray& ray) const
+{
+    for (const Interior *interior : ray.GetInteriors())
+        if (interior->refracting)
+            return true;
+    return false;
+}
+
+// Steps one ray may take through a varying index before it counts as trapped, and the lowest index it may meet.
+static const int kMaxRefractionSteps = 20000;
+static const double kMinRefractionIndex = 0.01;
+
+int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Intersection& isect, CurvedPath& path)
+{
+    NoSomethingFlagRayObjectCondition precond;
+    TrueRayObjectCondition postcond;
+    const double angle = sceneData->refractionAngle * M_PI / 180.0;
+    double maxStep = field.MaxStep();
+    isect = Intersection();
+    if (FindIntersection(isect, chord, precond, postcond))
+        maxStep = std::min(maxStep, isect.Depth / 16.0);
+    const double minStep = maxStep * 1.0e-6;
+    auto bend = [&](const Vector3d& point, const Vector3d& direction, double& index) -> Vector3d
+    {
+        Vector3d gradient;
+        index = ClampIndex(base + field.Offset(point, gradient), point);
+        return (gradient - dot(gradient, direction) * direction) / index;
+    };
+    Vector3d point = chord.Origin, direction = chord.Direction.normalized();
+    double index;
+    Vector3d curve = bend(point, direction, index);
+    double step = maxStep;
+    for (int steps = 0; steps < kMaxRefractionSteps; steps++)
+    {
+        threadData->Stats()[Refraction_Steps]++;
+        if ((steps & 255) == 255)
+            cooperate();
+        double entry;
+        if (!field.Ahead(point, direction, entry))
+        {
+            chord.Origin = point;
+            chord.Direction = direction;
+            isect = Intersection();
+            const bool found = FindIntersection(isect, chord, precond, postcond);
+            path.push_back(CurvedStep{ point, direction, found ? isect.Depth : HUGE_VAL, index });
+            return found ? 1 : 0;
+        }
+        const double curvature = curve.length();
+        if (curvature > 0.0)
+            step = std::min(step, angle / curvature);
+        step = std::max(std::min(step, maxStep), entry);
+        Vector3d next, turned, nextCurve;
+        double nextIndex;
+        for (;;)
+        {
+            const Vector3d half = (direction + (0.5 * step) * curve).normalized();
+            double midIndex;
+            const Vector3d midCurve = bend(point + (0.5 * step) * direction, half, midIndex);
+            next = point + step * half;
+            turned = (direction + step * midCurve).normalized();
+            nextCurve = bend(next, turned, nextIndex);
+            if ((std::max((midCurve - curve).length(), (nextCurve - midCurve).length()) * step <= angle) || (step <= minStep))
+                break;
+            step *= 0.5;
+        }
+        const Vector3d span = next - point;
+        const double length = span.length();
+        // Searching from behind the chord's start finds a surface the last chord ended within the tolerance of.
+        const double back = path.empty() ? 0.0 : 0.25 * path.back().length;
+        chord.Direction = span / length;
+        chord.Origin = point - back * chord.Direction;
+        isect = Intersection();
+        isect.Depth = back + length;
+        if (FindIntersection(isect, chord, precond, postcond))
+        {
+            if (isect.Depth > back)
+            {
+                isect.Depth -= back;
+                const double along = isect.Depth / length;
+                chord.Direction = ((1.0 - along) * direction + along * turned).normalized();
+                chord.Origin = isect.IPoint - isect.Depth * chord.Direction;
+            }
+            path.push_back(CurvedStep{ chord.Origin, chord.Direction, isect.Depth, index });
+            return 1;
+        }
+        path.push_back(CurvedStep{ point, chord.Direction, length, index });
+        point = next;
+        direction = turned;
+        curve = nextCurve;
+        index = nextIndex;
+        step = std::min(maxStep, step * 2.0);
+    }
+    WarnRefraction(kMediaRefractionTrapped, "A ray bending through media refraction was stopped after %d steps at <%g, %g, %g> "
+                   "and renders black. Rays orbiting a strong field do this; a larger refraction_angle takes fewer steps.",
+                   kMaxRefractionSteps, point[X], point[Y], point[Z]);
+    return -1;
+}
+
+double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay)
+{
+    threadData->Stats()[Curved_Rays]++;
+    const Interior *top = IorInterior(ray.GetInteriors(), nullptr);
+    const double base = (top != nullptr) ? top->IOR : sceneData->atmosphereIOR;
+    Ray chord(ray);
+    chord.hasDifferentials = false;
+    Intersection bestisect;
+    CurvedPath path;
+    const int march = MarchCurvedRay(chord, field, base, bestisect, path);
+    if (march < 0)
+    {
+        colour.Clear();
+        transm = 0.0;
+        return HUGE_VAL;
+    }
+    const double depth = ShadeRay(chord, bestisect, march > 0, colour, transm, weight, continuedRay);
+
+    // Radiance over n squared holds along the path; media of the earlier chords apply at their own index.
+    double current = (march > 0) ? ClampIndex(base + field.Offset(bestisect.IPoint), bestisect.IPoint) : path.back().index;
+    double length = 0.0;
+    for (size_t k = path.size() - 1; k-- > 0;)
+    {
+        const CurvedStep& piece = path[k];
+        length += piece.length;
+        colour *= Sqr(piece.index / current);
+        current = piece.index;
+        if (!qualityFlags.media)
+            continue;
+        chord.Origin = piece.origin;
+        chord.Direction = piece.direction;
+        Intersection segment;
+        segment.Depth = piece.length;
+        segment.Object = nullptr;
+        if (!chord.GetInteriors().empty() && InteriorMediaReach(chord))
+            media.ComputeMedia(chord.GetInteriors(), chord, segment, colour, transm);
+        if (chord.IsHollowRay())
+        {
+            media.ComputeMedia(sceneData->atmosphere, chord, segment, colour, transm);
+            if (sceneData->fog != nullptr)
+                ComputeFog(chord, segment, colour, transm);
+        }
+    }
+    colour *= Sqr(path.front().index / current);
+    return (depth < HUGE_VAL) ? depth + length : HUGE_VAL;
 }
 
 bool Trace::FindIntersection(Intersection& bestisect, const Ray& ray)
@@ -1189,7 +1350,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     SurfacePhotonGatherNesting gatherNesting(surfacePhotonGatherDepth, gatherSurfacePhotons);
 
     double relativeIor;
-    ComputeRelativeIOR(ray, isect.Object->interior.get(), relativeIor);
+    ComputeRelativeIOR(ray, isect.Object->interior.get(), isect.IPoint, relativeIor);
 
     WNRXVector listWNRX(wnrxPool); // "Weight, Normal, Reflectivity, eXponent"
     POV_REFPOOL_ASSERT(listWNRX->empty()); // verify that the WNRXVector pulled from the pool is in a cleaned-up condition
@@ -1902,63 +2063,11 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
     // Set up new ray.
     nray.Origin = ipoint;
 
-    // Get ratio of iors depending on the interiors the ray is traversing.
-
-    // Note:
-    // For the purpose of refraction, the space occupied by "nested" objects is considered to be "outside" the containing objects,
-    // i.e. when encountering (A (B B) A) we pretend that it's (A A|B B|A A).
-    // (Here "(X" and "X)" denote the entering and leaving of object X, and "X|Y" denotes an interface between objects X and Y.)
-    // In case of overlapping objects, the intersecting region is considered to be part of whatever object is encountered last,
-    // i.e. when encountering (A (B A) B) we pretend that it's (A A|B B|B B).
-
-    if(nray.GetInteriors().empty())
-    {
-        // The ray is entering from the atmosphere.
-        nray.AppendInterior(interior);
-
-        ior = sceneData->atmosphereIOR / interior->IOR;
-        dispersion = sceneData->atmosphereDispersion / interior->Dispersion;
-    }
-    else
-    {
-        // The ray is currently inside an object.
-        if(interior == nray.GetInteriors().back()) // The ray is leaving the "innermost" object
-        {
-            nray.RemoveInterior(interior);
-            if(nray.GetInteriors().empty())
-            {
-                // The ray is leaving into the atmosphere
-                ior = interior->IOR / sceneData->atmosphereIOR;
-                dispersion = interior->Dispersion / sceneData->atmosphereDispersion;
-            }
-            else
-            {
-                // The ray is leaving into another object, i.e. (A (B B) ...
-                // For the purpose of refraction, pretend that we weren't inside that other object,
-                // i.e. pretend that we didn't encounter (A (B B) ... but (A A|B B|A ...
-                ior = interior->IOR / nray.GetInteriors().back()->IOR;
-                dispersion = interior->Dispersion / nray.GetInteriors().back()->Dispersion;
-                dispersionelements = max(dispersionelements, (unsigned int)(nray.GetInteriors().back()->Disp_NElems));
-            }
-        }
-        else if(nray.RemoveInterior(interior) == true) // The ray is leaving the intersection of overlapping objects, i.e. (A (B A) ...
-        {
-            // For the purpose of refraction, pretend that we had already left the other member of the intersection when we entered the overlap,
-            // i.e. pretend that we didn't encounter (A (B A) ... but (A A|B B|B ...
-            ior = 1.0;
-            dispersion = 1.0;
-        }
-        else
-        {
-            // The ray is entering a new object.
-            // For the purpose of refraction, pretend that we're leaving any containing objects,
-            // i.e. pretend that we didn't encounter (A (B ... but (A A|B ...
-            ior = nray.GetInteriors().back()->IOR / interior->IOR;
-            dispersion = nray.GetInteriors().back()->Dispersion / interior->Dispersion;
-
-            nray.AppendInterior(interior);
-        }
-    }
+    InterfaceIor sides;
+    ComputeInterfaceIor(nray, interior, ipoint, sides);
+    ior = sides.ior;
+    dispersion = sides.dispersion;
+    dispersionelements = sides.dispersionElements;
 
     bool haveDispersion = (fabs(dispersion - 1.0) >= EPSILON);
 
@@ -2020,6 +2129,8 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
             transm /= ColourChannel(dispersionelements);
         }
     }
+    if (!totalReflection && (sides.radiance != 1.0))
+        colour *= sides.radiance;
 
     return totalReflection;
 }
@@ -3717,8 +3828,157 @@ void Trace::ComputeSpecularColour(const FINISH *finish, const Vector3d& lightDir
     }
 }
 
-void Trace::ComputeRelativeIOR(const Ray& ray, const Interior *interior, double& ior)
+bool Trace::RanksIor(const Interior *interior) const
 {
+    return (interior->IOR != SNGL(sceneData->atmosphereIOR)) || interior->refracting;
+}
+
+const Interior *Trace::IorInterior(const RayInteriorVector& interiors, const Interior *toggled) const
+{
+    const Interior *top = nullptr;
+    bool inside = false;
+    // Air ranks by entry: it outranks what the ray entered before it, and whatever it enters next outranks it.
+    auto enter = [&](const Interior *interior) {
+        if (!RanksIor(interior) || (top == nullptr) || !RanksIor(top) || (interior->precedence > top->precedence))
+            top = interior;
+    };
+    for (const Interior *interior : interiors)
+    {
+        if (interior == toggled)
+            inside = true;
+        else
+            enter(interior);
+    }
+    if (!inside && (toggled != nullptr))
+        enter(toggled);
+    return top;
+}
+
+double Trace::ClampIndex(double index, const Vector3d& point)
+{
+    if (index >= kMinRefractionIndex)
+        return index;
+    WarnRefraction(kMediaRefractionIndex, "Media refraction takes the index to %g at <%g, %g, %g>; it is held at %g. "
+                   "Use a smaller negative refraction or a higher ior.", index, point[X], point[Y], point[Z], kMinRefractionIndex);
+    return kMinRefractionIndex;
+}
+
+void Trace::WarnRefraction(unsigned flag, const char *format, ...)
+{
+    if (!threadData->mediaMessages || (sceneData->mediaWarningFlags.load(std::memory_order_relaxed) & flag) ||
+        (sceneData->mediaWarningFlags.fetch_or(flag, std::memory_order_relaxed) & flag))
+        return;
+    char text[1024];
+    va_list arguments;
+    va_start(arguments, format);
+    std::vsnprintf(text, sizeof(text), format, arguments);
+    va_end(arguments);
+    threadData->mediaMessages->Warning(kWarningGeneral, "%s", text);
+}
+
+double Trace::StackIndex(const RayInteriorVector& interiors, const Interior *toggled, const Vector3d& point, double& offset,
+                         const Interior **base)
+{
+    const Interior *top = IorInterior(interiors, toggled);
+    if (base != nullptr)
+        *base = top;
+    offset = 0.0;
+    if (sceneData->mediaRefraction &&
+        (std::any_of(interiors.begin(), interiors.end(), [](const Interior *i) { return i->refracting; }) ||
+         ((toggled != nullptr) && toggled->refracting)))
+    {
+        RayInteriorVector held(interiors);
+        RayInteriorVector::iterator found = std::find(held.begin(), held.end(), toggled);
+        if (found != held.end())
+            held.erase(found);
+        else if (toggled != nullptr)
+            held.push_back(const_cast<Interior *>(toggled));
+        RefractionField field(held, threadData);
+        offset = field.Offset(point);
+    }
+    return ClampIndex(((top != nullptr) ? top->IOR : sceneData->atmosphereIOR) + offset, point);
+}
+
+void Trace::ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, InterfaceIor& result)
+{
+    result.dispersionElements = interior->Disp_NElems;
+    result.radiance = 1.0;
+    if (!sceneData->legacyIorStack)
+    {
+        double fromOffset, toOffset;
+        const Interior *fromBase, *toBase;
+        const double from = StackIndex(ray.GetInteriors(), nullptr, point, fromOffset, &fromBase);
+        const double to = StackIndex(ray.GetInteriors(), interior, point, toOffset, &toBase);
+        const double fromIor = (fromBase != nullptr) ? fromBase->IOR : sceneData->atmosphereIOR;
+        const double toIor = (toBase != nullptr) ? toBase->IOR : sceneData->atmosphereIOR;
+        result.ior = from / to;
+        if (fromOffset != toOffset)
+            result.radiance = Sqr((from / fromIor) / (to / toIor));
+        result.dispersion = ((fromBase != nullptr) ? fromBase->Dispersion : sceneData->atmosphereDispersion) /
+                            ((toBase != nullptr) ? toBase->Dispersion : sceneData->atmosphereDispersion);
+        for (const Interior *side : { fromBase, toBase })
+            if (side != nullptr)
+                result.dispersionElements = max(result.dispersionElements, (unsigned int)side->Disp_NElems);
+        if (!ray.RemoveInterior(interior))
+            ray.AppendInterior(interior);
+        if ((fabs(fromOffset - toOffset) > 1.0e-3) && (fromIor == toIor))
+            WarnRefraction(kMediaRefractionJump,
+                "Media refraction changes by %g across a surface at <%g, %g, %g>: a refracting density is cut off there, so the surface "
+                "refracts. Fade the density to zero at its container to make the container invisible.",
+                fabs(fromOffset - toOffset), point[X], point[Y], point[Z]);
+        if ((fromBase == toBase) && (fromBase != nullptr) && RanksIor(interior) && (interior->IOR != fromBase->IOR))
+            WarnRefraction(kMediaRefractionHidden,
+                "A %s (ior %g) inside a %s (ior %g) placed after it does not refract at <%g, %g, %g>: the object placed last gives "
+                "the ior where objects overlap. Place the container before the objects inside it.",
+                interior->shape, interior->IOR, fromBase->shape, fromBase->IOR, point[X], point[Y], point[Z]);
+        return;
+    }
+
+    // Before 4.0 the innermost interior entered gives the index; a nested object counts as outside its container,
+    // i.e. (A (B B) A) is (A A|B B|A A), and an overlap belongs to the object entered last, i.e. (A (B A) B) is (A A|B B|B B).
+    if(ray.GetInteriors().empty())
+    {
+        ray.AppendInterior(interior);
+        result.ior = sceneData->atmosphereIOR / interior->IOR;
+        result.dispersion = sceneData->atmosphereDispersion / interior->Dispersion;
+    }
+    else if(interior == ray.GetInteriors().back())
+    {
+        ray.RemoveInterior(interior);
+        if(ray.GetInteriors().empty())
+        {
+            result.ior = interior->IOR / sceneData->atmosphereIOR;
+            result.dispersion = interior->Dispersion / sceneData->atmosphereDispersion;
+        }
+        else
+        {
+            result.ior = interior->IOR / ray.GetInteriors().back()->IOR;
+            result.dispersion = interior->Dispersion / ray.GetInteriors().back()->Dispersion;
+            result.dispersionElements = max(result.dispersionElements, (unsigned int)(ray.GetInteriors().back()->Disp_NElems));
+        }
+    }
+    else if(ray.RemoveInterior(interior))
+    {
+        result.ior = 1.0;
+        result.dispersion = 1.0;
+    }
+    else
+    {
+        result.ior = ray.GetInteriors().back()->IOR / interior->IOR;
+        result.dispersion = ray.GetInteriors().back()->Dispersion / interior->Dispersion;
+        ray.AppendInterior(interior);
+    }
+}
+
+void Trace::ComputeRelativeIOR(const Ray& ray, const Interior *interior, const Vector3d& point, double& ior)
+{
+    if ((interior != nullptr) && !sceneData->legacyIorStack)
+    {
+        double fromOffset, toOffset;
+        ior = StackIndex(ray.GetInteriors(), interior, point, toOffset) / StackIndex(ray.GetInteriors(), nullptr, point, fromOffset);
+        return;
+    }
+
     // Get ratio of iors depending on the interiors the ray is traversing.
     if (interior == nullptr)
     {
@@ -6551,7 +6811,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     double eta;
 
-    ComputeRelativeIOR(Eye, out.Object->interior.get(), eta);
+    ComputeRelativeIOR(Eye, out.Object->interior.get(), out.IPoint, eta);
 
     // The profile's reflectance is the flesh's where it has a colour of its own, otherwise the layers'.
     Vector3d inward = out.INormal.normalized();

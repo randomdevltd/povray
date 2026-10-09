@@ -1,7 +1,8 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Ice crystals in haze: each crystal's cloudy core replaces the haze, so none leaks in; the clear one has no media at all. +w480 +h320; Declare=Blend=0 makes the cores add instead, letting the golden haze in.
+// Ice crystals in haze: each crystal's cloudy core replaces the haze, so none leaks in; the clear one has no media at all. The air trapped in the cores lowers their index, so the view through a crystal ripples round its core. +w480 +h320; Declare=Blend=0 makes the cores add instead, letting the golden haze in; Declare=Bend=0 keeps the ice's index even.
 #version 4.0;
 #ifndef (Blend) #declare Blend = 1; #end
+#ifndef (Bend) #declare Bend = 1; #end
 #declare R = seed(23);
 
 global_settings { assumed_gamma 1 max_trace_level 16 }
@@ -25,14 +26,17 @@ box { <-5, 0, -1.5>, <5, 4.5, 3.5> pigment { rgbt 1 } interior { media { scatter
 #macro Core(Strength, Length, Width)
   interior {
     ior 1.31
-    media {
-      mix #if (Blend) replace #else add #end
-      scattering { 1, rgb <0.6, 0.8, 1.2> * Strength }
-      density {
-        spherical turbulence 0.5 octaves 5 lambda 2.5 scale <Width, Length, Width> * 0.85
-        color_map { [0 rgb 0] [0.3 rgb 0] [0.6 rgb 0.6] [1 rgb 1] }
-      }
+    #local Cloud = density {
+      spherical turbulence 0.5 octaves 5 lambda 2.5 scale <Width, Length, Width> * 0.85
+      color_map { [0 rgb 0] [0.3 rgb 0] [0.6 rgb 0.6] [1 rgb 1] }
     }
+    media { mix #if (Blend) replace #else add #end scattering { 1, rgb <0.6, 0.8, 1.2> * Strength } density { Cloud } }
+    #if (Bend)
+      media {
+        method 3 refraction -0.1
+        density { spherical turbulence 0.4 octaves 2 scale <Width, Length, Width> * 0.85 color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      }
+    #end
   }
 #end
 object { Prism(1.9, 0.6) texture { Ice } Core(9, 1.9, 0.6) rotate <10, 20, -25> translate <-2.4, 1.9, 0.8> }

@@ -158,8 +158,54 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
     if (maxDepth >= EPSILON)
         bestisect.Depth = maxDepth;
 
+    if (sceneData->mediaRefraction && (maxDepth < EPSILON) && RefractingRay(ray))
+    {
+        RefractionField field(ray.GetInteriors(), threadData);
+        if (field.Varies())
+        {
+            const Interior *top = IorInterior(ray.GetInteriors(), nullptr);
+            const double base = (top != nullptr) ? top->IOR : sceneData->atmosphereIOR;
+            Ray chord(ray);
+            chord.hasDifferentials = false;
+            CurvedPath path;
+            found = (MarchCurvedRay(chord, field, base, bestisect, path) > 0);
+            if (found)
+            {
+                for (size_t k = 0; k + 1 < path.size(); k++)
+                {
+                    chord.Origin = path[k].origin;
+                    chord.Direction = path[k].direction;
+                    Intersection segment;
+                    segment.Depth = path[k].length;
+                    segment.Object = nullptr;
+                    ComputeInteriorMedia(chord, segment, colour);
+                }
+                chord.Origin = path.back().origin;
+                chord.Direction = path.back().direction;
+                found = ShadePhoton(chord, bestisect, colour, weight);
+            }
+            ray.GetTicket().traceLevel--;
+            return found ? bestisect.Depth : HUGE_VAL;
+        }
+    }
+
     found = FindIntersection(bestisect, ray, precond, postcond);
-    if(found)
+    if (found && !ShadePhoton(ray, bestisect, colour, weight))
+    {
+        ray.GetTicket().traceLevel--;
+        return BOUND_HUGE;
+    }
+
+    ray.GetTicket().traceLevel--;
+
+    if(found == false)
+        return HUGE_VAL;
+    else
+        return bestisect.Depth;
+}
+
+bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
+{
     {
         // NK phmap
         int oldptflag = threadData->passThruPrev;
@@ -196,8 +242,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 
                             threadData->passThruThis = threadData->passThruPrev;
                             threadData->passThruPrev = oldptflag;
-                            ray.GetTicket().traceLevel--;
-                            return (BOUND_HUGE);
+                            return false;
                         }
                     }
                     else
@@ -220,8 +265,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 
                         threadData->passThruThis = threadData->passThruPrev;
                         threadData->passThruPrev = oldptflag;
-                        ray.GetTicket().traceLevel--;
-                        return (BOUND_HUGE);
+                        return false;
                     }
                 }
             }
@@ -234,13 +278,36 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
         threadData->passThruThis = threadData->passThruPrev;
         threadData->passThruPrev = oldptflag;
     }
+    return true;
+}
 
-    ray.GetTicket().traceLevel--;
+// Calculates participating media effects up to the hit, and deposits photons in media as it goes.
+void PhotonTrace::ComputeInteriorMedia(Ray& ray, Intersection& isect, MathColour& LightCol)
+{
+    if(qualityFlags.media && !ray.GetInteriors().empty() && InteriorMediaReach(ray))
+    {
+        MediaVector medialist;
+        MediaModifierVector mods;
+        CollectInteriorMedia(ray.GetInteriors(), medialist, sceneData->mediaBlendModes ? &mods : nullptr);
 
-    if(found == false)
-        return HUGE_VAL;
-    else
-        return bestisect.Depth;
+/*  TODO FIXME lightgroups
+        if ((Trace_Level > 1) &&
+            !threadData->passThruPrev && sceneData->photonSettings.maxMediaSteps>0 &&
+            !Test_Flag(isect.Object,PH_IGNORE_PHOTONS_FLAG) &&
+            Check_Light_Group(isect.Object,photonOptions.Light))
+*/
+        if(!medialist.empty())
+        {
+            if((ray.GetTicket().traceLevel > 1) && !threadData->passThruPrev && (sceneData->photonSettings.maxMediaSteps > 0))
+                mediaPhotons.ComputeMediaAndDepositPhotons(medialist, &mods, ray, isect, LightCol);
+            else
+            {
+                // compute media WITHOUT depositing photons
+                ColourChannel dummyTransm;
+                mediaPhotons.ComputeMedia(medialist, &mods, ray, isect, LightCol, dummyTransm);
+            }
+        }
+    }
 }
 
 void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, const TEXTURE *Texture, vector<const TEXTURE *>& warps, const Vector3d& ipoint, const Vector3d& rawnormal,
@@ -268,7 +335,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     int TIR_occured;
 
     double relativeIor;
-    ComputeRelativeIOR(ray, isect.Object->interior.get(), relativeIor);
+    ComputeRelativeIOR(ray, isect.Object->interior.get(), isect.IPoint, relativeIor);
 
     WNRXVector listWNRX(wnrxPool);
     POV_REFPOOL_ASSERT(listWNRX->empty()); // verify that the WNRXVector pulled from the pool is in a cleaned-up condition
@@ -290,31 +357,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     // how and when photons are deposited into different media.
 
     // TODO FIXME - [CLi] for the sake of performance, this should be handled in the calling function, in case we're dealing with averaged textures!
-    // Calculate participating media effects, and deposit photons in media as we go.
-    if(qualityFlags.media && !ray.GetInteriors().empty() && InteriorMediaReach(ray))
-    {
-        MediaVector medialist;
-        MediaModifierVector mods;
-        CollectInteriorMedia(ray.GetInteriors(), medialist, sceneData->mediaBlendModes ? &mods : nullptr);
-
-/*  TODO FIXME lightgroups
-        if ((Trace_Level > 1) &&
-            !threadData->passThruPrev && sceneData->photonSettings.maxMediaSteps>0 &&
-            !Test_Flag(isect.Object,PH_IGNORE_PHOTONS_FLAG) &&
-            Check_Light_Group(isect.Object,photonOptions.Light))
-*/
-        if(!medialist.empty())
-        {
-            if((ray.GetTicket().traceLevel > 1) && !threadData->passThruPrev && (sceneData->photonSettings.maxMediaSteps > 0))
-                mediaPhotons.ComputeMediaAndDepositPhotons(medialist, &mods, ray, isect, LightCol);
-            else
-            {
-                // compute media WITHOUT depositing photons
-                ColourChannel dummyTransm;
-                mediaPhotons.ComputeMedia(medialist, &mods, ray, isect, LightCol, dummyTransm);
-            }
-        }
-    }
+    ComputeInteriorMedia(ray, isect, LightCol);
 
     // Get distance based attenuation.
     interior = isect.Object->interior.get();
@@ -712,63 +755,11 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
     // Set up new ray.
     nray.Origin = ipoint;
 
-    // Get ratio of iors depending on the interiors the ray is traversing.
-
-    // Note:
-    // For the purpose of refraction, the space occupied by "nested" objects is considered to be "outside" the containing objects,
-    // i.e. when encountering (A (B B) A) we pretend that it's (A A|B B|A A).
-    // (Here "(X" and "X)" denote the entering and leaving of object X, and "X|Y" denotes an interface between objects X and Y.)
-    // In case of overlapping objects, the intersecting region is considered to be part of whatever object is encountered last,
-    // i.e. when encountering (A (B A) B) we pretend that it's (A A|B B|B B).
-
-    if(nray.GetInteriors().empty())
-    {
-        // The ray is entering from the atmosphere.
-        nray.AppendInterior(interior);
-
-        ior = sceneData->atmosphereIOR / interior->IOR;
-        dispersion = sceneData->atmosphereDispersion / interior->Dispersion;
-    }
-    else
-    {
-        // The ray is currently inside an object.
-        if(interior == nray.GetInteriors().back()) // The ray is leaving the "innermost" object
-        {
-            nray.RemoveInterior(interior);
-            if(nray.GetInteriors().empty())
-            {
-                // The ray is leaving into the atmosphere
-                ior = interior->IOR / sceneData->atmosphereIOR;
-                dispersion = interior->Dispersion / sceneData->atmosphereDispersion;
-            }
-            else
-            {
-                // The ray is leaving into another object, i.e. (A (B B) ...
-                // For the purpose of refraction, pretend that we weren't inside that other object,
-                // i.e. pretend that we didn't encounter (A (B B) ... but (A A|B B|A ...
-                ior = interior->IOR / nray.GetInteriors().back()->IOR;
-                dispersion = interior->Dispersion / nray.GetInteriors().back()->Dispersion;
-                dispersionelements = max(dispersionelements, (unsigned int)(nray.GetInteriors().back()->Disp_NElems));
-            }
-        }
-        else if(nray.RemoveInterior(interior) == true) // The ray is leaving the intersection of overlapping objects, i.e. (A (B A) ...
-        {
-            // For the purpose of refraction, pretend that we had already left the other member of the intersection when we entered the overlap,
-            // i.e. pretend that we didn't encounter (A (B A) ... but (A A|B B|B ...
-            ior = 1.0;
-            dispersion = 1.0;
-        }
-        else
-        {
-            // The ray is entering a new object.
-            // For the purpose of refraction, pretend that we're leaving any containing objects,
-            // i.e. pretend that we didn't encounter (A (B ... but (A A|B ...
-            ior = nray.GetInteriors().back()->IOR / interior->IOR;
-            dispersion = nray.GetInteriors().back()->Dispersion / interior->Dispersion;
-
-            nray.AppendInterior(interior);
-        }
-    }
+    InterfaceIor sides;
+    ComputeInterfaceIor(nray, interior, ipoint, sides);
+    ior = sides.ior;
+    dispersion = sides.dispersion;
+    dispersionelements = sides.dispersionElements;
 
     bool haveDispersion = (fabs(dispersion - 1.0) >= EPSILON);
 

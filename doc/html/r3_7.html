@@ -96,6 +96,9 @@
   <td><div class="divh4"><a title="3.7.2.2.3" href="#r3_7_2_2_3">Scattering</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.7.2.2.4" href="#r3_7_2_2_4">Refraction</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.7.2.3" href="#r3_7_2_3">Sampling Parameters & Methods</a></div></td>
 </tr>
 <tr>
@@ -441,7 +444,7 @@ MEDIA:
 MEDIA_ITEMS:
   method Number | intervals Number | samples Min, Max |
   confidence Value  | variance Value | ratio Value | jitter Value
-  absorption COLOR | emission COLOR | aa_threshold Value |
+  absorption COLOR | emission COLOR | refraction Value | aa_threshold Value |
   aa_level Value | 
   mix add | replace | subtract | multiply | priority Integer |
   scattering { 
@@ -470,6 +473,7 @@ method       : 3
 mix          : see Media Mix
 priority     : 0
 ratio        : 0.9
+refraction   : 0.0
 samples      : Min 1, Max 1
 variance     : 1/128
 SCATTERING
@@ -753,6 +757,7 @@ light is to change the <code><a href="r3_3.html#r3_3_1_7_3">filter</a></code> or
 specified in the pigment statement or to use the <code><a href="r3_7.html#r3_7_2_1">fade_power</a></code> 
 and <code><a href="r3_7.html#r3_7_2_1">fade_distance</a></code> keywords.
 See <a href="r3_7.html#r3_7_2_1_6">Attenuation</a>.</p>
+<p>Before version 4.0, where objects are nested the innermost one entered gives the ior, and leaving an overlap of two objects does not refract. With <code>#version 4.0;</code>, or wherever a scene uses <a href="r3_7.html#r3_7_2_2_4">media refraction</a>, the ior of a region is that of the interior placed last among those holding it, in the placement order described in <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>, and a surface refracts by the iors on its two sides: place a glass object after the water or container around it. Objects with the atmosphere's ior and no refracting media, such as a backdrop plane, an invisible media container or an air bubble, rank instead by the order in which the ray enters them, so they never hide glass entered after them and a bubble inside glass refracts.</p>
 <p class="Note"><strong>Note:</strong> Neither the <code>ior</code> nor <code>refraction</code> keywords cause the 
 object to be transparent. Transparency only occurs if there is a non-zero 
 <code>filter</code> or <code>transmit</code> value in the color.</p>
@@ -1018,6 +1023,25 @@ SCATTERING:
 </table>
 
 <p class="Note"><strong>Note:</strong> See the section on <a href="r3_4.html#r3_4_3_2">Light Groups</a> for additional information when using scattering media in a light group.</p></div>
+
+<a name="r3_7_2_2_4"></a>
+<div class="content-level-h5" contains="Refraction" id="r3_7_2_2_4">
+<h5>3.7.2.2.4 Refraction</h5>
+<p>The <code>refraction</code> keyword makes a medium change the index of refraction of the interior holding it in proportion to its density, so that light curves where the density varies: heat shimmer, mirages, steam, rocket exhaust, gradient-index lenses, or the bending of light around a black hole. Inside an object the index at any point is</p>
+<pre>
+n = ior + refraction<sub>1</sub> &times; density<sub>1</sub> + refraction<sub>2</sub> &times; density<sub>2</sub> + ...
+</pre>
+<p>where <code>ior</code> is the object's <a href="r3_7.html#r3_7_2_1_4">interior ior</a> and the sum runs over the refracting media that hold the point, combined by their <a href="r3_7.html#r3_7_2_1_9">mix</a> like every other coefficient: <code>add</code> sums them, <code>replace</code> keeps only its own, <code>multiply</code> scales the refraction beneath it by its density, and <code>subtract</code> reduces it toward zero by its own <code>refraction</code> times density, so a <code>subtract</code> medium without <code>refraction</code> of its own leaves the refraction beneath it unchanged. The density is a colour, and refraction uses the mean of its channels; it is not dispersive. The coefficient may be negative: hot air and steam are thinner than the air around them. A medium with only <code>refraction</code> is invisible and costs nothing in the media integration; it only bends rays.</p>
+<pre>
+box {
+  &lt;-5, 0, 2&gt;, &lt;5, 2, 50&gt;
+  pigment { rgbt 1 }
+  interior { media { refraction -0.0001 density { bozo turbulence 0.6 scale 0.5 } density { gradient y color_map { [0 rgb 1] [1 rgb 0] } scale 2 } } }
+}
+</pre>
+<p>A surface refracts once, by the index on each side of it at the point hit, so a container whose density fades to zero at its walls, with the same ior inside and out, neither refracts nor reflects there and is invisible. A density cut off by its container is a real step in the index: the surface refracts, and POV-Ray warns once where the ior on both sides is the same. Where the index varies, camera, reflected, refracted and photon rays follow the curve in short straight chords, testing each chord for objects so that nothing embedded is skipped. Each step bends the ray by at most <a href="r3_4.html#r3_4_1_13">refraction_angle</a>, judged from the curvature at its start, middle and end, so detail in the index narrower than about half a step can be missed. No step is longer than a sixty-fourth of the refracting object's size (twice the prepared resolution with method 4) or a sixteenth of the straight-line distance to the next surface. A ray still inside the field after 20000 steps is taken as trapped and returns black, with a warning; an index driven below 0.01 by a negative <code>refraction</code> is held there, also with a warning. Absorption, emission and scattering integrate along the chords, and radiance scales with the square of the index relative to the interior's ior, so the scaling cancels when both the camera and the source sit outside refracting media; emitting media in a raised index appear dimmer. Media <code>emission</code> is radiance in the units of the local index: an emission of 0.1 where the index is 1.5 above an ior of 1 looks like an emission of 0.1 / 1.5&sup2; would in an object of ior 1.5 without media refraction.</p>
+<p>With media method 4 the index and its gradient come from the prepared density grid; other methods evaluate the density pattern directly, which suits fields with fine detail such as a function of distance that rises steeply near its centre. Media with constant density do not curve rays; a constant <code>refraction</code> in an ior 1 object refracts exactly as an object with ior 1 plus that constant would, apart from the radiance scaling of any media inside it.</p>
+<p class="Note"><strong>Note:</strong> Shadow rays and the light that scattering media receive travel straight, so shadows and lit media are not bent; photons, which do curve, carry bent light into caustics and media. Atmospheric media do not refract. With media refraction, or under <code>#version 4.0</code>, the ior on each side of a surface is that of the interior placed last among those holding it (in the placement order of <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>, without media priorities): an object placed after another wins where they overlap, so a refracting container should be placed before the objects inside it. A surface of a lower-ranked object inside a higher-ranked interior does not refract at all, and POV-Ray warns once naming both shapes. Objects whose ior is the atmosphere's and whose media do not refract rank by entry instead: such an object outranks whatever the ray entered before it and is outranked by whatever the ray enters after it. So a backdrop <code>plane</code> placed after a glass object, whose solid side holds the camera and the glass, does not hide the glass, and an air bubble inside glass refracts wherever it is placed.</p></div>
 
 <a name="r3_7_2_3"></a>
 <div class="content-level-h4" contains="Sampling Parameters & Methods" id="r3_7_2_3">

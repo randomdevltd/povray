@@ -72,6 +72,7 @@ class PhotonGatherer;
 struct Photon;
 class Portal;
 struct ScreenPattern;
+class RefractionField;
 
 struct NoSomethingFlagRayObjectCondition final  : public RayObjectCondition
 {
@@ -892,7 +893,42 @@ class Trace
     ///
 
         /// Compute relative index of refraction.
-        void ComputeRelativeIOR(const Ray& ray, const Interior* interior, double& ior);
+        void ComputeRelativeIOR(const Ray& ray, const Interior* interior, const Vector3d& point, double& ior);
+
+        /// The ratios a surface refracts by.
+        struct InterfaceIor final
+        {
+            double ior;                      ///< index on the ray's side over the index beyond
+            double dispersion;               ///< the same for dispersion
+            unsigned int dispersionElements;
+            double radiance;                 ///< radiance scale across it: (n / base ior) squared, the ray's side over beyond
+        };
+        /// The one rule for the indices either side of a surface, for camera rays and photons; enters or leaves `interior` on the ray.
+        void ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, InterfaceIor& result);
+        /// The index where a ray holds `interiors` with `toggled` entered or left; `offset` gets its media refraction part.
+        double StackIndex(const RayInteriorVector& interiors, const Interior *toggled, const Vector3d& point, double& offset,
+                          const Interior **base = nullptr);
+        /// The interior whose ior is the base index where a ray holds `interiors` with `toggled` entered or left; nullptr: the atmosphere.
+        const Interior *IorInterior(const RayInteriorVector& interiors, const Interior *toggled) const;
+        /// Whether an interior ranks by placement; air (the atmosphere's ior, no media refraction) ranks by entry instead.
+        bool RanksIor(const Interior *interior) const;
+        /// Warns once per render for a SceneData::mediaWarningFlags bit.
+        void WarnRefraction(unsigned flag, const char *format, ...);
+        /// An index held at or above the smallest a curved ray may meet, warning once when it is not.
+        double ClampIndex(double index, const Vector3d& point);
+        bool RefractingRay(const Ray& ray) const;
+
+        struct CurvedStep final
+        {
+            Vector3d origin, direction;
+            double length, index;            ///< index: the refractive index at the chord's start
+        };
+        typedef std::vector<CurvedStep> CurvedPath;
+        /// Follows a ray chord by chord to its first hit (1), none (0) or trapped (-1); `chord` ends as the last chord.
+        int MarchCurvedRay(Ray& chord, RefractionField& field, double base, Intersection& isect, CurvedPath& path);
+        double TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay);
+        double ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
+                        bool continuedRay);
 
         /// Compute Reflectivity.
         ///

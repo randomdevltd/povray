@@ -445,6 +445,8 @@ bool Inside_Object(const Vector3d& IPoint, ObjectPtr Object, TraceThreadData *Th
 void Destroy_Object(std::vector<ObjectPtr>& Object);
 void Destroy_Object(ObjectPtr Object);
 void Destroy_Single_Object(ObjectPtr *ObjectPtr);
+/// A short name of an object's shape for messages.
+const char *ShapeName(ConstObjectPtr object);
 
 /// @}
 ///

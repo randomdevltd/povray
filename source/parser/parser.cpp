@@ -376,7 +376,11 @@ void Parser::Run()
 
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
+            {
                 i->PostProcess();
+                if (i->Refraction != 0.0)
+                    Warning("Atmospheric media do not refract; 'refraction' works in the media of an object's interior.");
+            }
 
             // post process global light sources
             for (size_t i = 0; i < sceneData->lightSources.size(); i++)
@@ -598,6 +602,7 @@ void Parser::Run()
     }
 
     sceneData->solidBlocksInteriorMedia = (sceneData->EffectiveLanguageVersion() < 400);
+    sceneData->legacyIorStack = (sceneData->EffectiveLanguageVersion() < 400) && !sceneData->mediaRefraction;
     if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
         Warning("A non-hollow object carries interior media, which before #version 4.0 is not rendered.\n"
                 "Add 'hollow' to the object, or use #version 4.0.");
@@ -7783,6 +7788,12 @@ void Parser::Parse_Global_Settings()
             Parse_End();
         END_CASE
 
+        CASE (REFRACTION_ANGLE_TOKEN)
+            sceneData->refractionAngle = Parse_Float();
+            if (!(sceneData->refractionAngle > 0.0) || !(sceneData->refractionAngle <= 45.0))
+                Error("refraction_angle must be greater than 0 and at most 45 degrees.");
+        END_CASE
+
         OTHERWISE
             UNGET
             EXIT
@@ -9908,6 +9919,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         if (interior.precedence == 0)
         {
             interior.precedence = ++interiorSerial;
+            interior.shape = ShapeName(Object);
             int first = Test_Flag(Object, HOLLOW_FLAG) ? kMediaBlendAdd : defaultMix;
             if (first == kMediaBlendAuto)
                 first = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
@@ -9928,6 +9940,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Object->interior->hollow = (Test_Flag(Object, HOLLOW_FLAG) != false);
         const bool visibleMedia = std::any_of(interior.media.begin(), interior.media.end(), [](const Media& medium) {
             return !medium.Absorption.IsZero() || !medium.Emission.IsZero() || !medium.Scattering.IsZero(); });
+        sceneData->mediaRefraction = sceneData->mediaRefraction || Object->interior->refracting;
         if (visibleMedia)
         {
             sceneData->interiorMedia = true;

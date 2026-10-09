@@ -473,6 +473,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { REFLECTION_TOKEN,             "reflection" },
     { REFLECTION_EXPONENT_TOKEN,    "reflection_exponent" },
     { REFRACTION_TOKEN,             "refraction" },
+    { REFRACTION_ANGLE_TOKEN,       "refraction_angle" },
     { RENDER_TOKEN,                 "render" },
     { REPEAT_TOKEN,                 "repeat" },
     { RESOLUTION_TOKEN,             "resolution" },

@@ -52,7 +52,10 @@
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/box.h"
+#include "core/shape/cone.h"
 #include "core/shape/csg.h"
+#include "core/shape/mesh.h"
+#include "core/shape/plane.h"
 #include "core/shape/sphere.h"
 #include "core/support/statistics.h"
 
@@ -981,6 +984,20 @@ FORCEINLINE bool Intersect_BBox_Dir(const BoundingBox& bbox, const BBoxVector3d&
         tmax = tzmax;
 
     return ((tmin < maxd) && (tmax > mind));
+}
+
+
+const char *ShapeName(ConstObjectPtr object)
+{
+    if (dynamic_cast<const Plane *>(object) != nullptr)        return "plane";
+    if (dynamic_cast<const Box *>(object) != nullptr)          return "box";
+    if (dynamic_cast<const Sphere *>(object) != nullptr)       return "sphere";
+    if (dynamic_cast<const Cone *>(object) != nullptr)         return "cone or cylinder";
+    if (dynamic_cast<const Mesh *>(object) != nullptr)         return "mesh";
+    if (dynamic_cast<const CSGMerge *>(object) != nullptr)     return "merge";
+    if (dynamic_cast<const CSGUnion *>(object) != nullptr)     return "union";
+    if (dynamic_cast<const CSGIntersection *>(object) != nullptr) return "intersection or difference";
+    return "object";
 }
 
 }

@@ -3722,6 +3722,12 @@ void Parser::Parse_Media(vector<Media>& medialist)
             Parse_Colour(IMedia->Emission);
         END_CASE
 
+        CASE (REFRACTION_TOKEN)
+            IMedia->Refraction = Parse_Float();
+            if (!std::isfinite(IMedia->Refraction))
+                Error("media refraction must be finite.");
+        END_CASE
+
         CASE (SCATTERING_TOKEN)
             Parse_Begin();
             IMedia->Type = (int)Parse_Float();
