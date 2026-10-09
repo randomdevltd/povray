@@ -1770,6 +1770,8 @@ built-in default camera and says so.</p>
 variable, and macros, includes, <code>#if</code> and <code>#ifdef</code> run exactly as they would without it. Excluded objects are still built
 by the parser but take no part in bounding, photon or radiosity work, nor in tracing. The option is available in any
 scene language version.</p>
+<p>If <code>Filter_Tags</code> is given more than once, the first is used, as with <code>Declare</code>. A malformed expression is
+reported at the character where it goes wrong.</p>
 </div>
 
 <a name="r3_2_6"></a>

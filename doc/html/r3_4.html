@@ -1661,7 +1661,7 @@ tightness         : 10
 <p>The different types of light sources and the optional modifiers are
 described in the following sections.</p>
 <p><code>photon_only on</code> lets a global light source shoot photons without directly lighting surfaces or media. It also removes that light from views through portals. Photon targets and the usual photon settings still control where its photons go.</p>
-<p><code>tags</code> labels the light so that a <a href="r3_5.html#r3_5_1_5_13">tag filter</a> can include or exclude it. A light that a view's filter excludes neither lights that view nor shoots photons into it. A light inside a <code>light_group</code> is selected with the group.</p>
+<p><code>tags</code> labels the light so that a <a href="r3_5.html#r3_5_1_5_13">tag filter</a> can include or exclude it. A light that a view's filter excludes neither lights that view nor shoots photons into it. A light inside a <code>light_group</code> answers to its own tags as well as the group's; a rejected group light lights nothing.</p>
 <p>
 The first two items are common to all light sources. The <em><code>&lt;Location&gt;</code></em>
 vector gives the location of the light. The <em>COLOR</em> gives the color 

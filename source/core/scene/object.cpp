@@ -593,6 +593,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->BBox    = Old->BBox;
     New->Flags   = Old->Flags;
     New->tags = Old->tags;
+    New->enclosingTags = Old->enclosingTags;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;

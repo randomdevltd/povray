@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
 #include <climits>
 #include <sstream>
 
@@ -55,6 +56,7 @@
 #include "core/bounding/bsptree.h"
 #include "core/scene/atmosphere.h"
 #include "core/scene/object.h"
+#include "core/shape/csg.h"
 #include "core/shape/portal.h"
 
 // this must be the last file included
@@ -69,6 +71,202 @@ PreparedSet::~PreparedSet()
         Destroy_BBox_Tree(boundingSlabs);
     delete flatSlabs;
     delete tree;
+    for (ObjectPtr view : views)
+    {
+        static_cast<CompoundObject *>(view)->children.clear();
+        delete view;
+    }
+}
+
+namespace
+{
+
+const std::vector<std::string>& EffectiveTags(ConstObjectPtr object, const std::vector<std::string> *inherited,
+                                              std::vector<std::string>& merged)
+{
+    if ((inherited == nullptr) || inherited->empty() ||
+        std::includes(object->tags.begin(), object->tags.end(), inherited->begin(), inherited->end()))
+        return object->tags;
+    merged = object->tags;
+    MergeTags(merged, *inherited);
+    return merged;
+}
+
+// An untagged compound only groups its children, so they decide; anything else is judged on its own tags.
+bool Excluded(const CSG *csg, const std::vector<std::string>& tags, const TagFilter& filter)
+{
+    return ((csg == nullptr) || !tags.empty()) && !MatchesTags(tags, filter);
+}
+
+TagSelection ExcludedAs(ConstObjectPtr object)
+{
+    return Test_Flag(object, INVERTED_FLAG) ? TagSelection::Everything : TagSelection::Empty;
+}
+
+// Whether a child with this selection is dropped from its parent, and whether it collapses the parent instead.
+bool Drops(TagSelection child, bool intersection)
+{
+    return (child == (intersection ? TagSelection::Everything : TagSelection::Empty));
+}
+
+bool Collapses(TagSelection child, bool intersection)
+{
+    return (child == (intersection ? TagSelection::Empty : TagSelection::Everything));
+}
+
+void CollectLights(ObjectPtr object, std::vector<LightSource*>& lights)
+{
+    if (LightSource *light = dynamic_cast<LightSource *>(object))
+        lights.push_back(light);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            CollectLights(child, lights);
+}
+
+void Rebound(CSG *csg)
+{
+    if (!csg->Bound.empty())
+        return;
+    Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+    csg->Compute_BBox();
+    Update_Infinite_Flag(csg);
+}
+
+TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited,
+                         std::vector<LightSource*>& removedLights)
+{
+    std::vector<std::string> merged;
+    const std::vector<std::string>& tags = EffectiveTags(object, inherited, merged);
+    CSG *csg = dynamic_cast<CSG *>(object);
+    if (Excluded(csg, tags, filter))
+        return ExcludedAs(object);
+    if (csg == nullptr)
+        return TagSelection::Whole;
+    const bool intersection = (dynamic_cast<CSGIntersection *>(csg) != nullptr);
+    std::vector<TagSelection> selected;
+    selected.reserve(csg->children.size());
+    for (ObjectPtr child : csg->children)
+    {
+        selected.push_back(PruneTagged(child, filter, &tags, removedLights));
+        if (Collapses(selected.back(), intersection))
+            return selected.back();
+    }
+    std::vector<ObjectPtr> kept;
+    bool part = false;
+    for (size_t i = 0; i < csg->children.size(); ++i)
+    {
+        if (Drops(selected[i], intersection))
+        {
+            CollectLights(csg->children[i], removedLights);
+            Destroy_Object(csg->children[i]);
+            part = true;
+        }
+        else
+        {
+            kept.push_back(csg->children[i]);
+            part = part || (selected[i] == TagSelection::Part);
+        }
+    }
+    csg->children.swap(kept);
+    if (csg->children.empty())
+        return intersection ? TagSelection::Everything : TagSelection::Empty;
+    if (part)
+        Rebound(csg);
+    return part ? TagSelection::Part : TagSelection::Whole;
+}
+
+CSG *NewView(CSG *original)
+{
+    CSG *view;
+    if (CSGMerge *merge = dynamic_cast<CSGMerge *>(original))
+        view = new CSGMerge(*merge, false);
+    else if (CSGIntersection *intersection = dynamic_cast<CSGIntersection *>(original))
+        view = new CSGIntersection(intersection->isDifference, *intersection, false);
+    else
+        view = new CSGUnion(original->Type, *original, false);
+    view->Type = original->Type;
+    view->Trans = Copy_Transform(original->Trans);
+    view->do_split = original->do_split;
+    view->children.clear();
+    return view;
+}
+
+// A view of a compound holding only what the filter selects; `key` records the selection for set identity.
+ObjectPtr ViewTagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited,
+                     std::vector<ObjectPtr>& views, std::ostringstream& key)
+{
+    std::vector<std::string> merged;
+    const std::vector<std::string>& tags = EffectiveTags(object, inherited, merged);
+    CSG *original = static_cast<CSG *>(object);
+    const bool intersection = (dynamic_cast<CSGIntersection *>(original) != nullptr);
+    CSG *view = NewView(original);
+    key << '(';
+    for (size_t i = 0; i < original->children.size(); ++i)
+    {
+        ObjectPtr child = original->children[i];
+        const TagSelection selected = SelectTagged(child, filter, &tags);
+        if (Drops(selected, intersection))
+            continue;
+        key << i;
+        view->children.push_back((selected == TagSelection::Part) ? ViewTagged(child, filter, &tags, views, key) : child);
+        key << ',';
+    }
+    key << ')';
+    views.push_back(view);
+    return view;
+}
+
+}
+
+TagSelection SelectTagged(ConstObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited)
+{
+    if (!filter.specified)
+        return TagSelection::Whole;
+    std::vector<std::string> merged;
+    const std::vector<std::string>& tags = EffectiveTags(object, inherited, merged);
+    const CSG *csg = dynamic_cast<const CSG *>(object);
+    if (Excluded(csg, tags, filter))
+        return ExcludedAs(object);
+    if (csg == nullptr)
+        return TagSelection::Whole;
+    const bool intersection = (dynamic_cast<const CSGIntersection *>(csg) != nullptr);
+    bool part = false, kept = false;
+    for (ConstObjectPtr child : csg->children)
+    {
+        const TagSelection selected = SelectTagged(child, filter, &tags);
+        if (Collapses(selected, intersection))
+            return selected;
+        part = part || (selected != TagSelection::Whole);
+        kept = kept || !Drops(selected, intersection);
+    }
+    if (!kept)
+        return intersection ? TagSelection::Everything : TagSelection::Empty;
+    return part ? TagSelection::Part : TagSelection::Whole;
+}
+
+bool EnclosingTagsMatch(ConstObjectPtr object, const TagFilter& filter)
+{
+    for (const TagScope *scope = object->enclosingTags.get(); scope != nullptr; scope = scope->enclosing.get())
+        if (!MatchesTags(scope->tags, filter))
+            return false;
+    return true;
+}
+
+TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights)
+{
+    if (!filter.specified)
+        return TagSelection::Whole;
+    return PruneTagged(object, filter, nullptr, removedLights);
+}
+
+void ForgetLights(ObjectPtr object, const std::vector<LightSource*>& lights)
+{
+    auto& own = object->LLights;
+    own.erase(std::remove_if(own.begin(), own.end(), [&](LightSource *light) {
+        return std::find(lights.begin(), lights.end(), light) != lights.end(); }), own.end());
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            ForgetLights(child, lights);
 }
 
 TagFilter SceneData::EffectiveFilterTags(const TagFilter& requested) const
@@ -105,13 +303,17 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
     for (size_t ordinal = 0; ordinal < objects.size(); ++ordinal)
     {
         ObjectPtr object = objects[ordinal];
-        if (MatchesTags(object->tags, filter))
-        {
-            set->objects.push_back(object);
-            CollectParticipatingObjects(object, participating);
-            key << 'o' << ordinal;
-            appendTags(object->tags);
-        }
+        if (!EnclosingTagsMatch(object, filter))
+            continue;
+        const TagSelection selected = SelectTagged(object, filter);
+        if ((selected == TagSelection::Empty) || (selected == TagSelection::Everything))
+            continue;
+        key << 'o' << ordinal;
+        appendTags(object->tags);
+        if (selected == TagSelection::Part)
+            object = ViewTagged(object, filter, nullptr, set->views, key);
+        set->objects.push_back(object);
+        CollectParticipatingObjects(object, participating);
     }
     for (const auto *sources : { &lightSources, &lightGroupLightSources })
         for (size_t ordinal = 0; ordinal < sources->size(); ++ordinal)
@@ -125,7 +327,7 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
             }
         }
     for (size_t i = 0; i < preparedSets.size(); ++i)
-        if ((preparedSets[i]->objects == set->objects) && (preparedSets[i]->lights == set->lights))
+        if (preparedSets[i]->photonKey == key.str())
         {
             preparedSetFilters.emplace(filter, i);
             return i;
@@ -146,15 +348,18 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
             set->globalLightIn[i] = true;
         }
     for (const LightSource *light : lightSources)
-        for (const LightSource *image : light->portalImages)
-            if (admitted(image))
-                set->globalPortalImages.push_back(image);
+        if (participating.count(light) != 0)
+            for (const LightSource *image : light->portalImages)
+                if (admitted(image))
+                    set->globalPortalImages.push_back(image);
     for (size_t i = 0; i < lightGroupLightSources.size(); ++i)
     {
         set->groupLightIn[i] = (participating.count(lightGroupLightSources[i]) != 0);
-        for (const LightSource *image : lightGroupLightSources[i]->portalImages)
-            if (admitted(image))
-                set->groupPortalImages[i].push_back(image);
+        set->groupLightsFiltered = set->groupLightsFiltered || !set->groupLightIn[i];
+        if (set->groupLightIn[i])
+            for (const LightSource *image : lightGroupLightSources[i]->portalImages)
+                if (admitted(image))
+                    set->groupPortalImages[i].push_back(image);
     }
     for (const Portal *mouth : portalMouths)
         if (participating.count(mouth) != 0)

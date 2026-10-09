@@ -4129,10 +4129,22 @@ light_source { &lt;0, 5, 0&gt;, rgb 1 tags { "room-a" } }
 <li><code>tags</code> and <code>filter_tags</code> are reserved words only from <code>#version 4.0</code>. In earlier scene versions they remain ordinary identifiers.</li>
 </ul>
 
-<p>Filters select whole top-level objects. The tags of a CSG object (the <code>union</code>, <code>intersection</code>,
-<code>difference</code> or <code>merge</code> at the top of the object) decide for all of it: tags on its operands do not carve operands
-out of a difference or intersection. When a union is split for acceleration, every piece follows the decision made for the
-whole. A <code>light_group</code> is selected as a group, and its lights stay with its geometry.</p>
+<p>Every object is filtered on its own tags, at every level. An object inside another also carries the tags of everything
+around it, so tagging a <code>union</code> tags all of it, and a tagged container that the filter rejects takes all of its contents
+with it. An untagged container only groups: its children decide, and it disappears when none remain. In a <code>union</code>,
+<code>merge</code> or <code>light_group</code> a rejected child is left out and the rest stay, and a rejected group light lights
+nothing; a union split for acceleration keeps these decisions.</p>
+<p>An <code>intersection</code> or <code>difference</code> treats a rejected operand as empty space. An intersection with a
+rejected operand is empty. A difference whose first operand is rejected is empty, and a rejected cutter cuts nothing:</p>
+<pre>
+difference {
+  box { -1, 1 }
+  cylinder { -2*z, 2*z, 0.5 tags { "hole" } }
+}
+// filter_tags { !"hole" } shows the box uncut
+</pre>
+<p>An <code>inverse</code> object that is rejected is the complement of empty space, everything: an intersection ignores it, and a
+union holding it has no surface left to render.</p>
 </div>
 
 <a name="r3_5_1_5_13"></a>

@@ -2411,13 +2411,6 @@ void Parser::Parse_Camera_Radiosity_Size(Camera& New)
     New.Radiosity_Height = (unsigned int)(size.y() + 0.5);
 }
 
-static void MergeTags(std::vector<std::string>& tags, const std::vector<std::string>& added)
-{
-    tags.insert(tags.end(), added.begin(), added.end());
-    std::sort(tags.begin(), tags.end());
-    tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
-}
-
 void Parser::Parse_Tags(std::vector<std::string>& tags)
 {
     std::vector<std::string> added;
@@ -2436,6 +2429,8 @@ void Parser::Parse_Tags(std::vector<std::string>& tags)
             Expectation_Error("comma or }");
     }
     Parse_End();
+    std::sort(added.begin(), added.end());
+    added.erase(std::unique(added.begin(), added.end()), added.end());
     MergeTags(tags, added);
 }
 
@@ -7493,10 +7488,17 @@ void Parser::Parse_Frame ()
             Object = Parse_Object();
             if (Object == nullptr)
                 Expectation_Error ("object or directive");
-            if (!MatchesTags(Object->tags, sceneData->parseFilterTags))
+            if (sceneData->parseFilterTags.specified)
             {
-                Destroy_Object(Object);
-                break;
+                std::vector<LightSource *> removedLights;
+                const TagSelection kept = PruneTagged(Object, sceneData->parseFilterTags, removedLights);
+                if ((kept == TagSelection::Empty) || (kept == TagSelection::Everything))
+                {
+                    Destroy_Object(Object);
+                    break;
+                }
+                if (!removedLights.empty())
+                    ForgetLights(Object, removedLights);
             }
             Post_Process (Object, nullptr);
             if (!DropShutPortal(Object))
@@ -9900,7 +9902,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         return;
     }
     if (Parent != nullptr)
-        Object->tags = Parent->tags;
+        MergeTags(Object->tags, Parent->tags);
 
     if (Object->Type & LT_SRC_UNION_OBJECT)
     {
@@ -10555,12 +10557,15 @@ void Parser::Link_To_Frame(ObjectPtr Object)
         Warning("Bounded CSG union split.");
     }
 
-    // Link all children of a union to the frame.
+    // Link all children of a union to the frame; each still answers to the union's tags.
+    std::shared_ptr<const TagScope> scope = Object->enclosingTags;
+    if (!Object->tags.empty())
+        scope = std::make_shared<TagScope>(TagScope{ Object->tags, Object->enclosingTags });
     for(vector<ObjectPtr>::iterator This_Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); This_Sib != (reinterpret_cast<CSG *>(Object))->children.end(); This_Sib++)
     {
         // Child is no longer inside a CSG object.
         (*This_Sib)->Type &= ~IS_CHILD_OBJECT;
-        (*This_Sib)->tags = Object->tags;
+        (*This_Sib)->enclosingTags = scope;
         Link_To_Frame(*This_Sib);
     }
 

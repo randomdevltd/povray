@@ -1952,14 +1952,14 @@ void MediaFunction::ComputeMediaSampleInterval(LitIntervalVector& litintervals, 
 
 void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect)
 {
-    const std::vector<unsigned int>& globalLights = threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).globalLights;
+    const PreparedSet& view = threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId());
     if ((isect.Object == nullptr) || ((isect.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG))
-        for (unsigned int i : globalLights)
+        for (unsigned int i : view.globalLights)
             if (threadData->lightSources[i]->Media_Interaction)
                 ComputeOneMediaLightInterval(threadData->lightSources[i], lights, ray, isect);
     if (isect.Object != nullptr)
         for (LightSource *light : isect.Object->LLights)
-            if (light->Media_Interaction)
+            if (light->Media_Interaction && view.UsesGroupLight(light->index))
                 ComputeOneMediaLightInterval(light, lights, ray, isect);
 
     if(lights.empty() == false)

@@ -27,6 +27,8 @@ int main()
     local->index = 0;
     local->lightGroupLight = true;
     group->children.push_back(local);
+    Sphere *inside = new Sphere();
+    group->children.push_back(inside);
     LightSource *global = new LightSource();
     global->tags = {"red"};
     global->index = 0;
@@ -53,7 +55,7 @@ int main()
     Check(empty == scene.RegisterPreparedSet(ParseTagFilter("\"missing\"")), "empty results must share one set");
     Check(scene.GetPreparedSet(empty).objects.empty() && scene.GetPreparedSet(empty).lights.empty(), "empty set must contain nothing");
     const PreparedSetId groupId = scene.RegisterPreparedSet(ParseTagFilter("\"group\""));
-    Check(scene.LightInPreparedSet(*local, groupId), "selected roots must include descendant lights regardless of child tags");
+    Check(scene.LightInPreparedSet(*local, groupId), "a selected root's children carry its tags");
     Check(!scene.LightInPreparedSet(*local, redId), "local lights must not leak into unrelated sets");
     Check(scene.GetPreparedSet(groupId).lights == std::vector<LightSource*>({local}), "selected descendant lights must be prepared");
 
@@ -66,6 +68,16 @@ int main()
     Check(scene.GetPreparedSet(empty).globalLights.empty() && scene.GetPreparedSet(groupId).globalLights.empty(),
           "sets without global lights list none, so render loops need no test");
     Check(scene.preparedSets.size() == 3, "only distinct memberships should allocate prepared sets");
+
+    const PreparedSetId partial = scene.RegisterPreparedSet(ParseTagFilter("\"group\" & !\"child\""));
+    const PreparedSet& partialSet = scene.GetPreparedSet(partial);
+    Check(!scene.LightInPreparedSet(*local, partial) && partialSet.groupLightsFiltered, "a child rejected by its own tags must leave the view");
+    Check(partialSet.objects.size() == 1 && partialSet.objects[0] != group && partialSet.views.size() == 1,
+          "a partly kept group must be a view of it");
+    Check(static_cast<CompoundObject *>(partialSet.objects[0])->children == std::vector<ObjectPtr>({inside}),
+          "a view must share the children it keeps");
+    Check(partial == scene.RegisterPreparedSet(ParseTagFilter("!\"child\" & \"group\"")), "equal views must share one set");
+    Check(scene.preparedSets.size() == 4, "a partial view is a distinct membership");
 
     ScreenPattern kept;
     {
