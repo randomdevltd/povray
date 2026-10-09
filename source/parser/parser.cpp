@@ -10040,6 +10040,9 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             Object->interior->IOR = sceneData->atmosphereIOR;
             Object->interior->Dispersion = sceneData->atmosphereDispersion;
         }
+        sceneData->dielectrics = sceneData->dielectrics || Object->interior->refracting ||
+                                 (Object->interior->IOR != SNGL(sceneData->atmosphereIOR)) ||
+                                 (Object->interior->Dispersion != SNGL(sceneData->atmosphereDispersion));
 
         // If object has subsurface light transport enabled, precompute some necessary information
         /* if(!Object->Texture->Finish->SubsurfaceTranslucency.IsZero()) */
@@ -10078,7 +10081,10 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     // Test if the object is opaque or not. [DB 8/94]
 
     if (Object->IsOpaque())
+    {
         Set_Flag(Object, OPAQUE_FLAG);
+        sceneData->anyOpaque = true;
+    }
 }
 
 namespace

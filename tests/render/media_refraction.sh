@@ -96,6 +96,11 @@ render inset_wall Declare=Case=25
 region coincident_wall inset_wall 0 95 0 71
 render grazing Declare=Case=26 +SC49 +EC49 +SR37 +ER37
 if says "stopped after" grazing; then echo "media_refraction: a ray bending past a clipped edge is trapped" >&2; exit 1; fi
+render thin_slab Declare=Case=27
+region thin_slab none 0 95 0 71
+render far_ball Declare=Case=28 Declare=Far=1e6
+render near_ball Declare=Case=28
+region far_ball near_ball 0 95 0 71
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71

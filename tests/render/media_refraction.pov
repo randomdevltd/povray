@@ -2,8 +2,9 @@
 // Media refraction checks for media_refraction.sh: Declare=Version=<v> Declare=Case=<n>, Declare=Ramp=1 for a vertical ramp backdrop.
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Ramp) #declare Ramp = 0; #end
+#ifndef (Far) #declare Far = 0; #end
 global_settings { assumed_gamma 1 }
-camera { orthographic location <0, 0, -10> look_at 0 right x * 8 up y * 6 }
+camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up y * 6 }
 #declare Backdrop = plane {
   z, 4
   #if (Ramp = 2) pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 8 translate -4 * x }
@@ -92,6 +93,8 @@ camera { orthographic location <0, 0, -10> look_at 0 right x * 8 up y * 6 }
   box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 media { method 3 refraction 10 density { gradient y scale 4 translate -2 * y } } } }
   box { <-3, -3, -1.998>, <3, 3 - 36.5 * 6 / 72 + 5e-7, 1> texture { Clear } interior { ior 1 } }
 #break
+#case (27) box { <-3, -3, -0.75e-4>, <3, 3, 0.75e-4> rotate y * 30 texture { Clear } interior { ior 1.5 } } #break
+#case (28) object { Ball translate x * Far } #break
 #case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior 1 } } #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior 1 } } #break
 #end

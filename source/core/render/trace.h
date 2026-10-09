@@ -444,6 +444,7 @@ class Trace
         RayInteriorVector sidesBefore, sidesAfter;
         Vector3d sidesPoint;
         const Interior *sidesInterior = nullptr;
+        double sidesLeave = 0.0;
         RadiosityFunctor& radiosity;
 
     ///
@@ -659,12 +660,14 @@ class Trace
         /// @param[out]     colour          Computed colour.
         /// @param[out]     transm          Computed transmittance.
         /// @param[in]      weight          Importance of this computation.
+        /// @param[in]      leave           How far past the surface the refracted ray starts.
         /// @param[in]      diff            Differentials at the hit for the refracted ray to carry, or `nullptr`.
         /// @return                         `true` if total internal reflection _did_ occur.
         ///
         bool TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, double ior, double n,
                                 const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal,
-                                MathColour& colour, ColourChannel& transm, COLC weight, const SurfaceDifferentials *diff = nullptr);
+                                MathColour& colour, ColourChannel& transm, COLC weight, double leave,
+                                const SurfaceDifferentials *diff = nullptr);
 
     ///
     /// @}
@@ -906,20 +909,24 @@ class Trace
             double dispersion;               ///< the same for dispersion
             unsigned int dispersionElements;
             double radiance;                 ///< radiance scale across it: (n / base ior) squared, the ray's side over beyond
+            double leave;                    ///< how far past it the child ray starts: the tolerance where the crossing was seen, else 0
         };
         /// The one rule for the indices either side of a surface, for camera rays and photons; enters or leaves `interior` on the ray.
         void ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal, InterfaceIor& result);
         /// The interiors beyond a surface of `interior` hit at `point`, with every other surface that meets there crossed too.
         const RayInteriorVector& InterfaceSides(const RayInteriorVector& before, Interior *interior, const Vector3d& point,
-                                                const Vector3d& normal, const Vector3d& direction);
-        /// How far either side of a surface its interiors are sampled, and how far past it child rays start.
-        double InterfaceTolerance(const Vector3d& point) const;
+                                                const Vector3d& normal, const Vector3d& direction, double *leave = nullptr);
+        /// How far either side of a surface its interiors are sampled, and how far past it child rays start: small beside the
+        /// coordinates and the interior's smallest extent, and at least twice the shortest hit distance where the object allows.
+        double InterfaceTolerance(const Vector3d& point, const Interior *interior) const;
         /// Where a hit's surface lets light through and another object's opaque surface lies at the same point, hits that one.
-        void PreferOpaqueCoincident(const Ray& ray, Intersection& isect, COLC weight);
+        void PreferOpaqueCoincident(Ray& ray, Intersection& isect, COLC weight);
         /// Whether a surface's plain pigment lets any light through, or might.
         bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
-        /// Moves a child ray's origin past the surfaces at its start, which the interface has already crossed.
-        void LeaveInterface(Ray& ray, const Vector3d& point) const;
+        /// Whether an interior's surfaces can change the index or the media a ray sees.
+        bool ChangesIndex(const Interior *interior) const;
+        /// Whether shading a hit needs the relative ior: it may let light through, or a finish uses Fresnel.
+        bool NeedsRelativeIor(const TEXTURE *texture, ConstObjectPtr object) const;
         /// The index where a ray holds `interiors` with `toggled` entered or left; `offset` gets its media refraction part.
         double StackIndex(const RayInteriorVector& interiors, const Interior *toggled, const Vector3d& point, double& offset,
                           const Interior **base = nullptr);

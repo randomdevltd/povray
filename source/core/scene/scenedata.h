@@ -180,6 +180,10 @@ class SceneData
         bool legacyIorStack;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
+        /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media
+        bool dielectrics;
+        /// whether any object is guaranteed opaque
+        bool anyOpaque;
         /// the lowest Interior::precedence of any interior with media
         unsigned int firstMediaPrecedence;
         /// point-cloud method: how coarsely far groups of points may be summed as one

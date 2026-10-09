@@ -335,8 +335,9 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     DBL Cos_Angle_Incidence;
     int TIR_occured;
 
-    double relativeIor;
-    ComputeRelativeIOR(ray, isect.Object->interior.get(), isect.IPoint, rawnormal, relativeIor);
+    double relativeIor = 1.0;
+    if (NeedsRelativeIor(Texture, isect.Object))
+        ComputeRelativeIOR(ray, isect.Object->interior.get(), isect.IPoint, rawnormal, relativeIor);
 
     WNRXVector listWNRX(wnrxPool);
     POV_REFPOOL_ASSERT(listWNRX->empty()); // verify that the WNRXVector pulled from the pool is in a cleaned-up condition
@@ -769,7 +770,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
     {
         // Only transmit the ray.
         nray.Direction = ray.Direction;
-        LeaveInterface(nray, ipoint);
+        nray.Origin = ipoint + sides.leave * nray.Direction;
         // Trace a transmitted ray.
         threadData->Stats()[Transmitted_Rays_Traced]++;
 
@@ -792,9 +793,9 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
             localnormal = -normal;
 
         if(!haveDispersion)
-            totalReflection = TraceRefractionRayForPhotons(finish, ipoint, ray, nray, ior, n, normal, rawnormal, localnormal, colour, weight);
+            totalReflection = TraceRefractionRayForPhotons(finish, ipoint, ray, nray, ior, n, normal, rawnormal, localnormal, colour, weight, sides.leave);
         else if(ray.IsMonochromaticRay())
-            totalReflection = TraceRefractionRayForPhotons(finish, ipoint, ray, nray, ray.GetSpectralBand().GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, colour, weight);
+            totalReflection = TraceRefractionRayForPhotons(finish, ipoint, ray, nray, ray.GetSpectralBand().GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, colour, weight, sides.leave);
         else
         {
             for(unsigned int i = 0; i < dispersionelements; i++)
@@ -808,7 +809,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
 
                 tempColour = colour * spectralBand.GetHue() / DBL(dispersionelements);
 
-                (void)TraceRefractionRayForPhotons(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, weight);
+                (void)TraceRefractionRayForPhotons(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, weight, sides.leave);
             }
         }
     }
@@ -816,7 +817,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
     return totalReflection;
 }
 
-bool PhotonTrace::TraceRefractionRayForPhotons(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, DBL ior, DBL n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, COLC weight)
+bool PhotonTrace::TraceRefractionRayForPhotons(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, DBL ior, DBL n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, COLC weight, DBL leave)
 {
     // Compute refracted ray direction using Heckbert's method.
     DBL t = 1.0 + Sqr(ior) * (Sqr(n) - 1.0);
@@ -842,7 +843,7 @@ bool PhotonTrace::TraceRefractionRayForPhotons(const FINISH* finish, const Vecto
     lc = colour * GFilCol;
 
     ColourChannel dummyTransm;
-    LeaveInterface(nray, ipoint);
+    nray.Origin = ipoint + leave * nray.Direction;
     TraceRay(nray, lc, dummyTransm, weight, false);
 
     return false;
