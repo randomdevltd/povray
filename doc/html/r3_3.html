@@ -4455,7 +4455,7 @@ VERSION_DIRECTIVE:
 
 <p><code>#version 4.0;</code> selects the 4.0 language defaults. Subsurface scattering uses method 2 when its method is omitted; scenes declaring an earlier language version retain method 1. An explicit <code>subsurface { method INT }</code> overrides either default.</p>
 
-<p>With <code>#version 4.0;</code> interior media also render inside objects that are not <code>hollow</code>, and inside objects nested in them; earlier versions hide them, as described in <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>. An object without media then clears the media of the objects around it (see <a href="r3_7.html#r3_7_2_1_9">Media Blend</a>), and <code>hollow</code> is deprecated: it governs only fog and atmospheric media.</p>
+<p>With <code>#version 4.0;</code> interior media also render inside objects that are not <code>hollow</code>, and inside objects nested in them; earlier versions hide them, as described in <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>. Every object then replaces the media of the objects placed before it where they overlap unless it sets another <a href="r3_7.html#r3_7_2_1_9">media_blend</a>, and <code>hollow</code> is deprecated in favour of <code>media_blend add</code>, which it sets.</p>
 
 <p>If you do need to do some processing before you decide on a version compatibility option start your scene with the following
 construct:</p>

@@ -3910,8 +3910,8 @@ hollow</code> keyword to the object you can make it hollow, also see the
 <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a> chapter. That is very
 useful if you want atmospheric effects to exist inside an object. Before
 <code>#version 4.0;</code> it is also required for objects containing an interior media;
-from version 4.0 interior media ignore it, <a href="r3_7.html#r3_7_2_1_9">media_blend</a>
-says how they combine, and using <code>hollow</code> warns that it is deprecated. The keyword may optionally
+from version 4.0 it is deprecated in favour of <code>interior { media_blend add }</code>,
+which it sets where no <a href="r3_7.html#r3_7_2_1_9">media_blend</a> is given, and it warns. The keyword may optionally
 be followed by a float expression which is interpreted as a boolean value.
 For example <code>hollow off</code> may be used to force it off. When the
 keyword is specified alone, it is the same as <code>hollow on</code>. 

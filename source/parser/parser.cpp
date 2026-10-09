@@ -8114,8 +8114,8 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         CASE(HOLLOW_TOKEN)
             if ((sceneData->EffectiveLanguageVersion() >= 400) && !hollowDeprecationWarned)
             {
-                Warning("'hollow' is deprecated from #version 4.0: interior media render inside any object, combined by\n"
-                        "interior { media_blend }. It still lets fog and atmospheric media into the object.");
+                Warning("'hollow' is deprecated from #version 4.0 in favour of interior { media_blend add }, which it now sets\n"
+                        "where no media_blend is given. It still lets fog and atmospheric media into the object.");
                 hollowDeprecationWarned = true;
             }
             Bool_Flag (Object, HOLLOW_FLAG, (Allow_Float(1.0) > 0.0));
@@ -9908,13 +9908,14 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Interior& interior = *Object->interior;
         if (interior.precedence == 0)
             interior.precedence = ++interiorSerial;
+        if ((interior.mediaBlend == kMediaBlendAuto) && Test_Flag(Object, HOLLOW_FLAG))
+            interior.mediaBlend = kMediaBlendAdd;
         if (interior.mediaBlend == kMediaBlendAuto)
             interior.mediaBlend = defaultMediaBlend;
         if (interior.mediaBlend == kMediaBlendAuto)
         {
             interior.mediaBlendDefaulted = true;
-            interior.mediaBlend = (interior.media.empty() && (sceneData->EffectiveLanguageVersion() >= 400)) ? kMediaBlendReplace
-                                                                                                             : kMediaBlendAdd;
+            interior.mediaBlend = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
         }
         sceneData->mediaBlendModes = sceneData->mediaBlendModes || (interior.mediaBlend != kMediaBlendAdd);
 
