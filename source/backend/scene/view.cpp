@@ -663,17 +663,24 @@ View::~View()
 namespace
 {
 
-struct SolidPointObjectCondition final : public PointObjectCondition
+struct MatchingPointObjectCondition final : public PointObjectCondition
 {
+    const View::ObjectMatch& match;
     mutable ConstObjectPtr found = nullptr;
+    explicit MatchingPointObjectCondition(const View::ObjectMatch& m) : match(m) {}
     virtual bool operator()(const Vector3d&, ConstObjectPtr object) const override
     {
-        if (object->interior->hollow)
+        if (!match(object))
             return false;
         found = object;
         return true;
     }
 };
+
+bool IsSolid(ConstObjectPtr object)
+{
+    return !object->interior->hollow;
+}
 
 const char *ShapeName(ConstObjectPtr object)
 {
@@ -690,7 +697,7 @@ const char *ShapeName(ConstObjectPtr object)
 
 }
 
-ConstObjectPtr View::FindCameraSolidObject(const Vector3d& point, const BBOX_TREE *node)
+ConstObjectPtr View::FindCameraObject(const Vector3d& point, const BBOX_TREE *node, const ObjectMatch& match)
 {
     if((node->Infinite == false) && (Inside_BBox(point, node->BBox) == false))
         return nullptr;
@@ -698,31 +705,31 @@ ConstObjectPtr View::FindCameraSolidObject(const Vector3d& point, const BBOX_TRE
     if(node->Entries)
     {
         for(int i = 0; i < node->Entries; i++)
-            if(ConstObjectPtr found = FindCameraSolidObject(point, node->Node[i]))
+            if(ConstObjectPtr found = FindCameraObject(point, node->Node[i], match))
                 return found;
         return nullptr;
     }
 
     TraceThreadData threadData(viewData.GetSceneData(), 0);
     ObjectPtr object = reinterpret_cast<ObjectPtr>(node->Node);
-    if ((object->interior != nullptr) && !object->interior->hollow && object->Inside(point, &threadData))
+    if ((object->interior != nullptr) && match(object) && object->Inside(point, &threadData))
         return object;
     return nullptr;
 }
 
-ConstObjectPtr View::FindCameraSolidObject(const Vector3d& point)
+ConstObjectPtr View::FindCameraObject(const Vector3d& point, const ObjectMatch& match)
 {
     shared_ptr<BackendSceneData>& sd = viewData.GetSceneData();
     TraceThreadData threadData(sd, 0);
     auto solid = [&](ConstObjectPtr object) {
-        return (object->interior != nullptr) && !object->interior->hollow &&
+        return (object->interior != nullptr) && match(object) &&
                Inside_BBox(point, object->BBox) && object->Inside(point, &threadData);
     };
 
     if(sd->boundingMethod == 2)
     {
         HasInteriorPointObjectCondition precond;
-        SolidPointObjectCondition postcond;
+        MatchingPointObjectCondition postcond(match);
         BSPInsideCondFunctor ifn(point, sd->objects, &threadData, precond, postcond);
 
         mailbox.clear();
@@ -739,7 +746,7 @@ ConstObjectPtr View::FindCameraSolidObject(const Vector3d& point)
                 return *object;
     }
     else
-        return FindCameraSolidObject(point, sd->boundingSlabs);
+        return FindCameraObject(point, sd->boundingSlabs, match);
 
     return nullptr;
 }
@@ -1129,7 +1136,7 @@ void View::StartRender(POVMS_Object& renderOptions)
     const bool hidesInteriorMedia = scene.interiorMedia && scene.solidBlocksInteriorMedia;
     if (!scene.atmosphere.empty() || (scene.fog != nullptr) || hidesInteriorMedia)
     {
-        if (ConstObjectPtr solid = FindCameraSolidObject(viewData.camera.Location))
+        if (ConstObjectPtr solid = FindCameraObject(viewData.camera.Location, IsSolid))
         {
             MessageFactory messages(scene.warningLevel, "Media", viewData.sceneData->backendAddress,
                                     viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
@@ -1147,6 +1154,23 @@ void View::StartRender(POVMS_Object& renderOptions)
                 messages.Warning(kWarningGeneral, "The camera is inside a non-hollow %s (bounds <%g, %g, %g> to <%g, %g, %g>), so %s do not render. "
                                  "Add 'hollow' to it.", ShapeName(solid), low[X], low[Y], low[Z], high[X], high[Y], high[Z], hidden);
             }
+        }
+    }
+    if (scene.interiorMedia && !scene.solidBlocksInteriorMedia)
+    {
+        const unsigned int firstMedia = scene.firstMediaPrecedence;
+        auto clearing = [firstMedia](ConstObjectPtr object) {
+            const Interior& interior = *object->interior;
+            return interior.media.empty() && interior.mediaBlendDefaulted && (interior.mediaBlend == kMediaBlendReplace) &&
+                   (interior.precedence > firstMedia);
+        };
+        if (ConstObjectPtr clear = FindCameraObject(viewData.camera.Location, clearing))
+        {
+            MessageFactory messages(scene.warningLevel, "Media", viewData.sceneData->backendAddress,
+                                    viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+            messages.Warning(kWarningGeneral, "The camera is inside a %s without media declared after interior media, so by default "
+                             "(media_blend replace) it clears those media wherever it holds them. Declare it before them, or give it "
+                             "interior { media_blend add }.", ShapeName(clear));
         }
     }
 

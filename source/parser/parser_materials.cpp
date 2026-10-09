@@ -3919,14 +3919,11 @@ void Parser::Parse_Interior(InteriorPtr& interior)
 int Parser::Parse_Media_Blend()
 {
     Get_Token();
-    const char *names[] = { "add", "inner", "subtract", "multiply" };
+    const char *names[] = { "add", "replace", "subtract", "multiply" };
     for (int blend = kMediaBlendAdd; blend <= kMediaBlendMultiply; blend++)
         if (CurrentTokenText() == names[blend])
-        {
-            sceneData->mediaBlendModes = sceneData->mediaBlendModes || (blend != kMediaBlendAdd);
             return blend;
-        }
-    Error("Expected add, inner, subtract or multiply after media_blend.");
+    Error("Expected add, replace, subtract or multiply after media_blend.");
     return kMediaBlendAdd;
 }
 

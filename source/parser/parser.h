@@ -780,8 +780,9 @@ class Parser final
         DefaultsVersion defaultsVersion;    ///< Language version active before the first `default` statement.
         bool defaultsModified   : 1;        ///< Whether a `default` statement has been encountered.
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
+        bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
         int defaultMediaBlend;              ///< `media_blend` of interiors created after `#default { interior { ... } }`.
-        unsigned int interiorSerial;        ///< Last Interior::serial handed out.
+        unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
 
         // express.h/express.cpp
         short Have_Vector;

@@ -53,6 +53,7 @@
 #include <thread>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -565,6 +566,8 @@ class View final
         // Scene needs access to the private view constructor!
         friend class Scene;
     public:
+        typedef std::function<bool(ConstObjectPtr)> ObjectMatch;
+
         /**
          *  Destructor. Rendering will be stopped as necessary.
          */
@@ -707,9 +710,9 @@ class View final
          *  returns true if so. comes in two versions, one for manual iteration of
          *  the object list, and one for a bounding tree.
          */
-        /// A non-hollow object containing the point, or nullptr.
-        ConstObjectPtr FindCameraSolidObject(const Vector3d& point);
-        ConstObjectPtr FindCameraSolidObject(const Vector3d& point, const BBOX_TREE *node);
+        /// An object containing the point that the match accepts, or nullptr.
+        ConstObjectPtr FindCameraObject(const Vector3d& point, const ObjectMatch& match);
+        ConstObjectPtr FindCameraObject(const Vector3d& point, const BBOX_TREE *node, const ObjectMatch& match);
 };
 
 }
