@@ -607,7 +607,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 namespace
 {
 
-/// Whether a's blend acts on b's media where both hold a point; POV1668's priority will come first.
+/// Whether a's blend acts on b's media where both hold a point; an object priority would come before scene order.
 bool Outranks(const Interior *a, const Interior *b)
 {
     return a->precedence > b->precedence;

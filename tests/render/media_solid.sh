@@ -43,7 +43,7 @@ absent "carries interior media" 40_front
 absent "deprecated" 40_front
 render 40_after Declare=Version=4.0 Declare=Hollow=0 Declare=Backdrop=3
 expect 40_after 48 1
-present "declared after interior media" 40_after
+present "placed after interior media" 40_after
 render add Declare=Version=4.0 Declare=Nested=1
 render replace Declare=Version=4.0 Declare=Nested=1 Declare=Blend=1
 render default_replace Declare=Version=4.0 Declare=Nested=1 Declare=DefaultBlend=1

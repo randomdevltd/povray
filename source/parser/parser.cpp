@@ -9904,11 +9904,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         if (Object->interior == nullptr)
         {
             Object->interior = InteriorPtr(new Interior());
-            Object->interior->mediaBlend = defaultMediaBlend;
         }
         Interior& interior = *Object->interior;
         if (interior.precedence == 0)
             interior.precedence = ++interiorSerial;
+        if (interior.mediaBlend == kMediaBlendAuto)
+            interior.mediaBlend = defaultMediaBlend;
         if (interior.mediaBlend == kMediaBlendAuto)
         {
             interior.mediaBlendDefaulted = true;
