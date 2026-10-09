@@ -163,29 +163,21 @@ bool Find_Intersection_BBox_Passed(Intersection *isect, ObjectPtr object, const 
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-        object->Resolve();
     return (object != nullptr) && Ray_Enters_Object_BBox(object, ray) && Find_Intersection_BBox_Passed(isect, object, ray, threadData);
 }
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, const RayObjectCondition& postcondition, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-        object->Resolve();
     return (object != nullptr) && Ray_Enters_Object_BBox(object, ray) && Find_Intersection_BBox_Passed(isect, object, ray, postcondition, threadData);
 }
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-        object->Resolve();
     return (object != nullptr) && object->Intersect_BBox(variant, origin, invdir) && Find_Intersection_BBox_Passed(isect, object, ray, threadData);
 }
 
 bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, const RayObjectCondition& postcondition, TraceThreadData *threadData)
 {
-    if (object != nullptr)
-        object->Resolve();
     return (object != nullptr) && object->Intersect_BBox(variant, origin, invdir) && Find_Intersection_BBox_Passed(isect, object, ray, postcondition, threadData);
 }
 
@@ -219,7 +211,6 @@ bool Find_Intersection(Intersection *isect, ObjectPtr object, const Ray& ray, BB
 
 bool Inside_Object (const Vector3d& IPoint, ObjectPtr Object, TraceThreadData *Thread)
 {
-    Object->Resolve();
     for (vector<ObjectPtr>::iterator Sib = Object->Clip.begin(); Sib != Object->Clip.end(); Sib++)
     {
         if(!Inside_Object(IPoint, *Sib, Thread))

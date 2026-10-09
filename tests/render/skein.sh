@@ -35,6 +35,19 @@ grep -q "^skein_mesh: 8192 triangles, 4225 vertices, 0 open edges" skein_mesh.lo
 test "$(grep -c '^skein_mesh: .* 0 open edges' skein_mesh.log)" = 6 || { cat skein_mesh.log; echo "skein_mesh: not six closed meshes"; exit 1; }
 "$POVRAY" +i"$SRCDIR/tests/render/deferred_mesh_check.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w8 +h8 -d -p -v -gp -f +wt4 > deferred_mesh.log 2>&1 || { cat deferred_mesh.log; exit 1; }
 test "$(grep -c '^skein_mesh: .* 0 open edges' deferred_mesh.log)" = 2 || { cat deferred_mesh.log; echo "deferred mesh: redeclaration did not build twice"; exit 1; }
+# a pending .povm octahedron in a translated merge or unsplit union must not be cut to the box taken before it loaded
+le32() { printf "\\$(printf %03o $(($1 & 255)))\\$(printf %03o $(($1 >> 8 & 255)))\\$(printf %03o $(($1 >> 16 & 255)))\\$(printf %03o $(($1 >> 24 & 255)))"; }
+{
+    printf POVM; for n in 1 0 6 0 0 8; do le32 $n; done
+    for v in 1065353216 0 0 3212836864 0 0 0 1065353216 0 0 3212836864 0 0 0 1065353216 0 0 3212836864; do le32 $v; done
+    for i in 0 2 4 2 1 4 1 3 4 3 0 4 2 0 5 1 2 5 3 1 5 0 3 5; do le32 $i; done
+} > deferred_mesh_bounds.povm
+for mode in 0 1 2; do
+    "$POVRAY" +i"$SRCDIR/tests/render/deferred_mesh_bounds.pov" +L. +w64 +h48 -a -d -p -v -gp +wt4 +fp Declare=Mode=$mode +o"deferred_bounds_$mode.ppm" > deferred_bounds.log 2>&1 || { cat deferred_bounds.log; exit 1; }
+    tail -c $((64 * 48 * 3)) "deferred_bounds_$mode.ppm" > "deferred_bounds_$mode.px"
+done
+cmp -s deferred_bounds_0.px deferred_bounds_2.px && cmp -s deferred_bounds_1.px deferred_bounds_2.px || { echo "deferred mesh: a merge or union clipped its pending mesh"; exit 1; }
+rm -f deferred_mesh_bounds.povm deferred_mesh_bounds.povt deferred_bounds_*
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/skein_shapes.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +wt1 +fp +o"skein_$name.ppm" "$@"

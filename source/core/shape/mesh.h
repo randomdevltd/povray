@@ -217,7 +217,7 @@ class Mesh final : public ObjectBase
         virtual bool IsOpaque() const override;
 
         void SetDeferred(const std::shared_ptr<DeferredMeshState>& state);
-        virtual bool Resolve() const override;
+        bool Resolve() const;
         bool Pending() const { return deferred != nullptr; }
 
         void Create_Mesh_Hash_Tables();

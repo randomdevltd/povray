@@ -296,16 +296,26 @@ void Parser::FinishMeshBuilds()
         Resolve_Mesh_Geometry(object);
 }
 
-void Parser::Resolve_Mesh_Geometry(ObjectPtr object)
+bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 {
     if (Mesh *mesh = dynamic_cast<Mesh *>(object))
-        mesh->Resolve();
+        return mesh->Resolve();
+    bool changed = false;
+    if (LightSource *light = dynamic_cast<LightSource *>(object))
+        if (light->Projected_Through_Object != nullptr)
+            Resolve_Mesh_Geometry(light->Projected_Through_Object);
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
     {
         for (ObjectPtr child : compound->children)
-            Resolve_Mesh_Geometry(child);
-        compound->Compute_BBox();
+            changed = Resolve_Mesh_Geometry(child) || changed;
+        // CSG bounds only shrink, so a box taken around a pending mesh must be reset before it can grow.
+        if (changed && compound->Bound.empty())
+        {
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            compound->Compute_BBox();
+        }
     }
+    return changed;
 }
 
 /* Parse the file. */
@@ -3925,6 +3935,7 @@ ObjectPtr Parser::Parse_Light_Source ()
             if ((Object->Projected_Through_Object = Parse_Object ()) == nullptr)
                 Expectation_Error ("object");
             Object->Projected_Through_Object = Parse_Object_Mods (Object->Projected_Through_Object);
+            Resolve_Mesh_Geometry(Object->Projected_Through_Object);
             Set_Flag(Object, NO_SHADOW_FLAG);
             Set_Flag(Object, PH_PASSTHRU_FLAG);
         END_CASE
@@ -8471,6 +8482,8 @@ void Parser::Parse_Bound_Clip(vector<ObjectPtr>& dest, bool notexture)
     if(objects.empty())
         Expectation_Error("object");
 
+    for (ObjectPtr object : objects)
+        Resolve_Mesh_Geometry(object);
     dest.insert(dest.end(), objects.begin(), objects.end());
 }
 
