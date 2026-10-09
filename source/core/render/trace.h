@@ -449,6 +449,7 @@ class Trace
             Vector3d point;
             const Interior *interior = nullptr;
             double leave = 0.0;
+            bool simple = false;                 ///< the far side holds just what crossing the hit surface gives
         };
         std::vector<InterfaceCache> sidesCache;
         void FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& before, Interior *interior, const Vector3d& point,
