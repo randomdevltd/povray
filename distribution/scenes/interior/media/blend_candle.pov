@@ -23,7 +23,7 @@ cylinder { <0, 1.28, 0>, Wick, 0.008 pigment { rgb 0.05 } }
 box { <-3, 0, -4>, <3, 4, 3> pigment { rgbt 1 } interior { media { scattering { 1, rgb 0.1 } absorption 0.01 } } }
 sphere {
   0, 1 pigment { rgbt 1 }
-  interior { media { emission rgb <14, 6, 1.6> density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } } }
+  interior { media_blend add media { emission rgb <14, 6, 1.6> density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } } }
   scale <0.06, 0.16, 0.06> translate Wick + y * 0.13
 }
 #if (Smoke)
@@ -31,6 +31,7 @@ sphere {
     Wick + y * 0.2, Wick + y * 2.6, 0.35
     pigment { rgbt 1 }
     interior {
+      media_blend add
       media {
         scattering { 1, rgb 3 } absorption rgb <2.5, 2.6, 2.8>
         density {

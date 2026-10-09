@@ -14,7 +14,7 @@
 #ifndef (TwoMedia) #declare TwoMedia = 0; #end
 
 global_settings { assumed_gamma 1 }
-#if (DefaultBlend) #default { interior { media_blend replace } } #end
+#if (DefaultBlend) #default { interior { media_blend add } } #end
 camera { orthographic location <0, 0, -20> look_at 0 right x * 16 up y * 12 }
 background { rgb 1 }
 #declare Backdrop_Finish = finish { #if (Lit) emission 0 diffuse 1 #else emission 1 diffuse 0 #end ambient 0 }
@@ -32,7 +32,7 @@ background { rgb 1 }
 
 #if (Varying) light_source { <-10, 20, -15> rgb 1 } #end
 
-// Blend=0 add, 1 replace, 2 subtract, 3 multiply, 4 subtract without media, 5 no media, 6 two half subtracts; Sibling, InnerFirst,
+// Blend=0 add, 1 replace, 2 subtract, 3 multiply, 4 subtract without media, 5 no media, 6 two half subtracts, 7 unset; Sibling, InnerFirst,
 // Csg (intersection with a plane), Lit (backdrop lit through the boxes) and TwoMedia (two outer media, 0.75 subtracted) vary it.
 #macro Inner(Absorption)
   #if (Csg) intersection { plane { y, 100 } #end
@@ -47,7 +47,8 @@ background { rgb 1 }
       #case (3) interior { media_blend multiply media { density { rgb 0.4 } } } #break
       #case (4) interior { media_blend subtract } #break
       #case (5) #break
-      #else interior { Medium(1.0) }
+      #case (7) interior { Medium(1.0) } #break
+      #else interior { media_blend add Medium(1.0) }
     #end
   }
 #end

@@ -33,6 +33,7 @@ box { <-7, 0, -1.5>, <7, 5, 3.5> pigment { rgbt 1 } interior { media { Fog } } }
           spherical turbulence 0.55 octaves 5 lambda 2.4 omega 0.6
           color_map { [0 rgb 0] [0.25 rgb 0.6] [0.5 rgb 1.6] [1 rgb 2.5] }
         }
+        density { spherical color_map { [0 rgb 0] [0.35 rgb 1] [1 rgb 1] } }
       }
     }
     scale <2.8, 1.9, 2.6> translate <0.2, 2.4, 1>

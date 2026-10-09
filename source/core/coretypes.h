@@ -198,7 +198,7 @@ class SubsurfaceInterior;
 /// How an interior's media combine with those of the interiors enclosing it.
 enum MediaBlend
 {
-    kMediaBlendAuto     = -1, ///< not set: from version 4.0 replace without media and add with them, add before
+    kMediaBlendAuto     = -1, ///< not set: add if hollow, else the #default, else replace from version 4.0 and add before
     kMediaBlendAdd      = 0, ///< add to the enclosing media
     kMediaBlendReplace  = 1, ///< replace the enclosing media
     kMediaBlendSubtract = 2, ///< subtract its coefficients from the sum of the enclosing media's, clamped at zero
