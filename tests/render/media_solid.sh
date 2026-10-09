@@ -1,5 +1,5 @@
 #!/bin/sh
-# media_solid.sh <povray> <srcdir>: interior media inside non-hollow objects, per language version, and media_blend.
+# media_solid.sh <povray> <srcdir>: interior media inside non-hollow objects, per language version, and media mix.
 set -e
 POVRAY=$1; SRCDIR=$2
 render() {
@@ -59,6 +59,9 @@ render csg Declare=Version=4.0 Declare=Nested=1 Declare=Blend=4 Declare=Csg=1
 render csg_replace Declare=Version=4.0 Declare=Nested=1 Declare=Blend=1 Declare=Csg=1
 render first_replace Declare=Version=4.0 Declare=Nested=1 Declare=Blend=1 Declare=InnerFirst=1
 render first_subtract Declare=Version=4.0 Declare=Nested=1 Declare=Blend=2 Declare=InnerFirst=1
+render first_priority Declare=Version=4.0 Declare=Nested=1 Declare=Blend=1 Declare=InnerFirst=1 Declare=Prio=1
+render replace_add Declare=Version=4.0 Declare=Nested=1 Declare=Blend=8
+render add_replace Declare=Version=4.0 Declare=Nested=1 Declare=Blend=9
 render sum_subtract Declare=Version=4.0 Declare=Nested=1 Declare=Blend=2 Declare=TwoMedia=1
 render split_subtract Declare=Version=4.0 Declare=Nested=1 Declare=Blend=6 Declare=TwoMedia=1
 render lit_add Declare=Version=4.0 Declare=Nested=1 Declare=Lit=1
@@ -78,6 +81,9 @@ expect csg 48 0.6065
 expect csg_replace 48 0.2231
 expect first_replace 48 0.1353
 expect first_subtract 48 0.3679
+expect first_priority 48 0.2231
+expect replace_add 48 0.1738
+expect add_replace 48 0.2231
 expect sum_subtract 48 0.2865
 expect split_subtract 48 0.2375
 for name in lit_add lit_clear; do expect $name 66 0.1353 "$(red $name 2)"; done
@@ -88,13 +94,13 @@ for blend in 0 2 3; do tail -c 41472 media_solid_varying_$blend.ppm > media_soli
 for blend in 2 3; do
     if cmp -s media_solid_varying_0.px media_solid_varying_$blend.px; then echo "media_solid: varying blend $blend matches add" >&2; exit 1; fi
 done
-for name in add replace unset hollow_add default_add subtract multiply clear nomedia nomedia_37 sibling csg csg_replace first_replace first_subtract; do
+for name in add replace unset hollow_add default_add subtract multiply clear nomedia nomedia_37 sibling csg csg_replace first_replace first_subtract first_priority replace_add add_replace; do
     expect $name 66 0.3679
 done
 for name in sum_subtract split_subtract; do expect $name 66 0.1353; done
-for name in add replace unset hollow_add default_add subtract multiply clear nomedia sibling csg csg_replace first_replace first_subtract \
+for name in add replace unset hollow_add default_add subtract multiply clear nomedia sibling csg csg_replace first_replace first_subtract first_priority replace_add add_replace \
             sum_subtract split_subtract lit_add lit_clear varying_0 varying_2 varying_3; do
     absent "classic sampling" $name
 done
 rm -f media_solid_*.ppm media_solid_*.px media_solid_*.log
-echo "media_solid: interior media render inside non-hollow objects under 4.0, and media_blend combines overlapping media"
+echo "media_solid: interior media render inside non-hollow objects under 4.0, and media mix combines overlapping media"

@@ -448,6 +448,8 @@ Media::Media()
     AA_Level = 3;
     Jitter = 0.0;
     FastResolution = -1.0;
+    mix = kMediaBlendAuto;
+    priority = 0;
 }
 
 Media::Media(const Media& source)
@@ -494,6 +496,8 @@ Media& Media::operator=(const Media& source)
         AA_Threshold = source.AA_Threshold;
         AA_Level = source.AA_Level;
         FastResolution = source.FastResolution;
+        mix = source.mix;
+        priority = source.priority;
         fastCache.reset();
 
         if (Sample_Threshold != nullptr)
@@ -607,15 +611,23 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 namespace
 {
 
-/// Whether a's blend acts on b's media where both hold a point; an object priority would come before scene order.
-bool Outranks(const Interior *a, const Interior *b)
+/// One medium on a ray, or an interior without media that clears the media beneath it (medium nullptr).
+struct Layer final
 {
-    return a->precedence > b->precedence;
-}
+    int priority;
+    size_t order;
+    Interior *interior;
+    Media *medium;
+};
 
-int EffectiveBlend(const Interior *interior)
+/// Whether a's mix acts on b's media where both hold a point: priority, then placement, then order in the interior.
+bool Outranks(const Layer& a, const Layer& b)
 {
-    return (interior->mediaBlend == kMediaBlendAuto) ? kMediaBlendAdd : interior->mediaBlend;
+    if (a.priority != b.priority)
+        return a.priority > b.priority;
+    if (a.interior->precedence != b.interior->precedence)
+        return a.interior->precedence > b.interior->precedence;
+    return a.order > b.order;
 }
 
 void SubtractFromSum(MathColour *values, size_t count, const MathColour& amount)
@@ -641,24 +653,31 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
                 medias.push_back(&medium);
         return;
     }
-    RayInteriorVector ranked(interiors);
-    std::stable_sort(ranked.begin(), ranked.end(), [](const Interior *a, const Interior *b) { return Outranks(b, a); });
-    size_t first = 0;
-    for (size_t i = 0; i < ranked.size(); i++)
+    std::vector<Layer> layers;
+    for (Interior *interior : interiors)
     {
-        const int blend = EffectiveBlend(ranked[i]);
-        if ((blend == kMediaBlendReplace) || ((blend == kMediaBlendSubtract) && ranked[i]->media.empty()))
-            first = i;
+        if (interior->clears)
+            layers.push_back(Layer{ 0, 0, interior, nullptr });
+        for (size_t i = 0; i < interior->media.size(); i++)
+            layers.push_back(Layer{ interior->media[i].priority, i, interior, &interior->media[i] });
     }
-    for (size_t i = first; i < ranked.size(); i++)
+    std::stable_sort(layers.begin(), layers.end(), [](const Layer& a, const Layer& b) { return Outranks(b, a); });
+    size_t first = 0;
+    for (size_t i = 0; i < layers.size(); i++)
+        if ((layers[i].medium == nullptr) || (layers[i].medium->mix == kMediaBlendReplace))
+            first = i;
+    for (size_t i = first; i < layers.size(); i++)
     {
-        Interior *interior = ranked[i];
-        const int blend = EffectiveBlend(interior);
-        if ((blend == kMediaBlendAdd) || (blend == kMediaBlendReplace))
-            for (Media& medium : interior->media)
-                medias.push_back(&medium);
-        else if (!medias.empty() && !interior->media.empty())
-            modifiers->push_back(MediaModifier{ interior, medias.size() });
+        Media *medium = layers[i].medium;
+        if (medium == nullptr)
+            continue;
+        if ((medium->mix == kMediaBlendSubtract) || (medium->mix == kMediaBlendMultiply))
+        {
+            if (!medias.empty())
+                modifiers->push_back(MediaModifier{ medium, layers[i].interior, medias.size() });
+        }
+        else if (medium->use_absorption || medium->use_emission || medium->use_scattering)
+            medias.push_back(medium);
     }
 }
 
@@ -668,21 +687,21 @@ DBL MediaFunction::ModifierResolution() const
     if (modifiers == nullptr)
         return resolution;
     for (const MediaModifier& modifier : *modifiers)
-        for (const Media& medium : modifier.interior->media)
+    {
+        const Media& medium = *modifier.medium;
+        if (medium.Density.empty())
+            continue;
+        if (medium.FastResolution > 0.0)
         {
-            if (medium.Density.empty())
-                continue;
-            if (medium.FastResolution > 0.0)
-            {
-                resolution = std::min(resolution, medium.FastResolution);
-                continue;
-            }
-            const Vector3d size = modifier.interior->boundsHigh - modifier.interior->boundsLow;
-            const DBL volume = size[X] * size[Y] * size[Z];
-            if (std::isfinite(volume) && (volume > 0.0))
-                resolution = std::min(resolution, std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0,
-                                                           std::cbrt(volume / 500000.0)));
+            resolution = std::min(resolution, medium.FastResolution);
+            continue;
         }
+        const Vector3d size = modifier.interior->boundsHigh - modifier.interior->boundsLow;
+        const DBL volume = size[X] * size[Y] * size[Z];
+        if (std::isfinite(volume) && (volume > 0.0))
+            resolution = std::min(resolution, std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0,
+                                                       std::cbrt(volume / 500000.0)));
+    }
     return resolution;
 }
 
@@ -700,28 +719,21 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
     }
     for (const MediaModifier& modifier : *modifiers)
     {
-        MathColour factor(1.0), absorption, scattering, emissive;
-        for (Media& medium : modifier.interior->media)
-        {
-            MathColour local;
-            Evaluate_Density_Pigment(medium.Density, point, local, threadData);
-            factor *= local;
-            absorption += local * medium.Absorption;
-            scattering += local * medium.Scattering;
-            emissive += local * medium.Emission;
-        }
-        if (modifier.interior->mediaBlend == kMediaBlendMultiply)
+        Media& medium = *modifier.medium;
+        MathColour local;
+        Evaluate_Density_Pigment(medium.Density, point, local, threadData);
+        if (medium.mix == kMediaBlendMultiply)
             for (size_t t = 0; t < modifier.below; t++)
             {
-                absorbing[t] *= factor;
-                scattered[t] *= factor;
-                emitted[t] *= factor;
+                absorbing[t] *= local;
+                scattered[t] *= local;
+                emitted[t] *= local;
             }
         else
         {
-            SubtractFromSum(absorbing, modifier.below, absorption);
-            SubtractFromSum(scattered, modifier.below, scattering);
-            SubtractFromSum(emitted, modifier.below, emissive);
+            SubtractFromSum(absorbing, modifier.below, local * medium.Absorption);
+            SubtractFromSum(scattered, modifier.below, local * medium.Scattering);
+            SubtractFromSum(emitted, modifier.below, local * medium.Emission);
         }
     }
     for (size_t i = 0; i < n; i++)

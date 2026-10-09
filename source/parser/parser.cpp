@@ -334,7 +334,7 @@ void Parser::Run()
             defaultsModified = false;
             solidMediaSeen = false;
             hollowDeprecationWarned = false;
-            defaultMediaBlend = kMediaBlendAuto;
+            defaultMix = kMediaBlendAuto;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -7109,17 +7109,16 @@ void Parser::Parse_Default ()
             Parse_Camera (Default_Camera);
         END_CASE
 
-        CASE (INTERIOR_TOKEN)
+        CASE (MEDIA_TOKEN)
             Parse_Begin ();
             EXPECT
+                CASE (MIX_TOKEN)
+                    defaultMix = Parse_Mix ();
+                END_CASE
+
                 OTHERWISE
-                    if (CurrentTokenText() == "media_blend")
-                        defaultMediaBlend = Parse_Media_Blend ();
-                    else
-                    {
-                        UNGET
-                        EXIT
-                    }
+                    UNGET
+                    EXIT
                 END_CASE
             END_EXPECT
             Parse_End ();
@@ -8114,8 +8113,8 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         CASE(HOLLOW_TOKEN)
             if ((sceneData->EffectiveLanguageVersion() >= 400) && !hollowDeprecationWarned)
             {
-                Warning("'hollow' is deprecated from #version 4.0 in favour of interior { media_blend add }, which it now sets\n"
-                        "where no media_blend is given. It still lets fog and atmospheric media into the object.");
+                Warning("'hollow' is deprecated from #version 4.0 in favour of media { mix add }, which it now sets where an\n"
+                        "object's first medium gives no mix. It still lets fog and atmospheric media into the object.");
                 hollowDeprecationWarned = true;
             }
             Bool_Flag (Object, HOLLOW_FLAG, (Allow_Float(1.0) > 0.0));
@@ -9907,22 +9906,29 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         }
         Interior& interior = *Object->interior;
         if (interior.precedence == 0)
-            interior.precedence = ++interiorSerial;
-        if ((interior.mediaBlend == kMediaBlendAuto) && Test_Flag(Object, HOLLOW_FLAG))
-            interior.mediaBlend = kMediaBlendAdd;
-        if (interior.mediaBlend == kMediaBlendAuto)
-            interior.mediaBlend = defaultMediaBlend;
-        if (interior.mediaBlend == kMediaBlendAuto)
         {
-            interior.mediaBlendDefaulted = true;
-            interior.mediaBlend = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
+            interior.precedence = ++interiorSerial;
+            int first = Test_Flag(Object, HOLLOW_FLAG) ? kMediaBlendAdd : defaultMix;
+            if (first == kMediaBlendAuto)
+                first = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
+            interior.clears = interior.media.empty() && (first == kMediaBlendReplace);
+            bool blends = interior.clears;
+            for (size_t i = 0; i < interior.media.size(); i++)
+            {
+                Media& medium = interior.media[i];
+                if (medium.mix == kMediaBlendAuto)
+                    medium.mix = (i == 0) ? first : kMediaBlendAdd;
+                blends = blends || (medium.mix != kMediaBlendAdd) || (medium.priority != 0);
+            }
+            sceneData->mediaBlendModes = sceneData->mediaBlendModes || blends;
         }
-        sceneData->mediaBlendModes = sceneData->mediaBlendModes || (interior.mediaBlend != kMediaBlendAdd);
 
         // Promote hollow flag to interior.
 
         Object->interior->hollow = (Test_Flag(Object, HOLLOW_FLAG) != false);
-        if (!Object->interior->media.empty())
+        const bool visibleMedia = std::any_of(interior.media.begin(), interior.media.end(), [](const Media& medium) {
+            return !medium.Absorption.IsZero() || !medium.Emission.IsZero() || !medium.Scattering.IsZero(); });
+        if (visibleMedia)
         {
             sceneData->interiorMedia = true;
             sceneData->firstMediaPrecedence = std::min(sceneData->firstMediaPrecedence, interior.precedence);

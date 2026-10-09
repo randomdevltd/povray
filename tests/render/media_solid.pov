@@ -12,9 +12,10 @@
 #ifndef (Lit) #declare Lit = 0; #end
 #ifndef (InnerFirst) #declare InnerFirst = 0; #end
 #ifndef (TwoMedia) #declare TwoMedia = 0; #end
+#ifndef (Prio) #declare Prio = 0; #end
 
 global_settings { assumed_gamma 1 }
-#if (DefaultBlend) #default { interior { media_blend add } } #end
+#if (DefaultBlend) #default { media { mix add } } #end
 camera { orthographic location <0, 0, -20> look_at 0 right x * 16 up y * 12 }
 background { rgb 1 }
 #declare Backdrop_Finish = finish { #if (Lit) emission 0 diffuse 1 #else emission 1 diffuse 0 #end ambient 0 }
@@ -22,8 +23,10 @@ background { rgb 1 }
 #if (Backdrop = 2) plane { -z, -6 pigment { rgb 1 } finish { Backdrop_Finish } } #end
 #if (Lit) light_source { <0, 0, -100> rgb 1 parallel point_at 0 media_attenuation on } #end
 
-#macro Medium(Absorption)
+#macro Medium(Absorption, Mix, Priority)
   media {
+    #switch (Mix) #case (0) mix add #break #case (1) mix replace #break #case (2) mix subtract #break #end
+    #if (Priority) priority Priority #end
     absorption Absorption
     #if (Nested | Varying) method 4 density { #if (Varying) bozo scale 0.7 #else rgb 1 #end } #end
     #if (Varying) scattering { 1, 0.3 } #end
@@ -32,8 +35,8 @@ background { rgb 1 }
 
 #if (Varying) light_source { <-10, 20, -15> rgb 1 } #end
 
-// Blend=0 add, 1 replace, 2 subtract, 3 multiply, 4 subtract without media, 5 no media, 6 two half subtracts, 7 unset; Sibling, InnerFirst,
-// Csg (intersection with a plane), Lit (backdrop lit through the boxes) and TwoMedia (two outer media, 0.75 subtracted) vary it.
+// Blend=0 add, 1 replace, 2 subtract, 3 multiply, 4 empty replace, 5 no media, 6 two half subtracts, 7 unset, 8 replace+add, 9 add+replace;
+// Sibling, InnerFirst, Prio, Csg (intersection with a plane), Lit (backdrop lit through) and TwoMedia (two outer media) vary it.
 #macro Inner(Absorption)
   #if (Csg) intersection { plane { y, 100 } #end
   box {
@@ -41,14 +44,16 @@ background { rgb 1 }
   #if (Csg) } #end
     pigment { rgbt 1 } #if (Hollow) hollow #end
     #switch (Blend)
-      #case (1) interior { media_blend replace Medium(1.0) } #break
-      #case (2) interior { media_blend subtract Medium(Absorption) } #break
-      #case (6) interior { media_blend subtract Medium(Absorption) } #break
-      #case (3) interior { media_blend multiply media { density { rgb 0.4 } } } #break
-      #case (4) interior { media_blend subtract } #break
+      #case (1) interior { Medium(1.0, 1, Prio) } #break
+      #case (2) interior { Medium(Absorption, 2, Prio) } #break
+      #case (6) interior { Medium(Absorption, 2, Prio) } #break
+      #case (3) interior { media { mix multiply density { rgb 0.4 } } } #break
+      #case (4) interior { media { mix replace } } #break
       #case (5) #break
-      #case (7) interior { Medium(1.0) } #break
-      #else interior { media_blend add Medium(1.0) }
+      #case (7) interior { Medium(1.0, -1, Prio) } #break
+      #case (8) interior { Medium(1.0, 1, 0) Medium(0.25, 0, 0) } #break
+      #case (9) interior { Medium(0.25, 0, 0) Medium(1.0, 1, 0) } #break
+      #else interior { Medium(1.0, 0, Prio) }
     #end
   }
 #end
@@ -66,14 +71,14 @@ background { rgb 1 }
   #if (InnerFirst) Subtracting() #end
   box {
     <-4, -4, -1>, <4, 4, 1> pigment { rgbt 1 } #if (Hollow) hollow #end
-    interior { #if (TwoMedia) Medium(0.5) Medium(0.5) #else Medium(0.5) #end }
+    interior { #if (TwoMedia) Medium(0.5, -1, 0) Medium(0.5, -1, 0) #else Medium(0.5, -1, 0) #end }
   }
   #if (!InnerFirst) Subtracting() #end
 #else
   box {
     <-3, -3, -1>, <3, 3, 1> pigment { rgbt 1 }
     #if (Hollow) hollow #end
-    interior { Medium(0.5) }
+    interior { Medium(0.5, -1, 0) }
   }
 #end
 #if (Backdrop = 3) plane { z, 6 pigment { rgb 1 } finish { Backdrop_Finish } } #end

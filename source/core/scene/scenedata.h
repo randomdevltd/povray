@@ -168,7 +168,7 @@ class SceneData
         int subsurfaceMethod;
         bool explicitSubsurfaceMethod;
 
-        /// whether any interior uses a media_blend other than add
+        /// whether any medium mixes other than by adding, has a priority, or an interior clears
         bool mediaBlendModes;
         /// whether a non-hollow interior on a ray hides interior media too, as before language version 4.0
         bool solidBlocksInteriorMedia;

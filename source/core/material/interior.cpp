@@ -70,8 +70,7 @@ Interior::Interior()
     Fade_Power    = 0.0;
 
     hollow = false;
-    mediaBlend = kMediaBlendAuto;
-    mediaBlendDefaulted = false;
+    clears = false;
     boundsLow = Vector3d(HUGE_VAL);
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
@@ -89,8 +88,7 @@ Interior::Interior(const Interior& source)
     Fade_Colour = source.Fade_Colour;
     media = source.media;
     hollow = source.hollow;
-    mediaBlend = source.mediaBlend;
-    mediaBlendDefaulted = source.mediaBlendDefaulted;
+    clears = source.clears;
     boundsLow = Vector3d(HUGE_VAL);
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;

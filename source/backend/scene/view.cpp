@@ -1160,17 +1160,15 @@ void View::StartRender(POVMS_Object& renderOptions)
     {
         const unsigned int firstMedia = scene.firstMediaPrecedence;
         auto clearing = [firstMedia](ConstObjectPtr object) {
-            const Interior& interior = *object->interior;
-            return interior.media.empty() && interior.mediaBlendDefaulted && (interior.mediaBlend == kMediaBlendReplace) &&
-                   (interior.precedence > firstMedia);
+            return object->interior->clears && (object->interior->precedence > firstMedia);
         };
         if (ConstObjectPtr clear = FindCameraObject(viewData.camera.Location, clearing))
         {
             MessageFactory messages(scene.warningLevel, "Media", viewData.sceneData->backendAddress,
                                     viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
             messages.Warning(kWarningGeneral, "The camera is inside a %s without media placed after interior media, so by default "
-                             "(media_blend replace) it clears those media wherever it holds them. Place it before them, or give it "
-                             "interior { media_blend add }.", ShapeName(clear));
+                             "(mix replace) it clears those media wherever it holds them. Place it before them, or give it "
+                             "interior { media { mix add } }.", ShapeName(clear));
         }
     }
 

@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// media_blend multiply: a density field scales the fog beneath it, thinning it in streaks and thickening it between. +w480 +h270; Declare=Blend=0 leaves the fog even.
+// mix multiply: a density field scales the fog beneath it, thinning it in streaks and thickening it between. +w480 +h270; Declare=Blend=0 leaves the fog even.
 #version 4.0;
 #ifndef (Blend) #declare Blend = 1; #end
 
@@ -18,8 +18,8 @@ box { <-12, 0, -10>, <12, 9, 14> pigment { rgbt 1 } interior { media { scatterin
     <-12, 0, -10>, <12, 9, 14>
     pigment { rgbt 1 }
     interior {
-      media_blend multiply
       media {
+        mix multiply
         density {
           wood turbulence 0.35 octaves 4 rotate x * 90 rotate z * 20 scale 2.5
           color_map { [0 rgb 0.02] [0.4 rgb 0.15] [0.6 rgb 1.6] [1 rgb 3] }
