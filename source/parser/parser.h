@@ -549,7 +549,7 @@ class Parser final
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
         void Parse_Interior (InteriorPtr&);
-        int Parse_Media_Blend();
+        int Parse_Mix();
         void Parse_Media_Density_Pattern (PIGMENT **);
         void Parse_Media_Density_Pattern (std::vector<PIGMENT*>&);
         Fog_Struct *Parse_Fog (void);
@@ -781,7 +781,7 @@ class Parser final
         bool defaultsModified   : 1;        ///< Whether a `default` statement has been encountered.
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
-        int defaultMediaBlend;              ///< `media_blend` of interiors created after `#default { interior { ... } }`.
+        int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
 
         // express.h/express.cpp

@@ -36,6 +36,7 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
 
+#include <climits>
 #include <cmath>
 
 // C++ variants of C standard header files
@@ -3803,6 +3804,19 @@ void Parser::Parse_Media(vector<Media>& medialist)
             Transform_Density (IMedia->Density, Parse_Transform(&Local_Trans));
         END_CASE
 
+        CASE (MIX_TOKEN)
+            IMedia->mix = Parse_Mix();
+        END_CASE
+
+        CASE (PRIORITY_TOKEN)
+        {
+            const DBL priority = Parse_Float();
+            if ((priority != std::floor(priority)) || (std::fabs(priority) > INT_MAX))
+                Error("media priority must be an integer.");
+            IMedia->priority = (int)priority;
+        }
+        END_CASE
+
         OTHERWISE
             UNGET
             EXIT
@@ -3900,27 +3914,22 @@ void Parser::Parse_Interior(InteriorPtr& interior)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "media_blend")
-                interior->mediaBlend = Parse_Media_Blend();
-            else
-            {
-                UNGET
-                EXIT
-            }
+            UNGET
+            EXIT
         END_CASE
     END_EXPECT
 
     Parse_End();
 }
 
-int Parser::Parse_Media_Blend()
+int Parser::Parse_Mix()
 {
     Get_Token();
     const char *names[] = { "add", "replace", "subtract", "multiply" };
     for (int blend = kMediaBlendAdd; blend <= kMediaBlendMultiply; blend++)
         if (CurrentTokenText() == names[blend])
             return blend;
-    Error("Expected add, replace, subtract or multiply after media_blend.");
+    Error("Expected add, replace, subtract or multiply after mix.");
     return kMediaBlendAdd;
 }
 

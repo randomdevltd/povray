@@ -172,6 +172,8 @@ class Media final
         std::vector<PIGMENT*> Density;
         DBL FastResolution;
         std::shared_ptr<FastCache> fastCache;
+        /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
+        int mix, priority;
 
         Media();
         Media(const Media&);
@@ -195,22 +197,22 @@ class Media final
 
 class SubsurfaceInterior;
 
-/// How an interior's media combine with those of the interiors enclosing it.
+/// How a medium mixes with the media ranked beneath it.
 enum MediaBlend
 {
-    kMediaBlendAuto     = -1, ///< not set: add if hollow, else the #default, else replace from version 4.0 and add before
-    kMediaBlendAdd      = 0, ///< add to the enclosing media
-    kMediaBlendReplace  = 1, ///< replace the enclosing media
-    kMediaBlendSubtract = 2, ///< subtract its coefficients from the sum of the enclosing media's, clamped at zero
-    kMediaBlendMultiply = 3, ///< scale the enclosing media's coefficients by its density
+    kMediaBlendAuto     = -1, ///< not set: an interior's first medium takes the object default, later ones add
+    kMediaBlendAdd      = 0, ///< add to the media beneath
+    kMediaBlendReplace  = 1, ///< replace the media beneath
+    kMediaBlendSubtract = 2, ///< subtract its coefficients from the sum of the media beneath, clamped at zero
+    kMediaBlendMultiply = 3, ///< scale the coefficients of the media beneath by its density
 };
 
 class Interior final
 {
     public:
         int  hollow, Disp_NElems;
-        int  mediaBlend;
-        bool mediaBlendDefaulted;
+        /// whether, having no media, it clears the media beneath it by default
+        bool clears;
         /// the bounds of the objects it fills, which size the sampling of its modifier media
         Vector3d boundsLow, boundsHigh;
         /// scene order: a blend acts on the media of lower-precedence interiors around it

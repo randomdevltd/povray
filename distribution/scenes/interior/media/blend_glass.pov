@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Glass without media in a fogged room stays clear: an object without media replaces the media around it by default. +w480 +h270; Declare=Fill=1 gives the glass media_blend add, so the fog fills it.
+// Glass without media in a fogged room stays clear: an object without media replaces the media around it by default. +w480 +h270; Declare=Fill=1 gives the glass an empty media { mix add }, so the fog fills it.
 #version 4.0;
 #ifndef (Fill) #declare Fill = 0; #end
 
@@ -13,7 +13,7 @@ box { <-6, 0, -2.5>, <6, 4.5, 4> pigment { rgbt 1 } interior { media { scatterin
 
 #declare Glass = material {
   texture { pigment { rgbf <0.97, 0.99, 1, 0.96> } finish { specular 0.6 roughness 0.002 reflection { 0.02, 1 fresnel } conserve_energy } }
-  interior { ior 1.5 #if (Fill) media_blend add #end }
+  interior { ior 1.5 #if (Fill) media { mix add } #end }
 }
 sphere { <-2.2, 1.2, 0.5>, 1.2 material { Glass } }
 torus { 0.9, 0.35 rotate <70, 0, 25> translate <0.3, 1.25, -0.4> material { Glass } }

@@ -74,10 +74,11 @@ enum
 
 void Transform_Density(std::vector<PIGMENT*>& Density, const TRANSFORM *Trans);
 
-/// A `subtract` or `multiply` interior on a ray; it changes the media collected before it, which rank below it.
+/// A `subtract` or `multiply` medium on a ray; it changes the media collected before it, which rank below it.
 struct MediaModifier final
 {
-    Interior *interior;
+    Media *medium;
+    const Interior *interior;
     size_t below;
 };
 typedef std::vector<MediaModifier> MediaModifierVector;

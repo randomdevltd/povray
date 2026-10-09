@@ -25,8 +25,8 @@ box { <-5, 0, -1.5>, <5, 4.5, 3.5> pigment { rgbt 1 } interior { media { scatter
 #macro Core(Strength, Length, Width)
   interior {
     ior 1.31
-    media_blend #if (Blend) replace #else add #end
     media {
+      mix #if (Blend) replace #else add #end
       scattering { 1, rgb <0.6, 0.8, 1.2> * Strength }
       density {
         spherical turbulence 0.5 octaves 5 lambda 2.5 scale <Width, Length, Width> * 0.85

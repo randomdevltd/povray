@@ -61,12 +61,12 @@ merge {
     Fronds(2 + K, 9, 0.5, 1.2, W[K] * 0.4)
   #end
   pigment { rgbt 1 }
-  interior { media_blend add media { emission rgb <0.9, 1, 1.8> * 30 } }
+  interior { media { mix add emission rgb <0.9, 1, 1.8> * 30 } }
 }
 #for (I, 0, GlowN - 1)
   sphere {
     0, 1 pigment { rgbt 1 }
-    interior { media_blend add media { emission rgb <0.25, 0.35, 1> * 0.8 density { spherical color_map { [0 rgb 0] [1 rgb 1] } } } }
+    interior { media { mix add emission rgb <0.25, 0.35, 1> * 0.8 density { spherical color_map { [0 rgb 0] [1 rgb 1] } } } }
     scale 0.45 + rand(R) * 0.25 translate Glow[I]
   }
 #end
@@ -75,8 +75,8 @@ merge {
   sphere {
     0, 1 pigment { rgbt 1 }
     interior {
-      media_blend add
       media {
+        mix add
         scattering { 1, rgb 0.5 } absorption 0.4 emission rgb <0.15, 0.3, 1.2>
         density { bozo turbulence 0.6 octaves 5 scale 0.3 color_map { [0 rgb 0] [0.5 rgb 0.3] [1 rgb 1.2] } }
         density { spherical turbulence 0.4 color_map { [0 rgb 0] [0.4 rgb 1] [1 rgb 1] } }
@@ -95,8 +95,8 @@ light_source { F rgb <0.8, 0.9, 1.5> fade_distance 3 fade_power 2 media_interact
   sphere {
     0, 1 pigment { rgbt 1 }
     interior {
-      media_blend multiply
       media {
+        mix multiply
         density {
           function {
             min(1, max(0, 1 - Crack(x, y, z) / 0.05) * max(0, 1 - 1.1 * sqrt(x * x + y * y + z * z)) * 1.6
