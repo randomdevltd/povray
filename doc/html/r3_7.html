@@ -907,7 +907,7 @@ interior { media_blend add | inner | subtract | multiply  MEDIA... }
   <li><code>add</code>, the default, adds this interior's media to the enclosing media.</li>
   <li><code>inner</code> shows only this interior's media inside it, hiding those of the interiors that enclose it.</li>
   <li><code>subtract</code> subtracts this interior's absorption, emission and scattering, each times its density, from those of every enclosing medium inside this object, clamped at zero per channel; its own media do not show. Without media it clears the space inside it.</li>
-  <li><code>multiply</code> scales the absorption, emission and scattering of every enclosing medium inside this object by this interior's density: 1 leaves them unchanged, 0 clears them and values above 1 thicken them. Its media's coefficients are unused.</li>
+  <li><code>multiply</code> scales the absorption, emission and scattering of every enclosing medium inside this object by this interior's density: 1 leaves them unchanged, 0 clears them and values above 1 thicken them. Its media's coefficients are unused, and without media it changes nothing.</li>
 </ul>
 <p>A <code>#default</code> interior sets the blend of the interiors created after it. All four blends work with media method 4; <code>subtract</code> and <code>multiply</code> evaluate their own densities directly, and shadow rays through them skip the per-light optical-depth cache. They change interior media only, not atmospheric media.</p>
 <pre>

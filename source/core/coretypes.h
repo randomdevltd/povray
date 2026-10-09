@@ -209,8 +209,9 @@ class Interior final
     public:
         int  hollow, Disp_NElems;
         int  mediaBlend;
-        /// the bounds of the objects it fills, to tell which interiors enclose which
+        /// the bounds of the objects it fills, to tell which interiors enclose which; serial breaks ties in parse order
         Vector3d boundsLow, boundsHigh;
+        unsigned int serial;
         SNGL IOR, Dispersion;
         SNGL Caustics, Old_Refract;
         SNGL Fade_Distance, Fade_Power;

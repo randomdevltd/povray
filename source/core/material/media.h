@@ -110,6 +110,8 @@ class MediaFunction : public Trace::MediaFunctor
             ~ModifierScope() { owner.modifiers = saved; }
         };
 
+        /// The finest prepared step of the modifiers' varying densities, or HUGE_VAL.
+        DBL ModifierResolution() const;
         /// Adds the media's coefficients at a point, density[i] being medias[i]'s density there, after the modifiers.
         void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point,
                                      MathColour& extinction, MathColour *emission, MathColour *scattering);

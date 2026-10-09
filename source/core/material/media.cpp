@@ -607,7 +607,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 namespace
 {
 
-bool Encloses(const Interior *outer, size_t o, const Interior *inner, size_t i)
+bool Encloses(const Interior *outer, const Interior *inner)
 {
     if (outer == inner)
         return false;
@@ -617,7 +617,7 @@ bool Encloses(const Interior *outer, size_t o, const Interior *inner, size_t i)
     for (int axis = 0; axis < 3; axis++)
         if ((outer->boundsLow[axis] != inner->boundsLow[axis]) || (outer->boundsHigh[axis] != inner->boundsHigh[axis]))
             return true;
-    return o < i;
+    return outer->serial < inner->serial;
 }
 
 void ClampedSubtract(MathColour& value, const MathColour& amount)
@@ -647,7 +647,7 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
         bool hidden = false;
         for (size_t k = 0; (k < n) && !hidden; k++)
             hidden = (interiors[k]->mediaBlend == kMediaBlendInner) && !interiors[k]->media.empty() &&
-                     Encloses(interiors[i], i, interiors[k], k);
+                     Encloses(interiors[i], interiors[k]);
         if (hidden)
             continue;
         for (Media& medium : interiors[i]->media)
@@ -656,19 +656,43 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
             owner.push_back(i);
         }
     }
-    for (size_t i = 0; i < n; i++)
-    {
-        const int blend = interiors[i]->mediaBlend;
-        if ((blend != kMediaBlendSubtract) && (blend != kMediaBlendMultiply))
-            continue;
-        MediaModifier modifier;
-        modifier.interior = interiors[i];
-        for (size_t m = 0; m < owner.size(); m++)
-            if (Encloses(interiors[owner[m]], owner[m], interiors[i], i))
-                modifier.targets.push_back(m);
-        if (!modifier.targets.empty())
-            modifiers->push_back(modifier);
-    }
+    for (int blend : { kMediaBlendMultiply, kMediaBlendSubtract })
+        for (size_t i = 0; i < n; i++)
+        {
+            if (interiors[i]->mediaBlend != blend)
+                continue;
+            MediaModifier modifier;
+            modifier.interior = interiors[i];
+            for (size_t m = 0; m < owner.size(); m++)
+                if (Encloses(interiors[owner[m]], interiors[i]))
+                    modifier.targets.push_back(m);
+            if (!modifier.targets.empty())
+                modifiers->push_back(modifier);
+        }
+}
+
+DBL MediaFunction::ModifierResolution() const
+{
+    DBL resolution = HUGE_VAL;
+    if (modifiers == nullptr)
+        return resolution;
+    for (const MediaModifier& modifier : *modifiers)
+        for (const Media& medium : modifier.interior->media)
+        {
+            if (medium.Density.empty())
+                continue;
+            if (medium.FastResolution > 0.0)
+            {
+                resolution = std::min(resolution, medium.FastResolution);
+                continue;
+            }
+            const Vector3d size = modifier.interior->boundsHigh - modifier.interior->boundsLow;
+            const DBL volume = size[X] * size[Y] * size[Z];
+            if (std::isfinite(volume) && (volume > 0.0))
+                resolution = std::min(resolution, std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0,
+                                                           std::cbrt(volume / 500000.0)));
+        }
+    return resolution;
 }
 
 void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point,
@@ -1180,6 +1204,9 @@ DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, 
         if (medium->fastCache->Segment(ray, entry, exit))
             count += ceil((exit - entry) * divisor / medium->FastResolution);
     }
+    const DBL modifierResolution = ModifierResolution();
+    if (modifierResolution < HUGE_VAL)
+        count += ceil((to - from) * divisor / modifierResolution);
     return count;
 }
 
@@ -1229,6 +1256,9 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
         if (medium->fastCache->Segment(ray, from, to))
             step = std::min(step, medium->FastResolution / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     }
+    const DBL modifierResolution = ModifierResolution();
+    if (modifierResolution < HUGE_VAL)
+        step = std::min(step, modifierResolution / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     return step;
 }
 

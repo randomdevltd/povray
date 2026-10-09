@@ -7,13 +7,17 @@
 #ifndef (DefaultBlend) #declare DefaultBlend = 0; #end
 #ifndef (Varying) #declare Varying = 0; #end
 #ifndef (Sibling) #declare Sibling = 0; #end
+#ifndef (Csg) #declare Csg = 0; #end
+#ifndef (Lit) #declare Lit = 0; #end
 
 global_settings { assumed_gamma 1 }
 #if (DefaultBlend) #default { interior { media_blend inner } } #end
 camera { orthographic location <0, 0, -20> look_at 0 right x * 16 up y * 12 }
 background { rgb 1 }
-#if (Backdrop = 1) plane { z, 6 pigment { rgb 1 } finish { emission 1 diffuse 0 ambient 0 } } #end
-#if (Backdrop = 2) plane { -z, -6 pigment { rgb 1 } finish { emission 1 diffuse 0 ambient 0 } } #end
+#declare Backdrop_Finish = finish { #if (Lit) emission 0 diffuse 1 #else emission 1 diffuse 0 #end ambient 0 }
+#if (Backdrop = 1) plane { z, 6 pigment { rgb 1 } finish { Backdrop_Finish } } #end
+#if (Backdrop = 2) plane { -z, -6 pigment { rgb 1 } finish { Backdrop_Finish } } #end
+#if (Lit) light_source { <0, 0, -100> rgb 1 parallel point_at 0 media_attenuation on } #end
 
 #macro Medium(Absorption)
   media {
@@ -26,13 +30,17 @@ background { rgb 1 }
 #if (Varying) light_source { <-10, 20, -15> rgb 1 } #end
 
 // Declare=Blend=0 add, 1 inner, 2 subtract, 3 multiply, 4 subtract without media; Sibling=1 lets the inner box poke out.
+// Csg=1 makes the inner box an intersection with an infinite plane; Lit=1 lights the backdrop through the boxes.
 #if (Nested)
   box {
     <-4, -4, -1>, <4, 4, 1> pigment { rgbt 1 } hollow
     interior { Medium(0.5) }
   }
+  #if (Csg) intersection { plane { y, 100 } #end
   box {
-    <-2, -2, -0.5>, <2, 2, #if (Sibling) 1.5 #else 0.5 #end> pigment { rgbt 1 } hollow
+    <-2, -2, -0.5>, <2, 2, #if (Sibling) 1.5 #else 0.5 #end>
+  #if (Csg) } #end
+    pigment { rgbt 1 } hollow
     interior {
       #switch (Blend)
         #case (1) media_blend inner Medium(1.0) #break

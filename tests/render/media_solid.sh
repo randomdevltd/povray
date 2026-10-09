@@ -10,9 +10,12 @@ render() {
 absent() {
     if grep -q "$1" "media_solid_$2.log"; then echo "media_solid: $2 warns: $1" >&2; exit 1; fi
 }
+red() {
+    tail -c $(( (96 * 72 - (36 * 96 + $2)) * 6 )) "media_solid_$1.ppm" | head -c 2 | od -An -tu1 | awk '{ printf "%.4f", ($1 * 256 + $2) / 65535 }'
+}
 expect() {
-    name=$1; col=$2; want=$3
-    got=$(tail -c $(( (96 * 72 - (36 * 96 + col)) * 6 )) "media_solid_$name.ppm" | head -c 2 | od -An -tu1 | awk '{ printf "%.4f", ($1 * 256 + $2) / 65535 }')
+    name=$1; col=$2; want=$3; ref=${4:-1}
+    got=$(awk -v a="$(red $name $col)" -v r="$ref" 'BEGIN { printf "%.4f", a / r }')
     awk -v a="$got" -v b="$want" 'BEGIN { exit !(a - b < 0.004 && b - a < 0.004) }' ||
         { echo "media_solid: $name at column $col is $got, expected $want" >&2; exit 1; }
 }
@@ -37,6 +40,10 @@ render subtract Declare=Version=4.0 Declare=Nested=1 Declare=Blend=2
 render multiply Declare=Version=4.0 Declare=Nested=1 Declare=Blend=3
 render clear Declare=Version=4.0 Declare=Nested=1 Declare=Blend=4
 render sibling Declare=Version=4.0 Declare=Nested=1 Declare=Blend=4 Declare=Sibling=1
+render csg Declare=Version=4.0 Declare=Nested=1 Declare=Blend=4 Declare=Csg=1
+render csg_inner Declare=Version=4.0 Declare=Nested=1 Declare=Blend=1 Declare=Csg=1
+render lit_add Declare=Version=4.0 Declare=Nested=1 Declare=Lit=1
+render lit_clear Declare=Version=4.0 Declare=Nested=1 Declare=Blend=4 Declare=Lit=1
 expect add 48 0.1353
 expect inner 48 0.2231
 expect default_inner 48 0.2231
@@ -44,9 +51,19 @@ expect subtract 48 0.6065
 expect multiply 48 0.4966
 expect clear 48 0.6065
 expect sibling 48 0.3679
-for name in add inner default_inner subtract multiply clear sibling; do
-    expect $name 66 0.3679
+expect csg 48 0.6065
+expect csg_inner 48 0.2231
+for name in lit_add lit_clear; do expect $name 66 0.1353 "$(red $name 2)"; done
+expect lit_add 48 0.0183 "$(red lit_add 2)"
+expect lit_clear 48 0.3679 "$(red lit_clear 2)"
+for blend in 0 2 3; do render varying_$blend Declare=Version=4.0 Declare=Nested=1 Declare=Varying=1 Declare=Blend=$blend; done
+for blend in 0 2 3; do tail -c 41472 media_solid_varying_$blend.ppm > media_solid_varying_$blend.px; done
+for blend in 2 3; do
+    if cmp -s media_solid_varying_0.px media_solid_varying_$blend.px; then echo "media_solid: varying blend $blend matches add" >&2; exit 1; fi
+done
+for name in add inner default_inner subtract multiply clear sibling csg csg_inner; do expect $name 66 0.3679; done
+for name in add inner default_inner subtract multiply clear sibling csg csg_inner lit_add lit_clear varying_0 varying_2 varying_3; do
     absent "classic sampling" $name
 done
-rm -f media_solid_*.ppm media_solid_*.log
+rm -f media_solid_*.ppm media_solid_*.px media_solid_*.log
 echo "media_solid: interior media render inside non-hollow objects under 4.0, and media_blend combines nested media"

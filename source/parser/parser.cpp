@@ -334,6 +334,7 @@ void Parser::Run()
             defaultsModified = false;
             solidMediaSeen = false;
             defaultMediaBlend = kMediaBlendAdd;
+            interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
             InitDefaults(sceneData->EffectiveLanguageVersion());
@@ -9960,12 +9961,14 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     // CJC TODO FIXME: see if this can be improved, and/or if it is appropriate for all bounding systems
 
     BOUNDS_VOLUME(Volume, Object->BBox);
-    if (Object->interior != nullptr)
+    if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
     {
         Vector3d low, high;
         Make_min_max_from_BBox(low, high, Object->BBox);
         Object->interior->boundsLow = min(Object->interior->boundsLow, low);
         Object->interior->boundsHigh = max(Object->interior->boundsHigh, high);
+        if (Object->interior->serial == 0)
+            Object->interior->serial = ++interiorSerial;
     }
 
     if (Volume > INFINITE_VOLUME)
