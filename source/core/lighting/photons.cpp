@@ -206,6 +206,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
+    PreferOpaqueCoincident(ray, bestisect, weight);
     {
         // NK phmap
         int oldptflag = threadData->passThruPrev;

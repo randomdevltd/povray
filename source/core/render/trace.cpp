@@ -383,6 +383,8 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
 double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
                        bool continuedRay)
 {
+    if (found)
+        PreferOpaqueCoincident(ray, bestisect, weight);
     if (ray.IsPrimaryRay())
     {
         primaryObject = found ? bestisect.Object : nullptr;
@@ -476,11 +478,16 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
     NoSomethingFlagRayObjectCondition precond;
     TrueRayObjectCondition postcond;
     const double angle = sceneData->refractionAngle * M_PI / 180.0;
-    double maxStep = field.MaxStep();
-    isect = Intersection();
-    if (FindIntersection(isect, chord, precond, postcond))
-        maxStep = std::min(maxStep, isect.Depth / 16.0);
-    const double minStep = maxStep * 1.0e-6;
+    // The step cap follows the straight-line distance to the next surface, found again each time the ray passes it.
+    double maxStep, reprobe, travelled = 0.0;
+    auto probe = [&]() {
+        isect = Intersection();
+        const bool hit = FindIntersection(isect, chord, precond, postcond);
+        maxStep = hit ? std::min(field.MaxStep(), std::max(isect.Depth, field.MaxStep() * 1.0e-3) / 16.0) : field.MaxStep();
+        reprobe = travelled + (hit ? isect.Depth : HUGE_VAL);
+    };
+    probe();
+    const double minStep = field.MaxStep() * 1.0e-9;
     auto bend = [&](const Vector3d& point, const Vector3d& direction, double& index) -> Vector3d
     {
         Vector3d gradient;
@@ -545,10 +552,17 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
             return 1;
         }
         path.push_back(CurvedStep{ point, chord.Direction, length, index });
+        travelled += length;
         point = next;
         direction = turned;
         curve = nextCurve;
         index = nextIndex;
+        if (travelled >= reprobe)
+        {
+            chord.Origin = next;
+            chord.Direction = turned;
+            probe();
+        }
         step = std::min(maxStep, step * 2.0);
     }
     WarnRefraction(kMediaRefractionTrapped, "A ray bending through media refraction was stopped after %d steps at <%g, %g, %g> "
@@ -3902,9 +3916,51 @@ double Trace::StackIndex(const RayInteriorVector& interiors, const Interior *tog
     return ClampIndex(((top != nullptr) ? top->IOR : sceneData->atmosphereIOR) + offset, point);
 }
 
+namespace
+{
+
+struct OtherObjectCondition final : public RayObjectCondition
+{
+    ConstObjectPtr skip;
+    explicit OtherObjectCondition(ConstObjectPtr object) : skip(object) {}
+    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return object != skip; }
+};
+
+}
+
+bool Trace::SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight)
+{
+    if (Test_Flag(isect.Object, OPAQUE_FLAG))
+        return false;
+    const TEXTURE *texture = isect.Object->Texture;
+    if ((texture == nullptr) || (texture->Type != PLAIN_PATTERN) || (texture->Next != nullptr) || (texture->Pigment == nullptr))
+        return true;
+    TransColour colour;
+    ActiveTraceScope activeTrace(threadData, this, weight);
+    return !Compute_Pigment(colour, texture->Pigment, isect.IPoint, &isect, &ray, threadData) || (colour.Opacity() < 1.0);
+}
+
+void Trace::PreferOpaqueCoincident(const Ray& ray, Intersection& isect, COLC weight)
+{
+    if (sceneData->legacyIorStack || !SurfaceTransmits(isect, ray, weight))
+        return;
+    const double tolerance = InterfaceTolerance(isect.IPoint), back = tolerance + MIN_ISECT_DEPTH;
+    Ray probe(ray);
+    probe.Origin = isect.IPoint - back * ray.Direction;
+    Intersection other;
+    other.Depth = back + tolerance;
+    NoSomethingFlagRayObjectCondition precond;
+    OtherObjectCondition postcond(isect.Object);
+    if (FindIntersection(other, probe, precond, postcond) && (other.Depth >= back - tolerance) && !SurfaceTransmits(other, probe, weight))
+    {
+        other.Depth += isect.Depth - back;
+        isect = other;
+    }
+}
+
 double Trace::InterfaceTolerance(const Vector3d& point) const
 {
-    return 1.0e-5 * std::max(1.0, std::max(fabs(point[X]), std::max(fabs(point[Y]), fabs(point[Z]))));
+    return std::max(2.0 * MIN_ISECT_DEPTH, 1.0e-5 * std::max(fabs(point[X]), std::max(fabs(point[Y]), fabs(point[Z]))));
 }
 
 void Trace::LeaveInterface(Ray& ray, const Vector3d& point) const

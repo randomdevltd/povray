@@ -914,6 +914,10 @@ class Trace
                                                 const Vector3d& normal, const Vector3d& direction);
         /// How far either side of a surface its interiors are sampled, and how far past it child rays start.
         double InterfaceTolerance(const Vector3d& point) const;
+        /// Where a hit's surface lets light through and another object's opaque surface lies at the same point, hits that one.
+        void PreferOpaqueCoincident(const Ray& ray, Intersection& isect, COLC weight);
+        /// Whether a surface's plain pigment lets any light through, or might.
+        bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
         /// Moves a child ray's origin past the surfaces at its start, which the interface has already crossed.
         void LeaveInterface(Ray& ray, const Vector3d& point) const;
         /// The index where a ray holds `interiors` with `toggled` entered or left; `offset` gets its media refraction part.
