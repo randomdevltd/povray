@@ -393,7 +393,7 @@ void Parser::Parse_Skein_Body(Skein *object, DBL *minSize, DBL *maxAngle)
     if (data.RequiresRayContext())
         Error("Skein geometry cannot sample a screen pigment.");
 
-    const std::string problem = object->Prepare(GetParserDataPtr());
+    const std::string problem = object->Prepare(GetParserDataPtr(), minSize == nullptr);
     if (!problem.empty())
         Error("%s", problem.c_str());
 }

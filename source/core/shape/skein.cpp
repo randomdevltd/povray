@@ -3795,7 +3795,7 @@ ObjectPtr Skein::Copy()
     return New;
 }
 
-std::string Skein::Prepare(TraceThreadData *thread)
+std::string Skein::Prepare(TraceThreadData *thread, bool traced)
 {
     SkeinData& d = *data;
     d.slots.clear();
@@ -3940,11 +3940,13 @@ std::string Skein::Prepare(TraceThreadData *thread)
     d.gridV = std::min(kMaxGrid, std::max(d.wrapV ? 4 : 2, int(ceil(NormalTurn(ev, false) / kPatchTurn))));
 
     const int nf = d.functionCount;
-    const std::vector<DBL> linesU = GridLines(ev, true, d.gridU, d.resamples), linesV = GridLines(ev, false, d.gridV, d.resamples);
     d.patches.clear();
-    d.ranges.assign(size_t(2 * nf) * d.gridU * d.gridV, 0.0);
+    d.nodes.clear();
+    d.ranges.assign(traced ? size_t(2 * nf) * d.gridU * d.gridV : 0, 0.0);
     d.provenBounds = true;
-    for (int j = 0; j < d.gridV; ++j)
+    const std::vector<DBL> linesU = traced ? GridLines(ev, true, d.gridU, d.resamples) : std::vector<DBL>(),
+                           linesV = traced ? GridLines(ev, false, d.gridV, d.resamples) : std::vector<DBL>();
+    for (int j = 0; traced && (j < d.gridV); ++j)
         for (int i = 0; i < d.gridU; ++i)
         {
             SkeinData::Patch p;
@@ -3959,8 +3961,8 @@ std::string Skein::Prepare(TraceThreadData *thread)
             p.flat = Flatness(ev, p);
             d.patches.push_back(p);
         }
-    d.nodes.clear();
-    BuildTree(d, 0, d.gridU, 0, d.gridV);
+    if (traced)
+        BuildTree(d, 0, d.gridU, 0, d.gridV);
 
     DBL flux = 0.0;
     for (int j = 0; j < 64; ++j)

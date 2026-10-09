@@ -307,8 +307,8 @@ class Skein final : public ObjectBase
         virtual void Transform(const TRANSFORM *) override;
         virtual void Compute_BBox() override;
 
-        /// Checks the topology and builds bounds and caps; returns an error message, empty when usable.
-        std::string Prepare(TraceThreadData *thread);
+        /// Checks the topology and builds caps, plus the patch bounds that tracing needs when `traced`; returns an error message, empty when usable.
+        std::string Prepare(TraceThreadData *thread, bool traced = true);
 
         static const size_t kMaxMeshTriangles = 2000000;
 

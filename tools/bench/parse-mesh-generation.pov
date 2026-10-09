@@ -18,6 +18,18 @@ global_settings { assumed_gamma 1 }
       max_angle MeshAngle*(1 + VaryOptions*(Copy - 1)/MeshCopies)
       #if (MeshMinSize > 0) min_size MeshMinSize #end
     }
+  #elseif (MeshKind = 3)
+    #declare Built = skein_mesh {
+      expressions {
+        scale <1, 4, 1>
+        extrude { radius function(u, v) { 0.1 * (1 + 0.1 * sin(2*pi*(3*u + 16*v))) } }
+        displace function(u, v) { 0.02 * sin(pi*v) * sin(2*pi*(13*u - 51*v)) }
+      }
+      closed u
+      ends flat
+      max_angle MeshAngle*(1 + VaryOptions*(Copy - 1)/MeshCopies)
+      #if (MeshMinSize > 0) min_size MeshMinSize #end
+    }
   #else
     #declare Built = isosurface_mesh {
       function { Rough(x, y, z) }
