@@ -437,6 +437,7 @@ Media::Media()
     Emission.Clear();
     Extinction.Clear();
     Scattering.Clear();
+    Refraction = 0.0;
 
     is_constant = false;
 
@@ -501,6 +502,7 @@ Media& Media::operator=(const Media& source)
         Emission = source.Emission;
         Extinction = source.Extinction;
         Scattering = source.Scattering;
+        Refraction = source.Refraction;
         Ratio = source.Ratio;
         Confidence = source.Confidence;
         Variance = source.Variance;
@@ -655,13 +657,19 @@ void SubtractFromSum(MathColour *values, size_t count, const MathColour& amount)
 
 }
 
-void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers)
+static bool PlaysRole(const Media& medium, MediaRole role)
+{
+    return (role == MediaRole::kRefraction) ? (medium.Refraction != 0.0) : !medium.OnlyRefracts();
+}
+
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers, MediaRole role)
 {
     if (modifiers == nullptr)
     {
         for (size_t i = 0; i < interiors.size(); i++)
             for (Media& medium : interiors[i]->media)
-                medias.push_back(&medium);
+                if (PlaysRole(medium, role))
+                    medias.push_back(&medium);
         return;
     }
     std::vector<Layer> layers;
@@ -687,9 +695,148 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
             if (!medias.empty())
                 modifiers->push_back(MediaModifier{ medium, layers[i].interior, medias.size() });
         }
-        else if (medium->use_absorption || medium->use_emission || medium->use_scattering)
+        else if ((role == MediaRole::kRefraction) ? (medium->Refraction != 0.0)
+                                                  : (medium->use_absorption || medium->use_emission || medium->use_scattering))
             medias.push_back(medium);
     }
+}
+
+static bool ConstantDensity(const Media& medium)
+{
+    for (const PIGMENT *pigment : medium.Density)
+        if (pigment->Type != PLAIN_PATTERN)
+            return false;
+    return true;
+}
+
+static DBL ChannelMean(const MathColour& colour)
+{
+    DBL sum = 0.0;
+    for (int ch = 0; ch < MathColour::channels; ch++)
+        sum += colour[ch];
+    return sum / MathColour::channels;
+}
+
+RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThreadData *td) :
+    threadData(td), low(HUGE_VAL), high(-HUGE_VAL), epsilon(HUGE_VAL), maxStep(HUGE_VAL), varies(false), bounded(true)
+{
+    CollectInteriorMedia(interiors, medias, td->GetSceneData()->mediaBlendModes ? &modifiers : nullptr, MediaRole::kRefraction);
+    if (medias.empty())
+        return;
+    for (Interior *interior : interiors)
+    {
+        for (Media& medium : interior->media)
+        {
+            const bool modifier = std::any_of(modifiers.begin(), modifiers.end(),
+                                              [&medium](const MediaModifier& m) { return m.medium == &medium; });
+            if (ConstantDensity(medium) ||
+                (!modifier && (std::find(medias.begin(), medias.end(), &medium) == medias.end())))
+                continue;
+            varies = true;
+            const Vector3d size = interior->boundsHigh - interior->boundsLow;
+            const DBL extent = std::max(size[X], std::max(size[Y], size[Z]));
+            const bool finite = std::isfinite(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5);
+            if (finite)
+            {
+                low = min(low, interior->boundsLow);
+                high = max(high, interior->boundsHigh);
+            }
+            else
+                bounded = false;
+            if (medium.fastCache && (medium.FastResolution > 0.0))
+            {
+                epsilon = std::min(epsilon, medium.FastResolution * 0.5);
+                maxStep = std::min(maxStep, medium.FastResolution * 2.0);
+            }
+            else if (finite)
+            {
+                epsilon = std::min(epsilon, extent * 1.0e-4);
+                maxStep = std::min(maxStep, extent / 64.0);
+            }
+            else
+            {
+                epsilon = std::min(epsilon, 1.0e-4);
+                maxStep = std::min(maxStep, 1.0);
+            }
+        }
+    }
+}
+
+DBL RefractionField::MeanDensity(Media& medium, const Vector3d& point)
+{
+    if (medium.Density.empty())
+        return 1.0;
+    MathColour density;
+    if (!medium.fastCache || !medium.fastCache->EnsureField(medium, threadData) || !medium.fastCache->DensityAt(point, density))
+        Evaluate_Density_Pigment(medium.Density, point, density, threadData);
+    return ChannelMean(density);
+}
+
+DBL RefractionField::Offset(const Vector3d& point)
+{
+    const size_t n = medias.size();
+    terms.resize(n);
+    for (size_t i = 0; i < n; i++)
+        terms[i] = medias[i]->Refraction * MeanDensity(*medias[i], point);
+    for (const MediaModifier& modifier : modifiers)
+    {
+        const bool multiply = (modifier.medium->mix == kMediaBlendMultiply);
+        const DBL density = MeanDensity(*modifier.medium, point);
+        const DBL amount = multiply ? density : fabs(modifier.medium->Refraction) * density;
+        DBL scale = amount;
+        if (!multiply)
+        {
+            DBL sum = 0.0;
+            for (size_t t = 0; t < modifier.below; t++)
+                sum += terms[t];
+            const DBL reduced = (sum > 0.0) ? std::max(0.0, sum - amount) : std::min(0.0, sum + amount);
+            scale = (sum != 0.0) ? reduced / sum : 0.0;
+        }
+        for (size_t t = 0; t < modifier.below; t++)
+            terms[t] *= scale;
+    }
+    DBL offset = 0.0;
+    for (size_t i = 0; i < n; i++)
+        offset += terms[i];
+    return offset;
+}
+
+DBL RefractionField::Offset(const Vector3d& point, Vector3d& gradient)
+{
+    for (int axis = X; axis <= Z; axis++)
+    {
+        Vector3d delta(0.0);
+        delta[axis] = epsilon;
+        gradient[axis] = (Offset(point + delta) - Offset(point - delta)) / (2.0 * epsilon);
+    }
+    return Offset(point);
+}
+
+bool RefractionField::Ahead(const Vector3d& origin, const Vector3d& direction, DBL& entry) const
+{
+    entry = 0.0;
+    if (!bounded)
+        return true;
+    DBL from = 0.0, to = HUGE_VAL;
+    for (int axis = X; axis <= Z; axis++)
+    {
+        const DBL a = low[axis] - maxStep, b = high[axis] + maxStep;
+        if (fabs(direction[axis]) < 1.0e-12)
+        {
+            if ((origin[axis] < a) || (origin[axis] > b))
+                return false;
+            continue;
+        }
+        DBL first = (a - origin[axis]) / direction[axis], last = (b - origin[axis]) / direction[axis];
+        if (first > last)
+            std::swap(first, last);
+        from = std::max(from, first);
+        to = std::min(to, last);
+        if (to < from)
+            return false;
+    }
+    entry = from;
+    return true;
 }
 
 DBL MediaFunction::ModifierResolution() const

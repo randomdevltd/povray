@@ -98,6 +98,9 @@ SceneData::SceneData() :
     mediaBlendModes = false;
     solidBlocksInteriorMedia = true;
     interiorMedia = false;
+    mediaRefraction = false;
+    legacyIorStack = true;
+    refractionAngle = 0.5;
     firstMediaPrecedence = UINT_MAX;
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;

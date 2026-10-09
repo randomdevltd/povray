@@ -247,6 +247,8 @@ typedef enum INTSTATS
     /* Media */
     Media_Samples,
     Media_Intervals,
+    Curved_Rays,
+    Refraction_Steps,
 
     /* Ray */
     Reflected_Rays_Traced,

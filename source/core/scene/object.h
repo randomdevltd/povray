@@ -437,6 +437,8 @@ void Destroy_Object(ObjectPtr Object);
 /// Flags an object infinite exactly when its bounding box is, as parsing does.
 void Update_Infinite_Flag(ObjectPtr Object);
 void Destroy_Single_Object(ObjectPtr *ObjectPtr);
+/// A short name of an object's shape for messages.
+const char *ShapeName(ConstObjectPtr object);
 
 /// @}
 ///

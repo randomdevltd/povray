@@ -83,8 +83,40 @@ struct MediaModifier final
 };
 typedef std::vector<MediaModifier> MediaModifierVector;
 
+/// SceneData::mediaWarningFlags bits for media refraction warnings, each given once per render.
+const unsigned kMediaRefractionJump = 64, kMediaRefractionHidden = 128, kMediaRefractionTrapped = 256, kMediaRefractionIndex = 512;
+
 /// The media a ray's interiors show, in precedence order; without modifiers every interior adds its media.
-void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers);
+/// Transport leaves out media that only refract; refraction keeps only media that refract.
+enum class MediaRole { kTransport, kRefraction };
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers,
+                          MediaRole role = MediaRole::kTransport);
+
+/// The media refraction on a stack of interiors: the refractive index there is the base ior plus Offset().
+class RefractionField final
+{
+    public:
+        RefractionField(const RayInteriorVector& interiors, TraceThreadData *td);
+        /// Whether the index varies anywhere, so rays inside curve.
+        bool Varies() const { return varies; }
+        /// Sum of refraction x density over the media at a point, after their blends.
+        DBL Offset(const Vector3d& point);
+        DBL Offset(const Vector3d& point, Vector3d& gradient);
+        /// The longest step a curved ray may take through it.
+        DBL MaxStep() const { return maxStep; }
+        /// Whether a straight line meets the bounds of its varying media, and from what distance.
+        bool Ahead(const Vector3d& origin, const Vector3d& direction, DBL& entry) const;
+    private:
+        MediaVector medias;
+        MediaModifierVector modifiers;
+        TraceThreadData *threadData;
+        std::vector<DBL> terms;
+        Vector3d low, high;
+        DBL epsilon, maxStep;
+        bool varies, bounded;
+
+        DBL MeanDensity(Media& medium, const Vector3d& point);
+};
 
 class ExtinctionPlan;
 

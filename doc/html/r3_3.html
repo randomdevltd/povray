@@ -1046,6 +1046,8 @@ an easier means of doing the same thing).
 <code><a href="r3_6.html#r3_6_1_3_5">reflection</a></code><br>
 <code><a href="r3_6.html#r3_6_1_3_5">reflection_exponent</a></code><br>
 <code><a href="r3_7.html#r3_7_2_1_4">refraction</a></code><br>
+<code><a href="r3_7.html#r3_7_2_2_4">refraction</a></code> <em>media</em><br>
+<code><a href="r3_4.html#r3_4_1_13">refraction_angle</a></code><br>
 <code><a href="r3_3.html#r3_3_2_7_1">render</a></code><br>
 <code><a href="r3_6.html#r3_6_2_2_3">repeat</a></code> <em>crackle pattern</em><br>
 <code><a href="r3_6.html#r3_6_2_5_5_2">repeat</a></code> <em>warp</em><br>
@@ -4457,7 +4459,7 @@ VERSION_DIRECTIVE:
 
 <p><code>#version 4.0;</code> selects the 4.0 language defaults. Subsurface scattering uses method 2 when its method is omitted; scenes declaring an earlier language version retain method 1. An explicit <code>subsurface { method INT }</code> overrides either default.</p>
 
-<p>With <code>#version 4.0;</code> interior media also render inside objects that are not <code>hollow</code>, and inside objects nested in them; earlier versions hide them, as described in <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>. Every object then replaces the media of the objects placed before it where they overlap unless its media set another <a href="r3_7.html#r3_7_2_1_9">mix</a>, and <code>hollow</code> is deprecated in favour of <code>media { mix add }</code>, which it sets.</p>
+<p>With <code>#version 4.0;</code> interior media also render inside objects that are not <code>hollow</code>, and inside objects nested in them; earlier versions hide them, as described in <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>. Every object then replaces the media of the objects placed before it where they overlap unless its media set another <a href="r3_7.html#r3_7_2_1_9">mix</a>, and <code>hollow</code> is deprecated in favour of <code>media { mix add }</code>, which it sets. Surfaces refract by the ior of the interior placed last on each side, as described in <a href="r3_7.html#r3_7_2_1_4">Refraction</a>, rather than the innermost one entered.</p>
 
 <p>If you do need to do some processing before you decide on a version compatibility option start your scene with the following
 construct:</p>

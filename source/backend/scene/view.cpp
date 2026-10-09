@@ -682,19 +682,6 @@ bool IsSolid(ConstObjectPtr object)
     return !object->interior->hollow;
 }
 
-const char *ShapeName(ConstObjectPtr object)
-{
-    if (dynamic_cast<const Plane *>(object) != nullptr)        return "plane";
-    if (dynamic_cast<const Box *>(object) != nullptr)          return "box";
-    if (dynamic_cast<const Sphere *>(object) != nullptr)       return "sphere";
-    if (dynamic_cast<const Cone *>(object) != nullptr)         return "cone or cylinder";
-    if (dynamic_cast<const Mesh *>(object) != nullptr)         return "mesh";
-    if (dynamic_cast<const CSGMerge *>(object) != nullptr)     return "merge";
-    if (dynamic_cast<const CSGUnion *>(object) != nullptr)     return "union";
-    if (dynamic_cast<const CSGIntersection *>(object) != nullptr) return "intersection or difference";
-    return "object";
-}
-
 }
 
 ConstObjectPtr View::FindCameraObject(const Vector3d& point, const BBOX_TREE *node, const ObjectMatch& match)
@@ -1501,6 +1488,8 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_ShadowCacheHits, stats[Shadow_Cache_Hits]);
     renderStats.SetLong(kPOVAttrib_MediaSamples, stats[Media_Samples]);
     renderStats.SetLong(kPOVAttrib_MediaIntervals, stats[Media_Intervals]);
+    renderStats.SetLong(kPOVAttrib_CurvedRays, stats[Curved_Rays]);
+    renderStats.SetLong(kPOVAttrib_RefractionSteps, stats[Refraction_Steps]);
     renderStats.SetLong(kPOVAttrib_ReflectedRays, stats[Reflected_Rays_Traced]);
     renderStats.SetLong(kPOVAttrib_InnerReflectedRays, stats[Internal_Reflected_Rays_Traced]);
     renderStats.SetLong(kPOVAttrib_RefractedRays, stats[Refracted_Rays_Traced]);

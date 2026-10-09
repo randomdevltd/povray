@@ -344,6 +344,9 @@ class PhotonTrace final : public Trace
     protected:
         virtual void ComputeLightedTexture(MathColour& LightCol, ColourChannel&, const TEXTURE *Texture, std::vector<const TEXTURE *>& warps, const Vector3d& ipoint, const Vector3d& rawnormal, Ray& ray, COLC weight, Intersection& isect) override;
         bool ComputeRefractionForPhotons(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, COLC weight);
+        /// Shades a photon's hit; false when it stops at an object that is not its target.
+        bool ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight);
+        void ComputeInteriorMedia(Ray& ray, Intersection& isect, MathColour& LightCol);
         bool TraceRefractionRayForPhotons(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, DBL ior, DBL n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, COLC weight);
     private:
         PhotonMediaFunction mediaPhotons;

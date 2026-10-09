@@ -174,6 +174,12 @@ class SceneData
         bool solidBlocksInteriorMedia;
         /// whether any object carries interior media
         bool interiorMedia;
+        /// whether any interior medium refracts, so rays curve where its density varies
+        bool mediaRefraction;
+        /// whether surfaces refract by the innermost interior entered, as before language version 4.0
+        bool legacyIorStack;
+        /// the largest change of direction, in degrees, a curved ray takes in one step
+        double refractionAngle;
         /// the lowest Interior::precedence of any interior with media
         unsigned int firstMediaPrecedence;
         /// point-cloud method: how coarsely far groups of points may be summed as one

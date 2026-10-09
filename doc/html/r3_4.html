@@ -69,6 +69,9 @@
   <td><div class="divh3"><a title="3.4.1.12" href="#r3_4_1_12">Subsurface</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.1.13" href="#r3_4_1_13">Refraction_Angle</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
 </tr>
 <tr>
@@ -390,6 +393,7 @@ GLOBAL_SETTINGS_ITEM:
   hf_gray_16 [Bool] | irid_wavelength COLOR | charset GLOBAL_CHARSET |
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
+  refraction_angle Value |
   radiosity { RADIOSITY_ITEMS... } | subsurface { SUBSURFACE_ITEMS } |
   photon { PHOTON_ITEMS... }
 GLOBAL_CHARSET:
@@ -411,6 +415,7 @@ max_intersections  : 64
 mm_per_unit        : 10
 number_of_waves	   : 10
 noise_generator	   : 2
+refraction_angle   : 0.5
 
 Radiosity:
 adc_bailout	   : 0.01
@@ -640,6 +645,10 @@ global_settings { number_of_waves Integer }
 <div class="content-level-h4" contains="Subsurface" id="r3_4_1_12">
 <h4>3.4.1.12 Subsurface</h4>
 <p>See the section <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light Transport</a> for more information about the role of <code>subsurface</code> in the global settings block.</p></div>
+<a name="r3_4_1_13"></a>
+<div class="content-level-h4" contains="Refraction_Angle" id="r3_4_1_13">
+<h4>3.4.1.13 Refraction_Angle</h4>
+<p>Rays curve where <a href="r3_7.html#r3_7_2_2_4">media refraction</a> makes the index vary, and POV-Ray follows them in short straight steps. <code>refraction_angle</code> is the largest change of direction, in degrees, that one step may take, and also the largest error a step may make in it; the default is 0.5 and values from just above 0 to 45 are accepted. Smaller values follow strongly bending rays, such as those grazing a black hole, more faithfully at the cost of more steps; larger values speed up gently bending scenes such as mirages. The statistics report the curved rays traced and the steps they took.</p></div>
 
 <a name="r3_4_2"></a>
 <div class="content-level-h3" contains="Camera" id="r3_4_2">

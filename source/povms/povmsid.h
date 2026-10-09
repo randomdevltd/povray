@@ -577,6 +577,8 @@ enum
 
     kPOVAttrib_MediaSamples          = 'MeSa',
     kPOVAttrib_MediaIntervals        = 'MeIn',
+    kPOVAttrib_CurvedRays            = 'CuRa',
+    kPOVAttrib_RefractionSteps       = 'RfSt',
 
     kPOVAttrib_ReflectedRays         = 'RflR',
     kPOVAttrib_InnerReflectedRays    = 'IReR',
