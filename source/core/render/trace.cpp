@@ -4035,59 +4035,77 @@ double Trace::InterfaceTolerance(const Vector3d& point, const Interior *interior
     return tolerance;
 }
 
-const RayInteriorVector& Trace::InterfaceSides(const RayInteriorVector& before, Interior *interior, const Vector3d& point,
-                                               const Vector3d& normal, const Vector3d& direction, double *leave)
+const RayInteriorVector& Trace::InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal,
+                                               double *leave)
 {
-    if ((sidesInterior == interior) && (sidesPoint[X] == point[X]) && (sidesPoint[Y] == point[Y]) && (sidesPoint[Z] == point[Z]) &&
-        (sidesBefore.size() == before.size()) && std::equal(before.begin(), before.end(), sidesBefore.begin()))
-    {
-        if (leave != nullptr)
-            *leave = sidesLeave;
-        return sidesAfter;
-    }
-    sidesInterior = interior;
-    sidesPoint = point;
-    sidesBefore = before;
-    sidesAfter = before;
-    sidesLeave = 0.0;
+    const RayInteriorVector& before = ray.GetInteriors();
+    const size_t level = std::min<size_t>(ray.GetTicket().traceLevel, 255);
+    if (sidesCache.size() <= level)
+        sidesCache.resize(level + 1);
+    InterfaceCache& sides = sidesCache[level];
+    if ((sides.interior != interior) || (sides.point[X] != point[X]) || (sides.point[Y] != point[Y]) || (sides.point[Z] != point[Z]) ||
+        (sides.before.size() != before.size()) || !std::equal(before.begin(), before.end(), sides.before.begin()))
+        FindInterfaceSides(sides, before, interior, point, normal, ray.Direction);
+    if (leave != nullptr)
+        *leave = sides.leave;
+    return sides.after;
+}
+
+void Trace::FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& before, Interior *interior, const Vector3d& point,
+                               const Vector3d& normal, const Vector3d& direction)
+{
+    sides.interior = interior;
+    sides.point = point;
+    sides.before = before;
+    sides.after = before;
+    sides.leave = 0.0;
     auto holds = [](const RayInteriorVector& set, const Interior *i) { return std::find(set.begin(), set.end(), i) != set.end(); };
     auto place = [&](Interior *i, bool inside) {
-        RayInteriorVector::iterator at = std::find(sidesAfter.begin(), sidesAfter.end(), i);
-        if (inside && (at == sidesAfter.end()))
-            sidesAfter.push_back(i);
-        else if (!inside && (at != sidesAfter.end()))
-            sidesAfter.erase(at);
+        RayInteriorVector::iterator at = std::find(sides.after.begin(), sides.after.end(), i);
+        if (inside && (at == sides.after.end()))
+            sides.after.push_back(i);
+        else if (!inside && (at != sides.after.end()))
+            sides.after.erase(at);
     };
-    bool crossed = false;
     const double across = dot(normal, direction);
-    if ((across != 0.0) && sceneData->dielectrics)
+    if ((across == 0.0) || !sceneData->dielectrics)
     {
-        // Every interior whose containment changes across the hit has a surface there; the rest stay as they are.
-        const double tolerance = InterfaceTolerance(point, interior);
-        const Vector3d step = ((across > 0.0) ? tolerance : -tolerance) * normal.normalized();
-        RayInteriorVector ahead, behind;
-        FindContainingInteriors(point + step, ahead);
-        FindContainingInteriors(point - step, behind);
-        for (Interior *i : ahead)
-            if (!holds(behind, i))
-            {
-                place(i, true);
-                crossed = crossed || (i == interior);
-            }
-        for (Interior *i : behind)
-            if (!holds(ahead, i))
-            {
-                place(i, false);
-                crossed = crossed || (i == interior);
-            }
-        if (crossed)
-            sidesLeave = tolerance;
-    }
-    if (!crossed)
         place(interior, !holds(before, interior));
-    if (leave != nullptr)
-        *leave = sidesLeave;
-    return sidesAfter;
+        return;
+    }
+    const double tolerance = InterfaceTolerance(point, interior);
+    const Vector3d step = ((across > 0.0) ? tolerance : -tolerance) * normal.normalized();
+    RayInteriorVector ahead;
+    FindContainingInteriors(point + step, ahead);
+    place(interior, !holds(before, interior));
+    // Where the far side holds just what crossing this one surface gives, no other surface meets here.
+    bool simple = std::all_of(sides.after.begin(), sides.after.end(), [&](const Interior *i) { return holds(ahead, i); }) &&
+                  std::all_of(ahead.begin(), ahead.end(), [&](const Interior *i) { return holds(sides.after, i); });
+    if (simple)
+    {
+        sides.leave = tolerance;
+        return;
+    }
+    sides.after = before;
+    RayInteriorVector behind;
+    FindContainingInteriors(point - step, behind);
+    bool crossed = false;
+    for (Interior *i : ahead)
+        if (!holds(behind, i))
+        {
+            place(i, true);
+            crossed = crossed || (i == interior);
+        }
+    for (Interior *i : behind)
+        if (!holds(ahead, i))
+        {
+            place(i, false);
+            crossed = crossed || (i == interior);
+        }
+    if (crossed)
+        sides.leave = tolerance;
+    else
+        place(interior, !holds(before, interior));
 }
 
 void Trace::ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal, InterfaceIor& result)
@@ -4099,7 +4117,7 @@ void Trace::ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& po
     {
         double fromOffset, toOffset;
         const Interior *fromBase, *toBase;
-        const RayInteriorVector after(InterfaceSides(ray.GetInteriors(), interior, point, normal, ray.Direction, &result.leave));
+        const RayInteriorVector after(InterfaceSides(ray, interior, point, normal, &result.leave));
         const double from = StackIndex(ray.GetInteriors(), nullptr, point, fromOffset, &fromBase);
         const double to = StackIndex(after, nullptr, point, toOffset, &toBase);
         const double fromIor = (fromBase != nullptr) ? fromBase->IOR : sceneData->atmosphereIOR;
@@ -4174,7 +4192,7 @@ void Trace::ComputeRelativeIOR(const Ray& ray, const Interior *interior, const V
             return;
         }
         double fromOffset, toOffset;
-        const RayInteriorVector& after = InterfaceSides(ray.GetInteriors(), const_cast<Interior *>(interior), point, normal, ray.Direction);
+        const RayInteriorVector& after = InterfaceSides(ray, const_cast<Interior *>(interior), point, normal);
         ior = StackIndex(after, nullptr, point, toOffset) / StackIndex(ray.GetInteriors(), nullptr, point, fromOffset);
         return;
     }
