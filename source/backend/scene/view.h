@@ -707,8 +707,9 @@ class View final
          *  returns true if so. comes in two versions, one for manual iteration of
          *  the object list, and one for a bounding tree.
          */
-        bool CheckCameraHollowObject(const Vector3d& point); // TODO - comment incomplete - consider moving elsewhere [trf]
-        bool CheckCameraHollowObject(const Vector3d& point, const BBOX_TREE *node); // TODO - comment missing - consider moving elsewhere [trf]
+        /// A non-hollow object containing the point, or nullptr.
+        ConstObjectPtr FindCameraSolidObject(const Vector3d& point);
+        ConstObjectPtr FindCameraSolidObject(const Vector3d& point, const BBOX_TREE *node);
 };
 
 }

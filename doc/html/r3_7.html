@@ -81,6 +81,9 @@
   <td><div class="divh4"><a title="3.7.2.1.8" href="#r3_7_2_1_8">Object-Media</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.7.2.1.9" href="#r3_7_2_1_9">Media Blend</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.7.2.2" href="#r3_7_2_2">Media Types</a></div></td>
 </tr>
 <tr>
@@ -490,7 +493,8 @@ INTERIOR:
 INTERIOR_ITEM:
   ior Value | caustics Value | dispersion Value | 
   dispersion_samples Samples | fade_distance Distance | 
-  fade_power Power | fade_color &lt;Color&gt;
+  fade_power Power | fade_color &lt;Color&gt; |
+  media_blend add | inner | subtract | multiply
   MEDIA...
 </pre>
 
@@ -503,6 +507,7 @@ dispersion_samples : 7
 fade_distance      : 0.0 
 fade_power         : 0.0
 fade_color         : &lt;0,0,0&gt;
+media_blend        : add
 </pre>
 
 <p>The <code>interior</code> contains items which describe the properties of the interior of the object. This is in contrast to the <code>texture</code> and <code>interior_texture</code> which describe the surface properties only. The interior of an object is only of interest if it has a transparent texture which allows you to see inside the object. It also applies only to solid objects which have a well-defined inside/outside distinction.</p>
@@ -602,6 +607,7 @@ The solution to this problem (that will often happen with infinite objects
 like planes) is to make those objects hollow too. Thus the ray will travel
 through a hollow object, will hit the container object and the media will be
 calculated.</p>
+<p>With <code>#version 4.0;</code> this applies to fog and atmospheric media only: interior media render inside non-hollow objects, whether the object holding the media or one around it is solid. A backdrop <code>plane</code> whose solid side holds the camera then no longer hides the media in front of it, and a solid glass object inside a media container fills with the container's media; give the glass <code>interior { media_blend subtract }</code> to keep it clear (see <a href="r3_7.html#r3_7_2_1_9">Media Blend</a>). When fog or atmospheric media exist (or, before version 4.0, any interior media) and the camera is inside a non-hollow object, POV-Ray warns and names the object; add <code>hollow</code> to it, or flip a plane's normal so the camera is on its open side. Before version 4.0 POV-Ray also warns when a non-hollow object carries interior media.</p>
 
 </div>
 <a name="r3_7_2_1_3"></a>
@@ -885,10 +891,31 @@ You may specify more than one <code>media</code> statement per <code>
 interior</code> statement. In that case, all of the media participate and
 where they overlap, they add together.</p>
 <p>
-Any object which is supposed to have media effects inside it, whether those
-effects are object media or atmospheric media, must have the <code>hollow on</code>
-keyword applied. Otherwise the media is blocked. See the section: <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>
+Any object which is supposed to have atmospheric media or fog inside it must have the <code>hollow on</code>
+keyword applied. Otherwise the media is blocked. Before <code>#version 4.0;</code> this also holds for object media. See the section: <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>
 for details.</p></div>
+
+<a name="r3_7_2_1_9"></a>
+<div class="content-level-h5" contains="Media Blend" id="r3_7_2_1_9">
+<h5>3.7.2.1.9 Media Blend</h5>
+<p>Where interiors with media nest, <code>media_blend</code> says how an interior's media combine with the media of the interiors around it. An interior encloses another when its object's bounding box contains the other's; overlapping objects that do not enclose one another always add.</p>
+<pre>
+interior { media_blend add | inner | subtract | multiply  MEDIA... }
+#default { interior { media_blend inner } }
+</pre>
+<ul>
+  <li><code>add</code>, the default, adds this interior's media to the enclosing media.</li>
+  <li><code>inner</code> shows only this interior's media inside it, hiding those of the interiors that enclose it.</li>
+  <li><code>subtract</code> subtracts this interior's absorption, emission and scattering, each times its density, from those of every enclosing medium inside this object, clamped at zero per channel; its own media do not show. Without media it clears the space inside it.</li>
+  <li><code>multiply</code> scales the absorption, emission and scattering of every enclosing medium inside this object by this interior's density: 1 leaves them unchanged, 0 clears them and values above 1 thicken them. Its media's coefficients are unused.</li>
+</ul>
+<p>A <code>#default</code> interior sets the blend of the interiors created after it. All four blends work with media method 4; <code>subtract</code> and <code>multiply</code> evaluate their own densities directly, and shadow rays through them skip the per-light optical-depth cache. They change interior media only, not atmospheric media.</p>
+<pre>
+box { -4, 4 pigment { rgbt 1 } hollow
+  interior { media { scattering { 1, 0.2 } method 4 density { bozo } } } }
+sphere { 0, 1.5 pigment { rgbt 1 } hollow interior { media_blend subtract } }  // a clear space in the fog
+</pre>
+</div>
 
 <a name="r3_7_2_2"></a>
 <div class="content-level-h4" contains="Media Types" id="r3_7_2_2">

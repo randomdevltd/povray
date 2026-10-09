@@ -167,6 +167,13 @@ class SceneData
         /// how subsurface light is found where a finish does not say: kSubsurfaceMethodSampled or kSubsurfaceMethodPointCloud
         int subsurfaceMethod;
         bool explicitSubsurfaceMethod;
+
+        /// whether any interior uses a media_blend other than add
+        bool mediaBlendModes;
+        /// whether a non-hollow interior on a ray hides interior media too, as before language version 4.0
+        bool solidBlocksInteriorMedia;
+        /// whether any object carries interior media
+        bool interiorMedia;
         /// point-cloud method: how coarsely far groups of points may be summed as one
         double subsurfaceErrorBound;
         /// point-cloud method: point spacing relative to the automatic spacing

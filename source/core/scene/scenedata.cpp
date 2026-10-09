@@ -94,6 +94,9 @@ SceneData::SceneData() :
     subsurfaceUseRadiosity = false;
     subsurfaceMethod = kSubsurfaceMethodSampled;
     explicitSubsurfaceMethod = false;
+    mediaBlendModes = false;
+    solidBlocksInteriorMedia = true;
+    interiorMedia = false;
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;
 

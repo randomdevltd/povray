@@ -70,6 +70,9 @@ Interior::Interior()
     Fade_Power    = 0.0;
 
     hollow = false;
+    mediaBlend = kMediaBlendAdd;
+    boundsLow = Vector3d(HUGE_VAL);
+    boundsHigh = Vector3d(-HUGE_VAL);
 
     subsurface = std::shared_ptr<SubsurfaceInterior>();
 }
@@ -84,6 +87,9 @@ Interior::Interior(const Interior& source)
     Fade_Colour = source.Fade_Colour;
     media = source.media;
     hollow = source.hollow;
+    mediaBlend = source.mediaBlend;
+    boundsLow = Vector3d(HUGE_VAL);
+    boundsHigh = Vector3d(-HUGE_VAL);
     IOR = source.IOR;
     subsurface = std::shared_ptr<SubsurfaceInterior>(source.subsurface);
     Caustics = source.Caustics;

@@ -323,7 +323,8 @@ class PhotonMediaFunction final : public MediaFunction
     public:
         PhotonMediaFunction(std::shared_ptr<SceneData> sd, TraceThreadData *td, Trace *t, PhotonGatherer *pg);
 
-        void ComputeMediaAndDepositPhotons(MediaVector& medias, const Ray& ray, const Intersection& isect, MathColour& colour);
+        void ComputeMediaAndDepositPhotons(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray,
+                                           const Intersection& isect, MathColour& colour);
     protected:
         void DepositMediaPhotons(MathColour& colour, MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                  const Ray& ray, int minsamples, bool ignore_photons, bool use_scattering, bool all_constant_and_light_ray);

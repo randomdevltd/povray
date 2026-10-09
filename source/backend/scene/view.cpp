@@ -61,6 +61,12 @@
 #include "core/lighting/radiosity.h"
 #include "core/lighting/subsurface.h"
 #include "core/math/matrix.h"
+#include "core/shape/box.h"
+#include "core/shape/cone.h"
+#include "core/shape/csg.h"
+#include "core/shape/mesh.h"
+#include "core/shape/plane.h"
+#include "core/shape/sphere.h"
 #include "core/support/octree.h"
 
 // POV-Ray header files (POVMS module)
@@ -654,69 +660,88 @@ View::~View()
     POV_MEM_STATS_RENDER_END();
 }
 
-bool View::CheckCameraHollowObject(const Vector3d& point, const BBOX_TREE *node)
+namespace
 {
-    // TODO FIXME - duplicate code - remove again!!!
 
-    // Check current node.
+struct SolidPointObjectCondition final : public PointObjectCondition
+{
+    mutable ConstObjectPtr found = nullptr;
+    virtual bool operator()(const Vector3d&, ConstObjectPtr object) const override
+    {
+        if (object->interior->hollow)
+            return false;
+        found = object;
+        return true;
+    }
+};
+
+const char *ShapeName(ConstObjectPtr object)
+{
+    if (dynamic_cast<const Plane *>(object) != nullptr)        return "plane";
+    if (dynamic_cast<const Box *>(object) != nullptr)          return "box";
+    if (dynamic_cast<const Sphere *>(object) != nullptr)       return "sphere";
+    if (dynamic_cast<const Cone *>(object) != nullptr)         return "cone or cylinder";
+    if (dynamic_cast<const Mesh *>(object) != nullptr)         return "mesh";
+    if (dynamic_cast<const CSGMerge *>(object) != nullptr)     return "merge";
+    if (dynamic_cast<const CSGUnion *>(object) != nullptr)     return "union";
+    if (dynamic_cast<const CSGIntersection *>(object) != nullptr) return "intersection or difference";
+    return "object";
+}
+
+}
+
+ConstObjectPtr View::FindCameraSolidObject(const Vector3d& point, const BBOX_TREE *node)
+{
     if((node->Infinite == false) && (Inside_BBox(point, node->BBox) == false))
-        return false;
+        return nullptr;
 
     if(node->Entries)
     {
-        // This is a node containing leaves to be checked.
         for(int i = 0; i < node->Entries; i++)
-            if(CheckCameraHollowObject(point, node->Node[i]))
-                return true;
-    }
-    else
-    {
-        size_t seed = 0; // TODO
-        // This is a leaf so test contained object.
-        TraceThreadData threadData(viewData.GetSceneData(), seed); // TODO: avoid the need to construct threadData
-        ObjectPtr object = reinterpret_cast<ObjectPtr>(node->Node);
-        if ((object->interior != nullptr) && (object->Inside(point, &threadData)))
-            return true;
+            if(ConstObjectPtr found = FindCameraSolidObject(point, node->Node[i]))
+                return found;
+        return nullptr;
     }
 
-    return false;
+    TraceThreadData threadData(viewData.GetSceneData(), 0);
+    ObjectPtr object = reinterpret_cast<ObjectPtr>(node->Node);
+    if ((object->interior != nullptr) && !object->interior->hollow && object->Inside(point, &threadData))
+        return object;
+    return nullptr;
 }
 
-bool View::CheckCameraHollowObject(const Vector3d& point)
+ConstObjectPtr View::FindCameraSolidObject(const Vector3d& point)
 {
-    size_t seed = 0; // TODO
     shared_ptr<BackendSceneData>& sd = viewData.GetSceneData();
+    TraceThreadData threadData(sd, 0);
+    auto solid = [&](ConstObjectPtr object) {
+        return (object->interior != nullptr) && !object->interior->hollow &&
+               Inside_BBox(point, object->BBox) && object->Inside(point, &threadData);
+    };
 
     if(sd->boundingMethod == 2)
     {
         HasInteriorPointObjectCondition precond;
-        TruePointObjectCondition postcond;
-        TraceThreadData threadData(sd, seed); // TODO: avoid the need to construct threadData
+        SolidPointObjectCondition postcond;
         BSPInsideCondFunctor ifn(point, sd->objects, &threadData, precond, postcond);
 
         mailbox.clear();
         if ((*sd->tree)(point, ifn, mailbox, true))
-            return true;
-
-        // test infinite objects
+            return postcond.found;
         for(vector<ObjectPtr>::iterator object = sd->objects.begin() + sd->numberOfFiniteObjects; object != sd->objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, &threadData))
-                return true;
+            if (solid(*object))
+                return *object;
     }
     else if ((sd->boundingMethod == 0) || (sd->boundingSlabs == nullptr))
     {
-        TraceThreadData threadData(sd, seed); // TODO: avoid the need to construct threadData
-        for(vector<ObjectPtr>::const_iterator object = viewData.GetSceneData()->objects.begin(); object != viewData.GetSceneData()->objects.end(); object++)
-            if ((*object)->interior != nullptr)
-                if((*object)->Inside(point, &threadData))
-                    return true;
+        for(vector<ObjectPtr>::const_iterator object = sd->objects.begin(); object != sd->objects.end(); object++)
+            if (solid(*object))
+                return *object;
     }
     else
-    {
-        return CheckCameraHollowObject(point, sd->boundingSlabs);
-    }
+        return FindCameraSolidObject(point, sd->boundingSlabs);
 
-    return false;
+    return nullptr;
 }
 
 // One pretrace per distinct screen camera besides the render's, at the render's pixel spacing over the camera's radiosity_size frame,
@@ -1100,10 +1125,29 @@ void View::StartRender(POVMS_Object& renderOptions)
         }
     }
 
-    if(CheckCameraHollowObject(viewData.camera.Location))
+    const SceneData& scene = *viewData.GetSceneData();
+    const bool hidesInteriorMedia = scene.interiorMedia && scene.solidBlocksInteriorMedia;
+    if (!scene.atmosphere.empty() || (scene.fog != nullptr) || hidesInteriorMedia)
     {
-        // TODO FIXME
-        // Warning("Camera is inside a non-hollow object. Fog and participating media may not work as expected.");
+        if (ConstObjectPtr solid = FindCameraSolidObject(viewData.camera.Location))
+        {
+            MessageFactory messages(scene.warningLevel, "Media", viewData.sceneData->backendAddress,
+                                    viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+            const char *hidden = hidesInteriorMedia ? "fog, atmospheric media and the interior media of every object it encloses"
+                                                    : "fog and atmospheric media";
+            const Plane *plane = dynamic_cast<const Plane *>(solid);
+            if (plane != nullptr)
+                messages.Warning(kWarningGeneral, "The camera is inside non-hollow plane { <%g, %g, %g>, %g }, so %s do not render. "
+                                 "Add 'hollow' to the plane, or flip its normal so the camera is on its open side.",
+                                 plane->Normal_Vector[X], plane->Normal_Vector[Y], plane->Normal_Vector[Z], -plane->Distance, hidden);
+            else
+            {
+                Vector3d low, high;
+                Make_min_max_from_BBox(low, high, solid->BBox);
+                messages.Warning(kWarningGeneral, "The camera is inside a non-hollow %s (bounds <%g, %g, %g> to <%g, %g, %g>), so %s do not render. "
+                                 "Add 'hollow' to it.", ShapeName(solid), low[X], low[Y], low[Z], high[X], high[Y], high[Z], hidden);
+            }
+        }
     }
 
     // check for preview end size
