@@ -7,8 +7,14 @@ render() {
     "$POVRAY" +i"$SRCDIR/tests/render/media_solid.pov" +w96 +h72 -a -d -p -v -gp +fp16 File_Gamma=1.0 +o"media_solid_$name.ppm" "$@" > "media_solid_$name.log" 2>&1 ||
         { cat "media_solid_$name.log"; exit 1; }
 }
+says() {
+    tr -s ' \n' '  ' < "media_solid_$2.log" | grep -q "$1"
+}
+present() {
+    says "$1" "$2" || { echo "media_solid: $2 does not warn: $1" >&2; cat "media_solid_$2.log" >&2; exit 1; }
+}
 absent() {
-    if grep -q "$1" "media_solid_$2.log"; then echo "media_solid: $2 warns: $1" >&2; exit 1; fi
+    if says "$1" "$2"; then echo "media_solid: $2 warns: $1" >&2; exit 1; fi
 }
 red() {
     tail -c $(( (96 * 72 - (36 * 96 + $2)) * 6 )) "media_solid_$1.ppm" | head -c 2 | od -An -tu1 | awk '{ printf "%.4f", ($1 * 256 + $2) / 65535 }'
@@ -29,8 +35,8 @@ render 37_solid Declare=Version=3.7 Declare=Hollow=0 Declare=Backdrop=2
 for name in 40_front 40_flipped 40_hollow 40_background 37_flipped; do expect $name 48 0.3679; done
 expect 37_front 48 1
 expect 37_solid 48 1
-grep -q "camera is inside non-hollow plane" media_solid_37_front.log
-grep -q "non-hollow object carries interior media" media_solid_37_solid.log
+present "camera is inside non-hollow plane" 37_front
+present "non-hollow object carries interior media" 37_solid
 absent "camera is inside" 40_front
 absent "carries interior media" 40_front
 render add Declare=Version=4.0 Declare=Nested=1
