@@ -440,6 +440,10 @@ class Trace
 
         CooperateFunctor& cooperate;
         MediaFunctor& media;
+        /// The last interface's sides, which ComputeRelativeIOR and ComputeRefraction share for one hit.
+        RayInteriorVector sidesBefore, sidesAfter;
+        Vector3d sidesPoint;
+        const Interior *sidesInterior = nullptr;
         RadiosityFunctor& radiosity;
 
     ///
@@ -893,7 +897,7 @@ class Trace
     ///
 
         /// Compute relative index of refraction.
-        void ComputeRelativeIOR(const Ray& ray, const Interior* interior, const Vector3d& point, double& ior);
+        void ComputeRelativeIOR(const Ray& ray, const Interior* interior, const Vector3d& point, const Vector3d& normal, double& ior);
 
         /// The ratios a surface refracts by.
         struct InterfaceIor final
@@ -904,7 +908,14 @@ class Trace
             double radiance;                 ///< radiance scale across it: (n / base ior) squared, the ray's side over beyond
         };
         /// The one rule for the indices either side of a surface, for camera rays and photons; enters or leaves `interior` on the ray.
-        void ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, InterfaceIor& result);
+        void ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal, InterfaceIor& result);
+        /// The interiors beyond a surface of `interior` hit at `point`, with every other surface that meets there crossed too.
+        const RayInteriorVector& InterfaceSides(const RayInteriorVector& before, Interior *interior, const Vector3d& point,
+                                                const Vector3d& normal, const Vector3d& direction);
+        /// How far either side of a surface its interiors are sampled, and how far past it child rays start.
+        double InterfaceTolerance(const Vector3d& point) const;
+        /// Moves a child ray's origin past the surfaces at its start, which the interface has already crossed.
+        void LeaveInterface(Ray& ray, const Vector3d& point) const;
         /// The index where a ray holds `interiors` with `toggled` entered or left; `offset` gets its media refraction part.
         double StackIndex(const RayInteriorVector& interiors, const Interior *toggled, const Vector3d& point, double& offset,
                           const Interior **base = nullptr);

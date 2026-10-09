@@ -6,7 +6,8 @@ global_settings { assumed_gamma 1 }
 camera { orthographic location <0, 0, -10> look_at 0 right x * 8 up y * 6 }
 #declare Backdrop = plane {
   z, 4
-  #if (Ramp) pigment { gradient y color_map { [0 rgb 0] [1 rgb 1] } scale 8 translate -4 * y }
+  #if (Ramp = 2) pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 8 translate -4 * x }
+  #elseif (Ramp) pigment { gradient y color_map { [0 rgb 0] [1 rgb 1] } scale 8 translate -4 * y }
   #else pigment { checker rgb 0.1 rgb 0.9 scale 0.5 }
   #end
   finish { ambient 0 emission 1 diffuse 0 }
@@ -63,6 +64,24 @@ camera { orthographic location <0, 0, -10> look_at 0 right x * 8 up y * 6 }
 #case (15) object { Water } #break
 #case (16) object { Ball } object { Backdrop } #break
 #case (17) object { Ball } box { -3, 3 texture { Clear } interior { ior 1 } } #break
+#case (20) // glass and water sharing the wall z = x
+  intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <-1, 0, 1>, 0 } texture { Clear } interior { ior 1.5 } }
+  intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <1, 0, -1>, 0 } texture { Clear } interior { ior 1.33 } }
+#break
+#case (21)
+  intersection { box { <-3, -2, -12>, <3, 2, 1> } plane { <-1, 0, 1>, 0 } texture { Clear } interior { ior 1.5 } }
+  intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <1, 0, -1>, 0 } texture { Clear } interior { ior 1.33 } }
+#break
+#case (22)
+  #for (K, 0, 2)
+    #local A = radians(120 * K + 10); #local B = radians(120 * K + 130);
+    intersection {
+      box { <-2, -2, -2>, <2, 2, 2> } plane { <sin(A), 0, -cos(A)>, 0 } plane { <-sin(B), 0, cos(B)>, 0 }
+      texture { Clear } interior { ior 1.5 }
+    }
+  #end
+#break
+#case (23) box { <-2, -2, -2>, <2, 2, 2> texture { Clear } interior { ior 1.5 } } #break
 #case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior 1 } } #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior 1 } } #break
 #end
