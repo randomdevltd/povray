@@ -99,6 +99,9 @@
   <td><div class="divh4"><a title="3.7.2.2.4" href="#r3_7_2_2_4">Refraction</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.7.2.2.5" href="#r3_7_2_2_5">Media Lights</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.7.2.3" href="#r3_7_2_3">Sampling Parameters & Methods</a></div></td>
 </tr>
 <tr>
@@ -447,6 +450,7 @@ MEDIA_ITEMS:
   absorption COLOR | emission COLOR | refraction Value | aa_threshold Value |
   aa_level Value | 
   mix add | replace | subtract | multiply | priority Integer |
+  light_source { [MEDIA_LIGHT_ITEM...] } |
   scattering { 
     Type, COLOR [ eccentricity Value ] [ extinction Value ]
     }  | 
@@ -949,7 +953,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
+<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on, or if the medium is declared a light with a <a href="r3_7.html#r3_7_2_2_5">light_source</a> block.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
@@ -1042,6 +1046,46 @@ box {
 <p>A surface refracts once, by the index on each side of it at the point hit, so a container whose density fades to zero at its walls, with the same ior inside and out, neither refracts nor reflects there and is invisible. A density cut off by its container is a real step in the index: the surface refracts, and POV-Ray warns once where the ior on both sides is the same. Where the index varies, camera, reflected, refracted and photon rays follow the curve in short straight chords, testing each chord for objects so that nothing embedded is skipped. Each step bends the ray by at most <a href="r3_4.html#r3_4_1_13">refraction_angle</a>, judged from the curvature at its start, middle and end, so detail in the index narrower than about half a step can be missed. No step is longer than a sixty-fourth of the refracting object's size (twice the prepared resolution with method 4) or a sixteenth of the straight-line distance to the next surface. A ray still inside the field after 20000 steps is taken as trapped and returns black, with a warning; an index driven below 0.01 by a negative <code>refraction</code> is held there, also with a warning. Absorption, emission and scattering integrate along the chords, and radiance scales with the square of the index relative to the interior's ior, so the scaling cancels when both the camera and the source sit outside refracting media; emitting media in a raised index appear dimmer. Media <code>emission</code> is radiance in the units of the local index: an emission of 0.1 where the index is 1.5 above an ior of 1 looks like an emission of 0.1 / 1.5&sup2; would in an object of ior 1.5 without media refraction.</p>
 <p>With media method 4 the index and its gradient come from the prepared density grid; other methods evaluate the density pattern directly, which suits fields with fine detail such as a function of distance that rises steeply near its centre. Media with constant density do not curve rays; a constant <code>refraction</code> in an ior 1 object refracts exactly as an object with ior 1 plus that constant would, apart from the radiance scaling of any media inside it.</p>
 <p class="Note"><strong>Note:</strong> Shadow rays and the light that scattering media receive travel straight, so shadows and lit media are not bent; photons, which do curve, carry bent light into caustics and media. Atmospheric media do not refract. With media refraction, or under <code>#version 4.0</code>, the ior on each side of a surface is that of the interior placed last among those holding it (in the placement order of <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>, without media priorities): an object placed after another wins where they overlap, so a refracting container should be placed before the objects inside it. A surface of a lower-ranked object inside a higher-ranked interior does not refract at all, and POV-Ray warns once naming both shapes. Objects whose ior is the atmosphere's and whose media do not refract rank by entry instead: such an object outranks whatever the ray entered before it and is outranked by whatever the ray enters after it. So a backdrop <code>plane</code> placed after a glass object, whose solid side holds the camera and the glass, does not hide the glass, and an air bubble inside glass refracts wherever it is placed.</p></div>
+
+<a name="r3_7_2_2_5"></a>
+<div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
+<h5>3.7.2.2.5 Media Lights</h5>
+<p>A <code>light_source</code> block inside an emitting medium makes the medium a light source: it lights surfaces, casting shadows, and lights scattering media, with its brightness and colour taken from its own <code>emission</code> and density, so the light always matches the glow the camera sees.</p>
+<pre>
+MEDIA_LIGHT_ITEM:
+  samples Integer | brightness Value | shadowless |
+  media_interaction [Bool] | media_attenuation [Bool] |
+  fade_distance Value | fade_power Value
+</pre>
+<p>Media light default values:</p>
+<pre>
+samples           : 16
+brightness        : 1.0
+media_interaction : on
+media_attenuation : on
+fade_distance     : 0 (physical falloff)
+fade_power        : 0 (physical falloff)
+</pre>
+<p>For example, a candle flame:</p>
+<pre>
+sphere {
+  0, 1 pigment { rgbt 1 } hollow
+  interior {
+    media {
+      emission rgb &lt;14, 6, 1.6&gt;
+      density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      light_source { samples 16 brightness 400 }
+    }
+  }
+  scale &lt;0.06, 0.16, 0.06&gt; translate &lt;0, 1.45, 0&gt;
+}
+</pre>
+<p>The block takes no position or colour: both come from the medium, which is placed, transformed and copied with its object, and an animated emission or density is taken afresh each frame. The medium emits equally in all directions: a piece of it of volume <em>dV</em> and density <em>d</em> has a radiant intensity of <code>emission</code> &times; <em>d</em> &times; <em>dV</em> (a power of 4&pi; times that), and its light falls off with the square of the distance, as real light does and a <code>light_source</code> without <code>fade_power</code> does not. <code>brightness</code> scales the light without changing the glow. A glow that is not overexposed is far dimmer as a light than the point lights usually placed to fake it: the flame of the candle sample <code>scenes/interior/media/blend_candle.pov</code> matches its glow with about 1/300 of the light its old point light gave the wall behind it, so <code>brightness</code> works as the exposure of the light against the glow. <code>fade_distance</code> and <code>fade_power</code> replace the physical falloff with a regular light's fade.</p>
+<p>Each lit point draws <code>samples</code> points from the medium, stratified in proportion to the power each cell of a grid over the container emits, and traces a shadow ray to each, so shadows are soft and shaped by the glow, and nearby surfaces are lit by its shape, as with <a href="r3_4.html#r3_4_3_1_5">area_illumination</a>. The grid is the prepared grid of method 4, at its <code>resolution</code>, or the grid method 4 would choose for the container; within a cell points are spread evenly, and a point is never taken to be nearer than half a cell's diagonal, which keeps the light finite at the medium's edge. Its cost is <code>samples</code> shadow rays per lit point, and building the table evaluates the density eight times per cell when the scene is parsed. A scattering medium is lit by one point of the light per media sample, as by an area light.</p>
+<p>With <code>media_attenuation</code>, on by default, each shadow ray is attenuated by the media of every interior it passes, including the medium's own and smoke surrounding it, so smoke dims its flame; <code>media_interaction off</code> leaves scattering media unlit, and <code>shadowless</code> casts no shadows. Shadow rays travel straight, also through <a href="r3_7.html#r3_7_2_2_4">media refraction</a>.</p>
+<p>The camera, reflections and refractions still see the glow, but gathers of <code>radiosity { media on }</code> leave out the glow of media that are lights, since that light already reaches surfaces directly. A medium in an object inside a <code>light_group</code> lights the objects of that group only, as the group's light sources do.</p>
+<p class="Note"><strong>Note:</strong> Only media in an object's interior can be lights, not atmospheric media, and not media that <code>subtract</code> or <code>multiply</code>; the light follows the medium's own emission and density, not what media mixed with it make of them. Media lights do not shoot photons: a <code>photons</code> block inside the <code>light_source</code> block is ignored with a warning, as photons from media lights come with a later photon method. They are not seen through portals.</p>
+</div>
 
 <a name="r3_7_2_3"></a>
 <div class="content-level-h4" contains="Sampling Parameters & Methods" id="r3_7_2_3">

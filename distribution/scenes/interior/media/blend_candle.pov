@@ -1,9 +1,11 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A candle in a misty room: the flame and its smoke add to the mist, the rising warm air subtracts it and, being thinner, bends light so the brick wall and the print behind ripple. +w360 +h480; Declare=Plume=0 stops the warm air clearing the mist, Smoke=0 drops the smoke, Shimmer=0 the heat.
+// A candle in a misty room lit by its own flame: the flame and its smoke add to the mist, the rising warm air subtracts it and, being thinner, bends light so the brick wall and the print behind ripple. +w360 +h480; Declare=Plume=0 stops the warm air clearing the mist, Smoke=0 drops the smoke, Shimmer=0 the heat.
+// Declare=FlameLight=0 lights the room with a point light at the wick instead of the flame's media light.
 #version 4.0;
 #ifndef (Plume) #declare Plume = 1; #end
 #ifndef (Smoke) #declare Smoke = 1; #end
 #ifndef (Shimmer) #declare Shimmer = 1; #end
+#ifndef (FlameLight) #declare FlameLight = 1; #end
 #declare Wick = <0, 1.32, 0>;
 #declare WickY = Wick.y;
 #declare Back = 1.6;
@@ -29,7 +31,9 @@ box {
   pigment { gradient x color_map { [0 rgb 0.1] [0.07 rgb 0.1] [0.07 rgb <0.5, 0.33, 0.18>] [1 rgb <0.42, 0.27, 0.14>] } scale 0.3 }
 }
 light_source { <-6, 3.4, -3> rgb <0.8, 1, 1.6> spotlight point_at <-1.8, 1.4, Back> radius 9 falloff 13 }
-light_source { Wick + y * 0.12 rgb <1.5, 0.85, 0.4> fade_distance 1 fade_power 2 }
+#if (!FlameLight)
+  light_source { Wick + y * 0.12 rgb <1.5, 0.85, 0.4> fade_distance 1 fade_power 2 }
+#end
 box { <-0.9, 0, -0.6>, <0.9, 0.9, 0.6> pigment { rgb <0.3, 0.17, 0.09> } }
 union {
   box { <-0.52, -0.52, 0.01>, <0.52, 0.52, 0.04> pigment { rgb <0.12, 0.07, 0.04> } }
@@ -48,7 +52,12 @@ cylinder { <0, 1.28, 0>, Wick, 0.008 pigment { rgb 0.05 } }
 box { <-2.99, 0.01, -3.99>, <2.99, 3.98, Back - 0.01> pigment { rgbt 1 } interior { media { scattering { 1, rgb Mist } absorption 0.01 } } }
 sphere {
   0, 1 pigment { rgbt 1 }
-  interior { media { mix add emission rgb <14, 6, 1.6> density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } } }
+  interior {
+    media {
+      mix add emission rgb <14, 6, 1.6> density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      #if (FlameLight) light_source { samples 16 brightness 400 } #end
+    }
+  }
   scale <0.06, 0.16, 0.06> translate Wick + y * 0.13
 }
 #if (Smoke)

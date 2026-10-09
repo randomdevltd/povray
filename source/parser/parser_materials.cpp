@@ -52,6 +52,7 @@
 #include "base/stringutilities.h"
 
 // POV-Ray header files (core module)
+#include "core/lighting/emitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/subsurface.h"
 #include "core/material/blendmap.h"
@@ -3817,6 +3818,10 @@ void Parser::Parse_Media(vector<Media>& medialist)
             IMedia->mix = Parse_Mix();
         END_CASE
 
+        CASE (LIGHT_SOURCE_TOKEN)
+            Parse_Media_Light(*IMedia);
+        END_CASE
+
         CASE (PRIORITY_TOKEN)
         {
             const DBL priority = Parse_Float();
@@ -3836,8 +3841,77 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
     if (resolutionSpecified && IMedia->Sample_Method != 4)
         Error("media resolution requires method 4.");
+    if (IMedia->light && ((IMedia->mix == kMediaBlendSubtract) || (IMedia->mix == kMediaBlendMultiply)))
+        Error("A media light_source needs a medium that adds or replaces, not one that subtracts or multiplies.");
 
     medialist.push_back(IMediaObj);
+}
+
+void Parser::Parse_Media_Light(Media& medium)
+{
+    std::shared_ptr<MediaLight> light(new MediaLight());
+
+    Parse_Begin();
+
+    EXPECT
+        CASE (SAMPLES_TOKEN)
+            light->samples = Parse_Int_With_Minimum(1, "samples");
+        END_CASE
+
+        CASE (BRIGHTNESS_TOKEN)
+            light->brightness = Parse_Float();
+            if (!std::isfinite(light->brightness) || (light->brightness < 0.0))
+                Error("A media light_source's brightness must be finite and not negative.");
+        END_CASE
+
+        CASE (SHADOWLESS_TOKEN)
+            light->shadowless = true;
+        END_CASE
+
+        CASE (MEDIA_INTERACTION_TOKEN)
+            light->mediaInteraction = Allow_Float(1.0) > 0.0;
+        END_CASE
+
+        CASE (MEDIA_ATTENUATION_TOKEN)
+            light->mediaAttenuation = Allow_Float(1.0) > 0.0;
+        END_CASE
+
+        CASE (FADE_DISTANCE_TOKEN)
+            light->fadeDistance = Parse_Float();
+        END_CASE
+
+        CASE (FADE_POWER_TOKEN)
+            light->fadePower = Parse_Float();
+        END_CASE
+
+        CASE (PHOTONS_TOKEN)
+            Parse_Begin();
+            EXPECT
+                CASE2 (REFRACTION_TOKEN, REFLECTION_TOKEN)
+                    Parse_Float();
+                END_CASE
+
+                CASE (AREA_LIGHT_TOKEN)
+                END_CASE
+
+                OTHERWISE
+                    UNGET
+                    EXIT
+                END_CASE
+            END_EXPECT
+            Parse_End();
+            Warning("photons in a media light_source are ignored: volume lights do not shoot photons yet.");
+        END_CASE
+
+        OTHERWISE
+            UNGET
+            EXIT
+        END_CASE
+    END_EXPECT
+
+    Parse_End();
+
+    medium.light = light;
 }
 
 

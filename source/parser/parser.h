@@ -565,6 +565,7 @@ class Parser final
         void Parse_Finish (FINISH **);
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
+        void Parse_Media_Light(Media& medium);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
         void Parse_Media_Density_Pattern (PIGMENT **);
@@ -864,6 +865,10 @@ class Parser final
         void Link(ObjectPtr New_Object, std::vector<ObjectPtr>& Object_List_Root);
         void Link_To_Frame(ObjectPtr Object);
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
+        /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
+        void Make_Media_Light(Media& medium, ObjectPtr container);
+        /// The light groups Post_Process is inside, innermost last.
+        std::vector<ObjectPtr> mLightGroups;
         void Remove_Subsurface_Without_Inside(ObjectPtr Object);
 
         void Parse_Global_Settings();

@@ -51,6 +51,7 @@
 //  (none at the moment)
 
 // POV-Ray header files (core module)
+#include "core/lighting/emitter.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
 #include "core/material/pattern.h"
@@ -511,6 +512,7 @@ Media& Media::operator=(const Media& source)
         FastResolution = source.FastResolution;
         mix = source.mix;
         priority = source.priority;
+        light = source.light;
         fastCache.reset();
 
         if (Sample_Threshold != nullptr)
@@ -545,22 +547,24 @@ void Media::Transform(const TRANSFORM *Trans)
     fastCache.reset();
 }
 
+// The prepared grid's width for a container when none is given: 0 for an unbounded one.
+static DBL AutomaticResolution(ObjectPtr object)
+{
+    Vector3d low, high;
+    Make_min_max_from_BBox(low, high, object->BBox);
+    const Vector3d size = high - low;
+    const DBL volume = size[X] * size[Y] * size[Z];
+    if (!std::isfinite(volume) || (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
+        return 0.0;
+    return std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0, std::cbrt(volume / 500000.0));
+}
+
 void Media::SetFastContainer(ObjectPtr object)
 {
     if (Sample_Method != 4)
         return;
     if (FastResolution == -1.0)
-    {
-        Vector3d low, high;
-        Make_min_max_from_BBox(low, high, object->BBox);
-        const Vector3d size = high - low;
-        const DBL volume = size[X] * size[Y] * size[Z];
-        if (!std::isfinite(volume) || (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
-            FastResolution = 0.0;
-        else
-            FastResolution = std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0,
-                                      std::cbrt(volume / 500000.0));
-    }
+        FastResolution = AutomaticResolution(object);
     if ((FastResolution <= 0.0) || Density.empty())
         return;
     if (fastCache && (fastCache->container != object))
@@ -619,6 +623,131 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 {
     for (vector<PIGMENT*>::iterator i = Density.begin(); i != Density.end(); ++ i)
         Transform_Tpattern(*i, Trans);
+}
+
+namespace
+{
+
+/// An emitting medium as a light: a table of the power of each cell of its prepared grid inside the container.
+class VolumeEmitter final : public Emitter
+{
+    public:
+        Vector3d low, cell;
+        int nx = 1, ny = 1;
+        vector<std::uint32_t> cells;
+        vector<double> cdf;
+        vector<MathColour> weights;
+        MathColour intensity;
+        Vector3d centre;
+        double nearDistance = 0.0;
+
+        virtual const MathColour& Intensity() const override { return intensity; }
+        virtual const Vector3d& Centre() const override { return centre; }
+        virtual double NearDistance() const override { return nearDistance; }
+        virtual EmitterSample Sample(double s, std::uint64_t key) const override
+        {
+            const size_t i = std::min(cells.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), s) - cdf.begin()));
+            const std::uint32_t index = cells[i];
+            const std::uint32_t x = index % nx, y = (index / nx) % ny, z = index / (std::uint32_t(nx) * ny);
+            EmitterSample sample;
+            sample.position = low + Vector3d((x + Draw(key, kDrawEmitter, 0)) * cell[X], (y + Draw(key, kDrawEmitter, 1)) * cell[Y],
+                                             (z + Draw(key, kDrawEmitter, 2)) * cell[Z]);
+            sample.weight = weights[i];
+            sample.pdf = (cdf[i] - (i > 0 ? cdf[i - 1] : 0.0)) / (cell[X] * cell[Y] * cell[Z]);
+            return sample;
+        }
+};
+
+}
+
+std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr container, TraceThreadData *td, std::string& failure)
+{
+    for (int ch = 0; ch < MathColour::channels; ch++)
+        if (!std::isfinite(medium.Emission[ch]) || (medium.Emission[ch] < 0.0))
+        {
+            failure = "its emission is negative or not finite";
+            return nullptr;
+        }
+    if (medium.Emission.IsZero())
+    {
+        failure = "it has no emission";
+        return nullptr;
+    }
+    Vector3d low, size;
+    Make_min_max_from_BBox(low, size, container->BBox);
+    size -= low;
+    DBL step = (medium.FastResolution > 0.0) ? medium.FastResolution : AutomaticResolution(container);
+    if (!(step > 0.0))
+    {
+        failure = "its container is unbounded";
+        return nullptr;
+    }
+    while (ceil(size[X] / step) * ceil(size[Y] / step) * ceil(size[Z] / step) > 1000000.0)
+        step *= 1.05;
+    std::shared_ptr<VolumeEmitter> emitter(new VolumeEmitter());
+    const int n[3] = { int(ceil(size[X] / step)), int(ceil(size[Y] / step)), int(ceil(size[Z] / step)) };
+    emitter->low = low;
+    emitter->nx = n[X];
+    emitter->ny = n[Y];
+    emitter->cell = Vector3d(size[X] / n[X], size[Y] / n[Y], size[Z] / n[Z]);
+    const Vector3d& cell = emitter->cell;
+    const DBL share = cell[X] * cell[Y] * cell[Z] / 8.0;
+    vector<double> power;
+    double total = 0.0;
+    Vector3d points[8];
+    MathColour density[8];
+    for (int z = 0; z < n[Z]; z++)
+        for (int y = 0; y < n[Y]; y++)
+            for (int x = 0; x < n[X]; x++)
+            {
+                size_t inside = 0;
+                for (int k = 0; k < 8; k++)
+                {
+                    const Vector3d point = low + Vector3d((x + 0.25 + 0.5 * (k & 1)) * cell[X], (y + 0.25 + 0.5 * ((k >> 1) & 1)) * cell[Y],
+                                                          (z + 0.25 + 0.5 * (k >> 2)) * cell[Z]);
+                    if (Inside_Object(point, container, td))
+                        points[inside++] = point;
+                }
+                if (inside == 0)
+                    continue;
+                Evaluate_Density_Pigment(medium.Density, points, density, inside, td);
+                MathColour sum;
+                for (size_t k = 0; k < inside; k++)
+                    sum += density[k];
+                const MathColour cellPower = medium.Emission * sum * share;
+                const double weight = cellPower.Weight();
+                if (!std::isfinite(weight) || (cellPower.Min() < 0.0))
+                {
+                    failure = "its density is negative or not finite";
+                    return nullptr;
+                }
+                if (weight <= 0.0)
+                    continue;
+                emitter->cells.push_back(std::uint32_t((size_t(z) * n[Y] + y) * n[X] + x));
+                emitter->weights.push_back(cellPower);
+                power.push_back(weight);
+                emitter->intensity += cellPower;
+                emitter->centre += (low + Vector3d((x + 0.5) * cell[X], (y + 0.5) * cell[Y], (z + 0.5) * cell[Z])) * weight;
+                total += weight;
+            }
+    if (!(total > 0.0) || !std::isfinite(total))
+    {
+        failure = "its density is zero throughout its container";
+        return nullptr;
+    }
+    emitter->centre /= total;
+    emitter->nearDistance = 0.5 * cell.length();
+    emitter->cdf.resize(power.size());
+    double sum = 0.0;
+    for (size_t i = 0; i < power.size(); i++)
+    {
+        sum += power[i];
+        emitter->cdf[i] = sum / total;
+        for (int ch = 0; ch < MathColour::channels; ch++)
+            emitter->weights[i][ch] = (emitter->intensity[ch] > 0.0) ? emitter->weights[i][ch] * (total / power[i]) / emitter->intensity[ch] : 0.0;
+    }
+    emitter->cdf.back() = 1.0;
+    return emitter;
 }
 
 namespace
@@ -874,7 +1003,7 @@ void MediaFunction::ModifierDensity(Media& medium, const Vector3d& point, Modifi
 }
 
 void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
-                                            MathColour& extinction, MathColour *emission, MathColour *scattering)
+                                            MathColour& extinction, MathColour *emission, MathColour *scattering, bool lightEmission)
 {
     const size_t n = medias.size();
     modifierScratch.resize(3 * n);
@@ -883,7 +1012,7 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
     {
         absorbing[i] = density[i] * medias[i]->Absorption;
         scattered[i] = density[i] * medias[i]->Scattering;
-        emitted[i] = density[i] * medias[i]->Emission;
+        emitted[i] = (lightEmission || !medias[i]->light) ? density[i] * medias[i]->Emission : MathColour();
     }
     for (const MediaModifier& modifier : *modifiers)
     {
@@ -2309,14 +2438,16 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 
         if(!ray.IsShadowTestRay())
         {
-            Emission   += C0 * (*i)->Emission;
+            // radiosity gathers leave out the glow of media that light the scene directly
+            if (!ray.IsRadiosityRay() || !(*i)->light)
+                Emission += C0 * (*i)->Emission;
             Scattering += C0 * (*i)->Scattering;
         }
     }
     if (modifiers != nullptr)
         AddModifiedCoefficients(medias, &densityScratch[0], H, (prepared && !ray.IsPhotonRay()) ? ModifierSource::kCamera : ModifierSource::kPattern,
                                 Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
-                                ray.IsShadowTestRay() ? nullptr : &Scattering);
+                                ray.IsShadowTestRay() ? nullptr : &Scattering, !ray.IsRadiosityRay());
 
     // Get estimate for the total optical depth of the current interval.
     SampOptDepth = Extinction * mediainterval.ds;

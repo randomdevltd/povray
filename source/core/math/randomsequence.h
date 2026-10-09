@@ -92,6 +92,7 @@ enum RandomDrawKind : std::uint64_t
     kDrawPhotonMap,
     kDrawAntialias,
     kDrawPretrace,
+    kDrawEmitter,
 };
 
 /// A bijective 64-bit mix (SplitMix64's finaliser).

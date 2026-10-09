@@ -163,6 +163,8 @@ class SceneData
         std::vector<LightSource*> lightSources;
         /// list of all lights that are part of light groups
         std::vector<LightSource*> lightGroupLightSources;
+        /// lights made from emitting media, which own them; each is also in lightSources or lightGroupLightSources
+        std::vector<LightSource *> mediaLights;
         /// lights as seen through portals, owned here; empty when no light reaches through a portal
         std::vector<LightSource*> portalLights;
         /// every portal mouth with an open side; empty in a scene without portals
