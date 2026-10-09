@@ -49,6 +49,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -73,6 +74,7 @@ class PhotonShootingStrategy final
         LightSource *light;
 
         std::vector<PhotonShootingUnit*> units;
+        std::string report;
 
         void createUnitsForCombo(ObjectPtr obj, LightSource* light, std::shared_ptr<SceneData> sceneData);
         void start();
