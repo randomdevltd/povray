@@ -434,6 +434,8 @@ void Transform_Object(ObjectPtr Object, const TRANSFORM *Trans);
 bool Inside_Object(const Vector3d& IPoint, ObjectPtr Object, TraceThreadData *Thread);
 void Destroy_Object(std::vector<ObjectPtr>& Object);
 void Destroy_Object(ObjectPtr Object);
+/// Flags an object infinite exactly when its bounding box is, as parsing does.
+void Update_Infinite_Flag(ObjectPtr Object);
 void Destroy_Single_Object(ObjectPtr *ObjectPtr);
 
 /// @}

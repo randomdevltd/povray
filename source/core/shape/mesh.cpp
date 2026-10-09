@@ -815,6 +815,8 @@ bool Mesh::Resolve() const
     self->BBox = built->BBox;
     if (self->Trans != nullptr)
         Recompute_BBox(&self->BBox, self->Trans);
+    // A placeholder box may have been infinite, as a skein_mesh's is until it is built.
+    Update_Infinite_Flag(self);
     self->deferred.reset();
     return true;
 }

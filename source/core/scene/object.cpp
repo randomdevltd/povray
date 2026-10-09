@@ -682,6 +682,16 @@ void Destroy_Object(vector<ObjectPtr>& Objects)
     Objects.clear();
 }
 
+void Update_Infinite_Flag(ObjectPtr Object)
+{
+    DBL volume;
+    BOUNDS_VOLUME(volume, Object->BBox);
+    if (volume > BOUND_HUGE)
+        Object->Flags |= INFINITE_FLAG;
+    else
+        Object->Flags &= ~INFINITE_FLAG;
+}
+
 void Destroy_Object(ObjectPtr Object)
 {
     if (Object != nullptr)
