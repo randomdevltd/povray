@@ -84,6 +84,13 @@ for case in 18:bubble 19:inside_glass; do
     render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*}
     region ${case#*:} ${case#*:}_37 0 95 0 71
 done
+render shared_wall Declare=Case=20 Declare=Ramp=2
+render shared_inside Declare=Case=21 Declare=Ramp=2
+expect shared_wall 48 36 0.5915 0.006
+expect shared_inside 48 36 0.5915 0.006
+render wedges Declare=Case=22
+render block Declare=Case=23
+region wedges block 0 95 0 71
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71

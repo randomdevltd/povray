@@ -335,7 +335,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     int TIR_occured;
 
     double relativeIor;
-    ComputeRelativeIOR(ray, isect.Object->interior.get(), isect.IPoint, relativeIor);
+    ComputeRelativeIOR(ray, isect.Object->interior.get(), isect.IPoint, rawnormal, relativeIor);
 
     WNRXVector listWNRX(wnrxPool);
     POV_REFPOOL_ASSERT(listWNRX->empty()); // verify that the WNRXVector pulled from the pool is in a cleaned-up condition
@@ -756,7 +756,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
     nray.Origin = ipoint;
 
     InterfaceIor sides;
-    ComputeInterfaceIor(nray, interior, ipoint, sides);
+    ComputeInterfaceIor(nray, interior, ipoint, rawnormal, sides);
     ior = sides.ior;
     dispersion = sides.dispersion;
     dispersionelements = sides.dispersionElements;
@@ -768,6 +768,7 @@ bool PhotonTrace::ComputeRefractionForPhotons(const FINISH* finish, Interior *in
     {
         // Only transmit the ray.
         nray.Direction = ray.Direction;
+        LeaveInterface(nray, ipoint);
         // Trace a transmitted ray.
         threadData->Stats()[Transmitted_Rays_Traced]++;
 
@@ -840,6 +841,7 @@ bool PhotonTrace::TraceRefractionRayForPhotons(const FINISH* finish, const Vecto
     lc = colour * GFilCol;
 
     ColourChannel dummyTransm;
+    LeaveInterface(nray, ipoint);
     TraceRay(nray, lc, dummyTransm, weight, false);
 
     return false;
