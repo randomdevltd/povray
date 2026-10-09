@@ -15,7 +15,7 @@ render() {
         "photon_ring_threads_$name.log" | tr -s ' ' > "photon_ring_threads_$name.counts"
 }
 
-for scene in autostop point spotlight area cylinder multi_target many_targets; do
+for scene in autostop point spotlight area cylinder multi_target many_targets inactive_lights; do
     render "$scene" "$scene-wt1" 1
     render "$scene" "$scene-wt8" 8
     cmp "photon_ring_threads_$scene-wt1.px" "photon_ring_threads_$scene-wt8.px"

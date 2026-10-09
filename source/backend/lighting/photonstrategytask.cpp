@@ -147,6 +147,7 @@ void PhotonStrategyTask::Run()
     Cooperate();
 
     strategy->start();
+    mpMessageFactory->Info("%s", strategy->report.c_str());
 }
 
 void PhotonStrategyTask::WarnAboutTinySpacing()

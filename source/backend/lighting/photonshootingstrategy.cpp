@@ -42,6 +42,7 @@
 // C++ standard header files
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <utility>
 
@@ -95,19 +96,43 @@ static bool walkRings(const LightTargetCombo& combo, std::size_t budget, Visit v
 
 void PhotonShootingStrategy::start()
 {
+    const std::size_t serialCount = units.empty() ? 0 : units.back()->lightAndObject.serial + 1;
+    std::vector<PhotonShootingUnit*> shooting;
+    for (PhotonShootingUnit* unit : units)
+    {
+        const int flags = unit->lightAndObject.computeMergedFlags();
+        if (((flags & PH_RFR_ON_FLAG) && !(flags & PH_RFR_OFF_FLAG)) ||
+            ((flags & PH_RFL_ON_FLAG) && !(flags & PH_RFL_OFF_FLAG)))
+            shooting.push_back(unit);
+        else
+            delete unit;
+    }
+    const std::size_t totalPairs = units.size();
+    units = std::move(shooting);
+
     const std::size_t comboCount = units.size();
     const std::size_t workerCount = std::size_t(std::max(threads, 1));
+    auto note = [this](const char* format, auto... args)
+    {
+        char line[256];
+        std::snprintf(line, sizeof line, format, args...);
+        report += line;
+    };
+    note("Photon shooting: %zu light/target pairs, %zu able to shoot, %zu threads. ",
+         totalPairs, comboCount, workerCount);
     if (comboCount == 0 || comboCount >= workerCount)
     {
+        note("%s", comboCount == 0 ? "Nothing to shoot." : "Not splitting rings: pairs >= threads.");
         iter = units.begin();
         return;
     }
 
-    comboProgress.resize(comboCount);
+    comboProgress.resize(serialCount);
     const std::size_t maxRingsPerCombo = kMaxSplitRings / comboCount;
     std::vector<std::size_t> ringCount(comboCount, 0);
     std::vector<std::size_t> firstPastStop(comboCount, 0);
     std::vector<std::size_t> chunkCount(comboCount, 1);
+    std::vector<const char*> unsplitReason(comboCount, nullptr);
     for (std::size_t i = 0; i < comboCount; ++i)
     {
         const LightTargetCombo& combo = units[i]->lightAndObject;
@@ -115,9 +140,16 @@ void PhotonShootingStrategy::start()
             (combo.light->Area_Light && combo.light->Photon_Area_Light) ||
             (!combo.light->Area_Light && ((combo.light->Light_Type == POINT_SOURCE) ||
                                           (combo.light->Light_Type == SPOT_SOURCE)));
-        if (!concentricRings || !std::isfinite(combo.dtheta) || combo.dtheta <= 0 ||
-            !std::isfinite(combo.maxtheta))
+        if (!concentricRings)
+        {
+            unsplitReason[i] = "light type is not ring-based";
             continue;
+        }
+        if (!std::isfinite(combo.dtheta) || combo.dtheta <= 0 || !std::isfinite(combo.maxtheta))
+        {
+            unsplitReason[i] = "no valid ring step";
+            continue;
+        }
         const DBL stopTheta = autoStopPercent * combo.maxtheta;
         std::size_t count = 0;
         std::size_t pastStop = std::numeric_limits<std::size_t>::max();
@@ -128,7 +160,10 @@ void PhotonShootingStrategy::start()
                 pastStop = index;
         });
         if (!complete || count < 2)
+        {
+            unsplitReason[i] = complete ? "fewer than 2 rings" : "over the ring budget or step too small";
             continue;
+        }
         ringCount[i] = count;
         firstPastStop[i] = std::min(pastStop, count);
     }
@@ -164,6 +199,13 @@ void PhotonShootingStrategy::start()
         --extraChunks;
     }
 
+    for (std::size_t i = 0; i < comboCount && i < 8; ++i)
+    {
+        if (chunkCount[i] > 1)
+            note("[pair %zu: %zu rings in %zu chunks] ", i, ringCount[i], chunkCount[i]);
+        else
+            note("[pair %zu: unsplit, %s] ", i, unsplitReason[i] ? unsplitReason[i] : "too few rings for more chunks");
+    }
     std::vector<std::vector<PhotonShootingUnit*>> dividedByCombo(comboCount);
     std::size_t dividedCount = 0;
     for (std::size_t comboIndex = 0; comboIndex < comboCount; ++comboIndex)
