@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <climits>
 #include <sstream>
 
 // POV-Ray header files (base module)
@@ -97,6 +98,7 @@ SceneData::SceneData() :
     mediaBlendModes = false;
     solidBlocksInteriorMedia = true;
     interiorMedia = false;
+    firstMediaPrecedence = UINT_MAX;
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;
 

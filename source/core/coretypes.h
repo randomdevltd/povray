@@ -198,9 +198,10 @@ class SubsurfaceInterior;
 /// How an interior's media combine with those of the interiors enclosing it.
 enum MediaBlend
 {
+    kMediaBlendAuto     = -1, ///< not set: from version 4.0 replace without media and add with them, add before
     kMediaBlendAdd      = 0, ///< add to the enclosing media
-    kMediaBlendInner    = 1, ///< replace the enclosing media
-    kMediaBlendSubtract = 2, ///< subtract its coefficients from the enclosing media's, clamped at zero
+    kMediaBlendReplace  = 1, ///< replace the enclosing media
+    kMediaBlendSubtract = 2, ///< subtract its coefficients from the sum of the enclosing media's, clamped at zero
     kMediaBlendMultiply = 3, ///< scale the enclosing media's coefficients by its density
 };
 
@@ -209,9 +210,11 @@ class Interior final
     public:
         int  hollow, Disp_NElems;
         int  mediaBlend;
-        /// the bounds of the objects it fills, to tell which interiors enclose which; serial breaks ties in parse order
+        bool mediaBlendDefaulted;
+        /// the bounds of the objects it fills, which size the sampling of its modifier media
         Vector3d boundsLow, boundsHigh;
-        unsigned int serial;
+        /// scene order: a blend acts on the media of lower-precedence interiors around it
+        unsigned int precedence;
         SNGL IOR, Dispersion;
         SNGL Caustics, Old_Refract;
         SNGL Fade_Distance, Fade_Power;

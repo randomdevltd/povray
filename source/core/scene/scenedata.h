@@ -174,6 +174,8 @@ class SceneData
         bool solidBlocksInteriorMedia;
         /// whether any object carries interior media
         bool interiorMedia;
+        /// the lowest Interior::precedence of any interior with media
+        unsigned int firstMediaPrecedence;
         /// point-cloud method: how coarsely far groups of points may be summed as one
         double subsurfaceErrorBound;
         /// point-cloud method: point spacing relative to the automatic spacing

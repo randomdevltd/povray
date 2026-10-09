@@ -333,7 +333,8 @@ void Parser::Run()
             defaultsVersion = DefaultsVersion::kLegacy;
             defaultsModified = false;
             solidMediaSeen = false;
-            defaultMediaBlend = kMediaBlendAdd;
+            hollowDeprecationWarned = false;
+            defaultMediaBlend = kMediaBlendAuto;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -8111,6 +8112,12 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         END_CASE
 
         CASE(HOLLOW_TOKEN)
+            if ((sceneData->EffectiveLanguageVersion() >= 400) && !hollowDeprecationWarned)
+            {
+                Warning("'hollow' is deprecated from #version 4.0: interior media render inside any object, combined by\n"
+                        "interior { media_blend }. It still lets fog and atmospheric media into the object.");
+                hollowDeprecationWarned = true;
+            }
             Bool_Flag (Object, HOLLOW_FLAG, (Allow_Float(1.0) > 0.0));
             Set_Flag (Object, HOLLOW_SET_FLAG);
             if ((dynamic_cast<CSGIntersection *>(Object) != nullptr) ||
@@ -9897,7 +9904,18 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         if (Object->interior == nullptr)
         {
             Object->interior = InteriorPtr(new Interior());
+            Object->interior->mediaBlend = defaultMediaBlend;
         }
+        Interior& interior = *Object->interior;
+        if (interior.precedence == 0)
+            interior.precedence = ++interiorSerial;
+        if (interior.mediaBlend == kMediaBlendAuto)
+        {
+            interior.mediaBlendDefaulted = true;
+            interior.mediaBlend = (interior.media.empty() && (sceneData->EffectiveLanguageVersion() >= 400)) ? kMediaBlendReplace
+                                                                                                             : kMediaBlendAdd;
+        }
+        sceneData->mediaBlendModes = sceneData->mediaBlendModes || (interior.mediaBlend != kMediaBlendAdd);
 
         // Promote hollow flag to interior.
 
@@ -9905,6 +9923,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         if (!Object->interior->media.empty())
         {
             sceneData->interiorMedia = true;
+            sceneData->firstMediaPrecedence = std::min(sceneData->firstMediaPrecedence, interior.precedence);
             solidMediaSeen = solidMediaSeen || !Object->interior->hollow;
         }
 
@@ -9967,8 +9986,6 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Make_min_max_from_BBox(low, high, Object->BBox);
         Object->interior->boundsLow = min(Object->interior->boundsLow, low);
         Object->interior->boundsHigh = max(Object->interior->boundsHigh, high);
-        if (Object->interior->serial == 0)
-            Object->interior->serial = ++interiorSerial;
     }
 
     if (Volume > INFINITE_VOLUME)
