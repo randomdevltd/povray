@@ -54,6 +54,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
+#include "core/lighting/emitter.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/radiosity.h"
 #include "core/lighting/subsurface.h"
@@ -2979,13 +2980,19 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                 jitter_v += Draw(key, kDrawFullAreaLight, 2 * cell + 1) - 0.5;
             }
 
+            MathColour weight;
+            if(lightsource.emitter != nullptr)
+            {
+                jitterAxis1 = EmitterOffset(lightsource, (jitter_u + 0.5) / lightsource.Area_Size1, DeriveKey(key, kDrawEmitter, cell), weight);
+                jitterAxis2 = Vector3d(0.0, 0.0, 0.0);
+            }
             // Create circular are lights [ENB 9/97]
             // First, make jitter_u and jitter_v be numbers from -1 to 1
             // Second, set scaleFactor to the abs max (jitter_u,jitter_v) (for shells)
             // Third, divide scaleFactor by the length of <jitter_u,jitter_v>
             // Fourth, scale jitter_u & jitter_v by scaleFactor
             // Finally scale Axis1 by jitter_u & Axis2 by jitter_v
-            if(lightsource.Circular == true)
+            else if(lightsource.Circular == true)
             {
                 jitter_u = jitter_u / (lightsource.Area_Size1 - 1) - 0.5 + 0.001;
                 jitter_v = jitter_v / (lightsource.Area_Size2 - 1) - 0.5 + 0.001;
@@ -3019,6 +3026,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, jitterAxis1 + jitterAxis2);
             // Calculate distance- and angle-based light attenuation
             attenuatedLightcolour = sampleLightcolour * Attenuate_Light(&lightsource, lsr, lightsourcedepth);
+            if(lightsource.emitter != nullptr)
+                attenuatedLightcolour *= weight;
 
             // If not double-illuminated, check if the normal is pointing away:
             if(!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG))
@@ -3318,6 +3327,35 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
 {
     Vector3d axis1Temp, axis2Temp;
 
+    if(lightsource.emitter != nullptr)
+    {
+        // Every stratum of the emitter's power is tested once; the result is the fraction of its light that arrives.
+        MathColour arrived, sent;
+        double first = 0.0;
+        for(int k = 0; k < lightsource.Area_Size1; k++)
+        {
+            MathColour weight;
+            const Vector3d offset = EmitterOffset(lightsource, (k + Draw(lightsourceray.GetKey(), kDrawAreaLight, k)) / lightsource.Area_Size1,
+                                                  DeriveKey(lightsourceray.GetKey(), kDrawEmitter, k), weight);
+            Ray lsr(lightsourceray);
+            double depth;
+            ComputeOneWhiteLightRay(lightsource, depth, lsr, ipoint, offset);
+            MathColour sample = lightcolour * weight;
+            const double unshadowed = sample.Weight();
+            sent += sample;
+            TraceEmitterSampleShadowRay(lightsource, depth, lsr, sample, offset);
+            lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
+            const double seen = (unshadowed > 0.0) ? sample.Weight() / unshadowed : 0.0;
+            if((k > 0) && (fabs(seen - first) > EPSILON))
+                MarkGrain();
+            first = (k == 0) ? seen : first;
+            arrived += sample;
+        }
+        for(int ch = 0; ch < MathColour::channels; ch++)
+            lightcolour[ch] = (sent[ch] > 0.0) ? lightcolour[ch] * arrived[ch] / sent[ch] : 0.0;
+        return;
+    }
+
     lightGrid.resize(lightsource.Area_Size1 * lightsource.Area_Size2);
 
     // Flag uncalculated points with a negative value for Red
@@ -3517,6 +3555,19 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
     Vector3d axis1, axis2;
     double u, v;
 
+    if(lightsource.emitter != nullptr)
+    {
+        // The caller attenuated the light to the emitter's centre; this sample moves it to its own distance.
+        MathColour weight;
+        const Vector3d offset = EmitterOffset(lightsource, sample[U], DeriveKey(lightsourceray.GetKey(), sample[V]), weight);
+        const double centre = Attenuate_Light(&lightsource, lightsourceray, lightsourcedepth);
+        ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, offset);
+        if(centre > 0.0)
+            lightcolour *= weight * (Attenuate_Light(&lightsource, lightsourceray, lightsourcedepth) / centre);
+        TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
+        return;
+    }
+
     ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1, axis2);
 
     u = AreaGridCoordinate(sample[U], lightsource.Area_Size1, lightsource.Jitter);
@@ -3525,6 +3576,28 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
     const Vector3d offset = AreaLightOffset(lightsource, u, v, axis1, axis2);
     ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, offset);
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
+}
+
+Vector3d Trace::EmitterOffset(const LightSource &lightsource, double s, std::uint64_t key, MathColour& weight)
+{
+    const EmitterSample sample = lightsource.emitter->Sample(std::min(std::max(s, 0.0), 1.0), key);
+    weight = sample.weight;
+    return sample.position - lightsource.Center;
+}
+
+void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                        MathColour& lightcolour, const Vector3d& offset)
+{
+    TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
+    if(lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && (lightsourcedepth > SHADOW_TOLERANCE) &&
+       !lightcolour.IsNearZero(EPSILON) && !lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
+    {
+        Intersection end;
+        end.Depth = lightsourcedepth;
+        end.Object = nullptr;
+        ColourChannel transm = 0.0;
+        media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, end, lightcolour, transm);
+    }
 }
 
 Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2)
@@ -4798,7 +4871,7 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
 
 bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour, const Vector2d* areaSample)
 {
-    ComputeOneLightRay(lightsource, depth, light_source_ray, p, colour);
+    ComputeOneLightRay(lightsource, depth, light_source_ray, p, colour, lightsource.emitter != nullptr);
 
     // There's no need to test for shadows if no light
     // is coming from the light source.

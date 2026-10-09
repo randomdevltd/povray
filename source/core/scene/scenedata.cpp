@@ -462,6 +462,9 @@ SceneData::~SceneData()
     preparedSets.clear();
     lightSources.clear();
     lightGroupLightSources.clear();
+    for (LightSource *light : mediaLights)
+        Destroy_Object(light);
+    mediaLights.clear();
     for (LightSource *image : portalLights)
         Destroy_Object(image);
     portalLights.clear();

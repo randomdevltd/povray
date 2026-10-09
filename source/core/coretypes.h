@@ -138,6 +138,8 @@ typedef TEXTURE* TexturePtr;
 ///
 /// @{
 
+struct MediaLight;
+
 class Media final
 {
     public:
@@ -174,6 +176,8 @@ class Media final
         std::vector<PIGMENT*> Density;
         DBL FastResolution;
         std::shared_ptr<FastCache> fastCache;
+        /// its `light_source` block, making it a light, or empty
+        std::shared_ptr<const MediaLight> light;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
 

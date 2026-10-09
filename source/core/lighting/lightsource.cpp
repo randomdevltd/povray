@@ -44,6 +44,7 @@
 //  (none at the moment)
 
 // POV-Ray header files (core module)
+#include "core/lighting/emitter.h"
 #include "core/math/matrix.h"
 #include "core/render/ray.h"
 #include "core/scene/object.h"
@@ -615,6 +616,12 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
             }
 
             break;
+    }
+
+    if ((Light->emitter != nullptr) && (Light->Fade_Power <= 0.0))
+    {
+        const DBL near = std::max(Distance, Light->emitter->NearDistance());
+        return Attenuation / (near * near);
     }
 
     if (Attenuation > 0.0)

@@ -63,6 +63,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingcylinder.h"
 #include "core/bounding/boundingsphere.h"
+#include "core/lighting/emitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
@@ -70,6 +71,7 @@
 #include "core/lighting/subsurface.h"
 #include "core/material/blendmap.h"
 #include "core/material/interior.h"
+#include "core/material/media.h"
 #include "core/material/noise.h"
 #include "core/material/normal.h"
 #include "core/material/pattern.h"
@@ -758,9 +760,14 @@ void Parser::Destroy_Frame()
     if(!sceneData->lightGroupLightSources.empty())
     {
         for(vector<LightSource *>::iterator i = sceneData->lightGroupLightSources.begin(); i != sceneData->lightGroupLightSources.end(); i++)
-            Destroy_Object(*i);
+            if ((*i)->emitter == nullptr)
+                Destroy_Object(*i);
         sceneData->lightGroupLightSources.clear();
     }
+
+    for (LightSource *light : sceneData->mediaLights)
+        Destroy_Object(light);
+    sceneData->mediaLights.clear();
 
     for (LightSource *image : sceneData->portalLights)
         Destroy_Object(image);
@@ -2924,7 +2931,7 @@ void Parser::Make_Portal_Lights()
     {
         for (LightSource *light : *lights)
         {
-            if (light->Photon_Only)
+            if (light->Photon_Only || (light->emitter != nullptr))
                 continue;
             if (light->Projected_Through_Object != nullptr)
             {
@@ -7313,6 +7320,8 @@ void Parser::Parse_Frame ()
 
         CASE (MEDIA_TOKEN)
             Parse_Media(sceneData->atmosphere);
+            if (sceneData->atmosphere.back().light)
+                Error("A media light_source needs an object's interior; atmospheric media cannot be lights.");
         END_CASE
 
         CASE (BACKGROUND_TOKEN)
@@ -9821,6 +9830,54 @@ void Parser::MAError (const char *, long)
 
 //******************************************************************************
 
+// Gives an object and everything in it a light of its light group.
+static void Add_Local_Light(ObjectPtr object, LightSource *light)
+{
+    object->LLights.push_back(light);
+    if (object->Type & IS_COMPOUND_OBJECT)
+        for (ObjectPtr child : reinterpret_cast<CompoundObject *>(object)->children)
+            Add_Local_Light(child, light);
+}
+
+void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
+{
+    std::string failure;
+    std::shared_ptr<const Emitter> emitter = MakeVolumeEmitter(medium, container, &mThreadData, failure);
+    if (!emitter)
+    {
+        Warning("A media light_source gives no light because %s.", failure.c_str());
+        return;
+    }
+    const MediaLight& settings = *medium.light;
+    LightSource *light = new LightSource();
+    light->emitter = emitter;
+    light->colour = emitter->Intensity() * settings.brightness;
+    light->Center = emitter->Centre();
+    light->Area_Light = true;
+    light->Use_Full_Area_Lighting = true;
+    light->Jitter = true;
+    light->Area_Size1 = settings.samples;
+    light->Area_Size2 = 1;
+    light->Fade_Distance = settings.fadeDistance;
+    light->Fade_Power = settings.fadePower;
+    light->Media_Interaction = settings.mediaInteraction;
+    light->Media_Attenuation = settings.mediaAttenuation;
+    if (settings.shadowless)
+        light->Light_Type = FILL_LIGHT_SOURCE;
+    // classic photons do not shoot from it
+    Set_Flag(light, PH_RFR_OFF_FLAG);
+    Set_Flag(light, PH_RFL_OFF_FLAG);
+    sceneData->mediaLights.push_back(light);
+    if (mLightGroups.empty())
+        sceneData->lightSources.push_back(light);
+    else
+    {
+        light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
+        sceneData->lightGroupLightSources.push_back(light);
+        Add_Local_Light(mLightGroups.back(), light);
+    }
+}
+
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 {
     DBL Volume;
@@ -9984,7 +10041,11 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 
     if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
         for (Media& medium : Object->interior->media)
+        {
             medium.SetFastContainer(Object);
+            if (medium.light)
+                Make_Media_Light(medium, Object);
+        }
 
     if ((Object->Texture == nullptr) &&
         !(Object->Type & TEXTURED_OBJECT) &&
@@ -10171,10 +10232,15 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 
     if (Object->Type & IS_COMPOUND_OBJECT)
     {
+        const bool group = ((Object->Type & LIGHT_GROUP_OBJECT) != 0);
+        if (group)
+            mLightGroups.push_back(Object);
         for (vector<ObjectPtr>::iterator Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); Sib != (reinterpret_cast<CSG *>(Object))->children.end(); Sib++)
         {
             Post_Process(*Sib, Object);
         }
+        if (group)
+            mLightGroups.pop_back();
         DropShutPortals(Object);
     }
 

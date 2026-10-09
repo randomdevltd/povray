@@ -766,6 +766,11 @@ class Trace
         void ComputeAreaLightAxes(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                   const Vector3d& ipoint, Vector3d& axis1, Vector3d& axis2);
         Vector3d AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2);
+        /// A light's sample point drawn from its emitter as an offset from its centre, s in [0,1) picking the stratum.
+        Vector3d EmitterOffset(const LightSource &lightsource, double s, std::uint64_t key, MathColour& weight);
+        /// One emitter sample's shadow: the walk to it, then the media of the interiors it ends inside.
+        void TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
+                                         MathColour& lightcolour, const Vector3d& offset);
 
         /// Compute the filtering effect of an object on incident light from a particular light source.
         ///
