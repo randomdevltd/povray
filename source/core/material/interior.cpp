@@ -73,6 +73,7 @@ Interior::Interior()
     mediaBlend = kMediaBlendAdd;
     boundsLow = Vector3d(HUGE_VAL);
     boundsHigh = Vector3d(-HUGE_VAL);
+    serial = 0;
 
     subsurface = std::shared_ptr<SubsurfaceInterior>();
 }
@@ -90,6 +91,7 @@ Interior::Interior(const Interior& source)
     mediaBlend = source.mediaBlend;
     boundsLow = Vector3d(HUGE_VAL);
     boundsHigh = Vector3d(-HUGE_VAL);
+    serial = 0;
     IOR = source.IOR;
     subsurface = std::shared_ptr<SubsurfaceInterior>(source.subsurface);
     Caustics = source.Caustics;
