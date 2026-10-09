@@ -43,9 +43,13 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
-#include <future>
+#include <exception>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -119,14 +123,30 @@ using MESH_TRIANGLE = Mesh_Triangle_Struct; ///< @deprecated
 
 class Mesh;
 
+/// Geometry the parser recorded but has not built: a generated or loaded mesh that is built once, when first needed.
 struct DeferredMeshState final
 {
-    std::shared_future<std::shared_ptr<Mesh>> result;
+    using Work = std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>;
+
+    Work work;
     std::shared_ptr<void> keepAlive;
+    std::shared_ptr<std::atomic<bool>> cancelled;
     SourceInfo source;
     std::string debug;
     std::vector<std::string> warnings;
-    POV_LONG cpuTime = -1;
+    bool reported = false;
+
+    /// Runs the work on this thread unless it has run or is running; either way returns its mesh or rethrows its failure.
+    std::shared_ptr<Mesh> Build(TraceThreadData *thread);
+    bool Built() const;
+    std::exception_ptr Failure() const;
+
+private:
+    mutable std::mutex mutex;
+    std::condition_variable finished;
+    enum class Phase { Recorded, Building, Done } phase = Phase::Recorded;
+    std::shared_ptr<Mesh> mesh;
+    std::exception_ptr failure;
 };
 
 /// Indices a triangle may carry beyond its vertices, `width` per triangle, stored only once triangles differ.
@@ -217,8 +237,10 @@ class Mesh final : public ObjectBase
         virtual bool IsOpaque() const override;
 
         void SetDeferred(const std::shared_ptr<DeferredMeshState>& state);
+        /// Attaches built geometry to a pending instance; true when that changed its bounds.
         bool Resolve() const;
         bool Pending() const { return deferred != nullptr; }
+        const std::shared_ptr<DeferredMeshState>& Deferred() const { return deferred; }
 
         void Create_Mesh_Hash_Tables();
 

@@ -70,6 +70,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 
 // POV-Ray header files (base module)
 #include "base/pov_err.h"
@@ -802,11 +803,60 @@ void Mesh::SetDeferred(const std::shared_ptr<DeferredMeshState>& state)
     deferred = state;
 }
 
+std::shared_ptr<Mesh> DeferredMeshState::Build(TraceThreadData *thread)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (phase == Phase::Recorded)
+    {
+        phase = Phase::Building;
+        Work run;
+        run.swap(work);
+        lock.unlock();
+        std::shared_ptr<Mesh> built;
+        std::exception_ptr error;
+        try
+        {
+            if ((cancelled != nullptr) && cancelled->load(std::memory_order_relaxed))
+                throw std::runtime_error("Mesh build cancelled.");
+            built = run(thread, *this);
+        }
+        catch (...)
+        {
+            error = std::current_exception();
+        }
+        run = nullptr;
+        lock.lock();
+        mesh = built;
+        failure = error;
+        keepAlive.reset();
+        phase = Phase::Done;
+        finished.notify_all();
+    }
+    finished.wait(lock, [this]() { return phase == Phase::Done; });
+    if (failure)
+        std::rethrow_exception(failure);
+    return mesh;
+}
+
+bool DeferredMeshState::Built() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return (phase == Phase::Done) && !failure;
+}
+
+std::exception_ptr DeferredMeshState::Failure() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return failure;
+}
+
 bool Mesh::Resolve() const
 {
     if (!deferred)
         return false;
-    const std::shared_ptr<Mesh> built = deferred->result.get();
+    if (!deferred->Built())
+        throw POV_EXCEPTION_STRING("A deferred mesh was used before it was built.");
+    const std::shared_ptr<Mesh> built = deferred->Build(nullptr);
     Mesh *self = const_cast<Mesh *>(this);
     self->Data = built->Data;
     self->Data->References++;
@@ -855,6 +905,8 @@ bool Mesh::Resolve() const
 
 void Mesh::Compute_BBox()
 {
+    if (Pending() && !deferred->Built())
+        return;
     Resolve();
     MeshIndex i;
     Vector3d P1, P2, P3;

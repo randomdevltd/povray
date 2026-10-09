@@ -15,10 +15,11 @@ The file is found like an include file, in the scene's directory or a library pa
 `.povm` is tried with `.povm` appended first, then as given. `povm` replaces the `vertex_vectors`, `normal_vectors`, `uv_vectors`, `texture_list` and
 index sections of `mesh2`; the mesh takes one texture, given in the scene like any object's.
 
-The file read, triangle preparation and cached-tree load or build run as one deferred mesh task. The parser may
-continue with later declarations, instances and transforms; a geometry query waits for that task, and otherwise all
-pending mesh tasks finish after the last scene token. Up to `+WT` tasks run concurrently;
-`+WT1` loads them serially.
+The file read, triangle preparation and cached-tree load or build are recorded as one deferred mesh. The parser
+continues with later declarations, instances and transforms; a geometry query loads the mesh then, and otherwise it is
+loaded after parsing, once every tag filter is known, and only if some view keeps an object that uses it (see
+[render tags](render-tags.md#phases-and-deferred-meshes)). Up to `+WT` meshes load concurrently; `+WT1` loads them
+serially.
 
 ## Layout
 

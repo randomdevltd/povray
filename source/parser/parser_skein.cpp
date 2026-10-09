@@ -245,8 +245,8 @@ ObjectPtr Parser::Parse_Skein_Mesh()
     std::shared_ptr<SkeinMeshBuildSource> source(new SkeinMeshBuildSource());
     source->skein = skein;
     RebindSkeinSteps(skein->data->steps, functionVM.get(), source->originalFunctions);
-    std::shared_ptr<DeferredMeshState> deferred = QueueMeshBuild(
-        [this, skein, minSize, maxAngle, closed, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+    std::shared_ptr<DeferredMeshState> deferred = RecordMeshBuild(
+        [skein, minSize, maxAngle, closed, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
             std::string definition;
             if (!cacheDir.empty() && skein->Describe(definition))
@@ -263,9 +263,9 @@ ObjectPtr Parser::Parse_Skein_Mesh()
             const auto start = std::chrono::steady_clock::now();
             SkeinMesh built;
             const std::vector<TraceThreadData *> threads(1, thread);
-            const std::string problem = skein->Tessellate(threads, minSize, maxAngle, built, [this]()
+            const std::string problem = skein->Tessellate(threads, minSize, maxAngle, built, [&state]()
             {
-                if (mMeshBuildCancelled.load(std::memory_order_relaxed))
+                if (state.cancelled->load(std::memory_order_relaxed))
                     throw std::runtime_error("Mesh build cancelled.");
             });
             if (!problem.empty())

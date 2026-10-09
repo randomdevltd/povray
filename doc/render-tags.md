@@ -73,13 +73,28 @@ This is a hard limit on the prepared scene: camera or portal filters cannot brin
 
 `Filter_Tags` is a planning option applied after entity syntax and tags are known. It is never exposed as an SDL variable or a value readable by macro logic. Tags belong to individual entities; they do not control preprocessing. Macros and includes execute normally regardless of the command-line filter. Given more than once, the first `Filter_Tags` wins, as with `Declare=`. A malformed expression is reported where it goes wrong, for example `unclosed quote at character 2 of '!"a'`.
 
-The current SDL parser constructs an object, and may load or construct its mesh, before discovering its trailing tags. Filtering therefore avoids subsequent object postprocessing, bounds preparation, radiosity and photon work, but does not yet avoid this initial construction. A macro can generate ordinary tagged objects without seeing the filter:
+A macro can generate ordinary tagged objects without seeing the filter:
 
 ```pov
 #macro PreviewSphere(Place)
   sphere { Place, 1 tags { "preview" } }
 #end
 PreviewSphere(0)
+```
+
+## Phases and deferred meshes
+
+A scene is prepared in four phases:
+
+1. **Parse.** The SDL runs, and generated or loaded meshes (`isosurface_mesh`, `skein_mesh` and `mesh2 { povm ... }`) are recorded without being built. The command-line filter removes what it rejects as each top-level object is completed.
+2. **Scene sets.** Every filter is now known: the command line, each camera, `global_settings`, each screen camera and each portal side. One prepared set is made per distinct selection.
+3. **Build.** Only meshes that some prepared set keeps are built, in parallel on up to `+WT` threads, and each once however many objects share its `#declare`. A mesh used only by objects every view rejects is never built, so a camera or `global_settings` filter can switch whole profiles of a scene without command-line options.
+4. **Render.** Bounding, photons, radiosity and tracing follow for each set.
+
+Anything that needs a mesh's geometry while parsing builds it there and then, on the parser thread: `min_extent`, `max_extent`, `trace`, `inside`, a mesh camera, a portal body, and an object used by `bounded_by`, `clipped_by`, an `object` or `potential` pattern or `projected_through`. Such a mesh is built even when no view uses it afterwards. The render reports the counts, and Parse Time includes the build phase:
+
+```
+Deferred meshes: 6 recorded, 1 built for parse-time queries, 3 built for the scene, 2 not needed.
 ```
 
 ## Geometry and transport
@@ -112,6 +127,6 @@ The current Tree-sitter grammar covers Boolean tag expressions only and adds no 
 
 The tag keywords require `#version 4.0`; earlier scene versions retain these names as ordinary identifiers. The `Filter_Tags` command-line and INI option is available independently of the SDL version. The Windows build now deliberately requires Visual Studio 2019 16.8 or later with v142 and a Windows 10 SDK for the C11 runtime; see [Windows build requirements](../windows/README.md#compilers).
 
-Full SDL work must benchmark opaque or streamed bulk ranges, including concrete mesh construction and semantic checks. It should parse the full source with bounded bulk syntax, then skip excluded entity construction once tags are known. Macro execution should construct concrete geometry directly, with the master filter remaining outside SDL and macro logic.
+Full SDL work must benchmark opaque or streamed bulk ranges, including concrete mesh construction and semantic checks. Generated meshes already wait for the scene sets; other entities are still constructed before their trailing tags are read. Full SDL parsing should parse the source with bounded bulk syntax, then skip excluded entity construction once tags are known. Macro execution should construct concrete geometry directly, with the master filter remaining outside SDL and macro logic.
 
-`tests/render/render_tags.sh` checks selection pixels, invalid syntax, ordinary macro construction, nested views, acceleration equivalence, and filtering inside light groups, unions, merges and CSG. `tools/bench/render-tags.pov` supplies three camera selections. `tools/bench/render-tags-many.pov` measures prepared-set scaling: `Declare=Count=N` varies screen count, and `Declare=Unique=0` reuses four memberships. Include parsing and preparation time and peak memory when comparing runs, in addition to trace time. Use `+PR` and compare decoded pixels.
+`tests/render/render_tags.sh` checks selection pixels, invalid syntax, ordinary macro construction, nested views, acceleration equivalence, filtering inside light groups, unions, merges and CSG, and which deferred meshes are built for command-line, camera and global filters and for parse-time queries. `tools/bench/render-tags.pov` supplies three camera selections. `tools/bench/render-tags-many.pov` measures prepared-set scaling: `Declare=Count=N` varies screen count, and `Declare=Unique=0` reuses four memberships. Include parsing and preparation time and peak memory when comparing runs, in addition to trace time. Use `+PR` and compare decoded pixels.

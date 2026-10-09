@@ -75,6 +75,7 @@ using namespace pov_base;
 
 class BSPTree;
 class SubsurfaceCache;
+struct DeferredMeshState;
 
 /// What remains of an object under a filter. An excluded object is empty space, so an excluded inverted operand, such
 /// as a difference's cutter, is everything; `Part` means some descendants were removed.
@@ -143,6 +144,10 @@ class SceneData
         std::vector<ObjectPtr> objects;
         TagFilter defaultFilterTags;
         TagFilter parseFilterTags;
+        /// meshes recorded during parsing, in source order, and how many of them a geometry query built then
+        std::vector<std::weak_ptr<DeferredMeshState>> deferredMeshes;
+        std::shared_ptr<std::atomic<bool>> meshBuildCancelled = std::make_shared<std::atomic<bool>>(false);
+        unsigned int deferredMeshesBuiltForQueries = 0;
         std::vector<std::unique_ptr<PreparedSet>> preparedSets;
         std::map<TagFilter, PreparedSetId> preparedSetFilters;
         unsigned int maxPreparedSetFiniteObjects = 0;

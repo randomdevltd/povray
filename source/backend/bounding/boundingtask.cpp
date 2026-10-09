@@ -40,25 +40,33 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <functional>
+#include <memory>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Boost header files
 #include <boost/bind.hpp>
 
 // POV-Ray header files (base module)
-//  (none at the moment)
+#include "base/timer.h"
 
 // POV-Ray header files (core module)
 #include "core/bounding/bsptree.h"
 #include "core/math/matrix.h"
 #include "core/scene/object.h"
 #include "core/scene/tracethreaddata.h"
+#include "core/shape/csg.h"
+#include "core/shape/mesh.h"
+#include "core/support/parallel.h"
 
 // POV-Ray header files (POVMS module)
 #include "povms/povmsid.h"
 
 // POV-Ray header files (backend module)
+#include "backend/control/messagefactory.h"
 #include "backend/scene/backendscenedata.h"
 #include "backend/support/task.h"
 
@@ -227,6 +235,186 @@ void BoundingTask::Finish()
 void BoundingTask::SendFatalError(Exception& e)
 {
     // if the front-end has been told about this exception already, we don't tell it again
+    if (e.frontendnotified(true))
+        return;
+
+    POVMS_Message msg(kPOVObjectClass_ControlData, kPOVMsgClass_SceneOutput, kPOVMsgIdent_Error);
+
+    msg.SetString(kPOVAttrib_EnglishText, e.what());
+    msg.SetInt(kPOVAttrib_Error, 0);
+    msg.SetInt(kPOVAttrib_SceneId, sceneData->sceneId);
+    msg.SetSourceAddress(sceneData->backendAddress);
+    msg.SetDestinationAddress(sceneData->frontendAddress);
+
+    POVMS_SendMessage(msg);
+}
+
+
+MeshBuildTask::MeshBuildTask(std::shared_ptr<BackendSceneData> sd, size_t sd_seed, unsigned int t, TraceThreadData *pd) :
+    SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), sd_seed), boost::bind(&MeshBuildTask::SendFatalError, this, _1), "Mesh", sd),
+    sceneData(sd),
+    seed(sd_seed),
+    threads(t),
+    parseData(pd),
+    buildCpuTime(0)
+{
+}
+
+MeshBuildTask::~MeshBuildTask()
+{
+}
+
+void MeshBuildTask::Run()
+{
+    std::vector<std::shared_ptr<DeferredMeshState>> needed;
+    std::unordered_set<const DeferredMeshState *> queued;
+    std::unordered_set<ConstObjectPtr> visited;
+    std::function<void(ObjectPtr)> collect = [&](ObjectPtr object)
+    {
+        if ((object == nullptr) || !visited.insert(object).second)
+            return;
+        if (Mesh *mesh = dynamic_cast<Mesh *>(object))
+        {
+            if (mesh->Pending() && !mesh->Deferred()->reported && queued.insert(mesh->Deferred().get()).second)
+                needed.push_back(mesh->Deferred());
+            return;
+        }
+        if (LightSource *light = dynamic_cast<LightSource *>(object))
+            collect(light->Projected_Through_Object);
+        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+            for (ObjectPtr child : compound->children)
+                collect(child);
+    };
+    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+        for (ObjectPtr object : set->objects)
+            collect(object);
+
+    std::vector<std::unique_ptr<TraceThreadData>> workers;
+    const size_t count = std::max<size_t>(1, std::min<size_t>(threads, needed.size()));
+    for (size_t i = 0; i < count; ++i)
+        workers.emplace_back(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sceneData), seed + i + 1, false));
+    try
+    {
+        std::vector<POV_LONG> cpu(count, 0);
+        ParallelFor(needed.size(), count, [&](size_t i, size_t worker)
+        {
+            Timer timer;
+            needed[i]->Build(workers[worker].get());
+            if (timer.HasValidThreadCPUTime())
+                cpu[worker] += timer.ElapsedThreadCPUTime();
+        }, [&]()
+        {
+            try
+            {
+                Cooperate();
+            }
+            catch (...)
+            {
+                sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+                throw;
+            }
+        });
+        // A single build runs on this task's own thread, whose time is counted already.
+        for (size_t worker = (count > 1) ? 0 : 1; worker < count; ++worker)
+            buildCpuTime += cpu[worker];
+    }
+    catch (const StopThreadException&)
+    {
+        throw;
+    }
+    catch (...)
+    {
+        sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+        for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)
+            if (std::shared_ptr<DeferredMeshState> state = recorded.lock())
+            if (std::exception_ptr failure = state->Failure())
+            {
+                try
+                {
+                    std::rethrow_exception(failure);
+                }
+                catch (const std::exception& error)
+                {
+                    mpMessageFactory->ErrorAt(state->source, "%s", error.what());
+                }
+            }
+        throw;
+    }
+    for (const std::unique_ptr<TraceThreadData>& worker : workers)
+        parseData->Stats() += worker->Stats();
+
+    unsigned int built = 0;
+    for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)
+    {
+        std::shared_ptr<DeferredMeshState> state = recorded.lock();
+        if ((state == nullptr) || state->reported || !state->Built())
+            continue;
+        state->reported = true;
+        ++built;
+        for (const std::string& warning : state->warnings)
+            mpMessageFactory->WarningAt(kWarningGeneral, state->source, "%s", warning.c_str());
+        if (!state->debug.empty())
+            mpMessageFactory->UserDebug(state->debug.c_str());
+    }
+
+    // A pending mesh's box was a placeholder, and a set's views have no box yet.
+    std::unordered_set<ConstObjectPtr> views;
+    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+        views.insert(set->views.begin(), set->views.end());
+    std::unordered_map<ConstObjectPtr, bool> rebounded;
+    std::function<bool(ObjectPtr)> rebound = [&](ObjectPtr object) -> bool
+    {
+        auto found = rebounded.find(object);
+        if (found != rebounded.end())
+            return found->second;
+        bool changed = false;
+        if (Mesh *mesh = dynamic_cast<Mesh *>(object))
+            changed = mesh->Resolve();
+        else if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        {
+            if (LightSource *light = dynamic_cast<LightSource *>(object))
+                if (light->Projected_Through_Object != nullptr)
+                    rebound(light->Projected_Through_Object);
+            for (ObjectPtr child : compound->children)
+                changed = rebound(child) || changed;
+            CSG *csg = dynamic_cast<CSG *>(object);
+            if ((csg != nullptr) && (changed || (views.count(object) != 0)) && csg->Bound.empty())
+            {
+                Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+                csg->Compute_BBox();
+                Update_Infinite_Flag(csg);
+                changed = true;
+            }
+        }
+        rebounded[object] = changed;
+        return changed;
+    };
+    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+        for (ObjectPtr object : set->objects)
+            rebound(object);
+
+    const size_t recorded = sceneData->deferredMeshes.size();
+    if (recorded > 0)
+        mpMessageFactory->Info("Deferred meshes: %u recorded, %u built for parse-time queries, %u built for the scene, %u not needed.",
+                               unsigned(recorded), sceneData->deferredMeshesBuiltForQueries, built,
+                               unsigned(recorded - sceneData->deferredMeshesBuiltForQueries - built));
+    std::vector<std::weak_ptr<DeferredMeshState>>().swap(sceneData->deferredMeshes);
+}
+
+void MeshBuildTask::Stopped()
+{
+    sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+}
+
+void MeshBuildTask::Finish()
+{
+    parseData->realTime += ConsumedRealTime();
+    if (parseData->cpuTime >= 0)
+        parseData->cpuTime += ConsumedCPUTime() + buildCpuTime;
+}
+
+void MeshBuildTask::SendFatalError(Exception& e)
+{
     if (e.frontendnotified(true))
         return;
 

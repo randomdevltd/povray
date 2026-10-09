@@ -1124,12 +1124,13 @@ one thread context. Generated meshes evaluate their frozen function
 state there; `.povm` tasks read and validate the file, prepare its triangles, and load or build its cached bounding
 tree there. Parser tokens, declarations and object modifiers remain on the parser thread.
 
-A declaration publishes a deferred mesh immediately. Copying, instancing, transforming and texturing it do not wait.
-Operations that actually inspect geometry (`trace`, `inside`, extents, mesh cameras, and bounding, clipping or
-object-pattern objects) join that build; otherwise the parser joins all builds after the last token. A pending mesh's
-box is a placeholder, so each compound holding one is rebounded from scratch once the mesh resolves; tracing never
-checks for pending meshes. Diagnostics are emitted in declaration order. Each generated build gets a frozen
-function-VM snapshot, so later function declarations and assignments neither race nor wait for it. Reusing a
+A declaration records a deferred mesh without building it. Copying, instancing, transforming and texturing it do not
+build it. Operations that actually inspect geometry (`trace`, `inside`, extents, mesh cameras, and bounding, clipping
+or object-pattern objects) build it on the parser thread; otherwise a mesh is built after parsing, once the tag
+filters show some view keeps an object using it (see [render tags](render-tags.md#phases-and-deferred-meshes)). A
+pending mesh's box is a placeholder, so each compound holding one is rebounded from scratch once the mesh resolves;
+tracing never checks for pending meshes. Diagnostics are emitted in declaration order. Each generated build gets a
+frozen function-VM snapshot, so later function declarations and assignments neither race nor wait for it. Reusing a
 declaration shares its completed mesh data; redeclaring it creates a distinct task and leaves earlier instances
 attached to the earlier result.
 
