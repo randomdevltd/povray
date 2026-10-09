@@ -82,6 +82,16 @@ camera { orthographic location <0, 0, -10> look_at 0 right x * 8 up y * 6 }
   #end
 #break
 #case (23) box { <-2, -2, -2>, <2, 2, 2> texture { Clear } interior { ior 1.5 } } #break
+#case (24)
+#case (25)
+  light_source { <-4, 5, -10> rgb 1 }
+  box { <-3, -2, 2>, <3, 2, 2.5> pigment { rgb 0.8 } finish { diffuse 0.9 } }
+  box { <-3, -2, -1>, <3, 2, (Case = 24 ? 2 : 1.99)> texture { Clear } interior { media { absorption 0.05 } } }
+#break
+#case (26) // pixel 48, 36 clips this box's top edge 5e-7 deep at 0.002 ahead, then bends over it
+  box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 media { method 3 refraction 10 density { gradient y scale 4 translate -2 * y } } } }
+  box { <-3, -3, -1.998>, <3, 3 - 36.5 * 6 / 72 + 5e-7, 1> texture { Clear } interior { ior 1 } }
+#break
 #case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior 1 } } #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior 1 } } #break
 #end
