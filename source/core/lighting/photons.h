@@ -347,7 +347,7 @@ class PhotonTrace final : public Trace
         /// Shades a photon's hit; false when it stops at an object that is not its target.
         bool ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight);
         void ComputeInteriorMedia(Ray& ray, Intersection& isect, MathColour& LightCol);
-        bool TraceRefractionRayForPhotons(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, DBL ior, DBL n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, COLC weight);
+        bool TraceRefractionRayForPhotons(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, DBL ior, DBL n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, COLC weight, DBL leave);
     private:
         PhotonMediaFunction mediaPhotons;
         RadiosityFunctor noRadiosity;
