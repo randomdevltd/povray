@@ -38,9 +38,11 @@
 
 // C++ variants of C standard header files
 #include <climits>
+#include <cstdlib>
 
 // C++ standard header files
 #include <algorithm>
+#include <type_traits>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -362,7 +364,14 @@ bool RawTokenizer::ProcessFloatLiteralLexeme(RawToken& token)
     token.id = int(FLOAT_TOKEN);
     token.expressionId = FLOAT_TOKEN_CATEGORY;
 
-    if (sscanf(token.lexeme.text.c_str(), POV_DBL_FORMAT_STRING, &token.floatValue) == 0)
+    if (std::is_same<DBL, double>::value)
+    {
+        char* end;
+        token.floatValue = DBL(std::strtod(token.lexeme.text.c_str(), &end));
+        if (end == token.lexeme.text.c_str())
+            return false;
+    }
+    else if (sscanf(token.lexeme.text.c_str(), POV_DBL_FORMAT_STRING, &token.floatValue) == 0)
         return false;
 
     token.isReservedWord = false;
