@@ -315,11 +315,14 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
         set->objects.push_back(object);
         CollectParticipatingObjects(object, participating);
     }
+    // a media light takes part with the object holding its medium
+    auto takesPart = [&](const LightSource *light) {
+        return (participating.count(light) != 0) || ((light->emitterContainer != nullptr) && (participating.count(light->emitterContainer) != 0)); };
     for (const auto *sources : { &lightSources, &lightGroupLightSources })
         for (size_t ordinal = 0; ordinal < sources->size(); ++ordinal)
         {
             LightSource *light = (*sources)[ordinal];
-            if (participating.count(light) != 0)
+            if (takesPart(light))
             {
                 set->lights.push_back(light);
                 key << (sources == &lightSources ? 'g' : 'l') << ordinal;
@@ -342,19 +345,19 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
     set->groupPortalImages.resize(lightGroupLightSources.size());
     auto admitted = [&](const LightSource *image) { return participating.count(image->portal) != 0; };
     for (size_t i = 0; i < lightSources.size(); ++i)
-        if (participating.count(lightSources[i]) != 0)
+        if (takesPart(lightSources[i]))
         {
             set->globalLights.push_back(i);
             set->globalLightIn[i] = true;
         }
     for (const LightSource *light : lightSources)
-        if (participating.count(light) != 0)
+        if (takesPart(light))
             for (const LightSource *image : light->portalImages)
                 if (admitted(image))
                     set->globalPortalImages.push_back(image);
     for (size_t i = 0; i < lightGroupLightSources.size(); ++i)
     {
-        set->groupLightIn[i] = (participating.count(lightGroupLightSources[i]) != 0);
+        set->groupLightIn[i] = takesPart(lightGroupLightSources[i]);
         set->groupLightsFiltered = set->groupLightsFiltered || !set->groupLightIn[i];
         if (set->groupLightIn[i])
             for (const LightSource *image : lightGroupLightSources[i]->portalImages)

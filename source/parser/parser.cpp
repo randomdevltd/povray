@@ -9851,6 +9851,7 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     const MediaLight& settings = *medium.light;
     LightSource *light = new LightSource();
     light->emitter = emitter;
+    light->emitterContainer = container;
     light->colour = emitter->Intensity() * settings.brightness;
     light->Center = emitter->Centre();
     light->Area_Light = true;
