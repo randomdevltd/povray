@@ -103,7 +103,10 @@ void Parser::Initialize_Tokenizer()
         Error("Cannot open input file.");
 
     mTokenizer.EnableCache();
-    SetInputStream(rfile, actualFileName);
+    if (IsPov4File(sceneData->inputFile))
+        SetUncachedInputStream(rfile);
+    else
+        SetInputStream(rfile, actualFileName);
 
     mHavePendingRawToken = false;
 
@@ -839,6 +842,12 @@ const MessageContext& Parser::CurrentMessageContext() const
 void Parser::SetInputStream(const shared_ptr<IStream>& stream, const UCS2String& path)
 {
     mTokenizer.SetInputStream(stream, path);
+    mToken.sourceFile = mTokenizer.GetInputStream();
+}
+
+void Parser::SetUncachedInputStream(const shared_ptr<IStream>& stream)
+{
+    mTokenizer.SetInputStream(stream);
     mToken.sourceFile = mTokenizer.GetInputStream();
 }
 

@@ -566,6 +566,7 @@ class Parser final
         bool HaveCurrentMessageContext() const;
         const MessageContext& CurrentMessageContext() const;
         void SetInputStream(const std::shared_ptr<IStream>& stream, const UCS2String& path);
+        void SetUncachedInputStream(const std::shared_ptr<IStream>& stream);
         RawTokenizer::HotBookmark GetHotBookmark();
         bool GoToBookmark(const RawTokenizer::HotBookmark& bookmark);
 

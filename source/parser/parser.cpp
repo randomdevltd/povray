@@ -7475,7 +7475,7 @@ void Parser::Parse_Snippet(const std::string& text, const UCS2String& fileName, 
     };
     auto snippet = std::make_shared<Snippet>(text, fileName);
     std::shared_ptr<IStream> stream(snippet, &snippet->stream);
-    SetInputStream(stream);
+    SetUncachedInputStream(stream);
     mTokenizer.SetStringEncoding(CharacterEncodingID::kUTF8);
     mTokenizer.SetLineMap(stream, std::move(lines));
     mHavePendingRawToken = false;
