@@ -426,7 +426,7 @@ an easier means of doing the same thing).
 <div class="content-level-h4" contains="Keywords" id="r3_3_1_2">
 <h4>3.3.1.2 Keywords</h4>
 <p>POV-Ray has a number of reserved keywords which are listed below.</p>
-<p>A few words are read only where they are expected and are not reserved: <code>off</code> and <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code>, <code>interface_texture</code> and <code>ior_mix</code> themselves. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
+<p>A few words are read only where they are expected and are not reserved: <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code> and <code>interface_texture</code>, and the interior item <code>ior_mix</code>, themselves. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
 <table class="tablelist">
 <tr>
 <th colspan="3" align="left">a</th>
@@ -4482,7 +4482,7 @@ VERSION_DIRECTIVE:
 <tr><td>interior media in a non-hollow object</td><td>not rendered</td><td>rendered</td></tr>
 <tr><td><a href="r3_7.html#r3_7_2_1_9">media mix</a> of an object's first medium</td><td><code>add</code></td><td><code>replace</code>; <code>add</code> if the object is <code>hollow</code></td></tr>
 <tr><td>an object without media</td><td>leaves the media beneath it</td><td>clears them</td></tr>
-<tr><td><a href="r3_7.html#r3_7_2_1_4">ior</a> when none is given</td><td>the atmosphere's ior, as in 3.7</td><td><code>ior off</code>: takes no part in refraction</td></tr>
+<tr><td><a href="r3_7.html#r3_7_2_1_4">ior</a> when none is given</td><td>the atmosphere's ior, as in 3.7, unless the scene merges faces (see <a href="r3_7.html#r3_7_2_1_10">Shared Faces</a>); then <code>ior off</code></td><td><code>ior off</code>: takes no part in refraction</td></tr>
 <tr><td><a href="r3_7.html#r3_7_2_1_4">ior_mix</a></td><td><code>surface</code></td><td><code>mean</code></td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></td><td>1.0</td><td>1.00029</td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_16">interface_texture</a></td><td><code>far</code></td><td><code>blend</code></td></tr>
