@@ -20,10 +20,10 @@ plane { z, 4 pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 tran
 #declare U = function(x) { x - 0.1 * floor((x + 0.01) / 0.1) }
 #declare Seams = function(x, y, z) { S(U(x) / 0.02) * Fade(x, y, z) }
 #declare Ramp = function(x, y, z) { ((x + 2) / 4) * Fade(x, y, z) }
-// Sine of 0.2 mm period: structure far below any detail the tests set.
-#declare Sine = function(x, y, z) { (0.5 + 0.5 * sin(x / 0.0005 * pi / 2)) * Fade(x, y, z) }
+// Sine of 0.3 mm period: structure far below any detail the tests set.
+#declare Sine = function(x, y, z) { (0.5 + 0.5 * sin(x / 0.00015 * pi / 2)) * Fade(x, y, z) }
 #declare Mean = function(x, y, z) { 0.5 * Fade(x, y, z) }
-#declare Coefficient = (Case = 5 | Case = 6 ? 0.07 : Case = 7 | Case = 8 | Case = 9 ? 0.005 : 0.00025);
+#declare Coefficient = (Case = 5 | Case = 6 ? 0.07 : Case = 7 | Case = 8 | Case = 9 ? 1e-5 : 0.00025);
 
 box {
   <-2, -1.5, -1>, <2, 1.5, 1>

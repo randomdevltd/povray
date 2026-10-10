@@ -69,7 +69,7 @@ says "smallest such structure" ramp || { echo "refraction_detail: no note for a 
 render ramp_set Declare=Case=6
 region ramp ramp_set 0 95 0 71
 
-# 0.2 mm sine structure under a 1 mm detail refracts as its smooth mean, not as noise.
+# 0.3 mm sine structure under a 1 mm detail refracts as its smooth mean, not as noise.
 render sine Declare=Case=7
 render mean Declare=Case=8
 region sine mean 0 95 0 71
