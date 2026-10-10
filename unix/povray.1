@@ -150,6 +150,17 @@ Also write the snapshot this often while rendering; 0 (the default) for never.
 Write the snapshot from this trace state file and exit, without parsing or
 rendering anything; give the render's \fBW\fP and \fBH\fP (and \fBUA\fP), plus \fBSN\fP.
 .TP
+\fBFilter_Tags\fP=\fIexpression\fP
+Limit which tagged objects, lights, portals and cameras take part in the render,
+using the Boolean grammar of \fBfilter_tags\fP. It is applied after parsing and
+is never visible to the scene; quote the expression for the shell. See doc/render\-tags.md.
+.TP
+\fBML\fP\fIn.n\fP or \fBPov4_Version\fP=\fIn.n\fP
+Run a .pov4 scene with the defaults of language version n.n instead of 4.0.
+.TP
+\fBGL\fP<\fIfile\fP> or \fBPov4_Lowered_File\fP=\fIfile\fP
+Write the classic scene text that a .pov4 scene was converted to while it ran.
+.TP
 \fBP\fP or \fBPause_When_Done\fP=\fIbool\fP
 If previewing, pause when the rendering is complete before closing the window.
 .TP

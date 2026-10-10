@@ -208,7 +208,7 @@
 <table class="HeaderFooter" width="100%">
 <tr>
   <td colspan=5 align="left" class="HeaderFooter">
-    POV-Ray for Unix <strong class="HeaderFooter">version 3.8</strong>
+    POV-Ray for Unix <strong class="HeaderFooter">version 4.0 alpha (fork)</strong>
   </td>
 </tr>
 <tr >
@@ -554,7 +554,7 @@ skein_mesh {
 <p>A curved surface split to an angle A (in radians) stays within about L A / 8 of its triangles, where L is a triangle's size. A torus of radii 2 and 0.5 at the default <code>max_angle</code> is 8192 triangles, lies within 0.0036 of the true surface, and takes about 0.02 seconds to build. A mesh may hold at most two million triangles; a <code>min_size</code> and <code>max_angle</code> that would need more stop the parse with an error. Each <code>skein_mesh</code> writes one line to the debug stream with its triangles, vertices, open edges, size in bytes, wall and CPU build time, and build threads.</p>
 <p>The parser records the build and continues: copying, transforming, texturing and instancing the mesh do not build it. An operation that inspects its geometry while parsing, such as <code>trace</code>, <code>inside</code> or an extent query, builds it then. Every other mesh is built after parsing, once all <a href="r3_5.html#r3_5_1_5_13">tag filters</a> are known, and only if some view keeps an object that uses it; those builds run on up to <code>+WT</code> threads, each mesh once. A build snapshots the compiled functions it can reach and has its own function context and scratch data. Referenced image pixels remain shared. <code>+WT1</code> keeps construction serial.</p>
 <p>A skein mapping function cannot sample a <code>screen</code> pigment, whether the skein is traced directly or built as a <code>skein_mesh</code>: its geometry must be the same for camera rays, photons and mesh preparation. This is a parse error. A <code>screen</code> used as the object's finished surface pigment is valid and is evaluated while rendering.</p>
-<p>A <code>skein_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>skein_mesh</code> twice. It is built again each time the scene is parsed. When to use a mesh rather than the skein itself is covered under <a href="r3_5.html#r3_5_1_2_4_1">Meshes Built From Other Objects</a>.</p>
+<p>A <code>skein_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>skein_mesh</code> twice. It is built again each time the scene is parsed, unless <code>global_settings { mesh_cache }</code> keeps it (see <a href="r3_5.html#r3_5_1_1_6">isosurface_mesh</a>). When to use a mesh rather than the skein itself is covered under <a href="r3_5.html#r3_5_1_2_4_1">Meshes Built From Other Objects</a>.</p>
 <table class="centered" width="680px" cellpadding="0" cellspacing="10">
 <tr>
   <td><img class="center" width="320px" src="images/skein_mesh_hat_skein.png"></td>

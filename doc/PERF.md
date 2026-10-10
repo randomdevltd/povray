@@ -101,6 +101,13 @@ single runs. Reach checks help when a large receiver extends well past a small c
 neutral in these stock scenes. Decoded pixels matched across builds on all listed scenes. Every
 render used `+PR` without anti-aliasing.
 
+Deferring the gather radius's square root until a tree branch needs it, with the same comparisons, saved 0.4 to 2.3%
+of trace instructions (`+PR -A +Q9 +WT1`, one-pixel run subtracted): `phot_met_glass` at 960×480 34.170 to 33.401 G,
+the water caustic at 640×360 8.155 to 8.019 G, dense water (spacing 0.01, cap 400) 21.758 to 21.337 G, the sparse
+caustic at 1920×960 20.363 to 20.283 G, with the same decoded pixels. Combined with the reuse and reach check above,
+trace instructions fell 3.0% on `phot_met_glass`, 15.8% on the water caustic, 11.1% on dense water and 30.1% on the
+sparse caustic (one run per scene, same pixels).
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`
@@ -188,6 +195,11 @@ to check function-density shadows across sampling methods and interval counts wi
 `tools/bench/check-function-ranges.sh <configured-build-directory> <output-directory>` checks range
 containment against scalar VM execution using that build's compiler flags and libraries.
 
+On `tools/bench/media-functions.pov` at 640×480, one thread, three alternating runs, the bounds took a direct function
+density from 18.94 to 9.34 billion user-space cycles (2.03×) and a named function from 22.71 to 9.72 (2.34×) against the
+repaired point-sampling path, with media samples down from 52.88 M to 9.90 M in both cases. Cutoff cases and unsupported
+fallbacks are pixel-identical; the largest bounded-case difference is 25/65535 per displayed colour channel.
+
 | Render | Before | After | |
 |---|---|---|---|
 | the window above, trace | 244.6 CPU-s, 1.66 G media samples, 44.1 M shadow rays | 36.9 CPU-s, 363 M, 9.4 M | 6.6× |
@@ -230,6 +242,22 @@ While preparation succeeds, `resolution` is the quality dial for camera and shad
 The first stage uses a fixed dense grid with a cap of one million density cells and one million cells per optical grid. Up to four optical grids are kept per medium. The field covers the container box; the container geometry clips ray segments and optical-depth construction, so field interpolation does not dilute density at a boundary. An unbounded or degenerate container, an unsupported pigment, non-finite or negative density, negative extinction, or a grid over the cap uses the classic path. Multiple simultaneous media and rays that need over 4096 steps also use classic evaluation. Portals, point lights and area lights do not use a light-aligned optical grid. Grid construction is lazy, shared among render threads and included in the first trace; subsequent rays reuse it. This is a finite-resolution approximation: subcell sampling can miss thin features and softens shadow edges. Reducing the cell width approaches the underlying continuous field where it is well behaved, but need not reproduce classic media's finite quadrature exactly.
 
 `tools/bench/media-self-shadow.pov` selects the mode with `Declare=Fast=1` and its cell width with `Declare=CellSize=0.1`. `tools/bench/media-fast-combinations.pov` exercises several containers, overlapping media, turbulent and function densities, emission, absorption, scattering, two parallel lights and an optional area light (`Declare=Area=1`). Compare paired 16-bit PPM files with `tools/bench/compare-media-fast.py`; use `+PR -A` at the same size and sampling settings. `distribution/scenes/interior/media/media5.pov` is a stock no-opt-in regression scene.
+
+Measured with `+PR -A +WT1` and 16-bit PPM output. The self-shadow scene at 96×54 took 23.414 s classic and 0.623 s
+prepared at 0.08 scene units: trace instructions fell from 307.7 to 10.22 billion. A mixed-volume scene at 96×54 took
+3.093 s classic and 1.747 s prepared at 0.04. These timings include first-use density and light-grid construction, and
+describe these small scenes only: they are the simplest cases, and the gain grows with the detail of the density and
+with the cost of what the medium is combined with.
+
+The error figures are differences from a higher-sample classic render, whose own quadrature is an approximation, so they
+bound how far method 4 sits from classic sampling and not how accurate either is. Against that reference the mean
+channel error was 12.6/65535 prepared against 6.2 classic on the self-shadow scene, and 14.4 against 18.3 on the mixed
+scene, where method 4 is the closer. A resolution fine enough for the detail can match or beat the classic result.
+
+Keeping prepared integration across overlapping and nested volumes, and skipping lighting for prepared samples with zero
+scattering, saved a further 15.51% of user-space instructions on the self-shadow scene (8.381 to 7.081 billion, identical
+pixels) and 2.72% on the mixed-media scene with an area light (23.272 to 22.640 billion), two alternating pairs each at
+64×40. Moving an invisible transparent shadow receiver from 2 to 200 units no longer changes the medium's illumination.
 
 ## Subsurface light on open surfaces
 
@@ -1143,6 +1171,8 @@ One isolated run of `tools/bench/parse-mesh-generation.pov`, native optimized bu
 
 The isosurface fixture saturated the test host: four concurrent builds each slowed by about four times and
 used 267 MB peak instead of 119 MB, so concurrency did not reduce latency there. The skein fixture scaled strongly.
+A second run of the isosurface fixture took the eight builds from 17.212 s wall at `+WT1` to 3.621 s at `+WT8` (-79.0%;
+CPU 17.215 and 25.389 s), so whether concurrent isosurface builds help depends on the host.
 This is workload- and machine-dependent; `+WT` controls the memory/throughput tradeoff, while `+WT1`
 retains serial construction.
 
@@ -1239,6 +1269,11 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 
 ## Next
 
+- Media method 4: re-benchmark on dense, finely detailed and combined media (with area lights, radiosity, photons,
+  subsurface), where classic sampling was impractical. The small fixtures above understate the gain: one check on a
+  complex medium showed at least 500×, but it was not recorded with its scene and settings, so no figure is claimed.
+  Compare against a classic render at a much higher sample count, with the error taken from that, and record
+  resolution, memory and first-use construction cost too.
 - Isosurfaces: vectorised noise, so that batches pay where functions are mostly noise; batches of rays rather than
   of points. An occupancy grid from max_gradient, skipping empty cells while root finding, was tried: it moved roots,
   gained 7 points only on a leaning trunk in a loose box and cost up to 6 on tighter ones; a tighter `contained_by`
