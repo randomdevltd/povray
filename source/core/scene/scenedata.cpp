@@ -261,9 +261,9 @@ TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<
 
 void ForgetLights(ObjectPtr object, const std::vector<LightSource*>& lights)
 {
-    auto& own = object->LLights;
-    own.erase(std::remove_if(own.begin(), own.end(), [&](LightSource *light) {
-        return std::find(lights.begin(), lights.end(), light) != lights.end(); }), own.end());
+    for (auto* own : {&object->LLights, &object->PhotonLights})
+        own->erase(std::remove_if(own->begin(), own->end(), [&](LightSource *light) {
+            return std::find(lights.begin(), lights.end(), light) != lights.end(); }), own->end());
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
             ForgetLights(child, lights);

@@ -344,6 +344,42 @@ void Parser::Run()
                 sceneData->lightGroupLightSources[i]->lightGroupLight = true;
             }
 
+            for (LightSource* light : sceneData->mediaLights)
+            {
+                if (sceneData->photonSettings.method != 2)
+                {
+                    Set_Flag(light, PH_RFR_OFF_FLAG);
+                    Set_Flag(light, PH_RFL_OFF_FLAG);
+                    Clear_Flag(light, PH_RFR_ON_FLAG);
+                    Clear_Flag(light, PH_RFL_ON_FLAG);
+                    if (light->mediaPhotonOptions)
+                        Warning("photons in a media light_source are ignored by photon method 1.");
+                }
+                else if (light->mediaPhotonLegacyOptions)
+                    Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
+            }
+            if (sceneData->photonSettings.method == 2)
+                for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
+                    for (LightSource* light : *lights)
+                    {
+                        if (light->Orient || light->Projected_Through_Object)
+                            Error("Photon method 2 does not support orient or projected_through lights.");
+                        if (light->Parallel)
+                        {
+                            if (light->Fade_Power != 0.0)
+                                Error("Parallel photon emitters require fade_power 0.");
+                        }
+                        else
+                        {
+                            if (light->Fade_Power == 0.0 && !light->emitter)
+                                light->Fade_Power = 2.0;
+                            else if (light->Fade_Power != 0.0 && light->Fade_Power != 2.0)
+                                Error("Photon method 2 requires inverse-square light power (fade_power 0 or 2).");
+                            else if (light->Fade_Power == 2.0 && light->Fade_Distance > EPSILON)
+                                light->colour *= 2.0 * light->Fade_Distance * light->Fade_Distance;
+                            light->Fade_Distance = 0.0;
+                        }
+                    }
             Make_Portal_Lights();
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
@@ -3816,6 +3852,7 @@ ObjectPtr Parser::Parse_Light_Group()
     Object = new CSGUnion();
 
     Object->Type |= LIGHT_GROUP_OBJECT;
+    Object->photonGroupEnabled = sceneData->EffectiveLanguageVersion() >= 400;
     Set_Flag(Object, NO_GLOBAL_LIGHTS_FLAG);
 
     while ((Local = Parse_Object()) != nullptr)
@@ -3880,6 +3917,14 @@ ObjectPtr Parser::Parse_Light_Group()
         END_CASE
 
         CASE(PHOTONS_TOKEN)
+            Get_Token();
+            if (CurrentTrueTokenId() != LEFT_CURLY_TOKEN)
+            {
+                UNGET
+                Object->photonGroupEnabled = Parse_Float() > 0.0;
+                break;
+            }
+            UNGET
             Parse_Begin();
             EXPECT
                 CASE(TARGET_TOKEN)
@@ -3958,6 +4003,8 @@ ObjectPtr Parser::Parse_Light_Group()
                           NO_GLOBAL_LIGHTS_FLAG, NO_GLOBAL_LIGHTS_SET_FLAG);
 
     Parse_End();
+
+    Promote_Photon_Lights(Object);
 
     return (reinterpret_cast<ObjectPtr>(Object));
 }
@@ -7638,13 +7685,27 @@ void Parser::Parse_Global_Settings()
             //  sceneData->photonSettings.photonReflectionBlur = false; // off by default
 
             sceneData->photonSettings.surfaceCount = 0;
+            sceneData->photonSettings.method = 1;
+            sceneData->photonSettings.quality = 1.0;
+            sceneData->photonSettings.classicOptions = false;
+            sceneData->photonSettings.qualitySpecified = false;
             //  sceneData->photonSettings.globalCount = 0;
 
             sceneData->surfacePhotonMinGatherRad = -1;
 
             Parse_Begin();
             EXPECT
+                CASE(METHOD_TOKEN)
+                    {
+                        const double method = Parse_Float();
+                        if (method != 1.0 && method != 2.0)
+                            Error("Photon method must be 1 (classic) or 2 (progressive).");
+                        sceneData->photonSettings.method = int(method);
+                    }
+                END_CASE
+
                 CASE(RADIUS_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->surfacePhotonMinGatherRad = Allow_Float(-1.0);
                     Parse_Comma();
                     sceneData->surfacePhotonMinGatherRadMult = Allow_Float(1.0);
@@ -7655,6 +7716,7 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 CASE(SPACING_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.surfaceSeparation = Parse_Float();
                 END_CASE
 
@@ -7666,6 +7728,7 @@ void Parser::Parse_Global_Settings()
 #endif
 
                 CASE (EXPAND_THRESHOLDS_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.expandTolerance = Parse_Float(); Parse_Comma();
                     sceneData->photonSettings.minExpandCount = Parse_Float();
                     if (sceneData->photonSettings.expandTolerance < 0.0)
@@ -7681,20 +7744,24 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 CASE (GATHER_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.minGatherCount = (int)Parse_Float();
                     Parse_Comma();
                     sceneData->photonSettings.maxGatherCount = (int)Parse_Float();
                 END_CASE
 
                 CASE (JITTER_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.jitter = Parse_Float();
                 END_CASE
 
                 CASE (COUNT_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.surfaceCount = (int)Parse_Float();
                 END_CASE
 
                 CASE (AUTOSTOP_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.autoStopPercent = Parse_Float();
                 END_CASE
 
@@ -7741,12 +7808,27 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 OTHERWISE
-                    UNGET
-                    EXIT
+                    if (CurrentTokenText() == "quality")
+                    {
+                        const double quality = Parse_Float();
+                        if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
+                            Error("Photon quality must be finite, greater than zero and at most 256.");
+                        sceneData->photonSettings.quality = quality;
+                        sceneData->photonSettings.qualitySpecified = true;
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
                 END_CASE
             END_EXPECT
 
             // max_gather_count = 0  means no photon maps
+            if (sceneData->photonSettings.method == 2 && sceneData->photonSettings.classicOptions)
+                Error("Photon method 2 uses quality instead of count, spacing, gather, radius, jitter, autostop or expand_thresholds.");
+            if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.qualitySpecified)
+                Error("Photon quality requires method 2.");
             if (sceneData->photonSettings.maxGatherCount > 0)
                 sceneData->photonSettings.photonsEnabled = true;
             else
@@ -9906,6 +9988,7 @@ void Parser::MAError (const char *, long)
 static void Add_Local_Light(ObjectPtr object, LightSource *light)
 {
     object->LLights.push_back(light);
+    object->PhotonLights.push_back(light);
     if (object->Type & IS_COMPOUND_OBJECT)
         for (ObjectPtr child : reinterpret_cast<CompoundObject *>(object)->children)
             Add_Local_Light(child, light);
@@ -9937,15 +10020,19 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
         light->Light_Type = FILL_LIGHT_SOURCE;
-    // classic photons do not shoot from it
-    Set_Flag(light, PH_RFR_OFF_FLAG);
-    Set_Flag(light, PH_RFL_OFF_FLAG);
+    light->mediaPhotonOptions = settings.photonOptions;
+    light->mediaPhotonLegacyOptions = settings.photonLegacyOptions;
+    if (settings.photonRefraction >= 0)
+        Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
+    if (settings.photonReflection >= 0)
+        Set_Flag(light, settings.photonReflection ? PH_RFL_ON_FLAG : PH_RFL_OFF_FLAG);
     sceneData->mediaLights.push_back(light);
     if (mLightGroups.empty())
         sceneData->lightSources.push_back(light);
     else
     {
         light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
+        light->photonGroupEnabled = mLightGroups.back()->photonGroupEnabled;
         sceneData->lightGroupLightSources.push_back(light);
         Add_Local_Light(mLightGroups.back(), light);
     }
@@ -10317,7 +10404,10 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         const bool group = ((Object->Type & LIGHT_GROUP_OBJECT) != 0);
         if (group)
+        {
+            Promote_Photon_Lights(static_cast<CSG*>(Object));
             mLightGroups.push_back(Object);
+        }
         const bool resolvedBefore = mMeshResolvedBelow;
         mMeshResolvedBelow = false;
         for (vector<ObjectPtr>::iterator Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); Sib != (reinterpret_cast<CSG *>(Object))->children.end(); Sib++)

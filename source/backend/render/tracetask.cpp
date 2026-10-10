@@ -354,7 +354,9 @@ void TraceTask::Run()
     do
     {
 #endif
-        if(progressLevel >= 0)
+        if (GetSceneData()->photonSettings.method == 2 && GetSceneData()->photonSettings.photonsEnabled)
+            ProgressivePhotons();
+        else if(progressLevel >= 0)
         {
             if(latticeStep > 0)
                 ProgressiveLevel();
@@ -472,6 +474,46 @@ void TraceTask::Finish()
         gMaxVal = 0;
     }
 #endif
+}
+
+void TraceTask::ProgressivePhotons()
+{
+    POVRect rect;
+    unsigned int serial;
+    const unsigned int pass = GetViewData()->photonPass;
+    std::vector<RGBTColour> pixels;
+    while (GetViewData()->GetNextRectangle(rect, serial))
+    {
+        BlockTimer timer;
+        pixels.clear();
+        pixels.reserve(rect.GetArea());
+        for (unsigned int y = rect.top; y <= rect.bottom; ++y)
+            for (unsigned int x = rect.left; x <= rect.right; ++x)
+            {
+                const auto key = DeriveKey(GetViewDataPtr()->stochasticRandomSeedBase,
+                                           kDrawPhoton, std::uint64_t(y) * GetViewData()->GetWidth() + x);
+                const double sx = Draw(key, kDrawPhoton, 0) + (pass + 0.5) * 0.7548776662466927;
+                const double sy = Draw(key, kDrawPhoton, 1) + (pass + 0.5) * 0.5698402909980532;
+                RGBTColour sample;
+                auto* data = GetViewDataPtr();
+                data->progressivePixel = &GetViewData()->photonPixels[size_t(y) * GetViewData()->GetWidth() + x];
+                data->progressivePass = pass;
+                data->progressiveValue = data->progressiveNoise = data->progressiveLaplacian = data->progressiveDensity = 0.0;
+                trace(x + sx - std::floor(sx), y + sy - std::floor(sy),
+                      GetViewData()->GetWidth(), GetViewData()->GetHeight(), sample);
+                data->progressivePixel->Update(pass, data->progressiveValue, data->progressiveNoise,
+                                               data->progressiveLaplacian, data->progressiveDensity);
+                data->progressivePixel = nullptr;
+                auto& sum = GetViewData()->LatticeSample(x, y);
+                sum += sample;
+                pixels.push_back(sum / double(pass + 1));
+                GetViewDataPtr()->Stats()[Number_Of_Pixels]++;
+                Cooperate();
+            }
+        GetViewDataPtr()->AfterTile();
+        GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, pass, timer.Elapsed());
+        Cooperate();
+    }
 }
 
 void TraceTask::SimpleSamplingM0()

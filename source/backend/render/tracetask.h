@@ -145,6 +145,7 @@ class TraceTask final : public RenderTask
         bool latticeFirst;              ///< The first level, which also traces the points of the coarser lattice.
         int aaPass;                     ///< Method 4's pass: 1 fit, 2 probe, 3 noise average, 4 resolve.
         int aaRound;                    ///< Method 4's probe round.
+        void ProgressivePhotons();
 
         /// A colour in OKLab, with its transmittance.
         struct OkLab final { float l, a, b, t; };

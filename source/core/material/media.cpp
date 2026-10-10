@@ -2571,7 +2571,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
             photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
-        if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0))
+        if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0 ||
+           threadData->GetSceneData()->photonSettings.method == 2))
         {
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);
         }
@@ -2739,6 +2740,31 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
 
 void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H)
 {
+    if (threadData->GetSceneData()->photonSettings.method == 2 && photonGatherer)
+    {
+        if (!threadData->GetSceneData()->photonSettings.photonsEnabled)
+            return;
+        for (const auto& set : threadData->GetSceneData()->preparedSets)
+        {
+            if (&set->mediaPhotonMap != photonGatherer->map)
+                continue;
+            const auto& map = set->progressiveMedia;
+            if (map.photons.empty())
+                return;
+            MathColour sum;
+            const double radius = map.RadiusAt(H);
+            map.Visit(H, radius, [&](const ProgressivePhoton& photon) {
+                BasicRay light;
+                light.Direction = photon.direction;
+                light.Origin = photon.point - photon.direction;
+                ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.flux, ray, light);
+                threadData->progressiveContributions++;
+            });
+            Te += sum / ProgressivePhotonBudget::KernelVolume(radius, 3);
+            return;
+        }
+        return;
+    }
     BasicRay Light_Ray;
     DBL r;
     int j;
