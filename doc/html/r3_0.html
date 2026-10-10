@@ -203,6 +203,24 @@
   <td><div class="divh2"><a title="3.12.6" href="#r3_12_6">Worked Examples</a></div></td>
 </tr>
 <tr>
+  <td class="FixedPanelHeading"><a title="3.13" href="#r3_13">Scene Language 4.0</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.13.1" href="#r3_13_1">Why a New Language</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.13.2" href="#r3_13_2">The 4.0 Language</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.13.3" href="#r3_13_3">Converting Scenes with the Codemod</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.13.4" href="#r3_13_4">Migration Guide</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.13.5" href="#r3_13_5">When to Keep Classic Files</a></div></td>
+</tr>
+<tr>
   <td><div class="divh1">&nbsp;</div></td>
 </tr>
 <tr>
@@ -2273,6 +2291,126 @@
 </tr>
 <tr>
   <td><div class="divh3"><a name="r3_12_6_4"></a><a title="3.12.6.4" href="r3_12.html#r3_12_6_4">Overlapping and Contained Lights</a></div></td>
+</tr>
+<tr>
+  <td class="ContentsHeading"><div class="divh1"><a name="r3_13"></a><a title="3.13" href="r3_13.html#r3_13">Scene Language 4.0</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_13_1"></a><a title="3.13.1" href="r3_13.html#r3_13_1">Why a New Language</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_1"></a><a title="3.13.1.1" href="r3_13.html#r3_13_1_1">Two Languages in One File</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_2"></a><a title="3.13.1.2" href="r3_13.html#r3_13_1_2">Directives That Splice Partial Constructs</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_3"></a><a title="3.13.1.3" href="r3_13.html#r3_13_1_3">Building Tokens with Macros</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_4"></a><a title="3.13.1.4" href="r3_13.html#r3_13_1_4">Meaning That Depends on Runtime Values</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_5"></a><a title="3.13.1.5" href="r3_13.html#r3_13_1_5">Optional Commas and Signs</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_6"></a><a title="3.13.1.6" href="r3_13.html#r3_13_1_6">Operators</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_1_7"></a><a title="3.13.1.7" href="r3_13.html#r3_13_1_7">What Stays the Same</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_13_2"></a><a title="3.13.2" href="r3_13.html#r3_13_2">The 4.0 Language</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_1"></a><a title="3.13.2.1" href="r3_13.html#r3_13_2_1">Files and the Extension</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_2"></a><a title="3.13.2.2" href="r3_13.html#r3_13_2_2">The Execution Model</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_3"></a><a title="3.13.2.3" href="r3_13.html#r3_13_2_3">Functions as Components and Fragments</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_4"></a><a title="3.13.2.4" href="r3_13.html#r3_13_2_4">Bindings: let, Assignment and global</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_5"></a><a title="3.13.2.5" href="r3_13.html#r3_13_2_5">Control Flow</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_6"></a><a title="3.13.2.6" href="r3_13.html#r3_13_2_6">Expressions and Precedence</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_7"></a><a title="3.13.2.7" href="r3_13.html#r3_13_2_7">Arrays, Comprehensions and Dictionaries</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_8"></a><a title="3.13.2.8" href="r3_13.html#r3_13_2_8">Lambdas and the Conditional Operator</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_9"></a><a title="3.13.2.9" href="r3_13.html#r3_13_2_9">Blocks</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_10"></a><a title="3.13.2.10" href="r3_13.html#r3_13_2_10">Render-time Functions</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_11"></a><a title="3.13.2.11" href="r3_13.html#r3_13_2_11">Built-ins Added by 4.0</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_12"></a><a title="3.13.2.12" href="r3_13.html#r3_13_2_12">Mixing with Classic</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_13"></a><a title="3.13.2.13" href="r3_13.html#r3_13_2_13">Errors and Where They Are Reported</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_2_14"></a><a title="3.13.2.14" href="r3_13.html#r3_13_2_14">Limits and Testing Options</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_13_3"></a><a title="3.13.3" href="r3_13.html#r3_13_3">Converting Scenes with the Codemod</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_3_1"></a><a title="3.13.3.1" href="r3_13.html#r3_13_3_1">Running It</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_3_2"></a><a title="3.13.3.2" href="r3_13.html#r3_13_3_2">What It Rewrites</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_3_3"></a><a title="3.13.3.3" href="r3_13.html#r3_13_3_3">What It Refuses</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_3_4"></a><a title="3.13.3.4" href="r3_13.html#r3_13_3_4">Checking a Conversion</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_13_4"></a><a title="3.13.4" href="r3_13.html#r3_13_4">Migration Guide</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_4_1"></a><a title="3.13.4.1" href="r3_13.html#r3_13_4_1">Step 1: Convert</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_4_2"></a><a title="3.13.4.2" href="r3_13.html#r3_13_4_2">Step 2: Render at the Old Version and Compare</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_4_3"></a><a title="3.13.4.3" href="r3_13.html#r3_13_4_3">Step 3: Switch to the 4.0 Defaults and Fix the Look</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_4_4"></a><a title="3.13.4.4" href="r3_13.html#r3_13_4_4">Step 4: Tidy into Idiomatic 4.0</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_13_5"></a><a title="3.13.5" href="r3_13.html#r3_13_5">When to Keep Classic Files</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_5_1"></a><a title="3.13.5.1" href="r3_13.html#r3_13_5_1">Heavy Literal Data</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_5_2"></a><a title="3.13.5.2" href="r3_13.html#r3_13_5_2">The Standard Library and Third-party Includes</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_5_3"></a><a title="3.13.5.3" href="r3_13.html#r3_13_5_3">Includes the Codemod Refuses</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_5_4"></a><a title="3.13.5.4" href="r3_13.html#r3_13_5_4">Behavior That Only Classic Has</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_13_5_5"></a><a title="3.13.5.5" href="r3_13.html#r3_13_5_5">Classic Parsing Speed</a></div></td>
 </tr>
 </table>
 </div>
