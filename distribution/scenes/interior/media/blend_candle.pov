@@ -6,7 +6,7 @@
 #ifndef (Smoke) #declare Smoke = 1; #end
 #ifndef (Shimmer) #declare Shimmer = 1; #end
 #ifndef (FlameLight) #declare FlameLight = 1; #end
-#ifndef (FlameSamples) #declare FlameSamples = 16; #end
+#ifndef (FlameSamples) #declare FlameSamples = 32; #end
 #declare Wick = <0, 1.32, 0>;
 #declare WickY = Wick.y;
 #declare Back = 1.6;
