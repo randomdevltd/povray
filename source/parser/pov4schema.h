@@ -58,96 +58,10 @@ static const char* const kPov4BlockItems_texture[] = { "finish", "material_map",
 static const char* const kPov4BlockItems_torus[] = { "bounded_by", "clipped_by", "cutaway_textures", "double_illuminate", "dtag", "finish", "hierarchy", "hollow", "interior", "interior_texture", "inverse", "light_source", "material", "matrix", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "photons", "pigment", "radiosity", "rotate", "scale", "split_union", "sturm", "tags", "texture", "transform", "translate", "uv_mapping" };
 static const char* const kPov4BlockItems_triangle[] = { "bounded_by", "clipped_by", "cutaway_textures", "double_illuminate", "dtag", "finish", "hierarchy", "hollow", "interior", "interior_texture", "inverse", "light_source", "material", "matrix", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "photons", "pigment", "radiosity", "rotate", "scale", "split_union", "sturm", "tags", "texture", "transform", "translate", "uv_mapping" };
 static const char* const kPov4BlockItems_union[] = { "bicubic_patch", "blob", "bounded_by", "box", "clipped_by", "composite", "cone", "cubic", "cutaway_textures", "cylinder", "difference", "disc", "double_illuminate", "dtag", "finish", "height_field", "hierarchy", "hollow", "interior", "interior_texture", "intersection", "inverse", "isosurface", "isosurface_mesh", "julia_fractal", "lathe", "lemon", "light_group", "light_source", "material", "matrix", "merge", "mesh", "mesh2", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "object", "ovus", "parametric", "photons", "pigment", "plane", "poly", "polygon", "polynomial", "portal", "prism", "quadric", "quartic", "radiosity", "rotate", "scale", "skein", "skein_mesh", "smooth_triangle", "sor", "sphere", "sphere_sweep", "split_union", "sturm", "superellipsoid", "tags", "text", "texture", "torus", "transform", "translate", "triangle", "union", "uv_mapping" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
+static const char* const kPov4BlockItems_photons[] = { "adc_bailout", "area_light", "autostop", "collect", "count", "expand_thresholds", "gather", "global", "jitter", "load_file", "max_trace_level", "media", "pass_through", "radius", "reflection", "refraction", "save_file", "spacing", "target" };
+static const char* const kPov4BlockItems_radiosity[] = { "adc_bailout", "always_sample", "brightness", "brilliance", "count", "error_bound", "gray_threshold", "grey_threshold", "importance", "load_file", "low_error_factor", "max_sample", "maximum_reuse", "media", "minimum_reuse", "nearest_count", "normal", "pretrace_end", "pretrace_start", "recursion_limit", "save_file", "subsurface" };
 static const char* const kPov4BlockItems_reflection[] = { "exponent", "falloff", "fresnel", "metallic" };
-static const char* const kPov4BlockItems_photons[] = { "adc_bailout", "autostop", "count", "expand_thresholds", "gather", "global", "jitter", "load_file", "max_trace_level", "media", "radius", "save_file", "spacing" };
-static const char* const kPov4BlockItems_radiosity[] = { "adc_bailout", "always_sample", "brightness", "brilliance", "count", "error_bound", "gray_threshold", "grey_threshold", "load_file", "low_error_factor", "max_sample", "maximum_reuse", "media", "minimum_reuse", "nearest_count", "normal", "pretrace_end", "pretrace_start", "recursion_limit", "save_file", "subsurface" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "area_light", "collect", "global", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
 static const char* const kPov4BlockItems_scattering[] = { "eccentricity", "extinction" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
-static const char* const kPov4BlockItems_photons[] = { "collect", "pass_through", "reflection", "refraction", "target" };
-static const char* const kPov4BlockItems_radiosity[] = { "importance" };
 struct Pov4BlockSchema { const char* word; const char* const* items; size_t count; };
 
 static const Pov4BlockSchema kPov4BlockSchemas[] = {
@@ -206,94 +120,8 @@ static const Pov4BlockSchema kPov4BlockSchemas[] = {
     { "union", kPov4BlockItems_union, sizeof(kPov4BlockItems_union) / sizeof(kPov4BlockItems_union[0]) },
     { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
     { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
     { "reflection", kPov4BlockItems_reflection, sizeof(kPov4BlockItems_reflection) / sizeof(kPov4BlockItems_reflection[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
     { "scattering", kPov4BlockItems_scattering, sizeof(kPov4BlockItems_scattering) / sizeof(kPov4BlockItems_scattering[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
-    { "photons", kPov4BlockItems_photons, sizeof(kPov4BlockItems_photons) / sizeof(kPov4BlockItems_photons[0]) },
-    { "radiosity", kPov4BlockItems_radiosity, sizeof(kPov4BlockItems_radiosity) / sizeof(kPov4BlockItems_radiosity[0]) },
 };
 
 inline const Pov4BlockSchema* FindPov4BlockSchema(const char* word, size_t len)

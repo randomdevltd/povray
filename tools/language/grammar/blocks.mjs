@@ -198,7 +198,12 @@ const defs = rows.map(([word, b]) => {
     const id = word.replace(/[^a-z0-9_]/g, '_');
     return `static const char* const kPov4BlockItems_${id}[] = { ${b.items.map((w) => `"${w}"`).join(', ')} };\n`;
 }).join('');
-const nestedEntries = rows.flatMap(([, b]) => Object.entries(b.nested).filter(([p]) => NESTED_IN_HEADER.has(p)));
+const nestedEntriesUnions = new Map();
+for (const [, b] of rows)
+    for (const [p, items] of Object.entries(b.nested))
+        if (NESTED_IN_HEADER.has(p))
+            nestedEntriesUnions.set(p, [...new Set([...(nestedEntriesUnions.get(p) ?? []), ...items])].sort());
+const nestedEntries = [...nestedEntriesUnions.entries()];
 const nestedDefs = nestedEntries.map(([p, items]) => {
     const id = p.replace(/[^a-z0-9_]/g, '_');
     return `static const char* const kPov4BlockItems_${id}[] = { ${items.map((w) => `"${w}"`).join(', ')} };\n`;
