@@ -556,7 +556,7 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
         const double back = path.empty() ? 0.0 : 0.25 * path.back().length;
         // Past the first chord the search starts a little further back again, so a surface just ahead clears the minimum hit depth.
         const double lead = path.empty() ? 0.0 : 2.0 * MIN_ISECT_DEPTH;
-        const BeyondDepthRayObjectCondition window(lead);
+        const BeyondDepthRayObjectCondition window(lead + std::max(0.0, MIN_ISECT_DEPTH - (travelled - back)));
         chord.Direction = span / length;
         chord.Origin = point - (back + lead) * chord.Direction;
         isect = Intersection();

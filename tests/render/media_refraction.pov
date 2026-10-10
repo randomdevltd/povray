@@ -115,6 +115,11 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
   box { <-1.5, -1.5, 0.5>, <1.5, 1.5, 1.5> pigment { function { z < 0.51 } color_map { [0 rgb 0] [1 rgb 1] } }
         finish { ambient 0 emission 1 diffuse 0 } }
 #break
+#case (35) // the same field around a clear box of glowing media
+  box { <-4, -3, -3>, <4, 3, 3> texture { Clear }
+        interior { media { method 3 refraction 0.05 density { function { pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } } } } }
+  box { <-1.5, -1.5, 0.5>, <1.5, 1.5, 1.5> texture { Clear } interior { media { emission 1.5 } } }
+#break
 #case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior 1 } } #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior 1 } } #break
 #end
