@@ -426,6 +426,7 @@ an easier means of doing the same thing).
 <div class="content-level-h4" contains="Keywords" id="r3_3_1_2">
 <h4>3.3.1.2 Keywords</h4>
 <p>POV-Ray has a number of reserved keywords which are listed below.</p>
+<p>A few words are read only where they are expected and are not reserved: <code>off</code> and <code>atmosphere</code> after <code>ior</code>, <code>surface</code>, <code>mean</code> and <code>replace</code> after <code>ior_mix</code>, <code>blend</code> after <code>interface_texture</code>, <code>add</code>, <code>replace</code>, <code>subtract</code> and <code>multiply</code> after <code>mix</code>, and the global settings <code>atmospheric_ior</code>, <code>atmospheric_dispersion</code>, <code>interface_texture</code> and <code>ior_mix</code> themselves. They are listed here, marked <em>contextual word</em>, for lookup, and can still be used as identifiers.</p>
 <table class="tablelist">
 <tr>
 <th colspan="3" align="left">a</th>
@@ -475,8 +476,8 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_1_5_4">atan2</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">atand</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">atanh</a></code><br>
-<code><a href="r3_4.html#r3_4_1_15">atmospheric_dispersion</a></code><br>
-<code><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></code><br>
+<code><a href="r3_4.html#r3_4_1_15">atmospheric_dispersion</a></code> <em>contextual word</em><br>
+<code><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></code> <em>contextual word</em><br>
 <code><a href="r3_4.html#r3_4_3_4_9_1">autostop</a></code><br>
 <code><a href="r3_6.html#r3_6_2_4_1">average</a></code><br>
 </td>
@@ -514,7 +515,8 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_2_6_4">break</a></code><br>
 <code><a href="r3_6.html#r3_6_2_1_4">brick</a></code><br>
 <code><a href="r3_6.html#r3_6_2_1_4">brick_size</a></code><br>
-<code><a href="r3_4.html#r3_4_3_3_3_3">brightness</a></code><br>
+<code><a href="r3_4.html#r3_4_3_3_3_3">brightness</a></code> <em>radiosity</em><br>
+<code><a href="r3_12.html#r3_12_1">brightness</a></code> <em>media light</em><br>
 </td>
 <td width="33%">
 <code><a href="r3_6.html#r3_6_1_3_3_2">brilliance</a></code><br>
@@ -667,7 +669,9 @@ an easier means of doing the same thing).
 <code><a href="r3_7.html#r3_7_2_1_6">fade_color</a></code><br>
 <code><a href="r3_7.html#r3_7_2_1_6">fade_colour</a></code><br>
 <code><a href="r3_4.html#r3_4_3_1_9">fade_distance</a></code><br>
+<code><a href="r3_12.html#r3_12_2">fade_distance</a></code> <em>media light</em><br>
 <code><a href="r3_4.html#r3_4_3_1_9">fade_power</a></code><br>
+<code><a href="r3_12.html#r3_12_2">fade_power</a></code> <em>media light</em><br>
 <code><a href="r3_10.html#r3_10_2_3">fallback</a></code> <em>screen</em><br>
 <code><a href="r3_10.html#r3_10_3_7">fallback</a></code> <em>portal</em><br>
 <code><a href="r3_4.html#r3_4_3_1_2">falloff</a></code><br>
@@ -775,7 +779,7 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_1_5_4">inside</a></code><br>
 <code><a href="r3_5.html#r3_5_1_2_3_1">inside_vector</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">int</a></code><br>
-<code><a href="r3_4.html#r3_4_1_16">interface_texture</a></code><br>
+<code><a href="r3_4.html#r3_4_1_16">interface_texture</a></code> <em>contextual word</em><br>
 <code><a href="r3_7.html#r3_7_2_1">interior</a></code><br>
 <code><a href="r3_6.html#r3_6_1_9">interior_texture</a></code><br>
 </td>
@@ -787,7 +791,7 @@ an easier means of doing the same thing).
 <code><a href="r3_7.html#r3_7_2_3">intervals</a></code><br>
 <code><a href="r3_5.html#r3_5_1_5_5">inverse</a></code><br>
 <code><a href="r3_7.html#r3_7_2_1_4">ior</a></code><br>
-<code><a href="r3_7.html#r3_7_2_1_4">ior_mix</a></code><br>
+<code><a href="r3_7.html#r3_7_2_1_4">ior_mix</a></code> <em>contextual word</em><br>
 <code><a href="r3_6.html#r3_6_1_3_7">irid</a></code><br>
 <code><a href="r3_4.html#r3_4_1_5">irid_wavelength</a></code><br>
 <code><a href="r3_5.html#r3_5_1_1_6">isosurface</a></code><br>
@@ -823,6 +827,7 @@ an easier means of doing the same thing).
 <code><a href="r3_6.html#r3_6_2_1_15">leopard</a></code><br>
 <code><a href="r3_4.html#r3_4_3_2">light_group</a></code><br>
 <code><a href="r3_4.html#r3_4_3_1">light_source</a></code><br>
+<code><a href="r3_12.html#r3_12_1">light_source</a></code> <em>media</em><br>
 </td>
 <td width="33%">
 <code><a href="r3_5.html#r3_5_1_1_8">linear_spline</a></code><br>
@@ -869,7 +874,9 @@ an easier means of doing the same thing).
 <code><a href="r3_4.html#r3_4_1_7">max_trace_level</a></code><br>
 <code><a href="r3_7.html#r3_7_2">media</a></code><br>
 <code><a href="r3_4.html#r3_4_3_1_11">media_attenuation</a></code><br>
+<code><a href="r3_12.html#r3_12_1">media_attenuation</a></code> <em>media light</em><br>
 <code><a href="r3_4.html#r3_4_3_1_10">media_interaction</a></code><br>
+<code><a href="r3_12.html#r3_12_1">media_interaction</a></code> <em>media light</em><br>
 <code><a href="r3_5.html#r3_5_1_4_5">merge</a></code> <em>csg</em><br>
 <code><a href="r3_5.html#r3_5_1_1_18">merge</a></code> <em>torus</em><br>
 <code><a href="r3_5.html#r3_5_1_2_3">mesh</a></code><br>
@@ -1056,6 +1063,7 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_2_7_1">render</a></code><br>
 <code><a href="r3_6.html#r3_6_2_2_3">repeat</a></code> <em>crackle pattern</em><br>
 <code><a href="r3_6.html#r3_6_2_5_5_2">repeat</a></code> <em>warp</em><br>
+<code><a href="r3_11.html#r3_11_4">resolution</a></code> <em>media</em><br>
 </td>
 <td width="33%">
 <code><a href="r3_3.html#r3_3_1_7_1">rgb</a></code><br>
@@ -1077,6 +1085,7 @@ an easier means of doing the same thing).
 <td width="33%">
 
 <code><a href="r3_7.html#r3_7_2_3">samples</a></code> <em>media</em><br>
+<code><a href="r3_12.html#r3_12_1">samples</a></code> <em>media light</em><br>
 <code><a href="r3_6.html#r3_6_1_3_3_4">samples</a></code> <em>subsurface</em><br>
 <code><a href="r3_4.html#r3_4_3_3_4_5">save_file</a></code><br>
 <code><a href="r3_3.html#r3_3_1_12_2">scale</a></code><br>
@@ -1086,6 +1095,7 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_1_5_4">seed</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">select</a></code><br>
 <code><a href="r3_4.html#r3_4_3_1_6">shadowless</a></code><br>
+<code><a href="r3_12.html#r3_12_1">shadowless</a></code> <em>media light</em><br>
 <code><a href="r3_3.html#r3_3_1_5_4">sin</a></code><br>
 <code><a href="r3_6.html#r3_6_2_5_3">sine_wave</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">sinh</a></code><br>
@@ -4419,7 +4429,7 @@ DEFAULT_ITEM:
 <p>This still changes the pigment of the default texture. At any time there is only one default texture made from the default pigment, normal and finish. The example above does not make a separate default for pigments alone.</p>
 <p class="Note"><strong>Note:</strong> The special textures <code>tiles</code> and <code>material_map</code>
 or a texture with a <code>texture_map</code> may not be used as defaults.</p>
-<p>A <code>media</code> default takes only <code>mix</code>, which then applies to every object placed afterwards whose first medium does not set its own, and to objects without media; see <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>.</p>
+<p>A <code>media</code> default takes only <code>mix</code>, which then applies to every object placed afterwards whose first medium does not set its own. An object without media is affected only by <code>mix replace</code>, which makes it clear the media beneath it; <code>add</code>, <code>subtract</code> and <code>multiply</code> leave it inert. A <code>hollow</code> object ignores the default and uses <code>add</code>. The word after <code>mix</code> is read as text, so it cannot come from a variable. See <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>.</p>
 <p>You may change the defaults several times throughout a scene as you wish. Subsequent <code>#default</code> statements begin with the defaults that were in effect at the time. If you wish to reset to the original POV-Ray defaults then you should first save them as follows:</p>
 <pre>
 //At top of file
@@ -4465,6 +4475,18 @@ VERSION_DIRECTIVE:
 <p><code>#version 4.0;</code> selects the 4.0 language defaults. Subsurface scattering uses method 2 when its method is omitted; scenes declaring an earlier language version retain method 1. An explicit <code>subsurface { method INT }</code> overrides either default.</p>
 
 <p>With <code>#version 4.0;</code> interior media also render inside objects that are not <code>hollow</code>, and inside objects nested in them; earlier versions hide them, as described in <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>. Every object then replaces the media of the objects placed before it where they overlap unless its media set another <a href="r3_7.html#r3_7_2_1_9">mix</a>, and <code>hollow</code> is deprecated in favour of <code>media { mix add }</code>, which it sets. Overlapping objects take the mean of their iors rather than the ior of the innermost one entered, unless their <code>ior_mix</code> says otherwise, as described in <a href="r3_7.html#r3_7_2_1_4">Refraction</a>.</p>
+<p>The media and interior defaults that follow the language version are:</p>
+<table width="100%" class="option-list">
+<tr><td></td><td><strong>Before 4.0</strong></td><td><strong><code>#version 4.0;</code></strong></td></tr>
+<tr><td><a href="r3_7.html#r3_7_2_3">media method</a></td><td>3 (from 3.5)</td><td>4, with automatic resolution</td></tr>
+<tr><td>interior media in a non-hollow object</td><td>not rendered</td><td>rendered</td></tr>
+<tr><td><a href="r3_7.html#r3_7_2_1_9">media mix</a> of an object's first medium</td><td><code>add</code></td><td><code>replace</code>; <code>add</code> if the object is <code>hollow</code></td></tr>
+<tr><td>an object without media</td><td>leaves the media beneath it</td><td>clears them</td></tr>
+<tr><td><a href="r3_7.html#r3_7_2_1_4">ior</a> when none is given</td><td>the atmosphere's ior, as in 3.7</td><td><code>ior off</code>: takes no part in refraction</td></tr>
+<tr><td><a href="r3_7.html#r3_7_2_1_4">ior_mix</a></td><td><code>surface</code></td><td><code>mean</code></td></tr>
+<tr><td><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></td><td>1.0</td><td>1.00029</td></tr>
+<tr><td><a href="r3_4.html#r3_4_1_16">interface_texture</a></td><td><code>far</code></td><td><code>blend</code></td></tr>
+</table>
 
 <p>If you do need to do some processing before you decide on a version compatibility option start your scene with the following
 construct:</p>
