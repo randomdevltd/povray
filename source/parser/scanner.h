@@ -219,6 +219,9 @@ public:
     /// Get current stream for comparison.
     ConstStreamPtr GetInputStream() const;
 
+    /// Get current stream for comparison, without copying a pointer to it.
+    const IStream* GetInputStreamPointer() const { return mSource.mpStream.get(); }
+
     /// Get current stream name for comparison.
     UCS2String GetInputStreamName() const;
 

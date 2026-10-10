@@ -295,14 +295,27 @@ class Parser final
             bool is_mixed_array_elem    : 1;    ///< `true` if token is a mixed-type array element reference.
             bool is_dictionary_elem     : 1;    ///< `true` if token is a dictionary element reference.
 
-            void SetTokenId(const RawToken& rawToken);
-            void SetTokenId(TokenId tokenId);
+            void SetTokenId(const RawToken& rawToken)
+            {
+                mTrueTokenId        = rawToken.GetTokenId();
+                mCategorizedTokenId = rawToken.expressionId;
+                POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId == pov_parser::GetCategorizedTokenId(mTrueTokenId));
+            }
+            void SetTokenId(TokenId tokenId)
+            {
+                mTrueTokenId        = tokenId;
+                mCategorizedTokenId = pov_parser::GetCategorizedTokenId(tokenId);
+            }
 
             /// Token ID, or identifier type ID (`XXX_ID_TOKEN`) in case of identifier token.
-            TokenId GetTrueTokenId() const;
+            TokenId GetTrueTokenId() const { return mTrueTokenId; }
 
             /// Token category if applicable, otherwise equal to @ref mTrueTokenId.
-            TokenId GetCategorizedTokenId() const;
+            TokenId GetCategorizedTokenId() const
+            {
+                POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId == pov_parser::GetCategorizedTokenId(mTrueTokenId));
+                return mCategorizedTokenId;
+            }
 
             virtual UCS2String GetFileName() const override;
             virtual POV_LONG GetLine() const override { return raw.lexeme.position.line; }
@@ -509,11 +522,21 @@ class Parser final
         Image *Read_Image(int filetype, const UCS2 *filename, const ImageReadOptions& options);
 
         // tokenize.h/tokenize.cpp
-        void Get_Token (void);
-        void Unget_Token (void);
+        void Get_Token()
+        {
+            if (mToken.Unget_Token)
+                mToken.Unget_Token = false;
+            else
+                Get_Next_Token();
+        }
+        void Unget_Token()
+        {
+            mToken.Unget_Token = true;
+            mToken.ungetRaw = false;
+        }
 
-        TokenId CurrentCategorizedTokenId() const;
-        TokenId CurrentTrueTokenId() const;
+        TokenId CurrentCategorizedTokenId() const { return mToken.GetCategorizedTokenId(); }
+        TokenId CurrentTrueTokenId() const { return mToken.GetTrueTokenId(); }
         const UTF8String& CurrentTokenText() const;
         const MessageContext& CurrentTokenMessageContext() const;
         void InitCurrentToken();
@@ -914,6 +937,7 @@ class Parser final
         std::shared_ptr<SkeinPath> Parse_Skein_Path(bool fromSurface = false);
 
         // tokenize.h/tokenize.cpp
+        void Get_Next_Token();
         void UngetRawToken(const RawToken& rawToken);
         bool GetRawToken(RawToken& rawToken, bool fastForwardToDirective);
         bool PeekRawToken(RawToken& rawToken);
