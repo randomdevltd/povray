@@ -23,8 +23,13 @@ const WITH_OWN_ITEMS = {
     mesh: 'Parse_Mesh1', mesh2: 'Parse_Mesh2', parametric: 'Parse_Parametric',
     bicubic_patch: 'Parse_Bicubic_Patch', julia_fractal: 'Parse_Julia_Fractal', isosurface: 'Parse_Isosurface_Body',
     isosurface_mesh: 'Parse_Isosurface_Body', portal: 'Parse_Portal', ovus: 'Parse_Ovus',
+    cone: 'Parse_Cone', cylinder: 'Parse_Cylinder', lemon: 'Parse_Lemon', sor: 'Parse_Sor',
+    text: 'Parse_TrueType',
 };
 const CURATION = {
+    ...Object.fromEntries(SHAPE_BLOCKS.map((w) => [w, ['Parse_Object_Mods']])),
+    ...Object.fromEntries(CSG_BLOCKS.map((w) => [w, ['Parse_Object', 'Parse_Object_Mods']])),
+    ...Object.fromEntries(Object.entries(WITH_OWN_ITEMS).map(([w, fn]) => [w, [fn, 'Parse_Object_Mods']])),
     finish: ['Parse_Finish'],
     texture: ['Parse_Texture'],
     material: ['Parse_Material'],
@@ -36,10 +41,10 @@ const CURATION = {
     camera: ['Parse_Camera', 'Parse_Camera_Mods'],
     global_settings: ['Parse_Global_Settings'],
     object: ['Parse_Object', 'Parse_Object_Mods'],
-    light_source: ['Parse_Light_Source', 'Parse_Object_Mods'],
-    ...Object.fromEntries(SHAPE_BLOCKS.map((w) => [w, ['Parse_Object_Mods']])),
-    ...Object.fromEntries(CSG_BLOCKS.map((w) => [w, ['Parse_Object', 'Parse_Object_Mods']])),
-    ...Object.fromEntries(Object.entries(WITH_OWN_ITEMS).map(([w, fn]) => [w, [fn, 'Parse_Object_Mods']])),
+    light_source: ['Parse_Light_Source', 'Parse_Media_Light', 'Parse_Object_Mods'],
+    height_field: ['Parse_HField', 'Parse_Image', 'Parse_Object_Mods'],
+    image_map: ['Parse_Image_Map', 'Parse_Image'],
+    bump_map: ['Parse_Bump_Map', 'Parse_Image'],
 };
 
 // Nested rows emitted into pov4schema.h: only genuine sub-blocks, not value positions.
@@ -78,7 +83,7 @@ const strip = (text) => {
     return out;
 };
 
-const MACRO = /\b(EXPECT_ONE_CAT|EXPECT_ONE|EXPECT_CAT|EXPECT|END_EXPECT|CASE_EXPRESS_UNGET|CASE[A-Z_0-9]*|END_CASE|OTHERWISE|AllowToken)\b\s*(\(([^()]*)\))?/g;
+const MACRO = /\b(EXPECT_ONE_CAT|EXPECT_ONE|EXPECT_CAT|EXPECT|END_EXPECT|CASE_EXPRESS_UNGET|CASE[A-Z_0-9]*|END_CASE|OTHERWISE|AllowToken|ALLOW)\b\s*(\(([^()]*)\))?/g;
 
 function mineFunction(name, body) {
     const top = new Set();
@@ -116,9 +121,14 @@ function mineFunction(name, body) {
             arms.pop();
         } else if (macro === 'OTHERWISE') {
             arms.push(null);
-        } else if (macro === 'AllowToken') {
+        } else if ((macro === 'AllowToken') || (macro === 'ALLOW')) {
             const t = (args ?? '').trim();
-            if (groups.length > 0 && /^[A-Z0-9_]+_TOKEN$/.test(t)) groups.at(-1).items.add(t);
+            if (!/^[A-Z0-9_]+_TOKEN$/.test(t))
+                continue;
+            if (groups.length > 0)
+                groups.at(-1).items.add(t);
+            else
+                top.add(t);
         }
     }
     return { top, nested };
