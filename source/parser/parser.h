@@ -867,6 +867,8 @@ class Parser final
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
         void Make_Media_Light(Media& medium, ObjectPtr container);
+        /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.
+        bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.
         std::vector<ObjectPtr> mLightGroups;
         void Remove_Subsurface_Without_Inside(ObjectPtr Object);
