@@ -1,0 +1,3351 @@
+{
+ "format": "pov4-blocks/1",
+ "comment": "Legal reserved-word items of each scene-language block, mined from the classic parser expect-loops by tools/language/grammar/blocks.mjs. Nested lists the items of sub-blocks such as reflection { ... } inside finish. Non-reserved tokens (punctuation, expression starts) are not listed. Regenerate rather than edit.",
+ "blocks": {
+  "finish": {
+   "items": [
+    "albedo",
+    "ambient",
+    "brilliance",
+    "caustics",
+    "conserve_energy",
+    "crand",
+    "diffuse",
+    "emission",
+    "fresnel",
+    "ior",
+    "irid",
+    "metallic",
+    "phong",
+    "phong_size",
+    "reflection",
+    "reflection_exponent",
+    "refraction",
+    "roughness",
+    "specular",
+    "subsurface",
+    "use_alpha"
+   ],
+   "nested": {
+    "reflection": [
+     "exponent",
+     "falloff",
+     "fresnel",
+     "metallic"
+    ],
+    "irid": [
+     "thickness",
+     "turbulence"
+    ],
+    "subsurface": [
+     "anisotropy",
+     "color",
+     "colour",
+     "emission",
+     "method",
+     "pigment",
+     "thickness",
+     "translucency",
+     "volume_sampling"
+    ]
+   },
+   "sources": [
+    "parser_materials.cpp:2310 Parse_Finish"
+   ]
+  },
+  "texture": {
+   "items": [
+    "finish",
+    "material_map",
+    "matrix",
+    "no_bump_scale",
+    "normal",
+    "pigment",
+    "rotate",
+    "scale",
+    "tiles",
+    "transform",
+    "translate"
+   ],
+   "nested": {},
+   "sources": [
+    "parser_materials.cpp:2693 Parse_Texture"
+   ]
+  },
+  "material": {
+   "items": [
+    "interior",
+    "interior_texture",
+    "matrix",
+    "rotate",
+    "scale",
+    "texture",
+    "transform",
+    "translate"
+   ],
+   "nested": {},
+   "sources": [
+    "parser_materials.cpp:4910 Parse_Material"
+   ]
+  },
+  "pigment": {
+   "items": [
+    "accuracy",
+    "agate",
+    "agate_turb",
+    "aoi",
+    "average",
+    "boxed",
+    "bozo",
+    "brick",
+    "brick_size",
+    "bump_map",
+    "bump_size",
+    "bumps",
+    "cells",
+    "checker",
+    "color_map",
+    "colour_map",
+    "control0",
+    "control1",
+    "coords",
+    "crackle",
+    "cubic",
+    "cubic_wave",
+    "cylindrical",
+    "density_file",
+    "density_map",
+    "dents",
+    "exponent",
+    "exterior",
+    "facets",
+    "form",
+    "frequency",
+    "function",
+    "gradient",
+    "granite",
+    "hexagon",
+    "image_map",
+    "image_pattern",
+    "interior",
+    "interpolate",
+    "julia",
+    "lambda",
+    "leopard",
+    "magnet",
+    "mandel",
+    "marble",
+    "matrix",
+    "metric",
+    "mortar",
+    "no_bump_scale",
+    "noise_generator",
+    "normal_map",
+    "number_of_sides",
+    "number_of_tiles",
+    "object",
+    "octaves",
+    "offset",
+    "omega",
+    "onion",
+    "pattern",
+    "pavement",
+    "phase",
+    "pigment_map",
+    "pigment_pattern",
+    "planar",
+    "poly_wave",
+    "potential",
+    "quick_color",
+    "quick_colour",
+    "quilted",
+    "radial",
+    "ramp_wave",
+    "repeat",
+    "ripples",
+    "rotate",
+    "scale",
+    "scallop_wave",
+    "screen",
+    "sine_wave",
+    "size",
+    "slope",
+    "slope_map",
+    "solid",
+    "spherical",
+    "spiral1",
+    "spiral2",
+    "spotted",
+    "square",
+    "texture_map",
+    "tiling",
+    "transform",
+    "translate",
+    "triangle_wave",
+    "triangular",
+    "turbulence",
+    "user_defined",
+    "uv_mapping",
+    "warp",
+    "waves",
+    "wood",
+    "wrinkles"
+   ],
+   "nested": {
+    "screen": [
+     "camera",
+     "fallback",
+     "max_trace_level"
+    ]
+   },
+   "sources": [
+    "parser_materials.cpp:1299 Parse_Pigment",
+    "parser_materials.cpp:1338 Parse_Pattern"
+   ]
+  },
+  "normal": {
+   "items": [
+    "accuracy",
+    "agate",
+    "agate_turb",
+    "aoi",
+    "average",
+    "boxed",
+    "bozo",
+    "brick",
+    "brick_size",
+    "bump_map",
+    "bump_size",
+    "bumps",
+    "cells",
+    "checker",
+    "color_map",
+    "colour_map",
+    "control0",
+    "control1",
+    "coords",
+    "crackle",
+    "cubic",
+    "cubic_wave",
+    "cylindrical",
+    "density_file",
+    "density_map",
+    "dents",
+    "exponent",
+    "exterior",
+    "facets",
+    "form",
+    "frequency",
+    "function",
+    "gradient",
+    "granite",
+    "hexagon",
+    "image_map",
+    "image_pattern",
+    "interior",
+    "interpolate",
+    "julia",
+    "lambda",
+    "leopard",
+    "magnet",
+    "mandel",
+    "marble",
+    "matrix",
+    "metric",
+    "mortar",
+    "no_bump_scale",
+    "noise_generator",
+    "normal_map",
+    "number_of_sides",
+    "number_of_tiles",
+    "object",
+    "octaves",
+    "offset",
+    "omega",
+    "onion",
+    "pattern",
+    "pavement",
+    "phase",
+    "pigment_map",
+    "pigment_pattern",
+    "planar",
+    "poly_wave",
+    "potential",
+    "quick_color",
+    "quick_colour",
+    "quilted",
+    "radial",
+    "ramp_wave",
+    "repeat",
+    "ripples",
+    "rotate",
+    "scale",
+    "scallop_wave",
+    "screen",
+    "sine_wave",
+    "size",
+    "slope",
+    "slope_map",
+    "solid",
+    "spherical",
+    "spiral1",
+    "spiral2",
+    "spotted",
+    "square",
+    "texture_map",
+    "tiling",
+    "transform",
+    "translate",
+    "triangle_wave",
+    "triangular",
+    "turbulence",
+    "user_defined",
+    "uv_mapping",
+    "warp",
+    "waves",
+    "wood",
+    "wrinkles"
+   ],
+   "nested": {
+    "screen": [
+     "camera",
+     "fallback",
+     "max_trace_level"
+    ]
+   },
+   "sources": [
+    "parser_materials.cpp:2253 Parse_Tnormal",
+    "parser_materials.cpp:1338 Parse_Pattern"
+   ]
+  },
+  "density": {
+   "items": [
+    "accuracy",
+    "agate",
+    "agate_turb",
+    "aoi",
+    "average",
+    "boxed",
+    "bozo",
+    "brick",
+    "brick_size",
+    "bump_map",
+    "bump_size",
+    "bumps",
+    "cells",
+    "checker",
+    "color_map",
+    "colour_map",
+    "control0",
+    "control1",
+    "coords",
+    "crackle",
+    "cubic",
+    "cubic_wave",
+    "cylindrical",
+    "density_file",
+    "density_map",
+    "dents",
+    "exponent",
+    "exterior",
+    "facets",
+    "form",
+    "frequency",
+    "function",
+    "gradient",
+    "granite",
+    "hexagon",
+    "image_map",
+    "image_pattern",
+    "interior",
+    "interpolate",
+    "julia",
+    "lambda",
+    "leopard",
+    "magnet",
+    "mandel",
+    "marble",
+    "matrix",
+    "metric",
+    "mortar",
+    "no_bump_scale",
+    "noise_generator",
+    "normal_map",
+    "number_of_sides",
+    "number_of_tiles",
+    "object",
+    "octaves",
+    "offset",
+    "omega",
+    "onion",
+    "pattern",
+    "pavement",
+    "phase",
+    "pigment_map",
+    "pigment_pattern",
+    "planar",
+    "poly_wave",
+    "potential",
+    "quick_color",
+    "quick_colour",
+    "quilted",
+    "radial",
+    "ramp_wave",
+    "repeat",
+    "ripples",
+    "rotate",
+    "scale",
+    "scallop_wave",
+    "screen",
+    "sine_wave",
+    "size",
+    "slope",
+    "slope_map",
+    "solid",
+    "spherical",
+    "spiral1",
+    "spiral2",
+    "spotted",
+    "square",
+    "texture_map",
+    "tiling",
+    "transform",
+    "translate",
+    "triangle_wave",
+    "triangular",
+    "turbulence",
+    "user_defined",
+    "uv_mapping",
+    "warp",
+    "waves",
+    "wood",
+    "wrinkles"
+   ],
+   "nested": {
+    "screen": [
+     "camera",
+     "fallback",
+     "max_trace_level"
+    ]
+   },
+   "sources": [
+    "parser_materials.cpp:1299 Parse_Pigment",
+    "parser_materials.cpp:1338 Parse_Pattern"
+   ]
+  },
+  "interior": {
+   "items": [
+    "caustics",
+    "dispersion",
+    "dispersion_samples",
+    "fade_color",
+    "fade_colour",
+    "fade_distance",
+    "fade_power",
+    "ior",
+    "media",
+    "priority",
+    "refraction"
+   ],
+   "nested": {},
+   "sources": [
+    "parser_materials.cpp:3950 Parse_Interior"
+   ]
+  },
+  "media": {
+   "items": [
+    "aa_level",
+    "aa_threshold",
+    "absorption",
+    "collect",
+    "confidence",
+    "density",
+    "emission",
+    "intervals",
+    "jitter",
+    "light_source",
+    "matrix",
+    "method",
+    "mix",
+    "priority",
+    "ratio",
+    "refraction",
+    "resolution",
+    "rotate",
+    "samples",
+    "scale",
+    "scattering",
+    "transform",
+    "translate",
+    "variance"
+   ],
+   "nested": {
+    "scattering": [
+     "eccentricity",
+     "extinction"
+    ]
+   },
+   "sources": [
+    "parser_materials.cpp:3637 Parse_Media"
+   ]
+  },
+  "camera": {
+   "items": [
+    "angle",
+    "aperture",
+    "blur_samples",
+    "bokeh",
+    "confidence",
+    "cylinder",
+    "direction",
+    "filter_tags",
+    "fisheye",
+    "focal_point",
+    "location",
+    "look_at",
+    "matrix",
+    "mesh_camera",
+    "no_radiosity",
+    "normal",
+    "omnimax",
+    "orthographic",
+    "panoramic",
+    "perspective",
+    "radiosity_size",
+    "right",
+    "rotate",
+    "scale",
+    "sky",
+    "spherical",
+    "tags",
+    "transform",
+    "translate",
+    "ultra_wide_angle",
+    "up",
+    "user_defined",
+    "variance"
+   ],
+   "nested": {
+    "orthographic": [
+     "angle",
+     "cylinder",
+     "fisheye",
+     "mesh_camera",
+     "omnimax",
+     "panoramic",
+     "perspective",
+     "spherical",
+     "ultra_wide_angle",
+     "user_defined"
+    ],
+    "perspective": [
+     "angle",
+     "aperture",
+     "blur_samples",
+     "confidence",
+     "cylinder",
+     "direction",
+     "filter_tags",
+     "fisheye",
+     "focal_point",
+     "location",
+     "look_at",
+     "matrix",
+     "mesh_camera",
+     "normal",
+     "omnimax",
+     "orthographic",
+     "panoramic",
+     "perspective",
+     "right",
+     "rotate",
+     "scale",
+     "sky",
+     "spherical",
+     "tags",
+     "transform",
+     "translate",
+     "ultra_wide_angle",
+     "up",
+     "user_defined",
+     "variance"
+    ],
+    "bokeh": [
+     "pigment"
+    ]
+   },
+   "sources": [
+    "parser.cpp:1456 Parse_Camera",
+    "parser.cpp:2202 Parse_Camera_Mods"
+   ]
+  },
+  "global_settings": {
+   "items": [
+    "adc_bailout",
+    "ambient_light",
+    "assumed_gamma",
+    "charset",
+    "filter_tags",
+    "hf_gray_16",
+    "hf_grey_16",
+    "irid_wavelength",
+    "max_intersections",
+    "max_trace_level",
+    "mm_per_unit",
+    "noise_generator",
+    "number_of_waves",
+    "photons",
+    "radiosity",
+    "refraction_angle",
+    "subsurface"
+   ],
+   "nested": {
+    "charset": [
+     "ascii",
+     "sys",
+     "utf8"
+    ],
+    "photons": [
+     "adc_bailout",
+     "autostop",
+     "count",
+     "expand_thresholds",
+     "gather",
+     "global",
+     "jitter",
+     "load_file",
+     "max_trace_level",
+     "media",
+     "radius",
+     "save_file",
+     "spacing"
+    ],
+    "radiosity": [
+     "adc_bailout",
+     "always_sample",
+     "brightness",
+     "brilliance",
+     "count",
+     "error_bound",
+     "gray_threshold",
+     "grey_threshold",
+     "load_file",
+     "low_error_factor",
+     "max_sample",
+     "maximum_reuse",
+     "media",
+     "minimum_reuse",
+     "nearest_count",
+     "normal",
+     "pretrace_end",
+     "pretrace_start",
+     "recursion_limit",
+     "save_file",
+     "subsurface"
+    ],
+    "subsurface": [
+     "error_bound",
+     "method",
+     "radiosity",
+     "samples",
+     "spacing"
+    ]
+   },
+   "sources": [
+    "parser.cpp:7502 Parse_Global_Settings"
+   ]
+  },
+  "object": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "light_source": {
+   "items": [
+    "adaptive",
+    "area_illumination",
+    "area_light",
+    "bounded_by",
+    "circular",
+    "clipped_by",
+    "color_map",
+    "colour_map",
+    "cutaway_textures",
+    "cylinder",
+    "double_illuminate",
+    "dtag",
+    "fade_distance",
+    "fade_power",
+    "falloff",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "jitter",
+    "light_source",
+    "looks_like",
+    "material",
+    "matrix",
+    "media_attenuation",
+    "media_interaction",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "orient",
+    "parallel",
+    "photon_only",
+    "photons",
+    "pigment",
+    "point_at",
+    "projected_through",
+    "radiosity",
+    "radius",
+    "rotate",
+    "scale",
+    "shadowless",
+    "split_union",
+    "spotlight",
+    "sturm",
+    "tags",
+    "texture",
+    "tightness",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "area_light",
+     "collect",
+     "global",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:3967 Parse_Light_Source",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "bicubic_patch": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "blob": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "box": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "cone": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "cubic": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "cylinder": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "disc": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "height_field": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "isosurface": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "isosurface_mesh": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "julia_fractal": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "lathe": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "lemon": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "mesh": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "mesh2": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "ovus": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "parametric": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "plane": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "poly": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "polygon": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "polynomial": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "portal": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "prism": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "quadric": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "quartic": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "skein": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "skein_mesh": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "smooth_triangle": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "sor": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "sphere": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "sphere_sweep": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "superellipsoid": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "text": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "torus": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "triangle": {
+   "items": [
+    "bounded_by",
+    "clipped_by",
+    "cutaway_textures",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "inverse",
+    "light_source",
+    "material",
+    "matrix",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "photons",
+    "pigment",
+    "radiosity",
+    "rotate",
+    "scale",
+    "split_union",
+    "sturm",
+    "tags",
+    "texture",
+    "transform",
+    "translate",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "composite": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "difference": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "intersection": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "light_group": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "merge": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  },
+  "union": {
+   "items": [
+    "bicubic_patch",
+    "blob",
+    "bounded_by",
+    "box",
+    "clipped_by",
+    "composite",
+    "cone",
+    "cubic",
+    "cutaway_textures",
+    "cylinder",
+    "difference",
+    "disc",
+    "double_illuminate",
+    "dtag",
+    "finish",
+    "height_field",
+    "hierarchy",
+    "hollow",
+    "interior",
+    "interior_texture",
+    "intersection",
+    "inverse",
+    "isosurface",
+    "isosurface_mesh",
+    "julia_fractal",
+    "lathe",
+    "lemon",
+    "light_group",
+    "light_source",
+    "material",
+    "matrix",
+    "merge",
+    "mesh",
+    "mesh2",
+    "no_image",
+    "no_radiosity",
+    "no_reflection",
+    "no_shadow",
+    "normal",
+    "object",
+    "ovus",
+    "parametric",
+    "photons",
+    "pigment",
+    "plane",
+    "poly",
+    "polygon",
+    "polynomial",
+    "portal",
+    "prism",
+    "quadric",
+    "quartic",
+    "radiosity",
+    "rotate",
+    "scale",
+    "skein",
+    "skein_mesh",
+    "smooth_triangle",
+    "sor",
+    "sphere",
+    "sphere_sweep",
+    "split_union",
+    "sturm",
+    "superellipsoid",
+    "tags",
+    "text",
+    "texture",
+    "torus",
+    "transform",
+    "translate",
+    "triangle",
+    "union",
+    "uv_mapping"
+   ],
+   "nested": {
+    "photons": [
+     "collect",
+     "pass_through",
+     "reflection",
+     "refraction",
+     "target"
+    ],
+    "pigment": [
+     "finish",
+     "normal",
+     "pigment"
+    ],
+    "radiosity": [
+     "importance"
+    ]
+   },
+   "sources": [
+    "parser.cpp:6988 Parse_Object",
+    "parser.cpp:8055 Parse_Object_Mods"
+   ]
+  }
+ }
+}
