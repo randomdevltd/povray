@@ -705,7 +705,8 @@ void Parser::Read_Symbol(const RawToken& rawToken)
 inline void Parser::Write_Token(const RawToken& rawToken, SymbolTable* table)
 {
     POV_EXPERIMENTAL_ASSERT(mToken.sourceFile == mTokenizer.GetInputStream());
-    mToken.raw      = rawToken;
+    if (&rawToken != &mToken.raw)
+        mToken.raw  = rawToken;
     mToken.Data     = nullptr;
     mToken.SetTokenId(rawToken);
     mToken.table    = table;
@@ -714,7 +715,8 @@ inline void Parser::Write_Token(const RawToken& rawToken, SymbolTable* table)
 inline void Parser::Write_Token(TokenId Token_Id, const RawToken& rawToken, SymbolTable* table)
 {
     POV_EXPERIMENTAL_ASSERT(mToken.sourceFile == mTokenizer.GetInputStream());
-    mToken.raw      = rawToken;
+    if (&rawToken != &mToken.raw)
+        mToken.raw  = rawToken;
     mToken.Data     = nullptr;
     mToken.SetTokenId(Token_Id);
     mToken.table    = table;
