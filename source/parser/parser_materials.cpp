@@ -3977,19 +3977,6 @@ void Parser::Parse_Interior(InteriorPtr& interior)
             }
         END_CASE
 
-        CASE (IOR_MIX_TOKEN)
-        {
-            Get_Token();
-            const char *names[] = { "surface", "mean", "replace" };
-            interior->iorMix = kIorMixAuto;
-            for (int mix = kIorMixSurface; mix <= kIorMixReplace; mix++)
-                if (CurrentTokenText() == names[mix])
-                    interior->iorMix = mix;
-            if (interior->iorMix == kIorMixAuto)
-                Error("Expected surface, mean or replace after ior_mix.");
-        }
-        END_CASE
-
         CASE (PRIORITY_TOKEN)
         {
             const DBL priority = Parse_Float();
@@ -4033,8 +4020,22 @@ void Parser::Parse_Interior(InteriorPtr& interior)
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "ior_mix")
+            {
+                Get_Token();
+                const char *names[] = { "surface", "mean", "replace" };
+                interior->iorMix = kIorMixAuto;
+                for (int mix = kIorMixSurface; mix <= kIorMixReplace; mix++)
+                    if (CurrentTokenText() == names[mix])
+                        interior->iorMix = mix;
+                if (interior->iorMix == kIorMixAuto)
+                    Error("Expected surface, mean or replace after ior_mix.");
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 

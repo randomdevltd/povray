@@ -7997,36 +7997,6 @@ void Parser::Parse_Global_Settings()
             Parse_End();
         END_CASE
 
-        CASE (INTERFACE_TEXTURE_TOKEN)
-        {
-            Get_Token();
-            const char *names[] = { "far", "near", "blend" };
-            sceneData->interfaceTexture = kInterfaceTextureAuto;
-            for (int mode = kInterfaceTextureFar; mode <= kInterfaceTextureBlend; mode++)
-                if (CurrentTokenText() == names[mode])
-                    sceneData->interfaceTexture = mode;
-            if (sceneData->interfaceTexture == kInterfaceTextureAuto)
-                Error("Expected blend, near or far after interface_texture.");
-        }
-        END_CASE
-
-        CASE (ATMOSPHERIC_IOR_TOKEN)
-            if (interiorSerial > 0)
-                Error("atmospheric_ior must come before the first object.");
-            sceneData->atmosphereIOR = Parse_Float();
-            if (!std::isfinite(sceneData->atmosphereIOR) || !(sceneData->atmosphereIOR > 0.0))
-                Error("atmospheric_ior must be greater than 0.");
-            atmosphereIorSet = true;
-        END_CASE
-
-        CASE (ATMOSPHERIC_DISPERSION_TOKEN)
-            if (interiorSerial > 0)
-                Error("atmospheric_dispersion must come before the first object.");
-            sceneData->atmosphereDispersion = Parse_Float();
-            if (!std::isfinite(sceneData->atmosphereDispersion) || !(sceneData->atmosphereDispersion > 0.0))
-                Error("atmospheric_dispersion must be greater than 0.");
-        END_CASE
-
         CASE (REFRACTION_ANGLE_TOKEN)
             sceneData->refractionAngle = Parse_Float();
             if (!(sceneData->refractionAngle > 0.0) || !(sceneData->refractionAngle <= 45.0))
@@ -8034,7 +8004,35 @@ void Parser::Parse_Global_Settings()
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "mesh_cache")
+            if (CurrentTokenText() == "interface_texture")
+            {
+                Get_Token();
+                const char *names[] = { "far", "near", "blend" };
+                sceneData->interfaceTexture = kInterfaceTextureAuto;
+                for (int mode = kInterfaceTextureFar; mode <= kInterfaceTextureBlend; mode++)
+                    if (CurrentTokenText() == names[mode])
+                        sceneData->interfaceTexture = mode;
+                if (sceneData->interfaceTexture == kInterfaceTextureAuto)
+                    Error("Expected blend, near or far after interface_texture.");
+            }
+            else if (CurrentTokenText() == "atmospheric_ior")
+            {
+                if (interiorSerial > 0)
+                    Error("atmospheric_ior must come before the first object.");
+                sceneData->atmosphereIOR = Parse_Float();
+                if (!std::isfinite(sceneData->atmosphereIOR) || !(sceneData->atmosphereIOR > 0.0))
+                    Error("atmospheric_ior must be greater than 0.");
+                atmosphereIorSet = true;
+            }
+            else if (CurrentTokenText() == "atmospheric_dispersion")
+            {
+                if (interiorSerial > 0)
+                    Error("atmospheric_dispersion must come before the first object.");
+                sceneData->atmosphereDispersion = Parse_Float();
+                if (!std::isfinite(sceneData->atmosphereDispersion) || !(sceneData->atmosphereDispersion > 0.0))
+                    Error("atmospheric_dispersion must be greater than 0.");
+            }
+            else if (CurrentTokenText() == "mesh_cache")
             {
                 UCS2 *dir = Parse_String(true);
                 mMeshCacheDir = UCS2String(dir);
