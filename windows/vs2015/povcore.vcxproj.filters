@@ -256,6 +256,8 @@
     </ClCompile>
     <ClCompile Include="..\..\libraries\tree-sitter\lib\src\lib.c" />
     <ClCompile Include="..\..\libraries\tree-sitter-pov-tags\src\parser.c" />
+    <ClCompile Include="..\..\libraries\tree-sitter-pov4\src\parser.c" />
+    <ClCompile Include="..\..\libraries\tree-sitter-pov4\src\scanner.c" />
     <ClCompile Include="..\..\source\core\math\spline.cpp">
       <Filter>Core Source\Math</Filter>
     </ClCompile>

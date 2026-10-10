@@ -453,6 +453,20 @@
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <ObjectFileName>$(IntDir)tree_sitter_pov_tags.obj</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="..\..\libraries\tree-sitter-pov4\src\parser.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <ObjectFileName>$(IntDir)tree_sitter_pov4.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\libraries\tree-sitter-pov4\src\scanner.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <ObjectFileName>$(IntDir)tree_sitter_pov4_scanner.obj</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\..\source\core\scene\object.cpp" />
     <ClCompile Include="..\..\source\core\scene\scenedata.cpp" />
     <ClCompile Include="..\..\source\core\scene\tracethreaddata.cpp" />

@@ -1,0 +1,27 @@
+==================
+Unclosed block
+:error
+==================
+union { sphere { 0, 1 }
+---
+
+==================
+Incomplete let
+:error
+==================
+let X = ;
+---
+
+==================
+Directive syntax is not 4.0
+:error
+==================
+#declare X = 1;
+---
+
+==================
+Index needs no space before the bracket
+:error
+==================
+let A = B [1];
+---

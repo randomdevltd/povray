@@ -93,10 +93,12 @@ current scope. Parameters may have defaults. Functions are closures; arguments a
 - `let X = E;` binds `X` in the current **function** scope (the file is the outermost function).
   Re-running `let X` in the same scope rebinds it. `if`, `for` and `while` bodies do not open scopes.
 - `X = E;` assigns to the nearest existing binding of `X` (local, enclosing function, file). It is an
-  error if there is none. `A[I] = E;` and `D.K = E;` assign into a container.
+  error if there is none. `A[I] = E;` and `D.K = E;` assign into a container; `V.x = E;` sets one
+  component of a vector or colour (a colour channel is rounded to colour precision).
 - `global X = E;` binds `X` at file scope from anywhere. This is what classic `#declare` inside a
   macro does.
-- `let X;` declares `X` as `null`.
+- `let X;` declares `X` as `null`; `defined(X)` is false while `X` is `null`, so `X = null;`
+  plays the part of classic `#undef X`.
 
 An `.inc4` include runs in the including file's scope (as classic includes do).
 
@@ -109,8 +111,16 @@ An `.inc4` include runs in the including file's scope (as classic includes do).
 - Identifiers as classic; they may not be a reserved word. Reserved words are the classic reserved
   words plus `let`, `fn`, `return`, `null`, `in`, `step`, `continue`. (`if`, `else`, `for`,
   `while`, `break`, `include`, `global`, `to`, `true`, `false` are already classic reserved words.)
+  The 4.0 built-ins `len`, `map`, `push` and `keys` are not reserved: a name resolves to a 4.0
+  binding first, then to a classic declaration of that name, then to the built-in. Names starting
+  with `__pov4_` are reserved for the evaluator.
 - `;` after an item is allowed and ignored. `let`, assignment, `global`, `include` and `return`
   statements end with `;`.
+- Indexing and member access take no space before `[` or `.`: `A[I]`, `V.x`. A `[` after a space
+  starts a new item, so `[0 color Red] [1 color Blue]` are two bracket groups.
+- As in classic, an item that starts with `-`, `+`, `<` or `(` continues the expression before it
+  (`x -y` is one expression, `translate -y` is a keyword and a value); separate juxtaposed values
+  with a comma when that is not meant.
 
 ### Statements
 
@@ -123,7 +133,7 @@ fn F(A, B = 2) { A * B }
 
 if (X > 1) { ... } else if (X < 0) { ... } else { ... }
 while (X < 10) { ... }
-for (I = 0 to 10) { ... }          // inclusive, step 1; I keeps its classic after-loop value
+for (I = 0 to 10) { ... }          // inclusive, step 1 (classic #for semantics exactly; afterwards I is 11)
 for (I = 0 to 1 step 0.1) { ... }
 for (V in Points) { ... }          // arrays, dictionaries (keys), fragments
 break;   continue;   return E;
@@ -146,25 +156,47 @@ Bodies always take braces. There is no `switch`; the codemod writes `if` chains.
 | conditional | `C ? A : B` |
 | lambda | `(params) => expr` / `(params) => { body }` / `P => expr` |
 
-Changes from classic expressions: equality is `==` (classic `=`), logical operators are `&&` / `||`
-(classic `&` / `|`). Everything else keeps classic meaning, including float→vector promotion,
+Changes from classic expressions: equality is `==` (classic `=`, with the same epsilon comparison:
+`(0.1 + 0.2 == 0.3)` is 1), logical operators are `&&` / `||`
+(classic `&` / `|`) and short-circuit when the left operand is a float that decides the result, and
+`&&` binds tighter than `||`. As in classic, comparisons and logical operators (`<` ... `||`) need
+parentheses except in conditions (`if (A < B)`, `while (...)`) and render-time function bodies:
+block items, vector components, `let` values and arguments take only `+ - * /`, so juxtaposed
+vectors (`box { <0, 0, 0> <1, 1, 1> }`) are two items and `>` always closes a vector. Write
+`(I < 2) ? A : B`, `filter(L, (P) => (P > 0))`. Everything else keeps classic meaning, including float→vector promotion,
 `.x/.y/.z/.t/.red/.green/.blue/.filter/.transmit` members, `x`, `y`, `z`, `t`, `u`, `v`, `pi`,
 `clock` and every classic built-in function.
 
 Literals:
 
 ```pov
-<1, 2, 3>                         // vector (2–5 components) as classic
+<1, 2, 3>                         // vector: 2–5 components as a value; any number ≥2 as a block item (matrix <...>)
 rgb <1, 0.5, 0>                   // colour expressions as classic
 [1, 2, 3]  [...A, 4]              // array; spreads
 [for (I = 0 to 9) { I * I }]       // comprehension: the array is an output
-{ A: 1, "b c": 2, [K]: 3, ...D }  // dictionary; identifier, string or computed keys; spreads
+{ A: 1, "b c": 2, [K]: 3, ...D }  // dictionary; any word, string or computed [string] keys; spreads
 null  true  false
 ```
 
+Any word is a dictionary key, reserved or not (`{ step: 1 }`), and member access takes any word
+(`D.step`); on vectors and colours the members are the classic component names.
+
 An array literal is an output, so `if`/`for`/`let` work inside it, and items are separated by commas
-or juxtaposition. In a block body a bracket group is emitted as-is, so classic map entries keep
-working: `color_map { [0 color Red] [1 color Blue] }`.
+or juxtaposition. Arrays have a fixed size once built: `A[I] = E` replaces an element, `push`
+returns a longer copy. In a block body a bracket group is emitted as-is, so classic map entries keep
+working: `color_map { [0 color Red] [1 color Blue] }`. An array whose elements are all arrays of the
+same shape is, for `dimensions`, `dimension_size` and classic SDL, a classic multi-dimensional array:
+`array(4, array(10))` has 2 dimensions and reaches a classic include as `array[4][10]`.
+
+Colour expressions: `rgb`, `rgbf`, `rgbt`, `rgbft`, the `srgb` forms and `color`/`colour` are prefix
+operators taking the whole following expression, as in classic (`rgb <1, 0, 0> * 0.5`); a colour
+value is a 5-component vector rounded to the renderer's colour precision, exactly as a classic
+colour identifier. Channel phrases follow classic `Parse_Colour`: `red`, `green`, `blue`, `filter`,
+`transmit` (and `alpha`) each take a value and set one channel, after an optional `rgb...`/`color`
+part, so `let C = color red 1 green 0.5 filter 0.1;` works in a `let` as in a body. A channel word
+with no value is left as a keyword (`transmit all 0.5` in an image map). `filter` directly followed
+by `(` is the built-in `filter(A, F)`. A `{` after `=>` always starts a lambda body; write
+`=> ({ ... })` for a dictionary.
 
 The conditional operator replaces the mid-expression `#if` splice:
 
@@ -172,6 +204,20 @@ The conditional operator replaces the mid-expression `#if` splice:
 // classic:  color rgb <1, #if (Hot) 0.2 #else 0.8 #end, 0>
 color rgb <1, Hot ? 0.2 : 0.8, 0>
 ```
+
+A binding may take a run of blocks: `let T = texture { ... } texture { ... };` binds a fragment of
+both (a layered texture); `...T` or `T` in an object body emits both, as classic `texture { T }`
+does. A classic include or a classic macro call sees the 4.0 file-scope bindings as classic
+identifiers: before handing one to the classic parser the evaluator declares every file-scope
+binding that changed since (floats, vectors, colours, strings, non-empty arrays, dictionaries,
+layered textures, and objects and other handles by copy; functions, `null`, undeclarable blocks
+and other fragments are not declared). A macro call inside a block body gets the declarations of
+the bindings 4.0 changed since they were last declared, in the body just before it. From then until
+the block reaches the classic parser, classic owns those values: a second call in the same block
+sees what the first left, unless 4.0 assigns the binding again in between. After a classic include,
+a top-level macro call, a macro call used as a value, or a block containing macro calls, floats,
+vectors and strings the classic code changed are read back into their 4.0 bindings; other classic
+changes are seen only through names that no 4.0 binding shadows.
 
 ### Blocks
 
@@ -186,11 +232,21 @@ union {
 }
 ```
 
+A statement's emitted items land where it stands, so `scale if (Big) { 2 } else { 1 }` supplies the
+operand of `scale`.
+
 The grammar does not know each block's legal contents; the renderer's object builders check that, as
 they do for classic scenes.
 
 A value used as an item in a block body is emitted by kind: a number, vector, colour or string is
 emitted as itself; an object becomes `object { V }`; a texture inside `texture { }` is `V`, and so on.
+A value directly after the keyword of its own kind is emitted bare (`transform T`), and so is an
+object written as the first item of an object block other than a CSG or `light_group`, which
+classic reads as a copy to modify (`light_source { Lamp translate y }`); `pigment_pattern { P }`
+takes a pigment as `pigment { }` does, and the word after `mix` is a keyword (`mix add`). Values spliced
+from a spread or a call are separated by commas, so `sphere_sweep { linear_spline 4, ...Points }`
+reads as written; an array must be spread (`...A`), not placed in a body whole. An uncalled
+function word in a body is the keyword itself (`filter 0.5`, while `filter(A, F)` is the built-in).
 
 ### Render-time functions
 
@@ -198,6 +254,15 @@ emitted as itself; an object becomes `object { V }`; a texture inside `texture {
 language (they compile to the function VM). Inside them, names bound by `let` to numbers are
 substituted as constants and names bound to render-time functions are called, as in classic.
 A 4.0 lambda is construct-time only and cannot be called from a render-time function.
+Built-in constants (`x`, `pi`, `clock`, ...) are not callable, so `translate x (2)` is an error.
+`trace(O, P, D, N)` sets the 4.0 variable `N` to the normal, binding it if needed.
+The body uses 4.0 operators; it is lowered to the classic function language (`==` to `=`, `&&` to
+`&`, `C ? A : B` to `select(-abs(C), A, B)`, `!C` to `select(-abs(C), 0, 1)`), with `let` floats
+substituted as their values. The image-size form `function 300, 300 { pigment { ... } }` is kept
+as well.
+
+The fork's portal target block `portal { ... to { ... } }` is a block named `to`; `to` stays a
+keyword of `for (I = A to B)` there.
 
 ### Built-ins added by 4.0
 
@@ -205,11 +270,56 @@ A 4.0 lambda is construct-time only and cannot be called from a render-time func
 `push(A, V)` (returns a new array), `keys(D)`, `defined(Name)` (false when unbound or `null`), `debug(S)`,
 `warning(S)`, `error(S)`, `array(N[, Fill])`.
 
+## Renderer front end
+
+The renderer picks the 4.0 front end by the input file's extension. It parses each `.pov4`/`.inc4`
+file once with `libraries/tree-sitter-pov4`, lowers the tree to a compact internal tree, and runs
+it. Plain values (null, floats, vectors, colours, strings, arrays, dictionaries, functions,
+fragments) live in the evaluator; everything else is a *handle* to a classic identifier.
+
+Objects and other blocks are still built by the classic parser. The evaluator lowers each
+manifested item, and each block bound by `let` (`#declare __pov4_N = ...;`), to classic SDL with
+every expression already evaluated, and hands it to the classic parser in order, in the same
+parser, so classic defaults, `#version`-dependent behaviour and shared mesh data apply unchanged.
+The scene starts with `#version 4.0;`. Arithmetic, vector and string built-ins run natively with
+classic semantics; `seed`/`rand` call the classic generator; built-ins that need scene state
+(`trace`, `inside`, `min_extent`, `str`, ...) and calls of classic functions, splines and macros
+are evaluated by the classic parser (`#declare __pov4_N = <call>`, which needs no `;` there, so a
+macro may end with directives after the object it makes) and the result read back.
+`global_settings`, `background`, `default`, `photons`, `radiosity` and `interior_texture` cannot be
+declared in classic SDL, so binding one with `let` keeps its text and manifests it where used.
+
+Errors in 4.0 code are reported as `file:line:column: message`. Errors the classic parser finds in
+lowered SDL point at the file and line of the 4.0 item they came from: lowered SDL is handed over
+in batches of up to 1 MiB per file with a line map, so a loop does not split it. Numbers are written
+in their shortest round-trip form, infinities as `1e400` and `-1e400`; a NaN is an error.
+
+Limits: the evaluator runs on its own 256 MiB stack (Linux and Windows; elsewhere on the parser
+thread's stack). Function calls nest at most 10,000 deep (classic allows about 100 nested macro
+calls). Statements, expressions, blocks and nested arrays and dictionaries nest at most 100,000
+levels in total, counting every active call and the parse of an `.inc4` included at that point.
+`.inc4` includes nest at most 100 deep (each file is parsed once and reused). An array holds at most
+256 MiB of values (4,194,304 elements on 64-bit builds), which bounds literals, comprehensions,
+`range`, `array` and `push`. `int`, `div`, `chr`, `bitwise_*` and random streams reject values
+outside the integer range, and `div` by zero is an error. A long-running 4.0 loop reports parse
+progress and can be cancelled like a classic parse. A 5-component vector is printed with `rgbft`
+only when it is a colour (from a colour expression or a classic colour identifier); arithmetic,
+unary minus and component assignment keep it a colour, comparisons and `!` do not.
+
+Testing aids (not language features):
+
+| INI option | Switch | Effect |
+|---|---|---|
+| `Pov4_Lowered_File=f.pov` | `+GLf.pov` | write the classic SDL the scene was lowered to; rendering it gives the same image |
+| `Pov4_Version=3.7` | `+ML3.7` | run a 4.0 scene under an older language version (image B of the evaluation corpus) |
+
 ## Mixing languages
 
 A `.pov4` file may `include` a classic file. The classic file is parsed by the classic parser into
 the same scene; its declarations become visible to the 4.0 program by name, and its macros can be
-called from 4.0 code (the call is handed to the classic parser at that point). This lets 4.0 scenes
+called from 4.0 code (the call is handed to the classic parser at that point: in place inside a
+block body, as a scene item at the top level, through `#declare` where a value is needed). A classic
+include in a block body is handed over in place too: `union { include "parts.inc"; }`. This lets 4.0 scenes
 use the standard include library unchanged. A classic file cannot include a 4.0 file.
 
 ## Codemod

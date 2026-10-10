@@ -297,6 +297,9 @@ public:
         return bookmark.instance == mPosition.instance;
     }
 
+    /// Report the current stream's line `i` as `lines[i - 1]`.
+    void SetLineMap(ConstStreamPtr stream, std::vector<POV_LONG> lines) { mScanner.SetLineMap(std::move(stream), std::move(lines)); }
+
     /// Change encoding setting.
     void SetStringEncoding(CharacterEncodingID encoding);
 

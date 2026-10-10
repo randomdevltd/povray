@@ -120,6 +120,9 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     sceneData->inputFile = parseOptions.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov");
     sceneData->headerFile = parseOptions.TryGetUCS2String(kPOVAttrib_IncludeHeader, "");
+    sceneData->pov4LoweredFile = parseOptions.TryGetUCS2String(kPOVAttrib_Pov4LoweredFile, "");
+    if (parseOptions.Exist(kPOVAttrib_Pov4Version))
+        sceneData->pov4Version = clip(int(parseOptions.GetFloat(kPOVAttrib_Pov4Version) * 100.0f + .5f), 100, 400);
 
     DBL outputWidth  = parseOptions.TryGetFloat(kPOVAttrib_Width, 160);
     DBL outputHeight = parseOptions.TryGetFloat(kPOVAttrib_Height, 120);

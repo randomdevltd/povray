@@ -913,7 +913,7 @@ bool Scanner::GetNextLexeme(Lexeme& lexeme)
         }
 
         lexeme.text.clear();
-        lexeme.position = mCurrentPosition;
+        lexeme.position = MappedPosition();
 
         if (IsNextCharacterIdentifierChar1())
             return GetNextWordLexeme(lexeme);
@@ -994,7 +994,7 @@ bool Scanner::GetNextDirective(Lexeme& lexeme)
         }
 
         lexeme.text.clear();
-        lexeme.position = mCurrentPosition;
+        lexeme.position = MappedPosition();
 
         if (IsNextCharacterASCII('"'))
         {
@@ -1282,7 +1282,7 @@ bool Scanner::GetNextSignatureLexeme(Lexeme& lexeme, Lexeme::Category sigId, con
         return false;
 
     lexeme.text = UTF8String(reinterpret_cast<const char*>(sigToTest), sigLength);
-    lexeme.position = mCurrentPosition;
+    lexeme.position = MappedPosition();
     lexeme.category = sigId;
     mSource.Advance(sigLength);
     mCurrentPosition.offset += sigLength;
@@ -1302,6 +1302,18 @@ bool Scanner::GetRaw(unsigned char* buffer, size_t size)
 }
 
 //------------------------------------------------------------------------------
+
+LexemePosition Scanner::MappedPosition()
+{
+    LexemePosition position = mCurrentPosition;
+    if (!mLineMap.empty() && (mSource.mpStream.get() == mLineMapStream.get()))
+    {
+        POV_LONG i = position.line - 1;
+        POV_LONG n = POV_LONG(mLineMap.size());
+        position.line = (i < n) ? mLineMap[size_t(i)] : mLineMap.back() + (i - n + 1);
+    }
+    return position;
+}
 
 ConstStreamPtr Scanner::GetInputStream() const
 {

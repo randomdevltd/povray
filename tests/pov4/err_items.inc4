@@ -1,0 +1,2 @@
+sphere { 0, 0.1 } sphere { 0, 0.2 }
+box { 0 }

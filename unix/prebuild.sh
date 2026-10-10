@@ -611,7 +611,7 @@ SUBDIRS = source vfe platform unix
 EXTRA_DIST = \\
   bootstrap kde_install.sh \\
   doc icons include ini scenes scripts libraries/xsimd \\
-  libraries/tree-sitter libraries/tree-sitter-pov-tags \\
+  libraries/tree-sitter libraries/tree-sitter-pov-tags libraries/tree-sitter-pov4 \\
   tools/bench/check-prepared-sets.sh tools/bench/check-prepared-sets.mk \\
   tools/bench/check-prepared-sets.cpp \\
   povray.ini.in changes.txt revision.txt
@@ -626,6 +626,7 @@ check: all
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/pov4/identical.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/snapshot.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/cylindrical_projection.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -846,14 +847,20 @@ libpovray_a_SOURCES = \\
 
 # Tree-sitter C is built by explicit rules: listing .c sources would make automake add a .c.o suffix
 # rule, which then wins over .cpp.o for povms.o (povms.cpp includes povms.c).
-libpovray_a_LIBADD = ts_lib.\$(OBJEXT) ts_parser.\$(OBJEXT)
-CLEANFILES = ts_lib.\$(OBJEXT) ts_parser.\$(OBJEXT)
+libpovray_a_LIBADD = ts_lib.\$(OBJEXT) ts_parser.\$(OBJEXT) ts_pov4.\$(OBJEXT) ts_pov4_scanner.\$(OBJEXT)
+CLEANFILES = ts_lib.\$(OBJEXT) ts_parser.\$(OBJEXT) ts_pov4.\$(OBJEXT) ts_pov4_scanner.\$(OBJEXT)
 
 ts_lib.\$(OBJEXT): ../libraries/tree-sitter/lib/src/lib.c
 	\$(CC) \$(DEFS) \$(AM_CPPFLAGS) \$(CPPFLAGS) -I../libraries/tree-sitter/lib/src -std=c11 -D_DEFAULT_SOURCE \$(CFLAGS) -c -o \$@ ../libraries/tree-sitter/lib/src/lib.c
 
 ts_parser.\$(OBJEXT): ../libraries/tree-sitter-pov-tags/src/parser.c
 	\$(CC) \$(DEFS) \$(AM_CPPFLAGS) \$(CPPFLAGS) -std=c11 -D_DEFAULT_SOURCE \$(CFLAGS) -c -o \$@ ../libraries/tree-sitter-pov-tags/src/parser.c
+
+ts_pov4.\$(OBJEXT): ../libraries/tree-sitter-pov4/src/parser.c
+	\$(CC) \$(DEFS) \$(AM_CPPFLAGS) \$(CPPFLAGS) -std=c11 -D_DEFAULT_SOURCE \$(CFLAGS) -c -o \$@ ../libraries/tree-sitter-pov4/src/parser.c
+
+ts_pov4_scanner.\$(OBJEXT): ../libraries/tree-sitter-pov4/src/scanner.c ../libraries/tree-sitter-pov4/src/words.h
+	\$(CC) \$(DEFS) \$(AM_CPPFLAGS) \$(CPPFLAGS) -std=c11 -D_DEFAULT_SOURCE \$(CFLAGS) -c -o \$@ ../libraries/tree-sitter-pov4/src/scanner.c
 
 check_PROGRAMS = tagfilter-test
 TESTS = tagfilter-test

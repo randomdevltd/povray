@@ -45,6 +45,7 @@
 // C++ standard header files
 #include <initializer_list>
 #include <memory>
+#include <vector>
 
 // POV-Ray header files (base module)
 #include "base/messenger_fwd.h"
@@ -181,6 +182,9 @@ public:
     ///     upon reaching the end of the stream, closing the scanner or changing
     ///     to yet another stream.
     void SetInputStream(StreamPtr pStream);
+
+    /// Report line `i` of `stream` as `lines[i - 1]`, continuing past the end; empty `lines` resets.
+    void SetLineMap(ConstStreamPtr stream, std::vector<POV_LONG> lines) { mLineMapStream = std::move(stream); mLineMap = std::move(lines); }
 
     /// Change encoding setting.
     void SetCharacterEncoding(CharacterEncodingID encoding);
@@ -408,6 +412,11 @@ private:
                                                         ///< first end-of-line class character in the stream
 
     bool                    mAllowNestedBlockComments;  ///< Whether block comments are allowed to nest.
+
+    ConstStreamPtr          mLineMapStream;
+    std::vector<POV_LONG>   mLineMap;
+
+    LexemePosition MappedPosition();
 
     /// Change the input stream and jump to a given bookmark.
     ///

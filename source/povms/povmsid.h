@@ -373,6 +373,8 @@ enum
     kPOVAttrib_FilterTags            = 'FiTa',
     kPOVAttrib_RealTimeRaytracing    = 'RTRa',
     kPOVAttrib_Version               = 'Vers',
+    kPOVAttrib_Pov4Version           = 'P4Ve',
+    kPOVAttrib_Pov4LoweredFile       = 'P4Lo',
 
     // options handled by view/renderer
     kPOVAttrib_Height                = 'Heig',

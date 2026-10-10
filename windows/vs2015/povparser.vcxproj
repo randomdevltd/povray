@@ -410,6 +410,9 @@
     <ClCompile Include="..\..\source\parser\parser_povm.cpp" />
     <ClCompile Include="..\..\source\parser\parser_skein.cpp" />
     <ClCompile Include="..\..\source\parser\parser_strings.cpp" />
+    <ClCompile Include="..\..\source\parser\pov4.cpp">
+      <AdditionalIncludeDirectories>..\..\libraries\tree-sitter\lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
     <ClCompile Include="..\..\source\parser\parser_tokenizer.cpp" />
     <ClCompile Include="..\..\source\parser\reservedwords.cpp" />
     <ClCompile Include="..\..\source\parser\precomp.cpp">
@@ -427,6 +430,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\source\parser\fncode.h" />
     <ClInclude Include="..\..\source\parser\parser.h" />
+    <ClInclude Include="..\..\source\parser\pov4.h" />
     <ClInclude Include="..\..\source\parser\parsertypes.h" />
     <ClInclude Include="..\..\source\parser\parser_fwd.h" />
     <ClInclude Include="..\..\source\parser\reservedwords.h" />

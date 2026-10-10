@@ -1,0 +1,3 @@
+include "scene.inc";
+let Size = 2;
+  Size * 3

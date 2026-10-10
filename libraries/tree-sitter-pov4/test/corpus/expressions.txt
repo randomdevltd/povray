@@ -1,0 +1,147 @@
+==================
+Precedence
+==================
+let A = (!B || C && D == E < F + G * -H);
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (parenthesized_expression
+      (comparison_expression
+        left: (unary_expression
+          operand: (identifier))
+        right: (comparison_expression
+          left: (identifier)
+          right: (comparison_expression
+            left: (identifier)
+            right: (comparison_expression
+              left: (identifier)
+              right: (binary_expression
+                left: (identifier)
+                right: (binary_expression
+                  left: (identifier)
+                  right: (unary_expression
+                    operand: (identifier)))))))))))
+
+==================
+Conditional inside a vector
+==================
+let C = rgb <1, (X > 1) ? 0.2 : 0.8, 0>;
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (colour_expression
+      operator: (colour_operator)
+      value: (vector
+        (number)
+        (conditional_expression
+          condition: (parenthesized_expression
+            (comparison_expression
+              left: (identifier)
+              right: (number)))
+          consequence: (number)
+          alternative: (number))
+        (number)))))
+
+==================
+Postfix chains and reserved member names
+==================
+let V = F(1)[2].x + C.red;
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (binary_expression
+      left: (member_expression
+        object: (index_expression
+          object: (call_expression
+            function: (identifier)
+            arguments: (arguments
+              (number)))
+          index: (number))
+        member: (identifier))
+      right: (member_expression
+        object: (identifier)
+        member: (identifier)))))
+
+==================
+Lambdas
+==================
+let S = (A) => A * 2;
+let B = (P) => { let Q = P + y; Q * 0.5 };
+let K = P => P;
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (lambda
+      parameters: (parameters
+        (parameter
+          name: (identifier)))
+      body: (binary_expression
+        left: (identifier)
+        right: (number))))
+  (let_statement
+    name: (identifier)
+    value: (lambda
+      parameters: (parameters
+        (parameter
+          name: (identifier)))
+      body: (body
+        (let_statement
+          name: (identifier)
+          value: (binary_expression
+            left: (identifier)
+            right: (builtin)))
+        (binary_expression
+          left: (identifier)
+          right: (number)))))
+  (let_statement
+    name: (identifier)
+    value: (lambda
+      parameters: (identifier)
+      body: (identifier))))
+
+==================
+Arrays, comprehensions and dictionaries
+==================
+let A = [1, 2, ...B];
+let C = [for (I = 0 to 9) { I * I }];
+let D = { A: 1, "b c": 2, ...E };
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (array
+      (number)
+      (number)
+      (spread
+        (identifier))))
+  (let_statement
+    name: (identifier)
+    value: (array
+      (for_statement
+        variable: (identifier)
+        start: (number)
+        end: (number)
+        body: (body
+          (binary_expression
+            left: (identifier)
+            right: (identifier))))))
+  (let_statement
+    name: (identifier)
+    value: (dictionary
+      (pair
+        key: (identifier)
+        value: (number))
+      (pair
+        key: (string)
+        value: (number))
+      (spread
+        (identifier)))))
