@@ -106,8 +106,8 @@ RawTokenizer::KnownWordInfo::KnownWordInfo() :
 
 //******************************************************************************
 
-static constexpr std::size_t kMaxCachedTokensPerFile = 1 << 20;
-static constexpr std::size_t kMaxCachedTokens = 1 << 21;
+static constexpr std::size_t kMaxCachedTokensPerFile = 1 << 18;
+static constexpr std::size_t kMaxCachedTokens = 1 << 20;
 
 RawTokenizer::RawTokenizer() :
     mNextIdentifierId(TOKEN_COUNT+1),
