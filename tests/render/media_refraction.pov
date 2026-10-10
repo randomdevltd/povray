@@ -3,25 +3,33 @@
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Ramp) #declare Ramp = 0; #end
 #ifndef (Far) #declare Far = 0; #end
+#ifndef (Inner) #declare Inner = 1; #end
+#ifndef (BallIor) #declare BallIor = 1.5; #end
 global_settings { assumed_gamma 1 }
 camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up y * 6 }
 #declare Backdrop = plane {
   z, 4
   #if (Ramp = 2) pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 8 translate -4 * x }
+  #elseif (Ramp = 3) pigment { rgb 1 }
   #elseif (Ramp) pigment { gradient y color_map { [0 rgb 0] [1 rgb 1] } scale 8 translate -4 * y }
   #else pigment { checker rgb 0.1 rgb 0.9 scale 0.5 }
   #end
   finish { ambient 0 emission 1 diffuse 0 }
 }
-#if (Case != 16) object { Backdrop } #end
+#if ((Case != 16) & (Case < 42)) object { Backdrop } #end
 
 #declare Clear = texture { pigment { rgbt 1 } finish { diffuse 0 } };
 #declare Lens = media { method 3 refraction 0.6 density { spherical scale 2.5 } }
 #declare Rise = media { method 3 refraction 0.2 density { gradient y scale 4 translate -2 * y } }
 #declare Riser = box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 media { Rise } } }
 #declare Tube = box { <-1, -1, -3>, <1, 1, 3> texture { Clear } };
-#declare Ball = sphere { 0, 1.5 texture { Clear } interior { ior 1.5 } };
+#declare Ball = sphere { 0, 1.5 texture { Clear } interior { ior BallIor } };
 #declare Water = box { -3, 3 texture { Clear } interior { ior 1.33 } };
+#declare A = sphere { -0.7 * x, 1.6 };
+#declare B = sphere { 0.7 * x, 1.6 };
+#declare Wall = <cos(radians(70)), 0, -sin(radians(70))>;
+#declare WaterFront = intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { -Wall, 0 } pigment { rgbf <1, 0.8, 0.8, 1> } finish { diffuse 0 } interior { ior 1.33 } };
+#declare GlassBack = intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { Wall, 0 } texture { Clear } interior { ior 1.5 } };
 
 #switch (Case)
 #case (1)
@@ -65,6 +73,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #case (15) object { Water } #break
 #case (16) object { Ball } object { Backdrop } #break
 #case (17) object { Ball } box { -3, 3 texture { Clear } interior { ior 1 } } #break
+#case (34) object { Ball } box { -3, 3 texture { Clear } } #break
 #case (20) // glass and water sharing the wall z = x
   intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <-1, 0, 1>, 0 } texture { Clear } interior { ior 1.5 } }
   intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <1, 0, -1>, 0 } texture { Clear } interior { ior 1.33 } }
@@ -120,6 +129,28 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
         interior { media { method 3 refraction 0.05 density { function { pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } } } } }
   box { <-1.5, -1.5, 0.5>, <1.5, 1.5, 1.5> texture { Clear } interior { media { emission 1.5 } } }
 #break
-#case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior 1 } } #break
-#case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior 1 } } #break
+#case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior Inner } } #break
+#case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior Inner } } #break
+#case (35) // a bubble cut with difference, and the same hole filled by a separate sphere
+#case (36)
+  difference { sphere { 0, 2.5 } sphere { 0, 1 } texture { Clear } interior { ior 1.5 } }
+  #if (Case = 36) sphere { 0, 1 texture { Clear } interior { ior 1.25 } } #end
+#break
+#case (37) object { A texture { Clear } interior { ior 1.5 } } object { B texture { Clear } interior { ior 1.3 } } #break
+#case (38) object { B texture { Clear } interior { ior 1.3 } } object { A texture { Clear } interior { ior 1.5 } } #break
+#case (39) // the overlap cut out as a solid of the mean ior
+  difference { object { A } object { B } texture { Clear } interior { ior 1.5 } }
+  difference { object { B } object { A } texture { Clear } interior { ior 1.3 } }
+  intersection { object { A } object { B } texture { Clear } interior { ior 1.4 } }
+#break
+#case (40) object { WaterFront } object { GlassBack } #break // rays meet the shared wall 70 degrees from its normal
+#case (41) object { GlassBack } object { WaterFront } #break
+#case (42) // from above: a polygon wall within the tolerance of a clear face must shade the floor behind both
+#case (43)
+  camera { orthographic location <0, 10, 0> look_at 0 right x * 8 up z * 6 }
+  light_source { <0, 3, 20> rgb 1 }
+  plane { y, -0.5 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
+  polygon { 5, <-5, -0.5, 0>, <5, -0.5, 0>, <5, 4, 0>, <-5, 4, 0>, <-5, -0.5, 0> pigment { rgb 0.5 } translate z * (2 + 1e-5) }
+  box { <-5, 0, -1>, <5, 4, (Case = 42 ? 2 : 1.99)> texture { Clear } }
+#break
 #end

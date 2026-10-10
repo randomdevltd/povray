@@ -227,6 +227,8 @@ class Interior final
         unsigned int precedence;
         /// whether any of its media refract
         bool refracting;
+        /// whether the scene states its ior, so it joins the mean ior where solids overlap
+        bool statesIor;
         /// the shape of the object it first belonged to, for messages
         const char *shape;
         SNGL IOR, Dispersion;

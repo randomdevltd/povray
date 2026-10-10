@@ -442,20 +442,23 @@ class Trace
 
         CooperateFunctor& cooperate;
         MediaFunctor& media;
-        /// Recent interfaces' sides by hit point and interior, which the probe, ComputeRelativeIOR and ComputeRefraction share for one hit.
+        /// Recent interfaces by hit point and interior: the surfaces meeting there merged into one, which TakeCoincident,
+        /// ComputeRelativeIOR and ComputeInterfaceIor share for one hit.
         struct InterfaceCache final
         {
             RayInteriorVector before, after;
             Vector3d point;
             const Interior *interior = nullptr;
+            ConstObjectPtr take = nullptr;       ///< the object whose surface there is hit instead: an opaque one, else one entered
             double leave = 0.0;
-            bool simple = false;                 ///< the far side holds just what crossing the hit surface gives
+            bool photon = false;
         };
         static const size_t kInterfaceCacheSize = 16;
         InterfaceCache sidesCache[kInterfaceCacheSize];
+        std::vector<std::pair<ConstObjectPtr, double>> coincident;
         const InterfaceCache& InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
-        void FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& before, Interior *interior, const Vector3d& point,
-                                const Vector3d& normal, const Vector3d& direction);
+        void FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
+        void StartProbe(Ray& probe, const Ray& ray);
         RadiosityFunctor& radiosity;
 
     ///
@@ -927,29 +930,26 @@ class Trace
             double radiance;                 ///< radiance scale across it: (n / base ior) squared, the ray's side over beyond
             double leave;                    ///< how far past it the child ray starts: the tolerance where the crossing was seen, else 0
         };
-        /// The one rule for the indices either side of a surface, for camera rays and photons; enters or leaves `interior` on the ray.
+        /// The one rule for the indices either side of a surface, for camera rays and photons; crosses every surface meeting there.
         void ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal, InterfaceIor& result);
-        /// The interiors beyond a surface of `interior` hit at `point`, with every other surface that meets there crossed too.
 
-        /// How far either side of a surface its interiors are sampled, and how far past it child rays start: small beside the
+        /// How far either side of a surface other surfaces merge with it, and how far past it child rays start: small beside the
         /// coordinates and the interior's smallest extent, and at least twice the shortest hit distance where the object allows.
         double InterfaceTolerance(const Vector3d& point, const Interior *interior) const;
-        /// Where a hit's surface lets light through and another object's opaque surface lies at the same point, hits that one.
+        /// Where other surfaces meet a hit that lets light through, hits an opaque one, else one of an object the ray enters.
         /// Returns whether it did.
-        bool PreferOpaqueCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
+        bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
+        /// Whether an opaque surface meets a shadow ray's clear hit, or lies in the gap the next search skips.
+        bool ShadowMeetsOpaque(const Ray& ray, const Intersection& isect, const RayObjectCondition& precond);
         /// Whether a surface's plain pigment lets any light through, or might.
         bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
-        /// Whether an interior's surfaces can change the index or the media a ray sees.
-        bool ChangesIndex(const Interior *interior) const;
         /// Whether shading a hit needs the relative ior: it may let light through, or a finish uses Fresnel.
         bool NeedsRelativeIor(const TEXTURE *texture, ConstObjectPtr object) const;
-        /// The index where a ray holds `interiors` with `toggled` entered or left; `offset` gets its media refraction part.
-        double StackIndex(const RayInteriorVector& interiors, const Interior *toggled, const Vector3d& point, double& offset,
-                          const Interior **base = nullptr);
-        /// The interior whose ior is the base index where a ray holds `interiors` with `toggled` entered or left; nullptr: the atmosphere.
-        const Interior *IorInterior(const RayInteriorVector& interiors, const Interior *toggled) const;
-        /// Whether an interior ranks by placement; air (the atmosphere's ior, no media refraction) ranks by entry instead.
-        bool RanksIor(const Interior *interior) const;
+        /// The mean ior and dispersion of the solids in `interiors` that state an ior, or the atmosphere's; `elements` gets their largest.
+        void MeanIor(const RayInteriorVector& interiors, double& ior, double& dispersion, unsigned int *elements) const;
+        /// The index where a ray holds `interiors`: their mean ior plus media refraction, whose part `offset` gets.
+        double StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base = nullptr,
+                          double *dispersion = nullptr, unsigned int *elements = nullptr);
         /// Warns once per render for a SceneData::mediaWarningFlags bit.
         void WarnRefraction(unsigned flag, const char *format, ...);
         /// An index held at or above the smallest a curved ray may meet, warning once when it is not.

@@ -75,6 +75,7 @@ Interior::Interior()
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
     refracting = false;
+    statesIor = false;
     shape = "object";
 
     subsurface = std::shared_ptr<SubsurfaceInterior>();
@@ -95,6 +96,7 @@ Interior::Interior(const Interior& source)
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
     refracting = source.refracting;
+    statesIor = source.statesIor;
     shape = "object";
     IOR = source.IOR;
     subsurface = std::shared_ptr<SubsurfaceInterior>(source.subsurface);
