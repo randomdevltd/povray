@@ -948,9 +948,9 @@ class Trace
         /// How far either side of a surface other surfaces merge with it, and how far past it child rays start: small beside the
         /// coordinates and the interior's smallest extent, and at least twice the shortest hit distance where the object allows.
         double InterfaceTolerance(const Vector3d& point, const Interior *interior) const;
-        /// Where other surfaces meet a hit that lets light through, hits an opaque one, else one of an object the ray enters.
-        /// Returns whether it did.
-        bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
+        /// Where other surfaces meet a hit that lets light through, hits an opaque one, else the one interface_texture picks.
+        /// Returns whether it did; `shared` gets whether several faces blend there.
+        bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight, bool *shared = nullptr);
         /// Under interface_texture blend, fills `textures` with the textures of the clear faces meeting at a hit, if several.
         bool SharedFaceTextures(const Ray& ray, const Intersection& isect, const Vector3d& normal, WeightedTextureVector& textures,
                                 std::unique_ptr<InterfaceCache>& sides);
