@@ -459,6 +459,7 @@ class Trace
         typedef std::pair<ConstObjectPtr, double> Surface;
         /// Objects with a surface where an interface is being merged, each once at its nearest depth, in SurfaceBefore order.
         std::vector<Surface> coincident;
+        bool loneSurface = false;            ///< whether the probe met one surface only, so crossing it toggles its interior
         size_t InterfaceSlot(const Interior *interior, const Vector3d& point) const;
         const InterfaceCache& InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
         void FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
@@ -948,11 +949,6 @@ class Trace
         /// Where other surfaces meet a hit that lets light through, hits an opaque one, else one of an object the ray enters.
         /// Returns whether it did.
         bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
-        /// Crosses every surface meeting a shadow ray's clear hit: each filters the light once and the ray's interiors are those
-        /// beyond them. Returns false where one is opaque. `reach` caps the search past the hit; `leave` gets how far to step on.
-        bool ShadowCrossCoincident(const LightSource& lightsource, Ray& ray, Intersection& isect, MathColour& colour,
-                                   const RayInteriorVector& before, const RayObjectCondition& precond, double reach,
-                                   double& leave);
         /// Whether interfaces merge coincident surfaces: version 4.0 or media refraction, with an ior or an opaque object.
         bool MergesSurfaces() const;
         /// Whether a surface's plain pigment lets any light through, or might.
