@@ -635,25 +635,37 @@ class VolumeEmitter final : public Emitter
         Vector3d low, cell;
         int nx = 1, ny = 1;
         vector<std::uint32_t> cells;
+        vector<unsigned char> inside;
         vector<double> cdf;
         vector<MathColour> weights;
         MathColour intensity;
         Vector3d centre;
-        double nearDistance = 0.0;
+        double nearDistance = 0.0, radius = 0.0;
 
         virtual const MathColour& Intensity() const override { return intensity; }
         virtual const Vector3d& Centre() const override { return centre; }
         virtual double NearDistance() const override { return nearDistance; }
+        virtual double Radius() const override { return radius; }
         virtual EmitterSample Sample(double s, std::uint64_t key) const override
         {
             const size_t i = std::min(cells.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), s) - cdf.begin()));
             const std::uint32_t index = cells[i];
             const std::uint32_t x = index % nx, y = (index / nx) % ny, z = index / (std::uint32_t(nx) * ny);
+            // a point in one of the cell's octants inside the container, each equally likely
+            const unsigned mask = inside[i];
+            int count = 0;
+            for (int k = 0; k < 8; k++)
+                count += (mask >> k) & 1;
+            int pick = std::min(count - 1, int(Draw(key, kDrawEmitter, 3) * count)), octant = 0;
+            for (; (pick > 0) || !((mask >> octant) & 1); octant++)
+                if ((mask >> octant) & 1)
+                    pick--;
             EmitterSample sample;
-            sample.position = low + Vector3d((x + Draw(key, kDrawEmitter, 0)) * cell[X], (y + Draw(key, kDrawEmitter, 1)) * cell[Y],
-                                             (z + Draw(key, kDrawEmitter, 2)) * cell[Z]);
+            sample.position = low + Vector3d((x + 0.5 * ((octant & 1) + Draw(key, kDrawEmitter, 0))) * cell[X],
+                                             (y + 0.5 * (((octant >> 1) & 1) + Draw(key, kDrawEmitter, 1))) * cell[Y],
+                                             (z + 0.5 * ((octant >> 2) + Draw(key, kDrawEmitter, 2))) * cell[Z]);
             sample.weight = weights[i];
-            sample.pdf = (cdf[i] - (i > 0 ? cdf[i - 1] : 0.0)) / (cell[X] * cell[Y] * cell[Z]);
+            sample.pdf = (cdf[i] - (i > 0 ? cdf[i - 1] : 0.0)) / (cell[X] * cell[Y] * cell[Z] * count / 8.0);
             return sample;
         }
 };
@@ -671,6 +683,11 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
     if (medium.Emission.IsZero())
     {
         failure = "it has no emission";
+        return nullptr;
+    }
+    if (Test_Flag(container, INFINITE_FLAG))
+    {
+        failure = "its container is infinite";
         return nullptr;
     }
     Vector3d low, size;
@@ -701,12 +718,16 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
             for (int x = 0; x < n[X]; x++)
             {
                 size_t inside = 0;
+                unsigned mask = 0;
                 for (int k = 0; k < 8; k++)
                 {
                     const Vector3d point = low + Vector3d((x + 0.25 + 0.5 * (k & 1)) * cell[X], (y + 0.25 + 0.5 * ((k >> 1) & 1)) * cell[Y],
                                                           (z + 0.25 + 0.5 * (k >> 2)) * cell[Z]);
                     if (Inside_Object(point, container, td))
+                    {
                         points[inside++] = point;
+                        mask |= 1u << k;
+                    }
                 }
                 if (inside == 0)
                     continue;
@@ -724,6 +745,7 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
                 if (weight <= 0.0)
                     continue;
                 emitter->cells.push_back(std::uint32_t((size_t(z) * n[Y] + y) * n[X] + x));
+                emitter->inside.push_back((unsigned char)mask);
                 emitter->weights.push_back(cellPower);
                 power.push_back(weight);
                 emitter->intensity += cellPower;
@@ -737,6 +759,12 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
     }
     emitter->centre /= total;
     emitter->nearDistance = 0.5 * cell.length();
+    for (std::uint32_t index : emitter->cells)
+    {
+        const Vector3d middle = low + Vector3d((index % n[X] + 0.5) * cell[X], ((index / n[X]) % n[Y] + 0.5) * cell[Y],
+                                               (index / (std::uint32_t(n[X]) * n[Y]) + 0.5) * cell[Z]);
+        emitter->radius = std::max(emitter->radius, (middle - emitter->centre).length() + emitter->nearDistance);
+    }
     // Z-order keeps an equal-power stratum of the table compact in space, so stratified draws spread in 3D.
     vector<std::pair<std::uint64_t, size_t>> order(power.size());
     for (size_t i = 0; i < order.size(); i++)
@@ -751,15 +779,18 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
     }
     std::sort(order.begin(), order.end());
     vector<std::uint32_t> cells(order.size());
+    vector<unsigned char> inside(order.size());
     vector<MathColour> weights(order.size());
     vector<double> sorted(order.size());
     for (size_t i = 0; i < order.size(); i++)
     {
         cells[i] = emitter->cells[order[i].second];
+        inside[i] = emitter->inside[order[i].second];
         weights[i] = emitter->weights[order[i].second];
         sorted[i] = power[order[i].second];
     }
     emitter->cells.swap(cells);
+    emitter->inside.swap(inside);
     emitter->weights.swap(weights);
     power.swap(sorted);
     emitter->cdf.resize(power.size());
@@ -1948,7 +1979,8 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             mediaLit = mediaLit || (lights[l].light->emitter != nullptr);
         int stride = 1;
         if (mediaLit && use_scattering && (modifiers == nullptr) && !ray.IsPhotonRay() &&
-            ((photonGatherer == nullptr) || (photonGatherer->map->numPhotons == 0)))
+            ((photonGatherer == nullptr) ||
+             (threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap.numPhotons == 0)))
             stride = std::max(1, std::min(count, int(ScatteringStep(medias, interval) / step)));
         MathColour light;
         int lit = -1;

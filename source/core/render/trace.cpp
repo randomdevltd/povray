@@ -2582,6 +2582,11 @@ bool Trace::ComputeOneLightReach(const LightSource &lightsource, const FINISH *f
     if(lightcolour.IsNearZero(EPSILON))
         return false;
 
+    // a media light wholly behind the surface lights only a two-sided or back-lit finish
+    if((lightsource.emitter != nullptr) && !Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (finish->DiffuseBack == 0.0) &&
+       (dot(layer_normal, lightsource.Center - ipoint) < -lightsource.emitter->Radius()))
+        return false;
+
     // See if light on far side of surface from camera.
     if(!(Test_Flag(object, DOUBLE_ILLUMINATE_FLAG)) // NK 1998 double_illuminate - changed to Test_Flag
        && !lightsource.Use_Full_Area_Lighting) // JN2007: Easiest way of getting rid of sharp shadow lines

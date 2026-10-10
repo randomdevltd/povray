@@ -10043,6 +10043,9 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
         for (Media& medium : Object->interior->media)
         {
+            // a media light's table needs the container's geometry, so a deferred mesh is built now
+            if (medium.light)
+                Resolve_Mesh_Geometry(Object);
             medium.SetFastContainer(Object);
             if (medium.light)
                 Make_Media_Light(medium, Object);
