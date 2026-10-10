@@ -187,6 +187,8 @@ class ObjectBase
         std::vector<ObjectPtr> Bound;
         std::vector<ObjectPtr> Clip;
         std::vector<LightSource*> LLights;  ///< Used for light groups.
+        std::vector<LightSource*> PhotonLights;
+        bool photonGroupEnabled = false;
         BoundingBox BBox;
         TRANSFORM *Trans;
         SNGL Ph_Density;
@@ -220,7 +222,8 @@ class ObjectBase
             Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags),
-            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags), enclosingTags(o.enclosingTags)
+            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
+            BBox(o.BBox), tags(o.tags), enclosingTags(o.enclosingTags)
         {
             if (transplant)
             {
@@ -231,6 +234,7 @@ class ObjectBase
                 o.Bound.clear();
                 o.Clip.clear();
                 o.LLights.clear();
+                o.PhotonLights.clear();
             }
         }
         virtual ~ObjectBase();

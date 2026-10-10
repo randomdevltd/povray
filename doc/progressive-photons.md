@@ -60,6 +60,17 @@ previous-pass hit rates guide the next pass, with an exploration floor and an
 isotropic component for nonparallel sources. Area emitters are sampled over their
 area without requiring the classic photon `area_light` option.
 
+`light_group { ... photons on }` enables group photon transport; `photons off`
+disables it. The default is off before scene version 4.0 and on from 4.0.
+Photon-only lamps retain group membership without entering the direct-light
+list. Target selection and deposits enforce membership and `global_lights off`;
+surface gathers also match the receiving object, so nearby objects in another
+group cannot receive those deposits. Group cloning and render-tag filtering
+preserve this relationship. Photon maps are shared by a prepared scene set,
+not allocated per light group.
+Volumetric photon collection from group lights is currently rejected; the
+surface membership checks do not substitute for medium ownership.
+
 Classic count, spacing, gather, radius, jitter, autostop, expansion and map-file
 controls do not apply and are rejected. Radiosity, oriented area emitters and
 `projected_through` lights are currently rejected. Explicit antialiasing is also

@@ -3838,6 +3838,7 @@ ObjectPtr Parser::Parse_Light_Group()
     Object = new CSGUnion();
 
     Object->Type |= LIGHT_GROUP_OBJECT;
+    Object->photonGroupEnabled = sceneData->EffectiveLanguageVersion() >= 400;
     Set_Flag(Object, NO_GLOBAL_LIGHTS_FLAG);
 
     while ((Local = Parse_Object()) != nullptr)
@@ -3902,6 +3903,14 @@ ObjectPtr Parser::Parse_Light_Group()
         END_CASE
 
         CASE(PHOTONS_TOKEN)
+            Get_Token();
+            if (CurrentTrueTokenId() != LEFT_CURLY_TOKEN)
+            {
+                UNGET
+                Object->photonGroupEnabled = Parse_Float() > 0.0;
+                break;
+            }
+            UNGET
             Parse_Begin();
             EXPECT
                 CASE(TARGET_TOKEN)
@@ -3980,6 +3989,8 @@ ObjectPtr Parser::Parse_Light_Group()
                           NO_GLOBAL_LIGHTS_FLAG, NO_GLOBAL_LIGHTS_SET_FLAG);
 
     Parse_End();
+
+    Promote_Photon_Lights(Object);
 
     return (reinterpret_cast<ObjectPtr>(Object));
 }
@@ -9963,6 +9974,7 @@ void Parser::MAError (const char *, long)
 static void Add_Local_Light(ObjectPtr object, LightSource *light)
 {
     object->LLights.push_back(light);
+    object->PhotonLights.push_back(light);
     if (object->Type & IS_COMPOUND_OBJECT)
         for (ObjectPtr child : reinterpret_cast<CompoundObject *>(object)->children)
             Add_Local_Light(child, light);
@@ -10003,6 +10015,7 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     else
     {
         light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
+        light->photonGroupEnabled = mLightGroups.back()->photonGroupEnabled;
         sceneData->lightGroupLightSources.push_back(light);
         Add_Local_Light(mLightGroups.back(), light);
     }
@@ -10374,7 +10387,10 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         const bool group = ((Object->Type & LIGHT_GROUP_OBJECT) != 0);
         if (group)
+        {
+            Promote_Photon_Lights(static_cast<CSG*>(Object));
             mLightGroups.push_back(Object);
+        }
         const bool resolvedBefore = mMeshResolvedBelow;
         mMeshResolvedBelow = false;
         for (vector<ObjectPtr>::iterator Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); Sib != (reinterpret_cast<CSG *>(Object))->children.end(); Sib++)

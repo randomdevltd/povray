@@ -134,6 +134,8 @@ PhotonTrace::~PhotonTrace()
 bool PhotonTrace::PhotonLightAffectsObject(ConstObjectPtr object) const
 {
     const LightSource* light = threadData->photonSourceLight;
+    if (sceneData->photonSettings.method == 2)
+        return pov::PhotonLightAffectsObject(light, object);
     if (!light->lightGroupLight)
         return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
     return std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end();
@@ -214,6 +216,9 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
+    if (sceneData->photonSettings.method == 2 && (ray.GetTicket().traceLevel == 1 || threadData->passThruThis) &&
+        Test_Flag(bestisect.Object, PH_TARGET_FLAG) && !PhotonLightAffectsObject(bestisect.Object))
+        return false;
     if ((bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
     {
         ColourChannel transm = 0.0;

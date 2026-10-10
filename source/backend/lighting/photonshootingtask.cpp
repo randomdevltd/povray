@@ -230,8 +230,7 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
                 continue;
             if (light->Parallel && Test_Flag(object, INFINITE_FLAG))
                 throw POV_EXCEPTION(kParamErr, "Parallel photon emission needs bounded targets.");
-            if ((!light->lightGroupLight && !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG)) ||
-                std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end())
+            if (PhotonLightAffectsObject(light, object))
                 targets.push_back(object);
         }
         else if (object->Type & IS_COMPOUND_OBJECT)
@@ -258,6 +257,8 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ProgressiveTargets(set.objects, light, selected);
             if (selected.empty())
                 continue;
+            if (light->lightGroupLight && GetSceneData()->interiorMedia && GetSceneData()->photonSettings.maxMediaSteps > 0)
+                throw POV_EXCEPTION(kParamErr, "Photon method 2 does not yet support volumetric photons from light groups.");
             lights.push_back(light);
             targets.push_back(std::move(selected));
         }

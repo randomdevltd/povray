@@ -5976,6 +5976,8 @@ bool Trace::SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId prep
 
 bool Trace::UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const
 {
+    if (sceneData->photonSettings.method == 2 && receiver->PhotonLights != root->PhotonLights)
+        return false;
     if ((Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG) != Test_Flag(root, PH_IGNORE_PHOTONS_FLAG)) ||
         (Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG) != Test_Flag(root, NO_GLOBAL_LIGHTS_FLAG)) || (receiver->LLights != root->LLights))
         return false;

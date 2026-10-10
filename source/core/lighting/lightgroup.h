@@ -61,6 +61,8 @@ namespace pov
 /// @{
 
 void Promote_Local_Lights(CSG *Object);
+void Promote_Photon_Lights(CSG *object);
+bool PhotonLightAffectsObject(const LightSource* light, ConstObjectPtr object);
 bool Check_Photon_Light_Group(ConstObjectPtr Object);
 
 /// @}
