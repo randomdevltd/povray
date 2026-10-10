@@ -113,9 +113,7 @@ static constexpr std::size_t kMaxCachedBytes = 64 << 20;
 RawTokenizer::RawTokenizer() :
     mNextIdentifierId(TOKEN_COUNT+1),
     mLastInstance(0),
-    mCacheEnabled(false),
-    mCachedTokenCount(0),
-    mCachedByteCount(0)
+    mUseCount(0)
 {
     for (auto i = Reserved_Words; i->Token_Name != nullptr; ++i)
     {
@@ -148,61 +146,76 @@ static POV_OFF_T StreamSize(IStream& stream)
 
 void RawTokenizer::SetInputStream(StreamPtr pStream, const UCS2String& path)
 {
-    if (!mCacheEnabled)
+    if (mBudget == nullptr)
     {
         SetInputStream(pStream);
         return;
     }
-    const POV_OFF_T size = StreamSize(*pStream);
-    auto cached = mCachedFiles.find(path);
-    if ((cached != mCachedFiles.end()) && ((size < 0) || (cached->second->size != size)))
+    Filesystem::FileStamp stamp = Filesystem::GetFileStamp(path);
+    if (stamp.size < 0)
+        stamp.size = StreamSize(*pStream);
+    auto cached = mCachedFiles.find(stamp.name);
+    if ((cached != mCachedFiles.end()) &&
+        ((stamp.size < 0) || (cached->second->size != stamp.size) || (cached->second->time != stamp.time)))
     {
-        ForgetFile(path);
+        mCachedFiles.erase(cached);
         cached = mCachedFiles.end();
     }
     if (cached == mCachedFiles.end())
     {
-        if ((mCachedTokenCount >= kMaxCachedTokens) || (mCachedByteCount >= kMaxCachedBytes))
+        if (!MakeRoom())
         {
             SetInputStream(pStream);
             return;
         }
-        cached = mCachedFiles.emplace(path, LexFile(pStream, size)).first;
+        cached = mCachedFiles.emplace(stamp.name, LexFile(pStream, stamp)).first;
     }
+    cached->second->lastUse = ++mUseCount;
     mPosition.file = cached->second;
     mPosition.index = 0;
     mPosition.instance = ++mLastInstance;
     mPosition.cached = true;
 }
 
-void RawTokenizer::ForgetFile(const UCS2String& path)
+void RawTokenizer::ForgetFile(const UCS2String& canonicalPath)
 {
-    auto cached = mCachedFiles.find(path);
-    if (cached == mCachedFiles.end())
-        return;
-    mCachedTokenCount -= cached->second->tokens.size();
-    mCachedByteCount -= cached->second->bytes;
-    mCachedFiles.erase(cached);
+    mCachedFiles.erase(canonicalPath);
 }
 
-CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream, POV_OFF_T size)
+bool RawTokenizer::MakeRoom()
+{
+    while ((mBudget->tokens >= kMaxCachedTokens) || (mBudget->bytes >= kMaxCachedBytes))
+    {
+        auto oldest = mCachedFiles.end();
+        for (auto i = mCachedFiles.begin(); i != mCachedFiles.end(); ++i)
+            if ((i->second.use_count() == 1) &&
+                ((oldest == mCachedFiles.end()) || (i->second->lastUse < oldest->second->lastUse)))
+                oldest = i;
+        if (oldest == mCachedFiles.end())
+            return false;
+        mCachedFiles.erase(oldest);
+    }
+    return true;
+}
+
+CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream, const Filesystem::FileStamp& stamp)
 {
     CachedFilePtr file = std::make_shared<CachedFile>();
     file->stream = pStream;
-    file->size = size;
+    file->size = stamp.size;
+    file->time = stamp.time;
+    file->lastUse = 0;
     file->bytes = 0;
     file->complete = false;
     mScanner.SetInputStream(pStream);
-    const std::size_t maxTokens =
-        std::min(kMaxCachedTokensPerFile, kMaxCachedTokens - mCachedTokenCount);
-    const std::size_t maxBytes =
-        std::min(kMaxCachedBytesPerFile, kMaxCachedBytes - mCachedByteCount);
+    const std::size_t maxTokens = std::min(kMaxCachedTokensPerFile, kMaxCachedTokens - mBudget->tokens);
+    const std::size_t maxBytes = std::min(kMaxCachedBytesPerFile, kMaxCachedBytes - mBudget->bytes);
     std::unordered_map<UTF8String, std::uint32_t> textIndex;
     Scanner::State before = mScanner.GetState();
     RawToken token;
     try
     {
-        while ((file->tokens.size() < maxTokens) && (file->bytes < maxBytes))
+        while (file->tokens.size() < maxTokens)
         {
             token.floatValue = 0.0;
             token.symbolHash = -1;
@@ -232,10 +245,26 @@ CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream, POV_OFF_T size)
             const std::uint32_t textCount = std::uint32_t(file->texts.size());
             t.text = textCount;
             if (t.category != Lexeme::kFloatLiteral)
-                t.text = textIndex.emplace(token.lexeme.text, textCount).first->second;
+            {
+                const auto known = textIndex.find(token.lexeme.text);
+                if (known != textIndex.end())
+                    t.text = known->second;
+            }
+            const Scanner::State after = mScanner.GetState();
+            const bool irregularEnd = (after.position.line != start.line) ||
+                                      (after.position.column != start.column + POV_LONG(length)) ||
+                                      (after.position.offset != start.offset + POV_OFF_T(length));
+            std::size_t cost = sizeof(CachedToken) + (irregularEnd ? 4 * sizeof(LexemePosition) : 0);
+            if (t.text == textCount)
+                cost += sizeof(UTF8String) + ((length < 16) ? 0 : length + 1);
+            if (t.category == Lexeme::kStringLiteral)
+                cost += sizeof(AmbiguousStringValue) + 4 * length;
+            if (file->bytes + cost > maxBytes)
+                break;
             if (t.text == textCount)
             {
-                file->bytes += sizeof(UTF8String) + ((length < 16) ? 0 : length + 1);
+                if (t.category != Lexeme::kFloatLiteral)
+                    textIndex.emplace(token.lexeme.text, textCount);
                 file->texts.push_back(token.lexeme.text);
             }
             if (t.category == Lexeme::kFloatLiteral)
@@ -244,20 +273,13 @@ CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream, POV_OFF_T size)
             {
                 t.value = file->values.size();
                 file->values.push_back(token.value);
-                file->bytes += sizeof(AmbiguousStringValue) + 4 * length;
             }
             else
                 t.symbolHash = token.symbolHash;
-            const Scanner::State after = mScanner.GetState();
-            if ((after.position.line != start.line) ||
-                (after.position.column != start.column + POV_LONG(length)) ||
-                (after.position.offset != start.offset + POV_OFF_T(length)))
-            {
+            if (irregularEnd)
                 file->ends.emplace(file->tokens.size(), after.position);
-                file->bytes += 4 * sizeof(LexemePosition);
-            }
             file->tokens.push_back(t);
-            file->bytes += sizeof(CachedToken);
+            file->bytes += cost;
             before = after;
         }
     }
@@ -265,8 +287,9 @@ CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream, POV_OFF_T size)
     {
         // Reading on from here raises the error where it occurs.
     }
-    mCachedTokenCount += file->tokens.size();
-    mCachedByteCount += file->bytes;
+    mBudget->tokens += file->tokens.size();
+    mBudget->bytes += file->bytes;
+    file->budget = mBudget;
     file->tokens.shrink_to_fit();
     file->texts.shrink_to_fit();
     file->end = mScanner.GetHotBookmark(before);
@@ -372,6 +395,8 @@ bool RawTokenizer::GetNextDirective(RawToken& token)
             return false;
     }
 
+    token.floatValue = 0.0;
+    token.symbolHash = -1;
     if (!mScanner.GetNextDirective(token.lexeme))
         return false;
 

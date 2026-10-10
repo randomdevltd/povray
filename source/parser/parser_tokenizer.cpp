@@ -50,6 +50,7 @@
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
+#include "base/filesystem.h"
 #include "base/stringutilities.h"
 #include "base/textstream.h"
 #include "base/types.h"
@@ -1264,6 +1265,11 @@ void Parser::Parse_Directive()
                                 Error("#macro did not end in file where it started.");
 
                             PMac->endPosition = hashPosition;
+                            if (PMac->source.cached && !mTokenizer.GetCachePosition().cached)
+                            {
+                                PMac->source.cached = false;
+                                PMac->source.file = nullptr;
+                            }
                             POV_OFF_T macroLength = CurrentFilePosition() - PMac->source;
                             /// @todo Re-enable cached macros.
                             if (!PMac->source.cached && (macroLength <= MaxCachedMacroSize))
@@ -2396,7 +2402,7 @@ void Parser::Parse_Fopen(void)
 
     if (New->Out_File != nullptr)
     {
-        New->includePath = mFileResolver.FindFile(fileName, POV_File_Text_INC);
+        New->includePath = Filesystem::GetFileStamp(mFileResolver.FindFile(fileName, POV_File_Text_INC)).name;
         mTokenizer.ForgetFile(New->includePath);
     }
 

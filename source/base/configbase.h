@@ -776,6 +776,13 @@
     #define POV_USE_DEFAULT_DELETEFILE 1
 #endif
 
+/// @def POV_USE_DEFAULT_FILESTAMP
+/// Whether to use a default implementation for @ref pov_base::Filesystem::GetFileStamp(), which knows nothing.
+///
+#ifndef POV_USE_DEFAULT_FILESTAMP
+    #define POV_USE_DEFAULT_FILESTAMP 1
+#endif
+
 /// @def POV_USE_DEFAULT_LARGEFILE
 /// Whether to use a default implementation for large file handling.
 ///

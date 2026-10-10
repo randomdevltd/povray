@@ -37,6 +37,7 @@
 #include "base/filesystem.h"
 
 // C++ variants of C standard header files
+#include <cstdlib>
 #include <cwchar>
 
 // C++ standard header files
@@ -81,6 +82,30 @@ bool DeleteFile(const UCS2String& fileName)
 }
 
 #endif // POV_USE_DEFAULT_DELETEFILE
+
+//******************************************************************************
+
+#if !POV_USE_DEFAULT_FILESTAMP
+
+FileStamp GetFileStamp(const UCS2String& fileName)
+{
+    FileStamp stamp;
+    stamp.name = fileName;
+    const wchar_t* name = reinterpret_cast<const wchar_t*>(fileName.c_str());
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    if (!GetFileAttributesExW(name, GetFileExInfoStandard, &data))
+        return stamp;
+    if (wchar_t* full = _wfullpath(nullptr, name, 0))
+    {
+        stamp.name = UCS2String(reinterpret_cast<const UCS2*>(full));
+        std::free(full);
+    }
+    stamp.size = (std::int_least64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+    stamp.time = (std::int_least64_t(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+    return stamp;
+}
+
+#endif // POV_USE_DEFAULT_FILESTAMP
 
 //******************************************************************************
 

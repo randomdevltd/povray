@@ -396,7 +396,7 @@ class Parser final
             std::shared_ptr<RawTokenizer>           inTokenizer;
             RawToken                                inToken;
             std::shared_ptr<pov_base::OTextStream>  Out_File;
-            UCS2String                              includePath; ///< Path `#include` finds.
+            UCS2String                              includePath; ///< Canonical path `#include` finds.
             bool inUngetToken   : 1;
             bool busyParsing    : 1; ///< `true` if parsing a statement related to the file, `false` otherwise.
 
