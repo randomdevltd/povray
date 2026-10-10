@@ -7,6 +7,8 @@ W=96; H=72
 render() {
     name=$1; shift; version=4.0
     case $1 in Version=*) version=${1#Version=}; shift;; esac
+    # 3.7 references take 4.0's default air ior, so they compare with 4.0 renders.
+    if [ "$version" = 3.7 ]; then set -- Declare=Atmosphere=1.00029 "$@"; fi
     "$POVRAY" +i"$SRCDIR/tests/render/media_refraction.pov" +w$W +h$H -a -d -p -v -gp +fp16 File_Gamma=1.0 +o"media_refraction_$name.ppm" Declare=Version=$version "$@" \
         > "media_refraction_$name.log" 2>&1 || { cat "media_refraction_$name.log"; exit 1; }
 }
@@ -48,8 +50,9 @@ region() {
         END { if (bad) { print bad " channels differ"; exit 1 } }' >&2 || { echo "media_refraction: $1 differs from $2" >&2; exit 1; }
 }
 
-render constant Declare=Case=1
-render uniform Declare=Case=2
+# In vacuum a constant refraction 0.5 over the void is a uniform ior 1.5.
+render constant Declare=Case=1 Declare=Atmosphere=1
+render uniform Declare=Case=2 Declare=Atmosphere=1
 region constant uniform 0 95 0 71
 says "Media refraction changes by 0.5 across a surface" constant || { echo "media_refraction: no jump warning" >&2; exit 1; }
 
@@ -165,6 +168,26 @@ lit bent_glow 36 59 24 47 0.95
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71
+# A shared clear face blends both textures, the same from either side; near and far show one box's, by the side seen from.
+render blend_left Declare=Case=62
+render blend_right Declare=Case=62 Declare=View=1
+same blend_left blend_right
+expect blend_left 48 36 0.28
+render blend_apart Declare=Case=63
+region blend_left blend_apart 0 95 0 71
+for side in 1:near:0.4:0.16 2:far:0.16:0.4; do
+    mode=$(echo $side | cut -d: -f2)
+    render ${mode}_left Declare=Case=62 Declare=Side=${side%%:*}
+    render ${mode}_right Declare=Case=62 Declare=Side=${side%%:*} Declare=View=1
+    expect ${mode}_left 48 36 $(echo $side | cut -d: -f3)
+    expect ${mode}_right 48 36 ${side##*:}
+done
+# A replace object owns its faces where they meet what it replaces, whatever interface_texture says.
+for side in 1 2 3; do
+    render replace_slab_$side Declare=Case=64 Declare=Side=$side
+    render replace_hole_$side Declare=Case=65 Declare=Side=$side
+    region replace_slab_$side replace_hole_$side 0 95 0 71
+done
 # Under 4.0 a scene whose clear objects are all ior_mix surface renders as 3.7 does.
 render hidden_surface Declare=Case=11 Declare=MixAll=0
 same hidden_surface hidden_37

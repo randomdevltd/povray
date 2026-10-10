@@ -54,6 +54,7 @@
 #include "core/coretypes.h"
 #include "core/bounding/bsptree.h"
 #include "core/lighting/subsurface.h"
+#include "core/material/texture.h"
 #include "core/math/randomsequence.h"
 #include "core/render/ray.h"
 #include "core/scene/atmosphere_fwd.h"
@@ -450,6 +451,7 @@ class Trace
             Vector3d point;
             const Interior *interior = nullptr;
             ConstObjectPtr take = nullptr;       ///< the object whose surface there is hit instead, if not the hit's own
+            std::vector<ConstObjectPtr> faces;  ///< clear objects whose textures blend there, empty unless two or more
             double leave = 0.0;
             bool photon = false;
         };
@@ -949,6 +951,9 @@ class Trace
         /// Where other surfaces meet a hit that lets light through, hits an opaque one, else one of an object the ray enters.
         /// Returns whether it did.
         bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
+        /// Under interface_texture blend, fills `textures` with the textures of the clear faces meeting at a hit, if several.
+        bool SharedFaceTextures(const Ray& ray, const Intersection& isect, const Vector3d& normal, WeightedTextureVector& textures,
+                                InterfaceCache& sides);
         /// Whether interfaces merge coincident surfaces: version 4.0 or media refraction, with an ior or an opaque object.
         bool MergesSurfaces() const;
         /// Whether a surface's plain pigment lets any light through, or might.

@@ -440,6 +440,7 @@ SceneData::SceneData() :
     legacyIorStack = true;
     iorMixModes = false;
     crossedNonSurface = false;
+    interfaceTexture = kInterfaceTextureAuto;
     refractionAngle = 0.5;
     dielectrics = false;
     anyOpaque = false;

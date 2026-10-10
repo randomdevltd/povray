@@ -130,6 +130,15 @@ struct PreparedSet final
 /// By no means shall this way of data access be used for any
 /// other newly created classes!!!"
 ///
+/// Which texture a clear face shared by several objects shows.
+enum InterfaceTexture
+{
+    kInterfaceTextureAuto  = -1, ///< not set: far before language version 4.0, blend from it
+    kInterfaceTextureFar   = 0,  ///< the object the ray enters there
+    kInterfaceTextureNear  = 1,  ///< the object the ray leaves there
+    kInterfaceTextureBlend = 2,  ///< the mean of every object's texture there
+};
+
 class SceneData
 {
     public:
@@ -247,6 +256,8 @@ class SceneData
         bool iorMixModes;
         /// whether an object that is not guaranteed opaque has an ior_mix other than surface
         bool crossedNonSurface;
+        /// which texture a clear face shared by several objects shows: an InterfaceTexture
+        int interfaceTexture;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media

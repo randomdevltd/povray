@@ -597,6 +597,8 @@ class Parser final
         void Parse_Media_Light(Media& medium);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
+        /// Gives the atmosphere the ior of air from version 4.0, of vacuum before it.
+        void SetAtmosphereIor();
         void Parse_Media_Density_Pattern (PIGMENT **);
         void Parse_Media_Density_Pattern (std::vector<PIGMENT*>&);
         Fog_Struct *Parse_Fog (void);
@@ -815,6 +817,7 @@ class Parser final
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
+        bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.
 
         // express.h/express.cpp
         short Have_Vector;

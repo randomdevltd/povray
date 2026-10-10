@@ -296,6 +296,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { INSIDE_TOKEN,                 "inside" },
     { INSIDE_VECTOR_TOKEN,          "inside_vector" },
     { INT_TOKEN,                    "int" },
+    { INTERFACE_TEXTURE_TOKEN,      "interface_texture" },
     { INTERIOR_TOKEN,               "interior" },
     { INTERIOR_TEXTURE_TOKEN,       "interior_texture" },
     { INTERNAL_TOKEN,               "internal" },

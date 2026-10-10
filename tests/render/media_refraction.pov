@@ -11,9 +11,14 @@
 #ifndef (MixAll) #declare MixAll = -1; #end
 #ifndef (Priority) #declare Priority = 0; #end
 #ifndef (Fog) #declare Fog = 0; #end
-#ifndef (Atmosphere) #declare Atmosphere = 1; #end
+#ifndef (Side) #declare Side = 0; #end
+#ifndef (View) #declare View = -1; #end
 #macro IorMix(M) #switch (M) #case (0) ior_mix surface #break #case (1) ior_mix mean #break #case (2) ior_mix replace #break #end #end
-global_settings { assumed_gamma 1 atmospheric_ior Atmosphere }
+global_settings {
+  assumed_gamma 1
+  #ifdef (Atmosphere) atmospheric_ior Atmosphere #end
+  #switch (Side) #case (1) interface_texture near #break #case (2) interface_texture far #break #case (3) interface_texture blend #break #end
+}
 camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up y * 6 }
 #declare Backdrop = plane {
   z, 4
@@ -24,7 +29,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
   #end
   finish { ambient 0 emission 1 diffuse 0 }
 }
-#if ((Case != 16) & ((Case < 42) | (Case > 49) | (Case = 44))) object { Backdrop } #end
+#if ((Case != 16) & ((Case < 42) | (Case > 49) | (Case = 44)) & ((Case < 62) | (Case > 65))) object { Backdrop } #end
 
 #declare Clear = texture { pigment { rgbt 1 } finish { diffuse 0 } };
 #declare Lens = media { method 3 refraction 0.6 density { spherical scale 2.5 } }
@@ -160,6 +165,33 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #case (57) object { Ball } #break // under atmospheric_ior 1.33 the ball refracts by 1.5 / 1.33
 #case (58) difference { box { -3, <3, 3, 5> } sphere { 0, 1.5 } texture { Clear } interior { ior 1.33 } } object { Ball } #break
 #case (59) object { Ball } box { -3, 3 texture { Clear } interior { ior 1.33 } } #break
+#case (62) // red and blue filter boxes of one ior sharing the face z = 0, seen along z from View -1 or 1
+#case (63) // the same faces apart: the shared face blends both textures, then a clear face across an invisible gap
+#case (64) // a replace slab through a glass box, flush with both its faces, and the same slab in a hole cut through the box
+#case (65)
+  background { rgb 1 }
+  camera { orthographic location <0, 0, 10 * View> look_at 0 right x * 8 up y * 6 }
+  #local TA = texture { pigment { rgbf <1, 0.4, 0.4, 1> } finish { diffuse 0 } };
+  #local TB = texture { pigment { rgbf <0.4, 0.4, 1, 1> } finish { diffuse 0 } };
+  #switch (Case)
+  #case (62)
+    box { <-3, -2, -1>, <3, 2, 0> texture { TA } interior { ior 1.3 } }
+    box { <-3, -2, 0>, <3, 2, 1> texture { TB } interior { ior 1.3 } }
+  #break
+  #case (63)
+    intersection { box { <-3, -2, -1>, <3, 2, 5> } plane { z, 0 texture { average texture_map { [1 TA] [1 TB] } } } texture { TA } interior { ior 1.3 } }
+    intersection { box { <-3, -2, -5>, <3, 2, 1> } plane { -z, -0.1 texture { Clear } } texture { TB } interior { ior 1.3 } }
+  #break
+  #case (64)
+    box { <-3, -2, -1>, <3, 2, 1> texture { TA } interior { ior 1.5 } }
+    box { <-1, -1, -1>, <1, 1, 1> texture { TB } interior { ior 1.2 ior_mix replace } }
+  #break
+  #case (65)
+    difference { box { <-3, -2, -1>, <3, 2, 1> } box { <-1, -1, -1.1>, <1, 1, 1.1> } texture { TA } interior { ior 1.5 } }
+    box { <-1, -1, -1>, <1, 1, 1> texture { TB } interior { ior 1.2 } }
+  #break
+  #end
+#break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior Inner } } #break
 #case (51) // a bubble cut with difference, and the same hole filled by a separate sphere
 #case (52)
