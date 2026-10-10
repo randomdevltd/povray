@@ -941,7 +941,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
 
     bool isMultiTextured = Test_Flag(isect.Object, MULTITEXTURE_FLAG) ||
                            ((isect.Object->Texture == nullptr) && Test_Flag(isect.Object, CUTAWAY_TEXTURES_FLAG));
-    InterfaceCache shared;
+    std::unique_ptr<InterfaceCache> shared;
     const bool averaged = SharedFaceTextures(ray, isect, rawnormal, wtextures, shared);
 
     // get textures and weights
@@ -971,9 +971,9 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     // the list of textures and summing the weighted color.
 
     // Each blended texture refracts from the interiors the ray held before the face, through the same merged interface.
-    RayInteriorVector held;
+    std::vector<Interior *> held;
     if (averaged)
-        held = ray.GetInteriors();
+        held.assign(ray.GetInteriors().begin(), ray.GetInteriors().end());
     for(WeightedTextureVector::iterator i(wtextures.begin()); i != wtextures.end(); i++)
     {
         TextureVector warps(texturePool);
@@ -983,7 +983,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
             ray.ResetInteriors();
             for (Interior *interior : held)
                 ray.AppendInterior(interior);
-            sidesCache[InterfaceSlot(shared.interior, shared.point)] = shared;
+            sidesCache[InterfaceSlot(shared->interior, shared->point)] = *shared;
         }
 
         // if the contribution of this texture is negligible skip ahead
@@ -4339,7 +4339,7 @@ bool Trace::TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal
 }
 
 bool Trace::SharedFaceTextures(const Ray& ray, const Intersection& isect, const Vector3d& normal, WeightedTextureVector& textures,
-                               InterfaceCache& sides)
+                               std::unique_ptr<InterfaceCache>& sides)
 {
     if ((sceneData->interfaceTexture != kInterfaceTextureBlend) || !MergesSurfaces() || Test_Flag(isect.Object, OPAQUE_FLAG) ||
         (isect.Object->interior == nullptr))
@@ -4347,8 +4347,8 @@ bool Trace::SharedFaceTextures(const Ray& ray, const Intersection& isect, const 
     const InterfaceCache& found = InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal);
     if (found.faces.empty())
         return false;
-    sides = found;
-    const std::vector<ConstObjectPtr>& faces = sides.faces;
+    sides.reset(new InterfaceCache(found));
+    const std::vector<ConstObjectPtr>& faces = sides->faces;
     for (ConstObjectPtr object : faces)
     {
         const bool inside = std::find(ray.GetInteriors().begin(), ray.GetInteriors().end(), object->interior.get()) != ray.GetInteriors().end();
@@ -4434,6 +4434,7 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *
     ConstObjectPtr best = nullptr, owner = nullptr;
     bool bestWanted = false, hitFound = false, plain = true;
     const bool nearSide = (sceneData->interfaceTexture == kInterfaceTextureNear);
+    const bool blend = (sceneData->interfaceTexture == kInterfaceTextureBlend) && (coincident.size() > 1);
     for (const Surface& surface : coincident)
     {
         ConstObjectPtr object = surface.first;
@@ -4459,13 +4460,15 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *
         }
         if ((i != nullptr) && (i->iorMix == kIorMixReplace) && ((owner == nullptr) || OutranksIor(i, owner->interior.get())))
             owner = object;
+        if (!blend)
+            continue;
         plain = plain && (object->Texture != nullptr) && !Test_Flag(object, MULTITEXTURE_FLAG | UV_FLAG | CUTAWAY_TEXTURES_FLAG);
         if (std::none_of(sides.faces.begin(), sides.faces.end(), [&](ConstObjectPtr o) { return o->Texture == object->Texture; }))
             sides.faces.push_back(object);
     }
     if (owner != nullptr)
         best = owner;
-    if ((owner != nullptr) || !plain || (sceneData->interfaceTexture != kInterfaceTextureBlend) || (sides.faces.size() < 2))
+    if ((owner != nullptr) || !plain || (sides.faces.size() < 2))
         sides.faces.clear();
     if (hitFound && (best != nullptr) && (best->interior.get() != interior))
         sides.take = best;
