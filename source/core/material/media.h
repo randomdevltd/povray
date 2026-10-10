@@ -91,7 +91,8 @@ struct MediaModifier final
 typedef std::vector<MediaModifier> MediaModifierVector;
 
 /// SceneData::mediaWarningFlags bits for media refraction warnings, each given once per render.
-const unsigned kMediaRefractionJump = 64, kThinOverlap = 128, kMediaRefractionTrapped = 256, kMediaRefractionIndex = 512;
+const unsigned kMediaRefractionJump = 64, kThinOverlap = 128, kMediaRefractionTrapped = 256, kMediaRefractionIndex = 512,
+              kRefractionDetailUnset = 1024;
 
 /// The media a ray's interiors show, in precedence order; without modifiers every interior adds its media.
 /// Transport leaves out media that only refract; refraction keeps only media that refract.

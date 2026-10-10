@@ -439,6 +439,7 @@ Media::Media()
     Extinction.Clear();
     Scattering.Clear();
     Refraction = 0.0;
+    RefractionDetail = -1.0;
 
     is_constant = false;
 
@@ -504,6 +505,7 @@ Media& Media::operator=(const Media& source)
         Extinction = source.Extinction;
         Scattering = source.Scattering;
         Refraction = source.Refraction;
+        RefractionDetail = source.RefractionDetail;
         Ratio = source.Ratio;
         Confidence = source.Confidence;
         Variance = source.Variance;
@@ -559,12 +561,17 @@ static DBL AutomaticResolution(ObjectPtr object)
     return std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0, std::cbrt(volume / 500000.0));
 }
 
-void Media::SetFastContainer(ObjectPtr object)
+void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail)
 {
     if (Sample_Method != 4)
         return;
     if (FastResolution == -1.0)
+    {
         FastResolution = AutomaticResolution(object);
+        // A prepared cell coarser than half the detail cannot hold it, so an automatic width follows the detail.
+        if ((refractionDetail > 0.0) && (Refraction != 0.0) && (FastResolution > 0.0))
+            FastResolution = min(FastResolution, 0.5 * refractionDetail);
+    }
     if ((FastResolution <= 0.0) || Density.empty())
         return;
     if (fastCache && (fastCache->container != object))
@@ -908,6 +915,7 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
     CollectInteriorMedia(interiors, medias, td->GetSceneData()->mediaBlendModes ? &modifiers : nullptr, MediaRole::kRefraction);
     if (medias.empty())
         return;
+    const std::shared_ptr<const SceneData> sceneData = td->GetSceneData();
     for (Interior *interior : interiors)
     {
         for (Media& medium : interior->media)
@@ -928,6 +936,16 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             }
             else
                 bounded = false;
+            // The detail is a length in millimetres, so it needs the scene's scale; several media take the smallest.
+            const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
+            const DBL detail = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
+            if (detail > 0.0)
+            {
+                // Steps of at most D/2 put about four curvature samples across the narrowest band; the same
+                // spacing as the gradient's central difference averages whatever is narrower, on every ray.
+                epsilon = std::min(epsilon, 0.5 * detail);
+                maxStep = std::min(maxStep, 0.5 * detail);
+            }
             if (medium.fastCache && (medium.FastResolution > 0.0))
             {
                 epsilon = std::min(epsilon, medium.FastResolution * 0.5);
@@ -937,6 +955,14 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             {
                 epsilon = std::min(epsilon, extent * 1.0e-4);
                 maxStep = std::min(maxStep, extent / 64.0);
+                if ((detail <= 0.0) && (sceneData->EffectiveLanguageVersion() >= 400) && td->mediaMessages &&
+                    (sceneData->mmPerUnit > 0.0) && (extent * sceneData->mmPerUnit > 100.0) &&
+                    !(sceneData->mediaWarningFlags.fetch_or(kRefractionDetailUnset, std::memory_order_relaxed) & kRefractionDetailUnset))
+                    td->mediaMessages->Warning(kWarningGeneral,
+                        "A refracting medium %.4g mm across steps at up to %.4g mm where its index varies, so structure narrower "
+                        "than about half of that can be missed on some rays and render as speckle. Set refraction_detail to "
+                        "the smallest such structure, in millimetres, that must refract. This warning is given once.",
+                        extent * sceneData->mmPerUnit, extent / 64.0 * sceneData->mmPerUnit);
             }
             else
             {

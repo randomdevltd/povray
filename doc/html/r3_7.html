@@ -450,7 +450,7 @@ MEDIA:
 MEDIA_ITEMS:
   method Number | intervals Number | samples Min, Max |
   confidence Value  | variance Value | ratio Value | jitter Value
-  absorption COLOR | emission COLOR | refraction Value | aa_threshold Value |
+  absorption COLOR | emission COLOR | refraction Value | refraction_detail Value | aa_threshold Value |
   aa_level Value | resolution Value |
   mix add | replace | subtract | multiply | priority Integer |
   light_source { [MEDIA_LIGHT_ITEM...] } |
@@ -481,6 +481,7 @@ mix          : see Media Mix
 priority     : 0
 ratio        : 0.9
 refraction   : 0.0
+refraction_detail : unset (the global_settings value, if any)
 resolution   : automatic (method 4 only)
 samples      : Min 1, Max 1 (10, 10 from version 3.5)
 variance     : 1/128
@@ -1114,7 +1115,8 @@ box {
   interior { media { refraction -0.0001 density { bozo turbulence 0.6 scale 0.5 } density { gradient y color_map { [0 rgb 1] [1 rgb 0] } scale 2 } } }
 }
 </pre>
-<p>How rays curve through the field, the limits that stop them, how brightness scales, the warnings and worked examples are in <a href="r3_11.html#r3_11_3">Refracting Volumes</a>. Atmospheric media do not refract.</p></div>
+<p>How rays curve through the field, the limits that stop them, how brightness scales, the warnings and worked examples are in <a href="r3_11.html#r3_11_3">Refracting Volumes</a>. Atmospheric media do not refract.</p>
+<p>A medium may carry its own <code>refraction_detail</code>, a length in millimetres (through <code>mm_per_unit</code>) that overrides the scene's <a href="r3_4.html#r3_4_1_17">global setting</a>: the smallest index structure of this medium that must refract faithfully. Where several refracting media hold a point, the smallest detail among them governs the step, as the step cap already takes the smallest over the media.</p></div>
 
 <a name="r3_7_2_2_5"></a>
 <div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
