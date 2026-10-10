@@ -11,7 +11,7 @@ namespace pov
 
 struct ProgressivePhotonBudget final
 {
-    static constexpr unsigned int batchSize = 16384;
+    static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
     unsigned int passes;
 
@@ -19,7 +19,7 @@ struct ProgressivePhotonBudget final
     {
         if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
             throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 256.");
-        passes = static_cast<unsigned int>(std::ceil(16.0 * quality));
+        passes = static_cast<unsigned int>(std::ceil(4.0 * quality));
     }
 
     static double RadiusScale(std::uint64_t pass, unsigned int dimensions)
@@ -82,7 +82,7 @@ struct ProgressivePhotonState final
         const double scale = baseRadius * ProgressivePhotonBudget::RadiusScale(pass + 1, 2);
         const double curvature2 = double(laplacian) * laplacian;
         const double optimum = curvature2 > 0.0 ? std::pow(32.0 * noise / (next * curvature2), 1.0 / 6.0) : 4.0 * scale;
-        radius = float(std::max(0.0625 * scale, std::min(4.0 * scale, optimum)));
+        radius = float(std::max(0.5 * scale, std::min(4.0 * scale, optimum)));
     }
 };
 

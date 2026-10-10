@@ -9,7 +9,7 @@ global_settings {
 ```
 
 Render with `+PR -A`. Photon quality includes stochastic pixel sampling. It is a
-positive work multiplier: `ceil(16 * quality)` image passes, each with 16,384
+positive work multiplier: `ceil(4 * quality)` image passes, each with 65,536
 emission samples per prepared scene set, preceded by one independent pilot batch.
 The current maximum quality is 256. Higher values add passes to the same sequence.
 `method 1` selects classic photons. Omitting the method retains classic behavior,
@@ -29,7 +29,8 @@ Surface bandwidth uses an independent local pilot and a recursive estimate of
 shot noise and tangent-plane curvature. The latter is a four-offset finite
 difference, with its support shrinking as `N^(-1/8)`. A uniform-disk plug-in
 bandwidth balances variance proportional to `1/(N*r^2)` against squared bias
-proportional to `r^4`. Automatic bounds shrink as `N^(-1/6)`. Local camera path
+proportional to `r^4`. Automatic bounds shrink as `N^(-1/6)` and keep at least
+half the pilot scale to suppress rare isolated bright pixels. Local camera path
 weights guide this choice; these diagnostics are proxies, not confidence bounds
 on the complete pixel integral. The surface estimator does not denoise the image.
 Volume and subsurface reconstruction use locally chosen pilot supports with
@@ -92,6 +93,10 @@ transport just as it does for ordinary lights. Omitting those switches leaves
 the target's settings in control. `brightness` scales emitted photon power and
 direct illumination together; it does not scale the glow seen by the camera.
 Classic method 1 continues to ignore media-light photon blocks with a warning.
+Media and conventional lights share the emitter sampling and flux normalization.
+The media light's default direct falloff is inverse-square, clamped within one
+source cell; photons acquire inverse-square falloff by spreading through space.
+There is no independent photon fade override yet.
 
 The position sample's weight already includes its power-table probability;
 shooting applies the light-selection and directional probabilities once. The
@@ -145,5 +150,16 @@ It also covers area, spot, parallel and cylindrical lights, heterogeneous media,
 dispersion, subsurface receivers, thin and close surfaces, reflected and refracted
 views, curved media paths, inactive lights, and emission along photon paths.
 The analytic prototype and the render test are included in `make check`.
-Broader image-error, material-combination and performance validation is required
-before treating this experimental estimator as a replacement for classic photons.
+On the focused 96 by 64 glass-sphere caustic, method 2 quality 1 used 3.10 billion
+instructions and had linear-light mean squared error `7.52e-6` against a
+32-times supersampled classic reference. Classic count 16,384 with `+AM4` used
+6.41 billion instructions and measured `8.71e-6` on the same scene. Quality 4
+used 10.50 billion instructions and measured `4.00e-7`; the earlier small-map
+schedule used 18.58 billion instructions and measured `7.46e-7`. Quality 16
+measured `2.06e-7`, with mean energy 1.1% lower than the reference. The reference
+itself has sampling uncertainty, and these numbers describe this one scene.
+On the visible 256 by 170 version, the revised schedule reduced displayed-pixel
+mean squared error against classic from 11.99 to 9.37 and visibly bright outliers
+from 35 to 26. This displayed-pixel comparison is a diagnostic, not a linear
+physical error measure or proof that classic is unbiased. Broader scene and
+performance validation remains necessary before method 2 replaces classic.

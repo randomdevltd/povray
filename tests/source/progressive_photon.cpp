@@ -8,7 +8,8 @@ int main()
 {
     using pov::ProgressivePhotonBudget;
     using pov::SppmEstimate;
-    assert(ProgressivePhotonBudget(1).passes == 16);
+    assert(ProgressivePhotonBudget(1).passes == 4);
+    assert(ProgressivePhotonBudget::batchSize == 65536);
     assert(ProgressivePhotonBudget(0.01).passes == 1);
     for (double invalid : {0.0, -1.0, 257.0, double(INFINITY), double(NAN)})
     {
@@ -33,6 +34,7 @@ int main()
         assert(std::abs(dim.radius - bright.radius) < 1.0e-6);
     }
     assert(dim.radius < 0.2f);
+    assert(dim.radius >= 0.5 * ProgressivePhotonBudget::RadiusScale(4096, 2));
     pov::ProgressivePhotonState dark;
     dark.baseRadius = dark.radius = 1.0f;
     dark.Update(0, 0, 0, 0, 0);

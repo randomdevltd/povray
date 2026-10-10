@@ -43,8 +43,8 @@ cmp progressive_photons_legacy.px progressive_photons_classic.px
 render no_glow Declare=TestGlow=1 Declare=SourceGlow=0 Declare=PhotonOnly=1 +wt2
 render glow Declare=TestGlow=1 Declare=SourceGlow=100 Declare=PhotonOnly=1 +wt2
 cmp progressive_photons_no_glow.px progressive_photons_glow.px
-render power1 Declare=PhotonOnly=1 Declare=LampPower=0.5 +wt2
-render power2 Declare=PhotonOnly=1 Declare=LampPower=1 +wt2
+render power1 Declare=PhotonOnly=1 Declare=LampPower=0.1 +wt2
+render power2 Declare=PhotonOnly=1 Declare=LampPower=0.2 +wt2
 od -An -v -t u1 progressive_photons_power1.px progressive_photons_power2.px | awk '
     { for (i=1; i<=NF; i++) {
         if (++bytes % 2) upper=$i;
