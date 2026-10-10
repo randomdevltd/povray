@@ -1,0 +1,244 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+<!--  This file copyright Persistence of Vision Raytracer Pty. Ltd. 2009-2011  -->
+
+<html lang="en">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<title>Reference Section 12</title>
+<link rel="StyleSheet" href="povray.css" type="text/css">
+<link rel="shortcut icon" href="favicon.ico">
+
+<!--  NOTE: In order to help users find information about POV-Ray using web      -->
+<!--  search engines, we ask that you *not* let them index documentation         -->
+<!--  mirrors because effectively, when searching, users will get hundreds of    -->
+<!--  results containing the same information! For this reason, these meta tags  -->
+<!--  below disable archiving of this page by search engines.                    -->
+
+<meta name="robots" content="noarchive">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+</head>
+<body>
+
+<div class="Page">
+
+<!-- NavPanel Begin -->
+<div class="NavPanel">
+<table class="NavTable">
+<tr>
+  <td class="FixedPanelHeading"><a title="3.12" href="#r3_12">Volume Lights</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.12.1" href="#r3_12_1">Making a Medium a Light</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.12.2" href="#r3_12_2">Power, Brightness and Falloff</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.12.3" href="#r3_12_3">Sampling and Shadows</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.12.4" href="#r3_12_4">Media, Light Groups and Radiosity</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.12.5" href="#r3_12_5">Limits and Messages</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.12.6" href="#r3_12_6">Worked Examples</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.12.6.1" href="#r3_12_6_1">A Candle in a Misty Room</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.12.6.2" href="#r3_12_6_2">Tubes and Neon</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.12.6.3" href="#r3_12_6_3">Glow Inside Other Media</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.12.6.4" href="#r3_12_6_4">Overlapping and Contained Lights</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+</table>
+</div>
+<!-- NavPanel End -->
+
+<div class="Content">
+<table class="HeaderFooter" width="100%">
+<tr>
+  <td colspan=5 align="left" class="HeaderFooter">
+    POV-Ray for Unix <strong class="HeaderFooter">version 3.8</strong>
+  </td>
+</tr>
+<tr >
+  <td colspan=5>
+    <hr align="right" width="70%">
+  </td>
+</tr>
+<tr>
+  <td width="30%"></td>
+  <td class="NavBar"><a href="index.html" title="The Front Door">Home</a></td>
+  <td class="NavBar"><a href="u1_0.html" title="Unix Table of Contents">POV-Ray for Unix</a></td>
+  <td class="NavBar"><a href="t2_0.html" title="Tutorial Table of Contents">POV-Ray Tutorial</a></td>
+  <td class="NavBar"><a href="r3_0.html" title="Reference Table of Contents">POV-Ray Reference</a></td>
+</tr>
+</table>
+
+<a name="r3_12"></a>
+<div class="content-level-h2" contains="Volume Lights" id="r3_12">
+<h2>3.12 Volume Lights</h2>
+<p>An emitting medium can be declared a light. It then lights the surfaces and scattering media around it as well as glowing, casts shadows shaped by its own volume, and gets its brightness and colour from the same <code>emission</code> and <code>density</code> the camera sees, so the light always matches the glow. A candle flame, a neon tube, a fireball, a glowing jellyfish and a lantern inside a cloud are all one medium with a <code>light_source</code> block.</p>
+<p>This chapter describes the block, how the light's power and falloff follow from the medium, how it is sampled, how it meets light groups, radiosity and other media, and its limits. The emission and density themselves are described in <a href="r3_7.html#r3_7_2_2_2">Emission</a> and <a href="r3_11.html#r3_11_1">Density Drives the Coefficients</a>. The sample scenes <code>light_*.pov</code> and <code>blend_candle.pov</code> in <code>scenes/interior/media</code> are the worked examples. The examples in this chapter assume <code>#version 4.0;</code>.</p>
+<p>Quick Links:</p>
+<ul>
+  <li><a href="r3_12.html#r3_12_1">Making a Medium a Light</a></li>
+  <li><a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a></li>
+  <li><a href="r3_12.html#r3_12_3">Sampling and Shadows</a></li>
+  <li><a href="r3_12.html#r3_12_4">Media, Light Groups and Radiosity</a></li>
+  <li><a href="r3_12.html#r3_12_5">Limits and Messages</a></li>
+  <li><a href="r3_12.html#r3_12_6">Worked Examples</a></li>
+</ul></div>
+
+<a name="r3_12_1"></a>
+<div class="content-level-h3" contains="Making a Medium a Light" id="r3_12_1">
+<h3>3.12.1 Making a Medium a Light</h3>
+<p>A <code>light_source</code> statement inside a <code>media</code> statement makes that medium a light. The block may be empty. A medium declared as an identifier, or copied, keeps its light.</p>
+<pre>
+MEDIA_LIGHT:
+  light_source { [MEDIA_LIGHT_ITEM...] }
+MEDIA_LIGHT_ITEM:
+  samples Integer | brightness Value | shadowless |
+  media_interaction [Bool] | media_attenuation [Bool] |
+  fade_distance Value | fade_power Value
+</pre>
+<p>Media light default values:</p>
+<pre>
+samples           : 32
+brightness        : 1.0
+shadowless        : off
+media_interaction : on
+media_attenuation : on
+fade_distance     : 0 (physical falloff)
+fade_power        : 0 (physical falloff)
+</pre>
+<table width="100%" class="option-list">
+<tr><td><code>samples</code></td><td>An integer of at least 1: the number of points of the medium that each lit point draws, and so the number of shadow rays. More samples give smoother soft shadows and cost more. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
+<tr><td><code>brightness</code></td><td>A number, 0 or more, that scales the light without changing the glow. See <a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a>.</td></tr>
+<tr><td><code>shadowless</code></td><td>The light casts no shadows, as a <a href="r3_4.html#r3_4_3_1_6">shadowless</a> light does.</td></tr>
+<tr><td><code>media_interaction</code></td><td>With <code>off</code>, the light does not light scattering media, as for a normal <a href="r3_4.html#r3_4_3_1_10">light source</a>. A bare keyword means on.</td></tr>
+<tr><td><code>media_attenuation</code></td><td>With <code>off</code>, a shadow ray is not dimmed by the media it passes; see <a href="r3_4.html#r3_4_3_1_11">Atmospheric Attenuation</a>. A bare keyword means on.</td></tr>
+<tr><td><code>fade_distance</code>, <code>fade_power</code></td><td>Replace the physical falloff with a regular light's fade, when <code>fade_power</code> is above 0. See <a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a>.</td></tr>
+</table>
+<p>The block takes no position or colour. Both come from the medium, which is placed, transformed and copied with its object, and an animated emission or density is taken afresh each frame. The container of the medium must be a finite object, and the medium must have a non-zero <code>emission</code>. For example, a candle flame:</p>
+<pre>
+sphere {
+  0, 1 pigment { rgbt 1 }
+  interior {
+    media {
+      mix add
+      emission rgb &lt;14, 6, 1.6&gt; * 200
+      density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      light_source { }
+    }
+  }
+  scale &lt;0.06, 0.16, 0.06&gt; translate &lt;0, 1.45, 0&gt;
+}
+</pre></div>
+
+<a name="r3_12_2"></a>
+<div class="content-level-h3" contains="Power, Brightness and Falloff" id="r3_12_2">
+<h3>3.12.2 Power, Brightness and Falloff</h3>
+<p>The medium emits equally in all directions. A piece of it of volume <em>dV</em> and density <em>d</em> has a radiant intensity of <code>emission</code> &times; <em>d</em> &times; <em>dV</em>, and a power of 4&pi; times that. The light's intensity is the sum over the medium, and its colour is that sum times <code>brightness</code>. A medium of volume <em>V</em> and mean density <em>d</em> therefore lights like a point light of colour <code>emission</code> &times; <em>d</em> &times; <em>V</em> with <code>fade_distance 0 fade_power 2</code>, and the render tests compare them. A uniform ball of radius 0.25 and emission 50 lights a floor like</p>
+<pre>
+light_source { &lt;0, 2, 0&gt;, rgb 50 * 4 / 3 * pi * pow(0.25, 3) fade_distance 0 fade_power 2 }
+</pre>
+<p>Its light falls off with the square of the distance, as real light does and a <code>light_source</code> without <code>fade_power</code> does not. The distance is never taken to be less than half the diagonal of a grid cell (see <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>), which keeps the light finite at the edge of the medium. With <code>fade_power</code> above 0, the regular <a href="r3_4.html#r3_4_3_1_9">fade_distance and fade_power</a> falloff replaces the physical one; <code>fade_distance</code> on its own changes nothing.</p>
+<p><code>brightness</code> scales the light and not the glow. It is an artistic override: the right way to make a light stronger is to make the emitter as bright as the real thing and leave <code>brightness</code> at 1, so the light keeps matching the glow.</p>
+<p>A real flame is far brighter than the glow a scene usually gives it. The flame of the candle sample <code>blend_candle.pov</code> has its emission raised 200 times, to <code>rgb &lt;14, 6, 1.6&gt; * 200</code>, to light the room warmly, and its glow is then overexposed, as a flame is in a photograph exposed for the room. The sample does not raise <code>brightness</code>: a hot flame lights the room and also shows it.</p></div>
+
+<a name="r3_12_3"></a>
+<div class="content-level-h3" contains="Sampling and Shadows" id="r3_12_3">
+<h3>3.12.3 Sampling and Shadows</h3>
+<p>When the scene is parsed, POV-Ray builds a table of the power of each cell of a grid over the container, counting only points inside it. The grid is the prepared grid of media method 4 (see <a href="r3_11.html#r3_11_4">Prepared Fields</a>), at its <code>resolution</code>, or the grid method 4 would choose for the container. Building the table evaluates the density at up to eight points per cell. A grid over 1000000 cells is not refused: the cell width is raised by 5 per cent at a time until it fits. A container that is a deferred mesh (<code>isosurface_mesh</code>, <code>skein_mesh</code> or a <code>.povm</code> mesh) is built then, on the parser thread and one at a time, instead of in parallel with the other meshes.</p>
+<p>Each lit point draws <code>samples</code> points from the medium, one from each of <code>samples</code> strata of equal power, each a compact region of the grid taken in Z-order, and traces a shadow ray to each. Within a cell, points are spread evenly over the eighths of the cell whose centres are inside the container. Shadows are therefore soft and shaped by the glow, and nearby surfaces are lit by its shape, as with <a href="r3_4.html#r3_4_3_1_5">area_illumination</a>.</p>
+<ul>
+  <li>The cost is <code>samples</code> shadow rays per lit point. There are none where the whole medium is behind the surface, unless the finish has <code>diffuse</code> backlighting or the object is <code>double_illuminate</code>.</li>
+  <li>With <code>media_attenuation</code>, each shadow ray is attenuated by the media of every interior it passes, including the light's own medium and any smoke surrounding it, so smoke dims its flame. Shadow rays that cross media that only glow skip them.</li>
+  <li><code>shadowless</code> casts no shadows. <code>media_interaction off</code> leaves scattering media unlit by this light.</li>
+  <li>A scattering medium is lit by one point of the light per media sample, as by an area light. Where a constant or coarser scattering medium lit by a media light shares a portion with a finer prepared medium, its scattered light is found at its own cadence; see <a href="r3_7.html#r3_7_2_3">Sampling Parameters &amp; Methods</a>.</li>
+  <li>Shadow rays travel straight, also through <a href="r3_11.html#r3_11_3">media refraction</a>.</li>
+</ul>
+<p>The strata have equal power, so the noise of the soft shadows falls as <code>samples</code> rises. The sample scenes use 16 to 32 and take the count as <code>Declare=Samples=N</code>.</p></div>
+
+<a name="r3_12_4"></a>
+<div class="content-level-h3" contains="Media, Light Groups and Radiosity" id="r3_12_4">
+<h3>3.12.4 Media, Light Groups and Radiosity</h3>
+<ul>
+  <li><strong>The glow.</strong> The camera, reflections and refractions still see the medium's glow. Gathers of <code>radiosity { media on }</code> leave out the glow of media that are lights, since that light already reaches surfaces directly.</li>
+  <li><strong>Light groups.</strong> A medium in an object inside a <code>light_group</code> lights the objects of that group only, as the group's light sources do. See <a href="r3_4.html#r3_4_3_2">Light Groups</a>.</li>
+  <li><strong>Other media.</strong> The light follows the medium's own emission &times; density and ignores the <code>mix</code> and <code>priority</code> of other media: a <code>subtract</code> or <code>replace</code> medium that carves the glow does not carve the light. It is dimmed by other media only through <code>media_attenuation</code>.</li>
+  <li><strong>Several lights.</strong> Every medium with a <code>light_source</code> block is its own light, also several in one object.</li>
+  <li><strong>Copies.</strong> A declared object placed several times, scaled or moved, has one light per placement.</li>
+</ul></div>
+
+<a name="r3_12_5"></a>
+<div class="content-level-h3" contains="Limits and Messages" id="r3_12_5">
+<h3>3.12.5 Limits and Messages</h3>
+<ul>
+  <li>Only media in an object's interior can be lights. Atmospheric media cannot.</li>
+  <li>A medium that is a light must add or replace. It cannot <code>mix subtract</code> or <code>mix multiply</code>.</li>
+  <li>Media lights do not shoot photons. A <code>photons</code> block inside the <code>light_source</code> block is ignored, with a warning, as photons from media lights come with a later photon method.</li>
+  <li>They are not seen through portals.</li>
+</ul>
+<table width="100%" class="option-list">
+<tr><td><code>A media light_source needs an object's interior; atmospheric media cannot be lights.</code></td><td>Error: a <code>light_source</code> block in a scene-level <code>media</code>.</td></tr>
+<tr><td><code>A media light_source needs a medium that adds or replaces, not one that subtracts or multiplies.</code></td><td>Error: <code>mix subtract</code> or <code>mix multiply</code> with the block.</td></tr>
+<tr><td><code>A media light_source's brightness must be finite and not negative.</code></td><td>Error.</td></tr>
+<tr><td><code>A media light_source gives no light because ...</code></td><td>Warning, and the medium glows but does not light. The reason is one of: its emission is negative or not finite; it has no emission; its container is infinite; its container is unbounded; its density is negative or not finite; its density is zero throughout its container.</td></tr>
+<tr><td><code>photons in a media light_source are ignored: volume lights do not shoot photons yet.</code></td><td>Warning.</td></tr>
+</table></div>
+
+<a name="r3_12_6"></a>
+<div class="content-level-h3" contains="Worked Examples" id="r3_12_6">
+<h3>3.12.6 Worked Examples</h3>
+<p>All of these are in <code>scenes/interior/media</code> and take the options named in their first comment lines with <code>Declare=</code>.</p></div>
+
+<a name="r3_12_6_1"></a>
+<div class="content-level-h4" contains="A Candle in a Misty Room" id="r3_12_6_1">
+<h4>3.12.6.1 A Candle in a Misty Room</h4>
+<p><code>blend_candle.pov</code> is the flame of 3.12.1 in a room filled with mist. The flame and its smoke add to the mist, so they use <code>mix add</code>; the mist and smoke dim the flame's light on its way to the surfaces, because <code>media_attenuation</code> is on. <code>Declare=FlameLight=0</code> swaps the media light for a point light at the wick, to compare, and <code>FlameSamples</code> sets the samples.</p></div>
+
+<a name="r3_12_6_2"></a>
+<div class="content-level-h4" contains="Tubes and Neon" id="r3_12_6_2">
+<h4>3.12.6.2 Tubes and Neon</h4>
+<p><code>light_tubes.pov</code> lights an underground passage only by fluorescent tubes and neon strips. A tube is a thin transparent cylinder with an emitting medium, and a fine <code>resolution</code> so the grid follows its thin shape; one tube is dying and one is dead, by the strength of the emission.</p>
+<pre>
+cylinder {
+  &lt;0, 0, -Length / 2&gt;, &lt;0, 0, Length / 2&gt;, 0.028
+  pigment { rgbt 1 }
+  interior { media { mix add method 4 resolution 0.009 emission Colour * 1200 * Strength light_source { samples Samples } } }
+  translate P
+}
+</pre></div>
+
+<a name="r3_12_6_3"></a>
+<div class="content-level-h4" contains="Glow Inside Other Media" id="r3_12_6_3">
+<h4>3.12.6.3 Glow Inside Other Media</h4>
+<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water). In each, the light is the medium's emission, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
+
+<a name="r3_12_6_4"></a>
+<div class="content-level-h4" contains="Overlapping and Contained Lights" id="r3_12_6_4">
+<h4>3.12.6.4 Overlapping and Contained Lights</h4>
+<p><code>light_intersections.pov</code> overlaps red, green and blue lights, threads them with a bronze knot, holds a glass ball in one and crosses them with smoke; it also seals a glow in a cracked stone and sinks a pool into the floor. <code>light_colonnade.pov</code> lights a rotunda only by a glowing core at its centre, with a lens of space around it made by <a href="r3_11.html#r3_11_3">media refraction</a> (<code>Declare=Refract=0</code> drops it).</p></div>
+
+</div>
+
+</div>
+</body>
+</html>

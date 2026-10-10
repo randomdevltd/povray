@@ -161,6 +161,48 @@
   <td><div class="divh2"><a title="3.10.6" href="#r3_10_6">Errors, Warnings and Limits</a></div></td>
 </tr>
 <tr>
+  <td class="FixedPanelHeading"><a title="3.11" href="#r3_11">Volume Density</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.11.1" href="#r3_11_1">Density Drives the Coefficients</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.11.2" href="#r3_11_2">Combining Volumes</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.11.3" href="#r3_11_3">Refracting Volumes</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.11.4" href="#r3_11_4">Prepared Fields</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.11.5" href="#r3_11_5">Worked Examples</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.11.6" href="#r3_11_6">Defaults and Messages</a></div></td>
+</tr>
+<tr>
+  <td class="FixedPanelHeading"><a title="3.12" href="#r3_12">Volume Lights</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.12.1" href="#r3_12_1">Making a Medium a Light</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.12.2" href="#r3_12_2">Power, Brightness and Falloff</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.12.3" href="#r3_12_3">Sampling and Shadows</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.12.4" href="#r3_12_4">Media, Light Groups and Radiosity</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.12.5" href="#r3_12_5">Limits and Messages</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a title="3.12.6" href="#r3_12_6">Worked Examples</a></div></td>
+</tr>
+<tr>
   <td><div class="divh1">&nbsp;</div></td>
 </tr>
 <tr>
@@ -1555,6 +1597,9 @@
   <td><div class="divh4"><a name="r3_7_2_1_9"></a><a title="3.7.2.1.9" href="r3_7.html#r3_7_2_1_9">Media Mix</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a name="r3_7_2_1_10"></a><a title="3.7.2.1.10" href="r3_7.html#r3_7_2_1_10">Shared Faces</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a name="r3_7_2_2"></a><a title="3.7.2.2" href="r3_7.html#r3_7_2_2">Media Types</a></div></td>
 </tr>
 <tr>
@@ -1568,6 +1613,9 @@
 </tr>
 <tr>
   <td><div class="divh4"><a name="r3_7_2_2_4"></a><a title="3.7.2.2.4" href="r3_7.html#r3_7_2_2_4">Refraction</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh4"><a name="r3_7_2_2_5"></a><a title="3.7.2.2.5" href="r3_7.html#r3_7_2_2_5">Media Lights</a></div></td>
 </tr>
 <tr>
   <td><div class="divh3"><a name="r3_7_2_3"></a><a title="3.7.2.3" href="r3_7.html#r3_7_2_3">Sampling Parameters & Methods</a></div></td>
@@ -2150,6 +2198,81 @@
 </tr>
 <tr>
   <td><div class="divh3"><a name="r3_10_6_4"></a><a title="3.10.6.4" href="r3_10.html#r3_10_6_4">The Images in This Chapter</a></div></td>
+</tr>
+<tr>
+  <td class="ContentsHeading"><div class="divh1"><a name="r3_11"></a><a title="3.11" href="r3_11.html#r3_11">Volume Density</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_11_1"></a><a title="3.11.1" href="r3_11.html#r3_11_1">Density Drives the Coefficients</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_11_2"></a><a title="3.11.2" href="r3_11.html#r3_11_2">Combining Volumes</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_11_3"></a><a title="3.11.3" href="r3_11.html#r3_11_3">Refracting Volumes</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_3_1"></a><a title="3.11.3.1" href="r3_11.html#r3_11_3_1">The Container</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_3_2"></a><a title="3.11.3.2" href="r3_11.html#r3_11_3_2">Curved Rays</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_3_3"></a><a title="3.11.3.3" href="r3_11.html#r3_11_3_3">Brightness in a Changing Index</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_11_4"></a><a title="3.11.4" href="r3_11.html#r3_11_4">Prepared Fields</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_11_5"></a><a title="3.11.5" href="r3_11.html#r3_11_5">Worked Examples</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_5_1"></a><a title="3.11.5.1" href="r3_11.html#r3_11_5_1">Heat Shimmer</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_5_2"></a><a title="3.11.5.2" href="r3_11.html#r3_11_5_2">Steam: One Density, Two Media</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_5_3"></a><a title="3.11.5.3" href="r3_11.html#r3_11_5_3">A Black Hole</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_11_5_4"></a><a title="3.11.5.4" href="r3_11.html#r3_11_5_4">Carving and Scaling Fog</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_11_6"></a><a title="3.11.6" href="r3_11.html#r3_11_6">Defaults and Messages</a></div></td>
+</tr>
+<tr>
+  <td class="ContentsHeading"><div class="divh1"><a name="r3_12"></a><a title="3.12" href="r3_12.html#r3_12">Volume Lights</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_12_1"></a><a title="3.12.1" href="r3_12.html#r3_12_1">Making a Medium a Light</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_12_2"></a><a title="3.12.2" href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_12_3"></a><a title="3.12.3" href="r3_12.html#r3_12_3">Sampling and Shadows</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_12_4"></a><a title="3.12.4" href="r3_12.html#r3_12_4">Media, Light Groups and Radiosity</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_12_5"></a><a title="3.12.5" href="r3_12.html#r3_12_5">Limits and Messages</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><a name="r3_12_6"></a><a title="3.12.6" href="r3_12.html#r3_12_6">Worked Examples</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_12_6_1"></a><a title="3.12.6.1" href="r3_12.html#r3_12_6_1">A Candle in a Misty Room</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_12_6_2"></a><a title="3.12.6.2" href="r3_12.html#r3_12_6_2">Tubes and Neon</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_12_6_3"></a><a title="3.12.6.3" href="r3_12.html#r3_12_6_3">Glow Inside Other Media</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a name="r3_12_6_4"></a><a title="3.12.6.4" href="r3_12.html#r3_12_6_4">Overlapping and Contained Lights</a></div></td>
 </tr>
 </table>
 </div>

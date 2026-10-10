@@ -84,6 +84,9 @@
   <td><div class="divh4"><a title="3.7.2.1.9" href="#r3_7_2_1_9">Media Mix</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.7.2.1.10" href="#r3_7_2_1_10">Shared Faces</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.7.2.2" href="#r3_7_2_2">Media Types</a></div></td>
 </tr>
 <tr>
@@ -448,7 +451,7 @@ MEDIA_ITEMS:
   method Number | intervals Number | samples Min, Max |
   confidence Value  | variance Value | ratio Value | jitter Value
   absorption COLOR | emission COLOR | refraction Value | aa_threshold Value |
-  aa_level Value | 
+  aa_level Value | resolution Value |
   mix add | replace | subtract | multiply | priority Integer |
   light_source { [MEDIA_LIGHT_ITEM...] } |
   scattering { 
@@ -473,18 +476,21 @@ confidence   : 0.9
 emission     : &lt;0,0,0&gt;
 intervals    : 1
 jitter       : 0.0
-method       : 3
+method       : 3 from version 3.5, 4 from version 4.0 (1 before 3.5)
 mix          : see Media Mix
 priority     : 0
 ratio        : 0.9
 refraction   : 0.0
-samples      : Min 1, Max 1
+resolution   : automatic (method 4 only)
+samples      : Min 1, Max 1 (10, 10 from version 3.5)
 variance     : 1/128
 SCATTERING
 COLOR        : &lt;0,0,0&gt;
 eccentricity : 0.0
 extinction   : 1.0
 </pre>
+
+<p>Media whose density varies are described further in <a href="r3_11.html#r3_11">Volume Density</a>, and media that light their surroundings in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
 
 <p>If a media identifier is specified, it must be the first item. All other media items may be specified in any order. All are optional. You may have multiple <code>density</code> statements in a single <code>media</code> statement. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a> for details. Transformations apply only to the <code>density</code> statements which have been already specified. Any <code>density</code> after a transformation is not affected. If the <code>media</code> has no <code>density</code> statements and none was specified in any media identifier, then the transformation has no effect. All other media items except for <code>density</code> and transformations override default values or any previously set values for this <code>media</code> statement.</p>
 
@@ -744,8 +750,8 @@ ior value. For example:</p>
 object { MyObject pigment {Clear } interior { ior 1.5 } }
 </pre>
 
-<p>The default ior value of 1.0 will give no refraction. The index of
-refraction for air is 1.0, water is 1.33, glass is 1.5 and diamond is
+<p>An object with no <code>ior</code> does not refract (see <code>ior off</code> below). The index of
+refraction for vacuum is 1.0, air is 1.0003, water is 1.33, glass is 1.5 and diamond is
 2.4.</p>
 <p>
 Normally transparent or semi-transparent surfaces in POV-Ray do not refract
@@ -774,7 +780,7 @@ See <a href="r3_7.html#r3_7_2_1_6">Attenuation</a>.</p>
 <ul>
 <li><code>surface</code>, the default before <code>#version 4.0</code>: the innermost object entered gives the ior, as in POV-Ray 3.7, so leaving an overlap of two objects does not refract and an <code>ior atmosphere</code> sphere inside glass is an air pocket. A scene whose objects that are not opaque all have an ior and are <code>surface</code>, and which has no <a href="r3_7.html#r3_7_2_2_4">media refraction</a>, renders exactly as POV-Ray 3.7 does.</li>
 <li><code>mean</code>, the default from <code>#version 4.0</code>: overlapping objects mix 50/50, and the ior is the mean of their iors; where glass (1.5) overlaps water (1.33) it is 1.415, whatever order the objects are placed in. Every object that takes part counts, so an <code>ior 1</code> sphere inside glass is vacuum mixed with glass, 1.25, and POV-Ray warns once when an object of ior 1 or <code>ior atmosphere</code> overlaps a denser one. Dispersion is averaged the same way.</li>
-<li><code>replace</code>: the object's ior overrides the objects ranked beneath it inside its volume, ranked by the interior's <code>priority</code> (an integer, 0 by default, higher first) and then by placement, later first, exactly as <a href="r3_7.html#r3_7_2_1_9">media mix replace</a> ranks. Objects ranked above it still mix with it by their own <code>ior_mix</code>.</li>
+<li><code>replace</code>: the object's ior overrides the objects ranked beneath it inside its volume, ranked by the interior's <code>priority</code> (an integer, 0 by default, higher first; it is not the <code>priority</code> of a <code>media</code>) and then by placement, later first, exactly as <a href="r3_7.html#r3_7_2_1_9">media mix replace</a> ranks. Objects ranked above it still mix with it by their own <code>ior_mix</code>.</li>
 </ul>
 <p>In one scene the modes combine: the innermost <code>surface</code> object the ray entered hides everything entered before it; among it and the objects entered after it, the highest-ranked <code>replace</code> hides those ranked beneath it; the rest take the mean of what remains. Objects with <code>ior off</code> are left out throughout. So a <code>surface</code> or <code>replace</code> sphere inside <code>mean</code> glass gives its own ior, and a <code>replace</code> sphere inside the overlap of two <code>mean</code> glasses replaces their mean.</p>
 <p>The physically correct bubble or inclusion is cut out of the glass with <code>difference</code>, giving an inclusion of another material its own object filling the hole:</p>
@@ -791,8 +797,7 @@ difference {
 sphere { 0, 2 pigment { rgbf 1 } interior { ior 1.5 } }
 sphere { 0, 0.5 pigment { rgbf 1 } interior { ior atmosphere ior_mix replace } }
 </pre>
-<p>Under <code>mean</code> or <code>replace</code>, or with media refraction, surfaces that meet at the point hit, such as glass and water sharing a wall or three wedges meeting along an edge, are one interface: the ray refracts and reflects once, by the ior just before the point over the ior just after it, with one test for total internal reflection. Every object with a surface there is tested for whether it holds a point a small distance beyond the surface, along the normal, and the rays spawned start that far beyond the point; objects without an inside, such as polygons and meshes without <code>inside_vector</code>, are crossed instead. If any surface there belongs to an object whose texture POV-Ray can tell is opaque, that surface is hit, for camera, reflected, refracted, shadow and photon rays alike. Otherwise the texture shown follows <a href="r3_4.html#r3_4_1_16">interface_texture</a>: by default (<code>blend</code>) the textures of every clear object with a surface there are each evaluated and their results averaged equally, so the face looks the same from both sides and whatever order the objects are placed in; <code>far</code> shows the texture of an object the ray enters there, else of one it leaves, and <code>near</code> the reverse, with exact ties settled by the objects' bounds. An <code>ior_mix replace</code> object owns its faces: where one of its surfaces is among them, its texture shows whatever the setting. Objects whose texture varies over their surface by other means, such as mesh textures, <code>uv_mapping</code> or <code>cutaway_textures</code>, are not blended, and those faces use <code>far</code>. Shadow rays cross such a surface surface by surface: each surface there filters the light once, and an opaque one blocks it.</p>
-<p>The distance is the lesser of a thousandth of the object's smallest extent (10<sup>-3</sup> for objects without finite bounds) and 10<sup>-5</sup> of the point's largest coordinate, raised to 2&times;10<sup>-4</sup> for objects at least 0.2 units across in every direction; surfaces of other objects closer than that count as meeting at the point, while on smaller objects only surfaces that truly coincide do.</p>
+<p>Surfaces of different objects that meet at a point, such as glass and water sharing a wall, are one interface and refract once; see <a href="r3_7.html#r3_7_2_1_10">Shared Faces</a>.</p>
 <p class="Note"><strong>Note:</strong> Neither the <code>ior</code> nor <code>refraction</code> keywords cause the 
 object to be transparent. Transparency only occurs if there is a non-zero 
 <code>filter</code> or <code>transmit</code> value in the color.</p>
@@ -951,8 +956,9 @@ media { mix add | replace | subtract | multiply  priority Integer  MEDIA_ITEMS..
   <li><code>subtract</code> subtracts this medium's absorption, emission and scattering, each times its density, from the sum of the media beneath it, clamped at zero per channel, and shares what remains among them in proportion; the medium itself does not show, and several subtracting media give the same result in any order.</li>
   <li><code>multiply</code> scales the absorption, emission and scattering of the media beneath it by this medium's density, per colour channel: 1 leaves them unchanged, 0 clears them, values above 1 thicken or brighten them, and a coloured density tints them. Its own coefficients are unused.</li>
 </ul>
-<p>When a medium does not set <code>mix</code>, the first medium of an interior takes its object's default and later media in the same interior add to it, so several media in one interior still sum as before. The object default is <code>add</code> if the object is <code>hollow</code>, otherwise the <code>mix</code> of the last <code>#default { media { &hellip; } }</code> before the object is placed, otherwise <code>replace</code> under <code>#version 4.0;</code> and <code>add</code> before it. An object without media under version 4.0 takes the same default, so by default it clears the media beneath it, ranking at priority 0. All four mixes work with media method 4: <code>subtract</code> and <code>multiply</code> media read their own prepared density like any other medium, but shadow rays towards parallel lights through them skip the per-light optical-depth cache. <code>mix</code> and <code>priority</code> apply to interior media only; atmospheric media and fog ignore them.</p>
+<p>When a medium does not set <code>mix</code>, the first medium of an interior takes its object's default and later media in the same interior add to it, so several media in one interior still sum as before. The object default is <code>add</code> if the object is <code>hollow</code>, otherwise the <code>mix</code> of the last <code>#default { media { &hellip; } }</code> before the object is placed, otherwise <code>replace</code> under <code>#version 4.0;</code> and <code>add</code> before it. An object without media under version 4.0 takes the same default, so by default it clears the media beneath it, ranking at priority 0. All four mixes work with media method 4; see <a href="r3_7.html#r3_7_2_1_9">Mix and method 4</a> below. <code>mix</code> and <code>priority</code> apply to interior media only; atmospheric media and fog ignore them.</p>
 <pre>
+#version 4.0;
 box { -4, 4 pigment { rgbt 1 }
   interior { media { scattering { 1, 0.2 } density { bozo } } } }
 sphere { 0, 1.5 pigment { rgbt 1 }
@@ -962,6 +968,40 @@ sphere { 0, 1.5 pigment { rgbt 1 }
   }
 }
 </pre>
+
+<p>The word after <code>mix</code> is read as text: it must be written <code>add</code>, <code>replace</code>, <code>subtract</code> or <code>multiply</code>. An identifier, an expression or a macro parameter cannot select the mode, and <code>mix 1</code> is an error (<code>Expected add, replace, subtract or multiply after mix.</code>). A scene that switches modes writes the word under <code>#switch</code>, as the sample <code>blend_slime.pov</code> does:</p>
+<pre>
+#macro Gel(Mix)
+  media {
+    #switch (Mix) #case (0) mix add #break #case (1) mix replace #break #case (2) mix subtract #break #end
+    scattering { 1, 0.1 }
+  }
+#end
+</pre>
+<p><strong>Priority.</strong> <code>priority</code> takes any integer, negative ones included; a fraction is an error (<code>media priority must be an integer.</code>). Media of equal priority are ranked by placement, then by order in the interior. An object without media always clears at priority 0. To clear at another rank, give it an empty <code>media { mix replace priority N }</code>. A medium with a negative priority ranks below every object without media, wherever it is placed, and is cleared by them where they overlap. This keeps smoke visible inside a glass ball placed after it:</p>
+<pre>
+#version 4.0;
+sphere { 0, 0.5 pigment { rgbt 1 } interior { media { priority 1 scattering { 1, rgb 0.5 } density { bozo scale 0.3 } } } }
+sphere { 0, 1 pigment { rgbt &lt;0.9, 0.95, 1, 0.9&gt; } interior { ior 1.5 } }
+</pre>
+<p>Without <code>priority 1</code> the ball, placed later and without media, would clear the smoke inside it. The sample <code>light_explosion.pov</code> gives a <code>subtract</code> medium a <code>priority</code> to carve a fireball's smoke.</p>
+<p><strong>What subtract and multiply read.</strong> A modifier acts only on the media ranked beneath it, never on those above.</p>
+<ul>
+  <li><code>subtract</code> uses its <code>absorption</code>, <code>emission</code> and <code>scattering</code> colours times its density. Its scattering type, <code>eccentricity</code> and <code>extinction</code> are not used. Removing scattering also removes the extinction that scattering caused, weighted by each lower medium's own <code>extinction</code>.</li>
+  <li><code>multiply</code> uses only its density colour.</li>
+  <li>A modifier with no media beneath it, or whose lower media a higher <code>replace</code> has already cleared, does nothing.</li>
+  <li>Modifiers apply in rank order. Several <code>subtract</code> media give the same result in any order, but a <code>subtract</code> and a <code>multiply</code> do not commute: the one ranked higher acts on the result of the lower.</li>
+</ul>
+<p><strong>Mix and method 4.</strong> <a href="r3_7.html#r3_7_2_3">Method 4</a> fallback to classic sampling looks only at the media that take part: <code>subtract</code> and <code>multiply</code> media, and media that a <code>replace</code> removed, do not trigger the fallback for a classic medium that overlaps them. A modifier's own classic settings (<code>samples</code>, <code>intervals</code>, <code>jitter</code>, <code>confidence</code> and the rest) are not used. A method 4 modifier with a unique finite container reads its prepared grid; otherwise its density pattern is evaluated at every sample of the media beneath it, and prepared steps are no coarser than the modifier's resolution. Segments with modifiers do without the per-light optical-depth cache for parallel lights, the early stop once a medium is opaque enough, and the shortcut for constant media in shadow rays, so they cost more.</p>
+<p><strong>Photons.</strong> Photon propagation and the deposit of media photons rank media through the same rules.</p>
+</div>
+
+<a name="r3_7_2_1_10"></a>
+<div class="content-level-h5" contains="Shared Faces" id="r3_7_2_1_10">
+<h5>3.7.2.1.10 Shared Faces</h5>
+<p>Under <code>mean</code> or <code>replace</code>, or with media refraction, surfaces that meet at the point hit, such as glass and water sharing a wall or three wedges meeting along an edge, are one interface: the ray refracts and reflects once, by the ior just before the point over the ior just after it, with one test for total internal reflection. Every object with a surface there is tested for whether it holds a point a small distance beyond the surface, along the normal, and the rays spawned start that far beyond the point; objects without an inside, such as polygons and meshes without <code>inside_vector</code>, are crossed instead. If any surface there belongs to an object whose texture POV-Ray can tell is opaque, that surface is hit, for camera, reflected, refracted, shadow and photon rays alike. Otherwise the texture shown follows <a href="r3_4.html#r3_4_1_16">interface_texture</a>: by default (<code>blend</code>) the textures of every clear object with a surface there are each evaluated and their results averaged equally, so the face looks the same from both sides and whatever order the objects are placed in; <code>far</code> shows the texture of an object the ray enters there, else of one it leaves, and <code>near</code> the reverse, with exact ties settled by the objects' bounds. An <code>ior_mix replace</code> object owns its faces: where one of its surfaces is among them, its texture shows whatever the setting. Objects whose texture varies over their surface by other means, such as mesh textures, <code>uv_mapping</code> or <code>cutaway_textures</code>, are not blended, and those faces use <code>far</code>. Shadow rays cross such a surface surface by surface: each surface there filters the light once, and an opaque one blocks it.</p>
+<p>The distance is the lesser of a thousandth of the object's smallest extent (10<sup>-3</sup> for objects without finite bounds) and 10<sup>-5</sup> of the point's largest coordinate, raised to 2&times;10<sup>-4</sup> for objects at least 0.2 units across in every direction; surfaces of other objects closer than that count as meeting at the point, while on smaller objects only surfaces that truly coincide do.</p>
+<p>The default <code>ior_mix</code> is <code>mean</code> from <code>#version 4.0</code>, so faces are merged there by default. Before 4.0 the default is <code>surface</code>, and faces merge only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses media refraction; the texture shown is then chosen by <a href="r3_4.html#r3_4_1_16">interface_texture</a>, which defaults to <code>far</code>.</p>
 </div>
 
 <a name="r3_7_2_2"></a>
@@ -984,7 +1024,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on, or if the medium is declared a light with a <a href="r3_7.html#r3_7_2_2_5">light_source</a> block.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
+<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on, or if the medium is declared a light with a <a href="r3_12.html#r3_12">light_source</a> block.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
@@ -1074,48 +1114,20 @@ box {
   interior { media { refraction -0.0001 density { bozo turbulence 0.6 scale 0.5 } density { gradient y color_map { [0 rgb 1] [1 rgb 0] } scale 2 } } }
 }
 </pre>
-<p>A surface refracts once, by the index on each side of it at the point hit, so a container whose density fades to zero at its walls, with the same ior inside and out, neither refracts nor reflects there and is invisible. A density cut off by its container is a real step in the index: the surface refracts, and POV-Ray warns once where the ior on both sides is the same. Where the index varies, camera, reflected, refracted and photon rays follow the curve in short straight chords, testing each chord for objects so that nothing embedded is skipped. Each step bends the ray by at most <a href="r3_4.html#r3_4_1_13">refraction_angle</a>, judged from the curvature at its start, middle and end, so detail in the index narrower than about half a step can be missed. No step is longer than a sixty-fourth of the refracting object's size (twice the prepared resolution with method 4) or a sixteenth of the straight-line distance to the next surface. A ray still inside the field after 20000 steps is taken as trapped and returns black, with a warning; an index driven below 0.01 by a negative <code>refraction</code> is held there, also with a warning. Absorption, emission and scattering integrate along the chords, and radiance scales with the square of the index relative to the interior's ior, so the scaling cancels when both the camera and the source sit outside refracting media; emitting media in a raised index appear dimmer. Media <code>emission</code> is radiance in the units of the local index: an emission of 0.1 where the index is 1.5 above an ior of 1 looks like an emission of 0.1 / 1.5&sup2; would in an object of ior 1.5 without media refraction.</p>
-<p>With media method 4 the index and its gradient come from the prepared density grid; other methods evaluate the density pattern directly, which suits fields with fine detail such as a function of distance that rises steeply near its centre. Media with constant density do not curve rays; a constant <code>refraction</code> in an ior 1 object refracts exactly as an object with ior 1 plus that constant would, apart from the radiance scaling of any media inside it.</p>
-<p class="Note"><strong>Note:</strong> Shadow rays and the light that scattering media receive travel straight, so shadows and lit media are not bent; photons, which do curve, carry bent light into caustics and media. Atmospheric media do not refract. The ior on each side of a surface is the ior the objects holding that side give by their <code>ior_mix</code>, plus the media refraction there; see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>.</p></div>
+<p>How rays curve through the field, the limits that stop them, how brightness scales, the warnings and worked examples are in <a href="r3_11.html#r3_11_3">Refracting Volumes</a>. Atmospheric media do not refract.</p></div>
 
 <a name="r3_7_2_2_5"></a>
 <div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
 <h5>3.7.2.2.5 Media Lights</h5>
 <p>A <code>light_source</code> block inside an emitting medium makes the medium a light source: it lights surfaces, casting shadows, and lights scattering media, with its brightness and colour taken from its own <code>emission</code> and density, so the light always matches the glow the camera sees.</p>
 <pre>
-MEDIA_LIGHT_ITEM:
-  samples Integer | brightness Value | shadowless |
-  media_interaction [Bool] | media_attenuation [Bool] |
-  fade_distance Value | fade_power Value
-</pre>
-<p>Media light default values:</p>
-<pre>
-samples           : 32
-brightness        : 1.0
-media_interaction : on
-media_attenuation : on
-fade_distance     : 0 (physical falloff)
-fade_power        : 0 (physical falloff)
-</pre>
-<p>For example, a candle flame:</p>
-<pre>
-sphere {
-  0, 1 pigment { rgbt 1 } hollow
-  interior {
-    media {
-      emission rgb &lt;14, 6, 1.6&gt; * 200
-      density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-      light_source { }
-    }
-  }
-  scale &lt;0.06, 0.16, 0.06&gt; translate &lt;0, 1.45, 0&gt;
+media {
+  emission rgb &lt;14, 6, 1.6&gt; * 200
+  density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+  light_source { samples 16 }
 }
 </pre>
-<p>The block takes no position or colour: both come from the medium, which is placed, transformed and copied with its object, and an animated emission or density is taken afresh each frame. The medium emits equally in all directions: a piece of it of volume <em>dV</em> and density <em>d</em> has a radiant intensity of <code>emission</code> &times; <em>d</em> &times; <em>dV</em> (a power of 4&pi; times that), and its light falls off with the square of the distance, as real light does and a <code>light_source</code> without <code>fade_power</code> does not. <code>brightness</code> scales the light without changing the glow. A real flame is far brighter than the glow a scene usually gives it: the flame of the candle sample <code>scenes/interior/media/blend_candle.pov</code> needed its emission raised about 200 times to light the room warmly, and its glow is then overexposed, as a flame is in a photograph exposed for the room. Make the emitter as bright as the real thing and leave <code>brightness</code> at 1, so the light keeps matching the glow; <code>brightness</code> is an artistic override that scales the light without changing the glow. <code>fade_distance</code> and <code>fade_power</code> replace the physical falloff with a regular light's fade.</p>
-<p>Each lit point draws <code>samples</code> points from the medium, one from each of <code>samples</code> strata of equal power, each a compact region of a grid over the container (its cells taken in Z-order), and traces a shadow ray to each, so shadows are soft and shaped by the glow, and nearby surfaces are lit by its shape, as with <a href="r3_4.html#r3_4_3_1_5">area_illumination</a>. The grid is the prepared grid of method 4, at its <code>resolution</code>, or the grid method 4 would choose for the container; within a cell points are spread evenly over the eighths of the cell whose centres are inside the container, and a point is never taken to be nearer than half a cell's diagonal, which keeps the light finite at the medium's edge. Its cost is <code>samples</code> shadow rays per lit point, none where the whole medium is behind the surface (unless the finish has <code>diffuse</code> backlighting or the object <code>double_illuminate</code>), and building the table evaluates the density eight times per cell when the scene is parsed. A container that is a deferred mesh (<code>isosurface_mesh</code>, <code>skein_mesh</code> or a <code>.povm</code> mesh) is built then, on the parser thread and one at a time, instead of in parallel with the other meshes. A scattering medium is lit by one point of the light per media sample, as by an area light.</p>
-<p>With <code>media_attenuation</code>, on by default, each shadow ray is attenuated by the media of every interior it passes, including the medium's own and smoke surrounding it, so smoke dims its flame; <code>media_interaction off</code> leaves scattering media unlit, and <code>shadowless</code> casts no shadows. Shadow rays travel straight, also through <a href="r3_7.html#r3_7_2_2_4">media refraction</a>.</p>
-<p>The camera, reflections and refractions still see the glow, but gathers of <code>radiosity { media on }</code> leave out the glow of media that are lights, since that light already reaches surfaces directly. A medium in an object inside a <code>light_group</code> lights the objects of that group only, as the group's light sources do.</p>
-<p class="Note"><strong>Note:</strong> Only media in an object's interior can be lights, not atmospheric media, and not media that <code>subtract</code> or <code>multiply</code>; the light follows the medium's own emission &times; density and ignores the <code>mix</code> and <code>priority</code> of other media: a <code>subtract</code> or <code>replace</code> medium that carves the glow does not carve the light. Media lights do not shoot photons: a <code>photons</code> block inside the <code>light_source</code> block is ignored with a warning, as photons from media lights come with a later photon method. They are not seen through portals.</p>
+<p>The items of the block (<code>samples</code>, <code>brightness</code>, <code>shadowless</code>, <code>media_interaction</code>, <code>media_attenuation</code>, <code>fade_distance</code> and <code>fade_power</code>), their defaults, the power and falloff of the light, its sampling, and its limits are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
 </div>
 
 <a name="r3_7_2_3"></a>
@@ -1135,7 +1147,7 @@ sphere {
 
 <p>Some work still falls back to classic sampling, using the media's classic quality settings:</p>
 <ul>
-<li>A variable medium using method 1, 2 or 3 overlaps a variable method 4 medium. Select method 4 on all overlapping variable media to enable prepared integration.</li>
+<li>A variable medium using method 1, 2 or 3 overlaps a variable method 4 medium. Select method 4 on all overlapping variable media to enable prepared integration. Only media that take part count: <code>subtract</code> and <code>multiply</code> media, and media a <code>replace</code> has removed, are not tested (see <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>).</li>
 <li>A density grid is invalid or exceeds 1,000,000 cells. Use a larger <code>resolution</code> value for coarser cells, omit it for automatic resolution, or split the container.</li>
 <li>The density field cannot be prepared, including unsupported fields or negative or non-finite values rejected by the cache, or no unique finite container is available.</li>
 <li>A ray segment requires marching with more than 4096 prepared integration steps. Camera integration uses steps one third of the selected cell width; prepared shadow marching uses the cell width. A shadow ray with usable parallel-light optical-depth caches for all its variable media can still use those caches beyond this limit, because no marching is required. The shadow step limit applies only when the cache path is unavailable and marching is necessary. Split long containers or explicitly choose a coarser width if it retains enough detail.</li>
@@ -1155,7 +1167,7 @@ sphere {
 
 <p>Sample <code>method 3</code> uses adaptive sampling (similar to adaptive anti-aliasing) which is very much like the sampling method used in POV-Ray 3.0 atmosphere. This code was written from the ground-up to work with media. However, adaptive sampling works by taking another sample between two existing samples if there is too much variance in the original two samples. This leads to fewer samples being taken in areas where the effect from the media remains constant. The adaptive sampling is only performed if the minimum samples are set to 3 or more.</p>
 
-<p>You can specify the anti-aliasing recursion depth using the <code>aa_level</code> keyword followed by an integer. You can specify the anti-aliasing threshold by using the <code>aa_threshold</code> followed by a float. The default for <code>aa_level</code> is 4 and the default <code>aa_threshold</code> is 0.1. <code>jitter</code> also works with method 3.</p>
+<p>You can specify the anti-aliasing recursion depth using the <code>aa_level</code> keyword followed by an integer. You can specify the anti-aliasing threshold by using the <code>aa_threshold</code> followed by a float. The default for <code>aa_level</code> is 3 and the default <code>aa_threshold</code> is 0.1. <code>jitter</code> also works with method 3.</p>
 
 <p class="Note"><strong>Note:</strong> It is usually best to only use one interval with method 3. Too many intervals can lead to artifacts, and POV will create more intervals if it needs them.</p>
 
@@ -1163,7 +1175,7 @@ sphere {
 
 <p>The <code>ratio</code> keyword distributes intervals differently between lit and unlit areas. The default value of <code>ratio 0.9</code> means that lit intervals get more samples than unlit intervals. Note that the total number of intervals must exceed the number of illuminated intervals. If a ray passes in and out of 8 spotlights but you have only specified 5 intervals then an error occurs.</p>
 
-<p>The <code>samples</code> <em><code>Min</code></em>, <em><code>Max</code></em> keyword specifies the minimum and maximum number of samples taken per interval. The default values are <code>samples 1,1</code>. The value for Max may be omitted, in which case the range Min = Max will be used.</p>
+<p>The <code>samples</code> <em><code>Min</code></em>, <em><code>Max</code></em> keyword specifies the minimum and maximum number of samples taken per interval. The default values are <code>samples 1,1</code>, or <code>samples 10,10</code> from version 3.5. The value for Max may be omitted, in which case the range Min = Max will be used.</p>
 
 <p>As each interval is sampled, the variance is computed. If the variance is below a threshold value, then no more samples are needed. The <code>variance</code> and <code>confidence</code> keywords specify the permitted variance allowed and the confidence that you are within that variance. The exact calculations are quite complex and involve chi-squared tests and other statistical principles too messy to describe here. The default values are <code>variance 1.0/128</code> and <code>confidence 
 0.9</code>. For slower more accurate results, decrease the variance and increase the confidence.</p>
@@ -1176,7 +1188,7 @@ sphere {
 <a name="r3_7_2_4"></a>
 <div class="content-level-h4" contains="Density" id="r3_7_2_4">
 <h4>3.7.2.4 Density</h4>
-<p>Particles of media are normally distributed in constant density throughout the media. However, the <code>density</code> statement allows you to vary the density across space using any of POV-Ray's pattern functions such as those used in textures. If no <code>density</code> statement is given then the density remains a constant value of 1.0 throughout the media. More than one <code>density</code> may be specified per <code>media</code> statement. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a>.</p>
+<p>Particles of media are normally distributed in constant density throughout the media. However, the <code>density</code> statement allows you to vary the density across space using any of POV-Ray's pattern functions such as those used in textures. If no <code>density</code> statement is given then the density remains a constant value of 1.0 throughout the media. More than one <code>density</code> may be specified per <code>media</code> statement. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a>. What a density field does to the coefficients, to overlapping media, to rays and to prepared fields is collected in <a href="r3_11.html#r3_11">Volume Density</a>.</p>
 
 <p>The syntax for <code>density</code> is:</p>
 <pre>

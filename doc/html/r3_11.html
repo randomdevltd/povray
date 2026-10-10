@@ -1,0 +1,326 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+<!--  This file copyright Persistence of Vision Raytracer Pty. Ltd. 2009-2011  -->
+
+<html lang="en">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<title>Reference Section 11</title>
+<link rel="StyleSheet" href="povray.css" type="text/css">
+<link rel="shortcut icon" href="favicon.ico">
+
+<!--  NOTE: In order to help users find information about POV-Ray using web      -->
+<!--  search engines, we ask that you *not* let them index documentation         -->
+<!--  mirrors because effectively, when searching, users will get hundreds of    -->
+<!--  results containing the same information! For this reason, these meta tags  -->
+<!--  below disable archiving of this page by search engines.                    -->
+
+<meta name="robots" content="noarchive">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+</head>
+<body>
+
+<div class="Page">
+
+<!-- NavPanel Begin -->
+<div class="NavPanel">
+<table class="NavTable">
+<tr>
+  <td class="FixedPanelHeading"><a title="3.11" href="#r3_11">Volume Density</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.11.1" href="#r3_11_1">Density Drives the Coefficients</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.11.2" href="#r3_11_2">Combining Volumes</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.11.3" href="#r3_11_3">Refracting Volumes</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.3.1" href="#r3_11_3_1">The Container</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.3.2" href="#r3_11_3_2">Curved Rays</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.3.3" href="#r3_11_3_3">Brightness in a Changing Index</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.11.4" href="#r3_11_4">Prepared Fields</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.11.5" href="#r3_11_5">Worked Examples</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.5.1" href="#r3_11_5_1">Heat Shimmer</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.5.2" href="#r3_11_5_2">Steam: One Density, Two Media</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.5.3" href="#r3_11_5_3">A Black Hole</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.11.5.4" href="#r3_11_5_4">Carving and Scaling Fog</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.11.6" href="#r3_11_6">Defaults and Messages</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+</table>
+</div>
+<!-- NavPanel End -->
+
+<div class="Content">
+<table class="HeaderFooter" width="100%">
+<tr>
+  <td colspan=5 align="left" class="HeaderFooter">
+    POV-Ray for Unix <strong class="HeaderFooter">version 3.8</strong>
+  </td>
+</tr>
+<tr >
+  <td colspan=5>
+    <hr align="right" width="70%">
+  </td>
+</tr>
+<tr>
+  <td width="30%"></td>
+  <td class="NavBar"><a href="index.html" title="The Front Door">Home</a></td>
+  <td class="NavBar"><a href="u1_0.html" title="Unix Table of Contents">POV-Ray for Unix</a></td>
+  <td class="NavBar"><a href="t2_0.html" title="Tutorial Table of Contents">POV-Ray Tutorial</a></td>
+  <td class="NavBar"><a href="r3_0.html" title="Reference Table of Contents">POV-Ray Reference</a></td>
+</tr>
+</table>
+
+<a name="r3_11"></a>
+<div class="content-level-h2" contains="Volume Density" id="r3_11">
+<h2>3.11 Volume Density</h2>
+<p>A medium whose density varies is a volume: smoke with a ragged edge, a flame that is brightest at its core, a column of hot air. This chapter collects what <code>density</code> does across the media features: how a density field scales the coefficients of a medium, how volumes combine where they overlap, how a volume bends light with <code>refraction</code>, and how media method 4 prepares the field for rendering. The syntax of <code>media</code> and <code>density</code> is in <a href="r3_7.html#r3_7_2">Media</a>; a volume that is also a light source is described in <a href="r3_12.html#r3_12">Volume Lights</a>. The sample scenes <code>blend_*.pov</code> and <code>refraction_*.pov</code> in <code>scenes/interior/media</code> are the worked examples. The examples in this chapter assume <code>#version 4.0;</code>.</p>
+<p>Quick Links:</p>
+<ul>
+  <li><a href="r3_11.html#r3_11_1">Density Drives the Coefficients</a></li>
+  <li><a href="r3_11.html#r3_11_2">Combining Volumes</a></li>
+  <li><a href="r3_11.html#r3_11_3">Refracting Volumes</a></li>
+  <li><a href="r3_11.html#r3_11_4">Prepared Fields</a></li>
+  <li><a href="r3_11.html#r3_11_5">Worked Examples</a></li>
+  <li><a href="r3_11.html#r3_11_6">Defaults and Messages</a></li>
+</ul></div>
+
+<a name="r3_11_1"></a>
+<div class="content-level-h3" contains="Density Drives the Coefficients" id="r3_11_1">
+<h3>3.11.1 Density Drives the Coefficients</h3>
+<p>A medium without a <code>density</code> statement has a density of 1 everywhere. With one, the density at a point is the value of the pattern there, and the medium's coefficients at that point are its keywords times that value:</p>
+<pre>
+absorption  at P = absorption  &times; density(P)
+emission    at P = emission    &times; density(P)
+scattering  at P = scattering  &times; density(P)    (and its extinction)
+refraction  at P = refraction  &times; density(P)
+</pre>
+<ul>
+  <li>The density is a colour. A pattern gives a grey from 0 to 1; a <code>color_map</code> or <code>density_map</code> can give any colour, including channels above 1, and each channel multiplies the same channel of <code>absorption</code>, <code>emission</code> and <code>scattering</code>. Refraction uses the mean of the channels, so it does not disperse. See <a href="r3_7.html#r3_7_2_4_2">Density with color_map</a> and <a href="r3_7.html#r3_7_2_4_3">Density Maps and Density Lists</a>.</li>
+  <li>Several <code>density</code> blocks in one <code>media</code> multiply, so only where all of them are non-zero is there any medium. Several <code>media</code> statements in one interior combine by their <a href="r3_7.html#r3_7_2_1_9">mix</a>, which by default adds them. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a>.</li>
+  <li>The pattern moves, rotates and scales with the object that holds the medium. Transformations written inside the <code>media</code> block apply to the <code>density</code> blocks written before them.</li>
+  <li>Any pattern is allowed, including <code>function</code>, <code>density_file</code> (see <a href="r3_6.html#r3_6_2_1_8">Density File</a>) and patterns with <code>turbulence</code> or <code>warp</code>. Some cannot be prepared for method 4; see <a href="r3_11.html#r3_11_4">Prepared Fields</a>.</li>
+  <li>A density that is negative or not finite is an error for a prepared field and for a medium that is a light. Keep densities from 0 up.</li>
+</ul>
+<p>A medium with only <code>refraction</code> has nothing to absorb, emit or scatter: it is invisible, costs nothing in the media integration and only bends rays. One density can drive a visible medium and a refracting one together by declaring it once:</p>
+<pre>
+#declare Steam = density { spherical turbulence 0.4 color_map { [0 rgb 0] [1 rgb 1] } }
+cylinder {
+  0, y * 2, 0.5 pigment { rgbt 1 }
+  interior {
+    media { scattering { 1, rgb 0.6 } density { Steam } }
+    media { refraction -0.03 density { Steam } }
+  }
+}
+</pre></div>
+
+<a name="r3_11_2"></a>
+<div class="content-level-h3" contains="Combining Volumes" id="r3_11_2">
+<h3>3.11.2 Combining Volumes</h3>
+<p>Where volumes overlap, each medium's <code>mix</code> says what its density does to the media ranked beneath it. The full ranking rules, the defaults by version and <code>#default { media { mix } }</code> are in <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>. For a density field the four mixes mean:</p>
+<table width="100%" class="option-list">
+<tr><td><code>mix add</code></td><td>The field's absorption, emission, scattering and refraction are added to those beneath it. This is the mix of a hollow object and of every medium after the first in an interior.</td></tr>
+<tr><td><code>mix replace</code></td><td>Inside the object only this field, and the media ranked above it, are seen; the media beneath it are removed, whatever its density. An empty <code>media { mix replace }</code> clears the space.</td></tr>
+<tr><td><code>mix subtract</code></td><td>The field's absorption, emission and scattering times its density are taken away from the sum beneath it, to zero in each channel, so a density that fades out carves a hollow with a soft edge. The medium itself does not show.</td></tr>
+<tr><td><code>mix multiply</code></td><td>The density scales the absorption, emission and scattering beneath it, channel by channel: 1 leaves them, 0 clears them, above 1 thickens or brightens them, and a coloured density tints them. Its own coefficients are unused.</td></tr>
+</table>
+<p>Refraction combines by the same rules (see <a href="r3_7.html#r3_7_2_2_4">Refraction</a>). Rank is set by <code>media { priority N }</code>, which is separate from <code>interior { priority N }</code>, the rank of an <code>ior_mix replace</code> interior (see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>).</p>
+<p>Under <code>#version 4.0;</code> an object replaces the media beneath it by default, so a field that sits inside another one, or that is placed before a backdrop, needs <code>mix add</code> or a higher <code>priority</code>. The samples <code>blend_carve.pov</code> and <code>blend_streaks.pov</code> are shown in <a href="r3_11.html#r3_11_5">Worked Examples</a>.</p></div>
+
+<a name="r3_11_3"></a>
+<div class="content-level-h3" contains="Refracting Volumes" id="r3_11_3">
+<h3>3.11.3 Refracting Volumes</h3>
+<p>The <code>refraction</code> keyword makes the index of refraction vary through space, so that light curves where the density varies: heat shimmer, mirages, steam, rocket exhaust, gradient-index lenses and the bending of light around a black hole. The formula for the index, and how refracting media combine by their <code>mix</code>, are under <a href="r3_7.html#r3_7_2_2_4">Refraction</a> in Media Types. This section is about what the field does to rays.</p></div>
+
+<a name="r3_11_3_1"></a>
+<div class="content-level-h4" contains="The Container" id="r3_11_3_1">
+<h4>3.11.3.1 The Container</h4>
+<p>A medium needs no <code>ior</code> of its own to refract. An object without an <code>ior</code> has <code>ior off</code> under <code>#version 4.0;</code>: it takes no part in refraction, has no refracting surface of its own, and the media inside it add their refraction to the index of whatever surrounds it. A refraction-only box therefore shimmers the water or air it sits in. Give the container an <code>ior</code> only when it should also be a solid, as a gradient-index lens is.</p>
+<p>A surface refracts once, by the index on each side of it at the point hit. A container whose density fades to zero at its walls, with the same ior inside and out, neither refracts nor reflects there and is invisible. A density cut off by its container is a real step in the index: the surface refracts, and POV-Ray warns once where the ior on both sides is the same. Fade the density to zero at the container's surface to avoid it.</p>
+<p>The ior on each side of a surface is what the objects holding that side give by their <code>ior_mix</code>, plus the media refraction there; see <a href="r3_7.html#r3_7_2_1_4">Refraction</a> under Interior. Atmospheric media do not refract, and <code>refraction</code> in one draws a warning. Only the media of an object's interior refract.</p></div>
+
+<a name="r3_11_3_2"></a>
+<div class="content-level-h4" contains="Curved Rays" id="r3_11_3_2">
+<h4>3.11.3.2 Curved Rays</h4>
+<p>Where the index varies, camera, reflected, refracted and photon rays follow the curve in short straight chords, testing each chord for objects so that nothing embedded is skipped. Each step bends the ray by at most <a href="r3_4.html#r3_4_1_13">refraction_angle</a> degrees (0.5 by default), judged from the curvature at its start, middle and end, so detail in the index narrower than about half a step can be missed. No step is longer than a sixty-fourth of the refracting object's size (twice the prepared resolution with method 4) or a sixteenth of the straight-line distance to the next surface.</p>
+<ul>
+  <li>A ray still inside the field after 20000 steps is taken as trapped and returns black, with a warning. Rays orbiting a strong field do this; a larger <code>refraction_angle</code> takes fewer steps.</li>
+  <li>An index driven below 0.01 by a negative <code>refraction</code> is held at 0.01, with a warning. Use a smaller negative coefficient or a higher <code>ior</code>.</li>
+  <li>Shadow rays and the light that scattering media receive travel straight, so shadows and lit media are not bent. Photons curve, and carry bent light into caustics and media.</li>
+  <li>Media with constant density do not curve rays. A constant <code>refraction</code> in an object of <code>ior 1</code> refracts exactly as an object of <code>ior</code> 1 plus that constant would, apart from the radiance scaling below.</li>
+</ul>
+<pre>
+global_settings { refraction_angle 0.25 }
+</pre></div>
+
+<a name="r3_11_3_3"></a>
+<div class="content-level-h4" contains="Brightness in a Changing Index" id="r3_11_3_3">
+<h4>3.11.3.3 Brightness in a Changing Index</h4>
+<p>Absorption, emission and scattering integrate along the chords. Radiance scales with the square of the index relative to the interior's ior, so the scaling cancels when both the camera and the source sit outside refracting media, while emitting media in a raised index appear dimmer. Media <code>emission</code> is radiance in the units of the local index: an emission of 0.1 where the index is 1.5 above an ior of 1 looks like an emission of 0.1 / 1.5&sup2; would in an object of ior 1.5 without media refraction.</p></div>
+
+<a name="r3_11_4"></a>
+<div class="content-level-h3" contains="Prepared Fields" id="r3_11_4">
+<h3>3.11.4 Prepared Fields</h3>
+<p>Media method 4, the default from <code>#version 4.0;</code>, evaluates the density once over a grid covering the bounding box of the container and reuses it. The one grid serves three jobs: camera rays and media shadowing (see <a href="r3_7.html#r3_7_2_3">Sampling Parameters &amp; Methods</a>), the index and its gradient for <a href="r3_11.html#r3_11_3">refraction</a>, and the table that makes a medium a <a href="r3_12.html#r3_12_3">volume light</a>.</p>
+<pre>
+media { method 4  resolution 0.1  scattering { 1, rgb 1 }  density { bozo } }
+</pre>
+<ul>
+  <li><code>resolution</code> is the cell width in scene units, a finite number above 0, and is an error unless the method is 4. Omitted, the width is the larger of the container's longest bounding-box side divided by 128 and the cube root of the bounding-box volume divided by 500000.</li>
+  <li>Each cell holds the mean of the density at eight points spread through it, and lookups interpolate between cell centres. Detail smaller than a cell can be missed; lower <code>resolution</code> to keep it.</li>
+  <li>A grid is limited to 1000000 cells. A larger one is not coarsened: the medium falls back to classic sampling with a warning that names the width that would fit. A medium light is the exception; it builds its table on coarser cells (see <a href="r3_12.html#r3_12_3">Volume Lights</a>).</li>
+  <li>The container must be finite and bounded. The density values must be finite and not negative.</li>
+  <li>Block patterns (<code>checker</code>, <code>brick</code>, <code>hexagon</code>, <code>cubic</code>, <code>square</code>, <code>triangular</code>, <code>object</code>), <code>average</code>, <code>uv_mapping</code> and image patterns cannot be prepared. A medium that uses one keeps classic sampling, with a warning.</li>
+  <li>Photon propagation through media uses classic sampling.</li>
+</ul>
+<p>The complete list of fallbacks, the optical-depth cache for parallel lights and the step limits are in <a href="r3_7.html#r3_7_2_3">Sampling Parameters &amp; Methods</a>. For a refracting field, a function density with fine detail, such as a function of distance that rises steeply near its centre, is best left to <code>method 3</code>, which evaluates the pattern directly; the samples that follow use it.</p></div>
+
+<a name="r3_11_5"></a>
+<div class="content-level-h3" contains="Worked Examples" id="r3_11_5">
+<h3>3.11.5 Worked Examples</h3>
+<p>All of these are in <code>scenes/interior/media</code> and take the options named in their first comment lines with <code>Declare=</code>.</p></div>
+
+<a name="r3_11_5_1"></a>
+<div class="content-level-h4" contains="Heat Shimmer" id="r3_11_5_1">
+<h4>3.11.5.1 Heat Shimmer</h4>
+<p><code>refraction_shimmer.pov</code> lays a long box of hot air over a runway. Hot air is thinner, so the coefficient is negative. Two densities multiply: a function that is 1 inside the box and fades to 0 at its ends, sides and top, so that the box is invisible, and turbulence that makes the air wobble the distant marker board. The box has no <code>ior</code>, so it takes no part in refraction of its own.</p>
+<pre>
+box {
+  &lt;-6, -0.5, 1&gt;, &lt;6, 3, 58&gt;
+  pigment { rgbt 1 }
+  interior {
+    media {
+      method 3
+      refraction -0.00006
+      density {
+        function { max(0, min(min(1, (z - 1) / 4), min((58 - z) / 4, (6 - abs(x)) / 2)) * max(0, 1 - y / 2.6)) }
+      }
+      density { bozo turbulence 0.6 octaves 3 lambda 2.2 scale &lt;1.1, 0.3, 2.5&gt; color_map { [0 rgb 0.2] [1 rgb 1.8] } }
+    }
+  }
+}
+</pre>
+<p><code>refraction_mirage.pov</code> does the same with air that is thinnest at the ground and a camera standing inside the field, so grazing views curve up and the road shows the sky; it sets <code>refraction_angle 1</code>. <code>refraction_plume.pov</code> puts a sheath of hot gas with negative refraction around an emitting exhaust core.</p></div>
+
+<a name="r3_11_5_2"></a>
+<div class="content-level-h4" contains="Steam: One Density, Two Media" id="r3_11_5_2">
+<h4>3.11.5.2 Steam: One Density, Two Media</h4>
+<p><code>refraction_steam.pov</code> declares the steam as a density and uses it twice in the interior of a cylinder: a scattering medium for the vapour you see and a refraction-only medium for the thin hot air that carries it, so the tiles behind waver where the steam rises.</p>
+<pre>
+interior {
+  media { mix add method 3 intervals 1 samples 12 scattering { 4, rgb 3 } absorption 0.2 density { Steam } }
+  media { method 3 refraction -0.03 density { Steam } }
+}
+</pre>
+<p><code>refraction_lens.pov</code> is a flat glass disc whose dissolved concentration raises its index towards the axis, a gradient-index lens: the disc has an <code>ior</code>, and the media add to it. <code>refraction_portal.pov</code> rings a portal with a torus of refracting media that is densest at the rim and fades to nothing at the torus surface.</p></div>
+
+<a name="r3_11_5_3"></a>
+<div class="content-level-h4" contains="A Black Hole" id="r3_11_5_3">
+<h4>3.11.5.3 A Black Hole</h4>
+<p><code>refraction_blackhole.pov</code> lenses the stars and a glowing disk with the index of a Schwarzschild field, n(r) = (1 + rs/4r)<sup>3</sup> / (1 &minus; rs/4r), and nothing else. The density is the index above the field's edge divided by a cap, <code>refraction</code> is the cap, so that <code>refraction</code> &times; density is the index to add, and the density is 1 inside the horizon so the index stays at the cap there. Rays that graze the hole bend by a large angle, so the scene sets a small <code>refraction_angle</code> (<code>Declare=Angle=A</code>).</p>
+<pre>
+sphere {
+  0, Reach
+  pigment { rgbt 1 }
+  interior {
+    media {
+      method 3
+      refraction Most
+      density {
+        function { select(sqrt(x * x + y * y + z * z) - RS * 0.26, 1,
+                          min(1, max(0, (Index(sqrt(x * x + y * y + z * z)) - Edge) / Most))) }
+      }
+    }
+  }
+}
+</pre></div>
+
+<a name="r3_11_5_4"></a>
+<div class="content-level-h4" contains="Carving and Scaling Fog" id="r3_11_5_4">
+<h4>3.11.5.4 Carving and Scaling Fog</h4>
+<p><code>blend_carve.pov</code> carves a turbulent cloud out of turbulent fog with <code>mix subtract</code>. The carving medium has the fog's own coefficients, so its density is the amount of fog taken away; the second density fades the carve out towards the sphere's edge, so the hollow frays instead of cutting clean.</p>
+<pre>
+sphere {
+  0, 1 pigment { rgbt 1 }
+  interior {
+    media {
+      mix subtract
+      scattering { 1, rgb 0.14 }
+      absorption rgb &lt;0.01, 0.015, 0.02&gt;
+      density { spherical turbulence 0.55 octaves 5 lambda 2.4 omega 0.6 color_map { [0 rgb 0] [0.25 rgb 0.6] [0.5 rgb 1.6] [1 rgb 2.5] } }
+      density { spherical color_map { [0 rgb 0] [0.35 rgb 1] [1 rgb 1] } }
+    }
+  }
+  scale &lt;2.8, 1.9, 2.6&gt; translate &lt;0.2, 2.4, 1&gt;
+}
+</pre>
+<p><code>blend_streaks.pov</code> lays a <code>mix multiply</code> box over uniform fog in the same bounds. Its density, a turbulent wood pattern, scales the fog beneath it, thinning it to 0.02 of its density in streaks and thickening it to 3 times between them.</p>
+<pre>
+box {
+  &lt;-12, 0, -10&gt;, &lt;12, 9, 14&gt; pigment { rgbt 1 }
+  interior {
+    media {
+      mix multiply
+      density { wood turbulence 0.35 octaves 4 rotate x * 90 rotate z * 20 scale 2.5 color_map { [0 rgb 0.02] [0.4 rgb 0.15] [0.6 rgb 1.6] [1 rgb 3] } }
+    }
+  }
+}
+</pre>
+<p><code>blend_lightning.pov</code> adds a bolt and its glow to a cloud and tints the grey cloud blue with a multiply volume; <code>blend_slime.pov</code> stacks all four mixes in one gelatinous cube.</p></div>
+
+<a name="r3_11_6"></a>
+<div class="content-level-h3" contains="Defaults and Messages" id="r3_11_6">
+<h3>3.11.6 Defaults and Messages</h3>
+<p>Media defaults that matter to volumes:</p>
+<pre>
+density     : none (a constant density of 1)
+refraction  : 0.0
+mix         : see Media Mix
+priority    : 0
+method      : 3 from version 3.5, 4 from version 4.0 (1 before 3.5)
+resolution  : automatic (method 4 only)
+</pre>
+<p>Global settings that act on volumes: <a href="r3_4.html#r3_4_1_13">refraction_angle</a> (0.5), and <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a> (1.00029 from <code>#version 4.0;</code>, otherwise 1), which is the index outside every object.</p>
+<p>Warnings, each given once (a prepared field that fails is reported once per field):</p>
+<table width="100%" class="option-list">
+<tr><td><code>Media refraction changes by N across a surface at ...</code></td><td>A refracting density is cut off at a surface with the same ior on both sides. Fade the density to zero at the container.</td></tr>
+<tr><td><code>A ray bending through media refraction was stopped after 20000 steps ...</code></td><td>The ray is trapped and returns black. Raise <code>refraction_angle</code>.</td></tr>
+<tr><td><code>Media refraction takes the index to N at ...; it is held at 0.01.</code></td><td>A negative <code>refraction</code> is too strong for the ior. Use a smaller coefficient or a higher <code>ior</code>.</td></tr>
+<tr><td><code>Atmospheric media do not refract; 'refraction' works in the media of an object's interior.</code></td><td><code>refraction</code> in a scene-level <code>media</code>.</td></tr>
+<tr><td><code>Media method 4 is using classic sampling: ...</code></td><td>A prepared field was not possible; the message gives the reason, the resolution and the container bounds.</td></tr>
+</table>
+<p>Errors: <code>media refraction must be finite.</code>, <code>media resolution needs a finite positive scene-unit width.</code>, <code>media resolution requires method 4.</code> and <code>media priority must be an integer.</code></p></div>
+
+</div>
+
+</div>
+</body>
+</html>
