@@ -2453,12 +2453,17 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
             return;
         MathColour sum;
         auto* state = threadData->progressivePixel;
-        double radius = map.RadiusAt(IPoint, Object);
-        if (state)
-        {
-            if (!(state->baseRadius > 0.0f))
-                state->baseRadius = state->radius = float(radius);
+        double radius;
+        if (state && state->baseRadius > 0.0f)
             radius = state->radius;
+        else
+        {
+            radius = map.RadiusAt(IPoint, Object);
+            if (state)
+            {
+                state->Initialize(radius, threadData->progressivePass);
+                radius = state->radius;
+            }
         }
         const double derivative = state ? 2.0 * state->baseRadius * std::pow(double(threadData->progressivePass + 1), -0.125) : radius;
         const double support = state ? std::max(radius, 2.0 * derivative) : radius;

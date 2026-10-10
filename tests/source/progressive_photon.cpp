@@ -20,6 +20,9 @@ int main()
     SppmEstimate empty;
     empty.Add(0, 0);
     assert(empty.radius == 1 && empty.count == 0 && empty.Evaluate(100) == 0);
+    pov::ProgressivePhotonState late;
+    late.Initialize(0.5 * ProgressivePhotonBudget::RadiusScale(100, 2), 100);
+    assert(std::abs(late.baseRadius - 0.5) < 1.0e-6);
     pov::ProgressivePhotonState dim, bright;
     dim.baseRadius = dim.radius = bright.baseRadius = bright.radius = 1.0f;
     for (unsigned int pass = 0; pass < 4096; ++pass)

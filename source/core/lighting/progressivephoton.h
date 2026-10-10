@@ -63,6 +63,12 @@ struct ProgressivePhotonState final
     float baseRadius = 0.0f, radius = 0.0f;
     float mean = 0.0f, noise = 0.0f, laplacian = 0.0f, density = 0.0f;
 
+    void Initialize(double support, unsigned int pass)
+    {
+        baseRadius = float(support / ProgressivePhotonBudget::RadiusScale(pass, 2));
+        radius = float(support);
+    }
+
     void Update(unsigned int pass, double value, double varianceCoefficient, double curvature, double photonDensity)
     {
         if (!(baseRadius > 0.0f))
