@@ -277,3 +277,54 @@ An operator spliced into a conditional parses as a unary item
         (unary_expression
           (number)))
       (number))))
+
+================================================================================
+Reserved words after a dictionary period and scope indexes
+================================================================================
+
+#declare D = dictionary { .size: 2, .pigment: 1, .global: 3, .x: 4 }
+#declare D.scale = D.size + D.pigment.local;
+#declare local["K"] = global["Name"] + local.tags;
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (dictionary_expression
+      (dictionary_entry
+        (identifier)
+        (number))
+      (dictionary_entry
+        (identifier)
+        (number))
+      (dictionary_entry
+        (identifier)
+        (number))
+      (dictionary_entry
+        (identifier)
+        (number))))
+  (declare_directive
+    (member_expression
+      (identifier)
+      (identifier))
+    (binary_expression
+      (member_expression
+        (identifier)
+        (identifier))
+      (member_expression
+        (member_expression
+          (identifier)
+          (identifier))
+        (identifier))))
+  (declare_directive
+    (index_expression
+      (identifier)
+      (string))
+    (binary_expression
+      (index_expression
+        (identifier)
+        (string))
+      (member_expression
+        (identifier)
+        (identifier)))))
