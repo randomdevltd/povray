@@ -23,11 +23,6 @@ plane { z, 4 pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 tran
 // Sine of 0.2 mm period: structure far below any detail the tests set.
 #declare Sine = function(x, y, z) { (0.5 + 0.5 * sin(x / 0.0005 * pi / 2)) * Fade(x, y, z) }
 #declare Mean = function(x, y, z) { 0.5 * Fade(x, y, z) }
-#declare Structure = function(x, y, z) {
-  (Case = 5 | Case = 6 ? Ramp(x, y, z) :
-   Case = 7 | Case = 9 ? Sine(x, y, z) :
-   Case = 8 ? Mean(x, y, z) : Seams(x, y, z))
-}
 #declare Coefficient = (Case = 5 | Case = 6 ? 0.07 : Case = 7 | Case = 8 | Case = 9 ? 0.005 : 0.00025);
 
 box {
@@ -40,7 +35,15 @@ box {
       #if (Case = 11) resolution 0.05 #end
       #if (Case = 3 & Detail > 0) refraction_detail Detail #end
       refraction Coefficient
-      density { function { Structure(x, y, z) } }
+      #if (Case = 5 | Case = 6)
+        density { function { Ramp(x, y, z) } }
+      #elseif (Case = 7 | Case = 9)
+        density { function { Sine(x, y, z) } }
+      #elseif (Case = 8)
+        density { function { Mean(x, y, z) } }
+      #else
+        density { function { Seams(x, y, z) } }
+      #end
     }
   }
 }
