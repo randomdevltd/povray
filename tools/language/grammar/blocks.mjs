@@ -13,11 +13,17 @@ const parserDir = join(here, '../../../source/parser');
 // Block word -> functions whose expect-loops define the legal items. A block only gets a
 // schema when every listed function is found; anything absent is skipped (checked unchecked).
 // Plain shape keywords share the object-modifier loop; CSG words also nest child objects.
-const SHAPE_BLOCKS = ['bicubic_patch', 'blob', 'box', 'cone', 'cubic', 'cylinder', 'disc', 'height_field',
-    'isosurface', 'isosurface_mesh', 'julia_fractal', 'lathe', 'lemon', 'mesh', 'mesh2', 'ovus', 'parametric',
-    'plane', 'poly', 'polygon', 'polynomial', 'portal', 'prism', 'quadric', 'quartic', 'skein', 'skein_mesh',
-    'smooth_triangle', 'sor', 'sphere', 'sphere_sweep', 'superellipsoid', 'text', 'torus', 'triangle'];
+const SHAPE_BLOCKS = ['bicubic_patch', 'box', 'cone', 'cubic', 'cylinder', 'disc', 'height_field',
+    'isosurface_mesh', 'lemon', 'mesh', 'ovus', 'parametric', 'plane', 'poly', 'polygon',
+    'polynomial', 'prism', 'quadric', 'quartic', 'smooth_triangle', 'sor', 'sphere',
+    'superellipsoid', 'text', 'torus', 'triangle'];
 const CSG_BLOCKS = ['composite', 'difference', 'intersection', 'light_group', 'merge', 'union'];
+const WITH_OWN_ITEMS = {
+    sphere_sweep: 'Parse_Sphere_Sweep', lathe: 'Parse_Lathe', prism: 'Parse_Prism', blob: 'Parse_Blob',
+    mesh: 'Parse_Mesh1', mesh2: 'Parse_Mesh2', parametric: 'Parse_Parametric',
+    bicubic_patch: 'Parse_Bicubic_Patch', julia_fractal: 'Parse_Julia_Fractal', isosurface: 'Parse_Isosurface_Body',
+    isosurface_mesh: 'Parse_Isosurface_Body', portal: 'Parse_Portal', ovus: 'Parse_Ovus',
+};
 const CURATION = {
     finish: ['Parse_Finish'],
     texture: ['Parse_Texture'],
@@ -33,6 +39,7 @@ const CURATION = {
     light_source: ['Parse_Light_Source', 'Parse_Object_Mods'],
     ...Object.fromEntries(SHAPE_BLOCKS.map((w) => [w, ['Parse_Object_Mods']])),
     ...Object.fromEntries(CSG_BLOCKS.map((w) => [w, ['Parse_Object', 'Parse_Object_Mods']])),
+    ...Object.fromEntries(Object.entries(WITH_OWN_ITEMS).map(([w, fn]) => [w, [fn, 'Parse_Object_Mods']])),
 };
 
 // Nested rows emitted into pov4schema.h: only genuine sub-blocks, not value positions.
