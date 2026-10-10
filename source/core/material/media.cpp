@@ -1113,8 +1113,14 @@ void MediaFunction::ComputeMedia(const RayInteriorVector& mediasource, const Ray
         // a media light's shadow rays skip media that only glow, so uniform media around them stay closed-form
         const LightSource *light = ray.GetMediaLight();
         if (ray.IsShadowTestRay() && (light != nullptr) && (light->emitter != nullptr) && mods.empty())
-            for (MediaVector::iterator i = medialist.begin(); i != medialist.end(); )
-                i = (*i)->use_extinction ? i + 1 : medialist.erase(i);
+        {
+            size_t kept = 0;
+            for (size_t k = 0; k < medialist.size(); k++)
+                if (medialist[k]->use_extinction)
+                    medialist[kept++] = medialist[k];
+            while (medialist.size() > kept)
+                medialist.pop_back();
+        }
 
         // Note: this version of ComputeMedia does not deposit photons. This is
         // intentional.  Even though we're processing a photon ray, we don't want
