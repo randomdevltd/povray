@@ -101,6 +101,12 @@ region thin_slab none 0 95 0 71
 render far_ball Declare=Case=28 Declare=Far=1e6
 render near_ball Declare=Case=28
 region far_ball near_ball 0 95 0 71
+render uv_inside Declare=Case=29
+for pair in 30:31:clear_wall 32:33:polygon_wall; do
+    render ${pair##*:} Declare=Case=${pair%%:*}
+    render ${pair##*:}_inset Declare=Case=$(echo $pair | cut -d: -f2)
+    region ${pair##*:} ${pair##*:}_inset 0 95 0 71
+done
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71

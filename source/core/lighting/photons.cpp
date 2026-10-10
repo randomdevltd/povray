@@ -215,7 +215,6 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
-    PreferOpaqueCoincident(ray, bestisect, weight);
     if ((bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
     {
         ColourChannel transm = 0.0;
