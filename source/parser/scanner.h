@@ -232,7 +232,11 @@ public:
     ColdBookmark GetColdBookmark() const;
 
     /// Get the state for a later @ref GetHotBookmark(const State&).
-    State GetState() const { return State{ mCurrentPosition, mpCharacterEncoding, mNominalEndOfLine, mAllowNestedBlockComments }; }
+    State GetState() const
+    {
+        return State{ mCurrentPosition, mpCharacterEncoding, mNominalEndOfLine,
+                      mAllowNestedBlockComments };
+    }
 
     /// Bookmark a state taken earlier in the current stream.
     HotBookmark GetHotBookmark(const State& state);

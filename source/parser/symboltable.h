@@ -135,7 +135,7 @@ public:
 private:
 
     SYM_ENTRY* mapHashTable[SYM_TABLE_SIZE];
-    std::uint64_t mUsedBuckets[(SYM_TABLE_SIZE + 63) / 64];   ///< Buckets that have held an entry, so destruction skips the rest.
+    std::uint64_t mUsedBuckets[(SYM_TABLE_SIZE + 63) / 64];   ///< Buckets that ever held an entry.
 
     void MarkUsed(int i) { mUsedBuckets[i / 64] |= std::uint64_t(1) << (i % 64); }
 };

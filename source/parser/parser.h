@@ -299,7 +299,8 @@ class Parser final
             {
                 mTrueTokenId        = rawToken.GetTokenId();
                 mCategorizedTokenId = rawToken.expressionId;
-                POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId == pov_parser::GetCategorizedTokenId(mTrueTokenId));
+                POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId ==
+                                        pov_parser::GetCategorizedTokenId(mTrueTokenId));
             }
             void SetTokenId(TokenId tokenId)
             {
@@ -313,7 +314,8 @@ class Parser final
             /// Token category if applicable, otherwise equal to @ref mTrueTokenId.
             TokenId GetCategorizedTokenId() const
             {
-                POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId == pov_parser::GetCategorizedTokenId(mTrueTokenId));
+                POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId ==
+                                        pov_parser::GetCategorizedTokenId(mTrueTokenId));
                 return mCategorizedTokenId;
             }
 
@@ -394,6 +396,7 @@ class Parser final
             std::shared_ptr<RawTokenizer>           inTokenizer;
             RawToken                                inToken;
             std::shared_ptr<pov_base::OTextStream>  Out_File;
+            UCS2String                              includePath; ///< Path `#include` finds.
             bool inUngetToken   : 1;
             bool busyParsing    : 1; ///< `true` if parsing a statement related to the file, `false` otherwise.
 
@@ -775,7 +778,6 @@ class Parser final
             COND_TYPE Cond_Type;
             DBL Switch_Value;
             RawTokenizer::HotBookmark returnToBookmark;
-            bool Macro_Same_Flag;
             bool Switch_Case_Ok_Flag;
             Macro *PMac;
             UTF8String Loop_Identifier;

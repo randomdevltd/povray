@@ -1320,7 +1320,8 @@ Scanner::HotBookmark Scanner::GetHotBookmark()
 
 Scanner::HotBookmark Scanner::GetHotBookmark(const State& state)
 {
-    return HotBookmark(mSource.GetInputStream(), state.position, state.characterEncoding, state.nominalEndOfLine, state.allowNestedBlockComments);
+    return HotBookmark(mSource.GetInputStream(), state.position, state.characterEncoding,
+                       state.nominalEndOfLine, state.allowNestedBlockComments);
 }
 
 Scanner::ColdBookmark Scanner::GetColdBookmark() const
