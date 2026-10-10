@@ -79,7 +79,7 @@ class Emitter
 
 struct MediaLight final ///< the `light_source { }` block of an emitting medium
 {
-    int samples = 16;
+    int samples = 32;
     double brightness = 1.0;
     double fadeDistance = 0.0, fadePower = 0.0;
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;

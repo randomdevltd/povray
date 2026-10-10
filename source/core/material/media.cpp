@@ -737,6 +737,31 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
     }
     emitter->centre /= total;
     emitter->nearDistance = 0.5 * cell.length();
+    // Z-order keeps an equal-power stratum of the table compact in space, so stratified draws spread in 3D.
+    vector<std::pair<std::uint64_t, size_t>> order(power.size());
+    for (size_t i = 0; i < order.size(); i++)
+    {
+        const std::uint32_t index = emitter->cells[i];
+        const std::uint64_t at[3] = { index % std::uint32_t(n[X]), (index / n[X]) % std::uint32_t(n[Y]), index / (std::uint32_t(n[X]) * n[Y]) };
+        std::uint64_t code = 0;
+        for (int bit = 0; bit < 21; bit++)
+            for (int axis = 0; axis < 3; axis++)
+                code |= ((at[axis] >> bit) & 1) << (3 * bit + axis);
+        order[i] = std::make_pair(code, i);
+    }
+    std::sort(order.begin(), order.end());
+    vector<std::uint32_t> cells(order.size());
+    vector<MathColour> weights(order.size());
+    vector<double> sorted(order.size());
+    for (size_t i = 0; i < order.size(); i++)
+    {
+        cells[i] = emitter->cells[order[i].second];
+        weights[i] = emitter->weights[order[i].second];
+        sorted[i] = power[order[i].second];
+    }
+    emitter->cells.swap(cells);
+    emitter->weights.swap(weights);
+    power.swap(sorted);
     emitter->cdf.resize(power.size());
     double sum = 0.0;
     for (size_t i = 0; i < power.size(); i++)
@@ -1082,6 +1107,11 @@ void MediaFunction::ComputeMedia(const RayInteriorVector& mediasource, const Ray
         MediaVector medialist;
         MediaModifierVector mods;
         CollectInteriorMedia(mediasource, medialist, threadData->GetSceneData()->mediaBlendModes ? &mods : nullptr);
+        // a media light's shadow rays skip media that only glow, so uniform media around them stay closed-form
+        const LightSource *light = ray.GetMediaLight();
+        if (ray.IsShadowTestRay() && (light != nullptr) && (light->emitter != nullptr) && mods.empty())
+            for (MediaVector::iterator i = medialist.begin(); i != medialist.end(); )
+                i = (*i)->use_extinction ? i + 1 : medialist.erase(i);
 
         // Note: this version of ComputeMedia does not deposit photons. This is
         // intentional.  Even though we're processing a photon ray, we don't want
@@ -2492,7 +2522,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
                 {
                     if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
                         lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
-                    const int points = lights[i].light->Area_Light ? kMediaAreaLightPoints : 1;
+                    const int points = (lights[i].light->Area_Light && (lights[i].light->emitter == nullptr)) ? kMediaAreaLightPoints : 1;
                     MathColour Lit_Colour;
                     for(int j = 0; j < points; j++)
                     {

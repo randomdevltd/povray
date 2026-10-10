@@ -3329,9 +3329,9 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
 
     if(lightsource.emitter != nullptr)
     {
-        // Every stratum of the emitter's power is tested once; the result is the fraction of its light that arrives.
+        // One draw in each of the emitter's equal-power strata; the result is the fraction of its light that arrives.
         MathColour arrived, sent;
-        double first = 0.0;
+        double low = HUGE_VAL, high = -HUGE_VAL;
         for(int k = 0; k < lightsource.Area_Size1; k++)
         {
             MathColour weight;
@@ -3345,12 +3345,13 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
             sent += sample;
             TraceEmitterSampleShadowRay(lightsource, depth, lsr, sample, offset);
             lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
-            const double seen = (unshadowed > 0.0) ? sample.Weight() / unshadowed : 0.0;
-            if((k > 0) && (fabs(seen - first) > EPSILON))
-                MarkGrain();
-            first = (k == 0) ? seen : first;
             arrived += sample;
+            const double seen = (unshadowed > 0.0) ? sample.Weight() / unshadowed : 0.0;
+            low = min(low, seen);
+            high = max(high, seen);
         }
+        if(high - low > EPSILON)
+            MarkGrain();
         for(int ch = 0; ch < MathColour::channels; ch++)
             lightcolour[ch] = (sent[ch] > 0.0) ? lightcolour[ch] * arrived[ch] / sent[ch] : 0.0;
         return;
