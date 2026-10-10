@@ -153,7 +153,7 @@ The analytic prototype and the render test are included in `make check`.
 On the focused 96 by 64 glass-sphere caustic, method 2 quality 1 used 3.10 billion
 instructions and had linear-light mean squared error `7.52e-6` against a
 32-times supersampled classic reference. Classic count 16,384 with `+AM4` used
-6.41 billion instructions and measured `8.71e-6` on the same scene. Quality 4
+5.72 billion instructions and measured `8.71e-6` on the same scene. Quality 4
 used 10.50 billion instructions and measured `4.00e-7`; the earlier small-map
 schedule used 18.58 billion instructions and measured `7.46e-7`. Quality 16
 measured `2.06e-7`, with mean energy 1.1% lower than the reference. The reference
