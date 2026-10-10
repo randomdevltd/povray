@@ -84,6 +84,7 @@ def main():
     parser.add_argument('reference')
     parser.add_argument('candidates', nargs='+')
     parser.add_argument('--size', nargs=2, type=int, metavar=('WIDTH', 'HEIGHT'))
+    parser.add_argument('--rect', nargs=4, type=int, metavar=('X0', 'Y0', 'X1', 'Y1'))
     args = parser.parse_args()
     reference = pixels(args.reference)
     reduced = {}
@@ -95,6 +96,13 @@ def main():
         if (width, height) not in reduced:
             reduced[width, height] = reduce_reference(reference, width, height)
         expected = reduced[width, height]
+        if args.rect:
+            x0, y0, x1, y1 = args.rect
+            if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
+                raise ValueError('rectangle must lie inside the compared image')
+            indices = [3 * (y * width + x) + c for y in range(y0, y1) for x in range(x0, x1) for c in range(3)]
+            values = [values[i] for i in indices]
+            expected = [expected[i] for i in indices]
         mse = sum((a - b) ** 2 for a, b in zip(values, expected)) / len(values)
         mean = sum(values) / len(values)
         reference_mean = sum(expected) / len(expected)

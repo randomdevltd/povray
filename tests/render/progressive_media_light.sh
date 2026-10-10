@@ -35,5 +35,6 @@ render hot_lens Declare=LensIor=1.5 Declare=Heat=0.1 +wt2
 ! cmp -s progressive_media_lens.px progressive_media_hot_lens.px
 render many Declare=Emitters=16 +wt2
 near "$(mean many)" "$(mean volume)" 0.08
+printf 'progressive_media_light means: photons=%s direct=%s point=%s\n' "$(mean volume)" "$(mean direct)" "$(mean point)"
 rm -f progressive_media_*.ppm progressive_media_*.px progressive_media_*.log
 echo 'progressive_media_light: emission weights, direct agreement, source controls, self-attenuation, heat and multiple emitters passed'
