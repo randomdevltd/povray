@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Generates keywords.json, the classic reserved words with their expression category, for both grammars.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
