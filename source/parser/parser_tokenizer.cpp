@@ -461,7 +461,9 @@ void Parser::Read_Symbol(const RawToken& rawToken)
         else
         {
             /* See if it's a previously declared identifier. */
-            Temp_Entry = mSymbolStack.Find_Symbol(rawToken.lexeme.text.c_str(), &Local_Index);
+            Temp_Entry = (rawToken.lexeme.category == Lexeme::kWord)
+                ? mSymbolStack.Find_Symbol(rawToken.lexeme.text.c_str(), rawToken.symbolHash, &Local_Index)
+                : mSymbolStack.Find_Symbol(rawToken.lexeme.text.c_str(), &Local_Index);
             if (Temp_Entry != nullptr)
             {
                 if (Temp_Entry->deprecated && !Temp_Entry->deprecatedShown)
@@ -694,7 +696,10 @@ void Parser::Read_Symbol(const RawToken& rawToken)
                 mToken.Data = *(mToken.DataPtr);
             mToken.context = Local_Index;
             if (dictIndex != nullptr)
+            {
                 mToken.raw.lexeme.text = dictIndex;
+                mToken.raw.symbolHash = SymbolTable::get_hash_value(dictIndex);
+            }
             return;
         }
     }

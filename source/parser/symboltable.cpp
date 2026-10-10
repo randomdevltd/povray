@@ -600,8 +600,12 @@ SYM_ENTRY* SymbolStack::Find_Symbol(int index, const char* name)
 
 SYM_ENTRY* SymbolStack::Find_Symbol(const char* name, int* pIndex)
 {
+    return Find_Symbol(name, SymbolTable::get_hash_value(name), pIndex);
+}
+
+SYM_ENTRY* SymbolStack::Find_Symbol(const char* name, int hash, int* pIndex)
+{
     SYM_ENTRY *entry;
-    int hash = SymbolTable::get_hash_value(name);
     for (int index = Table_Index; index >= SYM_TABLE_GLOBAL; --index)
     {
         entry = Tables[index]->Find_Symbol(name, hash);
