@@ -344,6 +344,28 @@ void Parser::Run()
                 sceneData->lightGroupLightSources[i]->lightGroupLight = true;
             }
 
+            if (sceneData->photonSettings.method == 2)
+                for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
+                    for (LightSource* light : *lights)
+                    {
+                        if (light->Orient || light->Projected_Through_Object)
+                            Error("Photon method 2 does not support orient or projected_through lights.");
+                        if (light->Parallel)
+                        {
+                            if (light->Fade_Power != 0.0)
+                                Error("Parallel photon emitters require fade_power 0.");
+                        }
+                        else if (!light->emitter)
+                        {
+                            if (light->Fade_Power == 0.0)
+                                light->Fade_Power = 2.0;
+                            else if (light->Fade_Power != 2.0)
+                                Error("Photon method 2 requires inverse-square light power (fade_power 0 or 2).");
+                            else if (light->Fade_Distance > EPSILON)
+                                light->colour *= 2.0 * light->Fade_Distance * light->Fade_Distance;
+                            light->Fade_Distance = 0.0;
+                        }
+                    }
             Make_Portal_Lights();
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
@@ -7638,13 +7660,27 @@ void Parser::Parse_Global_Settings()
             //  sceneData->photonSettings.photonReflectionBlur = false; // off by default
 
             sceneData->photonSettings.surfaceCount = 0;
+            sceneData->photonSettings.method = 1;
+            sceneData->photonSettings.quality = 1.0;
+            sceneData->photonSettings.classicOptions = false;
+            sceneData->photonSettings.qualitySpecified = false;
             //  sceneData->photonSettings.globalCount = 0;
 
             sceneData->surfacePhotonMinGatherRad = -1;
 
             Parse_Begin();
             EXPECT
+                CASE(METHOD_TOKEN)
+                    {
+                        const double method = Parse_Float();
+                        if (method != 1.0 && method != 2.0)
+                            Error("Photon method must be 1 (classic) or 2 (progressive).");
+                        sceneData->photonSettings.method = int(method);
+                    }
+                END_CASE
+
                 CASE(RADIUS_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->surfacePhotonMinGatherRad = Allow_Float(-1.0);
                     Parse_Comma();
                     sceneData->surfacePhotonMinGatherRadMult = Allow_Float(1.0);
@@ -7655,6 +7691,7 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 CASE(SPACING_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.surfaceSeparation = Parse_Float();
                 END_CASE
 
@@ -7666,6 +7703,7 @@ void Parser::Parse_Global_Settings()
 #endif
 
                 CASE (EXPAND_THRESHOLDS_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.expandTolerance = Parse_Float(); Parse_Comma();
                     sceneData->photonSettings.minExpandCount = Parse_Float();
                     if (sceneData->photonSettings.expandTolerance < 0.0)
@@ -7681,20 +7719,24 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 CASE (GATHER_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.minGatherCount = (int)Parse_Float();
                     Parse_Comma();
                     sceneData->photonSettings.maxGatherCount = (int)Parse_Float();
                 END_CASE
 
                 CASE (JITTER_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.jitter = Parse_Float();
                 END_CASE
 
                 CASE (COUNT_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.surfaceCount = (int)Parse_Float();
                 END_CASE
 
                 CASE (AUTOSTOP_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.autoStopPercent = Parse_Float();
                 END_CASE
 
@@ -7741,12 +7783,27 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 OTHERWISE
-                    UNGET
-                    EXIT
+                    if (CurrentTokenText() == "quality")
+                    {
+                        const double quality = Parse_Float();
+                        if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
+                            Error("Photon quality must be finite, greater than zero and at most 256.");
+                        sceneData->photonSettings.quality = quality;
+                        sceneData->photonSettings.qualitySpecified = true;
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
                 END_CASE
             END_EXPECT
 
             // max_gather_count = 0  means no photon maps
+            if (sceneData->photonSettings.method == 2 && sceneData->photonSettings.classicOptions)
+                Error("Photon method 2 uses quality instead of count, spacing, gather, radius, jitter, autostop or expand_thresholds.");
+            if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.qualitySpecified)
+                Error("Photon quality requires method 2.");
             if (sceneData->photonSettings.maxGatherCount > 0)
                 sceneData->photonSettings.photonsEnabled = true;
             else

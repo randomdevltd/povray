@@ -67,7 +67,8 @@ class PhotonShootingTask final : public RenderTask
 
         Timer timer;
 
-        PhotonShootingTask(ViewData *vd, PhotonShootingStrategy* strategy, size_t seed);
+        PhotonShootingTask(ViewData *vd, PhotonShootingStrategy* strategy, size_t seed, int pass = -1, unsigned int shard = 0,
+                           unsigned int workers = 16);
         virtual ~PhotonShootingTask() override;
 
         virtual void Run() override;
@@ -77,6 +78,7 @@ class PhotonShootingTask final : public RenderTask
         void SendProgress();
 
         void ShootPhotonsAtObject(PhotonShootingUnit& unit);
+        void ShootProgressive(unsigned int pass, unsigned int shard);
         DBL computeAttenuation(const LightSource* Light, const Ray& ray, DBL dist_of_initial_from_center);
 
     private:
@@ -93,6 +95,9 @@ class PhotonShootingTask final : public RenderTask
 
         unsigned int maxTraceLevel;
         DBL adcBailout;
+        int progressivePass;
+        unsigned int progressiveShard;
+        unsigned int progressiveWorkers;
 };
 
 }
