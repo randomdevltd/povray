@@ -3894,6 +3894,10 @@ void Parser::Parse_Media_Light(Media& medium)
                 CASE (AREA_LIGHT_TOKEN)
                 END_CASE
 
+                CASE4 (TARGET_TOKEN, COLLECT_TOKEN, PASS_THROUGH_TOKEN, SPLIT_UNION_TOKEN)
+                    Allow_Float(1.0);
+                END_CASE
+
                 OTHERWISE
                     UNGET
                     EXIT

@@ -620,8 +620,8 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
 
     if ((Light->emitter != nullptr) && (Light->Fade_Power <= 0.0))
     {
-        const DBL near = std::max(Distance, Light->emitter->NearDistance());
-        return Attenuation / (near * near);
+        const DBL clamped = std::max(Distance, Light->emitter->NearDistance());
+        return Attenuation / (clamped * clamped);
     }
 
     if (Attenuation > 0.0)

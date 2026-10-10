@@ -60,21 +60,18 @@ class Emitter
 {
     public:
         virtual ~Emitter() {}
-        /// Total radiant intensity: power over 4 pi for isotropic emission.
-        virtual const MathColour& Intensity() const = 0;
-        /// The power-weighted centre, where it is placed when sampled as a point.
-        virtual const Vector3d& Centre() const = 0;
+        virtual const MathColour& Intensity() const = 0;   ///< total radiant intensity: power over 4 pi
+        virtual const Vector3d& Centre() const = 0;        ///< power-weighted centre
+        virtual double Radius() const = 0;                 ///< about Centre(), holding every sample
+        virtual double NearDistance() const = 0;           ///< least distance lighting uses, so 1/r^2 stays finite
         /// A position drawn in proportion to emitted power: s in [0,1) picks the stratum, key the detail within it.
         virtual EmitterSample Sample(double s, std::uint64_t key) const = 0;
-        /// A direction leaving a sample from two uniform values, and its pdf per steradian (isotropic by default).
-        virtual Vector3d Direction(const EmitterSample&, double u, double v, double& pdf) const
+        virtual Vector3d Direction(const EmitterSample&, double u, double v, double& pdf) const ///< isotropic, pdf per steradian
         {
             const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z)), phi = 2.0 * M_PI * v;
             pdf = 1.0 / (4.0 * M_PI);
             return Vector3d(r * std::cos(phi), r * std::sin(phi), z);
         }
-        /// The least distance lighting puts between a sample and what it lights, so 1/r^2 stays finite.
-        virtual double NearDistance() const = 0;
 };
 
 struct MediaLight final ///< the `light_source { }` block of an emitting medium
