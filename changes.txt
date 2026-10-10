@@ -112,6 +112,12 @@ New Features
     the surface is shaded, and the `portal` object leads rays entering its body
     to somewhere else in the scene, with lights shining through it. Both are
     described in the "Portals and Screens" chapter of the reference.
+  - A new scene language, read from `.pov4` and `.inc4` files, replaces the `#`
+    directives with ordinary statements: functions, `let` bindings, loops,
+    arrays, dictionaries and lambdas, with the object syntax unchanged. Classic
+    scenes keep working as before, a 4.0 scene can include classic files and
+    call their macros, and a codemod converts classic scenes. It is described
+    in the "Scene Language 4.0" chapter of the reference.
 
 Performance Improvements
 ------------------------

@@ -1,0 +1,1027 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+<!--  This file copyright Persistence of Vision Raytracer Pty. Ltd. 2009-2011  -->
+
+<html lang="en">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<title>Reference Section 13</title>
+<link rel="StyleSheet" href="povray.css" type="text/css">
+<link rel="shortcut icon" href="favicon.ico">
+
+<!--  NOTE: In order to help users find information about POV-Ray using web      -->
+<!--  search engines, we ask that you *not* let them index documentation         -->
+<!--  mirrors because effectively, when searching, users will get hundreds of    -->
+<!--  results containing the same information! For this reason, these meta tags  -->
+<!--  below disable archiving of this page by search engines.                    -->
+
+<meta name="robots" content="noarchive">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+</head>
+<body>
+
+<div class="Page">
+
+<!-- NavPanel Begin -->
+<div class="NavPanel">
+<table class="NavTable">
+<tr>
+  <td class="FixedPanelHeading"><a title="3.13" href="#r3_13">Scene Language 4.0</a></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.13.1" href="#r3_13_1">Why a New Language</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.1" href="#r3_13_1_1">Two Languages in One File</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.2" href="#r3_13_1_2">Directives That Splice Partial Constructs</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.3" href="#r3_13_1_3">Building Tokens with Macros</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.4" href="#r3_13_1_4">Meaning That Depends on Runtime Values</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.5" href="#r3_13_1_5">Optional Commas and Signs</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.6" href="#r3_13_1_6">Operators</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.1.7" href="#r3_13_1_7">What Stays the Same</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.13.2" href="#r3_13_2">The 4.0 Language</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.1" href="#r3_13_2_1">Files and the Extension</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.2" href="#r3_13_2_2">The Execution Model</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.3" href="#r3_13_2_3">Functions as Components and Fragments</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.4" href="#r3_13_2_4">Bindings: let, Assignment and global</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.5" href="#r3_13_2_5">Control Flow</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.6" href="#r3_13_2_6">Expressions and Precedence</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.7" href="#r3_13_2_7">Arrays, Comprehensions and Dictionaries</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.8" href="#r3_13_2_8">Lambdas and the Conditional Operator</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.9" href="#r3_13_2_9">Blocks</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.10" href="#r3_13_2_10">Render-time Functions</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.11" href="#r3_13_2_11">Built-ins Added by 4.0</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.12" href="#r3_13_2_12">Mixing with Classic</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.13" href="#r3_13_2_13">Errors and Where They Are Reported</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.2.14" href="#r3_13_2_14">Limits and Testing Options</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.13.3" href="#r3_13_3">Converting Scenes with the Codemod</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.3.1" href="#r3_13_3_1">Running It</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.3.2" href="#r3_13_3_2">What It Rewrites</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.3.3" href="#r3_13_3_3">What It Refuses</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.3.4" href="#r3_13_3_4">Checking a Conversion</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.13.4" href="#r3_13_4">Migration Guide</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.4.1" href="#r3_13_4_1">Step 1: Convert</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.4.2" href="#r3_13_4_2">Step 2: Render at the Old Version and Compare</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.4.3" href="#r3_13_4_3">Step 3: Switch to the 4.0 Defaults and Fix the Look</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.4.4" href="#r3_13_4_4">Step 4: Tidy into Idiomatic 4.0</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh2"><strong><a title="3.13.5" href="#r3_13_5">When to Keep Classic Files</a></strong></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.5.1" href="#r3_13_5_1">Heavy Literal Data</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.5.2" href="#r3_13_5_2">The Standard Library and Third-party Includes</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.5.3" href="#r3_13_5_3">Includes the Codemod Refuses</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.5.4" href="#r3_13_5_4">Behavior That Only Classic Has</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh3"><a title="3.13.5.5" href="#r3_13_5_5">Classic Parsing Speed</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+<tr>
+  <td><div class="divh1">&nbsp;</div></td>
+</tr>
+</table>
+</div>
+<!-- NavPanel End -->
+
+<div class="Content">
+<table class="HeaderFooter" width="100%">
+<tr>
+  <td colspan=5 align="left" class="HeaderFooter">
+    POV-Ray for Unix <strong class="HeaderFooter">version 3.8</strong>
+  </td>
+</tr>
+<tr >
+  <td colspan=5>
+    <hr align="right" width="70%">
+  </td>
+</tr>
+<tr>
+  <td width="30%"></td>
+  <td class="NavBar"><a href="index.html" title="The Front Door">Home</a></td>
+  <td class="NavBar"><a href="u1_0.html" title="Unix Table of Contents">POV-Ray for Unix</a></td>
+  <td class="NavBar"><a href="t2_0.html" title="Tutorial Table of Contents">POV-Ray Tutorial</a></td>
+  <td class="NavBar"><a href="r3_0.html" title="Reference Table of Contents">POV-Ray Reference</a></td>
+</tr>
+</table>
+
+<a name="r3_13"></a>
+<div class="content-level-h2" contains="Scene Language 4.0" id="r3_13">
+<h2>3.13 Scene Language 4.0</h2>
+<p>POV-Ray reads two scene languages. The <em>classic</em> language is the one every earlier version reads: <code>.pov</code> and <code>.inc</code> files, with the <code>#</code> directives that run while the file is read. The <em>4.0</em> language is read from <code>.pov4</code> and <code>.inc4</code> files. It keeps the object syntax (<code>sphere { &lt;0, 1, 0&gt;, 1 texture { T } }</code> is valid in both) and replaces everything around it: declarations, macros, loops, conditions and includes become ordinary statements of a small programming language, with no <code>#</code> meta-language. Classic scenes keep working unchanged and nothing is removed from the classic language.</p>
+<p>This chapter explains why the 4.0 language exists, describes it, shows how to convert existing scenes with the codemod tool, walks through a migration, and says when a file is better left in classic.</p>
+<p class="Note"><strong>Note:</strong> A listing that begins with a <code>camera</code> and a <code>light_source</code> is a complete scene that renders as it stands. The other listings are parts of scenes, or whole scenes that leave the camera and light to the reader. Every 4.0 listing in this chapter parses with the 4.0 grammar. To keep them short, the complete scenes leave out <code>global_settings { assumed_gamma 1.0 }</code>, which POV-Ray asks every scene since version 3.7 to state, and warns about when it is missing; write it in your own scenes.</p>
+<p>Quick Links:</p>
+<ul>
+  <li><a href="r3_13.html#r3_13_1">Why a New Language</a></li>
+  <li><a href="r3_13.html#r3_13_2">The 4.0 Language</a></li>
+  <li><a href="r3_13.html#r3_13_3">Converting Scenes with the Codemod</a></li>
+  <li><a href="r3_13.html#r3_13_4">Migration Guide</a></li>
+  <li><a href="r3_13.html#r3_13_5">When to Keep Classic Files</a></li>
+</ul>
+</div>
+
+<a name="r3_13_1"></a>
+<div class="content-level-h3" contains="Why a New Language" id="r3_13_1">
+<h3>3.13.1 Why a New Language</h3>
+<p>This section states plainly what is wrong with the classic grammar, with small examples. Each one is valid classic and renders as it should; the trouble is what it costs to read, check and convert such text. None of it changes: classic scenes keep their <code>#version</code> defaults and keep rendering the way they always have.</p>
+</div>
+
+<a name="r3_13_1_1"></a>
+<div class="content-level-h4" contains="Two Languages in One File" id="r3_13_1_1">
+<h4>3.13.1.1 Two Languages in One File</h4>
+<p>A classic scene file holds two languages at once. One is the object language, <code>sphere { ... }</code>, <code>texture { ... }</code>, <code>translate x</code>. The other is the <code>#</code> meta-language: <code>#declare</code>, <code>#macro</code>, <code>#if</code>, <code>#while</code>, <code>#include</code>. The meta-language has its own statements, scoping rules and expression evaluator, it runs while the file is read, and a directive may stand between any two tokens of the object language. A classic file is therefore not a tree of blocks. It is a stream of text that the directives edit before the object parser sees it, and nothing can say what it means without running it.</p>
+<pre>
+#macro Row(N)
+  #local I = 0;
+  #while (I &lt; N)
+    sphere { &lt;I, 0, 0&gt;, 0.4 }
+    #local I = I + 1;
+  #end
+#end
+</pre>
+<p>This macro counts with a variable that it changes by hand, inside a loop made of directives, around objects that the loop repeats. In 4.0 the same text is a function with a <code>for</code> statement: <code>fn Row(N) { for (I = 0 to N - 1) { sphere { &lt;I, 0, 0&gt;, 0.4 } } }</code>.</p>
+</div>
+
+<a name="r3_13_1_2"></a>
+<div class="content-level-h4" contains="Directives That Splice Partial Constructs" id="r3_13_1_2">
+<h4>3.13.1.2 Directives That Splice Partial Constructs</h4>
+<p>Because a directive edits the token stream, it may open a block in one branch and close it outside the conditional, or choose one half of a construct:</p>
+<pre>
+#if (Fuse)
+  union {
+#else
+  merge {
+#end
+    sphere { 0, 1 }
+    sphere { x, 1 }
+  }
+</pre>
+<p>This is valid classic. The text inside the directive, <code>union {</code>, is not a complete block, so no grammar that reads the file as written can place it: the Tree-sitter grammar for classic reports a syntax error there, and the codemod refuses the file. This listing and the macro in the next section are the only classic listings in this chapter that the classic grammar rejects.</p>
+<p>A conditional can also stand in the middle of an expression:</p>
+<pre>
+sphere { 0, 1 pigment { color rgb &lt;1, #if (Hot) 0.2 #else 0.8 #end, 0&gt; } }
+</pre>
+<p>When both branches are one complete value, as here, nothing is lost, and in 4.0 this is the conditional operator: <code>color rgb &lt;1, Hot ? 0.2 : 0.8, 0&gt;</code>. When a branch is several tokens, the result depends on how its text regroups with the operators around the directive:</p>
+<pre>
+#declare V = 3 * #if (A) 1 + 2 #else 4 #end;
+</pre>
+<p>The codemod refuses this one too (<code>splice-precedence</code>), because the 4.0 conditional cannot be written without choosing a grouping the author may not have meant.</p>
+</div>
+
+<a name="r3_13_1_3"></a>
+<div class="content-level-h4" contains="Building Tokens with Macros" id="r3_13_1_3">
+<h4>3.13.1.3 Building Tokens with Macros</h4>
+<p>A classic macro is a piece of text that is read again at every call. Its body does not have to be a complete construct, and it is not read as one until it is called:</p>
+<pre>
+#macro Begin() union { #end
+
+Begin()
+  sphere { 0, 1 }
+}
+</pre>
+<p>The braces balance only across the macro boundary. A macro like this one cannot be checked where it is written, it is not checked at all unless it is called, and an error inside it is reported at every call. Loops work the same way: <code>#while</code> and macro calls move back to an earlier place in the file and read it again, which is why they could be slow (classic parsing now lexes each file once and replays the stored tokens, see <a href="r3_13.html#r3_13_5_5">Classic Parsing Speed</a>). The meaning is unchanged: a macro is text to read again, never a function with a body that is known when it is declared.</p>
+</div>
+
+<a name="r3_13_1_4"></a>
+<div class="content-level-h4" contains="Meaning That Depends on Runtime Values" id="r3_13_1_4">
+<h4>3.13.1.4 Meaning That Depends on Runtime Values</h4>
+<p>In classic, what a name refers to, and whether a statement changes a variable, can depend on how the macro was reached:</p>
+<pre>
+#macro Show()
+  sphere { 0, Radius }
+#end
+#macro Caller()
+  #local Radius = 2;
+  Show()
+#end
+Caller()
+</pre>
+<p><code>Radius</code> is not a parameter or a global of <code>Show</code>. It is found because classic resolves names through the stack of calling macros, so <code>Show</code> reads a local of <code>Caller</code>, and fails with a different caller. 4.0 uses lexical scope: a function sees its own parameters and bindings, the bindings it was written inside, and the file's, never those of whoever calls it.</p>
+<pre>
+#macro Twice(V) #declare V = V * 2; #end
+#declare X = 3;
+Twice(X)
+</pre>
+<p>Here the macro changes the caller's <code>X</code>, because classic passes a variable by reference when the macro assigns its parameter. 4.0 passes every argument by value; the 4.0 form is <code>X = Twice(X);</code>. A <code>#declare</code> inside a macro is global or local depending on what ran before it, and whether <code>A [1]</code> indexes an array or starts a new item depends on what <code>A</code> currently holds. The codemod refuses the cases it cannot decide from the text (<code>by-reference-argument</code>, <code>dynamic-scope</code>, <code>declare-maybe-local</code>, <code>ambiguous-index</code>).</p>
+</div>
+
+<a name="r3_13_1_5"></a>
+<div class="content-level-h4" contains="Optional Commas and Signs" id="r3_13_1_5">
+<h4>3.13.1.5 Optional Commas and Signs</h4>
+<p>Commas between vector components and macro arguments are optional in classic, and <code>-</code> is both a binary and a unary operator. Together they make a list of numbers easy to misread:</p>
+<pre>
+#declare A = &lt;1 2 3&gt;;      // &lt;1, 2, 3&gt;
+#declare B = &lt;1 -2 3&gt;;     // &lt;-1, 3&gt;: the 1 -2 is a subtraction
+#declare C = &lt;1, 2 -3&gt;;    // &lt;1, -1&gt;
+</pre>
+<p>The same ambiguity is why <code>translate -x</code> works (<code>translate</code> is a keyword, so the <code>-x</code> that follows is a negated vector) while <code>1 -x</code> is a subtraction. 4.0 keeps the rule that an item starting with <code>-</code>, <code>+</code>, <code>&lt;</code> or <code>(</code> continues the expression before it, but its vectors and argument lists need their commas, so <code>&lt;1, -2, 3&gt;</code> is always three components, and <code>&lt;1 -2 3&gt;</code> is a syntax error instead of a two-component vector. The codemod inserts the commas.</p>
+</div>
+
+<a name="r3_13_1_6"></a>
+<div class="content-level-h4" contains="Operators" id="r3_13_1_6">
+<h4>3.13.1.6 Operators</h4>
+<p>In classic <code>&amp;</code> and <code>|</code> share one precedence level and group from the left, and so do <code>=</code> and the other comparisons. <code>=</code> is also the assignment sign of <code>#declare</code>, and an equality test in a condition:</p>
+<pre>
+#declare T = (1 | 0 &amp; 0);     // 0: the same as ((1 | 0) &amp; 0)
+</pre>
+<p>In 4.0, <code>&amp;&amp;</code> binds tighter than <code>||</code> as in C, so <code>(1 || 0 &amp;&amp; 0)</code> is 1, and equality is <code>==</code>. The codemod rewrites the operators and adds parentheses where a classic expression would otherwise change its meaning.</p>
+</div>
+
+<a name="r3_13_1_7"></a>
+<div class="content-level-h4" contains="What Stays the Same" id="r3_13_1_7">
+<h4>3.13.1.7 What Stays the Same</h4>
+<p>Everything that makes a scene look the way it does is unchanged: the object, texture, camera and light blocks, the built-in functions, and the render-time function language inside <code>function { }</code>. A classic file keeps its extension and its <code>#version</code>, and a classic file does not need to know that 4.0 exists. A 4.0 file can include classic files and call classic macros, including the standard include library, so a scene can move one file at a time. <a href="r3_13.html#r3_13_3">The codemod</a> converts the files it can and leaves the others as they are.</p>
+</div>
+
+<a name="r3_13_2"></a>
+<div class="content-level-h3" contains="The 4.0 Language" id="r3_13_2">
+<h3>3.13.2 The 4.0 Language</h3>
+<p>This section is the reference for the 4.0 language. It describes what the evaluator does, and uses the object syntax of the rest of this manual unchanged. The grammar is in <code>libraries/tree-sitter-pov4</code> and the full design notes are in <code>doc/scene-language-4.md</code> in the source.</p>
+</div>
+
+<a name="r3_13_2_1"></a>
+<div class="content-level-h4" contains="Files and the Extension" id="r3_13_2_1">
+<h4>3.13.2.1 Files and the Extension</h4>
+<table width="100%" class="option-list">
+<tr><td><code>.pov4</code></td><td>A 4.0 scene, the file that is rendered.</td></tr>
+<tr><td><code>.inc4</code></td><td>A 4.0 include file. It runs in the scope of the file that includes it, as a classic include does.</td></tr>
+<tr><td>anything else</td><td>Classic: <code>.pov</code>, <code>.inc</code>, <code>.mcr</code> and any other name.</td></tr>
+</table>
+<p>The extension is the opt-in. POV-Ray picks the front end by the name of the input file before it reads a byte, so there is no marker to write inside the file and none is accepted. This keeps the two languages from being confused: a classic file never changes meaning because someone added a word to it, a 4.0 file is never read by the classic parser, and editors and tools choose a grammar by the extension without reading the content. A 4.0 file always runs with language version 4.0, which means the same defaults as a classic scene that begins with <code>#version 4.0;</code> (see <a href="r3_13.html#r3_13_4_3">Switch to the 4.0 Defaults</a>). A 4.0 file has no <code>#version</code> directive.</p>
+<pre>
+camera { location &lt;0, 2, -6&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+sphere { &lt;0, 0.5, 0&gt;, 0.5 pigment { rgb &lt;0.8, 0.2, 0.1&gt; } }
+plane { y, 0 pigment { checker rgb 1, rgb 0.4 } }
+</pre>
+<p>A classic file cannot include a 4.0 file. A 4.0 file can include classic files, see <a href="r3_13.html#r3_13_2_12">Mixing with Classic</a>.</p>
+</div>
+
+<a name="r3_13_2_2"></a>
+<div class="content-level-h4" contains="The Execution Model" id="r3_13_2_2">
+<h4>3.13.2.2 The Execution Model</h4>
+<p>A 4.0 file is a program that runs <em>once</em> to build the scene. As it runs, it emits <em>items</em> into an <em>output</em>. What the output is depends on where the code runs:</p>
+<table width="100%" class="option-list">
+<tr><td>the top level of a <code>.pov4</code> file, or of an <code>.inc4</code> it includes</td><td>the scene</td></tr>
+<tr><td>a function body</td><td>the result of the function, a <em>fragment</em></td></tr>
+<tr><td>a block body, such as <code>union { }</code></td><td>the contents of that block</td></tr>
+<tr><td>an array literal <code>[ ]</code></td><td>the elements of the array</td></tr>
+</table>
+<p>An <em>item</em> is anything that can appear in a classic block body: a keyword (<code>translate</code>, <code>hollow</code>), a value (<code>&lt;1, 0, 0&gt;</code>, <code>2.5</code>, <code>"name"</code>), a block (<code>pigment { }</code>) or a bracket group (<code>[0.5 color Red]</code>). Statements (<code>let</code>, <code>if</code>, <code>for</code>, <code>while</code>, <code>return</code>, <code>include</code>) emit nothing themselves; their bodies emit into the enclosing output.</p>
+<p>A statement <em>manifests</em> its result when its output is the scene. A <code>let</code> never manifests:</p>
+<pre>
+camera { location &lt;0, 2, -6&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Ball = sphere { 0, 1 pigment { rgb &lt;1, 0, 0&gt; } };
+Ball
+object { Ball translate x * 3 }
+</pre>
+<p>The first line that mentions <code>Ball</code> binds the sphere and puts nothing in the scene. The bare <code>Ball</code> then manifests one sphere, and the <code>object</code> block a second.</p>
+<p>At the top level only things that can stand in a scene are allowed: objects, <code>camera</code>, <code>light_source</code>, <code>background</code>, <code>fog</code>, <code>sky_sphere</code>, <code>rainbow</code>, <code>media</code>, <code>global_settings</code>, <code>default</code>, <code>photons</code> and <code>radiosity</code>. A bare number, vector or modifier there is an error that names the line: <code>A float cannot appear at the top level of a scene.</code></p>
+</div>
+
+<a name="r3_13_2_3"></a>
+<div class="content-level-h4" contains="Functions as Components and Fragments" id="r3_13_2_3">
+<h4>3.13.2.3 Functions as Components and Fragments</h4>
+<p>A function body emits into the function's result. Nothing reaches the scene unless the caller puts it there, and where a call stands decides what happens:</p>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 1.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+fn Tree(H) {
+  cylinder { 0, y * H, 0.1 pigment { rgb &lt;0.4, 0.3, 0.2&gt; } }
+  sphere { y * H, H / 3 pigment { rgb &lt;0.1, 0.5, 0.1&gt; } }
+}
+
+Tree(2)                                   // a statement at the top level: both objects manifest
+let T = Tree(3);                          // an assignment: nothing manifests, T holds a fragment
+union { ...T translate x * 4 }            // spread the items of T into a union
+union { Tree(1) translate -x * 4 }        // a call in a block body splices its items there
+</pre>
+<p>A <em>fragment</em> is the ordered list of items that a call emitted. It behaves as:</p>
+<ul>
+  <li>its single item when it has exactly one and is used as a value (<code>let V = Perp(A);</code> where <code>Perp</code> emits one vector);</li>
+  <li>its items spliced in place when it is used in a block body, in an array literal, or with <code>...</code>;</li>
+  <li>an error anywhere else, such as arithmetic on a fragment of two items.</li>
+</ul>
+<p><code>return E;</code> ends the function with the result <code>E</code>. Returning a value after the function has already emitted items is an error. A function that emits nothing and does not return gives <code>null</code>.</p>
+<pre>
+camera { location &lt;0, 2, -6&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+fn Clamp(V, Lo = 0, Hi = 1) {
+  if (V &lt; Lo) { return Lo; }
+  if (V &gt; Hi) { return Hi; }
+  return V;
+}
+sphere { 0, 1 pigment { rgb Clamp(1.5) } }
+</pre>
+<p><code>fn Name(A, B = 1) { ... }</code> is a shorthand for binding a lambda, <code>let Name = (A, B = 1) =&gt; { ... };</code>, in the current scope. Parameters may have defaults. Functions are closures. Arguments are passed by value: arrays and dictionaries are copied when written to, so a function never changes its caller's array.</p>
+</div>
+
+<a name="r3_13_2_4"></a>
+<div class="content-level-h4" contains="Bindings: let, Assignment and global" id="r3_13_2_4">
+<h4>3.13.2.4 Bindings: let, Assignment and global</h4>
+<ul>
+  <li><code>let X = E;</code> binds <code>X</code> in the current <em>function</em> scope. The file is the outermost function. Running <code>let X</code> again in the same scope rebinds it. The bodies of <code>if</code>, <code>for</code> and <code>while</code> do not open scopes.</li>
+  <li><code>X = E;</code> assigns to the nearest existing binding of <code>X</code>: a local, an enclosing function's, or the file's. It is an error if there is none. <code>A[I] = E;</code> and <code>D.K = E;</code> assign into an array or dictionary, and <code>V.x = E;</code> sets one component of a vector or color (a color channel is rounded to color precision).</li>
+  <li><code>global X = E;</code> binds <code>X</code> at file scope from anywhere. It is what <code>#declare</code> does inside a classic macro.</li>
+  <li><code>let X;</code> declares <code>X</code> as <code>null</code>. <code>defined(X)</code> is false while <code>X</code> is <code>null</code>, so <code>X = null;</code> does the job of <code>#undef X</code>.</li>
+</ul>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 1, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Count = 0;
+fn Ball(X) {
+  global Count = Count + 1;
+  sphere { &lt;X, 0.5 * Count, 0&gt;, 0.4 pigment { rgb &lt;1, 0.5, 0.2&gt; } }
+}
+Ball(-2) Ball(0) Ball(2)
+let Spare;
+if (!defined(Spare)) { box { &lt;-3, -1, -1&gt;, &lt;-2.5, 0, 1&gt; pigment { rgb 0.7 } } }
+</pre>
+<p>An <code>.inc4</code> include runs in the including file's scope, so its <code>let</code> bindings are visible afterwards.</p>
+</div>
+
+<a name="r3_13_2_5"></a>
+<div class="content-level-h4" contains="Control Flow" id="r3_13_2_5">
+<h4>3.13.2.5 Control Flow</h4>
+<p>The statements are <code>if</code>, <code>while</code>, two forms of <code>for</code>, <code>break</code> and <code>continue</code>. Bodies always take braces. There is no <code>switch</code>; the codemod writes an <code>if</code> chain.</p>
+<pre>
+if (X &gt; 1) { ... } else if (X &lt; 0) { ... } else { ... }
+while (X &lt; 10) { ... }
+for (I = 0 to 10) { ... }            // inclusive, step 1
+for (I = 0 to 1 step 0.1) { ... }
+for (V in Points) { ... }            // an array, the keys of a dictionary, or a fragment
+break;   continue;
+</pre>
+<p><code>for (I = A to B step S)</code> follows the classic <code>#for</code> exactly, including the value of the counter afterwards: after <code>for (I = 0 to 10)</code> the variable <code>I</code> is 11.</p>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Sizes = { small: 0.2, big: 0.45 };
+let I = 0;
+while (I &lt; 5) {
+  let R = (I &lt; 2) ? Sizes.small : Sizes.big;
+  if (I == 3) { I = I + 1; continue; }
+  sphere { &lt;I - 2, R, 0&gt;, R pigment { rgb &lt;I / 4, 0.5, 1 - I / 4&gt; } }
+  I = I + 1;
+}
+for (A = 0 to 1 step 0.25) { box { &lt;A * 4 - 2, -1, 1&gt;, &lt;A * 4 - 1.8, A - 1, 1.2&gt; pigment { rgb 1 } } }
+let Total = 0;
+for (K in Sizes) { Total = Total + Sizes[K]; }
+sphere { &lt;0, 2, 0&gt;, Total / 2 pigment { rgb &lt;1, 1, 0.2&gt; } }
+</pre>
+<p>This scene skips the fourth sphere with <code>continue</code>, and its last loop adds up the two entries of a dictionary: a <code>for (K in D)</code> loop visits the keys.</p>
+</div>
+
+<a name="r3_13_2_6"></a>
+<div class="content-level-h4" contains="Expressions and Precedence" id="r3_13_2_6">
+<h4>3.13.2.6 Expressions and Precedence</h4>
+<table width="100%" class="option-list">
+<tr><td>postfix</td><td>call <code>f(a, b)</code>, index <code>a[i]</code>, member <code>v.x</code> <code>d.key</code></td></tr>
+<tr><td>prefix</td><td><code>-</code> <code>+</code> <code>!</code></td></tr>
+<tr><td>multiplicative</td><td><code>*</code> <code>/</code></td></tr>
+<tr><td>additive</td><td><code>+</code> <code>-</code></td></tr>
+<tr><td>relational</td><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td></tr>
+<tr><td>equality</td><td><code>==</code> <code>!=</code></td></tr>
+<tr><td>logical and</td><td><code>&amp;&amp;</code></td></tr>
+<tr><td>logical or</td><td><code>||</code></td></tr>
+<tr><td>conditional</td><td><code>C ? A : B</code></td></tr>
+<tr><td>lambda</td><td><code>(params) =&gt; expr</code>, <code>(params) =&gt; { body }</code>, <code>P =&gt; expr</code></td></tr>
+</table>
+<p>The table runs from the tightest binding to the loosest. These are the changes from classic expressions:</p>
+<ul>
+  <li><strong>Equality is <code>==</code>.</strong> It keeps the classic epsilon comparison, so <code>(0.1 + 0.2 == 0.3)</code> is 1. The single <code>=</code> is assignment only.</li>
+  <li><strong>The logical operators are <code>&amp;&amp;</code> and <code>||</code></strong> (classic <code>&amp;</code> and <code>|</code>), <code>&amp;&amp;</code> binds tighter than <code>||</code>, and both short-circuit when the left operand is a float that decides the result.</li>
+  <li><strong>Comparisons and logical operators need parentheses except in conditions.</strong> As in classic, <code>&lt;</code> would otherwise open a vector. They are free in <code>if (...)</code>, <code>while (...)</code> and render-time function bodies. Block items, vector components, <code>let</code> values and arguments take only <code>+ - * /</code>, so write <code>(I &lt; 2) ? A : B</code> and <code>filter(L, (P) =&gt; (P &gt; 0))</code>. This is also why <code>box { &lt;0, 0, 0&gt; &lt;1, 1, 1&gt; }</code> is two vectors and why a <code>&gt;</code> always closes a vector.</li>
+</ul>
+<p>Everything else is classic: float to vector promotion, the members <code>.x .y .z .t .red .green .blue .filter .transmit</code>, the names <code>x y z t u v pi clock</code>, and every classic built-in function.</p>
+<pre>
+camera { location &lt;0, 2, -6&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Eq = (0.1 + 0.2 == 0.3);
+let Big = (Eq &amp;&amp; 2 &gt; 1);
+sphere { 0.5 * y, Big ? 0.5 : 0.25 pigment { rgb &lt;1 - Eq, Eq, 0.2&gt; } }
+</pre>
+<p>Literals:</p>
+<pre>
+&lt;1, 2, 3&gt;                          // a vector: 2 to 5 components as a value
+rgb &lt;1, 0.5, 0&gt;                    // color expressions, as in classic
+[1, 2, 3]   [...A, 4]              // an array, and a spread
+[for (I = 0 to 9) { I * I }]       // a comprehension: an array that is an output
+{ A: 1, "b c": 2, [K]: 3, ...D }   // a dictionary
+null   true   false
+</pre>
+<p>Color expressions are as in classic. <code>rgb</code>, <code>rgbf</code>, <code>rgbt</code>, <code>rgbft</code>, the <code>srgb</code> forms and <code>color</code>/<code>colour</code> are prefix operators that take the whole expression after them, so <code>rgb &lt;1, 0, 0&gt; * 0.5</code> is half red. The channel words <code>red</code>, <code>green</code>, <code>blue</code>, <code>filter</code>, <code>transmit</code> and <code>alpha</code> each take a value, so <code>let C = color red 1 green 0.5 filter 0.1;</code> works in a <code>let</code> as it does in a block body. A color is a five-component vector rounded to the renderer's color precision, exactly as a classic color identifier.</p>
+</div>
+
+<a name="r3_13_2_7"></a>
+<div class="content-level-h4" contains="Arrays, Comprehensions and Dictionaries" id="r3_13_2_7">
+<h4>3.13.2.7 Arrays, Comprehensions and Dictionaries</h4>
+<p>An array literal is an output, so <code>if</code>, <code>for</code> and <code>let</code> work inside it and a <code>for</code> in an array literal is a comprehension. Items are separated by commas or just by juxtaposition. An array has a fixed size once it is built: <code>A[I] = E</code> replaces an element, and <code>push(A, V)</code> returns a longer copy.</p>
+<p>A dictionary maps names to values. Any word, string or computed <code>[string]</code> may be a key, reserved or not (<code>{ step: 1 }</code>), and member access takes any word (<code>D.step</code>). On vectors and colors the members are the classic component names.</p>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let N = 8;
+let Ring = [for (I = 0 to N - 1) { &lt;3 * cos(I * tau / N), 0.3, 3 * sin(I * tau / N)&gt; }];
+let Style = { r: 0.3, "paint color": rgb &lt;0.9, 0.7, 0.1&gt;, [concat("sh", "ine")]: 0.8 };
+let Plain = { ...Style, r: 0.4 };
+for (P in Ring) { sphere { P, Plain.r pigment { Plain["paint color"] } finish { phong Style.shine } } }
+let Grid = array(2, array(3, 0.5));
+Grid[1][2] = 1;
+sphere { &lt;0, len(Grid) + Grid[1][2], 0&gt;, 0.5 pigment { rgb 1 } }
+</pre>
+<p>This builds a ring of spheres from a comprehension, copies and overrides a dictionary, and builds a two-dimensional array. An array whose elements are all arrays of the same shape counts as a classic multi-dimensional array for <code>dimensions</code>, <code>dimension_size</code> and for classic code: <code>array(4, array(10))</code> has two dimensions and reaches a classic include as <code>array[4][10]</code>.</p>
+<p>In a block body a bracket group is emitted as written, so classic map entries keep working: <code>color_map { [0 color Red] [1 color Blue] }</code>. Indexing and member access take no space before the <code>[</code> or <code>.</code>: <code>A[I]</code> indexes, and <code>A [I]</code> starts a new item.</p>
+</div>
+
+<a name="r3_13_2_8"></a>
+<div class="content-level-h4" contains="Lambdas and the Conditional Operator" id="r3_13_2_8">
+<h4>3.13.2.8 Lambdas and the Conditional Operator</h4>
+<p>A lambda is a function without a name. Its body is an expression, or braces for a body that emits items; <code>map</code> and <code>filter</code> take them.</p>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 1, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Scale = (S) =&gt; S * 2;
+let Points = map(range(0, 9), (I) =&gt; &lt;I - 4.5, Scale(sin(I)), 0&gt;);
+let Up = filter(Points, (P) =&gt; (P.y &gt; 0));
+for (P in Up) { sphere { P, 0.3 pigment { rgb &lt;P.y / 2, 0.4, 0.8&gt; } } }
+</pre>
+<p><code>range(A, B)</code> includes both ends and steps as the classic <code>#for</code>, and the lambda in <code>filter</code> returns a condition, so its comparison has parentheses. A <code>{</code> after <code>=&gt;</code> always starts a body. Write <code>=&gt; ({ ... })</code> for a lambda that returns a dictionary.</p>
+<p>The conditional operator <code>C ? A : B</code> replaces the <code>#if</code> that stood inside an expression:</p>
+<pre>
+// classic:  color rgb &lt;1, #if (Hot) 0.2 #else 0.8 #end, 0&gt;
+color rgb &lt;1, Hot ? 0.2 : 0.8, 0&gt;
+</pre>
+</div>
+
+<a name="r3_13_2_9"></a>
+<div class="content-level-h4" contains="Blocks" id="r3_13_2_9">
+<h4>3.13.2.9 Blocks</h4>
+<p><code>keyword { body }</code> is a block. Its body is an output, so it may hold statements. A statement's emitted items land where it stands, which is why a block can mix classic items and logic:</p>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 1, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Shiny = true;
+let Big = true;
+let Spheres = [for (I = 0 to 3) { sphere { x * I, 0.4 } }];
+union {
+  ...Spheres
+  pigment { rgb &lt;0.2, 0.6, 0.9&gt; }
+  if (Shiny) { finish { phong 1 } }
+  translate &lt;-2, 1, 0&gt;
+  scale if (Big) { 1.5 } else { 1 }
+}
+</pre>
+<p>The grammar does not know which items each block accepts: <code>sphere { }</code> and <code>pigment { }</code> are both a keyword and a body. The renderer's object builders check the contents, as they do for classic scenes.</p>
+<p>A value used as an item in a block body is emitted according to its kind. A number, vector, color or string is emitted as itself. An object becomes <code>object { V }</code>. A texture inside <code>texture { }</code> is <code>V</code>, and so on. A value that follows the keyword of its own kind is emitted bare (<code>transform T</code>), and so is an object written first in an object block that is not a CSG block or a <code>light_group</code>, which classic reads as a copy to modify: <code>light_source { Lamp translate y }</code>. Values spliced from a spread or a call are separated by commas, so <code>sphere_sweep { linear_spline 4, ...Points }</code> reads as written. An array must be spread (<code>...A</code>), never placed in a body whole.</p>
+<p>A binding may be a run of blocks. <code>let T = texture { ... } texture { ... };</code> binds a fragment of both, a layered texture, and <code>T</code> or <code>...T</code> in an object body emits both, as <code>texture { T }</code> does in classic.</p>
+<pre>
+camera { location &lt;0, 3, -9&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+let Lamp = light_source { &lt;4, 6, -3&gt; rgb 0.4 };
+light_source { Lamp translate y }
+let Glaze = texture { pigment { rgb &lt;0.9, 0.5, 0.2&gt; } } texture { pigment { rgbt &lt;1, 1, 1, 0.7&gt; } finish { phong 1 } };
+sphere { 0, 1 ...Glaze }
+</pre>
+</div>
+
+<a name="r3_13_2_10"></a>
+<div class="content-level-h4" contains="Render-time Functions" id="r3_13_2_10">
+<h4>3.13.2.10 Render-time Functions</h4>
+<p><code>function { ... }</code> and <code>function(x, y, z) { ... }</code> blocks keep the classic render-time function language, which compiles to the function VM. Inside them a name bound by <code>let</code> to a number is replaced by its value, and a name bound to a render-time function is called, as in classic. The body uses the 4.0 operators, and the renderer lowers it to the classic function language: <code>==</code> to <code>=</code>, <code>&amp;&amp;</code> to <code>&amp;</code>, <code>C ? A : B</code> to <code>select(-abs(C), A, B)</code> and <code>!C</code> to <code>select(-abs(C), 0, 1)</code>. The image-size form <code>function 300, 300 { pigment { ... } }</code> is kept.</p>
+<pre>
+camera { location &lt;0, 2, -5&gt; look_at &lt;0, 0, 0&gt; }
+light_source { &lt;-4, 6, -6&gt; rgb 1 }
+let K = 3;
+let Amp = 0.3;
+isosurface {
+  function { sqrt(x * x + y * y + z * z) - 1 + Amp * sin(K * x) * sin(K * z) }
+  contained_by { box { -1.5, 1.5 } }
+  max_gradient 4
+  pigment { rgb &lt;0.5, 0.8, 0.5&gt; }
+}
+</pre>
+<p>A 4.0 lambda exists only while the scene is built and cannot be called from a render-time function. Built-in constants (<code>x</code>, <code>pi</code>, <code>clock</code>) are not callable, so <code>translate x (2)</code> is an error. <code>trace(O, P, D, N)</code> sets the 4.0 variable <code>N</code> to the surface normal, binding it if needed.</p>
+<p>The portal target block <code>portal { ... to { ... } }</code> is a block named <code>to</code>, which stays a keyword of <code>for (I = A to B)</code> elsewhere (see <a href="r3_10.html#r3_10">Portals and Screens</a>).</p>
+</div>
+
+<a name="r3_13_2_11"></a>
+<div class="content-level-h4" contains="Built-ins Added by 4.0" id="r3_13_2_11">
+<h4>3.13.2.11 Built-ins Added by 4.0</h4>
+<table width="100%" class="option-list">
+<tr><td><code>len(A)</code></td><td>The number of elements of an array.</td></tr>
+<tr><td><code>range(A, B[, S])</code></td><td>The array of numbers from A to B, inclusive, with the classic <code>#for</code> stepping.</td></tr>
+<tr><td><code>map(A, F)</code></td><td>The array of <code>F</code> applied to each element.</td></tr>
+<tr><td><code>filter(A, F)</code></td><td>The elements for which <code>F</code> is true.</td></tr>
+<tr><td><code>push(A, V)</code></td><td>A new array with <code>V</code> added at the end.</td></tr>
+<tr><td><code>keys(D)</code></td><td>The keys of a dictionary, as strings.</td></tr>
+<tr><td><code>defined(Name)</code></td><td>False when the name is unbound or <code>null</code>.</td></tr>
+<tr><td><code>debug(S)</code>, <code>warning(S)</code>, <code>error(S)</code></td><td>The classic <code>#debug</code>, <code>#warning</code> and <code>#error</code>.</td></tr>
+<tr><td><code>array(N[, Fill])</code></td><td>An array of <code>N</code> elements, all <code>null</code> or all <code>Fill</code>.</td></tr>
+</table>
+<p>The words <code>let</code>, <code>fn</code>, <code>return</code>, <code>null</code>, <code>in</code>, <code>step</code> and <code>continue</code> are reserved in 4.0 beside the classic reserved words, and a name cannot be a reserved word. <code>len</code>, <code>map</code>, <code>push</code> and <code>keys</code> are not reserved: a name resolves to a 4.0 binding first, then to a classic declaration of that name, then to the built-in. Names that start with <code>__pov4_</code> belong to the evaluator.</p>
+<p>Comments are <code>//</code> and <code>/* */</code> (not nested). A <code>;</code> after an item is allowed and ignored; <code>let</code>, assignment, <code>global</code>, <code>include</code> and <code>return</code> statements end with <code>;</code>.</p>
+</div>
+
+<a name="r3_13_2_12"></a>
+<div class="content-level-h4" contains="Mixing with Classic" id="r3_13_2_12">
+<h4>3.13.2.12 Mixing with Classic</h4>
+<p>A <code>.pov4</code> file may <code>include</code> a classic file. The classic parser reads it into the same scene, its declarations become visible to the 4.0 program by name, and its macros can be called from 4.0 code. The call is handed to the classic parser where it stands: in place inside a block body, as a scene item at the top level, and through <code>#declare</code> where a value is needed. A classic include in a block body is handed over in place too (<code>union { include "parts.inc"; }</code>). This is how a 4.0 scene uses the standard include library unchanged: <code>include "colors.inc";</code> and <code>include "textures.inc";</code> work as they are.</p>
+<p>The two sides see each other's names like this:</p>
+<ul>
+  <li><strong>Classic sees 4.0 bindings.</strong> Before a classic include or a classic macro call is read, the evaluator declares every file-scope binding that changed since, as a classic identifier. Floats, vectors, colors, strings, non-empty arrays, dictionaries, layered textures, and objects and other handles (by copy) are declared. Functions, <code>null</code>, undeclarable blocks and other fragments are not.</li>
+  <li><strong>Classic owns a value once it has it.</strong> From the point where a binding is handed over until the block reaches the classic parser, a second call in the same block sees what the first call left, unless 4.0 assigns the binding again in between.</li>
+  <li><strong>4.0 reads back what classic changed.</strong> After a classic include, a top-level macro call, a macro call used as a value, or a block containing macro calls, the floats, vectors and strings that the classic code changed are read back into their 4.0 bindings. Other classic changes are seen through names that no 4.0 binding hides.</li>
+</ul>
+<p>A classic include file and the 4.0 scene that uses it:</p>
+<pre>
+// shelf.inc
+#declare Shelves = 0;
+#macro Shelf()
+  box { &lt;0, 0, 0&gt;, &lt;ShelfWidth, 0.08, 0.5&gt; pigment { rgb &lt;0.6, 0.4, 0.2&gt; } }
+  #declare Shelves = Shelves + 1;
+#end
+</pre>
+<pre>
+camera { location &lt;0, 2, -9&gt; look_at &lt;1, 1.2, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+include "shelf.inc";
+let ShelfWidth = 3;
+for (K = 0 to 2) { object { Shelf() translate y * K * 0.8 } }
+sphere { &lt;1.5, 0.33 + (Shelves - 1) * 0.8, 0.25&gt;, 0.25 pigment { rgb &lt;0.9, 0.2, 0.2&gt; } }
+</pre>
+<p><code>Shelf</code> reads <code>ShelfWidth</code>, which only the 4.0 file binds, and the 4.0 file reads the <code>Shelves</code> counter that the macro keeps in classic. A classic file cannot include a 4.0 file, and a classic include cannot call back a 4.0 function: pass data to the classic file instead.</p>
+</div>
+
+<a name="r3_13_2_13"></a>
+<div class="content-level-h4" contains="Errors and Where They Are Reported" id="r3_13_2_13">
+<h4>3.13.2.13 Errors and Where They Are Reported</h4>
+<p>An error in 4.0 code is reported as <code>file:line:column: message</code>. There are two kinds, and both are located in the <code>.pov4</code> file:</p>
+<ul>
+  <li><strong>The evaluator finds it</strong> when the program itself is wrong: an unknown name, a missing binding, a fragment used as a value, a bare value at the top level.</li>
+  <li><strong>The object builder finds it</strong> when the program ran correctly but the scene text it produced is wrong, such as a keyword that its block does not accept.</li>
+</ul>
+<pre>
+camera { location &lt;0, 2, -7&gt; look_at &lt;0, 1, 0&gt; }
+let R = 1;
+sphere { 0, Radius }
+</pre>
+<pre>
+File 'e1.pov4' line 3: Parse Error: e1.pov4:3:13: Unknown name 'Radius'.
+</pre>
+<p>The name is not bound, so the evaluator stops at line 3, column 13. The next scene runs without trouble, but <code>height_field</code> is not a keyword of a sphere:</p>
+<pre>
+camera { location &lt;0, 2, -7&gt; look_at &lt;0, 1, 0&gt; }
+let R = 1;
+sphere {
+  0, R
+  height_field 2
+}
+</pre>
+<pre>
+File 'e2.pov4' line 3: Possible Parse Error: Unmatched {
+File 'e2.pov4' line 5: Parse Error: No matching }, height_field found instead
+</pre>
+<p>This message comes from the classic object builder, with the line of the <code>.pov4</code> item it came from. To make that possible, the evaluator hands the scene text it builds to the classic parser in batches of up to 1 MiB per file, with a table that maps every line back to the source, so a loop that makes thousands of objects does not lose its place. An error in an included <code>.inc4</code> file names that file and its line.</p>
+<p>A long loop reports parse progress and can be cancelled like a classic parse. The built-in <code>error(S)</code> raises an error of your own with the location of the call.</p>
+</div>
+
+<a name="r3_13_2_14"></a>
+<div class="content-level-h4" contains="Limits and Testing Options" id="r3_13_2_14">
+<h4>3.13.2.14 Limits and Testing Options</h4>
+<p>The evaluator runs on its own stack of 256 MiB (Linux and Windows; elsewhere it uses the stack of the parser thread). These limits apply:</p>
+<ul>
+  <li>Function calls nest at most 10,000 deep. Classic allows about 100 nested macro calls.</li>
+  <li>Statements, expressions, blocks and nested arrays and dictionaries nest at most 100,000 levels in total, counting every active call and the parse of an <code>.inc4</code> included at that point.</li>
+  <li><code>.inc4</code> includes nest at most 100 deep. Each file is parsed once and reused.</li>
+  <li>An array holds at most 256 MiB of values, which is 4,194,304 elements on a 64-bit build. This bounds literals, comprehensions, <code>range</code>, <code>array</code> and <code>push</code>.</li>
+  <li><code>int</code>, <code>div</code>, <code>chr</code>, <code>bitwise_*</code> and random streams reject values outside the integer range. <code>div</code> by zero is an error. A NaN is an error.</li>
+</ul>
+<p>Two options exist for testing and are not part of the language:</p>
+<table width="100%" class="option-list">
+<tr><td><code>Pov4_Version=n.n</code><br><code>+MLn.n</code></td><td>Run a 4.0 scene under an older language version. It is how a converted scene is compared with its classic original.</td></tr>
+<tr><td><code>Pov4_Lowered_File=file</code><br><code>+GLfile</code></td><td>Write the classic scene text that the 4.0 scene was lowered to. Rendering that file gives the same image.</td></tr>
+</table>
+<p>The lowered file is the classic text that the classic parser actually reads, with every expression already evaluated. It is useful to see what a 4.0 construct becomes, and to isolate a problem to one of the two front ends:</p>
+<pre>
+povray +Iscene.pov4 +GLscene_lowered.pov
+povray +Iscene.pov4 +ML3.7
+</pre>
+<p>The first command renders <code>scene.pov4</code> and also writes <code>scene_lowered.pov</code>. The second renders it with the defaults of language version 3.7 instead of 4.0. For the scene of <a href="r3_13.html#r3_13_2_2">The Execution Model</a>, with its camera and light, the lowered file is:</p>
+<pre>
+#version 4;
+camera { location &lt;0, 2, -6&gt; look_at &lt;0, 0.5, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+#declare __pov4_1 = sphere { 0, 1 pigment { rgb &lt;1, 0, 0&gt; } };
+object { __pov4_1 }
+object { __pov4_1 translate &lt;3, 0, 0&gt; }
+</pre>
+<p>The scene starts with <code>#version 4;</code>. Every <code>let</code> that binds a block becomes a <code>#declare</code> of a name that begins with <code>__pov4_</code>, and each manifested item becomes the classic text for it.</p>
+</div>
+
+<a name="r3_13_3"></a>
+<div class="content-level-h3" contains="Converting Scenes with the Codemod" id="r3_13_3">
+<h3>3.13.3 Converting Scenes with the Codemod</h3>
+<p>The codemod, <code>tools/language/codemod/codemod.mjs</code> in the source tree, converts well-formed classic files to 4.0. It works on the classic syntax tree and makes text edits: directives and operators are rewritten, and everything else (comments, layout, the bodies of objects) is kept byte for byte, so the result still looks like the file you wrote. A scene it cannot convert safely is refused with a line, a column and a reason, and nothing is written for it. The codemod is a Node.js program that uses the Tree-sitter grammar in <code>libraries/tree-sitter-pov</code>, which needs its dependencies installed once (<code>libraries/tree-sitter-pov/README.md</code> has the steps).</p>
+</div>
+
+<a name="r3_13_3_1"></a>
+<div class="content-level-h4" contains="Running It" id="r3_13_3_1">
+<h4>3.13.3.1 Running It</h4>
+<pre>
+node tools/language/codemod/codemod.mjs SCENE.pov... -o OUT_DIR [--includes classic|convert] [-L DIR]... [--json REPORT] [--quiet]
+</pre>
+<table width="100%" class="option-list">
+<tr><td><code>SCENE.pov</code> or a folder</td><td>One or more scenes. A folder is searched for <code>.pov</code> files. A <code>.pov</code> input becomes a <code>.pov4</code> file with the same relative path in the output folder.</td></tr>
+<tr><td><code>-o OUT_DIR</code></td><td>Required. The folder that receives the converted files.</td></tr>
+<tr><td><code>--includes classic</code></td><td>The default. The converted scene includes its classic files as they are (<code>include "colors.inc";</code>).</td></tr>
+<tr><td><code>--includes convert</code></td><td>Also convert every include the scene reaches, and write each as an <code>.inc4</code> beside the scene. Includes that are refused, or not found, stay classic.</td></tr>
+<tr><td><code>-L DIR</code></td><td>A library folder to search for includes, as with POV-Ray's <code>+L</code>. The search order is the scene's folder, then the <code>-L</code> folders, then <code>distribution/include</code>. May be repeated.</td></tr>
+<tr><td><code>--json REPORT</code></td><td>Write a report of every scene and file: its output, refusals and notes.</td></tr>
+<tr><td><code>--quiet</code></td><td>Print refusals only.</td></tr>
+</table>
+<p>It prints one line per file, <code>converted</code> with the input and output, or <code>refused</code> with <code>file:line:column</code>, the reason and a detail, and then how many scenes were converted. The exit status is 0 when every scene converted and 2 when at least one was refused. An include named with <code>..</code> or an absolute path is written by its file name, so nothing lands outside the output folder.</p>
+<pre>
+$ node tools/language/codemod/codemod.mjs garden.pov -o out
+converted	garden.pov	out/garden.pov4
+1/1 scenes converted
+</pre>
+</div>
+
+<a name="r3_13_3_2"></a>
+<div class="content-level-h4" contains="What It Rewrites" id="r3_13_3_2">
+<h4>3.13.3.2 What It Rewrites</h4>
+<table width="100%" class="option-list">
+<tr><td><code>#declare X = E;</code>, <code>#local X = E;</code></td><td><code>let X = E;</code>, <code>X = E;</code> or <code>global X = E;</code> (see the scope rules below)</td></tr>
+<tr><td><code>#declare A[I] = E;</code>, <code>D.K = E</code></td><td><code>A[I] = E;</code>, <code>D.K = E;</code></td></tr>
+<tr><td><code>#macro M(A, B) ... #end</code></td><td><code>fn M(A, B) { ... }</code></td></tr>
+<tr><td><code>#if (C) ... #elseif (D) ... #else ... #end</code></td><td><code>if (C) { } else if (D) { } else { }</code></td></tr>
+<tr><td><code>#ifdef (X)</code>, <code>#ifndef (X)</code></td><td><code>if (defined(X))</code>, <code>if (!defined(X))</code></td></tr>
+<tr><td><code>#while (C) ... #end</code></td><td><code>while (C) { }</code></td></tr>
+<tr><td><code>#for (I, A, B, S) ... #end</code></td><td><code>for (I = A to B step S) { }</code></td></tr>
+<tr><td><code>#break</code> in a loop</td><td><code>break;</code></td></tr>
+<tr><td><code>#switch</code>, <code>#case</code>, <code>#range</code>, <code>#break</code>, <code>#else</code></td><td>An <code>if</code> chain on the value, or on <code>let Switch_Value = V;</code> unless <code>V</code> is a plain name</td></tr>
+<tr><td><code>#include "f.inc"</code></td><td><code>include "f.inc4";</code> (converted) or <code>include "f.inc";</code> (classic)</td></tr>
+<tr><td><code>#debug</code>, <code>#warning</code>, <code>#error</code></td><td><code>debug(...);</code>, <code>warning(...);</code>, <code>error(...);</code></td></tr>
+<tr><td><code>#default { ... }</code></td><td><code>default { ... }</code></td></tr>
+<tr><td><code>#version N;</code></td><td>Removed, with a <code>#declare V = version;</code> kept only where the version is restored later</td></tr>
+<tr><td><code>#undef X</code></td><td><code>X = null;</code>, or <code>let X = null;</code> / <code>global X = null;</code> where 4.0 has no binding to assign</td></tr>
+<tr><td><code>array[N] { a, b }</code></td><td><code>[a, b]</code>, padded with <code>null</code> to the size <code>N</code> (a literal size, or <code>...array(N - 2)</code>); <code>array[N]</code> alone becomes <code>array(N)</code>, and <code>array[N][M]</code> becomes <code>array(N, array(M))</code></td></tr>
+<tr><td><code>dictionary { ["k"]: v, .k2: w, [K]: u }</code></td><td><code>{ k: v, k2: w, [K]: u }</code>; keys that are not plain names or are reserved stay strings</td></tr>
+<tr><td><code>D.step</code>, where <code>step</code> is a 4.0 reserved word</td><td><code>D["step"]</code></td></tr>
+<tr><td><code>=</code>, <code>&amp;</code>, <code>|</code> in expressions</td><td><code>==</code>, <code>&amp;&amp;</code>, <code>||</code>, with parentheses where 4.0 precedence would regroup them</td></tr>
+<tr><td><code>#if</code> inside an expression</td><td><code>C ? A : B</code>, parenthesized inside an operator</td></tr>
+<tr><td>a single-value <code>#if</code> among block items, <code>scale #if (A) 2 #else 3 #end</code></td><td><code>scale A ? 2 : 3</code></td></tr>
+<tr><td><code>&lt;1 2 3&gt;</code>, <code>&lt;1, 2,&gt;</code>, <code>M(1 &lt;2, 3&gt;)</code></td><td><code>&lt;1, 2, 3&gt;</code>, <code>&lt;1, 2&gt;</code>, <code>M(1, &lt;2, 3&gt;)</code></td></tr>
+<tr><td>a string with a raw line break</td><td>The break written as <code>\n</code></td></tr>
+<tr><td><code>deprecated</code> on a declaration</td><td>Dropped</td></tr>
+<tr><td>an identifier that is a 4.0 reserved word</td><td>Renamed with a trailing <code>_</code>, as many as it takes to make the name unused in the scene and its includes</td></tr>
+</table>
+<p><strong>Scope.</strong> The codemod follows the way classic resolves a declaration. At file level both <code>#declare</code> and <code>#local</code> bind in the file, as <code>let X</code>, unless an earlier unconditional binding of <code>X</code> in the same or an enclosing statement list makes it <code>X =</code>. In a macro, <code>#local X</code> is <code>let X</code> (or <code>X =</code> after a binding, or for a parameter), and <code>#declare X</code> is <code>X =</code> for a parameter or a local that dominates it and <code>global X =</code> otherwise.</p>
+<p><strong>Notes.</strong> Two conversions are correct but change something worth knowing, so the codemod records a note in the report. An include's top-level <code>#local</code> becomes <code>let</code> (<code>include-local</code>): classic drops it at the end of the include, and an <code>.inc4</code> leaves it in the scope of the file that includes it. A file-level binding whose name a classic include reads (<code>read-by-classic-include</code>) is noted because the classic include must see the 4.0 binding as it saw the classic one, which it does.</p>
+</div>
+
+<a name="r3_13_3_3"></a>
+<div class="content-level-h4" contains="What It Refuses" id="r3_13_3_3">
+<h4>3.13.3.3 What It Refuses</h4>
+<p>A file is <em>well-formed</em> when every directive stands at a statement or block-item boundary, or inside an expression where it is a complete conditional. Anything else is refused: the report names the file, line, column and reason, and that file is not converted. If a scene includes a refused file with <code>--includes convert</code>, the include stays classic and the scene is still converted.</p>
+<table width="100%" class="option-list">
+<tr><td><code>syntax-error</code>, <code>partial-macro</code>, <code>stray-item</code></td><td>The file does not parse, or a macro builds tokens for its caller, or a keyword or call stands at statement level outside a macro. By hand: complete the construct, for example write both branches of a split <code>#if</code> as whole blocks. A macro that opens or closes a block for its caller stays classic.</td></tr>
+<tr><td><code>file-io</code></td><td><code>#fopen</code>, <code>#fclose</code>, <code>#read</code>, <code>#write</code>. 4.0 has no file I/O. Keep that code in a classic include and call it from the 4.0 scene.</td></tr>
+<tr><td><code>ambiguous-index</code></td><td>An identifier followed by a spaced <code>[</code>, which classic decides by the type of the identifier. Add a comma, or write the index without a space.</td></tr>
+<tr><td><code>expression-if-without-else</code>, <code>expression-if-not-single-value</code>, <code>directive-in-expression</code>, <code>operator-splice</code></td><td>A conditional in a value position that has no <code>#else</code>, or a branch that is not exactly one value, or another directive in a value position, or a splice after a unary sign. By hand: give the conditional an <code>#else</code>, or write it as a statement.</td></tr>
+<tr><td><code>by-reference-argument</code></td><td>A macro assigns a parameter that the caller passed as a variable that is read again. Classic writes the value back, 4.0 passes by value. By hand: return the value, <code>X = Twice(X);</code>.</td></tr>
+<tr><td><code>dynamic-scope</code></td><td>A macro reads or declares a name that is local to a macro that calls it. By hand: pass the value as a parameter.</td></tr>
+<tr><td><code>declare-maybe-local</code></td><td><code>#declare X</code> in a macro that makes <code>X</code> local on some paths only. By hand: decide whether <code>X</code> is a <code>let</code> or a <code>global</code>.</td></tr>
+<tr><td><code>layered-texture</code></td><td><code>#declare T = texture { } texture { }</code> has no single value in the codemod's output. By hand: <code>let T = texture { } texture { };</code>, which binds a fragment of both.</td></tr>
+<tr><td><code>tuple</code>, <code>optional-parameter</code>, <code>optional-declare</code>, <code>scope-prefix</code></td><td>Tuples, <code>optional</code>, and <code>local.</code> or <code>global.</code> prefixes. By hand: a default parameter (<code>B = null</code> with <code>defined(B)</code>), or <code>global</code>.</td></tr>
+<tr><td><code>include-local-shadow</code></td><td>With <code>--includes convert</code>, an include's top-level <code>#local X</code> where the scene or another include binds <code>X</code> too. By hand: rename one of them.</td></tr>
+<tr><td><code>called-by-classic-include</code></td><td>A macro of the scene that a classic include calls back. A classic file cannot call a 4.0 function. By hand: keep that macro in a classic file, or pass the data instead.</td></tr>
+<tr><td><code>splice-precedence</code></td><td>An <code>#if</code> in an expression whose branch would regroup with the operator around it, as in <code>3 * #if (A) 1 + 2 ...</code>. By hand: parenthesize the branch in the classic file first.</td></tr>
+<tr><td><code>array-size</code></td><td>An array initializer with directives in it and a size, whose element count is not known. By hand: write the array as a literal or a comprehension.</td></tr>
+<tr><td><code>switch-fallthrough</code>, <code>break-placement</code></td><td>A <code>#case</code> that runs on into the next one, or a <code>#break</code> that is not the last item of a clause or is outside a loop. By hand: repeat the shared items or restructure.</td></tr>
+<tr><td><code>empty-argument</code></td><td>A macro call such as <code>M(1,,3)</code> that leaves an argument out. By hand: pass a value.</td></tr>
+<tr><td><code>directive-in-dictionary</code>, <code>nested-comment</code></td><td>A directive in a dictionary literal, or a nested <code>/* */</code> comment. 4.0 has no form for either.</td></tr>
+</table>
+<p>For example, all of these are refused with the reason shown:</p>
+<pre>
+refused	by-reference.pov:3:7	by-reference-argument	Twice assigns its parameter V, passed X
+refused	dynamic-scope.pov:2:15	dynamic-scope	Radius in Show reads a local of calling macro Caller
+refused	maybe-local.pov:3:3	declare-maybe-local	Size is #local in Pick on some paths only
+refused	layered.pov:1:14	layered-texture	a declared layered texture has no 4.0 value form
+refused	splice-prec.pov:2:26	splice-precedence	1 + 2 would regroup with the operator around the #if
+refused	calledback.pov:2:1	called-by-classic-include	a classic include calls Hook, which would become a 4.0 function
+refused	file-io.pov:1:1	file-io
+refused	splice.pov:3:9	syntax-error
+</pre>
+</div>
+
+<a name="r3_13_3_4"></a>
+<div class="content-level-h4" contains="Checking a Conversion" id="r3_13_3_4">
+<h4>3.13.3.4 Checking a Conversion</h4>
+<p>A conversion is right when the converted scene, run with the language version of the classic one, makes the same picture as the classic scene. Language version is the whole difference between the two: a 4.0 scene always runs with the 4.0 defaults, so to compare like with like, tell POV-Ray to run it at the old version with <code>+ML</code>:</p>
+<pre>
+povray +Iscene.pov +W160 +H120 -A +FP16 +Oclassic.ppm
+povray +Iout/scene.pov4 +ML3.7 +W160 +H120 -A +FP16 +Oconverted.ppm
+</pre>
+<p>If the scene's first <code>#version</code> was 3.7, write <code>+ML3.7</code>, and so on for the version it declared; a scene with no <code>#version</code> passes nothing. The two images must be pixel for pixel the same. A difference is either a defect of the conversion or of the evaluator, which is worth a bug report with the smallest scene that shows it, or a classic scene that was plainly wrong and that the converted one gets right, which is worth a look before assuming either.</p>
+<p>For many scenes there is an evaluation tool, <code>tools/language/eval/eval.mjs</code>. It converts every scene under a folder and renders three images of each at 160x120 without anti-aliasing:</p>
+<table width="100%" class="option-list">
+<tr><td>A</td><td>The classic scene as it is.</td></tr>
+<tr><td>B</td><td>The converted scene, run with the classic scene's language version.</td></tr>
+<tr><td>C</td><td>The converted scene, run as 4.0.</td></tr>
+</table>
+<p>A different from B is a conversion or evaluator defect. B different from C is the effect of the 4.0 defaults on that scene, which the tool reports for review, since a different picture is often the better one. <code>eval all --out DIR --povray BIN</code> runs the three steps, and <code>plan</code>, <code>render</code> and <code>report</code> run alone. Each scene is <code>identical</code>, <code>noise-level</code>, <code>different</code>, <code>conversion-refused</code>, <code>eval-error</code>, <code>render-error</code> or <code>timeout</code>, and the report page shows the flagged scenes with A, B, C and difference maps. <code>doc/scene-language-4.md</code> describes the tool in full.</p>
+</div>
+
+<a name="r3_13_4"></a>
+<div class="content-level-h3" contains="Migration Guide" id="r3_13_4">
+<h3>3.13.4 Migration Guide</h3>
+<p>These steps take a classic scene to idiomatic 4.0 and check each one. They can stop at any point: a converted scene that runs at its old version is already a valid 4.0 scene, and the later steps are choices.</p>
+<p>The examples use a small fence scene with macros, a counter loop and a conditional:</p>
+<pre>
+#version 3.7;
+global_settings { assumed_gamma 1.0 ambient_light rgb 8 }
+
+camera { location &lt;0, 1.6, -6&gt; look_at &lt;0, 0.8, 0&gt; }
+light_source { &lt;6, 10, -8&gt; rgb 1 }
+sphere { 0, 100 pigment { rgb &lt;0.4, 0.6, 1&gt; } finish { diffuse 0 } }
+plane { y, 0 pigment { rgb &lt;0.3, 0.5, 0.2&gt; } }
+
+#declare Wood = texture { pigment { rgb &lt;0.55, 0.35, 0.2&gt; } }
+
+#macro Post(H, Round)
+  #if (Round)
+    cylinder { 0, y * H, 0.12 texture { Wood } }
+  #else
+    box { &lt;-0.12, 0, -0.12&gt;, &lt;0.12, H, 0.12&gt; texture { Wood } }
+  #end
+#end
+
+#macro Fence(N, Gap, Lean)
+  #local I = 0;
+  #while (I &lt; N)
+    object { Post(1 + 0.25 * mod(I, 2), (I = 3)) translate x * I * Gap }
+    #local I = I + 1;
+  #end
+  box {
+    &lt;0, 0.55, -0.04&gt;, &lt;(N - 1) * Gap, 0.65, 0.04&gt;
+    texture { Wood }
+    #if (Lean) rotate z * 2 #end
+  }
+#end
+
+union { Fence(6, 0.8, true) translate x * -2 }
+</pre>
+</div>
+
+<a name="r3_13_4_1"></a>
+<div class="content-level-h4" contains="Step 1: Convert" id="r3_13_4_1">
+<h4>3.13.4.1 Step 1: Convert</h4>
+<p>Run the codemod on the scene, and on the includes it uses if you want those converted too:</p>
+<pre>
+node tools/language/codemod/codemod.mjs garden.pov -o out
+</pre>
+<p>For this scene it writes <code>out/garden.pov4</code>. Everything outside the directives is as it was:</p>
+<pre>
+global_settings { assumed_gamma 1.0 ambient_light rgb 8 }
+
+camera { location &lt;0, 1.6, -6&gt; look_at &lt;0, 0.8, 0&gt; }
+light_source { &lt;6, 10, -8&gt; rgb 1 }
+sphere { 0, 100 pigment { rgb &lt;0.4, 0.6, 1&gt; } finish { diffuse 0 } }
+plane { y, 0 pigment { rgb &lt;0.3, 0.5, 0.2&gt; } }
+
+let Wood = texture { pigment { rgb &lt;0.55, 0.35, 0.2&gt; } };
+
+fn Post(H, Round) {
+  if (Round) {
+    cylinder { 0, y * H, 0.12 texture { Wood } }
+  } else {
+    box { &lt;-0.12, 0, -0.12&gt;, &lt;0.12, H, 0.12&gt; texture { Wood } }
+  }
+}
+
+fn Fence(N, Gap, Lean) {
+  let I = 0;
+  while (I &lt; N) {
+    object { Post(1 + 0.25 * mod(I, 2), (I == 3)) translate x * I * Gap }
+    I = I + 1;
+  }
+  box {
+    &lt;0, 0.55, -0.04&gt;, &lt;(N - 1) * Gap, 0.65, 0.04&gt;
+    texture { Wood }
+    if (Lean) { rotate z * 2 }
+  }
+}
+
+union { Fence(6, 0.8, true) translate x * -2 }
+</pre>
+<p>The <code>#version</code> line is gone, the macros are functions, <code>#declare</code> became <code>let</code>, the counter loop is a <code>while</code>, and <code>=</code> in the comparison is now <code>==</code>. If it refuses a file, see <a href="r3_13.html#r3_13_3_3">What It Refuses</a>.</p>
+</div>
+
+<a name="r3_13_4_2"></a>
+<div class="content-level-h4" contains="Step 2: Render at the Old Version and Compare" id="r3_13_4_2">
+<h4>3.13.4.2 Step 2: Render at the Old Version and Compare</h4>
+<p>Render the classic scene, then the converted one with <code>+ML</code> set to the version the original declared:</p>
+<pre>
+povray +Igarden.pov +W160 +H120 -A +FP16 +Oa.ppm
+povray +Iout/garden.pov4 +ML3.7 +W160 +H120 -A +FP16 +Ob.ppm
+</pre>
+<p>The two images must match exactly. They do for this scene: a comparison of the pixel data of the two files finds no difference. Fix any difference now, while the only thing that has changed is the language. Do not go on until it matches.</p>
+</div>
+
+<a name="r3_13_4_3"></a>
+<div class="content-level-h4" contains="Step 3: Switch to the 4.0 Defaults and Fix the Look" id="r3_13_4_3">
+<h4>3.13.4.3 Step 3: Switch to the 4.0 Defaults and Fix the Look</h4>
+<p>Now render the converted scene with no <code>+ML</code>, which runs it as 4.0. A 4.0 scene gets the defaults of language version 4.0, and a scene that was written for an older version can change appearance. Each of these is a deliberate difference of the language version, not of the 4.0 language, and each has a one-line fix.</p>
+<table width="100%" class="option-list">
+<tr><td><strong>The default ambient is 0</strong></td><td>From version 3.8 a finish's default <code>ambient</code> is 0, where it was 0.1. Most old scenes get darker. A surface that was lit only by ambient, such as a sky dome or a backdrop with <code>diffuse 0</code>, goes <em>black</em>. The default pigment is white and the default camera <code>right</code> is the image aspect ratio (see below) from the same version. Fix a scene as a whole with <code>default { finish { ambient 0.1 } }</code>, or give the sky <code>ambient</code> and the other surfaces what they need.</td></tr>
+<tr><td><strong>Media renders inside solid objects</strong></td><td>From 4.0, interior media are rendered inside objects that are not <code>hollow</code>, and inside objects nested in them. Earlier versions hid them, and warned. A scene that put media in a solid object by mistake, or that relied on a non-hollow object to hide the media around it, now shows the media. Each object also replaces the media of the objects placed before it where they overlap, unless its media set another <code>mix</code>, and <code>hollow</code> is deprecated in favor of <code>media { mix add }</code>. See <a href="r3_3.html#r3_3_2_5">Version Directive</a> and <a href="r3_7.html#r3_7_2_1_2">Empty and Solid Objects</a>.</td></tr>
+<tr><td><strong>3.6 scenes without <code>assumed_gamma</code></strong></td><td>A scene older than 3.7 with no <code>assumed_gamma</code> is rendered with gamma correction turned off. A 4.0 scene without it gets <code>assumed_gamma 1.0</code> implied, with a warning, so the same color values come out lighter. To keep the old look add <code>global_settings { assumed_gamma 2.2 }</code>, which is close but not identical, since the output is encoded as sRGB. For physically based results use <code>assumed_gamma 1.0</code> and adjust the colors. See <a href="r3_4.html#r3_4_1_3">Assumed_Gamma</a>.</td></tr>
+<tr><td><strong>Camera <code>right</code></strong></td><td>A camera with no <code>right</code> got <code>x * 1.33</code> before 3.8 and gets the aspect ratio of the image now, so the frame of a 4:3 picture changes by a quarter of a percent. Write <code>right x * 1.33</code> for the same frame, or <code>right x * image_width / image_height</code> to follow the image.</td></tr>
+<tr><td><strong>Refraction interior order</strong></td><td>Before 4.0, the innermost object entered gives the <code>ior</code> where objects are nested, and leaving an overlap of two objects does not refract. In 4.0 a region takes the <code>ior</code> of the interior placed last among those holding it, so a glass object must be placed <em>after</em> the water or container around it. See <a href="r3_7.html#r3_7_2_1_4">Refraction</a>.</td></tr>
+<tr><td><strong>New reserved words</strong></td><td>The names <code>tags</code>, <code>filter_tags</code>, <code>front_filter_tags</code>, <code>back_filter_tags</code>, <code>any</code> and <code>none</code> become reserved in a scene that runs at 4.0. The codemod renames the identifiers that collide with a reserved word, such as <code>step</code> or <code>in</code>, with a trailing <code>_</code>.</td></tr>
+</table>
+<p>The fence scene shows the first of these. Run as 4.0, its sky dome is black, and its ground and fence are much darker than in the classic render, since the scene's <code>ambient_light rgb 8</code> multiplied the old default ambient of 0.1. One line brings the old look back:</p>
+<pre>
+global_settings { assumed_gamma 1.0 ambient_light rgb 8 }
+default { finish { ambient 0.1 } }
+</pre>
+<p>Put it at the top of the converted file, and add <code>right x * 1.33</code> to the camera for the same frame as before. The result matches the classic render of step 2 exactly. If a scene's look is simply different and you prefer it, keep it. The 4.0 look is the one that the new defaults describe.</p>
+</div>
+
+<a name="r3_13_4_4"></a>
+<div class="content-level-h4" contains="Step 4: Tidy into Idiomatic 4.0" id="r3_13_4_4">
+<h4>3.13.4.4 Step 4: Tidy into Idiomatic 4.0</h4>
+<p>The converted scene is a literal translation, so it still reads like the classic one. Now use what 4.0 offers:</p>
+<ul>
+  <li><strong>Functions as components.</strong> A function that emits objects is a component. A call can stand in a block, be spread, or be kept in a <code>let</code> and reused.</li>
+  <li><strong>Comprehensions and <code>for</code> instead of counters.</strong> A <code>while</code> loop that counts with a variable is a <code>for (I = A to B)</code>, or a comprehension when it builds a list.</li>
+  <li><strong>Default parameters</strong> instead of <code>optional</code> parameters and <code>#ifdef</code> tests.</li>
+  <li><strong><code>?:</code> instead of <code>#if</code> splices</strong> for one value, such as <code>rotate z * (Lean ? 2 : 0)</code>.</li>
+</ul>
+<p>The fence scene, tidied, with the ambient default restored once at the top and the camera frame kept:</p>
+<pre>
+global_settings { assumed_gamma 1.0 ambient_light rgb 8 }
+default { finish { ambient 0.1 } }
+
+camera { location &lt;0, 1.6, -6&gt; look_at &lt;0, 0.8, 0&gt; right x * 1.33 }
+light_source { &lt;6, 10, -8&gt; rgb 1 }
+sphere { 0, 100 pigment { rgb &lt;0.4, 0.6, 1&gt; } finish { diffuse 0 } }
+plane { y, 0 pigment { rgb &lt;0.3, 0.5, 0.2&gt; } }
+
+let Wood = texture { pigment { rgb &lt;0.55, 0.35, 0.2&gt; } };
+
+fn Post(H, Round) {
+  if (Round) { cylinder { 0, y * H, 0.12 texture { Wood } } }
+  else { box { &lt;-0.12, 0, -0.12&gt;, &lt;0.12, H, 0.12&gt; texture { Wood } } }
+}
+
+fn Fence(N, Gap, Lean = false) {
+  let Posts = [for (I = 0 to N - 1) { object { Post(1 + 0.25 * mod(I, 2), (I == 3)) translate x * I * Gap } }];
+  ...Posts
+  box {
+    &lt;0, 0.55, -0.04&gt;, &lt;(N - 1) * Gap, 0.65, 0.04&gt;
+    texture { Wood }
+    rotate z * (Lean ? 2 : 0)
+  }
+}
+
+union { Fence(6, 0.8, true) translate x * -2 }
+</pre>
+<p>The posts are one comprehension, <code>Lean</code> is a parameter with a default, and the optional rotation is a value instead of a splice. Check the result as you did in step 2, now without <code>+ML</code>: it must match the classic render.</p>
+</div>
+
+<a name="r3_13_5"></a>
+<div class="content-level-h3" contains="When to Keep Classic Files" id="r3_13_5">
+<h3>3.13.5 When to Keep Classic Files</h3>
+<p>Moving a scene to 4.0 is a choice, and a scene can use both languages at once. A 4.0 file includes classic files and calls their macros, so a classic file can stay classic for as long as it is the better tool. These are the cases.</p>
+</div>
+
+<a name="r3_13_5_1"></a>
+<div class="content-level-h4" contains="Heavy Literal Data" id="r3_13_5_1">
+<h4>3.13.5.1 Heavy Literal Data</h4>
+<p>A mesh written out as text, such as a <code>mesh2</code> of hundreds of thousands of triangles from a modeler, is data and not code, and the classic parser reads it faster and in far less memory. Inline literal meshes in a <code>.pov4</code> file are currently slower to read and much larger in memory than in classic. One measurement, on a <code>mesh2</code> of 62,750 vertices and 125,000 triangles (5.7 MB of text), parsed with one thread and rendered at 8 by 6 pixels:</p>
+<table width="100%" class="option-list">
+<tr><td>the mesh in a classic <code>.pov</code> scene</td><td>0.23 seconds to parse, 38 MB peak memory</td></tr>
+<tr><td>the same text inline in a <code>.pov4</code> scene</td><td>1.9 seconds to parse, 471 MB peak memory</td></tr>
+<tr><td>the same text in a classic <code>.inc</code>, included from a <code>.pov4</code> scene</td><td>0.21 seconds to parse, 38 MB peak memory</td></tr>
+<tr><td>the same geometry as a <code>.povm</code> file, used from a <code>.pov4</code> scene</td><td>22 MB peak memory (the mesh is loaded after parsing)</td></tr>
+</table>
+<p>The numbers will differ on another machine, but the proportions are the point. Keep such data in a classic include and write <code>include "mesh.inc";</code> in the 4.0 scene. For geometry that is heavy and does not change, the <code>.povm</code> mesh file format is better still. It holds the geometry as binary arrays that a scene loads without parsing text (see <code>doc/povm.md</code> in the source), and works the same from a classic or a 4.0 scene:</p>
+<pre>
+camera { location &lt;0, 1, -5&gt; look_at &lt;0, 1, 0&gt; }
+light_source { &lt;5, 8, -6&gt; rgb 1 }
+mesh2 { povm "trunk.povm" pigment { rgb &lt;0.4, 0.3, 0.2&gt; } }
+</pre>
+</div>
+
+<a name="r3_13_5_2"></a>
+<div class="content-level-h4" contains="The Standard Library and Third-party Includes" id="r3_13_5_2">
+<h4>3.13.5.2 The Standard Library and Third-party Includes</h4>
+<p>The standard include files (<code>colors.inc</code>, <code>textures.inc</code>, <code>shapes.inc</code>, <code>math.inc</code> and the rest) and includes written by others are classic, work from a <code>.pov4</code> file as they are, and gain nothing from conversion. Write <code>include "colors.inc";</code>. The codemod with <code>--includes convert</code> can convert them, but there is no need to, and the converted copies would have to be kept in step with the originals. Leave a library classic unless you are the one who maintains it.</p>
+</div>
+
+<a name="r3_13_5_3"></a>
+<div class="content-level-h4" contains="Includes the Codemod Refuses" id="r3_13_5_3">
+<h4>3.13.5.3 Includes the Codemod Refuses</h4>
+<p>Some classic text has no 4.0 form, and the codemod refuses it (<a href="r3_13.html#r3_13_3_3">What It Refuses</a>). Leave those files classic and include them:</p>
+<ul>
+  <li><strong>Splices</strong> of partial constructs, and macros that open or close a block for their caller.</li>
+  <li><strong>File I/O</strong> with <code>#fopen</code>, <code>#read</code> and <code>#write</code>.</li>
+  <li><strong>Macros that assign a parameter by reference</strong>, or that read names local to a calling macro.</li>
+  <li><strong>Macros that a classic include calls back.</strong> A classic file cannot call a function of a 4.0 file.</li>
+</ul>
+</div>
+
+<a name="r3_13_5_4"></a>
+<div class="content-level-h4" contains="Behavior That Only Classic Has" id="r3_13_5_4">
+<h4>3.13.5.4 Behavior That Only Classic Has</h4>
+<p>A scene that depends on a classic-only behavior stays classic. A <code>.pov</code> file keeps its <code>#version</code> and its defaults, and rendering it is unchanged. If you need an older language version (for example a 3.6 scene that must come out exactly as before), a classic scene with <code>#version 3.6;</code> is the faithful way. The conversion to 4.0 followed by <code>+ML</code> is for checking a conversion, not for running scenes for good.</p>
+</div>
+
+<a name="r3_13_5_5"></a>
+<div class="content-level-h4" contains="Classic Parsing Speed" id="r3_13_5_5">
+<h4>3.13.5.5 Classic Parsing Speed</h4>
+<p>Classic parsing has also become faster, so staying classic does not cost the parsing speed that motivated some of the changes. Each scene or include file is lexed once into a compact array of tokens, with reserved words resolved, names interned and numbers converted. <code>#while</code>, <code>#for</code>, macro calls and returns then move an index into the array instead of seeking the file and lexing it again. Before, most of the cost of a loop was system time spent re-reading the file. On the benchmark scenes in <code>doc/PERF.md</code> a 50,000-pass loop that calls a macro from an include parses in 0.15 seconds instead of 0.63, and a macro loop benchmark in 0.21 seconds instead of 1.15; a 59 MB text mesh parses in 2.1 seconds instead of 2.8, with a peak of 143 MB instead of 123 MB. The section "Classic parser: lex once" of that file has the full figures.</p>
+</div>
+
+</div>
+
+</div>
+</body>
+</html>

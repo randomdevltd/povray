@@ -568,6 +568,7 @@ an easier means of doing the same thing).
 <code><a href="r3_5.html#r3_5_1_1_12">conic_sweep</a></code><br>
 <code><a href="r3_6.html#r3_6_1_3_6">conserve_energy</a></code><br>
 <code><a href="r3_5.html#r3_5_1_1_6">contained_by</a></code><br>
+<code><a href="r3_13.html#r3_13_2_5">continue</a></code> <em>4.0</em><br>
 <code><a href="r3_6.html#r3_6_2_5">control0</a></code><br>
 <code><a href="r3_6.html#r3_6_2_5">control1</a></code><br>
 <code><a href="r3_6.html#r3_6_2_1_10">coords</a></code><br>
@@ -690,6 +691,7 @@ an easier means of doing the same thing).
 <code><a href="r3_5.html#r3_5_1_2_1">flatness</a></code><br>
 <code><a href="r3_6.html#r3_6_2_5_5_2">flip</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">floor</a></code><br>
+<code><a href="r3_13.html#r3_13_2_3">fn</a></code> <em>4.0</em><br>
 <code><a href="r3_4.html#r3_4_2_3">focal_point</a></code><br>
 <code><a href="r3_7.html#r3_7_1_3">fog</a></code><br>
 <code><a href="r3_7.html#r3_7_1_3">fog_alt</a></code><br>
@@ -772,6 +774,7 @@ an easier means of doing the same thing).
 <code><a href="r3_4.html#r3_4_3_3_4_1">importance</a></code><br>
 </td>
 <td width="33%">
+<code><a href="r3_13.html#r3_13_2_5">in</a></code> <em>4.0</em><br>
 <code><a href="r3_3.html#r3_3_2_1">include</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_6">initial_clock</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_6">initial_frame</a></code><br>
@@ -825,6 +828,7 @@ an easier means of doing the same thing).
 <code><a href="r3_5.html#r3_5_1_1_8">lathe</a></code><br>
 <code><a href="r3_5.html#r3_5_1_1_9">lemon</a></code><br>
 <code><a href="r3_6.html#r3_6_2_1_15">leopard</a></code><br>
+<code><a href="r3_13.html#r3_13_2_4">let</a></code> <em>4.0</em><br>
 <code><a href="r3_4.html#r3_4_3_2">light_group</a></code><br>
 <code><a href="r3_4.html#r3_4_3_1">light_source</a></code><br>
 <code><a href="r3_12.html#r3_12_1">light_source</a></code> <em>media</em><br>
@@ -924,6 +928,7 @@ an easier means of doing the same thing).
 <code><a href="r3_6.html#r3_6_1_2_1">normal_map</a></code><br>
 <code><a href="r3_5.html#r3_5_1_2_4">normal_vectors</a></code><br>
 <code><a href="r3_3.html#r3_3_1_9_4">now</a></code><br>
+<code><a href="r3_13.html#r3_13_2_4">null</a></code> <em>4.0</em><br>
 <code><a href="r3_4.html#r3_4_1_10">number_of_waves</a></code><br>
 </td>
 </tr>
@@ -1066,6 +1071,7 @@ an easier means of doing the same thing).
 <code><a href="r3_11.html#r3_11_4">resolution</a></code> <em>media</em><br>
 </td>
 <td width="33%">
+<code><a href="r3_13.html#r3_13_2_3">return</a></code> <em>4.0</em><br>
 <code><a href="r3_3.html#r3_3_1_7_1">rgb</a></code><br>
 <code><a href="r3_3.html#r3_3_1_7_1">rgbf</a></code><br>
 <code><a href="r3_3.html#r3_3_1_7_1">rgbft</a></code><br>
@@ -1142,6 +1148,7 @@ an easier means of doing the same thing).
 <code><a href="r3_3.html#r3_3_1_7_2">srgbt</a></code><br>
 <code><a href="r3_3.html#r3_3_1_7_2">srgbft</a></code><br>
 <code><a href="r3_3.html#r3_3_2_7_1">statistics</a></code><br>
+<code><a href="r3_13.html#r3_13_2_5">step</a></code> <em>4.0</em><br>
 <code><a href="r3_3.html#r3_3_1_9_4">str</a></code><br>
 <code><a href="r3_3.html#r3_3_1_5_4">strcmp</a></code><br>
 <code><a href="r3_5.html#r3_5_1_1_1">strength</a></code><br>
@@ -4487,6 +4494,8 @@ VERSION_DIRECTIVE:
 <tr><td><a href="r3_4.html#r3_4_1_15">atmospheric_ior</a></td><td>1.0</td><td>1.00029</td></tr>
 <tr><td><a href="r3_4.html#r3_4_1_16">interface_texture</a></td><td><code>far</code></td><td><code>blend</code></td></tr>
 </table>
+
+<p>A scene in the 4.0 language is a <code>.pov4</code> file and has no <code>#version</code> directive. It always runs with the 4.0 defaults, and an older version can be chosen for testing with <code>+ML</code>. See <a href="r3_13.html#r3_13">Scene Language 4.0</a>.</p>
 
 <p>If you do need to do some processing before you decide on a version compatibility option start your scene with the following
 construct:</p>
