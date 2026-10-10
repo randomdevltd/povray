@@ -10201,6 +10201,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         Set_Flag(Object, OPAQUE_FLAG);
         sceneData->anyOpaque = true;
+        sceneData->opaqueWithoutInside = sceneData->opaqueWithoutInside || (Object->Type & PATCH_OBJECT) ||
+                                         (dynamic_cast<const Polygon *>(Object) != nullptr);
     }
 }
 

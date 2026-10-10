@@ -247,6 +247,8 @@ class SceneData
         bool dielectrics;
         /// whether any object is guaranteed opaque
         bool anyOpaque;
+        /// whether any opaque object never contains a point (a patch, polygon, or mesh without inside_vector)
+        bool opaqueWithoutInside;
         /// the lowest Interior::precedence of any interior with media
         unsigned int firstMediaPrecedence;
         /// point-cloud method: how coarsely far groups of points may be summed as one

@@ -95,6 +95,20 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #break
 #case (27) box { <-3, -3, -0.75e-4>, <3, 3, 0.75e-4> rotate y * 30 texture { Clear } interior { ior 1.5 } } #break
 #case (28) object { Ball translate x * Far } #break
+#case (29)
+  box { <-2, -2, -1>, <2, 2, 1> texture { Clear } interior { ior 1.5 } }
+  box { <-1.5, -1.5, -1 + 1e-4>, <1.5, 1.5, 0.5> pigment { uv_mapping checker rgbf <1, 1, 1, 0.5>, rgbf <0.5, 0.5, 1, 0.5> } finish { diffuse 0 } }
+#break
+#case (30)
+#case (31)
+#case (32)
+#case (33)
+  light_source { <-4, 5, -10> rgb 1 }
+  #if (Case < 32) box { <-3, -2, 2>, <3, 2, 2.5> pigment { rgb 0.8 } finish { diffuse 0.9 } }
+  #else polygon { 5, <-3, -2, 2>, <3, -2, 2>, <3, 2, 2>, <-3, 2, 2>, <-3, -2, 2> pigment { rgb 0.8 } finish { diffuse 0.9 } }
+  #end
+  box { <-3, -2, -1>, <3, 2, (mod(Case, 2) = 0 ? 2 : 1.99)> texture { Clear } interior { ior (Case < 32 ? 1 : 1.5) } }
+#break
 #case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior 1 } } #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior 1 } } #break
 #end

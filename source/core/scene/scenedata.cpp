@@ -437,6 +437,7 @@ SceneData::SceneData() :
     refractionAngle = 0.5;
     dielectrics = false;
     anyOpaque = false;
+    opaqueWithoutInside = false;
     firstMediaPrecedence = UINT_MAX;
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;

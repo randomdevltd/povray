@@ -442,7 +442,7 @@ class Trace
 
         CooperateFunctor& cooperate;
         MediaFunctor& media;
-        /// The last interface's sides at each trace level, which ComputeRelativeIOR and ComputeRefraction share for one hit.
+        /// Recent interfaces' sides by hit point and interior, which the probe, ComputeRelativeIOR and ComputeRefraction share for one hit.
         struct InterfaceCache final
         {
             RayInteriorVector before, after;
@@ -451,7 +451,9 @@ class Trace
             double leave = 0.0;
             bool simple = false;                 ///< the far side holds just what crossing the hit surface gives
         };
-        std::vector<InterfaceCache> sidesCache;
+        static const size_t kInterfaceCacheSize = 16;
+        InterfaceCache sidesCache[kInterfaceCacheSize];
+        const InterfaceCache& InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
         void FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& before, Interior *interior, const Vector3d& point,
                                 const Vector3d& normal, const Vector3d& direction);
         RadiosityFunctor& radiosity;
@@ -923,13 +925,13 @@ class Trace
         /// The one rule for the indices either side of a surface, for camera rays and photons; enters or leaves `interior` on the ray.
         void ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal, InterfaceIor& result);
         /// The interiors beyond a surface of `interior` hit at `point`, with every other surface that meets there crossed too.
-        const RayInteriorVector& InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal,
-                                                double *leave = nullptr);
+
         /// How far either side of a surface its interiors are sampled, and how far past it child rays start: small beside the
         /// coordinates and the interior's smallest extent, and at least twice the shortest hit distance where the object allows.
         double InterfaceTolerance(const Vector3d& point, const Interior *interior) const;
         /// Where a hit's surface lets light through and another object's opaque surface lies at the same point, hits that one.
-        void PreferOpaqueCoincident(Ray& ray, Intersection& isect, COLC weight);
+        /// Returns whether it did.
+        bool PreferOpaqueCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
         /// Whether a surface's plain pigment lets any light through, or might.
         bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
         /// Whether an interior's surfaces can change the index or the media a ray sees.

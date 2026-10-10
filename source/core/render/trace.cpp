@@ -392,8 +392,6 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
 double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
                        bool continuedRay)
 {
-    if (found)
-        PreferOpaqueCoincident(ray, bestisect, weight);
     if (ray.IsPrimaryRay())
     {
         primaryObject = found ? bestisect.Object : nullptr;
@@ -885,6 +883,11 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
 
     // compute the surface normal
     isect.Object->Normal(rawnormal, &isect, threadData);
+    if (PreferOpaqueCoincident(ray, isect, rawnormal, weight))
+    {
+        ipoint = isect.IPoint;
+        isect.Object->Normal(rawnormal, &isect, threadData);
+    }
 
     // I added this to flip the normal if the object is inverted (for CSG).
     // However, I subsequently commented it out for speed reasons - it doesn't
@@ -3945,23 +3948,14 @@ double Trace::StackIndex(const RayInteriorVector& interiors, const Interior *tog
 namespace
 {
 
-// A coincident surface that may displace a clear hit: another object, opaque where the probe meets it, and not one photons pass through.
+// A coincident surface that may displace a clear hit: another object the parser found opaque, and not one photons pass through.
 struct OpaqueOtherCondition final : public RayObjectCondition
 {
     ConstObjectPtr skip;
-    TraceThreadData *threadData;
-    OpaqueOtherCondition(ConstObjectPtr object, TraceThreadData *td) : skip(object), threadData(td) {}
-    virtual bool operator()(const Ray& ray, ConstObjectPtr object, double depth) const override
+    explicit OpaqueOtherCondition(ConstObjectPtr object) : skip(object) {}
+    virtual bool operator()(const Ray& ray, ConstObjectPtr object, double) const override
     {
-        if ((object == skip) || (ray.IsPhotonRay() && Test_Flag(object, PH_PASSTHRU_FLAG)))
-            return false;
-        if (Test_Flag(object, OPAQUE_FLAG))
-            return true;
-        const TEXTURE *texture = object->Texture;
-        if ((texture == nullptr) || (texture->Type != PLAIN_PATTERN) || (texture->Next != nullptr) || (texture->Pigment == nullptr))
-            return false;
-        TransColour colour;
-        return Compute_Pigment(colour, texture->Pigment, ray.Evaluate(depth), nullptr, &ray, threadData) && (colour.Opacity() >= 1.0);
+        return (object != skip) && Test_Flag(object, OPAQUE_FLAG) && !(ray.IsPhotonRay() && Test_Flag(object, PH_PASSTHRU_FLAG));
     }
 };
 
@@ -3995,20 +3989,15 @@ bool Trace::ChangesIndex(const Interior *interior) const
                                      (interior->IOR != SNGL(sceneData->atmosphereIOR)));
 }
 
-void Trace::PreferOpaqueCoincident(Ray& ray, Intersection& isect, COLC weight)
+bool Trace::PreferOpaqueCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight)
 {
-    if (sceneData->legacyIorStack || !sceneData->anyOpaque || !ChangesIndex(isect.Object->interior.get()))
-        return;
-    if (sceneData->dielectrics)
-    {
-        Vector3d normal;
-        isect.Object->Normal(normal, &isect, threadData);
-        InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal);
-        if (sidesCache[std::min<size_t>(ray.GetTicket().traceLevel, 255)].simple)
-            return;
-    }
+    if (sceneData->legacyIorStack || !sceneData->anyOpaque || Test_Flag(isect.Object, OPAQUE_FLAG))
+        return false;
+    if (sceneData->dielectrics && !sceneData->opaqueWithoutInside &&
+        InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal).simple)
+        return false;
     if (!SurfaceTransmits(isect, ray, weight))
-        return;
+        return false;
     const double tolerance = InterfaceTolerance(isect.IPoint, isect.Object->interior.get()), back = tolerance + MIN_ISECT_DEPTH;
     Ray probe(ray.GetTicket(), isect.IPoint - back * ray.Direction, ray.Direction);
     probe.SetFlags(ray.IsPrimaryRay() ? Ray::PrimaryRay : ray.IsReflectionRay() ? Ray::ReflectionRay :
@@ -4016,14 +4005,13 @@ void Trace::PreferOpaqueCoincident(Ray& ray, Intersection& isect, COLC weight)
     Intersection other;
     other.Depth = back + tolerance;
     NoSomethingFlagRayObjectCondition precond;
-    OpaqueOtherCondition postcond(isect.Object, threadData);
-    ActiveTraceScope activeTrace(threadData, this, weight);
-    if (FindIntersection(other, probe, precond, postcond) && (other.Depth >= back - tolerance) &&
-        (other.Depth + isect.Depth - back >= MIN_ISECT_DEPTH))
-    {
-        other.Depth += isect.Depth - back;
-        isect = other;
-    }
+    OpaqueOtherCondition postcond(isect.Object);
+    if (!FindIntersection(other, probe, precond, postcond) || (other.Depth < back - tolerance) ||
+        (other.Depth + isect.Depth - back < MIN_ISECT_DEPTH))
+        return false;
+    other.Depth += isect.Depth - back;
+    isect = other;
+    return true;
 }
 
 double Trace::InterfaceTolerance(const Vector3d& point, const Interior *interior) const
@@ -4037,27 +4025,28 @@ double Trace::InterfaceTolerance(const Vector3d& point, const Interior *interior
             if ((extent > 0.0) && (extent < BOUND_HUGE * 0.5))
                 smallest = std::min(smallest, extent);
         }
-    if (smallest < HUGE_VAL)
-        tolerance = std::min(tolerance, 1.0e-3 * smallest);
+    tolerance = std::min(tolerance, (smallest < HUGE_VAL) ? 1.0e-3 * smallest : 1.0e-3);
     if (1.0e-3 * smallest >= 2.0 * MIN_ISECT_DEPTH)
         tolerance = std::max(tolerance, 2.0 * MIN_ISECT_DEPTH);
     return tolerance;
 }
 
-const RayInteriorVector& Trace::InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal,
-                                               double *leave)
+const Trace::InterfaceCache& Trace::InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal)
 {
     const RayInteriorVector& before = ray.GetInteriors();
-    const size_t level = std::min<size_t>(ray.GetTicket().traceLevel, 255);
-    if (sidesCache.size() <= level)
-        sidesCache.resize(level + 1);
-    InterfaceCache& sides = sidesCache[level];
+    std::uint64_t key = reinterpret_cast<std::uintptr_t>(interior);
+    for (int axis = X; axis <= Z; axis++)
+    {
+        const double coordinate = point[axis];
+        std::uint64_t bits;
+        std::memcpy(&bits, &coordinate, sizeof(bits));
+        key = (key ^ bits) * 0x9E3779B97F4A7C15ull;
+    }
+    InterfaceCache& sides = sidesCache[(key >> 59) & (kInterfaceCacheSize - 1)];
     if ((sides.interior != interior) || (sides.point[X] != point[X]) || (sides.point[Y] != point[Y]) || (sides.point[Z] != point[Z]) ||
         (sides.before.size() != before.size()) || !std::equal(before.begin(), before.end(), sides.before.begin()))
         FindInterfaceSides(sides, before, interior, point, normal, ray.Direction);
-    if (leave != nullptr)
-        *leave = sides.leave;
-    return sides.after;
+    return sides;
 }
 
 void Trace::FindInterfaceSides(InterfaceCache& sides, const RayInteriorVector& before, Interior *interior, const Vector3d& point,
@@ -4128,7 +4117,9 @@ void Trace::ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& po
     {
         double fromOffset, toOffset;
         const Interior *fromBase, *toBase;
-        const RayInteriorVector after(InterfaceSides(ray, interior, point, normal, &result.leave));
+        const InterfaceCache& sides = InterfaceSides(ray, interior, point, normal);
+        result.leave = sides.leave;
+        const RayInteriorVector after(sides.after);
         const double from = StackIndex(ray.GetInteriors(), nullptr, point, fromOffset, &fromBase);
         const double to = StackIndex(after, nullptr, point, toOffset, &toBase);
         const double fromIor = (fromBase != nullptr) ? fromBase->IOR : sceneData->atmosphereIOR;
@@ -4203,7 +4194,7 @@ void Trace::ComputeRelativeIOR(const Ray& ray, const Interior *interior, const V
             return;
         }
         double fromOffset, toOffset;
-        const RayInteriorVector& after = InterfaceSides(ray, const_cast<Interior *>(interior), point, normal);
+        const RayInteriorVector& after = InterfaceSides(ray, const_cast<Interior *>(interior), point, normal).after;
         ior = StackIndex(after, nullptr, point, toOffset) / StackIndex(ray.GetInteriors(), nullptr, point, fromOffset);
         return;
     }
