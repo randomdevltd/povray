@@ -1071,6 +1071,9 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
 // Points of each area light tested per media sample; see doc/PERF.md.
 static const int kMediaAreaLightPoints = 4;
 
+// Where the draws picking the step a stride of prepared steps takes its light at start.
+static const std::uint64_t kMediaLightDraw = std::uint64_t(1) << 40;
+
 MediaFunction::MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg) :
     modifiers(nullptr),
     drawKey(0),
@@ -1904,6 +1907,16 @@ void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSource
     }
 }
 
+DBL MediaFunction::ScatteringStep(MediaVector& medias, const MediaInterval& interval) const
+{
+    DBL step = HUGE_VAL;
+    for (const Media *medium : medias)
+        if (medium->use_scattering)
+            step = std::min(step, medium->Density.empty() ? interval.ds / std::max(1, medium->Min_Samples)
+                                                          : (medium->fastCache ? medium->FastResolution / 3.0 : 0.0));
+    return step;
+}
+
 void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                               const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering)
 {
@@ -1923,13 +1936,33 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             continue;
         }
         MathColour accumulated, transmitted;
+        // Scattering media coarser than the step take their light once per stride of steps, at a step drawn within it.
+        int stride = 1;
+        if (use_scattering && interval.lit && (modifiers == nullptr) && !ray.IsPhotonRay() &&
+            ((photonGatherer == nullptr) || (photonGatherer->map->numPhotons == 0)))
+            stride = std::max(1, std::min(count, int(ScatteringStep(medias, interval) / step)));
+        MathColour light;
+        int lit = -1;
         for (int j = 0; j < count; j++)
         {
             MediaInterval cell(interval.lit, 0, interval.s0 + j * step, interval.s0 + (j + 1) * step,
                                step, interval.l0, interval.l1);
-            MathColour emission, depth;
+            MathColour emission, depth, scattering;
             ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, depth, 3,
-                                  ignore_photons, use_scattering, false, true);
+                                  ignore_photons, use_scattering && (stride == 1), false, true, &scattering);
+            if (stride > 1)
+            {
+                const int group = j / stride, first = group * stride, size = std::min(stride, count - first);
+                if (group != lit)
+                {
+                    const int at = first + std::min(size - 1, int(Draw(drawKey, kDrawMediaSample, kMediaLightDraw + group) * size));
+                    const DBL d = interval.s0 + (at + 0.5) * step;
+                    light.Clear();
+                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), light);
+                    lit = group;
+                }
+                emission += scattering * light * step;
+            }
             accumulated += emission * Exp(-(transmitted + depth * 0.5));
             transmitted += depth;
         }
@@ -2431,15 +2464,14 @@ bool MediaFunction::ComputeCylinderLightInterval(const Ray &ray, const LightSour
 ******************************************************************************/
 
 void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray &ray, DBL d0, MathColour& SampCol,
-                                          MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared)
+                                          MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared,
+                                          MathColour *scattering)
 {
     // NK samples - moved d0 to parameter list
-    DBL d1, len;
+    DBL d1;
     Vector3d P, H;
-    MathColour C0, Light_Colour;
+    MathColour C0;
     MathColour Emission, Extinction, Scattering;
-    Ray Light_Ray(ray);
-    Light_Ray.hasDifferentials = false;
 
     threadData->Stats()[Media_Samples]++;
 
@@ -2481,6 +2513,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 
     // Get estimate for the total optical depth of the current interval.
     SampOptDepth = Extinction * mediainterval.ds;
+    if (scattering != nullptr)
+        *scattering = Scattering;
 
     if(sample_method != 3)
         mediainterval.od += SampOptDepth;
@@ -2491,53 +2525,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     if(!ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && !emptyScattering)
     {
         if(mediainterval.lit)
-        {
-            // note for performance: we could skip this if there are no photons (surface or media)
-
-            // determine whether or not this media is ignoring photons
-            // save this in the thread data... it will be used by ComputeShadowColour
-            // TODO - maybe this should be (or already is?) computed elsewhere and passed in
-            //        as a parameter ( see the ignore_photons parameter! )
-            //        I need to look closer at the new code to clean that up [NK]
-            // assume true, set to false if we find even one
-            threadData->litObjectIgnoresPhotons = true;
-            for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
-            {
-                if(!(*i)->ignore_photons)
-                {
-                    threadData->litObjectIgnoresPhotons = false;
-                    break;
-                }
-            }
-
-            // Area lights: a few points per sample, spread over the light along the ray (an R2 sequence).
-            const double k = lightSampleIndex;
-            Light_Ray.SetKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex++));
-
-            // Process all light sources.
-            for(size_t i = mediainterval.l0; i <= mediainterval.l1; i++)
-            {
-                // Use light only if active and within it's boundaries.
-                if((d1 >= lights[i].s0) && (d1 <= lights[i].s1))
-                {
-                    if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
-                        lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
-                    const int points = (lights[i].light->Area_Light && (lights[i].light->emitter == nullptr)) ? kMediaAreaLightPoints : 1;
-                    MathColour Lit_Colour;
-                    for(int j = 0; j < points; j++)
-                    {
-                        const double kj = k * points + j;
-                        const double su = lightSampleShift[U] + kj * 0.7548776662466927 + i * 0.6180339887498949;
-                        const double sv = lightSampleShift[V] + kj * 0.5698402909980532 + i * 0.4142135623730950;
-                        const Vector2d areaSample(su - floor(su), sv - floor(sv));
-                        if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
-                            Lit_Colour += Light_Colour;
-                    }
-                    if(!Lit_Colour.IsZero())
-                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
-                }
-            }
-        }
+            ComputeMediaLight(medias, lights, mediainterval, ray, d1, P, Scattering, Emission);
 
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
@@ -2571,6 +2559,61 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     }
 
     mediainterval.samples++;
+}
+
+void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
+                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission)
+{
+    DBL len;
+    MathColour Light_Colour;
+    Ray Light_Ray(ray);
+    Light_Ray.hasDifferentials = false;
+
+    // note for performance: we could skip this if there are no photons (surface or media)
+
+    // determine whether or not this media is ignoring photons
+    // save this in the thread data... it will be used by ComputeShadowColour
+    // TODO - maybe this should be (or already is?) computed elsewhere and passed in
+    //        as a parameter ( see the ignore_photons parameter! )
+    //        I need to look closer at the new code to clean that up [NK]
+    // assume true, set to false if we find even one
+    threadData->litObjectIgnoresPhotons = true;
+    for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
+    {
+        if(!(*i)->ignore_photons)
+        {
+            threadData->litObjectIgnoresPhotons = false;
+            break;
+        }
+    }
+
+    // Area lights: a few points per sample, spread over the light along the ray (an R2 sequence).
+    const double k = lightSampleIndex;
+    Light_Ray.SetKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex++));
+
+    // Process all light sources.
+    for(size_t i = mediainterval.l0; i <= mediainterval.l1; i++)
+    {
+        // Use light only if active and within it's boundaries.
+        if((d1 >= lights[i].s0) && (d1 <= lights[i].s1))
+        {
+            if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
+                lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
+            const int points = (lights[i].light->Area_Light && (lights[i].light->emitter == nullptr)) ? kMediaAreaLightPoints : 1;
+            MathColour Lit_Colour;
+            for(int j = 0; j < points; j++)
+            {
+                const double kj = k * points + j;
+                const double su = lightSampleShift[U] + kj * 0.7548776662466927 + i * 0.6180339887498949;
+                const double sv = lightSampleShift[V] + kj * 0.5698402909980532 + i * 0.4142135623730950;
+                const Vector2d areaSample(su - floor(su), sv - floor(sv));
+                if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
+                    Lit_Colour += Light_Colour;
+            }
+            if(!Lit_Colour.IsZero())
+                ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
+        }
+    }
 }
 
 void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
