@@ -966,6 +966,8 @@ class Trace
         /// The index where a ray holds `interiors`: their mixed ior plus media refraction, whose part `offset` gets.
         double StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base = nullptr,
                           double *dispersion = nullptr, unsigned int *elements = nullptr);
+        /// Warns once where a mean interior of ior 1 or the atmosphere's overlaps a denser one.
+        void WarnThinOverlap(const RayInteriorVector& interiors, const Vector3d& point);
         /// Warns once per render for a SceneData::mediaWarningFlags bit.
         void WarnRefraction(unsigned flag, const char *format, ...);
         /// An index held at or above the smallest a curved ray may meet, warning once when it is not.

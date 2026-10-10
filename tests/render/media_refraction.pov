@@ -11,6 +11,9 @@
 #ifndef (MixAll) #declare MixAll = -1; #end
 #ifndef (Priority) #declare Priority = 0; #end
 #ifndef (Fog) #declare Fog = 0; #end
+#ifndef (Off) #declare Off = 0; #end
+#ifndef (InnerOff) #declare InnerOff = 0; #end
+#ifndef (InnerAir) #declare InnerAir = 0; #end
 #ifndef (Side) #declare Side = 0; #end
 #ifndef (View) #declare View = -1; #end
 #macro IorMix(M) #switch (M) #case (0) ior_mix surface #break #case (1) ior_mix mean #break #case (2) ior_mix replace #break #end #end
@@ -86,7 +89,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #case (15) object { Water } #break
 #case (16) object { Ball } object { Backdrop } #break
 #case (17) object { Ball } box { -3, 3 texture { Clear } interior { ior 1 #if (Fog) media { absorption 0.1 } #end } } #break
-#case (50) object { Ball } box { -3, 3 texture { Clear } #if (Fog) interior { media { absorption 0.1 } } #end } #break
+#case (50) object { Ball } box { -3, 3 texture { Clear } interior { #if (Off) ior off #end #if (Fog) media { absorption 0.1 } #end } } #break
 #case (20) // glass and water sharing the wall z = x
   intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <-1, 0, 1>, 0 } texture { Clear } interior { ior 1.5 } }
   intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <1, 0, -1>, 0 } texture { Clear } interior { ior 1.33 } }
@@ -144,11 +147,11 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #break
 #case (18)
   sphere { 0, 2.5 texture { Clear } interior { ior 1.5 IorMix(MixAll) } }
-  sphere { 0, 1 texture { Clear } interior { ior Inner IorMix(Mix) IorMix(MixAll) } }
+  sphere { 0, 1 texture { Clear } interior { #if (InnerOff) ior off #elseif (InnerAir) ior atmosphere #else ior Inner #end IorMix(Mix) IorMix(MixAll) } }
 #break
 #case (53) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } #break
 #case (54) // a replace bubble placed before its glass, outranking it only by priority
-  sphere { 0, 1 texture { Clear } interior { ior 1 ior_mix replace priority Priority } }
+  sphere { 0, 1 texture { Clear } interior { ior atmosphere ior_mix replace priority Priority } }
   sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } }
 #break
 #case (55) // a replace bubble inside the overlap of two glasses that mean, and the same bubble cut out of both
@@ -156,7 +159,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
   #local C = sphere { 0, 0.5 };
   #if (Case = 55)
     object { A texture { Clear } interior { ior 1.5 } } object { B texture { Clear } interior { ior 1.3 } }
-    object { C texture { Clear } interior { ior 1 ior_mix replace } }
+    object { C texture { Clear } interior { ior atmosphere ior_mix replace } }
   #else
     difference { object { A } object { C } texture { Clear } interior { ior 1.5 } }
     difference { object { B } object { C } texture { Clear } interior { ior 1.3 } }
@@ -164,7 +167,16 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #break
 #case (57) object { Ball } #break // under atmospheric_ior 1.33 the ball refracts by 1.5 / 1.33
 #case (58) difference { box { -3, <3, 3, 5> } sphere { 0, 1.5 } texture { Clear } interior { ior 1.33 } } object { Ball } #break
-#case (59) object { Ball } box { -3, 3 texture { Clear } interior { ior 1.33 } } #break
+#case (59) object { Ball } box { -3, 3 texture { Clear } interior { ior off } } #break
+#case (66) // a refraction-only lens box, ior off, in water or under atmospheric_ior 1.33, with a Fresnel mirror finish
+#case (67)
+#case (68)
+  #if (Case != 67) box { -3, <3, 3, 5> texture { Clear } interior { ior 1.33 } } #end
+  #if (Case != 68)
+    box { -2, 2 texture { pigment { rgbt 1 } finish { diffuse 0 reflection { 0, 1 fresnel } } }
+          interior { ior off media { method 3 refraction 0.6 density { spherical scale 2 } } } }
+  #end
+#break
 #case (62) // red and blue filter boxes of one ior sharing the face z = 0, seen along z from View -1 or 1
 #case (63) // the same faces apart: the shared face blends both textures, then a clear face across an invisible gap
 #case (64) // a replace slab through a glass box, flush with both its faces, and the same slab in a hole cut through the box

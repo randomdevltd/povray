@@ -75,6 +75,7 @@ Interior::Interior()
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
     refracting = false;
+    iorState = kIorOff;
     iorMix = kIorMixAuto;
     iorPriority = 0;
     shape = "object";
@@ -97,6 +98,7 @@ Interior::Interior(const Interior& source)
     boundsHigh = Vector3d(-HUGE_VAL);
     precedence = 0;
     refracting = source.refracting;
+    iorState = source.iorState;
     iorMix = source.iorMix;
     iorPriority = source.iorPriority;
     shape = "object";

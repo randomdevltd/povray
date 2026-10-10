@@ -502,7 +502,8 @@ interior</code>. The syntax is:</p>
 INTERIOR:
   interior { [INTERIOR_IDENTIFIER] [INTERIOR_ITEMS...] }
 INTERIOR_ITEM:
-  ior Value | ior_mix surface | ior_mix mean | ior_mix replace |
+  ior Value | ior off | ior atmosphere |
+  ior_mix surface | ior_mix mean | ior_mix replace |
   priority Integer | caustics Value | dispersion Value | 
   dispersion_samples Samples | fade_distance Distance | 
   fade_power Power | fade_color &lt;Color&gt;
@@ -511,7 +512,7 @@ INTERIOR_ITEM:
 
 <p>Interior default values:</p>
 <pre>
-ior                : 1.0 (the atmosphere's)
+ior                : off
 ior_mix            : surface before #version 4.0, mean from it
 priority           : 0
 caustics           : 0.0
@@ -764,13 +765,18 @@ light is to change the <code><a href="r3_3.html#r3_3_1_7_3">filter</a></code> or
 specified in the pigment statement or to use the <code><a href="r3_7.html#r3_7_2_1">fade_power</a></code> 
 and <code><a href="r3_7.html#r3_7_2_1">fade_distance</a></code> keywords.
 See <a href="r3_7.html#r3_7_2_1_6">Attenuation</a>.</p>
-<p>A surface always refracts by the ior just before it over the ior just after it. Where objects overlap, the ior in the overlap follows each object's <code>ior_mix</code>:</p>
+<p>The <code>ior</code> of an interior is a number, which means what it says (<code>ior 1</code> is vacuum), or one of two words:</p>
 <ul>
-<li><code>surface</code>, the default before <code>#version 4.0</code>: the innermost object entered gives the ior, as in POV-Ray 3.7, so leaving an overlap of two objects does not refract and an object stating <code>ior 1</code> inside glass is an air pocket. A scene whose objects that are not opaque are all <code>surface</code>, and which has no <a href="r3_7.html#r3_7_2_2_4">media refraction</a>, renders exactly as POV-Ray 3.7 does.</li>
-<li><code>mean</code>, the default from <code>#version 4.0</code>: overlapping objects mix 50/50, and the ior is the mean of their iors; where glass (1.5) overlaps water (1.33) it is 1.415, whatever order the objects are placed in. An object whose ior is the atmosphere's (see <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a>; air, 1.00029, by default) or 1 (vacuum), stated or not, is void and does not count, so a backdrop plane, a fog box or an <code>interior { ior 1 media { ... } }</code> container never weakens the glass inside it, and a separate <code>ior 1</code> sphere inside glass is filled by the glass. Dispersion is averaged the same way.</li>
-<li><code>replace</code>: the object's ior overrides the objects ranked beneath it inside its volume, ranked by the interior's <code>priority</code> (an integer, 0 by default, higher first) and then by placement, later first, exactly as <a href="r3_7.html#r3_7_2_1_9">media mix replace</a> ranks. Objects ranked above it still mix with it by their own <code>ior_mix</code>. It always counts, even at the atmosphere's ior.</li>
+<li><code>ior off</code>, the default when no ior is given: the object takes no part in refraction under any <code>ior_mix</code>. It is never counted in a mean and never replaces, and its surfaces neither bend rays nor reflect by Fresnel, so a fog box or a media container leaves the glass inside it, and whatever it sits in, untouched. Media <code>refraction</code> inside it adds to the index of whatever surrounds it, so a refraction-only box shimmers the water or air it sits in without a surface of its own.</li>
+<li><code>ior atmosphere</code>: the object is air; its ior and dispersion are the atmosphere's (see <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a>), and it takes part like any material.</li>
 </ul>
-<p>In one scene the modes combine: the innermost <code>surface</code> object the ray entered hides everything entered before it; among it and the objects entered after it, the highest-ranked <code>replace</code> hides those ranked beneath it; the rest take the mean of what remains, leaving out void <code>mean</code> objects. So a <code>surface</code> or <code>replace</code> sphere inside <code>mean</code> glass gives its own ior, and a <code>replace</code> sphere inside the overlap of two <code>mean</code> glasses replaces their mean.</p>
+<p>Before <code>#version 4.0</code> an object without an ior refracts as one of the atmosphere's ior, as in POV-Ray 3.7. A surface always refracts by the ior just before it over the ior just after it. Where objects overlap, the ior in the overlap follows each object's <code>ior_mix</code>:</p>
+<ul>
+<li><code>surface</code>, the default before <code>#version 4.0</code>: the innermost object entered gives the ior, as in POV-Ray 3.7, so leaving an overlap of two objects does not refract and an <code>ior atmosphere</code> sphere inside glass is an air pocket. A scene whose objects that are not opaque all have an ior and are <code>surface</code>, and which has no <a href="r3_7.html#r3_7_2_2_4">media refraction</a>, renders exactly as POV-Ray 3.7 does.</li>
+<li><code>mean</code>, the default from <code>#version 4.0</code>: overlapping objects mix 50/50, and the ior is the mean of their iors; where glass (1.5) overlaps water (1.33) it is 1.415, whatever order the objects are placed in. Every object that takes part counts, so an <code>ior 1</code> sphere inside glass is vacuum mixed with glass, 1.25, and POV-Ray warns once when an object of ior 1 or <code>ior atmosphere</code> overlaps a denser one. Dispersion is averaged the same way.</li>
+<li><code>replace</code>: the object's ior overrides the objects ranked beneath it inside its volume, ranked by the interior's <code>priority</code> (an integer, 0 by default, higher first) and then by placement, later first, exactly as <a href="r3_7.html#r3_7_2_1_9">media mix replace</a> ranks. Objects ranked above it still mix with it by their own <code>ior_mix</code>.</li>
+</ul>
+<p>In one scene the modes combine: the innermost <code>surface</code> object the ray entered hides everything entered before it; among it and the objects entered after it, the highest-ranked <code>replace</code> hides those ranked beneath it; the rest take the mean of what remains. Objects with <code>ior off</code> are left out throughout. So a <code>surface</code> or <code>replace</code> sphere inside <code>mean</code> glass gives its own ior, and a <code>replace</code> sphere inside the overlap of two <code>mean</code> glasses replaces their mean.</p>
 <p>The physically correct bubble or inclusion is cut out of the glass with <code>difference</code>, giving an inclusion of another material its own object filling the hole:</p>
 <pre>
 difference {
@@ -780,10 +786,10 @@ difference {
   interior { ior 1.5 }
 }
 </pre>
-<p><code>replace</code> is the convenience: a separate sphere placed after the glass, or given a higher <code>priority</code>, renders as the same bubble.</p>
+<p><code>replace</code> is the convenience: a separate <code>ior atmosphere</code> sphere placed after the glass, or given a higher <code>priority</code>, renders as the same bubble, whatever <code>atmospheric_ior</code> is.</p>
 <pre>
 sphere { 0, 2 pigment { rgbf 1 } interior { ior 1.5 } }
-sphere { 0, 0.5 pigment { rgbf 1 } interior { ior 1 ior_mix replace } }
+sphere { 0, 0.5 pigment { rgbf 1 } interior { ior atmosphere ior_mix replace } }
 </pre>
 <p>Under <code>mean</code> or <code>replace</code>, or with media refraction, surfaces that meet at the point hit, such as glass and water sharing a wall or three wedges meeting along an edge, are one interface: the ray refracts and reflects once, by the ior just before the point over the ior just after it, with one test for total internal reflection. Every object with a surface there is tested for whether it holds a point a small distance beyond the surface, along the normal, and the rays spawned start that far beyond the point; objects without an inside, such as polygons and meshes without <code>inside_vector</code>, are crossed instead. If any surface there belongs to an object whose texture POV-Ray can tell is opaque, that surface is hit, for camera, reflected, refracted, shadow and photon rays alike. Otherwise the texture shown follows <a href="r3_4.html#r3_4_1_16">interface_texture</a>: by default (<code>blend</code>) the textures of every clear object with a surface there are each evaluated and their results averaged equally, so the face looks the same from both sides and whatever order the objects are placed in; <code>far</code> shows the texture of an object the ray enters there, else of one it leaves, and <code>near</code> the reverse, with exact ties settled by the objects' bounds. An <code>ior_mix replace</code> object owns its faces: where one of its surfaces is among them, its texture shows whatever the setting. Objects whose texture varies over their surface by other means, such as mesh textures, <code>uv_mapping</code> or <code>cutaway_textures</code>, are not blended, and those faces use <code>far</code>. Shadow rays cross such a surface surface by surface: each surface there filters the light once, and an opaque one blocks it.</p>
 <p>The distance is the lesser of a thousandth of the object's smallest extent (10<sup>-3</sup> for objects without finite bounds) and 10<sup>-5</sup> of the point's largest coordinate, raised to 2&times;10<sup>-4</sup> for objects at least 0.2 units across in every direction; surfaces of other objects closer than that count as meeting at the point, while on smaller objects only surfaces that truly coincide do.</p>

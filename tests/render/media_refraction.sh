@@ -89,15 +89,19 @@ render late_backdrop Declare=Case=16
 render bare_box Declare=Case=50
 same late_backdrop ball
 same bare_box ball
-# Under ior_mix mean an interior at the atmosphere's ior is void: an ior 1 box or bubble leaves the glass whole, fog or not.
+# An ior 1 box around glass is vacuum and means with it, warning; without an ior, or with ior off, it takes no part.
 render air_box Declare=Case=17
-same air_box ball
-render fog_air_box Declare=Case=17 Declare=Fog=1
+render air_box_37 Version=3.7 Declare=Case=17 Declare=BallIor=1.25
+region air_box air_box_37 0 95 0 71
+says "of ior 1 overlaps" air_box || { echo "media_refraction: no warning for an ior 1 box around glass" >&2; exit 1; }
 render fog_box Declare=Case=50 Declare=Fog=1
-same fog_air_box fog_box
-render bubble_void Declare=Case=18
+render fog_off Declare=Case=50 Declare=Fog=1 Declare=Off=1
+same fog_box fog_off
+render fog_air Declare=Case=17 Declare=Fog=1
+differs fog_air fog_box
+render bubble_off Declare=Case=18 Declare=InnerOff=1
 render glass Declare=Case=53
-same bubble_void glass
+same bubble_off glass
 # Overlapping solids of other iors mean: glass 1.5 with 1.25 is 3.7's 1.375.
 for case in 18:bubble 19:inside_glass; do
     render ${case#*:} Declare=Case=${case%:*} Declare=Inner=1.25
@@ -105,19 +109,23 @@ for case in 18:bubble 19:inside_glass; do
     region ${case#*:} ${case#*:}_37 0 95 0 71
 done
 render bubble_cut Declare=Case=51
-render bubble_air_37 Version=3.7 Declare=Case=18
+render bubble_air_37 Version=3.7 Declare=Case=18 Declare=Inner=1.00029
 render bubble_filled Declare=Case=52
 region bubble_cut bubble_air_37 0 95 0 71
 # A surface or replace sphere inside mean glass gives its own ior, as a difference bubble does.
 for mix in 0:surface 2:replace; do
-    render bubble_${mix#*:} Declare=Case=18 Declare=Mix=${mix%:*}
+    render bubble_${mix#*:} Declare=Case=18 Declare=Mix=${mix%:*} Declare=InnerAir=1
     region bubble_${mix#*:} bubble_cut 0 95 0 71
     render filled_${mix#*:} Declare=Case=18 Declare=Mix=${mix%:*} Declare=Inner=1.25
     region filled_${mix#*:} bubble_filled 0 95 0 71
 done
-# A replace placed before its glass means with it, unless its priority outranks the glass.
-render replace_first Declare=Case=54
-region replace_first bubble_filled 0 95 0 71
+render bubble_replace_133 Declare=Case=18 Declare=Mix=2 Declare=InnerAir=1 Declare=Atmosphere=1.33
+render bubble_cut_133 Declare=Case=51 Declare=Atmosphere=1.33
+region bubble_replace_133 bubble_cut_133 0 95 0 71
+# A replace placed before its glass means with it, unless its priority outranks the glass; in vacuum the mean is 1.25.
+render replace_first Declare=Case=54 Declare=Atmosphere=1
+render bubble_filled_vacuum Declare=Case=52 Declare=Atmosphere=1
+region replace_first bubble_filled_vacuum 0 95 0 71
 render replace_priority Declare=Case=54 Declare=Priority=1
 region replace_priority bubble_cut 0 95 0 71
 render lens_bubble Declare=Case=55
@@ -127,8 +135,15 @@ region lens_bubble lens_bubble_cut 0 95 0 71
 render underwater Declare=Case=57 Declare=Atmosphere=1.33
 render in_water Declare=Case=58
 region underwater in_water 14 81 2 69
-render underwater_void Declare=Case=59 Declare=Atmosphere=1.33
-same underwater underwater_void
+render underwater_off Declare=Case=59 Declare=Atmosphere=1.33
+same underwater underwater_off
+# An ior off box of refracting media bends from the index around it, water or atmosphere alike, with no surface of its own.
+render lens_water Declare=Case=66
+render lens_air_133 Declare=Case=67 Declare=Atmosphere=1.33
+render water_only Declare=Case=68
+region lens_water lens_air_133 14 81 2 69
+differs lens_water water_only
+region lens_water water_only 67 70 13 16
 render lens_ab Declare=Case=37
 render lens_ba Declare=Case=38
 render lens_cut Declare=Case=39
@@ -191,7 +206,7 @@ done
 # Under 4.0 a scene whose clear objects are all ior_mix surface renders as 3.7 does.
 render hidden_surface Declare=Case=11 Declare=MixAll=0
 same hidden_surface hidden_37
-render bubble_surface Declare=Case=18 Declare=MixAll=0
+render bubble_surface Declare=Case=18 Declare=MixAll=0 Declare=Inner=1.00029
 same bubble_surface bubble_air_37
 
 # A gap inside the merge tolerance, none, or a wider one all look the same through parallel faces and filter or absorb once each.
