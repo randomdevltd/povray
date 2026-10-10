@@ -31,11 +31,11 @@ const CURATION = {
     ...Object.fromEntries(CSG_BLOCKS.map((w) => [w, ['Parse_Object', 'Parse_Object_Mods']])),
     ...Object.fromEntries(Object.entries(WITH_OWN_ITEMS).map(([w, fn]) => [w, [fn, 'Parse_Object_Mods']])),
     finish: ['Parse_Finish'],
-    texture: ['Parse_Texture'],
+    texture: ['Parse_Texture', 'Parse_Pattern'],
     material: ['Parse_Material'],
-    pigment: ['Parse_Pigment', 'Parse_Pattern'],
-    normal: ['Parse_Tnormal', 'Parse_Pattern'],
-    density: ['Parse_Pigment', 'Parse_Pattern'],
+    pigment: ['Parse_Pigment', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
+    normal: ['Parse_Tnormal', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
+    density: ['Parse_Pigment', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
     interior: ['Parse_Interior'],
     media: ['Parse_Media'],
     camera: ['Parse_Camera', 'Parse_Camera_Mods'],
@@ -43,6 +43,7 @@ const CURATION = {
     object: ['Parse_Object', 'Parse_Object_Mods'],
     light_source: ['Parse_Light_Source', 'Parse_Media_Light', 'Parse_Object_Mods'],
     height_field: ['Parse_HField', 'Parse_Image', 'Parse_Object_Mods'],
+    smooth_triangle: ['Parse_Smooth_Triangle', 'Parse_Three_UVCoords', 'Parse_Object_Mods'],
     image_map: ['Parse_Image_Map', 'Parse_Image'],
     bump_map: ['Parse_Bump_Map', 'Parse_Image'],
 };
@@ -83,7 +84,7 @@ const strip = (text) => {
     return out;
 };
 
-const MACRO = /\b(EXPECT_ONE_CAT|EXPECT_ONE|EXPECT_CAT|EXPECT|END_EXPECT|CASE_EXPRESS_UNGET|CASE[A-Z_0-9]*|END_CASE|OTHERWISE|AllowToken|ALLOW)\b\s*(\(([^()]*)\))?/g;
+const MACRO = /\b(EXPECT_ONE_CAT|EXPECT_ONE|EXPECT_CAT|EXPECT|END_EXPECT|CASE_EXPRESS_UNGET|CASE[A-Z_0-9]*|END_CASE|OTHERWISE|AllowToken|ALLOW|GET)\b\s*(\(([^()]*)\))?/g;
 
 function mineFunction(name, body) {
     const top = new Set();
@@ -121,7 +122,7 @@ function mineFunction(name, body) {
             arms.pop();
         } else if (macro === 'OTHERWISE') {
             arms.push(null);
-        } else if ((macro === 'AllowToken') || (macro === 'ALLOW')) {
+        } else if ((macro === 'AllowToken') || (macro === 'ALLOW') || (macro === 'GET')) {
             const t = (args ?? '').trim();
             if (!/^[A-Z0-9_]+_TOKEN$/.test(t))
                 continue;
@@ -136,7 +137,7 @@ function mineFunction(name, body) {
 
 function functionsOfFile(text) {
     const out = [];
-    const defn = /^\S.*\bParser::(Parse_\w+)\s*\(/gm;
+    const defn = /^\S.*\bParser::(Parse\w+)\s*\(/gm;
     let m;
     while ((m = defn.exec(text)) !== null) {
         let i = text.indexOf('{', m.index);
@@ -194,6 +195,8 @@ for (const [word, fns] of Object.entries(CURATION)) {
             }
         }
     }
+    for (const set of Object.values(nested))
+        for (const w of set) items.add(w);
     blocks[word] = {
         items: [...items].sort(),
         nested: Object.fromEntries(Object.entries(nested).map(([p, s]) => [p, [...s].sort()])),
