@@ -143,7 +143,7 @@ public:
     };
 
     /// Structure representing an open input stream and a rewindable position.
-    struct HotBookmark final : Bookmark
+    struct HotBookmark : Bookmark
     {
         StreamPtr           pStream;
         HotBookmark() = default;
@@ -154,7 +154,7 @@ public:
     };
 
     /// Structure representing an input stream name and a rewindable position.
-    struct ColdBookmark final : Bookmark
+    struct ColdBookmark : Bookmark
     {
         UCS2String          fileName;
         ColdBookmark() = default;
@@ -162,6 +162,15 @@ public:
             Bookmark(lp, se, neol, anbc), fileName(s)
         {}
         virtual UCS2String GetFileName() const override { return fileName; }
+    };
+
+    /// Scanner state between two lexemes, without the stream.
+    struct State final
+    {
+        LexemePosition          position;
+        CharacterEncodingPtr    characterEncoding;
+        Character               nominalEndOfLine;
+        bool                    allowNestedBlockComments;
     };
 
     Scanner();
@@ -218,6 +227,12 @@ public:
 
     /// Bookmark current stream position for later rewinding.
     ColdBookmark GetColdBookmark() const;
+
+    /// Get the state for a later @ref GetHotBookmark(const State&).
+    State GetState() const { return State{ mCurrentPosition, mpCharacterEncoding, mNominalEndOfLine, mAllowNestedBlockComments }; }
+
+    /// Bookmark a state taken earlier in the current stream.
+    HotBookmark GetHotBookmark(const State& state);
 
     /// Go to bookmark.
     bool GoToBookmark(const Bookmark& bookmark);

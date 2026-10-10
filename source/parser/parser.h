@@ -537,7 +537,7 @@ class Parser final
         const LexemePosition& CurrentFilePosition() const;
         bool HaveCurrentMessageContext() const;
         const MessageContext& CurrentMessageContext() const;
-        void SetInputStream(const std::shared_ptr<IStream>& stream);
+        void SetInputStream(const std::shared_ptr<IStream>& stream, const UCS2String& path);
         RawTokenizer::HotBookmark GetHotBookmark();
         bool GoToBookmark(const RawTokenizer::HotBookmark& bookmark);
 
