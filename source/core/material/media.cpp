@@ -1942,9 +1942,12 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             continue;
         }
         MathColour accumulated, transmitted;
-        // Scattering media coarser than the step take their light once per stride of steps, at a step drawn within it.
+        // Scattering media coarser than the step take media lights' light once per stride of steps, at a step drawn within it.
+        bool mediaLit = false;
+        for (size_t l = interval.l0; interval.lit && (l <= interval.l1) && (l < lights.size()); l++)
+            mediaLit = mediaLit || (lights[l].light->emitter != nullptr);
         int stride = 1;
-        if (use_scattering && interval.lit && (modifiers == nullptr) && !ray.IsPhotonRay() &&
+        if (mediaLit && use_scattering && (modifiers == nullptr) && !ray.IsPhotonRay() &&
             ((photonGatherer == nullptr) || (photonGatherer->map->numPhotons == 0)))
             stride = std::max(1, std::min(count, int(ScatteringStep(medias, interval) / step)));
         MathColour light;
