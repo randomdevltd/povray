@@ -1,0 +1,46 @@
+if (defined(Quality)) {
+  let Q = Quality;
+} else if (clock > 0.5 && clock < 1) {
+  let Q = 2;
+} else {
+  let Q = 1;
+}
+if (!defined(Seed)) { let Seed = seed(42); }
+
+let I = 0;
+while (I < 10 || I == 20) {
+  if (I == 5) { break; }
+  sphere { <I, 0, 0>, 0.4 }
+  I = I + 1;
+}
+
+union {
+  for (J = 0 to 1 step 0.25) {
+    box { <J, 0, 0>, <J + 0.2, 1, 1> }
+  }
+  translate y * ((Q > 1) ? 2 : 1)
+}
+
+if (Q == 0 || Q == 1) {
+    debug("low\n");
+} else if (Q >= 2 && Q <= 3) {
+    debug("mid\n");
+} else {
+    debug("high\n");
+}
+
+let Switch_Value = int(rand(Seed) * 3);
+if (Switch_Value == 0) { let Tint = 0;
+} else if (Switch_Value == 1) { let Tint = 1;
+}
+
+let Switch_Value2 = (Q == 1 || Q == 2);
+// grouped
+if (Switch_Value2 == 1) {
+    let Hit = 1; // yes
+}
+for (K = 1 to 3) { }
+let After = K;
+if (Q >= (Q <= 1) && Q <= (Q >= 1)) {
+    let Hit = 2;
+}

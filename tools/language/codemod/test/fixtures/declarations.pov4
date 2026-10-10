@@ -1,0 +1,19 @@
+// Declarations and scope
+let Radius = 1;
+let Count = 0;
+Radius = Radius * 2;
+let fn_ = 3;
+let Message = "two\nlines";
+
+fn Scale_All(Factor, Out) {
+  let Size = Factor * Radius;
+  Size = Size + 1;
+  global Total_Size = Size;
+  Factor = Factor + 1;
+  Out[0] = Size;
+  Size
+}
+
+let Ball = sphere { 0, Scale_All(2, Slots) };
+Ball = null;
+Ball = sphere { 0, 1 };

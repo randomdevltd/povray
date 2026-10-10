@@ -1,0 +1,7 @@
+let Width = 0.1;
+let Post_Width = Width * 2;
+let Post_Count = 0;
+fn Post(H) {
+  global Post_Count = Post_Count + 1;
+  cylinder { 0, y * H, Post_Width }
+}

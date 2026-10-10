@@ -107,8 +107,8 @@ An `.inc4` include runs in the including file's scope (as classic includes do).
 - Comments `// ...` and `/* ... */` (not nested).
 - Numbers as classic: `1`, `.5`, `1e-3`. Strings as classic, same escapes.
 - Identifiers as classic; they may not be a reserved word. Reserved words are the classic reserved
-  words plus `let`, `fn`, `global`, `return`, `null`, `in`, `to`, `step`. (`if`, `else`, `for`,
-  `while`, `include`, `true`, `false` are already classic reserved words.)
+  words plus `let`, `fn`, `return`, `null`, `in`, `step`, `continue`. (`if`, `else`, `for`,
+  `while`, `break`, `include`, `global`, `to`, `true`, `false` are already classic reserved words.)
 - `;` after an item is allowed and ignored. `let`, assignment, `global`, `include` and `return`
   statements end with `;`.
 
@@ -123,7 +123,7 @@ fn F(A, B = 2) { A * B }
 
 if (X > 1) { ... } else if (X < 0) { ... } else { ... }
 while (X < 10) { ... }
-for (I = 0 to 10) { ... }          // inclusive, step 1 (classic #for semantics exactly)
+for (I = 0 to 10) { ... }          // inclusive, step 1; I keeps its classic after-loop value
 for (I = 0 to 1 step 0.1) { ... }
 for (V in Points) { ... }          // arrays, dictionaries (keys), fragments
 break;   continue;   return E;
@@ -158,7 +158,7 @@ Literals:
 rgb <1, 0.5, 0>                   // colour expressions as classic
 [1, 2, 3]  [...A, 4]              // array; spreads
 [for (I = 0 to 9) { I * I }]       // comprehension: the array is an output
-{ A: 1, "b c": 2, ...D }          // dictionary; string or identifier keys; spreads
+{ A: 1, "b c": 2, [K]: 3, ...D }  // dictionary; identifier, string or computed keys; spreads
 null  true  false
 ```
 
@@ -202,8 +202,8 @@ A 4.0 lambda is construct-time only and cannot be called from a render-time func
 ### Built-ins added by 4.0
 
 `len(A)`, `range(A, B[, S])` (inclusive, classic `#for` stepping), `map(A, F)`, `filter(A, F)`,
-`push(A, V)` (returns a new array), `keys(D)`, `defined(Name)`, `debug(S)`, `warning(S)`,
-`error(S)`, `array(N[, Fill])`.
+`push(A, V)` (returns a new array), `keys(D)`, `defined(Name)` (false when unbound or `null`), `debug(S)`,
+`warning(S)`, `error(S)`, `array(N[, Fill])`.
 
 ## Mixing languages
 
@@ -214,31 +214,67 @@ use the standard include library unchanged. A classic file cannot include a 4.0 
 
 ## Codemod
 
-`tools/language/codemod` converts a well-formed classic file to 4.0:
+`tools/language/codemod/codemod.mjs <in>... -o <out-dir> [--includes classic|convert] [-L dir] [--json report]`
+converts well-formed classic files to 4.0 with text edits on the classic tree: directives and operators are
+rewritten, everything else (comments, layout, object bodies) is kept byte for byte. A `.pov` input becomes
+`.pov4`; with `--includes convert` every include it reaches (scene folder, then `-L` dirs, then
+`distribution/include`) becomes an `.inc4` beside it (an include named with `..` or an absolute path is written by its
+file name, so nothing lands outside the output folder; names stay unique within each output folder), and includes
+that are refused or not found stay classic.
 
 | Classic | 4.0 |
 |---|---|
-| `#declare X = E;` / `#local X = E;` | `let X = E;` (or `X = E;` / `global X = E;` by scope) |
+| `#declare X = E;` / `#local X = E;` | `let X = E;`, `X = E;` or `global X = E;` (below) |
+| `#declare A[I] = E;` / `D.K = E` | `A[I] = E;` / `D.K = E;` |
 | `#macro M(A, B) ... #end` | `fn M(A, B) { ... }` |
 | `#if (C) ... #elseif (D) ... #else ... #end` | `if (C) { } else if (D) { } else { }` |
 | `#ifdef (X)` / `#ifndef (X)` | `if (defined(X))` / `if (!defined(X))` |
 | `#while (C) ... #end` | `while (C) { }` |
 | `#for (I, A, B, S) ... #end` | `for (I = A to B step S) { }` |
-| `#switch` / `#case` / `#range` / `#break` | `if` chain on a temporary |
+| `#break` in a loop | `break;` |
+| `#switch` / `#case` / `#range` / `#break` / `#else` | `if` chain on the value, or on `let Switch_Value = V;` unless V is a plain name |
 | `#include "f.inc"` | `include "f.inc4";` (converted) or `include "f.inc";` (classic) |
-| `#debug` / `#warning` / `#error` | `debug(...)` / `warning(...)` / `error(...)` |
+| `#debug` / `#warning` / `#error` | `debug(...);` / `warning(...);` / `error(...);` |
 | `#default { ... }` | `default { ... }` |
-| `#version N;` | removed (the extension decides) |
-| `array[N] { a, b }` | `[a, b]`; `array[N]` alone becomes `array(N)` |
-| `dictionary { ["k"]: v, .k2: w }` | `{ k: v, k2: w }` |
-| `=` / `&` / `\|` in expressions | `==` / `&&` / `\|\|` |
-| `#if` inside an expression | `C ? A : B` |
-| identifiers that are 4.0 reserved words | renamed with a trailing `_` |
+| `#version N;` | removed, with a `#declare V = version;` used only to restore it |
+| `#undef X` | `X = null;`, or `let X = null;` / `global X = null;` where 4.0 has no binding to assign |
+| `array[N] { a, b }` | `[a, b]`, padded with `null` (or `array(M)` rows for `array[N][M]`) to a literal N or with `...array(N - 2)`; `array[N]` alone becomes `array(N)`, `array[N][M]` becomes `array(N, array(M))` |
+| `dictionary { ["k"]: v, .k2: w, [K]: u }` | `{ k: v, k2: w, [K]: u }`; keys that are not plain names or are reserved stay strings |
+| `D.step` where `step` is a 4.0 reserved word | `D["step"]` |
+| `=` / `&` / `\|` in expressions | `==` / `&&` / `\|\|`, parenthesised where 4.0 precedence would regroup them: classic `&` and `\|` share one left-associative level, as do `=` and `<` |
+| `#if` inside an expression | `C ? A : B` (a comparison C keeps its parentheses), parenthesised inside an operator; refused (`splice-precedence`) when a branch would regroup with the operator around it, as in `3 * #if (A) 1 + 2 ...` |
+| a single-value `#if` among block items, `scale #if (A) 2 #else 3 #end` | `scale A ? 2 : 3` |
+| `<1 2 3>`, `<1, 2,>`, `M(1 <2, 3>)`, `dictionary { ["a"]: 1 ["b"]: 2 }` | `<1, 2, 3>`, `<1, 2>`, `M(1, <2, 3>)`, `{ a: 1, b: 2 }`; an empty argument, `M(1,,3)`, is refused (`empty-argument`) |
+| a string with a raw line break | the break written as `\n` |
+| `deprecated` on a declaration | dropped |
+| identifiers that are 4.0 reserved words | renamed with trailing `_`, as many as make the name unused in the scene and its includes |
 
-A file is **well-formed** when every directive sits at a statement or block-item boundary, or inside
-an expression where it is a complete conditional (convertible to `?:`). Files that splice partial
-blocks (`#if (A) pigment { #else texture { pigment { #end ...`), build tokens by macro, or use
-`#fopen`/`#read`/`#write` are reported with their location and reason, not converted.
+Scope follows `Parse_Declare` and the symbol stack. At file level both directives bind in the file:
+`let X` unless an earlier unconditional binding in the same or an enclosing statement list makes it `X =`.
+In a macro, `#local X` is `let X` (or `X =` after a binding, or for a parameter); `#declare X` is `X =` for a
+parameter or a dominating local and `global X =` otherwise. An include's top-level `#local` becomes `let` and is
+noted (`include-local`): classic drops it at the end of the include, an `.inc4` leaves it in the includer's scope.
+A file-level binding whose name a classic include reads is noted too (`read-by-classic-include`): the classic
+include must see the 4.0 binding, as it saw the classic one.
+
+A file is **well-formed** when every directive sits at a statement or block-item boundary, or inside an
+expression where it is a complete conditional. Anything else is refused, with `file:line:column`, a reason and
+the conversion of that file skipped:
+
+| Reason | Why |
+|---|---|
+| reasons from `corpus.mjs` | syntax errors, partial macros, file I/O, splices, stray items, ambiguous indexes |
+| `by-reference-argument` | a macro assigns a parameter the caller passed as a variable that is read again (classic writes it back; 4.0 passes by value) |
+| `dynamic-scope` | a macro reads or `#declare`s a name that is local to a macro calling it (classic resolves names on the call stack) |
+| `declare-maybe-local` | `#declare X` in a macro that makes `X` local on some paths only |
+| `layered-texture` | `#declare T = texture { } texture { }` has no single 4.0 value |
+| `tuple`, `optional-parameter`, `optional-declare`, `scope-prefix` | tuples, `optional`, `local.`/`global.` have no 4.0 form |
+| `include-local-shadow` | with `--includes convert`, an include's top-level `#local X` where the scene or another include binds `X` |
+| `called-by-classic-include` | a scene macro that a classic include calls back (a classic file cannot call a 4.0 function) |
+| `splice-precedence` | see the `#if` row above |
+| `array-size` | an array initializer with directives and a size, whose element count is not known |
+| `switch-fallthrough`, `break-placement` | a `#case` that runs on into the next, a `#break` that is not the last item of a clause or outside a loop |
+| `directive-in-dictionary`, `nested-comment` | no 4.0 form |
 
 ## Classic front end
 
