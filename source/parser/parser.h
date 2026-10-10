@@ -259,6 +259,8 @@ GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& de
 
 class Parser final
 {
+    friend class Pov4Evaluator;
+
     public:
 
         using Options = ParserOptions;
@@ -714,6 +716,7 @@ class Parser final
         const FNGroup *mFunctionGroups = nullptr;
 
         bool Had_Max_Trace_Level;
+        bool mHadCamera;
         int Max_Trace_Level;
 
         ExperimentalFlags mExperimentalFlags;
@@ -788,6 +791,7 @@ class Parser final
         };
 
         std::vector<CS_ENTRY> Cond_Stack;
+        size_t mOptionalSemicolonLevel = 0; ///< Cond_Stack depth at which a #declare needs no `;` (4.0 evaluator snippets).
         bool Skipping, Inside_Ifdef, Inside_MacroDef, Parsing_Directive, parseRawIdentifiers, parseOptionalRValue;
 
         bool Got_EOF; // WARNING: Changes to the use of this variable are very dangerous as it is used in many places assuming certain non-obvious side effects! [trf]
@@ -886,6 +890,9 @@ class Parser final
         void Parse_Tags(std::vector<std::string>& tags);
         void Parse_Filter_Tags(TagFilter& filter);
         void Parse_Frame();
+        void Parse_Frame_Items();
+        void Parse_Snippet(const std::string& text, const UCS2String& fileName, std::vector<POV_LONG> lines);
+        void Run_Pov4();
 
         void Link(ObjectPtr New_Object, std::vector<ObjectPtr>& Object_List_Root);
         void Link_To_Frame(ObjectPtr Object);

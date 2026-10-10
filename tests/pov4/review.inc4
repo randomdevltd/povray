@@ -1,0 +1,2 @@
+let IncScale = 0.5;
+fn Ring(N, R) { [for (I = 0 to N - 1) { <R * cos(I * tau / N), 0.2, R * sin(I * tau / N)> }] }

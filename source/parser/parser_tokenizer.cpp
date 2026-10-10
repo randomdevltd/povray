@@ -63,6 +63,7 @@
 // POV-Ray header files (parser module)
 #include "parser/scanner.h"
 #include "parser/rawtokenizer.h"
+#include "parser/pov4.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -94,7 +95,10 @@ void Parser::Initialize_Tokenizer()
 
     pre_init_tokenizer();
 
-    rfile = Locate_File(sceneData->inputFile.c_str(), POV_File_Text_POV, actualFileName, true);
+    if (IsPov4File(sceneData->inputFile))
+        rfile = std::make_shared<IMemStream>(nullptr, 0, sceneData->inputFile);
+    else
+        rfile = Locate_File(sceneData->inputFile.c_str(), POV_File_Text_POV, actualFileName, true);
     if (rfile == nullptr)
         Error("Cannot open input file.");
 

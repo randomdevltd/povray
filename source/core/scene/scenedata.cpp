@@ -412,6 +412,7 @@ SceneData::SceneData() :
     languageVersion = POV_RAY_VERSION_INT;
     languageVersionSet = false;
     languageVersionLate = false;
+    pov4Version = 400;
     warningLevel = 10; // all warnings
     legacyCharset = LegacyCharset::kUnspecified;
     noiseGenerator = kNoiseGen_RangeCorrected;

@@ -193,6 +193,8 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Post_Frame_Return",   kPOVAttrib_PostFrameCommand,   kUseSpecialHandler },
     { "Post_Scene_Command",  kPOVAttrib_PostSceneCommand,   kUseSpecialHandler },
     { "Post_Scene_Return",   kPOVAttrib_PostSceneCommand,   kUseSpecialHandler },
+    { "Pov4_Lowered_File",   kPOVAttrib_Pov4LoweredFile,    kPOVMSType_UCS2String },
+    { "Pov4_Version",        kPOVAttrib_Pov4Version,        kPOVMSType_Float },
     { "Preview_End_Size",    kPOVAttrib_PreviewEndSize,     kPOVMSType_Int },
     { "Preview_Start_Size",  kPOVAttrib_PreviewStartSize,   kPOVMSType_Int },
     { "Progressive_Render",  kPOVAttrib_ProgressiveRender,  kPOVMSType_Bool },
@@ -296,6 +298,7 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
     { "GD",  kPOVAttrib_DebugFile,          kPOVMSType_UCS2String,  kPOVAttrib_DebugConsole,        kCmdOptFlag_Optional },
     { "GF",  kPOVAttrib_FatalFile,          kPOVMSType_UCS2String,  kPOVAttrib_FatalConsole,        kCmdOptFlag_Optional },
     { "GI",  kPOVAttrib_CreateIni,          kPOVMSType_UCS2String,  kNoParameter },
+    { "GL",  kPOVAttrib_Pov4LoweredFile,    kPOVMSType_UCS2String,  kNoParameter },
     { "GP",  kNoParameter,                  kNoParameter,           kPOVAttrib_AppendConsoleFiles },
     { "GR",  kPOVAttrib_RenderFile,         kPOVMSType_UCS2String,  kPOVAttrib_RenderConsole,       kCmdOptFlag_Optional },
     { "GS",  kPOVAttrib_StatisticsFile,     kPOVMSType_UCS2String,  kPOVAttrib_StatisticsConsole,   kCmdOptFlag_Optional },
@@ -321,6 +324,7 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
 
     { "MB",  kPOVAttrib_BoundingThreshold,  kPOVMSType_Int,         kPOVAttrib_Bounding,            kCmdOptFlag_Optional },
     { "MI",  kPOVAttrib_MaxImageBufferMem,  kPOVMSType_Int,         kNoParameter },
+    { "ML",  kPOVAttrib_Pov4Version,        kPOVMSType_Float,       kNoParameter },
     { "MV",  kPOVAttrib_Version,            kPOVMSType_Float,       kNoParameter },
 
     { "O",   kPOVAttrib_OutputFile,         kPOVMSType_UCS2String,  kNoParameter },
@@ -869,7 +873,7 @@ int ProcessRenderOptions::ProcessUnknownString(char *str, POVMSObjectPtr obj)
         char *ptr = strrchr(str, '.');
         if (ptr != nullptr)
         {
-            if(pov_stricmp(ptr, ".pov") == 0)
+            if((pov_stricmp(ptr, ".pov") == 0) || (pov_stricmp(ptr, ".pov4") == 0))
                 state = 1; // POV file
         }
     }

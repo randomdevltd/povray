@@ -1,0 +1,8 @@
+include "scene.inc";
+let Red = rgb <0.8, 0.1, 0.1>;
+let Hot = true;
+let Scale = (S) => S * 0.5;
+let Ball = sphere { 0, 1 pigment { color Red } };
+Ball
+object { Ball translate x * 2.5 scale Scale(1.5) }
+sphere { <-2.5, 0, 0>, Scale(2) pigment { color rgb <1, Hot ? 0.2 : 0.8, 0> } finish { phong 1 } }

@@ -1,0 +1,46 @@
+include "scene.inc";
+include "review.inc4";
+let Settings = global_settings { max_trace_level 7 };
+fn Pair() {
+  let Paint = texture { pigment { rgb <0.9, 0.3, 0.3> } };
+  sphere { <-1, 0, 0>, 0.3 texture { Paint } }
+  sphere { <1, 0, 0>, 0.3 texture { Paint } }
+}
+fn Wrapped() { return Pair(); }
+let P = Wrapped();
+debug("flushed\n");
+union { P translate <0, 1.5, -1> }
+let Counter = 0;
+fn Bump() { global Counter = Counter + 1; return Counter; }
+sphere { <2, Bump() * 0.5, -1>, 0.2 } sphere { <2.5, Bump() * 0.5, -1>, 0.2 }
+let Base = [1, 2, 3];
+let Copy = Base;
+Copy[0] = 10;
+sphere { <Base[0] - 3, 0, -2>, 0.2 }
+let Mixed = [1, <1, 2, 3>, "s"];
+let Empty = [];
+let Height = 0.25;
+let Layer = texture { pigment { rgb 1 } } texture { pigment { rgbt <0, 0, 1, 0.5> } };
+include "review_reads.inc";
+let Ticks = 0;
+union { Count() Count() pigment { rgb z } }
+union { Count() Ticks = 5; Count() pigment { rgb x } }
+let Tint = rgb <0.2, 0.4, 0.6>;
+Tint.red = 0.1;
+sphere { <Ticks * 0.3, -1, 2>, 0.3 pigment { Tint } }
+union {
+  Stack()
+  Height = 0.75;
+  Stack()
+  translate <2, 0, 1>
+}
+sphere { <-2, 0, 2>, ReadSize * 0.5 pigment { rgb x } }
+let Words = { "é": 1, plain: 2 };
+for (K in keys(Words)) { if (K != "plain") { sphere { <0, 0, 2>, strlen(K) * 0.2 } } }
+for (Q in Ring(4, 1.5)) { sphere { Q, 0.1 * IncScale * 2 } }
+box { <2.5, -1, -1>, <3, 0, 0> ...Layer }
+let Gone = 1;
+Gone = null;
+if (!defined(Gone) && !defined(Missing)) { sphere { <-3, 1, 0>, 0.25 } }
+let Rad = [0.15];
+sphere { <0, 0.5, -2>, ... /* radius */ Rad pigment { rgb y } }

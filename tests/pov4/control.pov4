@@ -1,0 +1,17 @@
+include "scene.inc";
+let Sizes = { small: 0.2, "big one": 0.45 };
+let I = 0;
+while (I < 5) {
+  let R = (I < 2) ? Sizes.small : Sizes["big one"];
+  if (I == 3) { I = I + 1; continue; }
+  sphere { <I - 2, R, 0>, R pigment { rgb <I / 4, 0.5, 1 - I / 4> } }
+  I = I + 1;
+}
+for (A = 0 to 1 step 0.25) { box { <A * 4 - 2, -1, 1>, <A * 4 - 1.8, A, 1.2> pigment { rgb 1 } } }
+let Total = 0;
+for (K in Sizes) { Total = Total + Sizes[K]; }
+let D = { ...Sizes, tiny: 0.05 };
+D.tiny = Total / 4;
+sphere { <0, 2, 0>, D.tiny pigment { rgb x } }
+let Steps = { step: 0.3, [concat("ha", "lf")]: 0.5 };
+sphere { <-2, 2, 0>, A / 5 scale if (Total > 0.5) { Steps.step * 2 } else { Steps.half } pigment { rgb y } }

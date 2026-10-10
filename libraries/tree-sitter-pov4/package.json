@@ -1,0 +1,12 @@
+{
+  "name": "tree-sitter-pov4",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "generate": "node words.js && tree-sitter generate --abi 15",
+    "test": "tree-sitter test"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "0.25.10"
+  }
+}

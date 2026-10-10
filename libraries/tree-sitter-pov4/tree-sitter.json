@@ -1,0 +1,14 @@
+{
+  "grammars": [{
+    "name": "pov4",
+    "camelcase": "Pov4",
+    "scope": "source.pov4",
+    "path": ".",
+    "file-types": ["pov4", "inc4"]
+  }],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "AGPL-3.0-or-later",
+    "description": "POV-Ray scene language 4.0"
+  }
+}

@@ -1,0 +1,108 @@
+==================
+Let, assignment and global
+==================
+let X = 1; X = X + 1; global Seed = seed(42); let Y;
+A[I] = 2; D.K = 3;
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (number))
+  (assignment
+    target: (identifier)
+    value: (binary_expression
+      left: (identifier)
+      right: (number)))
+  (global_statement
+    name: (identifier)
+    value: (call_expression
+      function: (builtin)
+      arguments: (arguments
+        (number))))
+  (let_statement
+    name: (identifier))
+  (assignment
+    target: (index_expression
+      object: (identifier)
+      index: (identifier))
+    value: (number))
+  (assignment
+    target: (member_expression
+      object: (identifier)
+      member: (identifier))
+    value: (number)))
+
+==================
+Functions and returns
+==================
+fn F(A, B = 2) { if (A > B) { return A; } A * B }
+---
+
+(source_file
+  (function_definition
+    name: (identifier)
+    parameters: (parameters
+      (parameter
+        name: (identifier))
+      (parameter
+        name: (identifier)
+        default: (number)))
+    body: (body
+      (if_statement
+        condition: (parenthesized_expression
+          (comparison_expression
+            left: (identifier)
+            right: (identifier)))
+        consequence: (body
+          (return_statement
+            value: (identifier))))
+      (binary_expression
+        left: (identifier)
+        right: (identifier)))))
+
+==================
+Control flow
+==================
+for (I = 0 to 1 step 0.1) { break; }
+for (V in Points) { continue; }
+while (X < 10) { X = X + 1; }
+if (A) { } else if (B) { } else { }
+include "colors.inc";
+---
+
+(source_file
+  (for_statement
+    variable: (identifier)
+    start: (number)
+    end: (number)
+    step: (number)
+    body: (body
+      (break_statement)))
+  (for_statement
+    variable: (identifier)
+    iterable: (identifier)
+    body: (body
+      (continue_statement)))
+  (while_statement
+    condition: (parenthesized_expression
+      (comparison_expression
+        left: (identifier)
+        right: (number)))
+    body: (body
+      (assignment
+        target: (identifier)
+        value: (binary_expression
+          left: (identifier)
+          right: (number)))))
+  (if_statement
+    condition: (parenthesized_expression
+      (identifier))
+    consequence: (body)
+    alternative: (if_statement
+      condition: (parenthesized_expression
+        (identifier))
+      consequence: (body)
+      alternative: (body)))
+  (include_statement
+    file: (string)))

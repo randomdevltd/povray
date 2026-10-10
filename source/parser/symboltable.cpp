@@ -232,7 +232,7 @@ void* SymbolTable::Copy_Identifier(void* Data, int Type)
             New = CopyConstructData<Media>(Data);
             break;
         case INTERIOR_ID_TOKEN:
-            New = CopyConstructData<Interior>(Data);
+            New = CopyConstructData<InteriorPtr>(Data);
             break;
         case MATERIAL_ID_TOKEN:
             New = reinterpret_cast<void*>(Copy_Material(reinterpret_cast<MATERIAL *>(Data)));

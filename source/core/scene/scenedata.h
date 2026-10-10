@@ -301,6 +301,10 @@ class SceneData
         // name of the parsed file
         UCS2String inputFile; // TODO - handle differently
         UCS2String headerFile;
+        /// Where a 4.0 scene writes the classic SDL it was lowered to (testing aid), if not empty.
+        UCS2String pov4LoweredFile;
+        /// Language version a 4.0 scene runs under, normally 400 (testing aid).
+        int pov4Version;
 
         /// Aspect ratio of the output image.
         DBL aspectRatio;

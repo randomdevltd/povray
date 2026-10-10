@@ -1,0 +1,223 @@
+==================
+Keywords are never operands
+==================
+object { Ball translate -x * 4 scale 2 }
+---
+
+(source_file
+  (block
+    name: (keyword)
+    (identifier)
+    (keyword)
+    (binary_expression
+      left: (unary_expression
+        operand: (builtin))
+      right: (number))
+    (keyword)
+    (number)))
+
+==================
+Bracket groups, colours and statements in bodies
+==================
+pigment { color_map { [0 color Red] [1 rgb 1 transmit 0.5] } }
+union { for (I = 0 to 9) { sphere { x * I, 0.4 } } ...Extras Tree(1) }
+---
+
+(source_file
+  (block
+    name: (keyword)
+    (block
+      name: (keyword)
+      (array
+        (number)
+        (colour_expression
+          operator: (color_operator)
+          value: (identifier)))
+      (array
+        (number)
+        (colour_expression
+          operator: (colour_operator)
+          value: (number)
+          (channel
+            name: (colour_channel)
+            value: (number))))))
+  (block
+    name: (keyword)
+    (for_statement
+      variable: (identifier)
+      start: (number)
+      end: (number)
+      body: (body
+        (block
+          name: (keyword)
+          (binary_expression
+            left: (builtin)
+            right: (identifier))
+          (number))))
+    (spread
+      (identifier))
+    (call_expression
+      function: (identifier)
+      arguments: (arguments
+        (number)))))
+
+==================
+Render-time functions and the filter word
+==================
+let F = function(x, y, z) { x * x - y };
+pigment { image_map { png "a.png" filter all 0.5 } }
+let L = filter(A, (P) => (P > 0));
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (function_block
+      parameters: (function_parameters
+        (builtin)
+        (builtin)
+        (builtin))
+      (binary_expression
+        left: (binary_expression
+          left: (builtin)
+          right: (builtin))
+        right: (builtin))))
+  (block
+    name: (keyword)
+    (block
+      name: (keyword)
+      (keyword)
+      (string)
+      (colour_expression
+        (channel
+          name: (colour_channel)))
+      (keyword)
+      (number)))
+  (let_statement
+    name: (identifier)
+    value: (call_expression
+      function: (builtin)
+      arguments: (arguments
+        (identifier)
+        (lambda
+          parameters: (parameters
+            (parameter
+              name: (identifier)))
+          body: (parenthesized_expression
+            (comparison_expression
+              left: (identifier)
+              right: (number))))))))
+
+==================
+Colour channels, long vectors and juxtaposed vectors
+==================
+let C = color red 1 green 0.5 filter 0.1;
+object { B matrix <1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0> }
+box { <0, 0, 0> <1, 1, 1> }
+pigment { image_map { png "a.png" transmit all 0.5 } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (colour_expression
+      (color_operator)
+      (colour_expression
+        (channel
+          (colour_channel)
+          (number))
+        (channel
+          (colour_channel)
+          (number)))
+      (channel
+        (colour_channel)
+        (number))))
+  (block
+    (keyword)
+    (identifier)
+    (keyword)
+    (vector
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)
+      (number)))
+  (block
+    (keyword)
+    (vector
+      (number)
+      (number)
+      (number))
+    (vector
+      (number)
+      (number)
+      (number)))
+  (block
+    (keyword)
+    (block
+      (keyword)
+      (keyword)
+      (string)
+      (colour_expression
+        (channel
+          (colour_channel)))
+      (keyword)
+      (number))))
+
+==================
+Sized pigment functions, portal targets and layered lets
+==================
+pigment { function 300, 300 { pigment { checker } } }
+portal { box { 0, 1 } to { box { 2, 3 } } }
+let T = texture { pigment { P } } texture { pigment { Q } };
+---
+
+(source_file
+  (block
+    (keyword)
+    (function_block
+      (number)
+      (number)
+      (block
+        (keyword)
+        (keyword))))
+  (block
+    (keyword)
+    (block
+      (keyword)
+      (number)
+      (number))
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (number)
+        (number))))
+  (let_statement
+    (identifier)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (identifier)))
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (identifier)))))
+
+==================
+Comparisons need parentheses outside conditions
+:error
+==================
+let A = B < C;
+---
+
+

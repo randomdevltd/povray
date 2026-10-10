@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
+#include "parser/pov4.h"
 
 // C++ variants of C standard header files
 #include <cctype>
@@ -313,9 +314,13 @@ void Parser::Run()
                 }
             }
 
-            IncludeHeader(sceneData->headerFile);
-
-            Parse_Frame();
+            if (IsPov4File(sceneData->inputFile))
+                Run_Pov4();
+            else
+            {
+                IncludeHeader(sceneData->headerFile);
+                Parse_Frame();
+            }
 
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
@@ -7285,11 +7290,19 @@ void Parser::Parse_Default ()
 
 void Parser::Parse_Frame ()
 {
+    mHadCamera = false;
+    Parse_Frame_Items();
+    // parsedCamera still holds the frame's default, exactly as in a scene without a camera.
+    if (!mHadCamera && sceneData->parseFilterTags.specified)
+        mMessageFactory.Info("No camera survived Filter_Tags; using the default camera.");
+}
+
+void Parser::Parse_Frame_Items ()
+{
     ObjectPtr Object;
     RAINBOW  *Local_Rainbow;
     FOG  *Local_Fog;
     SKYSPHERE  *Local_Skysphere;
-    bool had_camera = false;
 
     EXPECT
         CASE (RAINBOW_TOKEN)
@@ -7356,11 +7369,11 @@ void Parser::Parse_Frame ()
             {
                 if (sceneData->clocklessAnimation == false)
                 {
-                    if (had_camera == true)
+                    if (mHadCamera)
                         Warning("More than one camera in scene. Ignoring previous camera(s).");
                 }
             }
-            had_camera = true;
+            mHadCamera = true;
             sceneData->parsedCamera = candidate;
             if (sceneData->clocklessAnimation == true)
                 sceneData->cameras.push_back(sceneData->parsedCamera);
@@ -7449,9 +7462,28 @@ void Parser::Parse_Frame ()
             mPortalImages.clear();
         END_CASE
     END_EXPECT
-    // parsedCamera still holds the frame's default, exactly as in a scene without a camera.
-    if (!had_camera && sceneData->parseFilterTags.specified)
-        mMessageFactory.Info("No camera survived Filter_Tags; using the default camera.");
+}
+
+void Parser::Parse_Snippet(const std::string& text, const UCS2String& fileName, std::vector<POV_LONG> lines)
+{
+    struct Snippet final
+    {
+        std::string text;
+        IMemStream stream;
+        Snippet(const std::string& t, const UCS2String& name) :
+            text(t), stream(reinterpret_cast<const unsigned char*>(text.data()), text.size(), name) {}
+    };
+    auto snippet = std::make_shared<Snippet>(text, fileName);
+    std::shared_ptr<IStream> stream(snippet, &snippet->stream);
+    SetInputStream(stream);
+    mTokenizer.SetStringEncoding(CharacterEncodingID::kUTF8);
+    mTokenizer.SetLineMap(stream, std::move(lines));
+    mHavePendingRawToken = false;
+    mToken.End_Of_File = false;
+    mToken.Unget_Token = false;
+    Got_EOF = false;
+    InvalidateCurrentToken();
+    Parse_Frame_Items();
 }
 
 //******************************************************************************
@@ -8818,6 +8850,7 @@ void Parser::Parse_Declare(bool is_local, bool after_hash)
     bool tupleDeclare = false;
     bool lvectorDeclare = false;
     bool larrayDeclare = false;
+    const bool semicolonOptional = after_hash && (Cond_Stack.size() == mOptionalSemicolonLevel);
     TokenId* numberPtr = nullptr;
     void** dataPtr = nullptr;
     bool optional = false;
@@ -9129,7 +9162,7 @@ void Parser::Parse_Declare(bool is_local, bool after_hash)
                 GET (COMMA_TOKEN)
             }
             bool finalParameter = (i == lvalues.size()-1);
-            if (!Parse_RValue (Previous, numberPtr, dataPtr, Temp_Entry, false, !tupleDeclare, is_local, allow_redefine, true, MAX_NUMBER_OF_TABLES))
+            if (!Parse_RValue (Previous, numberPtr, dataPtr, Temp_Entry, false, !tupleDeclare && !semicolonOptional, is_local, allow_redefine, true, MAX_NUMBER_OF_TABLES))
             {
                 EXPECT_ONE
                     CASE (IDENTIFIER_TOKEN)

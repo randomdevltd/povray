@@ -1,0 +1,23 @@
+include "scene.inc";
+fn Tree(H) {
+  cylinder { 0, y * H, 0.1 pigment { rgb <0.4, 0.3, 0.2> } }
+  sphere { y * H, H / 3 pigment { rgb <0.1, 0.5, 0.1> } }
+}
+fn Perp(V) { vcross(V, y) }
+fn Clamp(V, Lo = 0, Hi = 1) {
+  if (V < Lo) { return Lo; }
+  if (V > Hi) { return Hi; }
+  return V;
+}
+Tree(2)
+let T = Tree(1.5);
+union { ...T translate x * 2 }
+union { Tree(1) translate -x * 2 }
+difference {
+  box { <-1, -1, -1>, <1, 0.5, 1> }
+  Tree(0.8)
+  translate <0, 0, 3>
+  pigment { rgb Clamp(1.5) }
+}
+let V = Perp(x);
+sphere { V * 2 + y * 2, 0.3 pigment { rgb 0.5 } }
