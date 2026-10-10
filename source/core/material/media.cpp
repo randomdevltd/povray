@@ -2578,14 +2578,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
     Ray Light_Ray(ray);
     Light_Ray.hasDifferentials = false;
 
-    // note for performance: we could skip this if there are no photons (surface or media)
-
-    // determine whether or not this media is ignoring photons
-    // save this in the thread data... it will be used by ComputeShadowColour
-    // TODO - maybe this should be (or already is?) computed elsewhere and passed in
-    //        as a parameter ( see the ignore_photons parameter! )
-    //        I need to look closer at the new code to clean that up [NK]
-    // assume true, set to false if we find even one
+    // ComputeShadowColour reads whether every medium here ignores photons
     threadData->litObjectIgnoresPhotons = true;
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
