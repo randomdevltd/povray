@@ -1,0 +1,24 @@
+{
+  "name": "tree-sitter-pov",
+  "version": "0.1.0",
+  "description": "POV-Ray classic scene language grammar",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "engines": { "node": ">=24" },
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "files": ["grammar.js", "tree-sitter.json", "binding.gyp", "bindings/node/*", "queries/*", "src/**"],
+  "scripts": {
+    "install": "node-gyp-build",
+    "generate": "tree-sitter generate --abi 15",
+    "test": "tree-sitter test && node --test 'bindings/node/*_test.js'"
+  },
+  "dependencies": {
+    "node-addon-api": "8.5.0",
+    "node-gyp-build": "4.8.4"
+  },
+  "devDependencies": {
+    "tree-sitter": "0.25.1",
+    "tree-sitter-cli": "0.25.10"
+  }
+}

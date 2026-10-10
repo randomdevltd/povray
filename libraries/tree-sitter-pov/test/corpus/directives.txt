@@ -1,0 +1,212 @@
+================================================================================
+Declarations
+================================================================================
+
+#declare Arr[1].Field = 2;
+#local deprecated once "use B" A = 1;
+#declare ( optional Ior, deprecated Disp ) = (1.5, 0.02);
+#declare T = texture { pigment { Red } } texture { finish { F } }
+
+---
+
+(source_file
+  (declare_directive
+    (member_expression
+      (index_expression
+        (identifier)
+        (number))
+      (identifier))
+    (number))
+  (declare_directive
+    (string)
+    (identifier)
+    (number))
+  (declare_directive
+    (tuple_target
+      (identifier)
+      (identifier))
+    (tuple
+      (number)
+      (number)))
+  (declare_directive
+    (identifier)
+    (layered_texture
+      (block
+        (keyword)
+        (block
+          (keyword)
+          (identifier)))
+      (block
+        (keyword)
+        (block
+          (keyword)
+          (identifier))))))
+
+================================================================================
+Macro with an expression body
+================================================================================
+
+#macro Scale(V, optional S)
+  #local K = 2;
+  V * K
+#end
+
+---
+
+(source_file
+  (macro_directive
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier))
+      (parameter
+        (identifier)))
+    (declare_directive
+      (identifier)
+      (number))
+    (binary_expression
+      (identifier)
+      (identifier))))
+
+================================================================================
+Conditionals
+================================================================================
+
+#ifndef (Inc_Temp)
+#declare Inc_Temp = version;
+#end
+#if (A) sphere { 0, 1 } #elseif (B) box { 0, 1 } #else Obj #end
+
+---
+
+(source_file
+  (if_directive
+    (condition
+      (identifier))
+    (declare_directive
+      (identifier)
+      (constant)))
+  (if_directive
+    (condition
+      (identifier))
+    (block
+      (keyword)
+      (number)
+      (number))
+    (elseif_clause
+      (condition
+        (identifier))
+      (block
+        (keyword)
+        (number)
+        (number)))
+    (else_clause
+      (identifier))))
+
+================================================================================
+Loops and switch
+================================================================================
+
+#while (I < 10) #declare I = I + 1; #end
+#for (J, 0, 1, 0.25) M(J) #end
+#switch (N)
+  #case (1) #case (2) cone { 0, 1, y, 0 } #break
+  #range (3, 4) #debug "range\n"
+  #else #error "bad"
+#end
+
+---
+
+(source_file
+  (while_directive
+    (condition
+      (binary_expression
+        (identifier)
+        (number)))
+    (declare_directive
+      (identifier)
+      (binary_expression
+        (identifier)
+        (number))))
+  (for_directive
+    (identifier)
+    (number)
+    (number)
+    (number)
+    (call_expression
+      (identifier)
+      (argument_list
+        (identifier))))
+  (switch_directive
+    (condition
+      (identifier))
+    (case_clause
+      (condition
+        (number)))
+    (case_clause
+      (condition
+        (number))
+      (block
+        (keyword)
+        (number)
+        (number)
+        (constant)
+        (number))
+      (break_directive))
+    (range_clause
+      (number)
+      (number)
+      (message_directive
+        (string)))
+    (else_clause
+      (message_directive
+        (string)))))
+
+================================================================================
+File and session directives
+================================================================================
+
+#version 3.7;
+#include "colors.inc"
+#default { finish { ambient 0 } }
+#undef Temp
+#fopen Out "out.txt" write
+#write (Out, "v: ", vstr(3, V, ", ", 0, 3), "\n",)
+#read (In, A, B)
+#fclose Out
+
+---
+
+(source_file
+  (version_directive
+    (number))
+  (include_directive
+    (string))
+  (default_directive
+    (block
+      (keyword)
+      (keyword)
+      (number)))
+  (undef_directive
+    (identifier))
+  (fopen_directive
+    (identifier)
+    (string))
+  (write_directive
+    (identifier)
+    (string)
+    (call_expression
+      (builtin_function)
+      (argument_list
+        (number)
+        (identifier)
+        (string)
+        (number)
+        (number)))
+    (string))
+  (read_directive
+    (identifier)
+    (identifier)
+    (identifier))
+  (fclose_directive
+    (identifier)))

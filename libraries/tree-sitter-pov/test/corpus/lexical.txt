@@ -1,0 +1,124 @@
+================================================================================
+Spaced directives, strings and numbers
+================================================================================
+
+# declare S = "a\"b\\c";
+#declare N = <5., .5, 1E-5>;
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (string))
+  (declare_directive
+    (identifier)
+    (vector
+      (number)
+      (number)
+      (number))))
+
+================================================================================
+Comment edge cases
+================================================================================
+
+/*/ still open */
+/* a **/
+sphere { 0, 1 }
+
+---
+
+(source_file
+  (block_comment)
+  (block_comment)
+  (block
+    (keyword)
+    (number)
+    (number)))
+
+================================================================================
+Unterminated block comment
+:error
+================================================================================
+
+sphere { 0, 1 } /* open
+
+---
+
+
+
+================================================================================
+Spaced index in values, bracket group in a block body
+================================================================================
+
+#declare V = (Arr [2]) + <Arr [1], 0>;
+color_map { Arr [0 rgb 1] }
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (binary_expression
+      (parenthesized_expression
+        (index_expression
+          (identifier)
+          (number)))
+      (vector
+        (index_expression
+          (identifier)
+          (number))
+        (number))))
+  (block
+    (keyword)
+    (identifier)
+    (bracket_group
+      (number)
+      (keyword)
+      (number))))
+
+================================================================================
+Reserved word as a declared name
+:error
+================================================================================
+
+#declare pigment = 5;
+
+---
+
+
+
+================================================================================
+Reserved word as a macro name
+:error
+================================================================================
+
+#macro rgb(A) A #end
+
+---
+
+
+
+================================================================================
+Legacy and debug-build directives
+================================================================================
+
+#render "r\n"
+#statistics "s\n"
+#breakpoint
+#write (F, uint8 X * 255)
+
+---
+
+(source_file
+  (message_directive
+    (string))
+  (message_directive
+    (string))
+  (breakpoint_directive)
+  (write_directive
+    (identifier)
+    (keyword)
+    (binary_expression
+      (identifier)
+      (number))))

@@ -1,0 +1,18 @@
+{
+  "grammars": [{
+    "name": "pov",
+    "camelcase": "Pov",
+    "scope": "source.pov",
+    "path": ".",
+    "file-types": ["pov", "inc", "mcr"],
+    "highlights": "queries/highlights.scm",
+    "locals": "queries/locals.scm",
+    "tags": "queries/tags.scm"
+  }],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "AGPL-3.0-or-later",
+    "description": "POV-Ray classic scene language"
+  },
+  "bindings": { "c": false, "go": false, "node": true, "python": false, "rust": false, "swift": false, "zig": false }
+}

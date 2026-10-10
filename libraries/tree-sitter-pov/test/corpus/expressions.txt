@@ -1,0 +1,279 @@
+================================================================================
+Keyword then unary minus, juxtaposed vectors
+================================================================================
+
+box { <0, 0, 0> <1, 1, 1> translate -x scale 2 * y }
+
+---
+
+(source_file
+  (block
+    (keyword)
+    (vector
+      (number)
+      (number)
+      (number))
+    (vector
+      (number)
+      (number)
+      (number))
+    (keyword)
+    (unary_expression
+      (constant))
+    (keyword)
+    (binary_expression
+      (number)
+      (constant))))
+
+================================================================================
+Classic precedence inside parentheses
+================================================================================
+
+#declare A = (B < 2 & C = 3 | !D ? 1 : 2);
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (parenthesized_expression
+      (conditional_expression
+        (binary_expression
+          (binary_expression
+            (binary_expression
+              (identifier)
+              (number))
+            (binary_expression
+              (identifier)
+              (number)))
+          (unary_expression
+            (identifier)))
+        (number)
+        (number)))))
+
+================================================================================
+Vectors with optional commas and a conditional component
+================================================================================
+
+#declare V = <1 -2, #if (Hot) 0.2 #else 0.8 #end, 0>;
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (vector
+      (binary_expression
+        (number)
+        (number))
+      (if_directive
+        (condition
+          (identifier))
+        (number)
+        (else_clause
+          (number)))
+      (number))))
+
+================================================================================
+Calls, members, indexes and tuples
+================================================================================
+
+#declare W = vnormalize(P - Q).x + Arr[I][J] * Dict.key + M(off <1, 2>, , "s");
+#declare (Lo, Hi) = (local.Min, global.Max);
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (member_expression
+          (call_expression
+            (builtin_function)
+            (argument_list
+              (binary_expression
+                (identifier)
+                (identifier))))
+          (identifier))
+        (binary_expression
+          (index_expression
+            (index_expression
+              (identifier)
+              (identifier))
+            (identifier))
+          (member_expression
+            (identifier)
+            (identifier))))
+      (call_expression
+        (identifier)
+        (argument_list
+          (constant)
+          (vector
+            (number)
+            (number))
+          (string)))))
+  (declare_directive
+    (tuple_target
+      (identifier)
+      (identifier))
+    (tuple
+      (member_expression
+        (identifier)
+        (identifier))
+      (member_expression
+        (identifier)
+        (identifier)))))
+
+================================================================================
+Colour expressions
+================================================================================
+
+#declare C1 = color red 1 green 0.5;
+#declare C2 = rgb <1, 0, 0> * 0.5 filter 0.2;
+#declare C3 = colour Red;
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (colour_expression
+      (colour_component
+        (number))
+      (colour_component
+        (number))))
+  (declare_directive
+    (identifier)
+    (colour_expression
+      (colour_component
+        (binary_expression
+          (vector
+            (number)
+            (number)
+            (number))
+          (number)))
+      (colour_component
+        (number))))
+  (declare_directive
+    (identifier)
+    (colour_expression
+      (identifier))))
+
+================================================================================
+Function blocks
+================================================================================
+
+#declare F = function(x, y, z, Size) { f_sphere(x, y, z, Size) * (y > 0) }
+#declare G = function { pigment { granite } }
+#declare H = function 300, 300 { pigment { Image } }
+#declare I = function { internal(12) }
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (function_block
+      (parameter_list
+        (parameter
+          (identifier))
+        (parameter
+          (identifier))
+        (parameter
+          (identifier))
+        (parameter
+          (identifier)))
+      (binary_expression
+        (call_expression
+          (identifier)
+          (argument_list
+            (constant)
+            (constant)
+            (constant)
+            (identifier)))
+        (parenthesized_expression
+          (binary_expression
+            (constant)
+            (number))))))
+  (declare_directive
+    (identifier)
+    (function_block
+      (block
+        (keyword)
+        (keyword))))
+  (declare_directive
+    (identifier)
+    (function_block
+      (number)
+      (number)
+      (block
+        (keyword)
+        (identifier))))
+  (declare_directive
+    (identifier)
+    (function_block
+      (call_expression
+        (builtin_function)
+        (argument_list
+          (number))))))
+
+================================================================================
+Arrays and dictionaries
+================================================================================
+
+#declare A = array[2][2] { {1, 2}, {3, 4} }
+#declare B = array mixed[3];
+#declare D = dictionary { .Name: "x", ["Key"]: <1, 2, 3>, }
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (array_expression
+      (number)
+      (number)
+      (array_initializer
+        (array_initializer
+          (number)
+          (number))
+        (array_initializer
+          (number)
+          (number)))))
+  (declare_directive
+    (identifier)
+    (array_expression
+      (number)))
+  (declare_directive
+    (identifier)
+    (dictionary_expression
+      (dictionary_entry
+        (identifier)
+        (string))
+      (dictionary_entry
+        (string)
+        (vector
+          (number)
+          (number)
+          (number))))))
+
+================================================================================
+An operator spliced into a conditional parses as a unary item
+================================================================================
+
+#declare X = <1 #if (A) + 2, #end 0>;
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (vector
+      (number)
+      (if_directive
+        (condition
+          (identifier))
+        (unary_expression
+          (number)))
+      (number))))
