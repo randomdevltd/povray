@@ -83,7 +83,7 @@ render ball Declare=Case=13
 same hidden inside
 differs hidden water
 render late_backdrop Declare=Case=16
-render bare_box Declare=Case=34
+render bare_box Declare=Case=50
 same late_backdrop ball
 same bare_box ball
 # A solid that states an ior averages with the solids it overlaps: 4.0 matches 3.7 with the overlap at the mean.
@@ -96,9 +96,9 @@ for case in 18:bubble 19:inside_glass; do
     render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*} Declare=Inner=1.25
     region ${case#*:} ${case#*:}_37 0 95 0 71
 done
-render bubble_cut Declare=Case=35
+render bubble_cut Declare=Case=51
 render bubble_air_37 Version=3.7 Declare=Case=18
-render bubble_filled Declare=Case=36
+render bubble_filled Declare=Case=52
 region bubble_cut bubble_air_37 0 95 0 71
 region bubble_filled bubble 0 95 0 71
 render lens_ab Declare=Case=37
