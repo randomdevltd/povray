@@ -956,6 +956,8 @@ class Trace
                                 std::unique_ptr<InterfaceCache>& sides);
         /// Whether interfaces merge coincident surfaces: version 4.0 or media refraction, with an ior or an opaque object.
         bool MergesSurfaces() const;
+        /// Whether an object's plain pigment lets no light through where its surface meets `point` along the ray.
+        bool OpaqueAt(ConstObjectPtr object, const Ray& ray, const Vector3d& point, double tolerance);
         /// Whether a surface's plain pigment lets any light through, or might.
         bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
         /// Whether shading a hit needs the relative ior: it may let light through, or a finish uses Fresnel.

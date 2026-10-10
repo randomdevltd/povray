@@ -14,6 +14,8 @@
 #ifndef (Off) #declare Off = 0; #end
 #ifndef (InnerOff) #declare InnerOff = 0; #end
 #ifndef (InnerAir) #declare InnerAir = 0; #end
+#ifndef (Count) #declare Count = 8; #end
+#ifndef (Alone) #declare Alone = 0; #end
 #ifndef (Side) #declare Side = 0; #end
 #ifndef (View) #declare View = -1; #end
 #macro IorMix(M) #switch (M) #case (0) ior_mix surface #break #case (1) ior_mix mean #break #case (2) ior_mix replace #break #end #end
@@ -203,6 +205,22 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
     box { <-1, -1, -1>, <1, 1, 1> texture { TB } interior { ior 1.2 } }
   #break
   #end
+#break
+#case (70) // from above: a floor lit through Count coincident clear spheres, each surface filtering 0.9
+  camera { orthographic location <0, 10, 0> look_at 0 right x * 8 up z * 6 }
+  light_source { <0, 5, 0> rgb 1 }
+  plane { y, 0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
+  #for (N, 1, Count) sphere { <0, 2.5, 0>, 1 pigment { rgbf <1, 1, 1, 0.9> } finish { ambient 0 diffuse 0 } no_image } #end
+#break
+#case (71) // a sphere opaque on its left half, alone or with a coincident clear sphere; 72 maps its pigment by uv
+#case (72)
+  light_source { <-3, 5, -10> rgb 1 }
+  sphere { 0, 1 finish { ambient 0 diffuse 1 }
+    #if (Case = 71) pigment { gradient x color_map { [0 rgbf <1, 0, 0, 0>] [0.5 rgbf <1, 0, 0, 0>] [0.5 rgbf <1, 0, 0, 1>] [1 rgbf <1, 0, 0, 1>] } scale 2 translate -x }
+    #else pigment { uv_mapping checker rgbf <1, 0, 0, 0>, rgbf <1, 0, 0, 1> scale 0.5 }
+    #end
+  }
+  #if (!Alone) sphere { 0, 1 pigment { rgbf <0, 0, 1, 0.9> } finish { ambient 0 diffuse 1 } } #end
 #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior Inner } } #break
 #case (51) // a bubble cut with difference, and the same hole filled by a separate sphere
