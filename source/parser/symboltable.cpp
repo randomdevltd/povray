@@ -73,13 +73,15 @@ using namespace pov;
 
 //******************************************************************************
 
-SymbolTable::SymbolTable()
+SymbolTable::SymbolTable() :
+    mUsedBuckets()
 {
     for (int i = 0; i < SYM_TABLE_SIZE; i++)
         mapHashTable[i] = nullptr;
 }
 
-SymbolTable::SymbolTable(const SymbolTable& obj)
+SymbolTable::SymbolTable(const SymbolTable& obj) :
+    mUsedBuckets()
 {
     for (int i = SYM_TABLE_SIZE - 1; i >= 0; i--)
     {
@@ -89,6 +91,7 @@ SymbolTable::SymbolTable(const SymbolTable& obj)
             SYM_ENTRY* newEntry = Copy_Entry(oldEntry);
             newEntry->next = obj.mapHashTable[i];
             mapHashTable[i] = newEntry;
+            MarkUsed(i);
             oldEntry = oldEntry->next;
         }
     }
@@ -98,10 +101,18 @@ SymbolTable::~SymbolTable()
 {
     for (int i = SYM_TABLE_SIZE - 1; i >= 0; i--)
     {
-        SYM_ENTRY *entry = mapHashTable[i];
-        while (entry)
+        std::uint64_t& used = mUsedBuckets[i / 64];
+        const std::uint64_t bit = std::uint64_t(1) << (i % 64);
+        if (used == 0)
+            i -= i % 64;
+        else if (used & bit)
         {
-            entry = Destroy_Entry(entry);
+            used &= ~bit;
+            SYM_ENTRY *entry = mapHashTable[i];
+            while (entry)
+            {
+                entry = Destroy_Entry(entry);
+            }
         }
     }
 }
@@ -413,6 +424,7 @@ void SymbolTable::Add_Entry(SYM_ENTRY *Table_Entry)
 
     Table_Entry->next = mapHashTable[i];
     mapHashTable[i] = Table_Entry;
+    MarkUsed(i);
 }
 
 SYM_ENTRY *SymbolTable::Add_Symbol(const UTF8String& Name, TokenId Number)
