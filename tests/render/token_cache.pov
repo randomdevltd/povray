@@ -18,14 +18,18 @@
 #write (F, "#declare Written = 1;\n")
 #fclose F
 #include "token_cache_out.inc"
-#fopen F "token_cache_out.inc" write
+#fopen F "./token_cache_out.inc" write
 #write (F, "#declare Written = 2;\n")
 #fclose F
 #include "token_cache_out.inc"
 #include "token_cache_skip.inc"
+#include "token_cache_float.inc"
 #for (I, 1, 2) #declare Tri = Tri + Thrice(1); #end
 #include "token_cache_long.inc"
-#for (I, 1, 2) #declare TailSum = TailSum + Tail(10); #end
+#fopen F "token_cache_long.inc" write
+#write (F, "// rewritten\n")
+#fclose F
+#for (I, 1, 2) #declare TailSum = TailSum + Tail(10) + Span(); #end
 #debug concat("token_cache written ", str(Written, 0, 0), " tri ", str(Tri, 0, 0),
               " tail ", str(TailSum, 0, 0), "\n")
 #ifdef (Bad) #include "token_cache_bad.inc" #end

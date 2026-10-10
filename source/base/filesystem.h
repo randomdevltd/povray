@@ -86,6 +86,17 @@ namespace Filesystem
 ///
 bool DeleteFile(const UCS2String& fileName);
 
+/// A file's canonical name, size and modification time, as far as the platform can tell.
+struct FileStamp final
+{
+    UCS2String          name;
+    std::int_least64_t  size = -1;
+    std::int_least64_t  time = 0;
+};
+
+/// Get a file's stamp; if the file cannot be examined, `name` is `fileName` and `size` is -1.
+FileStamp GetFileStamp(const UCS2String& fileName);
+
 /// Large file handling.
 ///
 /// This class provides basic random access to large (>2 GiB) files.

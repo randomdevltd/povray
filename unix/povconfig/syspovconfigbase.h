@@ -80,6 +80,9 @@
 // We want to implement a specialized Filesystem::DeleteFile.
 #define POV_USE_DEFAULT_DELETEFILE 0
 
+// We want to implement a specialized Filesystem::GetFileStamp.
+#define POV_USE_DEFAULT_FILESTAMP 0
+
 // We want to implement a specialized Filesystem::LargeFile.
 #define POV_USE_DEFAULT_LARGEFILE 0
 

@@ -61,6 +61,9 @@
 // Windows requires a platform-specific function to delete a file.
 #define POV_USE_DEFAULT_DELETEFILE 0
 
+// Windows gets a platform-specific Filesystem::GetFileStamp.
+#define POV_USE_DEFAULT_FILESTAMP 0
+
 // Windows gets a platform-specific implementation of large file handling.
 #define POV_USE_DEFAULT_LARGEFILE 0
 

@@ -38,13 +38,14 @@
 #include "syspovfilesystem.h"
 
 // C++ variants of C standard header files
-//  (none at the moment)
+#include <cstdlib>
 
 // C++ standard header files
 #include <limits>
 
 // POSIX standard header files
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 // POV-Ray header files (base module)
@@ -70,6 +71,34 @@ bool DeleteFile(const UCS2String& fileName)
 }
 
 #endif // POV_USE_DEFAULT_DELETEFILE
+
+//******************************************************************************
+
+#if !POV_USE_DEFAULT_FILESTAMP
+
+FileStamp GetFileStamp(const UCS2String& fileName)
+{
+    FileStamp stamp;
+    stamp.name = fileName;
+    const std::string sysName = UCS2toSysString(fileName);
+    struct stat st;
+    if (stat(sysName.c_str(), &st) != 0)
+        return stamp;
+    if (char* canonical = realpath(sysName.c_str(), nullptr))
+    {
+        stamp.name = SysToUCS2String(canonical);
+        std::free(canonical);
+    }
+    stamp.size = st.st_size;
+#if defined(__APPLE__)
+    stamp.time = std::int_least64_t(st.st_mtimespec.tv_sec) * 1000000000 + st.st_mtimespec.tv_nsec;
+#else
+    stamp.time = std::int_least64_t(st.st_mtim.tv_sec) * 1000000000 + st.st_mtim.tv_nsec;
+#endif
+    return stamp;
+}
+
+#endif // POV_USE_DEFAULT_FILESTAMP
 
 //******************************************************************************
 

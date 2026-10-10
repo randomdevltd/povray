@@ -50,6 +50,7 @@
 #include <vector>
 
 // POV-Ray header files (base module)
+#include "base/filesystem.h"
 #include "base/stringtypes.h"
 
 // POV-Ray header files (core module)
@@ -198,8 +199,15 @@ struct CachedToken final
 static_assert(sizeof(CachedToken) == 40, "a cached token should stay at 40 bytes");
 
 /// A source file lexed once: its first tokens, and the scanner state after the last of them.
+struct CacheBudget final
+{
+    std::size_t tokens = 0;
+    std::size_t bytes = 0;
+};
+
 struct CachedFile final
 {
+    std::shared_ptr<CacheBudget> budget;    ///< Refunded when the tokens are freed.
     StreamPtr                   stream;     ///< The file, or once complete a named empty stream.
     std::vector<CachedToken>    tokens;
     std::vector<ConstValuePtr>  values;
@@ -207,8 +215,11 @@ struct CachedFile final
     std::unordered_map<std::size_t, LexemePosition> ends; ///< Ends not at start plus text length.
     Scanner::HotBookmark        end;
     POV_OFF_T                   size;       ///< File size when lexed, or -1.
+    std::int_least64_t          time;       ///< Modification time when lexed.
+    std::uint64_t               lastUse;
     std::size_t                 bytes;      ///< Its share of the cache's byte budget.
     bool                        complete;   ///< Whether `tokens` reach the end of the file.
+    ~CachedFile() { if (budget) { budget->tokens -= tokens.size(); budget->bytes -= bytes; } }
 };
 
 using CachedFilePtr = std::shared_ptr<CachedFile>;
@@ -272,10 +283,10 @@ public:
     void SetInputStream(StreamPtr pStream, const UCS2String& path);
 
     /// Keep each file's tokens for re-reading.
-    void EnableCache() { mCacheEnabled = true; }
+    void EnableCache() { mBudget = std::make_shared<CacheBudget>(); }
 
     /// Drop the token array of the file at `path`, as it is being written.
-    void ForgetFile(const UCS2String& path);
+    void ForgetFile(const UCS2String& canonicalPath);
 
     /// Where the next token comes from.
     const CachePosition& GetCachePosition() const { return mPosition; }
@@ -349,14 +360,14 @@ private:
 
     CachePosition                                   mPosition;
     unsigned int                                    mLastInstance;
-    bool                                            mCacheEnabled;
-    std::size_t                                     mCachedTokenCount;
-    std::size_t                                     mCachedByteCount;
+    std::uint64_t                                   mUseCount;
+    std::shared_ptr<CacheBudget>                    mBudget;
     std::unordered_map<UCS2String, CachedFilePtr>   mCachedFiles;
 
     bool GetNextScannedToken(RawToken& token);
     bool ProcessLexeme(RawToken& token);
-    CachedFilePtr LexFile(StreamPtr pStream, POV_OFF_T size);
+    bool MakeRoom();
+    CachedFilePtr LexFile(StreamPtr pStream, const Filesystem::FileStamp& stamp);
     void ReadCachedToken(RawToken& token);
     bool ContinueFromCache();
     LexemePosition CachedPosition() const;

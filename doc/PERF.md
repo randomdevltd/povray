@@ -1171,10 +1171,13 @@ per file, words' symbol-table hashes computed, numbers converted (with `strtod`,
 strings decoded. A bookmark is an index into that array, so `#while`, `#for`, macro calls and returns and a repeated
 `#include` replay tokens instead of seeking the file and lexing it again; a macro keeps its file's array alive.
 Lexing a file stops at 256k tokens or 16 MB (1M tokens or 64 MB per parse) or at the first lexeme it cannot
-convert; from there the file is read from the scanner as before, macros declared there keep the byte copy, a large
-text mesh costs a small prefix, and lexing errors surface where they did. A file opened for writing, or whose size
-changed, is lexed afresh at its next `#include`. The per-token accessors are inlined, and popping a macro's symbol
-table visits only the buckets it used.
+convert; from there the file is read from the scanner as before, macros declared there or running into it keep the
+byte copy, a large text mesh costs a small prefix, and lexing errors surface where they did. Entries are keyed by
+the file's canonical path and reused only while its size and modification time match, so a file opened for writing
+under any spelling, or changed on disk, is lexed afresh at its next `#include`. The bounds count every array still
+alive, including those macros hold; when they are reached, the least recently used arrays nothing else holds are
+dropped first. The per-token accessors are inlined, and popping a macro's symbol table visits only the buckets it
+used.
 
 Medians of five runs per build, builds alternating, `+W8 +H6 -A +WT1`: user plus system CPU of the whole run from
 `getrusage`, POV-Ray's parse time, and peak RSS. Instruction counts were not available.

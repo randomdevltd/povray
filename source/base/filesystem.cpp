@@ -85,6 +85,19 @@ bool DeleteFile(const UCS2String& fileName)
 
 //******************************************************************************
 
+#if POV_USE_DEFAULT_FILESTAMP
+
+FileStamp GetFileStamp(const UCS2String& fileName)
+{
+    FileStamp stamp;
+    stamp.name = fileName;
+    return stamp;
+}
+
+#endif // POV_USE_DEFAULT_FILESTAMP
+
+//******************************************************************************
+
 #if POV_USE_DEFAULT_LARGEFILE
 
 using Offset = std::streamoff;
