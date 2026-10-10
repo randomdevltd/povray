@@ -26,6 +26,13 @@ same() {
     for name in $1 $2; do tail -c $(( 6 * W * H )) media_refraction_$name.ppm > media_refraction_$name.pixels; done
     cmp -s "media_refraction_$1.pixels" "media_refraction_$2.pixels" || { echo "media_refraction: $1 differs from $2" >&2; exit 1; }
 }
+# lit <name> <col0> <col1> <row0> <row1> <min>: every red value in the block is at least min
+lit() {
+    tail -c $(( 6 * W * H )) media_refraction_$1.ppm | od -An -v -tu1 -w6 | awk -v w=$W -v c0=$2 -v c1=$3 -v r0=$4 -v r1=$5 -v m=$6 '
+        { c = (NR - 1) % w; r = int((NR - 1) / w) }
+        c >= c0 && c <= c1 && r >= r0 && r <= r1 && ($1 * 256 + $2) / 65535 < m { dark++ }
+        END { if (dark) { print dark " pixels dark"; exit 1 } }' >&2 || { echo "media_refraction: $1 has dark pixels" >&2; exit 1; }
+}
 differs() {
     if (same $1 $2 2> /dev/null); then echo "media_refraction: $1 matches $2" >&2; exit 1; fi
 }
@@ -107,6 +114,8 @@ for pair in 30:31:clear_wall 32:33:polygon_wall; do
     render ${pair##*:}_inset Declare=Case=$(echo $pair | cut -d: -f2)
     region ${pair##*:} ${pair##*:}_inset 0 95 0 71
 done
+render bent_block Declare=Case=34
+lit bent_block 36 59 24 47 0.5
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71

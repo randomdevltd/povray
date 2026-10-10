@@ -480,6 +480,18 @@ bool Trace::RefractingRay(const Ray& ray) const
 static const int kMaxRefractionSteps = 20000;
 static const double kMinRefractionIndex = 0.01;
 
+namespace
+{
+
+struct BeyondDepthRayObjectCondition final : public RayObjectCondition
+{
+    double nearest;
+    explicit BeyondDepthRayObjectCondition(double depth) : nearest(depth) {}
+    virtual bool operator()(const Ray&, ConstObjectPtr, double depth) const override { return depth >= nearest; }
+};
+
+}
+
 int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Intersection& isect, CurvedPath& path)
 {
     NoSomethingFlagRayObjectCondition precond;
@@ -542,12 +554,17 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
         const double length = span.length();
         // Searching from behind the chord's start finds a surface the last chord ended within the tolerance of.
         const double back = path.empty() ? 0.0 : 0.25 * path.back().length;
+        // Past the first chord the search starts a little further back again, so a surface just ahead clears the minimum hit depth.
+        const double lead = path.empty() ? 0.0 : 2.0 * MIN_ISECT_DEPTH;
+        const BeyondDepthRayObjectCondition window(lead);
         chord.Direction = span / length;
-        chord.Origin = point - back * chord.Direction;
+        chord.Origin = point - (back + lead) * chord.Direction;
         isect = Intersection();
-        isect.Depth = back + length;
-        if (FindIntersection(isect, chord, precond, postcond))
+        isect.Depth = back + lead + length;
+        if (FindIntersection(isect, chord, precond, window))
         {
+            isect.Depth -= lead;
+            chord.Origin = point - back * chord.Direction;
             if (isect.Depth > back)
             {
                 isect.Depth -= back;
