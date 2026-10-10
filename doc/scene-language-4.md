@@ -285,15 +285,29 @@ that array instead of seeking the file and lexing it again.
 
 ## Evaluation corpus
 
-`tools/language/eval` converts every scene under `distribution/scenes` to 4.0 and renders three
-images per scene:
+`tools/language/eval/eval.mjs` converts every scene under `distribution/scenes` to 4.0 and renders three
+images per scene at 160×120 without anti-aliasing (a scene's first animation frame is its `clock = 0` frame):
 
 | Image | What |
 |---|---|
 | A | the classic scene as shipped |
-| B | the converted 4.0 scene, run with the classic scene's language version |
+| B | the converted 4.0 scene, run with the classic scene's language version (`--b-args`, `{version}` is its first `#version`; none passes nothing) |
 | C | the converted 4.0 scene, run as 4.0 |
 
 A≠B is a conversion or evaluator defect, unless the converted scene is plainly right and the
 original was not (flagged for review, not assumed). B≠C is the effect of 4.0 defaults on that scene;
 it is reported for review, since a different image is often the better one.
+
+`eval all --out DIR --povray BIN` runs the three steps; `plan` (convert, list the renders), `render` (local, with
+a time limit) and `report` also run alone, so another runner can do the renders in between. Pairs compare pixel
+for pixel, alpha included; `noise-level` means no channel differs by more than 8 levels, under 0.5% of pixels by
+more than 2, and the mean difference is under 0.5. Each scene is `identical`, `noise-level`, `different`,
+`conversion-refused`, `eval-error`, `render-error` or `timeout` (`a-only` when B and C were not rendered);
+`DIR/runs/<id>/index.html` shows the flagged ones with A, B, C and diff maps, and `DIR/index.html` lists the runs.
+
+Each render's status records a hash of its inputs: the scene's folder (every file, recursively), the classic files
+it includes, the converted files, the options and the binary (`--classic-id` for A, `--bc-id` or the
+`--povray` file for B and C). Planning into an existing run drops statuses whose inputs
+changed, `--force` also retries errors and timeouts, and `--only` limits which kinds render. A renders are cached
+under `DIR/cache` by that hash plus `--classic-id` and reused by later runs, `--only B,C` ones included. Files a
+scene reads from elsewhere (an image map in a library folder) are not in the hash.
