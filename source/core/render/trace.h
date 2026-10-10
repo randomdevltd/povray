@@ -449,15 +449,24 @@ class Trace
             RayInteriorVector before, after;
             Vector3d point;
             const Interior *interior = nullptr;
-            ConstObjectPtr take = nullptr;       ///< the object whose surface there is hit instead: an opaque one, else one entered
+            ConstObjectPtr take = nullptr;       ///< the object whose surface there is hit instead, if not the hit's own
             double leave = 0.0;
             bool photon = false;
         };
         static const size_t kInterfaceCacheSize = 16;
         InterfaceCache sidesCache[kInterfaceCacheSize];
-        std::vector<std::pair<ConstObjectPtr, double>> coincident;
+        /// An object with a surface near a hit, and the depth of that surface along the probe.
+        typedef std::pair<ConstObjectPtr, double> Surface;
+        /// Objects with a surface where an interface is being merged, each once at its nearest depth, in SurfaceBefore order.
+        std::vector<Surface> coincident;
+        size_t InterfaceSlot(const Interior *interior, const Vector3d& point) const;
         const InterfaceCache& InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
         void FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal);
+        /// Fills `coincident` from a probe along the ray from `back` before `point` to `reach` past it.
+        void FindCoincident(const Ray& ray, const Vector3d& point, double back, double reach, const RayObjectCondition& precond);
+        /// Gives `after` (a copy of `before`) the interiors beyond the surfaces in `coincident`, `interior` being the hit's.
+        void CrossCoincident(RayInteriorVector& after, const RayInteriorVector& before, Interior *interior,
+                             const Vector3d& beyond, bool photon);
         void StartProbe(Ray& probe, const Ray& ray);
         RadiosityFunctor& radiosity;
 
@@ -939,14 +948,20 @@ class Trace
         /// Where other surfaces meet a hit that lets light through, hits an opaque one, else one of an object the ray enters.
         /// Returns whether it did.
         bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
-        /// Whether an opaque surface meets a shadow ray's clear hit, or lies in the gap the next search skips.
-        bool ShadowMeetsOpaque(const Ray& ray, const Intersection& isect, const RayObjectCondition& precond);
+        /// Crosses every surface meeting a shadow ray's clear hit: each filters the light once and the ray's interiors are those
+        /// beyond them. Returns false where one is opaque. `reach` caps the search past the hit; `leave` gets how far to step on.
+        bool ShadowCrossCoincident(const LightSource& lightsource, Ray& ray, Intersection& isect, MathColour& colour,
+                                   const RayInteriorVector& before, const RayObjectCondition& precond, double reach,
+                                   double& leave);
+        /// Whether interfaces merge coincident surfaces: version 4.0 or media refraction, with an ior or an opaque object.
+        bool MergesSurfaces() const;
         /// Whether a surface's plain pigment lets any light through, or might.
         bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
         /// Whether shading a hit needs the relative ior: it may let light through, or a finish uses Fresnel.
         bool NeedsRelativeIor(const TEXTURE *texture, ConstObjectPtr object) const;
-        /// The mean ior and dispersion of the solids in `interiors` that state an ior, or the atmosphere's; `elements` gets their largest.
-        void MeanIor(const RayInteriorVector& interiors, double& ior, double& dispersion, unsigned int *elements) const;
+        /// The mean ior of the solids in `interiors` that state one, or the atmosphere's; `dispersion` gets their mean
+        /// dispersion, and `elements` their largest dispersion sample count.
+        double MeanIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const;
         /// The index where a ray holds `interiors`: their mean ior plus media refraction, whose part `offset` gets.
         double StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base = nullptr,
                           double *dispersion = nullptr, unsigned int *elements = nullptr);
