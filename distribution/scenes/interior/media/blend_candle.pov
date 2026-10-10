@@ -55,7 +55,7 @@ sphere {
   0, 1 pigment { rgbt 1 }
   interior {
     media {
-      mix add emission rgb <14, 6, 1.6> * 400 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      mix add emission rgb <14, 6, 1.6> * 200 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
       #if (FlameLight) light_source { samples FlameSamples } #end
     }
   }
