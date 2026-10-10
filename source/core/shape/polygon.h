@@ -64,7 +64,7 @@ namespace pov
 ///
 /// @{
 
-#define POLYGON_OBJECT (BASIC_OBJECT)
+#define POLYGON_OBJECT (BASIC_OBJECT | NO_INSIDE_OBJECT)
 
 /// @}
 ///

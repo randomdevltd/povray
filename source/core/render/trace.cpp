@@ -80,7 +80,6 @@
 #include "core/shape/isosurface.h"
 #include "core/shape/mesh.h"
 #include "core/shape/plane.h"
-#include "core/shape/polygon.h"
 #include "core/shape/polynomial.h"
 #include "core/shape/quadric.h"
 #include "core/shape/sphere.h"
@@ -600,8 +599,7 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
 double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay)
 {
     threadData->Stats()[Curved_Rays]++;
-    double base, dispersion;
-    MeanIor(ray.GetInteriors(), base, dispersion, nullptr);
+    const double base = MeanIor(ray.GetInteriors(), nullptr, nullptr);
     Ray chord(ray);
     chord.hasDifferentials = false;
     Intersection bestisect;
@@ -902,7 +900,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
 
     // compute the surface normal
     isect.Object->Normal(rawnormal, &isect, threadData);
-    if (TakeCoincident(ray, isect, rawnormal, weight))
+    if (!photonPass && TakeCoincident(ray, isect, rawnormal, weight))
     {
         ipoint = isect.IPoint;
         isect.Object->Normal(rawnormal, &isect, threadData);
@@ -3160,7 +3158,8 @@ struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
 
 struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
 {
-    virtual bool operator()(const Ray&, ConstObjectPtr, double dist) const override { return dist > SMALL_TOLERANCE; }
+    double tolerance = SMALL_TOLERANCE;
+    virtual bool operator()(const Ray&, ConstObjectPtr, double dist) const override { return dist > tolerance; }
 };
 
 // Any opaque hit in the shadow window blacks the light out, whether or not it is the nearest.
@@ -3268,6 +3267,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     }
 
     foundTransparentObjects = false;
+    double nearest = SHADOW_TOLERANCE;
 
     while(true)
     {
@@ -3280,7 +3280,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
         {
             OpaqueShadowStopCondition stop(std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth));
-            const IsoShadowWindow window(threadData, SHADOW_TOLERANCE, stop.farthest);
+            const IsoShadowWindow window(threadData, nearest, stop.farthest);
             foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
         }
         else
@@ -3289,10 +3289,11 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if((foundIntersection == true) &&
            (boundedIntersection.Depth < lightsourcedepth - SHADOW_TOLERANCE) &&
            (lightsourcedepth - boundedIntersection.Depth > projectedDepth) &&
-           (boundedIntersection.Depth > SHADOW_TOLERANCE))
+           (boundedIntersection.Depth > nearest))
         {
             threadData->Stats()[Shadow_Rays_Succeeded]++;
 
+            const RayInteriorVector before(sceneData->legacyIorStack ? RayInteriorVector() : lightsourceray.GetInteriors());
             ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
 
             ObjectPtr testObject(boundedIntersection.Csg != nullptr ? boundedIntersection.Csg : boundedIntersection.Object);
@@ -3315,13 +3316,23 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                 break;
             }
 
-            if (!sceneData->legacyIorStack && sceneData->anyOpaque && ShadowMeetsOpaque(lightsourceray, boundedIntersection, precond))
+            double leave = 0.0;
+            if (!sceneData->legacyIorStack &&
+                !ShadowCrossCoincident(lightsource, lightsourceray, boundedIntersection, lightcolour, before, precond,
+                                       lightsourcedepth - SHADOW_TOLERANCE - boundedIntersection.Depth, leave))
             {
                 lightcolour.Clear();
                 break;
             }
 
             foundTransparentObjects = true;
+            if (leave > 0.0)
+            {
+                lightsourcedepth -= boundedIntersection.Depth + leave;
+                lightsourceray.Origin = boundedIntersection.IPoint + leave * lightsourceray.Direction;
+                nearest = postcond.tolerance = MIN_ISECT_DEPTH;
+                continue;
+            }
 
             // Move the ray to the point of intersection, plus some
             lightsourcedepth -= boundedIntersection.Depth;
@@ -3999,7 +4010,7 @@ void Trace::WarnRefraction(unsigned flag, const char *format, ...)
     threadData->mediaMessages->Warning(kWarningGeneral, "%s", text);
 }
 
-void Trace::MeanIor(const RayInteriorVector& interiors, double& ior, double& dispersion, unsigned int *elements) const
+double Trace::MeanIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const
 {
     // Single-precision iors sum exactly in a double, so the mean does not depend on the order the solids were entered.
     double iors = 0.0, dispersions = 0.0;
@@ -4013,24 +4024,36 @@ void Trace::MeanIor(const RayInteriorVector& interiors, double& ior, double& dis
             if (elements != nullptr)
                 *elements = max(*elements, (unsigned int)interior->Disp_NElems);
         }
-    ior = (count > 0) ? iors / count : sceneData->atmosphereIOR;
-    dispersion = (count > 0) ? dispersions / count : sceneData->atmosphereDispersion;
+    if (dispersion != nullptr)
+        *dispersion = (count > 0) ? dispersions / count : sceneData->atmosphereDispersion;
+    return (count > 0) ? iors / count : sceneData->atmosphereIOR;
 }
 
 double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base, double *dispersion,
                          unsigned int *elements)
 {
-    double ior, spread;
-    MeanIor(interiors, ior, spread, elements);
+    const double ior = MeanIor(interiors, dispersion, elements);
     if (base != nullptr)
         *base = ior;
-    if (dispersion != nullptr)
-        *dispersion = spread;
     offset = 0.0;
     if (sceneData->mediaRefraction && std::any_of(interiors.begin(), interiors.end(), [](const Interior *i) { return i->refracting; }))
     {
         RefractionField field(interiors, threadData);
         offset = field.Offset(point);
+    }
+    if ((interiors.size() > 1) && !(sceneData->mediaWarningFlags.load(std::memory_order_relaxed) & kStatedAirOverlap))
+    {
+        const Interior *air = nullptr, *dense = nullptr;
+        for (const Interior *i : interiors)
+            if (i->statesIor && (i->IOR == SNGL(sceneData->atmosphereIOR)))
+                air = i;
+            else if (i->statesIor && (i->IOR > SNGL(sceneData->atmosphereIOR)))
+                dense = i;
+        if ((air != nullptr) && (dense != nullptr))
+            WarnRefraction(kStatedAirOverlap,
+                "A %s stating ior %g, the atmosphere's, overlaps a %s of ior %g at <%g, %g, %g>, so the ior there is their mean. "
+                "Leave the ior out of a container that should not refract, or cut a bubble out with difference.",
+                air->shape, air->IOR, dense->shape, dense->IOR, point[X], point[Y], point[Z]);
     }
     return ClampIndex(ior + offset, point);
 }
@@ -4038,12 +4061,14 @@ double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& poi
 namespace
 {
 
+typedef std::pair<ConstObjectPtr, double> SurfaceHit;
+
 // Collects every object with a surface on a probe segment, accepting none so the search runs to the segment's end.
 struct SurfaceCollector final : public RayObjectCondition
 {
-    std::vector<std::pair<ConstObjectPtr, double>>& found;
+    std::vector<SurfaceHit>& found;
     double limit;
-    SurfaceCollector(std::vector<std::pair<ConstObjectPtr, double>>& list, double end) : found(list), limit(end) {}
+    SurfaceCollector(std::vector<SurfaceHit>& list, double end) : found(list), limit(end) {}
     virtual bool operator()(const Ray&, ConstObjectPtr object, double depth) const override
     {
         if (depth <= limit)
@@ -4060,30 +4085,129 @@ double ProbeBack(const Ray& ray, const Vector3d& point, double tolerance)
 
 bool HasInside(ConstObjectPtr object)
 {
-    return !(object->Type & PATCH_OBJECT) && (dynamic_cast<const Polygon *>(object) == nullptr);
+    return !(object->Type & (PATCH_OBJECT | NO_INSIDE_OBJECT));
 }
 
-struct OpaqueCondition final : public RayObjectCondition
+// Surfaces meeting at a point in an order that placing the objects differently cannot change: depth, then bounds.
+bool SurfaceBefore(const SurfaceHit& a, const SurfaceHit& b)
 {
-    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return Test_Flag(object, OPAQUE_FLAG); }
-};
-
+    if (a.second != b.second)
+        return a.second < b.second;
+    const BoundingBox& p = a.first->BBox;
+    const BoundingBox& q = b.first->BBox;
+    for (int axis = X; axis <= Z; axis++)
+        if (p.lowerLeft[axis] != q.lowerLeft[axis])
+            return p.lowerLeft[axis] < q.lowerLeft[axis];
+    for (int axis = X; axis <= Z; axis++)
+        if (p.size[axis] != q.size[axis])
+            return p.size[axis] < q.size[axis];
+    return false;
 }
 
-bool Trace::ShadowMeetsOpaque(const Ray& ray, const Intersection& isect, const RayObjectCondition& precond)
-{
-    const double tolerance = InterfaceTolerance(isect.IPoint, isect.Object->interior.get()), back = ProbeBack(ray, isect.IPoint, tolerance);
-    Ray probe(const_cast<TraceTicket&>(ray.GetTicket()), isect.IPoint - back * ray.Direction, ray.Direction);
-    StartProbe(probe, ray);
-    Intersection segment;
-    segment.Depth = back + std::max(tolerance, SMALL_TOLERANCE);
-    return FindIntersection(segment, probe, precond, OpaqueCondition());
 }
 
 void Trace::StartProbe(Ray& probe, const Ray& ray)
 {
-    probe.SetFlags(ray.IsPrimaryRay() ? Ray::PrimaryRay : ray.IsReflectionRay() ? Ray::ReflectionRay :
-                   ray.IsRefractionRay() ? Ray::RefractionRay : Ray::OtherRay, ray);
+    probe.SetFlags(ray.IsSubsurfaceRay() ? Ray::SubsurfaceRay : ray.IsPrimaryRay() ? Ray::PrimaryRay :
+                   ray.IsReflectionRay() ? Ray::ReflectionRay : ray.IsRefractionRay() ? Ray::RefractionRay : Ray::OtherRay, ray);
+}
+
+void Trace::FindCoincident(const Ray& ray, const Vector3d& point, double back, double reach, const RayObjectCondition& precond)
+{
+    Ray probe(const_cast<TraceTicket&>(ray.GetTicket()), point - back * ray.Direction, ray.Direction);
+    StartProbe(probe, ray);
+    Intersection segment;
+    segment.Depth = back + reach;
+    coincident.clear();
+    SurfaceCollector postcond(coincident, back + reach);
+    (void)FindIntersection(segment, probe, precond, postcond);
+    std::sort(coincident.begin(), coincident.end(), [](const Surface& a, const Surface& b) {
+        return (a.first != b.first) ? (a.first < b.first) : (a.second < b.second); });
+    coincident.erase(std::unique(coincident.begin(), coincident.end(), [](const Surface& a, const Surface& b) {
+        return a.first == b.first; }), coincident.end());
+    std::sort(coincident.begin(), coincident.end(), SurfaceBefore);
+}
+
+void Trace::CrossCoincident(RayInteriorVector& after, const RayInteriorVector& before, Interior *interior, const Vector3d& beyond,
+                            bool photon)
+{
+    auto place = [&](Interior *i, bool inside) {
+        RayInteriorVector::iterator at = std::find(after.begin(), after.end(), i);
+        if (inside && (at == after.end()))
+            after.push_back(i);
+        else if (!inside && (at != after.end()))
+            after.erase(at);
+    };
+    auto toggle = [&](Interior *i) { place(i, std::find(before.begin(), before.end(), i) == before.end()); };
+    // Every object with a surface here takes the side the far point lies on; one that cannot tell is crossed.
+    bool crossed = false;
+    for (const Surface& surface : coincident)
+    {
+        Interior *i = surface.first->interior.get();
+        if ((i == nullptr) || (photon && (i != interior) && Photon_Pass_Through(surface.first)))
+            continue;
+        crossed = crossed || (i == interior);
+        if (HasInside(surface.first))
+            place(i, surface.first->Inside(beyond, threadData));
+        else
+            toggle(i);
+    }
+    if (!crossed)
+        toggle(interior);
+}
+
+bool Trace::ShadowCrossCoincident(const LightSource& lightsource, Ray& ray, Intersection& isect, MathColour& colour,
+                                  const RayInteriorVector& before, const RayObjectCondition& precond, double reach, double& leave)
+{
+    Interior *interior = isect.Object->interior.get();
+    const double tolerance = InterfaceTolerance(isect.IPoint, interior), back = ProbeBack(ray, isect.IPoint, tolerance);
+    leave = tolerance;
+    FindCoincident(ray, isect.IPoint, back, std::max(0.0, std::min(tolerance, reach)), precond);
+    for (const Surface& surface : coincident)
+        if (Test_Flag(surface.first, OPAQUE_FLAG))
+            return false;
+
+    // Every other surface meeting the hit filters the light once, with no media between them.
+    ConstObjectPtr hit = (isect.Csg != nullptr) ? isect.Csg : isect.Object;
+    std::vector<Surface> surfaces(coincident);
+    for (const Surface& surface : surfaces)
+    {
+        if (surface.first == hit)
+            continue;
+        Ray probe(ray.GetTicket(), isect.IPoint - back * ray.Direction, ray.Direction);
+        StartProbe(probe, ray);
+        Intersection other;
+        if (!FindIntersection(const_cast<ObjectPtr>(surface.first), other, probe, back + tolerance))
+            continue;
+        Ray across(ray);
+        across.Origin = isect.IPoint;
+        other.Depth = std::max(0.0, other.Depth - back);
+        ComputeShadowColour(lightsource, other, across, colour);
+    }
+    if (interior == nullptr)
+        return true;
+    Vector3d normal;
+    isect.Object->Normal(normal, &isect, threadData);
+    const double side = dot(normal, ray.Direction);
+    RayInteriorVector after(before);
+    if (side == 0.0)
+    {
+        RayInteriorVector::iterator at = std::find(after.begin(), after.end(), interior);
+        if (at != after.end())
+            after.erase(at);
+        else
+            after.push_back(interior);
+    }
+    else
+    {
+        coincident = surfaces;
+        const Vector3d beyond = isect.IPoint + ((side > 0.0) ? tolerance : -tolerance) * normal.normalized();
+        CrossCoincident(after, before, interior, beyond, false);
+    }
+    ray.ResetInteriors();
+    for (Interior *i : after)
+        ray.AppendInterior(i);
+    return true;
 }
 
 bool Trace::SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight)
@@ -4108,11 +4232,17 @@ bool Trace::NeedsRelativeIor(const TEXTURE *texture, ConstObjectPtr object) cons
     return false;
 }
 
+bool Trace::MergesSurfaces() const
+{
+    return !sceneData->legacyIorStack && (sceneData->dielectrics || sceneData->anyOpaque);
+}
+
 bool Trace::TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight)
 {
-    if (sceneData->legacyIorStack || Test_Flag(isect.Object, OPAQUE_FLAG) || (isect.Object->interior == nullptr))
+    if (!MergesSurfaces() || Test_Flag(isect.Object, OPAQUE_FLAG) || (isect.Object->interior == nullptr))
         return false;
-    ConstObjectPtr take = InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal).take;
+    const InterfaceCache& sides = InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal);
+    ConstObjectPtr take = sides.take;
     if ((take == nullptr) || (Test_Flag(take, OPAQUE_FLAG) && !SurfaceTransmits(isect, ray, weight)))
         return false;
     const double tolerance = InterfaceTolerance(isect.IPoint, isect.Object->interior.get()), back = ProbeBack(ray, isect.IPoint, tolerance);
@@ -4122,6 +4252,13 @@ bool Trace::TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal
     if (!FindIntersection(const_cast<ObjectPtr>(take), other, probe, back + tolerance))
         return false;
     other.Depth += isect.Depth - back;
+    // The interface found from the first hit stands for the surface taken, whose own tolerance may be smaller.
+    InterfaceCache moved(sides);
+    moved.interior = other.Object->interior.get();
+    moved.point = other.IPoint;
+    moved.take = nullptr;
+    if (moved.interior != nullptr)
+        sidesCache[InterfaceSlot(moved.interior, moved.point)] = moved;
     isect = other;
     return true;
 }
@@ -4143,9 +4280,8 @@ double Trace::InterfaceTolerance(const Vector3d& point, const Interior *interior
     return tolerance;
 }
 
-const Trace::InterfaceCache& Trace::InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal)
+size_t Trace::InterfaceSlot(const Interior *interior, const Vector3d& point) const
 {
-    const RayInteriorVector& before = ray.GetInteriors();
     std::uint64_t key = reinterpret_cast<std::uintptr_t>(interior);
     for (int axis = X; axis <= Z; axis++)
     {
@@ -4154,7 +4290,14 @@ const Trace::InterfaceCache& Trace::InterfaceSides(const Ray& ray, Interior *int
         std::memcpy(&bits, &coordinate, sizeof(bits));
         key = (key ^ bits) * 0x9E3779B97F4A7C15ull;
     }
-    InterfaceCache& sides = sidesCache[(key >> 59) & (kInterfaceCacheSize - 1)];
+    return (key >> 59) & (kInterfaceCacheSize - 1);
+}
+
+const Trace::InterfaceCache& Trace::InterfaceSides(const Ray& ray, Interior *interior, const Vector3d& point,
+                                                   const Vector3d& normal)
+{
+    const RayInteriorVector& before = ray.GetInteriors();
+    InterfaceCache& sides = sidesCache[InterfaceSlot(interior, point)];
     if ((sides.interior != interior) || (sides.point[X] != point[X]) || (sides.point[Y] != point[Y]) || (sides.point[Z] != point[Z]) ||
         (sides.photon != ray.IsPhotonRay()) || (sides.before.size() != before.size()) ||
         !std::equal(before.begin(), before.end(), sides.before.begin()))
@@ -4165,84 +4308,56 @@ const Trace::InterfaceCache& Trace::InterfaceSides(const Ray& ray, Interior *int
 void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal)
 {
     const RayInteriorVector& before = ray.GetInteriors();
+    const bool photon = ray.IsPhotonRay();
     sides.interior = interior;
     sides.point = point;
-    sides.photon = ray.IsPhotonRay();
+    sides.photon = photon;
     sides.before = before;
     sides.after = before;
     sides.leave = 0.0;
     sides.take = nullptr;
-    auto place = [&](Interior *i, bool inside) {
-        RayInteriorVector::iterator at = std::find(sides.after.begin(), sides.after.end(), i);
-        if (inside && (at == sides.after.end()))
-            sides.after.push_back(i);
-        else if (!inside && (at != sides.after.end()))
-            sides.after.erase(at);
-    };
     auto holds = [](const RayInteriorVector& set, const Interior *i) { return std::find(set.begin(), set.end(), i) != set.end(); };
-    auto toggle = [&](Interior *i) { place(i, !holds(before, i)); };
     const double across = dot(normal, ray.Direction);
-    if (across == 0.0)
+    if ((across == 0.0) || !MergesSurfaces())
     {
-        toggle(interior);
+        if (holds(before, interior))
+            sides.after.erase(std::find(sides.after.begin(), sides.after.end(), interior));
+        else
+            sides.after.push_back(interior);
         return;
     }
-    const double tolerance = InterfaceTolerance(point, interior), back = ProbeBack(ray, point, tolerance);
+    const double tolerance = InterfaceTolerance(point, interior);
     sides.leave = tolerance;
-    Ray probe(const_cast<TraceTicket&>(ray.GetTicket()), point - back * ray.Direction, ray.Direction);
-    StartProbe(probe, ray);
-    Intersection segment;
-    segment.Depth = back + tolerance;
-    coincident.clear();
     NoSomethingFlagRayObjectCondition precond;
-    SurfaceCollector postcond(coincident, back + tolerance);
-    (void)FindIntersection(segment, probe, precond, postcond);
-
-    // Every object with a surface here takes the side the far point lies on; one that cannot tell is crossed.
+    FindCoincident(ray, point, ProbeBack(ray, point, tolerance), tolerance, precond);
     const Vector3d beyond = point + ((across > 0.0) ? tolerance : -tolerance) * normal.normalized();
-    double nearestOpaque = HUGE_VAL;
-    bool crossed = false;
-    size_t distinct = 0;
-    for (size_t k = 0; k < coincident.size(); k++)
+    CrossCoincident(sides.after, before, interior, beyond, photon);
+
+    // An opaque surface is hit; otherwise the first, in SurfaceBefore's order, of the objects entered, else of those left.
+    ConstObjectPtr best = nullptr;
+    bool bestEntered = false, hitFound = false;
+    for (const Surface& surface : coincident)
     {
-        ConstObjectPtr object = coincident[k].first;
-        if (Test_Flag(object, OPAQUE_FLAG) && !(ray.IsPhotonRay() && Test_Flag(object, PH_PASSTHRU_FLAG)) &&
-            (coincident[k].second < nearestOpaque))
+        ConstObjectPtr object = surface.first;
+        Interior *i = object->interior.get();
+        if (photon && Photon_Pass_Through(object))
+            continue;
+        if (Test_Flag(object, OPAQUE_FLAG))
         {
             sides.take = object;
-            nearestOpaque = coincident[k].second;
+            return;
         }
-        bool seen = false;
-        for (size_t m = 0; (m < distinct) && !seen; m++)
-            seen = (coincident[m].first == object);
-        if (seen)
-            continue;
-        coincident[distinct++] = coincident[k];
-        Interior *i = object->interior.get();
-        if (i == nullptr)
-            continue;
-        crossed = crossed || (i == interior);
-        if (HasInside(object))
-            place(i, object->Inside(beyond, threadData));
-        else
-            toggle(i);
-    }
-    if (!crossed)
-        toggle(interior);
-
-    // Without an opaque one, the surface hit is that of an object the ray enters, so file order cannot pick the texture.
-    if ((sides.take != nullptr) || (holds(sides.after, interior) && !holds(before, interior)))
-        return;
-    double nearest = HUGE_VAL;
-    for (size_t k = 0; k < distinct; k++)
-    {
-        Interior *i = coincident[k].first->interior.get();
-        if ((i != nullptr) && (i != interior) && holds(sides.after, i) && !holds(before, i) && (coincident[k].second < nearest))
+        hitFound = hitFound || (i == interior);
+        const bool entered = (i != nullptr) && holds(sides.after, i) && !holds(before, i);
+        const bool left = (i != nullptr) && !holds(sides.after, i) && holds(before, i);
+        if ((entered || left || (i == interior)) && ((best == nullptr) || (entered && !bestEntered)))
         {
-            sides.take = coincident[k].first;
-            nearest = coincident[k].second;
+            best = object;
+            bestEntered = entered;
         }
     }
+    if (hitFound && (best != nullptr) && (best->interior.get() != interior))
+        sides.take = best;
 }
 
 void Trace::ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& point, const Vector3d& normal, InterfaceIor& result)

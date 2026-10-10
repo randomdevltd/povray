@@ -155,7 +155,7 @@ namespace pov
 #define STURM_OK_OBJECT             0x0008u ///< Object accepts the `sturm` parameter.
 #define HOLDS_PORTAL_OBJECT         0x0010u ///< Object is or holds a @ref Portal.
 #define LIGHT_SOURCE_OBJECT         0x0020u ///< Object is to be linked in frame.light_sources.
-// 0x0040u currently not used
+#define NO_INSIDE_OBJECT            0x0040u ///< Object never contains a point, though it is not a patch.
 // 0x0080u currently not used
 #define IS_CHILD_OBJECT             0x0100u ///< Object is inside a compound.
 #define HIERARCHY_OK_OBJECT         0x0200u ///< Object accepts the `hiararchy` parameter.

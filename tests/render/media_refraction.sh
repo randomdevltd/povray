@@ -90,6 +90,7 @@ same bare_box ball
 render air_box Declare=Case=17
 render air_box_37 Version=3.7 Declare=Case=17 Declare=BallIor=1.25
 region air_box air_box_37 0 95 0 71
+says "the atmosphere's, overlaps" air_box || { echo "media_refraction: no warning for an ior 1 box around glass" >&2; exit 1; }
 for case in 18:bubble 19:inside_glass; do
     render ${case#*:} Declare=Case=${case%:*}
     render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*} Declare=Inner=1.25
@@ -139,6 +140,14 @@ lit bent_glow 36 59 24 47 0.95
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71
+
+# A gap inside the merge tolerance, none, or a wider one all look the same through parallel faces and filter or absorb once each.
+# Columns past 78 in case 44 hold the water slab's side, which moves with the gap.
+for case in 44:78:0 45:95:51 46:95:51; do
+    c=${case%%:*}; c1=$(echo $case | cut -d: -f2); r0=${case##*:}
+    for gap in 0 5e-5 5e-4 2e-3; do render gap${c}_$gap Declare=Case=$c Declare=Gap=$gap; done
+    for gap in 5e-5 5e-4 2e-3; do region gap${c}_0 gap${c}_$gap 0 $c1 $r0 71; done
+done
 
 render only Declare=Case=14
 if says "Media Samples" only; then echo "media_refraction: a refraction-only medium is sampled" >&2; exit 1; fi

@@ -172,8 +172,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
         RefractionField field(ray.GetInteriors(), threadData);
         if (field.Varies())
         {
-            double base, dispersion;
-            MeanIor(ray.GetInteriors(), base, dispersion, nullptr);
+            const double base = MeanIor(ray.GetInteriors(), nullptr, nullptr);
             Ray chord(ray);
             chord.hasDifferentials = false;
             CurvedPath path;
@@ -220,6 +219,12 @@ bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& col
         ColourChannel transm = 0.0;
         TracePortal(*static_cast<const Portal *>(bestisect.Csg), bestisect, ray, colour, transm, weight);
         return true;
+    }
+    if (MergesSurfaces() && !Test_Flag(bestisect.Object, OPAQUE_FLAG))
+    {
+        Vector3d rawnormal;
+        bestisect.Object->Normal(rawnormal, &bestisect, threadData);
+        (void)TakeCoincident(ray, bestisect, rawnormal, weight);
     }
     {
         // NK phmap

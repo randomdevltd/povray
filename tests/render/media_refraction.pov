@@ -5,6 +5,7 @@
 #ifndef (Far) #declare Far = 0; #end
 #ifndef (Inner) #declare Inner = 1; #end
 #ifndef (BallIor) #declare BallIor = 1.5; #end
+#ifndef (Gap) #declare Gap = 0; #end
 global_settings { assumed_gamma 1 }
 camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up y * 6 }
 #declare Backdrop = plane {
@@ -16,7 +17,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
   #end
   finish { ambient 0 emission 1 diffuse 0 }
 }
-#if ((Case != 16) & (Case < 42)) object { Backdrop } #end
+#if (((Case != 16) & (Case < 42)) | (Case = 44)) object { Backdrop } #end
 
 #declare Clear = texture { pigment { rgbt 1 } finish { diffuse 0 } };
 #declare Lens = media { method 3 refraction 0.6 density { spherical scale 2.5 } }
@@ -145,6 +146,24 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #break
 #case (40) object { WaterFront } object { GlassBack } #break // rays meet the shared wall 70 degrees from its normal
 #case (41) object { GlassBack } object { WaterFront } #break
+#case (44) // seen at 30 degrees: a small water slab Gap behind a big glass slab's face; parallel faces make the gap invisible
+  camera { orthographic location <-5, 0, -8.66> look_at 0 right x * 8 up y * 6 }
+  box { <-4, -3, -1>, <4, 3, 0> texture { Clear } interior { ior 1.5 } }
+  box { <-3, -2, Gap>, <3, 2, Gap + 0.1> texture { Clear } interior { ior 1.33 } }
+#break
+#case (45) // from above: a floor lit through a red filter box, then a blue one Gap behind it, or two absorbing media boxes
+#case (46)
+  camera { orthographic location <0, 10, 0> look_at 0 right x * 8 up z * 6 }
+  light_source { <0, 3, 20> rgb 1 media_attenuation on }
+  plane { y, -0.5 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
+  #if (Case = 45)
+    box { <-5, 0, -1>, <5, 4, 1> pigment { rgbf <1, 0.3, 0.3, 1> } finish { diffuse 0 } }
+    box { <-5, 0, 1 + Gap>, <5, 4, 3> pigment { rgbf <0.3, 0.3, 1, 1> } finish { diffuse 0 } }
+  #else
+    box { <-5, 0, -1>, <5, 4, 1> texture { Clear } interior { media { absorption rgb <0, 0.5, 0.5> } } }
+    box { <-5, 0, 1 + Gap>, <5, 4, 3> texture { Clear } interior { media { absorption rgb <0.5, 0.5, 0> } } }
+  #end
+#break
 #case (42) // from above: a polygon wall within the tolerance of a clear face must shade the floor behind both
 #case (43)
   camera { orthographic location <0, 10, 0> look_at 0 right x * 8 up z * 6 }
