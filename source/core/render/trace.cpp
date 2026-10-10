@@ -4151,7 +4151,19 @@ void Trace::FindCoincident(const Ray& ray, const Vector3d& point, double back, d
     segment.Depth = back + reach;
     coincident.clear();
     SurfaceCollector postcond(coincident, back + reach);
-    (void)FindIntersection(segment, probe, precond, postcond);
+    const PreparedSet& view = sceneData->GetPreparedSet(probe.GetPreparedSetId());
+    if ((view.boundingMethod == 1) && (view.flatSlabs != nullptr))
+    {
+        // The collector accepts no hit, so the walk need not order its boxes by depth.
+        Traverse_Flat_BBox_Tree(*view.flatSlabs, probe, segment.Depth, true, threadData->Stats(), [&](std::int32_t leaf) {
+            ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(view.flatSlabs->leaves[leaf]));
+            if (precond(probe, object, 0.0))
+                (void)Find_Intersection_BBox_Passed(&segment, object, probe, postcond, threadData);
+            return false;
+        }, float(MIN_ISECT_DEPTH));
+    }
+    else
+        (void)FindIntersection(segment, probe, precond, postcond);
     loneSurface = (coincident.size() == 1);
     if (coincident.size() < 2)
         return;
