@@ -260,6 +260,8 @@ class SceneData
         int interfaceTexture;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
+        /// the scene's default media refraction_detail, in millimetres; negative when unset
+        double refractionDetail;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media
         bool dielectrics;
         /// whether any object is guaranteed opaque

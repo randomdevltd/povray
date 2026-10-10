@@ -81,6 +81,9 @@
   <td><div class="divh3"><a title="3.4.1.16" href="#r3_4_1_16">Interface_Texture</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.1.17" href="#r3_4_1_17">Refraction_Detail</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
 </tr>
 <tr>
@@ -402,7 +405,7 @@ GLOBAL_SETTINGS_ITEM:
   hf_gray_16 [Bool] | irid_wavelength COLOR | charset GLOBAL_CHARSET |
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
-  refraction_angle Value | atmospheric_ior Value | atmospheric_dispersion Value |
+  refraction_angle Value | refraction_detail Value | atmospheric_ior Value | atmospheric_dispersion Value |
   interface_texture blend | interface_texture near | interface_texture far |
   mesh_cache &quot;directory&quot; |
   radiosity { RADIOSITY_ITEMS... } | subsurface { SUBSURFACE_ITEMS } |
@@ -428,6 +431,7 @@ mm_per_unit        : 10
 number_of_waves	   : 10
 noise_generator	   : 2
 refraction_angle   : 0.5
+refraction_detail  : unset (the step follows the container's size)
 atmospheric_ior    : 1.00029 (1.0 before #version 4.0)
 atmospheric_dispersion : 1.0
 interface_texture  : blend (far before #version 4.0)
@@ -628,7 +632,11 @@ If there is no <code>max_trace_level</code> set and during rendering the default
 <a name="r3_4_1_9"></a>
 <div class="content-level-h4" contains="Mm_Per_Unit" id="r3_4_1_9">
 <h4>3.4.1.9 Mm_Per_Unit</h4>
-<p>See the section <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light Transport</a> for more information about the role of <code>mm_per_unit</code> in the global settings block.</p>
+<p><code>mm_per_unit</code> is the scale of the scene: how many millimetres one POV-Ray unit stands for. The default, 10, suits a scene of centimetre-sized objects; a scene at another scale should say so, because the settings measured in real-world millimetres need it to mean what they say. Media <a href="r3_4.html#r3_4_1_17">refraction_detail</a> takes its length through it, and subsurface scattering scales its distances by it.</p>
+<pre>
+global_settings { mm_per_unit 100 }  // one unit is 100 mm
+</pre>
+<p>See the section <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light Transport</a> for its role in subsurface scattering.</p>
 
 </div>
 <a name="r3_4_1_10"></a>
@@ -693,6 +701,14 @@ global_settings { atmospheric_ior 1.33 }
 <p>Where clear objects share a face, such as glass and water meeting at a wall, the ray crosses it as one surface (see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>), and <code>interface_texture</code> chooses the texture it shows. <code>blend</code>, the default from <code>#version 4.0</code>, evaluates the texture of every object there and averages the results equally, pigment and finish alike, so the face looks the same from either side and in any placement order; it costs one texture evaluation per object, at shared faces only. <code>far</code> shows the texture of the object on the far side of the face from the ray, the one being entered; <code>near</code> shows the one on the ray's side, the one being left. Faces of an <code>ior_mix replace</code> object show its own texture whatever the setting. Before 4.0 coincident surfaces are merged only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses media refraction, and the default there is <code>far</code>. See <a href="r3_7.html#r3_7_2_1_10">Shared Faces</a>.</p>
 <pre>
 global_settings { interface_texture near }
+</pre></div>
+
+<a name="r3_4_1_17"></a>
+<div class="content-level-h4" contains="Refraction_Detail" id="r3_4_1_17">
+<h4>3.4.1.17 Refraction_Detail</h4>
+<p>Where <a href="r3_7.html#r3_7_2_2_4">media refraction</a> makes the index vary, the ray follows the curve in steps whose length the scene author otherwise cannot see or set: without this setting the steps follow the refracting object's size. <code>refraction_detail</code> is a length in millimetres, converted through <a href="r3_4.html#r3_4_1_9">mm_per_unit</a>: the smallest index structure that must refract faithfully on every ray. Structure at least that wide bends as it should; narrower structure is averaged, the same way for every ray, rather than caught on some rays and missed on others, which is what renders it as speckle. A <code>media</code> block may give its own <code>refraction_detail</code>, overriding the scene's. How the step and the gradient follow the detail, and what it costs, is in <a href="r3_11.html#r3_11_3_2">Curved Rays</a>.</p>
+<pre>
+global_settings { mm_per_unit 100  refraction_detail 1 }
 </pre></div>
 
 <a name="r3_4_2"></a>

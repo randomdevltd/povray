@@ -164,6 +164,8 @@ class Media final
         MathColour Scattering;
         /// adds refraction x density (its channel mean) to the refractive index of the interior holding it
         DBL Refraction;
+        /// the smallest index detail, in millimetres, that must refract faithfully; negative when unset
+        DBL RefractionDetail;
 
         DBL Ratio;
         DBL Confidence;
@@ -190,7 +192,8 @@ class Media final
         void Transform(const TRANSFORM *trans);
 
         void PostProcess();
-        void SetFastContainer(ObjectPtr object);
+        /// object: the container; refractionDetail: the medium's refraction_detail in scene units, 0 when unset.
+        void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0);
         /// Whether it only bends rays, with nothing to absorb, emit or scatter.
         bool OnlyRefracts() const { return (Refraction != 0.0) && !use_absorption && !use_emission && !use_scattering; }
 };

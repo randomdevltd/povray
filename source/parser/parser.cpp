@@ -8015,6 +8015,12 @@ void Parser::Parse_Global_Settings()
                 if (sceneData->interfaceTexture == kInterfaceTextureAuto)
                     Error("Expected blend, near or far after interface_texture.");
             }
+            else if (CurrentTokenText() == "refraction_detail")
+            {
+                sceneData->refractionDetail = Parse_Float();
+                if (!std::isfinite(sceneData->refractionDetail) || !(sceneData->refractionDetail > 0.0))
+                    Error("refraction_detail must be a length in millimetres greater than 0.");
+            }
             else if (CurrentTokenText() == "atmospheric_ior")
             {
                 if (interiorSerial > 0)
@@ -10119,7 +10125,15 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
-            medium.SetFastContainer(Object);
+            // The detail comes from the medium or the scene's default, in millimetres; the grid width is in scene units.
+            const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
+            const DBL detailUnits = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
+            medium.SetFastContainer(Object, detailUnits);
+            if ((detailUnits > 0.0) && (medium.Refraction != 0.0) && (medium.Sample_Method == 4) &&
+                !medium.Density.empty() && (medium.FastResolution > 0.5 * detailUnits))
+                Warning("Media resolution %.6g is coarser than half this medium's refraction_detail (%.6g), so the prepared "
+                        "grid holds index detail no finer than %.6g; raise the resolution or lower refraction_detail.",
+                        medium.FastResolution, detailUnits, medium.FastResolution);
             if (medium.light)
                 Make_Media_Light(medium, Object);
         }

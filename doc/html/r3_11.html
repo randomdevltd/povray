@@ -66,6 +66,9 @@
   <td><div class="divh3"><a title="3.11.5.4" href="#r3_11_5_4">Carving and Scaling Fog</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.11.5.5" href="#r3_11_5_5">Detail and Speckle</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.11.6" href="#r3_11_6">Defaults and Messages</a></strong></div></td>
 </tr>
 <tr>
@@ -170,7 +173,8 @@ cylinder {
 <a name="r3_11_3_2"></a>
 <div class="content-level-h4" contains="Curved Rays" id="r3_11_3_2">
 <h4>3.11.3.2 Curved Rays</h4>
-<p>Where the index varies, camera, reflected, refracted and photon rays follow the curve in short straight chords, testing each chord for objects so that nothing embedded is skipped. Each step bends the ray by at most <a href="r3_4.html#r3_4_1_13">refraction_angle</a> degrees (0.5 by default), judged from the curvature at its start, middle and end, so detail in the index narrower than about half a step can be missed. No step is longer than a sixty-fourth of the refracting object's size (twice the prepared resolution with method 4) or a sixteenth of the straight-line distance to the next surface.</p>
+<p>Where the index varies, camera, reflected, refracted and photon rays follow the curve in short straight chords, testing each chord for objects so that nothing embedded is skipped. Each step bends the ray by at most <a href="r3_4.html#r3_4_1_13">refraction_angle</a> degrees (0.5 by default), judged from the curvature at its start, middle and end, so detail in the index narrower than about half a step can be missed. Without <code>refraction_detail</code> no step is longer than a sixty-fourth of the refracting object's size (twice the prepared resolution with method 4), and no step is longer than a sixteenth of the straight-line distance to the next surface; from <code>#version 4.0</code> a render whose refracting medium spans more than 100&nbsp;mm without the setting is told so, once.</p>
+<p><code>global_settings { refraction_detail D }</code>, or a medium's own <code>refraction_detail D</code>, sets the smallest index structure, in millimetres through <a href="r3_4.html#r3_4_1_9">mm_per_unit</a>, that must refract faithfully on every ray. The marcher derives its step from it and never exposes the step itself: no step is longer than D/2, which puts about four curvature samples across the narrowest band, and the gradient that bends the ray is a central difference taken over &plusmn;D/2, which is the gradient of the index averaged at the scale D. The contract for the author is that structure at least D wide refracts faithfully, and structure narrower than D contributes its average, the same average for every ray &mdash; never caught on some rays and missed on others, which is the speckle. The 1/16-of-distance-to-the-next-surface cap stands as before, and constant-density media still cost nothing. Through varying index the march takes about path / (D/2) steps, each sampling the index and its gradient: a 75&nbsp;mm plate at D = 2 takes roughly 75 steps where the size rule took ten, so set D no finer than the structure that must show. Where several refracting media hold a point, the smallest D among them governs.</p>
 <ul>
   <li>A ray still inside the field after 20000 steps is taken as trapped and returns black, with a warning. Rays orbiting a strong field do this; a larger <code>refraction_angle</code> takes fewer steps.</li>
   <li>An index driven below 0.01 by a negative <code>refraction</code> is held at 0.01, with a warning. Use a smaller negative coefficient or a higher <code>ior</code>.</li>
@@ -194,7 +198,7 @@ global_settings { refraction_angle 0.25 }
 media { method 4  resolution 0.1  scattering { 1, rgb 1 }  density { bozo } }
 </pre>
 <ul>
-  <li><code>resolution</code> is the cell width in scene units, a finite number above 0, and is an error unless the method is 4. Omitted, the width is the larger of the container's longest bounding-box side divided by 128 and the cube root of the bounding-box volume divided by 500000.</li>
+  <li><code>resolution</code> is the cell width in scene units, a finite number above 0, and is an error unless the method is 4. Omitted, the width is the larger of the container's longest bounding-box side divided by 128 and the cube root of the bounding-box volume divided by 500000 &mdash; refined, in a medium with <a href="r3_4.html#r3_4_1_17">refraction_detail</a>, to at most half the detail, so the grid can hold what the detail promises. A <code>resolution</code> given explicitly and coarser than half the detail draws a warning at parse time: the grid averages index detail between its cell and the detail. A detail so fine that half of it needs more than the 1000000-cell limit is not coarsened: the grid falls back as below, so give such a medium an explicit coarser <code>resolution</code> or a larger detail.</li>
   <li>Each cell holds the mean of the density at eight points spread through it, and lookups interpolate between cell centres. Detail smaller than a cell can be missed; lower <code>resolution</code> to keep it.</li>
   <li>A grid is limited to 1000000 cells. A larger one is not coarsened: the medium falls back to classic sampling with a warning that names the width that would fit. A medium light is the exception; it builds its table on coarser cells (see <a href="r3_12.html#r3_12_3">Volume Lights</a>).</li>
   <li>The container must be finite and bounded. The density values must be finite and not negative.</li>
@@ -296,6 +300,12 @@ box {
 </pre>
 <p><code>blend_lightning.pov</code> adds a bolt and its glow to a cloud and tints the grey cloud blue with a multiply volume; <code>blend_slime.pov</code> stacks all four mixes in one gelatinous cube.</p></div>
 
+<a name="r3_11_5_5"></a>
+<div class="content-level-h4" contains="Detail and Speckle" id="r3_11_5_5">
+<h4>3.11.5.5 Detail and Speckle</h4>
+<p><code>refraction_detail_bands.pov</code> is a 500&nbsp;mm plate whose index rises across 2&nbsp;mm seams every 10&nbsp;mm, like the cell walls of a mineral, seen against a striped card. Each seam is a narrow prism: with <code>refraction_detail 1</code> every seam bends the card's image by its own share, the same on every ray. <code>Declare=Detail=0</code> leaves the setting out, and the seams that fall between the marcher's steps &mdash; steps up to a sixty-fourth of 500&nbsp;mm &mdash; dither into per-pixel speckle instead of refracting.</p>
+<p><code>refraction_detail_crackle.pov</code> holds crackle at a 0.2&nbsp;mm scale in the same plate, far below its <code>refraction_detail 1</code>: every ray meets the same averaged index and the plate reads as smooth faint glass, while <code>Declare=Detail=0</code> returns per-pixel noise, each ray's steps catching a different phase of the pattern. Structure narrower than the detail is averaged, not eliminated: a fine pattern still shifts the mean index where the pattern itself does.</p></div>
+
 <a name="r3_11_6"></a>
 <div class="content-level-h3" contains="Defaults and Messages" id="r3_11_6">
 <h3>3.11.6 Defaults and Messages</h3>
@@ -307,8 +317,9 @@ mix         : see Media Mix
 priority    : 0
 method      : 3 from version 3.5, 4 from version 4.0 (1 before 3.5)
 resolution  : automatic (method 4 only)
+refraction_detail : unset (the global setting, in millimetres)
 </pre>
-<p>Global settings that act on volumes: <a href="r3_4.html#r3_4_1_13">refraction_angle</a> (0.5), and <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a> (1.00029 from <code>#version 4.0;</code>, otherwise 1), which is the index outside every object.</p>
+<p>Global settings that act on volumes: <a href="r3_4.html#r3_4_1_13">refraction_angle</a> (0.5), <a href="r3_4.html#r3_4_1_17">refraction_detail</a> (unset), and <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a> (1.00029 from <code>#version 4.0;</code>, otherwise 1), which is the index outside every object.</p>
 <p>Warnings, each given once (a prepared field that fails is reported once per field):</p>
 <table width="100%" class="option-list">
 <tr><td><code>Media refraction changes by N across a surface at ...</code></td><td>A refracting density is cut off at a surface with the same ior on both sides. Fade the density to zero at the container.</td></tr>
@@ -316,8 +327,9 @@ resolution  : automatic (method 4 only)
 <tr><td><code>Media refraction takes the index to N at ...; it is held at 0.01.</code></td><td>A negative <code>refraction</code> is too strong for the ior. Use a smaller coefficient or a higher <code>ior</code>.</td></tr>
 <tr><td><code>Atmospheric media do not refract; 'refraction' works in the media of an object's interior.</code></td><td><code>refraction</code> in a scene-level <code>media</code>.</td></tr>
 <tr><td><code>Media method 4 is using classic sampling: ...</code></td><td>A prepared field was not possible; the message gives the reason, the resolution and the container bounds.</td></tr>
+<tr><td><code>A refracting medium N mm across steps at up to M mm ...</code></td><td>From <code>#version 4.0</code>, a refracting medium of more than 100&nbsp;mm was rendered without <code>refraction_detail</code>, so its steps follow its size alone. Set the detail, in millimetres, that must refract.</td></tr>
 </table>
-<p>Errors: <code>media refraction must be finite.</code>, <code>media resolution needs a finite positive scene-unit width.</code>, <code>media resolution requires method 4.</code> and <code>media priority must be an integer.</code></p></div>
+<p>Errors: <code>media refraction must be finite.</code>, <code>media resolution needs a finite positive scene-unit width.</code>, <code>media resolution requires method 4.</code>, <code>media priority must be an integer.</code>, <code>refraction_detail must be a length in millimetres greater than 0.</code> and its media form. A parse-time warning, <code>Media resolution R is coarser than half this medium's refraction_detail ...</code>, names a prepared grid too coarse to hold the detail the medium asks for.</p></div>
 
 </div>
 
