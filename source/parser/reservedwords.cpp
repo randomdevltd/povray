@@ -107,6 +107,8 @@ const RESERVED_WORD Reserved_Words[] = {
     { ATAN_TOKEN,                   "atan" },
     { ATAN2_TOKEN,                  "atan2" },
     { ATANH_TOKEN,                  "atanh" },
+    { ATMOSPHERIC_DISPERSION_TOKEN, "atmospheric_dispersion" },
+    { ATMOSPHERIC_IOR_TOKEN,        "atmospheric_ior" },
     { AUTOSTOP_TOKEN,               "autostop" },
     { AVERAGE_TOKEN,                "average" },
 
@@ -302,6 +304,7 @@ const RESERVED_WORD Reserved_Words[] = {
     { INTERVALS_TOKEN,              "intervals" },
     { INVERSE_TOKEN,                "inverse" },
     { IOR_TOKEN,                    "ior" },
+    { IOR_MIX_TOKEN,                "ior_mix" },
     { IRID_TOKEN,                   "irid" },
     { IRID_WAVELENGTH_TOKEN,        "irid_wavelength" },
     { ISOSURFACE_TOKEN,             "isosurface" },

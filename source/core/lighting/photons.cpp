@@ -172,7 +172,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
         RefractionField field(ray.GetInteriors(), threadData);
         if (field.Varies())
         {
-            const double base = MeanIor(ray.GetInteriors(), nullptr, nullptr);
+            const double base = MixedIor(ray.GetInteriors(), nullptr, nullptr);
             Ray chord(ray);
             chord.hasDifferentials = false;
             CurvedPath path;

@@ -86,21 +86,46 @@ render late_backdrop Declare=Case=16
 render bare_box Declare=Case=50
 same late_backdrop ball
 same bare_box ball
-# A solid that states an ior averages with the solids it overlaps: 4.0 matches 3.7 with the overlap at the mean.
+# Under ior_mix mean an interior at the atmosphere's ior is void: an ior 1 box or bubble leaves the glass whole, fog or not.
 render air_box Declare=Case=17
-render air_box_37 Version=3.7 Declare=Case=17 Declare=BallIor=1.25
-region air_box air_box_37 0 95 0 71
-says "the atmosphere's, overlaps" air_box || { echo "media_refraction: no warning for an ior 1 box around glass" >&2; exit 1; }
+same air_box ball
+render fog_air_box Declare=Case=17 Declare=Fog=1
+render fog_box Declare=Case=50 Declare=Fog=1
+same fog_air_box fog_box
+render bubble_void Declare=Case=18
+render glass Declare=Case=53
+same bubble_void glass
+# Overlapping solids of other iors mean: glass 1.5 with 1.25 is 3.7's 1.375.
 for case in 18:bubble 19:inside_glass; do
-    render ${case#*:} Declare=Case=${case%:*}
-    render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*} Declare=Inner=1.25
+    render ${case#*:} Declare=Case=${case%:*} Declare=Inner=1.25
+    render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*} Declare=Inner=1.375
     region ${case#*:} ${case#*:}_37 0 95 0 71
 done
 render bubble_cut Declare=Case=51
 render bubble_air_37 Version=3.7 Declare=Case=18
 render bubble_filled Declare=Case=52
 region bubble_cut bubble_air_37 0 95 0 71
-region bubble_filled bubble 0 95 0 71
+# A surface or replace sphere inside mean glass gives its own ior, as a difference bubble does.
+for mix in 0:surface 2:replace; do
+    render bubble_${mix#*:} Declare=Case=18 Declare=Mix=${mix%:*}
+    region bubble_${mix#*:} bubble_cut 0 95 0 71
+    render filled_${mix#*:} Declare=Case=18 Declare=Mix=${mix%:*} Declare=Inner=1.25
+    region filled_${mix#*:} bubble_filled 0 95 0 71
+done
+# A replace placed before its glass means with it, unless its priority outranks the glass.
+render replace_first Declare=Case=54
+region replace_first bubble_filled 0 95 0 71
+render replace_priority Declare=Case=54 Declare=Priority=1
+region replace_priority bubble_cut 0 95 0 71
+render lens_bubble Declare=Case=55
+render lens_bubble_cut Declare=Case=56
+region lens_bubble lens_bubble_cut 0 95 0 71
+# The void is the atmosphere's ior: a ball under atmospheric_ior 1.33 is the ball in water, and ior 1.33 is void there.
+render underwater Declare=Case=57 Declare=Atmosphere=1.33
+render in_water Declare=Case=58
+region underwater in_water 14 81 2 69
+render underwater_void Declare=Case=59 Declare=Atmosphere=1.33
+same underwater underwater_void
 render lens_ab Declare=Case=37
 render lens_ba Declare=Case=38
 render lens_cut Declare=Case=39
@@ -140,6 +165,11 @@ lit bent_glow 36 59 24 47 0.95
 render hidden_37 Version=3.7 Declare=Case=11
 render inside_37 Version=3.7 Declare=Case=12
 region hidden_37 inside_37 0 95 0 71
+# Under 4.0 a scene whose clear objects are all ior_mix surface renders as 3.7 does.
+render hidden_surface Declare=Case=11 Declare=MixAll=0
+same hidden_surface hidden_37
+render bubble_surface Declare=Case=18 Declare=MixAll=0
+same bubble_surface bubble_air_37
 
 # A gap inside the merge tolerance, none, or a wider one all look the same through parallel faces and filter or absorb once each.
 # Columns past 78 in case 44 hold the water slab's side, which moves with the gap.

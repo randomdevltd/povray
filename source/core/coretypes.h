@@ -215,6 +215,15 @@ enum MediaBlend
     kMediaBlendMultiply = 3, ///< scale the coefficients of the media beneath by its density
 };
 
+/// How an interior's ior combines with the interiors it overlaps.
+enum IorMix
+{
+    kIorMixAuto    = -1, ///< not set: surface before language version 4.0, mean from it
+    kIorMixSurface = 0,  ///< the innermost entered gives the ior, as before 4.0
+    kIorMixMean    = 1,  ///< the mean of the overlapping iors other than the atmosphere's
+    kIorMixReplace = 2,  ///< overrides the iors ranked beneath it: priority, then placement
+};
+
 class Interior final
 {
     public:
@@ -227,8 +236,8 @@ class Interior final
         unsigned int precedence;
         /// whether any of its media refract
         bool refracting;
-        /// whether the scene states its ior, so it joins the mean ior where solids overlap
-        bool statesIor;
+        /// an IorMix, and the rank of a replace ahead of placement order
+        int iorMix, iorPriority;
         /// the shape of the object it first belonged to, for messages
         const char *shape;
         SNGL IOR, Dispersion;
