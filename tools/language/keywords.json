@@ -1,0 +1,2757 @@
+[
+ {
+  "word": "aa_level",
+  "token": "AA_LEVEL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "aa_threshold",
+  "token": "AA_THRESHOLD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "abs",
+  "token": "ABS_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "absorption",
+  "token": "ABSORPTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "accuracy",
+  "token": "ACCURACY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "acos",
+  "token": "ACOS_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "acosh",
+  "token": "ACOSH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "adaptive",
+  "token": "ADAPTIVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "adc_bailout",
+  "token": "ADC_BAILOUT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "agate",
+  "token": "AGATE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "agate_turb",
+  "token": "AGATE_TURB_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "albedo",
+  "token": "ALBEDO_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "all",
+  "token": "ALL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "all_intersections",
+  "token": "ALL_INTERSECTIONS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "alpha",
+  "token": "ALPHA_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "altitude",
+  "token": "ALTITUDE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "always_sample",
+  "token": "ALWAYS_SAMPLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ambient",
+  "token": "AMBIENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ambient_light",
+  "token": "AMBIENT_LIGHT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "angle",
+  "token": "ANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "anisotropy",
+  "token": "ANISOTROPY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "any",
+  "token": "ANY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "aoi",
+  "token": "AOI_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "aperture",
+  "token": "APERTURE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "append",
+  "token": "APPEND_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "arc_angle",
+  "token": "ARC_ANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "area_illumination",
+  "token": "AREA_ILLUMINATION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "area_light",
+  "token": "AREA_LIGHT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "array",
+  "token": "ARRAY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "asc",
+  "token": "ASC_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "ascii",
+  "token": "ASCII_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "asin",
+  "token": "ASIN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "asinh",
+  "token": "ASINH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "assumed_gamma",
+  "token": "ASSUMED_GAMMA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "atan",
+  "token": "ATAN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "atan2",
+  "token": "ATAN2_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "atanh",
+  "token": "ATANH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "autostop",
+  "token": "AUTOSTOP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "average",
+  "token": "AVERAGE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "b_spline",
+  "token": "B_SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "back",
+  "token": "BACK_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "back_filter_tags",
+  "token": "BACK_FILTER_TAGS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "background",
+  "token": "BACKGROUND_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bezier_spline",
+  "token": "BEZIER_SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bicubic_patch",
+  "token": "BICUBIC_PATCH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bitwise_and",
+  "token": "BITWISE_AND_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "bitwise_or",
+  "token": "BITWISE_OR_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "bitwise_xor",
+  "token": "BITWISE_XOR_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "black_hole",
+  "token": "BLACK_HOLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "blend_gamma",
+  "token": "BLEND_GAMMA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "blend_mode",
+  "token": "BLEND_MODE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "blob",
+  "token": "BLOB_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "blue",
+  "token": "BLUE_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "blur_samples",
+  "token": "BLUR_SAMPLES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bmp",
+  "token": "BMP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bokeh",
+  "token": "BOKEH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bounded_by",
+  "token": "BOUNDED_BY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "box",
+  "token": "BOX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "boxed",
+  "token": "BOXED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bozo",
+  "token": "BOZO_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "break",
+  "token": "BREAK_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "breakpoint",
+  "token": "BREAKPOINT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "brick",
+  "token": "BRICK_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "brick_size",
+  "token": "BRICK_SIZE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "brightness",
+  "token": "BRIGHTNESS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "brilliance",
+  "token": "BRILLIANCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bt2020",
+  "token": "BT2020_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bt709",
+  "token": "BT709_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bump_map",
+  "token": "BUMP_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bump_size",
+  "token": "BUMP_SIZE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "bumps",
+  "token": "BUMPS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "camera",
+  "token": "CAMERA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "case",
+  "token": "CASE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "caustics",
+  "token": "CAUSTICS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ceil",
+  "token": "CEIL_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "cells",
+  "token": "CELLS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "charset",
+  "token": "CHARSET_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "checker",
+  "token": "CHECKER_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "chr",
+  "token": "CHR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "circular",
+  "token": "CIRCULAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "clipped_by",
+  "token": "CLIPPED_BY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "clock",
+  "token": "CLOCK_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "clock_on",
+  "token": "CLOCK_ON_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "cmap",
+  "token": "CMAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "collect",
+  "token": "COLLECT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "color",
+  "token": "COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "color_map",
+  "token": "COLOUR_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "colour",
+  "token": "COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "colour_map",
+  "token": "COLOUR_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "component",
+  "token": "COMPONENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "composite",
+  "token": "COMPOSITE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "concat",
+  "token": "CONCAT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cone",
+  "token": "CONE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "confidence",
+  "token": "CONFIDENCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "conic_sweep",
+  "token": "CONIC_SWEEP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "conserve_energy",
+  "token": "CONSERVE_ENERGY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "contained_by",
+  "token": "CONTAINED_BY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "control0",
+  "token": "CONTROL0_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "control1",
+  "token": "CONTROL1_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "coords",
+  "token": "COORDS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cos",
+  "token": "COS_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "cosh",
+  "token": "COSH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "count",
+  "token": "COUNT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "crackle",
+  "token": "CRACKLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "crand",
+  "token": "CRAND_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cube",
+  "token": "CUBE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cubic",
+  "token": "CUBIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cubic_spline",
+  "token": "CUBIC_SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cubic_wave",
+  "token": "CUBIC_WAVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cutaway_textures",
+  "token": "CUTAWAY_TEXTURES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cylinder",
+  "token": "CYLINDER_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "cylindrical",
+  "token": "CYLINDRICAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "datetime",
+  "token": "DATETIME_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "debug",
+  "token": "DEBUG_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "declare",
+  "token": "DECLARE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "default",
+  "token": "DEFAULT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "defined",
+  "token": "DEFINED_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "degrees",
+  "token": "DEGREES_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "density",
+  "token": "DENSITY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "density_file",
+  "token": "DENSITY_FILE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "density_map",
+  "token": "DENSITY_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dents",
+  "token": "DENTS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "deprecated",
+  "token": "DEPRECATED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "df3",
+  "token": "DF3_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dictionary",
+  "token": "DICTIONARY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "difference",
+  "token": "DIFFERENCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "diffuse",
+  "token": "DIFFUSE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dimension_size",
+  "token": "DIMENSION_SIZE_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "dimensions",
+  "token": "DIMENSIONS_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "direction",
+  "token": "DIRECTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "disc",
+  "token": "DISC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dispersion",
+  "token": "DISPERSION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dispersion_samples",
+  "token": "DISPERSION_SAMPLES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dist_exp",
+  "token": "DIST_EXP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "distance",
+  "token": "DISTANCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "distance_maximum",
+  "token": "DISTANCE_MAXIMUM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "div",
+  "token": "DIV_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "double_illuminate",
+  "token": "DOUBLE_ILLUMINATE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "dtag",
+  "token": "DEBUG_TAG_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "eccentricity",
+  "token": "ECCENTRICITY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "else",
+  "token": "ELSE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "elseif",
+  "token": "ELSEIF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "emission",
+  "token": "EMISSION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "end",
+  "token": "END_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "error",
+  "token": "ERROR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "error_bound",
+  "token": "ERROR_BOUND_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "evaluate",
+  "token": "EVALUATE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "exit",
+  "token": "EXIT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "exp",
+  "token": "EXP_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "expand_thresholds",
+  "token": "EXPAND_THRESHOLDS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "exponent",
+  "token": "EXPONENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "exr",
+  "token": "EXR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "exterior",
+  "token": "EXTERIOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "extinction",
+  "token": "EXTINCTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "face_indices",
+  "token": "FACE_INDICES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "facets",
+  "token": "FACETS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fade_color",
+  "token": "FADE_COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fade_colour",
+  "token": "FADE_COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fade_distance",
+  "token": "FADE_DISTANCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fade_power",
+  "token": "FADE_POWER_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fallback",
+  "token": "FALLBACK_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "falloff",
+  "token": "FALLOFF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "falloff_angle",
+  "token": "FALLOFF_ANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "false",
+  "token": "FALSE_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "far",
+  "token": "FAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fclose",
+  "token": "FCLOSE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "file_exists",
+  "token": "FILE_EXISTS_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "filter",
+  "token": "FILTER_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "filter_tags",
+  "token": "FILTER_TAGS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "finish",
+  "token": "FINISH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fisheye",
+  "token": "FISHEYE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "flatness",
+  "token": "FLATNESS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "flip",
+  "token": "FLIP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "floor",
+  "token": "FLOOR_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "focal_point",
+  "token": "FOCAL_POINT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fog",
+  "token": "FOG_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fog_alt",
+  "token": "FOG_ALT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fog_offset",
+  "token": "FOG_OFFSET_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fog_type",
+  "token": "FOG_TYPE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fopen",
+  "token": "FOPEN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "for",
+  "token": "FOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "form",
+  "token": "FORM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "frequency",
+  "token": "FREQUENCY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "fresnel",
+  "token": "FRESNEL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "front",
+  "token": "FRONT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "front_filter_tags",
+  "token": "FRONT_FILTER_TAGS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "function",
+  "token": "FUNCTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "gamma",
+  "token": "GAMMA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "gather",
+  "token": "GATHER_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "gif",
+  "token": "GIF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "global",
+  "token": "GLOBAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "global_lights",
+  "token": "GLOBAL_LIGHTS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "global_settings",
+  "token": "GLOBAL_SETTINGS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "gradient",
+  "token": "GRADIENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "granite",
+  "token": "GRANITE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "gray",
+  "token": "GRAY_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "gray_threshold",
+  "token": "GRAY_THRESHOLD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "green",
+  "token": "GREEN_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "grey",
+  "token": "GRAY_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "grey_threshold",
+  "token": "GRAY_THRESHOLD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hdr",
+  "token": "HDR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "height_field",
+  "token": "HEIGHT_FIELD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hexagon",
+  "token": "HEXAGON_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hf_gray_16",
+  "token": "HF_GRAY_16_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hf_grey_16",
+  "token": "HF_GRAY_16_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hierarchy",
+  "token": "HIERARCHY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hollow",
+  "token": "HOLLOW_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "hypercomplex",
+  "token": "HYPERCOMPLEX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "if",
+  "token": "IF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ifdef",
+  "token": "IFDEF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "iff",
+  "token": "IFF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ifndef",
+  "token": "IFNDEF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "image_map",
+  "token": "IMAGE_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "image_pattern",
+  "token": "IMAGE_PATTERN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "importance",
+  "token": "IMPORTANCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "include",
+  "token": "INCLUDE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "inside",
+  "token": "INSIDE_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "inside_vector",
+  "token": "INSIDE_VECTOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "int",
+  "token": "INT_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "interior",
+  "token": "INTERIOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "interior_texture",
+  "token": "INTERIOR_TEXTURE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "internal",
+  "token": "INTERNAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "interpolate",
+  "token": "INTERPOLATE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "intersection",
+  "token": "INTERSECTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "intervals",
+  "token": "INTERVALS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "inverse",
+  "token": "INVERSE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ior",
+  "token": "IOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "irid",
+  "token": "IRID_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "irid_wavelength",
+  "token": "IRID_WAVELENGTH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "isosurface",
+  "token": "ISOSURFACE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "isosurface_mesh",
+  "token": "ISOSURFACE_MESH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "jitter",
+  "token": "JITTER_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "jpeg",
+  "token": "JPEG_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "julia",
+  "token": "JULIA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "julia_fractal",
+  "token": "JULIA_FRACTAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "lambda",
+  "token": "LAMBDA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "lathe",
+  "token": "LATHE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "lemon",
+  "token": "LEMON_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "leopard",
+  "token": "LEOPARD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "light_group",
+  "token": "LIGHT_GROUP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "light_source",
+  "token": "LIGHT_SOURCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "linear_spline",
+  "token": "LINEAR_SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "linear_sweep",
+  "token": "LINEAR_SWEEP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ln",
+  "token": "LN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "load_file",
+  "token": "LOAD_FILE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "local",
+  "token": "LOCAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "location",
+  "token": "LOCATION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "log",
+  "token": "LOG_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "look_at",
+  "token": "LOOK_AT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "looks_like",
+  "token": "LOOKS_LIKE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "low_error_factor",
+  "token": "LOW_ERROR_FACTOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "macro",
+  "token": "MACRO_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "magnet",
+  "token": "MAGNET_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "major_radius",
+  "token": "MAJOR_RADIUS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mandel",
+  "token": "MANDEL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "map_type",
+  "token": "MAP_TYPE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "marble",
+  "token": "MARBLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "material",
+  "token": "MATERIAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "material_map",
+  "token": "MATERIAL_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "matrix",
+  "token": "MATRIX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "max",
+  "token": "MAX_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "max_extent",
+  "token": "MAX_EXTENT_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "max_gradient",
+  "token": "MAX_GRADIENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "max_intersections",
+  "token": "MAX_INTERSECTIONS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "max_iteration",
+  "token": "MAX_ITERATION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "max_sample",
+  "token": "MAX_SAMPLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "max_trace",
+  "token": "MAX_TRACE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "max_trace_level",
+  "token": "MAX_TRACE_LEVEL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "maximum_reuse",
+  "token": "MAXIMUM_REUSE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "media",
+  "token": "MEDIA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "media_attenuation",
+  "token": "MEDIA_ATTENUATION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "media_interaction",
+  "token": "MEDIA_INTERACTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "merge",
+  "token": "MERGE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mesh",
+  "token": "MESH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mesh2",
+  "token": "MESH2_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mesh_camera",
+  "token": "MESH_CAMERA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "metallic",
+  "token": "METALLIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "method",
+  "token": "METHOD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "metric",
+  "token": "METRIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "min",
+  "token": "MIN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "min_extent",
+  "token": "MIN_EXTENT_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "minimum_reuse",
+  "token": "MINIMUM_REUSE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mix",
+  "token": "MIX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mixed",
+  "token": "MIXED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mm_per_unit",
+  "token": "MM_PER_UNIT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "mod",
+  "token": "MOD_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "mortar",
+  "token": "MORTAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "natural_spline",
+  "token": "NATURAL_SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "near",
+  "token": "NEAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "nearest_count",
+  "token": "NEAREST_COUNT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "no",
+  "token": "NO_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "no_bump_scale",
+  "token": "NO_BUMP_SCALE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "no_image",
+  "token": "NO_IMAGE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "no_lights",
+  "token": "NO_LIGHTS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "no_radiosity",
+  "token": "NO_RADIOSITY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "no_reflection",
+  "token": "NO_REFLECTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "no_shadow",
+  "token": "NO_SHADOW_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "noise_generator",
+  "token": "NOISE_GENERATOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "none",
+  "token": "NONE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "normal",
+  "token": "NORMAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "normal_indices",
+  "token": "NORMAL_INDICES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "normal_map",
+  "token": "NORMAL_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "normal_vectors",
+  "token": "NORMAL_VECTORS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "now",
+  "token": "NOW_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "number_of_sides",
+  "token": "NUMBER_OF_SIDES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "number_of_tiles",
+  "token": "NUMBER_OF_TILES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "number_of_waves",
+  "token": "NUMBER_OF_WAVES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "obj",
+  "token": "OBJ_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "object",
+  "token": "OBJECT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "octaves",
+  "token": "OCTAVES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "off",
+  "token": "OFF_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "offset",
+  "token": "OFFSET_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "omega",
+  "token": "OMEGA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "omnimax",
+  "token": "OMNIMAX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "on",
+  "token": "ON_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "once",
+  "token": "ONCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "onion",
+  "token": "ONION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "open",
+  "token": "OPEN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "optional",
+  "token": "OPTIONAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "orient",
+  "token": "ORIENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "orientation",
+  "token": "ORIENTATION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "orthographic",
+  "token": "ORTHOGRAPHIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ovus",
+  "token": "OVUS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "panoramic",
+  "token": "PANORAMIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "parallel",
+  "token": "PARALLEL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "parametric",
+  "token": "PARAMETRIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pass_through",
+  "token": "PASS_THROUGH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pattern",
+  "token": "PATTERN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pavement",
+  "token": "PAVEMENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "perspective",
+  "token": "PERSPECTIVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "perturb",
+  "token": "PERTURB_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pgm",
+  "token": "PGM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "phase",
+  "token": "PHASE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "phong",
+  "token": "PHONG_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "phong_size",
+  "token": "PHONG_SIZE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "photon_only",
+  "token": "PHOTON_ONLY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "photons",
+  "token": "PHOTONS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pi",
+  "token": "PI_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "pigment",
+  "token": "PIGMENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pigment_map",
+  "token": "PIGMENT_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pigment_pattern",
+  "token": "PIGMENT_PATTERN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "planar",
+  "token": "PLANAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "plane",
+  "token": "PLANE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "png",
+  "token": "PNG_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "point_at",
+  "token": "POINT_AT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "polarity",
+  "token": "POLARITY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "poly",
+  "token": "POLY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "poly_wave",
+  "token": "POLY_WAVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "polygon",
+  "token": "POLYGON_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "polynomial",
+  "token": "POLYNOMIAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "portal",
+  "token": "PORTAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pot",
+  "token": "POT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "potential",
+  "token": "POTENTIAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "povm",
+  "token": "POVM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pow",
+  "token": "POW_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "ppm",
+  "token": "PPM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "precision",
+  "token": "PRECISION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "precompute",
+  "token": "PRECOMPUTE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "prefix",
+  "token": "PREFIX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "premultiplied",
+  "token": "PREMULTIPLIED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pretrace_end",
+  "token": "PRETRACE_END_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pretrace_start",
+  "token": "PRETRACE_START_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "priority",
+  "token": "PRIORITY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "prism",
+  "token": "PRISM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "prod",
+  "token": "PROD_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "projected_through",
+  "token": "PROJECTED_THROUGH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "pwr",
+  "token": "PWR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quadratic_spline",
+  "token": "QUADRATIC_SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quadric",
+  "token": "QUADRIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quartic",
+  "token": "QUARTIC_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quaternion",
+  "token": "QUATERNION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quick_color",
+  "token": "QUICK_COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quick_colour",
+  "token": "QUICK_COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "quilted",
+  "token": "QUILTED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "radial",
+  "token": "RADIAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "radians",
+  "token": "RADIANS_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "radiosity",
+  "token": "RADIOSITY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "radiosity_size",
+  "token": "RADIOSITY_SIZE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "radius",
+  "token": "RADIUS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "rainbow",
+  "token": "RAINBOW_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ramp_wave",
+  "token": "RAMP_WAVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "rand",
+  "token": "RAND_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "range",
+  "token": "RANGE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ratio",
+  "token": "RATIO_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "read",
+  "token": "READ_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "reciprocal",
+  "token": "RECIPROCAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "recursion_limit",
+  "token": "RECURSION_LIMIT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "red",
+  "token": "RED_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "reflection",
+  "token": "REFLECTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "reflection_exponent",
+  "token": "REFLECTION_EXPONENT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "refraction",
+  "token": "REFRACTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "refraction_angle",
+  "token": "REFRACTION_ANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "render",
+  "token": "RENDER_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "repeat",
+  "token": "REPEAT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "resolution",
+  "token": "RESOLUTION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "rgb",
+  "token": "RGB_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "rgbf",
+  "token": "RGBF_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "rgbft",
+  "token": "RGBFT_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "rgbt",
+  "token": "RGBT_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "right",
+  "token": "RIGHT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ripples",
+  "token": "RIPPLES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "rotate",
+  "token": "ROTATE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "roughness",
+  "token": "ROUGHNESS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "samples",
+  "token": "SAMPLES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "save_file",
+  "token": "SAVE_FILE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sblue",
+  "token": "SBLUE_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "scale",
+  "token": "SCALE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "scallop_wave",
+  "token": "SCALLOP_WAVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "scattering",
+  "token": "SCATTERING_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "screen",
+  "token": "SCREEN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "seed",
+  "token": "SEED_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "select",
+  "token": "SELECT_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "sgreen",
+  "token": "SGREEN_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "shadowless",
+  "token": "SHADOWLESS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sin",
+  "token": "SIN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "sine_wave",
+  "token": "SINE_WAVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sinh",
+  "token": "SINH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "sint16be",
+  "token": "SINT16BE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sint16le",
+  "token": "SINT16LE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sint32be",
+  "token": "SINT32BE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sint32le",
+  "token": "SINT32LE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sint8",
+  "token": "SINT8_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "size",
+  "token": "SIZE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "skein",
+  "token": "SKEIN_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "skein_mesh",
+  "token": "SKEIN_MESH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sky",
+  "token": "SKY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sky_sphere",
+  "token": "SKYSPHERE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "slice",
+  "token": "SLICE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "slope",
+  "token": "SLOPE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "slope_map",
+  "token": "SLOPE_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "smooth",
+  "token": "SMOOTH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "smooth_triangle",
+  "token": "SMOOTH_TRIANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "solid",
+  "token": "SOLID_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sor",
+  "token": "SOR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spacing",
+  "token": "SPACING_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "specular",
+  "token": "SPECULAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sphere",
+  "token": "SPHERE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sphere_sweep",
+  "token": "SPHERE_SWEEP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spherical",
+  "token": "SPHERICAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spiral1",
+  "token": "SPIRAL1_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spiral2",
+  "token": "SPIRAL2_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spline",
+  "token": "SPLINE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "split_union",
+  "token": "SPLIT_UNION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spotlight",
+  "token": "SPOTLIGHT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "spotted",
+  "token": "SPOTTED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sqr",
+  "token": "SQR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sqrt",
+  "token": "SQRT_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "square",
+  "token": "SQUARE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sred",
+  "token": "SRED_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "srgb",
+  "token": "SRGB_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "srgbf",
+  "token": "SRGBF_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "srgbft",
+  "token": "SRGBFT_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "srgbt",
+  "token": "SRGBT_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "statistics",
+  "token": "STATISTICS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "str",
+  "token": "STR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "strcmp",
+  "token": "STRCMP_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "strength",
+  "token": "STRENGTH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "strlen",
+  "token": "STRLEN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "strlwr",
+  "token": "STRLWR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "strupr",
+  "token": "STRUPR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sturm",
+  "token": "STURM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "substr",
+  "token": "SUBSTR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "subsurface",
+  "token": "SUBSURFACE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "suffix",
+  "token": "SUFFIX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sum",
+  "token": "SUM_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "superellipsoid",
+  "token": "SUPERELLIPSOID_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "switch",
+  "token": "SWITCH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "sys",
+  "token": "SYS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "t",
+  "token": "T_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tags",
+  "token": "TAGS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tan",
+  "token": "TAN_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "tanh",
+  "token": "TANH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "target",
+  "token": "TARGET_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tau",
+  "token": "TAU_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "text",
+  "token": "TEXT_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "texture",
+  "token": "TEXTURE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "texture_list",
+  "token": "TEXTURE_LIST_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "texture_map",
+  "token": "TEXTURE_MAP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tga",
+  "token": "TGA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "thickness",
+  "token": "THICKNESS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "threshold",
+  "token": "THRESHOLD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tiff",
+  "token": "TIFF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tightness",
+  "token": "TIGHTNESS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tile2",
+  "token": "TILE2_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tiles",
+  "token": "TILES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tiling",
+  "token": "TILING_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "to",
+  "token": "TO_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "tolerance",
+  "token": "TOLERANCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "toroidal",
+  "token": "TOROIDAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "torus",
+  "token": "TORUS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "trace",
+  "token": "TRACE_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "transform",
+  "token": "TRANSFORM_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "translate",
+  "token": "TRANSLATE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "translucency",
+  "token": "TRANSLUCENCY_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "transmit",
+  "token": "TRANSMIT_TOKEN",
+  "category": "colour"
+ },
+ {
+  "word": "triangle",
+  "token": "TRIANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "triangle_wave",
+  "token": "TRIANGLE_WAVE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "triangular",
+  "token": "TRIANGULAR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "true",
+  "token": "TRUE_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "ttf",
+  "token": "TTF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "turb_depth",
+  "token": "TURB_DEPTH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "turbulence",
+  "token": "TURBULENCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "type",
+  "token": "TYPE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "u",
+  "token": "U_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "u_steps",
+  "token": "U_STEPS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "uint16be",
+  "token": "UINT16BE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "uint16le",
+  "token": "UINT16LE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "uint8",
+  "token": "UINT8_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "ultra_wide_angle",
+  "token": "ULTRA_WIDE_ANGLE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "undef",
+  "token": "UNDEF_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "union",
+  "token": "UNION_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "unofficial",
+  "token": "UNOFFICIAL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "up",
+  "token": "UP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "use_alpha",
+  "token": "USE_ALPHA_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "use_color",
+  "token": "USE_COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "use_colour",
+  "token": "USE_COLOUR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "use_index",
+  "token": "USE_INDEX_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "user_defined",
+  "token": "USER_DEFINED_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "utf8",
+  "token": "UTF8_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "uv_indices",
+  "token": "UV_INDICES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "uv_mapping",
+  "token": "UV_MAPPING_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "uv_vectors",
+  "token": "UV_VECTORS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "v",
+  "token": "V_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "v_steps",
+  "token": "V_STEPS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "val",
+  "token": "VAL_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "variance",
+  "token": "VARIANCE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "vaxis_rotate",
+  "token": "VAXIS_ROTATE_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "vcross",
+  "token": "VCROSS_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "vdot",
+  "token": "VDOT_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "version",
+  "token": "VERSION_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "vertex_vectors",
+  "token": "VERTEX_VECTORS_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "vlength",
+  "token": "VLENGTH_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "vnormalize",
+  "token": "VNORMALIZE_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "volume_sampling",
+  "token": "VOLUME_SAMPLING_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "vrotate",
+  "token": "VROTATE_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "vstr",
+  "token": "VSTR_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "vturbulence",
+  "token": "VTURBULENCE_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "warning",
+  "token": "WARNING_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "warp",
+  "token": "WARP_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "water_level",
+  "token": "WATER_LEVEL_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "waves",
+  "token": "WAVES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "while",
+  "token": "WHILE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "width",
+  "token": "WIDTH_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "wood",
+  "token": "WOOD_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "wrinkles",
+  "token": "WRINKLES_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "write",
+  "token": "WRITE_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "x",
+  "token": "X_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "xyz",
+  "token": "XYZ_TOKEN",
+  "category": "other"
+ },
+ {
+  "word": "y",
+  "token": "Y_TOKEN",
+  "category": "vector"
+ },
+ {
+  "word": "yes",
+  "token": "YES_TOKEN",
+  "category": "float"
+ },
+ {
+  "word": "z",
+  "token": "Z_TOKEN",
+  "category": "vector"
+ }
+]
