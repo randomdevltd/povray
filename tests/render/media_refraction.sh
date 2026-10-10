@@ -149,6 +149,13 @@ for case in 44:78:0 45:95:51 46:95:51; do
     for gap in 5e-5 5e-4 2e-3; do region gap${c}_0 gap${c}_$gap 0 $c1 $r0 71; done
 done
 
+# Shadows through a clear union finish and agree however the union is bounded or split.
+render union_split Declare=Case=47
+for case in 48:union_bounded 49:union_whole; do
+    render ${case#*:} Declare=Case=${case%:*}
+    region union_split ${case#*:} 0 95 0 71
+done
+
 render only Declare=Case=14
 if says "Media Samples" only; then echo "media_refraction: a refraction-only medium is sampled" >&2; exit 1; fi
 echo "media_refraction: ok"

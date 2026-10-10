@@ -164,6 +164,20 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
     box { <-5, 0, 1 + Gap>, <5, 4, 3> texture { Clear } interior { media { absorption rgb <0.5, 0.5, 0> } } }
   #end
 #break
+#case (47) // a lit floor under a clear union: split (47), bounded_by (48) and split_union off (49) must match
+#case (48)
+#case (49)
+  camera { location <0, 4, -8> look_at <0, 0.5, 0> }
+  light_source { <-3, 8, -4> rgb 1 }
+  plane { y, 0 pigment { rgb 0.8 } finish { diffuse 1 } }
+  union {
+    box { <-1, 0.01, -1>, <1, 1, 1> }
+    sphere { <0, 1, 0>, 0.8 }
+    #if (Case = 48) bounded_by { box { <-2, 0, -2>, <2, 2, 2> } } #end
+    #if (Case = 49) split_union off #end
+    pigment { rgbt 0.9 } finish { diffuse 0 } interior { ior 1.4 }
+  }
+#break
 #case (42) // from above: a polygon wall within the tolerance of a clear face must shade the floor behind both
 #case (43)
   camera { orthographic location <0, 10, 0> look_at 0 right x * 8 up z * 6 }
