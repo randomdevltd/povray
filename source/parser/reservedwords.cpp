@@ -775,19 +775,5 @@ const RESERVED_WORD Reserved_Words[] = {
     { TOKEN_COUNT_,                 nullptr }
 };
 
-TokenId GetCategorizedTokenId(TokenId tokenId)
-{
-    if (tokenId <= SIGNATURE_TOKEN_CATEGORY)
-        return SIGNATURE_TOKEN_CATEGORY;
-    else if (tokenId <= FLOAT_TOKEN_CATEGORY)
-        return FLOAT_TOKEN_CATEGORY;
-    else if (tokenId <= VECTOR_TOKEN_CATEGORY)
-        return VECTOR_TOKEN_CATEGORY;
-    else if (tokenId <= COLOUR_TOKEN_CATEGORY)
-        return COLOUR_TOKEN_CATEGORY;
-    else
-        return tokenId;
-}
-
 }
 // end of namespace pov_parser

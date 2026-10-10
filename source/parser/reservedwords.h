@@ -792,7 +792,19 @@ constexpr int TOKEN_COUNT = int(TokenId::TOKEN_COUNT_);
 
 extern const RESERVED_WORD Reserved_Words[];
 
-TokenId GetCategorizedTokenId(TokenId tokenId);
+inline TokenId GetCategorizedTokenId(TokenId tokenId)
+{
+    if (tokenId <= SIGNATURE_TOKEN_CATEGORY)
+        return SIGNATURE_TOKEN_CATEGORY;
+    else if (tokenId <= FLOAT_TOKEN_CATEGORY)
+        return FLOAT_TOKEN_CATEGORY;
+    else if (tokenId <= VECTOR_TOKEN_CATEGORY)
+        return VECTOR_TOKEN_CATEGORY;
+    else if (tokenId <= COLOUR_TOKEN_CATEGORY)
+        return COLOUR_TOKEN_CATEGORY;
+    else
+        return tokenId;
+}
 
 }
 // end of namespace pov_parser

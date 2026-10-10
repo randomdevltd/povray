@@ -295,6 +295,12 @@ public:
     /// Get current stream for comparison.
     ConstStreamPtr GetInputStream() const;
 
+    /// Whether `stream` is the current stream, without copying a pointer to it.
+    bool IsInputStream(const IStream* stream) const
+    {
+        return stream == ((mPosition.file != nullptr) ? mPosition.file->stream.get() : mScanner.GetInputStreamPointer());
+    }
+
     /// Get current stream name for comparison.
     UCS2String GetInputStreamName() const;
 

@@ -208,15 +208,8 @@ void Parser::Terminate_Tokenizer()
 *
 ******************************************************************************/
 
-void Parser::Get_Token ()
+void Parser::Get_Next_Token()
 {
-    if (mToken.Unget_Token)
-    {
-        mToken.Unget_Token = false;
-
-        return;
-    }
-
     if (mToken.End_Of_File)
     {
         return;
@@ -376,11 +369,6 @@ void Parser::Get_Token ()
 *
 ******************************************************************************/
 
-void Parser::Unget_Token ()
-{
-    mToken.Unget_Token = true;
-    mToken.ungetRaw = false;
-}
 
 
 /*****************************************************************************
@@ -709,7 +697,7 @@ void Parser::Read_Symbol(const RawToken& rawToken)
 
 inline void Parser::Write_Token(const RawToken& rawToken, SymbolTable* table)
 {
-    POV_EXPERIMENTAL_ASSERT(mToken.sourceFile == mTokenizer.GetInputStream());
+    POV_EXPERIMENTAL_ASSERT(mTokenizer.IsInputStream(mToken.sourceFile.get()));
     if (&rawToken != &mToken.raw)
         mToken.raw  = rawToken;
     mToken.Data     = nullptr;
@@ -719,7 +707,7 @@ inline void Parser::Write_Token(const RawToken& rawToken, SymbolTable* table)
 
 inline void Parser::Write_Token(TokenId Token_Id, const RawToken& rawToken, SymbolTable* table)
 {
-    POV_EXPERIMENTAL_ASSERT(mToken.sourceFile == mTokenizer.GetInputStream());
+    POV_EXPERIMENTAL_ASSERT(mTokenizer.IsInputStream(mToken.sourceFile.get()));
     if (&rawToken != &mToken.raw)
         mToken.raw  = rawToken;
     mToken.Data     = nullptr;
@@ -729,46 +717,12 @@ inline void Parser::Write_Token(TokenId Token_Id, const RawToken& rawToken, Symb
 
 //******************************************************************************
 
-void Parser::Token_Struct::SetTokenId(const RawToken& rawToken)
-{
-    mTrueTokenId        = rawToken.GetTokenId();
-    mCategorizedTokenId = rawToken.expressionId;
-    POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId == pov_parser::GetCategorizedTokenId(mTrueTokenId));
-}
-
-void Parser::Token_Struct::SetTokenId(TokenId tokenId)
-{
-    mTrueTokenId        = tokenId;
-    mCategorizedTokenId = pov_parser::GetCategorizedTokenId(tokenId);
-}
-
-TokenId Parser::Token_Struct::GetTrueTokenId() const
-{
-    return mTrueTokenId;
-}
-
-TokenId Parser::Token_Struct::GetCategorizedTokenId() const
-{
-    POV_EXPERIMENTAL_ASSERT(mCategorizedTokenId == pov_parser::GetCategorizedTokenId(mTrueTokenId));
-    return mCategorizedTokenId;
-}
-
 UCS2String Parser::Token_Struct::GetFileName() const
 {
     return sourceFile->Name();
 }
 
 //------------------------------------------------------------------------------
-
-TokenId Parser::CurrentCategorizedTokenId() const
-{
-    return mToken.GetCategorizedTokenId();
-}
-
-TokenId Parser::CurrentTrueTokenId() const
-{
-    return mToken.GetTrueTokenId();
-}
 
 const UTF8String& Parser::CurrentTokenText() const
 {
