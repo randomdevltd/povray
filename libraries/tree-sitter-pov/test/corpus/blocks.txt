@@ -1,0 +1,131 @@
+================================================================================
+Bracket groups and maps
+================================================================================
+
+pigment { gradient y color_map { [0 color Red] [0.5 rgb 1] } }
+
+---
+
+(source_file
+  (block
+    (keyword)
+    (keyword)
+    (constant)
+    (block
+      (keyword)
+      (bracket_group
+        (number)
+        (keyword)
+        (identifier))
+      (bracket_group
+        (number)
+        (keyword)
+        (number)))))
+
+================================================================================
+Directives as block items
+================================================================================
+
+union {
+  #for (I, 0, 2) sphere { x * I, 0.4 } #end
+  #if (Shiny) finish { phong 1 } #end
+  translate y
+}
+
+---
+
+(source_file
+  (block
+    (keyword)
+    (for_directive
+      (identifier)
+      (number)
+      (number)
+      (block
+        (keyword)
+        (binary_expression
+          (constant)
+          (identifier))
+        (number)))
+    (if_directive
+      (condition
+        (identifier))
+      (block
+        (keyword)
+        (keyword)
+        (number)))
+    (keyword)
+    (constant)))
+
+================================================================================
+Identifier-named blocks and blocks in vectors
+================================================================================
+
+#declare S = skein { expressions { extrude { radius 0.5 } sample { at <map { uv.u }, function(v) { v }> } } closed u }
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (block
+      (keyword)
+      (block
+        (identifier)
+        (block
+          (identifier)
+          (keyword)
+          (number))
+        (block
+          (identifier)
+          (identifier)
+          (vector
+            (block
+              (identifier)
+              (member_expression
+                (identifier)
+                (identifier)))
+            (function_block
+              (parameter_list
+                (parameter
+                  (identifier)))
+              (constant)))))
+      (identifier)
+      (constant))))
+
+================================================================================
+Tag filters
+================================================================================
+
+camera { filter_tags { !"a" & ("b" | any) } }
+
+---
+
+(source_file
+  (block
+    (keyword)
+    (tag_filter
+      (keyword)
+      (binary_expression
+        (unary_expression
+          (string))
+        (parenthesized_expression
+          (binary_expression
+            (string)
+            (constant)))))))
+
+================================================================================
+Nested block comments
+================================================================================
+
+/* outer /* inner */ still a comment */
+sphere { 0, 1 }
+
+---
+
+(source_file
+  (block_comment)
+  (block
+    (keyword)
+    (number)
+    (number)))
