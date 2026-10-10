@@ -1318,6 +1318,11 @@ Scanner::HotBookmark Scanner::GetHotBookmark()
     return HotBookmark(mSource.GetInputStream(), mCurrentPosition, mpCharacterEncoding, mNominalEndOfLine, mAllowNestedBlockComments);
 }
 
+Scanner::HotBookmark Scanner::GetHotBookmark(const State& state)
+{
+    return HotBookmark(mSource.GetInputStream(), state.position, state.characterEncoding, state.nominalEndOfLine, state.allowNestedBlockComments);
+}
+
 Scanner::ColdBookmark Scanner::GetColdBookmark() const
 {
     return ColdBookmark(mSource.GetInputStreamName(), mCurrentPosition, mpCharacterEncoding, mNominalEndOfLine, mAllowNestedBlockComments);

@@ -97,7 +97,8 @@ void Parser::Initialize_Tokenizer()
     if (rfile == nullptr)
         Error("Cannot open input file.");
 
-    SetInputStream(rfile);
+    mTokenizer.EnableCache();
+    SetInputStream(rfile, actualFileName);
 
     mHavePendingRawToken = false;
 
@@ -868,9 +869,9 @@ const MessageContext& Parser::CurrentMessageContext() const
     return mToken;
 }
 
-void Parser::SetInputStream(const shared_ptr<IStream>& stream)
+void Parser::SetInputStream(const shared_ptr<IStream>& stream, const UCS2String& path)
 {
-    mTokenizer.SetInputStream(stream);
+    mTokenizer.SetInputStream(stream, path);
     mToken.sourceFile = mTokenizer.GetInputStream();
 }
 
@@ -1303,7 +1304,7 @@ void Parser::Parse_Directive()
                             PMac->endPosition = hashPosition;
                             POV_OFF_T macroLength = CurrentFilePosition() - PMac->source;
                             /// @todo Re-enable cached macros.
-                            if (macroLength <= MaxCachedMacroSize)
+                            if ((PMac->source.file == nullptr) && (macroLength <= MaxCachedMacroSize))
                             {
                                 PMac->CacheSize = macroLength;
                                 PMac->Cache = new unsigned char[PMac->CacheSize];
@@ -1329,7 +1330,7 @@ void Parser::Parse_Directive()
                     break;
 
                 case WHILE_COND:
-                    if (Cond_Stack.back().returnToBookmark.pStream != mTokenizer.GetInputStream())
+                    if (!mTokenizer.IsCurrentInstance(Cond_Stack.back().returnToBookmark))
                     {
                         Error("#while loop did not end in file where it started.");
                     }
@@ -1350,7 +1351,7 @@ void Parser::Parse_Directive()
                     break;
 
                 case FOR_COND:
-                    if (Cond_Stack.back().returnToBookmark.pStream != mTokenizer.GetInputStream())
+                    if (!mTokenizer.IsCurrentInstance(Cond_Stack.back().returnToBookmark))
                     {
                         Error("#for loop did not end in file where it started.");
                     }
@@ -2083,7 +2084,10 @@ void Parser::Invoke_Macro()
         POV_FREE(Table_Entries);
     }
 
-    if ((PMac->Cache != nullptr) || (PMac->source.fileName != mTokenizer.GetInputStreamName()))
+    if (PMac->source.file != nullptr)
+        Cond_Stack.back().Macro_Same_Flag = (PMac->source.file == mTokenizer.GetCachePosition().file);
+    else if ((PMac->Cache != nullptr) || (PMac->source.fileName != mTokenizer.GetInputStreamName()) ||
+             (mTokenizer.GetCachePosition().file != nullptr))
     {
         UCS2String ign;
         /* Not in same file */
@@ -2408,6 +2412,7 @@ void Parser::Parse_Fopen(void)
         END_CASE
 
         CASE(WRITE_TOKEN)
+            mTokenizer.InvalidateCache();
             wfile = CreateFile(fileName.c_str(), POV_File_Text_User, false);
             if (wfile != nullptr)
                 New->Out_File = std::make_shared<OTextStream>(fileName.c_str(), wfile);
@@ -2419,6 +2424,7 @@ void Parser::Parse_Fopen(void)
         END_CASE
 
         CASE(APPEND_TOKEN)
+            mTokenizer.InvalidateCache();
             wfile = CreateFile(fileName.c_str(), POV_File_Text_User, true);
             if (wfile != nullptr)
                 New->Out_File = std::make_shared<OTextStream>(fileName.c_str(), wfile);
@@ -2994,7 +3000,7 @@ void Parser::IncludeHeader(const UCS2String& formalFileName)
     if (is == nullptr)
         Error ("Cannot open include file %s.", UCS2toSysString(formalFileName).c_str());
 
-    SetInputStream(is);
+    SetInputStream(is, actualFileName);
 
     mSymbolStack.PushTable();
 

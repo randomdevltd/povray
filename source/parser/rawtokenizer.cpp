@@ -37,7 +37,10 @@
 #include "parser/rawtokenizer.h"
 
 // C++ variants of C standard header files
+#include <climits>
+
 // C++ standard header files
+#include <algorithm>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -99,8 +102,15 @@ RawTokenizer::KnownWordInfo::KnownWordInfo() :
 
 //******************************************************************************
 
+static constexpr std::size_t kMaxCachedTokensPerFile = 1 << 20;
+static constexpr std::size_t kMaxCachedTokens = 1 << 21;
+
 RawTokenizer::RawTokenizer() :
-    mNextIdentifierId(TOKEN_COUNT+1)
+    mNextIdentifierId(TOKEN_COUNT+1),
+    mLastInstance(0),
+    mCacheEnabled(false),
+    mRelexOnOpen(false),
+    mCachedTokenCount(0)
 {
     for (auto i = Reserved_Words; i->Token_Name != nullptr; ++i)
     {
@@ -118,7 +128,101 @@ RawTokenizer::RawTokenizer() :
 
 void RawTokenizer::SetInputStream(StreamPtr pStream)
 {
+    mPosition = CachePosition();
+    mPosition.instance = ++mLastInstance;
     mScanner.SetInputStream(pStream);
+}
+
+void RawTokenizer::SetInputStream(StreamPtr pStream, const UCS2String& path)
+{
+    if (mCacheEnabled && mRelexOnOpen)
+        mCachedFiles.erase(path);
+    auto cached = mCachedFiles.find(path);
+    if (cached == mCachedFiles.end())
+    {
+        if (!mCacheEnabled || (mCachedTokenCount >= kMaxCachedTokens))
+        {
+            SetInputStream(pStream);
+            return;
+        }
+        cached = mCachedFiles.emplace(path, LexFile(pStream)).first;
+    }
+    mPosition.file = cached->second;
+    mPosition.index = 0;
+    mPosition.instance = ++mLastInstance;
+    mPosition.cached = true;
+}
+
+CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream)
+{
+    CachedFilePtr file = std::make_shared<CachedFile>();
+    file->stream = pStream;
+    file->complete = false;
+    mScanner.SetInputStream(pStream);
+    const std::size_t limit = std::min(kMaxCachedTokensPerFile, kMaxCachedTokens - mCachedTokenCount);
+    Scanner::State before = mScanner.GetState();
+    RawToken token;
+    try
+    {
+        while (file->tokens.size() < limit)
+        {
+            before = mScanner.GetState();
+            if (!GetNextScannedToken(token))
+            {
+                file->complete = true;
+                break;
+            }
+            if ((token.lexeme.position.line > UINT32_MAX) || (token.lexeme.position.column > UINT32_MAX))
+                break;
+            if (file->tokens.empty() && (token.expressionId == SIGNATURE_TOKEN_CATEGORY))
+                mScanner.SetCharacterEncoding(CharacterEncodingID::kUTF8);
+            file->tokens.emplace_back();
+            CachedToken& t = file->tokens.back();
+            t.offset = token.lexeme.position.offset;
+            t.line = std::uint32_t(token.lexeme.position.line);
+            t.column = std::uint32_t(token.lexeme.position.column);
+            t.id = token.id;
+            t.expressionId = token.expressionId;
+            t.category = token.lexeme.category;
+            t.isReservedWord = token.isReservedWord;
+            t.isPseudoIdentifier = token.isPseudoIdentifier;
+            if (token.lexeme.category == Lexeme::kFloatLiteral)
+            {
+                t.text = std::uint32_t(file->floatTexts.size());
+                file->floatTexts.append(token.lexeme.text.c_str(), token.lexeme.text.size() + 1);
+                t.floatValue = token.floatValue;
+            }
+            else
+            {
+                t.text = InternText(token.lexeme.text);
+                t.value = file->values.size();
+                if (token.value != nullptr)
+                    file->values.push_back(token.value);
+            }
+            before = mScanner.GetState();
+        }
+    }
+    catch (...)
+    {
+        // A malformed lexeme stops the token array; reading on from there raises the error where it occurs.
+    }
+    mCachedTokenCount += file->tokens.size();
+    file->tokens.shrink_to_fit();
+    file->end = mScanner.GetHotBookmark(before);
+    if (file->complete)
+    {
+        file->stream = std::make_shared<IMemStream>(nullptr, 0, UCS2String(pStream->Name()));
+        file->end.pStream = file->stream;
+    }
+    return file;
+}
+
+std::uint32_t RawTokenizer::InternText(const UTF8String& text)
+{
+    auto i = mTextIndex.emplace(text, std::uint32_t(mTexts.size()));
+    if (i.second)
+        mTexts.push_back(&i.first->first);
+    return i.first->second;
 }
 
 void RawTokenizer::SetStringEncoding(CharacterEncodingID encoding)
@@ -133,7 +237,58 @@ void pov_parser::RawTokenizer::SetNestedBlockComments(bool allow)
 
 //------------------------------------------------------------------------------
 
+void RawTokenizer::ReadCachedToken(RawToken& token)
+{
+    const CachedFile& file = *mPosition.file;
+    const CachedToken& t = file.tokens[mPosition.index++];
+    if (t.category == Lexeme::kFloatLiteral)
+    {
+        token.lexeme.text = &file.floatTexts[t.text];
+        token.floatValue = t.floatValue;
+        token.value = nullptr;
+    }
+    else
+    {
+        token.lexeme.text = *mTexts[t.text];
+        if (t.category == Lexeme::kStringLiteral)
+            token.value = file.values[t.value];
+        else
+            token.value = nullptr;
+    }
+    token.lexeme.position.line = t.line;
+    token.lexeme.position.column = t.column;
+    token.lexeme.position.offset = t.offset;
+    token.lexeme.category = t.category;
+    token.id = t.id;
+    token.expressionId = t.expressionId;
+    token.isReservedWord = t.isReservedWord;
+    token.isPseudoIdentifier = t.isPseudoIdentifier;
+}
+
+bool RawTokenizer::ContinueFromCache()
+{
+    if (mPosition.file->complete)
+        return false;
+    mPosition.cached = false;
+    return mScanner.GoToBookmark(mPosition.file->end);
+}
+
 bool RawTokenizer::GetNextToken(RawToken& token)
+{
+    if (mPosition.cached)
+    {
+        if (mPosition.index < mPosition.file->tokens.size())
+        {
+            ReadCachedToken(token);
+            return true;
+        }
+        if (!ContinueFromCache())
+            return false;
+    }
+    return GetNextScannedToken(token);
+}
+
+bool RawTokenizer::GetNextScannedToken(RawToken& token)
 {
     if (!mScanner.GetNextLexeme(token.lexeme))
         return false;
@@ -151,6 +306,20 @@ bool RawTokenizer::GetNextToken(RawToken& token)
 
 bool RawTokenizer::GetNextDirective(RawToken& token)
 {
+    if (mPosition.cached)
+    {
+        const std::vector<CachedToken>& tokens = mPosition.file->tokens;
+        while ((mPosition.index < tokens.size()) && (tokens[mPosition.index].id != int(HASH_TOKEN)))
+            ++mPosition.index;
+        if (mPosition.index < tokens.size())
+        {
+            ReadCachedToken(token);
+            return true;
+        }
+        if (!ContinueFromCache())
+            return false;
+    }
+
     if (!mScanner.GetNextDirective(token.lexeme))
         return false;
 
@@ -443,6 +612,8 @@ bool RawTokenizer::ProcessSignatureLexeme(RawToken& token)
 
 bool RawTokenizer::GetRaw(unsigned char* buffer, size_t size)
 {
+    if (mPosition.cached)
+        return false;
     return mScanner.GetRaw(buffer, size);
 }
 
@@ -450,32 +621,68 @@ bool RawTokenizer::GetRaw(unsigned char* buffer, size_t size)
 
 pov_parser::ConstStreamPtr RawTokenizer::GetInputStream() const
 {
+    if (mPosition.file != nullptr)
+        return mPosition.file->stream;
     return mScanner.GetInputStream();
 }
 
 pov_base::UCS2String RawTokenizer::GetInputStreamName() const
 {
+    if (mPosition.file != nullptr)
+        return mPosition.file->stream->Name();
     return mScanner.GetInputStreamName();
+}
+
+LexemePosition RawTokenizer::CachedPosition() const
+{
+    const CachedFile& file = *mPosition.file;
+    if (mPosition.index >= file.tokens.size())
+        return file.end;
+    const CachedToken& t = file.tokens[mPosition.index];
+    LexemePosition position;
+    position.line = t.line;
+    position.column = t.column;
+    position.offset = t.offset;
+    return position;
 }
 
 pov_parser::RawTokenizer::HotBookmark RawTokenizer::GetHotBookmark()
 {
-    return mScanner.GetHotBookmark();
+    if (!mPosition.cached)
+        return HotBookmark(mScanner.GetHotBookmark(), mPosition);
+    const Scanner::HotBookmark& end = mPosition.file->end;
+    return HotBookmark(Scanner::HotBookmark(mPosition.file->stream, CachedPosition(), end.characterEncoding, end.nominalEndOfLine,
+                                            end.allowNestedBlockComments), mPosition);
 }
 
 pov_parser::RawTokenizer::ColdBookmark RawTokenizer::GetColdBookmark() const
 {
-    return mScanner.GetColdBookmark();
+    if (!mPosition.cached)
+        return ColdBookmark(mScanner.GetColdBookmark(), mPosition);
+    const Scanner::HotBookmark& end = mPosition.file->end;
+    return ColdBookmark(Scanner::ColdBookmark(mPosition.file->stream->Name(), CachedPosition(), end.characterEncoding,
+                                              end.nominalEndOfLine, end.allowNestedBlockComments), mPosition);
 }
 
 bool RawTokenizer::GoToBookmark(const HotBookmark& bookmark)
 {
-    return mScanner.GoToBookmark(bookmark);
+    mPosition = bookmark;
+    if (bookmark.cached)
+        return true;
+    return mScanner.GoToBookmark(static_cast<const Scanner::HotBookmark&>(bookmark));
 }
 
 bool RawTokenizer::GoToBookmark(const ColdBookmark& bookmark)
 {
-    return mScanner.GoToBookmark(bookmark);
+    if (bookmark.file == nullptr)
+        return mScanner.GoToBookmark(static_cast<const Scanner::ColdBookmark&>(bookmark));
+    const unsigned int instance = (bookmark.file == mPosition.file) ? mPosition.instance : ++mLastInstance;
+    mPosition = bookmark;
+    mPosition.instance = instance;
+    if (bookmark.cached)
+        return true;
+    const Scanner::ColdBookmark& b = bookmark;
+    return mScanner.GoToBookmark(Scanner::HotBookmark(bookmark.file->stream, b, b.characterEncoding, b.nominalEndOfLine, b.allowNestedBlockComments));
 }
 
 }

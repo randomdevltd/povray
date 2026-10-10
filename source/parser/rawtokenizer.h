@@ -43,8 +43,11 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 // POV-Ray header files (base module)
 #include "base/stringtypes.h"
@@ -166,6 +169,40 @@ struct RawToken final
 
 //******************************************************************************
 
+/// A raw token as kept in a file's token array.
+struct CachedToken final
+{
+    POV_OFF_T           offset;
+    std::uint32_t       line;
+    std::uint32_t       column;
+    int                 id;
+    TokenId             expressionId;
+    std::uint32_t       text;               ///< Interned text, or offset of a float literal's text in the file's pool.
+    Lexeme::Category    category;
+    bool                isReservedWord      : 1;
+    bool                isPseudoIdentifier  : 1;
+    union
+    {
+        DBL             floatValue;
+        std::size_t     value;              ///< Index of a string literal's value in the file's values.
+    };
+};
+
+/// A source file lexed once: its first tokens, and the scanner state after the last of them.
+struct CachedFile final
+{
+    StreamPtr                   stream;     ///< The file while incomplete, an empty stream of that name once complete.
+    std::vector<CachedToken>    tokens;
+    std::vector<ConstValuePtr>  values;
+    std::string                 floatTexts;
+    Scanner::HotBookmark        end;
+    bool                        complete;   ///< Whether `tokens` reach the end of the file.
+};
+
+using CachedFilePtr = std::shared_ptr<CachedFile>;
+
+//******************************************************************************
+
 /// Class implementing the parser's _raw tokenizer_ stage.
 ///
 /// The parser's _raw tokenizer_ stage processes individual _lexemes_ from the
@@ -189,8 +226,26 @@ class RawTokenizer final
 {
 public:
 
-    using HotBookmark = Scanner::HotBookmark;
-    using ColdBookmark = Scanner::ColdBookmark;
+    /// Where in a file's token array (or, past its cached part, in the file itself) a bookmark points.
+    struct CachePosition
+    {
+        CachedFilePtr   file;
+        std::size_t     index       = 0;
+        unsigned int    instance    = 0;
+        bool            cached      = false;
+    };
+
+    struct HotBookmark final : Scanner::HotBookmark, CachePosition
+    {
+        HotBookmark() = default;
+        HotBookmark(const Scanner::HotBookmark& b, const CachePosition& p) : Scanner::HotBookmark(b), CachePosition(p) {}
+    };
+
+    struct ColdBookmark final : Scanner::ColdBookmark, CachePosition
+    {
+        ColdBookmark() = default;
+        ColdBookmark(const Scanner::ColdBookmark& b, const CachePosition& p) : Scanner::ColdBookmark(b), CachePosition(p) {}
+    };
 
     RawTokenizer();
 
@@ -198,6 +253,21 @@ public:
     /// @note
     ///     The input stream must already be opened.
     void SetInputStream(StreamPtr pStream);
+
+    /// Set or change the input stream to the file at `path`, read through its token array if caching is on.
+    void SetInputStream(StreamPtr pStream, const UCS2String& path);
+
+    /// Keep each file's tokens for re-reading.
+    void EnableCache() { mCacheEnabled = true; }
+
+    /// Lex each file afresh at every later opening, as files are being written.
+    void InvalidateCache() { mRelexOnOpen = true; }
+
+    /// Where the next token comes from.
+    const CachePosition& GetCachePosition() const { return mPosition; }
+
+    /// Whether `bookmark` was taken in the current opening of the current file.
+    bool IsCurrentInstance(const HotBookmark& bookmark) const { return bookmark.instance == mPosition.instance; }
 
     /// Change encoding setting.
     void SetStringEncoding(CharacterEncodingID encoding);
@@ -250,6 +320,22 @@ private:
     Scanner                                         mScanner;
     std::unordered_map<UTF8String, KnownWordInfo>   mKnownWords;
     unsigned int                                    mNextIdentifierId;
+
+    CachePosition                                   mPosition;
+    unsigned int                                    mLastInstance;
+    bool                                            mCacheEnabled;
+    bool                                            mRelexOnOpen;
+    std::size_t                                     mCachedTokenCount;
+    std::unordered_map<UCS2String, CachedFilePtr>   mCachedFiles;
+    std::unordered_map<UTF8String, std::uint32_t>   mTextIndex;
+    std::vector<const UTF8String*>                  mTexts;
+
+    bool GetNextScannedToken(RawToken& token);
+    CachedFilePtr LexFile(StreamPtr pStream);
+    void ReadCachedToken(RawToken& token);
+    bool ContinueFromCache();
+    LexemePosition CachedPosition() const;
+    std::uint32_t InternText(const UTF8String& text);
 
     bool ProcessWordLexeme(RawToken& token);
     bool ProcessOtherLexeme(RawToken& token);
