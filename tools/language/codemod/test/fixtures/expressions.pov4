@@ -1,0 +1,19 @@
+let A = 1;
+let B = 0;
+let Or_Then_And = ((A || B) && B);
+let And_Then_Or = (A && B || B);
+let Equal_Less = ((A == B) < 1);
+let Chain = ((A == B) < 1);
+let Scaled = 2 * (A ? 3 : 4) + 1;
+let Picked = A ? /* first */ 1 : 2 // second
+;
+sphere { 0, 1 scale A ? 2 : 3 }
+fn Pick(P, Q) { P }
+let Spaced_Args = Pick(1, <1, 2>);
+fn Shift(O, V) { object { O translate V } }
+fn Centred(O) { object { O } }
+fn Again(O) { Centred(O) }
+fn Half(V) { V / 2 }
+object { Shift(Again(sphere { 0, 1 }),
+  -y - x) }
+object { Shift(sphere { 0, 1 }, Half(y) - x) }

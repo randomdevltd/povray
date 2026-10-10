@@ -1,0 +1,23 @@
+include "colors.inc";
+default { finish { ambient 0.1 } }
+let Grid = [ [ 1, 2 ], [ 3, 4 ] ];
+let Empty = array(4);
+let Table = array(2, array(3));
+let Props = { name: "ball", "size": 2, "two words": 3 };
+let On = ((Grid[0][1] == 2) && !(Props.size == 1));
+camera { location <0, 1, -5> look_at 0 }
+light_source { <10, 10, -10>, White }
+plane { y, 0 pigment { color rgb <0.5, 0.5, 0.5> } }
+let Padded = [ 1, 2, null, null ];
+let Key = "name";
+let Mixed = { [Key]: 1, "step": 2, "x": 3 };
+let Steps = Mixed["step"] + Mixed["step"];
+Padded = null;
+let Spaced = { [Key]: 1, a: 2 };
+let Rows = [ array(3), array(3) ];
+let Sized = [ 1, ...array((Count + 1) - 1) ];
+fn Forget() {
+  global Spaced = null;
+}
+let Kept = version;
+Kept = null;
