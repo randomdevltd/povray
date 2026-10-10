@@ -43,6 +43,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
 #include <memory>
 
 // POV-Ray header files (base module)
@@ -134,6 +135,9 @@ public:
 private:
 
     SYM_ENTRY* mapHashTable[SYM_TABLE_SIZE];
+    std::uint64_t mUsedBuckets[(SYM_TABLE_SIZE + 63) / 64];   ///< Buckets that have held an entry, so destruction skips the rest.
+
+    void MarkUsed(int i) { mUsedBuckets[i / 64] |= std::uint64_t(1) << (i % 64); }
 };
 
 using SymbolTablePtr = std::shared_ptr<SymbolTable>;
