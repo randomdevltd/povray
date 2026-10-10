@@ -2360,8 +2360,17 @@
           "type": "FIELD",
           "name": "object",
           "content": {
-            "type": "SYMBOL",
-            "name": "_lvalue_path"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "_lvalue_path"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_scope"
+              }
+            ]
           }
         },
         {
@@ -2414,7 +2423,7 @@
           "name": "member",
           "content": {
             "type": "SYMBOL",
-            "name": "identifier"
+            "name": "_raw_identifier"
           }
         }
       ]
@@ -5269,6 +5278,10 @@
                 },
                 {
                   "type": "SYMBOL",
+                  "name": "_scope"
+                },
+                {
+                  "type": "SYMBOL",
                   "name": "call_expression"
                 },
                 {
@@ -5385,79 +5398,8 @@
             "type": "FIELD",
             "name": "member",
             "content": {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "SYMBOL",
-                  "name": "identifier"
-                },
-                {
-                  "type": "ALIAS",
-                  "content": {
-                    "type": "CHOICE",
-                    "members": [
-                      {
-                        "type": "STRING",
-                        "value": "x"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "y"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "z"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "t"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "u"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "v"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "red"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "green"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "blue"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "filter"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "transmit"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "gray"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "grey"
-                      },
-                      {
-                        "type": "STRING",
-                        "value": "alpha"
-                      }
-                    ]
-                  },
-                  "named": true,
-                  "value": "identifier"
-                }
-              ]
+              "type": "SYMBOL",
+              "name": "_raw_identifier"
             }
           }
         ]
@@ -5645,6 +5587,14 @@
       },
       "named": true,
       "value": "identifier"
+    },
+    "_raw_identifier": {
+      "type": "RESERVED",
+      "content": {
+        "type": "SYMBOL",
+        "name": "identifier"
+      },
+      "context_name": "raw"
     },
     "function_block": {
       "type": "SEQ",
@@ -5899,7 +5849,7 @@
                   "name": "key",
                   "content": {
                     "type": "SYMBOL",
-                    "name": "identifier"
+                    "name": "_raw_identifier"
                   }
                 }
               ]
@@ -8404,6 +8354,7 @@
         "type": "STRING",
         "value": "z"
       }
-    ]
+    ],
+    "raw": []
   }
 }

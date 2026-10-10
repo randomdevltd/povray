@@ -18,6 +18,8 @@ npm --prefix libraries/tree-sitter-pov test        # corpus, highlight and tag t
 
 The install scripts of `tree-sitter`, `tree-sitter-cli` and this package must be allowed to run: they build the
 runtime, fetch the CLI binary and compile the binding (`build/Release/tree_sitter_pov_binding.node`).
+`node-gyp-build` keeps an existing binding, so after `generate` rebuild it or Node scripts keep parsing with the
+old grammar: `cd libraries/tree-sitter-pov && rm -rf build && npx node-gyp-build`.
 
 ## Using it from Node
 
@@ -43,8 +45,9 @@ contextual syntax such as `skein`, an identifier), `bracket_group` (`[0.5 color 
 `array_expression`, `dictionary_expression`, `tag_filter`, directives, `,` and `;`. The grammar does not know
 which items each block accepts. Reserved words are never identifiers (`#declare pigment = 5;` is an error),
 except the render-tag words (`tags`, `filter_tags`, `front_filter_tags`, `back_filter_tags`, `any`, `none`),
-which classic reserves only from `#version 4.0`. Members after `.`, `local.`/`global.` scopes and function
-parameters such as `u` and `x` accept the reserved words classic accepts there.
+which classic reserves only from `#version 4.0`. Classic reads any word after `.` raw, so dictionary keys
+(`dictionary { .size: 2 }`) and members (`D.size`, `D.x`, also as `#declare` targets) may be reserved words;
+`local` and `global` are scope dictionaries before `.` or `[`; function parameters may be `u`, `x` and the like.
 
 Directives are `declare_directive` (`kind` is `#declare` or `#local`; `target` is an identifier, index, member
 or `tuple_target`; `value` may be a `layered_texture`), `macro_directive`, `if_directive` (`#if`, `#ifdef`,
@@ -86,12 +89,12 @@ is `error` (syntax errors, with the first locations), `ill-formed` (parses, but 
 
 ```json
 {
- "files": 633, "syntaxClean": 611, "wellFormed": 602,
- "directives": { "#if": { "top-level": 753, "block-item": 385, "macro-body": 227, "macro-fragment": 83,
-                          "expression": 2, "partial": 172 } },
- "contexts": { "top-level": 12191, "block-item": 1440, "macro-body": 2206, "macro-fragment": 330,
-               "expression": 5, "partial": 339 },
- "macros": { "statements": 292, "expression": 138, "items": 23, "directives": 34 },
+ "files": 649, "syntaxClean": 627, "wellFormed": 618,
+ "directives": { "#if": { "top-level": 754, "block-item": 389, "macro-body": 228, "macro-fragment": 83,
+                          "expression": 4, "partial": 172 } },
+ "contexts": { "top-level": 12271, "block-item": 1450, "macro-body": 2208, "macro-fragment": 330,
+               "expression": 7, "partial": 339 },
+ "macros": { "statements": 296, "expression": 142, "items": 23, "directives": 34 },
  "notWellFormed": [ { "file": "distribution/include/shapes.inc",
                       "reasons": [ { "reason": "syntax-error", "line": 86, "column": 13, "count": 37 },
                                   { "reason": "partial-macro", "line": 360, "column": 1 } ] } ]

@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-const reserved = require('../../tools/language/keywords.json');
+const words = require('../../tools/language/keywords.json');
 
 const CONSTANTS = ['clock', 'clock_on', 'false', 'no', 'now', 'off', 'on', 'pi', 't', 'tau', 'true', 'u', 'v',
   'version', 'x', 'y', 'yes', 'z'];
 const STRING_FUNCTIONS = ['chr', 'concat', 'datetime', 'str', 'strlwr', 'strupr', 'substr', 'vstr'];
-const FUNCTIONS = reserved
+const FUNCTIONS = words
   .filter((k) => (k.category === 'float' || k.category === 'vector') && !CONSTANTS.includes(k.word))
   .map((k) => k.word)
   .concat(STRING_FUNCTIONS, ['internal', 'sqr']);
-const COLOUR_CHANNELS = reserved.filter((k) => k.category === 'colour').map((k) => k.word);
+const COLOUR_CHANNELS = words.filter((k) => k.category === 'colour').map((k) => k.word);
 const TAG_FILTERS = ['filter_tags', 'front_filter_tags', 'back_filter_tags'];
 const VERSIONED = [...TAG_FILTERS, 'tags', 'any', 'none'];
 const BINARY_TYPES = ['sint8', 'uint8', 'sint16be', 'sint16le', 'uint16be', 'uint16le', 'sint32be', 'sint32le'];
 const SPECIAL = ['array', 'dictionary', 'function', 'texture', ...TAG_FILTERS];
-const KEYWORDS = reserved.map((k) => k.word).filter((w) =>
+const KEYWORDS = words.map((k) => k.word).filter((w) =>
   !CONSTANTS.includes(w) && !FUNCTIONS.includes(w) && !SPECIAL.includes(w));
-const MEMBERS = ['x', 'y', 'z', 't', 'u', 'v', 'red', 'green', 'blue', 'filter', 'transmit', 'gray', 'grey', 'alpha'];
 
 const PREC = {
   conditional: 1, logical: 2, relational: 3, additive: 4, multiplicative: 5, unary: 6, postfix: 7, call: 8,
@@ -32,7 +31,7 @@ module.exports = grammar({
   extras: $ => [/\s/, $.line_comment, $.block_comment],
   externals: $ => [$.block_comment],
   supertypes: $ => [$._directive],
-  reserved: { global: _ => reserved.map((k) => k.word).filter((w) => !VERSIONED.includes(w)) },
+  reserved: { global: _ => words.map((k) => k.word).filter((w) => !VERSIONED.includes(w)), raw: _ => [] },
 
   rules: {
     source_file: $ => repeat($._item),
@@ -89,9 +88,9 @@ module.exports = grammar({
       alias($._lvalue_member, $.member_expression),
     ),
     _lvalue_index: $ => seq(
-      field('object', $._lvalue_path), token.immediate('['), field('index', $._expression), ']',
+      field('object', choice($._lvalue_path, $._scope)), token.immediate('['), field('index', $._expression), ']',
     ),
-    _lvalue_member: $ => seq(field('object', choice($._lvalue_path, $._scope)), '.', field('member', $.identifier)),
+    _lvalue_member: $ => seq(field('object', choice($._lvalue_path, $._scope)), '.', field('member', $._raw_identifier)),
     tuple_target: $ => choice(
       seq('(', commaSlots(seq(repeat($._declare_modifier), $._lvalue)), ')'),
       seq('<', commaSlots($._lvalue), '>'),
@@ -222,7 +221,7 @@ module.exports = grammar({
     argument_list: $ => seq('(', commaSlots($._argument), ')'),
     macro_arguments: $ => seq('(', repeat(choice($._rvalue, ',')), ')'),
     index_expression: $ => prec(PREC.postfix, seq(
-      field('object', choice($.identifier, $.call_expression, $.index_expression, $.member_expression)),
+      field('object', choice($.identifier, $._scope, $.call_expression, $.index_expression, $.member_expression)),
       token.immediate('['), field('index', $._expression), ']',
     )),
     _spaced_index: $ => prec(-1, seq(
@@ -231,7 +230,7 @@ module.exports = grammar({
     )),
     member_expression: $ => prec(PREC.postfix, seq(
       field('object', choice($._primary, $._scope)), '.',
-      field('member', choice($.identifier, alias(choice(...MEMBERS), $.identifier))),
+      field('member', $._raw_identifier),
     )),
 
     colour_expression: $ => prec.right(choice(
@@ -241,6 +240,7 @@ module.exports = grammar({
     colour_component: $ => prec.right(seq(field('channel', choice(...COLOUR_CHANNELS)), field('value', $._value))),
 
     _scope: $ => alias(choice('local', 'global'), $.identifier),
+    _raw_identifier: $ => reserved('raw', $.identifier),
 
     function_block: $ => seq(
       'function',
@@ -258,7 +258,7 @@ module.exports = grammar({
 
     dictionary_expression: $ => seq('dictionary', '{', repeat(choice($.dictionary_entry, $._directive, ',')), '}'),
     dictionary_entry: $ => seq(
-      choice(seq('.', field('key', $.identifier)), seq('[', field('key', $._expression), ']')), ':',
+      choice(seq('.', field('key', $._raw_identifier)), seq('[', field('key', $._expression), ']')), ':',
       field('value', $._rvalue),
     ),
 
