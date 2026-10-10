@@ -3165,6 +3165,10 @@ struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
     double at[kCrossed];
     int count = 0;
     double base = 0.0;   ///< distance along the shadow ray of the search origin
+    /// The object, as the search sees it, of the nearest surface accepted since Reset.
+    mutable ConstObjectPtr accepted = nullptr;
+    mutable double acceptedAt = HUGE_VAL;
+    void Reset() { accepted = nullptr; acceptedAt = HUGE_VAL; }
     virtual bool operator()(const Ray&, ConstObjectPtr object, double dist) const override
     {
         if (dist <= tolerance)
@@ -3172,6 +3176,11 @@ struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
         for (int k = 0; k < count; k++)
             if ((crossed[k] == object) && (fabs(base + dist - at[k]) < 0.5 * MIN_ISECT_DEPTH))
                 return false;
+        if (dist < acceptedAt)
+        {
+            accepted = object;
+            acceptedAt = dist;
+        }
         return true;
     }
     void Cross(ConstObjectPtr object, double position, double keep)
@@ -3204,6 +3213,9 @@ struct OpaqueShadowStopCondition final : public IntersectionStopCondition
         return Test_Flag(isect.Object, OPAQUE_FLAG) && Test_Flag(testObject, OPAQUE_FLAG);
     }
 };
+
+// Clear surfaces one shadow ray may cross before it is given up as stuck.
+static const int kMaxShadowCrossings = 256;
 
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
@@ -3296,6 +3308,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     foundTransparentObjects = false;
     // From 4.0 each search after a clear hit starts `shift` behind it, so a surface meeting the hit is crossed in turn.
     double nearest = SHADOW_TOLERANCE, shift = 0.0, travelled = 0.0;
+    int crossings = 0;
 
     while(true)
     {
@@ -3307,6 +3320,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (shift > 0.0)
             lightsourceray.Origin -= shift * lightsourceray.Direction;
         postcond.base = travelled - shift;
+        postcond.Reset();
         const PreparedSet& shadowView = sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId());
         if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
         {
@@ -3358,8 +3372,11 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             boundedIntersection.Depth = depth;
             if (!sceneData->legacyIorStack)
             {
+                // A backstop: crossings that fail to advance must not hold the ray forever.
+                if ((++crossings > kMaxShadowCrossings) || (postcond.accepted == nullptr))
+                    break;
                 travelled += depth;
-                postcond.Cross(testObject, travelled, 4.0 * MIN_ISECT_DEPTH);
+                postcond.Cross(postcond.accepted, travelled, 4.0 * MIN_ISECT_DEPTH);
                 shift = std::max(0.0, std::min(2.0 * MIN_ISECT_DEPTH, travelled - SHADOW_TOLERANCE));
                 postcond.tolerance = 0.0;
                 nearest = -shift;
@@ -4122,7 +4139,9 @@ bool HasInside(ConstObjectPtr object)
 // Surfaces meeting at a point in an order that placing the objects differently cannot change: depth, then bounds.
 bool SurfaceBefore(const SurfaceHit& a, const SurfaceHit& b)
 {
-    if (a.second != b.second)
+    // Depths within one step are a tie, so rounding never orders surfaces that coincide.
+    const double step = 0.5 * MIN_ISECT_DEPTH;
+    if (std::floor(a.second / step) != std::floor(b.second / step))
         return a.second < b.second;
     const BoundingBox& p = a.first->BBox;
     const BoundingBox& q = b.first->BBox;
@@ -4185,7 +4204,7 @@ void Trace::CrossCoincident(RayInteriorVector& after, const RayInteriorVector& b
             after.erase(at);
     };
     auto toggle = [&](Interior *i) { place(i, std::find(before.begin(), before.end(), i) == before.end()); };
-    if (loneSurface && (coincident[0].first->interior.get() == interior))
+    if (loneSurface && (coincident[0].first->interior.get() == interior) && coincident[0].first->Clip.empty())
     {
         toggle(interior);
         return;
