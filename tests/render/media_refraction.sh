@@ -1,5 +1,5 @@
 #!/bin/sh
-# media_refraction.sh <povray> <srcdir>: media refraction, curved rays and the precedence of surface indices.
+# media_refraction.sh <povray> <srcdir>: media refraction, curved rays, and surface indices where solids meet or overlap.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -80,18 +80,35 @@ render hidden Declare=Case=11
 render water Declare=Case=15
 render inside Declare=Case=12
 render ball Declare=Case=13
-same hidden water
-says "placed after it does not refract" hidden || { echo "media_refraction: no warning for an outranked surface" >&2; exit 1; }
-differs inside water
+same hidden inside
+differs hidden water
 render late_backdrop Declare=Case=16
-render air_box Declare=Case=17
+render bare_box Declare=Case=34
 same late_backdrop ball
-same air_box ball
+same bare_box ball
+# A solid that states an ior averages with the solids it overlaps: 4.0 matches 3.7 with the overlap at the mean.
+render air_box Declare=Case=17
+render air_box_37 Version=3.7 Declare=Case=17 Declare=BallIor=1.25
+region air_box air_box_37 0 95 0 71
 for case in 18:bubble 19:inside_glass; do
     render ${case#*:} Declare=Case=${case%:*}
-    render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*}
+    render ${case#*:}_37 Version=3.7 Declare=Case=${case%:*} Declare=Inner=1.25
     region ${case#*:} ${case#*:}_37 0 95 0 71
 done
+render bubble_cut Declare=Case=35
+render bubble_air_37 Version=3.7 Declare=Case=18
+render bubble_filled Declare=Case=36
+region bubble_cut bubble_air_37 0 95 0 71
+region bubble_filled bubble 0 95 0 71
+render lens_ab Declare=Case=37
+render lens_ba Declare=Case=38
+render lens_cut Declare=Case=39
+same lens_ab lens_ba
+region lens_ab lens_cut 0 95 0 71
+render grazing_wall Declare=Case=40 Declare=Ramp=3
+render grazing_wall_ba Declare=Case=41 Declare=Ramp=3
+same grazing_wall grazing_wall_ba
+expect grazing_wall 48 36 1.0
 render shared_wall Declare=Case=20 Declare=Ramp=2
 render shared_inside Declare=Case=21 Declare=Ramp=2
 expect shared_wall 48 36 0.5915 0.006
@@ -110,7 +127,7 @@ render far_ball Declare=Case=28 Declare=Far=1e6
 render near_ball Declare=Case=28
 region far_ball near_ball 0 95 0 71
 render uv_inside Declare=Case=29
-for pair in 30:31:clear_wall 32:33:polygon_wall; do
+for pair in 30:31:clear_wall 32:33:polygon_wall 42:43:shadow_wall; do
     render ${pair##*:} Declare=Case=${pair%%:*}
     render ${pair##*:}_inset Declare=Case=$(echo $pair | cut -d: -f2)
     region ${pair##*:} ${pair##*:}_inset 0 95 0 71

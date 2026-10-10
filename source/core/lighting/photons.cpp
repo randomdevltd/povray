@@ -172,8 +172,8 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
         RefractionField field(ray.GetInteriors(), threadData);
         if (field.Varies())
         {
-            const Interior *top = IorInterior(ray.GetInteriors(), nullptr);
-            const double base = (top != nullptr) ? top->IOR : sceneData->atmosphereIOR;
+            double base, dispersion;
+            MeanIor(ray.GetInteriors(), base, dispersion, nullptr);
             Ray chord(ray);
             chord.hasDifferentials = false;
             CurvedPath path;

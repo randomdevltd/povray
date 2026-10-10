@@ -46,12 +46,22 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
 #end
 #macro Ramp(Lo, Hi) color_map { [0 rgb Lo] [1 rgb Hi] } #end
 
-blob {
-  threshold 0.55
-  #for (I, -1, 1) #for (J, -1, 1) #for (K, -1, 1)
-    sphere { <I, J * 0.8, K> * 1.05 + <rand(R), rand(R), rand(R)> * 0.25, 1.15, 1 }
-  #end #end #end
-  scale <1.15, 1, 1.05> translate y * 1.55
+difference {
+  blob {
+    threshold 0.55
+    #for (I, -1, 1) #for (J, -1, 1) #for (K, -1, 1)
+      sphere { <I, J * 0.8, K> * 1.05 + <rand(R), rand(R), rand(R)> * 0.25, 1.15, 1 }
+    #end #end #end
+    scale <1.15, 1, 1.05> translate y * 1.55
+  }
+  #if (Layers > 1)
+    #for (I, 0, 22)
+      sphere {
+        <rand(R) * 2.8 - 1.4, 0.6 + rand(R) * 2.0, rand(R) * 2.4 - 1.2>, 0.05 + pow(rand(R), 3) * 0.18
+        texture { pigment { rgbf <1, 1, 1, 0.98> } finish { specular 0.9 roughness 0.002 reflection { 0, 0.5 fresnel } } }
+      }
+    #end
+  #end
   texture {
     pigment { rgbf <0.8, 1, 0.75, 0.96> }
     normal { bumps 0.12 scale 0.4 }
@@ -62,16 +72,6 @@ blob {
     #if (Warp) media { refraction 0.12 density { bozo turbulence 0.5 octaves 3 scale <0.9, 0.6, 0.9> } } #end
   }
 }
-
-#if (Layers > 1)
-  #for (I, 0, 22)
-    sphere {
-      <rand(R) * 2.8 - 1.4, 0.6 + rand(R) * 2.0, rand(R) * 2.4 - 1.2>, 0.05 + pow(rand(R), 3) * 0.18
-      texture { pigment { rgbf <1, 1, 1, 0.98> } finish { specular 0.9 roughness 0.002 reflection { 0, 0.5 fresnel } } }
-      interior { ior 1 }
-    }
-  #end
-#end
 
 #if (Layers > 2)
   #declare Gas = Gel(rgb 0.1, rgb <0.6, 0.15, 0.8>, rgb <0.7, 0.1, 0.9>, density { granite turbulence 0.6 Ramp(0, 1.5) scale 0.6 }, -1)

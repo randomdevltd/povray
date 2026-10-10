@@ -10239,6 +10239,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
                     {
                         Object->interior->IOR = Finish->Temp_IOR;
                         Object->interior->Dispersion = Finish->Temp_Dispersion;
+                        Object->interior->statesIor = true;
                     }
                     if (Finish->Temp_Caustics >= 0.0)
                     {
@@ -10316,8 +10317,6 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         Set_Flag(Object, OPAQUE_FLAG);
         sceneData->anyOpaque = true;
-        sceneData->opaqueWithoutInside = sceneData->opaqueWithoutInside || (Object->Type & PATCH_OBJECT) ||
-                                         (dynamic_cast<const Polygon *>(Object) != nullptr);
     }
 }
 

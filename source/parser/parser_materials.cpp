@@ -3965,6 +3965,7 @@ void Parser::Parse_Interior(InteriorPtr& interior)
     EXPECT
         CASE (IOR_TOKEN)
             interior->IOR = Parse_Float();
+            interior->statesIor = true;
         END_CASE
 
         CASE (DISPERSION_TOKEN)
