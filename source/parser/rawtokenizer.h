@@ -147,6 +147,9 @@ struct RawToken final
     ///     their values here, rather than using the @ref value field.
     DBL floatValue;
 
+    /// Symbol table hash of a word token's text.
+    int symbolHash;
+
     /// Associated non-numeric value.
     /// For string literal tokens, this value is set by the _raw tokenizer_ to
     /// hold the parsed string. For identifiers, this value may be set by the
@@ -185,6 +188,7 @@ struct CachedToken final
     {
         DBL             floatValue;
         std::size_t     value;              ///< Index of a string literal's value in the file's values.
+        int             symbolHash;
     };
 };
 
@@ -312,6 +316,7 @@ private:
     {
         int     id;
         TokenId expressionId;
+        int     symbolHash;
         bool    isReservedWord     : 1;
         bool    isPseudoIdentifier : 1;
         KnownWordInfo();

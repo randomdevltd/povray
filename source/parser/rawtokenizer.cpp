@@ -54,6 +54,7 @@
 
 // POV-Ray header files (parser module)
 #include "parser/reservedwords.h"
+#include "parser/symboltable.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -98,6 +99,7 @@ TokenId RawToken::GetTokenId() const
 RawTokenizer::KnownWordInfo::KnownWordInfo() :
     id(int(NOT_A_TOKEN)),
     expressionId(NOT_A_TOKEN),
+    symbolHash(-1),
     isReservedWord(false),
     isPseudoIdentifier(false)
 {}
@@ -194,12 +196,16 @@ CachedFilePtr RawTokenizer::LexFile(StreamPtr pStream)
                 file->floatTexts.append(token.lexeme.text.c_str(), token.lexeme.text.size() + 1);
                 t.floatValue = token.floatValue;
             }
-            else
+            else if (token.lexeme.category == Lexeme::kStringLiteral)
             {
                 t.text = InternText(token.lexeme.text);
                 t.value = file->values.size();
-                if (token.value != nullptr)
-                    file->values.push_back(token.value);
+                file->values.push_back(token.value);
+            }
+            else
+            {
+                t.text = InternText(token.lexeme.text);
+                t.symbolHash = token.symbolHash;
             }
             before = mScanner.GetState();
         }
@@ -255,7 +261,10 @@ void RawTokenizer::ReadCachedToken(RawToken& token)
         if (t.category == Lexeme::kStringLiteral)
             token.value = file.values[t.value];
         else
+        {
             token.value = nullptr;
+            token.symbolHash = t.symbolHash;
+        }
     }
     token.lexeme.position.line = t.line;
     token.lexeme.position.column = t.column;
@@ -348,7 +357,10 @@ bool RawTokenizer::ProcessWordLexeme(RawToken& token)
         i.id = ++mNextIdentifierId;
         i.expressionId = IDENTIFIER_TOKEN;
     }
+    if (i.symbolHash < 0)
+        i.symbolHash = SymbolTable::get_hash_value(token.lexeme.text.c_str());
     token.id = i.id;
+    token.symbolHash = i.symbolHash;
     token.expressionId = i.expressionId;
     token.value = nullptr;
     token.isReservedWord = i.isReservedWord;

@@ -124,9 +124,12 @@ protected:
     template<typename T> static void DeleteData(void*);
 
     SYM_ENTRY* Find_Symbol(const char* s, int hash) const;
-    static int get_hash_value(const char *s);
 
     friend class SymbolStack;
+
+public:
+
+    static int get_hash_value(const char *s);
 
 private:
 
@@ -158,6 +161,7 @@ public:
     SYM_ENTRY *Add_Symbol(int Index, const UTF8String& Name, TokenId Number);
     SYM_ENTRY* Find_Symbol(int index, const char* s);
     SYM_ENTRY* Find_Symbol(const char* s, int* pIndex = nullptr);
+    SYM_ENTRY* Find_Symbol(const char* s, int hash, int* pIndex);
     void Remove_Symbol(int Index, const char *Name, bool is_array_elem, void **DataPtr, int ttype);
 
     //------------------------------------------------------------------------------
