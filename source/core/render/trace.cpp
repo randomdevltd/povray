@@ -941,34 +941,50 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
 
     bool isMultiTextured = Test_Flag(isect.Object, MULTITEXTURE_FLAG) ||
                            ((isect.Object->Texture == nullptr) && Test_Flag(isect.Object, CUTAWAY_TEXTURES_FLAG));
+    InterfaceCache shared;
+    const bool averaged = SharedFaceTextures(ray, isect, rawnormal, wtextures, shared);
 
     // get textures and weights
-    if(isMultiTextured == true)
+    if (!averaged)
     {
-        isect.Object->Determine_Textures(&isect, normaldirection > 0.0, wtextures, threadData);
-    }
-    else if (isect.Object->Texture != nullptr)
-    {
-        if ((normaldirection > 0.0) && (isect.Object->Interior_Texture != nullptr))
-            wtextures.push_back(WeightedTexture(1.0, isect.Object->Interior_Texture)); /* Chris Huff: Interior Texture patch */
+        if(isMultiTextured == true)
+        {
+            isect.Object->Determine_Textures(&isect, normaldirection > 0.0, wtextures, threadData);
+        }
+        else if (isect.Object->Texture != nullptr)
+        {
+            if ((normaldirection > 0.0) && (isect.Object->Interior_Texture != nullptr))
+                wtextures.push_back(WeightedTexture(1.0, isect.Object->Interior_Texture)); /* Chris Huff: Interior Texture patch */
+            else
+                wtextures.push_back(WeightedTexture(1.0, isect.Object->Texture));
+        }
         else
-            wtextures.push_back(WeightedTexture(1.0, isect.Object->Texture));
-    }
-    else
-    {
-        // don't need to do anything as the texture list will be empty.
-        // TODO: could we perform these tests earlier ? [cjc]
-        lightColorCacheIndex--;
-        return;
+        {
+            // don't need to do anything as the texture list will be empty.
+            // TODO: could we perform these tests earlier ? [cjc]
+            lightColorCacheIndex--;
+            return;
+        }
     }
 
     // Now, we perform the lighting calculations by stepping through
     // the list of textures and summing the weighted color.
 
+    // Each blended texture refracts from the interiors the ray held before the face, through the same merged interface.
+    RayInteriorVector held;
+    if (averaged)
+        held = ray.GetInteriors();
     for(WeightedTextureVector::iterator i(wtextures.begin()); i != wtextures.end(); i++)
     {
         TextureVector warps(texturePool);
         POV_REFPOOL_ASSERT(warps->empty()); // verify that the TextureVector pulled from the pool is in a cleaned-up condition
+        if (averaged && (i != wtextures.begin()))
+        {
+            ray.ResetInteriors();
+            for (Interior *interior : held)
+                ray.AppendInterior(interior);
+            sidesCache[InterfaceSlot(shared.interior, shared.point)] = shared;
+        }
 
         // if the contribution of this texture is negligible skip ahead
         if ((i->weight < ray.GetTicket().adcBailout) || (i->texture == nullptr))
@@ -988,7 +1004,8 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
         }
         else
         {
-            ComputeOneTextureColour(c1, t1, i->texture, *warps, ipoint, rawnormal, ray, weight, isect, false, false);
+            ComputeOneTextureColour(c1, t1, i->texture, *warps, ipoint, rawnormal, ray, averaged ? weight * i->weight : weight, isect,
+                                    false, false);
 
             tmpCol    += i->weight * c1;
             tmpTransm += i->weight * t1;
@@ -4105,7 +4122,8 @@ double Trace::MixedIor(const RayInteriorVector& interiors, double *dispersion, u
     for (size_t k = first; k < interiors.size(); k++)
     {
         const Interior *interior = interiors[k];
-        if ((interior->iorMix == kIorMixMean) && (interior->IOR != atmosphere) && ((top == nullptr) || OutranksIor(interior, top)))
+        if ((interior->iorMix == kIorMixMean) && (interior->IOR != atmosphere) && (interior->IOR != 1.0f) &&
+            ((top == nullptr) || OutranksIor(interior, top)))
             add(interior);
     }
     if (dispersion != nullptr)
@@ -4301,6 +4319,26 @@ bool Trace::TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal
     return true;
 }
 
+bool Trace::SharedFaceTextures(const Ray& ray, const Intersection& isect, const Vector3d& normal, WeightedTextureVector& textures,
+                               InterfaceCache& sides)
+{
+    if ((sceneData->interfaceTexture != kInterfaceTextureBlend) || !MergesSurfaces() || Test_Flag(isect.Object, OPAQUE_FLAG) ||
+        (isect.Object->interior == nullptr))
+        return false;
+    const InterfaceCache& found = InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal);
+    if (found.faces.empty())
+        return false;
+    sides = found;
+    const std::vector<ConstObjectPtr>& faces = sides.faces;
+    for (ConstObjectPtr object : faces)
+    {
+        const bool inside = std::find(ray.GetInteriors().begin(), ray.GetInteriors().end(), object->interior.get()) != ray.GetInteriors().end();
+        const TEXTURE *texture = (inside && (object->Interior_Texture != nullptr)) ? object->Interior_Texture : object->Texture;
+        textures.push_back(WeightedTexture(1.0 / faces.size(), const_cast<TEXTURE *>(texture)));
+    }
+    return true;
+}
+
 double Trace::InterfaceTolerance(const Vector3d& point, const Interior *interior) const
 {
     double tolerance = 1.0e-5 * std::max(fabs(point[X]), std::max(fabs(point[Y]), fabs(point[Z])));
@@ -4354,6 +4392,7 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *
     sides.after = before;
     sides.leave = 0.0;
     sides.take = nullptr;
+    sides.faces.clear();
     auto holds = [](const RayInteriorVector& set, const Interior *i) { return std::find(set.begin(), set.end(), i) != set.end(); };
     const double across = dot(normal, ray.Direction);
     if ((across == 0.0) || !MergesSurfaces())
@@ -4371,9 +4410,11 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *
     const Vector3d beyond = point + ((across > 0.0) ? tolerance : -tolerance) * normal.normalized();
     CrossCoincident(sides.after, before, interior, beyond, photon);
 
-    // An opaque surface is hit; otherwise the first, in SurfaceBefore's order, of the objects entered, else of those left.
-    ConstObjectPtr best = nullptr;
-    bool bestEntered = false, hitFound = false;
+    // An opaque surface is hit; then a replace interior's own face; otherwise the first, in SurfaceBefore's order, of the objects
+    // entered (far), or left (near), else of the others, with every clear face there listed for blending.
+    ConstObjectPtr best = nullptr, owner = nullptr;
+    bool bestWanted = false, hitFound = false, plain = true;
+    const bool nearSide = (sceneData->interfaceTexture == kInterfaceTextureNear);
     for (const Surface& surface : coincident)
     {
         ConstObjectPtr object = surface.first;
@@ -4383,17 +4424,30 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *
         if (Test_Flag(object, OPAQUE_FLAG))
         {
             sides.take = object;
+            sides.faces.clear();
             return;
         }
         hitFound = hitFound || (i == interior);
         const bool entered = (i != nullptr) && holds(sides.after, i) && !holds(before, i);
         const bool left = (i != nullptr) && !holds(sides.after, i) && holds(before, i);
-        if ((entered || left || (i == interior)) && ((best == nullptr) || (entered && !bestEntered)))
+        if (!entered && !left && (i != interior))
+            continue;
+        const bool wanted = nearSide ? left : entered;
+        if ((best == nullptr) || (wanted && !bestWanted))
         {
             best = object;
-            bestEntered = entered;
+            bestWanted = wanted;
         }
+        if ((i != nullptr) && (i->iorMix == kIorMixReplace) && ((owner == nullptr) || OutranksIor(i, owner->interior.get())))
+            owner = object;
+        plain = plain && (object->Texture != nullptr) && !Test_Flag(object, MULTITEXTURE_FLAG | UV_FLAG | CUTAWAY_TEXTURES_FLAG);
+        if (std::none_of(sides.faces.begin(), sides.faces.end(), [&](ConstObjectPtr o) { return o->Texture == object->Texture; }))
+            sides.faces.push_back(object);
     }
+    if (owner != nullptr)
+        best = owner;
+    if ((owner != nullptr) || !plain || (sceneData->interfaceTexture != kInterfaceTextureBlend) || (sides.faces.size() < 2))
+        sides.faces.clear();
     if (hitFound && (best != nullptr) && (best->interior.get() != interior))
         sides.take = best;
 }

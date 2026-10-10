@@ -549,7 +549,11 @@ void Parser::Run()
     }
 
     sceneData->solidBlocksInteriorMedia = (sceneData->EffectiveLanguageVersion() < 400);
+    if (!atmosphereIorSet)
+        SetAtmosphereIor();
     sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->mediaRefraction;
+    if (sceneData->interfaceTexture == kInterfaceTextureAuto)
+        sceneData->interfaceTexture = (sceneData->EffectiveLanguageVersion() >= 400) ? kInterfaceTextureBlend : kInterfaceTextureFar;
     if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
         Warning("A non-hollow object carries interior media, which before #version 4.0 is not rendered.\n"
                 "Add 'hollow' to the object, or use #version 4.0.");
@@ -621,6 +625,12 @@ void Parser::Finish()
 
 //******************************************************************************
 
+void Parser::SetAtmosphereIor()
+{
+    sceneData->atmosphereIOR = (sceneData->EffectiveLanguageVersion() >= 400) ? 1.00029 : 1.0;
+    atmosphereIorSet = true;
+}
+
 /* Set up the fields in the frame to default values. */
 void Parser::Frame_Init()
 {
@@ -629,6 +639,7 @@ void Parser::Frame_Init()
     sceneData->lightSources.clear();
     sceneData->atmosphereIOR = 1.0;
     sceneData->atmosphereDispersion = 1.0;
+    atmosphereIorSet = false;
     // TODO FIXME Frame.Antialias_Threshold = opts.Antialias_Threshold;
 
     /* Init atmospheric stuff. [DB 12/94] */
@@ -7986,12 +7997,26 @@ void Parser::Parse_Global_Settings()
             Parse_End();
         END_CASE
 
+        CASE (INTERFACE_TEXTURE_TOKEN)
+        {
+            Get_Token();
+            const char *names[] = { "far", "near", "blend" };
+            sceneData->interfaceTexture = kInterfaceTextureAuto;
+            for (int mode = kInterfaceTextureFar; mode <= kInterfaceTextureBlend; mode++)
+                if (CurrentTokenText() == names[mode])
+                    sceneData->interfaceTexture = mode;
+            if (sceneData->interfaceTexture == kInterfaceTextureAuto)
+                Error("Expected blend, near or far after interface_texture.");
+        }
+        END_CASE
+
         CASE (ATMOSPHERIC_IOR_TOKEN)
             if (interiorSerial > 0)
                 Error("atmospheric_ior must come before the first object.");
             sceneData->atmosphereIOR = Parse_Float();
             if (!std::isfinite(sceneData->atmosphereIOR) || !(sceneData->atmosphereIOR > 0.0))
                 Error("atmospheric_ior must be greater than 0.");
+            atmosphereIorSet = true;
         END_CASE
 
         CASE (ATMOSPHERIC_DISPERSION_TOKEN)
@@ -10202,6 +10227,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     else
     {
         // post-process the object
+        if (!atmosphereIorSet)
+            SetAtmosphereIor();
 
         // If there is no interior create one.
 
@@ -10277,7 +10304,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             Object->interior->Dispersion = sceneData->atmosphereDispersion;
         }
         sceneData->dielectrics = sceneData->dielectrics || Object->interior->refracting ||
-                                 (Object->interior->IOR != SNGL(sceneData->atmosphereIOR)) ||
+                                 ((Object->interior->IOR != SNGL(sceneData->atmosphereIOR)) &&
+                                  ((Object->interior->IOR != 1.0f) || (Object->interior->iorMix != kIorMixMean))) ||
                                  (Object->interior->Dispersion != SNGL(sceneData->atmosphereDispersion));
 
         // If object has subsurface light transport enabled, precompute some necessary information
