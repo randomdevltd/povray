@@ -599,7 +599,7 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
 double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay)
 {
     threadData->Stats()[Curved_Rays]++;
-    const double base = MeanIor(ray.GetInteriors(), nullptr, nullptr);
+    const double base = MixedIor(ray.GetInteriors(), nullptr, nullptr);
     Ray chord(ray);
     chord.hasDifferentials = false;
     Intersection bestisect;
@@ -4058,20 +4058,56 @@ void Trace::WarnRefraction(unsigned flag, const char *format, ...)
     threadData->mediaMessages->Warning(kWarningGeneral, "%s", text);
 }
 
-double Trace::MeanIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const
+namespace
 {
+
+// Whether a replace overrides another interior's ior where both hold a point: priority, then placement.
+bool OutranksIor(const Interior *a, const Interior *b)
+{
+    return (a->iorPriority != b->iorPriority) ? (a->iorPriority > b->iorPriority) : (a->precedence > b->precedence);
+}
+
+}
+
+double Trace::MixedIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const
+{
+    const SNGL atmosphere = SNGL(sceneData->atmosphereIOR);
+    size_t first = 0;
+    const Interior *innermost = nullptr, *top = nullptr;
+    if (sceneData->iorMixModes)
+    {
+        // The innermost surface entered hides what was entered before it; the highest replace after it hides what ranks beneath.
+        for (size_t k = interiors.size(); k-- > 0;)
+            if (interiors[k]->iorMix == kIorMixSurface)
+            {
+                innermost = interiors[k];
+                first = k + 1;
+                break;
+            }
+        for (size_t k = first; k < interiors.size(); k++)
+            if ((interiors[k]->iorMix == kIorMixReplace) && ((top == nullptr) || OutranksIor(interiors[k], top)))
+                top = interiors[k];
+    }
     // Single-precision iors sum exactly in a double, so the mean does not depend on the order the solids were entered.
     double iors = 0.0, dispersions = 0.0;
     int count = 0;
-    for (const Interior *interior : interiors)
-        if (interior->statesIor)
-        {
-            iors += interior->IOR;
-            dispersions += interior->Dispersion;
-            count++;
-            if (elements != nullptr)
-                *elements = max(*elements, (unsigned int)interior->Disp_NElems);
-        }
+    auto add = [&](const Interior *interior) {
+        iors += interior->IOR;
+        dispersions += interior->Dispersion;
+        count++;
+        if (elements != nullptr)
+            *elements = max(*elements, (unsigned int)interior->Disp_NElems);
+    };
+    if (top != nullptr)
+        add(top);
+    else if (innermost != nullptr)
+        add(innermost);
+    for (size_t k = first; k < interiors.size(); k++)
+    {
+        const Interior *interior = interiors[k];
+        if ((interior->iorMix == kIorMixMean) && (interior->IOR != atmosphere) && ((top == nullptr) || OutranksIor(interior, top)))
+            add(interior);
+    }
     if (dispersion != nullptr)
         *dispersion = (count > 0) ? dispersions / count : sceneData->atmosphereDispersion;
     return (count > 0) ? iors / count : sceneData->atmosphereIOR;
@@ -4080,7 +4116,7 @@ double Trace::MeanIor(const RayInteriorVector& interiors, double *dispersion, un
 double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base, double *dispersion,
                          unsigned int *elements)
 {
-    const double ior = MeanIor(interiors, dispersion, elements);
+    const double ior = MixedIor(interiors, dispersion, elements);
     if (base != nullptr)
         *base = ior;
     offset = 0.0;
@@ -4088,20 +4124,6 @@ double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& poi
     {
         RefractionField field(interiors, threadData);
         offset = field.Offset(point);
-    }
-    if ((interiors.size() > 1) && !(sceneData->mediaWarningFlags.load(std::memory_order_relaxed) & kStatedAirOverlap))
-    {
-        const Interior *air = nullptr, *dense = nullptr;
-        for (const Interior *i : interiors)
-            if (i->statesIor && (i->IOR == SNGL(sceneData->atmosphereIOR)))
-                air = i;
-            else if (i->statesIor && (i->IOR > SNGL(sceneData->atmosphereIOR)))
-                dense = i;
-        if ((air != nullptr) && (dense != nullptr))
-            WarnRefraction(kStatedAirOverlap,
-                "A %s stating ior %g, the atmosphere's, overlaps a %s of ior %g at <%g, %g, %g>, so the ior there is their mean. "
-                "Leave the ior out of a container that should not refract, or cut a bubble out with difference.",
-                air->shape, air->IOR, dense->shape, dense->IOR, point[X], point[Y], point[Z]);
     }
     return ClampIndex(ior + offset, point);
 }

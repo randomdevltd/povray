@@ -403,7 +403,7 @@ SceneData::SceneData() :
     functionContextFactory()
 {
     atmosphereIOR = 1.0;
-    atmosphereDispersion = 0.0;
+    atmosphereDispersion = 1.0;
     backgroundColour = ToTransColour(RGBFTColour(0.0, 0.0, 0.0, 0.0, 1.0));
     ambientLight = MathColour(1.0);
 
@@ -438,6 +438,8 @@ SceneData::SceneData() :
     interiorMedia = false;
     mediaRefraction = false;
     legacyIorStack = true;
+    iorMixModes = false;
+    crossedNonSurface = false;
     refractionAngle = 0.5;
     dielectrics = false;
     anyOpaque = false;

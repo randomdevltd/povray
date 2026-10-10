@@ -3965,7 +3965,28 @@ void Parser::Parse_Interior(InteriorPtr& interior)
     EXPECT
         CASE (IOR_TOKEN)
             interior->IOR = Parse_Float();
-            interior->statesIor = true;
+        END_CASE
+
+        CASE (IOR_MIX_TOKEN)
+        {
+            Get_Token();
+            const char *names[] = { "surface", "mean", "replace" };
+            interior->iorMix = kIorMixAuto;
+            for (int mix = kIorMixSurface; mix <= kIorMixReplace; mix++)
+                if (CurrentTokenText() == names[mix])
+                    interior->iorMix = mix;
+            if (interior->iorMix == kIorMixAuto)
+                Error("Expected surface, mean or replace after ior_mix.");
+        }
+        END_CASE
+
+        CASE (PRIORITY_TOKEN)
+        {
+            const DBL priority = Parse_Float();
+            if ((priority != std::floor(priority)) || (std::fabs(priority) > INT_MAX))
+                Error("interior priority must be an integer.");
+            interior->iorPriority = (int)priority;
+        }
         END_CASE
 
         CASE (DISPERSION_TOKEN)

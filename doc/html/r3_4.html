@@ -75,6 +75,9 @@
   <td><div class="divh3"><a title="3.4.1.14" href="#r3_4_1_14">Filter_Tags</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.1.15" href="#r3_4_1_15">Atmospheric_Ior</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
 </tr>
 <tr>
@@ -396,7 +399,7 @@ GLOBAL_SETTINGS_ITEM:
   hf_gray_16 [Bool] | irid_wavelength COLOR | charset GLOBAL_CHARSET |
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
-  refraction_angle Value |
+  refraction_angle Value | atmospheric_ior Value | atmospheric_dispersion Value |
   radiosity { RADIOSITY_ITEMS... } | subsurface { SUBSURFACE_ITEMS } |
   photon { PHOTON_ITEMS... } | filter_tags { TAG_FILTER }
 GLOBAL_CHARSET:
@@ -420,6 +423,8 @@ mm_per_unit        : 10
 number_of_waves	   : 10
 noise_generator	   : 2
 refraction_angle   : 0.5
+atmospheric_ior    : 1.0
+atmospheric_dispersion : 1.0
 
 Radiosity:
 adc_bailout	   : 0.01
@@ -667,6 +672,14 @@ one, those views see all objects. The setting applies wherever it appears in the
 <code>global_settings</code> appears more than once, the last <code>filter_tags</code> wins.</p>
 <p>The <a href="r3_2.html#r3_2_5_5">Filter_Tags</a> command-line option is separate: it is not part of <code>global_settings</code> and limits the scene before this default is applied.</p>
 </div>
+
+<a name="r3_4_1_15"></a>
+<div class="content-level-h4" contains="Atmospheric_Ior" id="r3_4_1_15">
+<h4>3.4.1.15 Atmospheric_Ior</h4>
+<p><code>atmospheric_ior</code> sets the ior of the space no object fills, 1.0 by default, and <code>atmospheric_dispersion</code> its dispersion, 1.0 (none) by default; both must be greater than 0 and must come before the first object. Objects that state no ior take the atmosphere's. A scene set under water with <code>atmospheric_ior 1.33</code> refracts at a glass ball of ior 1.5 by 1.5 / 1.33, as it would inside a large water object. Under <code>ior_mix mean</code> an object whose ior equals the atmosphere's is void and leaves the ior of what it overlaps unchanged; see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>. Curved rays, photons and media refraction measure the index from the same base.</p>
+<pre>
+global_settings { atmospheric_ior 1.33 }
+</pre></div>
 
 <a name="r3_4_2"></a>
 <div class="content-level-h3" contains="Camera" id="r3_4_2">

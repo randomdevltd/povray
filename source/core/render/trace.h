@@ -955,10 +955,10 @@ class Trace
         bool SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC weight);
         /// Whether shading a hit needs the relative ior: it may let light through, or a finish uses Fresnel.
         bool NeedsRelativeIor(const TEXTURE *texture, ConstObjectPtr object) const;
-        /// The mean ior of the solids in `interiors` that state one, or the atmosphere's; `dispersion` gets their mean
-        /// dispersion, and `elements` their largest dispersion sample count.
-        double MeanIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const;
-        /// The index where a ray holds `interiors`: their mean ior plus media refraction, whose part `offset` gets.
+        /// The ior where a ray holds `interiors`, by their ior_mix, else the atmosphere's; `dispersion` gets the dispersion
+        /// mixed the same way, and `elements` the largest dispersion sample count among the interiors that count.
+        double MixedIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const;
+        /// The index where a ray holds `interiors`: their mixed ior plus media refraction, whose part `offset` gets.
         double StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base = nullptr,
                           double *dispersion = nullptr, unsigned int *elements = nullptr);
         /// Warns once per render for a SceneData::mediaWarningFlags bit.

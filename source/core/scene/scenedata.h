@@ -243,6 +243,10 @@ class SceneData
         bool mediaRefraction;
         /// whether surfaces refract by the innermost interior entered, as before language version 4.0
         bool legacyIorStack;
+        /// whether any interior's ior_mix is surface or replace, so overlaps need more than the mean
+        bool iorMixModes;
+        /// whether an object that is not guaranteed opaque has an ior_mix other than surface
+        bool crossedNonSurface;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
         /// whether any interior has an ior or dispersion other than the atmosphere's, or refracting media

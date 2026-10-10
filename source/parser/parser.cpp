@@ -549,7 +549,7 @@ void Parser::Run()
     }
 
     sceneData->solidBlocksInteriorMedia = (sceneData->EffectiveLanguageVersion() < 400);
-    sceneData->legacyIorStack = (sceneData->EffectiveLanguageVersion() < 400) && !sceneData->mediaRefraction;
+    sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->mediaRefraction;
     if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
         Warning("A non-hollow object carries interior media, which before #version 4.0 is not rendered.\n"
                 "Add 'hollow' to the object, or use #version 4.0.");
@@ -7986,6 +7986,22 @@ void Parser::Parse_Global_Settings()
             Parse_End();
         END_CASE
 
+        CASE (ATMOSPHERIC_IOR_TOKEN)
+            if (interiorSerial > 0)
+                Error("atmospheric_ior must come before the first object.");
+            sceneData->atmosphereIOR = Parse_Float();
+            if (!std::isfinite(sceneData->atmosphereIOR) || !(sceneData->atmosphereIOR > 0.0))
+                Error("atmospheric_ior must be greater than 0.");
+        END_CASE
+
+        CASE (ATMOSPHERIC_DISPERSION_TOKEN)
+            if (interiorSerial > 0)
+                Error("atmospheric_dispersion must come before the first object.");
+            sceneData->atmosphereDispersion = Parse_Float();
+            if (!std::isfinite(sceneData->atmosphereDispersion) || !(sceneData->atmosphereDispersion > 0.0))
+                Error("atmospheric_dispersion must be greater than 0.");
+        END_CASE
+
         CASE (REFRACTION_ANGLE_TOKEN)
             sceneData->refractionAngle = Parse_Float();
             if (!(sceneData->refractionAngle > 0.0) || !(sceneData->refractionAngle <= 45.0))
@@ -10198,6 +10214,9 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             interior.precedence = ++interiorSerial;
             interior.shape = ShapeName(Object);
+            if (interior.iorMix == kIorMixAuto)
+                interior.iorMix = (sceneData->EffectiveLanguageVersion() >= 400) ? kIorMixMean : kIorMixSurface;
+            sceneData->iorMixModes = sceneData->iorMixModes || (interior.iorMix != kIorMixMean);
             int first = Test_Flag(Object, HOLLOW_FLAG) ? kMediaBlendAdd : defaultMix;
             if (first == kMediaBlendAuto)
                 first = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
@@ -10239,7 +10258,6 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
                     {
                         Object->interior->IOR = Finish->Temp_IOR;
                         Object->interior->Dispersion = Finish->Temp_Dispersion;
-                        Object->interior->statesIor = true;
                     }
                     if (Finish->Temp_Caustics >= 0.0)
                     {
@@ -10318,6 +10336,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Set_Flag(Object, OPAQUE_FLAG);
         sceneData->anyOpaque = true;
     }
+    else if ((Object->interior != nullptr) && (Object->interior->iorMix != kIorMixSurface))
+        sceneData->crossedNonSurface = true;
 }
 
 namespace

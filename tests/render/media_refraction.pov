@@ -1,12 +1,19 @@
 #version Version;
 // Media refraction checks for media_refraction.sh: Declare=Version=<v> Declare=Case=<n>, Declare=Ramp=1 for a vertical ramp backdrop.
+// Mix and MixAll pick an ior_mix (0 surface, 1 mean, 2 replace) for the inner object or for every clear one.
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Ramp) #declare Ramp = 0; #end
 #ifndef (Far) #declare Far = 0; #end
 #ifndef (Inner) #declare Inner = 1; #end
 #ifndef (BallIor) #declare BallIor = 1.5; #end
 #ifndef (Gap) #declare Gap = 0; #end
-global_settings { assumed_gamma 1 }
+#ifndef (Mix) #declare Mix = -1; #end
+#ifndef (MixAll) #declare MixAll = -1; #end
+#ifndef (Priority) #declare Priority = 0; #end
+#ifndef (Fog) #declare Fog = 0; #end
+#ifndef (Atmosphere) #declare Atmosphere = 1; #end
+#macro IorMix(M) #switch (M) #case (0) ior_mix surface #break #case (1) ior_mix mean #break #case (2) ior_mix replace #break #end #end
+global_settings { assumed_gamma 1 atmospheric_ior Atmosphere }
 camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up y * 6 }
 #declare Backdrop = plane {
   z, 4
@@ -24,8 +31,8 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #declare Rise = media { method 3 refraction 0.2 density { gradient y scale 4 translate -2 * y } }
 #declare Riser = box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 media { Rise } } }
 #declare Tube = box { <-1, -1, -3>, <1, 1, 3> texture { Clear } };
-#declare Ball = sphere { 0, 1.5 texture { Clear } interior { ior BallIor } };
-#declare Water = box { -3, 3 texture { Clear } interior { ior 1.33 } };
+#declare Ball = sphere { 0, 1.5 texture { Clear } interior { ior BallIor IorMix(MixAll) } };
+#declare Water = box { -3, 3 texture { Clear } interior { ior 1.33 IorMix(MixAll) } };
 #declare A = sphere { -0.7 * x, 1.6 };
 #declare B = sphere { 0.7 * x, 1.6 };
 #declare Wall = <cos(radians(70)), 0, -sin(radians(70))>;
@@ -73,8 +80,8 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #break
 #case (15) object { Water } #break
 #case (16) object { Ball } object { Backdrop } #break
-#case (17) object { Ball } box { -3, 3 texture { Clear } interior { ior 1 } } #break
-#case (50) object { Ball } box { -3, 3 texture { Clear } } #break
+#case (17) object { Ball } box { -3, 3 texture { Clear } interior { ior 1 #if (Fog) media { absorption 0.1 } #end } } #break
+#case (50) object { Ball } box { -3, 3 texture { Clear } #if (Fog) interior { media { absorption 0.1 } } #end } #break
 #case (20) // glass and water sharing the wall z = x
   intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <-1, 0, 1>, 0 } texture { Clear } interior { ior 1.5 } }
   intersection { box { <-3, -2, -1>, <3, 2, 1> } plane { <1, 0, -1>, 0 } texture { Clear } interior { ior 1.33 } }
@@ -130,7 +137,29 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
         interior { media { method 3 refraction 0.05 density { function { pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } } } } }
   box { <-1.5, -1.5, 0.5>, <1.5, 1.5, 1.5> texture { Clear } interior { media { emission 1.5 } } }
 #break
-#case (18) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } sphere { 0, 1 texture { Clear } interior { ior Inner } } #break
+#case (18)
+  sphere { 0, 2.5 texture { Clear } interior { ior 1.5 IorMix(MixAll) } }
+  sphere { 0, 1 texture { Clear } interior { ior Inner IorMix(Mix) IorMix(MixAll) } }
+#break
+#case (53) sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } } #break
+#case (54) // a replace bubble placed before its glass, outranking it only by priority
+  sphere { 0, 1 texture { Clear } interior { ior 1 ior_mix replace priority Priority } }
+  sphere { 0, 2.5 texture { Clear } interior { ior 1.5 } }
+#break
+#case (55) // a replace bubble inside the overlap of two glasses that mean, and the same bubble cut out of both
+#case (56)
+  #local C = sphere { 0, 0.5 };
+  #if (Case = 55)
+    object { A texture { Clear } interior { ior 1.5 } } object { B texture { Clear } interior { ior 1.3 } }
+    object { C texture { Clear } interior { ior 1 ior_mix replace } }
+  #else
+    difference { object { A } object { C } texture { Clear } interior { ior 1.5 } }
+    difference { object { B } object { C } texture { Clear } interior { ior 1.3 } }
+  #end
+#break
+#case (57) object { Ball } #break // under atmospheric_ior 1.33 the ball refracts by 1.5 / 1.33
+#case (58) difference { box { -3, <3, 3, 5> } sphere { 0, 1.5 } texture { Clear } interior { ior 1.33 } } object { Ball } #break
+#case (59) object { Ball } box { -3, 3 texture { Clear } interior { ior 1.33 } } #break
 #case (19) box { <-5, -4, -12>, <5, 4, 3.5> texture { Clear } interior { ior 1.5 } } sphere { 0, 1.5 texture { Clear } interior { ior Inner } } #break
 #case (51) // a bubble cut with difference, and the same hole filled by a separate sphere
 #case (52)
