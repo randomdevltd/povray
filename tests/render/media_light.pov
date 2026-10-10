@@ -1,7 +1,7 @@
-// media_light.pov: an emitting ball whose medium is a light, over a white floor seen from straight above; cases in
-// media_light.sh: 1 ball, 2 point light, 3/4 radiosity with/without the light, 5 light group, 6/7 smoke, 8 64 samples.
+// media_light.pov: emitting media as lights over a white floor seen from straight above; media_light.sh names the cases.
 #version 3.8;
 #ifndef (Case) #declare Case = 1; #end
+#ifndef (N) #declare N = 16; #end
 #declare Height = 2;
 #declare Radius = 0.25;
 #declare Emission = 50;
@@ -23,7 +23,7 @@ background { rgb 0 }
 #macro EmittingBall(R, E, Samples, Light)
   object {
     Ball scale R / Radius
-    interior { media { method 4 emission E #if (Light) light_source { samples Samples #ifdef (Photons) photons { refraction on } #end } #end } }
+    interior { media { method 4 emission E #if (Light) light_source { samples Samples #ifdef (Photons) photons { refraction on target } #end #ifdef (Shadowless) shadowless #end } #end } }
     translate y * Height
   }
 #end
@@ -47,4 +47,52 @@ background { rgb 0 }
   #break
   #case (7) object { Floor } EmittingBall(0.05, Emission * 125, 16, 1) #break
   #case (8) object { Floor } EmittingBall(Radius, Emission, 64, 1) #break
+  #case (9)
+    object { Floor }
+    sphere {
+      0, 0.5 pigment { rgbt 1 } hollow no_image
+      interior { media { method 4 emission 6 density { spherical color_map { [0 rgb 0] [0.7 rgb 0.2] [1 rgb 3] } } light_source { samples N } } }
+      translate <0.4, Height, 0.2>
+    }
+  #break
+  #case (10)
+    object { Floor }
+    sphere {
+      0, 0.5 pigment { rgbt 1 } hollow no_image
+      interior { media { method 4 emission rgb <6, 3, 1.5> density { gradient x color_map { [0 rgb <0, 0.2, 1>] [1 rgb <1, 0.4, 0>] } translate -x * 0.5 } light_source { samples N } } }
+      translate y * Height
+    }
+  #break
+  #case (11) #case (12) #case (13)
+    object { Floor }
+    EmittingBall(Radius, Emission, N, 1)
+    #if (Case != 13) box { <-0.25, 0.99, -0.25>, <0.25, 1, 0.25> no_image pigment { rgb 0.5 } } #end
+  #break
+  #case (14)
+    object { Floor }
+    #declare Lamp = object { EmittingBall(Radius, Emission, N, 1) }
+    object { Lamp scale 0.5 translate <0.5, 0, 0.3> }
+  #break
+  #case (15)
+    object { Floor }
+    object { Ball scale 0.5 interior { media { method 4 emission Emission light_source { samples N } } } translate <0.5, Height / 2, 0.3> }
+  #break
+  #case (18)
+    object { Floor }
+    isosurface_mesh {
+      function { sqrt(x * x + y * y + z * z) - Radius } contained_by { sphere { 0, Radius * 1.2 } }
+      pigment { rgbt 1 } hollow no_image
+      interior { media { method 4 emission Emission light_source { samples N } } }
+      translate y * Height
+    }
+  #break
+  #case (16) #case (17)
+    object { Floor }
+    box { <-2, 0.01, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { scattering { 1, 0.08 } } } }
+    sphere {
+      0, 0.5 pigment { rgbt 1 } hollow
+      interior { media { method 4 emission 0.5 #if (Case = 17) scattering { 1, 1e-6 } #end density { spherical } light_source { samples N } } }
+      translate y * 1.2
+    }
+  #break
 #end
