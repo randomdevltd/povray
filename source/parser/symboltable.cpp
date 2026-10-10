@@ -105,7 +105,7 @@ SymbolTable::~SymbolTable()
         const std::uint64_t bit = std::uint64_t(1) << (i % 64);
         if (used == 0)
             i -= i % 64;
-        else if (used & bit)
+        else if ((used & bit) != 0)
         {
             used &= ~bit;
             SYM_ENTRY *entry = mapHashTable[i];
@@ -617,6 +617,9 @@ SYM_ENTRY* SymbolStack::Find_Symbol(const char* name, int* pIndex)
 
 SYM_ENTRY* SymbolStack::Find_Symbol(const char* name, int hash, int* pIndex)
 {
+#if POV_DEBUG
+    POV_PARSER_ASSERT(hash == SymbolTable::get_hash_value(name));
+#endif
     SYM_ENTRY *entry;
     for (int index = Table_Index; index >= SYM_TABLE_GLOBAL; --index)
     {

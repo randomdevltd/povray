@@ -92,12 +92,15 @@ struct AmbiguousStringValue final : StringValue
 {
     struct InvalidEscapeSequenceInfo final
     {
-        ConstStreamPtr stream;
+        UCS2String fileName;
         LexemePosition position;
         UTF8String text;
-        InvalidEscapeSequenceInfo(ConstStreamPtr s, LexemePosition p, UTF8String t) : stream(s), position(p), text(t) {}
-        InvalidEscapeSequenceInfo(ConstStreamPtr s, LexemePosition p, const UTF8String::const_iterator& b, const UTF8String::const_iterator& e) :
-            stream(s), position(p), text(b, e) {}
+        InvalidEscapeSequenceInfo(const UCS2String& s, LexemePosition p, UTF8String t) :
+            fileName(s), position(p), text(t) {}
+        InvalidEscapeSequenceInfo(const UCS2String& s, LexemePosition p,
+                                  const UTF8String::const_iterator& b,
+                                  const UTF8String::const_iterator& e) :
+            fileName(s), position(p), text(b, e) {}
         void Throw() const;
     };
 
@@ -180,26 +183,31 @@ struct CachedToken final
     std::uint32_t       column;
     int                 id;
     TokenId             expressionId;
-    std::uint32_t       text;               ///< Interned text, or offset of a float literal's text in the file's pool.
+    std::uint32_t       text;               ///< Index of the text in the file's `texts`.
     Lexeme::Category    category;
     bool                isReservedWord      : 1;
     bool                isPseudoIdentifier  : 1;
-    union
+    union                                   ///< One payload per category keeps 40 bytes.
     {
         DBL             floatValue;
-        std::size_t     value;              ///< Index of a string literal's value in the file's values.
+        std::size_t     value;              ///< A string literal's index in `values`.
         int             symbolHash;
     };
 };
 
+static_assert(sizeof(CachedToken) == 40, "a cached token should stay at 40 bytes");
+
 /// A source file lexed once: its first tokens, and the scanner state after the last of them.
 struct CachedFile final
 {
-    StreamPtr                   stream;     ///< The file while incomplete, an empty stream of that name once complete.
+    StreamPtr                   stream;     ///< The file, or once complete a named empty stream.
     std::vector<CachedToken>    tokens;
     std::vector<ConstValuePtr>  values;
-    std::string                 floatTexts;
+    std::vector<UTF8String>     texts;
+    std::unordered_map<std::size_t, LexemePosition> ends; ///< Ends not at start plus text length.
     Scanner::HotBookmark        end;
+    POV_OFF_T                   size;       ///< File size when lexed, or -1.
+    std::size_t                 bytes;      ///< Its share of the cache's byte budget.
     bool                        complete;   ///< Whether `tokens` reach the end of the file.
 };
 
@@ -230,7 +238,7 @@ class RawTokenizer final
 {
 public:
 
-    /// Where in a file's token array (or, past its cached part, in the file itself) a bookmark points.
+    /// Where in a file's token array (or past its cached part, in the file) a bookmark points.
     struct CachePosition
     {
         CachedFilePtr   file;
@@ -242,13 +250,15 @@ public:
     struct HotBookmark final : Scanner::HotBookmark, CachePosition
     {
         HotBookmark() = default;
-        HotBookmark(const Scanner::HotBookmark& b, const CachePosition& p) : Scanner::HotBookmark(b), CachePosition(p) {}
+        HotBookmark(const Scanner::HotBookmark& b, const CachePosition& p) :
+            Scanner::HotBookmark(b), CachePosition(p) {}
     };
 
     struct ColdBookmark final : Scanner::ColdBookmark, CachePosition
     {
         ColdBookmark() = default;
-        ColdBookmark(const Scanner::ColdBookmark& b, const CachePosition& p) : Scanner::ColdBookmark(b), CachePosition(p) {}
+        ColdBookmark(const Scanner::ColdBookmark& b, const CachePosition& p) :
+            Scanner::ColdBookmark(b), CachePosition(p) {}
     };
 
     RawTokenizer();
@@ -258,20 +268,23 @@ public:
     ///     The input stream must already be opened.
     void SetInputStream(StreamPtr pStream);
 
-    /// Set or change the input stream to the file at `path`, read through its token array if caching is on.
+    /// Set or change the input stream to the file at `path`, through its token array if caching.
     void SetInputStream(StreamPtr pStream, const UCS2String& path);
 
     /// Keep each file's tokens for re-reading.
     void EnableCache() { mCacheEnabled = true; }
 
-    /// Lex each file afresh at every later opening, as files are being written.
-    void InvalidateCache() { mRelexOnOpen = true; }
+    /// Drop the token array of the file at `path`, as it is being written.
+    void ForgetFile(const UCS2String& path);
 
     /// Where the next token comes from.
     const CachePosition& GetCachePosition() const { return mPosition; }
 
     /// Whether `bookmark` was taken in the current opening of the current file.
-    bool IsCurrentInstance(const HotBookmark& bookmark) const { return bookmark.instance == mPosition.instance; }
+    bool IsCurrentInstance(const HotBookmark& bookmark) const
+    {
+        return bookmark.instance == mPosition.instance;
+    }
 
     /// Change encoding setting.
     void SetStringEncoding(CharacterEncodingID encoding);
@@ -298,7 +311,9 @@ public:
     /// Whether `stream` is the current stream, without copying a pointer to it.
     bool IsInputStream(const IStream* stream) const
     {
-        return stream == ((mPosition.file != nullptr) ? mPosition.file->stream.get() : mScanner.GetInputStreamPointer());
+        if (mPosition.file != nullptr)
+            return stream == mPosition.file->stream.get();
+        return stream == mScanner.GetInputStreamPointer();
     }
 
     /// Get current stream name for comparison.
@@ -335,18 +350,16 @@ private:
     CachePosition                                   mPosition;
     unsigned int                                    mLastInstance;
     bool                                            mCacheEnabled;
-    bool                                            mRelexOnOpen;
     std::size_t                                     mCachedTokenCount;
+    std::size_t                                     mCachedByteCount;
     std::unordered_map<UCS2String, CachedFilePtr>   mCachedFiles;
-    std::unordered_map<UTF8String, std::uint32_t>   mTextIndex;
-    std::vector<const UTF8String*>                  mTexts;
 
     bool GetNextScannedToken(RawToken& token);
-    CachedFilePtr LexFile(StreamPtr pStream);
+    bool ProcessLexeme(RawToken& token);
+    CachedFilePtr LexFile(StreamPtr pStream, POV_OFF_T size);
     void ReadCachedToken(RawToken& token);
     bool ContinueFromCache();
     LexemePosition CachedPosition() const;
-    std::uint32_t InternText(const UTF8String& text);
 
     bool ProcessWordLexeme(RawToken& token);
     bool ProcessOtherLexeme(RawToken& token);

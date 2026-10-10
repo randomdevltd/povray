@@ -449,9 +449,10 @@ void Parser::Read_Symbol(const RawToken& rawToken)
         else
         {
             /* See if it's a previously declared identifier. */
+            const char* name = rawToken.lexeme.text.c_str();
             Temp_Entry = (rawToken.lexeme.category == Lexeme::kWord)
-                ? mSymbolStack.Find_Symbol(rawToken.lexeme.text.c_str(), rawToken.symbolHash, &Local_Index)
-                : mSymbolStack.Find_Symbol(rawToken.lexeme.text.c_str(), &Local_Index);
+                ? mSymbolStack.Find_Symbol(name, rawToken.symbolHash, &Local_Index)
+                : mSymbolStack.Find_Symbol(name, &Local_Index);
             if (Temp_Entry != nullptr)
             {
                 if (Temp_Entry->deprecated && !Temp_Entry->deprecatedShown)
@@ -1265,7 +1266,7 @@ void Parser::Parse_Directive()
                             PMac->endPosition = hashPosition;
                             POV_OFF_T macroLength = CurrentFilePosition() - PMac->source;
                             /// @todo Re-enable cached macros.
-                            if ((PMac->source.file == nullptr) && (macroLength <= MaxCachedMacroSize))
+                            if (!PMac->source.cached && (macroLength <= MaxCachedMacroSize))
                             {
                                 PMac->CacheSize = macroLength;
                                 PMac->Cache = new unsigned char[PMac->CacheSize];
@@ -2045,14 +2046,12 @@ void Parser::Invoke_Macro()
         POV_FREE(Table_Entries);
     }
 
-    if (PMac->source.file != nullptr)
-        Cond_Stack.back().Macro_Same_Flag = (PMac->source.file == mTokenizer.GetCachePosition().file);
-    else if ((PMac->Cache != nullptr) || (PMac->source.fileName != mTokenizer.GetInputStreamName()) ||
-             (mTokenizer.GetCachePosition().file != nullptr))
+    if (!PMac->source.cached &&
+        ((PMac->Cache != nullptr) || (PMac->source.fileName != mTokenizer.GetInputStreamName()) ||
+         mTokenizer.GetCachePosition().cached))
     {
         UCS2String ign;
         /* Not in same file */
-        Cond_Stack.back().Macro_Same_Flag = false;
         Got_EOF=false;
         shared_ptr<IStream> is;
         if (PMac->Cache)
@@ -2066,10 +2065,6 @@ void Parser::Invoke_Macro()
                 Error ("Cannot open macro file '%s'.", UCS2toSysString(PMac->source.fileName).c_str());
         }
         mTokenizer.SetInputStream(is);
-    }
-    else
-    {
-        Cond_Stack.back().Macro_Same_Flag=true;
     }
 
     Got_EOF=false;
@@ -2373,7 +2368,6 @@ void Parser::Parse_Fopen(void)
         END_CASE
 
         CASE(WRITE_TOKEN)
-            mTokenizer.InvalidateCache();
             wfile = CreateFile(fileName.c_str(), POV_File_Text_User, false);
             if (wfile != nullptr)
                 New->Out_File = std::make_shared<OTextStream>(fileName.c_str(), wfile);
@@ -2385,7 +2379,6 @@ void Parser::Parse_Fopen(void)
         END_CASE
 
         CASE(APPEND_TOKEN)
-            mTokenizer.InvalidateCache();
             wfile = CreateFile(fileName.c_str(), POV_File_Text_User, true);
             if (wfile != nullptr)
                 New->Out_File = std::make_shared<OTextStream>(fileName.c_str(), wfile);
@@ -2400,6 +2393,12 @@ void Parser::Parse_Fopen(void)
             Expectation_Error("read or write");
         END_CASE
     END_EXPECT
+
+    if (New->Out_File != nullptr)
+    {
+        New->includePath = mFileResolver.FindFile(fileName, POV_File_Text_INC);
+        mTokenizer.ForgetFile(New->includePath);
+    }
 
     New->busyParsing = false;
 }
@@ -2418,6 +2417,7 @@ void Parser::Parse_Fclose(void)
             Got_EOF=false;
             Data->inTokenizer = nullptr;
             Data->Out_File = nullptr;
+            mTokenizer.ForgetFile(Data->includePath);
             mSymbolStack.GetGlobalTable()->Remove_Symbol(CurrentTokenText().c_str(), false, nullptr, 0);
         END_CASE
 
@@ -2666,6 +2666,7 @@ void Parser::Parse_Write(void)
 
     // Safeguard against accidental nesting of other file access directives inside the `#fopen`
     // directive (or the user forgetting portions of the directive).
+    mTokenizer.ForgetFile(User_File->includePath);
     User_File->busyParsing = true;
 
     Parse_Comma();
