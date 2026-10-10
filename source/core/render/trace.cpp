@@ -900,7 +900,8 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
 
     // compute the surface normal
     isect.Object->Normal(rawnormal, &isect, threadData);
-    if (!photonPass && TakeCoincident(ray, isect, rawnormal, weight))
+    bool sharedFace = photonPass;
+    if (!photonPass && TakeCoincident(ray, isect, rawnormal, weight, &sharedFace))
     {
         ipoint = isect.IPoint;
         isect.Object->Normal(rawnormal, &isect, threadData);
@@ -942,7 +943,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     bool isMultiTextured = Test_Flag(isect.Object, MULTITEXTURE_FLAG) ||
                            ((isect.Object->Texture == nullptr) && Test_Flag(isect.Object, CUTAWAY_TEXTURES_FLAG));
     std::unique_ptr<InterfaceCache> shared;
-    const bool averaged = SharedFaceTextures(ray, isect, rawnormal, wtextures, shared);
+    const bool averaged = sharedFace && SharedFaceTextures(ray, isect, rawnormal, wtextures, shared);
 
     // get textures and weights
     if (!averaged)
@@ -4312,11 +4313,13 @@ bool Trace::MergesSurfaces() const
     return !sceneData->legacyIorStack && (sceneData->dielectrics || sceneData->anyOpaque);
 }
 
-bool Trace::TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight)
+bool Trace::TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight, bool *shared)
 {
     if (!MergesSurfaces() || Test_Flag(isect.Object, OPAQUE_FLAG) || (isect.Object->interior == nullptr))
         return false;
     const InterfaceCache& sides = InterfaceSides(ray, isect.Object->interior.get(), isect.IPoint, normal);
+    if (shared != nullptr)
+        *shared = !sides.faces.empty();
     ConstObjectPtr take = sides.take;
     if ((take == nullptr) || (Test_Flag(take, OPAQUE_FLAG) && !SurfaceTransmits(isect, ray, weight)))
         return false;
