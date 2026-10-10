@@ -371,12 +371,13 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->photonDepth = 0.0;
             data->photonSpread = std::max(1.0e-8, Vector3d(targets[li].front()->BBox.size).length() * 0.025) *
                                  ProgressivePhotonBudget::RadiusScale(pass, 3);
-            MathColour flux = emitter.Intensity() * origin.weight * (lights.size() / (batch * pdf));
+            MathColour flux = light->colour * origin.weight * (lights.size() / (batch * pdf));
             flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
             data->Stats()[Number_Of_Photons_Shot]++;
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
-            trace.TraceRay(ray, flux, unused, 1.0, false);
+            if (!flux.IsZero())
+                trace.TraceRay(ray, flux, unused, 1.0, false);
             if (targeted)
             {
                 auto& feedback = data->progressiveFeedback[feedbackOffset[li] + selectedTarget];

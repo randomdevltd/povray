@@ -366,6 +366,7 @@ class LightSource final : public CompoundObject
         const Portal *portal = nullptr;                 ///< in an image, the portal it is seen through
         std::shared_ptr<const Emitter> emitter;         ///< where it emits from, for a light drawn as sample positions
         ConstObjectPtr emitterContainer = nullptr;      ///< for a media light, the object holding its medium
+        bool mediaPhotonOptions = false, mediaPhotonLegacyOptions = false;
 
         LightSource();
         virtual ~LightSource() override;

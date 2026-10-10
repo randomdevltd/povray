@@ -3885,16 +3885,22 @@ void Parser::Parse_Media_Light(Media& medium)
         END_CASE
 
         CASE (PHOTONS_TOKEN)
+            light->photonOptions = true;
             Parse_Begin();
             EXPECT
-                CASE2 (REFRACTION_TOKEN, REFLECTION_TOKEN)
-                    Parse_Float();
+                CASE (REFRACTION_TOKEN)
+                    light->photonRefraction = Parse_Float() > 0.0;
+                END_CASE
+
+                CASE (REFLECTION_TOKEN)
+                    light->photonReflection = Parse_Float() > 0.0;
                 END_CASE
 
                 CASE (AREA_LIGHT_TOKEN)
                 END_CASE
 
                 CASE4 (TARGET_TOKEN, COLLECT_TOKEN, PASS_THROUGH_TOKEN, SPLIT_UNION_TOKEN)
+                    light->photonLegacyOptions = true;
                     Allow_Float(1.0);
                 END_CASE
 
@@ -3904,7 +3910,6 @@ void Parser::Parse_Media_Light(Media& medium)
                 END_CASE
             END_EXPECT
             Parse_End();
-            Warning("photons in a media light_source are ignored: volume lights do not shoot photons yet.");
         END_CASE
 
         OTHERWISE

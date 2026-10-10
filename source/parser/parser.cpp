@@ -344,6 +344,20 @@ void Parser::Run()
                 sceneData->lightGroupLightSources[i]->lightGroupLight = true;
             }
 
+            for (LightSource* light : sceneData->mediaLights)
+            {
+                if (sceneData->photonSettings.method != 2)
+                {
+                    Set_Flag(light, PH_RFR_OFF_FLAG);
+                    Set_Flag(light, PH_RFL_OFF_FLAG);
+                    Clear_Flag(light, PH_RFR_ON_FLAG);
+                    Clear_Flag(light, PH_RFL_ON_FLAG);
+                    if (light->mediaPhotonOptions)
+                        Warning("photons in a media light_source are ignored by photon method 1.");
+                }
+                else if (light->mediaPhotonLegacyOptions)
+                    Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
+            }
             if (sceneData->photonSettings.method == 2)
                 for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
                     for (LightSource* light : *lights)
@@ -355,13 +369,13 @@ void Parser::Run()
                             if (light->Fade_Power != 0.0)
                                 Error("Parallel photon emitters require fade_power 0.");
                         }
-                        else if (!light->emitter)
+                        else
                         {
-                            if (light->Fade_Power == 0.0)
+                            if (light->Fade_Power == 0.0 && !light->emitter)
                                 light->Fade_Power = 2.0;
-                            else if (light->Fade_Power != 2.0)
+                            else if (light->Fade_Power != 0.0 && light->Fade_Power != 2.0)
                                 Error("Photon method 2 requires inverse-square light power (fade_power 0 or 2).");
-                            else if (light->Fade_Distance > EPSILON)
+                            else if (light->Fade_Power == 2.0 && light->Fade_Distance > EPSILON)
                                 light->colour *= 2.0 * light->Fade_Distance * light->Fade_Distance;
                             light->Fade_Distance = 0.0;
                         }
@@ -10006,9 +10020,12 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
         light->Light_Type = FILL_LIGHT_SOURCE;
-    // classic photons do not shoot from it
-    Set_Flag(light, PH_RFR_OFF_FLAG);
-    Set_Flag(light, PH_RFL_OFF_FLAG);
+    light->mediaPhotonOptions = settings.photonOptions;
+    light->mediaPhotonLegacyOptions = settings.photonLegacyOptions;
+    if (settings.photonRefraction >= 0)
+        Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
+    if (settings.photonReflection >= 0)
+        Set_Flag(light, settings.photonReflection ? PH_RFL_ON_FLAG : PH_RFL_OFF_FLAG);
     sceneData->mediaLights.push_back(light);
     if (mLightGroups.empty())
         sceneData->lightSources.push_back(light);

@@ -216,6 +216,9 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
+    const auto* source = threadData->photonSourceLight;
+    const bool ownEmitter = sceneData->photonSettings.method == 2 && source->emitterContainer &&
+                            IsObjectInCSG(bestisect.Object, source->emitterContainer);
     if (sceneData->photonSettings.method == 2 && (ray.GetTicket().traceLevel == 1 || threadData->passThruThis) &&
         Test_Flag(bestisect.Object, PH_TARGET_FLAG) && !PhotonLightAffectsObject(bestisect.Object))
         return false;
@@ -253,7 +256,7 @@ bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& col
                     {
                         // We did *not* hit *the* photon target
 
-                        if ( Photon_Pass_Through(bestisect.Object) //||
+                        if ( (Photon_Pass_Through(bestisect.Object) || ownEmitter) //||
                         //  ( Check_No_Shadow_Group(Best_Intersection.Object, photonOptions.Light) &&
                         //  !Check_Light_Group(Best_Intersection.Object, photonOptions.Light) )
                         )
@@ -279,7 +282,7 @@ bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& col
                 {
                     // We did *not* hit a photon target
 
-                    if ( Photon_Pass_Through(bestisect.Object) //||
+                    if ( (Photon_Pass_Through(bestisect.Object) || ownEmitter) //||
                     //  ( Check_No_Shadow_Group(Best_Intersection.Object, photonOptions.Light) &&
                     //  !Check_Light_Group(Best_Intersection.Object, photonOptions.Light) )
                     )

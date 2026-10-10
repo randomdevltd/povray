@@ -84,6 +84,36 @@ field marcher and its segment tolerances. No photon beam approximation is added.
 Subsurface photon illumination is reconstructed before diffusion; its cache is
 renewed each pass so illumination from an older map is not reused.
 
+## Media lights
+
+Media lights now use method 2 through the same emission interface. Their
+`light_source { photons { refraction on reflection off } }` block controls
+transport just as it does for ordinary lights. Omitting those switches leaves
+the target's settings in control. `brightness` scales emitted photon power and
+direct illumination together; it does not scale the glow seen by the camera.
+Classic method 1 continues to ignore media-light photon blocks with a warning.
+
+The position sample's weight already includes its power-table probability;
+shooting applies the light-selection and directional probabilities once. The
+emitter's own neutral container is crossed before the selected target, applying
+transmission and extinction. A refractive emitting container should itself be a
+photon target. Glow along a photon path never adds power to the photon. Direct
+illumination through a participating target is excluded even in an empty batch,
+so it cannot be counted again alongside the photon estimate.
+
+The candle sample includes an optional water glass:
+
+```sh
+povray +Idistribution/scenes/interior/media/blend_candle.pov +PR -A \
+  +W360 +H270 Declare=WaterGlass=1 Declare=PhotonQuality=1
+```
+
+`Shimmer`, `Smoke`, `Plume` and `Mist` allow separate transport checks. The
+existing view and lighting remain the sample's default when `WaterGlass=0`.
+`tests/render/progressive_media_light.pov` compares an emissive sphere with an
+equal-power point light, an identity lens with direct lighting, source controls,
+self-attenuation, refractive heat and arrays of small emitters.
+
 ## Memory and reproducibility
 
 There is one current map and one fixed pilot, not an accumulating photon map.

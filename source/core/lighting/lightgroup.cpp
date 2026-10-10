@@ -91,8 +91,8 @@ bool PhotonLightAffectsObject(const LightSource* light, ConstObjectPtr object)
 {
     if (!light->lightGroupLight)
         return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
-    return light->photonGroupEnabled &&
-           std::find(object->PhotonLights.begin(), object->PhotonLights.end(), light) != object->PhotonLights.end();
+    return light->photonGroupEnabled && std::any_of(object->PhotonLights.begin(), object->PhotonLights.end(),
+        [light](const LightSource* member) { return member == light || (member->lightGroupLight && member->index == light->index); });
 }
 
 

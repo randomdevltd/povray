@@ -55,6 +55,7 @@
 #include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
 #include "core/lighting/emitter.h"
+#include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/radiosity.h"
 #include "core/lighting/subsurface.h"
@@ -3857,7 +3858,8 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     // 4) LightA has photon refraction set to "off"
     // 5) Neither GlassSphereB nor LightA has photon refraction set to "on"
     if((sceneData->photonSettings.photonsEnabled == true) &&
-        (sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0) &&
+        (sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0 || sceneData->photonSettings.method == 2) &&
+        (sceneData->photonSettings.method != 2 || pov::PhotonLightAffectsObject(&lightsource, isect.Object)) &&
         (!threadData->litObjectIgnoresPhotons) &&
         (Test_Flag(isect.Object,PH_TARGET_FLAG)) &&
         (!Test_Flag(isect.Object,PH_RFR_OFF_FLAG)) &&

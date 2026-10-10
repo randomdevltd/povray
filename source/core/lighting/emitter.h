@@ -80,6 +80,8 @@ struct MediaLight final ///< the `light_source { }` block of an emitting medium
     double brightness = 1.0;
     double fadeDistance = 0.0, fadePower = 0.0;
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
+    int photonReflection = -1, photonRefraction = -1;
+    bool photonOptions = false, photonLegacyOptions = false;
 };
 
 }

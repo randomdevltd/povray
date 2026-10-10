@@ -4,6 +4,8 @@
 #ifndef (Reference) #declare Reference = 0; #end
 #ifndef (Grouped) #declare Grouped = 1; #end
 #ifndef (GroupPhotons) #declare GroupPhotons = -1; #end
+#ifndef (PhotonOnly) #declare PhotonOnly = 1; #end
+#ifndef (SourceRefraction) #declare SourceRefraction = 1; #end
 #macro KeepTag() #if (Version >= 4) tags { "keep" } #end #end
 global_settings {
   assumed_gamma 1 ambient_light 0 max_trace_level 10
@@ -21,7 +23,7 @@ camera {
   <-1, -0.1, -1>, <1, 0, 1> pigment { rgb 1 } finish { ambient 0 diffuse 1 }
 }
 #if (Grouped) #declare LampGroup = light_group { #end
-  light_source { <1.5, 4, 0> rgb 3 photon_only on photons { refraction on reflection off } KeepTag() }
+  light_source { <1.5, 4, 0> rgb 3 photon_only PhotonOnly photons { refraction SourceRefraction reflection off } KeepTag() }
   object { Lens KeepTag() }
   object { Receiver KeepTag() }
 #if (Grouped)
