@@ -83,6 +83,8 @@ render shadow_ref Declare=Case=11 Declare=N=512
 for block in "24 39 24 39" "18 25 28 35" "38 45 28 35"; do
     near "soft shadow, block $block" "$(mean shadow $block)" "$(mean shadow_ref $block)" 0.05
 done
+awk -v a="$(mean shadow 24 39 24 39)" -v b="$(mean ball 24 39 24 39)" 'BEGIN { exit !(a < 0.5 * b) }' ||
+    { echo "media_light: the occluder casts no shadow" >&2; exit 1; }
 render shadowless Declare=Case=12 Declare=Shadowless=1
 render unoccluded Declare=Case=13 Declare=Shadowless=1
 same shadowless unoccluded
@@ -101,3 +103,15 @@ render three Declare=Case=1 +WT3
 same one three
 render mesh Declare=Case=18
 near "a media light in a deferred isosurface mesh" "$(mean mesh 30 33 30 33)" "$(mean ball 30 33 30 33)" 0.05
+# a pending .povm octahedron holding a media light, in an unsplit union whose box was taken before it loaded
+le32() { printf "\\$(printf %03o $(($1 & 255)))\\$(printf %03o $(($1 >> 8 & 255)))\\$(printf %03o $(($1 >> 16 & 255)))\\$(printf %03o $(($1 >> 24 & 255)))"; }
+{
+    printf POVM; for n in 1 0 6 0 0 8; do le32 $n; done
+    for v in 1065353216 0 0 3212836864 0 0 0 1065353216 0 0 3212836864 0 0 0 1065353216 0 0 3212836864; do le32 $v; done
+    for i in 0 2 4 2 1 4 1 3 4 3 0 4 2 0 5 1 2 5 3 1 5 0 3 5; do le32 $i; done
+} > media_light.povm
+render held Declare=Case=19 +L.
+render alone Declare=Case=20 +L.
+for block in "0 63 0 63" "24 39 24 39"; do
+    near "a media light's mesh in a union, block $block" "$(mean held $block)" "$(mean alone $block)" 0.01
+done

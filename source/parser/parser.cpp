@@ -10041,15 +10041,17 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Object->interior->PostProcess();
 
     if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
+    {
+        // a media light's table needs the container's geometry, so a deferred mesh is built now and boxes above it redone
+        if (std::any_of(Object->interior->media.begin(), Object->interior->media.end(), [](const Media& medium) { return bool(medium.light); }))
+            mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
-            // a media light's table needs the container's geometry, so a deferred mesh is built now
-            if (medium.light)
-                Resolve_Mesh_Geometry(Object);
             medium.SetFastContainer(Object);
             if (medium.light)
                 Make_Media_Light(medium, Object);
         }
+    }
 
     if ((Object->Texture == nullptr) &&
         !(Object->Type & TEXTURED_OBJECT) &&
@@ -10239,10 +10241,20 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         const bool group = ((Object->Type & LIGHT_GROUP_OBJECT) != 0);
         if (group)
             mLightGroups.push_back(Object);
+        const bool resolvedBefore = mMeshResolvedBelow;
+        mMeshResolvedBelow = false;
         for (vector<ObjectPtr>::iterator Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); Sib != (reinterpret_cast<CSG *>(Object))->children.end(); Sib++)
         {
             Post_Process(*Sib, Object);
         }
+        CompoundObject *compound = dynamic_cast<CompoundObject *>(Object);
+        if (mMeshResolvedBelow && (compound != nullptr) && compound->Bound.empty())
+        {
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            compound->Compute_BBox();
+            Update_Infinite_Flag(compound);
+        }
+        mMeshResolvedBelow = mMeshResolvedBelow || resolvedBefore;
         if (group)
             mLightGroups.pop_back();
         DropShutPortals(Object);

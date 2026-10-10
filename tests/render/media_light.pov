@@ -86,6 +86,17 @@ background { rgb 0 }
       translate y * Height
     }
   #break
+  #case (19) #case (20)
+    object { Floor }
+    #declare Gem = mesh2 {
+      povm "media_light.povm" inside_vector <0.123, 0.937, 0.271>
+      pigment { rgbt 1 } hollow interior { media { method 4 emission 0.3 light_source { samples N } } }
+      scale 0.5
+    }
+    #if (Case = 19) union { object { Gem } sphere { <1.5, 0, 1.5>, 0.05 no_image no_shadow } split_union off translate y * Height }
+    #else object { Gem translate y * Height }
+    #end
+  #break
   #case (16) #case (17)
     object { Floor }
     box { <-2, 0.01, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { scattering { 1, 0.08 } } } }
