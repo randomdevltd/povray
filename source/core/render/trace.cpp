@@ -4142,9 +4142,10 @@ double Trace::MixedIor(const RayInteriorVector& interiors, double *dispersion, u
         if ((interior->iorMix == kIorMixMean) && (interior->iorState != kIorOff) && ((top == nullptr) || OutranksIor(interior, top)))
             add(interior);
     }
+    // The atmosphere in single precision, as ior atmosphere holds it, so air is the same however it is made.
     if (dispersion != nullptr)
-        *dispersion = (count > 0) ? dispersions / count : sceneData->atmosphereDispersion;
-    return (count > 0) ? iors / count : sceneData->atmosphereIOR;
+        *dispersion = (count > 0) ? dispersions / count : double(SNGL(sceneData->atmosphereDispersion));
+    return (count > 0) ? iors / count : double(SNGL(sceneData->atmosphereIOR));
 }
 
 double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base, double *dispersion,
