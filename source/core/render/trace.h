@@ -953,7 +953,7 @@ class Trace
         bool TakeCoincident(Ray& ray, Intersection& isect, const Vector3d& normal, COLC weight);
         /// Under interface_texture blend, fills `textures` with the textures of the clear faces meeting at a hit, if several.
         bool SharedFaceTextures(const Ray& ray, const Intersection& isect, const Vector3d& normal, WeightedTextureVector& textures,
-                                InterfaceCache& sides);
+                                std::unique_ptr<InterfaceCache>& sides);
         /// Whether interfaces merge coincident surfaces: version 4.0 or media refraction, with an ior or an opaque object.
         bool MergesSurfaces() const;
         /// Whether a surface's plain pigment lets any light through, or might.
