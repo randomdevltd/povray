@@ -26,6 +26,6 @@ box {
   pigment { rgbt 1 }
   interior {
     ior 1
-    media { method 3 refraction 0.05 density { function { Fine(x, y, z) * Fade(x, y, z) } } }
+    media { method 3 refraction 0.01 density { function { Fine(x, y, z) * Fade(x, y, z) } } }
   }
 }
