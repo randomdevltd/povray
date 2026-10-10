@@ -55,8 +55,8 @@ sphere {
   0, 1 pigment { rgbt 1 }
   interior {
     media {
-      mix add emission rgb <14, 6, 1.6> density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-      #if (FlameLight) light_source { samples FlameSamples brightness 400 } #end
+      mix add emission rgb <14, 6, 1.6> * 400 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      #if (FlameLight) light_source { samples FlameSamples } #end
     }
   }
   scale <0.06, 0.16, 0.06> translate Wick + y * 0.13
