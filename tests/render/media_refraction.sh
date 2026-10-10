@@ -197,6 +197,17 @@ for side in 1:near:0.4:0.16 2:far:0.16:0.4; do
     expect ${mode}_left 48 36 $(echo $side | cut -d: -f3)
     expect ${mode}_right 48 36 ${side##*:}
 done
+# A shadow crosses any number of coincident clear surfaces, each filtering once.
+for count in 8:0.1853 9:0.1501 20:0.0148; do
+    render coincident_${count%:*} Declare=Case=70 Declare=Count=${count%:*}
+    expect coincident_${count%:*} 48 36 ${count#*:}
+done
+# A face opaque where it is hit wins over a coincident clear face, also for a uv-mapped pigment.
+for case in 71 72; do
+    render local_opaque_$case Declare=Case=$case Declare=Alone=1
+    render local_opaque_shared_$case Declare=Case=$case
+done
+region local_opaque_71 local_opaque_shared_71 38 45 31 40
 # A replace object owns its faces where they meet what it replaces, whatever interface_texture says.
 for side in 1 2 3; do
     render replace_slab_$side Declare=Case=64 Declare=Side=$side

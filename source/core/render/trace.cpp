@@ -3177,23 +3177,32 @@ struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
 struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
 {
     double tolerance = SMALL_TOLERANCE;
-    /// Clear surfaces already crossed near the search origin, by object and distance along the shadow ray, which it skips.
+    /// Clear surfaces already crossed near the search origin, by object and distance along the shadow ray, which it skips;
+    /// `more` holds those past the first kCrossed, so every surface of a coincident interface is kept.
     static const int kCrossed = 8;
     ConstObjectPtr crossed[kCrossed];
     double at[kCrossed];
     int count = 0;
+    std::vector<std::pair<ConstObjectPtr, double>> more;
     double base = 0.0;   ///< distance along the shadow ray of the search origin
     /// The object, as the search sees it, of the nearest surface accepted since Reset.
     mutable ConstObjectPtr accepted = nullptr;
     mutable double acceptedAt = HUGE_VAL;
     void Reset() { accepted = nullptr; acceptedAt = HUGE_VAL; }
+    bool Crossed(ConstObjectPtr object, double position) const
+    {
+        for (int k = 0; k < count; k++)
+            if ((crossed[k] == object) && (fabs(position - at[k]) < 0.5 * MIN_ISECT_DEPTH))
+                return true;
+        for (const auto& entry : more)
+            if ((entry.first == object) && (fabs(position - entry.second) < 0.5 * MIN_ISECT_DEPTH))
+                return true;
+        return false;
+    }
     virtual bool operator()(const Ray&, ConstObjectPtr object, double dist) const override
     {
-        if (dist <= tolerance)
+        if ((dist <= tolerance) || Crossed(object, base + dist))
             return false;
-        for (int k = 0; k < count; k++)
-            if ((crossed[k] == object) && (fabs(base + dist - at[k]) < 0.5 * MIN_ISECT_DEPTH))
-                return false;
         if (dist < acceptedAt)
         {
             accepted = object;
@@ -3204,15 +3213,31 @@ struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
     void Cross(ConstObjectPtr object, double position, double keep)
     {
         int kept = 0;
-        for (int k = std::max(0, count - (kCrossed - 1)); k < count; k++)
-            if (at[k] >= position - keep)
+        size_t extra = 0;
+        auto retain = [&](ConstObjectPtr o, double d) {
+            if (d < position - keep)
+                return;
+            if (kept < kCrossed)
             {
-                crossed[kept] = crossed[k];
-                at[kept++] = at[k];
+                crossed[kept] = o;
+                at[kept++] = d;
             }
-        crossed[kept] = object;
-        at[kept] = position;
-        count = kept + 1;
+            else
+                more[extra++] = std::make_pair(o, d);
+        };
+        for (int k = 0; k < count; k++)
+            retain(crossed[k], at[k]);
+        for (size_t k = 0; k < more.size(); k++)
+            retain(more[k].first, more[k].second);
+        more.resize(extra);
+        if (kept < kCrossed)
+        {
+            crossed[kept] = object;
+            at[kept++] = position;
+        }
+        else
+            more.push_back(std::make_pair(object, position));
+        count = kept;
     }
 };
 
@@ -4298,6 +4323,18 @@ bool Trace::SurfaceTransmits(const Intersection& isect, const Ray& ray, COLC wei
     return !Compute_Pigment(colour, texture->Pigment, isect.IPoint, &isect, &ray, threadData) || (colour.Opacity() < 1.0);
 }
 
+bool Trace::OpaqueAt(ConstObjectPtr object, const Ray& ray, const Vector3d& point, double tolerance)
+{
+    const TEXTURE *texture = object->Texture;
+    if ((texture == nullptr) || (texture->Type != PLAIN_PATTERN) || (texture->Next != nullptr) || (texture->Pigment == nullptr))
+        return false;
+    const double back = ProbeBack(ray, point, tolerance);
+    Ray probe(const_cast<TraceTicket&>(ray.GetTicket()), point - back * ray.Direction, ray.Direction);
+    StartProbe(probe, ray);
+    Intersection hit;
+    return FindIntersection(const_cast<ObjectPtr>(object), hit, probe, back + tolerance) && !SurfaceTransmits(hit, probe, 1.0);
+}
+
 bool Trace::NeedsRelativeIor(const TEXTURE *texture, ConstObjectPtr object) const
 {
     if (sceneData->legacyIorStack || !Test_Flag(object, OPAQUE_FLAG))
@@ -4444,7 +4481,7 @@ void Trace::FindInterfaceSides(InterfaceCache& sides, const Ray& ray, Interior *
         Interior *i = object->interior.get();
         if (photon && Photon_Pass_Through(object))
             continue;
-        if (Test_Flag(object, OPAQUE_FLAG))
+        if (Test_Flag(object, OPAQUE_FLAG) || ((coincident.size() > 1) && OpaqueAt(object, ray, point, tolerance)))
         {
             sides.take = object;
             sides.faces.clear();
