@@ -1409,7 +1409,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     bool tir_occured;
     PhotonGatherer *surfacePhotonGatherer = nullptr;
     PhotonMap& photonMap = sceneData->GetPreparedSet(ray.GetPreparedSetId()).surfacePhotonMap;
-    const bool gatherSurfacePhotons = sceneData->photonSettings.photonsEnabled && photonMap.numPhotons > 0;
+    const bool gatherSurfacePhotons = sceneData->photonSettings.photonsEnabled &&
+        (photonMap.numPhotons > 0 || sceneData->photonSettings.method == 2);
     const size_t gatherIndex = surfacePhotonGatherDepth;
     SurfacePhotonGatherNesting gatherNesting(surfacePhotonGatherDepth, gatherSurfacePhotons);
 
@@ -1788,7 +1789,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 {
                     MathColour photonsContribution;
 
-                    ComputePhotonDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, rawnormal, layCol.colour(), photonsContribution, att, isect.Object, relativeIor, *surfacePhotonGatherer);
+                    ComputePhotonDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, rawnormal, layCol.colour(), photonsContribution, att, isect.Object, relativeIor, *surfacePhotonGatherer, weight);
 
 #if POV_EXPERIMENTAL_BRILLIANCE_OUT
                     if(layer->Finish->BrillianceOut != 1.0)
@@ -2442,8 +2443,82 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
 }
 
 void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
-                                      const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, PhotonGatherer& gatherer)
+                                      const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, PhotonGatherer& gatherer, double pathWeight)
 {
+    if (sceneData->photonSettings.method == 2)
+    {
+        const auto& map = sceneData->GetPreparedSet(Eye.GetPreparedSetId()).progressiveSurface;
+        if (map.photons.empty() || (Finish->Diffuse == 0.0 && Finish->DiffuseBack == 0.0 && Finish->Phong == 0.0 && Finish->Specular == 0.0))
+            return;
+        MathColour sum;
+        auto* state = threadData->progressivePixel;
+        double radius = map.RadiusAt(IPoint, Object);
+        if (state)
+        {
+            if (!(state->baseRadius > 0.0f))
+                state->baseRadius = state->radius = float(radius);
+            radius = state->radius;
+        }
+        const double derivative = state ? 2.0 * state->baseRadius * std::pow(double(threadData->progressivePass + 1), -0.125) : radius;
+        const double support = state ? std::max(radius, 2.0 * derivative) : radius;
+        Vector3d u, v;
+        ComputeSurfaceTangents(Raw_Normal, u, v);
+        u *= derivative;
+        v *= derivative;
+        double noise = 0.0, laplacian = 0.0;
+        unsigned int accepted = 0;
+        threadData->Stats()[Gather_Performed_Count]++;
+        const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
+        unsigned int index = 0;
+        map.Visit(IPoint, support, [&](const ProgressivePhoton& photon) {
+            if (photon.object != Object || dot(photon.normal, Raw_Normal) < 0.9 ||
+                std::abs(dot(photon.point - IPoint, Raw_Normal)) > 0.05 * support)
+                return;
+            const double cosine = dot(Raw_Normal, photon.direction);
+            const bool backside = !Test_Flag(Object, DOUBLE_ILLUMINATE_FLAG) && dot(Layer_Normal, photon.direction) < EPSILON;
+            if (std::abs(cosine) <= EPSILON || (backside && Finish->DiffuseBack == 0.0))
+                return;
+            const MathColour incident = photon.flux / std::abs(cosine);
+            MathColour contribution;
+            if (!(sceneData->useSubsurface && Finish->UseSubsurface))
+                ComputeDiffuseColour(Finish, photon.direction, Eye.Direction, Layer_Normal, contribution, incident,
+                                     Layer_Pigment_Colour, relativeIor, Attenuation, backside, key, index++);
+            if (!Eye.IsRadiosityRay() && !backside)
+            {
+                if (Finish->Phong > 0.0)
+                    ComputePhongColour(Finish, photon.direction, Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
+                if (Finish->Specular > 0.0)
+                    ComputeSpecularColour(Finish, photon.direction, -Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
+            }
+            const Vector3d delta = photon.point - IPoint;
+            const double value = contribution.Greyscale() * pathWeight;
+            if (delta.lengthSqr() <= radius * radius && std::abs(dot(delta, Raw_Normal)) <= 0.05 * radius)
+            {
+                sum += contribution;
+                noise += value * value;
+                accepted++;
+                threadData->progressiveContributions++;
+            }
+            if (state)
+            {
+                const double h2 = derivative * derivative;
+                const int stencil = int((delta + u).lengthSqr() <= h2) + int((delta - u).lengthSqr() <= h2) +
+                                    int((delta + v).lengthSqr() <= h2) + int((delta - v).lengthSqr() <= h2) -
+                                    4 * int(delta.lengthSqr() <= h2);
+                laplacian += stencil * value;
+            }
+        });
+        const double area = ProgressivePhotonBudget::KernelVolume(radius, 2);
+        colour += sum / area;
+        if (state)
+        {
+            threadData->progressiveValue += sum.Greyscale() * pathWeight / area;
+            threadData->progressiveNoise += noise * radius * radius / (area * area);
+            threadData->progressiveLaplacian += laplacian / (M_PI * std::pow(derivative, 4));
+            threadData->progressiveDensity += accepted / (area * ProgressivePhotonBudget::batchSize);
+        }
+        return;
+    }
     double Cos_Shadow_Angle;
     Vector3d lightDirection;
     MathColour Light_Colour;
@@ -5895,7 +5970,8 @@ static Vector3d SubsurfacePhotonNormal(Intersection& hit, TraceThreadData* data)
 bool Trace::SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId preparedSetId) const
 {
     return sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
-           (sceneData->GetPreparedSet(preparedSetId).surfacePhotonMap.numPhotons > 0) && !Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
+           (sceneData->GetPreparedSet(preparedSetId).surfacePhotonMap.numPhotons > 0 ||
+            !sceneData->GetPreparedSet(preparedSetId).progressiveSurface.photons.empty()) && !Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
 }
 
 bool Trace::UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const
@@ -6052,6 +6128,30 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
                                                   PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud)
 {
     MathColour irradiance;
+    if (sceneData->photonSettings.method == 2)
+    {
+        const auto& map = sceneData->GetPreparedSet(ticket.preparedSetId).progressiveSurface;
+        if (map.photons.empty() || Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG) || !(eta > 0.0))
+            return irradiance;
+        const double radius = map.RadiusAt(point, receiver);
+        Vector3d n = normal.normalized();
+        if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, radius, n, ticket))
+            return irradiance;
+        map.Visit(point, radius, [&](const ProgressivePhoton& photon) {
+            const double cosine = std::min(1.0, dot(n, photon.direction));
+            if (!IsObjectInCSG(photon.object, receiver) || dot(n, photon.normal) < 0.5 ||
+                cosine <= EPSILON || eta * eta + cosine * cosine <= 1.0 ||
+                std::abs(dot(photon.point - point, n)) > 0.05 * radius)
+                return;
+            const double transmission = ComputeFt(cosine, eta);
+            if (std::isfinite(transmission) && transmission > 0.0)
+            {
+                irradiance += photon.flux * transmission;
+                threadData->progressiveContributions++;
+            }
+        });
+        return irradiance / ProgressivePhotonBudget::KernelVolume(radius, 2);
+    }
     const PhotonMap& map = sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap;
     if (!SubsurfacePhotonsEnabled(receiver, ticket.preparedSetId) || !(eta > 0.0) || !std::isfinite(eta) ||
         !(map.minGatherRad > 0.0) || !std::isfinite(map.minGatherRad) || !(map.gatherRadStep >= 0.0) ||

@@ -55,6 +55,7 @@
 
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
+#include "core/lighting/progressivephotonmap.h"
 #include "core/bounding/boundingcylinder.h"
 #include "core/math/randomsequence_fwd.h"
 #include "core/math/vector.h"
@@ -177,6 +178,13 @@ class TraceThreadData : public ThreadData
         ObjectPtr photonTargetObject;
         bool litObjectIgnoresPhotons;
         bool subsurfacePhotonBoundaryProbe = false;
+        std::vector<ProgressivePhoton> progressiveSurface, progressiveMedia;
+        std::vector<ProgressivePhotonFeedback> progressiveFeedback;
+        std::vector<ProgressivePhotonBatch> progressiveBatches;
+        std::uint64_t progressiveContributions = 0;
+        ProgressivePhotonState* progressivePixel = nullptr;
+        unsigned int progressivePass = 0;
+        double progressiveValue = 0.0, progressiveNoise = 0.0, progressiveLaplacian = 0.0, progressiveDensity = 0.0;
         MathColour GFilCol;
         int hitObject;    // did we hit the target object? (for autostop)
         DBL photonSpread; // photon spread (in radians)

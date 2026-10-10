@@ -244,7 +244,7 @@ bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& col
                 {
                     // We hit *some* photon target object
 
-                    if (!IsObjectInCSG(bestisect.Object,threadData->photonTargetObject))
+                    if ((sceneData->photonSettings.method != 2) && !IsObjectInCSG(bestisect.Object,threadData->photonTargetObject))
                     {
                         // We did *not* hit *the* photon target
 
@@ -324,7 +324,14 @@ void PhotonTrace::ComputeInteriorMedia(Ray& ray, Intersection& isect, MathColour
             {
                 // compute media WITHOUT depositing photons
                 ColourChannel dummyTransm;
-                mediaPhotons.ComputeMedia(medialist, &mods, ray, isect, LightCol, dummyTransm);
+                if (sceneData->photonSettings.method == 2)
+                {
+                    Ray attenuation(ray);
+                    attenuation.SetFlags(Ray::OtherRay, true, true, false, ray.IsMonochromaticRay());
+                    mediaPhotons.ComputeMedia(medialist, &mods, attenuation, isect, LightCol, dummyTransm);
+                }
+                else
+                    mediaPhotons.ComputeMedia(medialist, &mods, ray, isect, LightCol, dummyTransm);
             }
         }
     }
@@ -411,11 +418,29 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
 
     // First, we should save this photon!
 
-    if ((ray.GetTicket().traceLevel > 1) && !threadData->passThruPrev &&
+    bool progressiveReceiver = sceneData->photonSettings.method != 2;
+    for (const TEXTURE* layer = Texture; !progressiveReceiver && layer; layer = layer->Next)
+        progressiveReceiver = layer->Finish->Diffuse != 0.0 || layer->Finish->DiffuseBack != 0.0 ||
+                              layer->Finish->Phong != 0.0 || layer->Finish->Specular != 0.0 ||
+                              (sceneData->useSubsurface && layer->Finish->UseSubsurface);
+    if (progressiveReceiver && (ray.GetTicket().traceLevel > 1) && !threadData->passThruPrev &&
         !Test_Flag(isect.Object,PH_IGNORE_PHOTONS_FLAG) &&
         PhotonLightAffectsObject(isect.Object))
     {
-        addSurfacePhoton(isect.IPoint, ray.Origin, LightCol, ray.GetPreparedSetId());
+        if (sceneData->photonSettings.method == 2)
+        {
+            ProgressivePhoton photon;
+            photon.point = isect.IPoint;
+            photon.direction = -ray.Direction;
+            photon.normal = rawnormal;
+            photon.flux = LightCol;
+            photon.object = isect.Object;
+            photon.set = ray.GetPreparedSetId();
+            threadData->progressiveSurface.push_back(photon);
+            threadData->Stats()[Number_Of_Photons_Stored]++;
+        }
+        else
+            addSurfacePhoton(isect.IPoint, ray.Origin, LightCol, ray.GetPreparedSetId());
     }
 
 #ifndef PT_FILTER_BEFORE_TARGET
@@ -1128,6 +1153,37 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
 void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                               const Ray& ray, int minsamples, bool ignore_photons, bool use_scattering, bool all_constant_and_light_ray)
 {
+    if (sceneData->photonSettings.method == 2)
+    {
+        for (auto& interval : mediaintervals)
+        {
+            if (interval.ds <= 0.0)
+                continue;
+            const int count = std::max(minsamples, int(std::min(double(sceneData->photonSettings.maxMediaSteps),
+                                                               std::ceil(interval.ds / threadData->photonSpread))));
+            const double step = interval.ds / count;
+            for (int sample = 0; sample < count; ++sample)
+            {
+                const double start = interval.s0 + sample * step;
+                MediaInterval cell(false, 0, start, start + step, step, 0, 0);
+                MathColour emission, opticalDepth;
+                ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, opticalDepth, 2,
+                                      ignore_photons, use_scattering, true);
+                if (use_scattering && !ignore_photons)
+                {
+                    ProgressivePhoton photon;
+                    photon.point = ray.Evaluate(start + 0.5 * step);
+                    photon.direction = -ray.Direction;
+                    photon.flux = colour * Exp(-opticalDepth * 0.5) * step;
+                    photon.set = ray.GetPreparedSetId();
+                    threadData->progressiveMedia.push_back(photon);
+                    threadData->Stats()[Number_Of_Media_Photons_Stored]++;
+                }
+                colour *= Exp(-opticalDepth);
+            }
+        }
+        return;
+    }
     int j;
     MathColour Od;
     DBL d0;

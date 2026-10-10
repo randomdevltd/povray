@@ -115,6 +115,10 @@ class ScenePhotonSettings final
         }
 
         bool photonsEnabled;
+        int method = 1;
+        double quality = 1.0;
+        bool classicOptions = false;
+        bool qualitySpecified = false;
 
         // photon separation (a.k.a. spacing)
         DBL surfaceSeparation;
