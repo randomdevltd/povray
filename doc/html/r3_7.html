@@ -474,7 +474,7 @@ aa_threshold : 0.1
 absorption   : &lt;0,0,0&gt;
 confidence   : 0.9
 emission     : &lt;0,0,0&gt;
-intervals    : 1
+intervals    : 1 (10 before 3.5)
 jitter       : 0.0
 method       : 3 from version 3.5, 4 from version 4.0 (1 before 3.5)
 mix          : see Media Mix
@@ -750,7 +750,7 @@ ior value. For example:</p>
 object { MyObject pigment {Clear } interior { ior 1.5 } }
 </pre>
 
-<p>An object with no <code>ior</code> does not refract (see <code>ior off</code> below). The index of
+<p>An object with no <code>ior</code> does not refract under version 4.0 (see <code>ior off</code> below). The index of
 refraction for vacuum is 1.0, air is 1.0003, water is 1.33, glass is 1.5 and diamond is
 2.4.</p>
 <p>
@@ -776,7 +776,7 @@ See <a href="r3_7.html#r3_7_2_1_6">Attenuation</a>.</p>
 <li><code>ior off</code>, the default when no ior is given: the object takes no part in refraction under any <code>ior_mix</code>. It is never counted in a mean and never replaces, and its surfaces neither bend rays nor reflect by Fresnel, so a fog box or a media container leaves the glass inside it, and whatever it sits in, untouched. Media <code>refraction</code> inside it adds to the index of whatever surrounds it, so a refraction-only box shimmers the water or air it sits in without a surface of its own.</li>
 <li><code>ior atmosphere</code>: the object is air; its ior and dispersion are the atmosphere's (see <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a>), and it takes part like any material.</li>
 </ul>
-<p>Before <code>#version 4.0</code> an object without an ior refracts as one of the atmosphere's ior, as in POV-Ray 3.7. A surface always refracts by the ior just before it over the ior just after it. Where objects overlap, the ior in the overlap follows each object's <code>ior_mix</code>:</p>
+<p>Before <code>#version 4.0</code> an object without an ior refracts as one of the atmosphere's ior, as in POV-Ray 3.7, unless the scene merges faces (it uses media refraction, or a non-opaque object states <code>ior_mix mean</code> or <code>replace</code>); then it is <code>ior off</code> as above. A surface always refracts by the ior just before it over the ior just after it. Where objects overlap, the ior in the overlap follows each object's <code>ior_mix</code>:</p>
 <ul>
 <li><code>surface</code>, the default before <code>#version 4.0</code>: the innermost object entered gives the ior, as in POV-Ray 3.7, so leaving an overlap of two objects does not refract and an <code>ior atmosphere</code> sphere inside glass is an air pocket. A scene whose objects that are not opaque all have an ior and are <code>surface</code>, and which has no <a href="r3_7.html#r3_7_2_2_4">media refraction</a>, renders exactly as POV-Ray 3.7 does.</li>
 <li><code>mean</code>, the default from <code>#version 4.0</code>: overlapping objects mix 50/50, and the ior is the mean of their iors; where glass (1.5) overlaps water (1.33) it is 1.415, whatever order the objects are placed in. Every object that takes part counts, so an <code>ior 1</code> sphere inside glass is vacuum mixed with glass, 1.25, and POV-Ray warns once when an object of ior 1 or <code>ior atmosphere</code> overlaps a denser one. Dispersion is averaged the same way.</li>
@@ -978,7 +978,7 @@ sphere { 0, 1.5 pigment { rgbt 1 }
   }
 #end
 </pre>
-<p><strong>Priority.</strong> <code>priority</code> takes any integer, negative ones included; a fraction is an error (<code>media priority must be an integer.</code>). Media of equal priority are ranked by placement, then by order in the interior. An object without media always clears at priority 0. To clear at another rank, give it an empty <code>media { mix replace priority N }</code>. A medium with a negative priority ranks below every object without media, wherever it is placed, and is cleared by them where they overlap. This keeps smoke visible inside a glass ball placed after it:</p>
+<p><strong>Priority.</strong> <code>priority</code> takes any integer, negative ones included; a fraction is an error (<code>media priority must be an integer.</code>). Media of equal priority are ranked by placement, then by order in the interior. An object without media that clears (under version 4.0 by default) does so at priority 0. To clear at another rank, give it an empty <code>media { mix replace priority N }</code>. A medium with a negative priority ranks below every object without media, wherever it is placed, and is cleared by them where they overlap. This keeps smoke visible inside a glass ball placed after it:</p>
 <pre>
 #version 4.0;
 sphere { 0, 0.5 pigment { rgbt 1 } interior { media { priority 1 scattering { 1, rgb 0.5 } density { bozo scale 0.3 } } } }

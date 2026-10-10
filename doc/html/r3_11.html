@@ -128,7 +128,7 @@ refraction  at P = refraction  &times; density(P)
   <li>Several <code>density</code> blocks in one <code>media</code> multiply, so only where all of them are non-zero is there any medium. Several <code>media</code> statements in one interior combine by their <a href="r3_7.html#r3_7_2_1_9">mix</a>, which by default adds them. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a>.</li>
   <li>The pattern moves, rotates and scales with the object that holds the medium. Transformations written inside the <code>media</code> block apply to the <code>density</code> blocks written before them.</li>
   <li>Any pattern is allowed, including <code>function</code>, <code>density_file</code> (see <a href="r3_6.html#r3_6_2_1_8">Density File</a>) and patterns with <code>turbulence</code> or <code>warp</code>. Some cannot be prepared for method 4; see <a href="r3_11.html#r3_11_4">Prepared Fields</a>.</li>
-  <li>A density that is negative or not finite is an error for a prepared field and for a medium that is a light. Keep densities from 0 up.</li>
+  <li>Keep densities from 0 up. A negative or non-finite density makes a prepared field fall back to classic sampling, with a warning, and a medium that is a light gives no light (it still glows).</li>
 </ul>
 <p>A medium with only <code>refraction</code> has nothing to absorb, emit or scatter: it is invisible, costs nothing in the media integration and only bends rays. One density can drive a visible medium and a refracting one together by declaring it once:</p>
 <pre>
