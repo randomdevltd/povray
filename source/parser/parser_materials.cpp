@@ -3964,7 +3964,17 @@ void Parser::Parse_Interior(InteriorPtr& interior)
 
     EXPECT
         CASE (IOR_TOKEN)
-            interior->IOR = Parse_Float();
+            Get_Token();
+            if (CurrentTokenText() == "off")
+                interior->iorState = kIorOff;
+            else if (CurrentTokenText() == "atmosphere")
+                interior->iorState = kIorAtmosphere;
+            else
+            {
+                Unget_Token();
+                interior->IOR = Parse_Float();
+                interior->iorState = kIorNumber;
+            }
         END_CASE
 
         CASE (IOR_MIX_TOKEN)

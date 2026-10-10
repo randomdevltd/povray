@@ -4075,6 +4075,23 @@ void Trace::WarnRefraction(unsigned flag, const char *format, ...)
     threadData->mediaMessages->Warning(kWarningGeneral, "%s", text);
 }
 
+void Trace::WarnThinOverlap(const RayInteriorVector& interiors, const Vector3d& point)
+{
+    const Interior *thin = nullptr, *dense = nullptr;
+    for (const Interior *i : interiors)
+        if ((i->iorMix != kIorMixMean) || (i->iorState == kIorOff))
+            continue;
+        else if ((i->iorState == kIorAtmosphere) || (i->IOR == 1.0f))
+            thin = i;
+        else if ((dense == nullptr) || (i->IOR > dense->IOR))
+            dense = i;
+    if ((thin != nullptr) && (dense != nullptr) && (dense->IOR > thin->IOR))
+        WarnRefraction(kThinOverlap,
+            "A %s of ior %s overlaps a %s of ior %g at <%g, %g, %g>, so the ior there is their mean. Give a container 'ior off', "
+            "or make a pocket 'ior atmosphere ior_mix replace'.",
+            thin->shape, (thin->iorState == kIorAtmosphere) ? "atmosphere" : "1", dense->shape, dense->IOR, point[X], point[Y], point[Z]);
+}
+
 namespace
 {
 
@@ -4088,21 +4105,21 @@ bool OutranksIor(const Interior *a, const Interior *b)
 
 double Trace::MixedIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const
 {
-    const SNGL atmosphere = SNGL(sceneData->atmosphereIOR);
     size_t first = 0;
     const Interior *innermost = nullptr, *top = nullptr;
     if (sceneData->iorMixModes)
     {
         // The innermost surface entered hides what was entered before it; the highest replace after it hides what ranks beneath.
         for (size_t k = interiors.size(); k-- > 0;)
-            if (interiors[k]->iorMix == kIorMixSurface)
+            if ((interiors[k]->iorMix == kIorMixSurface) && (interiors[k]->iorState != kIorOff))
             {
                 innermost = interiors[k];
                 first = k + 1;
                 break;
             }
         for (size_t k = first; k < interiors.size(); k++)
-            if ((interiors[k]->iorMix == kIorMixReplace) && ((top == nullptr) || OutranksIor(interiors[k], top)))
+            if ((interiors[k]->iorMix == kIorMixReplace) && (interiors[k]->iorState != kIorOff) &&
+                ((top == nullptr) || OutranksIor(interiors[k], top)))
                 top = interiors[k];
     }
     // Single-precision iors sum exactly in a double, so the mean does not depend on the order the solids were entered.
@@ -4122,8 +4139,7 @@ double Trace::MixedIor(const RayInteriorVector& interiors, double *dispersion, u
     for (size_t k = first; k < interiors.size(); k++)
     {
         const Interior *interior = interiors[k];
-        if ((interior->iorMix == kIorMixMean) && (interior->IOR != atmosphere) && (interior->IOR != 1.0f) &&
-            ((top == nullptr) || OutranksIor(interior, top)))
+        if ((interior->iorMix == kIorMixMean) && (interior->iorState != kIorOff) && ((top == nullptr) || OutranksIor(interior, top)))
             add(interior);
     }
     if (dispersion != nullptr)
@@ -4143,6 +4159,8 @@ double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& poi
         RefractionField field(interiors, threadData);
         offset = field.Offset(point);
     }
+    if ((interiors.size() > 1) && !(sceneData->mediaWarningFlags.load(std::memory_order_relaxed) & kThinOverlap))
+        WarnThinOverlap(interiors, point);
     return ClampIndex(ior + offset, point);
 }
 

@@ -10285,6 +10285,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
                     {
                         Object->interior->IOR = Finish->Temp_IOR;
                         Object->interior->Dispersion = Finish->Temp_Dispersion;
+                        Object->interior->iorState = kIorNumber;
                     }
                     if (Finish->Temp_Caustics >= 0.0)
                     {
@@ -10298,14 +10299,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 
         // If there is no IOR specified use the atmopshere ior.
 
-        if (Object->interior->IOR == 0.0)
+        if ((Object->interior->IOR == 0.0) || (Object->interior->iorState != kIorNumber))
         {
             Object->interior->IOR = sceneData->atmosphereIOR;
             Object->interior->Dispersion = sceneData->atmosphereDispersion;
         }
-        sceneData->dielectrics = sceneData->dielectrics || Object->interior->refracting ||
-                                 ((Object->interior->IOR != SNGL(sceneData->atmosphereIOR)) &&
-                                  ((Object->interior->IOR != 1.0f) || (Object->interior->iorMix != kIorMixMean))) ||
+        sceneData->dielectrics = sceneData->dielectrics || Object->interior->refracting || (Object->interior->iorState != kIorOff) ||
                                  (Object->interior->Dispersion != SNGL(sceneData->atmosphereDispersion));
 
         // If object has subsurface light transport enabled, precompute some necessary information
@@ -10364,7 +10363,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Set_Flag(Object, OPAQUE_FLAG);
         sceneData->anyOpaque = true;
     }
-    else if ((Object->interior != nullptr) && (Object->interior->iorMix != kIorMixSurface))
+    else if ((Object->interior != nullptr) && ((Object->interior->iorMix != kIorMixSurface) ||
+                                               ((Object->interior->iorState == kIorOff) && (sceneData->EffectiveLanguageVersion() >= 400))))
         sceneData->crossedNonSurface = true;
 }
 

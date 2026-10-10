@@ -224,6 +224,14 @@ enum IorMix
     kIorMixReplace = 2,  ///< overrides the iors ranked beneath it: priority, then placement
 };
 
+/// What an interior's ior is.
+enum IorState
+{
+    kIorOff        = 0, ///< takes no part in refraction: the default when no ior is given
+    kIorNumber     = 1, ///< the value given
+    kIorAtmosphere = 2, ///< the atmosphere's ior and dispersion, taking part like any material
+};
+
 class Interior final
 {
     public:
@@ -236,8 +244,8 @@ class Interior final
         unsigned int precedence;
         /// whether any of its media refract
         bool refracting;
-        /// an IorMix, and the rank of a replace ahead of placement order
-        int iorMix, iorPriority;
+        /// an IorState, an IorMix, and the rank of a replace ahead of placement order
+        int iorState, iorMix, iorPriority;
         /// the shape of the object it first belonged to, for messages
         const char *shape;
         SNGL IOR, Dispersion;
