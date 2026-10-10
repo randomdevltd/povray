@@ -1164,6 +1164,36 @@ With `global_settings { mesh_cache }` (doc/povm.md) a generated mesh is built on
 read back afterwards. A 200-pixel render of a scene with two isosurface meshes (77k and 287k triangles) and twelve
 skein meshes parses in 40.4 s uncached, 42.4 s when it fills the cache and 0.21 s from it, with identical pixels.
 
+## Classic parser: lex once
+
+Each scene or include file is lexed once into an array of 40-byte tokens: reserved words resolved, texts kept once
+per file, words' symbol-table hashes computed, numbers converted (with `strtod`, rejecting what `sscanf` rejected),
+strings decoded. A bookmark is an index into that array, so `#while`, `#for`, macro calls and returns and a repeated
+`#include` replay tokens instead of seeking the file and lexing it again; a macro keeps its file's array alive.
+Lexing a file stops at 256k tokens or 16 MB (1M tokens or 64 MB per parse) or at the first lexeme it cannot
+convert; from there the file is read from the scanner as before, macros declared there keep the byte copy, a large
+text mesh costs a small prefix, and lexing errors surface where they did. A file opened for writing, or whose size
+changed, is lexed afresh at its next `#include`. The per-token accessors are inlined, and popping a macro's symbol
+table visits only the buckets it used.
+
+Medians of five runs per build, builds alternating, `+W8 +H6 -A +WT1`: user plus system CPU of the whole run from
+`getrusage`, POV-Ray's parse time, and peak RSS. Instruction counts were not available.
+
+| Scene | CPU before | lex once | all steps | Parse before → after | Peak RSS |
+|---|---:|---:|---:|---:|---:|
+| `tools/bench/parse-macro-loop.pov` | 1.174 s | 0.345 s | 0.234 s | 1.153 → 0.208 s | 15 → 15 MB |
+| a 50,000-pass `#for` calling a macro from an include | 0.643 s | 0.235 s | 0.155 s | 0.632 → 0.149 s | 15 → 15 MB |
+| `language/tracevines.pov` | 2.407 s | 1.482 s | 1.053 s | 2.342 → 1.013 s | 24 → 25 MB |
+| `advanced/isocacti.pov` | 0.340 s | 0.291 s | 0.224 s | 0.290 → 0.171 s | 41 → 42 MB |
+| `advanced/benchmark/benchmark.pov` | 1.622 s | 1.539 s | 1.485 s | 0.270 → 0.174 s | 22 → 22 MB |
+| `advanced/landscape.pov` | 0.209 s | 0.170 s | 0.174 s | 0.174 → 0.148 s | 22 → 22 MB |
+| `language/trace-wicker.pov` | 0.127 s | 0.091 s | 0.080 s | 0.082 → 0.046 s | 24 → 24 MB |
+| `advanced/abyss.pov` | 0.201 s | 0.189 s | 0.190 s | 0.115 → 0.095 s | 50 → 50 MB |
+| 59 MB text `mesh2` (`tools/bench/text-mesh.py 800 m.inc`) | 2.737 s | 2.729 s | 2.086 s | 2.785 → 2.096 s | 123 → 143 MB |
+
+Before, most of a loop's cost was system time: every pass seeked the file and refilled a 64 KB buffer. Lexing once
+alone left the text mesh no faster and 57 MB larger, which the bounds and `strtod` turned around.
+
 ## Method
 
 `tools/bench/pcount.c` counts user-space instructions, cycles and branch misses of a process and every thread it
