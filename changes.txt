@@ -232,6 +232,10 @@ New Features
     completion, leaving live squiggles to the renderer's on-save check. A line the
     renderer reports hides the server's squiggle there, so the two layers never
     double-mark one error.
+  - The language server's typo hint only considers real code: words inside
+    string literals and comments, names the document declares itself, and
+    fragments under three characters are never blamed for a parse error, so a
+    mistyped keyword is explained by its own near miss.
   - The `skein` object (beta) defines a surface or solid by mapping the unit
     square through a chain of composable steps, and `skein_mesh` builds a
     `mesh2` from one at parse time. See the "Skein" chapter of the reference.
