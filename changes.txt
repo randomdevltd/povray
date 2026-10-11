@@ -212,6 +212,10 @@ New Features
     normalizes the tree-sitter grammar, `blocks.json` lists the legal keywords
     of every block mined from the classic parser's expect-loops, and
     `doc/language-4-grammar.md` renders both as an EBNF reference.
+  - A VS Code extension ships in `extensions/vscode`: highlighting for both
+    languages generated from the shared word tables, completion aware of the
+    enclosing block's legal keywords, and on-save diagnostics parsed from the
+    renderer's messages.
   - The `skein` object (beta) defines a surface or solid by mapping the unit
     square through a chain of composable steps, and `skein_mesh` builds a
     `mesh2` from one at parse time. See the "Skein" chapter of the reference.
