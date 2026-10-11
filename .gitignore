@@ -244,6 +244,13 @@ $RECYCLE.BIN/
 /legacy-license/
 
 # =========================
+# VS Code extension vendored tree-sitter grammars
+# =========================
+
+# Built per machine by extensions/vscode/scripts/vendor.mjs for packaged language-server runs
+/extensions/vscode/server/vendor/
+
+# =========================
 # POV-Ray Doxygen artefacts
 # =========================
 
