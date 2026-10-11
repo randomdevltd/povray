@@ -90,6 +90,14 @@
    "text": "Arc-sine of A.",
    "doc": "r3_3.html#r3_3_1_5_4"
   },
+  "atmosphere": {
+   "text": "Earlier versions of POV-Ray used an atmosphere statement for atmospheric effects but that system was incompatible with the old object halo system.",
+   "doc": "r3_7.html#r3_7_1_1"
+  },
+  "atmospheric_ior": {
+   "text": "A scene set under water with atmospheric_ior 1.33 refracts at a glass ball of ior 1.5 by 1.5 / 1.33, as it would inside a large water object.",
+   "doc": "r3_4.html#r3_4_1_15"
+  },
   "autostop": {
    "text": "To understand the autostop option, you need to understand the way photons are shot from light sources.",
    "doc": "r3_4.html#r3_4_3_4_9_1"
@@ -570,6 +578,10 @@
    "text": "The octaves keyword may be followed by an integer value to control the number of steps of turbulence that are computed.",
    "doc": "r3_6.html#r3_6_2_5_5_4"
   },
+  "off": {
+   "text": "By default hollow is off when not specified.",
+   "doc": "r3_5.html#r3_5_1_5_4"
+  },
   "offset": {
    "text": "The optional offset vector tells how much to translate the pattern each time it repeats.",
    "doc": "r3_6.html#r3_6_2_5_5_2"
@@ -721,6 +733,10 @@
   "refraction_angle": {
    "text": "Rays that graze the hole bend by a large angle, so the scene sets a small refraction_angle (Declare=Angle=A).",
    "doc": "r3_11.html#r3_11_5_3"
+  },
+  "refraction_detail": {
+   "text": "A media block may give its own refraction_detail, overriding the scene's.",
+   "doc": "r3_4.html#r3_4_1_17"
   },
   "repeat": {
    "text": "The repeat warp causes a section of the pattern to be repeated over and over.",
@@ -1076,11 +1092,6 @@
    "code": "filter all 0.9",
    "from": "doc/html/r3_6.html"
   },
-  "all_intersections": {
-   "rank": 1041,
-   "code": "[max_trace INTEGER] | [all_intersections]",
-   "from": "doc/html/r3_5.html"
-  },
   "always_sample": {
    "rank": 1019,
    "code": "always_sample : off",
@@ -1150,6 +1161,26 @@
    "rank": 1032,
    "code": "atanh | ln | pwr( X_Val, Y_Val )",
    "from": "doc/html/r3_5.html"
+  },
+  "atmosphere": {
+   "rank": 80,
+   "code": "sphere { 0, 0.5 pigment { rgbf 1 } interior { ior atmosphere ior_mix replace } }",
+   "from": "doc/html/r3_7.html"
+  },
+  "atmospheric_dispersion": {
+   "rank": 1028,
+   "code": "atmospheric_dispersion : 1.0",
+   "from": "doc/html/r3_4.html"
+  },
+  "atmospheric_ior": {
+   "rank": 40,
+   "code": "global_settings { atmospheric_ior 1.33 }",
+   "from": "doc/html/r3_4.html"
+  },
+  "auto": {
+   "rank": 1060,
+   "code": "refraction_detail : auto (derived from each medium's bounds)",
+   "from": "doc/html/r3_4.html"
   },
   "autostop": {
    "rank": 1010,
@@ -1454,6 +1485,11 @@
   "dents": {
    "rank": 1011,
    "code": "[0.3 dents]",
+   "from": "doc/html/r3_6.html"
+  },
+  "depth": {
+   "rank": 71,
+   "code": "volume_sampling BOOL | volume_sampling { [depth FLOAT] [spread FLOAT] }",
    "from": "doc/html/r3_6.html"
   },
   "df3": {
@@ -1780,6 +1816,11 @@
    "code": "inside_vector <0, 0, 1>",
    "from": "doc/html/r3_5.html"
   },
+  "interface_texture": {
+   "rank": 42,
+   "code": "global_settings { interface_texture near }",
+   "from": "doc/html/r3_4.html"
+  },
   "interior": {
    "code": "interior { INTERIOR_ITEMS... }",
    "from": "doc/html/r3_5.html:16"
@@ -1816,6 +1857,11 @@
   "ior": {
    "rank": 20,
    "code": "interior { ior 1.5 }",
+   "from": "doc/html/r3_7.html"
+  },
+  "ior_mix": {
+   "rank": 80,
+   "code": "sphere { 0, 0.5 pigment { rgbf 1 } interior { ior atmosphere ior_mix replace } }",
    "from": "doc/html/r3_7.html"
   },
   "irid": {
@@ -1986,11 +2032,6 @@
    "code": "max_sample : non-positive value",
    "from": "doc/html/r3_4.html"
   },
-  "max_trace": {
-   "rank": 1041,
-   "code": "[max_trace INTEGER] | [all_intersections]",
-   "from": "doc/html/r3_5.html"
-  },
   "max_trace_level": {
    "rank": 53,
    "code": "let Settings = global_settings { max_trace_level 7 };",
@@ -2027,6 +2068,11 @@
    "code": "mesh2 { povm \"trunk.povm\" pigment { rgb <0.4, 0.3, 0.2> } }",
    "from": "doc/html/r3_13.html:4"
   },
+  "mesh_cache": {
+   "rank": 1024,
+   "code": "mesh_cache \"directory\" |",
+   "from": "doc/html/r3_4.html"
+  },
   "mesh_camera": {
    "rank": 13,
    "code": "mesh_camera {",
@@ -2058,9 +2104,9 @@
    "from": "doc/html/r3_7.html"
   },
   "mm_per_unit": {
-   "rank": 1015,
-   "code": "mm_per_unit INT",
-   "from": "doc/html/r3_6.html"
+   "rank": 77,
+   "code": "global_settings { refraction_angle 0.25 mm_per_unit 100 refraction_detail 1 }",
+   "from": "doc/html/r3_11.html"
   },
   "mortar": {
    "rank": 1029,
@@ -2159,6 +2205,11 @@
    "rank": 58,
    "code": "warp { turbulence <0,1,1> octaves 3 lambda 1.5 omega 0.3 }",
    "from": "doc/html/r3_6.html"
+  },
+  "off": {
+   "rank": 31,
+   "code": "sphere { -0.5*x, 1 hollow off }",
+   "from": "doc/html/r3_5.html"
   },
   "offset": {
    "rank": 31,
@@ -2329,6 +2380,11 @@
    "code": "precompute 10 x,y,z",
    "from": "doc/html/r3_5.html"
   },
+  "prepared_media_cells": {
+   "rank": 48,
+   "code": "global_settings { prepared_media_cells 4000000 }",
+   "from": "doc/html/r3_4.html"
+  },
   "pretrace_end": {
    "rank": 1019,
    "code": "pretrace_end : 0.04",
@@ -2438,8 +2494,13 @@
    "from": "doc/html/r3_11.html"
   },
   "refraction_angle": {
-   "rank": 41,
-   "code": "global_settings { refraction_angle 0.25 }",
+   "rank": 77,
+   "code": "global_settings { refraction_angle 0.25 mm_per_unit 100 refraction_detail 1 }",
+   "from": "doc/html/r3_11.html"
+  },
+  "refraction_detail": {
+   "rank": 77,
+   "code": "global_settings { refraction_angle 0.25 mm_per_unit 100 refraction_detail 1 }",
    "from": "doc/html/r3_11.html"
   },
   "repeat": {
@@ -2638,6 +2699,11 @@
    "rank": 1027,
    "code": "<Location>, COLOR spotlight",
    "from": "doc/html/r3_4.html"
+  },
+  "spread": {
+   "rank": 71,
+   "code": "volume_sampling BOOL | volume_sampling { [depth FLOAT] [spread FLOAT] }",
+   "from": "doc/html/r3_6.html"
   },
   "sqr": {
    "rank": 1010,

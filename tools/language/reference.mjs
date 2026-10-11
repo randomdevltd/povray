@@ -127,7 +127,7 @@ const decodeLine = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(
     .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const lineOf = (text, index) => text.slice(0, index).split('\n').length;
 const usable = (s, cap = 110) => s.length >= 10 && s.length <= cap && !/[#]|\/\//.test(s)
-    && !/\[[-A-Z0-9_]+\]/.test(s);
+    && !/\[[-A-Z0-9_]+\]/.test(s) && !/\[[_a-z]+(_[a-z]+)+\s+[-A-Z0-9_ ]+\]/.test(s);
 
 function spanSnippet(sources, word, snippets) {
     const re = new RegExp(`(^|[^A-Za-z0-9_])${word}\\s*\\{`, 'g');

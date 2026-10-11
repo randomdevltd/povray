@@ -55,22 +55,22 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `density` | 105 | Pattern block scaling media density across its container. |
 | `difference` | 79 | CSG: first child minus every following child. |
 | `disc` | 37 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
-| `finish` | 32 | How the surface reflects: highlights, reflection, ambient, brilliance. |
+| `finish` | 34 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
-| `global_settings` | 48 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
+| `global_settings` | 55 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
 | `height_field` | 63 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
-| `interior` | 11 | Inside-the-surface properties: ior, caustics, fading, media. |
+| `interior` | 14 | Inside-the-surface properties: ior, caustics, fading, media. |
 | `intersection` | 79 | CSG: points inside every child. |
-| `isosurface` | 47 | Implicit surface where f(x,y,z) is zero, solved while rendering. |
-| `isosurface_mesh` | 47 | Isosurface tessellated into a mesh2 at parse time, sharp edges exact. |
+| `isosurface` | 49 | Implicit surface where f(x,y,z) is zero, solved while rendering. |
+| `isosurface_mesh` | 49 | Isosurface tessellated into a mesh2 at parse time, sharp edges exact. |
 | `julia_fractal` | 60 | 3-D slice of a 4-D quaternion Julia set. |
 | `lathe` | 41 | Solid of revolution: a 2-D profile curve spun about y. |
 | `lemon` | 38 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
 | `light_group` | 79 | Objects lit only by the lights named inside it. |
 | `light_source` | 63 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
-| `media` | 26 | Participating medium: scattering, emission, absorption, intervals. |
+| `media` | 28 | Participating medium: scattering, emission, absorption, intervals; its light_source is a volume light, not a scene light. |
 | `merge` | 79 | CSG union that removes inner surfaces, for transparent children. |
 | `mesh` | 40 | One object collecting explicit triangle components. |
 | `mesh2` | 45 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
