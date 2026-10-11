@@ -208,6 +208,10 @@ New Features
     scenes keep working as before, a 4.0 scene can include classic files and
     call their macros, and a codemod converts classic scenes. It is described
     in the "Scene Language 4.0" chapter of the reference.
+  - The 4.0 grammar is machine-readable: `tools/language/grammar/pov4.json`
+    normalizes the tree-sitter grammar, `blocks.json` lists the legal keywords
+    of every block mined from the classic parser's expect-loops, and
+    `doc/language-4-grammar.md` renders both as an EBNF reference.
   - The `skein` object (beta) defines a surface or solid by mapping the unit
     square through a chain of composable steps, and `skein_mesh` builds a
     `mesh2` from one at parse time. See the "Skein" chapter of the reference.

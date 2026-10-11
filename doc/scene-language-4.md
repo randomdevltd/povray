@@ -104,6 +104,9 @@ An `.inc4` include runs in the including file's scope (as classic includes do).
 
 ## Syntax
 
+This chapter is prose; `doc/language-4-grammar.md` is the generated EBNF reference and
+`tools/language/grammar/pov4.json` plus `blocks.json` are the machine-readable grammars.
+
 ### Lexical
 
 - Comments `// ...` and `/* ... */` (not nested).
