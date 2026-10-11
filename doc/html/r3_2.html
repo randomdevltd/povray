@@ -120,6 +120,9 @@
   <td><div class="divh3"><a title="3.2.5.5" href="#r3_2_5_5">Render Tag Filter</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.2.5.6" href="#r3_2_5_6">Prepared Media Cells</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.2.6" href="#r3_2_6">Shell Command Options</a></strong></div></td>
 </tr>
 <tr>
@@ -1802,6 +1805,29 @@ part in bounding, photon or radiosity work, nor in tracing, and an <code>isosurf
 option is available in any scene language version.</p>
 <p>If <code>Filter_Tags</code> is given more than once, the first is used, as with <code>Declare</code>. A malformed expression is
 reported at the character where it goes wrong.</p>
+</div>
+
+<a name="r3_2_5_6"></a>
+<div class="content-level-h4" contains="Prepared Media Cells" id="r3_2_5_6">
+<h4>3.2.5.6 Prepared Media Cells</h4>
+<p>Syntax:</p>
+<pre>
+Prepared_Media_Cells=N
+</pre>
+<p>Sets this machine's cell limit for <a href="r3_11.html#r3_11_4">prepared media grids</a> (method 4): the density grid
+of each medium and the per-light optical-depth tables, 1000000 by default. A grid that would need more is not abandoned:
+it is built coarser, at the widest cell width that fits, with a warning naming what was asked for and what to set to have
+it in full. The limit is a memory bound &mdash; each cell holds a density colour and each table entry an optical-depth
+colour, so a few million cells run to a few hundred megabytes.</p>
+<p>A scene can ask for its own limit with <a href="r3_4.html#r3_4_1_18">prepared_media_cells</a> in
+<code>global_settings</code>; the larger of the scene's and the machine's value applies. That keeps the division of
+labour simple: drafts render on the machine default, where a coarser grid costs almost nothing, and a final render
+raises the limit here, on the machine that renders it, without editing the scene. A value below 1 or above 1000000000
+is an error.</p>
+<pre>
+-- povray.ini on a render farm's final machines
+Prepared_Media_Cells=8000000
+</pre>
 </div>
 
 <a name="r3_2_6"></a>
