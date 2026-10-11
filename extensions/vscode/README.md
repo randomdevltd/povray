@@ -52,7 +52,10 @@ The command palette entry **POV-Ray: Convert Scene to 4.0 (codemod)**, offered f
 classic `.pov`/`.inc` documents, runs the repository's codemod
 (`tools/language/codemod/codemod.mjs`) on the active scene and opens the produced
 `.pov4`/`.inc4` beside it. It needs `povray.repoRoot` pointing at a POV-Ray checkout;
-with it empty and the default command, the command only asks you to set it. Set
+with it empty and the default command, the command only asks you to set it.
+The checkout's classic grammar binding must be built (`npm install` in
+`libraries/tree-sitter-pov`) — a missing binding is reported in the failure message
+and the POV-Ray output channel. Set
 `povray.codemodCommand` to run something else — `{repo}`, `{input}` and `{outdir}`
 are substituted with the checkout, the scene file and its directory. The command and
 its output are logged to the **POV-Ray** output channel; a scene the codemod refuses

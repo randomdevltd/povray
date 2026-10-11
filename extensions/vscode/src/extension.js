@@ -238,6 +238,14 @@ function firstRefusal(stdout, stderr) {
     return (stdout + '\n' + stderr).split('\n').find((line) => line.startsWith('refused\t'));
 }
 
+// First error-ish lines of renderer/codemod output, for surfacing in the failure message.
+function failureSummary(stdout, stderr) {
+    return (stdout + '\n' + stderr)
+        .split('\n').map((l) => l.trim())
+        .filter((l) => /error|refused|cannot|missing|not found|no such file/i.test(l) && !/^povray: cannot open (the|an) /.test(l))
+        .slice(0, 2).join(' | ');
+}
+
 async function convertToPov4() {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !isClassicScene(editor.document)) return;
@@ -263,9 +271,12 @@ async function convertToPov4() {
     if (stderr) channel.appendLine(stderr.replace(/\n$/, ''));
     if (code !== 0) {
         const refusal = firstRefusal(stdout, stderr);
+        const summary = failureSummary(stdout, stderr);
         vscode.window.showWarningMessage(refusal
             ? `Scene not converted: ${refusal}`
-            : `Codemod exited with code ${code}; see the POV-Ray output channel for the full log.`);
+            : (summary
+                ? `Scene not converted: ${summary} — see the POV-Ray output channel.`
+                : `Codemod exited with code ${code}; see the POV-Ray output channel for the full log.`));
         return;
     }
     const output = vscode.Uri.file(convertedPath(input));
