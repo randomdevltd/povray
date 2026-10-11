@@ -76,7 +76,7 @@ using std::vector;
 enum FastMediaWarning
 {
     kFastField = 1, kFastGrid = 2, kFastContainer = 4,
-    kFastMixed = 8, kFastLength = 16, kFastPhoton = 32
+    kFastMixed = 8, kFastPhoton = 32, kFastCoarse = 2048
 };
 
 static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reason,
@@ -91,8 +91,11 @@ static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reas
     if (container)
         Make_min_max_from_BBox(low, high, container->BBox);
     td->mediaMessages->Warning(kWarningGeneral,
-        "Media method 4 is using classic sampling: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. "
-        "This can be much slower. %s",
+        reason == kFastCoarse
+            ? "Media method 4 coarsened its preparation: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. "
+              "Further warnings for this reason are suppressed."
+            : "Media method 4 is using classic sampling: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. "
+              "This can be much slower. %s",
         detail, media.FastResolution, low[X], low[Y], low[Z], high[X], high[Y], high[Z],
         container ? "" : " (unavailable)",
         fieldFailure ? "This warning is reported once for this prepared field." : "Further warnings for this reason are suppressed.");
@@ -104,6 +107,8 @@ class Media::FastCache final
         FastCache(ObjectPtr object, DBL resolution) : container(object), step(resolution) {}
         ObjectPtr container;
         DBL step;
+        /// the requested step and the cells it needed, when the cell limit coarsened the grid; 0 when it did not
+        DBL coarseStep = 0.0, coarseCells = 0.0;
         std::once_flag fieldOnce;
         bool fieldReady = false;
         unsigned failureReason = kFastField;
@@ -163,12 +168,47 @@ bool Media::FastCache::Segment(const Ray& ray, DBL& from, DBL& to) const
     return true;
 }
 
+/// The widest grid step whose cell count fits the limit: `step` itself when it already fits, else a bisection
+/// over [step, longest side]; cellsNeeded reports the count at the requested step.
+static DBL FitGridStep(const Vector3d& size, DBL step, DBL limit, DBL& cellsNeeded)
+{
+    cellsNeeded = ceil(size[X] / step) * ceil(size[Y] / step) * ceil(size[Z] / step);
+    if (cellsNeeded <= limit)
+        return step;
+    DBL lower = step, upper = std::max(size[X], std::max(size[Y], size[Z]));
+    for (int i = 0; i < 48; i++)
+    {
+        const DBL candidate = (lower + upper) * 0.5;
+        if (ceil(size[X] / candidate) * ceil(size[Y] / candidate) * ceil(size[Z] / candidate) > limit)
+            lower = candidate;
+        else
+            upper = candidate;
+    }
+    return upper * 1.00001;
+}
+
+/// The coarsened-grid message shared by every path that fits a prepared grid to the cell limit.
+static void CoarseGridDetail(char *detail, size_t length, const char *what, DBL requested, DBL needed, DBL limit, DBL fitted)
+{
+    std::snprintf(detail, length,
+        "The %s at the requested resolution %.6g needs %.0f cells, above the limit of %.0f, so it is built at %.6g instead. "
+        "Set prepared_media_cells to at least %.0f to avoid this coarsening.",
+        what, requested, needed, limit, fitted, needed);
+}
+
 bool Media::FastCache::EnsureField(Media& media, TraceThreadData *ttd)
 {
     std::call_once(fieldOnce, [&] {
         fieldReady = BuildField(media, ttd);
         if (!fieldReady)
             WarnFastMedia(ttd, media, failureReason, failure.c_str(), container);
+        else if (coarseCells > 0.0)
+        {
+            char detail[512];
+            CoarseGridDetail(detail, sizeof(detail), "density grid", coarseStep, coarseCells,
+                             ttd->GetSceneData()->EffectivePreparedMediaCells(), step);
+            WarnFastMedia(ttd, media, kFastCoarse, detail, container);
+        }
     });
     return fieldReady;
 }
@@ -188,24 +228,24 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
     if (!std::isfinite(size[X]) || !std::isfinite(size[Y]) || !std::isfinite(size[Z]) ||
         (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
         return false;
+    // The grid is coarsened to the widest step that fits, never dropped to classic sampling; the parse-time fit
+    // normally leaves nothing to do here, so this covers bounds that grew after the medium was prepared.
+    if (step > 0.0)
+    {
+        DBL needed;
+        const DBL fitted = FitGridStep(size, step, ttd->GetSceneData()->EffectivePreparedMediaCells(), needed);
+        if (fitted != step)
+        {
+            coarseStep = step;
+            coarseCells = needed;
+            step = fitted;
+        }
+    }
     const DBL sx = ceil(size[X] / step), sy = ceil(size[Y] / step), sz = ceil(size[Z] / step);
-    if ((sx < 1) || (sy < 1) || (sz < 1) || (sx * sy * sz > 1000000.0))
+    if ((sx < 1) || (sy < 1) || (sz < 1))
     {
         failureReason = kFastGrid;
-        DBL lower = step, upper = std::max(size[X], std::max(size[Y], size[Z]));
-        for (int i = 0; i < 48; i++)
-        {
-            const DBL candidate = (lower + upper) * 0.5;
-            if (ceil(size[X] / candidate) * ceil(size[Y] / candidate) * ceil(size[Z] / candidate) > 1000000.0)
-                lower = candidate;
-            else
-                upper = candidate;
-        }
-        char detail[256];
-        std::snprintf(detail, sizeof(detail),
-            "The %.0f x %.0f x %.0f density grid exceeds 1000000 cells. Try resolution %.6g or coarser, automatic resolution, or split the container.",
-            sx, sy, sz, upper * 1.00001);
-        failure = detail;
+        failure = "The density grid has no usable cell size; check the container's bounds and the media resolution.";
         return false;
     }
     nx = int(sx); ny = int(sy); nz = int(sz);
@@ -356,6 +396,7 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
     grid->u = cross(grid->w, fabs(grid->w[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0)).normalized();
     grid->v = cross(grid->w, grid->u);
     const Vector3d basis[3] = { grid->u, grid->v, grid->w };
+    DBL span[3];
     for (int axis = 0; axis < 3; axis++)
     {
         grid->lo[axis] = std::numeric_limits<DBL>::infinity();
@@ -368,15 +409,34 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
                     grid->lo[axis] = std::min(grid->lo[axis], value);
                     hi = std::max(hi, value);
                 }
-        const DBL count = ceil((hi - grid->lo[axis]) / step);
-        if (!std::isfinite(count) || (count < 1.0) || (count > 1000000.0))
-            return nullptr;
-        grid->n[axis] = int(count);
-        grid->ds[axis] = (hi - grid->lo[axis]) / grid->n[axis];
+        span[axis] = hi - grid->lo[axis];
     }
-    const double cells = double(grid->n[0]) * grid->n[1] * grid->n[2];
-    if (cells > 1000000.0)
-        return nullptr;
+    // A single uniform scale coarsens ds until every count and the total fit, so the table is built, not dropped.
+    const DBL limit = ttd->GetSceneData()->EffectivePreparedMediaCells();
+    DBL total = 1.0;
+    for (int axis = 0; axis < 3; axis++)
+        total *= std::max(1.0, ceil(span[axis] / step));
+    const DBL needed = total;
+    DBL scale = 1.0;
+    while (total > limit)
+    {
+        scale = (scale > 1.0) ? scale * 1.05 : 1.05;
+        total = 1.0;
+        for (int axis = 0; axis < 3; axis++)
+            total *= std::max(1.0, ceil(span[axis] / (step * scale)));
+    }
+    for (int axis = 0; axis < 3; axis++)
+    {
+        const DBL count = std::max(1.0, ceil(span[axis] / (step * scale)));
+        grid->n[axis] = int(count);
+        grid->ds[axis] = span[axis] / grid->n[axis];
+    }
+    if (scale > 1.0)
+    {
+        char detail[512];
+        CoarseGridDetail(detail, sizeof(detail), "optical-depth grid", step, needed, limit, step * scale);
+        WarnFastMedia(ttd, media, kFastCoarse, detail, container);
+    }
     grid->prefix.resize(size_t(grid->n[0]) * grid->n[1] * (grid->n[2] + 1));
     for (int y = 0; y < grid->n[1]; y++)
         for (int x = 0; x < grid->n[0]; x++)
@@ -439,7 +499,7 @@ Media::Media()
     Extinction.Clear();
     Scattering.Clear();
     Refraction = 0.0;
-    RefractionDetail = -1.0;
+    RefractionDetail = 0.0;
 
     is_constant = false;
 
@@ -561,7 +621,15 @@ static DBL AutomaticResolution(ObjectPtr object)
     return std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0, std::cbrt(volume / 500000.0));
 }
 
-void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail)
+// A container's bounding-box size, the extent measure the detail rules share.
+static Vector3d ContainerSize(ObjectPtr object)
+{
+    Vector3d low, high;
+    Make_min_max_from_BBox(low, high, object->BBox);
+    return high - low;
+}
+
+void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLimit)
 {
     if (Sample_Method != 4)
         return;
@@ -580,7 +648,20 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail)
         FastResolution = 0.0;
     }
     else if (!fastCache)
+    {
+        // The grid is fitted here, at parse time, so every thread sees one resolution: a step whose grid would
+        // exceed the cell limit becomes the widest step that fits, reported when the field is first built.
+        DBL needed = 0.0;
+        const DBL requested = FastResolution;
+        if (cellLimit > 0.0)
+            FastResolution = FitGridStep(ContainerSize(object), FastResolution, cellLimit, needed);
         fastCache.reset(new FastCache(object, FastResolution));
+        if (FastResolution != requested)
+        {
+            fastCache->coarseStep = requested;
+            fastCache->coarseCells = needed;
+        }
+    }
 }
 
 void Media::PostProcess()
@@ -706,7 +787,7 @@ std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr contai
         failure = "its container is unbounded";
         return nullptr;
     }
-    while (ceil(size[X] / step) * ceil(size[Y] / step) * ceil(size[Z] / step) > 1000000.0)
+    while (ceil(size[X] / step) * ceil(size[Y] / step) * ceil(size[Z] / step) > td->GetSceneData()->EffectivePreparedMediaCells())
         step *= 1.05;
     std::shared_ptr<VolumeEmitter> emitter(new VolumeEmitter());
     const int n[3] = { int(ceil(size[X] / step)), int(ceil(size[Y] / step)), int(ceil(size[Z] / step)) };
@@ -937,14 +1018,18 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             else
                 bounded = false;
             // The detail is a length in millimetres, so it needs the scene's scale; several media take the smallest.
+            // Auto derives it from the same extent measure the old size rule used, D = extent/32, so the D/2 step
+            // cap keeps the old extent/64 march step and the gradient averages at that scale.
             const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
             const DBL detail = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
-            if (detail > 0.0)
+            const DBL autoDetail = ((detail <= 0.0) && finite) ? extent / 32.0 : 0.0;
+            const DBL effectiveDetail = (detail > 0.0) ? detail : autoDetail;
+            if (effectiveDetail > 0.0)
             {
                 // Steps of at most D/2 put about four curvature samples across the narrowest band; the same
                 // spacing as the gradient's central difference averages whatever is narrower, on every ray.
-                epsilon = std::min(epsilon, 0.5 * detail);
-                maxStep = std::min(maxStep, 0.5 * detail);
+                epsilon = std::min(epsilon, 0.5 * effectiveDetail);
+                maxStep = std::min(maxStep, 0.5 * effectiveDetail);
             }
             if (medium.fastCache && (medium.FastResolution > 0.0))
             {
@@ -953,16 +1038,19 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             }
             else if (finite)
             {
-                epsilon = std::min(epsilon, extent * 1.0e-4);
-                maxStep = std::min(maxStep, extent / 64.0);
-                if ((detail <= 0.0) && (sceneData->EffectiveLanguageVersion() >= 400) && td->mediaMessages &&
+                if (detail > 0.0)
+                {
+                    epsilon = std::min(epsilon, extent * 1.0e-4);
+                    maxStep = std::min(maxStep, extent / 64.0);
+                }
+                else if (td->mediaMessages &&
                     (sceneData->mmPerUnit > 0.0) && (extent * sceneData->mmPerUnit > 100.0) &&
                     !(sceneData->mediaWarningFlags.fetch_or(kRefractionDetailUnset, std::memory_order_relaxed) & kRefractionDetailUnset))
                     td->mediaMessages->Warning(kWarningGeneral,
-                        "A refracting medium %.4g mm across steps at up to %.4g mm where its index varies, so structure narrower "
-                        "than about half of that can be missed on some rays and render as speckle. Set refraction_detail to "
-                        "the smallest such structure, in millimetres, that must refract. This warning is given once.",
-                        extent * sceneData->mmPerUnit, extent / 64.0 * sceneData->mmPerUnit);
+                        "A refracting medium %.4g mm across renders with refraction_detail auto: the detail follows the "
+                        "medium's bounds, and index structure narrower than about %.4g mm is averaged rather than refracted. "
+                        "An explicit refraction_detail, in millimetres, refracts finer structure. This warning is given once.",
+                        extent * sceneData->mmPerUnit, extent / 32.0 * sceneData->mmPerUnit);
             }
             else
             {
@@ -1257,29 +1345,20 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     if(litintervals.empty())
         litintervals.push_back(LitInterval(false, 0.0, isect.Depth, 0, 0));
 
-    const DBL preparedResolution = PreparedResolution(medias, ray);
+    const DBL requestedResolution = PreparedResolution(medias, ray);
     DBL preparedFrom = 0.0, preparedTo = isect.Depth;
-    if (preparedResolution > 0.0)
-        PreparedRange(medias, ray, preparedFrom, preparedTo);
-    const DBL fastStep = ray.IsShadowTestRay() ? preparedResolution : preparedResolution / 3.0;
-    const bool withinStepLimit = fastStep > 0.0 &&
-        PreparedSteps(medias, ray, preparedFrom, preparedTo, preparedResolution) <= 4096.0;
-    const bool fieldsPrepared = preparedResolution > 0.0 && (withinStepLimit || ray.IsShadowTestRay()) && PrepareFields(medias, ray);
-    const bool fastPrepared = withinStepLimit && fieldsPrepared;
-    if (fastPrepared && preparedTo <= preparedFrom)
-        return;
-    if (fastStep > 0.0 && !withinStepLimit && !ray.IsShadowTestRay() &&
-        !(threadData->GetSceneData()->mediaWarningFlags.load(std::memory_order_relaxed) & kFastLength))
+    DBL preparedCoarsening = 1.0;
+    if (requestedResolution > 0.0)
     {
-        char detail[256];
-        std::snprintf(detail, sizeof(detail),
-            "Ray span %.9g with finest step %.9g exceeds 4096 prepared steps (%zu active media). Increase resolution or split long containers.",
-            preparedTo - preparedFrom, fastStep, medias.size());
-        WarnFastMedia(threadData, *medias.front(), kFastLength, detail,
-                      medias.front()->fastCache ? medias.front()->fastCache->container : nullptr);
+        PreparedRange(medias, ray, preparedFrom, preparedTo);
+        CoarsenPreparedResolution(medias, ray, preparedFrom, preparedTo, requestedResolution, preparedCoarsening);
     }
-    const bool fastCamera = fastPrepared && !ray.IsShadowTestRay() && !ray.IsPhotonRay();
-    const bool fastShadow = fastPrepared && ray.IsShadowTestRay();
+    const DBL preparedResolution = requestedResolution * preparedCoarsening;
+    const bool fieldsPrepared = preparedResolution > 0.0 && PrepareFields(medias, ray);
+    if (fieldsPrepared && preparedTo <= preparedFrom)
+        return;
+    const bool fastCamera = fieldsPrepared && !ray.IsShadowTestRay() && !ray.IsPhotonRay();
+    const bool fastShadow = fieldsPrepared && ray.IsShadowTestRay();
 
     // Set up sampling intervals (makes sure we will always have enough intervals)
     ComputeMediaSampleInterval(litintervals, mediaintervals, IMedia, fastCamera || fastShadow);
@@ -1298,7 +1377,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
                                  isect.Depth - mediaintervals.back().s1,
                                  0, 0));
 
-    if (fastPrepared)
+    if (fieldsPrepared)
     {
         for (MediaInterval& interval : mediaintervals)
         {
@@ -1365,7 +1444,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     }
     else if(fastCamera)
         ComputeMediaFixedSampling(medias, lights, mediaintervals, ray, preparedResolution / 3.0,
-                                  ignore_photons, use_scattering);
+                                  ignore_photons, use_scattering, preparedCoarsening);
     else if((IMedia->Sample_Method == 3 || IMedia->Sample_Method == 4) && !all_constant_and_light_ray) // adaptive sampling and method 4 fallback
         ComputeMediaAdaptiveSampling(medias, lights, mediaintervals, ray, IMedia, aa_threshold, minSamples, ignore_photons, use_scattering);
     else
@@ -1580,7 +1659,7 @@ void MediaFunction::PreparedRange(MediaVector& medias, const Ray& ray, DBL& from
     to = std::max(first, last);
 }
 
-DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution)
+DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL coarsening)
 {
     const DBL divisor = ray.IsShadowTestRay() ? 1.0 : 3.0;
     DBL count = 2.0 * medias.size() + 1.0;
@@ -1596,12 +1675,32 @@ DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, 
         }
         DBL entry = from, exit = to;
         if (medium->fastCache->Segment(ray, entry, exit))
-            count += ceil((exit - entry) * divisor / medium->FastResolution);
+            count += ceil((exit - entry) * divisor / (medium->FastResolution * coarsening));
     }
     const DBL modifierResolution = ModifierResolution();
     if (modifierResolution < HUGE_VAL)
-        count += ceil((to - from) * divisor / modifierResolution);
+        count += ceil((to - from) * divisor / (modifierResolution * coarsening));
     return count;
+}
+
+void MediaFunction::CoarsenPreparedResolution(MediaVector& medias, const Ray& ray, DBL from, DBL to,
+                                              DBL resolution, DBL& coarsening)
+{
+    coarsening = 1.0;
+    const DBL steps = PreparedSteps(medias, ray, from, to, resolution);
+    if (steps <= 4096.0)
+        return;
+    // One uniform factor coarsens every medium's steps until the march fits the budget, so the prepared path runs.
+    coarsening = ceil(steps / 4096.0);
+    while (PreparedSteps(medias, ray, from, to, resolution * coarsening, coarsening) > 4096.0)
+        coarsening *= 2.0;
+    char detail[512];
+    std::snprintf(detail, sizeof(detail),
+        "The prepared march over a span of %.9g at resolution %.9g needs %.0f steps, above the budget of 4096, so it runs "
+        "coarsened at resolution %.9g. Splitting long containers or a coarser resolution avoids this coarsening.",
+        to - from, resolution, steps, resolution * coarsening);
+    WarnFastMedia(threadData, *medias.front(), kFastCoarse, detail,
+                  medias.front()->fastCache ? medias.front()->fastCache->container : nullptr);
 }
 
 void MediaFunction::SplitPreparedIntervals(MediaVector& medias, const Ray& ray, MediaIntervalVector& intervals)
@@ -1633,7 +1732,7 @@ void MediaFunction::SplitPreparedIntervals(MediaVector& medias, const Ray& ray, 
     intervals = split;
 }
 
-DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const MediaInterval& interval, DBL fallback)
+DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const MediaInterval& interval, DBL fallback, DBL coarsening)
 {
     DBL step = interval.ds;
     for (Media* medium : medias)
@@ -1648,11 +1747,11 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
         }
         DBL from = interval.s0, to = interval.s1;
         if (medium->fastCache->Segment(ray, from, to))
-            step = std::min(step, medium->FastResolution / (ray.IsShadowTestRay() ? 1.0 : 3.0));
+            step = std::min(step, medium->FastResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     }
     const DBL modifierResolution = ModifierResolution();
     if (modifierResolution < HUGE_VAL)
-        step = std::min(step, modifierResolution / (ray.IsShadowTestRay() ? 1.0 : 3.0));
+        step = std::min(step, modifierResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     return step;
 }
 
@@ -1669,19 +1768,18 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
 {
     const bool method3 = (IMedia->Sample_Method == 3 || IMedia->Sample_Method == 4);
     const int points = method3 ? 2 * max((IMedia->Min_Samples + 1) / 2, 1) + 1 : max(IMedia->Min_Samples, 1);
-    const DBL resolution = PreparedResolution(medias, ray);
-    const bool withinStepLimit = resolution > 0.0 &&
-        PreparedSteps(medias, ray, mediaintervals.front().s0, mediaintervals.back().s1, resolution) <= 4096.0;
-    if (withinStepLimit && PrepareFields(medias, ray))
+    const DBL requestedResolution = PreparedResolution(medias, ray);
+    DBL coarsening = 1.0;
+    if (requestedResolution > 0.0)
+        CoarsenPreparedResolution(medias, ray, mediaintervals.front().s0, mediaintervals.back().s1,
+                                  requestedResolution, coarsening);
+    const DBL resolution = requestedResolution * coarsening;
+    if ((resolution > 0.0) && PrepareFields(medias, ray))
     {
         threadData->Stats()[Media_Intervals] += mediaintervals.size();
-        ComputeMediaFieldTransmittance(medias, mediaintervals, ray, resolution);
+        ComputeMediaFieldTransmittance(medias, mediaintervals, ray, resolution, coarsening);
         return;
     }
-    if (resolution > 0.0 && !withinStepLimit)
-        WarnFastMedia(threadData, *medias.front(), kFastLength,
-                      "This shadow segment exceeds 4096 prepared steps and has no usable optical-depth cache. Increase resolution or split long containers.",
-                      medias.front()->fastCache ? medias.front()->fastCache->container : nullptr);
 
     ExtinctionPlan plan;
     const bool planned = (modifiers == nullptr) && plan.Plan(medias, threadData);
@@ -1699,7 +1797,8 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
         ComputeMediaPointTransmittance(medias, mediaintervals, ray, planned ? &plan : nullptr, method3, points);
 }
 
-void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, DBL resolution)
+void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
+                                                  DBL resolution, DBL coarsening)
 {
     const DBL opaque = log(1024.0);
     MathColour total;
@@ -1710,7 +1809,7 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
         MathColour depth;
         if (!dark && (interval.ds > 0.0))
         {
-            const DBL width = PreparedStep(medias, ray, interval, resolution);
+            const DBL width = PreparedStep(medias, ray, interval, resolution, coarsening);
             const int count = std::max(1, int(ceil(interval.ds / width)));
             const DBL step = interval.ds / count;
             for (int j = 0; j < count; j++)
@@ -1981,7 +2080,7 @@ DBL MediaFunction::ScatteringStep(MediaVector& medias, const MediaInterval& inte
 }
 
 void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
-                                              const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering)
+                                              const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening)
 {
     for (MediaInterval& interval : mediaintervals)
     {
@@ -1990,7 +2089,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             interval.samples = 1;
             continue;
         }
-        const DBL width = PreparedStep(medias, ray, interval, resolution);
+        const DBL width = PreparedStep(medias, ray, interval, resolution, coarsening);
         const int count = std::max(1, int(ceil(interval.ds / width)));
         const DBL step = interval.ds / count;
         if (step <= 0.0)

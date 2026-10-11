@@ -8017,9 +8017,23 @@ void Parser::Parse_Global_Settings()
             }
             else if (CurrentTokenText() == "refraction_detail")
             {
-                sceneData->refractionDetail = Parse_Float();
-                if (!std::isfinite(sceneData->refractionDetail) || !(sceneData->refractionDetail > 0.0))
-                    Error("refraction_detail must be a length in millimetres greater than 0.");
+                Get_Token();
+                if (CurrentTokenText() == "auto")
+                    sceneData->refractionDetail = 0.0;
+                else
+                {
+                    UNGET
+                    sceneData->refractionDetail = Parse_Float();
+                    if (!std::isfinite(sceneData->refractionDetail) || !(sceneData->refractionDetail > 0.0))
+                        Error("refraction_detail must be a length in millimetres greater than 0, or auto.");
+                }
+            }
+            else if (CurrentTokenText() == "prepared_media_cells")
+            {
+                const DBL cells = Parse_Float();
+                if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
+                    Error("prepared_media_cells must be an integer from 1 to 1000000000.");
+                sceneData->preparedMediaCells = cells;
             }
             else if (CurrentTokenText() == "atmospheric_ior")
             {
@@ -10126,9 +10140,16 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         for (Media& medium : Object->interior->media)
         {
             // The detail comes from the medium or the scene's default, in millimetres; the grid width is in scene units.
+            // Auto derives it from the container's largest side, the same extent the marcher's rule measures.
             const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
             const DBL detailUnits = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
-            medium.SetFastContainer(Object, detailUnits);
+            Vector3d boundsLow, boundsHigh;
+            Make_min_max_from_BBox(boundsLow, boundsHigh, Object->BBox);
+            const Vector3d boundsSize = boundsHigh - boundsLow;
+            const DBL extent = std::max(boundsSize[X], std::max(boundsSize[Y], boundsSize[Z]));
+            const DBL autoDetail = (std::isfinite(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5)) ? extent / 32.0 : 0.0;
+            medium.SetFastContainer(Object, (detailUnits > 0.0) ? detailUnits : autoDetail,
+                                    sceneData->EffectivePreparedMediaCells());
             if ((detailUnits > 0.0) && (medium.Refraction != 0.0) && (medium.Sample_Method == 4) &&
                 !medium.Density.empty() && (medium.FastResolution > 0.5 * detailUnits))
                 Warning("Media resolution %.6g is coarser than half this medium's refraction_detail (%.6g), so the prepared "

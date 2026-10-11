@@ -178,7 +178,7 @@ class MediaFunction : public Trace::MediaFunctor
                                          const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering,
                                          bool all_constant_and_light_ray);
         void ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
-                                       const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering);
+                                       const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening = 1.0);
         void ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                           const Ray& ray, const Media *IMedia, DBL aa_threshold, int minsamples, bool ignore_photons, bool use_scattering);
         void ComputeMediaColour(MediaIntervalVector& mediaintervals, MathColour& colour, ColourChannel& transm);
@@ -189,11 +189,14 @@ class MediaFunction : public Trace::MediaFunctor
                                             const ExtinctionPlan *plan, bool method3, int points);
         DBL PreparedResolution(MediaVector& medias, const Ray& ray);
         bool PrepareFields(MediaVector& medias, const Ray& ray);
-        DBL PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution);
+        DBL PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL coarsening = 1.0);
+        /// Coarsens the prepared resolution uniformly until the march fits the step budget; coarsening 1 when it already fits.
+        void CoarsenPreparedResolution(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL& coarsening);
         void SplitPreparedIntervals(MediaVector& medias, const Ray& ray, MediaIntervalVector& intervals);
-        DBL PreparedStep(MediaVector& medias, const Ray& ray, const MediaInterval& interval, DBL fallback);
+        DBL PreparedStep(MediaVector& medias, const Ray& ray, const MediaInterval& interval, DBL fallback, DBL coarsening = 1.0);
         void PreparedRange(MediaVector& medias, const Ray& ray, DBL& from, DBL& to);
-        void ComputeMediaFieldTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray, DBL resolution);
+        void ComputeMediaFieldTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
+                                            DBL resolution, DBL coarsening = 1.0);
         /// ComputeMediaTransmittance where every density bounds its extinction along a segment; rayLo and rayHi bound the ray.
         void ComputeMediaBoundedTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
                                               const ExtinctionPlan& plan, bool method3, int points,

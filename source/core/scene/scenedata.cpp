@@ -442,7 +442,9 @@ SceneData::SceneData() :
     crossedNonSurface = false;
     interfaceTexture = kInterfaceTextureAuto;
     refractionAngle = 0.5;
-    refractionDetail = -1.0;
+    refractionDetail = 0.0;
+    preparedMediaCells = 1000000.0;
+    machinePreparedMediaCells = 1000000.0;
     dielectrics = false;
     anyOpaque = false;
     firstMediaPrecedence = UINT_MAX;

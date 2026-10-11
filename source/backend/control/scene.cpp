@@ -118,6 +118,9 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     sceneData->warningLevel = clip(parseOptions.TryGetInt(kPOVAttrib_WarningLevel, 9), 0, 9);
 
+    // the machine's prepared media cell limit; the scene's prepared_media_cells raises it, never lowers it
+    sceneData->machinePreparedMediaCells = clip<double>(parseOptions.TryGetFloat(kPOVAttrib_PreparedMediaCells, 1000000.0), 1.0, 1.0e9);
+
     sceneData->inputFile = parseOptions.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov");
     sceneData->headerFile = parseOptions.TryGetUCS2String(kPOVAttrib_IncludeHeader, "");
     sceneData->pov4LoweredFile = parseOptions.TryGetUCS2String(kPOVAttrib_Pov4LoweredFile, "");

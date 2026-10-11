@@ -202,6 +202,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Pre_Frame_Return",    kPOVAttrib_PreFrameCommand,    kUseSpecialHandler },
     { "Pre_Scene_Command",   kPOVAttrib_PreSceneCommand,    kUseSpecialHandler },
     { "Pre_Scene_Return",    kPOVAttrib_PreSceneCommand,    kUseSpecialHandler },
+    { "Prepared_Media_Cells",kPOVAttrib_PreparedMediaCells, kPOVMSType_Int },
 
     { "Quality",             kPOVAttrib_Quality,            kPOVMSType_Int },
 
