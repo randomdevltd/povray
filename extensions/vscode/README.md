@@ -39,10 +39,25 @@ language server for live feedback.
 | `povray.includePath` | library search paths (`+L`) passed to the renderer |
 | `povray.declare` | `Declare=name=value` entries passed to the renderer |
 | `povray.languageServer` | `auto` (default: start when bundled), `on`, or `off` |
+| `povray.repoRoot` | POV-Ray source checkout supplying the codemod for scene conversion |
+| `povray.codemodCommand` | command line for *Convert Scene to 4.0*, with `{repo}`, `{input}` and `{outdir}` placeholders |
 
 Notes: columns in diagnostics are byte-based and clamped to the line, and a check run
 is killed after 30 seconds. Messages from include files are attached to the include
 file when it can be resolved next to the document.
+
+## Converting a classic scene
+
+The command palette entry **POV-Ray: Convert Scene to 4.0 (codemod)**, offered for
+classic `.pov`/`.inc` documents, runs the repository's codemod
+(`tools/language/codemod/codemod.mjs`) on the active scene and opens the produced
+`.pov4`/`.inc4` beside it. It needs `povray.repoRoot` pointing at a POV-Ray checkout;
+with it empty and the default command, the command only asks you to set it. Set
+`povray.codemodCommand` to run something else — `{repo}`, `{input}` and `{outdir}`
+are substituted with the checkout, the scene file and its directory. The command and
+its output are logged to the **POV-Ray** output channel; a scene the codemod refuses
+(non-zero exit) shows a warning carrying the first refusal line, and the run is
+killed after 120 seconds.
 
 ## Packaging and development
 

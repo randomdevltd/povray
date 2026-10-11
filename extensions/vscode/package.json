@@ -2,7 +2,7 @@
   "name": "povray",
   "displayName": "POV-Ray",
   "description": "POV-Ray scene language support: highlighting, block-aware completion, and diagnostics from the renderer.",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "publisher": "povray",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -47,6 +47,13 @@
         "path": "./syntaxes/pov.tmLanguage.json"
       }
     ],
+    "commands": [
+      {
+        "command": "povray.convertToPov4",
+        "title": "POV-Ray: Convert Scene to 4.0 (codemod)",
+        "enablement": "resourceExtname == .pov || resourceExtname == .inc"
+      }
+    ],
     "configuration": {
       "title": "POV-Ray",
       "properties": {
@@ -76,6 +83,16 @@
             "Never start the language server"
           ],
           "description": "Language server for live syntax diagnostics, outline, go-to-definition and completion. Runs from the extension directory; off restores on-save-only diagnostics."
+        },
+        "povray.repoRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a POV-Ray source checkout; the codemod command runs its tools/language/codemod."
+        },
+        "povray.codemodCommand": {
+          "type": "string",
+          "default": "node \"{repo}/tools/language/codemod/codemod.mjs\" \"{input}\" -o \"{outdir}\" --includes classic",
+          "description": "Command line run by Convert Scene to 4.0. Placeholders: {repo} = povray.repoRoot, {input} = the scene file, {outdir} = its directory."
         }
       }
     }
