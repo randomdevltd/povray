@@ -61,8 +61,17 @@
 #endif
 
 // Function that executes functions, the parameter is the function index
+#ifndef POV_FN_IR
+    // 1 runs functions through the register IR; 0 keeps the fncode stack interpreter
+    #define POV_FN_IR 1
+#endif
+
 #ifndef POVFPU_Run
-    #define POVFPU_Run(ctx, fn) POVFPU_RunDefault(ctx, fn)
+    #if POV_FN_IR
+        #define POVFPU_Run(ctx, fn) POVFPU_RunIR(ctx, fn)
+    #else
+        #define POVFPU_Run(ctx, fn) POVFPU_RunDefault(ctx, fn)
+    #endif
 #endif
 
 // Adjust to add system specific handling of functions like just-in-time compilation

@@ -74,6 +74,10 @@ namespace
 const unsigned int kMaxVReg = 65535;
 const unsigned int kSpillHomes = 10;    // r0-r7 plus the two compare masks
 
+// only r0's home is read before any write (a trap-only function returns through it);
+// every other register the frontend lowers is written where the old VM wrote it
+inline unsigned int slotBaseHomes(const FnDef* def) { return def->slotCnt - kSpillHomes; }
+
 #ifndef FNIR_THREADED
     #if defined(__GNUC__) && !defined(__clang__)
         #define FNIR_THREADED 1
@@ -690,6 +694,7 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
 
         unsigned int cond = 0;
         unsigned int retV = 0;
+        const bool returns = (term != nullptr) && (term->code == VM_RTS);
         if (L.ok && (term != nullptr))
         {
             if (term->code == VM_RTS)
@@ -707,28 +712,32 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
             else if (term->code == VM_BGE)
                 cond = L.Not(L.Mask(0));
         }
-        for (unsigned int i = 0; (i < 8) && L.ok; ++i)
-            if (L.r[i] >= 0)
-            {
-                const unsigned int v = static_cast<unsigned int>(L.r[i]);
-                L.Emit(FnkLocalSet, v, 0, 0, 0, L.slotBase + i);
-            }
-        if (L.ok && (L.mGt >= 0))
+        // a returning block has no successor to hand values to, so its live values stay put
+        if (!returns)
         {
-            const unsigned int v = static_cast<unsigned int>(L.mGt);
-            L.Emit(FnkLocalSet, v, 0, 0, 0, L.slotBase + 8);
-        }
-        if (L.ok && (L.mEq >= 0))
-        {
-            const unsigned int v = static_cast<unsigned int>(L.mEq);
-            L.Emit(FnkLocalSet, v, 0, 0, 0, L.slotBase + 9);
-        }
-        for (unsigned int s = 0; (s < L.slotBase) && L.ok; ++s)
-            if (L.slotVreg[s] >= 0)
+            for (unsigned int i = 0; (i < 8) && L.ok; ++i)
+                if (L.r[i] >= 0)
+                {
+                    const unsigned int v = static_cast<unsigned int>(L.r[i]);
+                    L.Emit(FnkLocalSet, v, 0, 0, 0, L.slotBase + i);
+                }
+            if (L.ok && (L.mGt >= 0))
             {
-                const unsigned int v = static_cast<unsigned int>(L.slotVreg[s]);
-                L.Emit(FnkLocalSet, v, 0, 0, 0, s);
+                const unsigned int v = static_cast<unsigned int>(L.mGt);
+                L.Emit(FnkLocalSet, v, 0, 0, 0, L.slotBase + 8);
             }
+            if (L.ok && (L.mEq >= 0))
+            {
+                const unsigned int v = static_cast<unsigned int>(L.mEq);
+                L.Emit(FnkLocalSet, v, 0, 0, 0, L.slotBase + 9);
+            }
+            for (unsigned int s = 0; (s < L.slotBase) && L.ok; ++s)
+                if (L.slotVreg[s] >= 0)
+                {
+                    const unsigned int v = static_cast<unsigned int>(L.slotVreg[s]);
+                    L.Emit(FnkLocalSet, v, 0, 0, 0, s);
+                }
+        }
         if (!L.ok)
             break;
 
@@ -825,6 +834,206 @@ void FunctionVM::BuildIR(FUNCTION fn)
     entry.ir = LowerFunction(entry.ops, consts, functions, fn);
 }
 
+#if FNIR_THREADED
+__attribute__((optimize("no-crossjumping", "no-gcse", "no-tree-slp-vectorize")))
+#endif
+DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnDef* def,
+                      unsigned int frameSp, int depth, const DBL* args, unsigned int argc)
+{
+    if (depth >= MAX_CALL_STACK_SIZE)
+    {
+        POVFPU_Exception(ctx, fnIdx, "Maximum function evaluation recursion level reached.");
+        return 0.0;
+    }
+    const unsigned int need = frameSp + def->slotCnt + def->regCnt;
+    if (need > ctx->maxdblstacksize)
+    {
+        const unsigned int size = max(need, ctx->maxdblstacksize + (unsigned int)INITIAL_DBL_STACK_SIZE);
+        ctx->dblstackbase = reinterpret_cast<DBL *>(POV_REALLOC(ctx->dblstackbase, sizeof(DBL) * size, "fn: ir frame"));
+        ctx->maxdblstacksize = size;
+    }
+    DBL* slots = ctx->dblstackbase + frameSp;
+    DBL* regs = slots + def->slotCnt;
+    slots[slotBaseHomes(def)] = 0.0;
+    for (unsigned int j = 0; (j < argc) && (j < def->slotCnt); ++j)
+        slots[j] = args[j];
+    const FnOp* const ops = def->ops.data();
+    const DBL* const kConsts = def->consts.data();
+    const unsigned int* const kBlocks = def->blockStart.data();
+    const FnOp* op = ops;
+    unsigned int pc = 0;
+
+#define FNIR_OPS(X) \
+    X(Const) X(Copy) X(Add) X(Sub) X(Mul) X(Div) X(Mod) X(Neg) X(Abs) \
+    X(CmpGt) X(CmpEq) X(MaskOr) X(MaskNot) X(Flag) X(Select) \
+    X(LocalGet) X(LocalSet) X(Sys1) X(Sys2) X(Math1) X(Math2) X(Trap) X(TrapS) X(Call) \
+    X(Br) X(BrCond) X(Ret)
+
+#if FNIR_THREADED
+    #define FNIR_LABEL(n) &&L_##n,
+    static const void* const dispatch[] = { FNIR_OPS(FNIR_LABEL) };
+    #undef FNIR_LABEL
+    #define FNIR_HANDLER(n) L_##n:
+    #define FNIR_NEXT() { op = ops + (++pc); goto *dispatch[op->code]; }
+    #define FNIR_ENTER() { op = ops + pc; goto *dispatch[op->code]; }
+    goto *dispatch[op->code];
+#else
+    #define FNIR_HANDLER(n) case Fnk##n:
+    #define FNIR_NEXT() { ++pc; continue; }
+    #define FNIR_ENTER() { op = ops + pc; continue; }
+    for (;;)
+    {
+        op = ops + pc;
+        switch (op->code)
+        {
+#endif
+
+    FNIR_HANDLER(Const)
+        regs[op->dst] = kConsts[op->k];
+        FNIR_NEXT();
+    FNIR_HANDLER(Copy)
+        regs[op->dst] = regs[op->a];
+        FNIR_NEXT();
+    FNIR_HANDLER(Add)
+        regs[op->dst] = regs[op->a] + regs[op->b];
+        FNIR_NEXT();
+    FNIR_HANDLER(Sub)
+        regs[op->dst] = regs[op->a] - regs[op->b];
+        FNIR_NEXT();
+    FNIR_HANDLER(Mul)
+        regs[op->dst] = regs[op->a] * regs[op->b];
+        FNIR_NEXT();
+    FNIR_HANDLER(Div)
+        regs[op->dst] = regs[op->a] / regs[op->b];
+        FNIR_NEXT();
+    FNIR_HANDLER(Mod)
+        regs[op->dst] = fmod(regs[op->a], regs[op->b]);
+        FNIR_NEXT();
+    FNIR_HANDLER(Neg)
+        regs[op->dst] = -regs[op->a];
+        FNIR_NEXT();
+    FNIR_HANDLER(Abs)
+        regs[op->dst] = fabs(regs[op->a]);
+        FNIR_NEXT();
+    FNIR_HANDLER(CmpGt)
+        regs[op->dst] = (regs[op->a] > regs[op->b]) ? 1.0 : 0.0;
+        FNIR_NEXT();
+    FNIR_HANDLER(CmpEq)
+        regs[op->dst] = (regs[op->a] == regs[op->b]) ? 1.0 : 0.0;
+        FNIR_NEXT();
+    FNIR_HANDLER(MaskOr)
+        regs[op->dst] = ((regs[op->a] != 0.0) || (regs[op->b] != 0.0)) ? 1.0 : 0.0;
+        FNIR_NEXT();
+    FNIR_HANDLER(MaskNot)
+        regs[op->dst] = (regs[op->a] != 0.0) ? 0.0 : 1.0;
+        FNIR_NEXT();
+    FNIR_HANDLER(Flag)
+        regs[op->dst] = regs[op->a];
+        FNIR_NEXT();
+    FNIR_HANDLER(Select)
+        regs[op->dst] = (regs[op->a] != 0.0) ? regs[op->b] : regs[op->c];
+        FNIR_NEXT();
+    FNIR_HANDLER(LocalGet)
+        regs[op->dst] = slots[op->k];
+        FNIR_NEXT();
+    FNIR_HANDLER(LocalSet)
+        slots[op->k] = regs[op->a];
+        FNIR_NEXT();
+    FNIR_HANDLER(Sys1)
+        regs[op->dst] = POVFPU_Sys1Table[op->k](regs[op->a]);
+        FNIR_NEXT();
+    FNIR_HANDLER(Sys2)
+        regs[op->dst] = POVFPU_Sys2Table[op->k](regs[op->a], regs[op->b]);
+        FNIR_NEXT();
+    FNIR_HANDLER(Math1)
+        regs[op->dst] = POVFPU_Math1Scalar(op->k, regs[op->a]);
+        FNIR_NEXT();
+    FNIR_HANDLER(Math2)
+        regs[op->dst] = POVFPU_Math2Scalar(op->k, regs[op->a], regs[op->b]);
+        FNIR_NEXT();
+    FNIR_HANDLER(Trap)
+    {
+        DBL* const args = regs + op->a;
+        const DBL result = POVFPU_TrapTable[op->k].fn(ctx, args, fnIdx);
+        slots = ctx->dblstackbase + frameSp;
+        regs = slots + def->slotCnt;
+        regs[op->dst] = result;
+        FNIR_NEXT();
+    }
+    FNIR_HANDLER(TrapS)
+    {
+        POVFPU_TrapSTable[op->k].fn(ctx, slots + op->a, fnIdx, frameSp + op->a);
+        slots = ctx->dblstackbase + frameSp;
+        regs = slots + def->slotCnt;
+        FNIR_NEXT();
+    }
+    FNIR_HANDLER(Call)
+    {
+        const FnDef* const callee = vm->functions[op->k].ir.get();
+        const unsigned int cnt = callee->parameterCnt;
+        DBL argv[MAX_FUNCTION_PARAMETER_LIST];
+        for (unsigned int j = 0; j < cnt; ++j)
+            argv[j] = regs[op->a + j];
+        const unsigned int calleeSp = frameSp + def->slotCnt + def->regCnt;
+        const DBL result = RunIR(vm, ctx, op->k, callee, calleeSp, depth + 1, argv, cnt);
+        DBL* const calleeSlots = ctx->dblstackbase + calleeSp;
+        slots = ctx->dblstackbase + frameSp;
+        for (unsigned int j = 0; j < op->c; ++j)
+            slots[op->b + j] = calleeSlots[j];
+        regs = slots + def->slotCnt;
+        regs[op->dst] = result;
+        FNIR_NEXT();
+    }
+    FNIR_HANDLER(Br)
+        pc = kBlocks[op->k];
+        FNIR_ENTER();
+    FNIR_HANDLER(BrCond)
+        if (regs[op->a] != 0.0)
+            pc = kBlocks[op->k];
+        else
+            pc = kBlocks[op->b];
+        FNIR_ENTER();
+    FNIR_HANDLER(Ret)
+        return regs[op->a];
+
+#if !FNIR_THREADED
+        }
+    }
+#endif
+#undef FNIR_HANDLER
+#undef FNIR_NEXT
+#undef FNIR_ENTER
+#undef FNIR_OPS
+}
+
+DBL POVFPU_RunIR(FPUContext* context, FUNCTION fn)
+{
+    context->threaddata->Stats()[Ray_Function_VM_Calls]++;
+    const FnDef* def = context->functionvm->GetIR(fn);
+    if (def == nullptr)
+        return POVFPU_RunScalar(context, fn);
+    return FunctionVM::RunIR(context->functionvm.get(), context, fn, def, 0, 0, nullptr, 0);
+}
+
+void POVFPU_RunBatchIR(FPUContext* context, FUNCTION fn, const DBL* x, const DBL* y, const DBL* z,
+                       DBL* results, int n)
+{
+    const FnDef* def = context->functionvm->GetIR(fn);
+    if (def == nullptr)
+    {
+        POVFPU_RunBatch(context, fn, x, y, z, results, n);
+        return;
+    }
+    context->threaddata->Stats()[Ray_Function_VM_Calls] += static_cast<POV_ULONG>(n);
+    FunctionVM* const vm = context->functionvm.get();
+    for (int i = 0; i < n; ++i)
+    {
+        context->SetLocal(0, x[i]);
+        context->SetLocal(1, y[i]);
+        context->SetLocal(2, z[i]);
+        results[i] = FunctionVM::RunIR(vm, context, fn, def, 0, 0, nullptr, 0);
+    }
+}
 
 }
 // end of namespace pov

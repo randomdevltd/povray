@@ -618,6 +618,13 @@ bool FunctionVM::PreferBatch(FUNCTION fn) const
     return CanExecuteBatch(fn) && functions[fn].batchMath;
 }
 
+const FnDef* FunctionVM::GetIR(FUNCTION fn) const
+{
+    if ((fn >= functions.size()) || (functions[fn].ir == nullptr))
+        return nullptr;
+    return functions[fn].ir.get();
+}
+
 enum RangeCode { RangeParameter, RangeConstant, RangeAdd, RangeSub, RangeMul, RangeDiv, RangeNeg, RangeAbs, RangeMin, RangeMax };
 
 struct FunctionRangePlan
@@ -1757,6 +1764,16 @@ static DBL FirstLane(LaneVec v)
     return out[0];
 }
 
+DBL POVFPU_Math1Scalar(unsigned int k, DBL v)
+{
+    return FirstLane(Math1(k, LaneVec(v)));
+}
+
+DBL POVFPU_Math2Scalar(unsigned int k, DBL a, DBL b)
+{
+    return FirstLane(Math2(k, LaneVec(a), LaneVec(b)));
+}
+
 // Scalar handlers, one per opcode with its register fields, as the original switch had: h opcode, m and l fields.
 #define POVFPU_EACH_L(X, h, m) X(h, m, 0) X(h, m, 1) X(h, m, 2) X(h, m, 3) X(h, m, 4) X(h, m, 5) X(h, m, 6) X(h, m, 7)
 #define POVFPU_EACH_ML(X, h) POVFPU_EACH_L(X, h, 0) POVFPU_EACH_L(X, h, 1) POVFPU_EACH_L(X, h, 2) POVFPU_EACH_L(X, h, 3) \
@@ -2476,7 +2493,11 @@ bool FunctionVM::CustomFunction::PreferBatch() const
 
 void FunctionVM::CustomFunction::ExecuteBatch(GenericFunctionContextPtr pGenericContext, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n)
 {
+#if POV_FN_IR
+    POVFPU_RunBatchIR(GetFPUContextPtr(pGenericContext), *mpFn, x, y, z, results, n);
+#else
     POVFPU_RunBatch(GetFPUContextPtr(pGenericContext), *mpFn, x, y, z, results, n);
+#endif
 }
 
 GenericScalarFunctionPtr FunctionVM::CustomFunction::Clone() const

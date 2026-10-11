@@ -298,6 +298,10 @@ void POVFPU_Exception(FPUContext *context, FUNCTION fn, const char *msg = nullpt
 DBL POVFPU_RunDefault(FPUContext *context, FUNCTION k);
 DBL POVFPU_RunScalar(FPUContext *context, FUNCTION k);
 void POVFPU_RunBatch(FPUContext *context, FUNCTION fn, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n);
+DBL POVFPU_RunIR(FPUContext *context, FUNCTION k);
+void POVFPU_RunBatchIR(FPUContext *context, FUNCTION fn, const DBL *x, const DBL *y, const DBL *z, DBL *results, int n);
+DBL POVFPU_Math1Scalar(unsigned int k, DBL v);
+DBL POVFPU_Math2Scalar(unsigned int k, DBL a, DBL b);
 
 void FNCode_Delete(FunctionCode *);
 
@@ -306,6 +310,8 @@ class FunctionVM : public GenericFunctionContextFactory
         friend void POVFPU_Exception(FPUContext *, FUNCTION, const char *);
         friend DBL POVFPU_RunDefault(FPUContext *, FUNCTION);
         friend DBL POVFPU_RunScalar(FPUContext *, FUNCTION);
+        friend DBL POVFPU_RunIR(FPUContext *, FUNCTION);
+        friend void POVFPU_RunBatchIR(FPUContext *, FUNCTION, const DBL *, const DBL *, const DBL *, DBL *, int);
         friend struct BatchRun;
 
     public:
@@ -356,6 +362,7 @@ class FunctionVM : public GenericFunctionContextFactory
         bool Describe(FUNCTION fn, std::string& out) const;
         bool CanExecuteBatch(FUNCTION fn) const;
         bool PreferBatch(FUNCTION fn) const;
+        const FnDef* GetIR(FUNCTION fn) const;
         boost::intrusive_ptr<FunctionVM> Snapshot(const std::vector<FUNCTION>& roots);
 
         FUNCTION_PTR CopyFunction(FUNCTION_PTR pK);
@@ -368,6 +375,8 @@ class FunctionVM : public GenericFunctionContextFactory
         void BuildRangePlan(FUNCTION fn);
         void PlanBatch(FUNCTION fn);
         void BuildIR(FUNCTION fn);
+        static DBL RunIR(FunctionVM* vm, FPUContext* context, FUNCTION fn, const FnDef* def,
+                         unsigned int frameSp, int depth, const DBL* args, unsigned int argc);
         void RemoveFunctionInternal(FUNCTION fn);
 
         std::vector<FunctionEntry> functions;
