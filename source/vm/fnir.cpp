@@ -825,6 +825,136 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
 
 }
 
+bool FunctionVM::InlineRound(FnDef& d)
+{
+    for (std::size_t idx = 0; idx < d.ops.size(); ++idx)
+    {
+        if (d.ops[idx].code != FnkCall)
+            continue;
+        const FUNCTION k = d.ops[idx].k;
+        if (k >= functions.size() || functions[k].ir == nullptr)
+            continue;
+        const FnDef& c = *functions[k].ir;
+        bool splicable = !c.ops.empty();
+        for (const FnOp& co : c.ops)
+            if (co.code == FnkCall || co.code == FnkTrapS)
+                splicable = false;
+        if (!splicable || c.ops.size() > 512 || d.ops.size() + c.ops.size() > 16384)
+            continue;
+
+        const unsigned int a0 = d.ops[idx].a;
+        const unsigned int window = d.ops[idx].b;
+        const unsigned int retSize = d.ops[idx].c;
+        const unsigned int dst = d.ops[idx].dst;
+        const unsigned int slotBase = d.slotCnt;
+        const unsigned int regBase = d.regCnt;
+        const unsigned int scratch = regBase + c.regCnt;
+        const unsigned int constBase = d.consts.size();
+        const unsigned int oldBlocks = static_cast<unsigned int>(d.blockStart.size());
+
+        unsigned int bIdx = 0;
+        for (unsigned int i = 0; i < d.blockStart.size(); ++i)
+            if (idx >= d.blockStart[i])
+                bIdx = i;
+        const unsigned int bStart = d.blockStart[bIdx];
+        const unsigned int bEnd = (bIdx + 1 < d.blockStart.size()) ? d.blockStart[bIdx + 1] : static_cast<unsigned int>(d.ops.size());
+
+        const unsigned int calleeBlocks = static_cast<unsigned int>(c.blockStart.size());
+        const unsigned int entryBlock = oldBlocks;
+        const unsigned int continuationBlock = oldBlocks + calleeBlocks;
+        const unsigned int scratchConst = constBase + static_cast<unsigned int>(c.consts.size());
+
+        d.slotCnt += c.slotCnt;
+        d.regCnt += c.regCnt + 1;
+        d.consts.insert(d.consts.end(), c.consts.begin(), c.consts.end());
+        d.consts.push_back(0.0);
+
+        auto remap = [&](FnOp o) -> FnOp
+        {
+            switch (o.code)
+            {
+                case FnkLocalGet:
+                case FnkLocalSet:
+                    o.k += slotBase;
+                    o.dst += regBase;
+                    o.a += regBase;
+                    break;
+                case FnkConst:
+                    o.k += constBase;
+                    o.dst += regBase;
+                    break;
+                case FnkBr:
+                    o.k += entryBlock;
+                    break;
+                case FnkBrCond:
+                    o.a += regBase;
+                    o.b += entryBlock;
+                    o.k += entryBlock;
+                    break;
+                case FnkRet:
+                    o.a += regBase;
+                    break;
+                case FnkTrap:
+                    o.a += regBase;
+                    break;
+                default:
+                    o.a += regBase;
+                    o.b += regBase;
+                    o.c += regBase;
+                    o.dst += regBase;
+                    break;
+            }
+            return o;
+        };
+
+        std::vector<FnOp> ops;
+        std::vector<unsigned int> bs(oldBlocks + calleeBlocks + 1, 0);
+        ops.reserve(d.ops.size() + c.ops.size() + c.parameterCnt + 2 * retSize + 8);
+
+        for (unsigned int i = 0; i < bIdx; ++i)
+            bs[i] = d.blockStart[i];
+        bs[bIdx] = d.blockStart[bIdx];
+        for (unsigned int i = ops.size(); i < idx; ++i)
+            ops.push_back(d.ops[i]);
+
+        for (unsigned int j = 0; j < c.parameterCnt; ++j)
+            ops.push_back({FnkLocalSet, a0 + j, 0, 0, 0, slotBase + j});
+        ops.push_back({FnkConst, 0, 0, 0, scratch, scratchConst});
+        ops.push_back({FnkLocalSet, scratch, 0, 0, 0, slotBase + c.slotCnt - kSpillHomes});
+        ops.push_back({FnkBr, 0, 0, 0, 0, entryBlock});
+
+        for (unsigned int m = 0; m < calleeBlocks; ++m)
+            bs[oldBlocks + m] = static_cast<unsigned int>(ops.size());
+        for (unsigned int i = 0; i < c.ops.size(); ++i)
+        {
+            if (c.ops[i].code == FnkRet)
+            {
+                const FnOp ret = remap(c.ops[i]);
+                ops.push_back({FnkCopy, ret.a, 0, 0, dst, 0});
+                for (unsigned int j = 0; j < retSize; ++j)
+                {
+                    ops.push_back({FnkLocalGet, 0, 0, 0, scratch, slotBase + j});
+                    ops.push_back({FnkLocalSet, scratch, 0, 0, 0, window + j});
+                }
+                ops.push_back({FnkBr, 0, 0, 0, 0, continuationBlock});
+            }
+            else
+                ops.push_back(remap(c.ops[i]));
+        }
+
+        bs[continuationBlock] = static_cast<unsigned int>(ops.size());
+        for (unsigned int i = idx + 1; i < d.ops.size(); ++i)
+            ops.push_back(d.ops[i]);
+        for (unsigned int i = bIdx + 1; i < d.blockStart.size(); ++i)
+            bs[i] = d.blockStart[i] + (static_cast<unsigned int>(ops.size()) - bEnd);
+
+        d.ops = std::move(ops);
+        d.blockStart = std::move(bs);
+        return true;
+    }
+    return false;
+}
+
 void FunctionVM::BuildIR(FUNCTION fn)
 {
     FunctionEntry& entry = functions[fn];
@@ -832,6 +962,14 @@ void FunctionVM::BuildIR(FUNCTION fn)
     if (entry.fn.program == nullptr)
         return;
     entry.ir = LowerFunction(entry.ops, consts, functions, fn);
+    if (entry.ir != nullptr)
+    {
+        FnDef d = *entry.ir;
+        for (int round = 0; round < 64; ++round)
+            if (!InlineRound(d))
+                break;
+        entry.ir = std::make_shared<const FnDef>(std::move(d));
+    }
 }
 
 #if FNIR_THREADED

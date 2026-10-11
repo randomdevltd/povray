@@ -375,6 +375,7 @@ class FunctionVM : public GenericFunctionContextFactory
         void BuildRangePlan(FUNCTION fn);
         void PlanBatch(FUNCTION fn);
         void BuildIR(FUNCTION fn);
+        bool InlineRound(FnDef& d);
         static DBL RunIR(FunctionVM* vm, FPUContext* context, FUNCTION fn, const FnDef* def,
                          unsigned int frameSp, int depth, const DBL* args, unsigned int argc);
         void RemoveFunctionInternal(FUNCTION fn);
