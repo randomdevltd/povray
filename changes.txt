@@ -213,6 +213,15 @@ New Features
     normalizes the tree-sitter grammar, `blocks.json` lists the legal keywords
     of every block mined from the classic parser's expect-loops, and
     `doc/language-4-grammar.md` renders both as an EBNF reference.
+  - An agent-facing scene-language reference is generated from those tables:
+    `tools/language/reference/SKILL.md` is an always-cheap index (execution
+    model, statement forms, one line per block), and
+    `node tools/language/reference.mjs <term>` prints a card for any block or
+    item — its legal items or accepting blocks, nested sub-blocks, a one-line
+    description mined from the reference manual and a usage snippet mined from
+    the test scenes. `--list` prints the block index; regeneration from the
+    manual and fixtures is byte-stable and tested, so the cards cannot drift
+    from the parsers.
   - `.pov4` files are statically checked right after parsing: types are inferred
     from usage and mismatches are reported with the source position (a string used
     where a number is needed, a wrong argument count, an unknown member), and block

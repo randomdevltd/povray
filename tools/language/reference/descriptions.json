@@ -1,0 +1,2906 @@
+{
+ "format": "pov4-descriptions/1",
+ "comment": "One-line descriptions and usage snippets mined by tools/language/reference.mjs --generate from the built manual (doc/html/r3_*.html) and the twin fixtures (tests/pov4). Descriptions carry the manual anchor they were taken from; absent words were not found. Block one-liners and 4.0-only words live in overlay.json. Regenerate rather than edit.",
+ "descriptions": {
+  "aa_level": {
+   "text": "You can specify the anti-aliasing recursion depth using the aa_level keyword followed by an integer.",
+   "doc": "r3_7.html#r3_7_2_3"
+  },
+  "aa_threshold": {
+   "text": "You can specify the anti-aliasing threshold by using the aa_threshold followed by a float.",
+   "doc": "r3_7.html#r3_7_2_3"
+  },
+  "absorption": {
+   "text": "The absorption keyword specifies a color of light which is absorbed when looking through the media.",
+   "doc": "r3_7.html#r3_7_2_2_1"
+  },
+  "accuracy": {
+   "text": "For this reason, a new property, accuracy, has been added to normals.",
+   "doc": "r3_6.html#r3_6_1_2_2_1"
+  },
+  "acos": {
+   "text": "Arc-cosine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "acosh": {
+   "text": "Inverse hyperbolic cosine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "adaptive": {
+   "text": "The adaptive keyword is used to enable adaptive sampling of the light source.",
+   "doc": "r3_4.html#r3_4_3_1_5"
+  },
+  "adc_bailout": {
+   "text": "You may use the global setting adc_bailout keyword followed by float value to specify the point at which a ray's contribution is considered insignificant.",
+   "doc": "r3_4.html#r3_4_1_1"
+  },
+  "agate": {
+   "text": "The agate pattern is a banded pattern similar to marble but it uses a specialized built-in turbulence function that is different from the traditional turbulence.",
+   "doc": "r3_6.html#r3_6_2_1_1"
+  },
+  "agate_turb": {
+   "text": "The agate_turb modifier can only be used with the agate pattern.",
+   "doc": "r3_6.html#r3_6_2_5"
+  },
+  "albedo": {
+   "text": "The optional keyword albedo can be used right after diffuse to specify that the parameter is to be taken as the total diffuse/specular reflectance, rather than peak reflectance.",
+   "doc": "r3_6.html#r3_6_1_3_3_1"
+  },
+  "all": {
+   "text": "The only restriction is that shadowless should be before or after all spotlight or cylinder option keywords.",
+   "doc": "r3_4.html#r3_4_3_1_6"
+  },
+  "all_intersections": {
+   "text": "To check for all surfaces, use the keyword all_intersections instead.",
+   "doc": "r3_5.html#r3_5_1_1_6"
+  },
+  "always_sample": {
+   "text": "Since always_sample off is the default, POV-Ray will only use the data from the pretrace step and not gather any new samples during the final radiosity pass.",
+   "doc": "r3_4.html#r3_4_3_3_3_2"
+  },
+  "ambient": {
+   "text": "The ambient keyword controls the amount of ambient light used for each object.",
+   "doc": "r3_6.html#r3_6_1_3_1"
+  },
+  "ambient_light": {
+   "text": "POV-Ray provides the ambient_light keyword to let you easily change the brightness of the ambient lighting without changing every ambient value in all finish statements.",
+   "doc": "r3_4.html#r3_4_1_2"
+  },
+  "angle": {
+   "text": "The viewing angle can be specified by using the angle keyword.",
+   "doc": "r3_4.html#r3_4_2_2_5"
+  },
+  "aoi": {
+   "text": "The aoi pattern can be used with pigment, normal and texture statements.",
+   "doc": "r3_6.html#r3_6_2_3_1"
+  },
+  "aperture": {
+   "text": "To turn on focal blur, you must specify the aperture keyword followed by a float value which determines the depth of the sharpness zone.",
+   "doc": "r3_4.html#r3_4_2_3"
+  },
+  "area_illumination": {
+   "text": "The array-effect applies to shadows only, however with the addition of the area_illumination keyword, full area light diffuse and specular illumination can be achieved.",
+   "doc": "r3_4.html#r3_4_3_1_5"
+  },
+  "area_light": {
+   "text": "The area_light keyword in POV-Ray creates sources that are rectangular in shape, sort of like a flat panel light.",
+   "doc": "r3_4.html#r3_4_3_1_5"
+  },
+  "asin": {
+   "text": "Arc-sine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "autostop": {
+   "text": "To understand the autostop option, you need to understand the way photons are shot from light sources.",
+   "doc": "r3_4.html#r3_4_3_4_9_1"
+  },
+  "average": {
+   "text": "Technically average is not a pattern type but it is listed here because the syntax is similar to other patterns.",
+   "doc": "r3_6.html#r3_6_2_4_1"
+  },
+  "blur_samples": {
+   "text": "You must also specify the blur_samples keyword followed by an integer value specifying the maximum number of rays to use for each pixel.",
+   "doc": "r3_4.html#r3_4_2_3"
+  },
+  "bokeh": {
+   "text": "If bokeh is specified, focal blur will use a custom sampling sequence based on the specified pigment's brightness in the range <0,0,0> to <1,1,0> i.e.",
+   "doc": "r3_4.html#r3_4_2_3"
+  },
+  "bounded_by": {
+   "text": "While it may a good idea to manually add a bounded_by to intersection, difference and merge, it is best to never bound a union.",
+   "doc": "r3_5.html#r3_5_1_5_2"
+  },
+  "boxed": {
+   "text": "The boxed pattern creates a 2x2x2 unit cube centered at the origin.",
+   "doc": "r3_6.html#r3_6_2_1_2"
+  },
+  "bozo": {
+   "text": "The bozo pattern is a very smooth, random noise function that is traditionally used with some turbulence to create clouds.",
+   "doc": "r3_6.html#r3_6_2_1_3"
+  },
+  "brick": {
+   "text": "The brick pattern generates a pattern of bricks.",
+   "doc": "r3_6.html#r3_6_2_1_4"
+  },
+  "brick_size": {
+   "text": "These values may be changed using the optional brick_size and mortar pattern modifiers.",
+   "doc": "r3_6.html#r3_6_2_1_4"
+  },
+  "brightness": {
+   "text": "The brightness keyword specifies a float value that is the degree to which objects are brightened before being returned upwards to the rest of the system.",
+   "doc": "r3_4.html#r3_4_3_3_3_3"
+  },
+  "brilliance": {
+   "text": "The brilliance keyword can be used in a finish statement to vary the way light falls off depending upon the angle of incidence.",
+   "doc": "r3_6.html#r3_6_1_3_3_2"
+  },
+  "bump_size": {
+   "text": "Originally bump_size could only be used inside a bump map but it can now be used with any normal.",
+   "doc": "r3_6.html#r3_6_1_2_3_2"
+  },
+  "bumps": {
+   "text": "The bumps pattern was originally designed only to be used as a normal pattern.",
+   "doc": "r3_6.html#r3_6_2_1_5"
+  },
+  "caustics": {
+   "text": "The caustics Power keyword controls the effect.",
+   "doc": "r3_7.html#r3_7_2_1_7"
+  },
+  "cells": {
+   "text": "The cells pattern fills 3d space with unit cubes.",
+   "doc": "r3_6.html#r3_6_2_2_1"
+  },
+  "charset": {
+   "text": "Refer to your platform specific documentation if you specified charset sys.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "checker": {
+   "text": "The checker pattern produces a checkered pattern consisting of alternating squares of two colors.",
+   "doc": "r3_6.html#r3_6_2_2_2"
+  },
+  "chr": {
+   "text": "Character whose character value is B.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "circular": {
+   "text": "The circular keyword has been added to area lights in order to better create circular soft shadows.",
+   "doc": "r3_4.html#r3_4_3_1_5"
+  },
+  "clipped_by": {
+   "text": "The clipped_by statement is technically an object modifier but it provides a type of CSG similar to CSG intersection.",
+   "doc": "r3_5.html#r3_5_1_5_1"
+  },
+  "collect": {
+   "text": "The keyword collect off causes the object to ignore photons.",
+   "doc": "r3_4.html#r3_4_3_4_4"
+  },
+  "color": {
+   "text": "Under most circumstances the keyword color is optional and may be omitted.",
+   "doc": "r3_3.html#r3_3_1_7"
+  },
+  "color_map": {
+   "text": "The colors are defined in a pigment modifier called a color_map that describes how the pattern blends from one color to the next.",
+   "doc": "r3_6.html#r3_6_1_1_2"
+  },
+  "colour": {
+   "text": "Under most circumstances the keyword color is optional and may be omitted.",
+   "doc": "r3_3.html#r3_3_1_7"
+  },
+  "colour_map": {
+   "text": "The colors are defined in a pigment modifier called a color_map that describes how the pattern blends from one color to the next.",
+   "doc": "r3_6.html#r3_6_1_1_2"
+  },
+  "component": {
+   "text": "The component keyword is an obsolete method for specifying a spherical component and is only used for compatibility with earlier POV-Ray versions.",
+   "doc": "r3_5.html#r3_5_1_1_1"
+  },
+  "confidence": {
+   "text": "The confidence and variance keywords are followed by float values to control the adaptive function.",
+   "doc": "r3_4.html#r3_4_2_3"
+  },
+  "conserve_energy": {
+   "text": "This can be achieved by adding the conserve_energy keyword to the object's finish {}.",
+   "doc": "r3_6.html#r3_6_1_3_6"
+  },
+  "control0": {
+   "text": "The two parameters control0 and control1 are used to adjust the curvature of the seam or gouge area between the quilts.",
+   "doc": "r3_6.html#r3_6_2_1_21"
+  },
+  "control1": {
+   "text": "The two parameters control0 and control1 are used to adjust the curvature of the seam or gouge area between the quilts.",
+   "doc": "r3_6.html#r3_6_2_1_21"
+  },
+  "coords": {
+   "text": "If coords is specified, the facets pattern creates facets with a size on the same order as the specified SCALE_VALUE.",
+   "doc": "r3_6.html#r3_6_2_1_10"
+  },
+  "cos": {
+   "text": "Cosine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "cosh": {
+   "text": "The hyperbolic cosine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "crackle": {
+   "text": "The crackle pattern is a set of random tiled multifaceted cells.",
+   "doc": "r3_6.html#r3_6_2_2_3"
+  },
+  "crand": {
+   "text": "The crand keyword can be added to a finish to cause a minor random darkening in the diffuse reflection of direct illumination.",
+   "doc": "r3_6.html#r3_6_1_3_3_3"
+  },
+  "cylindrical": {
+   "text": "The cylindrical pattern creates a one unit radius cylinder along the Y axis.",
+   "doc": "r3_6.html#r3_6_2_1_7"
+  },
+  "datetime": {
+   "text": "Can be used to return the string representation of a date and time.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "density_file": {
+   "text": "The density_file pattern is a 3-D bitmap pattern that occupies a unit cube from location <0,0,0> to <1,1,1>.",
+   "doc": "r3_6.html#r3_6_2_1_8"
+  },
+  "density_map": {
+   "text": "The DENSITY_LIST and density_map modifiers only work with media{density{..}} statements.",
+   "doc": "r3_6.html#r3_6_2_5"
+  },
+  "dents": {
+   "text": "The dents pattern was originally designed only to be used as a normal pattern.",
+   "doc": "r3_6.html#r3_6_2_1_9"
+  },
+  "diffuse": {
+   "text": "The keyword diffuse is used in a finish statement to control how much of the light coming directly from any light sources is reflected via diffuse reflection.",
+   "doc": "r3_6.html#r3_6_1_3_3_1"
+  },
+  "direction": {
+   "text": "A shorter direction vector gives a wider view while a longer vector zooms in for close-ups.",
+   "doc": "r3_4.html#r3_4_2_1_4"
+  },
+  "dispersion": {
+   "text": "In order to get a more realistic effect the dispersion and dispersion_samples keywords can be added to the interior{} block.",
+   "doc": "r3_7.html#r3_7_2_1_5"
+  },
+  "dispersion_samples": {
+   "text": "In order to get a more realistic effect the dispersion and dispersion_samples keywords can be added to the interior{} block.",
+   "doc": "r3_7.html#r3_7_2_1_5"
+  },
+  "distance": {
+   "text": "The required distance keyword is the same like the one used with fogs.",
+   "doc": "r3_7.html#r3_7_1_5"
+  },
+  "double_illuminate": {
+   "text": "When double_illuminate is used, the other side is also illuminated.",
+   "doc": "r3_5.html#r3_5_1_5_9"
+  },
+  "eccentricity": {
+   "text": "This eccentricity is specified by the optional keyword eccentricity which is only used for scattering type five.",
+   "doc": "r3_7.html#r3_7_2_2_3"
+  },
+  "emission": {
+   "text": "The emission keyword New in version 3.7 can be used to model glowing materials, eliminating the need to co-opt ambient for this purpose.",
+   "doc": "r3_6.html#r3_6_1_3_2"
+  },
+  "error_bound": {
+   "text": "The error_bound float value is one of the two main speed/quality tuning values (the other is of course the number of rays shot).",
+   "doc": "r3_4.html#r3_4_3_3_3_5"
+  },
+  "exit": {
+   "text": "Without exit, a view through a portal carries on into the target for as far as it goes.",
+   "doc": "r3_10.html#r3_10_3_6"
+  },
+  "exp": {
+   "text": "Exponential of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "exponent": {
+   "text": "As a means to work around the phenomenon the optional exponent keyword was added, producing non-linear reflection intensities.",
+   "doc": "r3_6.html#r3_6_1_3_5"
+  },
+  "exterior": {
+   "text": "The form, exterior and interior specify the look of angle used for respectively slow convex (turning side), quick convex (pointy tile) and concave angle (interior angle between many tiles).",
+   "doc": "r3_6.html#r3_6_2_1_18"
+  },
+  "face_indices": {
+   "text": "To do this, specify the smooth triangles first in the face_indices section, followed by the flat triangles.",
+   "doc": "r3_5.html#r3_5_1_2_4_1"
+  },
+  "fade_color": {
+   "text": "The keywords fade_power, fade_distance and fade_color are specified in the interior statement.",
+   "doc": "r3_7.html#r3_7_2_1_6"
+  },
+  "fade_colour": {
+   "text": "The keywords fade_power, fade_distance and fade_color are specified in the interior statement.",
+   "doc": "r3_7.html#r3_7_2_1_6"
+  },
+  "fade_distance": {
+   "text": "The keywords fade_power, fade_distance and fade_color are specified in the interior statement.",
+   "doc": "r3_7.html#r3_7_2_1_6"
+  },
+  "fade_power": {
+   "text": "In order to get a more realistic effect fade_distance and fade_power keywords followed by float values can be used to model the distance based falloff in light intensity.",
+   "doc": "r3_4.html#r3_4_3_1_9"
+  },
+  "falloff": {
+   "text": "The falloff, radius, and tightness keywords control the way that light tapers off at the edges of the cone.",
+   "doc": "r3_4.html#r3_4_3_1_2"
+  },
+  "far": {
+   "text": "Written in near { } or far { } they apply to that mouth only and override the portal's.",
+   "doc": "r3_10.html#r3_10_3_3"
+  },
+  "filter_tags": {
+   "text": "If global_settings appears more than once, the last filter_tags wins.",
+   "doc": "r3_4.html#r3_4_1_14"
+  },
+  "flatness": {
+   "text": "The four parameters type, flatness, u_steps and v_steps may appear in any order.",
+   "doc": "r3_5.html#r3_5_1_2_1"
+  },
+  "focal_point": {
+   "text": "The center of the zone of sharpness is specified by the focal_point vector.",
+   "doc": "r3_4.html#r3_4_2_3"
+  },
+  "form": {
+   "text": "The form, exterior and interior specify the look of angle used for respectively slow convex (turning side), quick convex (pointy tile) and concave angle (interior angle between many tiles).",
+   "doc": "r3_6.html#r3_6_2_1_18"
+  },
+  "frequency": {
+   "text": "The frequency keyword adjusts the number of times that a color map repeats over one cycle of a pattern.",
+   "doc": "r3_6.html#r3_6_2_5_2"
+  },
+  "fresnel": {
+   "text": "When used directly in the finish block the fresnel keyword activates Fresnel effects for all of the ambient, diffuse, emission, specular and phong attributes.",
+   "doc": "r3_6.html#r3_6_1_3"
+  },
+  "function": {
+   "text": "The function statement can be used wherever an image specifier like tga or png may be used.",
+   "doc": "r3_6.html#r3_6_2_1_12_2"
+  },
+  "gather": {
+   "text": "The keyword gather allows you to specify how many photons are gathered at each point during the regular rendering step.",
+   "doc": "r3_4.html#r3_4_3_4_3"
+  },
+  "gradient": {
+   "text": "One of the simplest patterns is the gradient pattern.",
+   "doc": "r3_6.html#r3_6_2_1_13"
+  },
+  "granite": {
+   "text": "The granite pattern uses a simple 1/f fractal noise function to give a good granite pattern.",
+   "doc": "r3_6.html#r3_6_2_1_14"
+  },
+  "gray_threshold": {
+   "text": "The gray_threshold float value grays it down a little, to make your scene more believable.",
+   "doc": "r3_4.html#r3_4_3_3_3_6"
+  },
+  "grey_threshold": {
+   "text": "The gray_threshold float value grays it down a little, to make your scene more believable.",
+   "doc": "r3_4.html#r3_4_3_3_3_6"
+  },
+  "hexagon": {
+   "text": "The hexagon pattern is a block pattern that generates a repeating pattern of hexagons in the x-z-plane.",
+   "doc": "r3_6.html#r3_6_2_2_4"
+  },
+  "hf_gray_16": {
+   "text": "A Change as of version 3.7 has deprecated the hf_gray_16 keyword in the global_settings block.",
+   "doc": "r3_4.html#r3_4_1_4"
+  },
+  "hf_grey_16": {
+   "text": "A Change as of version 3.7 has deprecated the hf_gray_16 keyword in the global_settings block.",
+   "doc": "r3_4.html#r3_4_1_4"
+  },
+  "hierarchy": {
+   "text": "A blob modifier is any regular object modifier or the hierarchy or sturm keywords.",
+   "doc": "r3_5.html#r3_5_1_1_1"
+  },
+  "hollow": {
+   "text": "For example hollow off may be used to force it off.",
+   "doc": "r3_5.html#r3_5_1_5_4"
+  },
+  "inside_vector": {
+   "text": "Adding the inside_vector they do have a defined inside.",
+   "doc": "r3_5.html#r3_5_1_2_3_1"
+  },
+  "interior_texture": {
+   "text": "The interior_texture simply allows to specify a separate texture for the interior surface of the object.",
+   "doc": "r3_6.html#r3_6_1_9"
+  },
+  "interpolate": {
+   "text": "Adding the interpolate keyword can smooth the jagged look of a bitmap.",
+   "doc": "r3_6.html#r3_6_2_7_3"
+  },
+  "intervals": {
+   "text": "The classic controls intervals, samples, jitter, aa_level, aa_threshold, confidence, variance and ratio apply to methods 1, 2 and 3, and to method 4 when it falls back to classic sampling.",
+   "doc": "r3_7.html#r3_7_2_3"
+  },
+  "inverse": {
+   "text": "When the inverse keyword is used the inside of the shape is flipped to become the outside and vice versa.",
+   "doc": "r3_5.html#r3_5_1_5_5"
+  },
+  "ior": {
+   "text": "In earlier versions of POV-Ray, the refraction, ior, and caustics keywords were part of the finish statement but they are now part of the interior statement.",
+   "doc": "r3_6.html#r3_6_1_3"
+  },
+  "irid": {
+   "text": "This effect is controlled by the irid statement specified inside a finish statement.",
+   "doc": "r3_6.html#r3_6_1_3_7"
+  },
+  "irid_wavelength": {
+   "text": "You may adjust the values using the global setting irid_wavelength as follows...",
+   "doc": "r3_4.html#r3_4_1_5"
+  },
+  "jitter": {
+   "text": "The jitter keyword is optional.",
+   "doc": "r3_4.html#r3_4_3_1_5"
+  },
+  "lambda": {
+   "text": "The lambda parameter controls how statistically different the random move of an octave is compared to its previous octave.",
+   "doc": "r3_6.html#r3_6_2_5_5_5"
+  },
+  "linear_spline": {
+   "text": "The default if none is specified is linear_spline.",
+   "doc": "r3_5.html#r3_5_1_1_8"
+  },
+  "ln": {
+   "text": "Natural logarithm of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "load_file": {
+   "text": "The keywords save_file and load_file allow you to save and load photon maps.",
+   "doc": "r3_4.html#r3_4_3_4_3"
+  },
+  "location": {
+   "text": "Regardless of the projection type all cameras use location, right, up, direction, and other keywords to determine the location and orientation of the camera.",
+   "doc": "r3_4.html#r3_4_2_1"
+  },
+  "look_at": {
+   "text": "The look_at vector tells POV-Ray to pan and tilt the camera until it is looking at the specified x, y, z coordinates.",
+   "doc": "r3_4.html#r3_4_2_1_1"
+  },
+  "looks_like": {
+   "text": "Using looks_like is as an easy way to override this behavior.",
+   "doc": "r3_4.html#r3_4_3_1_7"
+  },
+  "low_error_factor": {
+   "text": "The low_error_factor is a float tuning value which sets the amount that the error bound is dropped during the preliminary image passes.",
+   "doc": "r3_4.html#r3_4_3_3_3_7"
+  },
+  "map_type": {
+   "text": "This option may be changed by adding the map_type keyword followed by an integer number specifying the way to wrap the image around the object.",
+   "doc": "r3_6.html#r3_6_2_7_2"
+  },
+  "marble": {
+   "text": "The marble pattern is very similar to the gradient x pattern.",
+   "doc": "r3_6.html#r3_6_2_1_16"
+  },
+  "material_map": {
+   "text": "After a material_map statement but still inside the texture statement you may apply any legal texture modifiers.",
+   "doc": "r3_6.html#r3_6_1_5_3_1"
+  },
+  "matrix": {
+   "text": "The matrix keyword can be used to explicitly specify the transformation matrix to be used for objects or textures.",
+   "doc": "r3_3.html#r3_3_1_12_4"
+  },
+  "max_gradient": {
+   "text": "When the max_gradient used to find the intersecting point is too high, the render slows down considerably.",
+   "doc": "r3_5.html#r3_5_1_1_6"
+  },
+  "max_intersections": {
+   "text": "As of version 3.7 max_intersections has been deprecated, and using it in the global settings blocks now produces a warning at parse time.",
+   "doc": "r3_4.html#r3_4_1_8"
+  },
+  "max_iteration": {
+   "text": "If none is specified, the default is max_iteration 20.",
+   "doc": "r3_5.html#r3_5_1_1_7"
+  },
+  "max_sample": {
+   "text": "This can be sometimes avoided by using the max_sample keyword.",
+   "doc": "r3_4.html#r3_4_3_3_3_8"
+  },
+  "max_trace": {
+   "text": "Consequently, the keyword max_trace followed by an integer value, must be added to the isosurface statement.",
+   "doc": "r3_5.html#r3_5_1_1_6"
+  },
+  "max_trace_level": {
+   "text": "If max_trace_level is reached before a non-reflecting surface is found and if ADC has not allowed an early exit from the ray tree the color is returned as black.",
+   "doc": "r3_4.html#r3_4_1_7"
+  },
+  "maximum_reuse": {
+   "text": "The maximum_reuse parameter works in conjunction with, and is similar to that of minimum_reuse, the only difference being that it is an upper bound rather than a lower one.",
+   "doc": "r3_4.html#r3_4_3_3_3_9"
+  },
+  "media_interaction": {
+   "text": "This behavior can be switched off by using media_interaction off inside the light source statement.",
+   "doc": "r3_4.html#r3_4_3_1_10"
+  },
+  "metallic": {
+   "text": "The keyword metallic may be used with phong or specular highlights.",
+   "doc": "r3_6.html#r3_6_1_3_4_3"
+  },
+  "method": {
+   "text": "The method keyword selects the integration method.",
+   "doc": "r3_7.html#r3_7_2_3"
+  },
+  "minimum_reuse": {
+   "text": "The minimum effective radius ratio is set by minimum_reuse float value.",
+   "doc": "r3_4.html#r3_4_3_3_3_10"
+  },
+  "mix": {
+   "text": "Where media overlap, each medium's mix says how it combines with the media ranked beneath it, and priority raises its rank.",
+   "doc": "r3_7.html#r3_7_2_1_9"
+  },
+  "mortar": {
+   "text": "These values may be changed using the optional brick_size and mortar pattern modifiers.",
+   "doc": "r3_6.html#r3_6_2_1_4"
+  },
+  "near": {
+   "text": "Written in near { } or far { } they apply to that mouth only and override the portal's.",
+   "doc": "r3_10.html#r3_10_3_3"
+  },
+  "nearest_count": {
+   "text": "The nearest_count integer value is the minimum number of old radiosity values blended together to create a new interpolated value.",
+   "doc": "r3_4.html#r3_4_3_3_3_11"
+  },
+  "no_image": {
+   "text": "When no_image is used, the object will not be seen by the camera, either directly or through transparent/refractive objects.",
+   "doc": "r3_5.html#r3_5_1_5_7"
+  },
+  "no_reflection": {
+   "text": "When no_reflection is used, the object will not show up in reflections.",
+   "doc": "r3_5.html#r3_5_1_5_8"
+  },
+  "no_shadow": {
+   "text": "You may specify the no_shadow keyword in an object to make that object cast no shadow.",
+   "doc": "r3_5.html#r3_5_1_5_6"
+  },
+  "noise_generator": {
+   "text": "The default is noise_generator 2",
+   "doc": "r3_4.html#r3_4_1_11"
+  },
+  "normal_map": {
+   "text": "The syntax for a normal_map is identical to a pigment_map except you specify a normal in each map entry.",
+   "doc": "r3_6.html#r3_6_1_2_1"
+  },
+  "normal_vectors": {
+   "text": "The normal_vectors, uv_vectors, and texture_list sections are optional.",
+   "doc": "r3_5.html#r3_5_1_2_4"
+  },
+  "number_of_tiles": {
+   "text": "The number_of_tiles is used to choose the number of basic polygons in the tile while pattern is used to choose amongst the variants.",
+   "doc": "r3_6.html#r3_6_2_1_18"
+  },
+  "number_of_waves": {
+   "text": "By default, ten waves are summed but this amount can be globally controlled by changing the number_of_waves setting.",
+   "doc": "r3_4.html#r3_4_1_10"
+  },
+  "octaves": {
+   "text": "The octaves keyword may be followed by an integer value to control the number of steps of turbulence that are computed.",
+   "doc": "r3_6.html#r3_6_2_5_5_4"
+  },
+  "offset": {
+   "text": "The optional offset vector tells how much to translate the pattern each time it repeats.",
+   "doc": "r3_6.html#r3_6_2_5_5_2"
+  },
+  "omega": {
+   "text": "The omega value controls how large each successive octave step is compared to the previous value.",
+   "doc": "r3_6.html#r3_6_2_5_5_6"
+  },
+  "once": {
+   "text": "By adding the once keyword after a file name you can eliminate all other copies of the map except the one at (0,0) to (1,1).",
+   "doc": "r3_6.html#r3_6_2_7_1"
+  },
+  "onion": {
+   "text": "The onion is a pattern of concentric spheres like the layers of an onion.",
+   "doc": "r3_6.html#r3_6_2_1_17"
+  },
+  "open": {
+   "text": "Adding the optional keyword open after Cap_Radius will remove the end caps and results in a tapered hollow tube like a megaphone or funnel.",
+   "doc": "r3_5.html#r3_5_1_1_3"
+  },
+  "orient": {
+   "text": "The orient keyword has been added to area lights in order to better create soft shadows.",
+   "doc": "r3_4.html#r3_4_3_1_5"
+  },
+  "orthographic": {
+   "text": "The pure orthographic projection.",
+   "doc": "r3_4.html#r3_4_2_2_2"
+  },
+  "parallel": {
+   "text": "The parallel keyword can be used with any type of light source.",
+   "doc": "r3_4.html#r3_4_3_1_4"
+  },
+  "pass_through": {
+   "text": "The keyword pass_through causes photons to pass through the object unaffected on their way to a target object.",
+   "doc": "r3_4.html#r3_4_3_4_4"
+  },
+  "pattern": {
+   "text": "Of special interest here is the pattern option, that makes it possible to use patterns as functions",
+   "doc": "r3_6.html#r3_6_2_1_12_1"
+  },
+  "pavement": {
+   "text": "The pavement is a pattern which paves the x-z plane with a single polyform tile.",
+   "doc": "r3_6.html#r3_6_2_1_18"
+  },
+  "perspective": {
+   "text": "The perspective keyword specifies the default perspective camera which simulates the classic pinhole camera.",
+   "doc": "r3_4.html#r3_4_2_2_1"
+  },
+  "phase": {
+   "text": "The phase value causes the map entries to be shifted so that the map starts and ends at a different place.",
+   "doc": "r3_6.html#r3_6_2_5_2"
+  },
+  "phong": {
+   "text": "The phong keyword in the finish statement controls the amount of phong highlighting on the object.",
+   "doc": "r3_6.html#r3_6_1_3_4_1"
+  },
+  "phong_size": {
+   "text": "The size of the highlight spot is defined by the phong_size value.",
+   "doc": "r3_6.html#r3_6_1_3_4_1"
+  },
+  "photons": {
+   "text": "With photons it is possible to render true reflective and refractive caustics.",
+   "doc": "r3_4.html#r3_4_3_4"
+  },
+  "pigment_map": {
+   "text": "You may not use pigment_map or individual pigments with an image_map.",
+   "doc": "r3_6.html#r3_6_1_1_3"
+  },
+  "planar": {
+   "text": "The planar pattern creates a horizontal stripe plus or minus one unit above and below the X-Z plane.",
+   "doc": "r3_6.html#r3_6_2_1_20"
+  },
+  "point_at": {
+   "text": "The point_at keyword tells the spotlight to point at a particular 3D coordinate.",
+   "doc": "r3_4.html#r3_4_3_1_2"
+  },
+  "polarity": {
+   "text": "New in version 3.8 this can be changed via the polarity keyword.",
+   "doc": "r3_5.html#r3_5_1_1_6"
+  },
+  "potential": {
+   "text": "New in version 3.8 a potential pattern has been added to define a pattern based on the potential field of a blob or isosurface object.",
+   "doc": "r3_6.html#r3_6_2_4_3"
+  },
+  "precision": {
+   "text": "The default if none is specified is precision 20.",
+   "doc": "r3_5.html#r3_5_1_1_7"
+  },
+  "premultiplied": {
+   "text": "Additionally the premultiplied parameter may be used to specify the input image alpha handling.",
+   "doc": "r3_6.html#r3_6_2_6_4"
+  },
+  "pretrace_end": {
+   "text": "The defaults are 0.08 for pretrace_start and 0.04 for pretrace_end.",
+   "doc": "r3_4.html#r3_4_3_3_3_12"
+  },
+  "pretrace_start": {
+   "text": "To control the radiosity pre-trace gathering step, use the keywords pretrace_start and pretrace_end.",
+   "doc": "r3_4.html#r3_4_3_3_3_12"
+  },
+  "projected_through": {
+   "text": "You can use projected_through with any type of light source.",
+   "doc": "r3_4.html#r3_4_3_1_8"
+  },
+  "quadratic_spline": {
+   "text": "The quadratic_spline keyword creates splines that are made of quadratic curves.",
+   "doc": "r3_5.html#r3_5_1_1_8"
+  },
+  "quick_color": {
+   "text": "By adding a quick_color to a pigment you tell POV-Ray what solid color to use for quick renders instead of a patterned pigment.",
+   "doc": "r3_6.html#r3_6_1_1_5"
+  },
+  "quick_colour": {
+   "text": "By adding a quick_color to a pigment you tell POV-Ray what solid color to use for quick renders instead of a patterned pigment.",
+   "doc": "r3_6.html#r3_6_1_1_5"
+  },
+  "quilted": {
+   "text": "The quilted pattern was originally designed only to be used as a normal pattern.",
+   "doc": "r3_6.html#r3_6_2_1_21"
+  },
+  "radial": {
+   "text": "The radial pattern is a radial blend that wraps around the +y-axis.",
+   "doc": "r3_6.html#r3_6_2_1_22"
+  },
+  "radiosity": {
+   "text": "Radiosity calculations are only made when a radiosity{} block is used inside the global_settings{} block.",
+   "doc": "r3_4.html#r3_4_3_3_1"
+  },
+  "radius": {
+   "text": "The falloff, radius, and tightness keywords control the way that light tapers off at the edges of the cone.",
+   "doc": "r3_4.html#r3_4_3_1_2"
+  },
+  "ratio": {
+   "text": "The ratio keyword distributes intervals differently between lit and unlit areas.",
+   "doc": "r3_7.html#r3_7_2_3"
+  },
+  "recursion_limit": {
+   "text": "The recursion_limit is an integer value which determines how many recursion levels are used to calculate the diffuse inter-reflection.",
+   "doc": "r3_4.html#r3_4_3_3_3_13"
+  },
+  "reflection": {
+   "text": "Such mirror-like reflection is controlled by the reflection {...} block in a finish statement.",
+   "doc": "r3_6.html#r3_6_1_3_5"
+  },
+  "refraction": {
+   "text": "In addition to turning refraction on or off, the old refraction keyword was followed by a float value from 0.0 to 1.0.",
+   "doc": "r3_7.html#r3_7_2_1_4"
+  },
+  "refraction_angle": {
+   "text": "Rays that graze the hole bend by a large angle, so the scene sets a small refraction_angle (Declare=Angle=A).",
+   "doc": "r3_11.html#r3_11_5_3"
+  },
+  "repeat": {
+   "text": "The repeat warp causes a section of the pattern to be repeated over and over.",
+   "doc": "r3_6.html#r3_6_2_5_5_2"
+  },
+  "right": {
+   "text": "The primary purpose of the up and right vectors is to tell POV-Ray the relative height and width of the view screen.",
+   "doc": "r3_4.html#r3_4_2_1_5"
+  },
+  "ripples": {
+   "text": "The ripples pattern was originally designed only to be used as a normal pattern.",
+   "doc": "r3_6.html#r3_6_2_1_23"
+  },
+  "rotate": {
+   "text": "You may change the orientation of an object or texture pattern by adding a rotate modifier.",
+   "doc": "r3_3.html#r3_3_1_12_3"
+  },
+  "roughness": {
+   "text": "The size of the spot is defined by the value given the roughness keyword.",
+   "doc": "r3_6.html#r3_6_1_3_4_2"
+  },
+  "samples": {
+   "text": "The classic controls intervals, samples, jitter, aa_level, aa_threshold, confidence, variance and ratio apply to methods 1, 2 and 3, and to method 4 when it falls back to classic sampling.",
+   "doc": "r3_7.html#r3_7_2_3"
+  },
+  "save_file": {
+   "text": "The keywords save_file and load_file allow you to save and load photon maps.",
+   "doc": "r3_4.html#r3_4_3_4_3"
+  },
+  "scale": {
+   "text": "It consists of the keyword scale followed by a vector expression.",
+   "doc": "r3_3.html#r3_3_1_12_2"
+  },
+  "scattering": {
+   "text": "The default value if no scattering statement is given is rgb <0,0,0> which means no scattering occurs.",
+   "doc": "r3_7.html#r3_7_2_2_3"
+  },
+  "screen": {
+   "text": "Before the screen pattern, a television, a monitor or a picture of another part of the scene took two renders.",
+   "doc": "r3_10.html#r3_10_1_1"
+  },
+  "shadowless": {
+   "text": "Using the shadowless keyword you can stop a light source from casting shadows.",
+   "doc": "r3_4.html#r3_4_3_1_6"
+  },
+  "sin": {
+   "text": "Sine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "sinh": {
+   "text": "The hyperbolic sine of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "size": {
+   "text": "If size is specified, the facets texture uses a different function that creates facets only on curved surfaces.",
+   "doc": "r3_6.html#r3_6_2_1_10"
+  },
+  "skein": {
+   "text": "A declared skein can be reused with object { Name } or with skein { Name ...",
+   "doc": "r3_9.html#r3_9_2"
+  },
+  "skein_mesh": {
+   "text": "Each skein_mesh writes one line to the debug stream with its triangles, vertices, open edges, size in bytes, wall and CPU build time, and build threads.",
+   "doc": "r3_9.html#r3_9_2_2"
+  },
+  "sky": {
+   "text": "You may change the tilt of the camera using the sky vector.",
+   "doc": "r3_4.html#r3_4_2_1_2"
+  },
+  "slice": {
+   "text": "A julia fractal object is a 3-D slice of a 4-D object created by generalizing the process used to create the classic Julia sets.",
+   "doc": "r3_5.html#r3_5_1_1_7"
+  },
+  "slope": {
+   "text": "The slope pattern uses the normal of a surface to calculate the slope at a given point.",
+   "doc": "r3_6.html#r3_6_2_3_2"
+  },
+  "slope_map": {
+   "text": "A slope_map is a normal pattern modifier which gives the user a great deal of control over the exact shape of the bumpy features.",
+   "doc": "r3_6.html#r3_6_1_2_2"
+  },
+  "smooth": {
+   "text": "Adding the keyword smooth causes POV-Ray to modify the surface normal vectors of the triangles in such a way that the lighting and shading of the triangles will give a smooth look.",
+   "doc": "r3_5.html#r3_5_1_1_5"
+  },
+  "specular": {
+   "text": "The specular keyword in a finish statement produces a highlight which is very similar to phong highlighting but it uses slightly different model.",
+   "doc": "r3_6.html#r3_6_1_3_4_2"
+  },
+  "spherical": {
+   "text": "The spherical pattern creates a one unit radius sphere, with its center at the origin.",
+   "doc": "r3_6.html#r3_6_2_1_24"
+  },
+  "spiral1": {
+   "text": "The spiral1 pattern creates a spiral that winds around the z-axis similar to a screw.",
+   "doc": "r3_6.html#r3_6_2_1_25"
+  },
+  "spiral2": {
+   "text": "The spiral2 pattern creates a double spiral that winds around the z-axis similar to spiral1 except that it has two overlapping spirals which twist in opposite directions.",
+   "doc": "r3_6.html#r3_6_2_1_26"
+  },
+  "split_union": {
+   "text": "With compact objects, without 'empty spaces' split_union off can improve photon gathering.",
+   "doc": "r3_5.html#r3_5_1_4_2_1"
+  },
+  "spotlight": {
+   "text": "However the spotlight keyword can be used to create a cone of light that is bright in the center and falls of to darkness in a soft fringe effect at the edge.",
+   "doc": "r3_4.html#r3_4_3_1_2"
+  },
+  "spotted": {
+   "text": "The spotted pattern is identical to the bozo pattern.",
+   "doc": "r3_6.html#r3_6_2_1_27"
+  },
+  "sqr": {
+   "text": "The presence of one of the function keywords sqr, cube, etc.",
+   "doc": "r3_5.html#r3_5_1_1_7"
+  },
+  "square": {
+   "text": "The square pattern is a block pattern that generates a repeating pattern of squares in the x-z plane.",
+   "doc": "r3_6.html#r3_6_2_2_6"
+  },
+  "str": {
+   "text": "Convert float A to a formatted string.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "strength": {
+   "text": "The strength parameter of either type of blob component is a float value specifying the field strength at the center of the object.",
+   "doc": "r3_5.html#r3_5_1_1_1"
+  },
+  "strlwr": {
+   "text": "Lower case of S.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "strupr": {
+   "text": "Upper case of S.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "sturm": {
+   "text": "For example sturm off may be used to force it off.",
+   "doc": "r3_5.html#r3_5_1_5_11"
+  },
+  "substr": {
+   "text": "Sub-string from S.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "sys": {
+   "text": "For details about the sys character set option refer to the platform specific documentation.",
+   "doc": "r3_4.html#r3_4_1_6"
+  },
+  "tan": {
+   "text": "Tangent of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "tanh": {
+   "text": "The hyperbolic tangent of A.",
+   "doc": "r3_3.html#r3_3_1_5_4"
+  },
+  "target": {
+   "text": "First, make your object into a \"target.\" You do this with the target keyword.",
+   "doc": "r3_4.html#r3_4_3_4_2"
+  },
+  "texture_list": {
+   "text": "The normal_vectors, uv_vectors, and texture_list sections are optional.",
+   "doc": "r3_5.html#r3_5_1_2_4"
+  },
+  "texture_map": {
+   "text": "When used with texture_map or density_map it works the same way.",
+   "doc": "r3_6.html#r3_6_2_4_1"
+  },
+  "thickness": {
+   "text": "The thickness keyword represents the film's thickness.",
+   "doc": "r3_6.html#r3_6_1_3_7"
+  },
+  "threshold": {
+   "text": "The threshold determines what absolute sampling error (i.e.",
+   "doc": "r3_2.html#r3_2_8_8_4"
+  },
+  "tightness": {
+   "text": "The falloff, radius, and tightness keywords control the way that light tapers off at the edges of the cone.",
+   "doc": "r3_4.html#r3_4_3_1_2"
+  },
+  "tiles": {
+   "text": "It used the tiles and tile2 keywords to create a checkered pattern of textures.",
+   "doc": "r3_6.html#r3_6_1_5_2"
+  },
+  "tiling": {
+   "text": "The tiling pattern creates a series tiles in the x-z plane.",
+   "doc": "r3_6.html#r3_6_2_1_28"
+  },
+  "translate": {
+   "text": "It consists of the keyword translate followed by a vector expression.",
+   "doc": "r3_3.html#r3_3_1_12_1"
+  },
+  "translucency": {
+   "text": "The translucency color, which can alternatively be a float, determines the strength of the subsurface light transport effect.",
+   "doc": "r3_6.html#r3_6_1_3_3_4"
+  },
+  "transmit": {
+   "text": "You can do this by adding the keyword filter or transmit following the filename.",
+   "doc": "r3_6.html#r3_6_2_6_3"
+  },
+  "triangular": {
+   "text": "The triangular pattern is a block pattern that generates a repeating pattern of triangles in the x-z plane.",
+   "doc": "r3_6.html#r3_6_2_2_7"
+  },
+  "turbulence": {
+   "text": "Inside the warp statement, the keyword turbulence followed by a float or vector may be used to stir up any pigment, normal or density.",
+   "doc": "r3_6.html#r3_6_2_5_5_3"
+  },
+  "type": {
+   "text": "The keyword type is followed by a float Patch_Type which currently must be either 0 or 1.",
+   "doc": "r3_5.html#r3_5_1_2_1"
+  },
+  "u_steps": {
+   "text": "The keywords u_steps and v_steps are each followed by integer values which tell how many rows and columns of triangles are the minimum to use to create the surface, both default to 0.",
+   "doc": "r3_5.html#r3_5_1_2_1"
+  },
+  "up": {
+   "text": "In type 3 the up vector determines how many units high the image is.",
+   "doc": "r3_4.html#r3_4_2_1_5"
+  },
+  "use_alpha": {
+   "text": "It takes a standard image specification with the option, use_alpha, which works similar to use_color or use_index.",
+   "doc": "r3_6.html#r3_6_2_4_2"
+  },
+  "use_color": {
+   "text": "The use_color keyword may be specified to explicitly note that the color methods should be used instead.",
+   "doc": "r3_6.html#r3_6_1_2_3_3"
+  },
+  "use_colour": {
+   "text": "The use_color keyword may be specified to explicitly note that the color methods should be used instead.",
+   "doc": "r3_6.html#r3_6_1_2_3_3"
+  },
+  "use_index": {
+   "text": "If you specify use_index, the bump map uses the color's palette number to compute as the height of the bump at that point.",
+   "doc": "r3_6.html#r3_6_1_2_3_3"
+  },
+  "user_defined": {
+   "text": "Similar to the mesh camera the user_defined camera allows complete control over ray origin and direction, with the advantage of not having to actually load a mesh to function.",
+   "doc": "r3_4.html#r3_4_2_2_10"
+  },
+  "utf8": {
+   "text": "The option utf8 is a special Unicode text encoding and it allows you to specify characters of nearly all languages in use today.",
+   "doc": "r3_4.html#r3_4_1_6"
+  },
+  "uv_vectors": {
+   "text": "With the keyword uv_vectors, the UV coordinates of the corners can be controlled for bicubic patches and standard triangle mesh.",
+   "doc": "r3_6.html#r3_6_1_7_2"
+  },
+  "v_steps": {
+   "text": "The keywords u_steps and v_steps are each followed by integer values which tell how many rows and columns of triangles are the minimum to use to create the surface, both default to 0.",
+   "doc": "r3_5.html#r3_5_1_2_1"
+  },
+  "variance": {
+   "text": "The variance value specifies an acceptable tolerance on the variance of the samples taken so far.",
+   "doc": "r3_4.html#r3_4_2_3"
+  },
+  "vstr": {
+   "text": "Convert vector A to a formatted string.",
+   "doc": "r3_3.html#r3_3_1_9_4"
+  },
+  "warp": {
+   "text": "The warp statement is a pattern modifier that is similar to turbulence.",
+   "doc": "r3_6.html#r3_6_2_5_5"
+  },
+  "water_level": {
+   "text": "The optional water_level parameter may be added after the file name.",
+   "doc": "r3_5.html#r3_5_1_1_5"
+  },
+  "waves": {
+   "text": "The waves pattern was originally designed only to be used as a normal pattern.",
+   "doc": "r3_6.html#r3_6_2_1_29"
+  },
+  "wood": {
+   "text": "The wood pattern consists of concentric cylinders centered on the z-axis.",
+   "doc": "r3_6.html#r3_6_2_1_30"
+  },
+  "wrinkles": {
+   "text": "The wrinkles pattern was originally designed only to be used as a normal pattern.",
+   "doc": "r3_6.html#r3_6_2_1_31"
+  },
+  "x": {
+   "text": "The built-in vector identifiers x, y, and z provide much greater readability for your scene files when used in vector expressions.",
+   "doc": "r3_3.html#r3_3_1_6_6"
+  },
+  "y": {
+   "text": "The built-in vector identifiers x, y, and z provide much greater readability for your scene files when used in vector expressions.",
+   "doc": "r3_3.html#r3_3_1_6_6"
+  },
+  "z": {
+   "text": "The default three parameters are x, y and z.",
+   "doc": "r3_3.html#r3_3_1_8_3"
+  }
+ },
+ "snippets": {
+  "aa_level": {
+   "rank": 1012,
+   "code": "aa_level : 3",
+   "from": "doc/html/r3_7.html"
+  },
+  "aa_threshold": {
+   "rank": 1018,
+   "code": "aa_threshold : 0.1",
+   "from": "doc/html/r3_7.html"
+  },
+  "absorption": {
+   "rank": 1020,
+   "code": "absorption : <0,0,0>",
+   "from": "doc/html/r3_7.html"
+  },
+  "accuracy": {
+   "rank": 1015,
+   "code": "accuracy 0.0001",
+   "from": "doc/html/r3_5.html"
+  },
+  "acos": {
+   "rank": 1054,
+   "code": "asinh | cos | acos | cosh | acosh | tan | atan |tanh |",
+   "from": "doc/html/r3_5.html"
+  },
+  "acosh": {
+   "rank": 1054,
+   "code": "asinh | cos | acos | cosh | acosh | tan | atan |tanh |",
+   "from": "doc/html/r3_5.html"
+  },
+  "adaptive": {
+   "rank": 1035,
+   "code": "count : 35 (supports adaptive mode)",
+   "from": "doc/html/r3_4.html"
+  },
+  "adc_bailout": {
+   "rank": 36,
+   "code": "global_settings { adc_bailout 0.01 }",
+   "from": "doc/html/r3_4.html"
+  },
+  "agate": {
+   "rank": 1017,
+   "code": "agate [Bump_Size]",
+   "from": "doc/html/r3_6.html"
+  },
+  "agate_turb": {
+   "rank": 1014,
+   "code": "agate_turb 0.5",
+   "from": "doc/html/r3_6.html"
+  },
+  "albedo": {
+   "rank": 37,
+   "code": "finish { diffuse albedo 0.7 fresnel }",
+   "from": "doc/html/r3_6.html"
+  },
+  "all": {
+   "rank": 1014,
+   "code": "filter all 0.9",
+   "from": "doc/html/r3_6.html"
+  },
+  "all_intersections": {
+   "rank": 1041,
+   "code": "[max_trace INTEGER] | [all_intersections]",
+   "from": "doc/html/r3_5.html"
+  },
+  "always_sample": {
+   "rank": 1019,
+   "code": "always_sample : off",
+   "from": "doc/html/r3_4.html"
+  },
+  "ambient": {
+   "rank": 17,
+   "code": "finish{ambient 1}",
+   "from": "doc/html/r3_3.html"
+  },
+  "ambient_light": {
+   "rank": 39,
+   "code": "global_settings { ambient_light COLOR }",
+   "from": "doc/html/r3_4.html"
+  },
+  "angle": {
+   "rank": 24,
+   "code": "[rotate { angle VALUE }]",
+   "from": "doc/html/r3_9.html"
+  },
+  "aperture": {
+   "rank": 1057,
+   "code": "blur_samples [MIN_SAMPLES,] MAX_SAMPLES | aperture Size |",
+   "from": "doc/html/r3_4.html"
+  },
+  "area_illumination": {
+   "rank": 1046,
+   "code": "adaptive Adaptive | area_illumination [Bool] |",
+   "from": "doc/html/r3_4.html"
+  },
+  "area_light": {
+   "rank": 1012,
+   "code": "[area_light]",
+   "from": "doc/html/r3_4.html"
+  },
+  "array": {
+   "rank": 14,
+   "code": "array[4][10] {",
+   "from": "doc/html/r3_3.html"
+  },
+  "ascii": {
+   "rank": 1015,
+   "code": "charset : ascii",
+   "from": "doc/html/r3_4.html"
+  },
+  "asin": {
+   "rank": 1051,
+   "code": "sqr | cube | exp | reciprocal | sin | asin | sinh |",
+   "from": "doc/html/r3_5.html"
+  },
+  "asinh": {
+   "rank": 1047,
+   "code": "asinh( FLOAT ) | atan( FLOAT) | atanh( FLOAT) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "assumed_gamma": {
+   "rank": 35,
+   "code": "global_settings { assumed_gamma 1 }",
+   "from": "doc/html/r3_9.html"
+  },
+  "atan": {
+   "rank": 1047,
+   "code": "asinh( FLOAT ) | atan( FLOAT) | atanh( FLOAT) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "atanh": {
+   "rank": 1032,
+   "code": "atanh | ln | pwr( X_Val, Y_Val )",
+   "from": "doc/html/r3_5.html"
+  },
+  "autostop": {
+   "rank": 1010,
+   "code": "autostop 0",
+   "from": "doc/html/r3_4.html"
+  },
+  "b_spline": {
+   "rank": 1039,
+   "code": "linear_spline | b_spline | cubic_spline",
+   "from": "doc/html/r3_5.html"
+  },
+  "back": {
+   "rank": 86,
+   "code": "front [on | off] | back [on | off] | no_lights [on | off] | pigment { PIGMENT_BODY } |",
+   "from": "doc/html/r3_10.html"
+  },
+  "back_filter_tags": {
+   "rank": 38,
+   "code": "far { back_filter_tags { \"outside\" } }",
+   "from": "doc/html/r3_10.html"
+  },
+  "bezier_spline": {
+   "rank": 1042,
+   "code": "bezier_spline | linear_sweep | conic_sweep",
+   "from": "doc/html/r3_5.html"
+  },
+  "blob": {
+   "code": "blob { BLOB_ITEM... [BLOB_MODIFIERS...]}",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "blur_samples": {
+   "rank": 1041,
+   "code": "blur_samples [ MIN_SAMPLES, ] MAX_SAMPLES",
+   "from": "doc/html/r3_4.html"
+  },
+  "bokeh": {
+   "rank": 56,
+   "code": "variance Blur_Variance | [bokeh { pigment { BOKEH } }] |",
+   "from": "doc/html/r3_4.html"
+  },
+  "bounded_by": {
+   "rank": 24,
+   "code": "bounded_by{ clipped_by }",
+   "from": "doc/html/r3_5.html"
+  },
+  "box": {
+   "code": "box { <-1, -1, -1>, <1, 0.5, 1> }",
+   "from": "tests/pov4/components.pov4:17"
+  },
+  "bozo": {
+   "rank": 63,
+   "code": "interior { media { scattering { 1, 0.2 } density { bozo } } } }",
+   "from": "doc/html/r3_7.html"
+  },
+  "brick": {
+   "rank": 20,
+   "code": "normal { brick 0.5 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "brick_size": {
+   "rank": 1029,
+   "code": "brick_size Size | mortar Size",
+   "from": "doc/html/r3_6.html"
+  },
+  "brightness": {
+   "rank": 1016,
+   "code": "brightness : 1.0",
+   "from": "doc/html/r3_12.html"
+  },
+  "brilliance": {
+   "rank": 1080,
+   "code": "emission COLOR | brilliance Amount | phong [albedo] Amount | phong_size Amount |",
+   "from": "doc/html/r3_6.html"
+  },
+  "bump_map": {
+   "code": "bump_map { BITMAP_TYPE \"bitmap.ext\" [BUMP_MAP_MODS...]}",
+   "from": "doc/html/r3_6.html:6"
+  },
+  "bump_size": {
+   "rank": 48,
+   "code": "slope_map{ SLOPE_MAP_BODY } | bump_size Amount |",
+   "from": "doc/html/r3_6.html"
+  },
+  "bumps": {
+   "rank": 20,
+   "code": "normal { bumps 0.3 }",
+   "from": "doc/html/r3_3.html"
+  },
+  "camera": {
+   "code": "camera { location <0, 1.3, -7.6> look_at <0, 0.75, -11.5> right x * 4 / 3 angle 55 }",
+   "from": "doc/html/r3_10.html:3"
+  },
+  "caustics": {
+   "rank": 31,
+   "code": "interior { I_Glass caustics 1 }",
+   "from": "doc/html/r3_8.html"
+  },
+  "cells": {
+   "rank": 49,
+   "code": "path { ... } | length | atan2 | cells [{ ... }] |",
+   "from": "doc/html/r3_9.html"
+  },
+  "charset": {
+   "rank": 1015,
+   "code": "charset : ascii",
+   "from": "doc/html/r3_4.html"
+  },
+  "checker": {
+   "rank": 22,
+   "code": "normal { checker 0.5 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "chr": {
+   "rank": 1055,
+   "code": "concat( STRING , STRING , [STRING ,...]) | chr( INT ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "circular": {
+   "rank": 1026,
+   "code": "jitter | circular | orient",
+   "from": "doc/html/r3_4.html"
+  },
+  "clipped_by": {
+   "rank": 22,
+   "code": "clipped_by{plane{y,0}}",
+   "from": "doc/html/r3_5.html"
+  },
+  "collect": {
+   "rank": 1011,
+   "code": "collect off",
+   "from": "doc/html/r3_4.html"
+  },
+  "color": {
+   "rank": 49,
+   "code": "let Ball = sphere { 0, 1 pigment { color Red } };",
+   "from": "tests/pov4/basics.pov4:5"
+  },
+  "color_map": {
+   "rank": 10,
+   "code": "color_map{",
+   "from": "doc/html/r3_6.html"
+  },
+  "colour": {
+   "rank": 49,
+   "code": "method INT | colour COLOR | pigment { PIGMENT } |",
+   "from": "doc/html/r3_6.html"
+  },
+  "colour_map": {
+   "rank": 12,
+   "code": "colour_map {",
+   "from": "doc/html/r3_3.html"
+  },
+  "component": {
+   "rank": 1038,
+   "code": "component Strength, Radius, <Center> |",
+   "from": "doc/html/r3_5.html"
+  },
+  "concat": {
+   "rank": 53,
+   "code": "let Steps = { step: 0.3, [concat(\"ha\", \"lf\")]: 0.5 };",
+   "from": "tests/pov4/control.pov4:18"
+  },
+  "cone": {
+   "code": "cone { <-1.5, 0, 2>, 0.6, <-1.5, 1.8, 2>, 0 pigment { rgb <0.2, 0.35, 0.95> } }",
+   "from": "doc/html/r3_10.html:2"
+  },
+  "confidence": {
+   "rank": 1016,
+   "code": "confidence : 0.9",
+   "from": "doc/html/r3_7.html"
+  },
+  "conic_sweep": {
+   "rank": 1042,
+   "code": "bezier_spline | linear_sweep | conic_sweep",
+   "from": "doc/html/r3_5.html"
+  },
+  "conserve_energy": {
+   "rank": 1037,
+   "code": "crand Amount | conserve_energy BOOL |",
+   "from": "doc/html/r3_6.html"
+  },
+  "contained_by": {
+   "rank": 34,
+   "code": "contained_by { box { -1.5, 1.5 } }",
+   "from": "tests/pov4/mixed.pov4:13"
+  },
+  "continue": {
+   "rank": 36,
+   "code": "if (I == 3) { I = I + 1; continue; }",
+   "from": "tests/pov4/control.pov4:6"
+  },
+  "control0": {
+   "rank": 1031,
+   "code": "control0 Value | control1 Value",
+   "from": "doc/html/r3_6.html"
+  },
+  "control1": {
+   "rank": 1031,
+   "code": "control0 Value | control1 Value",
+   "from": "doc/html/r3_6.html"
+  },
+  "coords": {
+   "rank": 1041,
+   "code": "facets [coords SCALE_VALUE | size FACTOR]",
+   "from": "doc/html/r3_6.html"
+  },
+  "cos": {
+   "rank": 54,
+   "code": "for (I = 1 to 100000) { S = S + sin(I) * cos(I / 3); }",
+   "from": "tests/pov4/loop.pov4:3"
+  },
+  "cosh": {
+   "rank": 1049,
+   "code": "cosh( FLOAT ) | degrees( FLOAT ) | exp( FLOAT ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "count": {
+   "rank": 1011,
+   "code": "count 20000",
+   "from": "doc/html/r3_4.html"
+  },
+  "crackle": {
+   "rank": 1013,
+   "code": "crackle solid",
+   "from": "doc/html/r3_6.html"
+  },
+  "crand": {
+   "rank": 21,
+   "code": "finish { crand 0.05 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "cube": {
+   "rank": 1010,
+   "code": "sqr | cube",
+   "from": "doc/html/r3_5.html"
+  },
+  "cubic": {
+   "code": "cubic { <A1, A2, A3,... A20> [POLY_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "cubic_spline": {
+   "rank": 89,
+   "code": "bend { along path { cubic_spline <-1, 0, 0>, <-0.3, 0.8, 0>, <0.4, 0.2, 0>, <1, 1, 0> } }",
+   "from": "doc/html/r3_9.html"
+  },
+  "cubic_wave": {
+   "rank": 1060,
+   "code": "sine_wave | scallop_wave | cubic_wave | poly_wave [Exponent]",
+   "from": "doc/html/r3_6.html"
+  },
+  "cylinder": {
+   "code": "cylinder { 0, y * H, 0.1 pigment { rgb <0.4, 0.3, 0.2> } }",
+   "from": "tests/pov4/components.pov4:3"
+  },
+  "cylindrical": {
+   "rank": 42,
+   "code": "warp { cylindrical [CYLINDRICAL_ITEMS...]}",
+   "from": "doc/html/r3_6.html"
+  },
+  "datetime": {
+   "rank": 1013,
+   "code": "datetime(now)",
+   "from": "doc/html/r3_3.html"
+  },
+  "debug": {
+   "rank": 1019,
+   "code": "debug(\"flushed\\n\");",
+   "from": "tests/pov4/review.pov4:11"
+  },
+  "defined": {
+   "rank": 72,
+   "code": "if (!defined(Gone) && !defined(Missing)) { sphere { <-3, 1, 0>, 0.25 } }",
+   "from": "tests/pov4/review.pov4:44"
+  },
+  "density": {
+   "code": "density { spherical turbulence 0.4 color_map { [0 rgb 0] [1 rgb 1] } }",
+   "from": "doc/html/r3_11.html:2"
+  },
+  "density_file": {
+   "rank": 1031,
+   "code": "density_file df3 \"filename.df3\"",
+   "from": "doc/html/r3_6.html"
+  },
+  "density_map": {
+   "rank": 32,
+   "code": "density_map { DENSITY_MAP_BODY }",
+   "from": "doc/html/r3_6.html"
+  },
+  "dents": {
+   "rank": 1011,
+   "code": "[0.3 dents]",
+   "from": "doc/html/r3_6.html"
+  },
+  "df3": {
+   "rank": 1031,
+   "code": "density_file df3 \"filename.df3\"",
+   "from": "doc/html/r3_6.html"
+  },
+  "difference": {
+   "code": "difference { box { <-1, -1, -1>, <1, 0.5, 1> } Tree(0.8) translate <0, 0, 3> pigment { rgb Clamp(1.5) } }",
+   "from": "tests/pov4/components.pov4:16"
+  },
+  "diffuse": {
+   "rank": 22,
+   "code": "finish { diffuse 0.9 }",
+   "from": "doc/html/r3_9.html"
+  },
+  "direction": {
+   "rank": 11,
+   "code": "direction {",
+   "from": "doc/html/r3_4.html"
+  },
+  "disc": {
+   "code": "disc { <0, 1, 0>, -z, 0.8 }",
+   "from": "doc/html/r3_10.html:2"
+  },
+  "dispersion": {
+   "rank": 1016,
+   "code": "dispersion : 1.0",
+   "from": "doc/html/r3_7.html"
+  },
+  "dispersion_samples": {
+   "rank": 1022,
+   "code": "dispersion_samples : 7",
+   "from": "doc/html/r3_7.html"
+  },
+  "distance": {
+   "rank": 1013,
+   "code": "distance 1000",
+   "from": "doc/html/r3_7.html"
+  },
+  "double_illuminate": {
+   "rank": 1028,
+   "code": "double_illuminate [ Bool ] |",
+   "from": "doc/html/r3_5.html"
+  },
+  "eccentricity": {
+   "rank": 1018,
+   "code": "eccentricity : 0.0",
+   "from": "doc/html/r3_7.html"
+  },
+  "emission": {
+   "rank": 31,
+   "code": "finish { emission 1 diffuse 0 }",
+   "from": "doc/html/r3_10.html"
+  },
+  "error": {
+   "rank": 1035,
+   "code": "refused splice.pov:3:9 syntax-error",
+   "from": "doc/html/r3_13.html"
+  },
+  "error_bound": {
+   "rank": 55,
+   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT }",
+   "from": "doc/html/r3_6.html"
+  },
+  "evaluate": {
+   "rank": 1021,
+   "code": "[evaluate P0, P1, P2]",
+   "from": "doc/html/r3_5.html"
+  },
+  "exp": {
+   "rank": 1035,
+   "code": "Attenuation = exp(-depth/fade_dist)",
+   "from": "doc/html/r3_7.html"
+  },
+  "expand_thresholds": {
+   "rank": 1052,
+   "code": "[expand_thresholds <percent_increase>, <expand_min>]",
+   "from": "doc/html/r3_4.html"
+  },
+  "exponent": {
+   "rank": 1019,
+   "code": "[exponent EXPONENT]",
+   "from": "doc/html/r3_6.html"
+  },
+  "exr": {
+   "rank": 1065,
+   "code": "exr | gif | hdr | jpeg | pgm | png | pot | ppm | sys | tga | tiff",
+   "from": "doc/html/r3_5.html"
+  },
+  "exterior": {
+   "rank": 1032,
+   "code": "[exterior EXTERIOR_TYPE, FACTOR]",
+   "from": "doc/html/r3_6.html"
+  },
+  "extinction": {
+   "rank": 1016,
+   "code": "extinction : 1.0",
+   "from": "doc/html/r3_7.html"
+  },
+  "face_indices": {
+   "rank": 71,
+   "code": "face_indices { N, ...[for (I = 0 to N - 1) { <I, mod(I + 1, N), N> }] }",
+   "from": "tests/pov4/points.pov4:6"
+  },
+  "facets": {
+   "rank": 1041,
+   "code": "facets [coords SCALE_VALUE | size FACTOR]",
+   "from": "doc/html/r3_6.html"
+  },
+  "fade_color": {
+   "rank": 1020,
+   "code": "fade_color : <0,0,0>",
+   "from": "doc/html/r3_7.html"
+  },
+  "fade_distance": {
+   "rank": 1019,
+   "code": "fade_distance : 0.0",
+   "from": "doc/html/r3_7.html"
+  },
+  "fade_power": {
+   "rank": 1016,
+   "code": "fade_power : 0.0",
+   "from": "doc/html/r3_7.html"
+  },
+  "fallback": {
+   "rank": 27,
+   "code": "[fallback { PIGMENT_BODY }]",
+   "from": "doc/html/r3_10.html"
+  },
+  "falloff": {
+   "rank": 1012,
+   "code": "falloff : 70",
+   "from": "doc/html/r3_4.html"
+  },
+  "far": {
+   "rank": 38,
+   "code": "far { pigment { rgb <0.45, 0.7, 1> } }",
+   "from": "doc/html/r3_10.html"
+  },
+  "filter": {
+   "rank": 1014,
+   "code": "filter all 0.9",
+   "from": "doc/html/r3_6.html"
+  },
+  "filter_tags": {
+   "rank": 23,
+   "code": "filter_tags { \"rooms\" }",
+   "from": "doc/html/r3_10.html"
+  },
+  "finish": {
+   "code": "finish { phong 1 }",
+   "from": "tests/pov4/basics.pov4:8"
+  },
+  "flatness": {
+   "rank": 1013,
+   "code": "flatness 0.01",
+   "from": "doc/html/r3_5.html"
+  },
+  "fn": {
+   "rank": 11,
+   "code": "fn Pair() {",
+   "from": "tests/pov4/review.pov4:4"
+  },
+  "focal_point": {
+   "rank": 1020,
+   "code": "focal_point: <0,0,0>",
+   "from": "doc/html/r3_4.html"
+  },
+  "form": {
+   "rank": 69,
+   "code": "cells [{ [frequency FLOAT] [amplitude FLOAT] [form <FLOAT, FLOAT>] }]",
+   "from": "doc/html/r3_9.html"
+  },
+  "frequency": {
+   "rank": 35,
+   "code": "normal {ripples 0.85 frequency 10 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "fresnel": {
+   "rank": 37,
+   "code": "finish { diffuse albedo 0.7 fresnel }",
+   "from": "doc/html/r3_6.html"
+  },
+  "front": {
+   "rank": 86,
+   "code": "front [on | off] | back [on | off] | no_lights [on | off] | pigment { PIGMENT_BODY } |",
+   "from": "doc/html/r3_10.html"
+  },
+  "front_filter_tags": {
+   "rank": 64,
+   "code": "near { filter_tags { \"lobby\" } front_filter_tags { \"service\" } }",
+   "from": "doc/html/r3_10.html"
+  },
+  "function": {
+   "rank": 76,
+   "code": "function { sqrt(x * x + y * y + z * z) - 1 + Amp * sin(K * x) * sin(K * z) }",
+   "from": "tests/pov4/mixed.pov4:12"
+  },
+  "gamma": {
+   "rank": 1027,
+   "code": "jpeg \"foobar.jpg\" gamma 1.8",
+   "from": "doc/html/r3_5.html"
+  },
+  "gather": {
+   "rank": 1016,
+   "code": "gather : 20, 100",
+   "from": "doc/html/r3_4.html"
+  },
+  "gif": {
+   "rank": 40,
+   "code": "pigment { image_map { gif \"test.gif\" } }",
+   "from": "doc/html/r3_5.html"
+  },
+  "global": {
+   "rank": 59,
+   "code": "fn Bump() { global Counter = Counter + 1; return Counter; }",
+   "from": "tests/pov4/review.pov4:14"
+  },
+  "global_settings": {
+   "code": "global_settings { max_trace_level 7 }",
+   "from": "tests/pov4/review.pov4:3"
+  },
+  "gradient": {
+   "rank": 21,
+   "code": "normal { gradient x }",
+   "from": "doc/html/r3_6.html"
+  },
+  "granite": {
+   "rank": 44,
+   "code": "brick normal{bumps 0.2}, normal{granite 0.3}",
+   "from": "doc/html/r3_6.html"
+  },
+  "gray_threshold": {
+   "rank": 1020,
+   "code": "gray_threshold : 0.0",
+   "from": "doc/html/r3_4.html"
+  },
+  "hdr": {
+   "rank": 1065,
+   "code": "exr | gif | hdr | jpeg | pgm | png | pot | ppm | sys | tga | tiff",
+   "from": "doc/html/r3_5.html"
+  },
+  "height_field": {
+   "code": "height_field { function 200,200 { pattern { bozo } } translate -0.5 scale 10 pigment {rgb 1} }",
+   "from": "doc/html/r3_6.html:2"
+  },
+  "hexagon": {
+   "rank": 22,
+   "code": "normal { hexagon 0.5 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "hf_gray_16": {
+   "rank": 1023,
+   "code": "hf_gray_16 : deprecated",
+   "from": "doc/html/r3_4.html"
+  },
+  "hierarchy": {
+   "rank": 1014,
+   "code": "hierarchy : on",
+   "from": "doc/html/r3_5.html"
+  },
+  "hollow": {
+   "rank": 31,
+   "code": "sphere { -0.5*x, 1 hollow off }",
+   "from": "doc/html/r3_5.html"
+  },
+  "hypercomplex": {
+   "rank": 1025,
+   "code": "quaternion | hypercomplex",
+   "from": "doc/html/r3_5.html"
+  },
+  "iff": {
+   "rank": 1065,
+   "code": "exr | gif | hdr | iff | jpeg | pgm | png | ppm | sys | tga | tiff",
+   "from": "doc/html/r3_6.html"
+  },
+  "image_map": {
+   "code": "image_map { png \"tv.png\" }",
+   "from": "doc/html/r3_10.html:6"
+  },
+  "image_pattern": {
+   "rank": 15,
+   "code": "image_pattern {",
+   "from": "doc/html/r3_6.html"
+  },
+  "importance": {
+   "rank": 50,
+   "code": "sphere { ... radiosity { importance IMPORTANCE } }",
+   "from": "doc/html/r3_4.html"
+  },
+  "in": {
+   "rank": 32,
+   "code": "...[for (P in Path) { P, 0.15 }]",
+   "from": "tests/pov4/points.pov4:13"
+  },
+  "inside_vector": {
+   "rank": 1023,
+   "code": "inside_vector <0, 0, 1>",
+   "from": "doc/html/r3_5.html"
+  },
+  "interior": {
+   "code": "interior { INTERIOR_ITEMS... }",
+   "from": "doc/html/r3_5.html:16"
+  },
+  "interior_texture": {
+   "rank": 35,
+   "code": "interior_texture { TEXTURE_BODY } |",
+   "from": "doc/html/r3_5.html"
+  },
+  "internal": {
+   "rank": 1037,
+   "code": "internal Font_Number \"String_of_Text\"",
+   "from": "doc/html/r3_5.html"
+  },
+  "interpolate": {
+   "rank": 41,
+   "code": "image { png \"plasma3.png\" interpolate 3 }",
+   "from": "doc/html/r3_9.html"
+  },
+  "intersection": {
+   "code": "intersection { SOLID_OBJECTS... [OBJECT_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "intervals": {
+   "rank": 1011,
+   "code": "intervals 1",
+   "from": "doc/html/r3_7.html"
+  },
+  "inverse": {
+   "rank": 27,
+   "code": "object { MyObject inverse }",
+   "from": "doc/html/r3_5.html"
+  },
+  "ior": {
+   "rank": 20,
+   "code": "interior { ior 1.5 }",
+   "from": "doc/html/r3_7.html"
+  },
+  "irid": {
+   "rank": 36,
+   "code": "irid { Irid_Amount [IRID_ITEMS...] |",
+   "from": "doc/html/r3_6.html"
+  },
+  "irid_wavelength": {
+   "rank": 41,
+   "code": "global_settings { irid_wavelength COLOR }",
+   "from": "doc/html/r3_4.html"
+  },
+  "isosurface": {
+   "code": "isosurface { ... polarity FLOAT ... }",
+   "from": "doc/html/r3_6.html:2"
+  },
+  "jitter": {
+   "rank": 1011,
+   "code": "jitter 0.01",
+   "from": "doc/html/r3_7.html"
+  },
+  "jpeg": {
+   "rank": 1020,
+   "code": "jpeg \"YourImage.jpg\"",
+   "from": "doc/html/r3_3.html"
+  },
+  "julia": {
+   "rank": 1024,
+   "code": "julia <0.353, 0.288>, 30",
+   "from": "doc/html/r3_6.html"
+  },
+  "julia_fractal": {
+   "code": "julia_fractal { <4D_Julia_Parameter> [JF_ITEM...] [OBJECT_MODIFIER...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "keys": {
+   "rank": 86,
+   "code": "for (K in keys(Words)) { if (K != \"plain\") { sphere { <0, 0, 2>, strlen(K) * 0.2 } } }",
+   "from": "tests/pov4/review.pov4:39"
+  },
+  "lambda": {
+   "rank": 58,
+   "code": "warp { turbulence <0,1,1> octaves 3 lambda 1.5 omega 0.3 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "lathe": {
+   "code": "lathe { [SPLINE_TYPE] Number_Of_Points, <Point_1> <Point_2>... <Point_n> [LATHE_MODIFIER...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "lemon": {
+   "code": "lemon { <Base_Point>, Base_Radius, <Cap_Point>, Cap_Radius, Inner_Radius [LEMON_MODIFIERS] }",
+   "from": "doc/html/r3_5.html:2"
+  },
+  "len": {
+   "rank": 52,
+   "code": "vertex_vectors { len(Ring) + 1, ...Ring, <0, 1, 0> }",
+   "from": "tests/pov4/points.pov4:5"
+  },
+  "let": {
+   "rank": 33,
+   "code": "let D = { ...Sizes, tiny: 0.05 };",
+   "from": "tests/pov4/control.pov4:13"
+  },
+  "light_group": {
+   "code": "light_group { LIGHT_GROUP LIGHT | LIGHT_GROUP OBJECT | LIGHT_GROUP [LIGHT_GROUP MODIFIER] }",
+   "from": "doc/html/r3_4.html:2"
+  },
+  "light_source": {
+   "code": "light_source { <4, 6, -3> rgb 0.4 }",
+   "from": "tests/pov4/interop.pov4:2"
+  },
+  "linear_spline": {
+   "rank": 1024,
+   "code": "linear_spline len(Path),",
+   "from": "tests/pov4/points.pov4:12"
+  },
+  "linear_sweep": {
+   "rank": 1025,
+   "code": "SWEEP_TYPE : linear_sweep",
+   "from": "doc/html/r3_5.html"
+  },
+  "ln": {
+   "rank": 1032,
+   "code": "atanh | ln | pwr( X_Val, Y_Val )",
+   "from": "doc/html/r3_5.html"
+  },
+  "load_file": {
+   "rank": 1045,
+   "code": "[save_file \"filename\" | load_file \"filename\"]",
+   "from": "doc/html/r3_4.html"
+  },
+  "location": {
+   "rank": 10,
+   "code": "location {",
+   "from": "doc/html/r3_4.html"
+  },
+  "look_at": {
+   "rank": 38,
+   "code": "camera { location <0,2,-2> look_at 0 }",
+   "from": "doc/html/r3_3.html"
+  },
+  "looks_like": {
+   "rank": 23,
+   "code": "looks_like { OBJECT } |",
+   "from": "doc/html/r3_4.html"
+  },
+  "low_error_factor": {
+   "rank": 1022,
+   "code": "low_error_factor : 0.5",
+   "from": "doc/html/r3_4.html"
+  },
+  "magnet": {
+   "rank": 1050,
+   "code": "magnet MAGNET_TYPE mandel ITERATIONS [, BUMP_SIZE]",
+   "from": "doc/html/r3_6.html"
+  },
+  "mandel": {
+   "rank": 1031,
+   "code": "mandel ITERATIONS [, BUMP_SIZE]",
+   "from": "doc/html/r3_6.html"
+  },
+  "map": {
+   "rank": 1070,
+   "code": "let Path = map(range(0, 6), (I) => <I - 3, 0.5 + 0.3 * sin(I), -1.5>);",
+   "from": "tests/pov4/points.pov4:10"
+  },
+  "map_type": {
+   "rank": 1010,
+   "code": "map_type 0",
+   "from": "doc/html/r3_6.html"
+  },
+  "marble": {
+   "rank": 1025,
+   "code": "[0.9 marble turbulence 1]",
+   "from": "doc/html/r3_6.html"
+  },
+  "material": {
+   "code": "material { [MATERIAL_IDENTIFIER][MATERIAL_ITEMS...] }",
+   "from": "doc/html/r3_5.html:17"
+  },
+  "material_map": {
+   "rank": 14,
+   "code": "material_map {",
+   "from": "doc/html/r3_6.html"
+  },
+  "matrix": {
+   "rank": 79,
+   "code": "sphere { 0, 0.5 pigment { rgb 1 } matrix <1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, 0> }",
+   "from": "tests/pov4/layered.pov4:9"
+  },
+  "max_gradient": {
+   "rank": 1014,
+   "code": "max_gradient 4",
+   "from": "tests/pov4/mixed.pov4:14"
+  },
+  "max_intersections": {
+   "rank": 1022,
+   "code": "max_intersections : 64",
+   "from": "doc/html/r3_4.html"
+  },
+  "max_iteration": {
+   "rank": 1015,
+   "code": "max_iteration 8",
+   "from": "doc/html/r3_5.html"
+  },
+  "max_sample": {
+   "rank": 1031,
+   "code": "max_sample : non-positive value",
+   "from": "doc/html/r3_4.html"
+  },
+  "max_trace": {
+   "rank": 1041,
+   "code": "[max_trace INTEGER] | [all_intersections]",
+   "from": "doc/html/r3_5.html"
+  },
+  "max_trace_level": {
+   "rank": 53,
+   "code": "let Settings = global_settings { max_trace_level 7 };",
+   "from": "tests/pov4/review.pov4:3"
+  },
+  "maximum_reuse": {
+   "rank": 1019,
+   "code": "maximum_reuse : 0.2",
+   "from": "doc/html/r3_4.html"
+  },
+  "media": {
+   "code": "media { mix add emission rgb <0.4, 0.1, 0> }",
+   "from": "tests/pov4/interop.pov4:10"
+  },
+  "media_attenuation": {
+   "rank": 1022,
+   "code": "media_attenuation : on",
+   "from": "doc/html/r3_12.html"
+  },
+  "media_interaction": {
+   "rank": 1022,
+   "code": "media_interaction : on",
+   "from": "doc/html/r3_12.html"
+  },
+  "merge": {
+   "code": "merge { SOLID_OBJECTS... [OBJECT_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "mesh": {
+   "code": "mesh { MESH_OBJECT_IDENTIFIER [TRANSFORMATIONS] }",
+   "from": "doc/html/r3_4.html:7"
+  },
+  "mesh2": {
+   "code": "mesh2 { povm \"trunk.povm\" pigment { rgb <0.4, 0.3, 0.2> } }",
+   "from": "doc/html/r3_13.html:4"
+  },
+  "mesh_camera": {
+   "rank": 13,
+   "code": "mesh_camera {",
+   "from": "doc/html/r3_4.html"
+  },
+  "metallic": {
+   "rank": 1023,
+   "code": "metallic FLOAT_METALLIC",
+   "from": "doc/html/r3_6.html"
+  },
+  "method": {
+   "rank": 25,
+   "code": "subsurface { method INT }",
+   "from": "doc/html/r3_6.html"
+  },
+  "metric": {
+   "rank": 1019,
+   "code": "metric METRIC_VALUE",
+   "from": "doc/html/r3_6.html"
+  },
+  "minimum_reuse": {
+   "rank": 1021,
+   "code": "minimum_reuse : 0.015",
+   "from": "doc/html/r3_4.html"
+  },
+  "mix": {
+   "rank": 81,
+   "code": "media { mix add | replace | subtract | multiply priority Integer MEDIA_ITEMS... }",
+   "from": "doc/html/r3_7.html"
+  },
+  "mm_per_unit": {
+   "rank": 1015,
+   "code": "mm_per_unit INT",
+   "from": "doc/html/r3_6.html"
+  },
+  "mortar": {
+   "rank": 1029,
+   "code": "brick_size Size | mortar Size",
+   "from": "doc/html/r3_6.html"
+  },
+  "near": {
+   "rank": 42,
+   "code": "global_settings { interface_texture near }",
+   "from": "doc/html/r3_4.html"
+  },
+  "nearest_count": {
+   "rank": 1052,
+   "code": "nearest_count : 5 (max = 20; supports adaptive mode)",
+   "from": "doc/html/r3_4.html"
+  },
+  "no_bump_scale": {
+   "rank": 1035,
+   "code": "no_bump_scale Bool | accuracy Float",
+   "from": "doc/html/r3_6.html"
+  },
+  "no_image": {
+   "rank": 1019,
+   "code": "no_image [ Bool ] |",
+   "from": "doc/html/r3_5.html"
+  },
+  "no_lights": {
+   "rank": 75,
+   "code": "portal { sphere { <-1.5, 1.1, 0>, 0.75 } to { translate 3 * x } no_lights }",
+   "from": "doc/html/r3_10.html"
+  },
+  "no_radiosity": {
+   "rank": 27,
+   "code": "camera { ... no_radiosity }",
+   "from": "doc/html/r3_4.html"
+  },
+  "no_reflection": {
+   "rank": 1024,
+   "code": "no_reflection [ Bool ] |",
+   "from": "doc/html/r3_5.html"
+  },
+  "no_shadow": {
+   "rank": 1011,
+   "code": "no_shadow |",
+   "from": "doc/html/r3_5.html"
+  },
+  "noise_generator": {
+   "rank": 1019,
+   "code": "noise_generator : 2",
+   "from": "doc/html/r3_4.html"
+  },
+  "normal": {
+   "code": "normal { NORMAL_BODY }",
+   "from": "doc/html/r3_10.html:12"
+  },
+  "normal_indices": {
+   "rank": 16,
+   "code": "normal_indices {",
+   "from": "doc/html/r3_5.html"
+  },
+  "normal_map": {
+   "rank": 12,
+   "code": "normal_map {",
+   "from": "doc/html/r3_6.html"
+  },
+  "normal_vectors": {
+   "rank": 16,
+   "code": "normal_vectors {",
+   "from": "doc/html/r3_5.html"
+  },
+  "null": {
+   "rank": 1012,
+   "code": "Gone = null;",
+   "from": "tests/pov4/review.pov4:43"
+  },
+  "number_of_sides": {
+   "rank": 1083,
+   "code": "number_of_sides SIDES_VALUE | number_of_tiles TILES_VALUE | pattern PATTERN_VALUE |",
+   "from": "doc/html/r3_6.html"
+  },
+  "number_of_tiles": {
+   "rank": 1083,
+   "code": "number_of_sides SIDES_VALUE | number_of_tiles TILES_VALUE | pattern PATTERN_VALUE |",
+   "from": "doc/html/r3_6.html"
+  },
+  "number_of_waves": {
+   "rank": 41,
+   "code": "global_settings { number_of_waves Count }",
+   "from": "doc/html/r3_6.html"
+  },
+  "object": {
+   "code": "object { Ball translate x * 2.5 scale Scale(1.5) }",
+   "from": "tests/pov4/basics.pov4:7"
+  },
+  "octaves": {
+   "rank": 58,
+   "code": "warp { turbulence <0,1,1> octaves 3 lambda 1.5 omega 0.3 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "offset": {
+   "rank": 31,
+   "code": "warp {repeat x*2 offset z*0.05}",
+   "from": "doc/html/r3_6.html"
+  },
+  "omega": {
+   "rank": 58,
+   "code": "warp { turbulence <0,1,1> octaves 3 lambda 1.5 omega 0.3 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "once": {
+   "rank": 1039,
+   "code": "map_type Type | once | interpolate Type",
+   "from": "doc/html/r3_6.html"
+  },
+  "open": {
+   "rank": 1015,
+   "code": "ends flat, open",
+   "from": "doc/html/r3_9.html"
+  },
+  "orient": {
+   "rank": 1026,
+   "code": "jitter | circular | orient",
+   "from": "doc/html/r3_4.html"
+  },
+  "orthographic": {
+   "rank": 47,
+   "code": "camera {location -2.5*z look_at 0 orthographic}",
+   "from": "doc/html/r3_3.html"
+  },
+  "parallel": {
+   "rank": 1044,
+   "code": "spotlight | shadowless | cylinder | parallel",
+   "from": "doc/html/r3_4.html"
+  },
+  "pass_through": {
+   "rank": 1014,
+   "code": "[pass_through]",
+   "from": "doc/html/r3_4.html"
+  },
+  "pattern": {
+   "rank": 25,
+   "code": "pattern { PATTERN_BLOCK }",
+   "from": "doc/html/r3_3.html"
+  },
+  "perspective": {
+   "rank": 1024,
+   "code": "CAMERA TYPE: perspective",
+   "from": "doc/html/r3_4.html"
+  },
+  "perturb": {
+   "rank": 26,
+   "code": "[perturb { PIGMENT_BODY }]",
+   "from": "doc/html/r3_6.html"
+  },
+  "pgm": {
+   "rank": 1065,
+   "code": "exr | gif | hdr | jpeg | pgm | png | pot | ppm | sys | tga | tiff",
+   "from": "doc/html/r3_5.html"
+  },
+  "phase": {
+   "rank": 59,
+   "code": "sin [{ [frequency FLOAT] [amplitude FLOAT] [phase FLOAT] }]",
+   "from": "doc/html/r3_9.html"
+  },
+  "phong": {
+   "rank": 18,
+   "code": "finish {phong 1.0}",
+   "from": "doc/html/r3_6.html"
+  },
+  "phong_size": {
+   "rank": 49,
+   "code": "finish { phong albedo 0.9 phong_size 60 fresnel }",
+   "from": "doc/html/r3_6.html"
+  },
+  "photon_only": {
+   "rank": 1017,
+   "code": "photon_only : off",
+   "from": "doc/html/r3_4.html"
+  },
+  "photons": {
+   "rank": 26,
+   "code": "photons { PHOTON_ITEMS...}",
+   "from": "doc/html/r3_5.html"
+  },
+  "pigment": {
+   "code": "pigment { color Red }",
+   "from": "tests/pov4/basics.pov4:5"
+  },
+  "pigment_map": {
+   "rank": 13,
+   "code": "pigment_map {",
+   "from": "doc/html/r3_6.html"
+  },
+  "pigment_pattern": {
+   "rank": 17,
+   "code": "pigment_pattern {",
+   "from": "doc/html/r3_6.html"
+  },
+  "planar": {
+   "rank": 33,
+   "code": "warp { planar [ VECTOR , FLOAT ]}",
+   "from": "doc/html/r3_6.html"
+  },
+  "plane": {
+   "code": "plane { y, 0 pigment { checker rgb 1, rgb 0.4 } }",
+   "from": "doc/html/r3_13.html:5"
+  },
+  "png": {
+   "rank": 26,
+   "code": "image_map {png \"Eggs.png\"}",
+   "from": "doc/html/r3_6.html"
+  },
+  "point_at": {
+   "rank": 1015,
+   "code": "point_at <Spot>",
+   "from": "doc/html/r3_4.html"
+  },
+  "polarity": {
+   "rank": 1014,
+   "code": "polarity : off",
+   "from": "doc/html/r3_5.html"
+  },
+  "poly": {
+   "code": "poly { Order, <A1, A2, A3,... An> [POLY_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "poly_wave": {
+   "rank": 1015,
+   "code": "poly_wave : 1.0",
+   "from": "doc/html/r3_6.html"
+  },
+  "polygon": {
+   "code": "polygon { Number_Of_Points, <Point_1> <Point_2>... <Point_n> [OBJECT_MODIFIER...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "polynomial": {
+   "code": "polynomial { Order, [COEFFICIENTS...] [POLY_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "portal": {
+   "code": "portal { BODY to { TRANSFORMATIONS... } [PORTAL_OPTIONS...] [OBJECT_MODIFIERS...] }",
+   "from": "doc/html/r3_10.html:2"
+  },
+  "pot": {
+   "rank": 1065,
+   "code": "exr | gif | hdr | jpeg | pgm | png | pot | ppm | sys | tga | tiff",
+   "from": "doc/html/r3_5.html"
+  },
+  "potential": {
+   "rank": 31,
+   "code": "potential { BLOB | ISOSURFACE }",
+   "from": "doc/html/r3_6.html"
+  },
+  "ppm": {
+   "rank": 1048,
+   "code": "povray +Igarden.pov +W160 +H120 -A +FP16 +Oa.ppm",
+   "from": "doc/html/r3_13.html"
+  },
+  "precision": {
+   "rank": 1012,
+   "code": "precision 15",
+   "from": "doc/html/r3_5.html"
+  },
+  "precompute": {
+   "rank": 1019,
+   "code": "precompute 10 x,y,z",
+   "from": "doc/html/r3_5.html"
+  },
+  "premultiplied": {
+   "rank": 1059,
+   "code": "[BITMAP_TYPE] \"filename\" [gamma GAMMA] [premultiplied BOOL]",
+   "from": "doc/html/r3_6.html"
+  },
+  "pretrace_end": {
+   "rank": 1019,
+   "code": "pretrace_end : 0.04",
+   "from": "doc/html/r3_4.html"
+  },
+  "pretrace_start": {
+   "rank": 1021,
+   "code": "pretrace_start : 0.08",
+   "from": "doc/html/r3_4.html"
+  },
+  "priority": {
+   "rank": 81,
+   "code": "media { mix add | replace | subtract | multiply priority Integer MEDIA_ITEMS... }",
+   "from": "doc/html/r3_7.html"
+  },
+  "projected_through": {
+   "rank": 28,
+   "code": "projected_through { OBJECT }",
+   "from": "doc/html/r3_4.html"
+  },
+  "pwr": {
+   "rank": 1032,
+   "code": "atanh | ln | pwr( X_Val, Y_Val )",
+   "from": "doc/html/r3_5.html"
+  },
+  "quadratic_spline": {
+   "rank": 53,
+   "code": "translate { y path { quadratic_spline 0, 0.1, 0.4 } }",
+   "from": "doc/html/r3_9.html"
+  },
+  "quadric": {
+   "code": "quadric { <A,B,C>,<D,E,F>,<G,H,I>,J [OBJECT_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "quartic": {
+   "code": "quartic { <A1, A2, A3,... A35> [POLY_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "quaternion": {
+   "rank": 1025,
+   "code": "quaternion | hypercomplex",
+   "from": "doc/html/r3_5.html"
+  },
+  "quick_color": {
+   "rank": 40,
+   "code": "pigment { color Yellow quick_color Red }",
+   "from": "doc/html/r3_6.html"
+  },
+  "quick_colour": {
+   "rank": 1018,
+   "code": "quick_colour COLOR",
+   "from": "doc/html/r3_6.html"
+  },
+  "quilted": {
+   "rank": 1019,
+   "code": "quilted [Bump_Size]",
+   "from": "doc/html/r3_6.html"
+  },
+  "radiosity": {
+   "rank": 11,
+   "code": "radiosity {",
+   "from": "doc/html/r3_2.html"
+  },
+  "radiosity_size": {
+   "rank": 45,
+   "code": "camera { ... radiosity_size <Width, Height> }",
+   "from": "doc/html/r3_4.html"
+  },
+  "radius": {
+   "rank": 63,
+   "code": "sphere { <0, 0.5, -2>, ... /* radius */ Rad pigment { rgb y } }",
+   "from": "tests/pov4/review.pov4:46"
+  },
+  "ramp_wave": {
+   "rank": 46,
+   "code": "pigment { wood color_map { MyMap } ramp_wave }",
+   "from": "doc/html/r3_6.html"
+  },
+  "range": {
+   "rank": 1070,
+   "code": "let Path = map(range(0, 6), (I) => <I - 3, 0.5 + 0.3 * sin(I), -1.5>);",
+   "from": "tests/pov4/points.pov4:10"
+  },
+  "ratio": {
+   "rank": 1011,
+   "code": "ratio : 0.9",
+   "from": "doc/html/r3_7.html"
+  },
+  "reciprocal": {
+   "rank": 1051,
+   "code": "sqr | cube | exp | reciprocal | sin | asin | sinh |",
+   "from": "doc/html/r3_5.html"
+  },
+  "recursion_limit": {
+   "rank": 1019,
+   "code": "recursion_limit : 2",
+   "from": "doc/html/r3_4.html"
+  },
+  "reflection": {
+   "rank": 12,
+   "code": "reflection {",
+   "from": "doc/html/r3_6.html"
+  },
+  "refraction": {
+   "rank": 44,
+   "code": "media { refraction -0.03 density { Steam } }",
+   "from": "doc/html/r3_11.html"
+  },
+  "refraction_angle": {
+   "rank": 41,
+   "code": "global_settings { refraction_angle 0.25 }",
+   "from": "doc/html/r3_11.html"
+  },
+  "repeat": {
+   "rank": 19,
+   "code": "warp { repeat 2*x }",
+   "from": "doc/html/r3_6.html"
+  },
+  "resolution": {
+   "rank": 74,
+   "code": "media { method 4 resolution 0.1 scattering { 1, rgb 1 } density { bozo } }",
+   "from": "doc/html/r3_11.html"
+  },
+  "return": {
+   "rank": 26,
+   "code": "if (V < Lo) { return Lo; }",
+   "from": "tests/pov4/components.pov4:8"
+  },
+  "right": {
+   "rank": 67,
+   "code": "camera { location <0, 1.6, -6> look_at <0, 0.8, 0> right x * 1.33 }",
+   "from": "doc/html/r3_13.html"
+  },
+  "ripples": {
+   "rank": 35,
+   "code": "normal {ripples 0.85 frequency 10 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "rotate": {
+   "rank": 24,
+   "code": "[rotate { angle VALUE }]",
+   "from": "doc/html/r3_9.html"
+  },
+  "roughness": {
+   "rank": 53,
+   "code": "finish { specular albedo 0.9 roughness 0.02 fresnel }",
+   "from": "doc/html/r3_6.html"
+  },
+  "samples": {
+   "rank": 27,
+   "code": "light_source { samples 16 }",
+   "from": "doc/html/r3_7.html"
+  },
+  "save_file": {
+   "rank": 1021,
+   "code": "save_file \"myfile.ph\"",
+   "from": "doc/html/r3_4.html"
+  },
+  "scale": {
+   "rank": 50,
+   "code": "object { Ball translate x * 2.5 scale Scale(1.5) }",
+   "from": "tests/pov4/basics.pov4:7"
+  },
+  "scallop_wave": {
+   "rank": 1060,
+   "code": "sine_wave | scallop_wave | cubic_wave | poly_wave [Exponent]",
+   "from": "doc/html/r3_6.html"
+  },
+  "scattering": {
+   "rank": 12,
+   "code": "scattering {",
+   "from": "doc/html/r3_7.html"
+  },
+  "screen": {
+   "rank": 38,
+   "code": "pigment { screen { camera { View } } }",
+   "from": "doc/html/r3_10.html"
+  },
+  "shadowless": {
+   "rank": 1016,
+   "code": "shadowless : off",
+   "from": "doc/html/r3_12.html"
+  },
+  "sin": {
+   "rank": 54,
+   "code": "for (I = 1 to 100000) { S = S + sin(I) * cos(I / 3); }",
+   "from": "tests/pov4/loop.pov4:3"
+  },
+  "sine_wave": {
+   "rank": 1060,
+   "code": "sine_wave | scallop_wave | cubic_wave | poly_wave [Exponent]",
+   "from": "doc/html/r3_6.html"
+  },
+  "sinh": {
+   "rank": 1049,
+   "code": "radians( FLOAT ) | sin( FLOAT ) | sinh( FLOAT ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "size": {
+   "rank": 1041,
+   "code": "facets [coords SCALE_VALUE | size FACTOR]",
+   "from": "doc/html/r3_6.html"
+  },
+  "skein": {
+   "rank": 48,
+   "code": "skein { SKEIN_IDENTIFIER [OBJECT_MODIFIERS...] }",
+   "from": "doc/html/r3_9.html"
+  },
+  "skein_mesh": {
+   "rank": 12,
+   "code": "skein_mesh {",
+   "from": "doc/html/r3_9.html"
+  },
+  "sky": {
+   "rank": 1011,
+   "code": "sky <0,1,0>",
+   "from": "doc/html/r3_4.html"
+  },
+  "slice": {
+   "rank": 1032,
+   "code": "slice, DISTANCE : <0,0,0,1>, 0.0",
+   "from": "doc/html/r3_5.html"
+  },
+  "slope": {
+   "rank": 21,
+   "code": "slope { <Direction> }",
+   "from": "doc/html/r3_6.html"
+  },
+  "slope_map": {
+   "rank": 11,
+   "code": "slope_map {",
+   "from": "doc/html/r3_6.html"
+  },
+  "smooth": {
+   "rank": 1012,
+   "code": "smooth : off",
+   "from": "doc/html/r3_5.html"
+  },
+  "smooth_triangle": {
+   "code": "smooth_triangle { <Corner_1>, <Normal_1>, <Corner_2>, <Normal_2>, <Corner_3>, <Normal_3> [MESH_TEXTURE] }",
+   "from": "doc/html/r3_6.html:9"
+  },
+  "solid": {
+   "rank": 1013,
+   "code": "crackle solid",
+   "from": "doc/html/r3_6.html"
+  },
+  "sor": {
+   "code": "sor { Number_Of_Points, <Point_1>, <Point_2>, ... <Point_n> [ open ] [SOR_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "spacing": {
+   "rank": 55,
+   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT }",
+   "from": "doc/html/r3_6.html"
+  },
+  "specular": {
+   "rank": 21,
+   "code": "finish{specular 0.75}",
+   "from": "doc/html/r3_6.html"
+  },
+  "sphere": {
+   "code": "sphere { 0, 1 pigment { color Red } }",
+   "from": "tests/pov4/basics.pov4:5"
+  },
+  "sphere_sweep": {
+   "code": "sphere_sweep { linear_spline len(Path), ...[for (P in Path) { P, 0.15 }] pigment { rgb <0.9, 0.5, 0.1> } }",
+   "from": "tests/pov4/points.pov4:11"
+  },
+  "spherical": {
+   "rank": 38,
+   "code": "warp { spherical [SPHERICAL_ITEMS...]}",
+   "from": "doc/html/r3_6.html"
+  },
+  "spiral1": {
+   "rank": 1022,
+   "code": "spiral1 Number_of_Arms",
+   "from": "doc/html/r3_6.html"
+  },
+  "spiral2": {
+   "rank": 1022,
+   "code": "spiral2 Number_of_Arms",
+   "from": "doc/html/r3_6.html"
+  },
+  "split_union": {
+   "rank": 1015,
+   "code": "split_union off",
+   "from": "doc/html/r3_5.html"
+  },
+  "spotlight": {
+   "rank": 1027,
+   "code": "<Location>, COLOR spotlight",
+   "from": "doc/html/r3_4.html"
+  },
+  "sqr": {
+   "rank": 1010,
+   "code": "sqr | cube",
+   "from": "doc/html/r3_5.html"
+  },
+  "square": {
+   "rank": 1052,
+   "code": "square [COLOR_1 [, COLOR_2 [, COLOR_3 [, COLOR_4]]]]",
+   "from": "doc/html/r3_6.html"
+  },
+  "step": {
+   "rank": 53,
+   "code": "let Steps = { step: 0.3, [concat(\"ha\", \"lf\")]: 0.5 };",
+   "from": "tests/pov4/control.pov4:18"
+  },
+  "str": {
+   "rank": 1047,
+   "code": "debug(concat(\"loop sum \", str(S, 0, 9), \"\\n\"));",
+   "from": "tests/pov4/loop.pov4:4"
+  },
+  "strength": {
+   "rank": 1010,
+   "code": "strength 2",
+   "from": "doc/html/r3_6.html"
+  },
+  "strlwr": {
+   "rank": 1056,
+   "code": "strlwr( STRING ) | vstr( INT, VECTOR, STRING, INT, INT )",
+   "from": "doc/html/r3_3.html"
+  },
+  "strupr": {
+   "rank": 1049,
+   "code": "substr( STRING , INT , INT ) | strupr( STRING ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "sturm": {
+   "rank": 1011,
+   "code": "sturm : off",
+   "from": "doc/html/r3_5.html"
+  },
+  "substr": {
+   "rank": 1049,
+   "code": "substr( STRING , INT , INT ) | strupr( STRING ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "subsurface": {
+   "rank": 13,
+   "code": "subsurface {}",
+   "from": "doc/html/r3_6.html"
+  },
+  "superellipsoid": {
+   "code": "superellipsoid { <Value_E, Value_N> [OBJECT_MODIFIERS...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "sys": {
+   "rank": 1015,
+   "code": "sys \"SomeImage\"",
+   "from": "doc/html/r3_6.html"
+  },
+  "tags": {
+   "rank": 16,
+   "code": "tags { \"doors\" }",
+   "from": "doc/html/r3_10.html"
+  },
+  "tan": {
+   "rank": 1046,
+   "code": "sqrt( FLOAT ) | tan( FLOAT ) | tanh( FLOAT ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "tanh": {
+   "rank": 1046,
+   "code": "sqrt( FLOAT ) | tan( FLOAT ) | tanh( FLOAT ) |",
+   "from": "doc/html/r3_3.html"
+  },
+  "target": {
+   "rank": 1012,
+   "code": "target : 1.0",
+   "from": "doc/html/r3_4.html"
+  },
+  "text": {
+   "code": "text { ttf DisplayFont \"Hello\", 2,0 translate y*1.50 }",
+   "from": "doc/html/r3_3.html:3"
+  },
+  "texture": {
+   "code": "texture { pigment { color Tint } }",
+   "from": "tests/pov4/layered.pov4:3"
+  },
+  "texture_list": {
+   "rank": 14,
+   "code": "texture_list {",
+   "from": "doc/html/r3_5.html"
+  },
+  "texture_map": {
+   "rank": 13,
+   "code": "texture_map {",
+   "from": "doc/html/r3_6.html"
+  },
+  "tga": {
+   "rank": 43,
+   "code": "image_pattern { tga \"image.tga\" use_alpha }",
+   "from": "doc/html/r3_6.html"
+  },
+  "thickness": {
+   "rank": 38,
+   "code": "envelope { thickness 0.12 edge round }",
+   "from": "doc/html/r3_9.html"
+  },
+  "threshold": {
+   "rank": 1013,
+   "code": "threshold 0.6",
+   "from": "doc/html/r3_5.html"
+  },
+  "tiff": {
+   "rank": 1065,
+   "code": "exr | gif | hdr | jpeg | pgm | png | pot | ppm | sys | tga | tiff",
+   "from": "doc/html/r3_5.html"
+  },
+  "tightness": {
+   "rank": 1012,
+   "code": "tightness: 0",
+   "from": "doc/html/r3_4.html"
+  },
+  "tiles": {
+   "rank": 1027,
+   "code": "tiles TEXTURE tile2 TEXTURE",
+   "from": "doc/html/r3_6.html"
+  },
+  "tiling": {
+   "rank": 1021,
+   "code": "tiling Pattern_Number",
+   "from": "doc/html/r3_6.html"
+  },
+  "to": {
+   "rank": 18,
+   "code": "for (I = 0 to 4) {",
+   "from": "tests/pov4/mixed.pov4:5"
+  },
+  "tolerance": {
+   "rank": 1027,
+   "code": "[tolerance DEPTH_TOLERANCE]",
+   "from": "doc/html/r3_5.html"
+  },
+  "torus": {
+   "code": "torus {5,1}",
+   "from": "doc/html/r3_3.html:9"
+  },
+  "transform": {
+   "rank": 11,
+   "code": "transform {",
+   "from": "doc/html/r3_3.html"
+  },
+  "translate": {
+   "rank": 30,
+   "code": "union { ...T translate x * 2 }",
+   "from": "tests/pov4/components.pov4:14"
+  },
+  "translucency": {
+   "rank": 33,
+   "code": "subsurface { translucency COLOR }",
+   "from": "doc/html/r3_6.html"
+  },
+  "transmit": {
+   "rank": 26,
+   "code": "[1 pigment { transmit 1 }]",
+   "from": "doc/html/r3_6.html"
+  },
+  "triangle": {
+   "code": "triangle { <Corner_1>, <Corner_2>, <Corner_3> [OBJECT_MODIFIER...] }",
+   "from": "doc/html/r3_5.html:3"
+  },
+  "triangle_wave": {
+   "rank": 1061,
+   "code": "frequency Amount | phase Amount | ramp_wave | triangle_wave |",
+   "from": "doc/html/r3_6.html"
+  },
+  "triangular": {
+   "rank": 1080,
+   "code": "triangular [COLOR_1 [, COLOR_2 [, COLOR_3 [, COLOR_4 [, COLOR_5 [, COLOR_6]]]]]]",
+   "from": "doc/html/r3_6.html"
+  },
+  "ttf": {
+   "rank": 54,
+   "code": "text { ttf DisplayFont \"Hello\", 2,0 translate y*1.50 }",
+   "from": "doc/html/r3_3.html"
+  },
+  "turbulence": {
+   "rank": 58,
+   "code": "warp { turbulence <0,1,1> octaves 3 lambda 1.5 omega 0.3 }",
+   "from": "doc/html/r3_6.html"
+  },
+  "type": {
+   "rank": 1017,
+   "code": "distribution type",
+   "from": "doc/html/r3_4.html"
+  },
+  "u_steps": {
+   "rank": 1011,
+   "code": "u_steps : 0",
+   "from": "doc/html/r3_5.html"
+  },
+  "union": {
+   "code": "union { ...T translate x * 2 }",
+   "from": "tests/pov4/components.pov4:14"
+  },
+  "up": {
+   "rank": 1010,
+   "code": "up <0,1,0>",
+   "from": "doc/html/r3_4.html"
+  },
+  "use_alpha": {
+   "rank": 43,
+   "code": "image_pattern { tga \"image.tga\" use_alpha }",
+   "from": "doc/html/r3_6.html"
+  },
+  "use_color": {
+   "rank": 1053,
+   "code": "map_type Type | once | interpolate Type | use_color |",
+   "from": "doc/html/r3_6.html"
+  },
+  "use_colour": {
+   "rank": 1028,
+   "code": "use_colour | bump_size Value",
+   "from": "doc/html/r3_6.html"
+  },
+  "user_defined": {
+   "rank": 14,
+   "code": "user_defined {",
+   "from": "doc/html/r3_6.html"
+  },
+  "utf8": {
+   "rank": 1018,
+   "code": "ascii | utf8 | sys",
+   "from": "doc/html/r3_4.html"
+  },
+  "uv_indices": {
+   "rank": 12,
+   "code": "uv_indices {",
+   "from": "doc/html/r3_5.html"
+  },
+  "uv_mapping": {
+   "rank": 67,
+   "code": "uv_mapping pigment{PIGMENT_BODY} | pigment{uv_mapping PIGMENT_BODY}",
+   "from": "doc/html/r3_6.html"
+  },
+  "uv_vectors": {
+   "rank": 12,
+   "code": "uv_vectors {",
+   "from": "doc/html/r3_5.html"
+  },
+  "v_steps": {
+   "rank": 1011,
+   "code": "v_steps : 0",
+   "from": "doc/html/r3_5.html"
+  },
+  "variance": {
+   "rank": 56,
+   "code": "variance Blur_Variance | [bokeh { pigment { BOKEH } }] |",
+   "from": "doc/html/r3_4.html"
+  },
+  "vertex_vectors": {
+   "rank": 52,
+   "code": "vertex_vectors { len(Ring) + 1, ...Ring, <0, 1, 0> }",
+   "from": "tests/pov4/points.pov4:5"
+  },
+  "volume_sampling": {
+   "rank": 71,
+   "code": "volume_sampling BOOL | volume_sampling { [depth FLOAT] [spread FLOAT] }",
+   "from": "doc/html/r3_6.html"
+  },
+  "vstr": {
+   "rank": 1032,
+   "code": "vstr(1, 1, \", \", 0,1) \"1.0, 1.0\"",
+   "from": "doc/html/r3_3.html"
+  },
+  "warp": {
+   "rank": 14,
+   "code": "warp { cubic }",
+   "from": "doc/html/r3_6.html"
+  },
+  "water_level": {
+   "rank": 1017,
+   "code": "water_level : 0.0",
+   "from": "doc/html/r3_5.html"
+  },
+  "wood": {
+   "rank": 46,
+   "code": "pigment { wood color_map { MyMap } ramp_wave }",
+   "from": "doc/html/r3_6.html"
+  },
+  "x": {
+   "rank": 30,
+   "code": "union { ...T translate x * 2 }",
+   "from": "tests/pov4/components.pov4:14"
+  },
+  "y": {
+   "rank": 27,
+   "code": "fn Perp(V) { vcross(V, y) }",
+   "from": "tests/pov4/components.pov4:6"
+  },
+  "z": {
+   "rank": 43,
+   "code": "union { Count() Count() pigment { rgb z } }",
+   "from": "tests/pov4/review.pov4:26"
+  }
+ }
+}

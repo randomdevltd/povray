@@ -106,6 +106,9 @@ An `.inc4` include runs in the including file's scope (as classic includes do).
 
 This chapter is prose; `doc/language-4-grammar.md` is the generated EBNF reference and
 `tools/language/grammar/pov4.json` plus `blocks.json` are the machine-readable grammars.
+An agent-facing index of every block and item lives in `tools/language/reference/SKILL.md`;
+`node tools/language/reference.mjs <term>` prints a card for any block, item or 4.0 word
+(exact name first, then a unique near-miss), and `--list` prints the block index.
 
 ### Lexical
 
