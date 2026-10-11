@@ -521,6 +521,13 @@ Miscellaneous:
     more segments than the first one a thread intersected.
   - Fix CPU feature detection (the `cpuid` probe could be optimised away),
     which gave AMD CPUs the portable noise code.
+  - The `.pov4` static checker now accepts the contextual keywords — those
+    matched by their text in the classic parser rather than reserved, such as
+    `refraction_detail`, `prepared_media_cells`, `atmospheric_ior`,
+    `atmospheric_dispersion`, `mesh_cache` and `interface_texture` — which the
+    block schema had silently never learned. The schema miner derives them
+    from the parser's text comparisons, so future contextual keywords need no
+    hand listing.
 
 Development Related
 -------------------

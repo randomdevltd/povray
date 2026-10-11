@@ -747,6 +747,7 @@ private:
     Flow ExecItems(const std::vector<const Node*>& items, Output& out);
     Flow Exec(const Node* n, Output& out);
     void Emit(const Node* n, Output& out);
+    bool ContextualItem(const std::string& block, const std::string& word);
     PValue Eval(const Node* n);
     PValue EvalArray(const Node* n);
     PValue EvalDict(const Node* n);
@@ -1591,6 +1592,16 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
             LookupTy(k->sym, ctx, found);
             if (!found && !k->text.empty() && std::islower(static_cast<unsigned char>(k->text[0])))
             {
+                // A contextual keyword matches a schema item exactly; it is the item, not a typo or a name.
+                bool contextual = false;
+                for (size_t i = 0; i < schema->count; ++i)
+                    if (k->text == schema->items[i])
+                    {
+                        contextual = true;
+                        break;
+                    }
+                if (contextual)
+                    continue;
                 int best = -1;
                 size_t limit = (k->text.size() >= 6) ? 2 : 1;
                 size_t bestDistance = limit + 1;
@@ -2880,6 +2891,18 @@ void Pov4Evaluator::Splice(const PValue& v0, Output& out, const Node* at)
         Fail(at, "Cannot splice a %s.", TypeName(v).c_str());
 }
 
+// A contextual keyword: the classic parser matches this word by text inside this block, so the
+// schema lists it as an item and an identifier spelled that way is the item, not a value name.
+bool Pov4Evaluator::ContextualItem(const std::string& block, const std::string& word)
+{
+    const Pov4BlockSchema* schema = FindPov4BlockSchema(block.data(), block.size());
+    if (schema != nullptr)
+        for (size_t i = 0; i < schema->count; ++i)
+            if (word == schema->items[i])
+                return true;
+    return false;
+}
+
 void Pov4Evaluator::Emit(const Node* n, Output& out)
 {
     switch (n->kind)
@@ -2888,7 +2911,8 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
             out.Put(Item(Item::Keyword, n->text, n->text, n), false);
             return;
         case NK::Ident:
-            if (out.IsBlock() && (static_cast<TextOutput&>(out).lastKeyword == "mix"))
+            if (out.IsBlock() && ((static_cast<TextOutput&>(out).lastKeyword == "mix") ||
+                                  ContextualItem(static_cast<TextOutput&>(out).context, n->text)))
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
                 return;

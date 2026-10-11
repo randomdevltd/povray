@@ -84,7 +84,7 @@ const strip = (text) => {
     return out;
 };
 
-const MACRO = /\b(EXPECT_ONE_CAT|EXPECT_ONE|EXPECT_CAT|EXPECT|END_EXPECT|CASE_EXPRESS_UNGET|CASE[A-Z_0-9]*|END_CASE|OTHERWISE|AllowToken|ALLOW|GET)\b\s*(\(([^()]*)\))?/g;
+const MACRO = /\b(EXPECT_ONE_CAT|EXPECT_ONE|EXPECT_CAT|EXPECT|END_EXPECT|CASE_EXPRESS_UNGET|CASE[A-Z_0-9]*|END_CASE|OTHERWISE|AllowToken|ALLOW|GET|POV4CTX)\b\s*(\(([^()]*)\))?/g;
 
 function mineFunction(name, body) {
     const top = new Set();
@@ -95,7 +95,13 @@ function mineFunction(name, body) {
     MACRO.lastIndex = 0;
     while ((m = MACRO.exec(body)) !== null) {
         const [, macro, , args] = m;
-        if (macro === 'EXPECT' || macro === 'EXPECT_ONE' || macro === 'EXPECT_ONE_CAT' || macro === 'EXPECT_CAT') {
+        if (macro === 'POV4CTX') {
+            // A contextual keyword: matched by text, absent from the reserved-word table, so it
+            // travels as a raw word and words() passes it through.
+            const item = '\x00' + (args ?? '').trim();
+            if (groups.length > 0) groups.at(-1).items.add(item);
+            else top.add(item);
+        } else if (macro === 'EXPECT' || macro === 'EXPECT_ONE' || macro === 'EXPECT_ONE_CAT' || macro === 'EXPECT_CAT') {
             let owner = null;
             for (let k = arms.length - 1; k >= 0; --k)
                 if (arms[k] && wordsOf.has(arms[k])) { owner = arms[k]; break; }
@@ -161,14 +167,19 @@ for (const k of keywords) {
 
 const inventory = new Map();
 const sources = new Map();
+// Contextual keywords never reach the expect-loops as tokens: the parser matches their text
+// (CurrentTokenText() == "word") inside OTHERWISE branches. Rewrite each comparison into a
+// synthetic macro call before stripping, so the scanner mines them like any other item.
+const CTX = /CurrentTokenText\(\)\s*==\s*"([a-z_][a-z0-9_]*)"/g;
 for (const file of files) {
-    const text = strip(readFileSync(join(parserDir, file), 'utf8'));
+    const raw = readFileSync(join(parserDir, file), 'utf8').replace(CTX, 'POV4CTX($1)');
+    const text = strip(raw);
     for (const fn of functionsOfFile(text)) {
         inventory.set(fn.name, { name: fn.name, ...mineFunction(fn.name, fn.body), file, line: fn.line });
     }
 }
 
-const words = (tokens) => [...tokens].flatMap((t) => wordsOf.get(t) ?? []).sort();
+const words = (tokens) => [...tokens].flatMap((t) => wordsOf.get(t) ?? (t.startsWith('\x00') ? [t.slice(1)] : [])).sort();
 const clean = (set) => [...new Set(words(set))];
 
 if (process.argv.includes('--inspect')) {

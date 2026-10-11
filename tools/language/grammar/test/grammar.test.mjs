@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,9 @@ import assert from 'node:assert/strict';
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = join(here, '../../..');
 const read = (p) => readFileSync(join(root, p), 'utf8');
+const listParserSources = () => readdirSync(join(root, 'source/parser'))
+    .filter((f) => f.endsWith('.cpp'))
+    .map((f) => `source/parser/${f}`);
 
 test('pov4.json covers every named rule of the tree-sitter grammar', () => {
     const ts = JSON.parse(read('libraries/tree-sitter-pov4/src/grammar.json'));
@@ -17,13 +20,21 @@ test('pov4.json covers every named rule of the tree-sitter grammar', () => {
     assert.deepEqual(ours.externals.sort(), ts.externals.map((e) => e.name).sort());
 });
 
-test('blocks.json items are reserved words and its sources exist', () => {
+test('blocks.json items are reserved or contextually matched words and its sources exist', () => {
     const keywords = new Set(JSON.parse(read('tools/language/keywords.json')).map((k) => k.word));
+    const contextual = new Set();
+    for (const f of listParserSources()) {
+        for (const m of read(f).matchAll(/CurrentTokenText\(\)\s*==\s*"([a-z_][a-z0-9_]*)"/g))
+            contextual.add(m[1]);
+    }
     const blocks = JSON.parse(read('tools/language/grammar/blocks.json')).blocks;
     assert.ok(Object.keys(blocks).length >= 50, 'curated block count');
     for (const [word, b] of Object.entries(blocks)) {
         assert.ok(b.items.length > 0, `${word} has items`);
-        for (const item of b.items) assert.ok(keywords.has(item), `${word} item '${item}' is a reserved word`);
+        for (const item of b.items) {
+            const kind = keywords.has(item) ? 'reserved' : (contextual.has(item) ? 'text-matched' : null);
+            assert.ok(kind, `${word} item '${item}' is ${kind ?? 'unknown to the classic parser'}`);
+        }
         for (const src of b.sources) {
             const [file, rest] = src.split(':');
             const text = read(`source/parser/${file}`);
@@ -40,6 +51,10 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['texture', 'pigment', 'interior', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
     assert.ok(blocks.union.items.includes('sphere'));
     for (const w of ['agate', 'granite', 'marble', 'wrinkles', 'turbulence']) assert.ok(blocks.pigment.items.includes(w));
+    // Contextual keywords, matched by text in the parser, are items too.
+    for (const w of ['refraction_detail', 'prepared_media_cells', 'atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])
+        assert.ok(blocks.global_settings.items.includes(w), `global_settings item '${w}'`);
+    for (const w of ['refraction_detail', 'auto']) assert.ok(blocks.media.items.includes(w), `media item '${w}'`);
 });
 
 test('generators are stable: regenerating changes nothing', () => {
