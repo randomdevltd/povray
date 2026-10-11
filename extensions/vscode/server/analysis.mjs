@@ -112,7 +112,13 @@ function firstError(root, text) {
             : text.indexOf('\n', found.startIndex);
         end = { line: start.line, character: Math.min(start.character + 1, lineEnd - lineStart) };
     }
-    const message = found.isMissing ? `Missing ${found.type.replace(/'/g, '')}` : 'Syntax error';
+    let snippet = text.slice(found.startIndex, found.endIndex);
+    const newline = snippet.indexOf('\n');
+    if (newline >= 0) snippet = snippet.slice(0, newline);
+    snippet = snippet.trim().slice(0, 40);
+    const message = found.isMissing
+        ? `Syntax error: missing '${found.type}'.`
+        : (snippet ? `Syntax error at '${snippet}'.` : 'Syntax error.');
     return { range: { start, end }, message };
 }
 

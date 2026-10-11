@@ -2,7 +2,7 @@
   "name": "povray",
   "displayName": "POV-Ray",
   "description": "POV-Ray scene language support: highlighting, block-aware completion, and diagnostics from the renderer.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "povray",
   "license": "AGPL-3.0-or-later",
   "repository": {
