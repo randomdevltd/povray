@@ -330,6 +330,7 @@ boost::intrusive_ptr<FunctionVM> FunctionVM::Snapshot(const std::vector<FUNCTION
             target.fn.private_data = source.fn.private_copy_method(source.fn.private_data);
         target.ops = source.ops;
         target.range = source.range;
+        target.ir = source.ir;
         target.batchDepth = source.batchDepth;
         target.batchStack = source.batchStack;
         target.batchMath = source.batchMath;
@@ -358,25 +359,6 @@ boost::intrusive_ptr<FunctionVM> FunctionVM::Snapshot(const std::vector<FUNCTION
         #define POVFPU_THREADED 0
     #endif
 #endif
-
-/// Interpreter handlers; one list orders the decoder's codes, the threaded dispatch table and the switch.
-#define POVFPU_OPS(X) \
-    X(ADD) X(SUB) X(MUL) X(DIV) X(MOD) X(MOVE) X(CMP) X(NEG) X(ABS) \
-    X(ADDI) X(SUBI) X(MULI) X(DIVI) X(MODI) X(LOADI) X(CMPI) \
-    X(SEQ) X(SNE) X(SLT) X(SLE) X(SGT) X(SGE) X(TEQ) X(TNE) \
-    X(LOADG) X(LOADL) X(STOREG) X(STOREL) \
-    X(BEQ) X(BNE) X(BLT) X(BLE) X(BGT) X(BGE) \
-    X(XEQ) X(XNE) X(XLT) X(XLE) X(XGT) X(XGE) X(XDZ) \
-    X(JSR) X(JMP) X(RTS) X(CALL) X(CALLF) X(SYS1) X(SQRT) X(MATH1) X(SYS2) X(MATH2) X(TRAP) X(TRAPS) \
-    X(GROW) X(PUSH) X(POP) X(NOP)
-
-enum VMCode
-{
-#define POVFPU_ENUM(n) VM_##n,
-    POVFPU_OPS(POVFPU_ENUM)
-#undef POVFPU_ENUM
-    VM_COUNT
-};
 
 /// Scalar handlers beyond the 1024 register-specialised opcodes.
 enum { VMS_SQRT = 1024, VMS_MATH1, VMS_MATH2, VMS_CALLF, VMS_NOP, VMS_COUNT };
@@ -1572,6 +1554,7 @@ FUNCTION FunctionVM::AddFunction(FunctionCode *f)
     DecodeProgram(functions[fn].fn, functions[fn].ops);
     PlanBatch(fn);
     BuildRangePlan(fn);
+    BuildIR(fn);
     functions[fn].reference_count = 1;
     SYS_ADD_FUNCTION(fn);
 
@@ -1636,6 +1619,7 @@ void FunctionVM::RemoveFunctionInternal(FUNCTION fn)
             FNCode_Delete(&(f.fn));
             vector<VMOp>().swap(functions[fn].ops);
             functions[fn].range.reset();
+            functions[fn].ir.reset();
             functions[fn].batchDepth = functions[fn].batchStack = 0;
             functions[fn].batchMath = false;
 

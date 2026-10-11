@@ -42,6 +42,7 @@
 // Module config header file must be the first file included within POV-Ray unit header files
 #include "vm/configvm.h"
 #include "vm/fnpovfpu_fwd.h"
+#include "vm/fnir.h"
 
 // C++ variants of C standard header files
 #include <cstdint>
@@ -164,6 +165,7 @@ struct FunctionEntry
     FunctionCode fn;            // valid if reference_count != 0
     std::vector<VMOp> ops;      // fn.program decoded, one entry per instruction
     std::shared_ptr<const FunctionRangePlan> range;
+    std::shared_ptr<const FnDef> ir;   // fn lowered to the register IR, if it lowered
     unsigned int batchDepth = 0;
     unsigned int batchStack = 0;
     bool batchMath = false;
@@ -270,6 +272,25 @@ extern const Sys2 POVFPU_Sys2Table[];
 extern const unsigned int POVFPU_Sys1TableSize;
 extern const unsigned int POVFPU_Sys2TableSize;
 
+/// Interpreter handlers; one list orders the decoder's codes, the threaded dispatch table and the switch.
+#define POVFPU_OPS(X) \
+    X(ADD) X(SUB) X(MUL) X(DIV) X(MOD) X(MOVE) X(CMP) X(NEG) X(ABS) \
+    X(ADDI) X(SUBI) X(MULI) X(DIVI) X(MODI) X(LOADI) X(CMPI) \
+    X(SEQ) X(SNE) X(SLT) X(SLE) X(SGT) X(SGE) X(TEQ) X(TNE) \
+    X(LOADG) X(LOADL) X(STOREG) X(STOREL) \
+    X(BEQ) X(BNE) X(BLT) X(BLE) X(BGT) X(BGE) \
+    X(XEQ) X(XNE) X(XLT) X(XLE) X(XGT) X(XGE) X(XDZ) \
+    X(JSR) X(JMP) X(RTS) X(CALL) X(CALLF) X(SYS1) X(SQRT) X(MATH1) X(SYS2) X(MATH2) X(TRAP) X(TRAPS) \
+    X(GROW) X(PUSH) X(POP) X(NOP)
+
+enum VMCode
+{
+#define POVFPU_ENUM(n) VM_##n,
+    POVFPU_OPS(POVFPU_ENUM)
+#undef POVFPU_ENUM
+    VM_COUNT
+};
+
 /// Points the batched interpreter evaluates together.
 const int POVFPU_LANES = 4;
 
@@ -346,6 +367,7 @@ class FunctionVM : public GenericFunctionContextFactory
 
         void BuildRangePlan(FUNCTION fn);
         void PlanBatch(FUNCTION fn);
+        void BuildIR(FUNCTION fn);
         void RemoveFunctionInternal(FUNCTION fn);
 
         std::vector<FunctionEntry> functions;
