@@ -20,6 +20,8 @@ class Range {
 
 const DiagnosticSeverity = { Error: 0, Warning: 1, Information: 2, Hint: 3 };
 
+const ProgressLocation = { SourceControl: 1, Window: 10, Notification: 15 };
+
 class Diagnostic {
     constructor(range, message, severity) {
         this.range = range;
@@ -119,8 +121,42 @@ class DiagnosticCollection {
 
 const configuration = { values: {} };
 
+const window = {
+    activeTextEditor: null,
+    channels: [],
+    messages: [],
+    shown: [],
+    createOutputChannel: (name) => {
+        const channel = { name, lines: [] };
+        channel.appendLine = (line) => { channel.lines.push(String(line)); return channel; };
+        channel.clear = () => { channel.lines = []; };
+        channel.show = () => {};
+        channel.dispose = () => {};
+        window.channels.push(channel);
+        return channel;
+    },
+    withProgress: (options, task) => Promise.resolve(task({ report() {} }, { isCancellationRequested: false })),
+    showInformationMessage: (message) => {
+        window.messages.push({ kind: 'info', message });
+        return Promise.resolve(undefined);
+    },
+    showWarningMessage: (message) => {
+        window.messages.push({ kind: 'warning', message });
+        return Promise.resolve(undefined);
+    },
+    showErrorMessage: (message) => {
+        window.messages.push({ kind: 'error', message });
+        return Promise.resolve(undefined);
+    },
+    showTextDocument: (document) => {
+        window.shown.push(document);
+        return Promise.resolve(undefined);
+    },
+};
+
 const workspace = {
     textDocuments: [],
+    opened: [],
     _emitters: {
         open: new EventEmitter(), change: new EventEmitter(), close: new EventEmitter(),
         save: new EventEmitter(), config: new EventEmitter(),
@@ -134,12 +170,17 @@ const workspace = {
     onDidCloseTextDocument: (handler) => workspace._register('close', handler),
     onDidSaveTextDocument: (handler) => workspace._register('save', handler),
     onDidChangeConfiguration: (handler) => workspace._register('config', handler),
+    openTextDocument: async (target) => {
+        workspace.opened.push(target);
+        const uri = (typeof target === 'string') ? Uri.file(target) : target;
+        return { uri, languageId: 'pov4', version: 1, text: '', getText: () => '' };
+    },
     getConfiguration: () => ({
         get: (key) => configuration.values[key],
     }),
 };
 
-const registrations = { completion: [], symbols: [], definitions: [] };
+const registrations = { completion: [], symbols: [], definitions: [], commands: [] };
 
 const languages = {
     createDiagnosticCollection: (name) => {
@@ -160,6 +201,14 @@ const languages = {
     },
 };
 
+const commands = {
+    registerCommand: (id, handler) => {
+        registrations.commands.push({ id, handler });
+        return { dispose() {} };
+    },
+};
+
 module.exports = { Position, Range, DiagnosticSeverity, Diagnostic, CompletionItem,
     CompletionItemKind, SnippetString, SymbolKind, DocumentSymbol, Location, Uri,
-    DiagnosticCollection, workspace, languages, configuration, registrations };
+    DiagnosticCollection, ProgressLocation, workspace, window, languages, commands,
+    configuration, registrations };

@@ -249,6 +249,13 @@ New Features
     string literals and comments, names the document declares itself, and
     fragments under three characters are never blamed for a parse error, so a
     mistyped keyword is explained by its own near miss.
+  - The extension adds a "Convert Scene to 4.0 (codemod)" command palette entry for
+    classic `.pov`/`.inc` documents: it runs the repository codemod on the active
+    scene (checkout path in `povray.repoRoot`, command template overridable as
+    `povray.codemodCommand`) and opens the produced 4.0 file beside it. The command
+    and its output are logged to a "POV-Ray" output channel; a scene the codemod
+    refuses shows a warning carrying the first refusal line, and the run is killed
+    after 120 seconds.
   - The `skein` object (beta) defines a surface or solid by mapping the unit
     square through a chain of composable steps, and `skein_mesh` builds a
     `mesh2` from one at parse time. See the "Skein" chapter of the reference.

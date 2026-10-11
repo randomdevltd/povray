@@ -3,7 +3,7 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const pure = require('./pure');
 const lsp = require('./lsp');
 const blocksDoc = require('../pov4-blocks.json');
@@ -14,7 +14,12 @@ const DIAGNOSTIC_LIMIT = 100;
 
 const SERVER_MODULE = path.join(__dirname, '..', 'server', 'server.mjs');
 
+const CODEMOD_COMMAND_ID = 'povray.convertToPov4';
+const DEFAULT_CODEMOD_COMMAND = 'node "{repo}/tools/language/codemod/codemod.mjs" "{input}" -o "{outdir}" --includes classic';
+const CODEMOD_TIMEOUT_MS = 120000;
+
 let diagnostics = null;
+let channel = null;
 const running = new Map();
 const rendererDiags = new Map();
 const serverDiags = new Map();
@@ -27,6 +32,7 @@ function matches(document) {
 
 function activate(context) {
     diagnostics = vscode.languages.createDiagnosticCollection('povray');
+    channel = vscode.window.createOutputChannel('POV-Ray');
     const provider = {
         async provideCompletionItems(document, position) {
             if (client) {
@@ -83,6 +89,8 @@ function activate(context) {
             running.clear();
             if (client) client.stop();
         } },
+        channel,
+        vscode.commands.registerCommand(CODEMOD_COMMAND_ID, convertToPov4),
     );
     configureClient();
 }
@@ -208,6 +216,71 @@ function report(document, output) {
         rendererDiags.set(uri, list.slice(0, DIAGNOSTIC_LIMIT));
         refreshDiagnostics(uri);
     }
+}
+
+function isClassicScene(document) {
+    return !!document && (document.languageId === 'pov') && (document.uri.scheme === 'file');
+}
+
+function convertedPath(input) {
+    return input.replace(/\.pov$/i, '.pov4').replace(/\.inc$/i, '.inc4');
+}
+
+function runCodemod(command, cwd) {
+    return new Promise((resolve) => {
+        exec(command, { cwd, timeout: CODEMOD_TIMEOUT_MS }, (error, stdout, stderr) => {
+            resolve({ code: error ? (error.code ?? 1) : 0, stdout: stdout || '', stderr: stderr || '' });
+        });
+    });
+}
+
+function firstRefusal(stdout, stderr) {
+    return (stdout + '\n' + stderr).split('\n').find((line) => line.startsWith('refused\t'));
+}
+
+// First error-ish lines of renderer/codemod output, for surfacing in the failure message.
+function failureSummary(stdout, stderr) {
+    return (stdout + '\n' + stderr)
+        .split('\n').map((l) => l.trim())
+        .filter((l) => /error|refused|cannot|missing|not found|no such file/i.test(l) && !/^povray: cannot open (the|an) /.test(l))
+        .slice(0, 2).join(' | ');
+}
+
+async function convertToPov4() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !isClassicScene(editor.document)) return;
+    const document = editor.document;
+    const input = document.uri.fsPath;
+    const outdir = path.dirname(input);
+    const config = vscode.workspace.getConfiguration('povray', document.uri);
+    const repoRoot = config.get('repoRoot') || '';
+    const template = config.get('codemodCommand') || '';
+    if (!repoRoot && (template === DEFAULT_CODEMOD_COMMAND)) {
+        vscode.window.showInformationMessage('Set "povray.repoRoot" to a POV-Ray checkout (or override "povray.codemodCommand") to convert scenes.');
+        return;
+    }
+    const command = template
+        .replaceAll('{repo}', repoRoot)
+        .replaceAll('{input}', input)
+        .replaceAll('{outdir}', outdir);
+    channel.appendLine('$ ' + command);
+    const { code, stdout, stderr } = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: 'POV-Ray: converting scene to 4.0' },
+        () => runCodemod(command, outdir));
+    if (stdout) channel.appendLine(stdout.replace(/\n$/, ''));
+    if (stderr) channel.appendLine(stderr.replace(/\n$/, ''));
+    if (code !== 0) {
+        const refusal = firstRefusal(stdout, stderr);
+        const summary = failureSummary(stdout, stderr);
+        vscode.window.showWarningMessage(refusal
+            ? `Scene not converted: ${refusal}`
+            : (summary
+                ? `Scene not converted: ${summary} — see the POV-Ray output channel.`
+                : `Codemod exited with code ${code}; see the POV-Ray output channel for the full log.`));
+        return;
+    }
+    const output = vscode.Uri.file(convertedPath(input));
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(output));
 }
 
 function deactivate() {}
