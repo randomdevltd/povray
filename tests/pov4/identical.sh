@@ -3,7 +3,7 @@
 set -e
 POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
-NAMES=${*:-"basics components points control mixed loop layered review interop"}
+NAMES=${*:-"basics components points control mixed loop layered review interop types"}
 render() {
     "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"
@@ -32,4 +32,9 @@ fails err_reserved "err_reserved.pov4:1:5: Names starting with '__pov4_' are res
 fails err_include "err_items.inc4' line 2"
 fails err_loop "err_loop.pov4' line 2"
 fails err_depth "err_depth.pov4:1:11: Function calls nested deeper than 10000 levels"
+fails err_prop "'finish' has no item 'phon'; did you mean 'phong'?"
+fails err_member "has no member 'size'."
+fails err_operand "The left operand of '+' must be a number, vector or colour, not a string."
+fails err_param "'Scale' uses parameter 'V' as"
+fails err_arity "'Place' takes 2 arguments, but this call passes 1."
 rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov

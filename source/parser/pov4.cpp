@@ -52,6 +52,8 @@
 
 extern "C" const TSLanguage* tree_sitter_pov4();
 
+#include "pov4schema.h"
+
 namespace pov_parser
 {
 
@@ -167,6 +169,116 @@ int ComponentIndex(const std::string& m)
 {
     return (m == "x" || m == "u" || m == "red") ? 0 : (m == "y" || m == "v" || m == "green") ? 1 :
            (m == "z" || m == "blue") ? 2 : (m == "t" || m == "filter") ? 3 : (m == "transmit") ? 4 : -1;
+}
+
+// Static-check type bits. TY_NONE means "no information" (classic interop, unresolved
+// names); a check only fires when a decidable type is disjoint from what the position needs.
+constexpr unsigned TY_NONE = 0;
+constexpr unsigned TY_NUM = 1u << 0;
+constexpr unsigned TY_VEC = 1u << 1;
+constexpr unsigned TY_COLOUR = 1u << 2;
+constexpr unsigned TY_STR = 1u << 3;
+constexpr unsigned TY_ARR = 1u << 4;
+constexpr unsigned TY_DICT = 1u << 5;
+constexpr unsigned TY_FN = 1u << 6;
+constexpr unsigned TY_FRAG = 1u << 7;
+constexpr unsigned TY_HANDLE = 1u << 8;
+constexpr unsigned TY_NULL = 1u << 9;
+constexpr unsigned TY_NUMERIC = TY_NUM | TY_VEC | TY_COLOUR;
+
+std::string TyName(unsigned ty)
+{
+    static const std::pair<unsigned, const char*> names[] = {
+        { TY_NUM, "a number" }, { TY_VEC, "a vector" }, { TY_COLOUR, "a colour" }, { TY_STR, "a string" },
+        { TY_ARR, "an array" }, { TY_DICT, "a dictionary" }, { TY_FN, "a function" }, { TY_FRAG, "a fragment" },
+        { TY_HANDLE, "a handle" }, { TY_NULL, "null" },
+    };
+    std::string out;
+    for (const auto& n : names)
+    {
+        if ((ty & n.first) == 0)
+            continue;
+        if (!out.empty())
+            out += " or ";
+        out += n.second;
+    }
+    return out.empty() ? "an unknown value" : out;
+}
+
+const char* OpName(Op op)
+{
+    switch (op)
+    {
+        case OpOr: return "||"; case OpAnd: return "&&"; case OpEq: return "=="; case OpNe: return "!=";
+        case OpLt: return "<"; case OpLe: return "<="; case OpGt: return ">"; case OpGe: return ">=";
+        case OpAdd: return "+"; case OpSub: return "-"; case OpMul: return "*"; case OpDiv: return "/";
+        case OpNeg: return "-"; case OpPlus: return "+"; case OpNot: return "!";
+    }
+    return "?";
+}
+
+size_t EditDistance(const std::string& a, const std::string& b)
+{
+    std::vector<size_t> previous(b.size() + 1), current(b.size() + 1);
+    for (size_t j = 0; j <= b.size(); ++j)
+        previous[j] = j;
+    for (size_t i = 1; i <= a.size(); ++i)
+    {
+        current[0] = i;
+        for (size_t j = 1; j <= b.size(); ++j)
+            current[j] = std::min({ previous[j - 1] + ((a[i - 1] == b[j - 1]) ? 0 : 1), previous[j] + 1, current[j - 1] + 1 });
+        std::swap(previous, current);
+    }
+    return previous[b.size()];
+}
+
+// Argument and return types of the value built-ins, for the static checker. Built-ins or
+// arities not listed here are left unchecked.
+struct BuiltinSig
+{
+    unsigned char minArgs;
+    unsigned char maxArgs;
+    unsigned args[3];
+    unsigned ret;
+};
+
+const std::unordered_map<BI, BuiltinSig>& BuiltinSigs()
+{
+    static const std::unordered_map<BI, BuiltinSig> sigs = {
+        { B_abs, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_acos, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_acosh, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_asin, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_asinh, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_atan, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_atanh, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_ceil, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_cos, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_cosh, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_degrees, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_exp, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_floor, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_int, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_ln, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_log, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_sin, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_sinh, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_sqrt, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_sqr, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_tan, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_tanh, { 1, 1, { TY_NUMERIC }, TY_NUM } },
+        { B_atan2, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_div, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
+        { B_mod, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_pow, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
+        { B_max, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_min, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
+        { B_select, { 3, 4, { TY_NUMERIC, TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
+        { B_vdot, { 2, 2, { TY_VEC, TY_VEC }, TY_NUM } }, { B_vcross, { 2, 2, { TY_VEC, TY_VEC }, TY_NUM } },
+        { B_vlength, { 1, 1, { TY_VEC }, TY_NUM } }, { B_vnormalize, { 1, 1, { TY_VEC }, TY_VEC } },
+        { B_vrotate, { 2, 2, { TY_VEC, TY_VEC }, TY_VEC } },
+        { B_vaxis_rotate, { 3, 3, { TY_VEC, TY_VEC, TY_NUMERIC }, TY_VEC } },
+        { B_strlen, { 1, 1, { TY_STR }, TY_NUM } }, { B_strcmp, { 2, 2, { TY_STR, TY_STR }, TY_NUM } },
+        { B_asc, { 1, 1, { TY_STR }, TY_NUM } }, { B_val, { 1, 1, { TY_STR }, TY_NUM } },
+        { B_concat, { 0, 255, { TY_STR }, TY_STR } }, { B_chr, { 1, 1, { TY_NUM }, TY_STR } },
+        { B_bitwise_and, { 2, 2, { TY_NUM, TY_NUM }, TY_NUM } }, { B_bitwise_or, { 2, 2, { TY_NUM, TY_NUM }, TY_NUM } },
+        { B_bitwise_xor, { 2, 2, { TY_NUM, TY_NUM }, TY_NUM } },
+        { B_dimensions, { 1, 1, { TY_ARR }, TY_NUM } }, { B_dimension_size, { 2, 2, { TY_ARR, TY_NUM }, TY_NUM } },
+        { B_seed, { 1, 1, { TY_NUM }, TY_NONE } }, { B_rand, { 1, 1, { TY_NONE }, TY_NUM } },
+        { B_len, { 1, 1, { TY_STR | TY_ARR | TY_DICT }, TY_NUM } }, { B_range, { 2, 3, { TY_NUM, TY_NUM }, TY_ARR } },
+        { B_map, { 2, 2, { TY_ARR, TY_FN }, TY_ARR } }, { B_filter, { 2, 2, { TY_ARR, TY_FN }, TY_ARR } },
+        { B_push, { 2, 2, { TY_NONE, TY_NONE }, TY_NONE } }, { B_keys, { 1, 1, { TY_DICT }, TY_ARR } },
+        { B_defined, { 1, 1, { TY_NONE }, TY_NUM } }, { B_debug, { 0, 255, { TY_NONE }, TY_NULL } },
+        { B_warning, { 0, 255, { TY_NONE }, TY_NULL } }, { B_error, { 0, 255, { TY_NONE }, TY_NULL } },
+        { B_array, { 0, 255, { TY_NONE }, TY_ARR } },
+    };
+    return sigs;
 }
 
 std::string WrapOfKeyword(const std::string& keyword)
@@ -675,6 +787,33 @@ private:
     PValue MakeString(const UCS2String& s);
     PValue MakeArray(PValues&& values);
     void Splice(const PValue& v, Output& out, const Node* at);
+
+    struct CheckFn
+    {
+        const Node* def = nullptr;
+        std::vector<int> params;
+        std::vector<unsigned> use;
+        std::vector<unsigned> args;
+        unsigned ret = TY_NONE;
+    };
+    struct CheckCtx
+    {
+        std::vector<std::unordered_map<int, unsigned>> scopes;
+        std::unordered_map<int, CheckFn>* fns = nullptr;
+        std::vector<CheckFn*> stack;
+        bool checking = false;
+    };
+
+    void Check(Program& p);
+    void CollectFns(const Node* n, std::unordered_set<const Node*>& seen, std::unordered_map<int, CheckFn>& fns);
+    void CheckItems(const std::vector<const Node*>& items, CheckCtx& ctx);
+    void CheckNode(const Node* n, CheckCtx& ctx);
+    void CheckBlockItems(const Node* n, CheckCtx& ctx);
+    unsigned TypeOf(const Node* n, CheckCtx& ctx);
+    unsigned OperandTy(const Node* n, unsigned mask, CheckCtx& ctx);
+    unsigned LookupTy(int sym, CheckCtx& ctx, bool& found) const;
+    void Constrain(const Node* n, unsigned mask, CheckCtx& ctx);
+    unsigned CheckCall(const Node* n, CheckCtx& ctx);
 };
 
 Pov4Evaluator::Pov4Evaluator(Parser& parser) :
@@ -1170,7 +1309,556 @@ Pov4Evaluator::Program& Pov4Evaluator::Load(const UCS2String& fileName, unsigned
         Fail(&node, "Syntax error at '%s'.", text.substr(0, newline).c_str());
     }
     p.root = Lower(p, root);
+    Check(p);
     return p;
+}
+
+//------------------------------------------------------------------------------
+// Static checking: inferred-from-usage types and block keyword schemas
+
+void Pov4Evaluator::CollectFns(const Node* n, std::unordered_set<const Node*>& seen,
+                               std::unordered_map<int, CheckFn>& fns)
+{
+    if ((n == nullptr) || !seen.insert(n).second)
+        return;
+    if ((n->kind == NK::FnDef) && (n->sym >= 0) && (fns.find(n->sym) == fns.end()))
+    {
+        CheckFn f;
+        f.def = n;
+        if (n->a != nullptr)
+            for (const Node* p : n->a->kids)
+                f.params.push_back(p->sym);
+        f.use.assign(f.params.size(), TY_NONE);
+        f.args.assign(f.params.size(), TY_NONE);
+        fns.emplace(n->sym, std::move(f));
+    }
+    for (const Node* k : n->kids)
+        CollectFns(k, seen, fns);
+    CollectFns(n->a, seen, fns);
+    CollectFns(n->b, seen, fns);
+    CollectFns(n->c, seen, fns);
+    CollectFns(n->d, seen, fns);
+}
+
+void Pov4Evaluator::Check(Program& p)
+{
+    std::unordered_map<int, CheckFn> fns;
+    std::unordered_set<const Node*> seen;
+    CollectFns(p.root, seen, fns);
+    CheckCtx infer;
+    infer.scopes.assign(1, {});
+    infer.fns = &fns;
+    infer.checking = false;
+    CheckItems(p.root->kids, infer);
+    CheckCtx check;
+    check.scopes.assign(1, {});
+    check.fns = &fns;
+    check.checking = true;
+    CheckItems(p.root->kids, check);
+}
+
+void Pov4Evaluator::CheckItems(const std::vector<const Node*>& items, CheckCtx& ctx)
+{
+    for (const Node* n : items)
+        CheckNode(n, ctx);
+}
+
+unsigned Pov4Evaluator::LookupTy(int sym, CheckCtx& ctx, bool& found) const
+{
+    found = false;
+    for (auto s = ctx.scopes.rbegin(); s != ctx.scopes.rend(); ++s)
+    {
+        auto i = s->find(sym);
+        if (i != s->end())
+        {
+            found = true;
+            return i->second;
+        }
+    }
+    return TY_NONE;
+}
+
+void Pov4Evaluator::Constrain(const Node* n, unsigned mask, CheckCtx& ctx)
+{
+    if (ctx.stack.empty() || (n->kind != NK::Ident))
+        return;
+    bool found = false;
+    LookupTy(n->sym, ctx, found);
+    if (found)
+        return;
+    CheckFn* f = ctx.stack.back();
+    for (size_t i = 0; i < f->params.size(); ++i)
+        if (f->params[i] == n->sym)
+            f->use[i] |= mask;
+}
+
+unsigned Pov4Evaluator::OperandTy(const Node* n, unsigned mask, CheckCtx& ctx)
+{
+    unsigned t = TypeOf(n, ctx);
+    if (t == TY_NONE)
+        Constrain(n, mask, ctx);
+    return t;
+}
+
+void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
+{
+    switch (n->kind)
+    {
+        case NK::Let:
+        case NK::Global:
+        case NK::Assign:
+        {
+            unsigned ty = TY_NONE;
+            for (const Node* k : n->kids)
+            {
+                if (k->kind == NK::Block)
+                {
+                    CheckBlockItems(k, ctx);
+                    ty = TY_FRAG;
+                }
+                else if (k == n->a)
+                    ty = TypeOf(k, ctx);
+                else
+                    (void)TypeOf(k, ctx);
+            }
+            if (n->kind == NK::Assign)
+            {
+                if (n->c->kind == NK::Index)
+                {
+                    unsigned bt = OperandTy(n->c->a, TY_ARR | TY_DICT, ctx);
+                    if (ctx.checking && (bt != TY_NONE) && ((bt & (TY_ARR | TY_DICT | TY_FRAG | TY_HANDLE)) == 0))
+                        Fail(n->c->a, "Cannot index a %s.", TyName(bt).c_str());
+                    (void)TypeOf(n->c->b, ctx);
+                }
+                else if (n->c->kind == NK::Member)
+                    (void)OperandTy(n->c->a, TY_DICT | TY_NUMERIC | TY_HANDLE, ctx);
+                if (n->c->kind == NK::Ident)
+                    ctx.scopes.back()[n->c->sym] = ty;
+            }
+            else
+                ctx.scopes.back()[n->sym] = ty;
+            break;
+        }
+        case NK::FnDef:
+        {
+            auto fi = ctx.fns->find(n->sym);
+            if (fi != ctx.fns->end())
+            {
+                CheckFn& f = fi->second;
+                ctx.scopes.emplace_back();
+                ctx.stack.push_back(&f);
+                if (ctx.checking)
+                    for (size_t i = 0; i < f.params.size(); ++i)
+                        ctx.scopes.back()[f.params[i]] = f.use[i] | f.args[i];
+                if (n->b != nullptr)
+                {
+                    if (n->b->kind == NK::Body)
+                        CheckItems(n->b->kids, ctx);
+                    else
+                        (void)TypeOf(n->b, ctx);
+                }
+                ctx.stack.pop_back();
+                ctx.scopes.pop_back();
+            }
+            ctx.scopes.back()[n->sym] = TY_FN;
+            break;
+        }
+        case NK::If:
+            for (const Node* branch = n; branch != nullptr; )
+            {
+                unsigned t = OperandTy(branch->a, TY_NUMERIC, ctx);
+                if (ctx.checking && (t != TY_NONE) && ((t & (TY_NUMERIC | TY_NULL)) == 0))
+                    Fail(branch->a, "A condition must be a number, vector or colour, not %s.", TyName(t).c_str());
+                if (branch->b != nullptr)
+                    CheckItems(branch->b->kids, ctx);
+                if ((branch->c != nullptr) && (branch->c->kind == NK::Body))
+                {
+                    CheckItems(branch->c->kids, ctx);
+                    break;
+                }
+                branch = branch->c;
+            }
+            break;
+        case NK::While:
+        {
+            unsigned t = OperandTy(n->a, TY_NUMERIC, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & (TY_NUMERIC | TY_NULL)) == 0))
+                Fail(n->a, "A condition must be a number, vector or colour, not %s.", TyName(t).c_str());
+            if (n->b != nullptr)
+                CheckItems(n->b->kids, ctx);
+            break;
+        }
+        case NK::For:
+            for (const Node* e : {n->a, n->b, n->c})
+            {
+                if (e == nullptr)
+                    continue;
+                unsigned t = OperandTy(e, TY_NUMERIC, ctx);
+                if (ctx.checking && (t != TY_NONE) && ((t & TY_NUMERIC) == 0))
+                    Fail(e, "A loop bound must be a number, not %s.", TyName(t).c_str());
+            }
+            ctx.scopes.back()[n->sym] = TY_NUM;
+            if (n->d != nullptr)
+                CheckItems(n->d->kids, ctx);
+            break;
+        case NK::ForIn:
+        {
+            unsigned t = OperandTy(n->a, TY_ARR | TY_DICT, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & (TY_ARR | TY_DICT | TY_FRAG | TY_HANDLE)) == 0))
+                Fail(n->a, "A loop can only iterate an array or a dictionary, not %s.", TyName(t).c_str());
+            ctx.scopes.back()[n->sym] = TY_NONE;
+            if (n->d != nullptr)
+                CheckItems(n->d->kids, ctx);
+            break;
+        }
+        case NK::Return:
+            if (!ctx.stack.empty())
+                ctx.stack.back()->ret |= (n->a != nullptr) ? TypeOf(n->a, ctx) : TY_NULL;
+            break;
+        case NK::Include:
+        {
+            unsigned t = OperandTy(n->a, TY_STR, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & TY_STR) == 0))
+                Fail(n->a, "The file name of an include must be a string, not %s.", TyName(t).c_str());
+            break;
+        }
+        case NK::Block:
+            CheckBlockItems(n, ctx);
+            break;
+        case NK::Call:
+            (void)CheckCall(n, ctx);
+            break;
+        default:
+            (void)TypeOf(n, ctx);
+            break;
+    }
+}
+
+void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
+{
+    if (n->kind == NK::FunctionBlock)
+        return;
+    const std::string word = Normalised(n->text);
+    const Pov4BlockSchema* schema = FindPov4BlockSchema(word.data(), word.size());
+    for (const Node* k : n->kids)
+    {
+        if (k->kind == NK::Block)
+        {
+            CheckBlockItems(k, ctx);
+            continue;
+        }
+        if (k->kind == NK::FunctionBlock)
+            continue;
+        if ((k->kind == NK::Keyword) && (schema != nullptr))
+        {
+            bool legal = false;
+            for (size_t i = 0; i < schema->count; ++i)
+                if (k->text == schema->items[i])
+                {
+                    legal = true;
+                    break;
+                }
+            if (!legal)
+            {
+                std::string note;
+                int best = -1;
+                size_t bestDistance = 3;
+                bool tie = false;
+                for (size_t i = 0; i < schema->count; ++i)
+                {
+                    size_t d = EditDistance(k->text, schema->items[i]);
+                    if (d < bestDistance)
+                    {
+                        bestDistance = d;
+                        best = int(i);
+                        tie = false;
+                    }
+                    else if ((d == bestDistance) && (best >= 0))
+                        tie = true;
+                }
+                if ((best >= 0) && !tie)
+                    note = "; did you mean '" + std::string(schema->items[best]) + "'?";
+                Fail(k, "'%s' has no item '%s'%s.", word.c_str(), k->text.c_str(), note.c_str());
+            }
+            continue;
+        }
+        if ((k->kind == NK::Ident) && (schema != nullptr) && ctx.checking)
+        {
+            // A typo of a reserved word reaches here as an identifier (it is not reserved).
+            // Only report when a near miss exists; otherwise it may name a classic value.
+            // Classic values are conventionally capitalised, so only lower-case names are flagged.
+            bool found = false;
+            LookupTy(k->sym, ctx, found);
+            if (!found && !k->text.empty() && std::islower(static_cast<unsigned char>(k->text[0])))
+            {
+                int best = -1;
+                size_t limit = (k->text.size() >= 6) ? 2 : 1;
+                size_t bestDistance = limit + 1;
+                bool tie = false;
+                for (size_t i = 0; i < schema->count; ++i)
+                {
+                    size_t d = EditDistance(k->text, schema->items[i]);
+                    if (d < bestDistance)
+                    {
+                        bestDistance = d;
+                        best = int(i);
+                        tie = false;
+                    }
+                    else if ((d == bestDistance) && (best >= 0))
+                        tie = true;
+                }
+                if ((best >= 0) && !tie)
+                    Fail(k, "'%s' has no item '%s'; did you mean '%s'?",
+                         word.c_str(), k->text.c_str(), schema->items[best]);
+            }
+        }
+        (void)TypeOf(k, ctx);
+    }
+}
+
+unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
+{
+    switch (n->kind)
+    {
+        case NK::Number:
+        case NK::True:
+        case NK::False:
+            return TY_NUM;
+        case NK::String:
+            return TY_STR;
+        case NK::Null:
+            return TY_NULL;
+        case NK::Vector:
+            for (const Node* k : n->kids)
+            {
+                unsigned t = OperandTy(k, TY_NUMERIC, ctx);
+                if (ctx.checking && (t != TY_NONE) && ((t & TY_NUMERIC) == 0))
+                    Fail(k, "A vector component must be a number, vector or colour, not %s.", TyName(t).c_str());
+            }
+            return TY_VEC;
+        case NK::Array:
+            for (const Node* k : n->kids)
+                if ((k->kind != NK::Keyword) && (k->kind != NK::Comma))
+                    (void)TypeOf(k, ctx);
+            return TY_ARR;
+        case NK::Dict:
+            for (const Node* k : n->kids)
+            {
+                if (k->kind == NK::Pair)
+                    (void)TypeOf(k->a, ctx);
+                else if (k->kind == NK::Spread)
+                {
+                    unsigned t = OperandTy(k, TY_DICT, ctx);
+                    if (ctx.checking && (t != TY_NONE) && ((t & TY_DICT) == 0))
+                        Fail(k, "Can only spread a dictionary into a dictionary, not %s.", TyName(t).c_str());
+                }
+            }
+            return TY_DICT;
+        case NK::Pair:
+            return (n->a != nullptr) ? TypeOf(n->a, ctx) : TY_NONE;
+        case NK::Block:
+        case NK::FunctionBlock:
+            CheckBlockItems(n, ctx);
+            return TY_FRAG;
+        case NK::Colour:
+            if (n->a != nullptr)
+            {
+                unsigned t = OperandTy(n->a, TY_NUMERIC | TY_COLOUR, ctx);
+                if (ctx.checking && (t != TY_NONE) && ((t & (TY_NUMERIC | TY_COLOUR)) == 0))
+                    Fail(n->a, "A colour value must be a number, vector or colour, not %s.", TyName(t).c_str());
+            }
+            for (const Node* k : n->kids)
+                (void)TypeOf(k, ctx);
+            return TY_COLOUR;
+        case NK::Channel:
+            if (n->a != nullptr)
+            {
+                unsigned t = OperandTy(n->a, TY_NUMERIC, ctx);
+                if (ctx.checking && (t != TY_NONE) && ((t & TY_NUMERIC) == 0))
+                    Fail(n->a, "A colour channel must be a number, vector or colour, not %s.", TyName(t).c_str());
+            }
+            return TY_NUM;
+        case NK::Spread:
+        {
+            unsigned t = OperandTy(n->a, TY_ARR, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & (TY_ARR | TY_DICT | TY_FRAG)) == 0))
+                Fail(n, "Can only spread an array, not %s.", TyName(t).c_str());
+            return ((t & (TY_ARR | TY_DICT | TY_FRAG)) != 0) ? t : TY_NONE;
+        }
+        case NK::Keyword:
+        case NK::Comma:
+            return TY_NONE;
+        case NK::Ident:
+        {
+            bool found = false;
+            return LookupTy(n->sym, ctx, found);
+        }
+        case NK::Builtin:
+            switch (n->op)
+            {
+                case B_x: case B_y: case B_z: case B_t: case B_u: case B_v:
+                    return TY_VEC;
+                case B_pi: case B_tau: case B_clock: case B_clock_on: case B_yes: case B_no: case B_on:
+                case B_off: case B_version: case B_now:
+                    return TY_NUM;
+                default:
+                    break;
+            }
+            {
+                const auto& sigs = BuiltinSigs();
+                auto i = sigs.find(BI(n->op));
+                return (i != sigs.end()) ? i->second.ret : TY_NONE;
+            }
+        case NK::Lambda:
+            if (n->b != nullptr)
+            {
+                if (n->b->kind == NK::Body)
+                    CheckItems(n->b->kids, ctx);
+                else
+                    (void)TypeOf(n->b, ctx);
+            }
+            return TY_FN;
+        case NK::Binary:
+        {
+            unsigned lt = OperandTy(n->a, TY_NUMERIC, ctx);
+            unsigned rt = OperandTy(n->b, TY_NUMERIC, ctx);
+            const char* op = OpName(Op(n->op));
+            if ((n->op == OpAdd) || (n->op == OpSub) || (n->op == OpMul) || (n->op == OpDiv))
+            {
+                if (ctx.checking && (lt != TY_NONE) && ((lt & TY_NUMERIC) == 0))
+                    Fail(n->a, "The left operand of '%s' must be a number, vector or colour, not %s.", op, TyName(lt).c_str());
+                if (ctx.checking && (rt != TY_NONE) && ((rt & TY_NUMERIC) == 0))
+                    Fail(n->b, "The right operand of '%s' must be a number, vector or colour, not %s.", op, TyName(rt).c_str());
+                if (((lt | rt) & (TY_VEC | TY_COLOUR)) != 0)
+                    return TY_VEC | TY_COLOUR;
+                return ((lt == TY_NONE) || (rt == TY_NONE)) ? TY_NONE : TY_NUM;
+            }
+            if (ctx.checking)
+            {
+                const unsigned comparable = TY_NUMERIC | TY_NULL | TY_STR;
+                if ((lt != TY_NONE) && ((lt & comparable) == 0))
+                    Fail(n->a, "The operands of '%s' must be numbers, vectors, colours or strings, not %s.", op, TyName(lt).c_str());
+                if ((rt != TY_NONE) && ((rt & comparable) == 0))
+                    Fail(n->b, "The operands of '%s' must be numbers, vectors, colours or strings, not %s.", op, TyName(rt).c_str());
+            }
+            return TY_NUM;
+        }
+        case NK::Unary:
+        {
+            unsigned need = (n->op == OpNot) ? (TY_NUMERIC | TY_NULL) : TY_NUMERIC;
+            unsigned t = OperandTy(n->a, need, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & need) == 0))
+                Fail(n->a, "The operand of '%s' must be a number, vector or colour, not %s.", OpName(Op(n->op)), TyName(t).c_str());
+            return TY_NUM;
+        }
+        case NK::Cond:
+        {
+            unsigned t = OperandTy(n->a, TY_NUMERIC, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & (TY_NUMERIC | TY_NULL)) == 0))
+                Fail(n->a, "A condition must be a number, vector or colour, not %s.", TyName(t).c_str());
+            return TypeOf(n->b, ctx) | TypeOf(n->c, ctx);
+        }
+        case NK::Call:
+            return CheckCall(n, ctx);
+        case NK::Index:
+        {
+            unsigned bt = OperandTy(n->a, TY_ARR | TY_DICT | TY_HANDLE | TY_FRAG, ctx);
+            if (ctx.checking && (bt != TY_NONE) && ((bt & (TY_ARR | TY_DICT | TY_FRAG | TY_HANDLE)) == 0))
+                Fail(n, "Cannot index a %s.", TyName(bt).c_str());
+            unsigned it = TypeOf(n->b, ctx);
+            if (ctx.checking && (bt == TY_ARR) && (it != TY_NONE) && ((it & TY_NUMERIC) == 0))
+                Fail(n->b, "An array index must be a number, not %s.", TyName(it).c_str());
+            if (ctx.checking && (bt == TY_DICT) && (it != TY_NONE) && ((it & TY_STR) == 0))
+                Fail(n->b, "A dictionary key must be a string, not %s.", TyName(it).c_str());
+            return TY_NONE;
+        }
+        case NK::Member:
+        {
+            unsigned bt = OperandTy(n->a, TY_DICT | TY_NUMERIC | TY_HANDLE, ctx);
+            if ((bt & (TY_DICT | TY_HANDLE)) != 0)
+                return TY_NONE;
+            if ((bt & TY_NUMERIC) != 0)
+            {
+                if ((n->text != "gray") && (n->text != "grey") && (ComponentIndex(n->text) < 0))
+                {
+                    if (ctx.checking)
+                        Fail(n, "Unknown component '%s'.", n->text.c_str());
+                    return TY_NONE;
+                }
+                return TY_NUM;
+            }
+            if (ctx.checking && (bt != TY_NONE))
+                Fail(n, "%s has no member '%s'.", TyName(bt).c_str(), n->text.c_str());
+            return TY_NONE;
+        }
+        default:
+            if ((n->kind == NK::File) || (n->kind == NK::Body) || (n->kind == NK::Params) || (n->kind == NK::Param) ||
+                (n->kind == NK::Break) || (n->kind == NK::Continue))
+                return TY_NONE;
+            CheckNode(n, ctx);
+            return TY_NONE;
+    }
+}
+
+unsigned Pov4Evaluator::CheckCall(const Node* n, CheckCtx& ctx)
+{
+    const Node* callee = n->a;
+    auto arityText = [](unsigned char lo, unsigned char hi) -> std::string {
+        return (lo == hi) ? std::to_string(lo) : std::to_string(lo) + " to " + std::to_string(hi);
+    };
+    if ((callee != nullptr) && (callee->kind == NK::Builtin))
+    {
+        const auto& sigs = BuiltinSigs();
+        auto i = sigs.find(BI(callee->op));
+        if (i == sigs.end())
+            return TY_NONE;
+        const BuiltinSig& s = i->second;
+        std::string ar = arityText(s.minArgs, s.maxArgs);
+        if (ctx.checking && ((n->kids.size() < s.minArgs) || (n->kids.size() > s.maxArgs)))
+            Fail(n, "'%s' takes %s argument%s, but this call passes %u.", callee->text.c_str(), ar.c_str(),
+                 (s.minArgs == 1) && (s.maxArgs == 1) ? "" : "s", unsigned(n->kids.size()));
+        for (size_t k = 0; k < n->kids.size(); ++k)
+        {
+            unsigned need = s.args[(k < 3) ? k : 0];
+            if (need == TY_NONE)
+                continue;
+            unsigned t = OperandTy(n->kids[k], need, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & need) == 0))
+                Fail(n->kids[k], "Argument %d of '%s' must be %s, not %s.",
+                     int(k + 1), callee->text.c_str(), TyName(need).c_str(), TyName(t).c_str());
+        }
+        return s.ret;
+    }
+    if ((callee != nullptr) && (callee->kind == NK::Ident))
+    {
+        bool found = false;
+        unsigned bound = LookupTy(callee->sym, ctx, found);
+        auto fi = (found && (bound != TY_NONE) && ((bound & TY_FN) == 0)) ? ctx.fns->end() : ctx.fns->find(callee->sym);
+        if (fi == ctx.fns->end())
+            return TY_NONE;
+        CheckFn& f = fi->second;
+        size_t required = 0;
+        if (f.def->a != nullptr)
+            for (const Node* p : f.def->a->kids)
+                required += (p->a == nullptr) ? 1 : 0;
+        if (ctx.checking && ((n->kids.size() < required) || (n->kids.size() > f.params.size())))
+        {
+            std::string ar = arityText((unsigned char)(required), (unsigned char)(f.params.size()));
+            Fail(n, "'%s' takes %s argument%s, but this call passes %u.", mSymbolNames[callee->sym].c_str(), ar.c_str(),
+                 (required == 1) && (f.params.size() == 1) ? "" : "s", unsigned(n->kids.size()));
+        }
+        for (size_t k = 0; (k < n->kids.size()) && (k < f.params.size()); ++k)
+        {
+            unsigned at = TypeOf(n->kids[k], ctx);
+            f.args[k] |= at;
+            if (ctx.checking && (at != TY_NONE) && (f.use[k] != TY_NONE) && ((at & f.use[k]) == 0))
+                Fail(n->kids[k], "'%s' uses parameter '%s' as %s, but this call passes %s.",
+                     mSymbolNames[callee->sym].c_str(), mSymbolNames[f.params[k]].c_str(),
+                     TyName(f.use[k]).c_str(), TyName(at).c_str());
+        }
+        return f.ret;
+    }
+    return TY_NONE;
 }
 
 //------------------------------------------------------------------------------
