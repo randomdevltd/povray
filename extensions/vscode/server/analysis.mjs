@@ -9,6 +9,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..', '..');
 const GRAMMAR_DIRS = { classic: 'tree-sitter-pov', pov4: 'tree-sitter-pov4' };
 
+const req = createRequire(import.meta.url);
+const pure = req(join(here, '..', 'src', 'pure.js'));
+
 const SYMBOL_KINDS = { variable: 13, function: 12, block: 23 };
 const DETAIL_MAX = 120;
 
@@ -97,7 +100,6 @@ const NEAR_MISS_WINDOW = 120;
 const knownWords = (() => {
     const words = new Set(('let fn global return null in to step true false function if else '
         + 'for while break continue include').split(' '));
-    const req = createRequire(import.meta.url);
     const blocks = req(join(here, '..', 'pov4-blocks.json')).blocks;
     for (const [name, block] of Object.entries(blocks)) {
         words.add(name);
@@ -120,15 +122,42 @@ function editDistance(a, b) {
     return prev[b.length];
 }
 
-// A mistyped keyword parses as an identifier; the nearest near-miss word before the error names the real mistake.
+// Identifiers in [start, end) outside string literals and comments, in source order;
+// the same walk as enclosingBlocks in ../src/pure.js.
+function windowIdentifiers(text, start, end) {
+    const ids = [];
+    for (let i = start; i < end; ++i) {
+        const c = text[i];
+        if ((c === '/') && (text[i + 1] === '/')) {
+            while ((i < end) && (text[i] !== '\n')) ++i;
+        } else if ((c === '/') && (text[i + 1] === '*')) {
+            i += 2;
+            while ((i + 1 < end) && !((text[i] === '*') && (text[i + 1] === '/'))) ++i;
+            ++i;
+        } else if (c === '"') {
+            ++i;
+            while ((i < end) && (text[i] !== '"')) i += (text[i] === '\\') ? 2 : 1;
+        } else if (/[A-Za-z_]/.test(c)) {
+            let j = i;
+            while ((j < end) && /[A-Za-z0-9_]/.test(text[j])) ++j;
+            ids.push({ id: text.slice(i, j), index: i });
+            i = j - 1;
+        }
+    }
+    return ids;
+}
+
+// A mistyped keyword parses as an identifier; the nearest near-miss word before the error names
+// the real mistake. Strings, comments, declared names and short fragments never name it.
 function nearMiss(text, endIndex) {
     const windowStart = Math.max(0, endIndex - NEAR_MISS_WINDOW);
-    const ids = [...text.slice(windowStart, endIndex).matchAll(/[A-Za-z_]\w*/g)];
+    const declared = new Set(pure.collectIdentifiers(text));
+    const ids = windowIdentifiers(text, windowStart, endIndex);
     const starts = lineStarts(text);
     for (let i = ids.length - 1; i >= 0; --i) {
-        const id = ids[i][0];
+        const id = ids[i].id;
         const lower = id.toLowerCase();
-        if (knownWords.has(lower)) continue;
+        if (knownWords.has(lower) || declared.has(id) || (id.length < 3)) continue;
         let best = null;
         let bestDistance = Infinity;
         for (const word of knownWords) {
@@ -139,7 +168,7 @@ function nearMiss(text, endIndex) {
             }
         }
         if (!best) continue;
-        const start = offsetToPosition(starts, windowStart + ids[i].index);
+        const start = offsetToPosition(starts, ids[i].index);
         return { range: { start, end: { line: start.line, character: start.character + id.length } },
             message: `Unknown name '${id}'; did you mean '${best}'?` };
     }

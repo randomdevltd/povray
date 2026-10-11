@@ -319,6 +319,58 @@ test('diagnostics keep the generic message when no word is a near miss', async (
     });
 });
 
+test('diagnostics blame the typo, never words inside string literals', async (t) => {
+    if (!(await nativeGrammarsPresent())) return t.skip('native grammar bindings not available');
+    await withServer(async (client) => {
+        const dictionary = 'let Steps = { step: 0.3, [concat("ha", "lf")]: 0.5 };';
+        const uri = 'file:///stringwindow.pov4';
+        client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'pov4',
+            version: 1, text: dictionary + '\nspere { <0, 2, 0>, 1 pigment { rgb x } }\n' } });
+        const found = await client.diagnostics(uri);
+        assert.equal(found.length, 1);
+        assert.match(found[0].message, /Unknown name 'spere'; did you mean 'sphere'\?/);
+        assert.doesNotMatch(found[0].message, /'lf'|'if'/);
+        assert.deepEqual(found[0].range,
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 5 } });
+
+        const brokenUri = 'file:///stringwindow-stray.pov4';
+        client.notify('textDocument/didOpen', { textDocument: { uri: brokenUri, languageId: 'pov4',
+            version: 1, text: dictionary + '\nsphere x { <0, 2, 0>, 1 pigment { rgb x } }\n' } });
+        const generic = await client.diagnostics(brokenUri);
+        assert.equal(generic.length, 1);
+        assert.match(generic[0].message, /^Syntax error/);
+        assert.doesNotMatch(generic[0].message, /did you mean/);
+    });
+});
+
+test('diagnostics never blame a declared name as a keyword typo', async (t) => {
+    if (!(await nativeGrammarsPresent())) return t.skip('native grammar bindings not available');
+    await withServer(async (client) => {
+        const uri = 'file:///declared.pov4';
+        const text = 'let Steps = { step: 0.3 };\nSphere { <0, 2, 0>, 1 }\n';
+        client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'pov4',
+            version: 1, text } });
+        const found = await client.diagnostics(uri);
+        assert.equal(found.length, 1);
+        assert.match(found[0].message, /^Syntax error/);
+        assert.doesNotMatch(found[0].message, /did you mean 'step'\?/);
+    });
+});
+
+test('diagnostics fall back to the generic message when window fragments are too short', async (t) => {
+    if (!(await nativeGrammarsPresent())) return t.skip('native grammar bindings not available');
+    await withServer(async (client) => {
+        const uri = 'file:///shortfragment.pov4';
+        const text = 's { <0, 2, 0>, 1 pigment { rgb x } }\n';
+        client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'pov4',
+            version: 1, text } });
+        const found = await client.diagnostics(uri);
+        assert.equal(found.length, 1);
+        assert.match(found[0].message, /^Syntax error/);
+        assert.doesNotMatch(found[0].message, /did you mean/);
+    });
+});
+
 test('diagnostics stay empty for a clean scene', async () => {
     await withServer(async (client) => {
         const uri = 'file:///clean.pov4';
