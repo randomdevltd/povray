@@ -1022,8 +1022,7 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             // cap keeps the old extent/64 march step and the gradient averages at that scale.
             const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
             const DBL detail = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
-            const DBL autoDetail = ((detail <= 0.0) && finite) ? extent / 32.0 : 0.0;
-            const DBL effectiveDetail = (detail > 0.0) ? detail : autoDetail;
+            const DBL effectiveDetail = (detail > 0.0) ? detail : (finite ? extent / 32.0 : 0.0);
             if (effectiveDetail > 0.0)
             {
                 // Steps of at most D/2 put about four curvature samples across the narrowest band; the same
@@ -1038,12 +1037,7 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             }
             else if (finite)
             {
-                if (detail > 0.0)
-                {
-                    epsilon = std::min(epsilon, extent * 1.0e-4);
-                    maxStep = std::min(maxStep, extent / 64.0);
-                }
-                else if (td->mediaMessages &&
+                if ((detail <= 0.0) && td->mediaMessages &&
                     (sceneData->mmPerUnit > 0.0) && (extent * sceneData->mmPerUnit > 100.0) &&
                     !(sceneData->mediaWarningFlags.fetch_or(kRefractionDetailUnset, std::memory_order_relaxed) & kRefractionDetailUnset))
                     td->mediaMessages->Warning(kWarningGeneral,
