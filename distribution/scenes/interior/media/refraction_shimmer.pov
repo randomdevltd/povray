@@ -3,7 +3,7 @@
 #version 4.0;
 #ifndef (Hot) #declare Hot = 1; #end
 
-global_settings { assumed_gamma 1 }
+global_settings { assumed_gamma 1 refraction_detail 1 } // the turbulence's finest wobbles are about 3 mm across
 camera { location <0, 0.9, -2> look_at <0, 1.4, 60> angle 13 right x * image_width / image_height }
 light_source { <-200, 300, -150> rgb 1.3 }
 sky_sphere { pigment { gradient y color_map { [0 rgb <0.85, 0.9, 1>] [0.3 rgb <0.35, 0.55, 0.95>] } } }

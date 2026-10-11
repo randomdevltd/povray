@@ -10,7 +10,7 @@
 #declare Index = function(r) { pow(1 + RS / (4 * r), 3) / (1 - RS / (4 * r)) }
 #declare Edge = Index(Reach);
 
-global_settings { assumed_gamma 1 refraction_angle Angle }
+global_settings { assumed_gamma 1 refraction_angle Angle refraction_detail 5 } // the index turns over across about half a unit near the horizon, where refraction_angle slows the bend anyway
 camera { location <0, 2.2, -32> look_at 0 angle 24 right x * image_width / image_height }
 
 sky_sphere {

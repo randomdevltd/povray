@@ -1323,7 +1323,7 @@ finish { crand 0.05 }
 <p class="Note"><strong>Note:</strong> The effect doesn't scale with the object, and values may be greater than 1.0</p>
 <p>To adjust materials to the dimensions of your scene, you <em>should</em> first determine the proper <code>mm_per_unit</code> setting (it should always match the actual scale of the object) to use in the global settings block, <em>then</em> adjust the materials <code>translucency</code> value.</p>
 <p class="Note"><strong>Note:</strong> Any effect that can be achieved by changing <code>mm_per_unit</code> can also be achieved by adjusting the <code>translucency</code> value of materials.</p>
-<p>The <code>mm_per_unit</code> algorithm is designed to give realistic results at a scale of 10 mm per POV-Ray unit by default. For other scales, you can place the following statement in the <code>global_settings</code> block:</p>
+<p>The <code>mm_per_unit</code> algorithm is designed to give realistic results at a scale of 10 mm per POV-Ray unit by default. It is the scene's scale generally &mdash; <a href="r3_4.html#r3_4_1_9">Mm_Per_Unit</a> describes it in its own right, and media <a href="r3_4.html#r3_4_1_17">refraction_detail</a> takes its length through it. For other scales, you can place the following statement in the <code>global_settings</code> block:</p>
 <pre>
   mm_per_unit INT
 </pre>

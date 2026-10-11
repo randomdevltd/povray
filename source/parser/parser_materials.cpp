@@ -3832,8 +3832,24 @@ void Parser::Parse_Media(vector<Media>& medialist)
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "refraction_detail")
+            {
+                Get_Token();
+                if (CurrentTokenText() == "auto")
+                    IMedia->RefractionDetail = 0.0;
+                else
+                {
+                    UNGET
+                    IMedia->RefractionDetail = Parse_Float();
+                    if (!std::isfinite(IMedia->RefractionDetail) || !(IMedia->RefractionDetail > 0.0))
+                        Error("media refraction_detail must be a length in millimetres greater than 0, or auto.");
+                }
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 

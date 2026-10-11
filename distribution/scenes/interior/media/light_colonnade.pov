@@ -119,7 +119,7 @@ union {
     pigment { rgbt 1 }
     interior {
       media {
-        method 4 resolution 0.14 refraction 0.25
+        method 4 resolution 0.14 refraction 0.25 refraction_detail 3 // half the detail is 0.15 units, so the grid's 0.14 cells hold what it promises
         density {
           function {
             1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z))

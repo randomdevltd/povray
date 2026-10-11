@@ -95,8 +95,9 @@ Changed Behaviour
     `skein_mesh`, `tags`, `to` and `volume_sampling`. A scene that uses one of
     them as an identifier needs it renamed. (`depth` and `spread` inside
     `volume_sampling`, `mesh_cache`, `ior_mix`, `interface_texture`,
-    `atmospheric_ior`, `atmospheric_dispersion` and the `off` and `atmosphere`
-    of `ior` are matched by their text where they apply and stay free.)
+    `atmospheric_ior`, `atmospheric_dispersion`, `refraction_detail`,
+    `prepared_media_cells` and the `off` and `atmosphere` of `ior` are matched
+    by their text where they apply and stay free.)
   - Random effects (area light jitter, media, `crand`, rainbow jitter,
     subsurface light, photons, radiosity gather directions, stochastic
     anti-aliasing) now draw from a hash of the ray's path instead of
@@ -247,7 +248,31 @@ New Features
   - Media `refraction K` adds K times the density to the interior's ior, so
     light curves where the density varies (heat shimmer, mirages, steam,
     gradient-index lenses, black holes); `refraction_angle` bounds the bend of
-    each step.
+    each step. `refraction_detail`, a length in millimetres through
+    `mm_per_unit` (now the general scene scale it always wanted to be), sets
+    the smallest index structure that must refract faithfully: the march step
+    is derived from it (at most half of it) and the gradient becomes a central
+    difference over the same span, so finer structure is averaged the same way
+    on every ray instead of rendering as per-pixel speckle when the march step
+    was derived from the object's size. Set it in `global_settings` or per
+    `media`, in every language version. `refraction_detail auto`, the default,
+    derives the detail from the medium's bounds (a thirty-second of its
+    largest side), which keeps the old bounds-based step and widens the
+    gradient to average at that scale; a render whose auto medium spans more
+    than 100 mm is told so once. A method 4 grid derives its resolution from
+    the detail, or warns when an explicit `resolution` is coarser than half
+    of it.
+  - A prepared method 4 grid never falls back to classic sampling at a size
+    limit: a density grid, a per-light optical-depth table or a prepared
+    march beyond its limit is coarsened to the widest fit and used, with a
+    warning naming the requested and fitted resolutions and the cells needed.
+    `prepared_media_cells`, in `global_settings` and as the machine option
+    `Prepared_Media_Cells` (INI or command line), sets the cell limit for
+    density and optical-depth grids (1000000 by default); the larger of the
+    scene's and the machine's value applies, so a render farm can raise a
+    scene's request without editing it. Long marches are coarsened to fit a
+    step budget; splitting long containers or a coarser resolution avoids
+    that.
   - An emitting medium can be a light: `media { emission ... light_source { }
     }` lights surfaces and media with soft shadows, with `samples`,
     `brightness`, `shadowless`, `fade_distance` and `fade_power` settings.
@@ -257,7 +282,9 @@ New Features
   - `global_settings { mesh_cache "directory" }` keeps finished
     `isosurface_mesh` and `skein_mesh` meshes between renders.
   - Command-line: `Filter_Tags`, `Pov4_Version` (`+ML`) and
-    `Pov4_Lowered_File` (`+GL`); `.pov4` is recognised as a scene extension.
+    `Pov4_Lowered_File` (`+GL`); `Prepared_Media_Cells` joins the INI options
+    that work on the command line too; `.pov4` is recognised as a scene
+    extension.
   - `isosurface_mesh` takes everything an `isosurface` takes and builds a
     `mesh2` of its surface at parse time, keeping sharp edges exact. Copies of
     a declared one share their triangles.
