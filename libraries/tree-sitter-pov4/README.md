@@ -43,5 +43,12 @@ npm run generate   # also regenerates src/words.h
 npm test
 ```
 
+The install scripts of `tree-sitter`, `tree-sitter-cli` and this package must be
+allowed to run: they build the runtime, fetch the CLI binary and compile the Node
+binding (`build/Release/tree_sitter_pov4_binding.node`, same `binding.gyp` and
+`bindings/node` layout as `../tree-sitter-pov`). The editor language server in
+`extensions/vscode/server` loads that binding when it exists and falls back to
+scanner-based analysis without it.
+
 The runtime is pinned to the same release in `../tree-sitter`. Regular renderer
 builds compile the committed C sources directly.
