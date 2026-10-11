@@ -130,7 +130,7 @@ if says "coarsened its preparation" cap_scene; then echo "refraction_detail: the
 if says "coarsened its preparation" cap_machine; then echo "refraction_detail: the machine option did not lift the limit" >&2; exit 1; fi
 
 # A per-light optical-depth table beyond the cell limit is coarsened the same way, not dropped; a scene cap
-# of ten million holds its 4.6 million cells without coarsening.
+# of ten million holds its 3.2 million cells without coarsening.
 render optical Declare=Case=13
 says "optical-depth grid at the requested resolution" optical ||
     { echo "refraction_detail: no coarsening message for an over-limit optical-depth table" >&2; exit 1; }

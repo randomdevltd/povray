@@ -40,7 +40,9 @@ box {
     media {
       #if (Case >= 10) method 4 #else method 3 #end
       #if (Case = 11) resolution 0.05 #end
-      #if (Case = 12 | Case = 13) resolution Res scattering { 1, rgb 0.5 } #end
+      #if (Case = 12) resolution Res scattering { 1, rgb 0.5 } #end
+      // Case 13's density grid fits the default cell limit, so its optical-depth table is what coarsens and warns.
+      #if (Case = 13) resolution 0.032 scattering { 1, rgb 0.5 } #end
       #if (Case = 14) resolution 1 scattering { 1, rgb 0.35 } #end
       #if (Case = 3 & Detail > 0) refraction_detail Detail #end
       #if (Case < 12) refraction Coefficient #end
