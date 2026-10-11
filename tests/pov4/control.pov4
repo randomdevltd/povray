@@ -13,5 +13,7 @@ for (K in Sizes) { Total = Total + Sizes[K]; }
 let D = { ...Sizes, tiny: 0.05 };
 D.tiny = Total / 4;
 sphere { <0, 2, 0>, D.tiny pigment { rgb x } }
+// Computed keys are expressions: 'step' shows a reserved word as a bare key, and the
+// built "half" is an ordinary member afterwards.
 let Steps = { step: 0.3, [concat("ha", "lf")]: 0.5 };
 sphere { <-2, 2, 0>, A / 5 scale if (Total > 0.5) { Steps.step * 2 } else { Steps.half } pigment { rgb y } }
