@@ -1,0 +1,72 @@
+{
+  "name": "povray",
+  "displayName": "POV-Ray",
+  "description": "POV-Ray scene language support: highlighting, block-aware completion, and diagnostics from the renderer.",
+  "version": "0.1.0",
+  "publisher": "povray",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/randomdevltd/povray"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:pov",
+    "onLanguage:pov4"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "pov",
+        "aliases": ["POV-Ray", "pov"],
+        "extensions": [".pov", ".inc"],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "pov4",
+        "aliases": ["POV-Ray 4.0", "pov4"],
+        "extensions": [".pov4", ".inc4"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "pov",
+        "scopeName": "source.pov",
+        "path": "./syntaxes/pov.tmLanguage.json"
+      },
+      {
+        "language": "pov4",
+        "scopeName": "source.pov",
+        "path": "./syntaxes/pov.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "POV-Ray",
+      "properties": {
+        "povray.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the povray binary used for on-save diagnostics. Empty disables diagnostics."
+        },
+        "povray.includePath": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Library search paths passed to the renderer (+L)."
+        },
+        "povray.declare": {
+          "type": "object",
+          "default": {},
+          "description": "Declared identifiers passed to the renderer (Declare=name=value)."
+        }
+      }
+    }
+  }
+}

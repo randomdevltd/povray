@@ -1,0 +1,100 @@
+{
+  "name": "POV-Ray",
+  "scopeName": "source.pov",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#directive"
+    },
+    {
+      "include": "#statement"
+    },
+    {
+      "include": "#colorop"
+    },
+    {
+      "include": "#colorword"
+    },
+    {
+      "include": "#channel"
+    },
+    {
+      "include": "#constant"
+    },
+    {
+      "include": "#builtin"
+    },
+    {
+      "include": "#block"
+    },
+    {
+      "include": "#item"
+    },
+    {
+      "include": "#number"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.pov",
+          "match": "//[^\\n]*"
+        },
+        {
+          "name": "comment.block.pov",
+          "match": "/\\*[^*]*\\*+([^/*][^*]*\\*+)*/"
+        }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.pov",
+      "match": "\"([^\"\\\\\\n]|\\\\.)*\""
+    },
+    "directive": {
+      "name": "keyword.control.directive.pov",
+      "match": "#\\s*[A-Za-z_]+"
+    },
+    "statement": {
+      "name": "keyword.control.pov",
+      "match": "\\b(?:continue|function|include|global|return|break|false|while|else|null|step|true|for|let|fn|if|in|to)\\b"
+    },
+    "colorop": {
+      "name": "support.function.color.pov",
+      "match": "\\b(?:srgbft|rgbft|srgbf|srgbt|rgbf|rgbt|srgb|rgb)\\b"
+    },
+    "colorword": {
+      "name": "keyword.other.color.pov",
+      "match": "\\b(?:colour|color)\\b"
+    },
+    "channel": {
+      "name": "constant.other.channel.pov",
+      "match": "\\b(?:transmit|filter|alpha|green|blue|gray|grey|red)\\b"
+    },
+    "constant": {
+      "name": "constant.language.pov",
+      "match": "\\b(?:clock_on|version|clock|now|off|tau|yes|no|on|pi|t|u|v|x|y|z)\\b"
+    },
+    "builtin": {
+      "name": "support.function.builtin.pov",
+      "match": "\\b(?:dimension_size|vaxis_rotate|bitwise_and|bitwise_xor|file_exists|vturbulence|bitwise_or|dimensions|max_extent|min_extent|vnormalize|datetime|defined|degrees|radians|vlength|vrotate|warning|concat|filter|inside|select|strcmp|strlen|strlwr|strupr|substr|vcross|acosh|array|asinh|atan2|atanh|debug|error|floor|range|trace|acos|asin|atan|ceil|cosh|prod|rand|seed|sinh|sqrt|tanh|vdot|vstr|abs|asc|chr|cos|div|exp|int|log|max|min|mod|pow|sin|sqr|str|sum|tan|val|ln)\\b"
+    },
+    "block": {
+      "name": "keyword.other.block.pov",
+      "match": "\\b(?:global_settings|isosurface_mesh|smooth_triangle|superellipsoid|bicubic_patch|julia_fractal|height_field|intersection|light_source|sphere_sweep|light_group|background|difference|isosurface|parametric|polynomial|sky_sphere|composite|image_map|radiosity|bump_map|cylinder|interior|material|triangle|default|density|photons|pigment|polygon|quadric|quartic|rainbow|texture|camera|finish|normal|object|portal|sphere|cubic|lathe|lemon|media|merge|mesh2|plane|prism|torus|union|blob|cone|disc|mesh|ovus|poly|text|box|fog|sor)\\b"
+    },
+    "item": {
+      "name": "keyword.other.item.pov",
+      "match": "\\b(?:reflection_exponent|dispersion_samples|all_intersections|area_illumination|double_illuminate|expand_thresholds|front_filter_tags|max_intersections|media_attenuation|media_interaction|projected_through|back_filter_tags|cutaway_textures|distance_maximum|interior_texture|low_error_factor|quadratic_spline|refraction_angle|ultra_wide_angle|conserve_energy|irid_wavelength|max_trace_level|noise_generator|number_of_sides|number_of_tiles|number_of_waves|pigment_pattern|recursion_limit|volume_sampling|gray_threshold|grey_threshold|natural_spline|normal_indices|normal_vectors|pretrace_start|radiosity_size|vertex_vectors|always_sample|ambient_light|assumed_gamma|bezier_spline|fade_distance|falloff_angle|global_lights|image_pattern|inside_vector|linear_spline|max_iteration|maximum_reuse|minimum_reuse|nearest_count|no_bump_scale|no_reflection|premultiplied|triangle_wave|aa_threshold|blur_samples|contained_by|cubic_spline|density_file|eccentricity|face_indices|hypercomplex|linear_sweep|major_radius|material_map|max_gradient|no_radiosity|orthographic|pass_through|pretrace_end|quick_colour|scallop_wave|texture_list|translucency|user_defined|adc_bailout|blend_gamma|conic_sweep|cylindrical|density_map|error_bound|fade_colour|filter_tags|focal_point|interpolate|mesh_camera|mm_per_unit|orientation|perspective|photon_only|pigment_map|quick_color|split_union|texture_map|water_level|absorption|agate_turb|anisotropy|area_light|black_hole|blend_mode|bounded_by|brick_size|brightness|brilliance|clipped_by|colour_map|confidence|cubic_wave|dictionary|dispersion|extinction|fade_color|fade_power|fog_offset|hf_gray_16|hf_grey_16|importance|looks_like|max_sample|normal_map|phong_size|precompute|quaternion|reciprocal|reflection|refraction|resolution|scattering|shadowless|skein_mesh|statistics|subsurface|triangular|turb_depth|turbulence|unofficial|use_colour|uv_indices|uv_mapping|uv_vectors|arc_angle|bump_size|color_map|component|direction|frequency|hierarchy|intervals|load_file|max_trace|no_lights|no_shadow|panoramic|poly_wave|potential|precision|ramp_wave|roughness|save_file|sine_wave|slope_map|spherical|spotlight|thickness|threshold|tightness|tolerance|transform|translate|use_alpha|use_color|use_index|aa_level|accuracy|adaptive|altitude|aperture|autostop|b_spline|caustics|circular|control0|control1|dist_exp|distance|emission|evaluate|exponent|exterior|fallback|flatness|fog_type|gradient|internal|location|map_type|metallic|no_image|optional|parallel|pavement|point_at|polarity|priority|sint16be|sint16le|sint32be|sint32le|specular|strength|toroidal|uint16be|uint16le|variance|wrinkles|ambient|average|charset|checker|collect|crackle|diffuse|falloff|fisheye|fog_alt|fresnel|granite|hexagon|inverse|leopard|look_at|octaves|omnimax|pattern|perturb|quilted|ripples|samples|spacing|spiral1|spiral2|spotted|u_steps|v_steps|albedo|bt2020|coords|facets|gather|hollow|jitter|lambda|magnet|mandel|marble|matrix|method|metric|mortar|offset|orient|planar|prefix|radial|radius|render|repeat|rotate|screen|sgreen|smooth|spline|square|suffix|target|tiling|agate|angle|ascii|bokeh|boxed|brick|bt709|bumps|cells|count|crand|dents|front|gamma|julia|mixed|omega|onion|phase|phong|ratio|right|sblue|scale|sint8|skein|slice|slope|solid|sturm|tile2|tiles|uint8|waves|width|back|bozo|cmap|cube|dtag|exit|flip|form|irid|jpeg|near|none|once|open|povm|size|sred|tags|tiff|type|utf8|warp|wood|all|any|aoi|bmp|df3|exr|far|gif|hdr|iff|ior|mix|obj|pgm|png|pot|ppm|pwr|sky|sys|tga|ttf|xyz|up)\\b"
+    },
+    "number": {
+      "name": "constant.numeric.pov",
+      "match": "(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?"
+    }
+  }
+}
