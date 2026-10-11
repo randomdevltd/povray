@@ -212,6 +212,11 @@ New Features
     normalizes the tree-sitter grammar, `blocks.json` lists the legal keywords
     of every block mined from the classic parser's expect-loops, and
     `doc/language-4-grammar.md` renders both as an EBNF reference.
+  - `.pov4` files are statically checked right after parsing: types are inferred
+    from usage and mismatches are reported with the source position (a string used
+    where a number is needed, a wrong argument count, an unknown member), and block
+    keywords are validated against the mined tables, so `finish { phon 1 }` is
+    caught before the scene runs, including in branches that never execute.
   - The `skein` object (beta) defines a surface or solid by mapping the unit
     square through a chain of composable steps, and `skein_mesh` builds a
     `mesh2` from one at parse time. See the "Skein" chapter of the reference.

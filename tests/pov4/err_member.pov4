@@ -1,0 +1,4 @@
+include "scene.inc";
+let Name = "ball";
+let Bad = Name.size;
+sphere { 0, 1 }

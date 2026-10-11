@@ -1,0 +1,3 @@
+include "scene.inc";
+fn Scale(V) { return V * 2; }
+sphere { 0, Scale("big") }

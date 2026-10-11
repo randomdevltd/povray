@@ -251,6 +251,23 @@ from a spread or a call are separated by commas, so `sphere_sweep { linear_splin
 reads as written; an array must be spread (`...A`), not placed in a body whole. An uncalled
 function word in a body is the keyword itself (`filter 0.5`, while `filter(A, F)` is the built-in).
 
+### Static checking
+
+Right after parsing, before anything runs, each file is statically checked:
+
+- **Block keywords** are validated against tables generated from the classic parser's
+  item loops (`tools/language/grammar/blocks.json`, compiled into the evaluator), so
+  `finish { phon 1 }` fails immediately with a located error and, when close enough, a
+  "did you mean" suggestion. Blocks without a table are not checked.
+- **Types are inferred from usage.** Literals, vectors, colours, arrays, dictionaries
+  and functions carry their obvious types; operators and built-ins propagate them;
+  a function parameter's type is what every call passes united with what the body does
+  with it. A check fires only when a value's type is decidable and disjoint from what
+  its position needs — a string added to a number, a member or index on a type that has
+  none, a wrong argument count, or a call passing a string to a parameter the function
+  uses as a number. Names that resolve to nothing (classic interop) stay unchecked.
+- Untaken branches are checked too: a typo inside `if (false) { ... }` still fails.
+
 ### Render-time functions
 
 `function { ... }` and `function(x, y, z) { ... }` blocks keep the classic render-time function

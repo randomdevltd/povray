@@ -1,0 +1,2 @@
+include "scene.inc";
+sphere { 0, 1 finish { phon 1 } }
