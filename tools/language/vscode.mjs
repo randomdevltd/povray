@@ -2,7 +2,7 @@
 // Generates the VS Code extension's TextMate grammar and block tables from the language sources.
 // Run from anywhere: node tools/language/vscode.mjs
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,8 +24,15 @@ const VALUE = [...new Set([
     ...reserved.filter((w) => w.category === 'float' || w.category === 'vector').map((w) => w.word),
     ...VALUE_OTHER,
 ])].filter((w) => !STATEMENT.includes(w)).sort();
-const KEYWORD = reserved.map((w) => w.word).filter((w) => !STATEMENT.includes(w) && !DIRECTIVE.includes(w) &&
-    !VALUE.includes(w) && !COLOUR.includes(w) && !COLOR.includes(w) && !CHANNEL.includes(w)).sort();
+// Contextual keywords mirror the words.js harvest: matched by text in the classic parser.
+const contextual = new Set();
+for (const f of readdirSync(join(root, 'source/parser')).filter((f) => f.endsWith('.cpp')))
+    for (const m of readFileSync(join(root, 'source/parser', f), 'utf8')
+        .matchAll(/CurrentTokenText\(\)\s*==\s*"([a-z_][a-z0-9_]*)"/g))
+        contextual.add(m[1]);
+const KEYWORD = [...new Set([...reserved.map((w) => w.word), ...contextual])].filter((w) => !STATEMENT.includes(w) &&
+    !DIRECTIVE.includes(w) && !VALUE.includes(w) && !COLOUR.includes(w) && !COLOR.includes(w) &&
+    !CHANNEL.includes(w)).sort();
 
 // Top-level statements that open a block but are not schema-checked blocks.
 const SCENE = ['background', 'default', 'fog', 'photons', 'radiosity', 'rainbow', 'sky_sphere'];
