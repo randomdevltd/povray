@@ -84,6 +84,9 @@
   <td><div class="divh3"><a title="3.4.1.17" href="#r3_4_1_17">Refraction_Detail</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.1.18" href="#r3_4_1_18">Prepared_Media_Cells</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
 </tr>
 <tr>
@@ -405,7 +408,9 @@ GLOBAL_SETTINGS_ITEM:
   hf_gray_16 [Bool] | irid_wavelength COLOR | charset GLOBAL_CHARSET |
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
-  refraction_angle Value | refraction_detail Value | atmospheric_ior Value | atmospheric_dispersion Value |
+  refraction_angle Value | refraction_detail Value | refraction_detail auto |
+  prepared_media_cells Value | atmospheric_ior Value | atmospheric_dispersion Value |
+
   interface_texture blend | interface_texture near | interface_texture far |
   mesh_cache &quot;directory&quot; |
   radiosity { RADIOSITY_ITEMS... } | subsurface { SUBSURFACE_ITEMS } |
@@ -431,7 +436,8 @@ mm_per_unit        : 10
 number_of_waves	   : 10
 noise_generator	   : 2
 refraction_angle   : 0.5
-refraction_detail  : unset (the step follows the container's size)
+refraction_detail  : auto (derived from each medium's bounds)
+prepared_media_cells : 1000000 (the machine option raises it)
 atmospheric_ior    : 1.00029 (1.0 before #version 4.0)
 atmospheric_dispersion : 1.0
 interface_texture  : blend (far before #version 4.0)
@@ -706,9 +712,19 @@ global_settings { interface_texture near }
 <a name="r3_4_1_17"></a>
 <div class="content-level-h4" contains="Refraction_Detail" id="r3_4_1_17">
 <h4>3.4.1.17 Refraction_Detail</h4>
-<p>Where <a href="r3_7.html#r3_7_2_2_4">media refraction</a> makes the index vary, the ray follows the curve in steps whose length the scene author otherwise cannot see or set: without this setting the steps follow the refracting object's size. <code>refraction_detail</code> is a length in millimetres, converted through <a href="r3_4.html#r3_4_1_9">mm_per_unit</a>: the smallest index structure that must refract faithfully on every ray. Structure at least that wide bends as it should; narrower structure is averaged, the same way for every ray, rather than caught on some rays and missed on others, which is what renders it as speckle. A <code>media</code> block may give its own <code>refraction_detail</code>, overriding the scene's. How the step and the gradient follow the detail, and what it costs, is in <a href="r3_11.html#r3_11_3_2">Curved Rays</a>.</p>
+<p>Where <a href="r3_7.html#r3_7_2_2_4">media refraction</a> makes the index vary, the ray follows the curve in steps whose length the scene author otherwise cannot see or set. <code>refraction_detail</code> is a length in millimetres, converted through <a href="r3_4.html#r3_4_1_9">mm_per_unit</a>: the smallest index structure that must refract faithfully on every ray. Structure at least that wide bends as it should; narrower structure is averaged, the same way for every ray, rather than caught on some rays and missed on others, which is what renders it as speckle. A <code>media</code> block may give its own <code>refraction_detail</code>, overriding the scene's. How the step and the gradient follow the detail, and what it costs, is in <a href="r3_11.html#r3_11_3_2">Curved Rays</a>.</p>
+<p><code>refraction_detail auto</code> is the default in every language version: the detail is derived from each medium's own bounds, a thirty-second of its largest side, so the march step keeps the bounds-based length and the gradient averages over the same span. A render whose auto medium spans more than 100&nbsp;mm is told this once.</p>
 <pre>
-global_settings { mm_per_unit 100  refraction_detail 1 }
+global_settings { mm_per_unit 100  refraction_detail 1 }  // or refraction_detail auto
+</pre></div>
+
+<a name="r3_4_1_18"></a>
+<div class="content-level-h4" contains="Prepared_Media_Cells" id="r3_4_1_18">
+<h4>3.4.1.18 Prepared_Media_Cells</h4>
+<p>A <a href="r3_11.html#r3_11_5_1">prepared media grid</a> (method 4) is limited to this many cells, 1000000 by default. A density grid or a per-light optical-depth table that would need more is not abandoned: it is built coarser, at the widest cell width that fits, with a warning naming the requested and fitted resolutions, the cells needed and the <code>prepared_media_cells</code> value that would avoid the coarsening. A prepared march longer than its step budget is likewise coarsened, not dropped.</p>
+<p>The same limit can be set for the machine as the <code>Prepared_Media_Cells</code> INI or command-line option, and the larger of the scene's and the machine's value applies: a render farm can raise a scene's request without editing it, and a scene can demand more than a machine's default. Place the setting before the media's containers, as with <code>refraction_detail</code>.</p>
+<pre>
+global_settings { prepared_media_cells 4000000 }
 </pre></div>
 
 <a name="r3_4_2"></a>

@@ -450,7 +450,7 @@ MEDIA:
 MEDIA_ITEMS:
   method Number | intervals Number | samples Min, Max |
   confidence Value  | variance Value | ratio Value | jitter Value
-  absorption COLOR | emission COLOR | refraction Value | refraction_detail Value | aa_threshold Value |
+  absorption COLOR | emission COLOR | refraction Value | refraction_detail Value | refraction_detail auto | aa_threshold Value |
   aa_level Value | resolution Value |
   mix add | replace | subtract | multiply | priority Integer |
   light_source { [MEDIA_LIGHT_ITEM...] } |
@@ -481,7 +481,7 @@ mix          : see Media Mix
 priority     : 0
 ratio        : 0.9
 refraction   : 0.0
-refraction_detail : unset (the global_settings value, if any)
+refraction_detail : auto (the global setting; auto derives it from the medium's bounds)
 resolution   : automatic (method 4 only)
 samples      : Min 1, Max 1 (10, 10 from version 3.5)
 variance     : 1/128
@@ -1116,7 +1116,7 @@ box {
 }
 </pre>
 <p>How rays curve through the field, the limits that stop them, how brightness scales, the warnings and worked examples are in <a href="r3_11.html#r3_11_3">Refracting Volumes</a>. Atmospheric media do not refract.</p>
-<p>A medium may carry its own <code>refraction_detail</code>, a length in millimetres (through <code>mm_per_unit</code>) that overrides the scene's <a href="r3_4.html#r3_4_1_17">global setting</a>: the smallest index structure of this medium that must refract faithfully. Where several refracting media hold a point, the smallest detail among them governs the step, as the step cap already takes the smallest over the media.</p></div>
+<p>A medium may carry its own <code>refraction_detail</code>, a length in millimetres (through <code>mm_per_unit</code>) that overrides the scene's <a href="r3_4.html#r3_4_1_17">global setting</a>, or <code>refraction_detail auto</code> to take the bounds-derived default again: the smallest index structure of this medium that must refract faithfully. Where several refracting media hold a point, the smallest detail among them governs the step, as the step cap already takes the smallest over the media.</p></div>
 
 <a name="r3_7_2_2_5"></a>
 <div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
@@ -1145,22 +1145,21 @@ media {
 
 <p>The optical-depth cache is an additional acceleration for eligible parallel-light shadow rays. Point lights, area lights, cylinder lights, and scenes containing portals cannot use this cache. Each medium has at most four light-cache entries; additional lights cannot acquire an entry. A light-aligned optical grid can also exceed its 1,000,000-cell limit even when the density grid fits. In these cases, supported shadow rays still march through the prepared density field. Losing the optical-depth cache alone does not cause classic fallback; prepared shadow marching is subject to the density-field eligibility and step limits below.</p>
 
-<p>The prepared field is an approximation and can miss details smaller than its cells; reduce <code>resolution</code> to retain finer structures. A fine width applies throughout its container bounds, so a large container with a small requested width can require excessive memory. Method 4 does not silently increase the requested width to fit a limit.</p>
+<p>The prepared field is an approximation and can miss details smaller than its cells; reduce <code>resolution</code> to retain finer structures. A fine width applies throughout its container bounds, so a large container with a small requested width can require excessive memory. A grid that would need more than the <a href="r3_4.html#r3_4_1_18">prepared_media_cells</a> limit is widened to the coarsest width that fits, with a warning naming what was requested and what fitted.</p>
 
 <p>Some work still falls back to classic sampling, using the media's classic quality settings:</p>
 <ul>
 <li>A variable medium using method 1, 2 or 3 overlaps a variable method 4 medium. Select method 4 on all overlapping variable media to enable prepared integration. Only media that take part count: <code>subtract</code> and <code>multiply</code> media, and media a <code>replace</code> has removed, are not tested (see <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>).</li>
-<li>A density grid is invalid or exceeds 1,000,000 cells. Use a larger <code>resolution</code> value for coarser cells, omit it for automatic resolution, or split the container.</li>
 <li>The density field cannot be prepared, including unsupported fields or negative or non-finite values rejected by the cache, or no unique finite container is available.</li>
-<li>A ray segment requires marching with more than 4096 prepared integration steps. Camera integration uses steps one third of the selected cell width; prepared shadow marching uses the cell width. A shadow ray with usable parallel-light optical-depth caches for all its variable media can still use those caches beyond this limit, because no marching is required. The shadow step limit applies only when the cache path is unavailable and marching is necessary. Split long containers or explicitly choose a coarser width if it retains enough detail.</li>
 <li>Photon propagation requires classic media sampling.</li>
 </ul>
+<p>A ray segment that would need more than 4096 prepared integration steps does not fall back: the march runs coarsened, at a wider resolution chosen so the steps fit, and warns once naming the fitted resolution. Camera integration uses steps one third of the selected cell width; prepared shadow marching uses the cell width. Splitting long containers or choosing a coarser width avoids the coarsening.</p>
 <p>Runtime fallback warnings report the reason, resolution and container bounding box, when available. Preparation failures are reported once for each affected field, so one oversized volume does not hide another. Other runtime reasons are reported on their first occurrence per scene; a single warning can therefore represent many affected rays. Check these warnings when a method 4 render is unexpectedly slow. Changing classic <code>samples</code> does not repair a failed prepared field.</p>
 
 <p>The public fixtures <code>tools/bench/media-prepared-combinations.pov</code> and <code>tools/bench/media-prepared-fallback.pov</code> provide small comparisons. Both accept <code>Declare=Method=4</code> (prepared) or <code>Declare=Method=3</code> (classic), and <code>Declare=Samples=64</code> for a more expensive classic reference. Use <code>+W96 +H64 +PR -A</code> for a small render.</p>
 <ul>
 <li>In <code>media-prepared-combinations.pov</code>, <code>Mode=0</code> stacks two variable media and one constant medium; <code>Mode=1</code> combines their coefficients into one equivalent density. Compare these images. <code>Wrapped=1</code> places the containers inside a union; it should give the same image as <code>Wrapped=0</code>. <code>Mode=2</code> and <code>Mode=3</code> repeat the pair with two overlapping containers. The stacked variable media request <code>CellSize</code> and <code>CellSize/2</code>; the equivalent medium requests <code>CellSize/2</code>. The transport equations match, though preparation and integration can introduce small numerical differences.</li>
-<li>In <code>media-prepared-fallback.pov</code>, <code>Mode=0</code> exceeds the density-grid limit, <code>Mode=1</code> overlaps classic variable media, and <code>Mode=2</code> exceeds the ray-step limit in a narrow, long container whose grid fits; <code>Mode=3</code> exercises classic photon propagation. Each method 4 case should warn for its intended reason; method 3 is the classic comparison. <code>CellSize</code>, <code>ClassicOverlap</code> and <code>SegmentLength</code> allow each limit to be removed explicitly.</li>
+<li>In <code>media-prepared-fallback.pov</code>, <code>Mode=0</code> exceeds the density-grid limit and is coarsened to the widest width that fits, <code>Mode=1</code> overlaps classic variable media, and <code>Mode=2</code> exceeds the ray-step limit in a narrow, long container whose grid fits and marches coarsened; <code>Mode=3</code> exercises classic photon propagation. Each method 4 case should warn for its intended reason; method 3 is the classic comparison. <code>CellSize</code>, <code>ClassicOverlap</code> and <code>SegmentLength</code> allow each limit to be removed explicitly.</li>
 </ul>
 
 <p><code>tools/bench/media-prepared-boundary.pov</code> checks bounded shadow integration. Moving its invisible transparent receiver from <code>Distance=2</code> to <code>Distance=200</code> must not extend the prepared medium or change its illumination. With <code>Wide=1</code>, a larger coarse volume overlaps the fine one; compare <code>Distance=200</code> and <code>Distance=400</code> to exercise separate step sizes within one ray.</p>
