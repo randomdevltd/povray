@@ -141,7 +141,8 @@ class Media::FastCache final
         };
 
         std::mutex lightMutex;
-        std::map<const LightSource*, std::shared_ptr<const Optical>> lights;
+        /// keyed by the light's scene index: the LightSource a ray carries is a per-thread copy, so its address is not stable
+        std::map<size_t, std::shared_ptr<const Optical>> lights;
 
         bool EnsureField(Media& media, TraceThreadData *ttd);
         bool Segment(const Ray& ray, DBL& from, DBL& to) const;
@@ -477,12 +478,12 @@ bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, cons
     std::shared_ptr<const Optical> grid;
     {
         std::lock_guard<std::mutex> guard(lightMutex);
-        auto found = lights.find(&light);
+        auto found = lights.find(light.index);
         if (found == lights.end())
         {
             if (lights.size() >= 4)
                 return false;
-            found = lights.emplace(&light, BuildOptical(media, light, ttd)).first;
+            found = lights.emplace(light.index, BuildOptical(media, light, ttd)).first;
         }
         grid = found->second;
     }
