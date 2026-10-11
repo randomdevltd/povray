@@ -1,8 +1,9 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // A 500 mm plate of clear material whose index rises across 2 mm seams every 10 mm, like the cell walls
 // of a mineral. The camera looks through it at a striped card. With refraction_detail 1 every seam bends
-// the card's image by its own share; Declare=Detail=0 leaves the setting out, and the seams that fall
-// between the marcher's steps dither into speckle instead. +w640 +h360
+// the card's image by its own share; Declare=Detail=0 asks for refraction_detail auto, which derives a
+// detail from the plate's bounds (about 16 mm) and averages the 2 mm seams alike on every ray, so the
+// plate reads as calm glass rather than as speckled walls. +w640 +h360
 #version 4.0;
 
 #ifndef (Detail) #declare Detail = 1; #end

@@ -3,7 +3,7 @@
 #version 4.0;
 #ifndef (Bend) #declare Bend = 1; #end
 
-global_settings { assumed_gamma 1 }
+global_settings { assumed_gamma 1 refraction_detail 1 } // the steam's wisps are a few millimetres wide
 camera { location <0, 1.6, -3.2> look_at <0, 1.45, 0> angle 34 }
 light_source { <-3, 5, -4> rgb 1.1 }
 light_source { <4, 3, -2> rgb 0.3 shadowless }

@@ -1,8 +1,8 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // Structure below the detail size averages instead of speckling: a 500 mm plate holds crackle at a
 // 0.2 mm scale, far below refraction_detail 1, so every ray meets the same mean index and the plate
-// reads as smooth faint glass. Declare=Detail=0 leaves the setting out and the same pattern returns
-// per-pixel noise, each ray's steps catching a different phase of it. +w640 +h360
+// reads as smooth faint glass. Declare=Detail=0 asks for refraction_detail auto, whose bounds-derived
+// detail (about 16 mm) averages the crackle the same way. +w640 +h360
 #version 4.0;
 
 #ifndef (Detail) #declare Detail = 1; #end
