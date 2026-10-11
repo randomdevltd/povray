@@ -2,7 +2,7 @@
   "name": "povray",
   "displayName": "POV-Ray",
   "description": "POV-Ray scene language support: highlighting, block-aware completion, and diagnostics from the renderer.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "povray",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -65,6 +65,17 @@
           "type": "object",
           "default": {},
           "description": "Declared identifiers passed to the renderer (Declare=name=value)."
+        },
+        "povray.languageServer": {
+          "type": "string",
+          "enum": ["auto", "on", "off"],
+          "default": "auto",
+          "enumDescriptions": [
+            "Start the language server when its script is bundled with the extension",
+            "Same as auto, made explicit",
+            "Never start the language server"
+          ],
+          "description": "Language server for live syntax diagnostics, outline, go-to-definition and completion. Runs from the extension directory; off restores on-save-only diagnostics."
         }
       }
     }

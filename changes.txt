@@ -216,6 +216,17 @@ New Features
     languages generated from the shared word tables, completion aware of the
     enclosing block's legal keywords, and on-save diagnostics parsed from the
     renderer's messages.
+  - The extension also bundles a language server (`extensions/vscode/server`), on by
+    default (`povray.languageServer`): live parse-error squiggles while typing, a
+    document outline (4.0 `let`/`fn`/`global`, classic `#declare`/`#local`/`#macro`,
+    named blocks — a trailing comment becomes the outline detail), go-to-definition
+    for those declarations within the document, and the same block-aware completion.
+    It is plain node with no dependencies; the tree-sitter grammars in
+    `libraries/tree-sitter-pov` and `libraries/tree-sitter-pov4` are optional at
+    runtime, and without them the server still serves outline, definitions and
+    completion, leaving live squiggles to the renderer's on-save check. A line the
+    renderer reports hides the server's squiggle there, so the two layers never
+    double-mark one error.
   - The `skein` object (beta) defines a surface or solid by mapping the unit
     square through a chain of composable steps, and `skein_mesh` builds a
     `mesh2` from one at parse time. See the "Skein" chapter of the reference.
