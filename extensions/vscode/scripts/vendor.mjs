@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copies the runtime pieces of the two native tree-sitter grammars into server/vendor/,
-// where analysis.mjs loads them when the extension runs outside the repository.
-// Run from anywhere: node extensions/vscode/scripts/vendor.mjs
+// Bundles the native tree-sitter grammars into server/vendor/ for packaged use; run: node extensions/vscode/scripts/vendor.mjs
 
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
