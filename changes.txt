@@ -216,10 +216,13 @@ New Features
   - An agent-facing scene-language reference is generated from those tables:
     `tools/language/reference/SKILL.md` is an always-cheap index (execution
     model, statement forms, one line per block), and
-    `node tools/language/reference.mjs <term>` prints a card for any block or
-    item — its legal items or accepting blocks, nested sub-blocks, a one-line
+    `node tools/language/reference.mjs <term>` prints a card for any block,
+    item, 4.0 statement or colour word, and for the scene-level blocks
+    (background, sky_sphere, fog, rainbow, default) the parser tables do not
+    list — its legal items or accepting blocks, nested sub-blocks, a one-line
     description mined from the reference manual and a usage snippet mined from
-    the test scenes. `--list` prints the block index; regeneration from the
+    the test scenes. Manual syntax synopses no longer pass as usage snippets.
+    `--list` prints the block index; regeneration from the
     manual and fixtures is byte-stable and tested, so the cards cannot drift
     from the parsers.
   - `.pov4` files are statically checked right after parsing: types are inferred

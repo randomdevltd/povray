@@ -11,11 +11,14 @@ const here = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const cli = join(here, 'reference.mjs');
 const run = (args) => execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
 
-test('--list covers every block in blocks.json', () => {
+test('--list covers every block in blocks.json plus the overlay scene blocks', () => {
     const blocks = JSON.parse(readFileSync(join(here, 'grammar/blocks.json'), 'utf8')).blocks;
+    const overlay = JSON.parse(readFileSync(join(here, 'reference/overlay.json'), 'utf8')).words;
+    const expected = [...Object.keys(blocks),
+        ...Object.keys(overlay).filter((w) => overlay[w].kind === 'block')].sort();
     const listed = run(['--list']).split('\n').filter(Boolean).map((l) => l.trim().split(/\s+/)[0]);
-    for (const name of Object.keys(blocks)) assert.ok(listed.includes(name), `${name} missing from --list`);
-    assert.equal(listed.length, Object.keys(blocks).length);
+    for (const name of expected) assert.ok(listed.includes(name), `${name} missing from --list`);
+    assert.equal(listed.length, expected.length);
 });
 
 test('regeneration is byte-stable', () => {

@@ -30,6 +30,8 @@ function itemUniverse() {
     return words;
 }
 
+const overlayBlocks = () => Object.keys(overlay.words).filter((w) => overlay.words[w].kind === 'block').sort();
+
 // ---------------------------------------------------------------- generation
 
 const manualSections = () => {
@@ -124,7 +126,8 @@ const manualPres = () => {
 const decodeLine = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const lineOf = (text, index) => text.slice(0, index).split('\n').length;
-const usable = (s, cap = 110) => s.length >= 10 && s.length <= cap && !/[#]|\/\//.test(s);
+const usable = (s, cap = 110) => s.length >= 10 && s.length <= cap && !/[#]|\/\//.test(s)
+    && !/\[[-A-Z0-9_]+\]/.test(s);
 
 function spanSnippet(sources, word, snippets) {
     const re = new RegExp(`(^|[^A-Za-z0-9_])${word}\\s*\\{`, 'g');
@@ -176,9 +179,10 @@ function mineSnippets() {
     const fixtures = fixtureTexts();
     const pres = manualPres();
     const blockNames = new Set(Object.keys(blocks));
+    const overlayBlockNames = new Set(overlayBlocks());
     const words = new Set([...Object.keys(overlay.words), ...itemUniverse(), ...blockNames]);
     for (const w of words) {
-        if (blockNames.has(w)) {
+        if (blockNames.has(w) || overlayBlockNames.has(w)) {
             spanSnippet(fixtures, w, snippets);
             if (!snippets[w]) spanSnippet(pres, w, snippets);
         } else {
@@ -318,15 +322,18 @@ export function lookup(term) {
 const pad = (s, n) => s + ' '.repeat(Math.max(1, n - s.length));
 
 export function indexTable() {
-    const names = Object.keys(blocks).sort((a, b) => a.localeCompare(b));
-    const rows = names.map((n) => `${n} (${blocks[n].items.length})`);
+    const names = [...Object.keys(blocks), ...overlayBlocks()].sort((a, b) => a.localeCompare(b));
+    const rows = names.map((n) => `${n} (${blocks[n] ? blocks[n].items.length : 'scene'})`);
     const width = Math.max(...rows.map((r) => r.length)) + 2;
-    return rows.map((r, i) => `${pad(r, width)}${overlay.blocks[names[i]]}`).join('\n');
+    return rows.map((r, i) => {
+        const n = names[i];
+        return `${pad(r, width)}${overlay.blocks[n] || overlay.words[n].text}`;
+    }).join('\n');
 }
 
 export function blockTableMarkdown() {
-    const rows = Object.keys(blocks).sort((a, b) => a.localeCompare(b))
-        .map((n) => `| \`${n}\` | ${blocks[n].items.length} | ${overlay.blocks[n]} |`);
+    const names = [...Object.keys(blocks), ...overlayBlocks()].sort((a, b) => a.localeCompare(b));
+    const rows = names.map((n) => `| \`${n}\` | ${blocks[n] ? blocks[n].items.length : '—'} | ${overlay.blocks[n] || overlay.words[n].text} |`);
     return ['| block | items | one-liner |', '|---|---|---|', ...rows].join('\n');
 }
 

@@ -174,17 +174,9 @@
    "text": "The keyword collect off causes the object to ignore photons.",
    "doc": "r3_4.html#r3_4_3_4_4"
   },
-  "color": {
-   "text": "Under most circumstances the keyword color is optional and may be omitted.",
-   "doc": "r3_3.html#r3_3_1_7"
-  },
   "color_map": {
    "text": "The colors are defined in a pigment modifier called a color_map that describes how the pattern blends from one color to the next.",
    "doc": "r3_6.html#r3_6_1_1_2"
-  },
-  "colour": {
-   "text": "Under most circumstances the keyword color is optional and may be omitted.",
-   "doc": "r3_3.html#r3_3_1_7"
   },
   "colour_map": {
    "text": "The colors are defined in a pigment modifier called a color_map that describes how the pattern blends from one color to the next.",
@@ -1125,8 +1117,8 @@
    "from": "doc/html/r3_4.html"
   },
   "array": {
-   "rank": 14,
-   "code": "array[4][10] {",
+   "rank": 1021,
+   "code": "Any valid array entry",
    "from": "doc/html/r3_3.html"
   },
   "ascii": {
@@ -1179,6 +1171,10 @@
    "code": "far { back_filter_tags { \"outside\" } }",
    "from": "doc/html/r3_10.html"
   },
+  "background": {
+   "code": "background {rgb 1}",
+   "from": "doc/html/r3_3.html:16"
+  },
   "bezier_spline": {
    "rank": 1042,
    "code": "bezier_spline | linear_sweep | conic_sweep",
@@ -1211,6 +1207,11 @@
    "rank": 63,
    "code": "interior { media { scattering { 1, 0.2 } density { bozo } } } }",
    "from": "doc/html/r3_7.html"
+  },
+  "break": {
+   "rank": 1016,
+   "code": "break; continue;",
+   "from": "doc/html/r3_13.html"
   },
   "brick": {
    "rank": 20,
@@ -1427,6 +1428,10 @@
    "code": "debug(\"flushed\\n\");",
    "from": "tests/pov4/review.pov4:11"
   },
+  "default": {
+   "code": "default { finish { ambient 0.1 } }",
+   "from": "doc/html/r3_13.html:3"
+  },
   "defined": {
    "rank": 72,
    "code": "if (!defined(Gone) && !defined(Missing)) { sphere { <-3, 1, 0>, 0.25 } }",
@@ -1498,6 +1503,11 @@
    "rank": 1018,
    "code": "eccentricity : 0.0",
    "from": "doc/html/r3_7.html"
+  },
+  "else": {
+   "rank": 33,
+   "code": "scale if (Big) { 1.5 } else { 1 }",
+   "from": "doc/html/r3_13.html"
   },
   "emission": {
    "rank": 31,
@@ -1584,6 +1594,11 @@
    "code": "falloff : 70",
    "from": "doc/html/r3_4.html"
   },
+  "false": {
+   "rank": 32,
+   "code": "fn Fence(N, Gap, Lean = false) {",
+   "from": "doc/html/r3_13.html"
+  },
   "far": {
    "rank": 38,
    "code": "far { pigment { rgb <0.45, 0.7, 1> } }",
@@ -1617,6 +1632,11 @@
    "rank": 1020,
    "code": "focal_point: <0,0,0>",
    "from": "doc/html/r3_4.html"
+  },
+  "for": {
+   "rank": 18,
+   "code": "for (I = 0 to 4) {",
+   "from": "tests/pov4/mixed.pov4:5"
   },
   "form": {
    "rank": 69,
@@ -1721,6 +1741,11 @@
    "code": "quaternion | hypercomplex",
    "from": "doc/html/r3_5.html"
   },
+  "if": {
+   "rank": 26,
+   "code": "if (V < Lo) { return Lo; }",
+   "from": "tests/pov4/components.pov4:8"
+  },
   "iff": {
    "rank": 1065,
    "code": "exr | gif | hdr | iff | jpeg | pgm | png | ppm | sys | tga | tiff",
@@ -1744,6 +1769,11 @@
    "rank": 32,
    "code": "...[for (P in Path) { P, 0.15 }]",
    "from": "tests/pov4/points.pov4:13"
+  },
+  "include": {
+   "rank": 83,
+   "code": "union { include \"parts.inc\"; pigment { rgb <1, 0.6, 0.2> } translate <-2.5, 0, 0> }",
+   "from": "tests/pov4/interop.pov4:4"
   },
   "inside_vector": {
    "rank": 1023,
@@ -1832,12 +1862,12 @@
    "from": "doc/html/r3_6.html"
   },
   "lathe": {
-   "code": "lathe { [SPLINE_TYPE] Number_Of_Points, <Point_1> <Point_2>... <Point_n> [LATHE_MODIFIER...] }",
-   "from": "doc/html/r3_5.html:3"
+   "code": "lathe { linear_spline 5, <2, 0>, <3, 0>, <3, 5>, <2, 5>, <2, 0> pigment {Red} }",
+   "from": "doc/html/r3_5.html:2"
   },
   "lemon": {
-   "code": "lemon { <Base_Point>, Base_Radius, <Cap_Point>, Cap_Radius, Inner_Radius [LEMON_MODIFIERS] }",
-   "from": "doc/html/r3_5.html:2"
+   "code": "lemon { <0,-20,0>, 0, <0,20,0>, 0, 30 texture { pigment { color srgb <1,0,0> }} translate x*-12 sturm }",
+   "from": "doc/html/r3_5.html:27"
   },
   "len": {
    "rank": 52,
@@ -1923,8 +1953,8 @@
    "from": "doc/html/r3_6.html"
   },
   "material": {
-   "code": "material { [MATERIAL_IDENTIFIER][MATERIAL_ITEMS...] }",
-   "from": "doc/html/r3_5.html:17"
+   "code": "material{ texture{ Glass_T } interior{ Glass_I }}",
+   "from": "doc/html/r3_5.html:2"
   },
   "material_map": {
    "rank": 14,
@@ -1990,8 +2020,8 @@
    "from": "doc/html/r3_5.html:3"
   },
   "mesh": {
-   "code": "mesh { MESH_OBJECT_IDENTIFIER [TRANSFORMATIONS] }",
-   "from": "doc/html/r3_4.html:7"
+   "code": "mesh { MESH_TRIANGLE... [MESH_MODIFIER...] }",
+   "from": "doc/html/r3_5.html:3"
   },
   "mesh2": {
    "code": "mesh2 { povm \"trunk.povm\" pigment { rgb <0.4, 0.3, 0.2> } }",
@@ -2299,11 +2329,6 @@
    "code": "precompute 10 x,y,z",
    "from": "doc/html/r3_5.html"
   },
-  "premultiplied": {
-   "rank": 1059,
-   "code": "[BITMAP_TYPE] \"filename\" [gamma GAMMA] [premultiplied BOOL]",
-   "from": "doc/html/r3_6.html"
-  },
   "pretrace_end": {
    "rank": 1019,
    "code": "pretrace_end : 0.04",
@@ -2432,6 +2457,26 @@
    "code": "if (V < Lo) { return Lo; }",
    "from": "tests/pov4/components.pov4:8"
   },
+  "rgb": {
+   "rank": 26,
+   "code": "pigment { rgb Clamp(1.5) }",
+   "from": "tests/pov4/components.pov4:20"
+  },
+  "rgbf": {
+   "rank": 18,
+   "code": "pigment { rgbf 1 }",
+   "from": "doc/html/r3_7.html"
+  },
+  "rgbft": {
+   "rank": 1025,
+   "code": "[ rgbft ] <5_Term_Vector>",
+   "from": "doc/html/r3_3.html"
+  },
+  "rgbt": {
+   "rank": 30,
+   "code": "box { -1, 1 pigment { rgbt 1 }",
+   "from": "tests/pov4/interop.pov4:9"
+  },
   "right": {
    "rank": 67,
    "code": "camera { location <0, 1.6, -6> look_at <0, 0.8, 0> right x * 1.33 }",
@@ -2542,10 +2587,6 @@
    "code": "smooth : off",
    "from": "doc/html/r3_5.html"
   },
-  "smooth_triangle": {
-   "code": "smooth_triangle { <Corner_1>, <Normal_1>, <Corner_2>, <Normal_2>, <Corner_3>, <Normal_3> [MESH_TEXTURE] }",
-   "from": "doc/html/r3_6.html:9"
-  },
   "solid": {
    "rank": 1013,
    "code": "crackle solid",
@@ -2607,6 +2648,11 @@
    "rank": 1052,
    "code": "square [COLOR_1 [, COLOR_2 [, COLOR_3 [, COLOR_4]]]]",
    "from": "doc/html/r3_6.html"
+  },
+  "srgb": {
+   "rank": 41,
+   "code": "texture { pigment { color srgb <1,0,0> }}",
+   "from": "doc/html/r3_5.html"
   },
   "step": {
    "rank": 53,
@@ -2778,6 +2824,11 @@
    "code": "triangular [COLOR_1 [, COLOR_2 [, COLOR_3 [, COLOR_4 [, COLOR_5 [, COLOR_6]]]]]]",
    "from": "doc/html/r3_6.html"
   },
+  "true": {
+   "rank": 1015,
+   "code": "let Hot = true;",
+   "from": "tests/pov4/basics.pov4:3"
+  },
   "ttf": {
    "rank": 54,
    "code": "text { ttf DisplayFont \"Hello\", 2,0 translate y*1.50 }",
@@ -2881,6 +2932,11 @@
    "rank": 1017,
    "code": "water_level : 0.0",
    "from": "doc/html/r3_5.html"
+  },
+  "while": {
+   "rank": 15,
+   "code": "while (I < 5) {",
+   "from": "tests/pov4/control.pov4:4"
   },
   "wood": {
    "rank": 46,

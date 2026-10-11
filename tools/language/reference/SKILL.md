@@ -41,6 +41,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 <!-- generated:begin block table -->
 | block | items | one-liner |
 |---|---|---|
+| `background` | — | The colour or pigment shown behind every object. |
 | `bicubic_patch` | 43 | Bezier patch surface from a 4x4 control-point grid. |
 | `blob` | 42 | Metaball surface from sphere and cylinder strength components. |
 | `box` | 37 | Box from two opposite corner vectors. |
@@ -50,10 +51,12 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `cone` | 38 | Cone or frustum from two end points and radii; open removes the caps. |
 | `cubic` | 37 | Third-degree polynomial shape; a special case of poly. |
 | `cylinder` | 38 | Cylinder from two end points and one radius; open removes the caps. |
+| `default` | — | Item values every later object begins from: default { texture { ... } }. |
 | `density` | 105 | Pattern block scaling media density across its container. |
 | `difference` | 79 | CSG: first child minus every following child. |
 | `disc` | 37 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
 | `finish` | 32 | How the surface reflects: highlights, reflection, ambient, brilliance. |
+| `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
 | `global_settings` | 48 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
 | `height_field` | 63 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
@@ -84,6 +87,8 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `prism` | 44 | Solid swept from closed 2-D curves in the x-z plane along y. |
 | `quadric` | 37 | Second-degree polynomial surface from ten coefficients. |
 | `quartic` | 37 | Fourth-degree polynomial surface from thirty-five coefficients. |
+| `rainbow` | — | An arc of colour bands across the sky: direction, angle, width, distance. |
+| `sky_sphere` | — | A pigment wrapped on a huge sphere around the scene to suggest a sky. |
 | `smooth_triangle` | 38 | Triangle carrying per-vertex normals for smooth shading. |
 | `sor` | 38 | Surface of revolution: a curve of points spun about the y axis. |
 | `sphere` | 37 | Sphere from a center and a radius. |
