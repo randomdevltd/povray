@@ -14,15 +14,18 @@ const DETAIL_MAX = 120;
 
 function loadParser(dir) {
     if (process.env.POVRAY_LSP_NO_NATIVE) return null;
-    try {
-        const root = join(repo, 'libraries', dir);
-        const req = createRequire(join(root, 'package.json'));
-        const parser = new (req('tree-sitter'))();
-        parser.setLanguage(req(join(root)));
-        return parser;
-    } catch {
-        return null;
+    // Repository layout first; a packaged extension falls back to its vendored copy.
+    for (const root of [join(repo, 'libraries', dir), join(here, 'vendor', dir)]) {
+        try {
+            const req = createRequire(join(root, 'package.json'));
+            const parser = new (req('tree-sitter'))();
+            parser.setLanguage(req(join(root)));
+            return parser;
+        } catch {
+            continue;
+        }
     }
+    return null;
 }
 
 export const grammars = {

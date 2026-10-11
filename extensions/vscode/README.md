@@ -52,6 +52,11 @@ The grammar and block tables are generated; never edit them directly:
     node --test extensions/vscode/test/pure.test.mjs extensions/vscode/test/generate.test.mjs \
         extensions/vscode/test/server.test.mjs extensions/vscode/test/extension.test.mjs
 
+Vendor the grammars' native bindings before packaging, so the bundled server keeps its
+live parse diagnostics outside the repository (without them it degrades to the scanner):
+
+    node extensions/vscode/scripts/vendor.mjs
+
 Package a `.vsix` from the repository root:
 
     cd extensions/vscode && npx @vscode/vsce package
