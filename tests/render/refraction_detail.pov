@@ -19,7 +19,7 @@ global_settings {
 }
 camera { orthographic location <0, 0, (Case = 14 ? -2100 : -10)> look_at <0, 0, 0> right x * 4 up y * 3 }
 plane { z, (Case = 14 ? 2001 : 4) pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 translate -2 * x } finish { ambient 0 emission 1 diffuse 0 } }
-light_source { <-1, 4, -3> rgb 1 #if (Case = 12 | Case = 13) parallel point_at <0, 0, 0> #end }
+light_source { <-1, 4, -3> rgb 1 #if (Case = 12 | Case = 13) parallel media_attenuation on point_at <0, 0, 0> #end }
 
 #declare S = function(T) { select(T, 0, select(T - 1, T * T * (3 - 2 * T), 1)) }
 #declare Fade = function(x, y, z) { S((2 - abs(x)) / 0.2) * S((1.5 - abs(y)) / 0.2) * S((1 - abs(z)) / 0.2) }

@@ -128,6 +128,17 @@ same cap_scene cap_machine
 if says "coarsened its preparation" cap_scene; then echo "refraction_detail: the scene cap did not lift the limit" >&2; exit 1; fi
 if says "coarsened its preparation" cap_machine; then echo "refraction_detail: the machine option did not lift the limit" >&2; exit 1; fi
 
+# A per-light optical-depth table beyond the cell limit is coarsened the same way, not dropped; a scene cap
+# of ten million holds its 4.6 million cells without coarsening.
+render optical Declare=Case=13
+says "optical-depth grid at the requested resolution" optical ||
+    { echo "refraction_detail: no coarsening message for an over-limit optical-depth table" >&2; exit 1; }
+says "Set prepared_media_cells to at least" optical ||
+    { echo "refraction_detail: the optical coarsening message names no cap to set" >&2; exit 1; }
+if says "using classic sampling" optical; then echo "refraction_detail: the over-limit optical table fell back" >&2; exit 1; fi
+render optical_cap Declare=Case=13 Declare=Cells=10000000
+if says "coarsened its preparation" optical_cap; then echo "refraction_detail: the scene cap did not lift the optical table's limit" >&2; exit 1; fi
+
 # A march longer than the step budget runs coarsened at a wider resolution rather than falling back.
 render steps Declare=Case=14
 says "runs coarsened at resolution" steps || { echo "refraction_detail: no coarsening message for a long march" >&2; exit 1; }
