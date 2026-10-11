@@ -68,17 +68,21 @@ same threads1 threads4
 render auto_t1 Declare=Case=1 Declare=Detail=0 +WT1
 render auto_t4 Declare=Case=1 Declare=Detail=0 +WT4
 same auto_t1 auto_t4
-# Detail at or below the seam width refracts it faithfully: a 0.2 mm detail renders the same field.
+# Details well below the 2 mm seam width refract it the same; the averaging span D/2 is part of the
+# detail, so a detail near the seam width smooths its edges where a finer one does not.
 render fine Declare=Case=1 Declare=Detail=0.2
-region set fine 0 95 0 71
+render finer Declare=Case=1 Declare=Detail=0.05
+region fine finer 0 95 0 71
 render fine_t4 Declare=Case=1 Declare=Detail=0.2 +WT4
 same fine fine_t4
 
-# A linear ramp has a scale-free gradient: the setting leaves the deflection where it was.
+# A linear ramp has a scale-free gradient, so details well below its variation scale leave the
+# deflection where it was; auto still notes what it derived.
 render ramp Declare=Case=5 Declare=Detail=0
 says "renders with refraction_detail auto" ramp || { echo "refraction_detail: no auto note for a large medium" >&2; exit 1; }
 render ramp_set Declare=Case=6
-region ramp ramp_set 0 95 0 71
+render ramp_fine Declare=Case=6 Declare=Detail=0.2
+region ramp_set ramp_fine 0 95 0 71
 
 # 0.3 mm sine structure under a 1 mm detail refracts as its smooth mean, not as noise; auto's 12.5 mm detail
 # averages it the same way, which is the point of a default.
