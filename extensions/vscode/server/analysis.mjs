@@ -92,6 +92,60 @@ function treeSymbols(node, language, text, decls) {
     return symbols;
 }
 
+const NEAR_MISS_WINDOW = 120;
+
+const knownWords = (() => {
+    const words = new Set(('let fn global return null in to step true false function if else '
+        + 'for while break continue include').split(' '));
+    const req = createRequire(import.meta.url);
+    const blocks = req(join(here, '..', 'pov4-blocks.json')).blocks;
+    for (const [name, block] of Object.entries(blocks)) {
+        words.add(name);
+        for (const item of block.items) words.add(item);
+        for (const list of Object.values(block.nested || {}))
+            for (const item of list) words.add(item);
+    }
+    return words;
+})();
+
+function editDistance(a, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; ++i) {
+        const row = [i];
+        for (let j = 1; j <= b.length; ++j)
+            row[j] = Math.min(prev[j] + 1, row[j - 1] + 1,
+                prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = row;
+    }
+    return prev[b.length];
+}
+
+// A mistyped keyword parses as an identifier; the nearest near-miss word before the error names the real mistake.
+function nearMiss(text, endIndex) {
+    const windowStart = Math.max(0, endIndex - NEAR_MISS_WINDOW);
+    const ids = [...text.slice(windowStart, endIndex).matchAll(/[A-Za-z_]\w*/g)];
+    const starts = lineStarts(text);
+    for (let i = ids.length - 1; i >= 0; --i) {
+        const id = ids[i][0];
+        const lower = id.toLowerCase();
+        if (knownWords.has(lower)) continue;
+        let best = null;
+        let bestDistance = Infinity;
+        for (const word of knownWords) {
+            const distance = editDistance(lower, word);
+            if ((distance <= ((word.length < 6) ? 1 : 2)) && (distance < bestDistance)) {
+                best = word;
+                bestDistance = distance;
+            }
+        }
+        if (!best) continue;
+        const start = offsetToPosition(starts, windowStart + ids[i].index);
+        return { range: { start, end: { line: start.line, character: start.character + id.length } },
+            message: `Unknown name '${id}'; did you mean '${best}'?` };
+    }
+    return null;
+}
+
 function firstError(root, text) {
     let found = null;
     const visit = (node) => {
@@ -104,6 +158,8 @@ function firstError(root, text) {
     };
     visit(root);
     if (!found) return null;
+    const miss = nearMiss(text, found.startIndex);
+    if (miss) return miss;
     let start = pos(found.startPosition);
     let end = pos(found.endPosition);
     if ((start.line === end.line) && (start.character === end.character)) {

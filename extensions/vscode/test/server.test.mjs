@@ -277,6 +277,58 @@ test('live diagnostics report the first parse error and clear when fixed', async
     });
 });
 
+async function nativeGrammarsPresent() {
+    const client = new Client();
+    const init = await client.initialize();
+    const has = (name) => init.serverInfo.grammars.includes(name);
+    const ok = has('pov4') && has('classic');
+    client.child.kill();
+    return ok;
+}
+
+test('diagnostics blame a mistyped keyword at the typo, not the recovery point', async (t) => {
+    if (!(await nativeGrammarsPresent())) return t.skip('native grammar bindings not available');
+    await withServer(async (client) => {
+        const uri = 'file:///typo.pov4';
+        const text = [
+            'union {',
+            'sphe re { <0,0,0>, 2 scale 2};',
+            'sphere { <0,0,0>, 2 scale 2};',
+            '}',
+        ].join('\n') + '\n';
+        client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'pov4',
+            version: 1, text } });
+        const found = await client.diagnostics(uri);
+        assert.equal(found.length, 1);
+        assert.match(found[0].message, /did you mean 'sphere'\?/);
+        assert.deepEqual(found[0].range,
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } });
+    });
+});
+
+test('diagnostics keep the generic message when no word is a near miss', async (t) => {
+    if (!(await nativeGrammarsPresent())) return t.skip('native grammar bindings not available');
+    await withServer(async (client) => {
+        const uri = 'file:///nocomma.pov4';
+        const text = 'sphere { <0, 0, 0>, 1 };\ncamera { location\n';
+        client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'pov4',
+            version: 1, text } });
+        const found = await client.diagnostics(uri);
+        assert.equal(found.length, 1);
+        assert.match(found[0].message, /^Syntax error/);
+    });
+});
+
+test('diagnostics stay empty for a clean scene', async () => {
+    await withServer(async (client) => {
+        const uri = 'file:///clean.pov4';
+        client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'pov4',
+            version: 1, text: POV4 } });
+        const found = await client.diagnostics(uri);
+        assert.equal(found.length, 0);
+    });
+});
+
 test('without native grammars the server still serves completion and outline', async () => {
     await withServer(async (client, init) => {
         assert.deepEqual(init.serverInfo.grammars, []);
