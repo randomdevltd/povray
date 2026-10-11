@@ -3,7 +3,7 @@
 set -e
 POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
-NAMES=${*:-"basics components points control mixed loop layered review interop types"}
+NAMES=${*:-"basics components points control mixed loop layered review interop types stills"}
 render() {
     "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"

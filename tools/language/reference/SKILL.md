@@ -106,6 +106,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 - Reserved words are positional: any word still works as a dictionary key (`{ step: 1 }`) or as a member (`D.step`).
 - Objects and blocks always close with braces; statement bodies always take braces (no `#end`).
 - No scene-state inspection at build time: built-ins that need the scene (`trace`, `inside`, `min_extent`, `str`) are handed to the classic parser; the program cannot query the scene while it runs.
+- A classic twin of a `.pov4` scene is `#version 4.0;` classic syntax — same semantics, two spellings. A `#version 3.7` twin does not match: 4.0 changed defaults (gamma among them).
 
 ## Canonical examples
 

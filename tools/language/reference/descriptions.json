@@ -1137,9 +1137,9 @@
    "from": "doc/html/r3_3.html"
   },
   "assumed_gamma": {
-   "rank": 35,
-   "code": "global_settings { assumed_gamma 1 }",
-   "from": "doc/html/r3_9.html"
+   "rank": 37,
+   "code": "global_settings { assumed_gamma 1.0 }",
+   "from": "tests/pov4/stills.pov4:3"
   },
   "atan": {
    "rank": 1047,
@@ -1248,8 +1248,8 @@
    "from": "doc/html/r3_3.html"
   },
   "camera": {
-   "code": "camera { location <0, 1.3, -7.6> look_at <0, 0.75, -11.5> right x * 4 / 3 angle 55 }",
-   "from": "doc/html/r3_10.html:3"
+   "code": "camera { location <0, 1.6, -4.5> look_at <0, 0.9, 0> }",
+   "from": "tests/pov4/stills.pov4:4"
   },
   "caustics": {
    "rank": 31,
@@ -1267,9 +1267,9 @@
    "from": "doc/html/r3_4.html"
   },
   "checker": {
-   "rank": 22,
-   "code": "normal { checker 0.5 }",
-   "from": "doc/html/r3_6.html"
+   "rank": 72,
+   "code": "pigment { checker color rgb <0.8, 0.8, 0.8> color rgb <0.25, 0.3, 0.4> }",
+   "from": "tests/pov4/stills.pov4:7"
   },
   "chr": {
    "rank": 1055,
@@ -1292,9 +1292,9 @@
    "from": "doc/html/r3_4.html"
   },
   "color": {
-   "rank": 49,
-   "code": "let Ball = sphere { 0, 1 pigment { color Red } };",
-   "from": "tests/pov4/basics.pov4:5"
+   "rank": 22,
+   "code": "pigment { color Tint }",
+   "from": "tests/pov4/stills.pov4:13"
   },
   "color_map": {
    "rank": 10,
@@ -1875,9 +1875,9 @@
    "from": "tests/pov4/points.pov4:5"
   },
   "let": {
-   "rank": 33,
-   "code": "let D = { ...Sizes, tiny: 0.05 };",
-   "from": "tests/pov4/control.pov4:13"
+   "rank": 25,
+   "code": "let Floor = plane { y, -1",
+   "from": "tests/pov4/stills.pov4:6"
   },
   "light_group": {
    "code": "light_group { LIGHT_GROUP LIGHT | LIGHT_GROUP OBJECT | LIGHT_GROUP [LIGHT_GROUP MODIFIER] }",
@@ -1908,14 +1908,14 @@
    "from": "doc/html/r3_4.html"
   },
   "location": {
-   "rank": 10,
-   "code": "location {",
-   "from": "doc/html/r3_4.html"
+   "rank": 54,
+   "code": "camera { location <0, 1.6, -4.5> look_at <0, 0.9, 0> }",
+   "from": "tests/pov4/stills.pov4:4"
   },
   "look_at": {
-   "rank": 38,
-   "code": "camera { location <0,2,-2> look_at 0 }",
-   "from": "doc/html/r3_3.html"
+   "rank": 54,
+   "code": "camera { location <0, 1.6, -4.5> look_at <0, 0.9, 0> }",
+   "from": "tests/pov4/stills.pov4:4"
   },
   "looks_like": {
    "rank": 23,
@@ -2226,14 +2226,14 @@
    "from": "doc/html/r3_9.html"
   },
   "phong": {
-   "rank": 18,
-   "code": "finish {phong 1.0}",
-   "from": "doc/html/r3_6.html"
+   "rank": 20,
+   "code": "finish { phong 0.2 }",
+   "from": "tests/pov4/stills.pov4:8"
   },
   "phong_size": {
-   "rank": 49,
-   "code": "finish { phong albedo 0.9 phong_size 60 fresnel }",
-   "from": "doc/html/r3_6.html"
+   "rank": 32,
+   "code": "finish { phong P phong_size 40 }",
+   "from": "tests/pov4/stills.pov4:14"
   },
   "photon_only": {
    "rank": 1017,
@@ -2265,8 +2265,8 @@
    "from": "doc/html/r3_6.html"
   },
   "plane": {
-   "code": "plane { y, 0 pigment { checker rgb 1, rgb 0.4 } }",
-   "from": "doc/html/r3_13.html:5"
+   "code": "plane { y, -1 pigment { checker color rgb <0.8, 0.8, 0.8> color rgb <0.25, 0.3, 0.4> } finish { phong 0.2 } }",
+   "from": "tests/pov4/stills.pov4:6"
   },
   "png": {
    "rank": 26,
@@ -2949,9 +2949,9 @@
    "from": "tests/pov4/components.pov4:14"
   },
   "y": {
-   "rank": 27,
-   "code": "fn Perp(V) { vcross(V, y) }",
-   "from": "tests/pov4/components.pov4:6"
+   "rank": 25,
+   "code": "let Floor = plane { y, -1",
+   "from": "tests/pov4/stills.pov4:6"
   },
   "z": {
    "rank": 43,
