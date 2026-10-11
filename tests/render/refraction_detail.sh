@@ -122,8 +122,9 @@ sed "s/#declare Res = 0.028;/#declare Res = $fitted;/" "$SRCDIR/tests/render/ref
 render_file fitted_explicit "$WORK/refraction_detail_fitted.pov" Declare=Case=12
 same overcap fitted_explicit
 # A higher limit, from the scene or from the command line, keeps the requested grid: the larger applies.
-render cap_scene Declare=Case=12 Declare=Cells=2000000
-render cap_machine Declare=Case=12 Prepared_Media_Cells=2000000
+# Ten million covers the density grid and the parallel light's optical-depth table together.
+render cap_scene Declare=Case=12 Declare=Cells=10000000
+render cap_machine Declare=Case=12 Prepared_Media_Cells=10000000
 same cap_scene cap_machine
 if says "coarsened its preparation" cap_scene; then echo "refraction_detail: the scene cap did not lift the limit" >&2; exit 1; fi
 if says "coarsened its preparation" cap_machine; then echo "refraction_detail: the machine option did not lift the limit" >&2; exit 1; fi
