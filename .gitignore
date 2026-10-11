@@ -267,3 +267,4 @@ $RECYCLE.BIN/
 /artifact*
 /tools/bench/pcount
 /tests/prepared-sets/
+*.vsix
