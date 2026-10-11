@@ -90,15 +90,26 @@ static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reas
     Vector3d low, high;
     if (container)
         Make_min_max_from_BBox(low, high, container->BBox);
+    const char *lead, *tail;
+    if (fieldFailure)
+    {
+        lead = "Media method 4 is using classic sampling";
+        tail = "This can be much slower. This warning is reported once for this prepared field.";
+    }
+    else if (reason == kFastCoarse)
+    {
+        lead = "Media method 4 coarsened its preparation";
+        tail = "Further warnings for this reason are suppressed.";
+    }
+    else
+    {
+        lead = "Media method 4 is using classic sampling";
+        tail = "This can be much slower. Further warnings for this reason are suppressed.";
+    }
     td->mediaMessages->Warning(kWarningGeneral,
-        reason == kFastCoarse
-            ? "Media method 4 coarsened its preparation: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. "
-              "Further warnings for this reason are suppressed."
-            : "Media method 4 is using classic sampling: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. "
-              "This can be much slower. %s",
-        detail, media.FastResolution, low[X], low[Y], low[Z], high[X], high[Y], high[Z],
-        container ? "" : " (unavailable)",
-        fieldFailure ? "This warning is reported once for this prepared field." : "Further warnings for this reason are suppressed.");
+        "%s: %s Resolution %.6g; container bounds <%.6g,%.6g,%.6g> to <%.6g,%.6g,%.6g>%s. %s",
+        lead, detail, media.FastResolution, low[X], low[Y], low[Z], high[X], high[Y], high[Z],
+        container ? "" : " (unavailable)", tail);
 }
 
 class Media::FastCache final
