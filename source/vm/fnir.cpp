@@ -655,7 +655,6 @@ bool RemoveUnreachable(vector<CfgBlock>& blocks)
 /// branch from one other block is appended to that block.
 bool Straighten(vector<CfgBlock>& blocks)
 {
-    bool changed = false;
     const unsigned int cnt = static_cast<unsigned int>(blocks.size());
     auto through = [&](unsigned int s)
     {
@@ -679,7 +678,7 @@ bool Straighten(vector<CfgBlock>& blocks)
                 t = MakeOp(FnkBr, 0, 0, 0, 0, t.k);
         }
     }
-    changed = RemoveUnreachable(blocks);
+    bool changed = RemoveUnreachable(blocks);
     vector<unsigned int> preds = Predecessors(blocks);
     for (unsigned int p = 0; p < cnt; ++p)
     {
@@ -697,8 +696,8 @@ bool Straighten(vector<CfgBlock>& blocks)
     return changed;
 }
 
-/// Within a block: a load of a slot whose value a register already holds becomes a copy, a
-/// store of the value a slot already holds goes, and reads of a copy read its source.
+/// Within a block: loads of a slot a register holds become copies, stores of the value a slot holds
+/// go, reads of a copy read its source, and branches and selects on a negated mask swap their arms.
 bool Forward(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntry>& functions)
 {
     struct Alias { unsigned int src, srcVer, ver, stamp; };
@@ -706,6 +705,7 @@ bool Forward(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntr
     vector<unsigned int> ver(d.regCnt, 0);
     vector<unsigned int> slotVer(d.slotCnt, 0);
     vector<Alias> alias(d.regCnt, Alias { 0, 0, 0, 0 });
+    vector<Alias> negation(d.regCnt, Alias { 0, 0, 0, 0 });
     vector<Known> known(d.slotCnt, Known { 0, 0, 0, 0 });
     unsigned int stamp = 0;
     bool changed = false;
@@ -715,11 +715,12 @@ bool Forward(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntr
             continue;
         const unsigned int blockStamp = ++stamp;
         unsigned int clearStamp = blockStamp;
-        auto root = [&](unsigned int r)
+        auto current = [&](const vector<Alias>& v, unsigned int r)
         {
-            const Alias& x = alias[r];
-            return ((x.stamp > blockStamp) && (ver[r] == x.ver) && (ver[x.src] == x.srcVer)) ? x.src : r;
+            const Alias& x = v[r];
+            return (x.stamp > blockStamp) && (ver[r] == x.ver) && (ver[x.src] == x.srcVer);
         };
+        auto root = [&](unsigned int r) { return current(alias, r) ? alias[r].src : r; };
         auto holder = [&](unsigned int s) -> int
         {
             const Known& x = known[s];
@@ -739,7 +740,19 @@ bool Forward(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntr
                 if (roles & RoleA) op.a = std::uint16_t(root(op.a));
                 if (roles & RoleB) op.b = std::uint16_t(root(op.b));
                 if (roles & RoleC) op.c = std::uint16_t(root(op.c));
-                changed = changed || (op.a != was.a) || (op.b != was.b) || (op.c != was.c);
+                if (((op.code == FnkBrCond) || (op.code == FnkSelect)) && current(negation, op.a))
+                {
+                    op.a = std::uint16_t(negation[op.a].src);
+                    if (op.code == FnkBrCond)
+                    {
+                        const unsigned int taken = op.k;
+                        op.k = op.b;
+                        op.b = std::uint16_t(taken);
+                    }
+                    else
+                        std::swap(op.b, op.c);
+                }
+                changed = changed || (op.a != was.a) || (op.b != was.b) || (op.c != was.c) || (op.k != was.k);
             }
             if (op.code == FnkLocalGet)
             {
@@ -767,6 +780,8 @@ bool Forward(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntr
             {
                 if ((op.code == FnkCopy) && (op.a != op.dst))
                     alias[op.dst] = Alias { op.a, ver[op.a], ver[op.dst], ++stamp };
+                else if ((op.code == FnkMaskNot) && (op.a != op.dst))
+                    negation[op.dst] = Alias { op.a, ver[op.a], ver[op.dst], ++stamp };
                 else if (op.code == FnkLocalGet)
                     known[op.k] = Known { op.dst, ver[op.dst], slotVer[op.k], ++stamp };
             }
@@ -947,6 +962,175 @@ bool Retarget(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEnt
         }
         Compact(b.body, keep);
     }
+    return changed;
+}
+
+const unsigned int kSpeculateOps = 8;
+
+/// Ops an arm may run unconditionally: cheap, no library call, no effect beyond its registers.
+bool IsSpeculable(unsigned int code)
+{
+    switch (code)
+    {
+        case FnkConst: case FnkCopy: case FnkAdd: case FnkSub: case FnkMul: case FnkDiv: case FnkNeg: case FnkAbs:
+        case FnkCmpGt: case FnkCmpEq: case FnkMaskOr: case FnkMaskNot: case FnkFlag: case FnkSelect:
+        case FnkAddK: case FnkSubK: case FnkMulK: case FnkDivK: case FnkCmpGtKA: case FnkCmpEqKA:
+        case FnkLocalGet: case FnkLocalSet:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// One pass turning branch diamonds and triangles with short arms into straight code: both arms
+/// run, and each slot an arm stores is set by a select on the branch mask, as the branch would.
+bool SpeculateRound(vector<CfgBlock>& blocks, FnDef& d, const vector<FunctionEntry>& functions)
+{
+    const int kNone = -1, kSeveral = -2;
+    vector<unsigned int> preds;
+    vector<int> defIn, readIn;
+    auto survey = [&]()
+    {
+        preds = Predecessors(blocks);
+        defIn.assign(d.regCnt, kNone);
+        readIn.assign(d.regCnt, kNone);
+        auto note = [&](vector<int>& v, unsigned int r, int p) { v[r] = (v[r] == kNone || v[r] == p) ? p : kSeveral; };
+        for (unsigned int p = 0; p < blocks.size(); ++p)
+        {
+            if (!blocks[p].live)
+                continue;
+            for (const FnOp& op : blocks[p].body)
+            {
+                ForEachRead(op, functions, [&](unsigned int r) { note(readIn, r, int(p)); });
+                ForEachWrite(op, functions, [&](unsigned int r) { note(defIn, r, int(p)); });
+            }
+            ForEachRead(blocks[p].term, functions, [&](unsigned int r) { note(readIn, r, int(p)); });
+        }
+    };
+    // an arm is entered only from the branch, leads straight to the join and keeps its registers to itself
+    auto isArm = [&](unsigned int x, unsigned int branch, unsigned int join)
+    {
+        const CfgBlock& a = blocks[x];
+        if ((x == 0) || (x == branch) || (x == join) || (preds[x] != 1) || (a.term.code != FnkBr) || (a.term.k != join))
+            return false;
+        unsigned int ops = 0;
+        vector<unsigned int> stored;
+        for (const FnOp& op : a.body)
+        {
+            if (!IsSpeculable(op.code))
+                return false;
+            if (op.code == FnkLocalSet)
+            {
+                stored.push_back(op.k);
+                continue;
+            }
+            if ((op.code == FnkLocalGet) && (std::find(stored.begin(), stored.end(), op.k) != stored.end()))
+                return false;
+            if ((defIn[op.dst] != int(x)) || ((readIn[op.dst] != kNone) && (readIn[op.dst] != int(x))))
+                return false;
+            ++ops;
+        }
+        return ops <= kSpeculateOps;
+    };
+
+    survey();
+    bool changed = false;
+    for (unsigned int p = 0; p < blocks.size(); ++p)
+    {
+        CfgBlock& b = blocks[p];
+        if (!b.live || (b.term.code != FnkBrCond))
+            continue;
+        const unsigned int t = b.term.k, f = b.term.b;
+        int armT = -1, armF = -1;
+        unsigned int join = 0;
+        if (isArm(t, p, f))
+        {
+            armT = int(t);
+            join = f;
+        }
+        else if (isArm(f, p, t))
+        {
+            armF = int(f);
+            join = t;
+        }
+        else if ((blocks[t].term.code == FnkBr) && (blocks[f].term.code == FnkBr) && (blocks[t].term.k == blocks[f].term.k) &&
+                 isArm(t, p, blocks[t].term.k) && isArm(f, p, blocks[t].term.k))
+        {
+            armT = int(t);
+            armF = int(f);
+            join = blocks[t].term.k;
+        }
+        else
+            continue;
+        if (join == p)
+            continue;
+
+        // the value each arm leaves in each slot it stores, in first-store order
+        vector<unsigned int> slots;
+        vector<int> valueT, valueF;
+        vector<FnOp> body(b.body);
+        for (int side = 0; side < 2; ++side)
+        {
+            const int arm = side ? armF : armT;
+            if (arm < 0)
+                continue;
+            for (const FnOp& op : blocks[arm].body)
+            {
+                if (op.code != FnkLocalSet)
+                {
+                    body.push_back(op);
+                    continue;
+                }
+                std::size_t at = std::find(slots.begin(), slots.end(), op.k) - slots.begin();
+                if (at == slots.size())
+                {
+                    slots.push_back(op.k);
+                    valueT.push_back(-1);
+                    valueF.push_back(-1);
+                }
+                (side ? valueF : valueT)[at] = int(op.a);
+            }
+        }
+        if (d.regCnt + 2 * slots.size() > kMaxVReg + 1)
+            continue;
+        for (std::size_t j = 0; j < slots.size(); ++j)
+        {
+            if ((valueT[j] < 0) || (valueF[j] < 0))
+            {
+                (valueT[j] < 0 ? valueT : valueF)[j] = int(d.regCnt);
+                body.push_back(MakeOp(FnkLocalGet, 0, 0, 0, d.regCnt++, slots[j]));
+            }
+            body.push_back(MakeOp(FnkSelect, b.term.a, valueT[j], valueF[j], d.regCnt, 0));
+            body.push_back(MakeOp(FnkLocalSet, d.regCnt++, 0, 0, 0, slots[j]));
+        }
+        b.body = std::move(body);
+        b.term = MakeOp(FnkBr, 0, 0, 0, 0, join);
+        if (armT >= 0)
+            blocks[armT].live = false;
+        if (armF >= 0)
+            blocks[armF].live = false;
+        changed = true;
+        survey();
+    }
+    return changed;
+}
+
+/// Short, pure branch arms become selects (see SpeculateRound), innermost first.
+bool Speculate(FnDef& d, const vector<FunctionEntry>& functions)
+{
+    vector<CfgBlock> blocks = Decode(d);
+    bool changed = false;
+    for (int round = 0; round < 64; ++round)
+    {
+        if (!SpeculateRound(blocks, d, functions))
+            break;
+        changed = true;
+        Straighten(blocks);
+        Forward(blocks, d, functions);
+        RemoveDeadOps(blocks, d, functions);
+    }
+    if (changed)
+        Encode(blocks, d);
     return changed;
 }
 
@@ -1487,6 +1671,13 @@ void FunctionVM::BuildIR(FUNCTION fn)
     Simplify(simplified, functions);
     if (ValidDef(simplified, functions))
         d = std::move(simplified);
+    FnDef speculated = d;
+    if (Speculate(speculated, functions) && ValidDef(speculated, functions))
+    {
+        Simplify(speculated, functions);
+        if (ValidDef(speculated, functions))
+            d = std::move(speculated);
+    }
     entry.ir = std::make_shared<const FnDef>(std::move(d));
 }
 
