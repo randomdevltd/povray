@@ -334,7 +334,7 @@ struct Lowerer final
                     const unsigned int cnt = CalleeParams(op.k);
                     if (!ok)
                         return 0;
-                    Note(spIn + max(cnt, (unsigned int)functions[op.k].fn.return_size));
+                    Note(spIn + cnt + functions[op.k].fn.return_size);
                     break;
                 }
                 case VM_CALLF:
@@ -348,7 +348,7 @@ struct Lowerer final
                     const unsigned int cnt = CalleeParams(callee);
                     if (!ok)
                         return 0;
-                    Note(spIn + op.k + max(cnt, (unsigned int)functions[callee].fn.return_size));
+                    Note(spIn + op.k + cnt + functions[callee].fn.return_size);
                     pc += 2;
                     break;
                 }
@@ -359,6 +359,107 @@ struct Lowerer final
         return spIn;
     }
 };
+
+enum FieldRole
+{
+    RoleA = 1, RoleB = 2, RoleC = 4, RoleDst = 8,
+    RoleKConst = 16, RoleKSlot = 32, RoleKBlock = 64, RoleBBlock = 128, RoleASlot = 256, RoleBSlot = 512
+};
+
+/// What each operand field of an op names; the validator and the inliner both read it.
+unsigned int FieldRoles(unsigned int code)
+{
+    switch (code)
+    {
+        case FnkConst:                                                  return RoleDst | RoleKConst;
+        case FnkCopy: case FnkNeg: case FnkAbs: case FnkMaskNot: case FnkFlag:
+        case FnkSys1: case FnkMath1: case FnkTrap:                      return RoleA | RoleDst;
+        case FnkAdd: case FnkSub: case FnkMul: case FnkDiv: case FnkMod:
+        case FnkCmpGt: case FnkCmpEq: case FnkMaskOr:
+        case FnkSys2: case FnkMath2:                                    return RoleA | RoleB | RoleDst;
+        case FnkSelect:                                                 return RoleA | RoleB | RoleC | RoleDst;
+        case FnkLocalGet:                                               return RoleDst | RoleKSlot;
+        case FnkLocalSet:                                               return RoleA | RoleKSlot;
+        case FnkTrapS:                                                  return RoleASlot;
+        case FnkCall:                                                   return RoleA | RoleDst | RoleBSlot;
+        case FnkBr:                                                     return RoleKBlock;
+        case FnkBrCond:                                                 return RoleA | RoleKBlock | RoleBBlock;
+        case FnkRet:                                                    return RoleA;
+        default:                                                        return 0;
+    }
+}
+
+bool IsTerminator(unsigned int code)
+{
+    return (code == FnkBr) || (code == FnkBrCond) || (code == FnkRet);
+}
+
+/// Every operand in range, every block closed by exactly one terminator; a def failing it never runs.
+bool ValidDef(const FnDef& d, const vector<FunctionEntry>& functions)
+{
+    const std::size_t n = d.ops.size();
+    if ((n == 0) || d.blockStart.empty() || (d.regCnt > kMaxVReg + 1) || (d.slotCnt < kSpillHomes) ||
+        (d.argBase + d.parameterCnt > d.slotCnt - kSpillHomes))
+        return false;
+    vector<unsigned int> starts(d.blockStart);
+    std::sort(starts.begin(), starts.end());
+    if (starts[0] != 0)
+        return false;
+    vector<char> isStart(n + 1, 0);
+    for (std::size_t i = 0; i < starts.size(); ++i)
+    {
+        if ((starts[i] >= n) || ((i > 0) && (starts[i] == starts[i - 1])))
+            return false;
+        isStart[starts[i]] = 1;
+    }
+    isStart[n] = 1;
+    const std::size_t blocks = d.blockStart.size();
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const FnOp& op = d.ops[i];
+        if ((op.code > FnkRet) || (IsTerminator(op.code) != (isStart[i + 1] != 0)))
+            return false;
+        const unsigned int roles = FieldRoles(op.code);
+        if (((roles & RoleA) && (op.a >= d.regCnt)) || ((roles & RoleB) && (op.b >= d.regCnt)) ||
+            ((roles & RoleC) && (op.c >= d.regCnt)) || ((roles & RoleDst) && (op.dst >= d.regCnt)) ||
+            ((roles & RoleKConst) && (op.k >= d.consts.size())) || ((roles & RoleKSlot) && (op.k >= d.slotCnt)) ||
+            ((roles & RoleKBlock) && (op.k >= blocks)) || ((roles & RoleBBlock) && (op.b >= blocks)) ||
+            ((roles & RoleASlot) && (op.a >= d.slotCnt)))
+            return false;
+        switch (op.code)
+        {
+            case FnkSys1: case FnkMath1:
+                if (op.k >= POVFPU_Sys1TableSize)
+                    return false;
+                break;
+            case FnkSys2: case FnkMath2:
+                if (op.k >= POVFPU_Sys2TableSize)
+                    return false;
+                break;
+            case FnkTrap:
+                if ((op.k >= POVFPU_TrapTableSize) || (op.a + POVFPU_TrapTable[op.k].parameter_cnt > d.regCnt) ||
+                    ((op.b | (unsigned int)(op.c) << 16) >= functions.size()))
+                    return false;
+                break;
+            case FnkTrapS:
+                if (op.k >= POVFPU_TrapSTableSize)
+                    return false;
+                break;
+            case FnkCall:
+            {
+                if ((op.k >= functions.size()) || (functions[op.k].ir == nullptr))
+                    return false;
+                const unsigned int cnt = functions[op.k].ir->parameterCnt;
+                if ((cnt > MAX_FUNCTION_PARAMETER_LIST) || (op.a + cnt > d.regCnt) || (op.b + op.c > d.slotCnt))
+                    return false;
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    return true;
+}
 
 std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector<DBL>& vmConsts,
                                            vector<FunctionEntry>& functions, FUNCTION fn)
@@ -454,6 +555,7 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
     L.slotBase = max(L.slotBase, L.maxSlot);
     L.slotVreg.assign(L.slotBase, -1);
     L.def->parameterCnt = L.parameterCnt;
+    L.def->argBase = functions[fn].fn.return_size;
     L.def->slotCnt = L.slotBase + kSpillHomes;
 
     for (unsigned int b = 0; b < starts.size() && L.ok; ++b)
@@ -618,7 +720,7 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
                     const unsigned int first = L.Gather(L.sp, arity);
                     L.Forget(L.sp, arity);
                     const unsigned int dst = L.Def(0);
-                    L.Emit(FnkTrap, first, 0, 0, dst, op.k);
+                    L.Emit(FnkTrap, first, L.self & 0xffffu, L.self >> 16, dst, op.k);
                     break;
                 }
                 case VM_TRAPS:
@@ -644,7 +746,7 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
                         L.Fail();
                         break;
                     }
-                    const unsigned int first = L.Gather(L.sp, cnt);
+                    const unsigned int first = L.Gather(L.sp + retSize, cnt);
                     L.Forget(L.sp, L.slotBase - L.sp);
                     const unsigned int dst = L.Def(0);
                     L.Emit(FnkCall, first, L.sp, retSize, dst, op.k);
@@ -663,7 +765,7 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
                         L.Fail();
                         break;
                     }
-                    const unsigned int first = L.Gather(window, cnt);
+                    const unsigned int first = L.Gather(window + retSize, cnt);
                     L.Forget(window, L.slotBase - window);
                     const unsigned int dst = L.Def(0);
                     L.Emit(FnkCall, first, window, retSize, dst, callee);
@@ -753,74 +855,19 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
     if (!L.ok)
         return nullptr;
 
-    const FnDef& d = *L.def;
-    const unsigned int blocks = static_cast<unsigned int>(d.blockStart.size());
-    for (const FnOp& op : d.ops)
-    {
-        if ((op.code > FnkRet) || (op.dst >= d.regCnt))
-            return nullptr;
-        switch (op.code)
-        {
-            case FnkConst:
-                if (op.k >= d.consts.size())
-                    return nullptr;
-                break;
-            case FnkCopy: case FnkNeg: case FnkAbs: case FnkMaskNot: case FnkFlag: case FnkLocalSet:
-                if (op.a >= d.regCnt)
-                    return nullptr;
-                break;
-            case FnkAdd: case FnkSub: case FnkMul: case FnkDiv: case FnkMod:
-            case FnkCmpGt: case FnkCmpEq: case FnkMaskOr:
-                if ((op.a >= d.regCnt) || (op.b >= d.regCnt))
-                    return nullptr;
-                break;
-            case FnkSelect:
-                if ((op.a >= d.regCnt) || (op.b >= d.regCnt) || (op.c >= d.regCnt))
-                    return nullptr;
-                break;
-            case FnkLocalGet:
-                if (op.k >= d.slotCnt)
-                    return nullptr;
-                break;
-            case FnkSys1: case FnkMath1:
-                if ((op.k >= POVFPU_Sys1TableSize) || (op.a >= d.regCnt))
-                    return nullptr;
-                break;
-            case FnkSys2: case FnkMath2:
-                if ((op.k >= POVFPU_Sys2TableSize) || (op.a >= d.regCnt) || (op.b >= d.regCnt))
-                    return nullptr;
-                break;
-            case FnkTrap:
-                if ((op.k >= POVFPU_TrapTableSize) || (op.a >= d.regCnt) ||
-                    (op.a + POVFPU_TrapTable[op.k].parameter_cnt > d.regCnt))
-                    return nullptr;
-                break;
-            case FnkTrapS:
-                if ((op.k >= POVFPU_TrapSTableSize) || (op.a >= d.slotCnt))
-                    return nullptr;
-                break;
-            case FnkCall:
-                if ((op.k >= functions.size()) || (functions[op.k].ir == nullptr) || (op.a >= d.regCnt) ||
-                    (op.b >= d.slotCnt) || (op.b + op.c > d.slotCnt))
-                    return nullptr;
-                break;
-            case FnkBr:
-                if (op.k >= blocks)
-                    return nullptr;
-                break;
-            case FnkBrCond:
-                if ((op.a >= d.regCnt) || (op.k >= blocks) || (op.b >= blocks))
-                    return nullptr;
-                break;
-            case FnkRet:
-                if (op.a >= d.regCnt)
-                    return nullptr;
-                break;
-            default:
-                return nullptr;
-        }
-    }
+    if (!ValidDef(*L.def, functions))
+        return nullptr;
     return L.def;
+}
+
+}
+
+namespace
+{
+
+FnOp MakeOp(unsigned int code, unsigned int a, unsigned int b, unsigned int c, unsigned int dst, unsigned int k)
+{
+    return FnOp { std::uint16_t(code), std::uint16_t(a), std::uint16_t(b), std::uint16_t(c), std::uint16_t(dst), k };
 }
 
 }
@@ -839,7 +886,8 @@ bool FunctionVM::InlineRound(FnDef& d)
         for (const FnOp& co : c.ops)
             if (co.code == FnkCall || co.code == FnkTrapS)
                 splicable = false;
-        if (!splicable || c.ops.size() > 512 || d.ops.size() + c.ops.size() > 16384)
+        if (!splicable || c.ops.size() > 512 || d.ops.size() + c.ops.size() > 16384 ||
+            d.regCnt + c.regCnt + 1 > kMaxVReg + 1)
             continue;
 
         const unsigned int a0 = d.ops[idx].a;
@@ -849,16 +897,8 @@ bool FunctionVM::InlineRound(FnDef& d)
         const unsigned int slotBase = d.slotCnt;
         const unsigned int regBase = d.regCnt;
         const unsigned int scratch = regBase + c.regCnt;
-        const unsigned int constBase = d.consts.size();
+        const unsigned int constBase = static_cast<unsigned int>(d.consts.size());
         const unsigned int oldBlocks = static_cast<unsigned int>(d.blockStart.size());
-
-        unsigned int bIdx = 0;
-        for (unsigned int i = 0; i < d.blockStart.size(); ++i)
-            if (idx >= d.blockStart[i])
-                bIdx = i;
-        const unsigned int bStart = d.blockStart[bIdx];
-        const unsigned int bEnd = (bIdx + 1 < d.blockStart.size()) ? d.blockStart[bIdx + 1] : static_cast<unsigned int>(d.ops.size());
-
         const unsigned int calleeBlocks = static_cast<unsigned int>(c.blockStart.size());
         const unsigned int entryBlock = oldBlocks;
         const unsigned int continuationBlock = oldBlocks + calleeBlocks;
@@ -871,82 +911,57 @@ bool FunctionVM::InlineRound(FnDef& d)
 
         auto remap = [&](FnOp o) -> FnOp
         {
-            switch (o.code)
-            {
-                case FnkLocalGet:
-                case FnkLocalSet:
-                    o.k += slotBase;
-                    o.dst += regBase;
-                    o.a += regBase;
-                    break;
-                case FnkConst:
-                    o.k += constBase;
-                    o.dst += regBase;
-                    break;
-                case FnkBr:
-                    o.k += entryBlock;
-                    break;
-                case FnkBrCond:
-                    o.a += regBase;
-                    o.b += entryBlock;
-                    o.k += entryBlock;
-                    break;
-                case FnkRet:
-                    o.a += regBase;
-                    break;
-                case FnkTrap:
-                    o.a += regBase;
-                    break;
-                default:
-                    o.a += regBase;
-                    o.b += regBase;
-                    o.c += regBase;
-                    o.dst += regBase;
-                    break;
-            }
+            const unsigned int roles = FieldRoles(o.code);
+            if (roles & RoleA)      o.a = std::uint16_t(o.a + regBase);
+            if (roles & RoleB)      o.b = std::uint16_t(o.b + regBase);
+            if (roles & RoleC)      o.c = std::uint16_t(o.c + regBase);
+            if (roles & RoleDst)    o.dst = std::uint16_t(o.dst + regBase);
+            if (roles & RoleKConst) o.k += constBase;
+            if (roles & RoleKSlot)  o.k += slotBase;
+            if (roles & RoleKBlock) o.k += entryBlock;
+            if (roles & RoleBBlock) o.b = std::uint16_t(o.b + entryBlock);
             return o;
         };
 
-        std::vector<FnOp> ops;
-        std::vector<unsigned int> bs(oldBlocks + calleeBlocks + 1, 0);
-        ops.reserve(d.ops.size() + c.ops.size() + c.parameterCnt + 2 * retSize + 8);
+        vector<int> calleeBlockAt(c.ops.size(), -1);
+        for (unsigned int m = 0; m < calleeBlocks; ++m)
+            calleeBlockAt[c.blockStart[m]] = static_cast<int>(m);
 
-        for (unsigned int i = 0; i < bIdx; ++i)
-            bs[i] = d.blockStart[i];
-        bs[bIdx] = d.blockStart[bIdx];
-        for (unsigned int i = ops.size(); i < idx; ++i)
-            ops.push_back(d.ops[i]);
+        vector<FnOp> ops;
+        vector<unsigned int> bs(oldBlocks + calleeBlocks + 1, 0);
+        ops.reserve(d.ops.size() + c.ops.size() + c.parameterCnt + 2 * retSize + 8);
+        ops.insert(ops.end(), d.ops.begin(), d.ops.begin() + idx);
 
         for (unsigned int j = 0; j < c.parameterCnt; ++j)
-            ops.push_back({FnkLocalSet, a0 + j, 0, 0, 0, slotBase + j});
-        ops.push_back({FnkConst, 0, 0, 0, scratch, scratchConst});
-        ops.push_back({FnkLocalSet, scratch, 0, 0, 0, slotBase + c.slotCnt - kSpillHomes});
-        ops.push_back({FnkBr, 0, 0, 0, 0, entryBlock});
+            ops.push_back(MakeOp(FnkLocalSet, a0 + j, 0, 0, 0, slotBase + c.argBase + j));
+        ops.push_back(MakeOp(FnkConst, 0, 0, 0, scratch, scratchConst));
+        ops.push_back(MakeOp(FnkLocalSet, scratch, 0, 0, 0, slotBase + c.slotCnt - kSpillHomes));
+        ops.push_back(MakeOp(FnkBr, 0, 0, 0, 0, entryBlock));
 
-        for (unsigned int m = 0; m < calleeBlocks; ++m)
-            bs[oldBlocks + m] = static_cast<unsigned int>(ops.size());
         for (unsigned int i = 0; i < c.ops.size(); ++i)
         {
+            if (calleeBlockAt[i] >= 0)
+                bs[oldBlocks + calleeBlockAt[i]] = static_cast<unsigned int>(ops.size());
             if (c.ops[i].code == FnkRet)
             {
                 const FnOp ret = remap(c.ops[i]);
-                ops.push_back({FnkCopy, ret.a, 0, 0, dst, 0});
+                ops.push_back(MakeOp(FnkCopy, ret.a, 0, 0, dst, 0));
                 for (unsigned int j = 0; j < retSize; ++j)
                 {
-                    ops.push_back({FnkLocalGet, 0, 0, 0, scratch, slotBase + j});
-                    ops.push_back({FnkLocalSet, scratch, 0, 0, 0, window + j});
+                    ops.push_back(MakeOp(FnkLocalGet, 0, 0, 0, scratch, slotBase + j));
+                    ops.push_back(MakeOp(FnkLocalSet, scratch, 0, 0, 0, window + j));
                 }
-                ops.push_back({FnkBr, 0, 0, 0, 0, continuationBlock});
+                ops.push_back(MakeOp(FnkBr, 0, 0, 0, 0, continuationBlock));
             }
             else
                 ops.push_back(remap(c.ops[i]));
         }
 
         bs[continuationBlock] = static_cast<unsigned int>(ops.size());
-        for (unsigned int i = idx + 1; i < d.ops.size(); ++i)
-            ops.push_back(d.ops[i]);
-        for (unsigned int i = bIdx + 1; i < d.blockStart.size(); ++i)
-            bs[i] = d.blockStart[i] + (static_cast<unsigned int>(ops.size()) - bEnd);
+        ops.insert(ops.end(), d.ops.begin() + idx + 1, d.ops.end());
+        const unsigned int shift = static_cast<unsigned int>(ops.size() - d.ops.size());
+        for (unsigned int i = 0; i < oldBlocks; ++i)
+            bs[i] = (d.blockStart[i] > idx) ? d.blockStart[i] + shift : d.blockStart[i];
 
         d.ops = std::move(ops);
         d.blockStart = std::move(bs);
@@ -961,15 +976,16 @@ void FunctionVM::BuildIR(FUNCTION fn)
     entry.ir.reset();
     if (entry.fn.program == nullptr)
         return;
-    entry.ir = LowerFunction(entry.ops, consts, functions, fn);
-    if (entry.ir != nullptr)
-    {
-        FnDef d = *entry.ir;
-        for (int round = 0; round < 64; ++round)
-            if (!InlineRound(d))
-                break;
+    const std::shared_ptr<const FnDef> lowered = LowerFunction(entry.ops, consts, functions, fn);
+    entry.ir = lowered;
+    if (lowered == nullptr)
+        return;
+    FnDef d = *lowered;
+    for (int round = 0; round < 64; ++round)
+        if (!InlineRound(d))
+            break;
+    if (ValidDef(d, functions))
         entry.ir = std::make_shared<const FnDef>(std::move(d));
-    }
 }
 
 #if FNIR_THREADED
@@ -993,8 +1009,8 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
     DBL* slots = ctx->dblstackbase + frameSp;
     DBL* regs = slots + def->slotCnt;
     slots[slotBaseHomes(def)] = 0.0;
-    for (unsigned int j = 0; (j < argc) && (j < def->slotCnt); ++j)
-        slots[j] = args[j];
+    for (unsigned int j = 0; (j < argc) && (def->argBase + j < def->slotCnt); ++j)
+        slots[def->argBase + j] = args[j];
     const FnOp* const ops = def->ops.data();
     const DBL* const kConsts = def->consts.data();
     const unsigned int* const kBlocks = def->blockStart.data();
@@ -1092,7 +1108,7 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
     FNIR_HANDLER(Trap)
     {
         DBL* const args = regs + op->a;
-        const DBL result = POVFPU_TrapTable[op->k].fn(ctx, args, fnIdx);
+        const DBL result = POVFPU_TrapTable[op->k].fn(ctx, args, op->b | (unsigned int)(op->c) << 16);
         slots = ctx->dblstackbase + frameSp;
         regs = slots + def->slotCnt;
         regs[op->dst] = result;

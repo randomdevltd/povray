@@ -79,7 +79,7 @@ enum FnOpCode
     FnkSys2,        // k = sys2 id, a, b                               -> dst (libm table)
     FnkMath1,       // k = sys1 id, a                                  -> dst (xsimd kernels)
     FnkMath2,       // k = sys2 id, a, b                               -> dst (xsimd kernels)
-    FnkTrap,        // k = trap id, a = first arg register, arity from the trap table -> dst
+    FnkTrap,        // k = trap id, a = first arg register, arity from the trap table, b|c<<16 = owning function -> dst
     FnkTrapS,       // k = trapS id, a = window base slot; reads and rewrites the window in place
     FnkCall,        // k = callee, a = first arg register, arity from the callee      -> dst
     FnkBr,          // k = block
@@ -105,6 +105,7 @@ struct FnDef final
     std::vector<unsigned int> blockStart;   // op index of each block entry
     std::vector<DBL> consts;                // FnkConst pool of this function
     unsigned int parameterCnt = 0;
+    unsigned int argBase = 0;               // first parameter slot: a vector function's results precede its parameters
     unsigned int slotCnt = 0;               // frame slots: inputs, locals, temporaries, register spill homes
     unsigned int regCnt = 0;
 };
