@@ -73,6 +73,13 @@ enum FnOpCode
     FnkMaskNot,     // a mask                                          -> mask dst
     FnkFlag,        // a mask                                          -> dst (0.0/1.0)
     FnkSelect,      // a mask, b if-set, c if-clear                    -> dst
+    FnkAddK,        // a, k = constant pool index                      -> dst (a + k)
+    FnkSubK,        // a - k
+    FnkMulK,        // a * k
+    FnkDivK,        // a / k
+    FnkModK,        // fmod(a, k)
+    FnkCmpGtKA,     // mask k > a
+    FnkCmpEqKA,     // mask k == a
     FnkLocalGet,    // k = frame slot                                  -> dst
     FnkLocalSet,    // a, k = frame slot
     FnkSys1,        // k = sys1 id, a                                  -> dst (libm table)

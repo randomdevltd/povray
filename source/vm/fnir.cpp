@@ -146,17 +146,14 @@ struct Lowerer final
         return static_cast<unsigned int>(def->consts.size() - 1);
     }
 
-    unsigned int KReg(unsigned int k)
+    unsigned int Imm(unsigned int k)
     {
         if (k >= vmConsts.size())
         {
             Fail();
             return 0;
         }
-        const unsigned int v = VReg();
-        const unsigned int ki = ConstIdx(vmConsts[k]);
-        Emit(FnkConst, 0, 0, 0, v, ki);
-        return v;
+        return ConstIdx(vmConsts[k]);
     }
 
     unsigned int Def(unsigned int reg)
@@ -378,6 +375,8 @@ unsigned int FieldRoles(unsigned int code)
         case FnkCmpGt: case FnkCmpEq: case FnkMaskOr:
         case FnkSys2: case FnkMath2:                                    return RoleA | RoleB | RoleDst;
         case FnkSelect:                                                 return RoleA | RoleB | RoleC | RoleDst;
+        case FnkAddK: case FnkSubK: case FnkMulK: case FnkDivK: case FnkModK:
+        case FnkCmpGtKA: case FnkCmpEqKA:                               return RoleA | RoleDst | RoleKConst;
         case FnkLocalGet:                                               return RoleDst | RoleKSlot;
         case FnkLocalSet:                                               return RoleA | RoleKSlot;
         case FnkTrapS:                                                  return RoleASlot;
@@ -617,11 +616,11 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
                 }
                 case VM_ADDI: case VM_SUBI: case VM_MULI: case VM_DIVI: case VM_MODI:
                 {
-                    const unsigned int code = FnkAdd + (op.code - VM_ADDI);
+                    const unsigned int code = FnkAddK + (op.code - VM_ADDI);
                     const unsigned int a = L.Reg(op.b);
-                    const unsigned int k = L.KReg(op.k);
+                    const unsigned int k = L.Imm(op.k);
                     const unsigned int dst = L.Def(op.b);
-                    L.Emit(code, a, k, 0, dst, 0);
+                    L.Emit(code, a, 0, 0, dst, k);
                     break;
                 }
                 case VM_LOADI:
@@ -637,12 +636,12 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
                 }
                 case VM_CMPI:
                 {
-                    const unsigned int k = L.KReg(op.k);
+                    const unsigned int k = L.Imm(op.k);
                     const unsigned int d = L.Reg(op.b);
                     const unsigned int gt = L.VReg();
                     const unsigned int eq = L.VReg();
-                    L.Emit(FnkCmpGt, k, d, 0, gt, 0);
-                    L.Emit(FnkCmpEq, k, d, 0, eq, 0);
+                    L.Emit(FnkCmpGtKA, d, 0, 0, gt, k);
+                    L.Emit(FnkCmpEqKA, d, 0, 0, eq, k);
                     L.mGt = static_cast<int>(gt);
                     L.mEq = static_cast<int>(eq);
                     break;
@@ -656,10 +655,8 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
                 case VM_TEQ: case VM_TNE:
                 {
                     const unsigned int a = L.Reg(op.b);
-                    const unsigned int z = L.VReg();
-                    L.Emit(FnkConst, 0, 0, 0, z, L.ConstIdx(0.0));
                     const unsigned int m = L.VReg();
-                    L.Emit(FnkCmpEq, a, z, 0, m, 0);
+                    L.Emit(FnkCmpEqKA, a, 0, 0, m, L.ConstIdx(0.0));
                     L.Flag((op.code == VM_TEQ) ? m : L.Not(m), op.b);
                     break;
                 }
@@ -1015,29 +1012,32 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
     const DBL* const kConsts = def->consts.data();
     const unsigned int* const kBlocks = def->blockStart.data();
     const FnOp* op = ops;
-    unsigned int pc = 0;
 
 #define FNIR_OPS(X) \
     X(Const) X(Copy) X(Add) X(Sub) X(Mul) X(Div) X(Mod) X(Neg) X(Abs) \
     X(CmpGt) X(CmpEq) X(MaskOr) X(MaskNot) X(Flag) X(Select) \
+    X(AddK) X(SubK) X(MulK) X(DivK) X(ModK) X(CmpGtKA) X(CmpEqKA) \
     X(LocalGet) X(LocalSet) X(Sys1) X(Sys2) X(Math1) X(Math2) X(Trap) X(TrapS) X(Call) \
     X(Br) X(BrCond) X(Ret)
 
 #if FNIR_THREADED
     #define FNIR_LABEL(n) &&L_##n,
-    static const void* const dispatch[] = { FNIR_OPS(FNIR_LABEL) };
+    static const void* const dispatchTable[] = { FNIR_OPS(FNIR_LABEL) };
     #undef FNIR_LABEL
+    static_assert(sizeof(dispatchTable) / sizeof(dispatchTable[0]) == FnkRet + 1, "one handler per FnOpCode, in order");
+    // keeps the table base in a register; otherwise every handler rematerialises it
+    const void* const* dispatch = dispatchTable;
+    __asm__("" : "+r"(dispatch));
     #define FNIR_HANDLER(n) L_##n:
-    #define FNIR_NEXT() { op = ops + (++pc); goto *dispatch[op->code]; }
-    #define FNIR_ENTER() { op = ops + pc; goto *dispatch[op->code]; }
+    #define FNIR_NEXT() { ++op; goto *dispatch[op->code]; }
+    #define FNIR_JUMP(block) { op = ops + kBlocks[block]; goto *dispatch[op->code]; }
     goto *dispatch[op->code];
 #else
     #define FNIR_HANDLER(n) case Fnk##n:
-    #define FNIR_NEXT() { ++pc; continue; }
-    #define FNIR_ENTER() { op = ops + pc; continue; }
+    #define FNIR_NEXT() { ++op; continue; }
+    #define FNIR_JUMP(block) { op = ops + kBlocks[block]; continue; }
     for (;;)
     {
-        op = ops + pc;
         switch (op->code)
         {
 #endif
@@ -1086,6 +1086,27 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
         FNIR_NEXT();
     FNIR_HANDLER(Select)
         regs[op->dst] = (regs[op->a] != 0.0) ? regs[op->b] : regs[op->c];
+        FNIR_NEXT();
+    FNIR_HANDLER(AddK)
+        regs[op->dst] = regs[op->a] + kConsts[op->k];
+        FNIR_NEXT();
+    FNIR_HANDLER(SubK)
+        regs[op->dst] = regs[op->a] - kConsts[op->k];
+        FNIR_NEXT();
+    FNIR_HANDLER(MulK)
+        regs[op->dst] = regs[op->a] * kConsts[op->k];
+        FNIR_NEXT();
+    FNIR_HANDLER(DivK)
+        regs[op->dst] = regs[op->a] / kConsts[op->k];
+        FNIR_NEXT();
+    FNIR_HANDLER(ModK)
+        regs[op->dst] = fmod(regs[op->a], kConsts[op->k]);
+        FNIR_NEXT();
+    FNIR_HANDLER(CmpGtKA)
+        regs[op->dst] = (kConsts[op->k] > regs[op->a]) ? 1.0 : 0.0;
+        FNIR_NEXT();
+    FNIR_HANDLER(CmpEqKA)
+        regs[op->dst] = (kConsts[op->k] == regs[op->a]) ? 1.0 : 0.0;
         FNIR_NEXT();
     FNIR_HANDLER(LocalGet)
         regs[op->dst] = slots[op->k];
@@ -1139,14 +1160,12 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
         FNIR_NEXT();
     }
     FNIR_HANDLER(Br)
-        pc = kBlocks[op->k];
-        FNIR_ENTER();
+        FNIR_JUMP(op->k);
     FNIR_HANDLER(BrCond)
         if (regs[op->a] != 0.0)
-            pc = kBlocks[op->k];
+            FNIR_JUMP(op->k)
         else
-            pc = kBlocks[op->b];
-        FNIR_ENTER();
+            FNIR_JUMP(op->b)
     FNIR_HANDLER(Ret)
         return regs[op->a];
 
@@ -1156,7 +1175,7 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
 #endif
 #undef FNIR_HANDLER
 #undef FNIR_NEXT
-#undef FNIR_ENTER
+#undef FNIR_JUMP
 #undef FNIR_OPS
 }
 
