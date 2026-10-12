@@ -393,7 +393,8 @@ bool IsTerminator(unsigned int code)
     return (code == FnkBr) || (code == FnkBrCond) || (code == FnkRet);
 }
 
-/// Every operand in range, every block closed by exactly one terminator; a def failing it never runs.
+/// Every operand in range, every block closed by one terminator or falling through into the next,
+/// the last op a terminator; a def failing it never runs.
 bool ValidDef(const FnDef& d, const vector<FunctionEntry>& functions)
 {
     const std::size_t n = d.ops.size();
@@ -412,11 +413,13 @@ bool ValidDef(const FnDef& d, const vector<FunctionEntry>& functions)
         isStart[starts[i]] = 1;
     }
     isStart[n] = 1;
+    if (!IsTerminator(d.ops[n - 1].code))
+        return false;
     const std::size_t blocks = d.blockStart.size();
     for (std::size_t i = 0; i < n; ++i)
     {
         const FnOp& op = d.ops[i];
-        if ((op.code > FnkRet) || (IsTerminator(op.code) != (isStart[i + 1] != 0)))
+        if ((op.code > FnkRet) || (IsTerminator(op.code) && !isStart[i + 1]))
             return false;
         const unsigned int roles = FieldRoles(op.code);
         if (((roles & RoleA) && (op.a >= d.regCnt)) || ((roles & RoleB) && (op.b >= d.regCnt)) ||
@@ -458,6 +461,513 @@ bool ValidDef(const FnDef& d, const vector<FunctionEntry>& functions)
         }
     }
     return true;
+}
+
+FnOp MakeOp(unsigned int code, unsigned int a, unsigned int b, unsigned int c, unsigned int dst, unsigned int k)
+{
+    return FnOp { std::uint16_t(code), std::uint16_t(a), std::uint16_t(b), std::uint16_t(c), std::uint16_t(dst), k };
+}
+
+void Compact(vector<FnOp>& ops, const vector<char>& keep)
+{
+    std::size_t j = 0;
+    for (std::size_t i = 0; i < ops.size(); ++i)
+        if (keep[i])
+            ops[j++] = ops[i];
+    ops.resize(j);
+}
+
+/// Number of consecutive registers from `a` a trap or call reads.
+unsigned int ArgCount(const FnOp& op, const vector<FunctionEntry>& functions)
+{
+    if (op.code == FnkTrap)
+        return POVFPU_TrapTable[op.k].parameter_cnt;
+    if (op.code == FnkCall)
+        return functions[op.k].ir->parameterCnt;
+    return 0;
+}
+
+template <typename F>
+void ForEachRead(const FnOp& op, const vector<FunctionEntry>& functions, F f)
+{
+    if ((op.code == FnkTrap) || (op.code == FnkCall))
+    {
+        const unsigned int cnt = ArgCount(op, functions);
+        for (unsigned int j = 0; j < cnt; ++j)
+            f(op.a + j);
+        return;
+    }
+    const unsigned int roles = FieldRoles(op.code);
+    if (roles & RoleA)
+        f(op.a);
+    if (roles & RoleB)
+        f(op.b);
+    if (roles & RoleC)
+        f(op.c);
+}
+
+/// The registers an op writes: dst, and for a trap its argument range, which traps overwrite in place.
+template <typename F>
+void ForEachWrite(const FnOp& op, const vector<FunctionEntry>& functions, F f)
+{
+    if (FieldRoles(op.code) & RoleDst)
+        f(op.dst);
+    if (op.code == FnkTrap)
+    {
+        const unsigned int cnt = ArgCount(op, functions);
+        for (unsigned int j = 0; j < cnt; ++j)
+            f(op.a + j);
+    }
+}
+
+/// No effect besides writing dst, so it may be dropped when nothing reads dst.
+bool IsPure(unsigned int code)
+{
+    return (FieldRoles(code) & RoleDst) && (code != FnkTrap) && (code != FnkCall);
+}
+
+/// A def as a control flow graph: blocks in physical order, the entry first, each a body
+/// and one terminator whose targets are block indices.
+struct CfgBlock final
+{
+    vector<FnOp> body;
+    FnOp term;
+    bool live;
+};
+
+vector<CfgBlock> Decode(const FnDef& d)
+{
+    const std::size_t n = d.ops.size();
+    vector<unsigned int> starts(d.blockStart);
+    std::sort(starts.begin(), starts.end());
+    vector<unsigned int> indexAt(n, 0);
+    for (unsigned int p = 0; p < starts.size(); ++p)
+        indexAt[starts[p]] = p;
+    vector<CfgBlock> blocks(starts.size());
+    for (unsigned int p = 0; p < starts.size(); ++p)
+    {
+        const std::size_t end = (p + 1 < starts.size()) ? starts[p + 1] : n;
+        CfgBlock& b = blocks[p];
+        b.live = true;
+        b.body.assign(d.ops.begin() + starts[p], d.ops.begin() + end);
+        b.term = b.body.back();
+        if (!IsTerminator(b.term.code))
+        {
+            b.term = MakeOp(FnkBr, 0, 0, 0, 0, p + 1);
+            continue;
+        }
+        b.body.pop_back();
+        if (b.term.code == FnkBr)
+            b.term.k = indexAt[d.blockStart[b.term.k]];
+        else if (b.term.code == FnkBrCond)
+        {
+            b.term.k = indexAt[d.blockStart[b.term.k]];
+            b.term.b = std::uint16_t(indexAt[d.blockStart[b.term.b]]);
+        }
+    }
+    return blocks;
+}
+
+/// Writes the live blocks back in order; a branch to the block that follows becomes a fallthrough.
+void Encode(const vector<CfgBlock>& blocks, FnDef& d)
+{
+    vector<unsigned int> id(blocks.size(), 0);
+    vector<unsigned int> next(blocks.size(), 0);
+    unsigned int cnt = 0;
+    for (unsigned int p = 0; p < blocks.size(); ++p)
+        if (blocks[p].live)
+            id[p] = cnt++;
+    for (unsigned int p = static_cast<unsigned int>(blocks.size()), following = ~0u; p-- > 0;)
+    {
+        next[p] = following;
+        if (blocks[p].live)
+            following = p;
+    }
+    vector<FnOp> ops;
+    vector<unsigned int> starts;
+    for (unsigned int p = 0; p < blocks.size(); ++p)
+    {
+        const CfgBlock& b = blocks[p];
+        if (!b.live)
+            continue;
+        starts.push_back(static_cast<unsigned int>(ops.size()));
+        ops.insert(ops.end(), b.body.begin(), b.body.end());
+        FnOp t = b.term;
+        if ((t.code == FnkBr) && (t.k == next[p]) && !b.body.empty())
+            continue;
+        if (t.code == FnkBr)
+            t.k = id[t.k];
+        else if (t.code == FnkBrCond)
+        {
+            t.k = id[t.k];
+            t.b = std::uint16_t(id[t.b]);
+        }
+        ops.push_back(t);
+    }
+    d.ops = std::move(ops);
+    d.blockStart = std::move(starts);
+}
+
+template <typename F>
+void ForEachSuccessor(const FnOp& term, F f)
+{
+    if (term.code == FnkBr)
+        f(term.k);
+    else if (term.code == FnkBrCond)
+    {
+        f(term.k);
+        f(term.b);
+    }
+}
+
+vector<unsigned int> Predecessors(const vector<CfgBlock>& blocks)
+{
+    vector<unsigned int> preds(blocks.size(), 0);
+    preds[0] = 1;
+    for (const CfgBlock& b : blocks)
+        if (b.live)
+            ForEachSuccessor(b.term, [&](unsigned int s) { ++preds[s]; });
+    return preds;
+}
+
+bool RemoveUnreachable(vector<CfgBlock>& blocks)
+{
+    vector<char> seen(blocks.size(), 0);
+    vector<unsigned int> work(1, 0);
+    seen[0] = 1;
+    while (!work.empty())
+    {
+        const unsigned int p = work.back();
+        work.pop_back();
+        ForEachSuccessor(blocks[p].term, [&](unsigned int s) { if (!seen[s]) { seen[s] = 1; work.push_back(s); } });
+    }
+    bool changed = false;
+    for (unsigned int p = 0; p < blocks.size(); ++p)
+        if (blocks[p].live && !seen[p])
+        {
+            blocks[p].live = false;
+            changed = true;
+        }
+    return changed;
+}
+
+/// Branches to an empty block go straight to where it leads, and a block entered only by a
+/// branch from one other block is appended to that block.
+bool Straighten(vector<CfgBlock>& blocks)
+{
+    bool changed = false;
+    const unsigned int cnt = static_cast<unsigned int>(blocks.size());
+    auto through = [&](unsigned int s)
+    {
+        for (unsigned int steps = 0; (steps < cnt) && (s != 0) && blocks[s].body.empty() && (blocks[s].term.code == FnkBr) &&
+                                     (blocks[s].term.k != s); ++steps)
+            s = blocks[s].term.k;
+        return s;
+    };
+    for (CfgBlock& b : blocks)
+    {
+        if (!b.live)
+            continue;
+        FnOp& t = b.term;
+        if (t.code == FnkBr)
+            t.k = through(t.k);
+        else if (t.code == FnkBrCond)
+        {
+            t.k = through(t.k);
+            t.b = std::uint16_t(through(t.b));
+            if (t.k == t.b)
+                t = MakeOp(FnkBr, 0, 0, 0, 0, t.k);
+        }
+    }
+    changed = RemoveUnreachable(blocks);
+    vector<unsigned int> preds = Predecessors(blocks);
+    for (unsigned int p = 0; p < cnt; ++p)
+    {
+        CfgBlock& b = blocks[p];
+        while (b.live && (b.term.code == FnkBr) && (b.term.k != p) && (b.term.k != 0) && (preds[b.term.k] == 1))
+        {
+            CfgBlock& s = blocks[b.term.k];
+            b.body.insert(b.body.end(), s.body.begin(), s.body.end());
+            b.term = s.term;
+            s.live = false;
+            s.body.clear();
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+/// Within a block: a load of a slot whose value a register already holds becomes a copy, a
+/// store of the value a slot already holds goes, and reads of a copy read its source.
+bool Forward(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntry>& functions)
+{
+    struct Alias { unsigned int src, srcVer, ver, stamp; };
+    struct Known { unsigned int reg, regVer, slotVer, stamp; };
+    vector<unsigned int> ver(d.regCnt, 0);
+    vector<unsigned int> slotVer(d.slotCnt, 0);
+    vector<Alias> alias(d.regCnt, Alias { 0, 0, 0, 0 });
+    vector<Known> known(d.slotCnt, Known { 0, 0, 0, 0 });
+    unsigned int stamp = 0;
+    bool changed = false;
+    for (CfgBlock& b : blocks)
+    {
+        if (!b.live)
+            continue;
+        const unsigned int blockStamp = ++stamp;
+        unsigned int clearStamp = blockStamp;
+        auto root = [&](unsigned int r)
+        {
+            const Alias& x = alias[r];
+            return ((x.stamp > blockStamp) && (ver[r] == x.ver) && (ver[x.src] == x.srcVer)) ? x.src : r;
+        };
+        auto holder = [&](unsigned int s) -> int
+        {
+            const Known& x = known[s];
+            if ((x.stamp > clearStamp) && (slotVer[s] == x.slotVer) && (ver[x.reg] == x.regVer))
+                return static_cast<int>(x.reg);
+            return -1;
+        };
+        vector<FnOp> body;
+        body.reserve(b.body.size());
+        for (std::size_t i = 0; i <= b.body.size(); ++i)
+        {
+            FnOp op = (i < b.body.size()) ? b.body[i] : b.term;
+            const unsigned int roles = FieldRoles(op.code);
+            if ((op.code != FnkTrap) && (op.code != FnkCall))
+            {
+                const FnOp was = op;
+                if (roles & RoleA) op.a = std::uint16_t(root(op.a));
+                if (roles & RoleB) op.b = std::uint16_t(root(op.b));
+                if (roles & RoleC) op.c = std::uint16_t(root(op.c));
+                changed = changed || (op.a != was.a) || (op.b != was.b) || (op.c != was.c);
+            }
+            if (op.code == FnkLocalGet)
+            {
+                const int h = holder(op.k);
+                if (h >= 0)
+                {
+                    op = MakeOp(FnkCopy, static_cast<unsigned int>(h), 0, 0, op.dst, 0);
+                    changed = true;
+                }
+            }
+            else if (op.code == FnkLocalSet)
+            {
+                if (holder(op.k) == static_cast<int>(op.a))
+                {
+                    changed = true;
+                    continue;
+                }
+                slotVer[op.k] = ++stamp;
+                known[op.k] = Known { op.a, ver[op.a], slotVer[op.k], ++stamp };
+            }
+            else if ((op.code == FnkTrapS) || (op.code == FnkCall))
+                clearStamp = ++stamp;
+            ForEachWrite(op, functions, [&](unsigned int r) { ver[r] = ++stamp; });
+            if (FieldRoles(op.code) & RoleDst)
+            {
+                if ((op.code == FnkCopy) && (op.a != op.dst))
+                    alias[op.dst] = Alias { op.a, ver[op.a], ver[op.dst], ++stamp };
+                else if (op.code == FnkLocalGet)
+                    known[op.k] = Known { op.dst, ver[op.dst], slotVer[op.k], ++stamp };
+            }
+            if (i < b.body.size())
+                body.push_back(op);
+            else
+                b.term = op;
+        }
+        b.body = std::move(body);
+    }
+    return changed;
+}
+
+/// Drops pure ops whose result nothing reads, and copies of a register onto itself.
+bool RemoveDeadOps(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntry>& functions)
+{
+    vector<unsigned int> uses(d.regCnt, 0);
+    for (const CfgBlock& b : blocks)
+    {
+        if (!b.live)
+            continue;
+        for (const FnOp& op : b.body)
+            ForEachRead(op, functions, [&](unsigned int r) { ++uses[r]; });
+        ForEachRead(b.term, functions, [&](unsigned int r) { ++uses[r]; });
+    }
+    bool changed = false;
+    for (bool again = true; again;)
+    {
+        again = false;
+        for (CfgBlock& b : blocks)
+        {
+            if (!b.live)
+                continue;
+            vector<char> keep(b.body.size(), 1);
+            for (std::size_t i = b.body.size(); i-- > 0;)
+            {
+                const FnOp& op = b.body[i];
+                const bool selfCopy = (op.code == FnkCopy) && (op.a == op.dst);
+                if (!selfCopy && !(IsPure(op.code) && (uses[op.dst] == 0)))
+                    continue;
+                ForEachRead(op, functions, [&](unsigned int r) { --uses[r]; });
+                keep[i] = 0;
+                again = changed = true;
+            }
+            Compact(b.body, keep);
+        }
+    }
+    return changed;
+}
+
+/// Backward slot liveness over the graph; a store to a slot no path reads before the next store goes.
+bool RemoveDeadStores(vector<CfgBlock>& blocks, const FnDef& d)
+{
+    const std::size_t words = (d.slotCnt + 63) / 64;
+    const std::size_t cnt = blocks.size();
+    if (words * cnt > (std::size_t(1) << 22))
+        return false;
+    typedef vector<std::uint64_t> Bits;
+    auto set = [](Bits& v, unsigned int s) { v[s >> 6] |= std::uint64_t(1) << (s & 63); };
+    auto reset = [](Bits& v, unsigned int s) { v[s >> 6] &= ~(std::uint64_t(1) << (s & 63)); };
+    auto test = [](const Bits& v, unsigned int s) { return ((v[s >> 6] >> (s & 63)) & 1) != 0; };
+    // a returning block hands the result area of a vector function to its caller
+    Bits atReturn(words, 0);
+    for (unsigned int s = 0; s < d.argBase; ++s)
+        set(atReturn, s);
+
+    // the slots live on entry to `b` given those live at its end; with `keep`, marks the dead stores
+    auto transfer = [&](const CfgBlock& b, Bits live, vector<char>* keep)
+    {
+        for (std::size_t i = b.body.size(); i-- > 0;)
+        {
+            const FnOp& op = b.body[i];
+            if (op.code == FnkLocalGet)
+                set(live, op.k);
+            else if (op.code == FnkLocalSet)
+            {
+                if ((keep != nullptr) && !test(live, op.k))
+                    (*keep)[i] = 0;
+                else
+                    reset(live, op.k);
+            }
+            else if (op.code == FnkCall)
+            {
+                for (unsigned int j = 0; j < op.c; ++j)
+                    reset(live, op.b + j);
+            }
+            else if (op.code == FnkTrapS)
+                std::fill(live.begin(), live.end(), ~std::uint64_t(0));
+        }
+        return live;
+    };
+    auto liveOut = [&](const vector<Bits>& liveIn, const CfgBlock& b)
+    {
+        Bits out(words, 0);
+        if (b.term.code == FnkRet)
+            out = atReturn;
+        ForEachSuccessor(b.term, [&](unsigned int s) { for (std::size_t w = 0; w < words; ++w) out[w] |= liveIn[s][w]; });
+        return out;
+    };
+
+    vector<Bits> liveIn(cnt, Bits(words, 0));
+    bool stable = false;
+    for (std::size_t round = 0; (round < cnt + 2) && !stable; ++round)
+    {
+        stable = true;
+        for (std::size_t p = cnt; p-- > 0;)
+        {
+            if (!blocks[p].live)
+                continue;
+            Bits in = transfer(blocks[p], liveOut(liveIn, blocks[p]), nullptr);
+            if (in != liveIn[p])
+            {
+                liveIn[p] = std::move(in);
+                stable = false;
+            }
+        }
+    }
+    if (!stable)
+        return false;
+    bool changed = false;
+    for (std::size_t p = 0; p < cnt; ++p)
+    {
+        if (!blocks[p].live)
+            continue;
+        vector<char> keep(blocks[p].body.size(), 1);
+        transfer(blocks[p], liveOut(liveIn, blocks[p]), &keep);
+        if (std::find(keep.begin(), keep.end(), 0) == keep.end())
+            continue;
+        Compact(blocks[p].body, keep);
+        changed = true;
+    }
+    return changed;
+}
+
+/// A register read only by a later copy in the same block is computed straight into the copy's
+/// destination, so argument ranges fill without the copy.
+bool Retarget(vector<CfgBlock>& blocks, const FnDef& d, const vector<FunctionEntry>& functions)
+{
+    vector<unsigned int> uses(d.regCnt, 0);
+    for (const CfgBlock& b : blocks)
+    {
+        if (!b.live)
+            continue;
+        for (const FnOp& op : b.body)
+            ForEachRead(op, functions, [&](unsigned int r) { ++uses[r]; });
+        ForEachRead(b.term, functions, [&](unsigned int r) { ++uses[r]; });
+    }
+    bool changed = false;
+    for (CfgBlock& b : blocks)
+    {
+        if (!b.live)
+            continue;
+        vector<char> keep(b.body.size(), 1);
+        for (std::size_t i = 0; i < b.body.size(); ++i)
+        {
+            const FnOp copy = b.body[i];
+            if ((copy.code != FnkCopy) || (uses[copy.a] != 1) || (copy.a == copy.dst))
+                continue;
+            for (std::size_t j = i; (j-- > 0) && (i - j <= 64);)
+            {
+                if (!keep[j])
+                    continue;
+                FnOp& q = b.body[j];
+                bool touches = false;
+                ForEachRead(q, functions, [&](unsigned int r) { touches = touches || (r == copy.dst); });
+                ForEachWrite(q, functions, [&](unsigned int r) { touches = touches || (r == copy.dst); });
+                if (touches)
+                    break;
+                if ((FieldRoles(q.code) & RoleDst) && (q.dst == copy.a))
+                {
+                    q.dst = copy.dst;
+                    keep[i] = 0;
+                    uses[copy.a] = 0;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        Compact(b.body, keep);
+    }
+    return changed;
+}
+
+/// Copy propagation, store-to-load forwarding, dead op and dead store removal and jump cleanup.
+/// No arithmetic is rewritten or reordered; an op goes only when nothing reads its result.
+void Simplify(FnDef& d, const vector<FunctionEntry>& functions)
+{
+    vector<CfgBlock> blocks = Decode(d);
+    RemoveUnreachable(blocks);
+    for (int round = 0; round < 16; ++round)
+    {
+        bool changed = Straighten(blocks);
+        changed = Forward(blocks, d, functions) || changed;
+        changed = RemoveDeadOps(blocks, d, functions) || changed;
+        changed = RemoveDeadStores(blocks, d) || changed;
+        if (!changed)
+            break;
+    }
+    if (Retarget(blocks, d, functions))
+        RemoveDeadOps(blocks, d, functions);
+    Encode(blocks, d);
 }
 
 std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector<DBL>& vmConsts,
@@ -859,16 +1369,6 @@ std::shared_ptr<const FnDef> LowerFunction(const vector<VMOp>& src, const vector
 
 }
 
-namespace
-{
-
-FnOp MakeOp(unsigned int code, unsigned int a, unsigned int b, unsigned int c, unsigned int dst, unsigned int k)
-{
-    return FnOp { std::uint16_t(code), std::uint16_t(a), std::uint16_t(b), std::uint16_t(c), std::uint16_t(dst), k };
-}
-
-}
-
 bool FunctionVM::InlineRound(FnDef& d)
 {
     for (std::size_t idx = 0; idx < d.ops.size(); ++idx)
@@ -981,8 +1481,13 @@ void FunctionVM::BuildIR(FUNCTION fn)
     for (int round = 0; round < 64; ++round)
         if (!InlineRound(d))
             break;
-    if (ValidDef(d, functions))
-        entry.ir = std::make_shared<const FnDef>(std::move(d));
+    if (!ValidDef(d, functions))
+        d = *lowered;
+    FnDef simplified = d;
+    Simplify(simplified, functions);
+    if (ValidDef(simplified, functions))
+        d = std::move(simplified);
+    entry.ir = std::make_shared<const FnDef>(std::move(d));
 }
 
 #if FNIR_THREADED
