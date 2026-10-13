@@ -480,7 +480,8 @@ void TraceTask::ProgressivePhotons()
 {
     POVRect rect;
     unsigned int serial;
-    const unsigned int pass = GetViewData()->photonPass;
+    const unsigned int pass = unsigned(progressLevel);
+    const unsigned int photonPass = GetViewData()->photonPass;
     std::vector<RGBTColour> pixels;
     while (GetViewData()->GetNextRectangle(rect, serial))
     {
@@ -497,7 +498,7 @@ void TraceTask::ProgressivePhotons()
                 RGBTColour sample;
                 auto* data = GetViewDataPtr();
                 data->progressivePixel = &GetViewData()->photonPixels[size_t(y) * GetViewData()->GetWidth() + x];
-                data->progressivePass = pass;
+                data->progressivePass = photonPass;
                 data->progressiveValue = data->progressiveNoise = data->progressiveLaplacian = data->progressiveDensity = 0.0;
                 trace(x + sx - std::floor(sx), y + sy - std::floor(sy),
                       GetViewData()->GetWidth(), GetViewData()->GetHeight(), sample);

@@ -13,13 +13,33 @@ struct ProgressivePhotonBudget final
 {
     static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
-    unsigned int passes;
+    struct Pass final
+    {
+        unsigned int camera, firstBatch, batches;
+        unsigned int EndBatch() const { return firstBatch + batches - 1; }
+    };
+    static constexpr unsigned int maxBatchesPerPass = 4;
+    unsigned int passes, batches, batchesPerPass;
 
-    explicit ProgressivePhotonBudget(double quality)
+    Pass EmissionBatch(unsigned int batch) const
+    {
+        if (batch == 0)
+            return {0, 0, 1};
+        const unsigned int camera = (batch - 1) / batchesPerPass;
+        return {camera, 1 + camera * batchesPerPass, batchesPerPass};
+    }
+
+    std::uint64_t EmittedSamples() const { return std::uint64_t(batches + 1) * batchSize; }
+    std::uint64_t CameraSamples(std::uint64_t pixels) const { return pixels * passes; }
+
+    explicit ProgressivePhotonBudget(double quality, std::uint64_t pixels = 0)
     {
         if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
             throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 256.");
-        passes = static_cast<unsigned int>(std::ceil(4.0 * quality));
+        const unsigned int requested = static_cast<unsigned int>(std::ceil(4.0 * quality));
+        batchesPerPass = pixels >= std::uint64_t(batchSize) * 64 ? maxBatchesPerPass : 1;
+        passes = (requested + batchesPerPass - 1) / batchesPerPass;
+        batches = passes * batchesPerPass;
     }
 
     static double RadiusScale(std::uint64_t pass, unsigned int dimensions)
