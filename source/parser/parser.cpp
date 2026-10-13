@@ -362,6 +362,9 @@ void Parser::Run()
                 for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
                     for (LightSource* light : *lights)
                     {
+                        if (light->Light_Type == FILL_LIGHT_SOURCE || light->colour.IsZero() ||
+                            (Test_Flag(light, PH_RFR_OFF_FLAG) && Test_Flag(light, PH_RFL_OFF_FLAG)))
+                            continue;
                         if (light->Orient || light->Projected_Through_Object)
                             Error("Photon method 2 does not support orient or projected_through lights.");
                         if (light->Parallel)
