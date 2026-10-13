@@ -84,6 +84,8 @@ samples contribute zero, and accepted rays start past its last intersection.
 The skipped segment does not cast shadows or attenuate photons. Containing
 interiors are found at the new origin. The aperture does not renormalize the
 emission PDF or redistribute the rejected power.
+`distribution/scenes/lights/progressive_projector.pov` combines an oriented area
+source, a geometric aperture and a glass caustic.
 
 `light_group { ... photons on }` enables group photon transport; `photons off`
 disables it. The default is off before scene version 4.0 and on from 4.0.
@@ -97,7 +99,9 @@ Volumetric photon collection from group lights is currently rejected; the
 surface membership checks do not substitute for medium ownership.
 
 Classic count, spacing, gather, radius, jitter, autostop, expansion and map-file
-controls do not apply and are rejected. Radiosity is currently rejected. Explicit antialiasing is also rejected; use photon quality to increase the number of camera samples.
+controls do not apply and are rejected. Radiosity is currently rejected. Explicit
+antialiasing is also rejected; use photon quality to increase the number of camera
+samples.
 
 Media photons are enabled by the existing `media` photon setting. Transport stores
 finite photon segments with their incoming flux and extinction. A gather clips each
@@ -196,6 +200,15 @@ It also covers area, spot, parallel and cylindrical lights, heterogeneous media,
 dispersion, subsurface receivers, thin and close surfaces, reflected and refracted
 views, curved media paths, inactive lights, and emission along photon paths.
 The analytic prototype and the render test are included in `make check`.
+`tests/render/progressive_emitter_parity.sh` checks active oriented and projected
+sources, zero samples on aperture misses, multiple CSG crossings, skipped and
+retained blockers, containing interiors, stripped aperture materials, and linear
+power. Its 32 by 24 photon-only images match across one and four threads. The
+oriented profile matches the fixed rectangular area profile exactly. Doubling
+power gives ratios 2.001105 and 2.000404 for the oriented and projected sources;
+a half aperture retains 0.511174 of the open image power. The source test checks
+unconditional mixture-PDF normalization analytically for aperture thinning and
+multiple sources. These fixtures do not measure geometric reconstruction error.
 `tests/source/photon_beam.cpp` checks segment clipping, attenuation and subdivision,
 uniform-density normalization and bent-path support. `photon_beam_map.cpp` compares
 indexed gathers and pilot distances against exhaustive queries. The registered

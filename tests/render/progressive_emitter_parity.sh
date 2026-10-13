@@ -19,9 +19,13 @@ render half Declare=Aperture=3 +wt2
 render aperture_four Declare=Aperture=1 +wt4
 render aperture_power Declare=Aperture=1 Declare=Power=0.08 +wt2
 render wall Declare=Blocker=1 +wt2
+render downstream_wall Declare=Aperture=4 Declare=Blocker=2 +wt2
+render inside_aperture Declare=Aperture=5 +wt2
 render crossings Declare=Aperture=4 Declare=Blocker=1 +wt2
-render medium Declare=Medium=1 +wt2
+render medium Declare=Medium=1 Declare=MediumTop=3 +wt2
 render aperture_medium Declare=Aperture=1 Declare=Medium=1 +wt2
+render skipped_medium Declare=SkippedMedium=1 +wt2
+render aperture_skipped_medium Declare=Aperture=1 Declare=SkippedMedium=1 +wt2
 render oriented_aperture Declare=Source=2 Declare=Aperture=4 Declare=Blocker=1 +wt2
 render oriented_open Declare=Source=2 +wt2
 render parallel Declare=Source=3 +wt1
@@ -55,13 +59,13 @@ def equal(a, b, tolerance=2):
 equal('rectangle', 'oriented', 0)
 equal('oriented', 'oriented_four', 0)
 equal('aperture', 'aperture_four', 0)
-for a, b in [('open', 'aperture'), ('open', 'crossings'), ('oriented_open', 'oriented_aperture'),
+for a, b in [('open', 'aperture'), ('open', 'crossings'), ('open', 'inside_aperture'), ('oriented_open', 'oriented_aperture'),
              ('parallel', 'parallel_aperture'), ('medium', 'aperture_medium'),
-             ('classic_open', 'classic_aperture'), ('classic_open', 'classic_crossings')]:
+             ('open', 'aperture_skipped_medium'), ('classic_open', 'classic_aperture'), ('classic_open', 'classic_crossings')]:
     equal(a, b)
 for name in ['oriented', 'aperture', 'medium', 'parallel', 'classic_oriented']:
     assert sum(values(name)) > 100, name
-for name in ['blocked', 'wall', 'classic_blocked']:
+for name in ['blocked', 'wall', 'downstream_wall', 'classic_blocked']:
     assert sum(values(name)) == 0, name
 for low, high in [('oriented', 'oriented_power'), ('aperture', 'aperture_power')]:
     ratio = sum(values(high)) / sum(values(low))
@@ -69,6 +73,7 @@ for low, high in [('oriented', 'oriented_power'), ('aperture', 'aperture_power')
 ratio = sum(values('half')) / sum(values('open'))
 assert 0.4 < ratio < 0.6, ('half aperture power', ratio)
 assert sum(values('medium')) < 0.9 * sum(values('open'))
+assert sum(values('skipped_medium')) < 0.9 * sum(values('open'))
 print(f'half aperture / open power: {ratio:.6f}')
 PY
 rm -f progressive_emitter_*.ppm progressive_emitter_*.log progressive_emitter_*.pov-state

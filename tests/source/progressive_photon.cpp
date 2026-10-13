@@ -69,7 +69,8 @@ int main()
                     flux += ProgressivePhotonBudget::EmissionWeight(sources, pdf);
             }
             assert(std::abs(flux - sources * pi * retained) < 0.003 * sources);
-            assert(std::abs(2.0 * flux - sources * 2.0 * pi * retained) < 0.006 * sources);
+            std::cout << "aperture retention=" << retained << " sources=" << sources
+                      << " reference=" << sources * pi * retained << " flux=" << flux << "\n";
         }
     SppmEstimate empty;
     empty.Add(0, 0);
