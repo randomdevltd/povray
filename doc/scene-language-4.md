@@ -254,6 +254,16 @@ from a spread or a call are separated by commas, so `sphere_sweep { linear_splin
 reads as written; an array must be spread (`...A`), not placed in a body whole. An uncalled
 function word in a body is the keyword itself (`filter 0.5`, while `filter(A, F)` is the built-in).
 
+### Progressive photons
+
+`global_settings { photons { method 2 quality (Budget * 2) } }` enables progressive
+photons. The quality expression must be a finite number greater than zero and at most 256;
+it defaults to 1. `quality` is contextual and stays available as a binding or function name
+outside the photon item position. Parenthesized expressions and signed operands work there.
+Omitting `method`, or specifying `method 1`, keeps classic photon controls; `quality` requires
+method 2 and cannot be combined with `count`, `spacing`, `gather`, `radius`, `jitter`,
+`autostop` or `expand_thresholds`. See `distribution/scenes/lights/progressive_photons4.pov4`.
+
 ### Static checking
 
 Right after parsing, before anything runs, each file is statically checked:

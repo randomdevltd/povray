@@ -519,8 +519,8 @@
    "doc": "r3_6.html#r3_6_1_3_4_3"
   },
   "method": {
-   "text": "The method keyword selects the integration method.",
-   "doc": "r3_7.html#r3_7_2_3"
+   "text": "Omitting method retains method 1 and its classic controls.",
+   "doc": "r3_4.html#r3_4_3_4_3"
   },
   "minimum_reuse": {
    "text": "The minimum effective radius ratio is set by minimum_reuse float value.",

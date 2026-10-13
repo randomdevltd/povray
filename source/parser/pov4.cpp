@@ -86,7 +86,7 @@ enum class NK : unsigned char
 {
     File, Let, Global, Assign, FnDef, Params, Param, If, While, For, ForIn, Break, Continue, Return, Include,
     Keyword, Comma, Spread, Number, String, Ident, Builtin, True, False, Null, Vector, Array, Dict, Pair,
-    Block, FunctionBlock, Cond, Binary, Unary, Lambda, Colour, Channel, Call, Index, Member, Body
+    Block, FunctionBlock, Cond, Binary, Unary, Lambda, Colour, Channel, Call, Index, Member, Body, PhotonQuality
 };
 
 enum Op : unsigned char { OpOr, OpAnd, OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpAdd, OpSub, OpMul, OpDiv, OpNeg, OpPlus, OpNot };
@@ -721,6 +721,8 @@ private:
     Node& NewNode(Program& p, NK kind, TSNode n);
     void LowerItems(Program& p, TSNode n, Node& into, const char* skipField);
     int CheckedName(Program& p, TSNode n);
+    void LowerPhotonItems(Program& p, Node& body);
+    const Node* PhotonOperand(Program& p, const Node* n, const Node*& word);
 
     void Snippet(const std::string& text, std::vector<POV_LONG> lines, unsigned file);
     Item TextItem(Item::Kind kind, std::string text, std::string name, const Node* at, size_t mark);
@@ -809,7 +811,7 @@ private:
     void CollectFns(const Node* n, std::unordered_set<const Node*>& seen, std::unordered_map<int, CheckFn>& fns);
     void CheckItems(const std::vector<const Node*>& items, CheckCtx& ctx);
     void CheckNode(const Node* n, CheckCtx& ctx);
-    void CheckBlockItems(const Node* n, CheckCtx& ctx);
+    void CheckBlockItems(const Node* n, CheckCtx& ctx, const std::string& context = std::string());
     unsigned TypeOf(const Node* n, CheckCtx& ctx);
     unsigned OperandTy(const Node* n, unsigned mask, CheckCtx& ctx);
     unsigned LookupTy(int sym, CheckCtx& ctx, bool& found) const;
@@ -990,6 +992,91 @@ void Pov4Evaluator::LowerItems(Program& p, TSNode n, Node& into, const char* ski
     }
 }
 
+const Node* Pov4Evaluator::PhotonOperand(Program& p, const Node* n, const Node*& word)
+{
+    DepthGuard depth(*this, n);
+    if ((n->kind == NK::Call) && (n->a->kind == NK::Ident) && (n->a->text == "quality"))
+    {
+        if ((n->kids.size() != 1) || (n->kids[0]->kind == NK::Spread))
+            Fail(n, "Photon quality takes one numeric expression.");
+        word = n->a;
+        return n->kids[0];
+    }
+    if ((n->kind != NK::Binary) && (n->kind != NK::Cond))
+        return nullptr;
+    const Node* value = nullptr;
+    if ((n->kind == NK::Binary) && (n->a->kind == NK::Ident) && (n->a->text == "quality") &&
+        ((n->op == OpAdd) || (n->op == OpSub)))
+    {
+        word = n->a;
+        p.nodes.push_back(*n);
+        Node& unary = p.nodes.back();
+        unary.kind = NK::Unary;
+        unary.op = (n->op == OpAdd) ? OpPlus : OpNeg;
+        unary.a = n->b;
+        unary.b = nullptr;
+        return &unary;
+    }
+    value = PhotonOperand(p, n->a, word);
+    if (value == nullptr)
+        return nullptr;
+    p.nodes.push_back(*n);
+    p.nodes.back().a = value;
+    return &p.nodes.back();
+}
+
+void Pov4Evaluator::LowerPhotonItems(Program& p, Node& body)
+{
+    DepthGuard depth(*this, &body);
+    for (size_t i = 0; i < body.kids.size(); ++i)
+    {
+        const Node* item = body.kids[i];
+        const Node* word = nullptr;
+        const Node* value = PhotonOperand(p, item, word);
+        if ((item->kind == NK::Ident) && (item->text == "quality"))
+        {
+            word = item;
+            if (i + 1 < body.kids.size())
+            {
+                const Node* next = body.kids[i + 1];
+                if ((next->kind == NK::Number) || (next->kind == NK::Ident) || (next->kind == NK::Builtin) ||
+                    (next->kind == NK::Call) || (next->kind == NK::Binary) || (next->kind == NK::Unary) ||
+                    (next->kind == NK::Cond) || (next->kind == NK::String) || (next->kind == NK::Vector) ||
+                    (next->kind == NK::Array) || (next->kind == NK::Dict) || (next->kind == NK::Member) ||
+                    (next->kind == NK::Index) || (next->kind == NK::True) || (next->kind == NK::False) ||
+                    (next->kind == NK::Null))
+                {
+                    value = next;
+                    body.kids.erase(body.kids.begin() + i + 1);
+                }
+            }
+        }
+        if (value != nullptr)
+        {
+            p.nodes.push_back(*word);
+            Node& quality = p.nodes.back();
+            quality.kind = NK::PhotonQuality;
+            quality.a = value;
+            body.kids[i] = &quality;
+        }
+        if (item->kind == NK::If)
+        {
+            const Node* branch = item;
+            while ((branch != nullptr) && (branch->kind == NK::If))
+            {
+                LowerPhotonItems(p, *const_cast<Node*>(branch->b));
+                branch = branch->c;
+            }
+            if (branch != nullptr)
+                LowerPhotonItems(p, *const_cast<Node*>(branch));
+        }
+        else if (item->kind == NK::While)
+            LowerPhotonItems(p, *const_cast<Node*>(item->b));
+        else if ((item->kind == NK::For) || (item->kind == NK::ForIn))
+            LowerPhotonItems(p, *const_cast<Node*>(item->d));
+    }
+}
+
 const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
 {
     if (mDepth >= kMaxDepth)
@@ -1023,6 +1110,8 @@ const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
         Node& node = NewNode(p, NK::Block, n);
         node.text = NodeText(p.source, Field(n, "name"));
         LowerItems(p, n, node, "name");
+        if (node.text == "photons")
+            LowerPhotonItems(p, node);
         return &node;
     }
     if (type == "function_block")
@@ -1523,6 +1612,13 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                 Fail(n->a, "The file name of an include must be a string, not %s.", TyName(t).c_str());
             break;
         }
+        case NK::PhotonQuality:
+        {
+            unsigned t = OperandTy(n->a, TY_NUM, ctx);
+            if (ctx.checking && (t != TY_NONE) && ((t & TY_NUM) == 0))
+                Fail(n->a, "Photon quality must be a number, not %s.", TyName(t).c_str());
+            break;
+        }
         case NK::Block:
             CheckBlockItems(n, ctx);
             break;
@@ -1535,14 +1631,33 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
     }
 }
 
-void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
+void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::string& context)
 {
+    DepthGuard depth(*this, n);
     if (n->kind == NK::FunctionBlock)
         return;
-    const std::string word = Normalised(n->text);
+    const std::string word = context.empty() ? Normalised(n->text) : context;
     const Pov4BlockSchema* schema = FindPov4BlockSchema(word.data(), word.size());
     for (const Node* k : n->kids)
     {
+        if (word == "photons")
+        {
+            if (k->kind == NK::If)
+            {
+                const Node* branch = k;
+                while ((branch != nullptr) && (branch->kind == NK::If))
+                {
+                    CheckBlockItems(branch->b, ctx, word);
+                    branch = branch->c;
+                }
+                if (branch != nullptr)
+                    CheckBlockItems(branch, ctx, word);
+            }
+            else if (k->kind == NK::While)
+                CheckBlockItems(k->b, ctx, word);
+            else if ((k->kind == NK::For) || (k->kind == NK::ForIn))
+                CheckBlockItems(k->d, ctx, word);
+        }
         if (k->kind == NK::Block)
         {
             CheckBlockItems(k, ctx);
@@ -2907,6 +3022,10 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
 {
     switch (n->kind)
     {
+        case NK::PhotonQuality:
+            out.Put(Item(Item::Keyword, "quality", "quality", n), false);
+            out.Put(Item(PValue::Number(Float(Eval(n->a), n->a, "Photon quality")), n->a), false);
+            return;
         case NK::Keyword:
             out.Put(Item(Item::Keyword, n->text, n->text, n), false);
             return;

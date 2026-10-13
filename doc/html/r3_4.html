@@ -2728,6 +2728,11 @@ photons {
   }
 </pre>
 
+<a name="r3_4_3_4_3_progressive"></a>
+<h6>Progressive photon controls</h6>
+<p><code>photons { method 2 quality FLOAT }</code> enables progressive photons. The <code>quality</code> value is a finite number greater than zero and at most 256, with a default of 1. Higher values spend more work reducing photon noise. Omitting <code>method</code> retains method 1 and its classic controls. Method 2 rejects <code>count</code>, <code>spacing</code>, <code>gather</code>, <code>radius</code>, <code>jitter</code>, <code>autostop</code> and <code>expand_thresholds</code>; <code>quality</code> requires method 2.</p>
+<p>Native <code>.pov4</code> scenes support the same settings, with expressions such as <code>quality (Budget * 2)</code>. The word <code>quality</code> is matched by text in the photon item position and remains available as an identifier. See <code>distribution/scenes/lights/progressive_photons4.pov4</code> for a complete example.</p>
+
 <p>All photons default values:</p>
 <pre>
 Global :

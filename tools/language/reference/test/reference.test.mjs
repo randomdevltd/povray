@@ -64,3 +64,12 @@ test('every block, item and overlay word renders a card', () => {
         assert.match(card, /^.{1,40}  \[(block|item|statement|function|literal)\]/);
     }
 });
+
+
+test('quality card describes its contextual progressive photon control', () => {
+    const out = run(['quality']);
+    assert.match(out, /^quality  \[item\]/);
+    assert.match(out, /method 2 quality FLOAT/);
+    assert.match(out, /remains available as an identifier/);
+    assert.doesNotMatch(out, /token: QUALITY_TOKEN/);
+});
