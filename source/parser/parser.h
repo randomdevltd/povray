@@ -890,6 +890,8 @@ class Parser final
         void Parse_User_Defined_Camera (Camera& Cam);
         void Parse_Camera(Camera& Cam);
         bool Parse_Camera_Mods(Camera& Cam);
+        void Parse_Camera_Look_At(Camera& Cam);
+        void Finalize_Camera_Framing();
         void Parse_Camera_Radiosity_Size(Camera& New);
         void Parse_Tags(std::vector<std::string>& tags);
         void Parse_Filter_Tags(TagFilter& filter);
@@ -907,6 +909,7 @@ class Parser final
         bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.
         std::vector<ObjectPtr> mLightGroups;
+        std::vector<std::pair<Media*, LightSource*>> mAutoMediaLights;
         void Remove_Subsurface_Without_Inside(ObjectPtr Object);
 
         void Parse_Global_Settings();

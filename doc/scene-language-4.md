@@ -20,6 +20,24 @@ Both languages have Tree-sitter grammars:
 
 Generated C sources are committed; renderer builds do not run the generator.
 
+## Bounds framing and media resolution
+
+`camera { location <4, 3, -8> angle 45 look_at Subject }` frames the transformed
+bounds of the object value `Subject`. `look_at filter_tags { "subject" }` instead
+frames the matching objects in the final manifested scene, including objects
+written after the camera. A coarse bounds projection sweep fits the camera with
+a small margin; a vector `look_at` retains its point-target meaning.
+
+`media { resolution auto }` uses the main camera and full output dimensions to
+estimate one world-unit grid width. `resolution auto 2` asks for twice as fine a
+width. `auto` remains an identifier outside the contextual media setting; these
+forms use the existing grammar's keyword, identifier and block items. Numeric
+`resolution R` keeps its stable world-unit meaning, and omitting the setting keeps
+the previous bounds-based default. The estimate ignores arbitrary screen pigment
+uses; a medium reachable through portal scene selections warns once. Use numeric
+resolution for those views. See the manual's [Prepared Fields](html/r3_11.html#r3_11_4)
+and [Bounds framing](html/r3_4.html#camera_bounds_framing).
+
 ## Execution model
 
 A 4.0 file is a program that runs **once** to construct the scene. Running it emits *items* into an

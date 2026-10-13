@@ -816,6 +816,8 @@ static vector<shared_ptr<ScreenPretrace>> ScreenPretraces(ViewData& viewData, un
 
 void View::StartRender(POVMS_Object& renderOptions)
 {
+    std::unique_lock<std::mutex> autoMediaLock(viewData.sceneData->autoMediaViewMutex, std::defer_lock);
+    if (!viewData.sceneData->cameraAutoMedia.empty()) autoMediaLock.lock();
     unsigned int tracingmethod = 0;
     DBL jitterscale = 1.0;
     bool jitter = false;
@@ -1156,6 +1158,25 @@ void View::StartRender(POVMS_Object& renderOptions)
         }
     }
 
+    if (!viewData.sceneData->cameraAutoMedia.empty() && (viewData.sceneData->autoMediaMainView.lock().get() == this))
+    {
+        const bool changed = (viewData.GetWidth() != viewData.sceneData->autoMediaWidth) ||
+                             (viewData.GetHeight() != viewData.sceneData->autoMediaHeight) ||
+                             !viewData.sceneData->autoMediaCamera.SameView(viewData.camera);
+        if (changed && !viewData.sceneData->cameraAutoMedia.empty())
+            for (const std::weak_ptr<View>& candidate : viewData.sceneData->autoMediaViews)
+                if (std::shared_ptr<View> view = candidate.lock())
+                    if ((view.get() != this) && !view->renderTasks.IsDone()) throw POV_EXCEPTION_CODE(kNotNowErr);
+        viewData.sceneData->ResolveAutoMedia(viewData.camera, viewData.GetWidth(), viewData.GetHeight());
+        MessageFactory autoMessages(viewData.sceneData->warningLevel, "Media", viewData.sceneData->backendAddress,
+                                    viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        for (Media* medium : viewData.sceneData->PortalAutoMedia(viewData.camera))
+        {
+            medium->FastAutoPortalWarned = true;
+            autoMessages.Warning(kWarningGeneral, "A medium using resolution auto can be seen through a portal; reprojection may make "
+                                 "the main-camera estimate inaccurate. Use numeric resolution to tune this medium.");
+        }
+    }
     const SceneData& scene = *viewData.GetSceneData();
     const bool hidesInteriorMedia = scene.interiorMedia && scene.solidBlocksInteriorMedia;
     if (!scene.atmosphere.empty() || (scene.fog != nullptr) || hidesInteriorMedia)

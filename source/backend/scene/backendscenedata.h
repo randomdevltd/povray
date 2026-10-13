@@ -45,6 +45,7 @@
 
 // C++ standard header files
 #include <map>
+#include <mutex>
 
 // POV-Ray header files (base module)
 #include "base/stringtypes.h"
@@ -54,6 +55,7 @@
 
 // POV-Ray header files (backend module)
 #include "backend/control/renderbackend.h"
+#include "backend/scene/view_fwd.h"
 
 namespace pov
 {
@@ -67,6 +69,9 @@ class BackendSceneData final : public SceneData
 
         typedef std::map<UCS2String, UCS2String> FilenameToFilenameMap;
 
+        std::weak_ptr<View> autoMediaMainView;
+        std::mutex autoMediaViewMutex;
+        std::vector<std::weak_ptr<View>> autoMediaViews;
         /// scene id
         RenderBackend::SceneId sceneId;
         /// backend address

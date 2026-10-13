@@ -583,7 +583,12 @@ Media& Media::operator=(const Media& source)
         Variance = source.Variance;
         AA_Threshold = source.AA_Threshold;
         AA_Level = source.AA_Level;
-        FastResolution = source.FastResolution;
+        FastResolution = source.FastResolutionAuto ? -1.0 : source.FastResolution;
+        FastResolutionAuto = source.FastResolutionAuto;
+        FastResolutionMultiplier = source.FastResolutionMultiplier;
+        FastAutoContainer = nullptr;
+        FastAutoContainerConflict = false;
+        FastAutoPortalWarned = false;
         mix = source.mix;
         priority = source.priority;
         light = source.light;
@@ -641,10 +646,17 @@ static Vector3d ContainerSize(ObjectPtr object)
     return high - low;
 }
 
-void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLimit)
+void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLimit, bool resolveAuto)
 {
     if (Sample_Method != 4)
         return;
+    if (FastResolutionAuto && !resolveAuto)
+    {
+        if ((FastAutoContainer != nullptr) && (FastAutoContainer != object))
+            FastAutoContainerConflict = true;
+        FastAutoContainer = object;
+        return;
+    }
     if (FastResolution == -1.0)
     {
         FastResolution = AutomaticResolution(object);

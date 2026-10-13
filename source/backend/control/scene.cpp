@@ -63,6 +63,7 @@
 // POV-Ray header files (backend module)
 #include "backend/bounding/boundingtask.h"
 #include "backend/control/parsertask.h"
+#include "backend/control/messagefactory.h"
 #include "backend/scene/backendscenedata.h"
 #include "backend/scene/view.h"
 
@@ -130,6 +131,8 @@ void Scene::StartParser(POVMS_Object& parseOptions)
     DBL outputWidth  = parseOptions.TryGetFloat(kPOVAttrib_Width, 160);
     DBL outputHeight = parseOptions.TryGetFloat(kPOVAttrib_Height, 120);
     sceneData->aspectRatio = outputWidth / outputHeight;
+    sceneData->outputWidth = static_cast<unsigned int>(outputWidth);
+    sceneData->outputHeight = static_cast<unsigned int>(outputHeight);
 
     sceneData->defaultFileType = parseOptions.TryGetInt(kPOVAttrib_OutputFileType, DEFAULT_OUTPUT_FORMAT); // TODO - should get DEFAULT_OUTPUT_FORMAT from the front-end
     sceneData->clocklessAnimation = parseOptions.TryGetBool(kPOVAttrib_ClocklessAnimation, false); // TODO - experimental code
@@ -246,6 +249,14 @@ void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, s
 
 void Scene::FinishSetBounds(TaskQueue& taskq)
 {
+    MessageFactory messages(sceneData->warningLevel, "Media", sceneData->backendAddress,
+                            sceneData->frontendAddress, sceneData->sceneId, 0);
+    for (Media* medium : sceneData->PortalAutoMedia(sceneData->parsedCamera))
+    {
+        medium->FastAutoPortalWarned = true;
+        messages.Warning(kWarningGeneral, "A medium using resolution auto can be seen through a portal; reprojection may make "
+                         "the main-camera estimate inaccurate. Use numeric resolution to tune this medium.");
+    }
     PreparedSet& mainView = sceneData->GetPreparedSet(0);
     sceneData->numberOfFiniteObjects = mainView.numberOfFiniteObjects;
     sceneData->numberOfInfiniteObjects = mainView.numberOfInfiniteObjects;
@@ -306,7 +317,11 @@ std::shared_ptr<View> Scene::NewView(unsigned int width, unsigned int height, Re
     if((parserTasks.IsDone() == false) || (parserTasks.Failed() == true))
         throw POV_EXCEPTION_CODE(kNotNowErr);
 
-    return std::shared_ptr<View>(new View(sceneData, width, height, vid));
+    std::lock_guard<std::mutex> lock(sceneData->autoMediaViewMutex);
+    std::shared_ptr<View> view(new View(sceneData, width, height, vid));
+    if (sceneData->autoMediaMainView.expired()) sceneData->autoMediaMainView = view;
+    sceneData->autoMediaViews.push_back(view);
+    return view;
 }
 
 POVMSAddress Scene::GetFrontendAddress() const

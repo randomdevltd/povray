@@ -93,7 +93,7 @@
   <td><div class="divh3"><a title="3.4.2.1" href="#r3_4_2_1">Placing the Camera</a></div></td>
 </tr>
 <tr>
-  <td><div class="divh4"><a title="3.4.2.1.1" href="#r3_4_2_1_1">Location and Look_At</a></div></td>
+  <td><div class="divh4"><a title="3.4.2.1.1" href="#r3_4_2_1_1">Location and Look_At</a> &middot; <a href="#camera_bounds_framing">Bounds framing</a></div></td>
 </tr>
 <tr>
   <td><div class="divh4"><a title="3.4.2.1.2" href="#r3_4_2_1_2">The Sky Vector</a></div></td>
@@ -746,6 +746,7 @@ CAMERA_VECTOR:
   direction &lt;Direction&gt; | sky &lt;Sky&gt;
 CAMERA_MODIFIER:
   angle HORIZONTAL [VERTICAL] | look_at &lt;Look_At&gt; |
+  look_at OBJECT_IDENTIFIER | look_at filter_tags { TAG_EXPRESSION } |
   blur_samples [MIN_SAMPLES,] MAX_SAMPLES | aperture Size |
   focal_point &lt;Point&gt; | confidence Blur_Confidence |
   variance Blur_Variance | [bokeh { pigment { BOKEH } }] |
@@ -864,6 +865,18 @@ the camera statement. If other camera items are placed after the <code>
 look_at</code> vector then the camera may not continue to look at the
 specified point.</p>
 
+</div>
+<div id="camera_bounds_framing">
+<h5>Framing object bounds</h5>
+<p>From language version 3.5 onward, <code>look_at ObjectIdentifier</code> frames the referenced object's transformed axis-aligned bounds, and, from language version 4.0, <code>look_at filter_tags { "subject" }</code> frames objects selected by a <a href="r3_5.html#r3_5_1_5_13">tag expression</a> in the final parsed scene. The tag query may therefore precede the objects it selects. Declarations alone do not enter that scene; manifest or instantiate them before using a query.</p>
+<pre>
+#declare Subject = sphere { 0, 1 scale &lt;2, 1, 1&gt; tags { "subject" } }
+object { Subject }
+camera { location &lt;4, 3, -8&gt; angle 45 look_at Subject }
+// Alternative: camera { location &lt;4, 3, -8&gt; angle 45 look_at filter_tags { "subject" } }
+</pre>
+<p>The camera points toward the bounds' centre from the supplied location, then moves along that view direction until a coarse projection sweep fits the bounds with a five per cent margin on each side. Orthographic cameras resize <code>right</code> and <code>up</code>; cylinder cameras 3 and 4 also resize their parallel axis. The fit covers bounding boxes, including empty space, rather than exact ray/geometry fitting. It ignores occlusion, camera normal perturbations and focal blur. Empty or infinite targets and unsupported mesh or user-defined camera projections are errors. Ordinary <code>look_at &lt;Point&gt;</code> retains its point-target behavior.</p>
+<p><a href="r3_11.html#r3_11_4">Media <code>resolution auto</code></a> uses the same bounds projection finder.</p>
 </div>
 <a name="r3_4_2_1_2"></a>
 <div class="content-level-h5" contains="The Sky Vector" id="r3_4_2_1_2">

@@ -127,6 +127,9 @@ public:
     bool No_Radiosity;                      // [screen cameras] no radiosity pretrace, and its view is shaded without radiosity
     std::vector<std::string> tags;
     TagFilter filterTags;
+    bool frameBounds = false;
+    Vector3d frameLow, frameHigh;
+    TagFilter frameFilter;
 
     Camera();
     Camera(const Camera& src);
@@ -138,10 +141,19 @@ public:
     void Translate(const Vector3d& Vector);
     /// Whether this camera takes the same picture as another, judged by content; perturbed or function-defined views never match a copy.
     bool SameView(const Camera& other, bool compareFilters = true) const;
+    bool Frame(const Vector3d& low, const Vector3d& high);
 
 private:
     void Init();
 };
+
+struct BoundsProjection final
+{
+    DBL left, right, bottom, top;
+};
+
+bool ProjectBounds(const Camera& camera, const Vector3d& low, const Vector3d& high, BoundsProjection& projection);
+bool FiniteBounds(const Vector3d& low, const Vector3d& high);
 
 /// @}
 ///
