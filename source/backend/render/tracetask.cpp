@@ -482,6 +482,9 @@ void TraceTask::ProgressivePhotons()
     unsigned int serial;
     const unsigned int pass = unsigned(progressLevel);
     const unsigned int photonPass = GetViewData()->photonPass;
+    const ProgressivePhotonBudget budget(GetSceneData()->photonSettings.quality,
+                                         std::uint64_t(GetViewData()->GetWidth()) * GetViewData()->GetHeight());
+    const auto group = budget.EmissionBatch(photonPass + 1);
     std::vector<RGBTColour> pixels;
     while (GetViewData()->GetNextRectangle(rect, serial))
     {
@@ -506,8 +509,8 @@ void TraceTask::ProgressivePhotons()
                                                data->progressiveLaplacian, data->progressiveDensity);
                 data->progressivePixel = nullptr;
                 auto& sum = GetViewData()->LatticeSample(x, y);
-                sum += sample;
-                pixels.push_back(sum / double(pass + 1));
+                sum += sample * double(group.batches);
+                pixels.push_back(sum / double(photonPass + 1));
                 GetViewDataPtr()->Stats()[Number_Of_Pixels]++;
                 Cooperate();
             }

@@ -26,7 +26,8 @@ struct ProgressivePhotonBudget final
         if (batch == 0)
             return {0, 0, 1};
         const unsigned int camera = (batch - 1) / batchesPerPass;
-        return {camera, 1 + camera * batchesPerPass, batchesPerPass};
+        const unsigned int first = 1 + camera * batchesPerPass;
+        return {camera, first, std::min(batchesPerPass, batches - first + 1)};
     }
 
     std::uint64_t EmittedSamples() const { return std::uint64_t(batches + 1) * batchSize; }
@@ -39,7 +40,7 @@ struct ProgressivePhotonBudget final
         const unsigned int requested = static_cast<unsigned int>(std::ceil(4.0 * quality));
         batchesPerPass = pixels >= std::uint64_t(batchSize) * 64 ? maxBatchesPerPass : 1;
         passes = (requested + batchesPerPass - 1) / batchesPerPass;
-        batches = passes * batchesPerPass;
+        batches = requested;
     }
 
     static double RadiusScale(std::uint64_t pass, unsigned int dimensions)
