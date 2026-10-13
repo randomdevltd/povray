@@ -108,6 +108,75 @@ caustic at 1920×960 20.363 to 20.283 G, with the same decoded pixels. Combined 
 trace instructions fell 3.0% on `phot_met_glass`, 15.8% on the water caustic, 11.1% on dense water and 30.1% on the
 sparse caustic (one run per scene, same pixels).
 
+## Progressive volume segments
+
+Photon method 2 now stores finite volume segments, with exponential attenuation
+integrated inside the gather sphere. Its existing bounded batches and independent
+pilot remain; adjacent constant-coefficient cells coalesce only inside one of the
+curved marcher's chords. Method 1 is unchanged. See
+[transport and ownership limits](progressive-photons.md).
+
+The focused fixture is `tests/render/progressive_volume.pov`, combining a media
+emitter, a method-4 scattering receiver and a refractive target. The method-4
+lighting stride previously omitted photon gathers: its 24×24 mean linear value
+was 0.00481 versus 0.01939 with classic media sampling. The registered regression
+fails on that version. Direct light keeps its coarse stride while photon gathers
+now run at every coefficient sample.
+
+These measurements used `+W24 +H24 +PR -A +WT1 +FP16 File_Gamma=1`, GCC 15,
+and the same scene with `Declare=Heat=0`. The development point fallback is built
+with `-DPOV_PROGRESSIVE_VOLUME_POINTS`; it uses the same coefficient preparation,
+medium ownership and final lighting stride. A segment render at quality 4 supplies
+the reference. Errors are MSE of decoded linear 16-bit RGB. This reference retains
+sampling and reconstruction error, so the comparison is a focused diagnostic.
+
+| Estimator / quality | Linear MSE | Full instructions | Shooting CPU | Map CPU | Camera CPU | Peak RSS |
+|---|---:|---:|---:|---:|---:|---:|
+| Points / 4 | 5.34e-5 | 59.219 G | 4.522 s | 1.828 s | 2.686 s | 229 MiB |
+| Segments / 0.5 | 5.29e-5 | 33.237 G | 0.721 s | 0.077 s | 2.823 s | 42 MiB |
+
+Medians of three alternating runs; user-space instruction counters were not
+multiplexed. Decoded images repeated exactly. At this matched error, segments used
+44% fewer total instructions and 82% less RSS. Camera gathering remains expensive;
+the gain comes from fewer emission batches and smaller maps. One-pixel runs used
+41.772 G instructions for points and 6.898 G for segments: these include photon
+shooting and map construction. Subtracting them leaves 17.448 G and 26.339 G for the
+camera increment. Total preparation CPU was 1.984 s and 0.111 s respectively,
+including the map subset shown above. Searching the pilot only within the already
+capped support reduced segment quality-0.25 instructions from 29.091 G to 18.241 G
+with identical decoded pixels.
+
+For heterogeneous extinction (`Declare=Variation=0.1`, quality 0.25, one run),
+segments used 6.745 G instructions and 212 MiB versus 7.029 G and 213 MiB for
+points. MSE against the corresponding quality-4 segment reference was 1.36e-4
+versus 1.55e-3. Varying coefficients prevent coalescing, so there was no memory gain.
+
+With the refractive field enabled (the fixture's default `Heat=0.08`, quality 0.25,
+one run), segments used 97.081 G instructions and 249 MiB versus 86.924 G and
+498 MiB for points: a 12% instruction regression at the same work budget, with
+half the memory. Against a four-pass segment reference (quality 1), MSE was
+2.33e-4 for segments and 1.51e-3 for points. This lower-quality reference is an
+additional diagnostic, not a converged solution. The refractive marcher dominates
+this case. The implementation preserves its piecewise paths; these measurements
+do not establish a curved-path performance improvement at equal error.
+
+Reproduce the matched-error pair with separate segment and point executables:
+
+```sh
+povray-segments +Itests/render/progressive_volume.pov +W24 +H24 +PR -A +WT1 \
+  +FP16 File_Gamma=1 Declare=Heat=0 Declare=PhotonQuality=0.5 +Osegments.ppm
+povray-points +Itests/render/progressive_volume.pov +W24 +H24 +PR -A +WT1 \
+  +FP16 File_Gamma=1 Declare=Heat=0 Declare=PhotonQuality=4 +Opoints.ppm
+```
+
+The analytic tests check clipping, attenuation, subdivision, kernel normalization,
+bent paths and indexed gathers against exhaustive queries. The combined render
+suite checks method-4 gathering, thread equality, linear power, varying extinction,
+curved paths and the existing rejection of volume photons from light groups.
+Emitter/target power weighting was left unchanged: comparable source power would
+need the spot, area and parallel directional/aperture PDFs, and these single-source
+fixtures provide no evidence of a useful sampling gain.
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

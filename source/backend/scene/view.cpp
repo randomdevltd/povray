@@ -1756,7 +1756,7 @@ void View::QueueProgressivePhotons(size_t seed, int threads, GammaCurvePtr& gamm
     for (auto& set : viewData.GetSceneData()->preparedSets)
     {
         set->progressiveSurface = ProgressivePhotonMap();
-        set->progressiveMedia = ProgressivePhotonMap();
+        set->progressiveMedia = ProgressiveVolumePhotonMap();
         set->progressiveFeedback.clear();
     }
     viewData.EnsureLatticeSamples(viewData.GetWidth(), viewData.GetHeight());
@@ -1856,7 +1856,8 @@ void View::PrepareProgressivePhotons(TaskQueue&, std::shared_ptr<std::vector<Vie
                 previous->hit += observation.hit;
             }
         }
-        bytes += (shooter->progressiveSurface.capacity() + shooter->progressiveMedia.capacity()) * sizeof(ProgressivePhoton);
+        bytes += shooter->progressiveSurface.capacity() * sizeof(ProgressivePhoton) +
+                 shooter->progressiveMedia.capacity() * sizeof(ProgressiveVolumePhoton);
     }
     for (unsigned int shard = 0; shard < ProgressivePhotonBudget::shards; ++shard)
         for (auto* shooter : *shooters)
@@ -1878,14 +1879,15 @@ void View::PrepareProgressivePhotons(TaskQueue&, std::shared_ptr<std::vector<Vie
     for (auto* shooter : *shooters)
     {
         std::vector<ProgressivePhoton>().swap(shooter->progressiveSurface);
-        std::vector<ProgressivePhoton>().swap(shooter->progressiveMedia);
+        std::vector<ProgressiveVolumePhoton>().swap(shooter->progressiveMedia);
     }
     for (auto& set : viewData.GetSceneData()->preparedSets)
     {
         set->progressiveSurface.Build(pass, 2);
         set->progressiveMedia.Build(pass, 3);
-        bytes += (set->progressiveSurface.photons.capacity() + set->progressiveSurface.pilot.capacity() +
-                  set->progressiveMedia.photons.capacity() + set->progressiveMedia.pilot.capacity()) * sizeof(ProgressivePhoton);
+        bytes += (set->progressiveSurface.photons.capacity() + set->progressiveSurface.pilot.capacity()) * sizeof(ProgressivePhoton) +
+                 (set->progressiveMedia.photons.capacity() + set->progressiveMedia.pilot.capacity()) * sizeof(ProgressiveVolumePhoton) +
+                 (set->progressiveMedia.bounds.capacity() + set->progressiveMedia.pilotBounds.capacity()) * sizeof(ProgressiveVolumePhotonMap::Bounds);
     }
     viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
     viewData.photonMapCPU += timer.ElapsedThreadCPUTime();

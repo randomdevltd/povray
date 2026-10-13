@@ -77,11 +77,31 @@ controls do not apply and are rejected. Radiosity, oriented area emitters and
 `projected_through` lights are currently rejected. Explicit antialiasing is also
 rejected; use photon quality to increase the number of camera samples.
 
-Media photons are enabled by the existing `media` photon setting. Transport uses
-ordered extinction integration and deposits flux times segment length. The media
-step limit and the medium's own sampling settings remain integration controls,
-separate from photon reconstruction. Curved paths use the existing refractive
-field marcher and its segment tolerances. No photon beam approximation is added.
+Media photons are enabled by the existing `media` photon setting. Transport stores
+finite photon segments with their incoming flux and extinction. A gather clips each
+segment to its spherical support and integrates attenuation analytically along the
+clipped length. The estimate divides by the sphere volume, with scattering and phase
+evaluated at the camera sample. An independent pilot supplies the local support.
+The existing media step limit and sampling settings control extinction integration;
+method 4 shares its prepared coefficient field with camera transport. Its coarse
+direct-light sampling still gathers photons at every coefficient sample.
+
+Curved photon paths retain every chord produced by the refractive field marcher.
+Segments may coalesce only inside one chord, when adjacent integration cells have
+identical extinction. No segment joins separate curved-ray chords or crosses an
+interior boundary. The spatial index bounds the actual segment endpoints. Constant
+media can consequently use fewer deposits, while varying extinction retains the
+integration cells. Field interpolation and constant extinction inside each cell
+remain approximations; a small number of photons can still miss a narrow caustic.
+
+Each segment records the exact active medium list and modifier ownership/order.
+Gathering and pilot support selection require that same list, avoiding transfer
+between nearby unrelated containers. This deliberately truncates support at a
+change of medium stack; it does not correct kernel bias at that boundary. The
+existing rejection of volume photons from light-group sources remains in place.
+The prototype does not add medium ownership support for light groups or change
+`global_lights off` behavior. Shared media must still follow the existing scene
+ownership restrictions.
 Subsurface photon illumination is reconstructed before diffusion; its cache is
 renewed each pass so illumination from an older map is not reused.
 
@@ -123,8 +143,8 @@ self-attenuation, refractive heat and arrays of small emitters.
 
 There is one current map and one fixed pilot, not an accumulating photon map.
 Photon storage depends on batch size and deposits per traced path, including
-spectral branches and media samples. The log reports peak photon-vector capacity
-and preparation CPU separately from shooting and camera work. Pixel state is
+spectral branches and media samples. The log reports peak photon and index vector capacity
+(shared ownership metadata is additional) and preparation CPU separately from shooting and camera work. Pixel state is
 40 bytes per image pixel: 16 bytes of accumulated RGBA and 24 bytes of bandwidth
 statistics. This is about 316 MiB at 3840 by 2160, excluding the frontend image,
 scene, worker scratch storage and photon vectors. Camera work is tiled, while
@@ -150,6 +170,15 @@ It also covers area, spot, parallel and cylindrical lights, heterogeneous media,
 dispersion, subsurface receivers, thin and close surfaces, reflected and refracted
 views, curved media paths, inactive lights, and emission along photon paths.
 The analytic prototype and the render test are included in `make check`.
+`tests/source/photon_beam.cpp` checks segment clipping, attenuation and subdivision,
+uniform-density normalization and bent-path support. `photon_beam_map.cpp` compares
+indexed gathers and pilot distances against exhaustive queries. The registered
+`tests/render/progressive_volume.sh` combines a method-4 receiver, media emitter,
+progressive volume photons and a refractive field, and checks thread equality,
+linear power, varying extinction and the unsupported group-source error. Its
+method-3 comparison fails when method-4 lighting strides omit photon gathers.
+For a development comparison, build with `-DPOV_PROGRESSIVE_VOLUME_POINTS` to retain
+midpoint deposits in the volume estimator; this is not a scene-language option.
 On the focused 96 by 64 glass-sphere caustic, method 2 quality 1 used 3.10 billion
 instructions and had linear-light mean squared error `7.52e-6` against a
 32-times supersampled classic reference. Classic count 16,384 with `+AM4` used

@@ -1080,7 +1080,7 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
                                                         const Intersection& isect, MathColour& colour)
 {
     ModifierScope scope(*this, mods);
-    if (ray.IsPhotonRay())
+    if (ray.IsPhotonRay() && sceneData->photonSettings.method != 2)
         PreparedResolution(medias, ray);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
@@ -1163,6 +1163,11 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
 {
     if (sceneData->photonSettings.method == 2)
     {
+        const double resolution = PreparedResolution(medias, ray);
+        const bool prepared = resolution > 0.0 && PrepareFields(medias, ray);
+        const auto domain = VolumeDomain(medias);
+        const size_t firstBeam = threadData->progressiveMedia.size();
+        double lastEnd = -1.0;
         for (auto& interval : mediaintervals)
         {
             if (interval.ds <= 0.0)
@@ -1175,17 +1180,40 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                 const double start = interval.s0 + sample * step;
                 MediaInterval cell(false, 0, start, start + step, step, 0, 0);
                 MathColour emission, opticalDepth;
-                ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, opticalDepth, 2,
-                                      ignore_photons, use_scattering, true);
+                ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, opticalDepth, 3,
+                                      ignore_photons, use_scattering, true, prepared);
                 if (use_scattering && !ignore_photons)
                 {
-                    ProgressivePhoton photon;
+                    ProgressiveVolumePhoton photon;
                     photon.point = ray.Evaluate(start + 0.5 * step);
                     photon.direction = -ray.Direction;
-                    photon.flux = colour * Exp(-opticalDepth * 0.5) * step;
+                    photon.flux = colour;
+                    photon.extinction = opticalDepth / step;
+                    photon.length = step;
+                    photon.domain = domain;
                     photon.set = ray.GetPreparedSetId();
-                    threadData->progressiveMedia.push_back(photon);
-                    threadData->Stats()[Number_Of_Media_Photons_Stored]++;
+                    bool merged = false;
+#ifndef POV_PROGRESSIVE_VOLUME_POINTS
+                    if (threadData->progressiveMedia.size() > firstBeam && (sample > 0 || lastEnd == start))
+                    {
+                        auto& previous = threadData->progressiveMedia.back();
+                        bool same = true;
+                        for (int channel = 0; channel < MathColour::channels; ++channel)
+                            same = same && previous.extinction[channel] == photon.extinction[channel];
+                        if (same)
+                        {
+                            previous.length += step;
+                            previous.point = ray.Evaluate(start + step - previous.length * 0.5);
+                            merged = true;
+                        }
+                    }
+#endif
+                    if (!merged)
+                    {
+                        threadData->progressiveMedia.push_back(photon);
+                        threadData->Stats()[Number_Of_Media_Photons_Stored]++;
+                    }
+                    lastEnd = start + step;
                 }
                 colour *= Exp(-opticalDepth);
             }

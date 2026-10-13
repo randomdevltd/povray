@@ -127,6 +127,7 @@ class RefractionField final
 };
 
 class ExtinctionPlan;
+struct ProgressiveVolumeDomain;
 
 class MediaFunction : public Trace::MediaFunctor
 {
@@ -141,6 +142,8 @@ class MediaFunction : public Trace::MediaFunctor
         /// The current segment's subtract and multiply interiors, or nullptr.
         const MediaModifierVector *modifiers;
         std::vector<MathColour> modifierScratch, densityScratch;
+        std::shared_ptr<const ProgressiveVolumeDomain> volumeDomain;
+        std::shared_ptr<const ProgressiveVolumeDomain> VolumeDomain(const MediaVector& medias);
 
         struct ModifierScope final
         {
