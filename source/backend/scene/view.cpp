@@ -1476,6 +1476,17 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       budget.passes, budget.batches, static_cast<unsigned long long>(budget.EmittedSamples()), static_cast<unsigned long long>(contributing), viewData.photonPrepareCPU / 1000.0,
                       viewData.photonMapCPU / 1000.0, viewData.photonPeakBytes,
                       size_t(viewData.GetWidth()) * viewData.GetHeight() * (sizeof(RGBTColour) + sizeof(ProgressivePhotonState)));
+        if (!viewData.photonCameraCache.empty())
+        {
+            size_t bytes = viewData.photonCameraCache.capacity() * sizeof(PhotonCameraCache), queries = 0, cached = 0;
+            for (const auto& pixel : viewData.photonCameraCache)
+            {
+                bytes += pixel.queries.capacity() * sizeof(PhotonCameraQuery);
+                queries += pixel.queries.size(); cached += pixel.complete && pixel.valid;
+            }
+            messages.Info("Experimental camera cache: %zu pixels reusable, %zu queries, %zu bytes; %zu bytes/query.",
+                          cached, queries, bytes, sizeof(PhotonCameraQuery));
+        }
     }
 
     double photonGathers = double(stats[Subsurface_Photon_Cloud_Gathers]) + double(stats[Subsurface_Photon_Sample_Gathers]);
@@ -1765,6 +1776,8 @@ void View::QueueProgressivePhotons(size_t seed, int threads, GammaCurvePtr& gamm
     viewData.EnsureLatticeSamples(viewData.GetWidth(), viewData.GetHeight());
     std::fill(viewData.latticeSamples.begin(), viewData.latticeSamples.end(), RGBTColour());
     viewData.photonPixels.assign(size_t(viewData.GetWidth()) * viewData.GetHeight(), ProgressivePhotonState());
+    if (std::getenv("POVRAY_CAMERA_CACHE"))
+        viewData.photonCameraCache.resize(viewData.photonPixels.size());
     shared_ptr<ViewData::BlockIdSet> noSkip(new ViewData::BlockIdSet());
     auto* photonTotal = new ViewThreadData(&viewData, seed);
     auto* traceTotal = new ViewThreadData(&viewData, seed);

@@ -67,6 +67,7 @@
 #include "core/bounding/bsptree.h"
 #include "core/lighting/radiosity.h"
 #include "core/lighting/progressivephoton.h"
+#include "core/lighting/photoncameracache.h"
 #include "core/scene/camera.h"
 
 // POV-Ray header files (backend module)
@@ -371,6 +372,7 @@ class ViewData final
         size_t photonPeakBytes = 0;
         unsigned int photonThreads = 0, photonTraceThreads = 0;
         std::vector<ProgressivePhotonState> photonPixels;
+        std::vector<PhotonCameraCache> photonCameraCache;
         bool KeepsLatticeSamples() const { return latticeSamplesActive; }
 
         /// Method 4: a pixel's index in its per-pixel state, which covers the render area only.

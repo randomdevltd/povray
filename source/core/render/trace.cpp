@@ -1466,6 +1466,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         surfacePhotonGatherer->gathered = false;
     }
 
+    if (threadData->photonCameraCache && (!ray.IsPrimaryRay() || texture->Next != nullptr))
+        threadData->photonCameraCache->valid = false;
     SubsurfaceLayers subsurfaceLayers;
 
     SurfaceDifferentials hitDiff;
@@ -1800,6 +1802,19 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     }
 #endif
 
+                    if (threadData->photonCameraCache && ray.IsPrimaryRay())
+                    {
+                        auto& cache = *threadData->photonCameraCache;
+                        PhotonCameraQuery query;
+                        query.point = isect.IPoint; query.normal = layNormal; query.rawNormal = rawnormal;
+                        query.eye = ray.Direction; query.pigment = layCol.colour(); query.finish = layer->Finish;
+                        query.receiver = isect.Object; query.set = ray.GetPreparedSetId(); query.key = ray.GetKey();
+                        query.attenuation = att; query.eta = relativeIor; query.coefficient = filCol;
+                        cache.queries.push_back(query);
+                        cache.firstPhotons += photonsContribution * filCol;
+                    }
+                    else if (threadData->photonCameraCache)
+                        threadData->photonCameraCache->valid = false;
                     tmpCol += photonsContribution;
                 }
             }
@@ -2441,6 +2456,31 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
 
     lightOrder.resize(order);
     lightCandidates.resize(first);
+}
+
+
+RGBTColour Trace::ReplayPhotonCamera(const PhotonCameraCache& cache)
+{
+    MathColour colour;
+    TraceTicket ticket(sceneData->parsedMaxTraceLevel, sceneData->parsedAdcBailout);
+    PhotonGatherer gatherer(&sceneData->GetPreparedSet(0).surfacePhotonMap, sceneData->photonSettings);
+    for (const auto& query : cache.queries)
+    {
+        ticket.preparedSetId = query.set;
+        MathColour result;
+        if (query.subsurface)
+            result = ComputeSubsurfacePhotonIrradiance(query.point, query.normal, query.eta,
+                const_cast<ObjectPtr>(query.receiver), gatherer, ticket, false);
+        else
+        {
+            Ray ray(ticket, query.point, query.eye);
+            ray.SetPreparedSetId(query.set); ray.SetKey(query.key);
+            ComputePhotonDiffuseLight(query.finish, query.point, ray, query.normal, query.rawNormal,
+                query.pigment, result, query.attenuation, query.receiver, query.eta, gatherer, 1.0);
+        }
+        colour += result * query.coefficient;
+    }
+    return cache.base + RGBTColour(ToRGBColour(colour), 0.0);
 }
 
 void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
@@ -6344,6 +6384,14 @@ bool Trace::ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vec
             }
             MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, normal, out.Object->interior->IOR / sceneData->atmosphereIOR,
                                                                       receiver, gatherer, ticket, false);
+            if (threadData->photonCameraCache)
+            {
+                PhotonCameraQuery query;
+                query.point = in.IPoint; query.normal = normal; query.receiver = receiver;
+                query.set = ticket.preparedSetId; query.eta = out.Object->interior->IOR / sceneData->atmosphereIOR;
+                query.subsurface = true; query.coefficient = MathColour(rd / double(samples));
+                threadData->photonCameraCache->queries.push_back(query);
+            }
             sum += rd * PreciseMathColour(photonEntry);
         }
     }
@@ -7474,6 +7522,8 @@ void Trace::SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers&
 void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& out, Ray& Eye, MathColour& Final_Colour)
 {
     const FINISH *Finish = layers.top->Finish;
+    PhotonCameraCache* cameraCache = threadData->photonCameraCache;
+    const size_t queryStart = cameraCache ? cameraCache->queries.size() : 0;
     int NumSamplesDiffuse = sceneData->subsurfaceSamplesDiffuse;
     int NumSamplesSingle  = sceneData->subsurfaceSamplesSingle;
 
@@ -7563,6 +7613,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
     bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+    if (cameraCache && cloud)
+        cameraCache->valid = false;
     const bool photonSamples = cloudData.photons && !cloud;
     if (photonSamples && (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed))
     {
@@ -7622,6 +7674,14 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                 if (dot(n, in.IPoint - sampleBase) < 0.0)
                     n.invert();
                 MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, n, out.Object->interior->IOR / sceneData->atmosphereIOR, SubsurfaceObject(out), *gatherer, Eye.GetTicket(), false);
+                if (cameraCache)
+                {
+                    PhotonCameraQuery query;
+                    query.point = in.IPoint; query.normal = n; query.receiver = SubsurfaceObject(out);
+                    query.set = Eye.GetPreparedSetId(); query.eta = out.Object->interior->IOR / sceneData->atmosphereIOR;
+                    query.subsurface = true; query.coefficient = MathColour(rd / double(NumSamplesDiffuse));
+                    cameraCache->queries.push_back(query);
+                }
                 Total_Colour += MathColour(rd * PreciseMathColour(photonEntry));
             }
 
@@ -7726,6 +7786,18 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     if (Finish->SubsurfaceHasColour)
         Total_Colour *= flesh.exitSkin;
+    if (cameraCache)
+    {
+        if (!Eye.IsPrimaryRay())
+            cameraCache->valid = false;
+        MathColour factor = layers.weight;
+        for (int j = 0; flesh.fleshAtDepth && (j < MathColour::channels); j++)
+            factor[j] /= max(flesh.reference[j], kFleshFloor);
+        if (Finish->SubsurfaceHasColour)
+            factor *= flesh.entrySkin * flesh.exitSkin;
+        for (size_t i = queryStart; i < cameraCache->queries.size(); ++i)
+            cameraCache->queries[i].coefficient *= factor;
+    }
     Final_Colour += Total_Colour * layers.weight;
 
     Eye.GetTicket().subsurfaceRecursionDepth--;

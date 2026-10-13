@@ -56,6 +56,7 @@
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
 #include "core/lighting/progressivephotonmap.h"
+#include "core/lighting/photoncameracache.h"
 #include "core/lighting/progressivevolumemap.h"
 #include "core/bounding/boundingcylinder.h"
 #include "core/math/randomsequence_fwd.h"
@@ -184,6 +185,7 @@ class TraceThreadData : public ThreadData
         std::vector<ProgressivePhotonFeedback> progressiveFeedback;
         std::vector<ProgressivePhotonBatch> progressiveBatches;
         std::uint64_t progressiveContributions = 0;
+        PhotonCameraCache* photonCameraCache = nullptr;
         ProgressivePhotonState* progressivePixel = nullptr;
         unsigned int progressivePass = 0;
         double progressiveValue = 0.0, progressiveNoise = 0.0, progressiveLaplacian = 0.0, progressiveDensity = 0.0;

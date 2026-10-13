@@ -496,15 +496,32 @@ void TraceTask::ProgressivePhotons()
             {
                 const auto key = DeriveKey(GetViewDataPtr()->stochasticRandomSeedBase,
                                            kDrawPhoton, std::uint64_t(y) * GetViewData()->GetWidth() + x);
-                const double sx = Draw(key, kDrawPhoton, 0) + (pass + 0.5) * 0.7548776662466927;
-                const double sy = Draw(key, kDrawPhoton, 1) + (pass + 0.5) * 0.5698402909980532;
+                const unsigned int cameraSample = (std::getenv("POVRAY_CAMERA_FIXED") || std::getenv("POVRAY_CAMERA_CACHE")) ? 0 : pass;
+                const double sx = Draw(key, kDrawPhoton, 0) + (cameraSample + 0.5) * 0.7548776662466927;
+                const double sy = Draw(key, kDrawPhoton, 1) + (cameraSample + 0.5) * 0.5698402909980532;
                 RGBTColour sample;
                 auto* data = GetViewDataPtr();
                 data->progressivePixel = &GetViewData()->photonPixels[size_t(y) * GetViewData()->GetWidth() + x];
                 data->progressivePass = photonPass;
                 data->progressiveValue = data->progressiveNoise = data->progressiveLaplacian = data->progressiveDensity = 0.0;
-                trace(x + sx - std::floor(sx), y + sy - std::floor(sy),
-                      GetViewData()->GetWidth(), GetViewData()->GetHeight(), sample);
+                PhotonCameraCache* cache = GetViewData()->photonCameraCache.empty() ? nullptr :
+                    &GetViewData()->photonCameraCache[size_t(y) * GetViewData()->GetWidth() + x];
+                if (cache && cache->complete && cache->valid)
+                    sample = trace.ReplayPhotonCamera(*cache);
+                else
+                {
+                    data->photonCameraCache = cache && !cache->complete ? cache : nullptr;
+                    trace(x + sx - std::floor(sx), y + sy - std::floor(sy),
+                          GetViewData()->GetWidth(), GetViewData()->GetHeight(), sample);
+                    data->photonCameraCache = nullptr;
+                    if (cache && !cache->complete)
+                    {
+                        cache->base = RGBTColour();
+                        const RGBTColour first = trace.ReplayPhotonCamera(*cache);
+                        cache->base = sample - first;
+                        cache->complete = true;
+                    }
+                }
                 data->progressivePixel->Update(pass, data->progressiveValue, data->progressiveNoise,
                                                data->progressiveLaplacian, data->progressiveDensity);
                 data->progressivePixel = nullptr;

@@ -311,6 +311,7 @@ class Trace
         bool Grainy() const { return grain; }
         void ClearGrain() { grain = false; }
         void MarkGrain() { grain = true; }
+        RGBTColour ReplayPhotonCamera(const PhotonCameraCache& cache);
 
         bool TestShadow(const LightSource &light, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour,
                         const Vector2d* areaSample = nullptr); // TODO FIXME - this should not be exposed here
