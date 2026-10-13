@@ -176,7 +176,48 @@ curved paths and the existing rejection of volume photons from light groups.
 Emitter/target power weighting was left unchanged: comparable source power would
 need the spot, area and parallel directional/aperture PDFs, and these single-source
 fixtures provide no evidence of a useful sampling gain.
+## Progressive surface gathering
 
+Method 2 now selects bandwidth at each receiver hit from its independent pilot,
+with a cap derived from that receiver. Capped nearest-neighbour queries prune
+before searching distant caustics. Surface reconstruction evaluates materials
+only inside its radiance support; the previous curvature stencil also shaded
+photons outside that support. The pilot and each fresh map remain bounded.
+
+Three alternating pairs, `+PR -A +WT1`, user-space instructions with the matching
+one-pixel render subtracted; no counters were multiplexed:
+
+| Scene | Size, quality | Trace instructions before → after | Whole render before → after |
+|---|---|---|---|
+| `tests/render/progressive_surface.pov` | 128×96, 4 | 4.209 → 3.192 G (−24.2%) | 15.464 → 14.522 G (−6.1%) |
+| `tests/render/progressive_photons.pov`, photon-only | 256×170, 1 | 3.324 → 1.804 G (−45.7%) | 5.573 → 4.085 G (−26.7%) |
+
+At 64×48 on the close/layered fixture, candidates inside the search support fell
+from 1,004,355 to 37,264 and material evaluations from 730,012 to 25,215. On the
+96×64 glass caustic they fell from 329,414 to 10,664. These counts came from separate
+diagnostic builds whose decoded original images matched the original optimized
+build. Median map CPU on the 128×96 fixture was 0.316 → 0.331 seconds; the logged
+photon-vector peak stayed 20,050,240 bytes. The additional fixed pilot index is not
+included in that vector-capacity statistic. CPU time is supporting evidence on
+these small runs.
+
+Against a 128×96 quality-16 method-2 reference, the 64×48 close/layered render's
+linear-light MSE fell from `3.807e-6` to `3.180e-6`; energy ratio moved from 1.116 to
+0.984. Classic gathers can mix these nearby receivers, so this fixture uses a
+higher-quality reference with receiver matching. Against a 4× supersampled
+classic glass reference with 1,048,576 photons, decoded HDR quality-4 MSE fell
+from `3.128e-4` to `2.822e-4`, and energy ratio moved from 0.967 to 0.972. The glass
+comparison uses `LampPower=8`, `PhotonOnly=1`, `FadeDistance=sqrt(0.5)` and
+`+AM4 +A0.05` for the reference.
+
+Quality 1 is noisier on that HDR glass comparison: MSE rises from `8.809e-4` to
+`1.233e-3`, peak radiance from 5.984 to 6.547, while energy ratio improves from
+1.098 to 1.085. This is a speed/quality trade at low work, not a universal quality
+improvement. Neither a per-hit curvature stencil, a prepared curvature proxy,
+nor a fixed 1.5× support improved both tested scenes, so the implementation keeps
+the receiver-local pilot baseline. The focused source regression checks receiver
+scales, independence, shrinking support and sparse-query visitation; the render
+regression checks thread equality and a higher-quality image reference.
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

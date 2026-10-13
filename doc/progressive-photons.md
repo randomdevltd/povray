@@ -25,16 +25,16 @@ reflection, refraction, layered shading and participating media without retainin
 an unbounded collection of camera vertices. VCM would require a more general
 bidirectional material interface and path-space MIS; it is not used here.
 
-Surface bandwidth uses an independent local pilot and a recursive estimate of
-shot noise and tangent-plane curvature. The latter is a four-offset finite
-difference, with its support shrinking as `N^(-1/8)`. A uniform-disk plug-in
-bandwidth balances variance proportional to `1/(N*r^2)` against squared bias
-proportional to `r^4`. Automatic bounds shrink as `N^(-1/6)` and keep at least
-half the pilot scale to suppress rare isolated bright pixels. Local camera path
-weights guide this choice; these diagnostics are proxies, not confidence bounds
-on the complete pixel integral. The surface estimator does not denoise the image.
-Volume and subsurface reconstruction use locally chosen pilot supports with
-shrinking radii; volume radii shrink as `N^(-1/7)`.
+Surface bandwidth uses the fixed independent pilot at each camera-path hit. The
+32 nearest deposits on the receiving object select a local support, capped at
+four times that receiver's median pilot support. The cap also bounds the search;
+objects absent from the pilot return the map fallback without scanning it.
+Recursive paths and texture layers query their own hit instead of sharing one
+pixel radius. Supports shrink as `N^(-1/6)`. Only photons inside the reconstruction
+support receive full material evaluation. This is a measured pilot-only baseline,
+not an optimal bandwidth claim; tested curvature proxies did not improve its
+quality/work trade. Volume and subsurface reconstruction also use locally chosen
+pilot supports; volume radii shrink as `N^(-1/7)`.
 
 See [SPPM](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Stochastic_Progressive_Photon_Mapping),
 [probabilistic PPM](https://www.cs.umd.edu/~zwicker/publications/PPMProbabilistic-TOG11.pdf)
@@ -143,10 +143,12 @@ self-attenuation, refractive heat and arrays of small emitters.
 
 There is one current map and one fixed pilot, not an accumulating photon map.
 Photon storage depends on batch size and deposits per traced path, including
-spectral branches and media samples. The log reports peak photon and index vector capacity
-(shared ownership metadata is additional) and preparation CPU separately from shooting and camera work. Pixel state is
-40 bytes per image pixel: 16 bytes of accumulated RGBA and 24 bytes of bandwidth
-statistics. This is about 316 MiB at 3840 by 2160, excluding the frontend image,
+spectral branches and media samples. The log reports peak photon and volume-index vector capacity,
+plus shared ownership metadata, separately from shooting and camera work. Pixel state is
+40 bytes per image pixel: 16 bytes of accumulated RGBA and 24 bytes of reserved estimator
+state. Surface bandwidth no longer uses that pixel state. The fixed pilot adds a
+receiver index with 16 bytes per pilot deposit on 64-bit builds before capacity rounding
+and a small table per receiver; this index does not grow with pass count. This is about 316 MiB at 3840 by 2160, excluding the frontend image,
 scene, worker scratch storage and photon vectors. Camera work is tiled, while
 the accumulated image remains in memory.
 
