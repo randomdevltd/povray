@@ -44,6 +44,11 @@ struct ProgressivePhotonBudget final
         batches = requested;
     }
 
+    static double EmissionWeight(std::uint64_t sources, double directionPdf)
+    {
+        return double(sources) / (batchSize * directionPdf);
+    }
+
     static double RadiusScale(std::uint64_t pass, unsigned int dimensions)
     {
         return std::pow(double(pass + 1), -1.0 / double(dimensions + 4));

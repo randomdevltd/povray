@@ -28,16 +28,8 @@ for source in range(5):
     assert max(abs(a-b) for a, b in zip(classic, progressive)) <= 2
 PY
 for source in 2 3; do
-    if "$POVRAY" +i"$SRCDIR/tests/render/progressive_direct_lights.pov" +w1 +h1 +pr -a -d -p -v -f \
-        Declare=Source="$source" Declare=Disabled=0 > progressive_direct_active.log 2>&1; then
-        echo 'unsupported photon emitter was accepted' >&2
-        exit 1
-    fi
-    grep -q 'does not support orient or projected_through' progressive_direct_active.log
-done
-for source in 2 3; do
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_direct_lights.pov" +w1 +h1 +pr -a -d -p -v -f \
         Declare=Source="$source" Declare=Disabled=0 Declare=Power=0 > progressive_direct_zero.log 2>&1 || { cat progressive_direct_zero.log; exit 1; }
 done
 rm -f progressive_direct_*.ppm progressive_direct_*.log progressive_direct_*.pov-state
-echo 'progressive_direct_lights: direct-light power, disabled and zero emitters, active-source rejection passed'
+echo 'progressive_direct_lights: direct-light power, disabled and zero emitters passed'

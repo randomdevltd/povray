@@ -53,6 +53,24 @@ int main()
         catch (const std::invalid_argument&) { rejected = true; }
         assert(rejected);
     }
+    const double pi = std::acos(-1.0);
+    for (unsigned int sources : {1u, 4u})
+        for (double retained : {0.0, 0.25, 0.5, 1.0})
+        {
+            double flux = 0.0;
+            for (unsigned int i = 0; i < ProgressivePhotonBudget::batchSize; ++i)
+            {
+                const double u = (i + 0.5) / ProgressivePhotonBudget::batchSize;
+                const bool targeted = u < 0.9;
+                const double cosine = targeted ? 1.0 - 0.5 * u / 0.9 : 1.0 - 2.0 * (u - 0.9) / 0.1;
+                const double pdf = 0.1 / (4.0 * pi) + (cosine >= 0.5 ? 0.9 / pi : 0.0);
+                const double aperture = std::fmod(i * 0.6180339887498949, 1.0);
+                if (cosine >= 0.5 && aperture < retained)
+                    flux += ProgressivePhotonBudget::EmissionWeight(sources, pdf);
+            }
+            assert(std::abs(flux - sources * pi * retained) < 0.003 * sources);
+            assert(std::abs(2.0 * flux - sources * 2.0 * pi * retained) < 0.006 * sources);
+        }
     SppmEstimate empty;
     empty.Add(0, 0);
     assert(empty.radius == 1 && empty.count == 0 && empty.Evaluate(100) == 0);

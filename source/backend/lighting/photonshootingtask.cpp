@@ -191,7 +191,7 @@ class SurfaceLightEmitter final : public Emitter
             if (light.Area_Light)
             {
                 double u = s - 0.5, v = Draw(key, kDrawPhoton, 7) - 0.5;
-                if (light.Circular)
+                if (light.Circular && !light.Orient)
                 {
                     const double radius = 0.5 * std::sqrt(s), angle = 2.0 * M_PI * (v + 0.5);
                     u = radius * std::cos(angle);
@@ -351,7 +351,23 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ray.SetPreparedSetId(setId);
             ray.SetKey(key);
             ray.SetFlags(Ray::PrimaryRay, false, true);
-            if (!light->emitter && !light->Area_Light && !light->Parallel)
+            data->Stats()[Number_Of_Photons_Shot]++;
+            if (targeted)
+                data->progressiveFeedback[feedbackOffset[li] + selectedTarget].attempted++;
+            double projectionDepth = 0.0;
+            if (light->Projected_Through_Object)
+            {
+                Intersection intersection;
+                if (!trace.FindIntersection(light->Projected_Through_Object, intersection, ray))
+                    continue;
+                do
+                {
+                    const double distance = intersection.Depth + EPSILON;
+                    ray.Origin += distance * ray.Direction;
+                    projectionDepth += distance;
+                } while (trace.FindIntersection(light->Projected_Through_Object, intersection, ray));
+            }
+            if (!light->emitter && !light->Area_Light && !light->Parallel && !light->Projected_Through_Object)
             {
                 for (Interior* interior : pointInteriors[li])
                     ray.AppendInterior(interior);
@@ -368,12 +384,11 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->Light_Is_Global = !light->lightGroupLight;
             data->passThruPrev = true;
             data->passThruThis = false;
-            data->photonDepth = 0.0;
+            data->photonDepth = projectionDepth;
             data->photonSpread = std::max(1.0e-8, Vector3d(targets[li].front()->BBox.size).length() * 0.025) *
                                  ProgressivePhotonBudget::RadiusScale(pass, 3);
-            MathColour flux = light->colour * origin.weight * (lights.size() / (batch * pdf));
+            MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(lights.size(), pdf);
             flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
-            data->Stats()[Number_Of_Photons_Shot]++;
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
             if (!flux.IsZero())
@@ -381,7 +396,6 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             if (targeted)
             {
                 auto& feedback = data->progressiveFeedback[feedbackOffset[li] + selectedTarget];
-                feedback.attempted++;
                 feedback.hit += data->progressiveSurface.size() + data->progressiveMedia.size() > before;
             }
         }

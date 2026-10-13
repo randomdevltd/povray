@@ -1,3 +1,4 @@
+Photon method 2 supports oriented area sources and projected-through apertures.
 ------------------------------------------------------------------------------
 POV-Ray Changelog Digest
 ------------------------------------------------------------------------------
