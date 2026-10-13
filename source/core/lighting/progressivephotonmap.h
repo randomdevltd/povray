@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <queue>
 #include <vector>
+#include <unordered_map>
 
 namespace pov
 {
@@ -63,12 +64,16 @@ class ProgressivePhotonMap final
             if (pilot.empty())
             {
                 pilot = photons;
+                for (size_t i = 0; i < pilot.size(); ++i)
+                    pilotReceivers[pilot[i].object].push_back({i, 0});
+                for (auto& receiver : pilotReceivers)
+                    BuildPilotRange(receiver.second, 0, receiver.second.size());
                 std::vector<double> radii;
                 const size_t stride = std::max(size_t(1), pilot.size() / 128);
                 for (size_t i = 0; i < pilot.size(); i += stride)
                 {
                     std::priority_queue<double> nearest;
-                    Nearest(0, pilot.size(), pilot[i].point, pilot[i].object, nearest);
+                    NearestAt(pilot[i].point, pilot[i].object, nearest);
                     if (!nearest.empty() && nearest.top() > 0.0)
                         radii.push_back(std::sqrt(nearest.top()));
                 }
@@ -82,13 +87,14 @@ class ProgressivePhotonMap final
             radius = initialRadius * ProgressivePhotonBudget::RadiusScale(pass, dimensions);
         }
 
-        double RadiusAt(const Vector3d& point, ConstObjectPtr object = nullptr) const
+        double RadiusAt(const Vector3d& point, ConstObjectPtr object = nullptr, size_t* visited = nullptr) const
         {
             std::priority_queue<double> nearest;
-            Nearest(0, pilot.size(), point, object, nearest);
+            NearestAt(point, object, nearest, visited);
             if (nearest.empty())
                 return radius;
-            return std::max(1.0e-8, std::min(std::sqrt(nearest.top()), 4.0 * initialRadius)) * radius / initialRadius;
+            const double local = object ? std::sqrt(nearest.top()) : std::min(std::sqrt(nearest.top()), 4.0 * initialRadius);
+            return std::max(1.0e-8, local) * radius / initialRadius;
         }
 
         template<class Visitor>
@@ -141,25 +147,64 @@ class ProgressivePhotonMap final
                 VisitRange(middle + 1, end, point, support, visitor);
         }
 
-        void Nearest(size_t begin, size_t end, const Vector3d& point, ConstObjectPtr object,
-                     std::priority_queue<double>& nearest) const
+        struct PilotNode final
+        {
+            size_t photon;
+            unsigned char axis;
+        };
+        std::unordered_map<ConstObjectPtr, std::vector<PilotNode>> pilotReceivers;
+
+        void BuildPilotRange(std::vector<PilotNode>& nodes, size_t begin, size_t end)
         {
             if (begin == end)
                 return;
             const size_t middle = begin + (end - begin) / 2;
-            const auto& photon = pilot[middle];
-            const Vector3d delta = photon.point - point;
+            Vector3d low = pilot[nodes[begin].photon].point, high = low;
+            for (size_t i = begin + 1; i < end; ++i)
+                for (unsigned int a = 0; a < 3; ++a)
+                {
+                    low[a] = std::min(low[a], pilot[nodes[i].photon].point[a]);
+                    high[a] = std::max(high[a], pilot[nodes[i].photon].point[a]);
+                }
+            const Vector3d span = high - low;
+            unsigned int axis = span[X] >= span[Y] ? X : Y;
+            if (span[Z] > span[axis])
+                axis = Z;
+            std::nth_element(nodes.begin() + begin, nodes.begin() + middle, nodes.begin() + end,
+                [&](const PilotNode& a, const PilotNode& b) { return pilot[a.photon].point[axis] < pilot[b.photon].point[axis]; });
+            nodes[middle].axis = axis;
+            BuildPilotRange(nodes, begin, middle);
+            BuildPilotRange(nodes, middle + 1, end);
+        }
+
+        void NearestAt(const Vector3d& point, ConstObjectPtr object, std::priority_queue<double>& nearest, size_t* visited = nullptr) const
+        {
+            const auto found = pilotReceivers.find(object);
+            if (found != pilotReceivers.end())
+                Nearest(found->second, 0, found->second.size(), point, nearest, visited);
+        }
+
+        void Nearest(const std::vector<PilotNode>& nodes, size_t begin, size_t end, const Vector3d& point,
+                     std::priority_queue<double>& nearest, size_t* visited) const
+        {
+            if (begin == end)
+                return;
+            const size_t middle = begin + (end - begin) / 2;
+            const auto& node = nodes[middle];
+            if (visited)
+                ++*visited;
+            const Vector3d delta = pilot[node.photon].point - point;
             const double distance2 = delta.lengthSqr();
-            if (photon.object == object && (nearest.size() < 32 || distance2 < nearest.top()))
+            if (nearest.size() < 32 || distance2 < nearest.top())
             {
                 nearest.push(distance2);
                 if (nearest.size() > 32)
                     nearest.pop();
             }
-            const bool left = delta[photon.axis] >= 0;
-            Nearest(left ? begin : middle + 1, left ? middle : end, point, object, nearest);
-            if (nearest.size() < 32 || delta[photon.axis] * delta[photon.axis] <= nearest.top())
-                Nearest(left ? middle + 1 : begin, left ? end : middle, point, object, nearest);
+            const bool left = delta[node.axis] >= 0;
+            Nearest(nodes, left ? begin : middle + 1, left ? middle : end, point, nearest, visited);
+            if (nearest.size() < 32 || delta[node.axis] * delta[node.axis] <= nearest.top())
+                Nearest(nodes, left ? middle + 1 : begin, left ? end : middle, point, nearest, visited);
         }
 };
 

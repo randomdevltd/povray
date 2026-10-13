@@ -2452,33 +2452,13 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         if (map.photons.empty() || (Finish->Diffuse == 0.0 && Finish->DiffuseBack == 0.0 && Finish->Phong == 0.0 && Finish->Specular == 0.0))
             return;
         MathColour sum;
-        auto* state = threadData->progressivePixel;
-        double radius;
-        if (state && state->baseRadius > 0.0f)
-            radius = state->radius;
-        else
-        {
-            radius = map.RadiusAt(IPoint, Object);
-            if (state)
-            {
-                state->Initialize(radius, threadData->progressivePass);
-                radius = state->radius;
-            }
-        }
-        const double derivative = state ? 2.0 * state->baseRadius * std::pow(double(threadData->progressivePass + 1), -0.125) : radius;
-        const double support = state ? std::max(radius, 2.0 * derivative) : radius;
-        Vector3d u, v;
-        ComputeSurfaceTangents(Raw_Normal, u, v);
-        u *= derivative;
-        v *= derivative;
-        double noise = 0.0, laplacian = 0.0;
-        unsigned int accepted = 0;
+        const double radius = map.RadiusAt(IPoint, Object);
         threadData->Stats()[Gather_Performed_Count]++;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
         unsigned int index = 0;
-        map.Visit(IPoint, support, [&](const ProgressivePhoton& photon) {
+        map.Visit(IPoint, radius, [&](const ProgressivePhoton& photon) {
             if (photon.object != Object || dot(photon.normal, Raw_Normal) < 0.9 ||
-                std::abs(dot(photon.point - IPoint, Raw_Normal)) > 0.05 * support)
+                std::abs(dot(photon.point - IPoint, Raw_Normal)) > 0.05 * radius)
                 return;
             const double cosine = dot(Raw_Normal, photon.direction);
             const bool backside = !Test_Flag(Object, DOUBLE_ILLUMINATE_FLAG) && dot(Layer_Normal, photon.direction) < EPSILON;
@@ -2496,33 +2476,10 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                 if (Finish->Specular > 0.0)
                     ComputeSpecularColour(Finish, photon.direction, -Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
             }
-            const Vector3d delta = photon.point - IPoint;
-            const double value = contribution.Greyscale() * pathWeight;
-            if (delta.lengthSqr() <= radius * radius && std::abs(dot(delta, Raw_Normal)) <= 0.05 * radius)
-            {
-                sum += contribution;
-                noise += value * value;
-                accepted++;
-                threadData->progressiveContributions++;
-            }
-            if (state)
-            {
-                const double h2 = derivative * derivative;
-                const int stencil = int((delta + u).lengthSqr() <= h2) + int((delta - u).lengthSqr() <= h2) +
-                                    int((delta + v).lengthSqr() <= h2) + int((delta - v).lengthSqr() <= h2) -
-                                    4 * int(delta.lengthSqr() <= h2);
-                laplacian += stencil * value;
-            }
+            sum += contribution;
+            threadData->progressiveContributions++;
         });
-        const double area = ProgressivePhotonBudget::KernelVolume(radius, 2);
-        colour += sum / area;
-        if (state)
-        {
-            threadData->progressiveValue += sum.Greyscale() * pathWeight / area;
-            threadData->progressiveNoise += noise * radius * radius / (area * area);
-            threadData->progressiveLaplacian += laplacian / (M_PI * std::pow(derivative, 4));
-            threadData->progressiveDensity += accepted / (area * ProgressivePhotonBudget::batchSize);
-        }
+        colour += sum / ProgressivePhotonBudget::KernelVolume(radius, 2);
         return;
     }
     double Cos_Shadow_Angle;
