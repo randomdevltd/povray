@@ -644,6 +644,7 @@ private:
         unsigned line;
         unsigned file;
         bool lastValue = false;
+        bool photonSettingsAllowed = true;
         TextOutput(Pov4Evaluator& e, const std::string& ctx, const Node* at) : Output(e), context(ctx), line(at->line), file(at->file) {}
         bool IsBlock() const override { return true; }
         void Append(const std::string& text, const Node* at);
@@ -766,7 +767,7 @@ private:
     void Assign(const Node* target, const PValue& v);
     void Bind(int sym, const PValue& v, bool global);
 
-    std::string LowerBlock(const Node* n);
+    std::string LowerBlock(const Node* n, const std::string& parent = std::string());
     std::string LowerFunction(const Node* n);
     void PrintFunctionExpr(std::string& out, const Node* n, const std::unordered_set<int>& params);
 
@@ -805,6 +806,8 @@ private:
         std::unordered_map<int, CheckFn>* fns = nullptr;
         std::vector<CheckFn*> stack;
         bool checking = false;
+        std::string block;
+        bool photonSettingsAllowed = true;
     };
 
     void Check(Program& p);
@@ -1637,11 +1640,30 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
     if (n->kind == NK::FunctionBlock)
         return;
     const std::string word = context.empty() ? Normalised(n->text) : context;
+    const std::string parent = ctx.block;
+    const bool savedPhotonSettings = ctx.photonSettingsAllowed;
+    struct RestoreContext
+    {
+        CheckCtx& ctx;
+        std::string block;
+        bool photonSettings;
+        ~RestoreContext() { ctx.block = block; ctx.photonSettingsAllowed = photonSettings; }
+    } restore{ctx, parent, savedPhotonSettings};
+    if (context.empty())
+    {
+        ctx.block = word;
+        ctx.photonSettingsAllowed = parent.empty() || (parent == "global_settings");
+    }
     const Pov4BlockSchema* schema = FindPov4BlockSchema(word.data(), word.size());
     for (const Node* k : n->kids)
     {
         if (word == "photons")
         {
+            if (ctx.checking && !ctx.photonSettingsAllowed &&
+                ((k->kind == NK::PhotonQuality) ||
+                 (((k->kind == NK::Keyword) || (k->kind == NK::Ident)) &&
+                  ((k->text == "method") || (k->text == "quality")))))
+                Fail(k, "Photon '%s' is only valid inside global_settings.", k->text.c_str());
             if (k->kind == NK::If)
             {
                 const Node* branch = k;
@@ -2428,6 +2450,9 @@ void Pov4Evaluator::TextOutput::Put(const Item& item, bool spliced)
             lastKeyword.clear();
             return;
         case Item::Keyword:
+            if ((context == "photons") && !photonSettingsAllowed &&
+                ((item.text == "method") || (item.text == "quality")))
+                ev.Fail(item.at, "Photon '%s' is only valid inside global_settings.", item.text.c_str());
             ev.mPrinted.insert(ev.mPrinted.end(), item.refs.begin(), item.refs.end());
             Append(item.text, item.at);
             lastKeyword = item.text;
@@ -3047,7 +3072,8 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
         case NK::FunctionBlock:
         {
             size_t mark = mPrinted.size();
-            std::string text = (n->kind == NK::Block) ? LowerBlock(n) : LowerFunction(n);
+            const std::string parent = out.IsBlock() ? static_cast<TextOutput&>(out).context : std::string();
+            std::string text = (n->kind == NK::Block) ? LowerBlock(n, parent) : LowerFunction(n);
             out.Put(TextItem(Item::Block, text, (n->kind == NK::Block) ? n->text : "function", n, mark), false);
             return;
         }
@@ -3101,9 +3127,10 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
     out.Put(Item(Eval(n), n), false);
 }
 
-std::string Pov4Evaluator::LowerBlock(const Node* n)
+std::string Pov4Evaluator::LowerBlock(const Node* n, const std::string& parent)
 {
     TextOutput block(*this, (n->text == "pigment_pattern") ? "pigment" : Normalised(n->text), n);
+    block.photonSettingsAllowed = parent.empty() || (parent == "global_settings");
     block.buf = n->text + " {";
     if (ExecItems(n->kids, block) != Flow::Normal)
         Fail(n, "'break', 'continue' or 'return' inside a '%s' block.", n->text.c_str());

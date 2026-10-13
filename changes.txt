@@ -226,7 +226,8 @@ New Features
     manual and fixtures is byte-stable and tested, so the cards cannot drift
     from the parsers.
   - Native `.pov4` photon blocks accept method 2 and quality expressions, including
-    parentheses and signed operands. `quality` is matched by text and remains
+    parentheses and signed operands. Method and quality controls are rejected in
+    object and light photon blocks. `quality` is matched by text and remains
     available as an identifier; the schema, editor completion and reference agree.
   - `.pov4` files are statically checked right after parsing: types are inferred
     from usage and mismatches are reported with the source position (a string used

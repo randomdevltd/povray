@@ -45,14 +45,17 @@ for method in '' 'method 1'; do
     cmp "progressive_photons4_legacy${method:+_explicit}.px" progressive_photons4_legacy_classic.px
 done
 cmp progressive_photons4_legacy.px progressive_photons4_legacy_explicit.px
-fails() {
-    controls=$1; expected=$2
-    printf 'global_settings { photons { %s } }\nsphere { 0, 1 }\n' "$controls" > progressive_photons4_invalid.pov4
+fails_scene() {
+    scene=$1; expected=$2
+    printf '%s\n' "$scene" > progressive_photons4_invalid.pov4
     if "$POVRAY" +iprogressive_photons4_invalid.pov4 +w1 +h1 +pr -a -d -p -v -gp -f \
         > progressive_photons4_invalid.log 2>&1; then
-        echo "invalid native photon controls accepted: $controls" >&2; exit 1
+        echo "invalid native photon scene accepted" >&2; exit 1
     fi
     tr -d '\n' < progressive_photons4_invalid.log | grep -Fq "$expected" || { cat progressive_photons4_invalid.log; exit 1; }
+}
+fails() {
+    fails_scene "global_settings { photons { $1 } } sphere { 0, 1 }" "$2"
 }
 for quality in 0 -1 257 1e400; do
     fails "method 2 quality $quality" 'Photon quality must be finite'
@@ -68,6 +71,18 @@ fails 'method 2 quality ("bad")' 'Photon quality must be a number'
 fails 'method 2 quality <1, 2, 3>' 'Photon quality must be a number'
 fails 'method 2 quality(1, 2)' 'Photon quality takes one numeric expression'
 fails 'method 2 if (false) { qualty 1 }' "did you mean 'quality'"
+for parent in 'sphere { 0, 1' 'light_source { <0, 5, 0> rgb 1'; do
+    for controls in 'method 1' 'method 2' 'quality 1' 'quality (1)' 'if (false) { method 2 quality 1 }'; do
+        fails_scene "$parent photons { $controls } }" 'only valid inside global_settings'
+    done
+    fails_scene "fn Controls() { method 2 } $parent photons { Controls() } }" 'only valid inside global_settings'
+    fails_scene "let Settings = photons { method 2 quality 1 }; $parent Settings }" 'method'
+done
+sed 's/photons { method 2 quality (quality \* 1) }/Settings/' "$SCENE.pov4" > progressive_photons4_fragment.pov4
+printf '%s\n' 'let Settings = photons { method 2 quality 0.125 };' > progressive_photons4_bound.pov4
+cat progressive_photons4_fragment.pov4 >> progressive_photons4_bound.pov4
+render bound progressive_photons4_bound.pov4
+cmp progressive_photons4_native.px progressive_photons4_bound.px
 rm -f progressive_photons4_*.ppm progressive_photons4_*.px progressive_photons4_*.pov \
     progressive_photons4_*.pov4 progressive_photons4_*.pov-state progressive_photons4_*.log
 echo 'progressive_photons4: native and lowered pixels, expressions, classic compatibility and failures passed'
