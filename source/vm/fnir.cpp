@@ -1681,29 +1681,24 @@ void FunctionVM::BuildIR(FUNCTION fn)
     entry.ir = std::make_shared<const FnDef>(std::move(d));
 }
 
-#if FNIR_THREADED
-__attribute__((optimize("no-crossjumping", "no-gcse", "no-tree-slp-vectorize")))
-#endif
-DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnDef* def,
-                      unsigned int frameSp, int depth, const DBL* args, unsigned int argc)
+void FunctionVM::ReserveFrame(FPUContext* ctx, unsigned int need)
 {
-    if (depth >= MAX_CALL_STACK_SIZE)
-    {
-        POVFPU_Exception(ctx, fnIdx, "Maximum function evaluation recursion level reached.");
-        return 0.0;
-    }
-    const unsigned int need = frameSp + def->slotCnt + def->regCnt;
     if (need > ctx->maxdblstacksize)
     {
         const unsigned int size = max(need, ctx->maxdblstacksize + (unsigned int)INITIAL_DBL_STACK_SIZE);
         ctx->dblstackbase = reinterpret_cast<DBL *>(POV_REALLOC(ctx->dblstackbase, sizeof(DBL) * size, "fn: ir frame"));
         ctx->maxdblstacksize = size;
     }
+}
+
+/// Runs a def whose frame is reserved and whose arguments and home are in place.
+#if FNIR_THREADED
+__attribute__((optimize("no-crossjumping", "no-gcse", "no-tree-slp-vectorize")))
+#endif
+DBL FunctionVM::ExecIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnDef* def, unsigned int frameSp, int depth)
+{
     DBL* slots = ctx->dblstackbase + frameSp;
     DBL* regs = slots + def->slotCnt;
-    slots[slotBaseHomes(def)] = 0.0;
-    for (unsigned int j = 0; (j < argc) && (def->argBase + j < def->slotCnt); ++j)
-        slots[def->argBase + j] = args[j];
     const FnOp* const ops = def->ops.data();
     const DBL* const kConsts = def->consts.data();
     const unsigned int* const kBlocks = def->blockStart.data();
@@ -1841,12 +1836,20 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
     FNIR_HANDLER(Call)
     {
         const FnDef* const callee = vm->functions[op->k].ir.get();
-        const unsigned int cnt = callee->parameterCnt;
-        DBL argv[MAX_FUNCTION_PARAMETER_LIST];
-        for (unsigned int j = 0; j < cnt; ++j)
-            argv[j] = regs[op->a + j];
         const unsigned int calleeSp = frameSp + def->slotCnt + def->regCnt;
-        const DBL result = RunIR(vm, ctx, op->k, callee, calleeSp, depth + 1, argv, cnt);
+        DBL result = 0.0;
+        if (depth + 1 < MAX_CALL_STACK_SIZE)
+        {
+            ReserveFrame(ctx, calleeSp + callee->slotCnt + callee->regCnt);
+            regs = ctx->dblstackbase + frameSp + def->slotCnt;
+            DBL* const calleeFrame = ctx->dblstackbase + calleeSp;
+            calleeFrame[slotBaseHomes(callee)] = 0.0;
+            for (unsigned int j = 0; j < callee->parameterCnt; ++j)
+                calleeFrame[callee->argBase + j] = regs[op->a + j];
+            result = ExecIR(vm, ctx, op->k, callee, calleeSp, depth + 1);
+        }
+        else
+            POVFPU_Exception(ctx, op->k, "Maximum function evaluation recursion level reached.");
         DBL* const calleeSlots = ctx->dblstackbase + calleeSp;
         slots = ctx->dblstackbase + frameSp;
         for (unsigned int j = 0; j < op->c; ++j)
@@ -1878,10 +1881,13 @@ DBL FunctionVM::RunIR(FunctionVM* vm, FPUContext* ctx, FUNCTION fnIdx, const FnD
 DBL POVFPU_RunIR(FPUContext* context, FUNCTION fn)
 {
     context->threaddata->Stats()[Ray_Function_VM_Calls]++;
-    const FnDef* def = context->functionvm->GetIR(fn);
+    FunctionVM* const vm = context->functionvm.get();
+    const FnDef* def = vm->GetIR(fn);
     if (def == nullptr)
         return POVFPU_RunScalar(context, fn);
-    return FunctionVM::RunIR(context->functionvm.get(), context, fn, def, 0, 0, nullptr, 0);
+    FunctionVM::ReserveFrame(context, def->slotCnt + def->regCnt);
+    context->dblstackbase[slotBaseHomes(def)] = 0.0;
+    return FunctionVM::ExecIR(vm, context, fn, def, 0, 0);
 }
 
 void POVFPU_RunBatchIR(FPUContext* context, FUNCTION fn, const DBL* x, const DBL* y, const DBL* z,
@@ -1895,12 +1901,16 @@ void POVFPU_RunBatchIR(FPUContext* context, FUNCTION fn, const DBL* x, const DBL
     }
     context->threaddata->Stats()[Ray_Function_VM_Calls] += static_cast<POV_ULONG>(n);
     FunctionVM* const vm = context->functionvm.get();
+    FunctionVM::ReserveFrame(context, def->slotCnt + def->regCnt);
     for (int i = 0; i < n; ++i)
     {
-        context->SetLocal(0, x[i]);
-        context->SetLocal(1, y[i]);
-        context->SetLocal(2, z[i]);
-        results[i] = FunctionVM::RunIR(vm, context, fn, def, 0, 0, nullptr, 0);
+        // the x, y, z locals as the scalar entry's arguments, then the home a trap-only def returns through
+        DBL* const slots = context->dblstackbase;
+        slots[0] = x[i];
+        slots[1] = y[i];
+        slots[2] = z[i];
+        slots[slotBaseHomes(def)] = 0.0;
+        results[i] = FunctionVM::ExecIR(vm, context, fn, def, 0, 0);
     }
 }
 

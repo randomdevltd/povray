@@ -618,13 +618,6 @@ bool FunctionVM::PreferBatch(FUNCTION fn) const
     return CanExecuteBatch(fn) && functions[fn].batchMath;
 }
 
-const FnDef* FunctionVM::GetIR(FUNCTION fn) const
-{
-    if ((fn >= functions.size()) || (functions[fn].ir == nullptr))
-        return nullptr;
-    return functions[fn].ir.get();
-}
-
 enum RangeCode { RangeParameter, RangeConstant, RangeAdd, RangeSub, RangeMul, RangeDiv, RangeNeg, RangeAbs, RangeMin, RangeMax };
 
 struct FunctionRangePlan

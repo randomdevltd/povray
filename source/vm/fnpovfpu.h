@@ -362,7 +362,7 @@ class FunctionVM : public GenericFunctionContextFactory
         bool Describe(FUNCTION fn, std::string& out) const;
         bool CanExecuteBatch(FUNCTION fn) const;
         bool PreferBatch(FUNCTION fn) const;
-        const FnDef* GetIR(FUNCTION fn) const;
+        const FnDef* GetIR(FUNCTION fn) const { return (fn < functions.size()) ? functions[fn].ir.get() : nullptr; }
         boost::intrusive_ptr<FunctionVM> Snapshot(const std::vector<FUNCTION>& roots);
 
         FUNCTION_PTR CopyFunction(FUNCTION_PTR pK);
@@ -376,8 +376,9 @@ class FunctionVM : public GenericFunctionContextFactory
         void PlanBatch(FUNCTION fn);
         void BuildIR(FUNCTION fn);
         bool InlineRound(FnDef& d);
-        static DBL RunIR(FunctionVM* vm, FPUContext* context, FUNCTION fn, const FnDef* def,
-                         unsigned int frameSp, int depth, const DBL* args, unsigned int argc);
+        static void ReserveFrame(FPUContext* context, unsigned int need);
+        static DBL ExecIR(FunctionVM* vm, FPUContext* context, FUNCTION fn, const FnDef* def,
+                          unsigned int frameSp, int depth);
         void RemoveFunctionInternal(FUNCTION fn);
 
         std::vector<FunctionEntry> functions;
