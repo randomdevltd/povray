@@ -800,6 +800,7 @@ ObjectPtr CSGUnion::Copy()
     if(Type & LIGHT_GROUP_OBJECT)
     {
         New->LLights.clear();
+        New->PhotonLights.clear();
         Promote_Local_Lights(New);
     }
 
@@ -820,6 +821,7 @@ ObjectPtr CSGMerge::Copy()
     if(Type & LIGHT_GROUP_OBJECT)
     {
         New->LLights.clear();
+        New->PhotonLights.clear();
         Promote_Local_Lights(New);
     }
 
@@ -840,6 +842,7 @@ ObjectPtr CSGIntersection::Copy()
     if(Type & LIGHT_GROUP_OBJECT)
     {
         New->LLights.clear();
+        New->PhotonLights.clear();
         Promote_Local_Lights(New);
     }
 

@@ -56,6 +56,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/radiosity.h"
+#include "core/lighting/progressivephotonmap.h"
 #include "core/bounding/boundingbox_fwd.h"
 #include "core/scene/atmosphere_fwd.h"
 #include "core/scene/camera.h"
@@ -105,6 +106,8 @@ struct PreparedSet final
     std::vector<const Portal*> portalMouths;
     PhotonMap surfacePhotonMap;
     PhotonMap mediaPhotonMap;
+    ProgressivePhotonMap progressiveSurface, progressiveMedia;
+    std::vector<ProgressivePhotonFeedback> progressiveFeedback;
     std::string photonKey;
     unsigned int boundingMethod = 0;
     unsigned int numberOfFiniteObjects = 0;

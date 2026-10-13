@@ -240,11 +240,8 @@ fi
 render photon_light_group tests/render/render_tags_photon_light_group.pov +ss1
 render photon_light_group_ref tests/render/render_tags_photon_light_group.pov Declare=Reference=1 +ss1
 equal photon_light_group photon_light_group_ref
-# Expected failure until light_group lights shoot photons; once they do, this reports so the check can become strict.
 if cmp -s render_tags_photon_light_group.px render_tags_m1_expr9.px; then
-    echo "expected failure: light_group lights do not shoot photons yet"
-else
-    echo "light-group photons now reach the receiver: make this check strict" >&2
+    echo "light-group photon receiver rendered empty" >&2
     exit 1
 fi
 

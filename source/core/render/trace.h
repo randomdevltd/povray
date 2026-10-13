@@ -834,7 +834,7 @@ class Trace
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
                                        const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation,
-                                       ConstObjectPtr Object, double relativeIor, PhotonGatherer& renderer);
+                                       ConstObjectPtr Object, double relativeIor, PhotonGatherer& renderer, double pathWeight);
 
     ///
     /// @}
