@@ -11,6 +11,10 @@ int main()
     assert(ProgressivePhotonBudget(1).passes == 4);
     assert(ProgressivePhotonBudget::batchSize == 65536);
     assert(ProgressivePhotonBudget(0.01).passes == 1);
+    constexpr auto threshold = ProgressivePhotonBudget::cameraWorkThreshold;
+    assert(ProgressivePhotonBudget(1, threshold - 1).passes == 4);
+    assert(ProgressivePhotonBudget(1, threshold).passes == 1);
+    assert(ProgressivePhotonBudget(1, threshold + 1).passes == 1);
     constexpr std::uint64_t pixels = 4000 * 2667;
     assert(ProgressivePhotonBudget(1, pixels).passes == 1);
     assert(ProgressivePhotonBudget(1, pixels).batches == 4);
@@ -25,13 +29,22 @@ int main()
         assert(budget.batches == requested);
         assert(budget.EmittedSamples() == std::uint64_t(budget.batches + 1) * 65536);
         assert(budget.CameraSamples(pixels) == pixels * budget.passes);
+        double imagePower = 0;
         for (unsigned int batch = 1; batch <= budget.batches; ++batch)
         {
             const auto group = budget.EmissionBatch(batch);
             assert(group.batches <= 4 && group.EndBatch() <= budget.batches);
             assert(group.firstBatch <= batch && batch <= group.EndBatch());
             assert(group.camera == (batch - 1) / 4);
+            if (batch == group.firstBatch)
+            {
+                double mapPower = 0;
+                for (unsigned int i = 0; i < group.batches; ++i)
+                    mapPower += 1.0 / group.batches;
+                imagePower += mapPower * group.batches;
+            }
         }
+        assert(std::abs(imagePower / requested - 1.0) < 1.0e-12);
     }
     for (double invalid : {0.0, -1.0, 257.0, double(INFINITY), double(NAN)})
     {

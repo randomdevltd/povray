@@ -9,9 +9,22 @@ global_settings {
 ```
 
 Render with `+PR -A`. Photon quality includes stochastic pixel sampling. It is a
-positive work multiplier: `ceil(4 * quality)` image passes, each with 65,536
-emission samples per prepared scene set, preceded by one independent pilot batch.
-The current maximum quality is 256. Higher values add passes to the same sequence.
+positive work multiplier: `ceil(4 * quality)` emission batches, each with 65,536
+samples per prepared scene set, preceded by one independent pilot batch.
+Images below 8,000,000 pixels trace one camera sample per pixel per batch.
+At or above that size, the experimental schedule merges up to four batches into
+one bounded map and traces one camera sample per pixel for that group. This pixel
+threshold is a work heuristic, validated on a 4000 by 2667 water caustic; it is not
+an error bound or a guarantee for other scenes. UHD 3840 by 2160 also selects it.
+The last group may be partial: quality 0.5 emits two batches and traces one camera
+pass, while quality 1.25 emits five batches and traces two passes. Each map divides
+flux by its actual batch count; camera radiance is averaged with that count as its
+weight. Radius shrinkage follows cumulative emissions. The smaller camera sample
+count can increase noise at edges and in textures; raise photon quality when that
+noise is visible. Quality 1 is not a universal image-quality improvement under
+this schedule. The current maximum quality is 256. Increasing quality preserves
+the emission sequence and adds work; an unfinished final group gains samples
+before another camera pass is added.
 `method 1` selects classic photons. Omitting the method retains classic behavior,
 including in version 4 scenes. Quality is not an exposure control.
 
@@ -52,8 +65,11 @@ reflection, refraction and spectral splitting retain their transport weights.
 An unfaded conventional point light therefore becomes inverse-square under
 method 2. An existing `fade_power 2 fade_distance F` is interpreted by its
 far-field intensity, `2*F*F*color`; its artificial near-field softening is removed.
-Other conventional fade powers are rejected. Parallel lights must be unfaded.
-These are intentional differences from the distance-compensated classic map.
+Other conventional fade powers are rejected. Parallel photon emitters must be
+unfaded. These are intentional differences from the distance-compensated classic
+map. Fill lights, zero-power sources and lights with both photon reflection and
+refraction disabled retain their direct-light settings, including oriented area
+lights and projected-through sources.
 
 Targets, `collect off`, reflection/refraction switches and `pass_through` retain
 their authoring roles. Numerical target density is replaced by measured targeting:
@@ -142,7 +158,9 @@ self-attenuation, refractive heat and arrays of small emitters.
 ## Memory and reproducibility
 
 There is one current map and one fixed pilot, not an accumulating photon map.
-Photon storage depends on batch size and deposits per traced path, including
+Large images retain at most four emission batches in the current map and one
+batch in the pilot; shooter vectors are released after each batch. Photon storage
+depends on this batch cap and deposits per traced path, including
 spectral branches and media samples. The log reports peak photon and volume-index vector capacity,
 plus shared ownership metadata, separately from shooting and camera work. Pixel state is
 40 bytes per image pixel: 16 bytes of accumulated RGBA and 24 bytes of reserved estimator

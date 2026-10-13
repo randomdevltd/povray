@@ -218,6 +218,76 @@ nor a fixed 1.5× support improved both tested scenes, so the implementation kee
 the receiver-local pilot baseline. The focused source regression checks receiver
 scales, independence, shrinking support and sparse-query visitation; the render
 regression checks thread equality and a higher-quality image reference.
+## Large-image photon batches
+
+The experimental method-2 schedule groups up to four 65,536-sample emission
+batches per camera pass for images of at least 8,000,000 pixels. Smaller images
+retain one batch per camera pass. This threshold is a work heuristic; these
+measurements cover the water-caustic fixture at 4000×2667. Fewer camera samples
+can increase edge and texture noise on other scenes. Exact fractional emission
+budgets use a partial last map and weight camera radiance by its batch count.
+
+Use `tools/bench/photon-budget-water.pov`, `+W4000 +H2667 +WT4 +Q9 +PR -A -D
++FH Declare=PhotonQuality=2` for both executables. A matching one-pixel run adds
+`+SR2 +ER2 +SC2 +EC2`, retaining the full dimensions and large-image schedule.
+It includes parsing, setup, photon shooting and map building; subtraction gives
+the camera increment. Full-render instruction counts include all those phases.
+
+One alternating pair of user-space instruction measurements with
+`tools/bench/pcount.c`; counters were not multiplexed:
+
+| Quality 2 | One batch per camera pass | Four batches per camera pass |
+|---|---:|---:|
+| Full instructions | 1746.589 G | 566.131 G |
+| One-pixel setup instructions | 9.648 G | 8.991 G |
+| Camera increment | 1736.940 G | 557.139 G |
+| Emission samples, including pilot | 589,824 | 589,824 |
+| Camera passes | 8 | 2 |
+
+Full instructions fell 67.59%; the camera increment fell 67.92%. Two phase-timing
+runs per build give these supporting CPU measurements; map time is a subset of
+preparation time:
+
+| Quality 2 phase | One batch, runs 1 / 2 | Four batches, runs 1 / 2 |
+|---|---:|---:|
+| Preparation CPU | 0.420 / 0.456 s | 0.319 / 0.328 s |
+| Map CPU | 0.127 / 0.155 s | 0.153 / 0.156 s |
+| Shooting CPU | 1.364 / 1.531 s | 1.394 / 1.449 s |
+| Camera CPU | 203.155 / 201.839 s | 61.278 / 61.343 s |
+| Peak anonymous and shared memory | 1062 / 975 MiB | 558 / 543 MiB |
+
+The memory figure is a measured process-group working set excluding file cache,
+not an individual process RSS. Logged photon-vector capacity rose from
+19,258,512 to 41,278,608 bytes; the fixed pilot and current map remain bounded.
+Classic defaults (`Declare=Method=1`, spacing 0.02, gather cap 100) used
+0.766 / 0.806 shooting CPU seconds and 33.019 / 32.490 camera CPU seconds.
+These phase timings do not establish an instruction-count advantage over classic.
+
+Linear RGB error uses same-resolution Radiance HDR references with classic
+`Declare=Method=1 Declare=GatherMax=400` and spacing 0.005 or 0.0025, otherwise
+matching the options above. The ground-caustic ROI is all columns and rows
+1000–1999, counted from zero.
+
+| Quality 2 error | One batch | Four batches |
+|---|---:|---:|
+| Whole-frame MSE, spacing-0.005 reference | 0.00402509 | 0.00385498 |
+| Whole-frame MSE, spacing-0.0025 reference | 0.00540557 | 0.00519042 |
+| Ground ROI MSE, spacing-0.0025 reference | 0.01359338 | 0.01273368 |
+| Mean-energy ratio, spacing-0.0025 reference | 1.005720 | 1.004294 |
+
+The references differ by MSE 0.00040240, so they are not a converged physical
+solution. Both give the same ordering for quality 2, whose whole-frame error
+falls about 4% and ground error 6.3%. Quality 1 is a tradeoff: whole-frame MSE
+against the finer reference rises from 0.00663816 to 0.00671547, while ground
+error falls from 0.01677036 to 0.01583563. This establishes a quality-2 gain on
+this large parallel-light scene, without a universal quality claim. Explicit
+anti-aliasing, including enabled method 4, remains unsupported by photon method 2.
+
+The volume regression uses a 16×16 crop of a 3000×2667 canvas to exercise grouped
+scheduling, a refractive lens, prepared media and a partial 4+1 batch sequence.
+It checks thread equality and linear power; it is functional scheduling-path
+coverage, not an 8-megapixel volume performance or quality validation.
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

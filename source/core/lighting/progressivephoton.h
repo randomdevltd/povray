@@ -19,6 +19,7 @@ struct ProgressivePhotonBudget final
         unsigned int EndBatch() const { return firstBatch + batches - 1; }
     };
     static constexpr unsigned int maxBatchesPerPass = 4;
+    static constexpr std::uint64_t cameraWorkThreshold = 8000000;
     unsigned int passes, batches, batchesPerPass;
 
     Pass EmissionBatch(unsigned int batch) const
@@ -38,7 +39,7 @@ struct ProgressivePhotonBudget final
         if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
             throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 256.");
         const unsigned int requested = static_cast<unsigned int>(std::ceil(4.0 * quality));
-        batchesPerPass = pixels >= std::uint64_t(batchSize) * 64 ? maxBatchesPerPass : 1;
+        batchesPerPass = pixels >= cameraWorkThreshold ? maxBatchesPerPass : 1;
         passes = (requested + batchesPerPass - 1) / batchesPerPass;
         batches = requested;
     }

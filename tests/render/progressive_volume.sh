@@ -31,6 +31,38 @@ if "$POVRAY" +i"$SRCDIR/tests/render/progressive_volume.pov" +w8 +h8 +pr -a -d -
     exit 1
 fi
 grep -q 'does not yet support volumetric photons from light groups' progressive_volume_group.log
+grouped_render() {
+    name=$1; shift
+    "$POVRAY" +i"$SRCDIR/tests/render/progressive_volume.pov" +w3000 +h2667 +pr -a -d -p -v -gp \
+        +sc1492 +ec1507 +sr1326 +er1341 Declare=PhotonQuality=1.25 Declare=Heat=0 \
+        +fp16 File_Gamma=1 +o"progressive_volume_grouped_$name.ppm" "$@" \
+        > "progressive_volume_grouped_$name.log" 2>&1 || { cat "progressive_volume_grouped_$name.log"; exit 1; }
+}
+grouped_render one Declare=LampPower=0.1 +wt1
+grouped_render four Declare=LampPower=0.1 +wt4
+grouped_render brighter Declare=LampPower=0.2 +wt4
+tr '\n' ' ' < progressive_volume_grouped_one.log | grep -q '2 camera passes, 5 emission *batches'
+python3 - <<'PY_GROUPED'
+from array import array
+from pathlib import Path
+import re
+import sys
+
+def pixels(name):
+    raw = Path('progressive_volume_grouped_' + name + '.ppm').read_bytes()
+    header = re.match(rb'P6\s+(?:#[^\n]*\n\s*)*(\d+)\s+(\d+)\s+65535\s', raw)
+    assert header is not None
+    values = array('H')
+    values.frombytes(raw[header.end():])
+    if sys.byteorder == 'little':
+        values.byteswap()
+    return values
+
+one, four, brighter = pixels('one'), pixels('four'), pixels('brighter')
+assert one == four
+assert sum(one) > 100 and max(brighter) < 65535
+assert 1.98 < sum(brighter) / sum(one) < 2.02
+PY_GROUPED
 printf 'progressive_volume means: prepared=%s classic=%s\n' "$(mean prepared)" "$(mean classic)"
 rm -f progressive_volume_*.ppm progressive_volume_*.px progressive_volume_*.log
 echo 'progressive_volume: prepared photon gathers, curved segments, extinction, power, threads and group rejection passed'
