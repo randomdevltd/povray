@@ -640,7 +640,9 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
                         PreparedSet& view = GetSceneData()->GetPreparedSet(unit.preparedSetId);
                         for(std::vector<ObjectPtr>::iterator object = view.objects.begin(); object != view.objects.end(); object++)
                         {
-                            if (((*object)->interior != nullptr) && Inside_BBox(ray.Origin, (*object)->BBox) && (*object)->Inside(ray.Origin, renderDataPtr))
+                            if (((*object)->interior != nullptr) &&
+                                (Test_Flag(*object, INVERTED_FLAG | INFINITE_FLAG) || Inside_BBox(ray.Origin, (*object)->BBox)) &&
+                                (*object)->Inside(ray.Origin, renderDataPtr))
                                 originInteriors.push_back((*object)->interior.get());
                         }
                         lastOrigin = ray.Origin;
