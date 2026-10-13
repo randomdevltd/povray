@@ -262,6 +262,20 @@ bool SubsurfacePhotonBoundaries::Unfold(const float folded[2], Vector3d& normal)
     return true;
 }
 
+void SubsurfaceCache::Storage(size_t& pointCount, size_t& bytes) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    pointCount = bytes = 0;
+    for (const auto& entry : cells)
+    {
+        const auto& cell = *entry.second;
+        pointCount += cell.points.size();
+        bytes += sizeof(SubsurfaceCell) + cell.points.capacity() * sizeof(SubsurfacePoint) +
+            cell.nodes.capacity() * sizeof(SubsurfaceNode) + sizeof(float) * (cell.visibility.capacity() +
+            cell.ambient.capacity() + cell.photonEntry.capacity() + cell.entry.capacity());
+    }
+}
+
 std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey& key, bool& build)
 {
     std::lock_guard<std::mutex> lock(mutex);

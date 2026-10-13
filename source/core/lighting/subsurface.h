@@ -214,6 +214,7 @@ class SubsurfaceCache final
 {
     public:
         SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
+        void Storage(size_t& pointCount, size_t& bytes) const;
         /// The cell for key, and whether the caller is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
         /// Reserves room for points; false once the budget is spent.

@@ -1843,6 +1843,14 @@ void View::ReleaseProgressiveData(TaskQueue&, std::shared_ptr<std::vector<ViewTh
     }
     total->realTime += wall;
     workers->clear();
+    if (std::getenv("POVRAY_CAMERA_CACHE") && total->timeType == TraceThreadData::kRenderTime)
+    {
+        size_t points = 0, bytes = 0;
+        viewData.subsurfaceCache->Storage(points, bytes);
+        MessageFactory messages(viewData.sceneData->warningLevel, "Experimental camera cache", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Info("Shared SSLT cloud storage after camera pass: %zu points, %zu bytes.", points, bytes);
+    }
 }
 
 void View::PrepareProgressivePhotons(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass)
