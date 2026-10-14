@@ -138,6 +138,7 @@ class Ray final : public BasicRay
         Vector3d dOdx, dOdy, dDdx, dDdy;
         /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
         bool hasDifferentials = false;
+        unsigned int taggedTransmissionDepth = 0;
 
     private:
 

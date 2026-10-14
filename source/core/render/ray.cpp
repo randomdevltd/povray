@@ -142,6 +142,7 @@ const SpectralBand& Ray::GetSpectralBand() const
 
 void Ray::SetFlags(RayType rt, bool shadowTest, bool photon, bool radiosity, bool monochromatic, bool pretrace)
 {
+    taggedTransmissionDepth = 0;
     primaryRay = (rt == PrimaryRay);
     reflectionRay = (rt == ReflectionRay);
     refractionRay = (rt == RefractionRay);
@@ -156,6 +157,7 @@ void Ray::SetFlags(RayType rt, bool shadowTest, bool photon, bool radiosity, boo
 
 void Ray::SetFlags(RayType rt, const Ray& other)
 {
+    taggedTransmissionDepth = other.taggedTransmissionDepth;
     preparedSetId = other.preparedSetId;
     primaryRay = (rt == PrimaryRay);
     reflectionRay = (rt == ReflectionRay) || ((rt == RefractionRay) && other.IsReflectionRay()); // TODO FIXME - just a kludge for now! [CLi]

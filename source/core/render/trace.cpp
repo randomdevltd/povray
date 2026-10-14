@@ -43,6 +43,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 
 // C++ standard header files
 #include <algorithm>
@@ -93,6 +94,29 @@
 
 namespace pov
 {
+
+namespace
+{
+bool TransmissionDepthExceeded(Ray& ray, const Intersection& hit, TraceThreadData *thread)
+{
+    static const std::string tag = std::getenv("POVRAY_TRANSMISSION_TAG") ? std::getenv("POVRAY_TRANSMISSION_TAG") : "";
+    static const unsigned int limit = [] {
+        const char *value = std::getenv("POVRAY_TRANSMISSION_LIMIT");
+        return value ? std::min(64u, static_cast<unsigned int>(std::max(0, std::atoi(value)))) : 0u;
+    }();
+    if (limit == 0 || tag.empty() || ray.IsShadowTestRay() || ray.IsPhotonRay() || ray.IsRadiosityRay() || ray.IsSubsurfaceRay())
+        return false;
+    if (dynamic_cast<const Mesh*>(hit.Object) == nullptr || std::find(hit.Object->tags.begin(), hit.Object->tags.end(), tag) == hit.Object->tags.end())
+        return false;
+    Vector3d normal;
+    hit.Object->Normal(normal, &hit, thread);
+    if (Test_Flag(hit.Object, INVERTED_FLAG))
+        normal.invert();
+    if ((hit.Object->Type & PATCH_OBJECT) || dot(normal, ray.Direction) < 0.0)
+        ++ray.taggedTransmissionDepth;
+    return ray.taggedTransmissionDepth > limit;
+}
+}
 
 using std::min;
 using std::max;
@@ -441,6 +465,11 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
 
     if (found && (bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
         TracePortal(*static_cast<const Portal *>(bestisect.Csg), bestisect, ray, colour, transm, weight);
+    else if(found && TransmissionDepthExceeded(ray, bestisect, threadData))
+    {
+        colour.Clear();
+        transm = 0.0;
+    }
     else if(found)
         ComputeTextureColour(bestisect, colour, transm, ray, weight, false);
     else
