@@ -97,7 +97,7 @@ namespace pov
 
 namespace
 {
-bool TransmissionDepthExceeded(Ray& ray, const Intersection& hit, TraceThreadData *thread)
+bool TransmissionDepthExceeded(Ray& ray, Intersection& hit, TraceThreadData *thread)
 {
     static const std::string tag = std::getenv("POVRAY_TRANSMISSION_TAG") ? std::getenv("POVRAY_TRANSMISSION_TAG") : "";
     static const unsigned int limit = [] {
