@@ -147,7 +147,7 @@ class ProgressivePhotonMap final
             return id < baseRadius.size() && baseRadius[id] > 0.0 ? baseRadius[id] : globalRadius;
         }
 
-        double Cap(std::uint32_t id) const { return ProgressivePhotonBudget::capScale * BaseRadius(id); }
+        double Cap(std::uint32_t id) const { return PhotonCapScale() * BaseRadius(id); }
 
         /// The k nearest accepted photons within cap; returns the kernel support (the k-th distance, or cap).
         template<class Accept>
@@ -220,12 +220,13 @@ class ProgressivePhotonMap final
                 }
                 const double delta = point[photon.axis] - photon.point[photon.axis];
                 const bool left = delta < 0.0;
-                if (delta * delta <= bound)
-                    NearestRange(left ? middle + 1 : begin, left ? end : middle, point, bound, heap, accept);
+                NearestRange(left ? begin : middle + 1, left ? middle : end, point, bound, heap, accept);
+                if (delta * delta > bound)
+                    return;
                 if (left)
-                    end = middle;
-                else
                     begin = middle + 1;
+                else
+                    end = middle;
             }
         }
 };

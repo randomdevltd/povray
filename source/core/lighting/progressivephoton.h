@@ -17,7 +17,7 @@ struct ProgressivePhotonBudget final
     static constexpr unsigned int shards = 16;
     static constexpr double maxQuality = 64.0;
     static constexpr unsigned int minNeighbours = 8, maxNeighbours = 256;
-    static constexpr double baseNeighbours = 48.0, capScale = 4.0;
+    static constexpr double baseNeighbours = 48.0, capScale = 8.0;
     unsigned int batches, neighbours;
 
     explicit ProgressivePhotonBudget(double quality, double k0 = baseNeighbours)
@@ -137,6 +137,11 @@ inline double PhotonNeighbourScale()
 {
     static const double k0 = PhotonSwitch("POVRAY_PHOTON_K0") ? std::atof(PhotonSwitch("POVRAY_PHOTON_K0")) : ProgressivePhotonBudget::baseNeighbours;
     return k0;
+}
+inline double PhotonCapScale()
+{
+    static const double cap = PhotonSwitch("POVRAY_PHOTON_CAP") ? std::atof(PhotonSwitch("POVRAY_PHOTON_CAP")) : ProgressivePhotonBudget::capScale;
+    return cap;
 }
 inline int PhotonKernelShape()
 {

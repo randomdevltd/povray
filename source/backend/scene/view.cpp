@@ -1471,7 +1471,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
         const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality, PhotonNeighbourScale());
         messages.Info("Progressive photons: %u emission batches (%llu samples/set), %s emission, %llu deposits, k %u, cap %.3g x base radius, %llu contributions; preparation CPU %.3f s (maps %.3f s); photon map peak %zu bytes.",
                       budget.batches, static_cast<unsigned long long>(budget.EmittedSamples()), LowDiscrepancyEmission() ? "Sobol" : "random",
-                      static_cast<unsigned long long>(stored), budget.neighbours, ProgressivePhotonBudget::capScale,
+                      static_cast<unsigned long long>(stored), budget.neighbours, PhotonCapScale(),
                       static_cast<unsigned long long>(contributing), viewData.photonPrepareCPU / 1000.0,
                       viewData.photonMapCPU / 1000.0, viewData.photonPeakBytes);
     }

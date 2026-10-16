@@ -51,7 +51,7 @@ that offset is zero for any two points on a sphere or a cylinder, so curvature d
 not reject photons. Deposits arriving from behind a receiver without
 `diffuse_back`, or entering a subsurface receiver at grazing angles, are not
 counted. The support `r` is the distance to the `k`-th compatible deposit, capped
-at four times the receiver's base radius, which is the median `k`-th-neighbour
+at eight times the receiver's base radius, which is the median `k`-th-neighbour
 distance over up to 128 of its own deposits. Each deposit is weighted by the
 Epanechnikov kernel `2 (1 - d^2/r^2) / (pi r^2)`. For a uniform deposit density
 the expected estimate equals the true irradiance both when `r` is the `k`-th
