@@ -1,0 +1,13 @@
+// framing: look_at an object identifier or a tagged selection
+#version 4.0;
+#declare Subject = union {
+  sphere { -x, 0.5 }
+  box { <0.6, -0.4, -0.4>, <1.4, 0.4, 0.4> }
+  translate <2, 0.5, 3>
+  tags { "subject" }
+}
+object { Subject }
+#declare Wide = camera { location <0, 1.6, -4.5> look_at tagged { "subject" & !"draft" }, 0.8 }
+camera { location <0, 1.6, -4.5> look_at Subject }
+#declare Copy = tagged { "subject" }
+object { tagged { "subject" } translate x * 3 }
