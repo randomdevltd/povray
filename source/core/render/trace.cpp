@@ -2451,6 +2451,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         const auto& map = sceneData->GetPreparedSet(Eye.GetPreparedSetId()).progressiveSurface;
         if (map.photons.empty() || (Finish->Diffuse == 0.0 && Finish->DiffuseBack == 0.0 && Finish->Phong == 0.0 && Finish->Specular == 0.0))
             return;
+        if (sceneData->useSubsurface && Finish->UseSubsurface && (Eye.IsRadiosityRay() || (Finish->Phong == 0.0 && Finish->Specular == 0.0)))
+            return;
         const std::uint32_t receiver = map.Receiver(Object);
         if (receiver == ProgressivePhotonMap::noReceiver)
             return;
