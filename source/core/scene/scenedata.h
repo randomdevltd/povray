@@ -172,6 +172,10 @@ class SceneData
         const PreparedSet& GetPreparedSet(PreparedSetId index) const { return *preparedSets.at(index); }
         bool LightInPreparedSet(const LightSource& light, PreparedSetId index) const;
         void FinalizeScreenCameras();
+        bool TaggedBounds(const TagFilter& filter, Vector3d& low, Vector3d& high) const;
+        std::vector<Media*> AutoMedia() const;
+        void ResolveAutoMedia(const Camera& camera, unsigned int width, unsigned int height);
+        std::vector<Media*> PortalAutoMedia(const Camera& camera) const;
         /// list of all global light sources
         std::vector<LightSource*> lightSources;
         /// list of all lights that are part of light groups
@@ -331,6 +335,10 @@ class SceneData
 
         /// Aspect ratio of the output image.
         DBL aspectRatio;
+        unsigned int outputWidth = 160, outputHeight = 120;
+        std::vector<Media*> cameraAutoMedia;
+        Camera autoMediaCamera;
+        unsigned int autoMediaWidth = 0, autoMediaHeight = 0;
 
         int defaultFileType;
 

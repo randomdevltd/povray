@@ -87,6 +87,16 @@ Changed Behaviour
     subsurface scattering defaults to method 2 (the point cloud) instead of
     method 1. Scenes declaring an earlier version, and scenes that name a
     `method`, render as before.
+  - Media method 4 accepts `resolution auto [FLOAT]` to choose a world-unit
+    cell width from the medium's projected bounds and the main camera's full
+    output size. The multiplier defaults to 1; larger values give finer cells.
+    Numeric resolution and the omitted bounds-based default keep their meaning.
+    `auto` is matched by text after `resolution` and stays free elsewhere.
+    A medium visible through a portal warns that numeric tuning may be needed.
+  - Camera `look_at` accepts an object reference or `filter_tags { EXPRESSION }`
+    to frame transformed bounding boxes with a coarse projection sweep and a
+    small margin. Tag queries resolve against the final parsed scene. Existing
+    point targets keep their behavior; no new reserved words are introduced.
   - New reserved words, in every language version: `any`, `back`,
     `back_filter_tags`, `exit`, `fallback`, `far`, `filter_tags`, `front`,
     `front_filter_tags`, `isosurface_mesh`, `mix`, `near`, `no_lights`,

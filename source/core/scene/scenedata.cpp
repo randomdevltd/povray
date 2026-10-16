@@ -43,6 +43,8 @@
 #include <algorithm>
 #include <climits>
 #include <sstream>
+#include <stdexcept>
+#include <functional>
 
 // POV-Ray header files (base module)
 #include "base/types.h"
@@ -51,6 +53,7 @@
 
 // POV-Ray header files (core module)
 #include "core/material/noise.h"
+#include "core/material/interior.h"
 #include "core/material/pattern.h"
 #include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
@@ -383,6 +386,136 @@ bool SceneData::LightInPreparedSet(const LightSource& light, PreparedSetId index
     const LightSource& real = (light.imageOf != nullptr) ? *light.imageOf : light;
     const std::vector<bool>& in = real.lightGroupLight ? GetPreparedSet(index).groupLightIn : GetPreparedSet(index).globalLightIn;
     return (real.index < in.size()) && in[real.index];
+}
+
+
+bool SceneData::TaggedBounds(const TagFilter& filter, Vector3d& low, Vector3d& high) const
+{
+    bool found = false, finite = true;
+    low = Vector3d(HUGE_VAL);
+    high = Vector3d(-HUGE_VAL);
+    std::function<void(ConstObjectPtr, const std::vector<std::string>*)> visit = [&](ConstObjectPtr object, const std::vector<std::string>* inherited) {
+        const TagSelection selection = SelectTagged(object, filter, inherited);
+        if ((selection == TagSelection::Empty) || (selection == TagSelection::Everything)) return;
+        if (selection == TagSelection::Part)
+        {
+            if (const CompoundObject* compound = dynamic_cast<const CompoundObject*>(object))
+            {
+                std::vector<std::string> tags = inherited ? *inherited : std::vector<std::string>();
+                MergeTags(tags, object->tags);
+                for (ConstObjectPtr child : compound->children) visit(child, &tags);
+                return;
+            }
+        }
+        if (object->Type & LIGHT_SOURCE_OBJECT) return;
+        Vector3d objectLow, objectHigh;
+        Make_min_max_from_BBox(objectLow, objectHigh, object->BBox);
+        finite = finite && FiniteBounds(objectLow, objectHigh);
+        for (unsigned int axis = 0; axis < 3; ++axis)
+        {
+            low[axis] = std::min(low[axis], objectLow[axis]);
+            high[axis] = std::max(high[axis], objectHigh[axis]);
+        }
+        found = true;
+    };
+    for (ConstObjectPtr object : objects)
+        if (EnclosingTagsMatch(object, filter)) visit(object, nullptr);
+    return found && finite;
+}
+
+std::vector<Media*> SceneData::AutoMedia() const
+{
+    std::vector<Media*> result;
+    std::unordered_set<Media*> seen;
+    std::function<void(ObjectPtr)> visit = [&](ObjectPtr object) {
+        if (object->interior)
+            for (Media& medium : object->interior->media)
+                if (medium.FastResolutionAuto && seen.insert(&medium).second) result.push_back(&medium);
+        if (const CompoundObject* compound = dynamic_cast<const CompoundObject*>(object))
+            for (ObjectPtr child : compound->children) visit(child);
+    };
+    for (ObjectPtr object : objects) visit(object);
+    return result;
+}
+
+void SceneData::ResolveAutoMedia(const Camera& camera, unsigned int width, unsigned int height)
+{
+    if (autoMediaWidth == 0) cameraAutoMedia = AutoMedia();
+    if (cameraAutoMedia.empty()) return;
+    for (const Media* medium : cameraAutoMedia)
+    {
+        if (medium->FastAutoContainerConflict)
+            throw std::runtime_error("media resolution auto needs one container per medium; give each container a separate "
+                                     "medium instance or use numeric resolution.");
+        if (!medium->FastAutoContainer)
+            throw std::runtime_error("media resolution auto requires an object interior with a registered container.");
+    }
+    if ((autoMediaWidth == width) && (autoMediaHeight == height) && autoMediaCamera.SameView(camera)) return;
+    for (Media* medium : cameraAutoMedia)
+    {
+        medium->fastCache.reset();
+        medium->FastResolution = -1.0;
+        ObjectPtr object = medium->FastAutoContainer;
+        Vector3d low, high;
+        Make_min_max_from_BBox(low, high, object->BBox);
+        BoundsProjection projected;
+        if (ProjectBounds(camera, low, high, projected))
+        {
+            const DBL pixels = std::max((projected.right - projected.left) * width, (projected.top - projected.bottom) * height);
+            const Vector3d size = high - low;
+            const DBL extent = std::max(size[X], std::max(size[Y], size[Z]));
+            if (pixels > 0.0)
+                medium->FastResolution = extent / std::max(1.0, pixels) / medium->FastResolutionMultiplier;
+        }
+        // A singular or unsupported projection retains the bounds estimate, with the same multiplier.
+        if (medium->FastResolution == -1.0)
+        {
+            const Vector3d size = high - low;
+            const DBL volume = size[X] * size[Y] * size[Z];
+            const DBL extent = std::max(size[X], std::max(size[Y], size[Z]));
+            medium->FastResolution = FiniteBounds(low, high) && (volume > 0.0) ?
+                std::max(extent / 128.0, std::cbrt(volume / 500000.0)) / medium->FastResolutionMultiplier : 0.0;
+        }
+        const DBL detailMM = (medium->RefractionDetail > 0.0) ? medium->RefractionDetail : refractionDetail;
+        const Vector3d size = high - low;
+        const DBL autoDetail = FiniteBounds(low, high) ? std::max(size[X], std::max(size[Y], size[Z])) / 32.0 : 0.0;
+        const DBL detail = ((detailMM > 0.0) && (mmPerUnit > 0.0)) ? detailMM / mmPerUnit : autoDetail;
+        if ((detail > 0.0) && (medium->Refraction != 0.0))
+            medium->FastResolution = std::min(medium->FastResolution, detail * 0.5);
+        medium->SetFastContainer(object, detail, EffectivePreparedMediaCells(), true);
+    }
+    autoMediaCamera = camera;
+    autoMediaWidth = width;
+    autoMediaHeight = height;
+}
+
+std::vector<Media*> SceneData::PortalAutoMedia(const Camera& camera) const
+{
+    if (cameraAutoMedia.empty()) return {};
+    std::unordered_set<Media*> media;
+    std::unordered_set<PreparedSetId> visited;
+    std::vector<PreparedSetId> queue { FindPreparedSet(EffectiveFilterTags(camera.filterTags)) };
+    std::function<void(ObjectPtr)> collect = [&](ObjectPtr object) {
+        if (object->interior)
+            for (Media& medium : object->interior->media)
+                if (medium.FastResolutionAuto && !medium.FastAutoPortalWarned) media.insert(&medium);
+        if (const CompoundObject* compound = dynamic_cast<const CompoundObject*>(object))
+            for (ObjectPtr child : compound->children) collect(child);
+    };
+    for (size_t index = 0; index < queue.size(); ++index)
+    {
+        const PreparedSetId id = queue[index];
+        if (!visited.insert(id).second) continue;
+        for (const Portal* portal : GetPreparedSet(id).portalMouths)
+            for (const auto& side : { std::make_pair(portal->front, portal->frontPreparedSetId), std::make_pair(portal->back, portal->backPreparedSetId) })
+                if (side.first)
+                {
+                    const PreparedSet& destination = GetPreparedSet(side.second);
+                    for (ObjectPtr object : destination.objects) collect(object);
+                    queue.push_back(side.second);
+                }
+    }
+    return std::vector<Media*>(media.begin(), media.end());
 }
 
 void SceneData::FinalizeScreenCameras()

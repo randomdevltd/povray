@@ -177,6 +177,11 @@ class Media final
 
         std::vector<PIGMENT*> Density;
         DBL FastResolution;
+        bool FastResolutionAuto = false;
+        DBL FastResolutionMultiplier = 1.0;
+        ObjectPtr FastAutoContainer = nullptr;
+        bool FastAutoContainerConflict = false;
+        bool FastAutoPortalWarned = false;
         std::shared_ptr<FastCache> fastCache;
         /// its `light_source` block, making it a light, or empty
         std::shared_ptr<const MediaLight> light;
@@ -194,7 +199,7 @@ class Media final
         void PostProcess();
         /// object: the container; refractionDetail: the effective refraction_detail in scene units, 0 when auto has none to derive;
         /// cellLimit: the effective prepared media cell limit, 0 for none.
-        void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0);
+        void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0, bool resolveAuto = false);
         /// Whether it only bends rays, with nothing to absorb, emit or scatter.
         bool OnlyRefracts() const { return (Refraction != 0.0) && !use_absorption && !use_emission && !use_scattering; }
 };

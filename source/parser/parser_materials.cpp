@@ -3695,9 +3695,23 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (RESOLUTION_TOKEN)
             resolutionSpecified = true;
-            IMedia->FastResolution = Parse_Float();
-            if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
-                Error("media resolution needs a finite positive scene-unit width.");
+            Get_Token();
+            if (CurrentTokenText() == "auto")
+            {
+                IMedia->FastResolutionAuto = true;
+                IMedia->FastResolution = -1.0;
+                IMedia->FastResolutionMultiplier = Allow_Float(1.0);
+                if ((IMedia->FastResolutionMultiplier <= 0.0) || !std::isfinite(IMedia->FastResolutionMultiplier))
+                    Error("media resolution auto needs a finite positive multiplier.");
+            }
+            else
+            {
+                UNGET
+                IMedia->FastResolutionAuto = false;
+                IMedia->FastResolution = Parse_Float();
+                if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
+                    Error("media resolution needs a finite positive scene-unit width.");
+            }
         END_CASE
 
         CASE (AA_THRESHOLD_TOKEN)

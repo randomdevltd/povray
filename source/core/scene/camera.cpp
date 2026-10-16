@@ -376,6 +376,10 @@ Camera& Camera::operator=(const Camera& src)
     No_Radiosity = src.No_Radiosity;
     tags = src.tags;
     filterTags = src.filterTags;
+    frameBounds = src.frameBounds;
+    frameLow = src.frameLow;
+    frameHigh = src.frameHigh;
+    frameFilter = src.frameFilter;
     Mesh_Index = src.Mesh_Index;
     for (int i = 0; i < 10; i++)
     {
@@ -405,6 +409,222 @@ Camera& Camera::operator=(const Camera& src)
     return *this;
 }
 
+
+bool FiniteBounds(const Vector3d& low, const Vector3d& high)
+{
+    for (unsigned int axis = 0; axis < 3; ++axis)
+        if (!std::isfinite(low[axis]) || !std::isfinite(high[axis]) || (low[axis] > high[axis]) ||
+            (fabs(low[axis]) >= BOUND_HUGE * 0.5) || (fabs(high[axis]) >= BOUND_HUGE * 0.5))
+            return false;
+    return (high - low).lengthSqr() > 0.0;
+}
+
+static bool ProjectPoint(const Camera& camera, const Vector3d& point, DBL& x, DBL& y)
+{
+    Vector3d right = camera.Right, up = camera.Up, forward = camera.Direction;
+    const DBL rightLength = right.length(), upLength = up.length();
+    if ((rightLength <= 0.0) || (upLength <= 0.0) || (forward.lengthSqr() <= 0.0))
+        return false;
+    const bool normalized = (camera.Type != PERSPECTIVE_CAMERA) && (camera.Type != ORTHOGRAPHIC_CAMERA) &&
+                            (camera.Type != PANORAMIC_CAMERA) && (camera.Type != SPHERICAL_CAMERA);
+    if (normalized)
+    {
+        right.normalize();
+        up.normalize();
+        forward.normalize();
+    }
+    const DBL determinant = dot(right, cross(up, forward));
+    if (fabs(determinant) < EPSILON)
+        return false;
+    const Vector3d offset = point - camera.Location;
+    if (offset.lengthSqr() <= EPSILON) return false;
+    const DBL a = dot(offset, cross(up, forward)) / determinant;
+    const DBL b = dot(offset, cross(forward, right)) / determinant;
+    const DBL c = dot(offset, cross(right, up)) / determinant;
+    const DBL angle = camera.Angle * M_PI_180;
+    switch (camera.Type)
+    {
+        case PERSPECTIVE_CAMERA:
+            if (c <= EPSILON) return false;
+            x = a / c;
+            y = b / c;
+            break;
+        case ORTHOGRAPHIC_CAMERA:
+            if (c <= 0.0) return false;
+            x = a;
+            y = b;
+            break;
+        case CYL_1_CAMERA:
+        case CYL_3_CAMERA:
+            if ((angle <= 0.0) || (hypot(a, c) <= EPSILON)) return false;
+            x = atan2(a, c) / angle;
+            y = b / ((camera.Type == CYL_1_CAMERA) ? hypot(a, c) * upLength : upLength);
+            break;
+        case CYL_2_CAMERA:
+        case CYL_4_CAMERA:
+            if ((angle <= 0.0) || (hypot(b, c) <= EPSILON)) return false;
+            x = a / ((camera.Type == CYL_2_CAMERA) ? hypot(b, c) * rightLength : rightLength);
+            y = atan2(b, c) / angle;
+            break;
+        case SPHERICAL_CAMERA:
+            if ((camera.H_Angle <= 0.0) || (camera.V_Angle <= 0.0)) return false;
+            x = atan2(a * rightLength, c * forward.length()) / (camera.H_Angle * M_PI_180);
+            y = atan2(b * upLength, hypot(a * rightLength, c * forward.length())) / (camera.V_Angle * M_PI_180);
+            break;
+        case PANORAMIC_CAMERA:
+            x = atan2(a, c) / M_PI;
+            y = atan2(b, hypot(a, c)) / M_PI;
+            break;
+        case FISHEYE_CAMERA:
+        case OMNIMAX_CAMERA:
+        {
+            const DBL radial = hypot(a, b);
+            const DBL theta = atan2(radial, c);
+            DBL radius;
+            if (camera.Type == FISHEYE_CAMERA)
+            {
+                if (angle <= 0.0) return false;
+                radius = 2.0 * theta / angle;
+                x = (radial > EPSILON) ? radius * a / radial / (2.0 * rightLength) : 0.0;
+                y = (radial > EPSILON) ? radius * b / radial / (2.0 * upLength) : 0.0;
+            }
+            else
+            {
+                if (b < -c) return false;
+                DBL lower = 0.0, upper = 2.0;
+                for (unsigned int i = 0; i < 32; ++i)
+                {
+                    radius = (lower + upper) * 0.5;
+                    const DBL t = radius * radius;
+                    if (radius * (1.411269 - 0.09439 * t + 0.25674 * t * t) < theta)
+                        lower = radius;
+                    else
+                        upper = radius;
+                }
+                radius = (lower + upper) * 0.5;
+                x = (radial > EPSILON) ? radius * a / radial : 0.0;
+                y = (radial > EPSILON) ? radius * b / radial : 0.0;
+                const DBL aspect = rightLength / upLength;
+                if (aspect > 1.0)
+                {
+                    const DBL scale = std::min(aspect, 1.283458);
+                    if (aspect > 1.283458) x *= 1.283458 / aspect;
+                    y = (y - 1.0) * scale + 1.0;
+                }
+                else y *= aspect;
+                x *= 0.5;
+                y *= 0.5;
+            }
+            break;
+        }
+        case ULTRA_WIDE_ANGLE_CAMERA:
+        {
+            if ((angle <= 0.0) || (c <= EPSILON)) return false;
+            const DBL u = a / c, v = b / c;
+            DBL horizontal = atan(u), vertical = atan(v);
+            for (unsigned int i = 0; i < 24; ++i)
+            {
+                horizontal = atan(u * cos(vertical));
+                vertical = atan(v * cos(horizontal));
+            }
+            x = horizontal / angle;
+            y = vertical / (angle * upLength / rightLength);
+            break;
+        }
+        default: return false;
+    }
+    return std::isfinite(x) && std::isfinite(y);
+}
+
+bool ProjectBounds(const Camera& camera, const Vector3d& low, const Vector3d& high, BoundsProjection& projection)
+{
+    if (!FiniteBounds(low, high))
+        return false;
+    projection = { HUGE_VAL, -HUGE_VAL, HUGE_VAL, -HUGE_VAL };
+    // Sweep the transformed AABB's surface; curved projections may have extrema between corners.
+    for (unsigned int i = 0; i <= 4; ++i)
+        for (unsigned int j = 0; j <= 4; ++j)
+            for (unsigned int k = 0; k <= 4; ++k)
+            {
+                if ((i != 0) && (i != 4) && (j != 0) && (j != 4) && (k != 0) && (k != 4)) continue;
+                const Vector3d point(low[X] + (high[X] - low[X]) * i / 4.0,
+                                     low[Y] + (high[Y] - low[Y]) * j / 4.0,
+                                     low[Z] + (high[Z] - low[Z]) * k / 4.0);
+                DBL x, y;
+                if (!ProjectPoint(camera, point, x, y)) return false;
+                projection.left = std::min(projection.left, x);
+                projection.right = std::max(projection.right, x);
+                projection.bottom = std::min(projection.bottom, y);
+                projection.top = std::max(projection.top, y);
+            }
+    return true;
+}
+
+bool Camera::Frame(const Vector3d& low, const Vector3d& high)
+{
+    if (!FiniteBounds(low, high) || (Direction.lengthSqr() <= 0.0)) return false;
+    const Vector3d center = (low + high) * 0.5;
+    Vector3d forward = (center - Location).lengthSqr() > EPSILON ? (center - Location).normalized() : Direction.normalized();
+    const DBL extent = (high - low).length();
+    const DBL directionLength = Direction.length(), rightLength = Right.length(), upLength = Up.length();
+    const DBL handedness = dot(cross(Up, Direction), Right);
+    Vector3d right = cross(Sky, forward);
+    if (right.lengthSqr() < EPSILON) right = Right;
+    if (right.lengthSqr() < EPSILON) return false;
+    right.normalize();
+    Up = cross(forward, right).normalized() * upLength;
+    Right = right * ((handedness > 0.0) ? rightLength : -rightLength);
+    Direction = forward * directionLength;
+    if ((Type == ORTHOGRAPHIC_CAMERA) || (Type == CYL_3_CAMERA) || (Type == CYL_4_CAMERA))
+    {
+        Location = center - forward * extent * 2.0;
+        BoundsProjection projected;
+        if (!ProjectBounds(*this, low, high, projected)) return false;
+        if ((Type == ORTHOGRAPHIC_CAMERA) || (Type == CYL_4_CAMERA))
+            Right *= std::max(fabs(projected.left), fabs(projected.right)) / 0.45;
+        if ((Type == ORTHOGRAPHIC_CAMERA) || (Type == CYL_3_CAMERA))
+            Up *= std::max(fabs(projected.bottom), fabs(projected.top)) / 0.45;
+    }
+    auto fits = [&](DBL distance) {
+        Location = center - forward * distance;
+        BoundsProjection projected;
+        if (!ProjectBounds(*this, low, high, projected)) return false;
+        if (Type == FISHEYE_CAMERA)
+            if (hypot(std::max(fabs(projected.left), fabs(projected.right)) * Right.length(),
+                      std::max(fabs(projected.bottom), fabs(projected.top)) * Up.length()) > 0.45) return false;
+        if (Type == OMNIMAX_CAMERA)
+        {
+            const DBL aspect = Right.length() / Up.length();
+            DBL left = projected.left * 2.0, right = projected.right * 2.0;
+            DBL bottom = projected.bottom * 2.0, top = projected.top * 2.0;
+            if (aspect > 1.0)
+            {
+                if (aspect > 1.283458) { left *= aspect / 1.283458; right *= aspect / 1.283458; }
+                const DBL scale = std::min(aspect, 1.283458);
+                bottom = (bottom - 1.0) / scale + 1.0;
+                top = (top - 1.0) / scale + 1.0;
+            }
+            else { bottom /= aspect; top /= aspect; }
+            if (hypot(std::max(fabs(left), fabs(right)), std::max(fabs(bottom), fabs(top))) > 0.95) return false;
+        }
+        return (projected.left >= -0.45) && (projected.right <= 0.45) &&
+               (projected.bottom >= -0.45) && (projected.top <= 0.45);
+    };
+    DBL lower = 0.0, upper = extent;
+    unsigned int expansions = 0;
+    while (!fits(upper) && (++expansions < 64)) upper *= 2.0;
+    if (expansions == 64) return false;
+    for (unsigned int i = 0; i < 40; ++i)
+    {
+        const DBL distance = (lower + upper) * 0.5;
+        if (fits(distance)) upper = distance;
+        else lower = distance;
+    }
+    Location = center - forward * upper;
+    Look_At = center;
+    return true;
+}
+
 static bool SameVector(const Vector3d& a, const Vector3d& b)
 {
     return (a.x() == b.x()) && (a.y() == b.y()) && (a.z() == b.z());
@@ -421,7 +641,8 @@ bool Camera::SameView(const Camera& other, bool compareFilters) const
            (Focal_Distance == other.Focal_Distance) && (Blur_Samples == other.Blur_Samples) &&
            (Blur_Samples_Min == other.Blur_Samples_Min) && (Confidence == other.Confidence) && (Variance == other.Variance) &&
            (Max_Ray_Distance == other.Max_Ray_Distance) && (Tnormal == other.Tnormal) && (Bokeh == other.Bokeh) &&
-           (!compareFilters || (filterTags == other.filterTags)) &&
+           (!compareFilters || (filterTags == other.filterTags)) && (frameBounds == other.frameBounds) &&
+           (frameFilter == other.frameFilter) && (!frameBounds || (SameVector(frameLow, other.frameLow) && SameVector(frameHigh, other.frameHigh))) &&
            Meshes.empty() && other.Meshes.empty();
 }
 

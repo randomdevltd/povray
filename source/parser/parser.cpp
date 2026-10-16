@@ -322,10 +322,36 @@ void Parser::Run()
                 Parse_Frame();
             }
 
+            Finalize_Camera_Framing();
+            sceneData->ResolveAutoMedia(sceneData->parsedCamera, sceneData->outputWidth, sceneData->outputHeight);
+            for (const auto& pending : mAutoMediaLights)
+            {
+                Media& medium = *pending.first;
+                LightSource& light = *pending.second;
+                std::string failure;
+                light.emitter = MakeVolumeEmitter(medium, medium.FastAutoContainer, &mThreadData, failure);
+                if (!light.emitter)
+                {
+                    Warning("A media light_source gives no light because %s.", failure.c_str());
+                    const std::vector<LightSource*> removed { &light };
+                    for (ObjectPtr object : sceneData->objects) ForgetLights(object, removed);
+                    for (auto* lights : { &sceneData->mediaLights, &sceneData->lightSources, &sceneData->lightGroupLightSources })
+                        lights->erase(std::remove(lights->begin(), lights->end(), &light), lights->end());
+                    Destroy_Object(&light);
+                }
+                else
+                {
+                    light.colour = light.emitter->Intensity() * medium.light->brightness;
+                    light.Center = light.emitter->Centre();
+                }
+            }
+
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
             {
                 i->PostProcess();
+                if (i->FastResolutionAuto)
+                    Error("media resolution auto requires a bounded object interior.");
                 if (i->Refraction != 0.0)
                     Warning("Atmospheric media do not refract; 'refraction' works in the media of an object's interior.");
             }
@@ -2075,7 +2101,7 @@ void Parser::Parse_Camera (Camera& Cam)
                 tempv            = cross(New.Up, New.Direction);
                 Handedness       = dot(tempv, New.Right);
 
-                Parse_Vector (New.Look_At);
+                Parse_Camera_Look_At(New);
                 New.Direction = New.Look_At - New.Location;
 
                 // Check for zero length direction vector.
@@ -2199,6 +2225,60 @@ void Parser::Parse_Camera (Camera& Cam)
     }
 }
 
+
+void Parser::Parse_Camera_Look_At(Camera& camera)
+{
+    camera.frameBounds = false;
+    camera.frameFilter = TagFilter();
+    Get_Token();
+    if (CurrentTrueTokenId() == OBJECT_ID_TOKEN)
+    {
+        if (sceneData->EffectiveLanguageVersion() < 350)
+            Error("look_at bounds framing requires language version 3.5 or later.");
+        ObjectPtr object = CurrentTokenDataPtr<ObjectPtr>();
+        Resolve_Mesh_Geometry(object);
+        Make_min_max_from_BBox(camera.frameLow, camera.frameHigh, object->BBox);
+        if (!FiniteBounds(camera.frameLow, camera.frameHigh))
+            Error("look_at object framing needs finite non-empty bounds.");
+        camera.frameBounds = true;
+        camera.Look_At = Vector3d(HUGE_VAL);
+    }
+    else if (CurrentTrueTokenId() == FILTER_TAGS_TOKEN)
+    {
+        if (sceneData->EffectiveLanguageVersion() < 400)
+            Error("look_at filter_tags framing requires language version 4.0 or later.");
+        Parse_Filter_Tags(camera.frameFilter);
+        camera.frameBounds = true;
+        camera.Look_At = Vector3d(HUGE_VAL);
+    }
+    else
+    {
+        UNGET
+        Parse_Vector(camera.Look_At);
+    }
+}
+
+void Parser::Finalize_Camera_Framing()
+{
+    auto frame = [&](Camera& camera) {
+        if (!camera.frameBounds) return;
+        if (camera.frameFilter.specified)
+        {
+            for (ObjectPtr object : sceneData->objects)
+                Resolve_Mesh_Geometry(object);
+            if (!sceneData->TaggedBounds(camera.frameFilter, camera.frameLow, camera.frameHigh))
+                Error("look_at filter_tags must select objects with finite non-empty bounds.");
+        }
+        if (!camera.Frame(camera.frameLow, camera.frameHigh))
+            Error("look_at could not frame these bounds with this camera projection.");
+    };
+    frame(sceneData->parsedCamera);
+    for (Camera& camera : sceneData->cameras) frame(camera);
+    for (const std::weak_ptr<const Camera>& candidate : sceneData->screenCameraCandidates)
+        if (std::shared_ptr<const Camera> camera = candidate.lock())
+            frame(*std::const_pointer_cast<Camera>(camera));
+}
+
 bool Parser::Parse_Camera_Mods(Camera& New)
 {
     TRANSFORM Local_Trans;
@@ -2244,7 +2324,7 @@ bool Parser::Parse_Camera_Mods(Camera& New)
         END_CASE
 
         CASE (LOOK_AT_TOKEN)
-            Parse_Vector(New.Look_At);
+            Parse_Camera_Look_At(New);
         END_CASE
 
         CASE (LOCATION_TOKEN)
@@ -9934,8 +10014,10 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
 void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
 {
     std::string failure;
-    std::shared_ptr<const Emitter> emitter = MakeVolumeEmitter(medium, container, &mThreadData, failure);
-    if (!emitter)
+    std::shared_ptr<const Emitter> emitter;
+    if (!medium.FastResolutionAuto)
+        emitter = MakeVolumeEmitter(medium, container, &mThreadData, failure);
+    if (!medium.FastResolutionAuto && !emitter)
     {
         Warning("A media light_source gives no light because %s.", failure.c_str());
         return;
@@ -9944,8 +10026,16 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     LightSource *light = new LightSource();
     light->emitter = emitter;
     light->emitterContainer = container;
-    light->colour = emitter->Intensity() * settings.brightness;
-    light->Center = emitter->Centre();
+    if (emitter)
+    {
+        light->colour = emitter->Intensity() * settings.brightness;
+        light->Center = emitter->Centre();
+    }
+    else
+    {
+        light->colour.Clear();
+        mAutoMediaLights.emplace_back(&medium, light);
+    }
     light->Area_Light = true;
     light->Use_Full_Area_Lighting = true;
     light->Jitter = true;
@@ -10646,7 +10736,9 @@ void Parser::Link_To_Frame(ObjectPtr Object)
     /* NK phmap - added code so union is not split up if it is
                   flagged for hi-density photon mapping...
               maybe we SHOULD split it anyways... do speed tests later */
-    if((reinterpret_cast<CSGUnion *>(Object))->do_split == false)
+    const bool autoContainer = Object->interior && std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
+        [Object](const Media& medium) { return medium.FastResolutionAuto && (medium.FastAutoContainer == Object); });
+    if((reinterpret_cast<CSGUnion *>(Object))->do_split == false || autoContainer)
     {
         Link(Object, sceneData->objects);
         return;
