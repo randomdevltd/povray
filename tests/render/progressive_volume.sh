@@ -15,6 +15,7 @@ mean() {
         END {print sum/(n/2)/65535}'
 }
 render prepared +wt1
+tr '\n' ' ' < progressive_volume_prepared.log | tr -s ' ' | grep -q 'Progressive photons: 1 emission batches'
 render classic Declare=ReceiverMethod=3 +wt1
 awk -v a="$(mean prepared)" -v b="$(mean classic)" 'BEGIN {exit !(a>0.65*b && a<1.35*b)}'
 render threads +wt4

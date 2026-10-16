@@ -2925,7 +2925,7 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                 ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
                 threadData->progressiveContributions++;
             });
-            Te += sum / ProgressivePhotonBudget::KernelVolume(radius, 3);
+            Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
             return;
         }
         return;

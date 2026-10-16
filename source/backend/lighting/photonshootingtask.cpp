@@ -329,35 +329,11 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             double pdf;
             const double uSample = sobol(sampleIndex, PhotonSobol::kPolar), vSample = sobol(sampleIndex, PhotonSobol::kAzimuth);
             Vector3d direction = emitter.Direction(origin, uSample, vSample, pdf);
-            const bool targeted = !light->Parallel && sobol(sampleIndex, PhotonSobol::kTargeted) < 0.9;
+            bool targeted = false;
             size_t selectedTarget = 0;
-            if (targeted)
-            {
-                double selector = sobol(sampleIndex, PhotonSobol::kTarget);
-                while (selectedTarget + 1 < axes.size() && selector >= probability[li][selectedTarget])
-                    selector -= probability[li][selectedTarget++];
-                const size_t ti = selectedTarget;
-                const Vector3d axis = axes[ti];
-                Vector3d u = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
-                const Vector3d v = cross(axis, u);
-                const double deficit = uSample * widths[ti];
-                const double z = 1.0 - deficit;
-                const double r = std::sqrt(std::max(0.0, deficit * (2.0 - deficit)));
-                const double angle = 2.0 * M_PI * vSample;
-                direction = axis * z + u * (r * std::cos(angle)) + v * (r * std::sin(angle));
-            }
             if (!light->Parallel)
-            {
-                pdf = 0.1 / (4.0 * M_PI);
-                for (size_t ti = 0; ti < axes.size(); ++ti)
-                {
-                    const double projection = dot(direction, axes[ti]);
-                    const bool inside = widths[ti] >= 1.0 ? projection >= 1.0 - widths[ti] :
-                        projection >= 0.0 && (direction - axes[ti] * projection).lengthSqr() <= widths[ti] * (2.0 - widths[ti]);
-                    if ((targeted && selectedTarget == ti) || inside)
-                        pdf += 0.9 * probability[li][ti] / (2.0 * M_PI * widths[ti]);
-                }
-            }
+                pdf = PhotonTargetMixture(axes, widths, probability[li], uSample, vSample, sobol(sampleIndex, PhotonSobol::kTargeted),
+                                          sobol(sampleIndex, PhotonSobol::kTarget), direction, selectedTarget, targeted);
             TraceTicket ticket(maxTraceLevel, adcBailout);
             Ray ray(ticket);
             ray.Origin = origin.position;

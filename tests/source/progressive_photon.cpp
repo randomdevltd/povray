@@ -108,7 +108,7 @@ int main()
     assert(pov::ProgressivePhotonBudget(1).batches == 4 && pov::ProgressivePhotonBudget(64).batches == 256);
     assert(pov::ProgressivePhotonBudget(64).neighbours == pov::ProgressivePhotonBudget::maxNeighbours);
     assert(std::abs(pov::ProgressivePhotonBudget(1).EmissionWeight(2, 0.5) - 2.0 / (65536 * 0.5)) < 1e-18);
-    for (double invalid : {0.0, -1.0, 64.5, double(INFINITY), double(NAN)})
+    for (double invalid : {0.0, -1.0, 16384.5, double(INFINITY), double(NAN)})
     {
         bool rejected = false;
         try { pov::ProgressivePhotonBudget budget(invalid); (void)budget; }

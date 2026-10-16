@@ -1,5 +1,7 @@
+#include "core/lighting/emitter.h"
 #include "core/lighting/progressivephotonmap.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -190,6 +192,71 @@ int main()
                   << ", estimate " << lit << "\n";
         assert(faint.BaseRadius(id) > 1.0e-4 && faint.BaseRadius(id) < 1.0 && lit > 0.0);
     }
+
+    pov::ProgressivePhotonMap scattered;
+    std::mt19937_64 brute(9);
+    std::normal_distribution<double> gauss(0.0, 1.0);
+    for (unsigned int i = 0; i < 6000; ++i)
+    {
+        Deposit deposit;
+        deposit.point = pov::Vector3d(unit(brute), 0.2 * unit(brute), unit(brute));
+        deposit.normal = pov::Vector3d(gauss(brute), gauss(brute), gauss(brute)).normalized();
+        deposit.direction = deposit.normal;
+        deposit.flux = pov::MathColour(1.0);
+        scattered.Add(deposit, reinterpret_cast<pov::ConstObjectPtr>(&owners[i % 2]), 1.0);
+    }
+    scattered.Build(24);
+    std::vector<pov::PhotonNeighbour> found;
+    for (int i = 0; i < 400; ++i)
+    {
+        const pov::Vector3d point(unit(brute), 0.2 * unit(brute), unit(brute));
+        const pov::Vector3d normal = pov::Vector3d(gauss(brute), gauss(brute), gauss(brute)).normalized();
+        const std::uint32_t receiver = i % 3 == 2 ? pov::ProgressivePhotonMap::noReceiver : std::uint32_t(i % 3);
+        const bool twoSided = i % 4 == 0;
+        const double cap = 0.05 + 0.3 * unit(brute);
+        auto accept = [&](const pov::MappedPhoton& photon) {
+            const double agreement = dot(photon.Normal(), normal);
+            return (receiver == pov::ProgressivePhotonMap::noReceiver || photon.receiver == receiver) &&
+                   (agreement >= 0.5 || (twoSided && agreement <= -0.5));
+        };
+        const double support = scattered.Nearest(point, normal, receiver, cap, found, accept, twoSided);
+        std::vector<double> all;
+        for (const auto& photon : scattered.photons)
+            if (accept(photon) && (photon.point - point).lengthSqr() <= cap * cap)
+                all.push_back((photon.point - point).lengthSqr());
+        std::sort(all.begin(), all.end());
+        assert(found.size() == std::min<size_t>(24, all.size()));
+        assert(support == (all.size() < 24 ? cap : std::sqrt(all[23])));
+        std::vector<double> got;
+        for (const auto& neighbour : found)
+            got.push_back(neighbour.distance2);
+        std::sort(got.begin(), got.end());
+        assert(std::equal(got.begin(), got.end(), all.begin()));
+    }
+    std::cout << "partitioned nearest neighbours match a brute-force search\n";
+
+    std::vector<pov::Vector3d> axes = {pov::Vector3d(0, 0, 1), pov::Vector3d(1, 0, 0), pov::Vector3d(0, -1, 0)};
+    const std::vector<double> widths = {0.02, 0.3, 2.0}, chance = {0.5, 0.3, 0.2};
+    std::mt19937_64 emission(13);
+    const unsigned int samples = 1u << 21;
+    double whole = 0.0, narrow = 0.0, outside = 0.0;
+    for (unsigned int i = 0; i < samples; ++i)
+    {
+        const double u = unit(emission), v = unit(emission);
+        const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z));
+        pov::Vector3d direction(r * std::cos(2.0 * pi * v), r * std::sin(2.0 * pi * v), z);
+        size_t selected;
+        bool targeted;
+        const double pdf = pov::PhotonTargetMixture(axes, widths, chance, u, v, unit(emission), unit(emission), direction, selected, targeted);
+        const double weight = 1.0 / (samples * pdf);
+        whole += weight;
+        narrow += direction[pov::Z] >= 1.0 - widths[0] ? weight : 0.0;
+        outside += direction[pov::Z] < 0.0 && direction[pov::X] < 0.0 ? weight : 0.0;
+    }
+    std::cout << "target mixture: sphere " << whole / (4.0 * pi) << ", narrow cone " << narrow / (2.0 * pi * widths[0])
+              << ", untargeted octant pair " << outside / pi << " of their solid angles\n";
+    assert(std::abs(whole / (4.0 * pi) - 1.0) < 0.01 && std::abs(narrow / (2.0 * pi * widths[0]) - 1.0) < 0.01);
+    assert(std::abs(outside / pi - 1.0) < 0.02);
     std::cout << "progressive photon density estimator passed\n";
     return 0;
 }
