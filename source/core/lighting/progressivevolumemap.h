@@ -64,58 +64,48 @@ class ProgressiveVolumePhotonMap final
 {
     public:
         std::vector<ProgressiveVolumePhoton> photons;
-        std::vector<ProgressiveVolumePhoton> pilot;
         double initialRadius = 0.0;
-        double radius = 0.0;
         struct Bounds { Vector3d low, high; };
-        std::vector<Bounds> bounds, pilotBounds;
+        std::vector<Bounds> bounds;
 
-        void Build(unsigned int pass, unsigned int dimensions)
+        void Build()
         {
             if (photons.empty())
                 return;
-            if (initialRadius == 0.0)
-            {
-                Vector3d low = photons.front().point, high = low;
-                for (const auto& photon : photons)
-                    for (unsigned int a = 0; a < 3; ++a)
-                    {
-                        low[a] = std::min(low[a], photon.point[a]);
-                        high[a] = std::max(high[a], photon.point[a]);
-                    }
-                initialRadius = std::max(1.0e-8, (high - low).length() * 0.025);
-            }
+            Vector3d low = photons.front().point, high = low;
+            for (const auto& photon : photons)
+                for (unsigned int a = 0; a < 3; ++a)
+                {
+                    low[a] = std::min(low[a], photon.point[a]);
+                    high[a] = std::max(high[a], photon.point[a]);
+                }
+            initialRadius = std::max(1.0e-8, (high - low).length() * 0.025);
             bounds.resize(photons.size());
             BuildRange(0, photons.size(), 0);
-            if (pilot.empty())
+            std::vector<double> radii;
+            const size_t stride = std::max(size_t(1), photons.size() / 128);
+            for (size_t i = 0; i < photons.size(); i += stride)
             {
-                pilot = photons;
-                pilotBounds = bounds;
-                std::vector<double> radii;
-                const size_t stride = std::max(size_t(1), pilot.size() / 128);
-                for (size_t i = 0; i < pilot.size(); i += stride)
-                {
-                    std::priority_queue<double> nearest;
-                    Nearest(0, pilot.size(), pilot[i].point, *pilot[i].domain, nearest);
-                    if (!nearest.empty() && nearest.top() > 0.0)
-                        radii.push_back(std::sqrt(nearest.top()));
-                }
-                if (!radii.empty())
-                {
-                    const size_t middle = radii.size() / 2;
-                    std::nth_element(radii.begin(), radii.begin() + middle, radii.end());
-                    initialRadius = std::max(1.0e-8, radii[middle]);
-                }
+                std::priority_queue<double> nearest;
+                Nearest(0, photons.size(), photons[i].point, *photons[i].domain, nearest);
+                if (!nearest.empty() && nearest.top() > 0.0)
+                    radii.push_back(std::sqrt(nearest.top()));
             }
-            radius = initialRadius * ProgressivePhotonBudget::RadiusScale(pass, dimensions);
+            if (!radii.empty())
+            {
+                const size_t middle = radii.size() / 2;
+                std::nth_element(radii.begin(), radii.begin() + middle, radii.end());
+                initialRadius = std::max(1.0e-8, radii[middle]);
+            }
         }
 
+        /// The distance to the 32nd nearest photon of the same medium, at most four median distances.
         double RadiusAt(const Vector3d& point, const ProgressiveVolumeDomain& domain) const
         {
             std::priority_queue<double> nearest;
-            Nearest(0, pilot.size(), point, domain, nearest, 16.0 * initialRadius * initialRadius);
+            Nearest(0, photons.size(), point, domain, nearest, 16.0 * initialRadius * initialRadius);
             const double local = nearest.size() == 32 ? std::sqrt(nearest.top()) : 4.0 * initialRadius;
-            return std::max(1.0e-8, local) * radius / initialRadius;
+            return std::max(1.0e-8, local);
         }
 
         template<class Visitor>
@@ -197,9 +187,9 @@ class ProgressiveVolumePhotonMap final
             if (begin == end)
                 return;
             const size_t middle = begin + (end - begin) / 2;
-            if (DistanceSquared(pilotBounds[middle], point) > (nearest.size() == 32 ? nearest.top() : limit))
+            if (DistanceSquared(bounds[middle], point) > (nearest.size() == 32 ? nearest.top() : limit))
                 return;
-            const auto& photon = pilot[middle];
+            const auto& photon = photons[middle];
             const Vector3d delta = photon.point - point;
             const double distance2 = photon.DistanceSquared(point);
             if (distance2 <= limit && *photon.domain == domain && (nearest.size() < 32 || distance2 < nearest.top()))

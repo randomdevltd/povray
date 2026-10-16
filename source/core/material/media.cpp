@@ -1616,7 +1616,7 @@ DBL MediaFunction::PreparedResolution(MediaVector& medias, const Ray& ray)
         }
     if (!requested)
         return 0.0;
-    if (ray.IsPhotonRay() && threadData->GetSceneData()->photonSettings.method != 2)
+    if (ray.IsPhotonRay() && !threadData->GetSceneData()->photonSettings.Progressive())
     {
         WarnFastMedia(threadData, *requested, kFastPhoton, "Photon propagation uses classic media sampling.");
         return 0.0;
@@ -2135,7 +2135,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                 }
                 emission += scattering * light * step;
                 if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
-                    threadData->GetSceneData()->photonSettings.method == 2)
+                    threadData->GetSceneData()->photonSettings.Progressive())
                 {
                     photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
                     MathColour indirect;
@@ -2711,7 +2711,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         if (photonGatherer != nullptr)
             photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
         if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0 ||
-           threadData->GetSceneData()->photonSettings.method == 2))
+           threadData->GetSceneData()->photonSettings.Progressive()))
         {
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);
         }
@@ -2902,7 +2902,7 @@ std::shared_ptr<const ProgressiveVolumeDomain> MediaFunction::VolumeDomain(const
 
 void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H)
 {
-    if (threadData->GetSceneData()->photonSettings.method == 2 && photonGatherer)
+    if (threadData->GetSceneData()->photonSettings.Progressive() && photonGatherer)
     {
         if (!threadData->GetSceneData()->photonSettings.photonsEnabled)
             return;

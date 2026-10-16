@@ -67,6 +67,7 @@
 #include "backend/scene/view.h"
 #include "backend/scene/viewthreaddata.h"
 #include "core/lighting/emitter.h"
+#include "core/lighting/progressivephoton.h"
 #include "core/shape/csg.h"
 
 // this must be the last file included
@@ -162,35 +163,28 @@ class SurfaceLightEmitter final : public Emitter
         double NearDistance() const override { return EPSILON; }
         EmitterSample Sample(double s, std::uint64_t key) const override
         {
+            if (light.Parallel)
+            {
+                size_t selected = 0;
+                while (selected + 1 < targets.size() && s >= probability[selected])
+                    s -= probability[selected++];
+                return ParallelDisc(selected, Draw(key, kDrawPhoton, 7), Draw(key, kDrawPhoton, 8));
+            }
+            return SampleSquare(s, Draw(key, kDrawPhoton, 7), key);
+        }
+        EmitterSample SampleSquare(double s, double t, std::uint64_t key) const override
+        {
             Vector3d point = light.Center;
             if (light.Parallel)
             {
                 size_t selected = 0;
                 while (selected + 1 < targets.size() && s >= probability[selected])
                     s -= probability[selected++];
-                auto centre = [&](ObjectPtr target) {
-                    const Vector3d c = Vector3d(target->BBox.lowerLeft) + Vector3d(target->BBox.size) * 0.5;
-                    return c - light.Direction * dot(c - light.Center, light.Direction);
-                };
-                const Vector3d axis = light.Direction;
-                const Vector3d u = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
-                const Vector3d v = cross(axis, u);
-                const double radius = Vector3d(targets[selected]->BBox.size).length() * 0.5;
-                const double r = radius * std::sqrt(Draw(key, kDrawPhoton, 7));
-                const double angle = 2.0 * M_PI * Draw(key, kDrawPhoton, 8);
-                point = centre(targets[selected]) + u * (r * std::cos(angle)) + v * (r * std::sin(angle));
-                double pdf = 0.0;
-                for (size_t i = 0; i < targets.size(); ++i)
-                {
-                    const double r2 = Vector3d(targets[i]->BBox.size).lengthSqr() * 0.25;
-                    if (i == selected || (point - centre(targets[i])).lengthSqr() <= r2)
-                        pdf += probability[i] / (M_PI * r2);
-                }
-                return {point, MathColour(1.0 / pdf), pdf};
+                return ParallelDisc(selected, std::min(1.0, s / probability[selected]), t);
             }
             if (light.Area_Light)
             {
-                double u = s - 0.5, v = Draw(key, kDrawPhoton, 7) - 0.5;
+                double u = s - 0.5, v = t - 0.5;
                 if (light.Circular && !light.Orient)
                 {
                     const double radius = 0.5 * std::sqrt(s), angle = 2.0 * M_PI * (v + 0.5);
@@ -213,6 +207,29 @@ class SurfaceLightEmitter final : public Emitter
     private:
         const LightSource& light;
         const std::vector<ObjectPtr>& targets;
+        Vector3d DiscCentre(ObjectPtr target) const
+        {
+            const Vector3d c = Vector3d(target->BBox.lowerLeft) + Vector3d(target->BBox.size) * 0.5;
+            return c - light.Direction * dot(c - light.Center, light.Direction);
+        }
+        EmitterSample ParallelDisc(size_t selected, double radial, double turn) const
+        {
+            const Vector3d axis = light.Direction;
+            const Vector3d u = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
+            const Vector3d v = cross(axis, u);
+            const double radius = Vector3d(targets[selected]->BBox.size).length() * 0.5;
+            const double r = radius * std::sqrt(radial);
+            const double angle = 2.0 * M_PI * turn;
+            const Vector3d point = DiscCentre(targets[selected]) + u * (r * std::cos(angle)) + v * (r * std::sin(angle));
+            double pdf = 0.0;
+            for (size_t i = 0; i < targets.size(); ++i)
+            {
+                const double r2 = Vector3d(targets[i]->BBox.size).lengthSqr() * 0.25;
+                if (i == selected || (point - DiscCentre(targets[i])).lengthSqr() <= r2)
+                    pdf += probability[i] / (M_PI * r2);
+            }
+            return {point, MathColour(1.0 / pdf), pdf};
+        }
         const std::vector<double>& probability;
 };
 
@@ -243,6 +260,9 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
 {
     auto* data = GetViewDataPtr();
     constexpr unsigned int batch = ProgressivePhotonBudget::batchSize;
+    const auto& settings = GetSceneData()->photonSettings;
+    const bool lowDiscrepancy = LowDiscrepancyEmission();
+    const double spreadScale = ProgressivePhotonBudget(settings.quality).BeamSpreadScale();
     for (PreparedSetId setId = 0; setId < GetSceneData()->preparedSets.size(); ++setId)
     {
         auto& set = GetSceneData()->GetPreparedSet(setId);
@@ -290,16 +310,22 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
         std::vector<Vector3d> axes;
         std::vector<double> widths;
         RayInteriorVector originInteriors;
+        const PhotonSobol sobol(DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhotonMap, 0));
         for (unsigned int index = shard; index < batch; index += ProgressivePhotonBudget::shards)
         {
             Cooperate();
-            const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId),
-                                       kDrawPhoton, std::uint64_t(pass) * batch + index);
-            const size_t li = std::min(lights.size() - 1, size_t(Draw(key, kDrawPhoton, 0) * lights.size()));
+            const std::uint64_t sampleIndex = std::uint64_t(pass) * batch + index;
+            const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhoton, sampleIndex);
+            auto dimension = [&](unsigned int d, unsigned int draw) {
+                return lowDiscrepancy ? sobol(sampleIndex, d) : Draw(key, kDrawPhoton, draw);
+            };
+            const size_t li = std::min(lights.size() - 1, size_t(dimension(PhotonSobol::kLight, 0) * lights.size()));
             LightSource* light = lights[li];
             SurfaceLightEmitter fallback(*light, targets[li], probability[li]);
             const Emitter& emitter = light->emitter ? *light->emitter : fallback;
-            const EmitterSample origin = emitter.Sample(Draw(key, kDrawPhoton, 1), key);
+            const EmitterSample origin = lowDiscrepancy ?
+                emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key) :
+                emitter.Sample(Draw(key, kDrawPhoton, 1), key);
             axes.clear();
             widths.clear();
             for (ObjectPtr target : targets[li])
@@ -313,13 +339,14 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                 widths.push_back(distance > radius ? sine2 / (1.0 + std::sqrt(std::max(0.0, 1.0 - sine2))) : 2.0);
             }
             double pdf;
-            const double uSample = (index + Draw(key, kDrawPhoton, 2)) / batch;
-            Vector3d direction = emitter.Direction(origin, uSample, Draw(key, kDrawPhoton, 3), pdf);
-            const bool targeted = !light->Parallel && Draw(key, kDrawPhoton, 4) < 0.9;
+            const double uSample = lowDiscrepancy ? sobol(sampleIndex, PhotonSobol::kPolar) : (index + Draw(key, kDrawPhoton, 2)) / batch;
+            const double vSample = dimension(PhotonSobol::kAzimuth, 3);
+            Vector3d direction = emitter.Direction(origin, uSample, vSample, pdf);
+            const bool targeted = !light->Parallel && dimension(PhotonSobol::kTargeted, 4) < 0.9;
             size_t selectedTarget = 0;
             if (targeted)
             {
-                double selector = Draw(key, kDrawPhoton, 5);
+                double selector = dimension(PhotonSobol::kTarget, 5);
                 while (selectedTarget + 1 < axes.size() && selector >= probability[li][selectedTarget])
                     selector -= probability[li][selectedTarget++];
                 const size_t ti = selectedTarget;
@@ -329,7 +356,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                 const double deficit = uSample * widths[ti];
                 const double z = 1.0 - deficit;
                 const double r = std::sqrt(std::max(0.0, deficit * (2.0 - deficit)));
-                const double angle = 2.0 * M_PI * Draw(key, kDrawPhoton, 3);
+                const double angle = 2.0 * M_PI * vSample;
                 direction = axis * z + u * (r * std::cos(angle)) + v * (r * std::sin(angle));
             }
             if (!light->Parallel)
@@ -386,7 +413,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->passThruThis = false;
             data->photonDepth = projectionDepth;
             data->photonSpread = std::max(1.0e-8, Vector3d(targets[li].front()->BBox.size).length() * 0.025) *
-                                 ProgressivePhotonBudget::RadiusScale(pass, 3);
+                                 spreadScale;
             MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(lights.size(), pdf);
             flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
             ColourChannel unused;

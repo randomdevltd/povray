@@ -365,12 +365,10 @@ class ViewData final
             }
         }
         RGBTColour& LatticeSample(unsigned int x, unsigned int y) { return latticeSamples[x + y * latticeWidth]; }
-        unsigned int photonPass = 0;
         POV_LONG photonPrepareCPU = 0;
         POV_LONG photonMapCPU = 0;
         size_t photonPeakBytes = 0;
-        unsigned int photonThreads = 0, photonTraceThreads = 0;
-        std::vector<ProgressivePhotonState> photonPixels;
+        unsigned int photonThreads = 0;
         bool KeepsLatticeSamples() const { return latticeSamplesActive; }
 
         /// Method 4: a pixel's index in its per-pixel state, which covers the render area only.
@@ -702,8 +700,9 @@ class View final
                                     DBL aaBudget = 0.0);
 
         void StartLevel(TaskQueue& taskq, std::shared_ptr<ViewData::BlockIdSet> bsl, bool keepProgress);
-        void QueueProgressivePhotons(size_t seed, int threads, GammaCurvePtr& gamma);
-        void PrepareProgressivePhotons(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass);
+        void QueueProgressivePhotons(size_t seed, int threads);
+        void PreparePhotonBatch(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
+                                      unsigned int batches, unsigned int neighbours);
         void ReleaseProgressiveData(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> workers, ViewThreadData* total);
 
         /// Method 4's planning step between two passes.

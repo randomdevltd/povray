@@ -1,6 +1,7 @@
 # Progressive photons
 
-The experimental photon estimator is selected independently of its work budget:
+Method 2 replaces the classic photon count, spacing and gather controls with one
+work budget:
 
 ```pov
 global_settings {
@@ -8,50 +9,68 @@ global_settings {
 }
 ```
 
-Render with `+PR -A`. Photon quality includes stochastic pixel sampling. It is a
-positive work multiplier: `ceil(4 * quality)` emission batches, each with 65,536
-samples per prepared scene set, preceded by one independent pilot batch.
-Images below 8,000,000 pixels trace one camera sample per pixel per batch.
-At or above that size, the experimental schedule merges up to four batches into
-one bounded map and traces one camera sample per pixel for that group. This pixel
-threshold is a work heuristic, validated on a 4000 by 2667 water caustic; it is not
-an error bound or a guarantee for other scenes. UHD 3840 by 2160 also selects it.
-The last group may be partial: quality 0.5 emits two batches and traces one camera
-pass, while quality 1.25 emits five batches and traces two passes. Each map divides
-flux by its actual batch count; camera radiance is averaged with that count as its
-weight. Radius shrinkage follows cumulative emissions. The smaller camera sample
-count can increase noise at edges and in textures; raise photon quality when that
-noise is visible. Quality 1 is not a universal image-quality improvement under
-this schedule. The current maximum quality is 256. Increasing quality preserves
-the emission sequence and adds work; an unfinished final group gains samples
-before another camera pass is added.
-`method 1` selects classic photons. Omitting the method retains classic behavior,
-including in version 4 scenes. Quality is not an exposure control.
+`quality` is a finite number greater than zero and at most 64, default 1. It sets
+`ceil(4 * quality)` emission batches of 65,536 samples per prepared scene set. All
+batches are deposited into one surface map and one media map per set; each deposit
+carries its emitted flux divided by the batch count, so the image brightness does not
+depend on quality. The maps are built once, after the last batch, before radiosity
+and camera tracing start. Camera tracing is the ordinary render: anti-aliasing
+(`+A`, any `+AM`), mosaic preview, progressive rendering (`+PR`), render windows and
+`+C` all behave as they do without photons, and each camera sample is traced once.
+Nothing in the photon budget depends on the image size. `method 1` selects classic
+photons. Omitting the method retains classic behavior, including in version 4
+scenes. Quality is not an exposure control.
+
+## Emission
+
+Batches are shot in order, each split into sixteen logical shards. Each target's
+hit rate in one batch sets its selection probability in the next, with an
+exploration floor; the first batch selects targets uniformly. Ten percent of
+samples from a nonparallel source are isotropic. Every deposit carries emitted flux
+divided by the complete mixture density of the direction actually taken, including
+overlapping target cones; samples rejected by an aperture are not renormalized.
+
+Emission is driven by a seven-dimensional Sobol sequence, indexed by the global
+sample number and digitally shifted once per prepared set from the render seed.
+Its dimensions choose the light, the position on an area light or a parallel
+source's target disc (a volume emitter uses the first for its power-table cell),
+the polar and azimuthal direction within the selected target cone or the sphere,
+the targeted-or-isotropic choice and the target. Every aligned block of 2^m samples,
+and therefore every batch, is a digital net, so each batch covers the emission
+domain evenly however the earlier batches adapted target probabilities. Choices
+after the first surface (reflection, refraction, roulette, dispersion bands, media
+scattering) remain hashed per-sample random numbers.
 
 ## Estimator
 
-The runnable comparison in `tests/source/progressive_photon.cpp` starts with SPPM
-and checks surface and volume flux against analytic uniform-density references.
-The renderer uses probabilistic progressive photon mapping: fresh bounded photon
-maps and camera paths in each pass, averaging linear radiance. This fits recursive
-reflection, refraction, layered shading and participating media without retaining
-an unbounded collection of camera vertices. VCM would require a more general
-bidirectional material interface and path-space MIS; it is not used here.
+A surface receiver gathers the `k` nearest compatible deposits on the same object.
+A deposit is compatible when its surface normal is within 60 degrees of the
+receiver's and its offset from the mean of the two tangent planes,
+`|0.5 dot(p - x, n_x + n_p)|`, is at most a tenth of that receiver's base radius;
+that offset is zero for any two points on a sphere or a cylinder, so curvature does
+not reject photons. Deposits arriving from behind a receiver without
+`diffuse_back`, or entering a subsurface receiver at grazing angles, are not
+counted. The support `r` is the distance to the `k`-th compatible deposit, capped
+at four times the receiver's base radius, which is the median `k`-th-neighbour
+distance over up to 128 of its own deposits. Each deposit is weighted by the
+Epanechnikov kernel `2 (1 - d^2/r^2) / (pi r^2)`. For a uniform deposit density
+the expected estimate equals the true irradiance both when `r` is the `k`-th
+distance and when it is the cap; on a sphere, the set within a straight-line
+distance `r` has area exactly `pi r^2`.
 
-Surface bandwidth uses the fixed independent pilot at each camera-path hit. The
-32 nearest deposits on the receiving object select a local support, capped at
-four times that receiver's median pilot support. The cap also bounds the search;
-objects absent from the pilot return the map fallback without scanning it.
-Recursive paths and texture layers query their own hit instead of sharing one
-pixel radius. Supports shrink as `N^(-1/6)`. Only photons inside the reconstruction
-support receive full material evaluation. This is a measured pilot-only baseline,
-not an optimal bandwidth claim; tested curvature proxies did not improve its
-quality/work trade. Volume and subsurface reconstruction also use locally chosen
-pilot supports; volume radii shrink as `N^(-1/7)`.
+`k` grows with the batch count as `k = 48 (batches / 4)^(2/3)`, clamped to
+8..256, the kernel-density rate for a two-dimensional density: quality 1 uses
+48 neighbours, quality 4 uses 121 and quality 16 uses the cap of 256. The same
+estimator feeds diffuse, phong and specular photon lighting and subsurface entry,
+including the shared subsurface point cloud, whose boundary probe uses the base
+radius. A subsurface receiver that is a CSG gathers deposits on its members.
 
-See [SPPM](https://pbr-book.org/3ed-2018/Light_Transport_III_Bidirectional_Methods/Stochastic_Progressive_Photon_Mapping),
-[probabilistic PPM](https://www.cs.umd.edu/~zwicker/publications/PPMProbabilistic-TOG11.pdf)
-and [adaptive PPM](https://doi.org/10.1145/2451236.2451242) for the estimator families.
+Media deposits are finite beam segments. A camera sample gathers the segments
+within the distance of the 32nd nearest segment of the same medium list, capped at
+four times the median such distance, and divides by the sphere volume; the
+clipped segment is integrated analytically. This volume estimator keeps the
+box kernel and fixed neighbour count of the earlier prototype, now over the
+single map.
 
 ## Light power and authoring
 
@@ -73,7 +92,7 @@ lights and projected-through sources.
 
 Targets, `collect off`, reflection/refraction switches and `pass_through` retain
 their authoring roles. Numerical target density is replaced by measured targeting:
-previous-pass hit rates guide the next pass, with an exploration floor and an
+previous-batch hit rates guide the next batch, with an exploration floor and an
 isotropic component for nonparallel sources. Area emitters are sampled over their
 area without requiring the classic photon `area_light` option. Oriented area
 lights use the original axes and rectangular photon profile, as classic photons
@@ -99,15 +118,13 @@ Volumetric photon collection from group lights is currently rejected; the
 surface membership checks do not substitute for medium ownership.
 
 Classic count, spacing, gather, radius, jitter, autostop, expansion and map-file
-controls do not apply and are rejected. Radiosity is currently rejected. Explicit
-antialiasing is also rejected; use photon quality to increase the number of camera
-samples.
+controls do not apply and are rejected. Radiosity is currently rejected.
 
 Media photons are enabled by the existing `media` photon setting. Transport stores
 finite photon segments with their incoming flux and extinction. A gather clips each
 segment to its spherical support and integrates attenuation analytically along the
 clipped length. The estimate divides by the sphere volume, with scattering and phase
-evaluated at the camera sample. An independent pilot supplies the local support.
+evaluated at the camera sample.
 The existing media step limit and sampling settings control extinction integration;
 method 4 shares its prepared coefficient field with camera transport. Its coarse
 direct-light sampling still gathers photons at every coefficient sample.
@@ -121,15 +138,15 @@ integration cells. Field interpolation and constant extinction inside each cell
 remain approximations; a small number of photons can still miss a narrow caustic.
 
 Each segment records the exact active medium list and modifier ownership/order.
-Gathering and pilot support selection require that same list, avoiding transfer
+Gathering and support selection require that same list, avoiding transfer
 between nearby unrelated containers. This deliberately truncates support at a
 change of medium stack; it does not correct kernel bias at that boundary. The
 existing rejection of volume photons from light-group sources remains in place.
-The prototype does not add medium ownership support for light groups or change
+Method 2 does not add medium ownership support for light groups or change
 `global_lights off` behavior. Shared media must still follow the existing scene
 ownership restrictions.
-Subsurface photon illumination is reconstructed before diffusion; its cache is
-renewed each pass so illumination from an older map is not reused.
+Subsurface photon illumination is reconstructed before diffusion; the subsurface
+cache is created once, after the maps are built.
 
 ## Media lights
 
@@ -155,7 +172,7 @@ so it cannot be counted again alongside the photon estimate.
 The candle sample includes an optional water glass:
 
 ```sh
-povray +Idistribution/scenes/interior/media/blend_candle.pov +PR -A \
+povray +Idistribution/scenes/interior/media/blend_candle.pov \
   +W360 +H270 Declare=WaterGlass=1 Declare=PhotonQuality=1
 ```
 
@@ -167,67 +184,37 @@ self-attenuation, refractive heat and arrays of small emitters.
 
 ## Memory and reproducibility
 
-There is one current map and one fixed pilot, not an accumulating photon map.
-Large images retain at most four emission batches in the current map and one
-batch in the pilot; shooter vectors are released after each batch. Photon storage
-depends on this batch cap and deposits per traced path, including
-spectral branches and media samples. The log reports peak photon and volume-index vector capacity,
-plus shared ownership metadata, separately from shooting and camera work. Pixel state is
-40 bytes per image pixel: 16 bytes of accumulated RGBA and 24 bytes of reserved estimator
-state. Surface bandwidth no longer uses that pixel state. The fixed pilot adds a
-receiver index with 16 bytes per pilot deposit on 64-bit builds before capacity rounding
-and a small table per receiver; this index does not grow with pass count. This is about 316 MiB at 3840 by 2160, excluding the frontend image,
-scene, worker scratch storage and photon vectors. Camera work is tiled, while
-the accumulated image remains in memory.
+The surface map stores 64 bytes per deposit (double position, float direction,
+normal and flux, a receiver index and the tree axis); media segments keep their
+full record. Shooter vectors hold one batch and are released after it is merged.
+Memory therefore grows linearly with quality and with deposits per sample, which
+depend on the scene (spectral bands, bounces, media steps); quality is capped at 64
+for that reason. The log line `Progressive photons:` reports batches, emitted
+samples, deposits, `k`, contributions, preparation time and the peak map size.
 
-Emission has sixteen fixed logical shards. Workers may process several shards;
-their deposits are merged in shard order before building the map. Sample keys
-depend on seed, prepared set, pass and sample index. Pixel accumulation is in pass
-order. Thread count and scheduling do not change the result on the same build
-and platform; floating-point differences between platforms are not covered.
+Deposits are merged in shard order, so the maps, and the image, do not depend on
+the number of threads on the same build and platform. Because the maps are
+rebuilt identically, `+C` continues a render with the same photons.
 
-`+C` reconstructs estimator state by deterministic replay. It currently repeats
-earlier passes, including the pilot, instead of storing photon maps or sampling
-statistics in the render-state file. The final image is identical to an
-uninterrupted render under the same scene, seed and settings. Snapshot and block
-timing output use the normal progressive-render messages.
+## Changes from the earlier prototype
 
-## Validation
+The earlier method 2 traced one full camera pass per emission batch (four at
+quality 1), averaged the passes with a shrinking box-kernel radius chosen from a
+pilot batch, required `+PR -A`, and grouped batches differently at 8,000,000
+pixels and above. Each pass repeated camera, direct-light and subsurface work. Its
+surface acceptance slab, `|dot(p - x, n_x)| <= 0.05 r`, rejects deposits on
+receivers curved at a radius smaller than about ten gather radii: on a sphere the
+gathered fraction is 0.50 at `r = 0.2 R` and 0.25 at `r = 0.4 R`. That schedule,
+the pilot, the per-pixel estimator state and the image-size threshold are gone.
 
-`tests/render/progressive_photons.sh` checks thread-count and restart equality,
-classic selector compatibility, linear emitted power, and invalid quality values.
-It also covers area, spot, parallel and cylindrical lights, heterogeneous media,
-dispersion, subsurface receivers, thin and close surfaces, reflected and refracted
-views, curved media paths, inactive lights, and emission along photon paths.
-The analytic prototype and the render test are included in `make check`.
-`tests/render/progressive_emitter_parity.sh` checks active oriented and projected
-sources, zero samples on aperture misses, multiple CSG crossings, skipped and
-retained blockers, containing interiors, stripped aperture materials, and linear
-power. Its 32 by 24 photon-only images match across one and four threads. The
-oriented profile matches the fixed rectangular area profile exactly. Doubling
-power gives ratios 2.001105 and 2.000404 for the oriented and projected sources;
-a half aperture retains 0.511174 of the open image power. The source test checks
-unconditional mixture-PDF normalization analytically for aperture thinning and
-multiple sources. These fixtures do not measure geometric reconstruction error.
-`tests/source/photon_beam.cpp` checks segment clipping, attenuation and subdivision,
-uniform-density normalization and bent-path support. `photon_beam_map.cpp` compares
-indexed gathers and pilot distances against exhaustive queries. The registered
-`tests/render/progressive_volume.sh` combines a method-4 receiver, media emitter,
-progressive volume photons and a refractive field, and checks thread equality,
-linear power, varying extinction and the unsupported group-source error. Its
-method-3 comparison fails when method-4 lighting strides omit photon gathers.
-For a development comparison, build with `-DPOV_PROGRESSIVE_VOLUME_POINTS` to retain
-midpoint deposits in the volume estimator; this is not a scene-language option.
-On the focused 96 by 64 glass-sphere caustic, method 2 quality 1 used 3.10 billion
-instructions and had linear-light mean squared error `7.52e-6` against a
-32-times supersampled classic reference. Classic count 16,384 with `+AM4` used
-5.72 billion instructions and measured `8.71e-6` on the same scene. Quality 4
-used 10.50 billion instructions and measured `4.00e-7`; the earlier small-map
-schedule used 18.58 billion instructions and measured `7.46e-7`. Quality 16
-measured `2.06e-7`, with mean energy 1.1% lower than the reference. The reference
-itself has sampling uncertainty, and these numbers describe this one scene.
-On the visible 256 by 170 version, the revised schedule reduced displayed-pixel
-mean squared error against classic from 11.99 to 9.37 and visibly bright outliers
-from 35 to 26. This displayed-pixel comparison is a diagnostic, not a linear
-physical error measure or proof that classic is unbiased. Broader scene and
-performance validation remains necessary before method 2 replaces classic.
+## Limits
+
+- Radiosity and classic photon map files are rejected.
+- The fixed-`k` rule is global; it is not adapted to local noise or gradients,
+  and it smooths features narrower than the support at low quality. Sparse
+  regions are estimated at the capped radius and stay noisy.
+- Density is still truncated at object edges and at changes of medium; there is
+  no boundary correction.
+- Volumetric photons from light-group sources are rejected.
+- Deposits per sample, and therefore memory, are not bounded by quality alone.
+

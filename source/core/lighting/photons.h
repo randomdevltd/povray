@@ -119,6 +119,7 @@ class ScenePhotonSettings final
         double quality = 1.0;
         bool classicOptions = false;
         bool qualitySpecified = false;
+        bool Progressive() const { return method == 2; } ///< quality-budgeted emission into one k-nearest-neighbour map
 
         // photon separation (a.k.a. spacing)
         DBL surfaceSeparation;

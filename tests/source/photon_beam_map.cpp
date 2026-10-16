@@ -22,7 +22,7 @@ int main()
         photon.domain = (i % 2) ? domain : otherDomain;
         map.photons.push_back(photon);
     }
-    map.Build(0, 3);
+    map.Build();
     for (int i = 0; i < 100; ++i)
     {
         const pov::Vector3d point(coordinate(random), coordinate(random), coordinate(random));
@@ -44,7 +44,7 @@ int main()
         assert(owned == expectedOwned);
         assert(std::abs(sum - indexed) < 1e-10);
         std::vector<double> distances;
-        for (const auto& photon : map.pilot)
+        for (const auto& photon : map.photons)
             if (*photon.domain == *domain)
                 distances.push_back(photon.DistanceSquared(point));
         std::sort(distances.begin(), distances.end());
@@ -58,5 +58,5 @@ int main()
     other.modifiers.push_back(nullptr);
     other.below.push_back(1);
     assert(!(*domain == other));
-    std::cout << "photon beam map: indexed segment gathers, pilot nearest distances and domain identity passed\n";
+    std::cout << "photon beam map: indexed segment gathers, nearest distances and domain identity passed\n";
 }

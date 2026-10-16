@@ -57,7 +57,7 @@
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file."
  },
  "words": {
-  "quality": { "kind": "item", "text": "Progressive photon budget for photons { method 2 quality FLOAT }; finite, positive and at most 256, default 1. Contextual: remains available as an identifier." },
+  "quality": { "kind": "item", "text": "Progressive photon budget for photons { method 2 quality FLOAT }; finite, positive and at most 64, default 1. Contextual: remains available as an identifier." },
   "let": { "kind": "statement", "text": "Binds a name in the current function scope; repeats rebind." },
   "global": { "kind": "statement", "text": "Binds a name at file scope: global X = E; visible in the file's functions and included files." },
   "fn": { "kind": "statement", "text": "Defines a named function; shorthand for a let-bound lambda." },

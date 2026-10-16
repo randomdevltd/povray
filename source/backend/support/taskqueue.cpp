@@ -215,10 +215,12 @@ bool TaskQueue::Process()
 
     for(list<TaskEntry>::iterator i(activeTasks.begin()); i != activeTasks.end();)
     {
+        // read done first: a task records its failure before it is done
+        const bool done = i->GetTask()->IsDone();
         if(failed == kNoError)
             failed = i->GetTask()->FailureCode();
 
-        if(i->GetTask()->IsDone() == true)
+        if(done)
         {
             list<TaskEntry>::iterator e(i);
             i++;

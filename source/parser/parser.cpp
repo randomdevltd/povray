@@ -69,6 +69,7 @@
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
 #include "core/lighting/radiosity.h"
+#include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
 #include "core/material/blendmap.h"
 #include "core/material/interior.h"
@@ -346,7 +347,7 @@ void Parser::Run()
 
             for (LightSource* light : sceneData->mediaLights)
             {
-                if (sceneData->photonSettings.method != 2)
+                if (!sceneData->photonSettings.Progressive())
                 {
                     Set_Flag(light, PH_RFR_OFF_FLAG);
                     Set_Flag(light, PH_RFL_OFF_FLAG);
@@ -358,7 +359,7 @@ void Parser::Run()
                 else if (light->mediaPhotonLegacyOptions)
                     Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
             }
-            if (sceneData->photonSettings.method == 2)
+            if (sceneData->photonSettings.Progressive())
                 for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
                     for (LightSource* light : *lights)
                     {
@@ -7700,7 +7701,7 @@ void Parser::Parse_Global_Settings()
                     {
                         const double method = Parse_Float();
                         if (method != 1.0 && method != 2.0)
-                            Error("Photon method must be 1 (classic) or 2 (progressive).");
+                            Error("Photon method must be 1 (classic) or 2.");
                         sceneData->photonSettings.method = int(method);
                     }
                 END_CASE
@@ -7812,8 +7813,8 @@ void Parser::Parse_Global_Settings()
                     if (CurrentTokenText() == "quality")
                     {
                         const double quality = Parse_Float();
-                        if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
-                            Error("Photon quality must be finite, greater than zero and at most 256.");
+                        if (!std::isfinite(quality) || quality <= 0.0 || quality > ProgressivePhotonBudget::maxQuality)
+                            Error("Photon quality must be finite, greater than zero and at most 64.");
                         sceneData->photonSettings.quality = quality;
                         sceneData->photonSettings.qualitySpecified = true;
                     }
@@ -7826,7 +7827,7 @@ void Parser::Parse_Global_Settings()
             END_EXPECT
 
             // max_gather_count = 0  means no photon maps
-            if (sceneData->photonSettings.method == 2 && sceneData->photonSettings.classicOptions)
+            if (sceneData->photonSettings.Progressive() && sceneData->photonSettings.classicOptions)
                 Error("Photon method 2 uses quality instead of count, spacing, gather, radius, jitter, autostop or expand_thresholds.");
             if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.qualitySpecified)
                 Error("Photon quality requires method 2.");

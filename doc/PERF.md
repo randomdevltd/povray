@@ -178,6 +178,8 @@ need the spot, area and parallel directional/aperture PDFs, and these single-sou
 fixtures provide no evidence of a useful sampling gain.
 ## Progressive surface gathering
 
+Superseded: method 2 now builds one map and traces the camera once; see [progressive-photons.md](progressive-photons.md).
+
 Method 2 now selects bandwidth at each receiver hit from its independent pilot,
 with a cap derived from that receiver. Capped nearest-neighbour queries prune
 before searching distant caustics. Surface reconstruction evaluates materials
@@ -219,6 +221,8 @@ the receiver-local pilot baseline. The focused source regression checks receiver
 scales, independence, shrinking support and sparse-query visitation; the render
 regression checks thread equality and a higher-quality image reference.
 ## Large-image photon batches
+
+Superseded: method 2 now builds one map and traces the camera once; see [progressive-photons.md](progressive-photons.md).
 
 The experimental method-2 schedule groups up to four 65,536-sample emission
 batches per camera pass for images of at least 8,000,000 pixels. Smaller images

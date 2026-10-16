@@ -134,7 +134,7 @@ PhotonTrace::~PhotonTrace()
 bool PhotonTrace::PhotonLightAffectsObject(ConstObjectPtr object) const
 {
     const LightSource* light = threadData->photonSourceLight;
-    if (sceneData->photonSettings.method == 2)
+    if (sceneData->photonSettings.Progressive())
         return pov::PhotonLightAffectsObject(light, object);
     if (!light->lightGroupLight)
         return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
@@ -217,9 +217,9 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
     const auto* source = threadData->photonSourceLight;
-    const bool ownEmitter = sceneData->photonSettings.method == 2 && source->emitterContainer &&
+    const bool ownEmitter = sceneData->photonSettings.Progressive() && source->emitterContainer &&
                             IsObjectInCSG(bestisect.Object, source->emitterContainer);
-    if (sceneData->photonSettings.method == 2 && (ray.GetTicket().traceLevel == 1 || threadData->passThruThis) &&
+    if (sceneData->photonSettings.Progressive() && (ray.GetTicket().traceLevel == 1 || threadData->passThruThis) &&
         Test_Flag(bestisect.Object, PH_TARGET_FLAG) && !PhotonLightAffectsObject(bestisect.Object))
         return false;
     if ((bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
@@ -252,7 +252,7 @@ bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& col
                 {
                     // We hit *some* photon target object
 
-                    if ((sceneData->photonSettings.method != 2) && !IsObjectInCSG(bestisect.Object,threadData->photonTargetObject))
+                    if (!sceneData->photonSettings.Progressive() && !IsObjectInCSG(bestisect.Object,threadData->photonTargetObject))
                     {
                         // We did *not* hit *the* photon target
 
@@ -332,7 +332,7 @@ void PhotonTrace::ComputeInteriorMedia(Ray& ray, Intersection& isect, MathColour
             {
                 // compute media WITHOUT depositing photons
                 ColourChannel dummyTransm;
-                if (sceneData->photonSettings.method == 2)
+                if (sceneData->photonSettings.Progressive())
                 {
                     Ray attenuation(ray);
                     attenuation.SetFlags(Ray::OtherRay, true, true, false, ray.IsMonochromaticRay());
@@ -426,7 +426,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
 
     // First, we should save this photon!
 
-    bool progressiveReceiver = sceneData->photonSettings.method != 2;
+    bool progressiveReceiver = !sceneData->photonSettings.Progressive();
     for (const TEXTURE* layer = Texture; !progressiveReceiver && layer; layer = layer->Next)
         progressiveReceiver = layer->Finish->Diffuse != 0.0 || layer->Finish->DiffuseBack != 0.0 ||
                               layer->Finish->Phong != 0.0 || layer->Finish->Specular != 0.0 ||
@@ -435,7 +435,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
         !Test_Flag(isect.Object,PH_IGNORE_PHOTONS_FLAG) &&
         PhotonLightAffectsObject(isect.Object))
     {
-        if (sceneData->photonSettings.method == 2)
+        if (sceneData->photonSettings.Progressive())
         {
             ProgressivePhoton photon;
             photon.point = isect.IPoint;
@@ -1080,7 +1080,7 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
                                                         const Intersection& isect, MathColour& colour)
 {
     ModifierScope scope(*this, mods);
-    if (ray.IsPhotonRay() && sceneData->photonSettings.method != 2)
+    if (ray.IsPhotonRay() && !sceneData->photonSettings.Progressive())
         PreparedResolution(medias, ray);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
@@ -1161,7 +1161,7 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
 void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                               const Ray& ray, int minsamples, bool ignore_photons, bool use_scattering, bool all_constant_and_light_ray)
 {
-    if (sceneData->photonSettings.method == 2)
+    if (sceneData->photonSettings.Progressive())
     {
         const double resolution = PreparedResolution(medias, ray);
         const bool prepared = resolution > 0.0 && PrepareFields(medias, ray);

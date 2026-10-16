@@ -12,7 +12,10 @@ render() {
 render grouped
 render isolated Declare=Reference=1
 render global Declare=Reference=1 Declare=Grouped=0
-cmp progressive_group_grouped.px progressive_group_isolated.px
+left() {
+    od -An -v -w384 -t u1 "progressive_group_$1.px" | awk '{for (i = 1; i <= 240; i++) printf "%s ", $i; print ""}'
+}
+[ "$(left grouped)" = "$(left isolated)" ] || { echo 'grouped receiver differs from the isolated one' >&2; exit 1; }
 cmp progressive_group_isolated.px progressive_group_global.px
 render disabled Declare=GroupPhotons=0
 render legacy_disabled Declare=Version=3.8

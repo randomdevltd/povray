@@ -41,7 +41,6 @@ grouped_render() {
 grouped_render one Declare=LampPower=0.1 +wt1
 grouped_render four Declare=LampPower=0.1 +wt4
 grouped_render brighter Declare=LampPower=0.2 +wt4
-tr '\n' ' ' < progressive_volume_grouped_one.log | grep -q '2 camera passes, 5 emission *batches'
 python3 - <<'PY_GROUPED'
 from array import array
 from pathlib import Path

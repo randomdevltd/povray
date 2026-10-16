@@ -42,6 +42,10 @@ Changed Behaviour
 
   - Photon method 2 supports oriented area sources and projected-through apertures.
 
+  - Photon method 2 now shoots every batch into one map, with Sobol-stratified
+    emission and a k-nearest-neighbour kernel gather, and traces the camera once.
+    It no longer needs +PR, accepts anti-aliasing, and its quality is at most 64.
+
   - Any new behaviour formerly activated by `#version 3.71` now requires
     `#version 3.8` (or higher); specifying `#version 3.71` will trigger a
     corresponding warning.

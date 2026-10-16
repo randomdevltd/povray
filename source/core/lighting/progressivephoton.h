@@ -4,7 +4,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <stdexcept>
+#include <string>
 
 namespace pov
 {
@@ -13,45 +15,34 @@ struct ProgressivePhotonBudget final
 {
     static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
-    struct Pass final
-    {
-        unsigned int camera, firstBatch, batches;
-        unsigned int EndBatch() const { return firstBatch + batches - 1; }
-    };
-    static constexpr unsigned int maxBatchesPerPass = 4;
-    static constexpr std::uint64_t cameraWorkThreshold = 8000000;
-    unsigned int passes, batches, batchesPerPass;
+    static constexpr double maxQuality = 64.0;
+    static constexpr unsigned int minNeighbours = 8, maxNeighbours = 256;
+    static constexpr double baseNeighbours = 48.0, capScale = 4.0;
+    unsigned int batches, neighbours;
 
-    Pass EmissionBatch(unsigned int batch) const
+    explicit ProgressivePhotonBudget(double quality, double k0 = baseNeighbours)
     {
-        if (batch == 0)
-            return {0, 0, 1};
-        const unsigned int camera = (batch - 1) / batchesPerPass;
-        const unsigned int first = 1 + camera * batchesPerPass;
-        return {camera, first, std::min(batchesPerPass, batches - first + 1)};
+        if (!std::isfinite(quality) || quality <= 0.0 || quality > maxQuality)
+            throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 64.");
+        batches = static_cast<unsigned int>(std::ceil(4.0 * quality));
+        neighbours = Neighbours(batches, k0);
     }
 
-    std::uint64_t EmittedSamples() const { return std::uint64_t(batches + 1) * batchSize; }
-    std::uint64_t CameraSamples(std::uint64_t pixels) const { return pixels * passes; }
-
-    explicit ProgressivePhotonBudget(double quality, std::uint64_t pixels = 0)
+    /// k grows as the emitted count to the 2/3, the kernel-density optimum for a surface.
+    static unsigned int Neighbours(unsigned int batches, double k0 = baseNeighbours)
     {
-        if (!std::isfinite(quality) || quality <= 0.0 || quality > 256.0)
-            throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 256.");
-        const unsigned int requested = static_cast<unsigned int>(std::ceil(4.0 * quality));
-        batchesPerPass = pixels >= cameraWorkThreshold ? maxBatchesPerPass : 1;
-        passes = (requested + batchesPerPass - 1) / batchesPerPass;
-        batches = requested;
+        const double k = std::round(k0 * std::pow(batches / 4.0, 2.0 / 3.0));
+        return unsigned(std::max(double(minNeighbours), std::min(double(maxNeighbours), k)));
     }
+
+    std::uint64_t EmittedSamples() const { return std::uint64_t(batches) * batchSize; }
+
+    /// Media beam segments shrink with the emitted count at the volume kernel rate.
+    double BeamSpreadScale() const { return std::pow(double(batches), -1.0 / 7.0); }
 
     static double EmissionWeight(std::uint64_t sources, double directionPdf)
     {
         return double(sources) / (batchSize * directionPdf);
-    }
-
-    static double RadiusScale(std::uint64_t pass, unsigned int dimensions)
-    {
-        return std::pow(double(pass + 1), -1.0 / double(dimensions + 4));
     }
 
     static double KernelVolume(double radius, unsigned int dimensions)
@@ -61,55 +52,114 @@ struct ProgressivePhotonBudget final
     }
 };
 
-struct SppmEstimate final
+/// Sobol points in the emission dimensions, digitally shifted per prepared set; every aligned 2^m block is a net.
+class PhotonSobol final
 {
-    double radius = 1.0;
-    double count = 0.0;
-    double flux = 0.0;
+    public:
+        enum Dimension : unsigned int { kLight, kPositionS, kPositionT, kPolar, kAzimuth, kTargeted, kTarget, kDimensions };
 
-    void Add(double batchFlux, unsigned int hits, unsigned int dimensions = 2)
-    {
-        if (hits == 0)
-            return;
-        const double alpha = 4.0 / double(dimensions + 4);
-        const double next = count + alpha * hits;
-        const double ratio = next / (count + hits);
-        radius *= std::pow(ratio, 1.0 / double(dimensions));
-        flux = (flux + batchFlux) * ratio;
-        count = next;
-    }
+        explicit PhotonSobol(std::uint64_t seed)
+        {
+            for (unsigned int d = 0; d < kDimensions; ++d)
+            {
+                std::uint64_t z = seed + 0x9E3779B97F4A7C15ull * (d + 1);
+                z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+                z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+                shift[d] = std::uint32_t((z ^ (z >> 31)) >> 32);
+            }
+        }
 
-    double Evaluate(std::uint64_t emitted, unsigned int dimensions = 2) const
-    {
-        return emitted ? flux / (double(emitted) * ProgressivePhotonBudget::KernelVolume(radius, dimensions)) : 0.0;
-    }
+        std::uint32_t Bits(std::uint64_t index, unsigned int dimension) const
+        {
+            const auto& v = Directions()[dimension];
+            std::uint32_t x = shift[dimension];
+            for (unsigned int bit = 0; index; ++bit, index >>= 1)
+                if (index & 1)
+                    x ^= v[bit];
+            return x;
+        }
+
+        double operator()(std::uint64_t index, unsigned int dimension) const
+        {
+            return (Bits(index, dimension) + 0.5) * (1.0 / 4294967296.0);
+        }
+
+    private:
+        std::uint32_t shift[kDimensions];
+
+        struct Table final
+        {
+            std::uint32_t v[kDimensions][32];
+            Table()
+            {
+                // Joe and Kuo primitive polynomials and initial numbers for dimensions 2 to 7
+                static const unsigned int degree[kDimensions] = { 0, 1, 2, 3, 3, 4, 4 };
+                static const unsigned int poly[kDimensions] = { 0, 0, 1, 1, 2, 1, 4 };
+                static const std::uint32_t initial[kDimensions][4] = {
+                    {}, { 1 }, { 1, 3 }, { 1, 3, 1 }, { 1, 1, 1 }, { 1, 1, 3, 3 }, { 1, 3, 5, 13 } };
+                for (unsigned int k = 0; k < 32; ++k)
+                    v[0][k] = 1u << (31 - k);
+                for (unsigned int d = 1; d < kDimensions; ++d)
+                {
+                    const unsigned int s = degree[d];
+                    for (unsigned int k = 0; k < 32; ++k)
+                    {
+                        if (k < s)
+                        {
+                            v[d][k] = initial[d][k] << (31 - k);
+                            continue;
+                        }
+                        std::uint32_t value = v[d][k - s] ^ (v[d][k - s] >> s);
+                        for (unsigned int i = 1; i < s; ++i)
+                            if ((poly[d] >> (s - 1 - i)) & 1)
+                                value ^= v[d][k - i];
+                        v[d][k] = value;
+                    }
+                }
+            }
+        };
+
+        static const std::uint32_t (&Directions())[kDimensions][32]
+        {
+            static const Table table;
+            return table.v;
+        }
 };
 
-struct ProgressivePhotonState final
+// EXPERIMENT switches for the ablation runs; not part of the scene interface.
+inline const char* PhotonSwitch(const char* name) { return std::getenv(name); }
+inline bool LowDiscrepancyEmission()
 {
-    float baseRadius = 0.0f, radius = 0.0f;
-    float mean = 0.0f, noise = 0.0f, laplacian = 0.0f, density = 0.0f;
+    static const bool enabled = !PhotonSwitch("POVRAY_PHOTON_QMC") || std::string(PhotonSwitch("POVRAY_PHOTON_QMC")) != "0";
+    return enabled;
+}
+inline double PhotonNeighbourScale()
+{
+    static const double k0 = PhotonSwitch("POVRAY_PHOTON_K0") ? std::atof(PhotonSwitch("POVRAY_PHOTON_K0")) : ProgressivePhotonBudget::baseNeighbours;
+    return k0;
+}
+inline int PhotonKernelShape()
+{
+    static const int shape = PhotonSwitch("POVRAY_PHOTON_KERNEL") ? std::atoi(PhotonSwitch("POVRAY_PHOTON_KERNEL")) : 0;
+    return shape;
+}
 
-    void Initialize(double support, unsigned int pass)
+/// Epanechnikov weight over the disc of radius support, normalised to integrate to one.
+struct PhotonKernel final
+{
+    static double Weight(double distance2, double support2)
     {
-        baseRadius = float(support / ProgressivePhotonBudget::RadiusScale(pass, 2));
-        radius = float(support);
+        switch (PhotonKernelShape())
+        {
+            case 1: return distance2 < support2 ? 1.0 : 0.0;
+            case 2: return std::max(0.0, 1.0 - std::sqrt(distance2 / support2));
+            default: return std::max(0.0, 1.0 - distance2 / support2);
+        }
     }
-
-    void Update(unsigned int pass, double value, double varianceCoefficient, double curvature, double photonDensity)
+    static double Normaliser(double support2)
     {
-        if (!(baseRadius > 0.0f))
-            return;
-        const double count = double(pass + 1);
-        mean += (value - mean) / count;
-        noise += (varianceCoefficient - noise) / count;
-        laplacian += (curvature - laplacian) / count;
-        density += (photonDensity - density) / count;
-        const double next = double(pass + 2);
-        const double scale = baseRadius * ProgressivePhotonBudget::RadiusScale(pass + 1, 2);
-        const double curvature2 = double(laplacian) * laplacian;
-        const double optimum = curvature2 > 0.0 ? std::pow(32.0 * noise / (next * curvature2), 1.0 / 6.0) : 4.0 * scale;
-        radius = float(std::max(0.5 * scale, std::min(4.0 * scale, optimum)));
+        const double scale[3] = { 2.0, 1.0, 3.0 };
+        return scale[PhotonKernelShape() % 3] / (std::acos(-1.0) * support2);
     }
 };
 
