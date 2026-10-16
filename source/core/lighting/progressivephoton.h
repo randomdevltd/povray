@@ -4,9 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
 #include <stdexcept>
-#include <string>
 
 namespace pov
 {
@@ -126,46 +124,11 @@ class PhotonSobol final
         }
 };
 
-// EXPERIMENT switches for the ablation runs; not part of the scene interface.
-inline const char* PhotonSwitch(const char* name) { return std::getenv(name); }
-inline bool LowDiscrepancyEmission()
-{
-    static const bool enabled = !PhotonSwitch("POVRAY_PHOTON_QMC") || std::string(PhotonSwitch("POVRAY_PHOTON_QMC")) != "0";
-    return enabled;
-}
-inline double PhotonNeighbourScale()
-{
-    static const double k0 = PhotonSwitch("POVRAY_PHOTON_K0") ? std::atof(PhotonSwitch("POVRAY_PHOTON_K0")) : ProgressivePhotonBudget::baseNeighbours;
-    return k0;
-}
-inline double PhotonCapScale()
-{
-    static const double cap = PhotonSwitch("POVRAY_PHOTON_CAP") ? std::atof(PhotonSwitch("POVRAY_PHOTON_CAP")) : ProgressivePhotonBudget::capScale;
-    return cap;
-}
-inline int PhotonKernelShape()
-{
-    static const int shape = PhotonSwitch("POVRAY_PHOTON_KERNEL") ? std::atoi(PhotonSwitch("POVRAY_PHOTON_KERNEL")) : 0;
-    return shape;
-}
-
 /// Epanechnikov weight over the disc of radius support, normalised to integrate to one.
 struct PhotonKernel final
 {
-    static double Weight(double distance2, double support2)
-    {
-        switch (PhotonKernelShape())
-        {
-            case 1: return distance2 < support2 ? 1.0 : 0.0;
-            case 2: return std::max(0.0, 1.0 - std::sqrt(distance2 / support2));
-            default: return std::max(0.0, 1.0 - distance2 / support2);
-        }
-    }
-    static double Normaliser(double support2)
-    {
-        const double scale[3] = { 2.0, 1.0, 3.0 };
-        return scale[PhotonKernelShape() % 3] / (std::acos(-1.0) * support2);
-    }
+    static double Weight(double distance2, double support2) { return std::max(0.0, 1.0 - distance2 / support2); }
+    static double Normaliser(double support2) { return 2.0 / (std::acos(-1.0) * support2); }
 };
 
 }

@@ -1468,10 +1468,10 @@ void View::GetStatistics(POVMS_Object& renderStats)
             stored += set->progressiveSurface.photons.size() + set->progressiveMedia.photons.size();
         MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
-        const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality, PhotonNeighbourScale());
-        messages.Info("Progressive photons: %u emission batches (%llu samples/set), %s emission, %llu deposits, k %u, cap %.3g x base radius, %llu contributions; preparation CPU %.3f s (maps %.3f s); photon map peak %zu bytes.",
-                      budget.batches, static_cast<unsigned long long>(budget.EmittedSamples()), LowDiscrepancyEmission() ? "Sobol" : "random",
-                      static_cast<unsigned long long>(stored), budget.neighbours, PhotonCapScale(),
+        const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
+        messages.Info("Progressive photons: %u emission batches (%llu samples/set), %llu deposits, k %u, cap %.3g x base radius, %llu contributions; preparation CPU %.3f s (maps %.3f s); photon map peak %zu bytes.",
+                      budget.batches, static_cast<unsigned long long>(budget.EmittedSamples()),
+                      static_cast<unsigned long long>(stored), budget.neighbours, ProgressivePhotonBudget::capScale,
                       static_cast<unsigned long long>(contributing), viewData.photonPrepareCPU / 1000.0,
                       viewData.photonMapCPU / 1000.0, viewData.photonPeakBytes);
     }
@@ -1744,7 +1744,7 @@ void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, un
 
 void View::QueueProgressivePhotons(size_t seed, int threads)
 {
-    const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality, PhotonNeighbourScale());
+    const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
     viewData.photonPrepareCPU = 0;
     viewData.photonMapCPU = 0;
     viewData.photonPeakBytes = 0;

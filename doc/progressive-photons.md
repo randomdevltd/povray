@@ -207,6 +207,88 @@ receivers curved at a radius smaller than about ten gather radii: on a sphere th
 gathered fraction is 0.50 at `r = 0.2 R` and 0.25 at `r = 0.4 R`. That schedule,
 the pilot, the per-pixel estimator state and the image-size threshold are gone.
 
+## Tests
+
+`tests/source/progressive_photon.cpp` checks the budget, determinism and the
+stratification of the Sobol dimensions (every aligned block of 2^m values holds one
+value per stratum; pairwise star discrepancy against random points).
+`tests/source/progressive_surface.cpp` checks that the estimator reproduces a uniform
+irradiance within 1% on a plane and on a sphere, including at a support of about 0.3 sphere
+radii, and that close receivers keep separate supports. `tests/render/progressive_photons.sh`
+covers thread-count equality for every light type and media, dispersion, subsurface,
+thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
+independence of the logged budget and invalid quality; the emitter, direct-light,
+volume, media-light, light-group and `.pov4` scripts run with the new estimator.
+
+## Measurements
+
+User-space instruction counts of whole renders (parse, emission, maps and camera), four
+threads, counters not multiplexed; one run each. Errors are linear-light RMSE over
+pixels whose reference value is at most 1 (the few focal pixels above 1 are sampled
+differently by every camera pattern and would otherwise dominate). "Earlier method 2"
+is the multi-pass prototype described above. Classic photons use `fade_distance
+sqrt(0.5)` so their power matches.
+
+Glass sphere caustic, `tests/render/progressive_photons.pov`, 96 by 64, photon-only.
+The no-anti-aliasing reference is quality 64 with another seed; two such seeds differ
+by 0.0009, and a classic 4,194,304-photon render differs from it by 0.0026.
+
+| render | instructions | RMSE, no AA reference | RMSE, 36-sample reference |
+|---|---:|---:|---:|
+| classic 1,048,576 photons | 3.53 G | 0.0048 | 0.0048 |
+| earlier method 2, quality 1 | 3.13 G | (4 jittered samples) | 0.0073 |
+| quality 1 | 2.24 G | 0.0027 | 0.0042 |
+| quality 1, `+A0 +AM1 +R4` | 3.14 G | | 0.0016 |
+| quality 4 | 8.52 G | 0.0014 | 0.0039 |
+| earlier method 2, quality 4 | 10.94 G | (16 jittered samples) | 0.0036 |
+
+Water caustic, `tools/bench/photon-budget-water.pov`, 1000 by 667, no anti-aliasing.
+References: quality 16 with another seed (two seeds differ by 0.0040) and classic
+spacing 0.005; the two references differ by 0.0149, mostly at the shadow edge of the
+water box, where the kernel spreads deposits that classic gathers keep sharp.
+
+| render | instructions | RMSE vs quality 16 | RMSE vs classic 0.005 |
+|---|---:|---:|---:|
+| classic spacing 0.02 | 24.4 G | 0.0247 | 0.0351 |
+| classic spacing 0.01 | 41.1 G | 0.0090 | 0.0169 |
+| earlier method 2, quality 1 | 64.3 G | 0.0647 | 0.0705 |
+| quality 1 | 19.9 G | 0.0176 | 0.0285 |
+| quality 4 | 41.4 G | 0.0092 | 0.0216 |
+
+Emission and kernel ablations, RMSE against the same-camera reference:
+
+| change at quality 1 (quality 4) | sphere | water |
+|---|---:|---:|
+| as described | 0.0027 (0.0014) | 0.0176 (0.0092) |
+| hashed random emission | 0.0041 (0.0025) | 0.0625 (0.0377) |
+| box kernel | 0.0045 (0.0033) | 0.0296 |
+| cone kernel | 0.0027 (0.0014) | 0.0158 |
+| `k` base 16 / 96 instead of 48 | 0.0047 / 0.0035 | 0.0284 / 0.0279 |
+| cap 4 / 16 base radii instead of 8 | 0.0058 / 0.0019 | 0.0175 / 0.0176 |
+
+Stratified emission is the largest single gain: on the water caustic, random emission
+at quality 4 (0.0377) is no better than stratified emission at quality 0.25 (0.0362),
+with sixteen times fewer photons. On the water scene a cap of 8 costs 13% more
+instructions than 4 (17.6 G) and 16 costs 42% more, for no change in error there.
+
+Leaf, `tests/render/subsurface_leaf.pov` with `photons { method 2 quality Q }` in
+place of its classic block, 320 by 240, both prisms, subsurface method 2 with 64
+samples. Camera work is the full render minus a one-pixel render of the same scene:
+
+| render | instructions | one-pixel run | camera increment |
+|---|---:|---:|---:|
+| classic 400,000 photons | 290 G | 37 G | 253 G |
+| earlier method 2, quality 1 | 642 G | 16 G | 627 G |
+| quality 1 | 256 G | 12 G | 244 G |
+| quality 4 | 448 G | 49 G | 399 G |
+
+Here image error is dominated by subsurface and camera sampling, not photons: against a
+9-sample classic 1,600,000-photon reference the RMSE is 0.028 for classic, quality 1 and
+quality 4 alike, 0.019 for the earlier prototype (four camera samples) and 0.014 for
+quality 1 with four anti-aliasing samples (884 G). With the sun, fill and sky off, the
+lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%,
++2.1%; the earlier prototype +0.6%, +1.0%, +0.2%).
+
 ## Limits
 
 - Radiosity and classic photon map files are rejected.
@@ -217,4 +299,7 @@ the pilot, the per-pixel estimator state and the image-size threshold are gone.
   no boundary correction.
 - Volumetric photons from light-group sources are rejected.
 - Deposits per sample, and therefore memory, are not bounded by quality alone.
+- A query with no compatible photons nearby still visits the photons within the cap:
+  on a thin receiver lit on one side, gathers on the unlit side pay for the lit side's
+  photons. A per-side or per-orientation index would remove that cost.
 

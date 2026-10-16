@@ -163,13 +163,6 @@ class SurfaceLightEmitter final : public Emitter
         double NearDistance() const override { return EPSILON; }
         EmitterSample Sample(double s, std::uint64_t key) const override
         {
-            if (light.Parallel)
-            {
-                size_t selected = 0;
-                while (selected + 1 < targets.size() && s >= probability[selected])
-                    s -= probability[selected++];
-                return ParallelDisc(selected, Draw(key, kDrawPhoton, 7), Draw(key, kDrawPhoton, 8));
-            }
             return SampleSquare(s, Draw(key, kDrawPhoton, 7), key);
         }
         EmitterSample SampleSquare(double s, double t, std::uint64_t key) const override
@@ -261,7 +254,6 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
     auto* data = GetViewDataPtr();
     constexpr unsigned int batch = ProgressivePhotonBudget::batchSize;
     const auto& settings = GetSceneData()->photonSettings;
-    const bool lowDiscrepancy = LowDiscrepancyEmission();
     const double spreadScale = ProgressivePhotonBudget(settings.quality).BeamSpreadScale();
     for (PreparedSetId setId = 0; setId < GetSceneData()->preparedSets.size(); ++setId)
     {
@@ -316,16 +308,12 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             Cooperate();
             const std::uint64_t sampleIndex = std::uint64_t(pass) * batch + index;
             const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhoton, sampleIndex);
-            auto dimension = [&](unsigned int d, unsigned int draw) {
-                return lowDiscrepancy ? sobol(sampleIndex, d) : Draw(key, kDrawPhoton, draw);
-            };
-            const size_t li = std::min(lights.size() - 1, size_t(dimension(PhotonSobol::kLight, 0) * lights.size()));
+            const size_t li = std::min(lights.size() - 1, size_t(sobol(sampleIndex, PhotonSobol::kLight) * lights.size()));
             LightSource* light = lights[li];
             SurfaceLightEmitter fallback(*light, targets[li], probability[li]);
             const Emitter& emitter = light->emitter ? *light->emitter : fallback;
-            const EmitterSample origin = lowDiscrepancy ?
-                emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key) :
-                emitter.Sample(Draw(key, kDrawPhoton, 1), key);
+            const EmitterSample origin =
+                emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key);
             axes.clear();
             widths.clear();
             for (ObjectPtr target : targets[li])
@@ -339,14 +327,13 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                 widths.push_back(distance > radius ? sine2 / (1.0 + std::sqrt(std::max(0.0, 1.0 - sine2))) : 2.0);
             }
             double pdf;
-            const double uSample = lowDiscrepancy ? sobol(sampleIndex, PhotonSobol::kPolar) : (index + Draw(key, kDrawPhoton, 2)) / batch;
-            const double vSample = dimension(PhotonSobol::kAzimuth, 3);
+            const double uSample = sobol(sampleIndex, PhotonSobol::kPolar), vSample = sobol(sampleIndex, PhotonSobol::kAzimuth);
             Vector3d direction = emitter.Direction(origin, uSample, vSample, pdf);
-            const bool targeted = !light->Parallel && dimension(PhotonSobol::kTargeted, 4) < 0.9;
+            const bool targeted = !light->Parallel && sobol(sampleIndex, PhotonSobol::kTargeted) < 0.9;
             size_t selectedTarget = 0;
             if (targeted)
             {
-                double selector = dimension(PhotonSobol::kTarget, 5);
+                double selector = sobol(sampleIndex, PhotonSobol::kTarget);
                 while (selectedTarget + 1 < axes.size() && selector >= probability[li][selectedTarget])
                     selector -= probability[li][selectedTarget++];
                 const size_t ti = selectedTarget;
