@@ -57,7 +57,7 @@ fails_scene() {
 fails() {
     fails_scene "global_settings { photons { $1 } } sphere { 0, 1 }" "$2"
 }
-for quality in 0 -1 64.5 257 1e400; do
+for quality in 0 -1 16384.5 1e400; do
     fails "method 2 quality $quality" 'Photon quality must be finite'
 done
 fails 'method 3' 'Photon method must be 1'

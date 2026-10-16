@@ -13,23 +13,25 @@ struct ProgressivePhotonBudget final
 {
     static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
-    static constexpr double maxQuality = 64.0;
+    /// Quality 16384 emits 2^32 samples per prepared set, the length of the emission sequence; memory is bounded separately.
+    static constexpr double maxQuality = 16384.0;
+    static constexpr double memoryShare = 0.4, memoryCeiling = 6.0 * 1024 * 1024 * 1024, memoryMargin = 1.2;
     static constexpr unsigned int minNeighbours = 8, maxNeighbours = 256;
     static constexpr double baseNeighbours = 48.0, capScale = 8.0;
     unsigned int batches, neighbours;
 
-    explicit ProgressivePhotonBudget(double quality, double k0 = baseNeighbours)
+    explicit ProgressivePhotonBudget(double quality)
     {
         if (!std::isfinite(quality) || quality <= 0.0 || quality > maxQuality)
-            throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 64.");
+            throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 16384.");
         batches = static_cast<unsigned int>(std::ceil(4.0 * quality));
-        neighbours = Neighbours(batches, k0);
+        neighbours = Neighbours(batches);
     }
 
     /// k grows as the emitted count to the 2/3, the kernel-density optimum for a surface.
-    static unsigned int Neighbours(unsigned int batches, double k0 = baseNeighbours)
+    static unsigned int Neighbours(unsigned int batches)
     {
-        const double k = std::round(k0 * std::pow(batches / 4.0, 2.0 / 3.0));
+        const double k = std::round(baseNeighbours * std::pow(batches / 4.0, 2.0 / 3.0));
         return unsigned(std::max(double(minNeighbours), std::min(double(maxNeighbours), k)));
     }
 
@@ -43,10 +45,9 @@ struct ProgressivePhotonBudget final
         return double(sources) / (batchSize * directionPdf);
     }
 
-    static double KernelVolume(double radius, unsigned int dimensions)
+    static double KernelVolume(double radius)
     {
-        const double pi = std::acos(-1.0);
-        return dimensions == 2 ? pi * radius * radius : (4.0 / 3.0) * pi * radius * radius * radius;
+        return (4.0 / 3.0) * std::acos(-1.0) * radius * radius * radius;
     }
 };
 

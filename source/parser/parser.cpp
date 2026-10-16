@@ -8002,7 +8002,7 @@ void Parser::Parse_Global_Settings()
                     {
                         const double quality = Parse_Float();
                         if (!std::isfinite(quality) || quality <= 0.0 || quality > ProgressivePhotonBudget::maxQuality)
-                            Error("Photon quality must be finite, greater than zero and at most 64.");
+                            Error("Photon quality must be finite, greater than zero and at most 16384.");
                         sceneData->photonSettings.quality = quality;
                         sceneData->photonSettings.qualitySpecified = true;
                     }

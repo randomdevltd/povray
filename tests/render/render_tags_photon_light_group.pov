@@ -33,8 +33,9 @@ camera {
 }
 object { LampGroup }
 #end
+#ifndef (OutsideLens) #declare OutsideLens = 1; #end
 // no_image: the reference has no outside lens to refract the camera onto the lit receiver
 #if (!Reference)
-  object { Lens no_image translate 3*x KeepTag() }
+  #if (OutsideLens) object { Lens no_image translate 3*x KeepTag() } #end
   object { Receiver translate 3*x KeepTag() }
 #end

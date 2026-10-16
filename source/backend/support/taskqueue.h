@@ -108,6 +108,8 @@ class TaskQueue final
         bool Failed();
 
         int FailureCode(int defval = kNoError);
+        /// Fails the queue from a queued function; the queue stops before its next entry.
+        void Fail(int code);
 
         ThreadData *AppendTask(Task *task);
         void AppendDeferredTask(const boost::function0<Task*>& factory, const boost::function1<void, ThreadData*>& created);

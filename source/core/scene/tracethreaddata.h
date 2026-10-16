@@ -46,6 +46,7 @@
 #include <cstdint>
 #include <memory>
 #include <stack>
+#include <unordered_map>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -184,6 +185,7 @@ class TraceThreadData : public ThreadData
         std::vector<ProgressivePhotonFeedback> progressiveFeedback;
         std::vector<ProgressivePhotonBatch> progressiveBatches;
         std::vector<PhotonNeighbour> photonNeighbours;
+        std::unordered_map<ConstObjectPtr, std::pair<std::uint64_t, double>> csgPhotonRadius;
         std::uint64_t progressiveContributions = 0;
         MathColour GFilCol;
         int hitObject;    // did we hit the target object? (for autostop)

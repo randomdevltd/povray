@@ -42,6 +42,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 #include "core/coretypes.h"
 
@@ -75,6 +76,38 @@ class Emitter
             return Vector3d(r * std::cos(phi), r * std::sin(phi), z);
         }
 };
+
+/// Photon emission: a tenth isotropic, nine tenths over target cones (width = 1 - least cosine); a draw below 0.9 replaces
+/// the isotropic direction by a cone sample. Returns the mixture density per steradian.
+inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::vector<double>& widths, const std::vector<double>& probability,
+                                  double u, double v, double draw, double selector, Vector3d& direction, size_t& selected, bool& targeted)
+{
+    targeted = draw < 0.9;
+    selected = 0;
+    if (targeted)
+    {
+        while (selected + 1 < axes.size() && selector >= probability[selected])
+            selector -= probability[selected++];
+        const Vector3d axis = axes[selected];
+        Vector3d s = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
+        const Vector3d t = cross(axis, s);
+        const double deficit = u * widths[selected];
+        const double z = 1.0 - deficit;
+        const double r = std::sqrt(std::max(0.0, deficit * (2.0 - deficit)));
+        const double angle = 2.0 * M_PI * v;
+        direction = axis * z + s * (r * std::cos(angle)) + t * (r * std::sin(angle));
+    }
+    double pdf = 0.1 / (4.0 * M_PI);
+    for (size_t i = 0; i < axes.size(); ++i)
+    {
+        const double projection = dot(direction, axes[i]);
+        const bool inside = widths[i] >= 1.0 ? projection >= 1.0 - widths[i] :
+            projection >= 0.0 && (direction - axes[i] * projection).lengthSqr() <= widths[i] * (2.0 - widths[i]);
+        if ((targeted && selected == i) || inside)
+            pdf += 0.9 * probability[i] / (2.0 * M_PI * widths[i]);
+    }
+    return pdf;
+}
 
 struct MediaLight final ///< the `light_source { }` block of an emitting medium
 {

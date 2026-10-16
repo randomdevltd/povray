@@ -44,6 +44,8 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
+#include <limits>
 #include <sstream>
 
 // Boost header files
@@ -1840,8 +1842,28 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     renderTasks.AppendSync();
 }
 
-void View::PreparePhotonBatch(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
+/// The memory progressive photons may use: a share of the memory available now, at most a fixed ceiling.
+static double ProgressivePhotonMemoryBudget()
+{
+    double available = ProgressivePhotonBudget::memoryCeiling / ProgressivePhotonBudget::memoryShare;
+    std::ifstream meminfo("/proc/meminfo");
+    std::string field;
+    double kilobytes;
+    while (meminfo >> field >> kilobytes)
+    {
+        if (field == "MemAvailable:")
+        {
+            available = kilobytes * 1024.0;
+            break;
+        }
+        meminfo.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    return std::min(ProgressivePhotonBudget::memoryCeiling, ProgressivePhotonBudget::memoryShare * available);
+}
+
+void View::PreparePhotonBatch(TaskQueue& queue, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
                                     unsigned int batches, unsigned int neighbours)
+try
 {
     Timer timer;
     size_t bytes = 0;
@@ -1886,10 +1908,45 @@ void View::PreparePhotonBatch(TaskQueue&, std::shared_ptr<std::vector<ViewThread
                     photons.back().flux *= share;
                 }
             }
+    const size_t transient = bytes;
     for (auto* shooter : *shooters)
     {
         std::vector<ProgressivePhoton>().swap(shooter->progressiveSurface);
         std::vector<ProgressiveVolumePhoton>().swap(shooter->progressiveMedia);
+    }
+    if (pass == 0)
+    {
+        constexpr size_t segmentBytes = sizeof(ProgressiveVolumePhoton) + sizeof(ProgressiveVolumePhotonMap::Bounds);
+        const double scale = ProgressivePhotonBudget::memoryMargin * batches;
+        double projected = transient * ProgressivePhotonBudget::memoryMargin;
+        size_t deposits = 0, segments = 0;
+        for (const auto& set : viewData.GetSceneData()->preparedSets)
+        {
+            deposits += set->progressiveSurface.photons.size();
+            segments += set->progressiveMedia.photons.size();
+            projected += scale * (set->progressiveSurface.photons.size() * sizeof(MappedPhoton) + set->progressiveMedia.photons.size() * segmentBytes);
+        }
+        const double budget = ProgressivePhotonMemoryBudget();
+        if (projected > budget)
+        {
+            for (auto& set : viewData.GetSceneData()->preparedSets)
+            {
+                set->progressiveSurface = ProgressivePhotonMap();
+                set->progressiveMedia = ProgressiveVolumePhotonMap();
+            }
+            MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
+                                    viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+            messages.PossibleError("Photon quality %g would need about %.2f GB for photons (%zu deposits and %zu media segments per batch, "
+                                   "%u batches), more than the %.2f GB allowed (40%% of available memory, at most 6 GB). Lower the photon quality.",
+                                   viewData.GetSceneData()->photonSettings.quality, projected / 1.0e9, deposits, segments, batches, budget / 1.0e9);
+            queue.Fail(kOutOfMemoryErr);
+            return;
+        }
+        for (auto& set : viewData.GetSceneData()->preparedSets)
+        {
+            set->progressiveSurface.photons.reserve(size_t(scale * set->progressiveSurface.photons.size()));
+            set->progressiveMedia.photons.reserve(size_t(scale * set->progressiveMedia.photons.size()));
+        }
     }
     const bool last = pass + 1 == batches;
     for (auto& set : viewData.GetSceneData()->preparedSets)
@@ -1906,6 +1963,15 @@ void View::PreparePhotonBatch(TaskQueue&, std::shared_ptr<std::vector<ViewThread
         viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
     viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
     viewData.photonMapCPU += timer.ElapsedThreadCPUTime();
+}
+catch (std::bad_alloc&)
+{
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+    {
+        set->progressiveSurface = ProgressivePhotonMap();
+        set->progressiveMedia = ProgressiveVolumePhotonMap();
+    }
+    queue.Fail(kOutOfMemoryErr);
 }
 
 void View::ReleaseProgressiveData(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> workers, ViewThreadData* total)
