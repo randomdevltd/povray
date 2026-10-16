@@ -59,6 +59,13 @@ inline bool PhotonSurfaceMatch(const MappedPhoton& photon, const Vector3d& point
     return dot(other, normal) >= kPhotonNormalAgreement && std::abs(0.5 * dot(photon.point - point, normal + other)) <= slab;
 }
 
+/// The same sheet, for a photon that arrived on its far side.
+inline bool PhotonSurfaceMatchBehind(const MappedPhoton& photon, const Vector3d& point, const Vector3d& normal, double slab)
+{
+    const Vector3d other = -photon.Normal();
+    return dot(other, normal) >= kPhotonNormalAgreement && std::abs(0.5 * dot(photon.point - point, normal + other)) <= slab;
+}
+
 struct PhotonNeighbour final
 {
     double distance2;
@@ -203,11 +210,11 @@ class ProgressivePhotonMap final
 
         double Cap(std::uint32_t id) const { return ProgressivePhotonBudget::capScale * BaseRadius(id); }
 
-        /// The k nearest accepted photons within cap; returns the kernel support (the k-th distance, or cap).
-        /// Only partitions of receiver (any, for noReceiver) holding a normal within 60 degrees of normal are visited.
+        /// The k nearest accepted photons within cap, visiting only partitions of receiver (any, for noReceiver) with a normal
+        /// within 60 degrees of normal, or of -normal when twoSided; returns the kernel support (the k-th distance, or cap).
         template<class Accept>
         double Nearest(const Vector3d& point, const Vector3d& normal, std::uint32_t receiver, double cap,
-                       std::vector<PhotonNeighbour>& heap, Accept&& accept) const
+                       std::vector<PhotonNeighbour>& heap, Accept&& accept, bool twoSided = false) const
         {
             heap.clear();
             double bound = cap * cap;
@@ -215,10 +222,14 @@ class ProgressivePhotonMap final
             const std::uint32_t first = any ? 0 : receiverPartitions[receiver].first;
             const std::uint32_t last = any ? std::uint32_t(partitions.size()) : receiverPartitions[receiver].second;
             const double length = normal.length();
-            auto usable = [&](const PhotonPartition& part) {
-                const double cosine = length > 0.0 ? std::max(-1.0, std::min(1.0, dot(normal, part.axis) / length)) : 1.0;
+            auto facing = [&](const PhotonPartition& part, double cosine) {
                 const double closest = cosine >= part.cosSpread ? 1.0 : cosine * part.cosSpread + std::sqrt(1.0 - cosine * cosine) * part.sinSpread;
                 return part.length * length * closest >= kPhotonNormalAgreement ? cosine : -2.0;
+            };
+            auto usable = [&](const PhotonPartition& part) {
+                const double cosine = length > 0.0 ? std::max(-1.0, std::min(1.0, dot(normal, part.axis) / length)) : 1.0;
+                const double front = facing(part, cosine);
+                return twoSided ? std::max(front, facing(part, -cosine)) : front;
             };
             std::uint32_t nearest = last;
             double best = -2.0;

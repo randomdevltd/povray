@@ -2443,6 +2443,20 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
     lightCandidates.resize(first);
 }
 
+#if defined(__GNUC__)
+#define POV_COLD_PATH __attribute__((noinline, cold))
+#else
+#define POV_COLD_PATH
+#endif
+
+/// Gathers photons from both sides of a sheet, kept out of line so the one-sided gather stays as compiled before.
+template<class Accept>
+POV_COLD_PATH static double NearestBothSides(const ProgressivePhotonMap& map, const Vector3d& point, const Vector3d& normal, std::uint32_t receiver,
+                                             std::vector<PhotonNeighbour>& heap, const Accept& accept)
+{
+    return map.Nearest(point, normal, receiver, map.Cap(receiver), heap, accept, true);
+}
+
 void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
                                       const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, PhotonGatherer& gatherer, double pathWeight)
 {
@@ -2460,14 +2474,22 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         const bool doubleIlluminate = Test_Flag(Object, DOUBLE_ILLUMINATE_FLAG);
         const double slab = kPhotonSlab * map.BaseRadius(receiver);
         auto& nearest = threadData->photonNeighbours;
-        const double support = map.Nearest(IPoint, Raw_Normal, receiver, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
-            const Vector3d direction = photon.Direction();
-            if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab))
-                return false;
-            const double cosine = dot(Raw_Normal, direction);
-            const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
-            return std::abs(cosine) > EPSILON && !(backside && Finish->DiffuseBack == 0.0);
-        });
+        double support;
+        if (Finish->DiffuseBack != 0.0)
+            support = NearestBothSides(map, IPoint, Raw_Normal, receiver, nearest, [&](const MappedPhoton& photon) {
+                const double cosine = dot(Raw_Normal, photon.Direction());
+                return photon.receiver == receiver && std::abs(cosine) > EPSILON &&
+                       (PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab) || PhotonSurfaceMatchBehind(photon, IPoint, Raw_Normal, slab));
+            });
+        else
+            support = map.Nearest(IPoint, Raw_Normal, receiver, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
+                const Vector3d direction = photon.Direction();
+                if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab))
+                    return false;
+                const double cosine = dot(Raw_Normal, direction);
+                const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
+                return std::abs(cosine) > EPSILON && !(backside && Finish->DiffuseBack == 0.0);
+            });
         const double support2 = support * support;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
         unsigned int index = 0;
