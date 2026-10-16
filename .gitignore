@@ -274,4 +274,5 @@ $RECYCLE.BIN/
 /artifact*
 /tools/bench/pcount
 /tests/prepared-sets/
+/tests/progressive-surface/
 *.vsix

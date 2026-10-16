@@ -882,6 +882,13 @@ void View::StartRender(POVMS_Object& renderOptions)
     if (!progressive && (tracingmethod == 4))
         throw POV_EXCEPTION(kParamErr, "Anti-aliasing method 4 needs progressive rendering (+PR).");
     bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
+    if (viewData.GetSceneData()->photonSettings.Progressive())
+    {
+        if (viewData.GetSceneData()->radiositySettings.radiosityEnabled)
+            throw POV_EXCEPTION(kParamErr, "Photon method 2 does not yet support radiosity.");
+        if (!viewData.GetSceneData()->photonSettings.fileName.empty())
+            throw POV_EXCEPTION(kParamErr, "Photon method 2 does not use classic photon map files.");
+    }
 
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
 
@@ -1224,7 +1231,7 @@ void View::StartRender(POVMS_Object& renderOptions)
         renderTasks.AppendSync();
     }
     */
-    if(viewData.GetSceneData()->photonSettings.photonsEnabled)
+    if(viewData.GetSceneData()->photonSettings.photonsEnabled && viewData.GetSceneData()->photonSettings.method == 1)
     {
         if (!viewData.GetSceneData()->photonSettings.fileName.empty() && viewData.GetSceneData()->photonSettings.loadFile)
         {
@@ -1274,6 +1281,8 @@ void View::StartRender(POVMS_Object& renderOptions)
 
         }
     }
+    else if (viewData.GetSceneData()->photonSettings.photonsEnabled && viewData.GetSceneData()->photonSettings.Progressive())
+        QueueProgressivePhotons(seed, maxRenderThreads);
 
     // do radiosity pretrace
     if(viewData.GetSceneData()->radiositySettings.radiosityEnabled && !skipPretrace)
@@ -1464,6 +1473,23 @@ void View::GetStatistics(POVMS_Object& renderStats)
 
     for(vector<ViewThreadData *>::iterator i(viewThreadData.begin()); i != viewThreadData.end(); i++)
         stats += (*i)->Stats();
+
+    if (viewData.GetSceneData()->photonSettings.Progressive() && viewData.GetSceneData()->photonSettings.photonsEnabled)
+    {
+        std::uint64_t contributing = 0, stored = 0;
+        for (auto* worker : viewThreadData)
+            contributing += worker->progressiveContributions;
+        for (const auto& set : viewData.GetSceneData()->preparedSets)
+            stored += set->progressiveSurface.photons.size() + set->progressiveMedia.photons.size();
+        MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
+        messages.Info("Progressive photons: %u emission batches (%llu samples/set), %llu deposits, k %u, cap %.3g x base radius, %llu contributions; preparation CPU %.3f s (maps %.3f s); photon map peak %zu bytes.",
+                      budget.batches, static_cast<unsigned long long>(budget.EmittedSamples()),
+                      static_cast<unsigned long long>(stored), budget.neighbours, ProgressivePhotonBudget::capScale,
+                      static_cast<unsigned long long>(contributing), viewData.photonPrepareCPU / 1000.0,
+                      viewData.photonMapCPU / 1000.0, viewData.photonPeakBytes);
+    }
 
     double photonGathers = double(stats[Subsurface_Photon_Cloud_Gathers]) + double(stats[Subsurface_Photon_Sample_Gathers]);
     if (photonGathers > 0.0)
@@ -1680,6 +1706,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
     };
 
     TimeData timeData[TraceThreadData::kMaxTimeType];
+    timeData[TraceThreadData::kPhotonTime].cpuTime = viewData.photonPrepareCPU;
 
     for(vector<ViewThreadData *>::iterator i(viewThreadData.begin()); i != viewThreadData.end(); i++)
     {
@@ -1687,6 +1714,8 @@ void View::GetStatistics(POVMS_Object& renderStats)
         timeData[(*i)->timeType].cpuTime += (*i)->cpuTime;
         timeData[(*i)->timeType].samples++;
     }
+    if (viewData.GetSceneData()->photonSettings.Progressive())
+        timeData[TraceThreadData::kPhotonTime].samples = viewData.photonThreads;
 
     for(size_t i = TraceThreadData::kUnknownTime; i < TraceThreadData::kMaxTimeType; i++)
     {
@@ -1769,6 +1798,130 @@ void View::SendStatistics(TaskQueue&)
 void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, unsigned int fs)
 {
     viewData.SetNextRectangle(*bsl, fs);
+}
+
+void View::QueueProgressivePhotons(size_t seed, int threads)
+{
+    const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
+    viewData.photonPrepareCPU = 0;
+    viewData.photonMapCPU = 0;
+    viewData.photonPeakBytes = 0;
+    viewData.photonThreads = std::min(unsigned(ProgressivePhotonBudget::shards), unsigned(std::max(1, threads)));
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+    {
+        set->progressiveSurface = ProgressivePhotonMap();
+        set->progressiveMedia = ProgressiveVolumePhotonMap();
+        set->progressiveFeedback.clear();
+    }
+    auto* photonTotal = new ViewThreadData(&viewData, seed);
+    photonTotal->timeType = TraceThreadData::kPhotonTime;
+    photonTotal->cpuTime = photonTotal->realTime = 0;
+    viewThreadData.push_back(photonTotal);
+    auto controller = std::make_shared<Timer>();
+    renderTasks.AppendFunction([controller](TaskQueue&) { controller->Reset(); });
+    for (unsigned int pass = 0; pass < budget.batches; ++pass)
+    {
+        auto shooters = std::make_shared<std::vector<ViewThreadData*>>();
+        auto collect = [this, shooters](ThreadData* thread) {
+            auto* data = static_cast<ViewThreadData*>(thread);
+            viewThreadData.push_back(data);
+            shooters->push_back(data);
+        };
+        const unsigned int workers = viewData.photonThreads;
+        for (unsigned int shard = 0; shard < workers; ++shard)
+            renderTasks.AppendDeferredTask([this, seed, pass, shard, workers]() -> Task* {
+                return new PhotonShootingTask(&viewData, nullptr, seed, pass, shard, workers);
+            }, collect);
+        renderTasks.AppendSync();
+        renderTasks.AppendFunction(boost::bind(&View::PreparePhotonBatch, this, _1, shooters, pass, budget.batches, budget.neighbours));
+        renderTasks.AppendFunction(boost::bind(&View::ReleaseProgressiveData, this, _1, shooters, photonTotal));
+    }
+    renderTasks.AppendFunction([this, controller](TaskQueue&) { viewData.photonPrepareCPU = controller->ElapsedThreadCPUTime(); });
+    renderTasks.AppendSync();
+}
+
+void View::PreparePhotonBatch(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
+                                    unsigned int batches, unsigned int neighbours)
+{
+    Timer timer;
+    size_t bytes = 0;
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+        set->progressiveFeedback.clear();
+    for (auto* shooter : *shooters)
+    {
+        for (const auto& observation : shooter->progressiveFeedback)
+        {
+            auto& feedback = viewData.GetSceneData()->GetPreparedSet(observation.set).progressiveFeedback;
+            auto previous = std::find_if(feedback.begin(), feedback.end(), [&](const ProgressivePhotonFeedback& entry) {
+                return entry.light == observation.light && entry.target == observation.target;
+            });
+            if (previous == feedback.end())
+                feedback.push_back(observation);
+            else
+            {
+                previous->attempted += observation.attempted;
+                previous->hit += observation.hit;
+            }
+        }
+        bytes += shooter->progressiveSurface.capacity() * sizeof(ProgressivePhoton) +
+                 shooter->progressiveMedia.capacity() * sizeof(ProgressiveVolumePhoton);
+    }
+    const double share = 1.0 / double(batches);
+    for (unsigned int shard = 0; shard < ProgressivePhotonBudget::shards; ++shard)
+        for (auto* shooter : *shooters)
+            for (const auto& batch : shooter->progressiveBatches)
+            {
+                if (batch.shard != shard)
+                    continue;
+                for (size_t i = batch.surfaceBegin; i < batch.surfaceEnd; ++i)
+                {
+                    const auto& photon = shooter->progressiveSurface[i];
+                    viewData.GetSceneData()->GetPreparedSet(photon.set).progressiveSurface.Add(photon, photon.object, share);
+                }
+                for (size_t i = batch.mediaBegin; i < batch.mediaEnd; ++i)
+                {
+                    const auto& photon = shooter->progressiveMedia[i];
+                    auto& photons = viewData.GetSceneData()->GetPreparedSet(photon.set).progressiveMedia.photons;
+                    photons.push_back(photon);
+                    photons.back().flux *= share;
+                }
+            }
+    for (auto* shooter : *shooters)
+    {
+        std::vector<ProgressivePhoton>().swap(shooter->progressiveSurface);
+        std::vector<ProgressiveVolumePhoton>().swap(shooter->progressiveMedia);
+    }
+    const bool last = pass + 1 == batches;
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+    {
+        bytes += set->progressiveSurface.photons.capacity() * sizeof(MappedPhoton) +
+                 set->progressiveMedia.photons.capacity() * sizeof(ProgressiveVolumePhoton);
+        if (!last)
+            continue;
+        set->progressiveSurface.Build(neighbours);
+        set->progressiveMedia.Build();
+        bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
+    }
+    if (last)
+        viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
+    viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
+    viewData.photonMapCPU += timer.ElapsedThreadCPUTime();
+}
+
+void View::ReleaseProgressiveData(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> workers, ViewThreadData* total)
+{
+    POV_LONG wall = 0;
+    for (auto* worker : *workers)
+    {
+        total->Stats() += worker->Stats();
+        total->progressiveContributions += worker->progressiveContributions;
+        total->cpuTime += worker->cpuTime;
+        wall = std::max(wall, worker->realTime);
+        viewThreadData.erase(std::find(viewThreadData.begin(), viewThreadData.end(), worker));
+        delete worker;
+    }
+    total->realTime += wall;
+    workers->clear();
 }
 
 void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int tracingMethod, DBL jitterScale, DBL aaThreshold,

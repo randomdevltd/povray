@@ -45,6 +45,7 @@ module.exports = grammar({
 
   rules: {
     source_file: ($) => repeat($._item),
+    // Contextual photon quality prefixes use identifier/call/arithmetic trees; lowering extracts their operand.
     _item: ($) => choice($._statement, $.keyword, $.spread, $._item_expression, ',', ';'),
 
     _statement: ($) => choice($.let_statement, $.global_statement, $.assignment, $.function_definition,

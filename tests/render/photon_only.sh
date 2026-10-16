@@ -15,8 +15,14 @@ render dark_fill Declare=Lamp=0 Declare=MixedLights=1
 render isolated_fill Declare=PhotonOnly=1 Declare=MixedLights=1
 cmp photon_only_dark.px photon_only_isolated.px
 cmp photon_only_dark_fill.px photon_only_isolated_fill.px
-! cmp -s photon_only_dark.px photon_only_direct.px
-! cmp -s photon_only_dark.px photon_only_photons.px
+if cmp -s photon_only_dark.px photon_only_direct.px; then
+    echo 'photon_only: the direct light is missing' >&2
+    exit 1
+fi
+if cmp -s photon_only_dark.px photon_only_photons.px; then
+    echo 'photon_only: the photons are missing' >&2
+    exit 1
+fi
 sed -n 's/^Surface photons stored: *\([0-9][0-9]*\).*/\1/p' photon_only_photons.log | awk '$1 > 0 { found=1 } END { exit !found }'
 rm -f photon_only_*.ppm photon_only_*.px photon_only_*.log
 echo "photon_only: photons remain while direct light is absent"

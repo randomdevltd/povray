@@ -601,6 +601,8 @@ ObjectPtr Copy_Object (ObjectPtr Old)
 
     // TODO FIXME - An explanation WHY this is important would be nice [CLi]
     New->LLights.clear(); // important
+    New->PhotonLights.clear();
+    New->photonGroupEnabled = Old->photonGroupEnabled;
 
     New->Texture = Copy_Textures (Old->Texture);
     New->Interior_Texture = Copy_Textures (Old->Interior_Texture);

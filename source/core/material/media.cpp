@@ -1616,7 +1616,7 @@ DBL MediaFunction::PreparedResolution(MediaVector& medias, const Ray& ray)
         }
     if (!requested)
         return 0.0;
-    if (ray.IsPhotonRay())
+    if (ray.IsPhotonRay() && !threadData->GetSceneData()->photonSettings.Progressive())
     {
         WarnFastMedia(threadData, *requested, kFastPhoton, "Photon propagation uses classic media sampling.");
         return 0.0;
@@ -2134,6 +2134,14 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                     lit = group;
                 }
                 emission += scattering * light * step;
+                if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
+                    threadData->GetSceneData()->photonSettings.Progressive())
+                {
+                    photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
+                    MathColour indirect;
+                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(cell.s0 + step * 0.5));
+                    emission += indirect * step;
+                }
             }
             accumulated += emission * Exp(-(transmitted + depth * 0.5));
             transmitted += depth;
@@ -2659,7 +2667,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     {
         P = H;
 
-        if (!prepared || ray.IsPhotonRay() || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
+        if (!prepared || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
             Evaluate_Density_Pigment((*i)->Density, P, C0, threadData);
 
         if (modifiers != nullptr)
@@ -2679,7 +2687,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         }
     }
     if (modifiers != nullptr)
-        AddModifiedCoefficients(medias, &densityScratch[0], H, (prepared && !ray.IsPhotonRay()) ? ModifierSource::kCamera : ModifierSource::kPattern,
+        AddModifiedCoefficients(medias, &densityScratch[0], H, prepared ? ModifierSource::kCamera : ModifierSource::kPattern,
                                 Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
                                 ray.IsShadowTestRay() ? nullptr : &Scattering, !ray.IsRadiosityRay());
 
@@ -2702,7 +2710,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
             photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
-        if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0))
+        if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0 ||
+           threadData->GetSceneData()->photonSettings.Progressive()))
         {
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);
         }
@@ -2868,8 +2877,59 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
 }
 
 
+std::shared_ptr<const ProgressiveVolumeDomain> MediaFunction::VolumeDomain(const MediaVector& medias)
+{
+    bool match = volumeDomain && volumeDomain->media.size() == medias.size() &&
+                 volumeDomain->modifiers.size() == (modifiers ? modifiers->size() : 0);
+    for (size_t i = 0; match && i < medias.size(); ++i)
+        match = volumeDomain->media[i] == medias[i];
+    for (size_t i = 0; match && modifiers && i < modifiers->size(); ++i)
+        match = volumeDomain->modifiers[i] == (*modifiers)[i].interior && volumeDomain->below[i] == (*modifiers)[i].below;
+    if (!match)
+    {
+        auto domain = std::make_shared<ProgressiveVolumeDomain>();
+        domain->media.assign(medias.begin(), medias.end());
+        if (modifiers)
+            for (const auto& modifier : *modifiers)
+            {
+                domain->modifiers.push_back(modifier.interior);
+                domain->below.push_back(modifier.below);
+            }
+        volumeDomain = domain;
+    }
+    return volumeDomain;
+}
+
 void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H)
 {
+    if (threadData->GetSceneData()->photonSettings.Progressive() && photonGatherer)
+    {
+        if (!threadData->GetSceneData()->photonSettings.photonsEnabled)
+            return;
+        for (const auto& set : threadData->GetSceneData()->preparedSets)
+        {
+            if (&set->mediaPhotonMap != photonGatherer->map)
+                continue;
+            const auto& map = set->progressiveMedia;
+            if (map.photons.empty())
+                return;
+            MathColour sum;
+            const auto domain = VolumeDomain(medias);
+            const double radius = map.RadiusAt(H, *domain);
+            map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
+                if (!(*photon.domain == *domain))
+                    return;
+                BasicRay light;
+                light.Direction = photon.direction;
+                light.Origin = photon.point - photon.direction;
+                ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
+                threadData->progressiveContributions++;
+            });
+            Te += sum / ProgressivePhotonBudget::KernelVolume(radius, 3);
+            return;
+        }
+        return;
+    }
     BasicRay Light_Ray;
     DBL r;
     int j;

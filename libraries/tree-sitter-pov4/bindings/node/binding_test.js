@@ -11,3 +11,15 @@ test("parses a 4.0 scene", () => {
   assert.equal(tree.rootNode.hasError, false);
   assert.deepEqual(tree.rootNode.namedChildren.map((n) => n.type), ["let_statement", "block"]);
 });
+
+
+test("parses contextual photon quality expressions without reserving the name", () => {
+  const parser = new Parser();
+  parser.setLanguage(require("."));
+  for (const expression of ["quality", "(quality * 2) / 2", "+quality", "-1", "quality(0.125)"]) {
+    const tree = parser.parse(`let quality = 0.125; global_settings { photons { method 2 quality ${expression} } }`);
+    assert.equal(tree.rootNode.hasError, false, expression);
+    assert.equal(tree.rootNode.namedChild(0).childForFieldName("name").type, "identifier");
+  }
+  assert.equal(parser.parse("fn quality(Q) { Q } let Q = quality(1);").rootNode.hasError, false);
+});

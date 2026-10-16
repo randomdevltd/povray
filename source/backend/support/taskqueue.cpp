@@ -181,6 +181,16 @@ void TaskQueue::AppendSync()
     Notify();
 }
 
+void TaskQueue::AppendDeferredTask(const boost::function0<Task*>& factory, const boost::function1<void, ThreadData*>& created)
+{
+    AppendFunction([this, factory, created](TaskQueue&) {
+        std::shared_ptr<Task> task(factory());
+        created(task->GetDataPtr());
+        activeTasks.push_back(TaskEntry(task));
+        task->Start(boost::bind(&TaskQueue::Notify, this));
+    });
+}
+
 void TaskQueue::AppendMessage(POVMS_Message& msg)
 {
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
@@ -205,10 +215,12 @@ bool TaskQueue::Process()
 
     for(list<TaskEntry>::iterator i(activeTasks.begin()); i != activeTasks.end();)
     {
+        // read done first: a task records its failure before it is done
+        const bool done = i->GetTask()->IsDone();
         if(failed == kNoError)
             failed = i->GetTask()->FailureCode();
 
-        if(i->GetTask()->IsDone() == true)
+        if(done)
         {
             list<TaskEntry>::iterator e(i);
             i++;

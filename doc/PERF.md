@@ -108,6 +108,190 @@ caustic at 1920×960 20.363 to 20.283 G, with the same decoded pixels. Combined 
 trace instructions fell 3.0% on `phot_met_glass`, 15.8% on the water caustic, 11.1% on dense water and 30.1% on the
 sparse caustic (one run per scene, same pixels).
 
+## Progressive volume segments
+
+Photon method 2 now stores finite volume segments, with exponential attenuation
+integrated inside the gather sphere. Its existing bounded batches and independent
+pilot remain; adjacent constant-coefficient cells coalesce only inside one of the
+curved marcher's chords. Method 1 is unchanged. See
+[transport and ownership limits](progressive-photons.md).
+
+The focused fixture is `tests/render/progressive_volume.pov`, combining a media
+emitter, a method-4 scattering receiver and a refractive target. The method-4
+lighting stride previously omitted photon gathers: its 24×24 mean linear value
+was 0.00481 versus 0.01939 with classic media sampling. The registered regression
+fails on that version. Direct light keeps its coarse stride while photon gathers
+now run at every coefficient sample.
+
+These measurements used `+W24 +H24 +PR -A +WT1 +FP16 File_Gamma=1`, GCC 15,
+and the same scene with `Declare=Heat=0`. The development point fallback is built
+with `-DPOV_PROGRESSIVE_VOLUME_POINTS`; it uses the same coefficient preparation,
+medium ownership and final lighting stride. A segment render at quality 4 supplies
+the reference. Errors are MSE of decoded linear 16-bit RGB. This reference retains
+sampling and reconstruction error, so the comparison is a focused diagnostic.
+
+| Estimator / quality | Linear MSE | Full instructions | Shooting CPU | Map CPU | Camera CPU | Peak RSS |
+|---|---:|---:|---:|---:|---:|---:|
+| Points / 4 | 5.34e-5 | 59.219 G | 4.522 s | 1.828 s | 2.686 s | 229 MiB |
+| Segments / 0.5 | 5.29e-5 | 33.237 G | 0.721 s | 0.077 s | 2.823 s | 42 MiB |
+
+Medians of three alternating runs; user-space instruction counters were not
+multiplexed. Decoded images repeated exactly. At this matched error, segments used
+44% fewer total instructions and 82% less RSS. Camera gathering remains expensive;
+the gain comes from fewer emission batches and smaller maps. One-pixel runs used
+41.772 G instructions for points and 6.898 G for segments: these include photon
+shooting and map construction. Subtracting them leaves 17.448 G and 26.339 G for the
+camera increment. Total preparation CPU was 1.984 s and 0.111 s respectively,
+including the map subset shown above. Searching the pilot only within the already
+capped support reduced segment quality-0.25 instructions from 29.091 G to 18.241 G
+with identical decoded pixels.
+
+For heterogeneous extinction (`Declare=Variation=0.1`, quality 0.25, one run),
+segments used 6.745 G instructions and 212 MiB versus 7.029 G and 213 MiB for
+points. MSE against the corresponding quality-4 segment reference was 1.36e-4
+versus 1.55e-3. Varying coefficients prevent coalescing, so there was no memory gain.
+
+With the refractive field enabled (the fixture's default `Heat=0.08`, quality 0.25,
+one run), segments used 97.081 G instructions and 249 MiB versus 86.924 G and
+498 MiB for points: a 12% instruction regression at the same work budget, with
+half the memory. Against a four-pass segment reference (quality 1), MSE was
+2.33e-4 for segments and 1.51e-3 for points. This lower-quality reference is an
+additional diagnostic, not a converged solution. The refractive marcher dominates
+this case. The implementation preserves its piecewise paths; these measurements
+do not establish a curved-path performance improvement at equal error.
+
+Reproduce the matched-error pair with separate segment and point executables:
+
+```sh
+povray-segments +Itests/render/progressive_volume.pov +W24 +H24 +PR -A +WT1 \
+  +FP16 File_Gamma=1 Declare=Heat=0 Declare=PhotonQuality=0.5 +Osegments.ppm
+povray-points +Itests/render/progressive_volume.pov +W24 +H24 +PR -A +WT1 \
+  +FP16 File_Gamma=1 Declare=Heat=0 Declare=PhotonQuality=4 +Opoints.ppm
+```
+
+The analytic tests check clipping, attenuation, subdivision, kernel normalization,
+bent paths and indexed gathers against exhaustive queries. The combined render
+suite checks method-4 gathering, thread equality, linear power, varying extinction,
+curved paths and the existing rejection of volume photons from light groups.
+Emitter/target power weighting was left unchanged: comparable source power would
+need the spot, area and parallel directional/aperture PDFs, and these single-source
+fixtures provide no evidence of a useful sampling gain.
+## Progressive surface gathering
+
+Superseded: method 2 now builds one map and traces the camera once; see [progressive-photons.md](progressive-photons.md).
+
+Method 2 now selects bandwidth at each receiver hit from its independent pilot,
+with a cap derived from that receiver. Capped nearest-neighbour queries prune
+before searching distant caustics. Surface reconstruction evaluates materials
+only inside its radiance support; the previous curvature stencil also shaded
+photons outside that support. The pilot and each fresh map remain bounded.
+
+Three alternating pairs, `+PR -A +WT1`, user-space instructions with the matching
+one-pixel render subtracted; no counters were multiplexed:
+
+| Scene | Size, quality | Trace instructions before → after | Whole render before → after |
+|---|---|---|---|
+| `tests/render/progressive_surface.pov` | 128×96, 4 | 4.209 → 3.192 G (−24.2%) | 15.464 → 14.522 G (−6.1%) |
+| `tests/render/progressive_photons.pov`, photon-only | 256×170, 1 | 3.324 → 1.804 G (−45.7%) | 5.573 → 4.085 G (−26.7%) |
+
+At 64×48 on the close/layered fixture, candidates inside the search support fell
+from 1,004,355 to 37,264 and material evaluations from 730,012 to 25,215. On the
+96×64 glass caustic they fell from 329,414 to 10,664. These counts came from separate
+diagnostic builds whose decoded original images matched the original optimized
+build. Median map CPU on the 128×96 fixture was 0.316 → 0.331 seconds; the logged
+photon-vector peak stayed 20,050,240 bytes. The additional fixed pilot index is not
+included in that vector-capacity statistic. CPU time is supporting evidence on
+these small runs.
+
+Against a 128×96 quality-16 method-2 reference, the 64×48 close/layered render's
+linear-light MSE fell from `3.807e-6` to `3.180e-6`; energy ratio moved from 1.116 to
+0.984. Classic gathers can mix these nearby receivers, so this fixture uses a
+higher-quality reference with receiver matching. Against a 4× supersampled
+classic glass reference with 1,048,576 photons, decoded HDR quality-4 MSE fell
+from `3.128e-4` to `2.822e-4`, and energy ratio moved from 0.967 to 0.972. The glass
+comparison uses `LampPower=8`, `PhotonOnly=1`, `FadeDistance=sqrt(0.5)` and
+`+AM4 +A0.05` for the reference.
+
+Quality 1 is noisier on that HDR glass comparison: MSE rises from `8.809e-4` to
+`1.233e-3`, peak radiance from 5.984 to 6.547, while energy ratio improves from
+1.098 to 1.085. This is a speed/quality trade at low work, not a universal quality
+improvement. Neither a per-hit curvature stencil, a prepared curvature proxy,
+nor a fixed 1.5× support improved both tested scenes, so the implementation keeps
+the receiver-local pilot baseline. The focused source regression checks receiver
+scales, independence, shrinking support and sparse-query visitation; the render
+regression checks thread equality and a higher-quality image reference.
+## Large-image photon batches
+
+Superseded: method 2 now builds one map and traces the camera once; see [progressive-photons.md](progressive-photons.md).
+
+The experimental method-2 schedule groups up to four 65,536-sample emission
+batches per camera pass for images of at least 8,000,000 pixels. Smaller images
+retain one batch per camera pass. This threshold is a work heuristic; these
+measurements cover the water-caustic fixture at 4000×2667. Fewer camera samples
+can increase edge and texture noise on other scenes. Exact fractional emission
+budgets use a partial last map and weight camera radiance by its batch count.
+
+Use `tools/bench/photon-budget-water.pov`, `+W4000 +H2667 +WT4 +Q9 +PR -A -D
++FH Declare=PhotonQuality=2` for both executables. A matching one-pixel run adds
+`+SR2 +ER2 +SC2 +EC2`, retaining the full dimensions and large-image schedule.
+It includes parsing, setup, photon shooting and map building; subtraction gives
+the camera increment. Full-render instruction counts include all those phases.
+
+One alternating pair of user-space instruction measurements with
+`tools/bench/pcount.c`; counters were not multiplexed:
+
+| Quality 2 | One batch per camera pass | Four batches per camera pass |
+|---|---:|---:|
+| Full instructions | 1746.589 G | 566.131 G |
+| One-pixel setup instructions | 9.648 G | 8.991 G |
+| Camera increment | 1736.940 G | 557.139 G |
+| Emission samples, including pilot | 589,824 | 589,824 |
+| Camera passes | 8 | 2 |
+
+Full instructions fell 67.59%; the camera increment fell 67.92%. Two phase-timing
+runs per build give these supporting CPU measurements; map time is a subset of
+preparation time:
+
+| Quality 2 phase | One batch, runs 1 / 2 | Four batches, runs 1 / 2 |
+|---|---:|---:|
+| Preparation CPU | 0.420 / 0.456 s | 0.319 / 0.328 s |
+| Map CPU | 0.127 / 0.155 s | 0.153 / 0.156 s |
+| Shooting CPU | 1.364 / 1.531 s | 1.394 / 1.449 s |
+| Camera CPU | 203.155 / 201.839 s | 61.278 / 61.343 s |
+| Peak anonymous and shared memory | 1062 / 975 MiB | 558 / 543 MiB |
+
+The memory figure is a measured process-group working set excluding file cache,
+not an individual process RSS. Logged photon-vector capacity rose from
+19,258,512 to 41,278,608 bytes; the fixed pilot and current map remain bounded.
+Classic defaults (`Declare=Method=1`, spacing 0.02, gather cap 100) used
+0.766 / 0.806 shooting CPU seconds and 33.019 / 32.490 camera CPU seconds.
+These phase timings do not establish an instruction-count advantage over classic.
+
+Linear RGB error uses same-resolution Radiance HDR references with classic
+`Declare=Method=1 Declare=GatherMax=400` and spacing 0.005 or 0.0025, otherwise
+matching the options above. The ground-caustic ROI is all columns and rows
+1000–1999, counted from zero.
+
+| Quality 2 error | One batch | Four batches |
+|---|---:|---:|
+| Whole-frame MSE, spacing-0.005 reference | 0.00402509 | 0.00385498 |
+| Whole-frame MSE, spacing-0.0025 reference | 0.00540557 | 0.00519042 |
+| Ground ROI MSE, spacing-0.0025 reference | 0.01359338 | 0.01273368 |
+| Mean-energy ratio, spacing-0.0025 reference | 1.005720 | 1.004294 |
+
+The references differ by MSE 0.00040240, so they are not a converged physical
+solution. Both give the same ordering for quality 2, whose whole-frame error
+falls about 4% and ground error 6.3%. Quality 1 is a tradeoff: whole-frame MSE
+against the finer reference rises from 0.00663816 to 0.00671547, while ground
+error falls from 0.01677036 to 0.01583563. This establishes a quality-2 gain on
+this large parallel-light scene, without a universal quality claim. Explicit
+anti-aliasing, including enabled method 4, remains unsupported by photon method 2.
+
+The volume regression uses a 16×16 crop of a 3000×2667 canvas to exercise grouped
+scheduling, a refractive lens, prepared media and a partial 4+1 batch sequence.
+It checks thread equality and linear power; it is functional scheduling-path
+coverage, not an 8-megapixel volume performance or quality validation.
+
 ## Where the time went
 
 A cycle profile of 3.8 on the large scene put about 70% of tracing in the bounding hierarchy: `Check_And_Enqueue`

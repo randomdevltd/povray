@@ -801,6 +801,7 @@ ObjectPtr CSGUnion::Copy()
     {
         New->lightGroupActive = Light_Group_Lights_Something(New);
         New->lightGroupCopy = true;
+        New->PhotonLights.clear();
     }
 
     return (New);
@@ -821,6 +822,7 @@ ObjectPtr CSGMerge::Copy()
     {
         New->lightGroupActive = Light_Group_Lights_Something(New);
         New->lightGroupCopy = true;
+        New->PhotonLights.clear();
     }
 
     return (New);
@@ -841,6 +843,7 @@ ObjectPtr CSGIntersection::Copy()
     {
         New->lightGroupActive = Light_Group_Lights_Something(New);
         New->lightGroupCopy = true;
+        New->PhotonLights.clear();
     }
 
     return (New);

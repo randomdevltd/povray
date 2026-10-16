@@ -66,6 +66,8 @@ class Emitter
         virtual double NearDistance() const = 0;           ///< least distance lighting uses, so 1/r^2 stays finite
         /// A position drawn in proportion to emitted power: s in [0,1) picks the stratum, key the detail within it.
         virtual EmitterSample Sample(double s, std::uint64_t key) const = 0;
+        /// As Sample(), with t a second stratified dimension for emitters that use one.
+        virtual EmitterSample SampleSquare(double s, double, std::uint64_t key) const { return Sample(s, key); }
         virtual Vector3d Direction(const EmitterSample&, double u, double v, double& pdf) const ///< isotropic, pdf per steradian
         {
             const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z)), phi = 2.0 * M_PI * v;
@@ -80,6 +82,8 @@ struct MediaLight final ///< the `light_source { }` block of an emitting medium
     double brightness = 1.0;
     double fadeDistance = 0.0, fadePower = 0.0;
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
+    int photonReflection = -1, photonRefraction = -1;
+    bool photonOptions = false, photonLegacyOptions = false;
 };
 
 }

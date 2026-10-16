@@ -110,6 +110,7 @@ class TaskQueue final
         int FailureCode(int defval = kNoError);
 
         ThreadData *AppendTask(Task *task);
+        void AppendDeferredTask(const boost::function0<Task*>& factory, const boost::function1<void, ThreadData*>& created);
         void AppendSync();
         void AppendMessage(POVMS_Message& msg);
         void AppendFunction(const boost::function1<void, TaskQueue&>& fn);

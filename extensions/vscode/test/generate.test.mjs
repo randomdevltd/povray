@@ -27,3 +27,12 @@ test('the grammar covers the shared word classes', () => {
     assert.match(grammar.repository.channel.match, /\btransmit\b/);
     assert.match(grammar.repository.colorop.match, /\brgbft\b/);
 });
+
+
+test('photon controls are completed and quality is highlighted', () => {
+    const blocks = JSON.parse(readFileSync(join(root, targets[1]), 'utf8'));
+    const grammar = JSON.parse(readFileSync(join(root, targets[0]), 'utf8'));
+    assert.match(grammar.repository.item.match, /\bquality\b/);
+    for (const word of ['quality', 'method'])
+        assert.ok(blocks.blocks.global_settings.nested.photons.includes(word));
+});

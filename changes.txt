@@ -40,6 +40,12 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Photon method 2 supports oriented area sources and projected-through apertures.
+
+  - Photon method 2 now shoots every batch into one map, with Sobol-stratified
+    emission and a k-nearest-neighbour kernel gather, and traces the camera once.
+    It no longer needs +PR, accepts anti-aliasing, and its quality is at most 64.
+
   - Any new behaviour formerly activated by `#version 3.71` now requires
     `#version 3.8` (or higher); specifying `#version 3.71` will trigger a
     corresponding warning.
@@ -240,6 +246,10 @@ New Features
     `--list` prints the block index; regeneration from the
     manual and fixtures is byte-stable and tested, so the cards cannot drift
     from the parsers.
+  - Native `.pov4` photon blocks accept method 2 and quality expressions, including
+    parentheses and signed operands. Method and quality controls are rejected in
+    object and light photon blocks. `quality` is matched by text and remains
+    available as an identifier; the schema, editor completion and reference agree.
   - `.pov4` files are statically checked right after parsing: types are inferred
     from usage and mismatches are reported with the source position (a string used
     where a number is needed, a wrong argument count, an unknown member), and block

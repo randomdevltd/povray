@@ -188,6 +188,8 @@ class ObjectBase
         std::vector<ObjectPtr> Bound;
         std::vector<ObjectPtr> Clip;
         std::vector<LightSource*> LLights;  ///< Used for light groups.
+        std::vector<LightSource*> PhotonLights;
+        bool photonGroupEnabled = false;
         BoundingBox BBox;
         TRANSFORM *Trans;
         SNGL Ph_Density;
@@ -222,7 +224,8 @@ class ObjectBase
             Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
-            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags)
+            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags)
         {
             if (transplant)
             {
@@ -233,6 +236,7 @@ class ObjectBase
                 o.Bound.clear();
                 o.Clip.clear();
                 o.LLights.clear();
+                o.PhotonLights.clear();
             }
         }
         virtual ~ObjectBase();
@@ -364,6 +368,7 @@ class LightSource final : public CompoundObject
         const Portal *portal = nullptr;                 ///< in an image, the portal it is seen through
         std::shared_ptr<const Emitter> emitter;         ///< where it emits from, for a light drawn as sample positions
         ConstObjectPtr emitterContainer = nullptr;      ///< for a media light, the object holding its medium
+        bool mediaPhotonOptions = false, mediaPhotonLegacyOptions = false;
 
         LightSource();
         virtual ~LightSource() override;
