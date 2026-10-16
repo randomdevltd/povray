@@ -4244,6 +4244,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "tag_filter"
+        },
+        {
+          "type": "SYMBOL",
           "name": "function_block"
         },
         {
@@ -4270,6 +4274,10 @@
         {
           "type": "SYMBOL",
           "name": "block"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "tag_filter"
         },
         {
           "type": "SYMBOL",
@@ -5898,26 +5906,40 @@
           "type": "FIELD",
           "name": "name",
           "content": {
-            "type": "ALIAS",
-            "content": {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "STRING",
-                  "value": "filter_tags"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "ALIAS",
+                "content": {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": "filter_tags"
+                    },
+                    {
+                      "type": "STRING",
+                      "value": "front_filter_tags"
+                    },
+                    {
+                      "type": "STRING",
+                      "value": "back_filter_tags"
+                    }
+                  ]
                 },
-                {
-                  "type": "STRING",
-                  "value": "front_filter_tags"
+                "named": true,
+                "value": "keyword"
+              },
+              {
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "_tagged"
                 },
-                {
-                  "type": "STRING",
-                  "value": "back_filter_tags"
-                }
-              ]
-            },
-            "named": true,
-            "value": "keyword"
+                "named": true,
+                "value": "keyword"
+              }
+            ]
           }
         },
         {
@@ -6166,6 +6188,10 @@
     {
       "type": "SYMBOL",
       "name": "block_comment"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_tagged"
     }
   ],
   "inline": [],

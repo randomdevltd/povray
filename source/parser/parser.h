@@ -890,9 +890,15 @@ class Parser final
         void Parse_User_Defined_Camera (Camera& Cam);
         void Parse_Camera(Camera& Cam);
         bool Parse_Camera_Mods(Camera& Cam);
+        void Parse_Camera_Look_At(Camera& Cam);
+        void Finalize_Camera_Framing();
+        bool Frame_Bounds(ObjectPtr object, Vector3d& low, Vector3d& high, unsigned int& unbounded, bool& changed);
+        bool Tagged_Selector_Follows();
+        ObjectPtr Parse_Tagged(bool warnEmpty);
+        ObjectPtr Copy_Tagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited);
         void Parse_Camera_Radiosity_Size(Camera& New);
         void Parse_Tags(std::vector<std::string>& tags);
-        void Parse_Filter_Tags(TagFilter& filter);
+        void Parse_Filter_Tags(TagFilter& filter, const char *keyword = "filter_tags");
         void Parse_Frame();
         void Parse_Frame_Items();
         void Parse_Snippet(const std::string& text, const UCS2String& fileName, std::vector<POV_LONG> lines);

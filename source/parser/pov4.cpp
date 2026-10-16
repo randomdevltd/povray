@@ -129,7 +129,7 @@ const char* const kObjectKeywords[] = {
     "intersection", "isosurface", "isosurface_mesh", "julia_fractal", "lathe", "lemon", "light_group",
     "light_source", "merge", "mesh", "mesh2", "object", "ovus", "parametric", "plane", "poly", "polygon",
     "polynomial", "portal", "prism", "quadric", "quartic", "skein", "skein_mesh", "smooth_triangle", "sor",
-    "sphere", "sphere_sweep", "superellipsoid", "text", "torus", "triangle", "union",
+    "sphere", "sphere_sweep", "superellipsoid", "tagged", "text", "torus", "triangle", "union",
 };
 const char* const kChildKeywords[] = {
     "composite", "difference", "intersection", "light_group", "merge", "union",
@@ -718,6 +718,7 @@ private:
 
     Program& Load(const UCS2String& fileName, unsigned int fileType, const Node* at);
     const Node* Lower(Program& p, TSNode n);
+    void LowerTagExpression(Program& p, TSNode n, Node& into);
     Node& NewNode(Program& p, NK kind, TSNode n);
     void LowerItems(Program& p, TSNode n, Node& into, const char* skipField);
     int CheckedName(Program& p, TSNode n);
@@ -990,6 +991,38 @@ void Pov4Evaluator::LowerItems(Program& p, TSNode n, Node& into, const char* ski
     }
 }
 
+// Operators, any and none pass through as words; string operands are evaluated like any other value.
+void Pov4Evaluator::LowerTagExpression(Program& p, TSNode n, Node& into)
+{
+    const std::string type = ts_node_type(n);
+    if ((type == "binary_expression") || (type == "unary_expression") || (type == "parenthesized_expression") ||
+        (type == "constant"))
+    {
+        for (uint32_t i = 0; i < ts_node_child_count(n); ++i)
+        {
+            TSNode child = ts_node_child(n, i);
+            if (std::strcmp(ts_node_type(child), "comment") == 0)
+                continue;
+            if (ts_node_is_named(child))
+                LowerTagExpression(p, child, into);
+            else
+            {
+                Node& word = NewNode(p, NK::Keyword, child);
+                word.text = NodeText(p.source, child);
+                into.kids.push_back(&word);
+            }
+        }
+        if (ts_node_child_count(n) == 0)
+        {
+            Node& word = NewNode(p, NK::Keyword, n);
+            word.text = NodeText(p.source, n);
+            into.kids.push_back(&word);
+        }
+        return;
+    }
+    into.kids.push_back(Lower(p, n));
+}
+
 const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
 {
     if (mDepth >= kMaxDepth)
@@ -1023,6 +1056,15 @@ const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
         Node& node = NewNode(p, NK::Block, n);
         node.text = NodeText(p.source, Field(n, "name"));
         LowerItems(p, n, node, "name");
+        return &node;
+    }
+    if (type == "tag_filter")
+    {
+        Node& node = NewNode(p, NK::Block, n);
+        node.text = NodeText(p.source, Field(n, "name"));
+        TSNode filter = Field(n, "filter");
+        if (!ts_node_is_null(filter))
+            LowerTagExpression(p, filter, node);
         return &node;
     }
     if (type == "function_block")
@@ -2345,7 +2387,8 @@ void Pov4Evaluator::TextOutput::PutValue(const PValue& v, const Node* at, bool s
                 buf += ',';
             bool copied = (h.wrap == "object") && !spliced && (buf.back() == '{') && IN_LIST(kObjectKeywords, context) &&
                           !IN_LIST(kChildKeywords, context);
-            if (h.wrap.empty() || context.empty() || (context == h.wrap) || (lastKeyword == h.wrap) || copied)
+            const bool framed = (h.wrap == "object") && (lastKeyword == "look_at");
+            if (h.wrap.empty() || context.empty() || (context == h.wrap) || (lastKeyword == h.wrap) || copied || framed)
                 Append(h.name, at);
             else
                 Append(h.wrap + " { " + h.name + " }", at);
@@ -2911,8 +2954,10 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
             out.Put(Item(Item::Keyword, n->text, n->text, n), false);
             return;
         case NK::Ident:
+            // tagged is a selector only before a brace, so a bound name of that spelling is its value
             if (out.IsBlock() && ((static_cast<TextOutput&>(out).lastKeyword == "mix") ||
-                                  ContextualItem(static_cast<TextOutput&>(out).context, n->text)))
+                                  (ContextualItem(static_cast<TextOutput&>(out).context, n->text) &&
+                                   !((n->text == "tagged") && FindBinding(n)))))
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
                 return;

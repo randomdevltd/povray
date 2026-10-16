@@ -85,6 +85,7 @@
   "fog": { "kind": "block", "text": "Fades distant objects toward a colour; fog_type picks flat fog or ground mist." },
   "rainbow": { "kind": "block", "text": "An arc of colour bands across the sky: direction, angle, width, distance." },
   "default": { "kind": "block", "text": "Item values every later object begins from: default { texture { ... } }." },
+  "tagged": { "kind": "block", "text": "Object value: copies of the objects placed so far that a tag expression selects, as in look_at tagged { \"subject\" } or object { tagged { \"whale\" } translate x }. Matched by text before a block, so tagged stays free as a name." },
   "prepared_media_cells": { "kind": "item", "text": "Cell limit for a medium's prepared density grid; grids coarsen to fit, and a warning names the fitted resolution." },
   "atmospheric_dispersion": { "kind": "item", "text": "Wavelength-dependent spread of the atmosphere's refraction." },
   "mesh_cache": { "kind": "item", "text": "Directory where finished isosurface_mesh and skein_mesh meshes are kept between renders." },

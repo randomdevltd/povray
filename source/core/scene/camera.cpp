@@ -38,7 +38,10 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <vector>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -376,6 +379,13 @@ Camera& Camera::operator=(const Camera& src)
     No_Radiosity = src.No_Radiosity;
     tags = src.tags;
     filterTags = src.filterTags;
+    frameBounds = src.frameBounds;
+    frameLow = src.frameLow;
+    frameHigh = src.frameHigh;
+    framePlacement = src.framePlacement;
+    frameMultiplier = src.frameMultiplier;
+    windowLow[0] = src.windowLow[0]; windowLow[1] = src.windowLow[1];
+    windowHigh[0] = src.windowHigh[0]; windowHigh[1] = src.windowHigh[1];
     Mesh_Index = src.Mesh_Index;
     for (int i = 0; i < 10; i++)
     {
@@ -405,6 +415,501 @@ Camera& Camera::operator=(const Camera& src)
     return *this;
 }
 
+
+bool FiniteBounds(const Vector3d& low, const Vector3d& high)
+{
+    for (unsigned int axis = 0; axis < 3; ++axis)
+        if (!std::isfinite(low[axis]) || !std::isfinite(high[axis]) || (low[axis] > high[axis]) ||
+            (fabs(low[axis]) >= BOUND_HUGE * 0.5) || (fabs(high[axis]) >= BOUND_HUGE * 0.5))
+            return false;
+    return true;
+}
+
+// Bounds too small beside their distance to define a fit: a light's point, or a single point.
+static bool PointBounds(const Vector3d& low, const Vector3d& high, const Vector3d& from)
+{
+    return (high - low).length() <= 1e-12 * ((low + high) * 0.5 - from).length();
+}
+
+static bool ProjectPoint(const Camera& camera, const Vector3d& point, DBL& x, DBL& y)
+{
+    const DBL tiny = 1e-9;
+    Vector3d right = camera.Right, up = camera.Up, forward = camera.Direction;
+    const DBL rightLength = right.length(), upLength = up.length(), forwardLength = forward.length();
+    if ((rightLength <= 0.0) || (upLength <= 0.0) || (forwardLength <= 0.0))
+        return false;
+    const bool normalized = (camera.Type != PERSPECTIVE_CAMERA) && (camera.Type != ORTHOGRAPHIC_CAMERA) &&
+                            (camera.Type != SPHERICAL_CAMERA);
+    if (normalized)
+    {
+        right.normalize();
+        up.normalize();
+        forward.normalize();
+    }
+    const DBL determinant = dot(right, cross(up, forward));
+    if (fabs(determinant) <= tiny * right.length() * up.length() * forward.length())
+        return false;
+    const Vector3d offset = point - camera.Location;
+    const DBL distance = offset.length();
+    if (distance <= 0.0) return false;
+    const DBL a = dot(offset, cross(up, forward)) / determinant;
+    const DBL b = dot(offset, cross(forward, right)) / determinant;
+    const DBL c = dot(offset, cross(right, up)) / determinant;
+    const DBL angle = camera.Angle * M_PI_180;
+    switch (camera.Type)
+    {
+        case PERSPECTIVE_CAMERA:
+            if (c * forwardLength <= tiny * distance) return false;
+            x = a / c;
+            y = b / c;
+            break;
+        case ORTHOGRAPHIC_CAMERA:
+            if (c <= 0.0) return false;
+            x = a;
+            y = b;
+            break;
+        case CYL_1_CAMERA:
+        case CYL_3_CAMERA:
+            if ((angle <= 0.0) || (hypot(a, c) <= tiny * distance)) return false;
+            x = atan2(a, c) / angle;
+            y = b / ((camera.Type == CYL_1_CAMERA) ? hypot(a, c) * upLength : upLength);
+            break;
+        case CYL_2_CAMERA:
+        case CYL_4_CAMERA:
+            if ((angle <= 0.0) || (hypot(b, c) <= tiny * distance)) return false;
+            x = a / ((camera.Type == CYL_2_CAMERA) ? hypot(b, c) * rightLength : rightLength);
+            y = atan2(b, c) / angle;
+            break;
+        case SPHERICAL_CAMERA:
+            if ((camera.H_Angle <= 0.0) || (camera.V_Angle <= 0.0)) return false;
+            x = atan2(a * rightLength, c * forwardLength) / (camera.H_Angle * M_PI_180);
+            y = atan2(b * upLength, hypot(a * rightLength, c * forwardLength)) / (camera.V_Angle * M_PI_180);
+            break;
+        case FISHEYE_CAMERA:
+        {
+            if (angle <= 0.0) return false;
+            const DBL radial = hypot(a, b);
+            const DBL radius = 2.0 * atan2(radial, c) / angle;
+            x = (radial > tiny * distance) ? radius * a / radial / (2.0 * rightLength) : 0.0;
+            y = (radial > tiny * distance) ? radius * b / radial / (2.0 * upLength) : 0.0;
+            break;
+        }
+        case ULTRA_WIDE_ANGLE_CAMERA:
+        {
+            // Solves sin h = a s, sin v = b s, cos h cos v = c s for s, the root with |h|, |v| below 90 degrees.
+            if ((angle <= 0.0) || (c <= tiny * distance)) return false;
+            const DBL sum = a * a + b * b + c * c;
+            const DBL scale = sqrt(2.0 / (sum + sqrt(std::max(0.0, sum * sum - 4.0 * a * a * b * b))));
+            x = asin(std::max(-1.0, std::min(1.0, a * scale))) / angle;
+            y = asin(std::max(-1.0, std::min(1.0, b * scale))) / (angle * upLength / rightLength);
+            break;
+        }
+        default: return false;
+    }
+    return std::isfinite(x) && std::isfinite(y);
+}
+
+struct BoundsProjection final
+{
+    DBL left, right, bottom, top, radius;
+};
+
+static bool ProjectBounds(const Camera& camera, const Vector3d& low, const Vector3d& high, BoundsProjection& projection)
+{
+    if (!FiniteBounds(low, high))
+        return false;
+    projection = { HUGE_VAL, -HUGE_VAL, HUGE_VAL, -HUGE_VAL, 0.0 };
+    const DBL rightLength = camera.Right.length(), upLength = camera.Up.length();
+    // Sweep the transformed AABB's surface; curved projections may have extrema between corners.
+    for (unsigned int i = 0; i <= 4; ++i)
+        for (unsigned int j = 0; j <= 4; ++j)
+            for (unsigned int k = 0; k <= 4; ++k)
+            {
+                if ((i != 0) && (i != 4) && (j != 0) && (j != 4) && (k != 0) && (k != 4)) continue;
+                const Vector3d point(low[X] + (high[X] - low[X]) * i / 4.0,
+                                     low[Y] + (high[Y] - low[Y]) * j / 4.0,
+                                     low[Z] + (high[Z] - low[Z]) * k / 4.0);
+                DBL x, y;
+                if (!ProjectPoint(camera, point, x, y)) return false;
+                projection.left = std::min(projection.left, x);
+                projection.right = std::max(projection.right, x);
+                projection.bottom = std::min(projection.bottom, y);
+                projection.top = std::max(projection.top, y);
+                projection.radius = std::max(projection.radius, hypot(x * rightLength, y * upLength));
+            }
+    return true;
+}
+
+// Scales the parsed field by zoom (below 1 narrows it); false for projections without a field to scale.
+static bool ApplyZoom(Camera& camera, const Camera& base, DBL zoom)
+{
+    switch (camera.Type)
+    {
+        case PERSPECTIVE_CAMERA: camera.Direction = base.Direction / zoom; return true;
+        case ORTHOGRAPHIC_CAMERA: camera.Right = base.Right * zoom; camera.Up = base.Up * zoom; return true;
+        case FISHEYE_CAMERA:
+        case ULTRA_WIDE_ANGLE_CAMERA: camera.Angle = base.Angle * zoom; return true;
+        case CYL_1_CAMERA:
+        case CYL_3_CAMERA: camera.Angle = base.Angle * zoom; camera.Up = base.Up * zoom; return true;
+        case CYL_2_CAMERA:
+        case CYL_4_CAMERA: camera.Angle = base.Angle * zoom; camera.Right = base.Right * zoom; return true;
+        case SPHERICAL_CAMERA: camera.H_Angle = base.H_Angle * zoom; camera.V_Angle = base.V_Angle * zoom; return true;
+        default: return false;
+    }
+}
+
+bool Camera::FitsFrame(const Vector3d& low, const Vector3d& high) const
+{
+    BoundsProjection projected;
+    if (!ProjectBounds(*this, low, high, projected)) return false;
+    const DBL x = std::max(fabs(projected.left), fabs(projected.right)), y = std::max(fabs(projected.bottom), fabs(projected.top));
+    const DBL limit = 0.5 * frameMultiplier;
+    if ((Type == FISHEYE_CAMERA) && (projected.radius > limit)) return false;
+    return (x <= limit) && (y <= limit);
+}
+
+void Camera::PlaceFrame(const TRANSFORM *trans)
+{
+    std::shared_ptr<TRANSFORM> placed = std::make_shared<TRANSFORM>();
+    if (framePlacement)
+        *placed = *framePlacement;
+    else
+    {
+        MIdentity(placed->matrix);
+        MIdentity(placed->inverse);
+    }
+    Compose_Transforms(placed.get(), trans);
+    framePlacement = placed;
+}
+
+namespace
+{
+
+// The rays of a user_defined camera, evaluated from its functions at a point (u, v) of its output space.
+class UserRays final
+{
+public:
+    UserRays(const Camera& camera, TraceThreadData *threadData) : mCamera(camera)
+    {
+        for (unsigned int i = 0; i < 3; ++i)
+        {
+            if (camera.Location_Fn[i] != nullptr) mLocation[i].reset(new GenericScalarFunctionInstance(camera.Location_Fn[i], threadData));
+            if (camera.Direction_Fn[i] != nullptr) mDirection[i].reset(new GenericScalarFunctionInstance(camera.Direction_Fn[i], threadData));
+        }
+    }
+    bool Ray(DBL u, DBL v, Vector3d& origin, Vector3d& direction)
+    {
+        origin = mCamera.Location;
+        direction = mCamera.Direction;
+        for (unsigned int i = 0; i < 3; ++i)
+        {
+            if (mLocation[i]) origin[i] = mLocation[i]->Evaluate(u, v);
+            if (mDirection[i]) direction[i] = mDirection[i]->Evaluate(u, v);
+            if (!std::isfinite(origin[i]) || !std::isfinite(direction[i])) return false;
+        }
+        return direction.lengthSqr() > 0.0;
+    }
+    bool Hits(DBL u, DBL v, const Vector3d& low, const Vector3d& high)
+    {
+        Vector3d origin, direction;
+        if (!Ray(u, v, origin, direction)) return false;
+        DBL near = 0.0, far = HUGE_VAL;
+        for (unsigned int axis = 0; axis < 3; ++axis)
+        {
+            if (direction[axis] == 0.0)
+            {
+                if ((origin[axis] < low[axis]) || (origin[axis] > high[axis])) return false;
+                continue;
+            }
+            DBL a = (low[axis] - origin[axis]) / direction[axis], b = (high[axis] - origin[axis]) / direction[axis];
+            if (a > b) std::swap(a, b);
+            near = std::max(near, a);
+            far = std::min(far, b);
+            if (near > far) return false;
+        }
+        return true;
+    }
+private:
+    const Camera& mCamera;
+    std::unique_ptr<GenericScalarFunctionInstance> mLocation[3], mDirection[3];
+};
+
+}
+
+FrameResult Camera::FrameWindow(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData)
+{
+    if (!FiniteBounds(low, high) || (threadData == nullptr)) return FrameResult::Failed;
+    UserRays rays(*this, threadData);
+    const DBL u0 = windowLow[0], v0 = windowLow[1], spanU = windowHigh[0] - u0, spanV = windowHigh[1] - v0;
+    // Azimuth wraps when the rays at both side edges coincide, as in a 360 degree cylindrical projection.
+    bool circular = true;
+    for (unsigned int k = 0; (k < 5) && circular; ++k)
+    {
+        Vector3d originA, directionA, originB, directionB;
+        const DBL v = v0 + (k + 0.5) / 5.0 * spanV;
+        circular = rays.Ray(u0, v, originA, directionA) && rays.Ray(u0 + spanU, v, originB, directionB) &&
+                   ((originA - originB).length() <= 1e-9 * (1.0 + originA.length())) &&
+                   (dot(directionA.normalized(), directionB.normalized()) >= 1.0 - 1e-12);
+    }
+    const unsigned int columns = 256, rows = 128;
+    const DBL du = spanU / columns, dv = spanV / rows;
+    std::vector<bool> columnHit(columns, false), rowHit(rows, false);
+    const Vector3d centre = (low + high) * 0.5;
+    DBL bestU = u0 + spanU * 0.5, bestV = v0 + spanV * 0.5, bestCos = -2.0;
+    bool any = false;
+    for (unsigned int i = 0; i < columns; ++i)
+        for (unsigned int j = 0; j < rows; ++j)
+        {
+            const DBL u = u0 + (i + 0.5) * du, v = v0 + (j + 0.5) * dv;
+            Vector3d origin, direction;
+            if (!rays.Ray(u, v, origin, direction)) continue;
+            const DBL cosine = dot(direction.normalized(), (centre - origin).normalized());
+            if (cosine > bestCos) { bestCos = cosine; bestU = u; bestV = v; }
+            if (rays.Hits(u, v, low, high)) { columnHit[i] = rowHit[j] = any = true; }
+        }
+    auto place = [&](DBL scale, DBL centreU, DBL centreV) {
+        const DBL halfU = spanU * scale * 0.5, halfV = spanV * scale * 0.5;
+        centreV = std::max(v0 + halfV, std::min(v0 + spanV - halfV, centreV));
+        if (circular)
+            centreU = u0 + spanU * 0.5 + remainder(centreU - (u0 + spanU * 0.5), spanU);
+        else
+            centreU = std::max(u0 + halfU, std::min(u0 + spanU - halfU, centreU));
+        windowLow[0] = centreU - halfU;
+        windowHigh[0] = centreU + halfU;
+        windowLow[1] = centreV - halfV;
+        windowHigh[1] = centreV + halfV;
+    };
+    if (PointBounds(low, high, Location))
+    {
+        // A point target: the ray closest to it, found by walking from the best grid ray, centres the unnarrowed window.
+        DBL stepU = du, stepV = dv;
+        for (unsigned int iteration = 0; (iteration < 400) && (stepU > spanU * 1e-12); ++iteration)
+        {
+            bool moved = false;
+            const DBL fromU = bestU, fromV = bestV;
+            for (int a = -1; a <= 1; ++a)
+                for (int b = -1; b <= 1; ++b)
+                {
+                    const DBL u = fromU + a * stepU, v = std::max(v0, std::min(v0 + spanV, fromV + b * stepV));
+                    if (!circular && ((u < u0) || (u > u0 + spanU))) continue;
+                    Vector3d origin, direction;
+                    if (!rays.Ray(u, v, origin, direction)) continue;
+                    const DBL cosine = dot(direction.normalized(), (centre - origin).normalized());
+                    if (cosine > bestCos) { bestCos = cosine; bestU = u; bestV = v; moved = true; }
+                }
+            if (!moved) { stepU *= 0.5; stepV *= 0.5; }
+        }
+        if (bestCos < -1.5) return FrameResult::Failed;
+        place(1.0, bestU, bestV);
+        return FrameResult::Pointed;
+    }
+    DBL lowU, highU, lowV, highV;
+    if (any)
+    {
+        lowV = HUGE_VAL; highV = -HUGE_VAL;
+        for (unsigned int j = 0; j < rows; ++j)
+            if (rowHit[j]) { lowV = std::min(lowV, v0 + (j + 0.5) * dv); highV = std::max(highV, v0 + (j + 0.5) * dv); }
+        unsigned int gapStart = 0, gapLength = 0;
+        if (circular)
+            for (unsigned int i = 0; i < columns; ++i)
+            {
+                unsigned int length = 0;
+                while ((length < columns) && !columnHit[(i + length) % columns]) ++length;
+                if (length > gapLength) { gapLength = length; gapStart = i; }
+            }
+        if (circular && (gapLength > 0))
+        {
+            const unsigned int first = (gapStart + gapLength) % columns, last = (gapStart + columns - 1) % columns;
+            lowU = u0 + (first + 0.5) * du;
+            highU = u0 + (last + 0.5) * du;
+            if (highU < lowU) highU += spanU;
+        }
+        else
+        {
+            lowU = HUGE_VAL; highU = -HUGE_VAL;
+            for (unsigned int i = 0; i < columns; ++i)
+                if (columnHit[i]) { lowU = std::min(lowU, u0 + (i + 0.5) * du); highU = std::max(highU, u0 + (i + 0.5) * du); }
+        }
+    }
+    else
+    {
+        // A target narrower than the grid: walk from the ray that points closest to its centre until one hits.
+        DBL stepU = du, stepV = dv;
+        bool found = false;
+        for (unsigned int iteration = 0; (iteration < 400) && !found && (stepU > spanU * 1e-12); ++iteration)
+        {
+            bool moved = false;
+            for (int a = -1; (a <= 1) && !found; ++a)
+                for (int b = -1; (b <= 1) && !found; ++b)
+                {
+                    const DBL u = bestU + a * stepU, v = std::max(v0, std::min(v0 + spanV, bestV + b * stepV));
+                    if (!circular && ((u < u0) || (u > u0 + spanU))) continue;
+                    Vector3d origin, direction;
+                    if (!rays.Ray(u, v, origin, direction)) continue;
+                    if (rays.Hits(u, v, low, high)) { bestU = u; bestV = v; found = true; break; }
+                    const DBL cosine = dot(direction.normalized(), (centre - origin).normalized());
+                    if (cosine > bestCos) { bestCos = cosine; bestU = u; bestV = v; moved = true; }
+                }
+            if (!moved) { stepU *= 0.5; stepV *= 0.5; }
+        }
+        if (!found) return FrameResult::Failed;
+        lowU = highU = bestU;
+        lowV = highV = bestV;
+    }
+    // Moves each edge out to where the rays stop hitting, testing a line of rays across the other axis.
+    const unsigned int samples = 33;
+    auto lineHits = [&](bool alongU, DBL at, DBL from, DBL to) {
+        for (unsigned int k = 0; k < samples; ++k)
+        {
+            const DBL across = from + (to - from) * k / (samples - 1.0);
+            if (alongU ? rays.Hits(at, across, low, high) : rays.Hits(across, at, low, high)) return true;
+        }
+        return false;
+    };
+    auto refine = [&](bool alongU, DBL inner, DBL sign, DBL step, DBL limit, bool bounded, DBL from, DBL to) {
+        DBL outer = inner + sign * step;
+        while (true)
+        {
+            if (bounded && ((outer - limit) * sign >= 0.0))
+            {
+                if (lineHits(alongU, limit, from, to)) return limit;
+                outer = limit;
+                break;
+            }
+            if (!lineHits(alongU, outer, from, to)) break;
+            inner = outer;
+            step *= 2.0;
+            outer = inner + sign * step;
+            if (fabs(outer - inner) > (alongU ? spanU : spanV)) return inner;
+        }
+        for (unsigned int i = 0; i < 40; ++i)
+        {
+            const DBL middle = (inner + outer) * 0.5;
+            if (lineHits(alongU, middle, from, to)) inner = middle;
+            else outer = middle;
+        }
+        return inner;
+    };
+    const bool fullCircle = circular && any && (lowU <= u0 + du) && (highU >= u0 + spanU - du) && (highU - lowU >= spanU - 1.5 * du);
+    for (unsigned int pass = 0; pass < 2; ++pass)
+    {
+        const DBL acrossLowV = std::max(v0, lowV - dv), acrossHighV = std::min(v0 + spanV, highV + dv);
+        if (!fullCircle)
+        {
+            const DBL newLowU = refine(true, lowU, -1.0, du * 0.5, u0, !circular, acrossLowV, acrossHighV);
+            const DBL newHighU = refine(true, highU, 1.0, du * 0.5, u0 + spanU, !circular, acrossLowV, acrossHighV);
+            lowU = newLowU;
+            highU = newHighU;
+        }
+        else
+        {
+            lowU = u0;
+            highU = u0 + spanU;
+        }
+        const DBL acrossLowU = fullCircle ? u0 : (circular ? lowU - du : std::max(u0, lowU - du));
+        const DBL acrossHighU = fullCircle ? u0 + spanU : (circular ? highU + du : std::min(u0 + spanU, highU + du));
+        lowV = refine(false, lowV, -1.0, dv * 0.5, v0, true, acrossLowU, acrossHighU);
+        highV = refine(false, highV, 1.0, dv * 0.5, v0 + spanV, true, acrossLowU, acrossHighU);
+    }
+    // The window keeps the parsed pixel aspect and grows from the target until it fills frameMultiplier of it.
+    DBL scale = std::max((highU - lowU) / (frameMultiplier * spanU), (highV - lowV) / (frameMultiplier * spanV));
+    scale = std::max(scale, 1e-9);
+    FrameResult result = FrameResult::Fitted;
+    if (scale > 1.0) { scale = 1.0; result = FrameResult::Aimed; }
+    place(scale, (lowU + highU) * 0.5, (lowV + highV) * 0.5);
+    return result;
+}
+
+FrameResult Camera::Frame(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData)
+{
+    const FrameResult result = (Type == USER_DEFINED_CAMERA) ? FrameWindow(low, high, threadData) : FrameField(low, high);
+    if (Focal_Distance < 0.0)
+    {
+        Vector3d direction = Direction;
+        if (framePlacement) MInvTransDirection(direction, Direction, framePlacement.get());
+        Focal_Distance = direction.length();
+    }
+    if (Focal_Distance == 0.0)
+        Focal_Distance = 1.0;
+    return result;
+}
+
+FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high)
+{
+    if (!FiniteBounds(low, high) || (Direction.lengthSqr() <= 0.0) || (Type == MESH_CAMERA) || (Type == USER_DEFINED_CAMERA))
+        return FrameResult::Failed;
+    const DBL extent = (high - low).length();
+    Vector3d center = (low + high) * 0.5, location = Location, direction = Direction, up = Up, rightVector = Right;
+    if (framePlacement)
+    {
+        MInvTransPoint(center, center, framePlacement.get());
+        MInvTransPoint(location, Location, framePlacement.get());
+        MInvTransDirection(direction, Direction, framePlacement.get());
+        MInvTransDirection(up, Up, framePlacement.get());
+        MInvTransDirection(rightVector, Right, framePlacement.get());
+    }
+    const Vector3d toCenter = center - location;
+    const Vector3d forward = (toCenter.length() > 1e-9 * extent) ? toCenter.normalized() : direction.normalized();
+    const DBL directionLength = direction.length(), rightLength = rightVector.length(), upLength = up.length();
+    const DBL handedness = dot(cross(up, direction), rightVector);
+    Vector3d right = cross(Sky, forward);
+    if (right.length() <= 1e-9 * Sky.length()) right = rightVector - forward * dot(rightVector, forward);
+    if (right.length() <= 1e-9 * rightLength) return FrameResult::Failed;
+    right.normalize();
+    up = cross(forward, right).normalized() * upLength;
+    rightVector = right * ((handedness > 0.0) ? rightLength : -rightLength);
+    direction = forward * directionLength;
+    Look_At = (low + high) * 0.5;
+    Direction = direction;
+    Up = up;
+    Right = rightVector;
+    if (framePlacement)
+    {
+        MTransDirection(Direction, direction, framePlacement.get());
+        MTransDirection(Up, up, framePlacement.get());
+        MTransDirection(Right, rightVector, framePlacement.get());
+    }
+    if (PointBounds(low, high, Location))
+        return FrameResult::Pointed;
+    if (Type == ORTHOGRAPHIC_CAMERA)
+    {
+        const Vector3d view = Direction.normalized();
+        DBL nearest = HUGE_VAL;
+        for (unsigned int corner = 0; corner < 8; ++corner)
+        {
+            const Vector3d point((corner & 1) ? high[X] : low[X], (corner & 2) ? high[Y] : low[Y], (corner & 4) ? high[Z] : low[Z]);
+            nearest = std::min(nearest, dot(point - Location, view));
+        }
+        const DBL clearance = extent * 0.01;
+        if (nearest < clearance) Location -= view * (clearance - nearest);
+    }
+    const Camera base(*this);
+    if (!ApplyZoom(*this, base, 1.0)) return FrameResult::Aimed;
+    DBL upper = 1.0;
+    if (!FitsFrame(low, high))
+    {
+        if (Type != ORTHOGRAPHIC_CAMERA) return FrameResult::Aimed;
+        unsigned int doublings = 0;
+        do
+        {
+            if (++doublings > 64) { ApplyZoom(*this, base, 1.0); return FrameResult::Failed; }
+            upper *= 2.0;
+            ApplyZoom(*this, base, upper);
+        }
+        while (!FitsFrame(low, high));
+    }
+    DBL lower = upper * 1e-15;
+    for (unsigned int i = 0; i < 80; ++i)
+    {
+        const DBL zoom = sqrt(lower * upper);
+        ApplyZoom(*this, base, zoom);
+        if (FitsFrame(low, high)) upper = zoom;
+        else lower = zoom;
+    }
+    ApplyZoom(*this, base, upper);
+    return FrameResult::Fitted;
+}
+
 static bool SameVector(const Vector3d& a, const Vector3d& b)
 {
     return (a.x() == b.x()) && (a.y() == b.y()) && (a.z() == b.z());
@@ -421,7 +926,9 @@ bool Camera::SameView(const Camera& other, bool compareFilters) const
            (Focal_Distance == other.Focal_Distance) && (Blur_Samples == other.Blur_Samples) &&
            (Blur_Samples_Min == other.Blur_Samples_Min) && (Confidence == other.Confidence) && (Variance == other.Variance) &&
            (Max_Ray_Distance == other.Max_Ray_Distance) && (Tnormal == other.Tnormal) && (Bokeh == other.Bokeh) &&
-           (!compareFilters || (filterTags == other.filterTags)) &&
+           (!compareFilters || (filterTags == other.filterTags)) && (frameBounds == other.frameBounds) &&
+           (frameMultiplier == other.frameMultiplier) && (windowLow[0] == other.windowLow[0]) &&
+           (windowLow[1] == other.windowLow[1]) && (windowHigh[0] == other.windowHigh[0]) && (windowHigh[1] == other.windowHigh[1]) && (!frameBounds || (SameVector(frameLow, other.frameLow) && SameVector(frameHigh, other.frameHigh))) &&
            Meshes.empty() && other.Meshes.empty();
 }
 

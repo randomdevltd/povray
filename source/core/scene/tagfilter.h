@@ -36,6 +36,9 @@ struct TagScope final
 {
     std::vector<std::string> tags;
     std::shared_ptr<const TagScope> enclosing;
+    /// set when the union was a light_group, whose flags it keeps, so a selection can take the group whole
+    bool lightGroup;
+    unsigned int groupFlags;
 };
 
 TagFilter ParseTagFilter(const std::string& expression);

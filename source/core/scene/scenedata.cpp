@@ -247,7 +247,7 @@ TagSelection SelectTagged(ConstObjectPtr object, const TagFilter& filter, const 
 bool EnclosingTagsMatch(ConstObjectPtr object, const TagFilter& filter)
 {
     for (const TagScope *scope = object->enclosingTags.get(); scope != nullptr; scope = scope->enclosing.get())
-        if (!MatchesTags(scope->tags, filter))
+        if (!scope->tags.empty() && !MatchesTags(scope->tags, filter))
             return false;
     return true;
 }

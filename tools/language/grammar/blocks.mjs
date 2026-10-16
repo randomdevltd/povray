@@ -38,7 +38,7 @@ const CURATION = {
     density: ['Parse_Pigment', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
     interior: ['Parse_Interior'],
     media: ['Parse_Media'],
-    camera: ['Parse_Camera', 'Parse_Camera_Mods'],
+    camera: ['Parse_Camera', 'Parse_Camera_Mods', 'Parse_Camera_Look_At'],
     global_settings: ['Parse_Global_Settings'],
     object: ['Parse_Object', 'Parse_Object_Mods'],
     light_source: ['Parse_Light_Source', 'Parse_Media_Light', 'Parse_Object_Mods'],
