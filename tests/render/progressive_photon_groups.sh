@@ -12,10 +12,17 @@ render() {
 render grouped
 render isolated Declare=Reference=1
 render global Declare=Reference=1 Declare=Grouped=0
+# the outside lens shows the lit group receiver through refraction on the right
 left() {
     od -An -v -w384 -t u1 "progressive_group_$1.px" | awk '{for (i = 1; i <= 240; i++) printf "%s ", $i; print ""}'
 }
+deposits() {
+    tr '\n' ' ' < "progressive_group_$1.log" | tr -s ' ' | grep -o '[0-9]* deposits'
+}
 [ "$(left grouped)" = "$(left isolated)" ] || { echo 'grouped receiver differs from the isolated one' >&2; exit 1; }
+[ "$(deposits grouped)" = "$(deposits isolated)" ] || { echo 'the group light stored photons outside its group' >&2; exit 1; }
+render outside_receiver Declare=OutsideLens=0
+cmp progressive_group_outside_receiver.px progressive_group_isolated.px
 cmp progressive_group_isolated.px progressive_group_global.px
 render disabled Declare=GroupPhotons=0
 render legacy_disabled Declare=Version=3.8

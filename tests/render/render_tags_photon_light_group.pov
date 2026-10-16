@@ -33,7 +33,8 @@ camera {
 }
 object { LampGroup }
 #end
+#ifndef (OutsideLens) #declare OutsideLens = 1; #end
 #if (!Reference)
-  object { Lens translate 3*x KeepTag() }
+  #if (OutsideLens) object { Lens translate 3*x KeepTag() } #end
   object { Receiver translate 3*x KeepTag() }
 #end
