@@ -2475,7 +2475,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         const double slab = kPhotonSlab * map.BaseRadius(receiver);
         auto& nearest = threadData->photonNeighbours;
         double support;
-        if (Finish->DiffuseBack != 0.0)
+        if (Finish->DiffuseBack != 0.0 || doubleIlluminate)
             support = NearestBothSides(map, IPoint, Raw_Normal, receiver, nearest, [&](const MappedPhoton& photon) {
                 const double cosine = dot(Raw_Normal, photon.Direction());
                 return photon.receiver == receiver && std::abs(cosine) > EPSILON &&
@@ -2486,9 +2486,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                 const Vector3d direction = photon.Direction();
                 if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab))
                     return false;
-                const double cosine = dot(Raw_Normal, direction);
-                const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
-                return std::abs(cosine) > EPSILON && !(backside && Finish->DiffuseBack == 0.0);
+                return std::abs(dot(Raw_Normal, direction)) > EPSILON && !(dot(Layer_Normal, direction) < EPSILON);
             });
         const double support2 = support * support;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);

@@ -73,10 +73,12 @@ kd-trees, each with its bounding box and the widest angle of its normals from th
 axis. A gather visits only the trees of its receiver that can hold a normal within
 60 degrees of its own, nearest-aligned first, so a query on the unlit face of a thin
 receiver does not scan the lit face's deposits. Photon normals face the side a photon
-arrived on; a finish with `diffuse_back` also accepts deposits whose normal is
-opposed (measuring the tangent-plane offset against the deposit's own sheet), so a
-thin sheet lit from behind shows its back-lit diffusion. `double_illuminate` does not
-do this.
+arrived on; a finish with `diffuse_back`, or a `double_illuminate` object, also
+accepts deposits whose normal is opposed (measuring the tangent-plane offset against
+the deposit's own sheet), so a thin sheet lit from behind shows its back-lit
+diffusion. `double_illuminate` shades those deposits with `diffuse` and the
+highlights, as it does a light behind the surface; `diffuse_back` alone uses its own
+coefficient and no highlights.
 
 ### CSG receivers
 
@@ -272,8 +274,8 @@ covers thread-count equality for every light type and media, dispersion, subsurf
 thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
 independence of the logged budget, the memory budget error and invalid quality;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
-requires its underside to match the lit top; the emitter, direct-light,
-volume, media-light, light-group and `.pov4` scripts run with the new estimator.
+requires its underside to match the lit top, as does a `double_illuminate` disc; the
+emitter, direct-light, volume, media-light, light-group and `.pov4` scripts run with the new estimator.
 
 ## Measurements
 
@@ -401,5 +403,4 @@ camera loop, hence its larger value.
 - A CSG subsurface receiver's slab and boundary probe use the whole map's median base
   radius (see CSG receivers).
 - Media noise does not fall with quality on the tested scene; only the cost grows.
-- `double_illuminate` surfaces do not gather photons that arrived on their far side.
 

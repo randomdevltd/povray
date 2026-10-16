@@ -38,5 +38,11 @@ behind=$(back behind Declare=Below=1)
 unlit=$(back unlit Declare=Below=1 Declare=Back=0 Declare=Front=0.8)
 awk -v f="$front" -v b="$behind" -v u="$unlit" 'BEGIN {
     if (!(f > 0 && u == 0 && b > 0.98 * f && b < 1.02 * f)) { print "diffuse_back photon light", f, b, u > "/dev/stderr"; exit 1 } }'
+double=$(back double Declare=Below=1 Declare=Back=0 Declare=Front=0.8 Declare=Double=1)
+back double_one Declare=Below=1 Declare=Back=0 Declare=Front=0.8 Declare=Double=1 +wt1 > /dev/null
+for name in double double_one behind; do tail -c 13824 "progressive_surface_$name.ppm" > "progressive_surface_$name.px"; done
+cmp progressive_surface_double.px progressive_surface_behind.px
+cmp progressive_surface_double.px progressive_surface_double_one.px
+[ "$double" = "$front" ] || { echo "double_illuminate photon light $front $double" >&2; exit 1; }
 rm -f progressive_surface_*.ppm progressive_surface_*.log progressive_surface_*.px progressive_surface_*.pov-state progressive_surface_quality.json
-echo 'progressive_surface: close and layered receivers, thread equality, reference quality and diffuse_back passed'
+echo 'progressive_surface: close and layered receivers, thread equality, reference quality, diffuse_back and double_illuminate passed'
