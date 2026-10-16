@@ -2458,7 +2458,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         const bool doubleIlluminate = Test_Flag(Object, DOUBLE_ILLUMINATE_FLAG);
         const double slab = kPhotonSlab * map.BaseRadius(receiver);
         auto& nearest = threadData->photonNeighbours;
-        const double support = map.Nearest(IPoint, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
+        const double support = map.Nearest(IPoint, Raw_Normal, receiver, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
             const Vector3d direction = photon.Direction();
             if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab))
                 return false;
@@ -6121,7 +6121,7 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
         bool inside = false;
         const double slab = kPhotonSlab * map.BaseRadius(exact);
         auto& nearest = threadData->photonNeighbours;
-        const double support = map.Nearest(point, map.Cap(exact), nearest, [&](const MappedPhoton& photon) {
+        const double support = map.Nearest(point, n, exact, map.Cap(exact), nearest, [&](const MappedPhoton& photon) {
             if (photon.receiver != exact)
             {
                 if (exact != ProgressivePhotonMap::noReceiver)

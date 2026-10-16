@@ -18,7 +18,7 @@ double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point
 {
     std::vector<pov::PhotonNeighbour> nearest;
     const double slab = pov::kPhotonSlab * map.BaseRadius(0);
-    const double support = map.Nearest(point, map.Cap(0), nearest, [&](const pov::MappedPhoton& photon) {
+    const double support = map.Nearest(point, normal, 0, map.Cap(0), nearest, [&](const pov::MappedPhoton& photon) {
         return pov::PhotonSurfaceMatch(photon, point, normal, slab);
     });
     double sum = 0.0;

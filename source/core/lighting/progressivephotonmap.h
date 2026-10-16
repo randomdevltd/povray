@@ -97,7 +97,7 @@ class ProgressivePhotonMap final
         {
             neighbours = k;
             photons.shrink_to_fit();
-            BuildRange(0, photons.size(), 0);
+            Partition();
             baseRadius.assign(receivers.size(), 0.0);
             std::vector<size_t> count(receivers.size(), 0), seen(receivers.size(), 0);
             for (const auto& photon : photons)
@@ -111,7 +111,7 @@ class ProgressivePhotonMap final
                 if (seen[id]++ % stride)
                     continue;
                 const Vector3d normal = photon.Normal();
-                const double support = Nearest(photon.point, std::numeric_limits<double>::infinity(), heap,
+                const double support = Nearest(photon.point, normal, id, std::numeric_limits<double>::infinity(), heap,
                     [&](const MappedPhoton& other) { return other.receiver == id && dot(other.Normal(), normal) >= 0.5; });
                 if (support > 0.0 && std::isfinite(support))
                     radii[id].push_back(support);
@@ -150,24 +150,131 @@ class ProgressivePhotonMap final
         double Cap(std::uint32_t id) const { return ProgressivePhotonBudget::capScale * BaseRadius(id); }
 
         /// The k nearest accepted photons within cap; returns the kernel support (the k-th distance, or cap).
+        /// Only partitions of receiver (any, for noReceiver) holding a normal within 60 degrees of normal are visited.
         template<class Accept>
-        double Nearest(const Vector3d& point, double cap, std::vector<PhotonNeighbour>& heap, Accept&& accept) const
+        double Nearest(const Vector3d& point, const Vector3d& normal, std::uint32_t receiver, double cap,
+                       std::vector<PhotonNeighbour>& heap, Accept&& accept) const
         {
             heap.clear();
-            if (photons.empty())
-                return cap;
             double bound = cap * cap;
-            NearestRange(0, photons.size(), point, bound, heap, accept);
+            const bool any = receiver >= receiverPartitions.size();
+            const std::uint32_t first = any ? 0 : receiverPartitions[receiver].first;
+            const std::uint32_t last = any ? std::uint32_t(partitions.size()) : receiverPartitions[receiver].second;
+            const double length = normal.length();
+            auto usable = [&](const PhotonPartition& part) {
+                const double cosine = length > 0.0 ? std::max(-1.0, std::min(1.0, dot(normal, part.axis) / length)) : 1.0;
+                const double closest = cosine >= part.cosSpread ? 1.0 : cosine * part.cosSpread + std::sqrt(1.0 - cosine * cosine) * part.sinSpread;
+                return part.length * length * closest >= kPhotonNormalAgreement ? cosine : -2.0;
+            };
+            std::uint32_t nearest = last;
+            double best = -2.0;
+            for (std::uint32_t i = first; i < last; ++i)
+            {
+                const double cosine = usable(partitions[i]);
+                if (cosine > best && partitions[i].Distance2(point) <= bound)
+                {
+                    best = cosine;
+                    nearest = i;
+                }
+            }
+            if (nearest == last)
+                return cap;
+            NearestRange(partitions[nearest].begin, partitions[nearest].end, point, bound, heap, accept);
+            for (std::uint32_t i = first; i < last; ++i)
+                if (i != nearest && partitions[i].Distance2(point) <= bound && usable(partitions[i]) > -2.0)
+                    NearestRange(partitions[i].begin, partitions[i].end, point, bound, heap, accept);
             if (heap.size() < neighbours)
                 return cap;
             return std::sqrt(heap.front().distance2);
         }
 
     private:
+        static constexpr unsigned int kNormalClusters = 6;
+
+        /// A kd-tree over the photons of one receiver whose normals share a dominant axis, bounded in space and in normal angle.
+        struct PhotonPartition final
+        {
+            size_t begin, end;
+            Vector3d low, high, axis;
+            double cosSpread, sinSpread, length;
+
+            double Distance2(const Vector3d& point) const
+            {
+                double d2 = 0.0;
+                for (unsigned int a = 0; a < 3; ++a)
+                {
+                    const double d = std::max(0.0, std::max(low[a] - point[a], point[a] - high[a]));
+                    d2 += d * d;
+                }
+                return d2;
+            }
+        };
+
+        std::vector<PhotonPartition> partitions;
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> receiverPartitions;
         std::vector<ConstObjectPtr> receivers;
         std::unordered_map<ConstObjectPtr, std::uint32_t> receiverIds;
         std::vector<double> baseRadius;
         double globalRadius = 1.0e-8;
+
+        static unsigned int NormalCluster(const MappedPhoton& photon)
+        {
+            const float* n = photon.normal;
+            unsigned int axis = std::abs(n[X]) >= std::abs(n[Y]) ? X : Y;
+            if (std::abs(n[Z]) > std::abs(n[axis]))
+                axis = Z;
+            return 2 * axis + (n[axis] < 0.0f);
+        }
+
+        /// Groups photons by receiver and normal cluster, each group a contiguous kd-tree.
+        void Partition()
+        {
+            std::vector<size_t> start(receivers.size() * kNormalClusters + 1, 0);
+            for (const auto& photon : photons)
+                ++start[photon.receiver * kNormalClusters + NormalCluster(photon) + 1];
+            for (size_t i = 1; i < start.size(); ++i)
+                start[i] += start[i - 1];
+            std::vector<MappedPhoton> sorted(photons.size());
+            for (const auto& photon : photons)
+                sorted[start[photon.receiver * kNormalClusters + NormalCluster(photon)]++] = photon;
+            photons.swap(sorted);
+            partitions.clear();
+            receiverPartitions.assign(receivers.size(), {0, 0});
+            for (size_t begin = 0, end; begin < photons.size(); begin = end)
+            {
+                const std::uint32_t id = photons[begin].receiver;
+                const unsigned int cluster = NormalCluster(photons[begin]);
+                PhotonPartition part;
+                part.begin = begin;
+                part.low = part.high = photons[begin].point;
+                part.axis = Vector3d(0.0);
+                part.axis[cluster / 2] = (cluster & 1) ? -1.0 : 1.0;
+                double spread = 0.0;
+                part.length = 0.0;
+                for (end = begin; end < photons.size() && photons[end].receiver == id && NormalCluster(photons[end]) == cluster; ++end)
+                {
+                    const Vector3d n = photons[end].Normal();
+                    const double length = n.length();
+                    for (unsigned int a = 0; a < 3; ++a)
+                    {
+                        part.low[a] = std::min(part.low[a], photons[end].point[a]);
+                        part.high[a] = std::max(part.high[a], photons[end].point[a]);
+                    }
+                    part.length = std::max(part.length, length);
+                    if (length > 0.0)
+                        spread = std::max(spread, std::acos(std::max(-1.0, std::min(1.0, dot(n, part.axis) / length))));
+                }
+                part.end = end;
+                part.cosSpread = std::cos(spread + 1.0e-6);
+                part.sinSpread = std::sin(spread + 1.0e-6);
+                part.length *= 1.0 + 1.0e-6;
+                if (receiverPartitions[id].first == receiverPartitions[id].second)
+                    receiverPartitions[id].first = std::uint32_t(partitions.size());
+                receiverPartitions[id].second = std::uint32_t(partitions.size() + 1);
+                partitions.push_back(part);
+                BuildRange(begin, end, 0);
+            }
+        }
 
         void BuildRange(size_t begin, size_t end, unsigned int depth)
         {
