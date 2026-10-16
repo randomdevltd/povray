@@ -6,7 +6,7 @@
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #ifndef (Dispersion) #declare Dispersion = 1.04; #end
 #ifndef (Bands) #declare Bands = 31; #end
-#ifndef (Power) #declare Power = 10; #end
+#ifndef (Power) #declare Power = 14; #end
 #ifndef (Detail) #declare Detail = 0.5; #end
 #ifndef (KScale) #declare KScale = 1; #end
 #ifndef (Plain) #declare Plain = 0; #end
@@ -17,14 +17,17 @@ global_settings {
   photons { method 2 quality PhotonQuality }
 }
 camera { location <0, 11, -4.5> look_at <0, 0, 0.7> angle 52 right x * image_width / image_height }
-background { rgb <0.03, 0.035, 0.05> }
-light_source { <-5, 14, -9> rgb <1, 0.96, 0.9> * 0.22 shadowless photons { refraction off reflection off } }
+background { rgb <0.004, 0.005, 0.012> }
+sky_sphere {
+  pigment { gradient y color_map { [0 rgb <0.01, 0.015, 0.04>] [0.45 rgb <0.005, 0.008, 0.02>] [0.58 rgb <0.55, 0.42, 0.30>] [0.66 rgb <0.01, 0.01, 0.03>] [1 rgb <0.01, 0.015, 0.05>] } }
+}
+light_source { <-5, 14, -9> rgb <1, 0.9, 0.78> * 0.10 shadowless photons { refraction off reflection off } }
 plane { y, 0
   pigment {
-    function { sqrt(x * x + (z - 0.8) * (z - 0.8)) / 13 }
-    color_map { [0 rgb <0.88, 0.87, 0.85>] [0.46 rgb <0.55, 0.55, 0.58>] [1 rgb <0.10, 0.11, 0.14>] }
+    function { sqrt(x * x / 1.6 + (z - 0.8) * (z - 0.8)) / 9 }
+    color_map { [0 rgb <0.30, 0.26, 0.22>] [0.3 rgb <0.08, 0.09, 0.13>] [0.65 rgb <0.01, 0.025, 0.07>] [1 rgb <0.003, 0.004, 0.012>] }
   }
-  finish { ambient 0.04 diffuse 1 }
+  finish { ambient 0.015 diffuse 1 }
 }
 light_source { <0, H, -20> rgb Power parallel point_at <0, H, 0> photon_only 1 photons { refraction on reflection off } }
 
