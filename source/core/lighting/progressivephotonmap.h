@@ -7,6 +7,7 @@
 #include "core/lighting/progressivephoton.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -98,6 +99,7 @@ class ProgressivePhotonMap final
             neighbours = k;
             Partition();
             baseRadius.assign(receivers.size(), 0.0);
+            sparseRadius.assign(receivers.size(), 0.0);
             std::vector<size_t> count(receivers.size(), 0), seen(receivers.size(), 0);
             for (const auto& photon : photons)
                 ++count[photon.receiver];
@@ -107,7 +109,7 @@ class ProgressivePhotonMap final
             {
                 const std::uint32_t id = photon.receiver;
                 const size_t stride = std::max(size_t(1), count[id] / 128);
-                if (seen[id]++ % stride)
+                if (count[id] < k || seen[id]++ % stride)
                     continue;
                 const Vector3d normal = photon.Normal();
                 const double support = Nearest(photon.point, normal, id, std::numeric_limits<double>::infinity(), heap,
@@ -125,11 +127,62 @@ class ProgressivePhotonMap final
                 baseRadius[id] = std::max(1.0e-8, r[r.size() / 2]);
                 all.push_back(baseRadius[id]);
             }
+            const size_t receiversWithRadius = all.size();
+            for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                if (count[id] < k && count[id] > 1)
+                {
+                    Vector3d low = partitions[receiverPartitions[id].first].low, high = low;
+                    for (std::uint32_t i = receiverPartitions[id].first; i < receiverPartitions[id].second; ++i)
+                        for (unsigned int a = 0; a < 3; ++a)
+                        {
+                            low[a] = std::min(low[a], partitions[i].low[a]);
+                            high[a] = std::max(high[a], partitions[i].high[a]);
+                        }
+                    sparseRadius[id] = std::max(1.0e-8, ExtentRadius(low, high, count[id], k));
+                }
+            const size_t stride = std::max(size_t(1), photons.size() / 128);
+            for (size_t i = 0; receiversWithRadius == 0 && i < photons.size(); i += stride)
+            {
+                const Vector3d normal = photons[i].Normal();
+                const double support = Nearest(photons[i].point, normal, noReceiver, std::numeric_limits<double>::infinity(), heap,
+                    [&](const MappedPhoton& other) { return dot(other.Normal(), normal) >= 0.5; });
+                if (support > 0.0 && std::isfinite(support))
+                    all.push_back(support);
+            }
             if (!all.empty())
             {
                 std::nth_element(all.begin(), all.begin() + all.size() / 2, all.end());
-                globalRadius = all[all.size() / 2];
+                globalRadius = std::max(1.0e-8, all[all.size() / 2]);
             }
+            else if (!photons.empty())
+            {
+                Vector3d low = photons.front().point, high = low;
+                for (const auto& photon : photons)
+                    for (unsigned int a = 0; a < 3; ++a)
+                    {
+                        low[a] = std::min(low[a], photon.point[a]);
+                        high[a] = std::max(high[a], photon.point[a]);
+                    }
+                globalRadius = std::max(1.0e-8, ExtentRadius(low, high, photons.size(), k));
+            }
+            generation = ++Generations();
+        }
+
+        /// Identifies one build of one map, for caches derived from it.
+        std::uint64_t Generation() const { return generation; }
+
+        /// The median base radius of the receivers selected by member, or the global one when none has its own.
+        template<class Member>
+        double MedianBaseRadius(Member&& member) const
+        {
+            std::vector<double> selected;
+            for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                if (baseRadius[id] > 0.0 && member(receivers[id]))
+                    selected.push_back(baseRadius[id]);
+            if (selected.empty())
+                return globalRadius;
+            std::nth_element(selected.begin(), selected.begin() + selected.size() / 2, selected.end());
+            return selected[selected.size() / 2];
         }
 
         std::uint32_t Receiver(ConstObjectPtr object) const
@@ -140,10 +193,12 @@ class ProgressivePhotonMap final
 
         ConstObjectPtr ReceiverObject(std::uint32_t id) const { return receivers[id]; }
 
-        /// The typical support on a receiver, or over the whole map when the receiver holds no photons itself.
+        /// The typical support on a receiver, from its spacing when it holds fewer than k photons, else over the whole map.
         double BaseRadius(std::uint32_t id) const
         {
-            return id < baseRadius.size() && baseRadius[id] > 0.0 ? baseRadius[id] : globalRadius;
+            if (id >= baseRadius.size())
+                return globalRadius;
+            return baseRadius[id] > 0.0 ? baseRadius[id] : sparseRadius[id] > 0.0 ? sparseRadius[id] : globalRadius;
         }
 
         double Cap(std::uint32_t id) const { return ProgressivePhotonBudget::capScale * BaseRadius(id); }
@@ -213,8 +268,21 @@ class ProgressivePhotonMap final
         std::vector<std::pair<std::uint32_t, std::uint32_t>> receiverPartitions;
         std::vector<ConstObjectPtr> receivers;
         std::unordered_map<ConstObjectPtr, std::uint32_t> receiverIds;
-        std::vector<double> baseRadius;
+        std::vector<double> baseRadius, sparseRadius;
         double globalRadius = 1.0e-8;
+        std::uint64_t generation = 0;
+
+        static std::atomic<std::uint64_t>& Generations()
+        {
+            static std::atomic<std::uint64_t> counter(0);
+            return counter;
+        }
+
+        /// The k-th neighbour distance of count photons spread evenly over a square with the given diagonal.
+        static double ExtentRadius(const Vector3d& low, const Vector3d& high, size_t count, unsigned int k)
+        {
+            return (high - low).length() * std::sqrt(k / (2.0 * 3.14159265358979 * count));
+        }
 
         static unsigned int NormalCluster(const MappedPhoton& photon)
         {

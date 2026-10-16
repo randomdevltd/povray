@@ -14,13 +14,16 @@ struct Deposit final
     pov::MathColour flux;
 };
 
-double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point, const pov::Vector3d& normal)
+double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point, const pov::Vector3d& normal,
+                std::uint32_t receiver = 0, double* used = nullptr)
 {
     std::vector<pov::PhotonNeighbour> nearest;
-    const double slab = pov::kPhotonSlab * map.BaseRadius(0);
-    const double support = map.Nearest(point, normal, 0, map.Cap(0), nearest, [&](const pov::MappedPhoton& photon) {
-        return pov::PhotonSurfaceMatch(photon, point, normal, slab);
+    const double slab = pov::kPhotonSlab * map.BaseRadius(receiver);
+    const double support = map.Nearest(point, normal, receiver, map.Cap(receiver), nearest, [&](const pov::MappedPhoton& photon) {
+        return photon.receiver == receiver && pov::PhotonSurfaceMatch(photon, point, normal, slab);
     });
+    if (used)
+        *used = support;
     double sum = 0.0;
     for (const auto& neighbour : nearest)
         sum += map.photons[neighbour.index].flux.Greyscale() * pov::PhotonKernel::Weight(neighbour.distance2, support * support);
@@ -137,6 +140,56 @@ int main()
     assert(ratio > 3.0 && ratio < 5.0);
     assert(layered.BaseRadius(dense) == bright.BaseRadius(dense) && layered.BaseRadius(sparse) == bright.BaseRadius(sparse));
     std::cout << "close receivers: base radius ratio " << ratio << " for 1/16 the density; emitted power keeps the support\n";
+
+    pov::ProgressivePhotonMap mixed;
+    std::mt19937_64 spread(5);
+    for (unsigned int i = 0; i < 60000 + 25600; ++i)
+    {
+        Deposit deposit;
+        const bool dense = i < 60000;
+        deposit.point = dense ? pov::Vector3d(unit(spread), 0.0, unit(spread)) : pov::Vector3d(1.0 + 8.0 * unit(spread), 0.0, 8.0 * unit(spread));
+        deposit.normal = deposit.direction = pov::Vector3d(0, 1, 0);
+        deposit.flux = pov::MathColour(1.0e-4);
+        mixed.Add(deposit, reinterpret_cast<pov::ConstObjectPtr>(&owners[0]), 1.0);
+    }
+    mixed.Build(48);
+    double capped = 0.0, sparseSum = 0.0;
+    for (int i = 0; i < 4000; ++i)
+    {
+        double support = 0.0;
+        sparseSum += Estimate(mixed, pov::Vector3d(1.5 + 7.0 * unit(queries), 0.0, 0.5 + 7.0 * unit(queries)), pov::Vector3d(0, 1, 0), 0, &support);
+        capped += support == mixed.Cap(0);
+    }
+    const double sparseRatio = sparseSum / 4000.0 / (25600.0e-4 / 64.0);
+    std::cout << "sparse region at the support cap: mean estimate / analytic irradiance " << sparseRatio << ", " << capped / 40.0 << "% capped\n";
+    assert(capped > 3600.0 && std::abs(sparseRatio - 1.0) < 0.02);
+
+    for (bool alone : {false, true})
+    {
+        pov::ProgressivePhotonMap faint;
+        for (unsigned int i = 0; !alone && i < 40000; ++i)
+        {
+            Deposit deposit;
+            plane(unit(random), unit(random), deposit.point, deposit.normal);
+            deposit.direction = deposit.normal;
+            deposit.flux = pov::MathColour(1.0e-4);
+            faint.Add(deposit, reinterpret_cast<pov::ConstObjectPtr>(&owners[0]), 1.0);
+        }
+        for (unsigned int i = 0; i < 20; ++i)
+        {
+            Deposit deposit;
+            deposit.point = pov::Vector3d(0.05 * unit(random), 0.002, 0.05 * unit(random));
+            deposit.normal = deposit.direction = pov::Vector3d(0, 1, 0);
+            deposit.flux = pov::MathColour(1.0e-3);
+            faint.Add(deposit, reinterpret_cast<pov::ConstObjectPtr>(&owners[1]), 1.0);
+        }
+        faint.Build(48);
+        const std::uint32_t id = faint.Receiver(reinterpret_cast<pov::ConstObjectPtr>(&owners[1]));
+        const double lit = Estimate(faint, pov::Vector3d(0.025, 0.002, 0.025), pov::Vector3d(0, 1, 0), id);
+        std::cout << "20-photon caustic" << (alone ? " alone" : " beside a dense receiver") << ": base radius " << faint.BaseRadius(id)
+                  << ", estimate " << lit << "\n";
+        assert(faint.BaseRadius(id) > 1.0e-4 && faint.BaseRadius(id) < 1.0 && lit > 0.0);
+    }
     std::cout << "progressive photon density estimator passed\n";
     return 0;
 }

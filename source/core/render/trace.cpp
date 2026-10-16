@@ -6116,6 +6116,15 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
         if (map.photons.empty() || Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG) || !(eta > 0.0))
             return irradiance;
         const std::uint32_t exact = map.Receiver(receiver);
+        double cap = map.Cap(exact);
+        if (exact == ProgressivePhotonMap::noReceiver)
+        {
+            // why: doc/progressive-photons.md#csg-receivers
+            auto& cached = threadData->csgPhotonRadius[receiver];
+            if (cached.first != map.Generation())
+                cached = {map.Generation(), map.MedianBaseRadius([&](ConstObjectPtr member) { return IsObjectInCSG(member, receiver); })};
+            cap = ProgressivePhotonBudget::capScale * cached.second;
+        }
         Vector3d n = normal.normalized();
         if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, map.BaseRadius(exact), n, ticket))
             return irradiance;
@@ -6123,7 +6132,7 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
         bool inside = false;
         const double slab = kPhotonSlab * map.BaseRadius(exact);
         auto& nearest = threadData->photonNeighbours;
-        const double support = map.Nearest(point, n, exact, map.Cap(exact), nearest, [&](const MappedPhoton& photon) {
+        const double support = map.Nearest(point, n, exact, cap, nearest, [&](const MappedPhoton& photon) {
             if (photon.receiver != exact)
             {
                 if (exact != ProgressivePhotonMap::noReceiver)
