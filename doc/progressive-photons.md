@@ -9,7 +9,9 @@ global_settings {
 }
 ```
 
-`quality` is a finite number greater than zero and at most 64, default 1. It sets
+`quality` is a finite number greater than zero and at most 16384 (2^32 samples per
+set, the length of the emission sequence), default 1; photon storage is bounded by
+memory instead (see below). It sets
 `ceil(4 * quality)` emission batches of 65,536 samples per prepared scene set. All
 batches are deposited into one surface map and one media map per set; each deposit
 carries its emitted flux divided by the batch count, so the image brightness does not
@@ -58,6 +60,35 @@ the expected estimate equals the true irradiance both when `r` is the `k`-th
 distance and when it is the cap; on a sphere, the set within a straight-line
 distance `r` has area exactly `pi r^2`.
 
+A receiver holding fewer than `k` deposits takes its base radius from their extent,
+the `k`-th neighbour distance of that many deposits spread evenly over a square with
+their bounding diagonal; its gathers then run at the cap, which keeps a faint
+caustic's energy near where it landed instead of losing it. When no receiver reaches
+`k`, the radius for receivers without deposits is the median `k`-th distance over the
+whole map, or the extent rule applied to every deposit.
+
+Deposits are indexed per receiver and per normal direction: each receiver's
+deposits are split by the dominant axis and sign of their normal into up to six
+kd-trees, each with its bounding box and the widest angle of its normals from that
+axis. A gather visits only the trees of its receiver that can hold a normal within
+60 degrees of its own, nearest-aligned first, so a query on the unlit face of a thin
+receiver does not scan the lit face's deposits. Photon normals face the side a photon
+arrived on; a finish with `diffuse_back` also accepts deposits whose normal is
+opposed (measuring the tangent-plane offset against the deposit's own sheet), so a
+thin sheet lit from behind shows its back-lit diffusion. `double_illuminate` does not
+do this.
+
+### CSG receivers
+
+A subsurface receiver that is a CSG has no deposits of its own; its gathers accept
+deposits on its members and cap the support at eight times the median of the
+members' base radii. Its tangent-plane slab and boundary probe still use the median
+base radius over the whole map: on the leaf scene below the members' own radius is
+about five times smaller, and a slab that tight rejects enough deposits at subsurface
+sample points to darken 836 pixels by up to 0.9 and raise the error against the
+classic reference from 0.0035 to 0.0044, while the cap alone changes the image by at
+most 0.016.
+
 `k` grows with the batch count as `k = 48 (batches / 4)^(2/3)`, clamped to
 8..256, the kernel-density rate for a two-dimensional density: quality 1 uses
 48 neighbours, quality 4 uses 121 and quality 16 uses the cap of 256. The same
@@ -70,7 +101,12 @@ within the distance of the 32nd nearest segment of the same medium list, capped 
 four times the median such distance, and divides by the sphere volume; the
 clipped segment is integrated analytically. This volume estimator keeps the
 box kernel and fixed neighbour count of the earlier prototype, now over the
-single map.
+single map. Its noise does not fall with quality: on `tests/render/progressive_volume.pov`
+at 96 by 96, two seeds differ by an RMSE of 0.0053 at quality 0.25, 1 and 4 alike, while
+the render costs 216 G, 760 G and 2,855 G instructions. Scaling the neighbour count with
+the batch count at the three-dimensional kernel rate (`32 (batches / 4)^(4/7)`) moved
+that difference to 0.0065 at quality 0.25 and 0.0049 at quality 4, for 4% more work, so
+the count stays fixed; the remaining noise there comes from camera and media sampling.
 
 ## Light power and authoring
 
@@ -185,12 +221,17 @@ self-attenuation, refractive heat and arrays of small emitters.
 ## Memory and reproducibility
 
 The surface map stores 64 bytes per deposit (double position, float direction,
-normal and flux, a receiver index and the tree axis); media segments keep their
-full record. Shooter vectors hold one batch and are released after it is merged.
-Memory therefore grows linearly with quality and with deposits per sample, which
-depend on the scene (spectral bands, bounces, media steps); quality is capped at 64
-for that reason. The log line `Progressive photons:` reports batches, emitted
-samples, deposits, `k`, contributions, preparation time and the peak map size.
+normal and flux, a receiver index and the tree axis); a media segment takes about
+160 bytes with its bounds. Shooter vectors hold one batch and are released after it is
+merged. Memory grows linearly with quality and with deposits per sample, which depend
+on the scene (spectral bands, bounces, media steps). After the first batch the whole
+emission's storage is projected from its deposits and segments with a 20% margin; if
+it exceeds 40% of the memory available at that moment, at most 6 GB, the render stops
+with an error giving the projection, before more work is done. Otherwise the maps
+reserve that capacity once, so they neither grow by doubling nor shrink by copying,
+and the index is partitioned in place. The log line `Progressive photons:` reports
+batches, emitted samples, deposits, `k`, contributions, preparation time and the peak
+photon storage.
 
 Deposits are merged in shard order, so the maps, and the image, do not depend on
 the number of threads on the same build and platform. Because the maps are
@@ -214,10 +255,17 @@ stratification of the Sobol dimensions (every aligned block of 2^m values holds 
 value per stratum; pairwise star discrepancy against random points).
 `tests/source/progressive_surface.cpp` checks that the estimator reproduces a uniform
 irradiance within 1% on a plane and on a sphere, including at a support of about 0.3 sphere
-radii, and that close receivers keep separate supports. `tests/render/progressive_photons.sh`
+radii, and within 2% in a sparse region gathered at the cap; that close receivers keep
+separate supports; that a 20-photon caustic, alone or beside a dense receiver, gets a usable
+radius and a nonzero estimate; that the partitioned search, one- and two-sided, returns the
+same neighbours as a brute-force search; and that the target-cone and isotropic emission
+mixture integrates to the true solid angle over the sphere, inside a narrow cone and outside
+every cone. `tests/render/progressive_photons.sh`
 covers thread-count equality for every light type and media, dispersion, subsurface,
 thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
-independence of the logged budget and invalid quality; the emitter, direct-light,
+independence of the logged budget, the memory budget error and invalid quality;
+`tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
+requires its underside to match the lit top; the emitter, direct-light,
 volume, media-light, light-group and `.pov4` scripts run with the new estimator.
 
 ## Measurements
@@ -237,9 +285,9 @@ by 0.0009, and a classic 4,194,304-photon render differs from it by 0.0026.
 |---|---:|---:|---:|
 | classic 1,048,576 photons | 3.53 G | 0.0048 | 0.0048 |
 | earlier method 2, quality 1 | 3.13 G | (4 jittered samples) | 0.0073 |
-| quality 1 | 2.24 G | 0.0027 | 0.0042 |
+| quality 1 | 2.26 G | 0.0027 | 0.0042 |
 | quality 1, `+A0 +AM1 +R4` | 3.14 G | | 0.0016 |
-| quality 4 | 8.52 G | 0.0014 | 0.0039 |
+| quality 4 | 8.55 G | 0.0014 | 0.0039 |
 | earlier method 2, quality 4 | 10.94 G | (16 jittered samples) | 0.0036 |
 
 Water caustic, `tools/bench/photon-budget-water.pov`, 1000 by 667, no anti-aliasing.
@@ -252,8 +300,8 @@ water box, where the kernel spreads deposits that classic gathers keep sharp.
 | classic spacing 0.02 | 24.4 G | 0.0247 | 0.0351 |
 | classic spacing 0.01 | 41.1 G | 0.0090 | 0.0169 |
 | earlier method 2, quality 1 | 64.3 G | 0.0647 | 0.0705 |
-| quality 1 | 19.9 G | 0.0176 | 0.0285 |
-| quality 4 | 41.4 G | 0.0092 | 0.0216 |
+| quality 1 | 17.9 G | 0.0176 | 0.0285 |
+| quality 4 | 38.5 G | 0.0092 | 0.0216 |
 
 Emission and kernel ablations, RMSE against the same-camera reference:
 
@@ -268,26 +316,67 @@ Emission and kernel ablations, RMSE against the same-camera reference:
 
 Stratified emission is the largest single gain: on the water caustic, random emission
 at quality 4 (0.0377) is no better than stratified emission at quality 0.25 (0.0362),
-with sixteen times fewer photons. On the water scene a cap of 8 costs 13% more
-instructions than 4 (17.6 G) and 16 costs 42% more, for no change in error there.
+with sixteen times fewer photons. The cap changes no image here but costs work on the
+water scene: 16.2 G at a cap of 4, 17.9 G at 8 and 23.3 G at 16; on the leaf below it
+is 170 G, 169 G and 178 G.
 
 Leaf, `tests/render/subsurface_leaf.pov` with `photons { method 2 quality Q }` in
 place of its classic block, 320 by 240, both prisms, subsurface method 2 with 64
-samples. Camera work is the full render minus a one-pixel render of the same scene:
+samples. Here image error is dominated by subsurface and camera sampling, not photons:
+against a 9-sample classic 1,600,000-photon reference the RMSE is 0.028 for classic,
+quality 1 and quality 4 alike, 0.019 for the earlier prototype (four camera samples) and
+0.014 for quality 1 with four anti-aliasing samples. With the sun, fill and sky off, the
+lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%, +2.1%;
+the earlier prototype +0.6%, +1.0%, +0.2%). Before deposits were indexed by normal
+direction its quality 1 camera work was 244 G, as much as classic, because gathers on
+the unlit face scanned the lit face's deposits within the cap.
 
-| render | instructions | one-pixel run | camera increment |
-|---|---:|---:|---:|
-| classic 400,000 photons | 290 G | 37 G | 253 G |
-| earlier method 2, quality 1 | 642 G | 16 G | 627 G |
-| quality 1 | 256 G | 12 G | 244 G |
-| quality 4 | 448 G | 49 G | 399 G |
+### Where the work goes
 
-Here image error is dominated by subsurface and camera sampling, not photons: against a
-9-sample classic 1,600,000-photon reference the RMSE is 0.028 for classic, quality 1 and
-quality 4 alike, 0.019 for the earlier prototype (four camera samples) and 0.014 for
-quality 1 with four anti-aliasing samples (884 G). With the sun, fill and sky off, the
-lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%,
-+2.1%; the earlier prototype +0.6%, +1.0%, +0.2%).
+Each scene and configuration is rendered three times: the full image, one pixel, and one
+pixel with photons off (`+Q8`, the earlier prototype with `+PR`). Shooting is the one-pixel
+run minus the photons-off run (emission, deposits and map build); camera is the full run
+minus the one-pixel run. Instructions are exact; wall seconds are single runs at four
+threads on a shared machine, within about 0.3 s, and the start-up of each run is about
+0.8 s. "Per shot" and "per deposit" divide the shooting instructions by the photons shot
+and stored.
+
+Sphere, 96 by 64, photon-only:
+
+| render | photons off | shooting | camera | total | peak RSS | shot | deposits | per shot | per deposit |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| classic 1,048,576 | 0.14 G | 3.20 G / 0.1 s | 0.2 G / 0.2 s | 3.5 G / 1.4 s | 42 MB | 157,873 | 441,368 | 20,279 | 7,254 |
+| earlier method 2, quality 1 | 0.97 G | 1.90 G / 0.3 s | 0.3 G / 0.0 s | 3.1 G / 1.4 s | 38 MB | 327,680 | 132,029 | 5,788 | 14,366 |
+| quality 0.25 | 0.14 G | 0.48 G / 0.0 s | 0.0 G / 0.0 s | 0.7 G / 0.8 s | 31 MB | 65,536 | 26,390 | 7,347 | 18,246 |
+| quality 1 | 0.14 G | 2.02 G / 0.0 s | 0.1 G / 0.1 s | 2.3 G / 1.1 s | 41 MB | 262,144 | 105,536 | 7,714 | 19,160 |
+| quality 4 | 0.14 G | 8.36 G / 1.0 s | 0.1 G / 1.8 s | 8.6 G / 3.9 s | 62 MB | 1,048,576 | 422,196 | 7,971 | 19,797 |
+
+Water, 1000 by 667:
+
+| render | photons off | shooting | camera | total | peak RSS | shot | deposits | per shot | per deposit |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| classic spacing 0.02 | 0.29 G | 6.01 G / 0.8 s | 18.1 G / 1.6 s | 24.4 G / 3.2 s | 51 MB | 568,787 | 352,315 | 10,567 | 17,060 |
+| classic spacing 0.01 | 0.29 G | 23.88 G / 2.1 s | 17.0 G / 0.8 s | 41.1 G / 3.7 s | 93 MB | 2,272,472 | 1,409,299 | 10,510 | 16,946 |
+| earlier method 2, quality 1 | 1.48 G | 2.88 G / 0.1 s | 59.9 G / 4.2 s | 64.3 G / 5.5 s | 84 MB | 327,680 | 203,653 | 8,784 | 14,133 |
+| quality 0.25 | 0.29 G | 0.72 G / 0.1 s | 10.2 G / 0.9 s | 11.2 G / 1.8 s | 50 MB | 65,536 | 40,691 | 11,000 | 17,716 |
+| quality 1 | 0.29 G | 3.05 G / 0.6 s | 14.6 G / 1.6 s | 17.9 G / 3.0 s | 61 MB | 262,144 | 162,775 | 11,649 | 18,760 |
+| quality 4 | 0.29 G | 12.39 G / 2.1 s | 25.9 G / 1.0 s | 38.5 G / 3.9 s | 91 MB | 1,048,576 | 651,087 | 11,813 | 19,025 |
+
+Leaf, 320 by 240:
+
+| render | photons off | shooting | camera | total | peak RSS | shot | deposits | per shot | per deposit |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| classic 400,000 | 0.16 G | 37.2 G / 3.6 s | 252 G / 26.4 s | 290 G / 30.8 s | 225 MB | 658,246 | 1,803,296 | 56,513 | 20,629 |
+| earlier method 2, quality 1 | 1.23 G | 14.4 G / 2.0 s | 626 G / 63.4 s | 642 G / 66.6 s | 214 MB | 327,680 | 745,239 | 44,075 | 19,380 |
+| quality 0.25 | 0.16 G | 3.0 G / 0.3 s | 155 G / 15.6 s | 158 G / 16.7 s | 137 MB | 65,536 | 147,862 | 45,809 | 20,304 |
+| quality 1 | 0.16 G | 12.3 G / 1.2 s | 156 G / 14.4 s | 169 G / 16.4 s | 170 MB | 262,144 | 591,415 | 46,985 | 20,826 |
+| quality 4 | 0.16 G | 49.6 G / 6.0 s | 159 G / 14.7 s | 209 G / 21.5 s | 277 MB | 1,048,576 | 2,363,821 | 47,252 | 20,961 |
+
+Shooting costs 17,700 to 21,000 instructions per deposit at every quality on all three
+scenes, so it is set by the photons asked for. Camera work with the single map barely depends on
+quality (the leaf's 155 G to 159 G from quality 0.25 to 4), while the earlier prototype
+repeated it once per pass. The prototype's photons-off control still runs its progressive
+camera loop, hence its larger value.
 
 ## Limits
 
@@ -298,8 +387,12 @@ lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%,
 - Density is still truncated at object edges and at changes of medium; there is
   no boundary correction.
 - Volumetric photons from light-group sources are rejected.
-- Deposits per sample, and therefore memory, are not bounded by quality alone.
-- A query with no compatible photons nearby still visits the photons within the cap:
-  on a thin receiver lit on one side, gathers on the unlit side pay for the lit side's
-  photons. A per-side or per-orientation index would remove that cost.
+- Deposits per sample, and therefore memory, are not bounded by quality alone; a
+  quality whose projected storage exceeds the memory budget stops the render.
+- Receivers with fewer than `k` deposits, and sparse regions of any receiver, are
+  estimated at the capped support: their energy is kept but spread over it.
+- A CSG subsurface receiver's slab and boundary probe use the whole map's median base
+  radius (see CSG receivers).
+- Media noise does not fall with quality on the tested scene; only the cost grows.
+- `double_illuminate` surfaces do not gather photons that arrived on their far side.
 
