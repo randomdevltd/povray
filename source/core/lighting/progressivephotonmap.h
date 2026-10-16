@@ -96,7 +96,6 @@ class ProgressivePhotonMap final
         void Build(unsigned int k)
         {
             neighbours = k;
-            photons.shrink_to_fit();
             Partition();
             baseRadius.assign(receivers.size(), 0.0);
             std::vector<size_t> count(receivers.size(), 0), seen(receivers.size(), 0);
@@ -229,15 +228,23 @@ class ProgressivePhotonMap final
         /// Groups photons by receiver and normal cluster, each group a contiguous kd-tree.
         void Partition()
         {
-            std::vector<size_t> start(receivers.size() * kNormalClusters + 1, 0);
+            const size_t keys = receivers.size() * kNormalClusters;
+            auto key = [](const MappedPhoton& photon) { return photon.receiver * kNormalClusters + NormalCluster(photon); };
+            std::vector<size_t> start(keys + 1, 0);
             for (const auto& photon : photons)
-                ++start[photon.receiver * kNormalClusters + NormalCluster(photon) + 1];
-            for (size_t i = 1; i < start.size(); ++i)
+                ++start[key(photon) + 1];
+            for (size_t i = 1; i <= keys; ++i)
                 start[i] += start[i - 1];
-            std::vector<MappedPhoton> sorted(photons.size());
-            for (const auto& photon : photons)
-                sorted[start[photon.receiver * kNormalClusters + NormalCluster(photon)]++] = photon;
-            photons.swap(sorted);
+            std::vector<size_t> next(start.begin(), start.end() - 1);
+            for (size_t bucket = 0; bucket < keys; ++bucket)
+                while (next[bucket] < start[bucket + 1])
+                {
+                    const size_t target = key(photons[next[bucket]]);
+                    if (target == bucket)
+                        ++next[bucket];
+                    else
+                        std::swap(photons[next[bucket]], photons[next[target]++]);
+                }
             partitions.clear();
             receiverPartitions.assign(receivers.size(), {0, 0});
             for (size_t begin = 0, end; begin < photons.size(); begin = end)

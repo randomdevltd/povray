@@ -13,7 +13,9 @@ struct ProgressivePhotonBudget final
 {
     static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
-    static constexpr double maxQuality = 64.0;
+    /// Quality 16384 emits 2^32 samples per prepared set, the length of the emission sequence; memory is bounded separately.
+    static constexpr double maxQuality = 16384.0;
+    static constexpr double memoryShare = 0.4, memoryCeiling = 6.0 * 1024 * 1024 * 1024, memoryMargin = 1.2;
     static constexpr unsigned int minNeighbours = 8, maxNeighbours = 256;
     static constexpr double baseNeighbours = 48.0, capScale = 8.0;
     unsigned int batches, neighbours;
@@ -21,7 +23,7 @@ struct ProgressivePhotonBudget final
     explicit ProgressivePhotonBudget(double quality, double k0 = baseNeighbours)
     {
         if (!std::isfinite(quality) || quality <= 0.0 || quality > maxQuality)
-            throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 64.");
+            throw std::invalid_argument("Photon quality must be finite, greater than zero and at most 16384.");
         batches = static_cast<unsigned int>(std::ceil(4.0 * quality));
         neighbours = Neighbours(batches, k0);
     }

@@ -70,7 +70,7 @@ od -An -v -t u1 progressive_photons_power1.px progressive_photons_power2.px | aw
 "$POVRAY" +i"$SCENE" +w4000 +h2667 +sc2000 +ec2000 +sr1333 +er1333 -a -d -p -v -f Declare=PhotonQuality=0.25 +wt2 \
     > progressive_photons_large.log 2>&1 || { cat progressive_photons_large.log; exit 1; }
 [ "$(budget one)" = "$(budget large)" ] || { echo "photon budget depends on the image size" >&2; budget one; budget large; exit 1; }
-for quality in 0 -1 64.5; do
+for quality in 0 -1 16384.5; do
     if "$POVRAY" +i"$SCENE" +w1 +h1 -a -d -p -v -f Declare=PhotonQuality="$quality" \
         > progressive_photons_invalid.log 2>&1; then
         echo "invalid photon quality accepted: $quality" >&2
@@ -78,5 +78,10 @@ for quality in 0 -1 64.5; do
     fi
     grep -q 'quality must be' progressive_photons_invalid.log
 done
+if "$POVRAY" +i"$SCENE" +w1 +h1 -a -d -p -v -f Declare=PhotonQuality=16384 +wt2 > progressive_photons_memory.log 2>&1; then
+    echo "photon quality beyond the memory budget accepted" >&2
+    exit 1
+fi
+tr '\n' ' ' < progressive_photons_memory.log | tr -s ' ' | grep -q 'more than the [0-9.]* GB allowed'
 rm -f progressive_photons_*.ppm progressive_photons_*.px progressive_photons_*.pov-state progressive_photons_*.log
-echo 'progressive_photons: deterministic threads, lamps and features, anti-aliasing, resume, classic compatibility, emission power, size-independent budget and invalid quality passed'
+echo 'progressive_photons: deterministic threads, lamps and features, anti-aliasing, resume, classic compatibility, emission power, size-independent budget, memory budget and invalid quality passed'

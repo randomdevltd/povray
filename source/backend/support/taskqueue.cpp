@@ -40,6 +40,8 @@
 // C++ standard header files
 
 // Boost header files
+#include <new>
+
 #include <boost/bind.hpp>
 
 // POV-Ray header files (base module)
@@ -159,6 +161,14 @@ int TaskQueue::FailureCode(int defval)
         return failed;
 }
 
+void TaskQueue::Fail(int code)
+{
+    std::lock_guard<std::recursive_mutex> lock(queueMutex);
+
+    if(failed == kNoError)
+        failed = code;
+}
+
 ThreadData *TaskQueue::AppendTask(Task *task)
 {
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
@@ -263,7 +273,7 @@ bool TaskQueue::Process()
             }
             case TaskEntry::kFunction:
             {
-                try { queuedTasks.front().GetFunction()(*this); } catch(pov_base::Exception&) { }
+                try { queuedTasks.front().GetFunction()(*this); } catch(pov_base::Exception&) { } catch(std::bad_alloc&) { failed = kOutOfMemoryErr; }
                 queuedTasks.pop();
                 break;
             }
