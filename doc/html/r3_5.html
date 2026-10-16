@@ -210,6 +210,9 @@
   <td><div class="divh4"><a title="3.5.1.5.13" href="#r3_5_1_5_13">Tag Filter Expressions</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.5.1.5.14" href="#r3_5_1_5_14">Tagged Selections</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.5.1.6" href="#r3_5_1_6">Portal</a></div></td>
 </tr>
 <tr>
@@ -4186,6 +4189,47 @@ camera { location -5*z look_at 0 filter_tags { "room-*" &amp; !"draft" } }
 light and photons from something a view excludes never reach it, and rays in that view never test it. Selections that
 resolve to the same objects and lights share one preparation, however they were written. A selection costs memory and
 preparation time in proportion to what it contains.</p>
+</div>
+
+<a name="r3_5_1_5_14"></a>
+<div class="content-level-h5" contains="Tagged Selections" id="r3_5_1_5_14">
+<h5>3.5.1.5.14 Tagged Selections</h5>
+<pre>
+tagged { TAG_EXPRESSION }
+</pre>
+<p>A <code>filter_tags</code> is a property of a camera, a portal, <code>global_settings</code> or the command line: it decides what
+a view shows when the scene is rendered. <code>tagged</code> is a different thing, an object: it stands for the objects placed so
+far in the scene that a <a href="r3_5.html#r3_5_1_5_13">tag expression</a> selects, and can be used wherever an object can, with
+<code>#declare</code>, in <code>object { }</code>, in a CSG, with transforms, or as a camera's
+<a href="r3_4.html#camera_bounds_framing"><code>look_at</code></a> target.</p>
+<pre>
+#declare Whale = union { sphere { 0, 2 } cone { -2*x, 1, -5*x, 0 } tags { "whale" } }
+object { Whale translate 20*z }
+camera { location &lt;0, 5, -40&gt; look_at tagged { "whale" } }
+object { tagged { "whale" } translate 30*x }   // a second whale; the first stays
+</pre>
+<p>The selection is taken when the statement holding it is parsed, from the scene as it is then: the objects placed so far,
+including those placed by macros, loops and 4.0 programs, in order. Objects written later are not in it, so a selection never
+includes itself, and a <code>look_at</code> target must be written before its camera. A declaration that is not placed is not in
+the scene and cannot be selected. The expression selects as a filter would, at every level, so it may take only some children of
+a union, and a difference keeps its selected cutters. <code>tagged</code> copies what its filter selects, light sources and
+portals included, with all their settings. Something selected inside a <code>light_group</code> is copied as just that object, lit
+by the lights where its copy is placed: the global lights at the top level, or another group's lights inside that group; a light
+taken out alone is an ordinary light there. A <code>light_group</code> selected itself, by its own tags or by an expression that
+takes untagged objects too, is copied whole with its lights, which light its members as in the original, its
+<code>global_lights</code> setting included. A copied portal makes its own far mouth when placed; since transforms move only a
+portal's body, a moved copy leads where the original does. The far mouths that placed portals make are not selected themselves:
+each comes with its near mouth. Objects the command-line
+<a href="r3_2.html#r3_2_5_5">Filter_Tags</a> removed are not in the scene; camera, portal and <code>global_settings</code>
+filters do not affect a selection, so a camera can frame an object its own filter hides.</p>
+<p>A selection used only as a <code>look_at</code> target or in a declaration adds nothing to the scene. Placing it adds copies of
+the selected objects, as placed, under any transforms given; the originals stay where they are. The copies keep the tags of what
+they copy, including those of a union around them, so filters treat a copy as they treat its original; add tags with
+<code>object { tagged { ... } tags { ... } }</code>. A copy shares its mesh data as <code>object { }</code> copies do, and a
+generated mesh that has not yet been built is built once for the original and its copies. A selection of nothing is an empty
+union, with a warning; placing it adds nothing. Unbounded objects such as planes are copied like any other.</p>
+<p><code>tagged</code> is matched by its text, only when a <code>{</code> follows it in a <code>#version 4.0</code> or
+<code>.pov4</code> scene, so it remains free as an identifier.</p>
 </div>
 
 <a name="r3_5_1_6"></a>

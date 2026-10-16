@@ -26,6 +26,26 @@ camera { location -5*z look_at 0 filter_tags { "room-*" & !"draft" } }
 
 Thus `"a" | "b" & !"c"` means `"a" | ("b" & (!"c"))`. `any | none` selects everything, and `any & none` selects nothing. Omitting a filter selects everything when no applicable default exists. An empty expression is an error; use an explicit expression for an empty selection.
 
+## Tagged selections
+
+`filter_tags` and `tagged` share the expression grammar and do different jobs:
+
+- `filter_tags { EXPRESSION }` is a property of a camera, a portal, `global_settings` or the command line. It decides what a view shows when the scene renders, and it sees every object, wherever it was written.
+- `tagged { EXPRESSION }` is an object. It stands for the objects already placed in the scene that the expression selects, and can be declared, framed with `look_at`, placed with `object { }`, transformed and combined in CSG.
+
+```pov
+camera { location -5*z look_at 0 filter_tags { "room-a" & !"draft" } }   // what this view shows
+sphere { 0, 1 tags { "whale" } }
+camera { location -5*z look_at tagged { "whale" } }                     // what this camera frames
+object { tagged { "whale" } translate 3*x }                             // a copy beside the original
+```
+
+A selection is a snapshot taken when its statement is parsed: the objects placed so far, in order, including those placed by macros, loops and `.pov4` programs. Objects written later are not in it, so it can never contain itself, and a `look_at` target must come before its camera. A declaration that is never placed is not in the scene. The command-line filter has already removed what it rejects; camera, portal and global filters do not affect a selection, so a camera can frame an object it does not show. `tagged` copies what its filter selects, lights and portals included, with all their settings. Something selected inside a `light_group` is copied as just that object, lit by the lights where its copy is placed; a `light_group` selected itself, by its own tags or by an expression that takes untagged objects too, is copied whole, and its lights light its copied members as they light the originals. A copied portal makes its own far mouth when placed, and the far mouths that placed portals make are not selected themselves.
+
+Using a selection as a `look_at` target or in a declaration adds nothing to the scene. Placing it adds copies of the selected objects as placed; the originals stay. Copies keep the tags of what they copy, including those of a split union around them, so filters treat them as they treat the originals. They share mesh data as `object { }` copies do, and a deferred mesh among them is built once for the original and its copies; framing a selection builds its deferred meshes while parsing, to measure them. A selection of nothing is an empty union, with a warning; placing it adds nothing, and framing it is an error.
+
+`tagged` is matched by its text: it is the selector only when `{` follows it in a 4.0 scene, and remains an ordinary identifier elsewhere.
+
 ## Cameras and defaults
 
 A camera uses its own `filter_tags`, then the final `global_settings { filter_tags { ... } }`, then all objects. A global default declared after the camera still applies. The main camera remains the last accepted scene camera. When the command-line filter rejects every scene camera, rendering uses the built-in camera and reports that fallback.
@@ -125,7 +145,7 @@ Saved radiosity caches use `.set-<stable membership hash>` sidecars when filters
 
 The current Tree-sitter grammar covers Boolean tag expressions only and adds no bulk-scene syntax tree. Its generated C parser and runtime form the foundation for subsequent full SDL parsing; this change does not replace the SDL parser.
 
-The tag keywords require `#version 4.0`; earlier scene versions retain these names as ordinary identifiers. The `Filter_Tags` command-line and INI option is available independently of the SDL version. The Windows build now deliberately requires Visual Studio 2019 16.8 or later with v142 and a Windows 10 SDK for the C11 runtime; see [Windows build requirements](../windows/README.md#compilers).
+The tag keywords require `#version 4.0`; earlier scene versions retain these names as ordinary identifiers. `tagged` is not reserved at any version: a 4.0 scene treats it as the selector only before `{`. The `Filter_Tags` command-line and INI option is available independently of the SDL version. The Windows build now deliberately requires Visual Studio 2019 16.8 or later with v142 and a Windows 10 SDK for the C11 runtime; see [Windows build requirements](../windows/README.md#compilers).
 
 Full SDL work must benchmark opaque or streamed bulk ranges, including concrete mesh construction and semantic checks. Generated meshes already wait for the scene sets; other entities are still constructed before their trailing tags are read. Full SDL parsing should parse the source with bounded bulk syntax, then skip excluded entity construction once tags are known. Macro execution should construct concrete geometry directly, with the master filter remaining outside SDL and macro logic.
 

@@ -344,6 +344,50 @@ New Features
     optional moving ray origins.
   - The render statistics gain a count of supersampled pixels, the progressive
     rendering setting, and skein counters.
+  - `tagged { EXPRESSION }` in 4.0 scenes is an object value: copies of the
+    objects already placed in the scene that a tag expression selects, as a
+    filter would select them. The selection is taken when its statement is
+    parsed, so objects written later are not in it and it cannot include
+    itself. It can be declared, framed with `look_at`, placed with `object {
+    }`, transformed and used in CSG; placing it adds copies beside the
+    originals, which keep their tags. `tagged` copies what its filter selects,
+    lights and portals included. Something selected inside a light_group is
+    copied as just that object, lit by the lights where its copy is placed; a
+    light_group selected itself, by its own tags or by an expression that takes
+    untagged objects too, is copied whole, and its lights light its members as
+    in the original. A copied portal makes its own far mouth when placed.
+    Command-line
+    `Filter_Tags` has already removed what it rejects; camera, portal and
+    global filters do not affect a selection. An empty selection is an empty
+    union, with a warning. `tagged` is matched by its text only before `{`,
+    so it stays free as an identifier, and 4.0 programs now accept the full
+    tag expression grammar in `filter_tags` and `tagged` blocks, with string
+    values, names and calls such as `concat(...)` as operands.
+  - Camera `look_at` accepts an object identifier, or a `tagged { EXPRESSION
+    }` selection in 4.0 scenes, followed by an optional frame multiplier, and
+    frames that target's transformed bounding box: after parsing, the camera
+    turns toward the centre of the bounds and narrows its field until the
+    box's projected extent is the multiplier times half the image along the
+    limiting axis. The multiplier defaults to 0.9 (a five per cent border); 1
+    touches the edges, 0.8 leaves a wider border and values above 1 crop into
+    loose bounds. Camera transforms apply after the aim, as for a point
+    `look_at`. The location stays where it is, except that an orthographic
+    camera steps back along its view line when the box reaches behind it. The
+    field never widens, except for orthographic cameras; a target that does not
+    fit is aimed at without a zoom, with a warning. An identifier frames the
+    declared object's own bounds, not a moved copy of it; a tagged selection
+    frames objects as placed before the camera, skips unbounded objects with a
+    warning, and is an error when it selects nothing. A light frames as its
+    location, or the area of an area_light; a target with no size is aimed at
+    without a zoom or a warning. A user_defined camera,
+    including the Mercator and Miller cameras of projections.inc, frames by
+    narrowing the range of its x and y inputs, found by sweeping its rays
+    against the bounds; a 360 degree projection wraps across its seam. A
+    declared camera takes a target as `camera { Eye look_at Subject }`. Mesh
+    cameras cannot frame. Cameras without a target render exactly as before.
+    Point targets keep their behaviour; no new reserved words are introduced;
+    the multiplier follows the target as a plain number, like
+    `look_at Subject, 0.8`.
 
 Performance Improvements
 ------------------------

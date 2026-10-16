@@ -20,6 +20,41 @@ Both languages have Tree-sitter grammars:
 
 Generated C sources are committed; renderer builds do not run the generator.
 
+## Bounds framing
+
+`camera { location <4, 3, -8> look_at Subject }` frames the transformed bounds of
+the object value `Subject` (bound with `let`, or a classic `#declare`) as declared:
+a copy placed elsewhere with `object { Subject translate ... }` is not what gets
+framed. `look_at tagged { "subject" }` frames every object placed before the camera
+that the tag expression selects, where it was placed. The
+camera keeps its location, turns to the centre of the bounds and narrows its field
+until they fill a fraction of the image: 0.9 by default, or the frame multiplier
+written after the target, as in `look_at Subject, 0.8` or
+`look_at tagged { "subject" }, 1.1`. A vector `look_at` keeps its point
+meaning. A `user_defined` camera, such as `MercatorCamera(...)` from
+`projections.inc`, frames by narrowing the range of its `x` and `y` inputs, and a
+declared camera takes a target as `camera { Eye look_at Subject }`. See
+the manual's [Bounds framing](html/r3_4.html#camera_bounds_framing).
+
+## Tagged selections
+
+`tagged { EXPRESSION }` is an object value: copies of the objects placed so far that
+the [tag expression](render-tags.md#tagged-selections) selects. It is taken when the
+statement holding it runs, so later objects are not in it:
+
+```pov
+for (I = 0 to 2) { sphere { x * I, 0.3 tags { "row" } } }
+let Row = tagged { "row" };                 // the three spheres placed above
+camera { location <1, 1, -6> look_at Row }
+object { Row translate y }                  // copies; the originals stay
+```
+
+`filter_tags`, `front_filter_tags`, `back_filter_tags` and `tagged` blocks take the full
+tag expression grammar (`&`, `|`, `!`, `any`, `none`, wildcards and parentheses). Its
+operators are kept as written; its operands are string values, written as literals, names,
+calls such as `concat(...)`, members or indexes, and are evaluated like any other value. `tagged` is a keyword only when a `{` follows it, so it remains free
+as a name: `let tagged = 1;` still works.
+
 ## Execution model
 
 A 4.0 file is a program that runs **once** to construct the scene. Running it emits *items* into an
