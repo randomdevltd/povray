@@ -1476,7 +1476,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       double(stats[Subsurface_Photon_Boundaries_Computed]), double(stats[Subsurface_Photon_Boundaries_Reused]), mean, sqrt(variance));
     }
 
-    if (stats[Subsurface_Cloud_Attempts] > 0)
+    if ((stats[Subsurface_Cloud_Attempts] > 0) || (stats[Subsurface_Cloud_Estimated] > 0))
     {
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
@@ -1485,13 +1485,13 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       "subsurface light; discs bending %.0f, with points unfolded across creases %.0f; near field drawn at %.0f, with %.0f "
                       "shadow rays; lit as the exit point with no points near %.0f, with none facing in the disc %.0f; gathers with larger "
                       "cells %.0f; crossings dropped as inside on both sides %.0f, outside on both %.0f, closer than the probes %.0f, "
-                      "on open sheets %.0f.",
+                      "on open sheets %.0f; %.0f shading points below the subsurface bailout lit as their exit point, without the cloud.",
                       attempts, served, double(stats[Subsurface_Cloud_Pretrace]), double(stats[Subsurface_Cloud_Unserved]),
                       double(stats[Subsurface_Cloud_Bent]), double(stats[Subsurface_Cloud_Hidden]), double(stats[Subsurface_Cloud_Near_Field]),
                       double(stats[Subsurface_Cloud_Near_Rays]), double(stats[Subsurface_Cloud_Alone]), double(stats[Subsurface_Cloud_Empty_Disc]),
                       double(stats[Subsurface_Cloud_Lifted]), double(stats[Subsurface_Cloud_Dropped_Inside]),
                       double(stats[Subsurface_Cloud_Dropped_Outside]), double(stats[Subsurface_Cloud_Dropped_Thin]),
-                      double(stats[Subsurface_Cloud_Dropped_Sheet]));
+                      double(stats[Subsurface_Cloud_Dropped_Sheet]), double(stats[Subsurface_Cloud_Estimated]));
         if (viewData.subsurfaceCache)
         {
             SubsurfaceCloudStatistics cloud = viewData.subsurfaceCache->Statistics();

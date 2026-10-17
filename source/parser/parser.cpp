@@ -7997,6 +7997,14 @@ void Parser::Parse_Global_Settings()
                         if (!(sceneData->subsurfaceMemory >= 1.0))
                             Error("Subsurface memory must be at least 1 (MB).");
                     }
+                    else if (CurrentTokenText() == "bailout")
+                    {
+                        sceneData->subsurfaceBailout = Parse_Float();
+                        if (!(sceneData->subsurfaceBailout >= 0.0))
+                            Error("Subsurface bailout must be 0 or more.");
+                        if (sceneData->EffectiveLanguageVersion() < 400)
+                            Warning("Subsurface bailout applies to scenes of language version 4.0 only and is ignored here.");
+                    }
                     else
                     {
                         UNGET

@@ -3356,6 +3356,7 @@
         "atmospheric_ior",
         "auto",
         "autostop",
+        "bailout",
         "brightness",
         "brilliance",
         "charset",
@@ -3449,6 +3450,7 @@
           "subsurface"
         ],
         "subsurface": [
+          "bailout",
           "error_bound",
           "memory",
           "method",

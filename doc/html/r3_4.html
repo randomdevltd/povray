@@ -491,6 +491,9 @@ smaller than that could not be visible in a 24 bit image. Generally this
 setting is perfectly adequate and should be left alone. Setting
 <code>adc_bailout</code> to 0 will disable ADC, relying completely on
 <code>max_trace_level</code> to set an upper limit on the number of rays spawned.</p>
+<p>In scenes of language version 4.0, subsurface method 2 lights a hit whose weight is below a multiple of
+<code>adc_bailout</code> (8 by default) from its exit point alone instead of from its point cloud; see the
+<code>bailout</code> setting under <a href="r3_6.html#r3_6_1_3_3_4">Subsurface Light Transport</a>.</p>
 <p>
 See the section <a href="r3_4.html#r3_4_1_7">Max_Trace_Level</a> for details on how ADC and <code>max_trace_level</code> interact.</p>
 
