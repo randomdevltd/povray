@@ -68,6 +68,11 @@ built-in call; bare value words parse as identifiers).\n
     `\n## Syntax\n` +
     group('Statements', grammar.groups.statements) +
     group('Expressions', grammar.groups.expressions) +
+    group('Expression contexts', ['_expression', '_item_expression', '_component'],
+        'Every item list (block and function bodies, the top level, arrays) takes `_item_expression`, which has ' +
+        'no `<` operator, so a `<` after an item starts a ' +
+        'vector. Vector components, colour values and spreads take `_component`, which has no comparison, ' +
+        'so `>` always closes a vector. Each repeats the operator rules above over its own context.') +
     group('Other named rules', otherNames) +
     group('Lexical rules', lexicalNames, 'Hidden rules (leading underscore) are folded into their parents.') +
     `\n## Block keywords\n

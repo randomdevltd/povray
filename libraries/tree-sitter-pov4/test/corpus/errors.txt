@@ -25,3 +25,10 @@ Index needs no space before the bracket
 ==================
 let A = B [1];
 ---
+
+==================
+Comparisons inside a vector need parentheses
+:error
+==================
+let V = <1, 2 > 1, 3>;
+---

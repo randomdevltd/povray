@@ -145,3 +145,80 @@ let D = { A: 1, "b c": 2, ...E };
         value: (number))
       (spread
         (identifier)))))
+
+==================
+Comparisons in every expression position
+==================
+fn F(A, B) { if (A) { return A > B; } A >= B }
+let V = A == B && F(A < B, !C) || D;
+let W = A > 1 ? 5 : X != 2;
+let H = (H < 0 ? H + 360 : H);
+let P = (L) => L <= 0;
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters
+      (parameter
+        (identifier))
+      (parameter
+        (identifier)))
+    (body
+      (if_statement
+        (parenthesized_expression
+          (identifier))
+        (body
+          (return_statement
+            (comparison_expression
+              (identifier)
+              (identifier)))))
+      (comparison_expression
+        (identifier)
+        (identifier))))
+  (let_statement
+    (identifier)
+    (comparison_expression
+      (comparison_expression
+        (comparison_expression
+          (identifier)
+          (identifier))
+        (call_expression
+          (identifier)
+          (arguments
+            (comparison_expression
+              (identifier)
+              (identifier))
+            (unary_expression
+              (identifier)))))
+      (identifier)))
+  (let_statement
+    (identifier)
+    (conditional_expression
+      (comparison_expression
+        (identifier)
+        (number))
+      (number)
+      (comparison_expression
+        (identifier)
+        (number))))
+  (let_statement
+    (identifier)
+    (parenthesized_expression
+      (conditional_expression
+        (comparison_expression
+          (identifier)
+          (number))
+        (binary_expression
+          (identifier)
+          (number))
+        (identifier))))
+  (let_statement
+    (identifier)
+    (lambda
+      (parameters
+        (parameter
+          (identifier)))
+      (comparison_expression
+        (identifier)
+        (number)))))

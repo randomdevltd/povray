@@ -39,6 +39,10 @@
   [
    null,
    null
+  ],
+  [
+   null,
+   null
   ]
  ],
  "inline": [],
@@ -597,6 +601,7 @@
   "expressions": [
    "conditional_expression",
    "binary_expression",
+   "comparison_expression",
    "unary_expression",
    "lambda",
    "colour_expression",
@@ -686,7 +691,7 @@
     },
     {
      "t": "sym",
-     "name": "_expression"
+     "name": "_item_expression"
     },
     {
      "t": "str",
@@ -1387,6 +1392,10 @@
     },
     {
      "t": "sym",
+     "name": "comparison_expression"
+    },
+    {
+     "t": "sym",
      "name": "unary_expression"
     },
     {
@@ -1404,93 +1413,6 @@
     {
      "t": "sym",
      "name": "array"
-    }
-   ]
-  },
-  "_comparable": {
-   "hidden": true,
-   "productions": [
-    {
-     "t": "sym",
-     "name": "_expression"
-    },
-    {
-     "t": "sym",
-     "name": "comparison_expression"
-    }
-   ]
-  },
-  "_postfix": {
-   "hidden": true,
-   "productions": [
-    {
-     "t": "sym",
-     "name": "call_expression"
-    },
-    {
-     "t": "sym",
-     "name": "index_expression"
-    },
-    {
-     "t": "sym",
-     "name": "member_expression"
-    },
-    {
-     "t": "sym",
-     "name": "_primary"
-    }
-   ]
-  },
-  "_primary": {
-   "hidden": true,
-   "productions": [
-    {
-     "t": "sym",
-     "name": "number"
-    },
-    {
-     "t": "sym",
-     "name": "string"
-    },
-    {
-     "t": "sym",
-     "name": "identifier"
-    },
-    {
-     "t": "sym",
-     "name": "builtin"
-    },
-    {
-     "t": "sym",
-     "name": "true"
-    },
-    {
-     "t": "sym",
-     "name": "false"
-    },
-    {
-     "t": "sym",
-     "name": "null"
-    },
-    {
-     "t": "sym",
-     "name": "vector"
-    },
-    {
-     "t": "sym",
-     "name": "dictionary"
-    },
-    {
-     "t": "sym",
-     "name": "parenthesized_expression"
-    },
-    {
-     "t": "sym",
-     "name": "block"
-    },
-    {
-     "t": "sym",
-     "name": "function_block"
     }
    ]
   },
@@ -1680,282 +1602,6 @@
     }
    ]
   },
-  "comparison_expression": {
-   "productions": [
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 3,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": "||"
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 4,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": "&&"
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 5,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": "=="
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 5,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": "!="
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 6,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": "<"
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 6,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": "<="
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 6,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": ">"
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    },
-    {
-     "t": "prec",
-     "kind": "left",
-     "v": 6,
-     "of": {
-      "t": "seq",
-      "of": [
-       {
-        "t": "field",
-        "name": "left",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       },
-       {
-        "t": "field",
-        "name": "operator",
-        "of": {
-         "t": "str",
-         "v": ">="
-        }
-       },
-       {
-        "t": "field",
-        "name": "right",
-        "of": {
-         "t": "sym",
-         "name": "_comparable"
-        }
-       }
-      ]
-     }
-    }
-   ]
-  },
   "unary_expression": {
    "productions": [
     {
@@ -2050,6 +1696,1273 @@
     }
    ]
   },
+  "comparison_expression": {
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 3,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "||"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 4,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "&&"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 5,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "=="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 5,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "!="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "<"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "<="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": ">"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": ">="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_expression"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_item_expression": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_conditional_expression_item"
+     },
+     "name": "conditional_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_binary_expression_item"
+     },
+     "name": "binary_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_comparison_expression_item"
+     },
+     "name": "comparison_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_unary_expression_item"
+     },
+     "name": "unary_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_lambda_item"
+     },
+     "name": "lambda"
+    },
+    {
+     "t": "sym",
+     "name": "colour_expression"
+    },
+    {
+     "t": "sym",
+     "name": "_postfix"
+    },
+    {
+     "t": "sym",
+     "name": "array"
+    }
+   ]
+  },
+  "_conditional_expression_item": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "right",
+     "v": 2,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "condition",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "str",
+        "v": "?"
+       },
+       {
+        "t": "field",
+        "name": "consequence",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "str",
+        "v": ":"
+       },
+       {
+        "t": "field",
+        "name": "alternative",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_binary_expression_item": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 7,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "+"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 7,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "-"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 8,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "*"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 8,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "/"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_unary_expression_item": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "v": 9,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "choice",
+         "of": [
+          {
+           "t": "str",
+           "v": "-"
+          },
+          {
+           "t": "str",
+           "v": "+"
+          },
+          {
+           "t": "str",
+           "v": "!"
+          }
+         ]
+        }
+       },
+       {
+        "t": "field",
+        "name": "operand",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_lambda_item": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "right",
+     "v": -1,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "parameters",
+        "of": {
+         "t": "choice",
+         "of": [
+          {
+           "t": "sym",
+           "name": "parameters"
+          },
+          {
+           "t": "sym",
+           "name": "identifier"
+          }
+         ]
+        }
+       },
+       {
+        "t": "str",
+        "v": "=>"
+       },
+       {
+        "t": "field",
+        "name": "body",
+        "of": {
+         "t": "choice",
+         "of": [
+          {
+           "t": "sym",
+           "name": "body"
+          },
+          {
+           "t": "sym",
+           "name": "_item_expression"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_comparison_expression_item": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 3,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "||"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 4,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "&&"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 5,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "=="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 5,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "!="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "<="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": ">"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 6,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": ">="
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_item_expression"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_component": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_conditional_expression_component"
+     },
+     "name": "conditional_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_binary_expression_component"
+     },
+     "name": "binary_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_unary_expression_component"
+     },
+     "name": "unary_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_lambda_component"
+     },
+     "name": "lambda"
+    },
+    {
+     "t": "sym",
+     "name": "colour_expression"
+    },
+    {
+     "t": "sym",
+     "name": "_postfix"
+    },
+    {
+     "t": "sym",
+     "name": "array"
+    }
+   ]
+  },
+  "_conditional_expression_component": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "right",
+     "v": 2,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "condition",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       },
+       {
+        "t": "str",
+        "v": "?"
+       },
+       {
+        "t": "field",
+        "name": "consequence",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       },
+       {
+        "t": "str",
+        "v": ":"
+       },
+       {
+        "t": "field",
+        "name": "alternative",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_binary_expression_component": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 7,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "+"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 7,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "-"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 8,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "*"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 8,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "/"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_unary_expression_component": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "v": 9,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "choice",
+         "of": [
+          {
+           "t": "str",
+           "v": "-"
+          },
+          {
+           "t": "str",
+           "v": "+"
+          },
+          {
+           "t": "str",
+           "v": "!"
+          }
+         ]
+        }
+       },
+       {
+        "t": "field",
+        "name": "operand",
+        "of": {
+         "t": "sym",
+         "name": "_component"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_lambda_component": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "right",
+     "v": -1,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "parameters",
+        "of": {
+         "t": "choice",
+         "of": [
+          {
+           "t": "sym",
+           "name": "parameters"
+          },
+          {
+           "t": "sym",
+           "name": "identifier"
+          }
+         ]
+        }
+       },
+       {
+        "t": "str",
+        "v": "=>"
+       },
+       {
+        "t": "field",
+        "name": "body",
+        "of": {
+         "t": "choice",
+         "of": [
+          {
+           "t": "sym",
+           "name": "body"
+          },
+          {
+           "t": "sym",
+           "name": "_component"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_postfix": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "sym",
+     "name": "call_expression"
+    },
+    {
+     "t": "sym",
+     "name": "index_expression"
+    },
+    {
+     "t": "sym",
+     "name": "member_expression"
+    },
+    {
+     "t": "sym",
+     "name": "_primary"
+    }
+   ]
+  },
+  "_primary": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "sym",
+     "name": "number"
+    },
+    {
+     "t": "sym",
+     "name": "string"
+    },
+    {
+     "t": "sym",
+     "name": "identifier"
+    },
+    {
+     "t": "sym",
+     "name": "builtin"
+    },
+    {
+     "t": "sym",
+     "name": "true"
+    },
+    {
+     "t": "sym",
+     "name": "false"
+    },
+    {
+     "t": "sym",
+     "name": "null"
+    },
+    {
+     "t": "sym",
+     "name": "vector"
+    },
+    {
+     "t": "sym",
+     "name": "dictionary"
+    },
+    {
+     "t": "sym",
+     "name": "parenthesized_expression"
+    },
+    {
+     "t": "sym",
+     "name": "block"
+    },
+    {
+     "t": "sym",
+     "name": "function_block"
+    }
+   ]
+  },
   "colour_expression": {
    "productions": [
     {
@@ -2078,7 +2991,7 @@
             "name": "value",
             "of": {
              "t": "sym",
-             "name": "_expression"
+             "name": "_component"
             }
            }
           ]
@@ -2102,7 +3015,7 @@
               "name": "value",
               "of": {
                "t": "sym",
-               "name": "_expression"
+               "name": "_component"
               }
              },
              {
@@ -2152,7 +3065,7 @@
         "name": "value",
         "of": {
          "t": "sym",
-         "name": "_expression"
+         "name": "_component"
         }
        }
       ]
@@ -2371,7 +3284,7 @@
       },
       {
        "t": "sym",
-       "name": "_expression"
+       "name": "_component"
       },
       {
        "t": "str",
@@ -2382,7 +3295,7 @@
        "of": [
         {
          "t": "sym",
-         "name": "_expression"
+         "name": "_component"
         },
         {
          "t": "repeat",
@@ -2395,7 +3308,7 @@
            },
            {
             "t": "sym",
-            "name": "_expression"
+            "name": "_component"
            }
           ]
          }
@@ -2594,7 +3507,7 @@
       },
       {
        "t": "sym",
-       "name": "_expression"
+       "name": "_component"
       }
      ]
     }
@@ -2611,7 +3524,7 @@
       },
       {
        "t": "sym",
-       "name": "_comparable"
+       "name": "_expression"
       },
       {
        "t": "str",
@@ -2740,7 +3653,7 @@
          },
          {
           "t": "sym",
-          "name": "_comparable"
+          "name": "_expression"
          },
          {
           "t": "str",

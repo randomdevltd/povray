@@ -48,4 +48,5 @@ accepts ok_vector_builtins
 accepts ok_negate
 accepts ok_string_compare
 accepts ok_debug_statement "pov4 debug statement"
+accepts ok_bare_comparisons "pov4 bare comparisons"
 rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov

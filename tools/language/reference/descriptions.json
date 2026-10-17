@@ -1455,9 +1455,9 @@
    "from": "doc/html/r3_3.html"
   },
   "debug": {
-   "rank": 1019,
-   "code": "debug(\"flushed\\n\");",
-   "from": "tests/pov4/review.pov4:11"
+   "rank": 88,
+   "code": "fn G() { debug(\"pov4 debug statement\\n\"); warning(\"pov4 warning statement\"); return 1; }",
+   "from": "tests/pov4/ok_debug_statement.pov4:2"
   },
   "default": {
    "code": "default { finish { ambient 0.1 } }",
@@ -1551,9 +1551,9 @@
    "from": "doc/html/r3_10.html"
   },
   "error": {
-   "rank": 1035,
-   "code": "refused splice.pov:3:9 syntax-error",
-   "from": "doc/html/r3_13.html"
+   "rank": 84,
+   "code": "if (max_extent(Scaled).x != 2) { error(\"bare comparison in a block item differs\"); }",
+   "from": "tests/pov4/ok_bare_comparisons.pov4:14"
   },
   "error_bound": {
    "rank": 68,
@@ -1921,9 +1921,9 @@
    "from": "tests/pov4/points.pov4:5"
   },
   "let": {
-   "rank": 25,
-   "code": "let Floor = plane { y, -1",
-   "from": "tests/pov4/stills.pov4:6"
+   "rank": 17,
+   "code": "let D = { a: 1 };",
+   "from": "tests/pov4/ok_string_compare.pov4:4"
   },
   "light_group": {
    "code": "light_group { LIGHT_GROUP LIGHT | LIGHT_GROUP OBJECT | LIGHT_GROUP [LIGHT_GROUP MODIFIER] }",
@@ -2574,9 +2574,9 @@
    "from": "doc/html/r3_4.html"
   },
   "scale": {
-   "rank": 50,
-   "code": "object { Ball translate x * 2.5 scale Scale(1.5) }",
-   "from": "tests/pov4/basics.pov4:7"
+   "rank": 47,
+   "code": "let Scaled = box { -1, 1 scale A > B ? 2 : 1 };",
+   "from": "tests/pov4/ok_bare_comparisons.pov4:13"
   },
   "scallop_wave": {
    "rank": 1060,
@@ -2993,6 +2993,11 @@
    "rank": 1032,
    "code": "vstr(1, 1, \", \", 0,1) \"1.0, 1.0\"",
    "from": "doc/html/r3_3.html"
+  },
+  "warning": {
+   "rank": 88,
+   "code": "fn G() { debug(\"pov4 debug statement\\n\"); warning(\"pov4 warning statement\"); return 1; }",
+   "from": "tests/pov4/ok_debug_statement.pov4:2"
   },
   "warp": {
    "rank": 14,

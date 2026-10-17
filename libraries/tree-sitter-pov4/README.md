@@ -27,9 +27,13 @@ of one lexer token per word, which keeps the generated parser small. A word is a
 keyword only where the grammar accepts one; elsewhere it lexes as `identifier`,
 which the renderer rejects as a name.
 
-Comparisons and logical operators (`comparison_expression`) parse only inside parentheses
-and render-time function bodies, as in classic; elsewhere `<` starts a vector, so juxtaposed
-vectors are separate items and `>` always closes a vector. Vectors take any number (two or
+Comparisons and logical operators (`comparison_expression`) parse in every expression
+position with their usual precedence, with two exceptions that keep vectors unambiguous:
+vector components take no bare comparison, so `>` always closes a vector, and in any item
+list (block and function bodies, the top level, arrays, comprehension bodies) a bare `<` after
+an item starts a vector, so juxtaposed vectors are separate items: `A > B` is an item there,
+but `fn Lt(A, B) { (A < B) }` and `[(a < b), 1]` need their parentheses. The grammar keeps one copy of
+the operator rules per context (`_expression`, `_item_expression`, `_component`). Vectors take any number (two or
 more) of components. Indexing and member access need no space before `[` or `.`: `A[0]`, `V.x`. A
 spaced `[` starts a new item, so map entries such as `[0 color Red] [1 color Blue]`
 stay bracket groups. Lambda bodies in braces are always bodies, never

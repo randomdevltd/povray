@@ -7,16 +7,45 @@ const PREC = {
 
 const commaSep1 = (rule) => seq(rule, repeat(seq(',', rule)));
 
+const COMPARISONS = [['||', PREC.or], ['&&', PREC.and], ['==', PREC.equality], ['!=', PREC.equality],
+  ['<', PREC.relational], ['<=', PREC.relational], ['>', PREC.relational], ['>=', PREC.relational]];
+
+// One copy of the operator rules per context: full, block items (a bare `<` starts a vector), vector components.
+function expressionFamily(top, suffix, comparisons) {
+  const name = (rule) => (suffix ? `_${rule}_${suffix}` : rule);
+  const ref = ($, rule) => (suffix ? alias($[name(rule)], $[rule]) : $[rule]);
+  const rules = {
+    [top]: ($) => choice(ref($, 'conditional_expression'), ref($, 'binary_expression'),
+      ...(comparisons.length ? [ref($, 'comparison_expression')] : []), ref($, 'unary_expression'),
+      ref($, 'lambda'), $.colour_expression, $._postfix, $.array),
+    [name('conditional_expression')]: ($) => prec.right(PREC.conditional, seq(field('condition', $[top]), '?',
+      field('consequence', $[top]), ':', field('alternative', $[top]))),
+    [name('binary_expression')]: ($) => choice(...[
+      ['+', PREC.additive], ['-', PREC.additive], ['*', PREC.multiplicative], ['/', PREC.multiplicative],
+    ].map(([op, p]) => prec.left(p, seq(field('left', $[top]), field('operator', op), field('right', $[top]))))),
+    [name('unary_expression')]: ($) => prec(PREC.unary, seq(field('operator', choice('-', '+', '!')),
+      field('operand', $[top]))),
+    [name('lambda')]: ($) => prec.right(PREC.lambda, seq(field('parameters', choice($.parameters, $.identifier)), '=>',
+      field('body', choice($.body, $[top])))),
+  };
+  if (comparisons.length) {
+    rules[name('comparison_expression')] = ($) => choice(...comparisons.map(([op, p]) => prec.left(p,
+      seq(field('left', $[top]), field('operator', op), field('right', $[top])))));
+  }
+  return rules;
+}
+
 module.exports = grammar({
   name: 'pov4',
   word: ($) => $.identifier,
   externals: ($) => [$.keyword, $.builtin, $.colour_operator, $.color_operator, $.colour_channel],
   extras: ($) => [/\s/, $.comment],
-  conflicts: ($) => [[$.parameter, $._primary], [$.body, $.dictionary], [$._item, $.dictionary], [$.channel], [$._item, $.pair]],
+  conflicts: ($) => [[$.parameter, $._primary], [$.body, $.dictionary], [$._item, $.dictionary], [$.channel],
+    [$._expression, $._item_expression], [$.lambda, $._lambda_item]],
 
   rules: {
     source_file: ($) => repeat($._item),
-    _item: ($) => choice($._statement, $.keyword, $.spread, $._expression, ',', ';'),
+    _item: ($) => choice($._statement, $.keyword, $.spread, $._item_expression, ',', ';'),
 
     _statement: ($) => choice($.let_statement, $.global_statement, $.assignment, $.function_definition,
       $.if_statement, $.while_statement, $.for_statement, $.break_statement, $.continue_statement,
@@ -43,33 +72,18 @@ module.exports = grammar({
     return_statement: ($) => seq('return', optional(field('value', $._expression)), ';'),
     include_statement: ($) => seq('include', field('file', $._expression), ';'),
 
-    _expression: ($) => choice($.conditional_expression, $.binary_expression, $.unary_expression,
-      $.lambda, $.colour_expression, $._postfix, $.array),
-    _comparable: ($) => choice($._expression, $.comparison_expression),
+    ...expressionFamily('_expression', '', COMPARISONS),
+    ...expressionFamily('_item_expression', 'item', COMPARISONS.filter(([op]) => op !== '<')),
+    ...expressionFamily('_component', 'component', []),
     _postfix: ($) => choice($.call_expression, $.index_expression, $.member_expression, $._primary),
     _primary: ($) => choice($.number, $.string, $.identifier, $.builtin, $.true, $.false, $.null, $.vector,
       $.dictionary, $.parenthesized_expression, $.block, $.function_block),
 
-    conditional_expression: ($) => prec.right(PREC.conditional, seq(field('condition', $._expression), '?',
-      field('consequence', $._expression), ':', field('alternative', $._expression))),
-    binary_expression: ($) => choice(...[
-      ['+', PREC.additive], ['-', PREC.additive], ['*', PREC.multiplicative], ['/', PREC.multiplicative],
-    ].map(([op, p]) => prec.left(p, seq(field('left', $._expression), field('operator', op),
-      field('right', $._expression))))),
-    comparison_expression: ($) => choice(...[
-      ['||', PREC.or], ['&&', PREC.and], ['==', PREC.equality], ['!=', PREC.equality],
-      ['<', PREC.relational], ['<=', PREC.relational], ['>', PREC.relational], ['>=', PREC.relational],
-    ].map(([op, p]) => prec.left(p, seq(field('left', $._comparable), field('operator', op),
-      field('right', $._comparable))))),
-    unary_expression: ($) => prec(PREC.unary, seq(field('operator', choice('-', '+', '!')),
-      field('operand', $._expression))),
-    lambda: ($) => prec.right(PREC.lambda, seq(field('parameters', choice($.parameters, $.identifier)), '=>',
-      field('body', choice($.body, $._expression)))),
     colour_expression: ($) => prec.right(PREC.colour, seq(choice(
-      seq(field('operator', $.colour_operator), field('value', $._expression)),
-      seq(field('operator', $.color_operator), optional(field('value', $._expression))),
+      seq(field('operator', $.colour_operator), field('value', $._component)),
+      seq(field('operator', $.color_operator), optional(field('value', $._component))),
       $.channel), repeat($.channel))),
-    channel: ($) => choice(prec.dynamic(1, seq(field('name', $.colour_channel), field('value', $._expression))),
+    channel: ($) => choice(prec.dynamic(1, seq(field('name', $.colour_channel), field('value', $._component))),
       field('name', $.colour_channel)),
 
     call_expression: ($) => prec(PREC.postfix, seq(field('function', $._postfix), field('arguments', $.arguments))),
@@ -79,18 +93,18 @@ module.exports = grammar({
     member_expression: ($) => prec(PREC.postfix, seq(field('object', $._postfix), token.immediate('.'),
       field('member', $.identifier))),
 
-    vector: ($) => seq('<', $._expression, ',', commaSep1($._expression), '>'),
+    vector: ($) => seq('<', $._component, ',', commaSep1($._component), '>'),
     array: ($) => seq('[', repeat($._item), ']'),
     dictionary: ($) => seq('{', optional(seq(commaSep1(choice($.pair, $.spread)), optional(','))), '}'),
     pair: ($) => seq(choice(field('key', choice($.identifier, $.string)), seq('[', field('computed', $._expression), ']')),
       ':', field('value', $._expression)),
-    spread: ($) => seq('...', $._expression),
-    parenthesized_expression: ($) => seq('(', $._comparable, ')'),
+    spread: ($) => seq('...', $._component),
+    parenthesized_expression: ($) => seq('(', $._expression, ')'),
     block: ($) => prec(PREC.block, seq(field('name', choice($.keyword, alias('to', $.keyword))),
       '{', repeat($._item), '}')),
     function_block: ($) => seq('function', optional(choice(field('parameters', $.function_parameters),
       seq(field('width', $._size), ',', field('height', $._size)))),
-      '{', repeat(choice($.keyword, $._comparable, ',')), '}'),
+      '{', repeat(choice($.keyword, $._expression, ',')), '}'),
     _size: ($) => choice($.number, $.identifier),
     function_parameters: ($) => prec(PREC.block, seq('(', optional(commaSep1(choice($.identifier, $.builtin))), ')')),
 
