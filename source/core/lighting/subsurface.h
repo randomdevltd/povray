@@ -135,6 +135,9 @@ const double kSubsurfaceBailout = 8.0;
 /// Memory method 2's boundary and layer tables keep for reuse, besides those render threads are using; see doc/PERF.md.
 const double kSubsurfaceTablesMB = 32.0;
 
+/// The least reduced albedo method 2 gives a channel, so one that reflects nothing keeps a finite extinction; see doc/PERF.md.
+const double kSubsurfaceAlbedoFloor = 1e-4;
+
 class SubsurfaceBoundary;
 
 /// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, or the floor.

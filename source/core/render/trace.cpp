@@ -8241,6 +8241,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // user setting specifies reduced scattering coefficient
     PreciseMathColour   alpha_prime     = pointCloud ? ssltBoundary->GetReducedAlbedo(reflectance)
                                                      : out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
+    for (int j = 0; pointCloud && (j < MathColour::channels); j++)
+        alpha_prime[j] = max(alpha_prime[j], kSubsurfaceAlbedoFloor);
     PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;

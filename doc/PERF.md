@@ -1410,6 +1410,23 @@ the worst block by 0.2), so the scores in the sections above stand as printed. T
 `tests/render/subsurface_tables.sh` renders the wedge at 80×60 on one thread and two: the tables must pass their cap,
 stay within it but for what the threads hold, and the two images must match.
 
+**A channel that reflects nothing.** A colour channel of reflectance 0 (`pigment { rgb <1, 0, 0> }` with any `diffuse`)
+inverts to a reduced albedo of 0, so the reduced extinction, scattering over albedo, is infinite and the profile NaN;
+clipped, the channel came out at full brightness on every pixel of the object, with methods 1 and 2 alike, in every build
+since the cloud (a red sphere, 64×48, `diffuse` 0.6 and 1: green and blue 255 on all 1848 of its pixels). Method 2 now
+gives a channel a reduced albedo of at least 10⁻⁴ (`kSubsurfaceAlbedoFloor`): the extinction stays finite (10⁴ times the
+scattering), the channel scatters next to nothing, and only channels the colour table would put below 10⁻⁴ change. The
+sphere's green and blue are now 0 on every pixel, and its red has a mean of 113.64 and 137.44 levels against 113.61 and
+137.40 for `rgb <1, 0.002, 0.002>` (rms 1.17 and 1.07 between them, at most 18 levels at a pixel). A colour without a
+zero channel renders the same pixels as before. Method 1 is left as it was.
+
+The other end, a channel of albedo 1, has no absorption, so its depth never passes the thick-part test and every such
+part takes the layer model; its table stops at τ = 2¹², so a deeper part reads a layer 2¹² deep. An albedo just below 1
+does the same until σ·τ passes 15, so this is not a case of its own. Against a layer 10⁴ deep (the table's formulas at
+η 1.5), the 2¹² layer's near-face Rd ratio is within 0.04% out to 362 reduced mean free paths, 0.8% low at 1024 and 15%
+at 2896; its disc integral is within 10⁻⁴ out to 2896, and
+its ratio through to the far face 2.6% low. It is left as it is.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
