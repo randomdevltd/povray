@@ -586,14 +586,15 @@ instead of capping the step, with 8, 16, 24 and 64 draws, left rms errors of 10.
 kept only for clouds coarse by `spacing`.
 
 **Creases.** Method 1 cannot be the reference here: its base point's rays never reach a stud's wall or the slab around a
-stud, so it leaves out light that diffuses round the corner. `tools/bench/sslt-reference.cpp` (`c++ -O2 -std=c++17
--pthread -o sslt-reference sslt-reference.cpp`) renders a physically based reference for `tools/bench/sslt-studs.pov`
+stud, so it leaves out light that diffuses round the corner. `tools/bench/sslt-reference.cpp` (then; now its `Shape=4`,
+under **Subsurface reference** below) renders a physically based reference for `tools/bench/sslt-studs.pov`
 with `Fillet=0 Reference=1` (point lights, no floor, no highlight, single scattering off): random walks through the
 homogeneous medium of the same reduced coefficients, Fresnel boundaries of index 1.5, scored with the light entering
 where a walk leaves after two or more scatterings. Its layout is written out apart from the scene's, so its object mask
 must match a render's pixel for pixel (it does, at every view used here). On the bare slab's flat top (`Bare=1`) with a
 high albedo (`Colour=1.2 Mfp=2`, reflectance 0.9), where the dipole holds, the dipole is 1.79 times the walks in every
-channel alike: the two take the light leaving a surface in different units, and 1.79 is that constant. With the
+channel alike: the two take the light leaving a surface in different units, and 1.79 is that constant (it is not; see
+**Subsurface reference**: the bare slab is thin against the diffusion, and those walks lacked a 1/(1 − F̄dr)). With the
 default red (reflectance 0.64, 0.09, 0.06) the dipole is 1.81, 4.31 and 5.51 times them: at low albedo the dipole and
 its Fresnel approximation are that far from the transport, which this change does not touch, so the red reference is
 scaled per channel. At 160×120 and 1024 walks the reference's own noise is about 10 levels rms. Levels of 255 over the
@@ -740,6 +741,89 @@ case 4's error from 3.29 to 3.16 and case 3's from 0.82 to 0.80.
 
 Subsurface light still does not cross between separate objects: a flesh object inside a skin object does not glow
 through it.
+
+## Subsurface reference
+
+Method 2 was judged above against method 1 at eight times its samples, and method 1 is an approximation too: the
+dipole, and rays from under the exit point that never reach round a corner. `tools/bench/sslt-reference.cpp` (`c++ -O2
+-std=c++17 -pthread`) is an independent reference with nothing of the dipole: random walks through the homogeneous
+medium the renderer derives from a finish (reduced scattering 1/translucency per mm, the reduced albedo the renderer's own
+table gives the reflectance, isotropic scattering, the interior's ior), Fresnel reflection at every boundary. A walk
+starts along the refracted eye ray and scores light scattered two or more times, as the renderer's diffuse term is with
+single scattering off. By default it scores where it leaves: the light the surface takes in there (each point light's
+colour, cosine and Fresnel transmittance, shadowed), entering as diffuse light of that transmitted flux, so a pixel, π
+times the radiance, is Ft(eye)·E[weight · light in] / (1 − F̄dr), F̄dr the hemispherical Fresnel reflectance from outside.
+With `Entry=beam` it takes each light's refracted beam at every collision instead, which is exact where the beam enters
+through a flat face, apart from the beam's own reflections inside; on a curved face the entry can go unresolved (the
+walks count those on stderr: none on the slab and walls, 2 to 49% on the dimple, studs and trunk). `Mode=forward`
+shoots photons into a half-space or a layer. Shapes are signed-distance bounds, sphere-traced, matched shape for shape
+by `tools/bench/sslt-reference.pov`: a slab 24 units deep (`View=1`: lit and seen along the normal), a 90° V-groove and
+a spherical dimple 0.18 deep in a block 2 deep, the ridged trunk of `sslt-wide.pov` (in the scene a 480 × 96 `mesh2`, in
+the walks the smooth surface it samples), a 1.2 mm wall, and the studs of `sslt-studs.pov` (`Bare=1`: its slab, 0.4 deep,
+alone); materials red and high albedo (`sslt-studs.pov`), wax (`sslt-lamps.pov`), bark (`sslt-wide.pov`) and clay
+(`sslt-open.pov`). `tools/bench/sslt-reference.py commands DIR` prints one command per walk image and per render
+(`--tag`/`--declare` for another method or build, `--entry beam`), and `score DIR` the tables below, with a sheet per run
+(render, walks, difference ×4). Every walk image carries per-pixel standard errors, which the rms subtracts; at 2048
+walks per pixel and 160×120 they are 0.8 to 2.5 levels per pixel.
+
+**Checks on a half-space**, ior 1.5, light and view along the normal, per unit irradiance, light scattered two or more
+times (beam entry from 16×12 images, standard error 0.2 to 0.3%):
+
+| | high albedo | red: R | G | B |
+|---|---|---|---|---|
+| photons, exact | 0.782 | 0.4234 | 0.02112 | 0.01091 |
+| walks, beam entry | 0.778 | 0.4230 | 0.02094 | 0.01085 |
+| walks, diffuse entry | 0.781 | 0.4286 | 0.02194 | 0.01138 |
+| `reference-subsurface-plane.py`, the renderer's Fdr | 0.829 | 0.5875 | 0.0829 | 0.0553 |
+| the same with Jensen's Fdr (`--jensen`, same medium) | 0.751 | 0.4454 | 0.0724 | 0.0494 |
+| method 2 | 0.828 | 0.5837 | 0.0829 | 0.0553 |
+
+Method 2 renders the plane integrator's dipole to within 0.7%, and the two walk estimators agree with the photons to
+within 1% (beam) and 5% (diffuse entry, which is high at low albedo). The dipole is 6% above the transport at high
+albedo and 1.39, 3.9 and 5.1 times it in red's channels; with Jensen's Fdr it is 4% below at high albedo. On a layer
+1.2 mm deep of clay, seen within 8° of the normal, diffuse entry is 16, 12 and 6% above the photons and beam entry 1.6
+to 1.9% below them (the beam's reflection off the far face is left out). The scores below use diffuse entry; on the
+walls, where beams resolve everywhere, beam entry puts method 2 at 4.52, 2.76, 1.60 (clay) and 3.71 (high albedo)
+times the walks instead of 3.97, 2.50, 1.53 and 3.34.
+
+**Scores** at the head of method 2 without method 1, 160×120, no anti-aliasing, levels of 255 over the pixels both
+cover (no mask mismatches but 4 on the trunk's silhouette). "Geometry" scales the walks per channel by method 2's
+ratio on the deep slab of the same material, so the flat surface's error drops out (its residue, 0.5 to 1.0 rms, is the
+slabs' own row); "against bare" scales by the bare studs slab instead, leaving the studs alone. Method 1 at 592 samples
+is scaled by its own slab ratio and carries its own noise. rms / mean / worst 8×8 block:
+
+| Run | Method 2 / walks, R, G, B | Method 2 absolute | Method 2 geometry | Method 1 geometry | Method 2 CPU-s |
+|---|---|---|---|---|---|
+| slab, red | 1.351, 3.586, 4.594 | 35.1 / +34.5 / +38.9 | 0.73 / +0.02 / +1.5 | 1.37 / +0.01 / +1.4 | 0.84 |
+| slab, high albedo | 1.075 | 7.38 / +7.36 / +8.5 | 0.48 / +0.01 / −1.2 | 0.65 / 0.00 / +0.7 | 0.90 |
+| slab, wax | 1.477, 1.801, 3.855 | 34.9 / +34.7 / +38.4 | 0.82 / +0.02 / +2.4 | 1.57 / +0.01 / +1.6 | 0.76 |
+| slab, bark | 1.604, 1.798, 2.081 | 34.4 / +34.3 / +37.2 | 1.04 / +0.01 / +1.9 | 0.94 / +0.01 / +1.8 | 0.83 |
+| slab, clay | 1.300, 1.556, 2.084 | 30.6 / +30.1 / +33.2 | 0.95 / +0.01 / +2.6 | 1.04 / +0.01 / +1.5 | 0.83 |
+| V-groove and dimple, wax | 1.474, 1.762, 3.888 | 34.0 / +33.6 / +40.7 | 4.27 / −0.32 / −16.7 | 8.76 / −4.52 / −15.7 | 0.88 |
+| the dimple alone (40×32 pixels) | | 35.5 / +35.1 / +40.4 | 4.56 / +1.49 / +9.5 | 9.75 / −6.40 / −12.6 | |
+| V-groove and dimple, high albedo | 1.279 | 23.1 / +22.6 / +34.6 | 17.1 / +16.3 / +29.1 | 11.6 / +4.07 / +24.3 | 0.91 |
+| ridged trunk, bark | 1.474, 1.701, 2.042 | 25.4 / +21.8 / +32.4 | 11.0 / −3.55 / −25.9 | 12.9 / −6.78 / −27.7 | 2.79 |
+| 1.2 mm wall, clay | 3.974, 2.495, 1.534 | 68.1 / +59.5 / +74.4 | 53.8 / +32.8 / +48.6 | 53.8 / +33.2 / +48.0 | 0.70 |
+| 1.2 mm wall, high albedo | 3.343 | 99.9 / +98.7 / +111.8 | 95.3 / +94.1 / +107.0 | 95.4 / +94.1 / +106.4 | 0.69 |
+| bare studs slab, red | 1.740, 3.477, 4.550 | 38.7 / +37.1 / +42.7 | 14.5 / +5.55 / −22.8 | 14.2 / +5.34 / −18.2 | 0.64 |
+| bare studs slab, high albedo | 1.676 | 44.0 / +42.1 / +50.0 | 38.8 / +36.7 / +44.3 | 38.4 / +36.3 / +44.3 | 0.65 |
+| studs, red | 1.726, 3.159, 4.255 | 35.6 / +32.5 / +45.5 | 17.4 / +3.04 / −21.7 | 22.6 / −11.5 / −31.4 | 1.54 |
+| the same against bare | | | 14.4 / −2.58 / −25.1 | 29.7 / −16.9 / −34.7 | |
+| studs, high albedo | 1.734 | 44.5 / +40.9 / +62.9 | 40.0 / +36.0 / +58.2 | 26.3 / +9.88 / +34.0 | 1.68 |
+| the same against bare | | | 17.7 / +1.92 / −36.4 | 34.0 / −23.9 / −61.9 | |
+
+Where the part is thin against the diffusion, the dipole's semi-infinite medium dominates: the 4 mm studs slab is 1.68
+times the walks at high albedo against 1.075 on the deep slab, the 20 mm block 1.28, and the 1.2 mm walls 3.3 to 4.
+
+**Earlier decisions against the walks** (they were judged against method 1 × 8):
+
+| Decision | Then | Against the walks |
+|---|---|---|
+| Hand no shading points over at bends and creases (`sslt-lamps.pov`); not kept, now shipped | a small concave dimple 14 levels bright, block edges 6 dark | wax dimple: method 2 4.56 / +1.49 / +9.5, method 1 9.75 / −6.40 / −12.6; method 2 is the closer, and method 1 is dark there |
+| `sslt-wide.pov` bark "not close at any setting" | up to 8.6 levels light in 8-pixel blocks | ridged trunk: method 2 11.0 / −3.55 / −25.9, method 1 12.9 / −6.78 / −27.7; both dark in bands along the ridges, method 2 the closer |
+| Thin rod and wall close at spacing 0.5 (`sslt-open.pov` case 6) | rms 1.60 against 1.88 | 1.2 mm wall: methods 2 and 1 alike and 1.5 to 4 times the walks; neither is close |
+| Creases unfolded (`sslt-studs.pov`, 1×) | red 13.2 / −3.2, high 15.8 / +3.4; method 1 27.4 / −17.6, 32.1 / −22.6 | against bare: red 14.4 / −2.58, high 17.7 / +1.92; method 1 29.7 / −16.9, 34.0 / −23.9: holds |
+| The dipole 1.79 times the walks on the bare slab, "a constant of units" | | not units: 1.075 on the deep slab, 1.68 on the 0.4-deep bare slab (thin against a 34 mm diffusion length) |
 
 ## Mesh memory
 
