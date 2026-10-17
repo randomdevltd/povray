@@ -1052,6 +1052,12 @@ bool TracePixel::CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, 
             // Convert the y coordinate to be a DBL from -0.5 to 0.5.
             y0 = 0.5 - y / height;
 
+            if (camera.HasWindow())
+            {
+                x0 = camera.windowLow[0] + (x / width) * (camera.windowHigh[0] - camera.windowLow[0]);
+                y0 = camera.windowHigh[1] - (y / height) * (camera.windowHigh[1] - camera.windowLow[1]);
+            }
+
             for (unsigned int i = 0; i < 3; ++i)
             {
                 if (camera.Location_Fn[i] != nullptr)

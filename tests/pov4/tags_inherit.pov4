@@ -1,0 +1,16 @@
+// tags_inherit: what a child writes in tags decides whether it keeps its union's tags; inherit stays a free name
+let inherit = 0.5;
+let Extra = [];
+global_settings { assumed_gamma 1.0 }
+light_source { <4, 6, -3> rgb 1 }
+camera { location <0, 0, -6> look_at 0 filter_tags { "kit" } }
+union {
+  sphere { -x * 1.5, 0.5 pigment { color rgb <1, 0.3, 0.2> } }
+  sphere { 0, 0.5 pigment { color rgb <0.3, 1, 0.2> } tags { ...Extra, inherit } }
+  sphere { x * 1.5, 0.5 pigment { color rgb <0.2, 0.3, 1> } tags { none } }
+  sphere { y * 1.2, 0.5 pigment { color rgb 1 } tags { "other" } }
+  sphere { -y * 1.2, 0.5 pigment { color rgb <1, 1, 0.2> } tags { "kit", ...Extra, "b" } }
+  sphere { <1.5, 1.2, 0>, 0.5 pigment { color rgb <1, 0.2, 1> } tags { "other", ...Extra } }
+  scale inherit * 2
+  tags { "kit" }
+}

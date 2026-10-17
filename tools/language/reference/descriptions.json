@@ -1150,7 +1150,7 @@
   "assumed_gamma": {
    "rank": 37,
    "code": "global_settings { assumed_gamma 1.0 }",
-   "from": "tests/pov4/stills.pov4:3"
+   "from": "tests/pov4/framing.pov4:2"
   },
   "atan": {
    "rank": 1047,
@@ -1279,8 +1279,8 @@
    "from": "doc/html/r3_3.html"
   },
   "camera": {
-   "code": "camera { location <0, 1.6, -4.5> look_at <0, 0.9, 0> }",
-   "from": "tests/pov4/stills.pov4:4"
+   "code": "camera { location <0, 0, -10> right x * 4 / 3 up y look_at Subject, 0.8 }",
+   "from": "tests/pov4/framing.pov4:11"
   },
   "caustics": {
    "rank": 31,
@@ -1646,9 +1646,9 @@
    "from": "doc/html/r3_6.html"
   },
   "filter_tags": {
-   "rank": 23,
-   "code": "filter_tags { \"rooms\" }",
-   "from": "doc/html/r3_10.html"
+   "rank": 62,
+   "code": "camera { location <0, 0, -6> look_at 0 filter_tags { \"kit\" } }",
+   "from": "tests/pov4/tags_inherit.pov4:6"
   },
   "finish": {
    "code": "finish { phong 1 }",
@@ -1725,8 +1725,8 @@
    "from": "tests/pov4/review.pov4:14"
   },
   "global_settings": {
-   "code": "global_settings { max_trace_level 7 }",
-   "from": "tests/pov4/review.pov4:3"
+   "code": "global_settings { assumed_gamma 1.0 }",
+   "from": "tests/pov4/framing.pov4:2"
   },
   "gradient": {
    "rank": 21,
@@ -1810,6 +1810,11 @@
    "rank": 83,
    "code": "union { include \"parts.inc\"; pigment { rgb <1, 0.6, 0.2> } translate <-2.5, 0, 0> }",
    "from": "tests/pov4/interop.pov4:4"
+  },
+  "inherit": {
+   "rank": 80,
+   "code": "sphere { 0, 0.5 pigment { color rgb <0.3, 1, 0.2> } tags { ...Extra, inherit } }",
+   "from": "tests/pov4/tags_inherit.pov4:9"
   },
   "input": {
    "rank": 1012,
@@ -1935,8 +1940,8 @@
    "from": "doc/html/r3_4.html:2"
   },
   "light_source": {
-   "code": "light_source { <4, 6, -3> rgb 0.4 }",
-   "from": "tests/pov4/interop.pov4:2"
+   "code": "light_source { <4, 6, -3> rgb 1 }",
+   "from": "tests/pov4/framing.pov4:3"
   },
   "linear_spline": {
    "rank": 1024,
@@ -2168,6 +2173,11 @@
    "code": "noise_generator : 2",
    "from": "doc/html/r3_4.html"
   },
+  "none": {
+   "rank": 73,
+   "code": "sphere { x * 1.5, 0.5 pigment { color rgb <0.2, 0.3, 1> } tags { none } }",
+   "from": "tests/pov4/tags_inherit.pov4:10"
+  },
   "normal": {
    "code": "normal { NORMAL_BODY }",
    "from": "doc/html/r3_10.html:12"
@@ -2326,8 +2336,8 @@
    "from": "doc/html/r3_6.html"
   },
   "plane": {
-   "code": "plane { y, -1 pigment { checker color rgb <0.8, 0.8, 0.8> color rgb <0.25, 0.3, 0.4> } finish { phong 0.2 } }",
-   "from": "tests/pov4/stills.pov4:6"
+   "code": "plane { y, -1.5 pigment { checker color rgb 0.8 color rgb <0.25, 0.3, 0.4> } }",
+   "from": "tests/pov4/framing.pov4:4"
   },
   "png": {
    "rank": 26,
@@ -2509,9 +2519,9 @@
    "from": "doc/html/r3_11.html"
   },
   "refraction_detail": {
-   "rank": 77,
-   "code": "global_settings { refraction_angle 0.25 mm_per_unit 100 refraction_detail 1 }",
-   "from": "doc/html/r3_11.html"
+   "rank": 57,
+   "code": "global_settings { assumed_gamma 1.0 refraction_detail 1 }",
+   "from": "tests/pov4/framing_tagged.pov4:3"
   },
   "repeat": {
    "rank": 19,
@@ -2549,9 +2559,9 @@
    "from": "tests/pov4/interop.pov4:9"
   },
   "right": {
-   "rank": 67,
-   "code": "camera { location <0, 1.6, -6> look_at <0, 0.8, 0> right x * 1.33 }",
-   "from": "doc/html/r3_13.html"
+   "rank": 64,
+   "code": "camera { location <0, 0, -10> right x * 4 / 3 up y look_at Row }",
+   "from": "tests/pov4/framing_tagged.pov4:12"
   },
   "ripples": {
    "rank": 35,
@@ -2579,9 +2589,9 @@
    "from": "doc/html/r3_4.html"
   },
   "scale": {
-   "rank": 47,
-   "code": "let Scaled = box { -1, 1 scale A > B ? 2 : 1 };",
-   "from": "tests/pov4/ok_bare_comparisons.pov4:13"
+   "rank": 45,
+   "code": "object { Row translate y * 0.8 scale tagged }",
+   "from": "tests/pov4/framing_tagged.pov4:14"
   },
   "scallop_wave": {
    "rank": 1060,
@@ -2779,10 +2789,13 @@
    "code": "sys \"SomeImage\"",
    "from": "doc/html/r3_6.html"
   },
+  "tagged": {
+   "code": "tagged { \"subject*\" & !Draft }",
+   "from": "tests/pov4/framing_tagged.pov4:11"
+  },
   "tags": {
-   "rank": 16,
-   "code": "tags { \"doors\" }",
-   "from": "doc/html/r3_10.html"
+   "code": "tags { \"subject\" }",
+   "from": "tests/pov4/framing_tagged.pov4:7"
   },
   "tan": {
    "rank": 1046,
@@ -2863,8 +2876,8 @@
    "from": "doc/html/r3_5.html"
   },
   "torus": {
-   "code": "torus {5,1}",
-   "from": "doc/html/r3_3.html:9"
+   "code": "torus { 0.55, 0.18 translate <1, 1.8, 0> pigment { color rgb <0.95, 0.8, 0.2> } tags { \"subject-draft\" } }",
+   "from": "tests/pov4/framing_tagged.pov4:9"
   },
   "transform": {
    "rank": 11,
@@ -2930,9 +2943,9 @@
    "from": "tests/pov4/components.pov4:14"
   },
   "up": {
-   "rank": 1010,
-   "code": "up <0,1,0>",
-   "from": "doc/html/r3_4.html"
+   "rank": 64,
+   "code": "camera { location <0, 0, -10> right x * 4 / 3 up y look_at Row }",
+   "from": "tests/pov4/framing_tagged.pov4:12"
   },
   "use_alpha": {
    "rank": 43,

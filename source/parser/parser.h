@@ -56,6 +56,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 // Boost headers
@@ -890,9 +891,16 @@ class Parser final
         void Parse_User_Defined_Camera (Camera& Cam);
         void Parse_Camera(Camera& Cam);
         bool Parse_Camera_Mods(Camera& Cam);
+        void Parse_Camera_Look_At(Camera& Cam);
+        std::shared_ptr<ObjectBase> Frame_Target(ObjectPtr declared);
+        /// Declared objects that look_at frames, each held once however many cameras frame it.
+        std::unordered_map<ObjectPtr, std::weak_ptr<ObjectBase>> mFrameTargets;
+        bool Tagged_Selector_Follows();
+        ObjectPtr Parse_Tagged(bool warnEmpty);
+        ObjectPtr Copy_Tagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited);
         void Parse_Camera_Radiosity_Size(Camera& New);
-        void Parse_Tags(std::vector<std::string>& tags);
-        void Parse_Filter_Tags(TagFilter& filter);
+        void Parse_Tags(std::vector<std::string>& tags, bool *inherit = nullptr);
+        void Parse_Filter_Tags(TagFilter& filter, const char *keyword = "filter_tags");
         void Parse_Frame();
         void Parse_Frame_Items();
         void Parse_Snippet(const std::string& text, const UCS2String& fileName, std::vector<POV_LONG> lines);
@@ -900,6 +908,13 @@ class Parser final
 
         void Link(ObjectPtr New_Object, std::vector<ObjectPtr>& Object_List_Root);
         void Link_To_Frame(ObjectPtr Object);
+        void Prepare_Link(ObjectPtr Object);
+        bool Splits_Union(ObjectPtr Object, bool warn);
+        void Split_Unions();
+        void Split_Union(ObjectPtr Object);
+        void Assign_Scene_Lights();
+        /// Media lights made inside light groups, with their group, given out after the groups' own lights.
+        std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
         void Make_Media_Light(Media& medium, ObjectPtr container);
@@ -907,6 +922,8 @@ class Parser final
         bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.
         std::vector<ObjectPtr> mLightGroups;
+        /// The compounds Post_Process is inside, outermost first.
+        std::vector<ConstObjectPtr> mPostProcessPath;
         void Remove_Subsurface_Without_Inside(ObjectPtr Object);
 
         void Parse_Global_Settings();

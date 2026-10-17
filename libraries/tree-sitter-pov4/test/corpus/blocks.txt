@@ -239,3 +239,63 @@ object { B scale A > 1 ? 2 : 3 }
         (number))
       (number)
       (number))))
+
+
+==================
+Tag expressions, and tagged as a keyword only before a block
+==================
+let tagged = 3;
+let W = tagged { ("statue-*" & !"draft") | none };
+camera { look_at tagged { "a" }, 0.8 filter_tags { any } }
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (number))
+  (let_statement
+    name: (identifier)
+    value: (tag_filter
+      name: (keyword)
+      filter: (binary_expression
+        left: (parenthesized_expression
+          (binary_expression
+            left: (string)
+            right: (unary_expression
+              operand: (string))))
+        right: (constant))))
+  (block
+    name: (keyword)
+    (keyword)
+    (tag_filter
+      name: (keyword)
+      filter: (string))
+    (number)
+    (tag_filter
+      name: (keyword)
+      filter: (constant))))
+
+==================
+Tag operands are values, and comments may separate tagged from its brace
+==================
+let W = tagged /* note */ { Tag & !concat("a", X) | D.k };
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (tag_filter
+      name: (keyword)
+      (comment)
+      filter: (binary_expression
+        left: (binary_expression
+          left: (identifier)
+          right: (unary_expression
+            operand: (call_expression
+              function: (builtin)
+              arguments: (arguments
+                (string)
+                (identifier)))))
+        right: (member_expression
+          object: (identifier)
+          member: (identifier))))))

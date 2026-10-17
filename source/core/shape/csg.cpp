@@ -799,8 +799,8 @@ ObjectPtr CSGUnion::Copy()
 
     if(Type & LIGHT_GROUP_OBJECT)
     {
-        New->LLights.clear();
-        Promote_Local_Lights(New);
+        New->lightGroupActive = Light_Group_Lights_Something(New);
+        New->lightGroupCopy = true;
     }
 
     return (New);
@@ -819,8 +819,8 @@ ObjectPtr CSGMerge::Copy()
 
     if(Type & LIGHT_GROUP_OBJECT)
     {
-        New->LLights.clear();
-        Promote_Local_Lights(New);
+        New->lightGroupActive = Light_Group_Lights_Something(New);
+        New->lightGroupCopy = true;
     }
 
     return (New);
@@ -839,8 +839,8 @@ ObjectPtr CSGIntersection::Copy()
 
     if(Type & LIGHT_GROUP_OBJECT)
     {
-        New->LLights.clear();
-        Promote_Local_Lights(New);
+        New->lightGroupActive = Light_Group_Lights_Something(New);
+        New->lightGroupCopy = true;
     }
 
     return (New);

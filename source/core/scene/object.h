@@ -118,6 +118,7 @@ namespace pov
 #define CUTAWAY_TEXTURES_FLAG     0x10000000L ///< Object (or any of its parents) has cutaway_textures set.
 #define PORTAL_FLAG               0x20000000L ///< Object is a @ref Portal; it stamps itself as the CSG of its hits.
 #define PH_PASSTHRU_OFF_FLAG      0x40000000L ///< `pass_through off` given, so `no_shadow` does not imply pass-through.
+#define FRAME_TARGET_FLAG         0x80000000L ///< A declared object a camera frames: destroying it leaves it to the camera.
 
 #define Set_Flag(Object, Flag)     \
     { (Object)->Flags |=  (Flag); }
@@ -194,7 +195,8 @@ class ObjectBase
         bool RadiosityImportanceSet;
         unsigned int Flags;
         std::vector<std::string> tags;
-        std::shared_ptr<const TagScope> enclosingTags;
+        /// whether the parent's effective tags add to `tags`: true when omitted or written with `inherit`
+        bool inheritTags = true;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -219,8 +221,8 @@ class ObjectBase
             Type(t),
             Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
-            RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags),
-            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags), enclosingTags(o.enclosingTags)
+            RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
+            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags)
         {
             if (transplant)
             {

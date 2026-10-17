@@ -19,4 +19,6 @@ camera { location -5*z look_at 0 }
     #macro ShadowNone(none) camera { filter_tags { none } } #end
     ShadowNone("a")
     #break
+  #case (10) sphere { 0, 1 tags { none, "a" } } #break
+  #case (11) sphere { 0, 1 tags { inherit, none } } #break
 #end

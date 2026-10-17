@@ -229,7 +229,7 @@ Portal *Portal::MakeImage() const
     image->farMouth = false;
     image->partner = this;
     image->origin = "far mouth of the " + origin;
-    image->Flags = Flags;
+    image->Flags = Flags & ~FRAME_TARGET_FLAG;
     image->tags = tags;
     if (!Bound.empty())
         image->Bound = Copy_Objects(const_cast<std::vector<ObjectPtr>&>(Bound));
