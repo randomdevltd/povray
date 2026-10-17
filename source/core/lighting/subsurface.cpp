@@ -187,6 +187,7 @@ SubsurfaceBoundary::SubsurfaceBoundary(double e) :
         c2 += f * Sqr(c);
     }
     fdr = 2.0 * c1;
+    exitScale = 1.0 / (Sqr(eta) * (1.0 - fdr));
     ab = (1.0 + 3.0 * c2) / (1.0 - 2.0 * c1);
     cphi = 0.25 * (1.0 - 2.0 * c1);
     ce = 0.5 * (1.0 - 3.0 * c2);

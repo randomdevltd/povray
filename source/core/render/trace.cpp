@@ -8120,6 +8120,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
     double ftOut   = ComputeFt(cos_out, eta);
+    // Method 2's diffusion leaves with all the light its profile counts: Ft(out) / pi normalised by 1 - Fdr from outside.
+    double ftDiffuse = pointCloud ? ftOut * ssltBoundary->exitScale : ftOut;
 
     // colour dependent diffuse contribution
 
@@ -8160,13 +8162,13 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                                                       1, &shift, nullptr, Eye.GetTicket(), estimateKey);
         if (flesh.PerEntry())
             here = here * flesh.nearby.factor + flesh.nearby.emission;
-        cloudDiffuse = MathColour(profile.RdTotal() * PreciseMathColour(here) * ftOut);
+        cloudDiffuse = MathColour(profile.RdTotal() * PreciseMathColour(here) * ftDiffuse);
     }
     const bool tryCloud = pointCloud && !estimate;
     if (tryCloud)
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
     bool cloud = tryCloud && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
-                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftDiffuse, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     if (cloud && radiosity_needed && !cloudRadiosity)
         threadData->Stats()[Subsurface_Cloud_Pretrace]++;
     if (tryCloud && !cloud)
@@ -8257,7 +8259,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     if (Finish->SubsurfaceHasColour)
         Total_Colour *= flesh.entrySkin;
     if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
-        Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftOut);
+        Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftDiffuse);
 
     Vector3d refractedEye;
     if (SSLTComputeRefractedDirection(Eye.Direction, out.INormal, 1.0/eta, refractedEye))

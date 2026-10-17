@@ -1110,6 +1110,68 @@ the depth ray and, on stepped faces, the 8 runs; the heat maps spread it over th
 
 Method 1 renders the same pixels, bit for bit, before and after (the list in the smooth-mesh section).
 
+## Subsurface method 2's exit term
+
+Rd counts all the light that leaves the surface, while the directional term Ft(out) / π carries only 1 − F̄dr of it
+from outside, η² (1 − 2 c1): 0.908 at η 1.5, 0.923 at 1.4 (see **Subsurface method 2's profile**). Dividing by it, as
+pbrt's normalised term does, brought the slabs to within 1 to 7% of the walks, but made the thin parts worse while the
+half-space profile still gave them too much (rms 11.2 on the high-albedo groove, 35.0 on the studs, 93.7 on the wall).
+With the thin parts' layer model it no longer does, so method 2 now takes Ft(out) / (π (1 − F̄dr)) for its diffuse term,
+the bailout's estimate and uniform emission; single scattering keeps Ft(out). A thick flat piece now reflects its
+colour times the light entering it in all, as its albedo inversion intends, so seen head on it is about a tenth brighter
+than with method 1, which keeps Ft(out) / π. Absolute rms / mean / worst block:
+
+| Run | before, exit term alone | thin parts | thin parts and exit term |
+|---|---|---|---|
+| slab, red | 1.9 / +1.7 / +3 | 4.5 / −3.7 / −4 | 1.9 / +1.7 / +3 |
+| slab, high albedo | 3.5 / +3.4 / +5 | 6.8 / −6.7 / −9 | 3.5 / +3.3 / +5 |
+| slab, wax | 1.5 / +0.9 / +2 | 5.4 / −4.7 / −7 | 1.5 / +0.9 / +2 |
+| slab, bark | 0.9 / +0.3 / +2 | 5.2 / −5.1 / −6 | 0.9 / +0.3 / +2 |
+| slab, clay | 1.9 / +1.5 / +3 | 4.7 / −4.6 / −6 | 1.9 / +1.5 / +3 |
+| slab head on, red | 3.1 / +2.9 / +4 | 4.1 / −2.4 / −3 | 3.1 / +2.9 / +4 |
+| slab head on, high albedo | 3.3 / +3.2 / +5 | 6.9 / −6.9 / −9 | 3.3 / +3.2 / +5 |
+| V-groove and dimple, wax | 4.1 / +0.8 / −13 | 6.5 / −4.6 / −19 | 4.0 / +0.8 / −13 |
+| V-groove and dimple, high albedo | 11.2 / +10.3 / +22 | 4.7 / −2.2 / −13 | 7.6 / +6.3 / +17 |
+| ridged trunk, bark | 10.2 / −3.6 / −19 | 12.1 / −7.5 / −22 | 10.2 / −3.6 / −19 |
+| the same, smooth normals | 10.2 / −3.6 / −20 | 12.1 / −7.5 / −22 | 10.2 / −3.6 / −20 |
+| 1.2 mm wall, clay | 61.2 / +45.7 / +66 | 7.6 / −2.4 / −9 | 7.7 / +2.3 / +9 |
+| 1.2 mm wall, high albedo | 93.7 / +92.3 / +110 | 7.0 / −5.0 / −13 | 5.3 / +1.1 / −8 |
+| bare studs slab, red | 15.8 / +7.6 / −21 | 8.2 / −6.2 / −23 | 5.4 / −1.9 / −19 |
+| bare studs slab, high albedo | 31.9 / +30.5 / +40 | 12.3 / −11.1 / −21 | 6.9 / −4.3 / −14 |
+| studs, red | 18.4 / +5.4 / −20 | 10.3 / −5.5 / −21 | 9.2 / −1.5 / −18 |
+| studs, high albedo | 35.0 / +30.6 / +54 | 8.5 / −2.2 / −22 | 9.6 / +4.4 / +16 |
+| blocks with an air gap, red | 16.8 / +6.9 / −21 | 8.8 / −6.2 / −23 | 6.5 / −2.1 / −20 |
+| blocks with an air gap, high albedo | 32.5 / +29.6 / +61 | 10.3 / −5.9 / +27 | 8.7 / +0.9 / +34 |
+
+Against the thin parts alone it is better on every run but three: the high-albedo groove (4.7 to 7.6; the layer model left it at 0.97 of the walks,
+the exit term puts it at 1.07), the high-albedo studs (8.5 to 9.6, at 1.07) and the clay wall (7.6 to 7.7). The
+renderer over the walks, per channel:
+
+| Run | thin parts | thin parts and exit term |
+|---|---|---|
+| slab, red | 0.925, 0.933, 0.967 | 1.019, 1.028, 1.065 |
+| slab, high albedo | 0.938, 0.937, 0.937 | 1.032, 1.032, 1.032 |
+| slab, wax | 0.925, 0.913, 0.968 | 1.010, 0.998, 1.057 |
+| slab, bark | 0.928, 0.924, 0.927 | 1.005, 1.001, 1.005 |
+| slab, clay | 0.950, 0.938, 0.931 | 1.029, 1.016, 1.009 |
+| slab head on, red | 0.927, 0.975, 1.016 | 1.021, 1.073, 1.118 |
+| slab head on, high albedo | 0.936, 0.936, 0.936 | 1.031, 1.031, 1.031 |
+| V-groove and dimple, wax | 0.930, 0.897, 0.969 | 1.015, 0.980, 1.058 |
+| V-groove and dimple, high albedo | 0.974, 0.974, 0.974 | 1.072, 1.072, 1.072 |
+| ridged trunk, bark | 0.850, 0.865, 0.895 | 0.920, 0.937, 0.970 |
+| the same, smooth normals | 0.851, 0.866, 0.896 | 0.922, 0.938, 0.970 |
+| 1.2 mm wall, clay | 1.042, 0.971, 0.885 | 1.129, 1.052, 0.959 |
+| 1.2 mm wall, high albedo | 0.928, 0.927, 0.924 | 1.022, 1.020, 1.017 |
+| bare studs slab, red | 0.861, 0.856, 0.945 | 0.948, 0.942, 1.040 |
+| bare studs slab, high albedo | 0.858, 0.858, 0.858 | 0.945, 0.945, 0.944 |
+| studs, red | 0.919, 0.827, 0.879 | 1.012, 0.911, 0.968 |
+| studs, high albedo | 0.970, 0.969, 0.969 | 1.068, 1.067, 1.067 |
+| blocks with an air gap, red | 0.870, 0.842, 0.929 | 0.958, 0.927, 1.023 |
+| blocks with an air gap, high albedo | 0.921, 0.919, 0.918 | 1.015, 1.012, 1.011 |
+
+Method 1 renders the same pixels, bit for bit (the list in the smooth-mesh section). The scale is one multiply per shading
+point; the cost is that of the thin parts' section.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
