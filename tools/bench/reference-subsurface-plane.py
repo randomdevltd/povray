@@ -16,7 +16,7 @@ def transmission(cosine, eta):
     return 1 - min(1, max(0, f))
 
 
-def profile(reflectance, eta, mfp):
+def profile(reflectance, eta, mfp, jensen=False):
     fdr = eta * eta - eta ** 2.25 if eta < 1 else (1 - 1 / eta) / 4 + 0.75 * (1 - 1 / eta) ** 4.5
     boundary = (1 + fdr) / (1 - fdr)
     lo, hi = 0.0, 1.0
@@ -30,6 +30,9 @@ def profile(reflectance, eta, mfp):
             hi = alpha
     alpha = (lo + hi) / 2
     zr = mfp * alpha
+    if jensen:
+        fdr = -1.440 / eta ** 2 + 0.710 / eta + 0.668 + 0.0636 * eta
+        boundary = (1 + fdr) / (1 - fdr)
     return alpha / (4 * math.pi), math.sqrt(3 * (1 - alpha)) / zr, zr, zr * (1 + 4 / 3 * boundary)
 
 
@@ -46,6 +49,7 @@ def main():
     parser.add_argument('--width', type=int, default=64)
     parser.add_argument('--height', type=int, default=48)
     parser.add_argument('--angles', type=int, default=2048)
+    parser.add_argument('--jensen', action='store_true', help="the same medium with Jensen's Fdr in the profile's boundary")
     args = parser.parse_args()
     flux, cosine = 1.0, 1.0
     if args.map:
@@ -63,7 +67,7 @@ def main():
                 raise ValueError('expected constant flux and incidence')
         flux = math.ldexp(colour[0], colour[3] - 258) / args.step ** 2
         cosine = math.sin(theta * math.pi / 127)
-    scale, sigma, zr, zv = profile(args.reflectance, args.ior, args.mfp)
+    scale, sigma, zr, zv = profile(args.reflectance, args.ior, args.mfp, args.jensen)
     factor = flux * transmission(cosine, args.ior) * transmission(6 / math.sqrt(36 + 1e-6), args.ior)
     angles = [(math.cos(2 * math.pi * (k + 0.5) / args.angles), math.sin(2 * math.pi * (k + 0.5) / args.angles)) for k in range(args.angles)]
     origin = math.exp(-sigma * zr) + math.exp(-sigma * zv)
