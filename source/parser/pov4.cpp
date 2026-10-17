@@ -130,7 +130,7 @@ const char* const kObjectKeywords[] = {
     "intersection", "isosurface", "isosurface_mesh", "julia_fractal", "lathe", "lemon", "light_group",
     "light_source", "merge", "mesh", "mesh2", "object", "ovus", "parametric", "plane", "poly", "polygon",
     "polynomial", "portal", "prism", "quadric", "quartic", "skein", "skein_mesh", "smooth_triangle", "sor",
-    "sphere", "sphere_sweep", "superellipsoid", "text", "torus", "triangle", "union",
+    "sphere", "sphere_sweep", "superellipsoid", "tagged", "text", "torus", "triangle", "union",
 };
 const char* const kChildKeywords[] = {
     "composite", "difference", "intersection", "light_group", "merge", "union",
@@ -698,6 +698,7 @@ private:
     std::vector<POV_LONG> mPendingLines;
     unsigned mPendingFile = 0;
     bool mPendingRaw = false;
+    bool mAfterEmptySplice = false;
     std::vector<std::string> mDead;
     std::unordered_map<int, std::string> mExported;
     std::unordered_set<int> mDirty;
@@ -721,6 +722,7 @@ private:
 
     Program& Load(const UCS2String& fileName, unsigned int fileType, const Node* at);
     const Node* Lower(Program& p, TSNode n);
+    void LowerTagExpression(Program& p, TSNode n, Node& into);
     Node& NewNode(Program& p, NK kind, TSNode n);
     void LowerItems(Program& p, TSNode n, Node& into, const char* skipField);
     int CheckedName(Program& p, TSNode n);
@@ -750,6 +752,7 @@ private:
     Flow ExecItems(const std::vector<const Node*>& items, Output& out);
     Flow Exec(const Node* n, Output& out);
     void Emit(const Node* n, Output& out);
+    void EmitItem(const Node* n, Output& out);
     bool ContextualItem(const std::string& block, const std::string& word);
     PValue Eval(const Node* n);
     PValue EvalArray(const Node* n);
@@ -790,7 +793,7 @@ private:
     bool Truth(const PValue& v, const Node* at);
     PValue MakeString(const UCS2String& s);
     PValue MakeArray(PValues&& values);
-    void Splice(const PValue& v, Output& out, const Node* at);
+    bool Splice(const PValue& v, Output& out, const Node* at);
 
     struct CheckFn
     {
@@ -1025,6 +1028,38 @@ void Pov4Evaluator::LowerItems(Program& p, TSNode n, Node& into, const char* ski
     }
 }
 
+// Operators, any and none pass through as words; string operands are evaluated like any other value.
+void Pov4Evaluator::LowerTagExpression(Program& p, TSNode n, Node& into)
+{
+    const std::string type = ts_node_type(n);
+    if ((type == "binary_expression") || (type == "unary_expression") || (type == "parenthesized_expression") ||
+        (type == "constant"))
+    {
+        for (uint32_t i = 0; i < ts_node_child_count(n); ++i)
+        {
+            TSNode child = ts_node_child(n, i);
+            if (std::strcmp(ts_node_type(child), "comment") == 0)
+                continue;
+            if (ts_node_is_named(child))
+                LowerTagExpression(p, child, into);
+            else
+            {
+                Node& word = NewNode(p, NK::Keyword, child);
+                word.text = NodeText(p.source, child);
+                into.kids.push_back(&word);
+            }
+        }
+        if (ts_node_child_count(n) == 0)
+        {
+            Node& word = NewNode(p, NK::Keyword, n);
+            word.text = NodeText(p.source, n);
+            into.kids.push_back(&word);
+        }
+        return;
+    }
+    into.kids.push_back(Lower(p, n));
+}
+
 const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
 {
     if (mDepth >= kMaxDepth)
@@ -1058,6 +1093,15 @@ const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
         Node& node = NewNode(p, NK::Block, n);
         node.text = NodeText(p.source, Field(n, "name"));
         LowerItems(p, n, node, "name");
+        return &node;
+    }
+    if (type == "tag_filter")
+    {
+        Node& node = NewNode(p, NK::Block, n);
+        node.text = NodeText(p.source, Field(n, "name"));
+        TSNode filter = Field(n, "filter");
+        if (!ts_node_is_null(filter))
+            LowerTagExpression(p, filter, node);
         return &node;
     }
     if (type == "function_block")
@@ -2585,7 +2629,8 @@ void Pov4Evaluator::TextOutput::PutValue(const PValue& v, const Node* at, bool s
                 buf += ',';
             bool copied = (h.wrap == "object") && !spliced && (buf.back() == '{') && IN_LIST(kObjectKeywords, context) &&
                           !IN_LIST(kChildKeywords, context);
-            if (h.wrap.empty() || context.empty() || (context == h.wrap) || (lastKeyword == h.wrap) || copied)
+            const bool framed = (h.wrap == "object") && (lastKeyword == "look_at");
+            if (h.wrap.empty() || context.empty() || (context == h.wrap) || (lastKeyword == h.wrap) || copied || framed)
                 Append(h.name, at);
             else
                 Append(h.wrap + " { " + h.name + " }", at);
@@ -3140,17 +3185,25 @@ Pov4Evaluator::Flow Pov4Evaluator::Exec(const Node* n, Output& out)
     }
 }
 
-void Pov4Evaluator::Splice(const PValue& v0, Output& out, const Node* at)
+// Whether the splice put anything into the output.
+bool Pov4Evaluator::Splice(const PValue& v0, Output& out, const Node* at)
 {
     PValue v = (v0.type == PValue::Frag) ? v0 : AsValue(v0, at);
     if (v.type == PValue::Arr)
+    {
         for (const PValue& e : v.As<PValues>())
             out.Put(Item(e, at), true);
-    else if (v.type == PValue::Frag)
+        return !v.As<PValues>().empty();
+    }
+    if (v.type == PValue::Frag)
+    {
         for (const Item& item : v.As<Items>())
             out.Put(item, true);
-    else if (v.type != PValue::Null)
+        return !v.As<Items>().empty();
+    }
+    if (v.type != PValue::Null)
         Fail(at, "Cannot splice a %s.", TypeName(v).c_str());
+    return false;
 }
 
 // A contextual keyword: the classic parser matches this word by text inside this block, so the
@@ -3165,7 +3218,19 @@ bool Pov4Evaluator::ContextualItem(const std::string& block, const std::string& 
     return false;
 }
 
+// An empty spread takes the comma after it, so `tags { ...None, inherit }` stays a list.
 void Pov4Evaluator::Emit(const Node* n, Output& out)
+{
+    const bool afterEmptySplice = mAfterEmptySplice;
+    mAfterEmptySplice = false;
+    if ((n->kind == NK::Comma) && afterEmptySplice)
+        return;
+    EmitItem(n, out);
+    if (n->kind != NK::Spread)
+        mAfterEmptySplice = false;
+}
+
+void Pov4Evaluator::EmitItem(const Node* n, Output& out)
 {
     switch (n->kind)
     {
@@ -3173,8 +3238,10 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
             out.Put(Item(Item::Keyword, n->text, n->text, n), false);
             return;
         case NK::Ident:
+            // tagged is a selector only before a brace, so a bound name of that spelling is its value
             if (out.IsBlock() && ((static_cast<TextOutput&>(out).lastKeyword == "mix") ||
-                                  ContextualItem(static_cast<TextOutput&>(out).context, n->text)))
+                                  (ContextualItem(static_cast<TextOutput&>(out).context, n->text) &&
+                                   !((n->text == "tagged") && FindBinding(n)))))
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
                 return;
@@ -3184,7 +3251,7 @@ void Pov4Evaluator::Emit(const Node* n, Output& out)
             out.Put(Item(Item::Comma, ",", std::string(), n), false);
             return;
         case NK::Spread:
-            Splice(Eval(n->a), out, n);
+            mAfterEmptySplice = !Splice(Eval(n->a), out, n);
             return;
         case NK::Block:
         case NK::FunctionBlock:

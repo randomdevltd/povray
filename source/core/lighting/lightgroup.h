@@ -41,7 +41,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <unordered_set>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -60,7 +60,11 @@ namespace pov
 ///
 /// @{
 
-void Promote_Local_Lights(CSG *Object);
+/// Whether a light group as it is now holds a light that lights and an object to light; groups record it as written.
+bool Light_Group_Lights_Something(const CSG *group);
+/// Gives the objects of every active light group below and at an object its group's lights, inner groups first; `lit`
+/// holds the objects a group has given lights to, which an enclosing group's lights are then added to.
+void Assign_Light_Groups(ObjectPtr object, std::unordered_set<ConstObjectPtr>& lit);
 bool Check_Photon_Light_Group(ConstObjectPtr Object);
 
 /// @}

@@ -38,7 +38,7 @@ function expressionFamily(top, suffix, comparisons) {
 module.exports = grammar({
   name: 'pov4',
   word: ($) => $.identifier,
-  externals: ($) => [$.keyword, $.builtin, $.colour_operator, $.color_operator, $.colour_channel],
+  externals: ($) => [$.keyword, $.builtin, $.colour_operator, $.color_operator, $.colour_channel, $.tag_keyword],
   extras: ($) => [/\s/, $.comment],
   conflicts: ($) => [[$.parameter, $._primary], [$.body, $.dictionary], [$._item, $.dictionary], [$.channel],
     [$._expression, $._item_expression], [$.lambda, $._lambda_item]],
@@ -79,7 +79,7 @@ module.exports = grammar({
     ...expressionFamily('_component', 'component', []),
     _postfix: ($) => choice($.call_expression, $.index_expression, $.member_expression, $._primary),
     _primary: ($) => choice($.number, $.string, $.identifier, $.builtin, $.true, $.false, $.null, $.vector,
-      $.dictionary, $.parenthesized_expression, $.block, $.function_block),
+      $.dictionary, $.parenthesized_expression, $.block, $.function_block, $.tag_filter),
 
     colour_expression: ($) => prec.right(PREC.colour, seq(choice(
       seq(field('operator', $.colour_operator), field('value', $._component)),
@@ -108,6 +108,21 @@ module.exports = grammar({
       seq(field('width', $._size), ',', field('height', $._size)))),
       '{', repeat(choice($.keyword, $._expression, ',')), '}'),
     _size: ($) => choice($.number, $.identifier),
+    tag_filter: ($) => seq(field('name', alias($.tag_keyword, $.keyword)), '{',
+      optional(field('filter', $._tag_expression)), '}'),
+    _tag_expression: ($) => choice($.string, $.identifier, alias($._tag_call, $.call_expression),
+      alias($._tag_member, $.member_expression), alias($._tag_index, $.index_expression),
+      alias(choice('any', 'none'), $.constant),
+      alias($._tag_parenthesized, $.parenthesized_expression), alias($._tag_not, $.unary_expression),
+      alias($._tag_binary, $.binary_expression)),
+    _tag_parenthesized: ($) => seq('(', $._tag_expression, ')'),
+    _tag_call: ($) => seq(field('function', choice($.identifier, $.builtin)), field('arguments', $.arguments)),
+    _tag_member: ($) => seq(field('object', $.identifier), token.immediate('.'), field('member', $.identifier)),
+    _tag_index: ($) => seq(field('object', $.identifier), token.immediate('['), field('index', $._expression), ']'),
+    _tag_not: ($) => prec(3, seq(field('operator', '!'), field('operand', $._tag_expression))),
+    _tag_binary: ($) => choice(
+      prec.left(2, seq(field('left', $._tag_expression), field('operator', '&'), field('right', $._tag_expression))),
+      prec.left(1, seq(field('left', $._tag_expression), field('operator', '|'), field('right', $._tag_expression)))),
     function_parameters: ($) => prec(PREC.block, seq('(', optional(commaSep1(choice($.identifier, $.builtin))), ')')),
 
     true: (_) => 'true',

@@ -44,6 +44,7 @@
 
 // C++ standard header files
 #include <memory>
+#include <vector>
 
 // POV-Ray header files (base module)
 #include "base/base_fwd.h"
@@ -97,6 +98,28 @@ class MeshBuildTask final : public SceneTask
         TraceThreadData *parseData;
         POV_LONG buildCpuTime;
 
+        void SendFatalError(pov_base::Exception& e);
+};
+
+/// The scene's cameras that look_at an object or tagged selection and are not framed yet, each once.
+std::vector<Camera *> FramedCameras(SceneData& sceneData);
+
+/// Frames those cameras once MeshBuildTask has built their targets' meshes, as the last step of parsing.
+class CameraFramingTask final : public SceneTask
+{
+    public:
+        CameraFramingTask(std::shared_ptr<BackendSceneData> sd, size_t seed, TraceThreadData *parseData);
+        virtual ~CameraFramingTask() override;
+
+        virtual void Run() override;
+        virtual void Stopped() override;
+        virtual void Finish() override;
+
+    private:
+        std::shared_ptr<BackendSceneData> sceneData;
+        TraceThreadData *parseData;
+
+        void Frame(Camera& camera);
         void SendFatalError(pov_base::Exception& e);
 };
 

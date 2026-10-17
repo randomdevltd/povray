@@ -84,6 +84,10 @@ class CSG : public CompoundObject
         CSG(int t, CompoundObject& o, bool transplant) : CompoundObject(t, o, transplant) {}
 
         int do_split;
+        /// [light group] it held a light and an object as written, so the scene's final pass gives out its lights
+        bool lightGroupActive = false;
+        /// [light group] made by copying one, which leaves the group's own list of lights empty
+        bool lightGroupCopy = false;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;

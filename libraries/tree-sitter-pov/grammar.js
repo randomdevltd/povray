@@ -29,7 +29,7 @@ module.exports = grammar({
   name: 'pov',
   word: $ => $.identifier,
   extras: $ => [/\s/, $.line_comment, $.block_comment],
-  externals: $ => [$.block_comment],
+  externals: $ => [$.block_comment, $._tagged],
   supertypes: $ => [$._directive],
   reserved: { global: _ => words.map((k) => k.word).filter((w) => !VERSIONED.includes(w)), raw: _ => [] },
 
@@ -170,10 +170,12 @@ module.exports = grammar({
     ),
 
     _rvalue: $ => choice(
-      $._value, $.colour_expression, $.block, $.function_block, $.array_expression, $.dictionary_expression,
+      $._value, $.colour_expression, $.block, $.tag_filter, $.function_block, $.array_expression,
+      $.dictionary_expression,
     ),
     _argument: $ => choice(
-      $._expression, $.colour_expression, $.block, $.function_block, $.array_expression, $.dictionary_expression,
+      $._expression, $.colour_expression, $.block, $.tag_filter, $.function_block, $.array_expression,
+      $.dictionary_expression,
     ),
 
     _expression: $ => choice($._value, alias($._logic_expression, $.binary_expression), $.conditional_expression),
@@ -263,7 +265,8 @@ module.exports = grammar({
     ),
 
     tag_filter: $ => seq(
-      field('name', alias(choice(...TAG_FILTERS), $.keyword)), '{', optional(field('filter', $._tag_expression)), '}',
+      field('name', choice(alias(choice(...TAG_FILTERS), $.keyword), alias($._tagged, $.keyword))), '{',
+      optional(field('filter', $._tag_expression)), '}',
     ),
     _tag_expression: $ => choice(
       $.string, $.identifier, alias(choice('any', 'none'), $.constant),

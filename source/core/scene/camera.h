@@ -43,12 +43,15 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <functional>
+#include <memory>
 #include <vector>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
 
 // POV-Ray header files (core module)
+#include "core/coretypes.h"
 #include "core/math/vector.h"
 #include "core/material/normal.h"
 #include "core/scene/tagfilter.h"
@@ -86,6 +89,10 @@ namespace pov
 /*****************************************************************************
 * Global typedefs
 ******************************************************************************/
+
+/// Fitted: aimed and zoomed; Aimed: aimed only, the bounds overflow the parsed field, reach behind the camera, or the projection has none to scale;
+/// Pointed: aimed only, the bounds have no size to fit.
+enum class FrameResult { Fitted, Aimed, Pointed, Failed };
 
 class Camera final
 {
@@ -127,6 +134,20 @@ public:
     bool No_Radiosity;                      // [screen cameras] no radiosity pretrace, and its view is shaded without radiosity
     std::vector<std::string> tags;
     TagFilter filterTags;
+    /// look_at an object or tagged selection: a copy of it taken as the camera is parsed, measured and framed once the
+    /// scene's deferred meshes are built, and then released for the bounds it had
+    bool frameBounds = false;
+    std::shared_ptr<ObjectBase> frameTarget;
+    bool frameSelection = false;
+    SourceInfo frameSource;
+    Vector3d frameLow, frameHigh;
+    /// transforms parsed after a framed look_at; framing aims beneath them, as a point look_at does
+    std::shared_ptr<const TRANSFORM> framePlacement;
+    /// the framed target's extent as a fraction of the image along its limiting axis; 1 touches the edges
+    DBL frameMultiplier = 0.9;
+    /// [user-defined camera] the part of its (x, y) output space the image shows; framing narrows it
+    DBL windowLow[2] = { -0.5, -0.5 }, windowHigh[2] = { 0.5, 0.5 };
+    bool HasWindow() const { return (windowLow[0] != -0.5) || (windowLow[1] != -0.5) || (windowHigh[0] != 0.5) || (windowHigh[1] != 0.5); }
 
     Camera();
     Camera(const Camera& src);
@@ -138,10 +159,23 @@ public:
     void Translate(const Vector3d& Vector);
     /// Whether this camera takes the same picture as another, judged by content; perturbed or function-defined views never match a copy.
     bool SameView(const Camera& other, bool compareFilters = true) const;
+    /// Aims at the bounds' centre from Location, which framing never moves, and resizes the field until they fit with a margin.
+    FrameResult Frame(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData = nullptr,
+                      const std::function<void()>& cooperate = nullptr);
+    bool FitsFrame(const Vector3d& low, const Vector3d& high) const;
+    void PlaceFrame(const TRANSFORM *trans);
 
 private:
     void Init();
+    FrameResult FrameField(const Vector3d& low, const Vector3d& high);
+    FrameResult FrameWindow(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData,
+                            const std::function<void()>& cooperate);
 };
+
+/// Whether a box, a single point at least, is finite and well inside the bounding limits.
+bool FiniteBounds(const Vector3d& low, const Vector3d& high);
+/// The finite bounds a look_at target frames, with its genuinely unbounded parts counted and left out; false if none.
+bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, unsigned int& unbounded);
 
 /// @}
 ///

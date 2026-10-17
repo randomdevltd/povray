@@ -82,10 +82,13 @@ struct DeferredMeshState;
 enum class TagSelection { Empty, Everything, Whole, Part };
 
 TagSelection SelectTagged(ConstObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited = nullptr);
-bool EnclosingTagsMatch(ConstObjectPtr object, const TagFilter& filter);
+/// The tags an object answers to: its own, plus `inherited` (its parent's) when it inherits them; `merged` may hold them.
+const std::vector<std::string>& EffectiveTags(ConstObjectPtr object, const std::vector<std::string> *inherited,
+                                              std::vector<std::string>& merged);
+/// Writes the effective tags into each object below `object`, once nothing will copy them as written.
+void ResolveInheritedTags(ObjectPtr object, const std::vector<std::string> *inherited = nullptr);
 /// Destroys the descendants of a parsed root that the filter removes; the root itself is left to the caller.
 TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights);
-void ForgetLights(ObjectPtr object, const std::vector<LightSource*>& lights);
 
 struct PreparedSet final
 {

@@ -56,6 +56,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/bsptree.h"
 #include "core/math/matrix.h"
+#include "core/scene/camera.h"
 #include "core/scene/object.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/csg.h"
@@ -288,6 +289,9 @@ void MeshBuildTask::Run()
     for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
         for (ObjectPtr object : set->objects)
             collect(object);
+    // a look_at target is measured built, so its meshes are built with the scene's
+    for (Camera *camera : FramedCameras(*sceneData))
+        collect(camera->frameTarget.get());
 
     std::vector<std::unique_ptr<TraceThreadData>> workers;
     const size_t count = std::max<size_t>(1, std::min<size_t>(threads, needed.size()));
@@ -399,6 +403,124 @@ void MeshBuildTask::Run()
                                unsigned(recorded), sceneData->deferredMeshesBuiltForQueries, built,
                                unsigned(recorded - sceneData->deferredMeshesBuiltForQueries - built));
     std::vector<std::weak_ptr<DeferredMeshState>>().swap(sceneData->deferredMeshes);
+}
+
+std::vector<Camera *> FramedCameras(SceneData& sceneData)
+{
+    std::vector<Camera *> framed;
+    std::unordered_set<const Camera *> seen;
+    auto frames = [&](const Camera& camera) {
+        if (camera.frameBounds && camera.frameTarget && seen.insert(&camera).second)
+            framed.push_back(const_cast<Camera *>(&camera));
+    };
+    frames(sceneData.parsedCamera);
+    for (const Camera& camera : sceneData.cameras)
+        frames(camera);
+    for (const std::shared_ptr<const Camera>& camera : sceneData.screenCameras)
+        frames(*camera);
+    return framed;
+}
+
+CameraFramingTask::CameraFramingTask(std::shared_ptr<BackendSceneData> sd, size_t sd_seed, TraceThreadData *pd) :
+    SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), sd_seed, false), boost::bind(&CameraFramingTask::SendFatalError, this, _1), "Parse", sd),
+    sceneData(sd),
+    parseData(pd)
+{
+}
+
+CameraFramingTask::~CameraFramingTask()
+{
+}
+
+// A target's meshes were built with the scene's; its boxes are redone above them, as for a prepared set.
+static bool ResolveTarget(ObjectPtr object)
+{
+    if (Mesh *mesh = dynamic_cast<Mesh *>(object))
+        return mesh->Resolve();
+    CompoundObject *compound = dynamic_cast<CompoundObject *>(object);
+    if (compound == nullptr)
+        return false;
+    if (LightSource *light = dynamic_cast<LightSource *>(object))
+        if (light->Projected_Through_Object != nullptr)
+            ResolveTarget(light->Projected_Through_Object);
+    bool changed = false;
+    for (ObjectPtr child : compound->children)
+        changed = ResolveTarget(child) || changed;
+    CSG *csg = dynamic_cast<CSG *>(object);
+    if (changed && (csg != nullptr) && csg->Bound.empty())
+    {
+        Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        csg->Compute_BBox();
+        Update_Infinite_Flag(csg);
+    }
+    return changed;
+}
+
+void CameraFramingTask::Run()
+{
+    for (Camera *camera : FramedCameras(*sceneData))
+        Frame(*camera);
+}
+
+void CameraFramingTask::Frame(Camera& camera)
+{
+    ResolveTarget(camera.frameTarget.get());
+    unsigned int unbounded = 0;
+    const bool found = FrameTargetBounds(camera.frameTarget.get(), camera.frameLow, camera.frameHigh, unbounded);
+    camera.frameTarget.reset();
+    const SourceInfo& source = camera.frameSource;
+    Exception failed = POV_EXCEPTION_CODE(kParseErr);
+    if (!found)
+        mpMessageFactory->ErrorAt(failed, source, camera.frameSelection ? "look_at tagged selects no object with finite non-empty bounds."
+                                                                : "look_at object framing needs finite non-empty bounds.");
+    if (unbounded > 0)
+        mpMessageFactory->WarningAt(kWarningGeneral, source, camera.frameSelection
+            ? "look_at tagged skipped %u unbounded object(s), such as planes, and frames the rest."
+            : "look_at skipped %u unbounded part(s) of this object, such as planes, and frames the rest.", unbounded);
+    switch (camera.Frame(camera.frameLow, camera.frameHigh, static_cast<TraceThreadData *>(GetDataPtr()), [this]() { Cooperate(); }))
+    {
+        case FrameResult::Failed:
+            if (camera.Type == MESH_CAMERA)
+                mpMessageFactory->ErrorAt(failed, source, "look_at cannot frame a target with a mesh_camera; use a point look_at.");
+            if (camera.Type == USER_DEFINED_CAMERA)
+                mpMessageFactory->ErrorAt(failed, source, "look_at found no ray of this user_defined camera that reaches the target's bounds.");
+            mpMessageFactory->ErrorAt(failed, source, "look_at could not frame these bounds with this camera projection.");
+            break;
+        case FrameResult::Aimed:
+            if ((camera.Type != PANORAMIC_CAMERA) && (camera.Type != OMNIMAX_CAMERA))
+                mpMessageFactory->WarningAt(kWarningGeneral, source, "look_at target does not fit the camera's field from its "
+                                            "location; the camera points at its centre without zooming out.");
+            break;
+        default:
+            break;
+    }
+}
+
+void CameraFramingTask::Stopped()
+{
+}
+
+void CameraFramingTask::Finish()
+{
+    parseData->realTime += ConsumedRealTime();
+    if (parseData->cpuTime >= 0)
+        parseData->cpuTime += ConsumedCPUTime();
+}
+
+void CameraFramingTask::SendFatalError(Exception& e)
+{
+    if (e.frontendnotified(true))
+        return;
+
+    POVMS_Message msg(kPOVObjectClass_ControlData, kPOVMsgClass_SceneOutput, kPOVMsgIdent_Error);
+
+    msg.SetString(kPOVAttrib_EnglishText, e.what());
+    msg.SetInt(kPOVAttrib_Error, 0);
+    msg.SetInt(kPOVAttrib_SceneId, sceneData->sceneId);
+    msg.SetSourceAddress(sceneData->backendAddress);
+    msg.SetDestinationAddress(sceneData->frontendAddress);
+
+    POVMS_SendMessage(msg);
 }
 
 void MeshBuildTask::Stopped()

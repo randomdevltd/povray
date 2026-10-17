@@ -246,6 +246,8 @@ void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, s
     TraceThreadData *parseData = sceneThreadData.front();
     sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(taskq.AppendTask(new MeshBuildTask(sceneData, seed, workers, parseData))));
     taskq.AppendSync();
+    sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(taskq.AppendTask(new CameraFramingTask(sceneData, seed, parseData))));
+    taskq.AppendSync();
 
     for (size_t view = 0; view < sceneData->preparedSets.size(); ++view)
     {

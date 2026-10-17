@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <unordered_set>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -56,157 +57,68 @@
 namespace pov
 {
 
-using std::vector;
 
-void Promote_Local_Lights_Recursive(CompoundObject *Object, vector<LightSource *>& Lights);
-
-
-/*****************************************************************************
-*
-* FUNCTION
-*
-*   Promote_Local_Lights
-*
-* INPUT
-*
-*   Object - CSG union object
-*
-* OUTPUT
-*
-*   Modified CSG union object with local lights added to each object
-*
-* RETURNS
-*
-* AUTHOR
-*
-*   Thorsten Froehlich [trf]
-*
-* DESCRIPTION
-*
-*   Collects all light sources in CSG union object (only those who are direct
-*   children of the object, not childrens children light sources - this was
-*   taken care of before) and adds them to local light list of every object
-*   in the CSG union.
-*   NOTE: Only pointers are changed, the original light source is still the
-*   one in the CSG union, and once this light source has been deallocated,
-*   the pointers will be invalid.  Note that because of this we do not need
-*   to (and we may not!) free the LLight lights of each object!
-*
-* CHANGES
-*
-*   Jun 2000 : Creation.
-*
-******************************************************************************/
-
-void Promote_Local_Lights(CSG *Object)
+namespace
 {
-    vector<LightSource *> lights;
 
-    if (Object == nullptr)
-        return;
-
-    // find all light sources in the light group and connect them to form a list
-    int light_counter = 0;
-    int object_counter = 0;
-    for(vector<ObjectPtr>::iterator curObject = Object->children.begin();
-        curObject != Object->children.end();
-        curObject++)
-    {
-        if(((*curObject)->Type & LIGHT_GROUP_LIGHT_OBJECT) == LIGHT_GROUP_LIGHT_OBJECT)
-        {
-            LightSource *light = reinterpret_cast<LightSource *>(*curObject);
-            if (!light->Photon_Only)
-            {
-                lights.push_back(light);
-                light_counter++;
-            }
-        }
-        else
-            object_counter++;
-    }
-
-    // if no lights have been found in the light group we don't need to continue, but the
-    // user should know there are no lights (also it will continue to work as a union)
-    if(light_counter <= 0)
-    {
-;// TODO MESSAGE        Warning("No light source(s) found in light group.");
-        return;
-    }
-    // if no objects have been found nothing will happen at all (the light group is only wasting memory)
-    if(object_counter <= 0)
-    {
-;// TODO MESSAGE        Warning("No object(s) found in light group.");
-        return;
-    }
-
-    // allow easy promotion of lights (if this is part of another light group)
-    Object->LLights = lights;
-
-    // promote light recursively to all other objects in the CSG union
-    Promote_Local_Lights_Recursive(reinterpret_cast<CompoundObject *>(Object), lights);
+bool GivesLight(ConstObjectPtr child)
+{
+    return ((child->Type & LIGHT_GROUP_LIGHT_OBJECT) == LIGHT_GROUP_LIGHT_OBJECT) &&
+           !reinterpret_cast<const LightSource *>(child)->Photon_Only;
 }
 
-/*****************************************************************************
-*
-* FUNCTION
-*
-*   Promote_Local_Lights_Recursive
-*
-* INPUT
-*
-*   Object - compound object
-*   Lights - local lights to add to children objects
-*
-* OUTPUT
-*
-*   Modified compound object with local lights added to each object
-*
-* RETURNS
-*
-* AUTHOR
-*
-*   Thorsten Froehlich [trf]
-*
-* DESCRIPTION
-*
-*   Adds input list of light sources to local light list of every object in
-*   the compound object, recursively if there are other compound objects.
-*   NOTE: Only pointers are changed and because of this we do not need to
-*   (and we may not!) free the LLight lights of each object!
-*
-* CHANGES
-*
-*   Jun 2000 : Creation.
-*
-******************************************************************************/
-
-void Promote_Local_Lights_Recursive(CompoundObject *Object, vector<LightSource *>& Lights)
+// Every object in a group without lights from a group inside it takes these lights; those with them add these.
+void Give_Group_Lights(CompoundObject *object, const std::vector<LightSource *>& lights, std::unordered_set<ConstObjectPtr>& lit)
 {
-    ObjectPtr curObject = nullptr;
-
-    for(vector<ObjectPtr>::iterator curObject = Object->children.begin();
-        curObject != Object->children.end();
-        curObject++)
+    for (ObjectPtr child : object->children)
     {
-        if(!(*curObject)->LLights.empty())
+        if (lit.count(child) != 0)
         {
-            for(vector<LightSource *>::iterator i = Lights.begin(); i != Lights.end(); i++)
-                (*curObject)->LLights.push_back(*i);
+            child->LLights.insert(child->LLights.end(), lights.begin(), lights.end());
+            continue;
         }
-        else if(((*curObject)->Type & IS_COMPOUND_OBJECT) == IS_COMPOUND_OBJECT)
-        {
-            // allow easy promotion of lights (if this is part of another light group)
-            (*curObject)->LLights = Lights;
-
-            Promote_Local_Lights_Recursive(reinterpret_cast<CompoundObject *>(*curObject), Lights);
-        }
-        else
-        {
-            (*curObject)->LLights = Lights;
-        }
+        child->LLights = lights;
+        lit.insert(child);
+        if ((child->Type & IS_COMPOUND_OBJECT) == IS_COMPOUND_OBJECT)
+            Give_Group_Lights(reinterpret_cast<CompoundObject *>(child), lights, lit);
     }
 }
 
+}
+
+bool Light_Group_Lights_Something(const CSG *group)
+{
+    bool light = false, object = false;
+    for (ConstObjectPtr child : group->children)
+    {
+        if ((child->Type & LIGHT_GROUP_LIGHT_OBJECT) == LIGHT_GROUP_LIGHT_OBJECT)
+            light = light || GivesLight(child);
+        else
+            object = true;
+    }
+    return light && object;
+}
+
+void Assign_Light_Groups(ObjectPtr object, std::unordered_set<ConstObjectPtr>& lit)
+{
+    if ((object->Type & IS_COMPOUND_OBJECT) != IS_COMPOUND_OBJECT)
+        return;
+    CompoundObject *compound = reinterpret_cast<CompoundObject *>(object);
+    for (ObjectPtr child : compound->children)
+        Assign_Light_Groups(child, lit);
+    CSG *group = dynamic_cast<CSG *>(object);
+    if ((group == nullptr) || ((object->Type & LIGHT_GROUP_OBJECT) == 0) || !group->lightGroupActive)
+        return;
+    std::vector<LightSource *> lights;
+    for (ObjectPtr child : compound->children)
+        if (GivesLight(child))
+            lights.push_back(reinterpret_cast<LightSource *>(child));
+    Give_Group_Lights(compound, lights, lit);
+    if (group->lightGroupCopy)
+        return;
+    object->LLights = lights;
+    lit.insert(object);
+}
 
 
 /*****************************************************************************

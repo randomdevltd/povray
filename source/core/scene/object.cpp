@@ -591,9 +591,9 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Bound   = Old->Bound;
     New->Clip    = Old->Clip;
     New->BBox    = Old->BBox;
-    New->Flags   = Old->Flags;
+    New->Flags   = Old->Flags & ~FRAME_TARGET_FLAG;
     New->tags = Old->tags;
-    New->enclosingTags = Old->enclosingTags;
+    New->inheritTags = Old->inheritTags;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;
@@ -699,7 +699,9 @@ void Update_Infinite_Flag(ObjectPtr Object)
 
 void Destroy_Object(ObjectPtr Object)
 {
-    if (Object != nullptr)
+    if ((Object != nullptr) && Test_Flag(Object, FRAME_TARGET_FLAG))
+        Object->Flags &= ~FRAME_TARGET_FLAG;
+    else if (Object != nullptr)
     {
         bool DestroyClip = true;
         if (!Object->Bound.empty() && !Object->Clip.empty())

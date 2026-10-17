@@ -49,6 +49,7 @@
 #include <algorithm>
 #include <map>
 #include <sstream>
+#include <unordered_set>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -321,6 +322,12 @@ void Parser::Run()
                 IncludeHeader(sceneData->headerFile);
                 Parse_Frame();
             }
+
+            // the scene is complete: settle inherited tags, give out group lights, then dissolve the unions split for bounding
+            for (ObjectPtr object : sceneData->objects)
+                ResolveInheritedTags(object);
+            Assign_Scene_Lights();
+            Split_Unions();
 
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
@@ -1528,6 +1535,12 @@ void Parser::Parse_Camera (Camera& Cam)
                 Parse_Filter_Tags(New.filterTags);
             END_CASE
 
+            CASE (LOOK_AT_TOKEN)
+                Parse_Camera_Look_At(New);
+                if (!New.frameBounds)
+                    Error("A declared camera can take look_at an object or tagged selection, not a point.");
+            END_CASE
+
             OTHERWISE
                 UNGET
                 EXIT
@@ -1536,6 +1549,8 @@ void Parser::Parse_Camera (Camera& Cam)
 
         // apply camera transformations
         New.Transform(New.Trans);
+        if (New.frameBounds)
+            New.PlaceFrame(New.Trans);
         Compose_Transforms(&Backup_Trans, New.Trans);
     }
     else if (sceneData->EffectiveLanguageVersion() >= 350)
@@ -1963,6 +1978,8 @@ void Parser::Parse_Camera (Camera& Cam)
 
         // apply camera transformations
         New.Transform(New.Trans);
+        if (New.frameBounds)
+            New.PlaceFrame(New.Trans);
     }
     else // old style syntax [mesh camera and user-defined camera not supported]
     {
@@ -2075,68 +2092,79 @@ void Parser::Parse_Camera (Camera& Cam)
                 tempv            = cross(New.Up, New.Direction);
                 Handedness       = dot(tempv, New.Right);
 
-                Parse_Vector (New.Look_At);
-                New.Direction = New.Look_At - New.Location;
-
-                // Check for zero length direction vector.
-                if (New.Direction.lengthSqr() < EPSILON)
-                    Error("Camera location and look_at point must be different.");
-
-                New.Direction.normalize();
-
-                // Save Right vector
-                tempv = New.Right;
-
-                New.Right = cross(New.Sky, New.Direction);
-
-                // Avoid DOMAIN error (from Terry Kanakis)
-                if((fabs(New.Right[X]) < EPSILON) &&
-                   (fabs(New.Right[Y]) < EPSILON) &&
-                   (fabs(New.Right[Z]) < EPSILON))
+                Parse_Camera_Look_At(New);
+                if (!New.frameBounds)
                 {
-                    // Restore Right vector
-                    New.Right = tempv;
-                }
+                    New.Direction = New.Look_At - New.Location;
 
-                New.Right.normalize();
-                New.Up = cross(New.Direction, New.Right);
-                New.Direction *= Direction_Length;
+                    // Check for zero length direction vector.
+                    if (New.Direction.lengthSqr() < EPSILON)
+                        Error("Camera location and look_at point must be different.");
 
-                if (Handedness > 0.0)
-                {
-                    New.Right *= Right_Length;
-                }
-                else
-                {
-                    New.Right *= -Right_Length;
-                }
+                    New.Direction.normalize();
 
-                New.Up *= Up_Length;
+                    // Save Right vector
+                    tempv = New.Right;
+
+                    New.Right = cross(New.Sky, New.Direction);
+
+                    // Avoid DOMAIN error (from Terry Kanakis)
+                    if((fabs(New.Right[X]) < EPSILON) &&
+                       (fabs(New.Right[Y]) < EPSILON) &&
+                       (fabs(New.Right[Z]) < EPSILON))
+                    {
+                        // Restore Right vector
+                        New.Right = tempv;
+                    }
+
+                    New.Right.normalize();
+                    New.Up = cross(New.Direction, New.Right);
+                    New.Direction *= Direction_Length;
+
+                    if (Handedness > 0.0)
+                    {
+                        New.Right *= Right_Length;
+                    }
+                    else
+                    {
+                        New.Right *= -Right_Length;
+                    }
+
+                    New.Up *= Up_Length;
+                }
             END_CASE
 
             CASE (TRANSLATE_TOKEN)
                 Parse_Vector (tempv);
                 New.Translate (tempv);
+                Compute_Translation_Transform(&Local_Trans, tempv);
+                if (New.frameBounds) New.PlaceFrame(&Local_Trans);
             END_CASE
 
             CASE (ROTATE_TOKEN)
                 Parse_Vector (tempv);
                 New.Rotate (tempv);
+                Compute_Rotation_Transform(&Local_Trans, tempv);
+                if (New.frameBounds) New.PlaceFrame(&Local_Trans);
             END_CASE
 
             CASE (SCALE_TOKEN)
                 Parse_Scale_Vector (tempv);
                 New.Scale (tempv);
+                Compute_Scaling_Transform(&Local_Trans, tempv);
+                if (New.frameBounds) New.PlaceFrame(&Local_Trans);
             END_CASE
 
             CASE (TRANSFORM_TOKEN)
                 New.Transform(Parse_Transform(&Local_Trans));
+                if (New.frameBounds) New.PlaceFrame(&Local_Trans);
             END_CASE
 
             CASE (MATRIX_TOKEN)
                 Parse_Matrix (Local_Matrix);
                 Compute_Matrix_Transform(&Local_Trans, Local_Matrix);
                 New.Transform(&Local_Trans);
+                if (New.frameBounds) New.PlaceFrame(&Local_Trans);
             END_CASE
 
             CASE (BLUR_SAMPLES_TOKEN)
@@ -2181,8 +2209,8 @@ void Parser::Parse_Camera (Camera& Cam)
 
     Parse_End ();
 
-    // Make sure the focal distance hasn't been explicitly given
-    if (New.Focal_Distance < 0.0)
+    // Make sure the focal distance hasn't been explicitly given; framing defaults it from the framed direction
+    if ((New.Focal_Distance < 0.0) && !New.frameBounds)
         New.Focal_Distance = Direction_Length;
     if (New.Focal_Distance == 0.0)
         New.Focal_Distance = 1.0;
@@ -2197,6 +2225,143 @@ void Parser::Parse_Camera (Camera& Cam)
         Warning("Camera vectors are not perpendicular.\n"
                 "Making look_at the last statement may help.");
     }
+}
+
+
+// A far mouth is made when its near mouth is placed, so a copy of the near mouth brings its own.
+static bool PortalImage(ConstObjectPtr object)
+{
+    if (!Test_Flag(object, PORTAL_FLAG))
+        return false;
+    const Portal *portal = static_cast<const Portal *>(object);
+    return !portal->farMouth && (portal->partner != nullptr);
+}
+
+void Parser::Parse_Camera_Look_At(Camera& camera)
+{
+    camera.frameBounds = false;
+    camera.frameTarget.reset();
+    camera.framePlacement.reset();
+    camera.frameMultiplier = 0.9;
+    Get_Token();
+    std::shared_ptr<ObjectBase> target;
+    const bool selected = (CurrentTokenText() == "tagged") && Tagged_Selector_Follows();
+    const SourceInfo source(CurrentMessageContext());
+    if (selected)
+    {
+        target.reset(Parse_Tagged(false), [](ObjectPtr object) { Destroy_Object(object); });
+        if (static_cast<CSG *>(target.get())->children.empty())
+            Error("look_at tagged selects nothing: no object placed before this camera matches it, and targets must be "
+                  "written before the camera.");
+    }
+    else if (CurrentTrueTokenId() == OBJECT_ID_TOKEN)
+        target = Frame_Target(CurrentTokenDataPtr<ObjectPtr>());
+    if (target != nullptr)
+    {
+        // measured once deferred meshes are built, by the scene's mesh pass
+        camera.frameTarget = target;
+        camera.frameSelection = selected;
+        camera.frameSource = source;
+        camera.frameBounds = true;
+        camera.Look_At = Vector3d(HUGE_VAL);
+        Parse_Comma();
+        camera.frameMultiplier = Allow_Float(0.9);
+        if (!(camera.frameMultiplier > 0.0) || !std::isfinite(camera.frameMultiplier))
+            Error("look_at frame multiplier must be a finite number greater than 0.");
+    }
+    else
+    {
+        UNGET
+        Parse_Vector(camera.Look_At);
+    }
+}
+
+// A declared target is framed as it is: when its declaration goes first, the camera frees it once framed.
+std::shared_ptr<ObjectBase> Parser::Frame_Target(ObjectPtr declared)
+{
+    std::weak_ptr<ObjectBase>& known = mFrameTargets[declared];
+    std::shared_ptr<ObjectBase> held = known.lock();
+    if (held == nullptr)
+    {
+        Set_Flag(declared, FRAME_TARGET_FLAG);
+        held.reset(declared, [](ObjectPtr object) {
+            if (Test_Flag(object, FRAME_TARGET_FLAG))
+                object->Flags &= ~FRAME_TARGET_FLAG;
+            else
+                Destroy_Object(object);
+        });
+        known = held;
+    }
+    return held;
+}
+
+bool Parser::Tagged_Selector_Follows()
+{
+    RawToken next;
+    return (sceneData->EffectiveLanguageVersion() >= 400) && PeekRawToken(next) &&
+           (next.lexeme.category == Lexeme::kOther) && (next.lexeme.text == "{");
+}
+
+// The current token is the word tagged: path copies of what the expression selects among the objects placed so far.
+ObjectPtr Parser::Parse_Tagged(bool warnEmpty)
+{
+    TagFilter filter;
+    Parse_Filter_Tags(filter, "tagged");
+    CSGUnion *selection = new CSGUnion();
+    bool lightsOnly = true;
+    for (ObjectPtr object : sceneData->objects)
+    {
+        if (PortalImage(object))
+            continue;
+        ObjectPtr copy = Copy_Tagged(object, filter, nullptr);
+        if (copy == nullptr)
+            continue;
+        copy->Type |= IS_CHILD_OBJECT;
+        selection->Type |= (copy->Type & CHILDREN_FLAGS);
+        lightsOnly = lightsOnly && ((copy->Type & LIGHT_SOURCE_OBJECT) != 0);
+        Link(copy, selection->children);
+    }
+    if (selection->children.empty() && warnEmpty)
+        Warning("tagged selects no object placed so far, so it is an empty union; objects written after it are not seen.");
+    if (lightsOnly && !selection->children.empty())
+        selection->Type |= LT_SRC_UNION_OBJECT;
+    selection->Compute_BBox();
+    return selection;
+}
+
+// A copy of what a filter selects in one placed object, each container holding only its selected parts; nullptr if none.
+ObjectPtr Parser::Copy_Tagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited)
+{
+    const TagSelection selection = SelectTagged(object, filter, inherited);
+    if ((selection == TagSelection::Empty) || (selection == TagSelection::Everything))
+        return nullptr;
+    CSG *csg = dynamic_cast<CSG *>(object);
+    if ((csg == nullptr) || (selection == TagSelection::Whole))
+        return Copy_Object(object);
+    std::vector<std::string> merged;
+    const std::vector<std::string>& tags = EffectiveTags(object, inherited, merged);
+    std::vector<ObjectPtr> children;
+    children.swap(csg->children);
+    CSG *copy = static_cast<CSG *>(Copy_Object(csg));
+    children.swap(csg->children);
+    copy->Type &= ~HOLDS_PORTAL_OBJECT;
+    for (ObjectPtr child : csg->children)
+    {
+        ObjectPtr kept = Copy_Tagged(child, filter, &tags);
+        if (kept == nullptr)
+            continue;
+        copy->Type |= (kept->Type & CHILDREN_FLAGS);
+        Link(kept, copy->children);
+    }
+    if (copy->Type & LIGHT_GROUP_OBJECT)
+        copy->lightGroupActive = Light_Group_Lights_Something(copy);
+    if (copy->Bound.empty())
+    {
+        Make_BBox(copy->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        copy->Compute_BBox();
+        Update_Infinite_Flag(copy);
+    }
+    return copy;
 }
 
 bool Parser::Parse_Camera_Mods(Camera& New)
@@ -2244,7 +2409,7 @@ bool Parser::Parse_Camera_Mods(Camera& New)
         END_CASE
 
         CASE (LOOK_AT_TOKEN)
-            Parse_Vector(New.Look_At);
+            Parse_Camera_Look_At(New);
         END_CASE
 
         CASE (LOCATION_TOKEN)
@@ -2363,30 +2528,49 @@ void Parser::Parse_Camera_Radiosity_Size(Camera& New)
     New.Radiosity_Height = (unsigned int)(size.y() + 0.5);
 }
 
-void Parser::Parse_Tags(std::vector<std::string>& tags)
+// A list replaces the parent's tags unless it holds inherit; none or an empty list means no tags at all.
+void Parser::Parse_Tags(std::vector<std::string>& tags, bool *inherit)
 {
     std::vector<std::string> added;
+    bool none = false, inherits = false;
     Parse_Begin();
     while (!Peek_Token(RIGHT_CURLY_TOKEN))
     {
-        char *name = Parse_C_String();
-        const std::string value(name);
-        POV_FREE(name);
-        if (value.empty())
-            Error("A tag cannot be empty.");
-        if (value.find('*') != std::string::npos)
-            Error("'*' is a filter wildcard and cannot be assigned as a tag.");
-        added.push_back(value);
+        if (AllowToken(NONE_TOKEN))
+            none = true;
+        else
+        {
+            Get_Token();
+            if (CurrentTokenText() == "inherit")
+                inherits = true;
+            else
+            {
+                Unget_Token();
+                char *name = Parse_C_String();
+                const std::string value(name);
+                POV_FREE(name);
+                if (value.empty())
+                    Error("A tag cannot be empty.");
+                if (value.find('*') != std::string::npos)
+                    Error("'*' is a filter wildcard and cannot be assigned as a tag.");
+                added.push_back(value);
+            }
+        }
         if (!AllowToken(COMMA_TOKEN) && !Peek_Token(RIGHT_CURLY_TOKEN))
             Expectation_Error("comma or }");
     }
     Parse_End();
+    if (none && (inherits || !added.empty()))
+        Error("tags { none } stands alone: it cannot be combined with tag names or inherit.");
+    if (inherit != nullptr)
+        *inherit = inherits;
+    // A later tags block on the same object replaces earlier ones, list and inherit alike.
     std::sort(added.begin(), added.end());
     added.erase(std::unique(added.begin(), added.end()), added.end());
-    MergeTags(tags, added);
+    tags = std::move(added);
 }
 
-void Parser::Parse_Filter_Tags(TagFilter& filter)
+void Parser::Parse_Filter_Tags(TagFilter& filter, const char *keyword)
 {
     std::string expression;
     Parse_Begin();
@@ -2443,7 +2627,7 @@ void Parser::Parse_Filter_Tags(TagFilter& filter)
     }
     catch (const std::runtime_error& error)
     {
-        Error("Invalid filter_tags expression: %s", error.what());
+        Error("Invalid %s expression: %s", keyword, error.what());
     }
 }
 
@@ -2810,7 +2994,7 @@ ObjectPtr Parser::Parse_Portal()
 
         CASE (TAGS_TOKEN)
         {
-            Parse_Tags(Object->tags);
+            Parse_Tags(Object->tags, &Object->inheritTags);
         }
         END_CASE
 
@@ -3828,7 +4012,8 @@ ObjectPtr Parser::Parse_Light_Group()
         Object->Type |= (Local->Type & HOLDS_PORTAL_OBJECT);
     }
 
-    Promote_Local_Lights(Object); // in core/lighting/lightgroup.cpp [trf]
+    // its lights are given to its objects when the scene is complete, in Assign_Scene_Lights
+    Object->lightGroupActive = Light_Group_Lights_Something(Object);
 
     Object->Compute_BBox();
 
@@ -3875,7 +4060,7 @@ ObjectPtr Parser::Parse_Light_Group()
 
         CASE (TAGS_TOKEN)
         {
-            Parse_Tags(Object->tags);
+            Parse_Tags(Object->tags, &Object->inheritTags);
         }
         END_CASE
 
@@ -4223,7 +4408,7 @@ ObjectPtr Parser::Parse_Light_Source ()
 
         CASE (TAGS_TOKEN)
         {
-            Parse_Tags(Object->tags);
+            Parse_Tags(Object->tags, &Object->inheritTags);
         }
         END_CASE
 
@@ -6989,207 +7174,214 @@ ObjectPtr Parser::Parse_Object ()
 {
     ObjectPtr Object = nullptr;
 
-    EXPECT_ONE
+    Get_Token();
+    if ((CurrentTokenText() == "tagged") && Tagged_Selector_Follows())
+        Object = Parse_Tagged(true);
+    else
+    {
+        Unget_Token();
+        EXPECT_ONE
 
-        CASE (ISOSURFACE_TOKEN)
-            Object = Parse_Isosurface ();
-        END_CASE
+            CASE (ISOSURFACE_TOKEN)
+                Object = Parse_Isosurface ();
+            END_CASE
 
-        CASE (PARAMETRIC_TOKEN)
-            Object = Parse_Parametric ();
-        END_CASE
+            CASE (PARAMETRIC_TOKEN)
+                Object = Parse_Parametric ();
+            END_CASE
 
-        CASE (JULIA_FRACTAL_TOKEN)
-            Object = Parse_Julia_Fractal ();
-        END_CASE
+            CASE (JULIA_FRACTAL_TOKEN)
+                Object = Parse_Julia_Fractal ();
+            END_CASE
 
-        CASE (SPHERE_TOKEN)
-            Object = Parse_Sphere ();
-        END_CASE
+            CASE (SPHERE_TOKEN)
+                Object = Parse_Sphere ();
+            END_CASE
 
-        CASE (SPHERE_SWEEP_TOKEN)
-            Object = Parse_Sphere_Sweep ();
-        END_CASE
+            CASE (SPHERE_SWEEP_TOKEN)
+                Object = Parse_Sphere_Sweep ();
+            END_CASE
 
-        CASE (PLANE_TOKEN)
-            Object = Parse_Plane ();
-        END_CASE
+            CASE (PLANE_TOKEN)
+                Object = Parse_Plane ();
+            END_CASE
 
-        CASE (CONE_TOKEN)
-            Object = Parse_Cone ();
-        END_CASE
+            CASE (CONE_TOKEN)
+                Object = Parse_Cone ();
+            END_CASE
 
-        CASE (CYLINDER_TOKEN)
-            Object = Parse_Cylinder ();
-        END_CASE
+            CASE (CYLINDER_TOKEN)
+                Object = Parse_Cylinder ();
+            END_CASE
 
-        CASE (DISC_TOKEN)
-            Object = Parse_Disc ();
-        END_CASE
+            CASE (DISC_TOKEN)
+                Object = Parse_Disc ();
+            END_CASE
 
-        CASE (QUADRIC_TOKEN)
-            Object = Parse_Quadric ();
-        END_CASE
+            CASE (QUADRIC_TOKEN)
+                Object = Parse_Quadric ();
+            END_CASE
 
-        CASE (CUBIC_TOKEN)
-            Object = Parse_Poly (3);
-        END_CASE
+            CASE (CUBIC_TOKEN)
+                Object = Parse_Poly (3);
+            END_CASE
 
-        CASE (QUARTIC_TOKEN)
-            Object = Parse_Poly (4);
-        END_CASE
+            CASE (QUARTIC_TOKEN)
+                Object = Parse_Poly (4);
+            END_CASE
 
-        CASE (POLY_TOKEN)
-            Object = Parse_Poly (0);
-        END_CASE
+            CASE (POLY_TOKEN)
+                Object = Parse_Poly (0);
+            END_CASE
 
-        CASE (POLYNOMIAL_TOKEN)
-            Object = Parse_Polynom();
-        END_CASE
+            CASE (POLYNOMIAL_TOKEN)
+                Object = Parse_Polynom();
+            END_CASE
 
-        CASE (OVUS_TOKEN)
-            Object = Parse_Ovus();
-        END_CASE
+            CASE (OVUS_TOKEN)
+                Object = Parse_Ovus();
+            END_CASE
 
-        CASE (TORUS_TOKEN)
-            Object = Parse_Torus ();
-        END_CASE
+            CASE (TORUS_TOKEN)
+                Object = Parse_Torus ();
+            END_CASE
 
-        CASE (SKEIN_TOKEN)
-            Object = Parse_Skein ();
-        END_CASE
+            CASE (SKEIN_TOKEN)
+                Object = Parse_Skein ();
+            END_CASE
 
-        CASE (SKEIN_MESH_TOKEN)
-            Object = Parse_Skein_Mesh ();
-        END_CASE
+            CASE (SKEIN_MESH_TOKEN)
+                Object = Parse_Skein_Mesh ();
+            END_CASE
 
-        CASE (ISOSURFACE_MESH_TOKEN)
-            Object = Parse_Isosurface_Mesh ();
-        END_CASE
+            CASE (ISOSURFACE_MESH_TOKEN)
+                Object = Parse_Isosurface_Mesh ();
+            END_CASE
 
-        /* Parse lathe primitive. [DB 8/94] */
+            /* Parse lathe primitive. [DB 8/94] */
 
-        CASE (LATHE_TOKEN)
-            Object = Parse_Lathe();
-        END_CASE
+            CASE (LATHE_TOKEN)
+                Object = Parse_Lathe();
+            END_CASE
 
-        CASE (LEMON_TOKEN)
-            Object = Parse_Lemon();
-        END_CASE
+            CASE (LEMON_TOKEN)
+                Object = Parse_Lemon();
+            END_CASE
 
-        /* Parse polygon primitive. [DB 8/94] */
+            /* Parse polygon primitive. [DB 8/94] */
 
-        CASE (POLYGON_TOKEN)
-            Object = Parse_Polygon();
-        END_CASE
+            CASE (POLYGON_TOKEN)
+                Object = Parse_Polygon();
+            END_CASE
 
-        /* Parse prism primitive. [DB 8/94] */
+            /* Parse prism primitive. [DB 8/94] */
 
-        CASE (PRISM_TOKEN)
-            Object = Parse_Prism();
-        END_CASE
+            CASE (PRISM_TOKEN)
+                Object = Parse_Prism();
+            END_CASE
 
-        /* Parse surface of revolution primitive. [DB 8/94] */
+            /* Parse surface of revolution primitive. [DB 8/94] */
 
-        CASE (SOR_TOKEN)
-            Object = Parse_Sor();
-        END_CASE
+            CASE (SOR_TOKEN)
+                Object = Parse_Sor();
+            END_CASE
 
-        /* Parse superellipsoid primitive. [DB 11/94] */
+            /* Parse superellipsoid primitive. [DB 11/94] */
 
-        CASE (SUPERELLIPSOID_TOKEN)
-            Object = Parse_Superellipsoid();
-        END_CASE
+            CASE (SUPERELLIPSOID_TOKEN)
+                Object = Parse_Superellipsoid();
+            END_CASE
 
-        /* Parse triangle mesh primitive. [DB 2/95] */
+            /* Parse triangle mesh primitive. [DB 2/95] */
 
-        CASE (MESH_TOKEN)
-            Object = Parse_Mesh();
-        END_CASE
+            CASE (MESH_TOKEN)
+                Object = Parse_Mesh();
+            END_CASE
 
-        /* NK 1998 Parse triangle mesh primitive - syntax version 2. */
-        CASE (MESH2_TOKEN)
-            Object = Parse_Mesh2();
-        END_CASE
-        /* NK ---- */
+            /* NK 1998 Parse triangle mesh primitive - syntax version 2. */
+            CASE (MESH2_TOKEN)
+                Object = Parse_Mesh2();
+            END_CASE
+            /* NK ---- */
 
-        CASE (TEXT_TOKEN)
-            Object = Parse_TrueType ();
-        END_CASE
+            CASE (TEXT_TOKEN)
+                Object = Parse_TrueType ();
+            END_CASE
 
-        CASE (OBJECT_ID_TOKEN)
-            Object = Copy_Object(CurrentTokenDataPtr<ObjectPtr>());
-        END_CASE
+            CASE (OBJECT_ID_TOKEN)
+                Object = Copy_Object(CurrentTokenDataPtr<ObjectPtr>());
+            END_CASE
 
-        CASE (UNION_TOKEN)
-            Object = Parse_CSG (CSG_UNION_TYPE);
-        END_CASE
+            CASE (UNION_TOKEN)
+                Object = Parse_CSG (CSG_UNION_TYPE);
+            END_CASE
 
-        CASE (LIGHT_GROUP_TOKEN)
-            Object = Parse_Light_Group ();
-        END_CASE
+            CASE (LIGHT_GROUP_TOKEN)
+                Object = Parse_Light_Group ();
+            END_CASE
 
-        CASE (PORTAL_TOKEN)
-            Object = Parse_Portal ();
-        END_CASE
+            CASE (PORTAL_TOKEN)
+                Object = Parse_Portal ();
+            END_CASE
 
-        CASE (COMPOSITE_TOKEN)
-            VersionWarning(150, "Use union instead of composite.");
-            Object = Parse_CSG (CSG_UNION_TYPE);
-        END_CASE
+            CASE (COMPOSITE_TOKEN)
+                VersionWarning(150, "Use union instead of composite.");
+                Object = Parse_CSG (CSG_UNION_TYPE);
+            END_CASE
 
-        CASE (MERGE_TOKEN)
-            Object = Parse_CSG (CSG_MERGE_TYPE);
-        END_CASE
+            CASE (MERGE_TOKEN)
+                Object = Parse_CSG (CSG_MERGE_TYPE);
+            END_CASE
 
-        CASE (INTERSECTION_TOKEN)
-            Object = Parse_CSG (CSG_INTERSECTION_TYPE);
-        END_CASE
+            CASE (INTERSECTION_TOKEN)
+                Object = Parse_CSG (CSG_INTERSECTION_TYPE);
+            END_CASE
 
-        CASE (DIFFERENCE_TOKEN)
-            Object = Parse_CSG (CSG_DIFFERENCE_TYPE+CSG_INTERSECTION_TYPE);
-        END_CASE
+            CASE (DIFFERENCE_TOKEN)
+                Object = Parse_CSG (CSG_DIFFERENCE_TYPE+CSG_INTERSECTION_TYPE);
+            END_CASE
 
-        CASE (BICUBIC_PATCH_TOKEN)
-            Object = Parse_Bicubic_Patch ();
-        END_CASE
+            CASE (BICUBIC_PATCH_TOKEN)
+                Object = Parse_Bicubic_Patch ();
+            END_CASE
 
-        CASE (TRIANGLE_TOKEN)
-            Object = Parse_Triangle ();
-        END_CASE
+            CASE (TRIANGLE_TOKEN)
+                Object = Parse_Triangle ();
+            END_CASE
 
-        CASE (SMOOTH_TRIANGLE_TOKEN)
-            Object = Parse_Smooth_Triangle ();
-        END_CASE
+            CASE (SMOOTH_TRIANGLE_TOKEN)
+                Object = Parse_Smooth_Triangle ();
+            END_CASE
 
-        CASE (HEIGHT_FIELD_TOKEN)
-            Object = Parse_HField ();
-        END_CASE
+            CASE (HEIGHT_FIELD_TOKEN)
+                Object = Parse_HField ();
+            END_CASE
 
-        CASE (BOX_TOKEN)
-            Object = Parse_Box ();
-        END_CASE
+            CASE (BOX_TOKEN)
+                Object = Parse_Box ();
+            END_CASE
 
-        CASE (BLOB_TOKEN)
-            Object = Parse_Blob ();
-        END_CASE
+            CASE (BLOB_TOKEN)
+                Object = Parse_Blob ();
+            END_CASE
 
-        CASE (LIGHT_SOURCE_TOKEN)
-            Object = Parse_Light_Source ();
-        END_CASE
+            CASE (LIGHT_SOURCE_TOKEN)
+                Object = Parse_Light_Source ();
+            END_CASE
 
-        CASE (OBJECT_TOKEN)
-            Parse_Begin ();
-            Object = Parse_Object ();
-            if (!Object)
-                Expectation_Error ("object");
-            Object = Parse_Object_Mods (reinterpret_cast<ObjectPtr>(Object));
-        END_CASE
+            CASE (OBJECT_TOKEN)
+                Parse_Begin ();
+                Object = Parse_Object ();
+                if (!Object)
+                    Expectation_Error ("object");
+                Object = Parse_Object_Mods (reinterpret_cast<ObjectPtr>(Object));
+            END_CASE
 
-        OTHERWISE
-            UNGET
-        END_CASE
-    END_EXPECT
+            OTHERWISE
+                UNGET
+            END_CASE
+        END_EXPECT
+    }
 
     if (Object && !Object->Precompute())
         PossibleError("Inconsistent object parameters.");
@@ -7459,8 +7651,6 @@ void Parser::Parse_Frame_Items ()
                     Destroy_Object(Object);
                     break;
                 }
-                if (!removedLights.empty())
-                    ForgetLights(Object, removedLights);
             }
             Post_Process (Object, nullptr);
             if (!DropShutPortal(Object))
@@ -8098,7 +8288,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
     EXPECT_CAT
         CASE(TAGS_TOKEN)
         {
-            Parse_Tags(Object->tags);
+            Parse_Tags(Object->tags, &Object->inheritTags);
         }
         END_CASE
 
@@ -9327,6 +9517,20 @@ bool Parser::Parse_RValue (TokenId Previous, TokenId *NumberPtr, void **DataPtr,
     bool oldParseOptionalRVaue = parseOptionalRValue;
     parseOptionalRValue = allowUndefined;
 
+    Get_Token();
+    const bool taggedSelector = (CurrentTokenText() == "tagged") && Tagged_Selector_Follows();
+    Unget_Token();
+    if (taggedSelector)
+    {
+        Local_Object = Parse_Object();
+        *NumberPtr = OBJECT_ID_TOKEN;
+        Test_Redefine(Previous, NumberPtr, *DataPtr, allow_redefine);
+        *DataPtr = reinterpret_cast<void *>(Local_Object);
+        SetOkToDeclare(oldOkToDeclare);
+        parseOptionalRValue = oldParseOptionalRVaue;
+        return true;
+    }
+
     EXPECT_ONE_CAT
         CASE4 (NORMAL_ID_TOKEN, FINISH_ID_TOKEN, TEXTURE_ID_TOKEN, OBJECT_ID_TOKEN)
         CASE4 (COLOUR_MAP_ID_TOKEN, TRANSFORM_ID_TOKEN, CAMERA_ID_TOKEN, PIGMENT_ID_TOKEN)
@@ -9976,8 +10180,18 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     {
         light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
         sceneData->lightGroupLightSources.push_back(light);
-        Add_Local_Light(mLightGroups.back(), light);
+        mGroupMediaLights.emplace_back(mLightGroups.back(), light);
     }
+}
+
+void Parser::Assign_Scene_Lights()
+{
+    std::unordered_set<ConstObjectPtr> lit;
+    for (ObjectPtr object : sceneData->objects)
+        Assign_Light_Groups(object, lit);
+    for (const std::pair<ObjectPtr, LightSource *>& added : mGroupMediaLights)
+        Add_Local_Light(added.first, added.second);
+    mGroupMediaLights.clear();
 }
 
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
@@ -9989,9 +10203,6 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
     {
         return;
     }
-    if (Parent != nullptr)
-        MergeTags(Object->tags, Parent->tags);
-
     if (Object->Type & LT_SRC_UNION_OBJECT)
     {
         for (vector<ObjectPtr>::iterator Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); Sib != (reinterpret_cast<CSG *>(Object))->children.end(); Sib++)
@@ -10012,6 +10223,13 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Portal *image = portal->farMouth ? portal->MakeImage() : nullptr;
         if (image != nullptr)
         {
+            // the far mouth is placed on its own, so it takes the tags the near mouth answers to
+            std::vector<std::string> merged;
+            image->tags.clear();
+            for (ConstObjectPtr ancestor : mPostProcessPath)
+                image->tags = EffectiveTags(ancestor, &image->tags, merged);
+            image->tags = EffectiveTags(portal, &image->tags, merged);
+            image->inheritTags = false;
             for (const Portal *other : mPortalImagesMade)
                 if ((other->origin == image->origin) && ((other->BBox.lowerLeft - image->BBox.lowerLeft).lengthSqr() == 0.0) &&
                     ((other->BBox.size - image->BBox.size).lengthSqr() == 0.0))
@@ -10364,10 +10582,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             mLightGroups.push_back(Object);
         const bool resolvedBefore = mMeshResolvedBelow;
         mMeshResolvedBelow = false;
+        mPostProcessPath.push_back(Object);
         for (vector<ObjectPtr>::iterator Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); Sib != (reinterpret_cast<CSG *>(Object))->children.end(); Sib++)
         {
             Post_Process(*Sib, Object);
         }
+        mPostProcessPath.pop_back();
         CompoundObject *compound = dynamic_cast<CompoundObject *>(Object);
         if (mMeshResolvedBelow && (compound != nullptr) && compound->Bound.empty())
         {
@@ -10595,6 +10815,13 @@ void Parser::Link_To_Frame(ObjectPtr Object)
     if (ClippedUnionHoldsPortal(Object))
         Error("A union holding a portal cannot be clipped.");
 
+    Prepare_Link(Object);
+    Link(Object, sceneData->objects);
+}
+
+// What linking does to an object and, through the unions Split_Unions will dissolve, to each member it will place.
+void Parser::Prepare_Link(ObjectPtr Object)
+{
     /* Remove bounding object if object is cheap to intersect. [DB 8/94]  */
 
     if ((Object->Bound.empty() == false) && (sceneData->removeBounds == true))
@@ -10634,16 +10861,19 @@ void Parser::Link_To_Frame(ObjectPtr Object)
             Set_Flag(Object, NO_SHADOW_FLAG);
     }
 
-    // Link the object to the frame if it's not a CSG union object,
-    // if it's clipped or if bounding slabs aren't used.
-    // TODO FIXME - check if bound is used
+    if (Splits_Union(Object, true))
+        for (ObjectPtr child : static_cast<CSG *>(Object)->children)
+            Prepare_Link(child);
+}
+
+// Whether a placed object is a union whose members are placed in its stead, warning as it is placed when asked.
+bool Parser::Splits_Union(ObjectPtr Object, bool warn)
+{
+    // Only an unclipped union that is not a merge splits. TODO FIXME - check if bound is used
     if ((Object->Clip.empty() == false) ||
         (dynamic_cast<CSGUnion *>(Object) == nullptr) ||
         (dynamic_cast<CSGMerge *>(Object) != nullptr))
-    {
-        Link(Object, sceneData->objects);
-        return;
-    }
+        return false;
 
     /*
      * [DB 8/94]
@@ -10656,10 +10886,7 @@ void Parser::Link_To_Frame(ObjectPtr Object)
                   flagged for hi-density photon mapping...
               maybe we SHOULD split it anyways... do speed tests later */
     if((reinterpret_cast<CSGUnion *>(Object))->do_split == false)
-    {
-        Link(Object, sceneData->objects);
-        return;
-    }
+        return false;
 
     if(!Object->Bound.empty())
     {
@@ -10683,25 +10910,41 @@ void Parser::Link_To_Frame(ObjectPtr Object)
 
         if (((finite == false) || (sceneData->splitUnions == false)) && ((Object->Type & LIGHT_GROUP_OBJECT) != LIGHT_GROUP_OBJECT))
         {
-            if (finite)
+            if (finite && warn)
                 Warning("CSG union unnecessarily bounded.");
-            Link(Object, sceneData->objects);
-            return;
+            return false;
         }
 
-        Warning("Bounded CSG union split.");
+        if (warn)
+            Warning("Bounded CSG union split.");
+    }
+    return true;
+}
+
+// Placed unions stay whole while the scene runs; once it is complete, each that splits leaves its members in its place.
+void Parser::Split_Unions()
+{
+    std::vector<ObjectPtr> placed;
+    placed.swap(sceneData->objects);
+    sceneData->objects.reserve(placed.size());
+    for (ObjectPtr object : placed)
+        Split_Union(object);
+}
+
+void Parser::Split_Union(ObjectPtr Object)
+{
+    if (!Splits_Union(Object, false))
+    {
+        Link(Object, sceneData->objects);
+        return;
     }
 
-    // Link all children of a union to the frame; each still answers to the union's tags.
-    std::shared_ptr<const TagScope> scope = Object->enclosingTags;
-    if (!Object->tags.empty())
-        scope = std::make_shared<TagScope>(TagScope{ Object->tags, Object->enclosingTags });
-    for(vector<ObjectPtr>::iterator This_Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); This_Sib != (reinterpret_cast<CSG *>(Object))->children.end(); This_Sib++)
+    // Link all children of a union to the frame; their tags already hold what they inherited from it.
+    for (ObjectPtr child : static_cast<CSG *>(Object)->children)
     {
         // Child is no longer inside a CSG object.
-        (*This_Sib)->Type &= ~IS_CHILD_OBJECT;
-        (*This_Sib)->enclosingTags = scope;
-        Link_To_Frame(*This_Sib);
+        child->Type &= ~IS_CHILD_OBJECT;
+        Split_Union(child);
     }
 
     (reinterpret_cast<CSG *>(Object))->children.clear();

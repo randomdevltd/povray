@@ -115,6 +115,55 @@ camera { filter_tags { !"a" & ("b" | any) } }
             (constant)))))))
 
 ================================================================================
+The tagged selector, and tagged as an identifier
+================================================================================
+
+#declare Statue = tagged { "statue-*" & !"draft" }
+camera { look_at tagged { "a" }, 0.8 }
+sphere { 0, tagged }
+
+---
+
+(source_file
+  (declare_directive
+    (identifier)
+    (tag_filter
+      (keyword)
+      (binary_expression
+        (string)
+        (unary_expression
+          (string)))))
+  (block
+    (keyword)
+    (keyword)
+    (tag_filter
+      (keyword)
+      (string))
+    (number))
+  (block
+    (keyword)
+    (number)
+    (identifier)))
+
+================================================================================
+A comment between tagged and its brace
+================================================================================
+
+object { tagged // the statues
+  /* all /* of */ them */ { "statue" } }
+
+---
+
+(source_file
+  (block
+    (keyword)
+    (tag_filter
+      (keyword)
+      (line_comment)
+      (block_comment)
+      (string))))
+
+================================================================================
 Nested block comments
 ================================================================================
 

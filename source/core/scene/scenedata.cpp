@@ -79,13 +79,10 @@ PreparedSet::~PreparedSet()
     }
 }
 
-namespace
-{
-
 const std::vector<std::string>& EffectiveTags(ConstObjectPtr object, const std::vector<std::string> *inherited,
                                               std::vector<std::string>& merged)
 {
-    if ((inherited == nullptr) || inherited->empty() ||
+    if (!object->inheritTags || (inherited == nullptr) || inherited->empty() ||
         std::includes(object->tags.begin(), object->tags.end(), inherited->begin(), inherited->end()))
         return object->tags;
     merged = object->tags;
@@ -93,10 +90,23 @@ const std::vector<std::string>& EffectiveTags(ConstObjectPtr object, const std::
     return merged;
 }
 
-// An untagged compound only groups its children, so they decide; anything else is judged on its own tags.
+void ResolveInheritedTags(ObjectPtr object, const std::vector<std::string> *inherited)
+{
+    if (object->inheritTags && (inherited != nullptr))
+        MergeTags(object->tags, *inherited);
+    object->inheritTags = false;
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            ResolveInheritedTags(child, &object->tags);
+}
+
+namespace
+{
+
+// A compound is never judged itself: it holds what remains of its children.
 bool Excluded(const CSG *csg, const std::vector<std::string>& tags, const TagFilter& filter)
 {
-    return ((csg == nullptr) || !tags.empty()) && !MatchesTags(tags, filter);
+    return (csg == nullptr) && !MatchesTags(tags, filter);
 }
 
 TagSelection ExcludedAs(ConstObjectPtr object)
@@ -245,29 +255,11 @@ TagSelection SelectTagged(ConstObjectPtr object, const TagFilter& filter, const 
     return part ? TagSelection::Part : TagSelection::Whole;
 }
 
-bool EnclosingTagsMatch(ConstObjectPtr object, const TagFilter& filter)
-{
-    for (const TagScope *scope = object->enclosingTags.get(); scope != nullptr; scope = scope->enclosing.get())
-        if (!MatchesTags(scope->tags, filter))
-            return false;
-    return true;
-}
-
 TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights)
 {
     if (!filter.specified)
         return TagSelection::Whole;
     return PruneTagged(object, filter, nullptr, removedLights);
-}
-
-void ForgetLights(ObjectPtr object, const std::vector<LightSource*>& lights)
-{
-    auto& own = object->LLights;
-    own.erase(std::remove_if(own.begin(), own.end(), [&](LightSource *light) {
-        return std::find(lights.begin(), lights.end(), light) != lights.end(); }), own.end());
-    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
-        for (ObjectPtr child : compound->children)
-            ForgetLights(child, lights);
 }
 
 TagFilter SceneData::EffectiveFilterTags(const TagFilter& requested) const
@@ -304,8 +296,6 @@ PreparedSetId SceneData::RegisterPreparedSet(const TagFilter& filter)
     for (size_t ordinal = 0; ordinal < objects.size(); ++ordinal)
     {
         ObjectPtr object = objects[ordinal];
-        if (!EnclosingTagsMatch(object, filter))
-            continue;
         const TagSelection selected = SelectTagged(object, filter);
         if ((selected == TagSelection::Empty) || (selected == TagSelection::Everything))
             continue;
