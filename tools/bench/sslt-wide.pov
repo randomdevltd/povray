@@ -1,6 +1,7 @@
 // Subsurface in a wide, busy view: a 360-degree spherical camera, 13 lights (two soft area suns), about 20000 small
 // objects, bark-like mesh2 trunks and a small smooth mesh with subsurface, each covering few pixels; see doc/PERF.md.
 #version 3.7;
+#ifdef (Version) #version Version; #end
 #ifndef (Diffuse) #declare Diffuse = 6; #end
 #ifndef (Single) #declare Single = 3; #end
 #ifndef (Subsurface) #declare Subsurface = 1; #end
@@ -9,7 +10,7 @@
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 80
-  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing } #end
+  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing #ifdef (Bailout) bailout Bailout #end } #end
 }
 
 camera { spherical angle 360 180 location <0, 1.6, 0> look_at <0, 1.6, 1> }

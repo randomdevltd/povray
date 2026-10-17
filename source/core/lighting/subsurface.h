@@ -127,6 +127,9 @@ const int kCloudNoDepthLevel = -10000;
 /// Memory all subsurface clouds may take together unless global_settings { subsurface { memory MB } } says otherwise.
 const double kSubsurfaceMemoryMB = 1024.0;
 
+/// The multiple of adc_bailout under which method 2 lights a hit as its exit point is lit, unless global_settings { subsurface { bailout F } } says otherwise.
+const double kSubsurfaceBailout = 8.0;
+
 /// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, or the floor.
 enum SubsurfaceStepTerm { kStepDiffusion, kStepPixel, kStepObject, kStepFinest, kStepTerms };
 

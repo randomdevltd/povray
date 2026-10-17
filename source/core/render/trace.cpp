@@ -8095,7 +8095,23 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
-    const bool tryCloud = (method == kSubsurfaceMethodPointCloud);
+    const bool pointCloud = (method == kSubsurfaceMethodPointCloud);
+    // Below the subsurface bailout (4.0) a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
+    const bool estimate = pointCloud && (sceneData->EffectiveLanguageVersion() >= 400) &&
+                          (rayWeight * layers.weight.WeightMax() < sceneData->subsurfaceBailout * Eye.GetTicket().adcBailout) &&
+                          (FindSubsurfaceParts(SubsurfaceObject(out), Eye.GetPreparedSetId()).sheets.count(out.Object) == 0);
+    if (estimate)
+    {
+        threadData->Stats()[Subsurface_Cloud_Estimated]++;
+        const std::uint64_t estimateKey = DeriveKey(key, kDrawSubsurface, 6);
+        Vector2d shift(Draw(estimateKey, kDrawSubsurface, 0), Draw(estimateKey, kDrawSubsurface, 1));
+        MathColour here = ComputeSubsurfaceIrradiance(out.IPoint, out.INormal.normalized(), lights, out.Object->interior->IOR / sceneData->atmosphereIOR,
+                                                      1, &shift, nullptr, Eye.GetTicket(), estimateKey);
+        if (flesh.PerEntry())
+            here = here * flesh.nearby.factor + flesh.nearby.emission;
+        cloudDiffuse = MathColour(profile.RdTotal() * PreciseMathColour(here) * ftOut);
+    }
+    const bool tryCloud = pointCloud && !estimate;
     if (tryCloud)
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
     bool cloud = tryCloud && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
@@ -8115,8 +8131,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
             counter.pending = 0;
         }
     }
-    const bool photonSamples = !tryCloud && SubsurfacePhotonsEnabled(out.Object, Eye.GetPreparedSetId());
-    if (!tryCloud)
+    const bool photonSamples = !pointCloud && SubsurfacePhotonsEnabled(out.Object, Eye.GetPreparedSetId());
+    if (!pointCloud)
     {
         std::vector<SubsurfaceCandidate> candidates(lights.size() * NumSamplesDiffuse);
         const std::uint64_t fleshKey = DeriveKey(key, kDrawSubsurface, 4);
@@ -8182,7 +8198,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         if (projectedPhotons)
             Total_Colour += projectedDiffuse;
     }
-    if (cloud)
+    if (cloud || estimate)
         Total_Colour += cloudDiffuse;
     // Looked-up flesh is relative to the reference; emission the same everywhere enters over the whole profile.
     for (int j = 0; flesh.fleshAtDepth && (j < MathColour::channels); j++)
@@ -8213,7 +8229,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
         // colour dependent single scattering contribution
 
-        if (NumSamplesSingle > 0)
+        if ((NumSamplesSingle > 0) && !estimate)
         {
             MathColour singleColour;
             ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, eta, lights,
