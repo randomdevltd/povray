@@ -1,6 +1,6 @@
 #!/bin/sh
-# subsurface_cloud.sh <povray> <srcdir>: each reason the point cloud cannot serve is warned by name, a cloud past its
-# memory cap stops the render, the cloud and image do not depend on thread count, and a user-defined panorama is served.
+# subsurface_cloud.sh <povray> <srcdir>: a plane, a light group's part and a thin wall are served by the point cloud, a cloud
+# past its memory cap stops the render, the cloud and image do not depend on thread count, and a user-defined panorama is served.
 set -e
 trap 'rm -f sscloud_*' EXIT
 POVRAY=$1; SRCDIR=$2
@@ -29,12 +29,12 @@ has capped 'Raisethecapabovememory[0-9.]*,orsetspacing[0-9.]*ormore(about[0-9.]*
 if render cell "$case" +w64 +h48 +wt2 Declare=Case=5; then fail "a cell past the memory cap did not stop the render"; fi
 text cell
 has cell 'Subsurfacecloudsneedatleast1[.0-9]*MBatspacing0.0001after' || fail "a cell past the cap was not stopped as it cast"
-render plane "$case" +w64 +h48 +wt2 Declare=Case=2; text plane
-warned plane 'theobjectisunbounded' || fail "no warning names an unbounded object"
-render group "$case" +w64 +h48 +wt2 Declare=Case=3; text group
-warned group 'partoftheobjectislitbyalightgroup' || fail "no warning names a light group"
-render thin "$case" +w64 +h48 +wt2 Declare=Case=4; text thin
-warned thin 'over1in16surfacecrossings' || fail "no warning names unoriented crossings"
+for c in 2:plane 3:group 4:thin; do
+    render ${c#*:} "$case" +w64 +h48 +wt2 Declare=Case=${c%:*}; text ${c#*:}
+    has ${c#*:} 'Subsurfacemethod2fellback' && fail "the ${c#*:} warned of a fallback"
+    has ${c#*:} 'Subsurfacemethod2left' && fail "the ${c#*:} left shading points without subsurface light"
+    share ${c#*:} 100 || fail "the ${c#*:} was not served by the cloud: $(served ${c#*:})"
+done
 
 bench=$SRCDIR/tools/bench/sslt-projection.pov
 render mercator "$bench" +w96 +h48 +wt2 Declare=Camera=0 Declare=Count=400; text mercator
@@ -54,4 +54,4 @@ render many "$bench" +w160 +h90 Declare=Camera=1 Declare=Count=1000; text many
 tail -c 86400 sscloud_one.ppm > sscloud_one.px; tail -c 86400 sscloud_many.ppm > sscloud_many.px
 cmp -s sscloud_one.px sscloud_many.px || fail "one thread and many rendered different images"
 [ -n "$(built one)" ] && [ "$(built one)" = "$(built many)" ] || fail "one thread and many built different clouds"
-echo "subsurface_cloud: fallbacks are warned by reason, the memory cap stops the render, and the cloud is the same on any thread count"
+echo "subsurface_cloud: the cloud serves every case, the memory cap stops the render, and the cloud is the same on any thread count"

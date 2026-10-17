@@ -560,10 +560,17 @@ object, and each crossing is a point standing for h²/|n|₁ of surface (h the g
 point per grid square on a patch facing an axis and no clumps. All crossings along a line are collected by testing it
 again past the farthest one found, since one test of a blob returns only the nearest interval. A point's normal is
 turned to point out of the object, by testing which side of it is inside: primitives report normals with no regard to
-a `difference` inverting them, and a mesh's follow its winding. Crossings whose sides cannot be told apart (parts
-thinner than about a twentieth of the spacing, a union's inner surfaces) are dropped, and a cube that
-drops more than one in sixteen is left to method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The spacing is a
-128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
+a `difference` inverting them, and a mesh's follow its winding. A crossing inside on both sides (a union's inner
+surfaces, parts sharing a face), outside on both, or between walls closer than the probe floor (a ten-thousandth of the
+step) is dropped by itself; the cube keeps the rest. A part with no inside for light to diffuse through, a disc (whose
+inside is a half-space), unless it cuts an intersection or difference, or a mesh with an `inside_vector` whose
+triangles leave a border (an edge used an odd number of times, its vertices welded by position, as exporters repeat
+them per face), adds no points, and a shading point on it gets no diffuse subsurface light, named in a warning; open
+skeins, like triangles and meshes without an `inside_vector`, lose subsurface when parsed. Points are lit once, four points of each area light apiece, by the
+lights of their own part (a part in a light group has its own), take photons if their own part collects them, and keep
+each light's shadow. The spacing is a 128th of the cube's side, or three depths z_r where that is finer (a power of two
+at most that, kept in the cube's key, so that points can place a shadow edge or the edge of a surface near the exit
+point when the diffusion is long against z_r), a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
 cube comes nearest it if that is coarser, and never under a 1024th of the side; a pixel spans a size plus an angle
 times the distance, for perspective, orthographic, spherical, fisheye, ultra-wide, omnimax and panoramic cameras
 (for spherical and panoramic ones, a pixel at the equator, coarser than one toward the poles). For cylinder, mesh and
@@ -577,16 +584,20 @@ then stands for 1/Σ(|nₐ|/hₐ²) of surface. The camera is set once for the r
 level and at full quality, so it comes out the same whichever thread builds it, from a camera ray, a reflection, the
 radiosity pretrace or a radiosity sample (whose trace leaves out area lights). Threads that need a cube while it is
 built take jobs from its building, so it does not hold them up; an exception in any job leaves the cube unusable
-instead of holding up the threads waiting on it. Every cube is built at its own spacing, from the pixel, diffusion and
+instead of holding up the threads waiting on it, and the render stops. Every cube is built at its own spacing, from the pixel, diffusion and
 object rules alone, so the cloud, and with it the image, is the same whichever threads build it and in whatever order.
 
 Two global levers make a large render fit. `spacing` multiplies every cube's step (the pixel, diffusion and object terms
 alike; only the 1/1024-of-a-cube floor, a lower bound, is left as it is), so points and memory go about as
 1/spacing²: spacing 4 builds about a sixteenth of the points, and the cloud resolves the diffusion's detail that much
 more coarsely. Where the pixel sets the step, memory also goes as 1/pixel², so a proof render's statistics, scaled by
-the square of the resolution ratio, predict a print render's. A coarse spacing can widen the ring past the diffusion's
-reach; the gather then widens with it, over the cubes the object's bounds cross, up to 32 along a bounded axis and 8
-along an unbounded one (a plane's), rather than handing the shading point to method 1.
+the square of the resolution ratio, predict a print render's. A ring the exit point's cube or one of its 26 neighbours would
+make wider than a cube raises the cubes' size by fours before any is built, so a gather spans at most three cubes along an axis; cube
+coordinates are 64-bit. The reach stops at the diagonal of the object's bounds, or a thousand depths z_r on an unbounded
+object, which also bounds a material with no absorption. A large bounded object of a nearly non-absorbing material
+then gets cubes as large as itself with points three z_r apart, so its cloud can be large; where a cube's side passes
+1024 steps of three z_r, its finest floor (a 1024th of the side) sets the step instead, a warning counts those cubes,
+and their edges are drawn near each exit point as on a coarse cloud.
 
 All clouds together may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`, 1024 by default).
 Each finished cube's footprint counts against it in real bytes, by the capacity of what it holds: the cube itself,
@@ -596,20 +607,20 @@ so whether the clouds pass the cap, and the render stops, is the same on any thr
 before stopping, and so the figures in the error, depend on thread timing. The rows a cube casts into are counted in the
 reported peak but never decide the stop, except that a cube whose own points alone pass the cap stops the render while
 it is cast, so one cube cannot outgrow memory either. The error gives the memory held so far, the share of the image
-done, the cap, and a cap or spacing that would hold what was built so far. Once a quarter of the image is done, a
-warning says when the clouds at that rate would pass the cap; it is an estimate, and only passing the cap stops the
-render. A cube is never coarsened, and no shading point falls back to method 1, for memory. An unbounded object such as
-a plane is left to method 1 where its cubes would be coarse (below).
+done, the cap, and a cap or spacing that would hold what was built so far. Once half the image is done, a
+warning says when the clouds, growing as they did between a quarter and a half of it, would pass the cap. Cells already
+built serve the rest of the image, so growth slows: one render that took the first quarter's rate projected 3407 MB
+and peaked at 1657 MB. The two-point rate still overshoots; it is an upper estimate, and only passing the cap stops the
+render. A cube is never coarsened for memory. An unbounded object such as a plane gets cubes like any other.
 
 The statistics report the spacing in force, the memory counted against the cap, the peak with rows being cast, the cubes
 built, their points, the points the gathers read (those under a node a gather used, alone or summed as a group, which
 measures how much of the cloud was built for nothing), and the cubes and points whose step the pixel, the diffusion, the
-object's size or the floor set. They split the shading points left to method 1 by reason: unoriented crossings, an
-unbounded object, a reach wider than the cubes gathered, a light group, an exit point in no cube, and others (no
-interior or diffusion, uneven photons, a build that threw), beside the per-point reasons of the sum below. A warning
-names each whole-cloud reason with its count and likely cause once those reasons together reach 1% of the shading points
-tried, or once all fallbacks together reach a quarter; another names the per-point reasons once they alone reach a
-quarter.
+object's size or the floor set. They count the shading points tried and served (those in the radiosity pretrace among them), discs
+that bend, shading points with points unfolded across creases, those whose near field was drawn and the shadow rays that
+took, those lit as the exit point (no points near, or none facing in the disc), gathers whose cubes were raised, and the
+crossings dropped by kind. Method 2 never hands a shading point to method 1: one the cloud cannot serve gets no diffuse
+subsurface light, and a warning names its object (shape, first tag and the centre of its bounds) with the count.
 
 **The sum.** Around the exit point, a core half a spacing across is lit as the exit point is, from its own light and
 its own shadow test where the nearby points disagree on a light's shadow (so shadow edges stay sharp); out to 1.5
@@ -619,11 +630,19 @@ they would be with the surface unfolded flat (taking the planes through the exit
 crease), which is 1 on a flat surface and more across an edge, unless the ring holds more than 1.33 times a flat
 ring's area or faces away from the exit point (a thin part's far side), where its points are summed as they are;
 beyond, points are summed in groups whose area is small against their distance (`error_bound`, 0.1) and whose normals
-agree. A point counts only if the sampled method's base point, under the exit point, sees it from the inside, which
-keeps light from crossing gaps between parts of an object. Where the disc bends by more
-than 60° (edges, tight curves) or a point within 2.5 spacings is seen from behind (creases), the shading point uses
-method 1. The disc and ring are sized by the coarsest cube they reach, so where cubes of different spacing meet each
-still holds enough points. Diffusion shorter than a pixel is taken as lit like the exit point.
+agree. A point the sampled method's base point, under the exit point, sees from behind lies across a crease (a
+stud's wall seen from the slab around it) or on a parallel face (the slab seen from the stud's top): it is weighed by
+the profile at its distance unfolded through the material, taking the planes through the exit point and the point to
+meet at a crease, and laid on the exit point's tangent plane for the disc, the ring and the edge window; walls facing
+each other, and points whose tangent plane meets the exit point's where the material does not turn the corner (inside
+tests a quarter spacing into the corner and under the exit point's face just off the other), stay out, so light does
+not cross the gap between two studs. Parallel faces at different heights, seen from behind or in front, count only where
+the material steps between them (inside under the higher face at the lower one's height, and halfway from there to the
+lower one), so two blocks of one merge with an air gap between them do not light each other across it. A disc that bends
+sharply is served as it is. Points across a convex edge near the exit point are averaged over their patch rather than taken at the
+point. The disc and ring are sized by the coarsest cube they reach, so where cubes of different spacing meet each
+still holds enough points. Diffusion shorter than a pixel (its own length, not the reach capped by the bounds) is taken as lit like the exit
+point.
 
 **Edges.** Where the surface runs out (an open border), the closed-form core, disc and ring integrals
 would count surface that is not there. A window (1 − r²/R²)² over the ring measures how much of a plane the points
@@ -636,17 +655,20 @@ against what a single edge leaving that share would give. Each of core, disc and
 integral inside the edges, summed along the far side of the chord. Shares above 0.95 count as whole and the correction
 reaches full strength at 0.85, so curved and bumpy surfaces are left alone. Single scattering near an edge is sampled.
 
-**Coarse clouds.** A material whose diffusion is long against its depth z_r (marble seen from a distance) gets cubes
-whose points lie far apart. Where they are more than four times the larger of a pixel and z_r apart, the exit point
-tests its own shadows, and a shading point whose shadow differs from its neighbours' by over a quarter, or near which
-they disagree, uses method 1; an unbounded object gets no such cubes at all.
+**Coarse clouds.** Points still more than four times the larger of a pixel and z_r apart (a coarse `spacing`, or the
+finest floor) cannot place a shadow edge or an edge of the surface near the exit point. There, where the disc's points
+disagree on a shadow, the exit point's own shadow differs from theirs, or the surface runs out, the disc is drawn
+instead: 24 keyed draws on the tangent disc by the profile's near field r/(z_r² + r²)^1.5, each found on the surface by
+a ray from the base point as the sampled method finds its points, lit and shadow-tested.
 
 **Radiosity.** With subsurface radiosity on, cubes built in the final trace (kept apart from those without it) add
 the radiosity cache's light to each point, entering along the normal as the sampled method takes it, and the core adds
 the exit point's own. Points read only the pretrace's and loaded samples, as a final-trace query from a tile no tile
 has, so no final-trace sample counts and a cube does not depend on the tile that builds it; where none is near, the
 bound is widened up to fourfold, then deeper bounces are tried, and a point still without one takes its cube's mean.
-The pretrace uses method 1, since the cache is incomplete while it runs. With `radiosity { subsurface on }`, gathers
+In the pretrace, while the cache is incomplete, the cloud's points carry no radiosity. With radiosity on, the pretrace and the final trace build their cubes apart, so cubes the final trace needs
+are built twice, once without the cache's light; sharing the points and adding the light to the second would save that.
+With `radiosity { subsurface on }`, gathers
 at the deepest bounce use cubes without radiosity, so the same parts of an object can be built twice, once of each
 kind, within the one memory cap.
 
@@ -725,6 +747,60 @@ Tried and not kept:
 - One cloud per object laid out by the first shading point: a floor seen from close to far gets one spacing, and the
   first shading point's material fixes it for a texture that varies the diffusion.
 
+## Subsurface method 2 without method 1
+
+Method 2 used to hand shading points it could not serve to method 1, which is grainy, slower, and was the only source
+of the difference between the two at creases. It now serves all of them (the rules are under the point cloud above);
+`tests/render/subsurface_fallback.pov` forces each former reason, one case at a time, and
+`tests/render/subsurface_fallback.sh` checks that every shading point is served, the radiosity pretrace included.
+
+**Shadow edges.** `tools/bench/sslt-shadow-edges.pov` puts a grid of thin rods' shadows, from a small area light and a
+point light, on a high-albedo slab and cylinder whose diffusion is long against z_r, so cubes of 128 points per side
+lie about ten z_r apart; 640×480, 74, 21, `+WT1`, tuned builds, against method 1 at 592, 168:
+
+| | CPU-s | rms | Worst block |
+|---|---|---|---|
+| method 1 | 12.7 | 4.69 | 2.8 |
+| method 2, handing shadow edges to method 1 (67% of shading points) | 13.0 | 7.14 | 64.1 |
+| method 2, steps capped at three z_r, reach at the bounds | 13.3–13.4 | 3.75 | 12.7 |
+
+The worst block before was a flare on the slab's front face below its top edge: points across the convex edge, a
+spacing apart beside a z_r a tenth of that, were taken at their centres. Drawing the near field at the shadow edges
+instead of capping the step, with 8, 16, 24 and 64 draws, left rms errors of 10.8, 7.9, 8.3 and 6.8, so the draws are
+kept only for clouds coarse by `spacing`.
+
+**Creases.** Method 1 cannot be the reference here: its base point's rays never reach a stud's wall or the slab around a
+stud, so it leaves out light that diffuses round the corner. `tools/bench/sslt-reference.cpp` (`c++ -O2 -std=c++17
+-pthread -o sslt-reference sslt-reference.cpp`) renders a physically based reference for `tools/bench/sslt-studs.pov`
+with `Fillet=0 Reference=1` (point lights, no floor, no highlight, single scattering off): random walks through the
+homogeneous medium of the same reduced coefficients, Fresnel boundaries of index 1.5, scored with the light entering
+where a walk leaves after two or more scatterings. Its layout is written out apart from the scene's, so its object mask
+must match a render's pixel for pixel (it does, at every view used here). On the bare slab's flat top (`Bare=1`) with a
+high albedo (`Colour=1.2 Mfp=2`, reflectance 0.9), where the dipole holds, the dipole is 1.79 times the walks in every
+channel alike: the two take the light leaving a surface in different units, and 1.79 is that constant. With the
+default red (reflectance 0.64, 0.09, 0.06) the dipole is 1.81, 4.31 and 5.51 times them: at low albedo the dipole and
+its Fresnel approximation are that far from the transport, which this change does not touch, so the red reference is
+scaled per channel. At 160×120 and 1024 walks the reference's own noise is about 10 levels rms. Levels of 255 over the
+object, 320×240 and 4096 walks for the red studs, 160×120 and 1024 or 2048 walks for the rest:
+
+| | red 1× | red 4× | red slot | red tight row | high albedo 1× | high albedo 4× |
+|---|---|---|---|---|---|---|
+| method 1, 592 samples | 27.4 / −17.6 | 32.7 / −20.8 | 24.3 / −18.6 | 30.3 / −20.6 | 32.1 / −22.6 | 38.6 / −22.8 |
+| method 2, creases to method 1 | 28.1 / −17.3 | 33.9 / −21.0 | | | | |
+| method 2, creases unfolded | 13.2 / −3.2 | 12.6 / −2.3 | 13.2 / −3.0 | 10.8 / −1.4 | 15.8 / +3.4 | 13.8 / +6.1 |
+
+(rms / mean.) Choices taken from the reference, at 160×120: unfolding only across creases with a midpoint test keeping
+light from crossing gaps gave rms 19.7 on red 1×, without the midpoint test 16.5, weighing every point the base point
+sees from behind at its unfolded distance 13.8; leaving parallel faces out made red worse (15.4) and high albedo no
+better; capping the ring's gain over a flat ring across a fold at 1, 2, 4 or not at all changed rms by under 0.1, so it
+is not capped. Requiring the material to turn each corner on both sides, and parallel faces to step through it, then
+gave (rms / mean, 160×120) red 13.5 / −3.2 at 1×, 12.9 / −2.3 at 4×, 13.2 / −3.0 in the slot and 10.8 / −1.4 on the
+tight row, and high albedo 15.8 / +3.4, 13.8 / +6.1, 13.6 / +9.0 and 11.7 / +7.7. With `Blocks=1 View=3` (two blocks
+of one merge, 0.05 apart, well within reach) the lower block's top beside the gap came out 21% brighter than farther
+along it against the reference before (high albedo; red 15%), and 6% (red 1%) after. What remains: method 2 is brighter
+than the walks where the diffusion is long against the part (high-albedo stud tops, thin blocks), as the dipole on a
+semi-infinite medium is, and stud walls are a little bright in red near their base.
+
 ## Subsurface flesh and skin
 
 A texture's subsurface layers are blended into the colour the viewer sees, by each layer's opacity and filter as the
@@ -745,7 +821,7 @@ than the spacing keep their points. The point step is also capped so that at lea
 side: it was sized from the diffusion reach and the pixel alone, so a small object beside a long reach got a few points
 and cells with none, and every shading point near them went to method 1. A point lying on a cell's face (an object
 resting on y = 0) is matched to the nearest gathered cell instead of the empty one beside it. The render reports, for
-method 2, how many shading points the cloud served and why the rest went to method 1.
+method 2, how many shading points the cloud served.
 
 A finish's `colour` or `pigment` gives the flesh inside a colour of its own; the texture's pigment is then a skin light
 crosses on the way in and out, each crossing letting through the pigment to the power of half the relative
@@ -1496,7 +1572,7 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
-- Subsurface: method 2 still hands sharp edges and creases to method 1, and samples single scattering from lights
+- Subsurface: method 2 samples single scattering from lights
   behind the surface. At equal quality it needs spacing 0.35 at the rim of `sslt-open.pov` Case 2 and 0.25 under the
   small mesh in `sslt-wide.pov`, and at 1600×800 that scene's bark comes out up to 8.6 levels light at any spacing.
 - Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders

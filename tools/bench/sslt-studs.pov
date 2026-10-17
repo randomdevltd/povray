@@ -1,5 +1,5 @@
-// Concave creases on one subsurface object: rows of studs at three pitches on a slab, a step and a slot; Fillet=1 rounds
-// their inner corners, Sink=0 lays their bases on the slab's top, and Zoom=4 looks closely at the middle row's first studs.
+// Concave creases on one subsurface object: studs at three pitches, a step and a slot on a slab; Fillet, Sink, Zoom, View (1 slot,
+// 2 tight row, 3 gap), Bare (slab alone), Blocks (two blocks with an air gap) and Reference (as tools/bench/sslt-reference.cpp).
 #version 3.7;
 #ifndef (Diffuse) #declare Diffuse = 74; #end
 #ifndef (Single) #declare Single = 21; #end
@@ -10,22 +10,26 @@
 #ifndef (Zoom) #declare Zoom = 1; #end
 #ifndef (Mfp) #declare Mfp = <3, 1.6, 0.9>; #end
 #ifndef (Sink) #declare Sink = 0.002; #end
+#ifndef (Reference) #declare Reference = 0; #end
+#ifndef (Bare) #declare Bare = 0; #end
+#ifndef (Blocks) #declare Blocks = 0; #end
+#ifndef (Colour) #declare Colour = <0.85, 0.12, 0.08>; #end
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 10
   #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing } #end
 }
 
-#declare Target = (Zoom = 1 ? <0, 0.3, 0.1> : <-1.7, 0.5, -0.1>);
+#ifndef (View) #declare View = 0; #end
+#declare Target = (View = 1 ? <2.15, 0.55, -0.6> : View = 2 ? <-1.49, 0.5, 0.75> : View = 3 ? <0.02, 0.4, -0.4> : Zoom = 1 ? <0, 0.3, 0.1> : <-1.7, 0.5, -0.1>);
 camera { perspective location <0.8, 4.2, -4.2> look_at Target angle 42 / Zoom right x * 4 / 3 }
 
 light_source {
   <-3, 5, -2.5>, rgb <1.0, 0.93, 0.85> * 1.2
-  area_light <0.4, 0, 0>, <0, 0, 0.4>, 4, 4
-  adaptive 1 circular orient
+  #if (!Reference) area_light <0.4, 0, 0>, <0, 0, 0.4>, 4, 4 adaptive 1 circular orient #end
 }
 light_source { <3.5, 2.2, 1.0>, rgb <0.7, 0.8, 1.0> * 0.5 }
-plane { y, 0 pigment { rgb 0.3 } }
+#if (!Reference) plane { y, 0 pigment { rgb 0.3 } } #end
 
 #declare R = 0.24;
 #declare H = 0.17;
@@ -44,7 +48,13 @@ plane { y, 0 pigment { rgb 0.3 } }
 #end
 
 merge {
+  #if (Blocks)
+  box { <-2.4, 0, -1.6>, <0, 0.6, 1.6> }
+  box { <0.05, 0, -1.6>, <2.4, 0.35, 1.6> }
+  #else
   box { <-2.4, 0, -1.6>, <2.4, 0.4, 1.6> }
+  #end
+  #if (!Bare & !Blocks)
   #for (I, 0, 4) Stud(<-2.0 + I * 0.8, 0.4, -1.1>) #end
   #for (I, 0, 6) Stud(<-2.0 + I * 0.56, 0.4, -0.15>) #end
   #for (I, 0, 6) Stud(<-2.0 + I * 0.51, 0.4, 0.75>) #end
@@ -55,6 +65,7 @@ merge {
   }
   Crease(<-2.4, 0.4, 1.2 - F>, <1.9, 0.4 + F, 1.2>, x, <0, 0.4 + F, 1.2 - F>)
   Crease(<1.9 - F, 0.4, -1.6>, <1.9, 0.4 + F, 1.2>, z, <1.9 - F, 0.4 + F, 0>)
-  texture { pigment { rgb <0.85, 0.12, 0.08> } finish { diffuse 0.75 specular 0.3 roughness 0.02 subsurface { translucency Mfp } } }
+  #end
+  texture { pigment { rgb Colour } finish { #if (Reference) ambient 0 #end diffuse 0.75 specular 0.3 * !Reference roughness 0.02 subsurface { translucency Mfp } } }
   interior { ior 1.5 }
 }

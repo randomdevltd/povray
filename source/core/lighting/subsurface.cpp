@@ -128,8 +128,8 @@ size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
     size_t h = std::hash<const void*>()(k.object) ^ (std::hash<const void*>()(k.medium) * 31u) ^
                (std::hash<size_t>()(k.preparedSetId) * 65599u);
-    for (int v : { k.sizeLevel, k.x, k.y, k.z, int(k.radiosity), int(k.photons) })
-        h = h * 1000003u ^ std::hash<int>()(v);
+    for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel) })
+        h = h * 1000003u ^ std::hash<std::int64_t>()(v);
     return h;
 }
 
@@ -331,6 +331,38 @@ bool SubsurfaceCache::CellFits(size_t bytes)
     return false;
 }
 
+std::atomic<std::uint64_t>& SubsurfaceCache::UnservedCounter(const void *object, SubsurfaceUnserved reason, const std::string& description)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_ptr<UnservedEntry>& entry = unserved[std::make_pair(object, int(reason))];
+    if (!entry)
+    {
+        entry.reset(new UnservedEntry());
+        entry->description = description;
+    }
+    return entry->count;
+}
+
+std::vector<SubsurfaceCache::UnservedObject> SubsurfaceCache::Unserved() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<UnservedObject> list;
+    for (const auto& entry : unserved)
+        list.push_back({ entry.second->description, SubsurfaceUnserved(entry.first.second), entry.second->count.load() });
+    std::sort(list.begin(), list.end(), [](const UnservedObject& a, const UnservedObject& b)
+              { return (a.description != b.description) ? a.description < b.description : a.reason < b.reason; });
+    return list;
+}
+
+bool SubsurfaceCache::ClosedMesh(const void *mesh, const std::function<bool()>& compute)
+{
+    std::lock_guard<std::mutex> lock(closedMeshesMutex);
+    auto found = closedMeshes.find(mesh);
+    if (found != closedMeshes.end())
+        return found->second;
+    return closedMeshes[mesh] = compute();
+}
+
 void SubsurfaceCache::CheckCap() const
 {
     size_t needed;
@@ -360,11 +392,21 @@ bool SubsurfaceCache::Progress(double fraction, double& heldMB, double& projecte
     progress = fraction;
     if (projected || !(fraction >= 0.25))
         return false;
+    // Cells already built serve the rest of the image, so the clouds grow more slowly as it goes: the projection takes
+    // the rate between a quarter and a half of the image, which still overshoots, rather than the first quarter's mean.
+    if (firstFraction == 0.0)
+    {
+        firstFraction = fraction;
+        firstCharged = charged;
+        return false;
+    }
+    if (!(fraction >= 0.5) || !(fraction > firstFraction))
+        return false;
     projected = true;
     heldMB = charged / 1048576.0;
-    projectedMB = heldMB / fraction;
+    projectedMB = heldMB + (double(charged) - double(firstCharged)) / (fraction - firstFraction) * (1.0 - fraction) / 1048576.0;
     capMB = cap / 1048576.0;
-    return (charged > fraction * cap);
+    return (projectedMB > capMB);
 }
 
 SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
@@ -481,6 +523,11 @@ static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector
 }
 
 double SubsurfaceCell::Spacing(const Vector3d& normal) const
+{
+    return SubsurfaceSpacing(step, normal);
+}
+
+double SubsurfaceSpacing(const double step[3], const Vector3d& normal)
 {
     double facing = 0.0, density = 0.0;
     for (int a = 0; a < 3; a++)
