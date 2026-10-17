@@ -7941,10 +7941,16 @@ void Trace::SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x,
         thin.depthWeight[j] = min(1.0, f - k);
         thin.extinctionSqr[j] = profile.extinctionSqr[j];
         int u = int(floor(sqrt(3.0 * clip(1.0 - profile.albedo[j], 0.0, 1.0)) * SubsurfaceBoundary::kLayerSteps + 0.5));
-        const float *&rows = ssltLayers[std::make_tuple((const void*)profile.boundary, u, k)];
-        if (rows == nullptr)
-            rows = profile.boundary->Layer(u, k);
-        thin.rows[j] = rows;
+        SubsurfaceLayerSlot& slot = ssltLayers[(unsigned(u) * 2654435761u ^ unsigned(k - SubsurfaceBoundary::kLayerFirst) * 40503u) % kLayerSlots];
+        if ((slot.step != u) || (slot.k != k) || (slot.eta != profile.boundary->eta))
+        {
+            slot.rows = threadData->subsurfaceCache->Layer(*profile.boundary, u, k);
+            slot.eta = profile.boundary->eta;
+            slot.step = u;
+            slot.k = k;
+        }
+        thin.hold[j] = slot.rows;
+        thin.rows[j] = slot.rows.get();
         thin.active = true;
     }
     for (int j = 0; j < MathColour::channels; j++)

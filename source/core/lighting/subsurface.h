@@ -48,6 +48,7 @@
 #include <condition_variable>
 #include <map>
 #include <functional>
+#include <list>
 #include <memory>
 #include <string>
 #include <mutex>
@@ -131,6 +132,11 @@ const double kSubsurfaceMemoryMB = 1024.0;
 /// The multiple of adc_bailout under which method 2 lights a hit as its exit point is lit, unless global_settings { subsurface { bailout F } } says otherwise.
 const double kSubsurfaceBailout = 8.0;
 
+/// Memory method 2's boundary and layer tables keep for reuse, besides those render threads are using; see doc/PERF.md.
+const double kSubsurfaceTablesMB = 32.0;
+
+class SubsurfaceBoundary;
+
 /// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, or the floor.
 enum SubsurfaceStepTerm { kStepDiffusion, kStepPixel, kStepObject, kStepFinest, kStepTerms };
 
@@ -139,6 +145,7 @@ struct SubsurfaceCloudStatistics final
 {
     double spacing = 1.0, peakBytes = 0.0, chargedBytes = 0.0, cells = 0.0, points = 0.0, read = 0.0;
     double termCells[kStepTerms] = {}, termPoints[kStepTerms] = {};
+    double layers = 0.0, evicted = 0.0, tablesPeakBytes = 0.0; ///< method 2's tables built, dropped for the cap, and the most alive at once
 };
 
 /// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
@@ -285,8 +292,27 @@ class SubsurfaceCache final
         /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
         void SetCamera(const Vector3d& location, double pixelSize, double pixelAngle);
         bool GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const;
+        /// A layer table of the boundary (SubsurfaceBoundary::BuildLayer), kept within kSubsurfaceTablesMB with the
+        /// least recently used dropped first; a table is a function of its key alone, so dropping one costs only time.
+        std::shared_ptr<const float> Layer(const SubsurfaceBoundary& boundary, int step, int k);
 
     private:
+        struct TableKey
+        {
+            double eta;
+            int step, k;
+            bool operator==(const TableKey& o) const { return (eta == o.eta) && (step == o.step) && (k == o.k); }
+        };
+        struct TableKeyHash { size_t operator()(const TableKey& key) const; };
+        struct TableEntry { std::shared_ptr<const void> table; size_t bytes; std::list<TableKey>::iterator use; };
+        /// Bytes of the tables alive anywhere, those threads hold after the cache dropped them included.
+        struct TableBytes { std::atomic<size_t> live{0}, peak{0}; };
+        std::shared_ptr<const void> Table(const TableKey& key, size_t bytes, const std::function<std::shared_ptr<const void>()>& build);
+        mutable std::mutex tablesMutex;
+        std::unordered_map<TableKey, TableEntry, TableKeyHash> tables;
+        std::list<TableKey> tableUse; ///< most recently used first
+        size_t tablesHeld = 0, tableLayers = 0, tablesEvicted = 0;
+        std::shared_ptr<TableBytes> tableBytes = std::make_shared<TableBytes>();
         mutable std::mutex mutex;
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
         struct UnservedEntry { std::string description; std::atomic<std::uint64_t> count{0}; };
@@ -364,15 +390,10 @@ class SubsurfaceBoundary final
 
         /// A part 2^(k/4) reduced mean free paths deep, for k from kLayerFirst to kLayerLast, at the albedo whose u is
         /// step / kLayerSteps (see doc/PERF.md): for k and k + 1 in BeamRatio's layout, the ratios to the dipole of Rd and its
-        /// disc integral on the near face, then from kLayerFar on, of Rd through to the far face. Built on first use and shared.
+        /// disc integral on the near face, then from kLayerFar on, of Rd through to the far face; SubsurfaceCache keeps them.
         static const int kLayerFirst = -40, kLayerLast = 48, kLayerFar = 4 * kBeamColumns, kLayerSteps = 4096;
-        const float *Layer(int step, int k) const;
-
-    private:
-        mutable std::mutex layerMutex;
-        mutable std::map<std::pair<int, int>, std::unique_ptr<float[]>> layers;
-
-    public:
+        static const size_t kLayerFloats = 2 * kLayerFar;
+        void BuildLayer(int step, int k, float *rows) const;
 
         /// Beam diffusion over the dipole at a squared optical radius, interpolated within a quarter octave: of Rd for
         /// disc 0, of its integral over the disc for disc 1.

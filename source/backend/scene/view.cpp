@@ -1540,6 +1540,8 @@ void View::GetStatistics(POVMS_Object& renderStats)
                           cloud.termCells[kStepPixel], cloud.termPoints[kStepPixel], cloud.termCells[kStepDiffusion],
                           cloud.termPoints[kStepDiffusion], cloud.termCells[kStepObject], cloud.termPoints[kStepObject],
                           cloud.termCells[kStepFinest], cloud.termPoints[kStepFinest]);
+            messages.Info("Method 2 tables: %.0f layer tables built, %.0f dropped for the %g MB cap, peak %.2f MB alive.",
+                          cloud.layers, cloud.evicted, kSubsurfaceTablesMB, cloud.tablesPeakBytes / 1048576.0);
             const char *reasons[kUnservedReasons] = {
                 "it is an open sheet (a disc, or a mesh whose triangles leave a border), with no inside for light to diffuse through",
                 "its part has a light the object's other parts were not found to have",

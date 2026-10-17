@@ -45,7 +45,6 @@
 // C++ standard header files
 #include <memory>
 #include <map>
-#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -1097,13 +1096,17 @@ class Trace
             bool active = false;
             double depth = 0.0; ///< through the material under the exit point, in mm
             const float *rows[MathColour::channels]; ///< the layer table at the albedo, or null where thick
+            std::shared_ptr<const float> hold[MathColour::channels]; ///< keeps rows alive
             double depthWeight[MathColour::channels], extinctionSqr[MathColour::channels];
             bool same[MathColour::channels]; ///< whether a channel's ratios are the previous channel's
             /// Multiplies rd by the ratios at squared distance distSqr (mm^2): part 0 Rd, 1 its disc integral (radius squared), 2 Rd through.
             void Apply(PreciseMathColour& rd, double distSqr, int part) const;
         };
         SubsurfaceThin ssltThin;
-        std::map<std::tuple<const void*, int, int>, const float*> ssltLayers;
+        /// The layer tables this thread used last, by key, so that most lookups take no lock.
+        struct SubsurfaceLayerSlot { double eta = 0.0; int step = -1, k = 0; std::shared_ptr<const float> rows; };
+        static const int kLayerSlots = 32;
+        SubsurfaceLayerSlot ssltLayers[kLayerSlots];
 
         /// A texture's subsurface layers blended as the viewer sees them: reflectance and colour weighted by each layer's
         /// opacity and filter, their sum, and the topmost layer, whose finish they scatter with.

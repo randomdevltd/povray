@@ -282,20 +282,15 @@ static double LayerDisc(const SubsurfaceDipole& d, double x, double z, double s)
 // Donner and Jensen's multipole for a layer tau deep, from one source at min(1, tau / 2) carrying the light that scatters
 // in the layer, 1 - e^-tau, over the better dipole: the light leaving the near face, and the far face (over the dipole at the
 // straight distance through the layer).
-const float *SubsurfaceBoundary::Layer(int step, int k) const
+void SubsurfaceBoundary::BuildLayer(int step, int k, float *rows) const
 {
-    std::lock_guard<std::mutex> lock(layerMutex);
-    std::unique_ptr<float[]>& rows = layers[std::make_pair(step, k)];
-    if (rows)
-        return rows.get();
-    rows.reset(new float[2 * kLayerFar]);
     double u = double(step) / kLayerSteps;
     SubsurfaceDipole dipole(1.0 - Sqr(u) / 3.0, *this);
     for (int part = 0; part < 2; part++)
     {
         double tau = exp2(0.25 * (k + part)), z = std::min(1.0, 0.5 * tau), scatter = -expm1(-tau), period = 2.0 * (tau + dipole.zb);
         int images = (dipole.sigma * period > 0.0) ? std::min(64, int(ceil(12.0 / (dipole.sigma * period)))) : 64;
-        float *near = rows.get() + part * 2 * kBeamColumns, *far = near + kLayerFar;
+        float *near = rows + part * 2 * kBeamColumns, *far = near + kLayerFar;
         double rdRatio = 1.0, discRatio = 1.0, farRatio = 1.0;
         for (int c = 0; c < kBeamColumns; c++)
         {
@@ -318,7 +313,6 @@ const float *SubsurfaceBoundary::Layer(int step, int k) const
             far[2 * c + 1] = float(farRatio);
         }
     }
-    return rows.get();
 }
 
 const SubsurfaceBoundary& SubsurfaceBoundary::For(double eta)
@@ -538,6 +532,60 @@ void SubsurfaceCache::Refund(SubsurfaceCell& cell)
     cell.settled = true;
 }
 
+size_t SubsurfaceCache::TableKeyHash::operator()(const TableKey& key) const
+{
+    return (std::hash<double>()(key.eta) * 1000003u ^ std::hash<int>()(key.step)) * 1000003u ^ std::hash<int>()(key.k);
+}
+
+std::shared_ptr<const void> SubsurfaceCache::Table(const TableKey& key, size_t bytes, const std::function<std::shared_ptr<const void>()>& build)
+{
+    {
+        std::lock_guard<std::mutex> lock(tablesMutex);
+        auto found = tables.find(key);
+        if (found != tables.end())
+        {
+            tableUse.splice(tableUse.begin(), tableUse, found->second.use);
+            return found->second.table;
+        }
+    }
+    // Built without the lock; a thread that built the same table meanwhile wins, with the same values.
+    std::shared_ptr<const void> table = build();
+    size_t live = (tableBytes->live += bytes), peak = tableBytes->peak.load();
+    while ((live > peak) && !tableBytes->peak.compare_exchange_weak(peak, live)) {}
+    std::lock_guard<std::mutex> lock(tablesMutex);
+    auto found = tables.find(key);
+    if (found != tables.end())
+    {
+        tableUse.splice(tableUse.begin(), tableUse, found->second.use);
+        return found->second.table;
+    }
+    tableLayers++;
+    tableUse.push_front(key);
+    tables[key] = TableEntry{ table, bytes, tableUse.begin() };
+    tablesHeld += bytes;
+    while ((tablesHeld > size_t(kSubsurfaceTablesMB * 1048576.0)) && (tableUse.size() > 1))
+    {
+        auto oldest = tables.find(tableUse.back());
+        tablesHeld -= oldest->second.bytes;
+        tables.erase(oldest);
+        tableUse.pop_back();
+        tablesEvicted++;
+    }
+    return table;
+}
+
+std::shared_ptr<const float> SubsurfaceCache::Layer(const SubsurfaceBoundary& boundary, int step, int k)
+{
+    const size_t bytes = SubsurfaceBoundary::kLayerFloats * sizeof(float);
+    std::shared_ptr<TableBytes> counted = tableBytes;
+    return std::static_pointer_cast<const float>(Table({ boundary.eta, step, k }, bytes, [&]()
+    {
+        float *rows = new float[SubsurfaceBoundary::kLayerFloats];
+        boundary.BuildLayer(step, k, rows);
+        return std::shared_ptr<const void>(rows, [counted, bytes](const void *p) { delete[] static_cast<const float*>(p); counted->live -= bytes; });
+    }));
+}
+
 bool SubsurfaceCache::CellFits(size_t bytes)
 {
     if (bytes <= cap)
@@ -641,6 +689,12 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
         all.reserve(cells.size());
         for (const auto& slot : cells)
             all.push_back(slot.second);
+    }
+    {
+        std::lock_guard<std::mutex> lock(tablesMutex);
+        stats.layers = double(tableLayers);
+        stats.evicted = double(tablesEvicted);
+        stats.tablesPeakBytes = double(tableBytes->peak.load());
     }
     for (const std::shared_ptr<SubsurfaceCell>& cell : all)
     {
