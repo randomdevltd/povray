@@ -67,9 +67,21 @@ for index, (distance, power, parallel) in enumerate([(0, 0, 0), (2, 1, 0), (0, 2
     print(f'fade {index}: photon / direct {ratio:.4f}, expected {expected:.4f}')
     assert abs(ratio / expected - 1.0) < 0.03, (index, ratio, expected)
 PY
+# a refracting target darkens its shadow for photons only when the map holds deposits
+for method in 1 2; do
+    "$POVRAY" +i"$SRCDIR/tests/render/progressive_direct_lights.pov" +w8 +h8 -a -d -p -v -gp +fp16 File_Gamma=1 \
+        +o"progressive_direct_blocked_${method}.ppm" Declare=Method="$method" Declare=Disabled=0 Declare=Lens=1 \
+        Declare=Blocked=1 +wt2 > progressive_direct_blocked.log 2>&1 || { cat progressive_direct_blocked.log; exit 1; }
+done
+grep -q 'Surface photons stored: *0' progressive_direct_blocked.log || grep -q ' 0 deposits' progressive_direct_blocked.log ||
+    { cat progressive_direct_blocked.log; exit 1; }
+tail -c 384 progressive_direct_blocked_1.ppm > progressive_direct_classic.px
+tail -c 384 progressive_direct_blocked_2.ppm > progressive_direct_progressive.px
+cmp progressive_direct_classic.px progressive_direct_progressive.px
+od -An -v -t u1 progressive_direct_progressive.px | awk '{for(i=1;i<=NF;i++) lit=lit || $i>0} END {exit !lit}'
 for source in 2 3; do
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_direct_lights.pov" +w1 +h1 +pr -a -d -p -v -f \
         Declare=Source="$source" Declare=Disabled=0 Declare=Power=0 > progressive_direct_zero.log 2>&1 || { cat progressive_direct_zero.log; exit 1; }
 done
 rm -f progressive_direct_*.px progressive_direct_*.ppm progressive_direct_*.log progressive_direct_*.pov-state
-echo 'progressive_direct_lights: direct-light power and fade, photon power calibration, disabled and zero emitters passed'
+echo 'progressive_direct_lights: direct-light power and fade, photon power calibration, shadows without deposits, disabled and zero emitters passed'

@@ -3864,8 +3864,10 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     // 4) LightA has photon refraction set to "off"
     // 5) Neither GlassSphereB nor LightA has photon refraction set to "on"
     if((sceneData->photonSettings.photonsEnabled == true) &&
-        (sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0 || sceneData->photonSettings.Progressive()) &&
-        (!sceneData->photonSettings.Progressive() || pov::PhotonLightAffectsObject(&lightsource, isect.Object)) &&
+        (sceneData->photonSettings.Progressive() ?
+            !sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).progressiveSurface.photons.empty() &&
+                pov::PhotonLightAffectsObject(&lightsource, isect.Object) :
+            sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0) &&
         (!threadData->litObjectIgnoresPhotons) &&
         (Test_Flag(isect.Object,PH_TARGET_FLAG)) &&
         (!Test_Flag(isect.Object,PH_RFR_OFF_FLAG)) &&
