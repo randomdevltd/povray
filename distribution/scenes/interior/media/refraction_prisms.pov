@@ -1,6 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Four glass prisms whose index of refraction varies inside the glass: media refraction adds K times the medium's density to the interior's ior. From the left: octave turbulence, 3D voronoi cells with one index each, a spherical gradient lens and laminated strata. A parallel photon beam splits into a spectrum through each. +w1024 +h576 +a0.2.
-// The indices reach 2.0, past total internal reflection at every exit face, so some light leaves backwards: the blue loops in front of the lens are caustics of light that turned round inside it. Declare=Case=1..4 renders one prism alone, Plain=1 removes the media, PhotonQuality raises the photon count, Bands sets the spectral samples.
+// Four glass prisms whose index of refraction varies inside the glass: media refraction adds K times the medium's density to the interior's ior. From the left: a corkscrew that twists the index along the beam, 3D voronoi cells with one index each, a spherical gradient lens and laminated strata. A parallel photon beam splits into a spectrum through each. +w1024 +h576 +a0.2. The indices reach 2.0, past total internal reflection at every exit face, so some light leaves backwards: the blue loops in front of the lens are caustics of light that turned round inside it. Declare=Case=1..4 renders one prism alone, Plain=1 removes the media, PhotonQuality raises the photon count, Bands sets the spectral samples.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
@@ -10,6 +9,9 @@
 #ifndef (Detail) #declare Detail = 0.5; #end
 #ifndef (KScale) #declare KScale = 1; #end
 #ifndef (Plain) #declare Plain = 0; #end
+#ifndef (CellScale) #declare CellScale = 0.25; #end
+#ifndef (Arms) #declare Arms = 3; #end
+#ifndef (Pitch) #declare Pitch = 12; #end
 #declare H = 1.3;
 #declare Slots = array[4] { -3.6, -1.2, 1.2, 3.6 }
 global_settings {
@@ -33,13 +35,13 @@ light_source { <0, H, -20> rgb Power parallel point_at <0, H, 0> photon_only 1 p
 
 #macro Density(C)
   #switch (C)
-    #case (1) density { bozo turbulence 0.85 octaves 6 omega 0.55 lambda 2.2 scale 0.45 } #break
-    #case (2) density { crackle solid scale 0.55 } #break
+    #case (1) density { function { 0.5 + 0.5 * sin(Arms * atan2(y, x) + Pitch * z) * min(1, 4 * sqrt(x * x + y * y)) } } #break
+    #case (2) density { crackle solid scale CellScale } #break
     #case (3) density { spherical scale 0.9 } #break
     #case (4) density { gradient x sine_wave turbulence 0.05 scale 0.3 } #break
   #end
 #end
-#macro Strength(C) #switch (C) #case (1) (0.55) #break #case (2) (0.6) #break #case (3) (0.5) #break #case (4) (0.5) #end #end
+#macro Strength(C) #switch (C) #case (1) (0.5) #break #case (2) (0.6) #break #case (3) (0.5) #break #case (4) (0.5) #end #end
 
 #macro MediumPrism(C, X)
   prism { linear_sweep linear_spline -0.9, 0.9, 4

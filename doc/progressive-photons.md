@@ -380,8 +380,9 @@ equal-power point light, an identity lens with direct lighting, source controls,
 self-attenuation, refractive heat and arrays of small emitters.
 
 `distribution/scenes/interior/media/refraction_prisms.pov` sends one parallel photon
-beam through four dispersive prisms whose index varies inside the glass (media
-`refraction` with turbulence, voronoi cells, a spherical gradient and strata). Indices
+beam through four dispersive prisms whose index varies inside the glass through media
+`refraction`: from the left, a corkscrew that twists the index along the beam, 3D voronoi
+cells with one index each, a spherical gradient lens and laminated strata. Indices
 up to 2.0 turn some light back out of the entry face, so the caustics include loops in
 front of the prism. Render it with `+W1024 +H576`; `Declare=Case=1` to `4` renders one
 prism alone and `Declare=PhotonQuality=` raises the photon count.
