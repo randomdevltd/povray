@@ -340,7 +340,8 @@ deposit and 96 per media segment: on the leaf of the measurements below, at qual
 591,415 deposits take 37.9 MB, saving adds 1.1 G instructions to the 168.7 G render,
 and a loaded render gives the same image in 164.1 G.
 `tests/render/progressive_photon_file.sh` saves and loads media, subsurface and
-dispersion scenes, turns the camera, and checks each error.
+dispersion scenes, turns the camera, and checks each error, including a load refused
+under a tiny `POV_PHOTON_MEMORY` ceiling.
 
 ## Media lights
 
@@ -395,8 +396,14 @@ with its bounds. Shooter vectors hold one batch and are released after it is mer
 Memory grows linearly with quality and with deposits per sample, which depend
 on the scene (spectral bands, bounces, media steps). After every batch the whole
 emission's storage is projected from the deposits and segments per batch so far, with a
-20% margin; if it exceeds 40% of the memory available after the first batch, at most
-6 GB, the render stops with an error giving the projection, before more work is done.
+20% margin; if it exceeds the memory ceiling, the render stops with an error giving the
+projection and the batch it was made after, before more work is done. By default the
+ceiling is 40% of the memory available after the first batch, at most 6 GB; it is read
+once per render, so the same scene can be refused on a busy machine and accepted on an
+idle one. The environment variable `POV_PHOTON_MEMORY` sets the ceiling instead, in GB
+(10^9 bytes, any positive number such as `0.5` or `24`), with no reference to free
+memory; it is read once per process, applies to loading a photon file too, and a value
+that is not a positive number stops the render with an error.
 Otherwise the maps reserve the projected capacity, so they grow only when a later batch
 deposits more than the earlier ones, and the index is partitioned in place. The log line `Progressive photons:` reports
 batches, emitted samples, deposits, `k`, contributions, preparation time and the peak
@@ -419,7 +426,8 @@ the pilot, the per-pixel estimator state and the image-size threshold are gone.
 
 ## Tests
 
-`tests/source/progressive_photon.cpp` checks the budget, determinism and the
+`tests/source/progressive_photon.cpp` checks the budget, the per-batch memory projection,
+determinism and the
 stratification of the Sobol dimensions (every aligned block of 2^m values holds one
 value per stratum; pairwise star discrepancy against random points).
 `tests/source/progressive_surface.cpp` checks that the estimator reproduces a uniform
@@ -432,7 +440,10 @@ mixture integrates to the true solid angle over the sphere, inside a narrow cone
 every cone. `tests/render/progressive_photons.sh`
 covers thread-count equality for every light type and media, dispersion, subsurface,
 thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
-independence of the logged budget, the memory budget error and invalid quality;
+independence of the logged budget, the default memory budget error, refusal under a tiny
+`POV_PHOTON_MEMORY` ceiling, acceptance under a generous one, invalid ceilings and invalid
+quality; every other render there runs under a generous ceiling, so no result depends on free
+memory;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
 requires its underside to match the lit top, as does a `double_illuminate` disc;
 `tests/render/progressive_receivers.sh` focuses a caustic on a wavy floor built as a mesh, a

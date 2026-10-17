@@ -3,6 +3,8 @@ set -eu
 POVRAY=$1
 SRCDIR=$2
 SCENE="$SRCDIR/tests/render/progressive_photons.pov"
+POV_PHOTON_MEMORY=64
+export POV_PHOTON_MEMORY
 render() {
     name=$1; shift
     "$POVRAY" +i"$SCENE" +w48 +h32 -a -d -p -v -gp +fp16 File_Gamma=1 +o"progressive_photons_$name.ppm" \
@@ -78,10 +80,27 @@ for quality in 0 -1 16384.5; do
     fi
     grep -q 'quality must be' progressive_photons_invalid.log
 done
-if "$POVRAY" +i"$SCENE" +w1 +h1 -a -d -p -v -f Declare=PhotonQuality=16384 +wt2 > progressive_photons_memory.log 2>&1; then
-    echo "photon quality beyond the memory budget accepted" >&2
+refused() {
+    tr '\n' ' ' < "progressive_photons_$1.log" | tr -s ' ' | grep -q "$2" || { cat "progressive_photons_$1.log"; exit 1; }
+}
+if (unset POV_PHOTON_MEMORY; "$POVRAY" +i"$SCENE" +w1 +h1 -a -d -p -v -f Declare=PhotonQuality=16384 +wt2) \
+    > progressive_photons_memory.log 2>&1; then
+    echo "photon quality beyond the default memory budget accepted" >&2
     exit 1
 fi
-tr '\n' ' ' < progressive_photons_memory.log | tr -s ' ' | grep -q 'more than the [0-9.]* GB allowed'
+refused memory 'after batch 1), more than the [0-9.]* GB allowed (40% of available memory, at most 6 GB)'
+for ceiling in 0.001 abc 0; do
+    if POV_PHOTON_MEMORY=$ceiling "$POVRAY" +i"$SCENE" +w8 +h8 -a -d -p -v -f Declare=PhotonQuality=0.25 +wt2 \
+        > progressive_photons_ceiling.log 2>&1; then
+        echo "photons accepted under the memory ceiling $ceiling" >&2
+        exit 1
+    fi
+    case $ceiling in
+        0.001) refused ceiling 'after batch 1), more than the [0-9.]* GB allowed (set by POV_PHOTON_MEMORY)' ;;
+        *) refused ceiling 'POV_PHOTON_MEMORY must be a number of gigabytes' ;;
+    esac
+done
+"$POVRAY" +i"$SCENE" +w8 +h8 -a -d -p -v -f Declare=PhotonQuality=0.25 +wt2 > progressive_photons_ceiling.log 2>&1 ||
+    { cat progressive_photons_ceiling.log; exit 1; }
 rm -f progressive_photons_*.ppm progressive_photons_*.px progressive_photons_*.pov-state progressive_photons_*.log
-echo 'progressive_photons: deterministic threads, lamps and features, anti-aliasing, resume, classic compatibility, emission power, size-independent budget, memory budget and invalid quality passed'
+echo 'progressive_photons: deterministic threads, lamps and features, anti-aliasing, resume, classic compatibility, emission power, size-independent budget, memory budget and ceiling and invalid quality passed'

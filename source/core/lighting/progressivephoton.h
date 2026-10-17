@@ -37,6 +37,12 @@ struct ProgressivePhotonBudget final
 
     std::uint64_t EmittedSamples() const { return std::uint64_t(batches) * batchSize; }
 
+    /// The whole emission's bytes projected after batch pass + 1 from that batch's shooter bytes and the maps so far.
+    static double ProjectedBytes(double shooterBytes, double mapBytes, unsigned int pass, unsigned int batches)
+    {
+        return memoryMargin * (shooterBytes + mapBytes * batches / double(pass + 1));
+    }
+
     /// Media beam segments shrink with the emitted count at the volume kernel rate.
     double BeamSpreadScale() const { return std::pow(double(batches), -1.0 / 7.0); }
 

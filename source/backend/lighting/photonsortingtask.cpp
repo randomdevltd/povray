@@ -39,8 +39,11 @@
 // C++ variants of C standard header files
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <iomanip>
@@ -678,6 +681,44 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
     return out.Close() ? std::string() : "the file could not be written";
 }
 
+double ProgressivePhotonMemoryCeiling()
+{
+    static const double ceiling = [] {
+        const char* text = std::getenv("POV_PHOTON_MEMORY");
+        if (text == nullptr || *text == '\0')
+            return 0.0;
+        char* end = nullptr;
+        const double gigabytes = std::strtod(text, &end);
+        return std::isfinite(gigabytes) && gigabytes > 0.0 && *end == '\0' ? gigabytes * 1.0e9 : -1.0;
+    }();
+    return ceiling;
+}
+
+double ProgressivePhotonMemoryBudget()
+{
+    if (ProgressivePhotonMemoryCeiling() > 0.0)
+        return ProgressivePhotonMemoryCeiling();
+    double available = ProgressivePhotonBudget::memoryCeiling / ProgressivePhotonBudget::memoryShare;
+    std::ifstream meminfo("/proc/meminfo");
+    std::string field;
+    double kilobytes;
+    while (meminfo >> field >> kilobytes)
+    {
+        if (field == "MemAvailable:")
+        {
+            available = kilobytes * 1024.0;
+            break;
+        }
+        meminfo.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    return std::min(ProgressivePhotonBudget::memoryCeiling, ProgressivePhotonBudget::memoryShare * available);
+}
+
+const char* ProgressivePhotonMemoryRule()
+{
+    return ProgressivePhotonMemoryCeiling() > 0.0 ? "set by POV_PHOTON_MEMORY" : "40% of available memory, at most 6 GB";
+}
+
 std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_t& savedSeed)
 {
     const std::string& name = scene.photonSettings.fileName;
@@ -841,7 +882,8 @@ std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_
     {
         std::ostringstream message;
         message << std::setprecision(3) << "The photon file '" << name << "' needs at least " << bytes / 1.0e9
-                << " GB for photons, more than the " << budget / 1.0e9 << " GB allowed (40% of available memory, at most 6 GB).";
+                << " GB for photons, more than the " << budget / 1.0e9 << " GB allowed ("
+                << ProgressivePhotonMemoryRule() << ").";
         return message.str();
     }
     unsigned char end[sizeof(kProgressiveEnd)];

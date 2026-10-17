@@ -108,6 +108,13 @@ int main()
     assert(pov::ProgressivePhotonBudget(1).batches == 4 && pov::ProgressivePhotonBudget(64).batches == 256);
     assert(pov::ProgressivePhotonBudget(64).neighbours == pov::ProgressivePhotonBudget::maxNeighbours);
     assert(std::abs(pov::ProgressivePhotonBudget(1).EmissionWeight(2, 0.5) - 2.0 / (65536 * 0.5)) < 1e-18);
+    {
+        using pov::ProgressivePhotonBudget;
+        const double batch1 = ProgressivePhotonBudget::ProjectedBytes(2.0e5, 1.0e6, 0, 8), ceiling = 1.1 * batch1;
+        assert(std::abs(batch1 - 1.2 * (2.0e5 + 8.0e6)) < 1.0);
+        assert(std::abs(ProgressivePhotonBudget::ProjectedBytes(2.0e5, 4.0e6, 3, 8) - batch1) < 1.0);
+        assert(batch1 <= ceiling && ProgressivePhotonBudget::ProjectedBytes(2.0e5, 5.0e6, 3, 8) > ceiling);
+    }
     for (double invalid : {0.0, -1.0, 16384.5, double(INFINITY), double(NAN)})
     {
         bool rejected = false;

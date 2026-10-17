@@ -119,6 +119,9 @@ class TaskQueue final
 
         bool Process();
 
+        /// Keeps Process from running entries until the lock is released, so a render is queued whole.
+        std::unique_lock<std::recursive_mutex> Hold() { return std::unique_lock<std::recursive_mutex>(queueMutex); }
+
         void Notify();
     private:
         /// queued task list

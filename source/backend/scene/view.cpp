@@ -846,6 +846,8 @@ void View::StartRender(POVMS_Object& renderOptions)
 
     if (renderControlThread == nullptr)
         renderControlThread = new std::thread(boost::bind(&View::RenderControlThread, this));
+    // a failure in an early entry must not be cleared by AppendTask while later entries are still queued
+    const auto queuing = renderTasks.Hold();
 
     viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceMemory, viewData.sceneData->subsurfaceSpacing);
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
@@ -1810,11 +1812,11 @@ void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, un
     viewData.SetNextRectangle(*bsl, fs);
 }
 
-static double ProgressivePhotonMemoryBudget();
-
 void View::QueueProgressivePhotons(size_t seed, int threads)
 {
     const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
+    if (ProgressivePhotonMemoryCeiling() < 0.0)
+        throw POV_EXCEPTION(kParamErr, "POV_PHOTON_MEMORY must be a number of gigabytes greater than zero.");
     viewData.photonPrepareCPU = 0;
     viewData.photonMapCPU = 0;
     viewData.photonPeakBytes = 0;
@@ -1874,25 +1876,6 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     renderTasks.AppendSync();
 }
 
-/// The memory progressive photons may use: a share of the memory available now, at most a fixed ceiling.
-static double ProgressivePhotonMemoryBudget()
-{
-    double available = ProgressivePhotonBudget::memoryCeiling / ProgressivePhotonBudget::memoryShare;
-    std::ifstream meminfo("/proc/meminfo");
-    std::string field;
-    double kilobytes;
-    while (meminfo >> field >> kilobytes)
-    {
-        if (field == "MemAvailable:")
-        {
-            available = kilobytes * 1024.0;
-            break;
-        }
-        meminfo.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    }
-    return std::min(ProgressivePhotonBudget::memoryCeiling, ProgressivePhotonBudget::memoryShare * available);
-}
-
 void View::PreparePhotonBatch(TaskQueue& queue, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
                                     unsigned int batches, unsigned int neighbours)
 try
@@ -1948,14 +1931,15 @@ try
         // each batch projects the final maps from the deposits per batch so far, against the budget read at the first
         constexpr size_t segmentBytes = sizeof(ProgressiveVolumePhoton) + sizeof(ProgressiveVolumePhotonMap::Bounds);
         const double scale = ProgressivePhotonBudget::memoryMargin * batches / double(pass + 1);
-        double projected = transient * ProgressivePhotonBudget::memoryMargin;
+        double mapBytes = 0.0;
         size_t deposits = 0, segments = 0;
         for (const auto& set : viewData.GetSceneData()->preparedSets)
         {
             deposits += set->progressiveSurface.photons.size();
             segments += set->progressiveMedia.photons.size();
-            projected += scale * (set->progressiveSurface.photons.size() * sizeof(MappedPhoton) + set->progressiveMedia.photons.size() * segmentBytes);
+            mapBytes += double(set->progressiveSurface.photons.size() * sizeof(MappedPhoton) + set->progressiveMedia.photons.size() * segmentBytes);
         }
+        const double projected = ProgressivePhotonBudget::ProjectedBytes(double(transient), mapBytes, pass, batches);
         deposits /= pass + 1;
         segments /= pass + 1;
         if (pass == 0)
@@ -1971,8 +1955,9 @@ try
             MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
                                     viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
             messages.PossibleError("Photon quality %g would need about %.2f GB for photons (%zu deposits and %zu media segments per batch, "
-                                   "%u batches), more than the %.2f GB allowed (40%% of available memory, at most 6 GB). Lower the photon quality.",
-                                   viewData.GetSceneData()->photonSettings.quality, projected / 1.0e9, deposits, segments, batches, budget / 1.0e9);
+                                   "%u batches, projected after batch %u), more than the %.2f GB allowed (%s). Lower the photon quality.",
+                                   viewData.GetSceneData()->photonSettings.quality, projected / 1.0e9, deposits, segments, batches,
+                                   pass + 1, budget / 1.0e9, ProgressivePhotonMemoryRule());
             queue.Fail(kOutOfMemoryErr);
             return;
         }
