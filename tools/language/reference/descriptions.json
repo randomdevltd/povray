@@ -1811,6 +1811,11 @@
    "code": "union { include \"parts.inc\"; pigment { rgb <1, 0.6, 0.2> } translate <-2.5, 0, 0> }",
    "from": "tests/pov4/interop.pov4:4"
   },
+  "inherit": {
+   "rank": 87,
+   "code": "tags { \"NAME\" [, \"NAME\"...] [, inherit] } | tags { inherit } | tags { none } | tags { }",
+   "from": "doc/html/r3_5.html"
+  },
   "input": {
    "rank": 1012,
    "code": "input Label;",
@@ -2783,6 +2788,10 @@
    "rank": 1015,
    "code": "sys \"SomeImage\"",
    "from": "doc/html/r3_6.html"
+  },
+  "tagged": {
+   "code": "tagged { TAG_EXPRESSION }",
+   "from": "doc/html/r3_4.html:16"
   },
   "tags": {
    "code": "tags { \"doors\" }",

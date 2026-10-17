@@ -288,6 +288,23 @@ New Features
     limit. Each distinct selection is prepared once as its own scene (objects,
     bounding tree, lights, portal images, photon maps, radiosity cache), so a
     scene can hold several views of itself.
+  - Tags are inherited down the object tree: an object that writes no `tags`
+    takes its parent's effective tags, `tags { "a" }` replaces them, `tags {
+    "a", inherit }` adds to them, and `tags { none }` or `tags {}` has none. A
+    filter is evaluated once per object on its effective tags; containers are
+    not judged themselves and disappear when nothing in them remains. Changed:
+    `tags {}` used to be a no-op that kept the parent's tags and now clears
+    them, so `tags { ...Tags }` with an empty `Tags` loses the inherited tags;
+    write `tags { ...Tags, inherit }` to keep them. Tagged containers are no
+    longer checked against the filter level by level, and a child's own tags
+    replace its containers' instead of adding to them, so filter "u" now shows
+    a sphere tagged "u" inside a union tagged "uu". Scenes that relied on the
+    old rule add `inherit` to the child's list. A later `tags` block on the
+    same object now replaces earlier ones instead of adding to them, so
+    `object { Thing tags { "b" } }` drops the tags `Thing` was declared with.
+    `inherit` is matched by its text inside `tags { }` and stays free as an
+    identifier. In 4.0 programs an empty spread takes the comma after it, so
+    `tags { ...Tags, inherit }` inherits whatever `Tags` holds.
   - Media can mix: `media { mix add | replace | subtract | multiply priority N
     }` says how a medium combines with the media ranked beneath it, so media
     can carve, tint or replace each other.
@@ -380,6 +397,59 @@ New Features
     optional moving ray origins.
   - The render statistics gain a count of supersampled pixels, the progressive
     rendering setting, and skein counters.
+  - `tagged { EXPRESSION }` in 4.0 scenes is an object value: copies of the
+    objects already placed in the scene that a tag expression selects, as a
+    filter would select them. The selection is taken when its statement is
+    parsed, so objects written later are not in it and it cannot include
+    itself. It can be declared, framed with `look_at`, placed with `object {
+    }`, transformed and used in CSG; placing it adds copies beside the
+    originals. The scene keeps unions and light groups
+    whole until it is complete, so a selection sees them as written; unions
+    are split for bounding, and light groups give out their lights, after
+    parsing. A selection expands once, at its `#declare` or where it is
+    written, and never sees the tree it is written in. It copies each
+    selected object together with the containers around it, which keep their
+    own tags and hold only the selected parts, so a light group stays a
+    light group with the lights that were selected; copies keep their `tags`
+    as written and inherit where they are placed. Lights and portals are
+    copied like any other object; a copied portal makes its own far mouth
+    when placed.
+    Command-line
+    `Filter_Tags` has already removed what it rejects; camera, portal and
+    global filters do not affect a selection. An empty selection is an empty
+    union, with a warning. `tagged` is matched by its text only before `{`,
+    so it stays free as an identifier, and 4.0 programs now accept the full
+    tag expression grammar in `filter_tags` and `tagged` blocks, with string
+    values, names and calls such as `concat(...)` as operands.
+  - Camera `look_at` accepts an object identifier, or a `tagged { EXPRESSION
+    }` selection in 4.0 scenes, followed by an optional frame multiplier, and
+    frames that target's transformed bounding box: after parsing, the camera
+    turns toward the centre of the bounds and narrows its field until the
+    box's projected extent is the multiplier times half the image along the
+    limiting axis. The multiplier defaults to 0.9 (a five per cent border); 1
+    touches the edges, 0.8 leaves a wider border and values above 1 crop into
+    loose bounds. Camera transforms apply after the aim, as for a point
+    `look_at`. Framing never moves the camera: its location stays where it
+    was written, for every projection. The field never widens, except for
+    orthographic cameras; a target that does not fit, or whose box reaches
+    behind the camera (for an orthographic camera, behind the plane through
+    its location), is aimed at without a zoom, with a warning. An identifier frames the
+    declared object's own bounds as they are at the camera, not a moved or
+    later copy of it, measured once deferred meshes are built; the object is
+    not copied, and declaring the name again keeps it for the camera until it
+    is framed; a tagged selection
+    frames objects as placed before the camera, skips unbounded objects with a
+    warning, and is an error when it selects nothing. A light frames as its
+    location, or the area of an area_light; a target with no size is aimed at
+    without a zoom or a warning. A user_defined camera,
+    including the Mercator and Miller cameras of projections.inc, frames by
+    narrowing the range of its x and y inputs, found by sweeping its rays
+    against the bounds; a 360 degree projection wraps across its seam. A
+    declared camera takes a target as `camera { Eye look_at Subject }`. Mesh
+    cameras cannot frame. Cameras without a target render exactly as before.
+    Point targets keep their behaviour; no new reserved words are introduced;
+    the multiplier follows the target as a plain number, like
+    `look_at Subject, 0.8`.
 
 Performance Improvements
 ------------------------

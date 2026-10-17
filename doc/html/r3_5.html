@@ -210,6 +210,9 @@
   <td><div class="divh4"><a title="3.5.1.5.13" href="#r3_5_1_5_13">Tag Filter Expressions</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.5.1.5.14" href="#r3_5_1_5_14">Tagged Selections</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.5.1.6" href="#r3_5_1_6">Portal</a></div></td>
 </tr>
 <tr>
@@ -853,7 +856,7 @@ isosurface_mesh {
 </table>
 <p>Each cube that the surface passes through has one vertex, placed where the tangent planes at the surface's crossings of the cube's edges meet (dual contouring), so flat faces, sharp edges and corners come out exact at any cube size. The vertex is then moved onto the surface along the gradient, and its normal is the gradient there; triangles that span a crease take separate normals on either side. Each cube edge the surface crosses joins the vertices of the cubes around it, so cubes of different sizes meet without cracks. Where the surface meets the container the mesh is closed by the container, as the isosurface is, and is given an inside vector; with <code>open</code> it stops at the container instead, and the cubes along that rim split down to <code>min_size</code>. The mesh has no uv coordinates.</p>
 <p>A sphere of radius 1 at the default <code>max_angle</code> is 6348 triangles within 0.002 of the true surface, built in 0.04 seconds; a cube turned off the axes is 408 triangles with its edges and corners exact; a sphere displaced by <code>f_noise3d</code> is 136,000 triangles built in about 2.5 seconds, and renders five times faster than the isosurface. The finished mesh takes about 24 bytes per triangle; building it takes more for a while, about 450 bytes per triangle for the noisy sphere. A mesh may hold at most two million triangles; a <code>min_size</code> and <code>max_angle</code> that would need more stop the parse with an error. Each <code>isosurface_mesh</code> writes one line to the debug stream with its triangles, vertices, open edges, size in bytes, peak memory while building, wall and CPU build time, how many cubes range arithmetic checked and how many a sample judged, and the number of build threads. If a cube ruled out by a sample turns out to touch the surface, a warning says <code>max_gradient</code> is too low.</p>
-<p>The parser records the build and continues: copying, transforming, texturing and instancing the mesh do not build it. An operation that inspects its geometry while parsing, such as <code>trace</code>, <code>inside</code> or an extent query, builds it then. Every other mesh is built after parsing, once all <a href="r3_5.html#r3_5_1_5_13">tag filters</a> are known, and only if some view keeps an object that uses it; those builds run on up to <code>+WT</code> threads, each mesh once. A build snapshots the compiled functions it can reach and has its own function context and scratch data. Referenced image pixels remain shared. <code>+WT1</code> keeps construction serial.</p>
+<p>The parser records the build and continues: copying, transforming, texturing and instancing the mesh do not build it. An operation that inspects its geometry while parsing, such as <code>trace</code>, <code>inside</code> or an extent query, builds it then. Every other mesh is built after parsing, once all <a href="r3_5.html#r3_5_1_5_13">tag filters</a> are known, and only if some view keeps an object that uses it or a camera frames one with <code>look_at</code>; those builds run on up to <code>+WT</code> threads, each mesh once. A build snapshots the compiled functions it can reach and has its own function context and scratch data. Referenced image pixels remain shared. <code>+WT1</code> keeps construction serial.</p>
 <p>An isosurface function cannot sample a <code>screen</code> pigment, whether the isosurface is traced directly or built as an <code>isosurface_mesh</code>: its geometry must be the same for camera rays, photons and mesh preparation. This is a parse error. A <code>screen</code> used as the object's finished surface pigment is valid and is evaluated while rendering.</p>
 <p>An <code>isosurface_mesh</code> is built once where it is written: declare it and use the declared name to place copies, rather than writing the same <code>isosurface_mesh</code> twice. It is built again each time the scene is parsed, so every run and every frame of an animation pays the build once; the time saved in tracing grows with the size of the image and with the number of copies.</p>
 <p>With <code>global_settings { mesh_cache &quot;directory&quot; }</code> a finished mesh is kept between renders. Each <code>isosurface_mesh</code> and <code>skein_mesh</code> first looks for its mesh, bounding tree included, in <em>directory</em> (a relative path is taken from the working directory), and stores what it builds there, so an unchanged mesh is read back instead of built on later parses. A file is named by a hash of everything its triangles depend on: the build of POV-Ray, the function code with its constants and the functions it calls, the noise generator, the container or prepared skein, and the meshing options. Changing any of them makes a new name, so a stale mesh is never read, and a function that samples a pattern or pigment cannot be described and is built every time. A file that fails its checks is rebuilt with a warning. Nothing is removed automatically, so delete old files when the directory grows. A scene with two isosurface meshes and twelve skein meshes parsed in 40.4 s uncached and in 0.21 s from the cache, with identical pixels. <code>mesh_cache</code> is read by its text where it applies, so it can still be used as an identifier.</p>
@@ -4110,7 +4113,7 @@ be used.</p>
 <pre>
 OBJECT {
   [OBJECT_ITEMS...]
-  tags { "NAME" [, "NAME"...] }
+  tags { "NAME" [, "NAME"...] [, inherit] } | tags { inherit } | tags { none } | tags { }
   }
 </pre>
 
@@ -4126,15 +4129,43 @@ light_source { &lt;0, 5, 0&gt;, rgb 1 tags { "room-a" } }
 <ul>
 <li>Names are case-sensitive strings. They are sorted and duplicates are dropped, so repeating a name is harmless.</li>
 <li>A name assigned with <code>tags</code> may not contain <code>*</code>; wildcards belong to filters.</li>
-<li>An empty <code>tags { }</code> means no tags, as if the modifier were absent. An untagged thing matches the filter <code>none</code>.</li>
+<li>An untagged thing matches the filter <code>none</code>.</li>
 <li><code>tags</code> and <code>filter_tags</code> are reserved words only from <code>#version 4.0</code>. In earlier scene versions they remain ordinary identifiers.</li>
 </ul>
 
-<p>Every object is filtered on its own tags, at every level. An object inside another also carries the tags of everything
-around it, so tagging a <code>union</code> tags all of it, and a tagged container that the filter rejects takes all of its contents
-with it. An untagged container only groups: its children decide, and it disappears when none remain. In a <code>union</code>,
-<code>merge</code> or <code>light_group</code> a rejected child is left out and the rest stay, and a rejected group light lights
-nothing; a union split for acceleration keeps these decisions.</p>
+<p>Tags are inherited down the object tree: through <code>union</code>, <code>merge</code>, <code>light_group</code>,
+<code>intersection</code> and <code>difference</code>. What an object writes decides its <em>effective tags</em>:</p>
+<table width="100%" class="option-list">
+<tr><td>no <code>tags</code> (the default)</td><td>Its parent's effective tags. A top-level object has none.</td></tr>
+<tr><td><code>tags { none }</code> or <code>tags { }</code></td><td>No tags, and nothing inherited.</td></tr>
+<tr><td><code>tags { "a", "b" }</code></td><td>Exactly that list; the parent's tags are not inherited.</td></tr>
+<tr><td><code>tags { "a", inherit }</code></td><td>That list plus the parent's effective tags.</td></tr>
+</table>
+<pre>
+union {
+  sphere { 0, 1 }                         // "a"
+  box { 1, 2 tags { "c", inherit } }      // "a" and "c"
+  box { 3, 4 tags { "c" } }               // "c" only
+  tags { "a" }
+}
+</pre>
+<p>Here the filter <code>"a"</code> selects the sphere and the first box, <code>"a" &amp; !"c"</code> the sphere alone, and
+<code>"c"</code> both boxes. <code>none</code> cannot be combined with names or <code>inherit</code>. <code>inherit</code> is matched
+by its text inside <code>tags { }</code> and stays free as an identifier elsewhere. A later <code>tags</code> block on the same object
+replaces earlier ones entirely, list and <code>inherit</code> alike: <code>object { Thing tags { "b" } }</code> drops the tags
+<code>Thing</code> was declared with, and <code>tags { "a", inherit } tags { "b" }</code> gives exactly <code>"b"</code>, without
+inheriting.</p>
+<p>A filter is evaluated once per object, against its effective tags. A container is never judged itself: it holds what remains
+of its children and disappears when none remain. In a <code>union</code>, <code>merge</code> or <code>light_group</code> a rejected
+child is left out and the rest stay, and a rejected group light lights nothing; a union split for acceleration keeps these
+decisions.</p>
+<p><strong>Changed:</strong> the first release of render tags also checked every tagged container against the filter, so a rejected
+container took all its contents with it, and added a child's own tags to its containers' instead of replacing them. Filter
+<code>"u"</code> used to hide a sphere tagged <code>"u"</code> inside a union tagged <code>"uu"</code>; it now shows it. A child that
+should stay in its container's tag set writes <code>inherit</code> in its list. <code>tags {}</code> used to keep the parent's
+tags and now clears them, so <code>tags { ...Tags, inherit }</code> keeps them when <code>Tags</code> may be empty. Repeated <code>tags</code> blocks on one object
+also used to add their names together; the last one now replaces the others, so a copy that should keep a declared object's
+tags writes them again.</p>
 <p>An <code>intersection</code> or <code>difference</code> treats a rejected operand as empty space. An intersection with a
 rejected operand is empty. A difference whose first operand is rejected is empty, and a rejected cutter cuts nothing:</p>
 <pre>
@@ -4186,6 +4217,49 @@ camera { location -5*z look_at 0 filter_tags { "room-*" &amp; !"draft" } }
 light and photons from something a view excludes never reach it, and rays in that view never test it. Selections that
 resolve to the same objects and lights share one preparation, however they were written. A selection costs memory and
 preparation time in proportion to what it contains.</p>
+</div>
+
+<a name="r3_5_1_5_14"></a>
+<div class="content-level-h5" contains="Tagged Selections" id="r3_5_1_5_14">
+<h5>3.5.1.5.14 Tagged Selections</h5>
+<pre>
+tagged { TAG_EXPRESSION }
+</pre>
+<p>A <code>filter_tags</code> is a property of a camera, a portal, <code>global_settings</code> or the command line: it decides what
+a view shows when the scene is rendered. <code>tagged</code> is a different thing, an object: it stands for the objects placed so
+far in the scene that a <a href="r3_5.html#r3_5_1_5_13">tag expression</a> selects, and can be used wherever an object can, with
+<code>#declare</code>, in <code>object { }</code>, in a CSG, with transforms, or as a camera's
+<a href="r3_4.html#camera_bounds_framing"><code>look_at</code></a> target.</p>
+<pre>
+#declare Statue = union { sphere { 0, 2 } cone { -2*x, 1, -5*x, 0 } tags { "statue" } }
+object { Statue translate 20*z }
+camera { location &lt;0, 5, -40&gt; look_at tagged { "statue" } }
+object { tagged { "statue" } translate 30*x }   // a second statue; the first stays
+</pre>
+<p>A selection expands once, when its expression is evaluated: at the <code>#declare</code> for a declared one, or where it is
+written. It holds the objects placed so far, including those placed by macros, loops and 4.0 programs, in order. Objects written
+later are not in it, and neither is the tree it is written in: a container is placed only once every <code>tagged</code> inside it
+has expanded, so its earlier children are not in the scene yet. A <code>look_at</code> target must be written before its camera. A
+declaration that is not placed is not in the scene and cannot be selected, and placing a declared selection twice places the same
+copies twice without selecting again. Objects the command-line <a href="r3_2.html#r3_2_5_5">Filter_Tags</a> removed are not in the
+scene; camera, portal and <code>global_settings</code> filters do not affect a selection, so a camera can frame an object its own
+filter hides.</p>
+<p>The expression is evaluated once per object, on its <a href="r3_5.html#r3_5_1_5_12">effective tags</a>, and the copy keeps the
+structure around what it selects: a selected object inside a container is copied as that container, with its own tags and
+settings, holding only the selected parts. A <code>light_group</code> is copied as a light group, so a copied member is lit by
+those of the group's lights that are selected and copied with it, as in a hand-written group holding them; a group whose lights
+and members are all selected is copied whole. Light sources and portals are copied like any other object, with all their
+settings. A copied portal makes its own far mouth when placed; since transforms move only a portal's body, a moved copy leads
+where the original does. The far mouths that placed portals make are not selected themselves: each comes with its near mouth.</p>
+<p>A selection used only as a <code>look_at</code> target or in a declaration adds nothing to the scene. Placing it adds copies of
+the selected objects, as placed, under any transforms given; the originals stay where they are. Copies keep their
+<code>tags</code> as written, so they inherit in their new place: a copy placed inside a tagged container takes that container's
+tags if it inherits, and a later filter or selection must match them too. A copy shares its mesh data as <code>object { }</code>
+copies do, and a generated mesh that has not yet been built is built once for the original and its copies. A selection of
+nothing is an empty union, with a warning; placing it adds nothing. Unbounded objects such as planes are copied like any other.
+<code>trace</code> and <code>inside</code> work on a declared selection, since it is a concrete object once declared.</p>
+<p><code>tagged</code> is matched by its text, only when a <code>{</code> follows it in a <code>#version 4.0</code> or
+<code>.pov4</code> scene, so it remains free as an identifier.</p>
 </div>
 
 <a name="r3_5_1_6"></a>
