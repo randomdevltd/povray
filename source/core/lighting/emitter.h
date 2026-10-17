@@ -101,6 +101,38 @@ inline double PhotonTurn(const Vector3d& offset, const Vector3d& s, const Vector
     return turn < 0.0 ? std::min(turn + 1.0, std::nextafter(1.0, 0.0)) : turn;
 }
 
+/// Whether direction lies in the cone about axis of the given width; projection is their dot product.
+inline bool PhotonConeContains(const Vector3d& direction, const Vector3d& axis, double width, double projection)
+{
+    return width >= 1.0 ? projection >= 1.0 - width :
+        projection >= 0.0 && (direction - axis * projection).lengthSqr() <= width * (2.0 - width);
+}
+
+/// A light's photon intensity scale in direction: the cone-weighted mean of its targets' scales, else its nearest target's.
+inline double PhotonDirectionScale(const Vector3d& direction, const std::vector<Vector3d>& axes, const std::vector<double>& widths,
+                                   const std::vector<double>& probability, const std::vector<double>& scales)
+{
+    if (scales.size() == 1)
+        return scales[0];
+    double sum = 0.0, weight = 0.0, best = -2.0;
+    size_t nearest = 0;
+    for (size_t i = 0; i < axes.size(); ++i)
+    {
+        const double projection = dot(direction, axes[i]);
+        if (projection > best)
+        {
+            best = projection;
+            nearest = i;
+        }
+        if (PhotonConeContains(direction, axes[i], widths[i], projection))
+        {
+            sum += probability[i] / widths[i] * scales[i];
+            weight += probability[i] / widths[i];
+        }
+    }
+    return weight > 0.0 ? sum / weight : scales[nearest];
+}
+
 /// Photon emission: a tenth isotropic, nine tenths over target cones (width = 1 - least cosine), each cone's (share of width,
 /// turn) square warped by its learned density if any. Returns the density per steradian and the cell of a cone sample.
 inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::vector<double>& widths, const std::vector<double>& probability,
@@ -133,9 +165,7 @@ inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::
         else
         {
             const double projection = dot(direction, axes[i]);
-            const bool inside = widths[i] >= 1.0 ? projection >= 1.0 - widths[i] :
-                projection >= 0.0 && (direction - axes[i] * projection).lengthSqr() <= widths[i] * (2.0 - widths[i]);
-            if (!inside)
+            if (!PhotonConeContains(direction, axes[i], widths[i], projection))
                 continue;
             if (!learned.empty() && learned[i] && !learned[i]->Uniform())
             {

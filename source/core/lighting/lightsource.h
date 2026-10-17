@@ -87,6 +87,10 @@ namespace pov
 ******************************************************************************/
 
 DBL Attenuate_Light(const LightSource *Light_Source, const Ray &Light_Source_Ray, DBL Distance);
+/// The distance part of Attenuate_Light(): the authored fade, or 1/r^2 for an unfaded emitter.
+DBL Light_Distance_Attenuation(const LightSource *Light_Source, DBL Distance);
+/// Photon method 2 intensity over colour: matches the direct light's irradiance at Distance (1 for parallel lights).
+DBL Light_Photon_Intensity_Scale(const LightSource *Light_Source, DBL Distance);
 
 DBL cubic_spline(DBL low,DBL high,DBL pos);
 

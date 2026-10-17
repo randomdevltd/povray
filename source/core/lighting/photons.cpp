@@ -103,6 +103,12 @@ constexpr int PHOTON_BLOCK_MASK = PHOTON_BLOCK_SIZE - 1;
 
 static_assert(PHOTON_BLOCK_POWER < std::numeric_limits<decltype(PHOTON_BLOCK_SIZE)>::digits, "PHOTON_BLOCK_POWER too large");
 
+/// Method 2: a parallel light's authored fade at a photon's depth from the light's plane, as its direct light has.
+static double ParallelPhotonFade(const LightSource* light, double depth)
+{
+    return light != nullptr && light->Parallel && light->Fade_Power > 0.0 ? Light_Distance_Attenuation(light, depth) : 1.0;
+}
+
 class PhotonMap::PhotonBlock final
 {
 public:
@@ -444,7 +450,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
                 photon.normal = rawnormal;
             else if (dot(photon.normal, ray.Direction) > 0.0)
                 photon.normal.invert();
-            photon.flux = LightCol;
+            photon.flux = LightCol * ParallelPhotonFade(threadData->photonSourceLight, threadData->photonDepth);
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();
             threadData->progressiveSurface.push_back(photon);
@@ -1170,6 +1176,8 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
         const bool prepared = resolution > 0.0 && PrepareFields(medias, ray);
         const auto domain = VolumeDomain(medias);
         const size_t firstBeam = threadData->progressiveMedia.size();
+        const LightSource* source = threadData->photonSourceLight;
+        const bool faded = source != nullptr && source->Parallel && source->Fade_Power > 0.0;
         double lastEnd = -1.0;
         for (auto& interval : mediaintervals)
         {
@@ -1190,7 +1198,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     ProgressiveVolumePhoton photon;
                     photon.point = ray.Evaluate(start + 0.5 * step);
                     photon.direction = -ray.Direction;
-                    photon.flux = colour;
+                    photon.flux = faded ? colour * ParallelPhotonFade(source, threadData->photonDepth + start + 0.5 * step) : colour;
                     photon.extinction = opticalDepth / step;
                     photon.length = step;
                     photon.domain = domain;
@@ -1199,7 +1207,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     photon.set = std::uint32_t(ray.GetPreparedSetId());
                     bool merged = false;
 #ifndef POV_PROGRESSIVE_VOLUME_POINTS
-                    if (threadData->progressiveMedia.size() > firstBeam && (sample > 0 || lastEnd == start))
+                    if (!faded && threadData->progressiveMedia.size() > firstBeam && (sample > 0 || lastEnd == start))
                     {
                         auto& previous = threadData->progressiveMedia.back();
                         bool same = true;

@@ -306,7 +306,11 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
         for (size_t li = 0; li < lights.size(); ++li)
             if (!lights[li]->emitter && !lights[li]->Area_Light && !lights[li]->Parallel)
                 trace.FindContainingInteriors(lights[li]->Center, pointInteriors[li], setId);
-        std::vector<std::vector<double>> probability(lights.size());
+        std::vector<std::vector<double>> probability(lights.size()), scales(lights.size());
+        for (size_t li = 0; li < lights.size(); ++li)
+            for (const ProgressiveTarget& target : targets[li])
+                scales[li].push_back(Light_Photon_Intensity_Scale(lights[li],
+                    std::max((target.Centre() - lights[li]->Center).length(), target.Radius())));
         std::vector<std::vector<const PhotonTargetDensity*>> learned(lights.size());
         std::vector<size_t> feedbackOffset;
         for (size_t li = 0, entry = 0; li < lights.size(); ++li)
@@ -422,7 +426,8 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->photonDepth = projectionDepth;
             data->photonSpread = std::max(1.0e-8, aim.Radius() * 0.05) * spreadScale;
             MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(lights.size(), pdf);
-            flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
+            flux *= computeAttenuation(light, ray, (origin.position - light->Center).length()) *
+                    (light->Parallel ? 1.0 : PhotonDirectionScale(direction, axes, widths, probability[li], scales[li]));
             ColourChannel unused;
             const size_t surfaceBefore = data->progressiveSurface.size(), mediaBefore = data->progressiveMedia.size();
             const size_t before = surfaceBefore + mediaBefore;

@@ -25,7 +25,7 @@ background { rgb <0.010, 0.014, 0.030> }
 #if (Parallel)
   light_source { -100 * Sun rgb Power parallel point_at <0, 0, 0> photon_only 1 photons { refraction on reflection on } }
 #else
-  light_source { -SunDistance * Sun rgb Power * SunDistance * SunDistance photon_only 1 photons { refraction on reflection on } }
+  light_source { -SunDistance * Sun rgb Power * SunDistance * SunDistance fade_power 2 fade_distance 0 photon_only 1 photons { refraction on reflection on } }
 #end
 light_source { <-4, 9, -8> rgb 0.05 photons { refraction off reflection off } }
 #declare Stone = texture { pigment { granite color_map { [0 rgb 0.30] [1 rgb 0.42] } scale 2 } finish { ambient 0 diffuse 0.9 } }

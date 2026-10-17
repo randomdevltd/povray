@@ -362,29 +362,6 @@ void Parser::Run()
             if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
                       "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
-            if (sceneData->photonSettings.Progressive())
-                for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
-                    for (LightSource* light : *lights)
-                    {
-                        if (light->Light_Type == FILL_LIGHT_SOURCE || light->colour.IsZero() ||
-                            (Test_Flag(light, PH_RFR_OFF_FLAG) && Test_Flag(light, PH_RFL_OFF_FLAG)))
-                            continue;
-                        if (light->Parallel)
-                        {
-                            if (light->Fade_Power != 0.0)
-                                Error("Parallel photon emitters require fade_power 0.");
-                        }
-                        else
-                        {
-                            if (light->Fade_Power == 0.0 && !light->emitter)
-                                light->Fade_Power = 2.0;
-                            else if (light->Fade_Power != 0.0 && light->Fade_Power != 2.0)
-                                Error("Photon method 2 requires inverse-square light power (fade_power 0 or 2).");
-                            else if (light->Fade_Power == 2.0 && light->Fade_Distance > EPSILON)
-                                light->colour *= 2.0 * light->Fade_Distance * light->Fade_Distance;
-                            light->Fade_Distance = 0.0;
-                        }
-                    }
             Make_Portal_Lights();
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)

@@ -625,19 +625,36 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
     }
 
     if (Attenuation > 0.0)
-    {
-        /* Attenuate light due to light source distance. */
-
-        if (Light->Fade_Power > 0.0)
-        {
-            if (fabs(Light->Fade_Distance) >= EPSILON)
-                Attenuation *= 2.0 / (1.0 + pow(Distance / Light->Fade_Distance, Light->Fade_Power));
-            else
-                Attenuation *= pow(Distance, -Light->Fade_Power);
-        }
-    }
+        Attenuation *= Light_Distance_Attenuation(Light, Distance);
 
     return(Attenuation);
+}
+
+DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
+{
+    if ((Light->emitter != nullptr) && (Light->Fade_Power <= 0.0))
+    {
+        const DBL clamped = std::max(Distance, Light->emitter->NearDistance());
+        return 1.0 / (clamped * clamped);
+    }
+    if (Light->Fade_Power <= 0.0)
+        return 1.0;
+    if (fabs(Light->Fade_Distance) >= EPSILON)
+        return 2.0 / (1.0 + pow(Distance / Light->Fade_Distance, Light->Fade_Power));
+    return pow(Distance, -Light->Fade_Power);
+}
+
+DBL Light_Photon_Intensity_Scale(const LightSource *Light, DBL Distance)
+{
+    if (Light->Parallel)
+        return 1.0;
+    if ((Light->emitter != nullptr) && (Light->Fade_Power <= 0.0))
+        return Distance >= Light->emitter->NearDistance() ? 1.0 : Sqr(Distance / Light->emitter->NearDistance());
+    if (Light->Fade_Power <= 0.0)
+        return Distance * Distance;
+    if (fabs(Light->Fade_Distance) >= EPSILON)
+        return 2.0 * Distance * Distance / (1.0 + pow(Distance / Light->Fade_Distance, Light->Fade_Power));
+    return Light->Fade_Power == 2.0 ? 1.0 : pow(Distance, 2.0 - Light->Fade_Power);
 }
 
 /*****************************************************************************
