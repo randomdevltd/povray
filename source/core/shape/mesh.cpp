@@ -468,6 +468,21 @@ void Mesh::Smooth_Mesh_Normal(Vector3d& Result, const MESH_TRIANGLE *Triangle, c
     }
 }
 
+bool Mesh::FaceNormal(Vector3d& Result, const Intersection *Inter) const
+{
+    Resolve();
+    const MESH_TRIANGLE *Triangle = reinterpret_cast<const MESH_TRIANGLE *>(Inter->Pointer);
+    if (!Triangle->Smooth())
+        return false;
+    Vector3d face = Face_Normal(Triangle);
+    if (Trans != nullptr)
+        MTransNormal(face, face, Trans);
+    if (face.lengthSqr() == 0.0)
+        return false;
+    Result = face.normalized();
+    return true;
+}
+
 Vector3d Mesh::Face_Normal(const MESH_TRIANGLE *Triangle) const
 {
     Vector3d P1, P2, P3;

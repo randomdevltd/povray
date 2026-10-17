@@ -324,7 +324,7 @@ bool HField::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 void HField::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread) const
 {
     int px,pz, i;
-    DBL x,z,y1,y2,y3,u,v;
+    DBL x,z,u,v;
     Vector3d Local_Origin;
     Vector3d n[4];
 
@@ -374,32 +374,51 @@ void HField::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thre
         Result = v*(u*n[0] + x*n[1]) + z*(u*n[2] + x*n[3]);
     }
     else
-    {
-        if ((x+z) <= 1.0)
-        {
-            /* Lower triangle. */
-
-            y1 = Get_Height(px,   pz);
-            y2 = Get_Height(px+1, pz);
-            y3 = Get_Height(px,   pz+1);
-
-            Result = Vector3d(y1-y2, 1.0, y1-y3);
-        }
-        else
-        {
-            /* Upper triangle. */
-
-            y1 = Get_Height(px+1, pz+1);
-            y2 = Get_Height(px,   pz+1);
-            y3 = Get_Height(px+1, pz);
-
-            Result = Vector3d(y2-y1, 1.0, y3-y1);
-        }
-
-        MTransNormal(Result, Result, Trans);
-    }
+        Result = Facet_Normal(px, pz, x, z);
 
     Result.normalize();
+}
+
+Vector3d HField::Facet_Normal(int px, int pz, DBL x, DBL z) const
+{
+    DBL y1, y2, y3;
+    Vector3d Result;
+
+    if ((x+z) <= 1.0)
+    {
+        /* Lower triangle. */
+
+        y1 = Get_Height(px,   pz);
+        y2 = Get_Height(px+1, pz);
+        y3 = Get_Height(px,   pz+1);
+
+        Result = Vector3d(y1-y2, 1.0, y1-y3);
+    }
+    else
+    {
+        /* Upper triangle. */
+
+        y1 = Get_Height(px+1, pz+1);
+        y2 = Get_Height(px,   pz+1);
+        y3 = Get_Height(px+1, pz);
+
+        Result = Vector3d(y2-y1, 1.0, y3-y1);
+    }
+
+    MTransNormal(Result, Result, Trans);
+    return Result;
+}
+
+bool HField::FaceNormal(Vector3d& Result, const Intersection *Inter) const
+{
+    if (!Test_Flag(this, SMOOTHED_FLAG))
+        return false;
+    Vector3d Local_Origin;
+    MInvTransPoint(Local_Origin, Inter->IPoint, Trans);
+    const int px = std::min((int)Local_Origin[X], Data->max_x);
+    const int pz = std::min((int)Local_Origin[Z], Data->max_z);
+    Result = Facet_Normal(px, pz, Local_Origin[X] - (DBL)px, Local_Origin[Z] - (DBL)pz).normalized();
+    return true;
 }
 
 

@@ -253,6 +253,10 @@ class ObjectBase
         virtual double GetPotential (const Vector3d&, bool subtractThreshold, TraceThreadData *) const;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const = 0;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const = 0;
+        /// The unsmoothed unit normal of the face hit, either way round; false when Normal() already is that normal.
+        virtual bool FaceNormal(Vector3d&, const Intersection *) const { return false; }
+        /// How far a reported intersection may lie from the true surface, in world units.
+        virtual double SurfaceTolerance() const { return 0.0; }
         virtual void UVCoord(Vector2d&, const Intersection *) const;
         virtual void Translate(const Vector3d&, const TRANSFORM *) = 0;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) = 0;

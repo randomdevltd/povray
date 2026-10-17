@@ -447,6 +447,12 @@ bool Parametric::Inside(const Vector3d&, TraceThreadData *Thread) const
  *
  ******************************************************************************/
 
+// Interval subdivision reports a hit up to about four times its accuracy from the surface, either side.
+double Parametric::SurfaceTolerance() const
+{
+    return 8.0 * accuracy * MLargestScale(Trans);
+}
+
 void Parametric::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread) const
 {
     Vector3d RU, RV;

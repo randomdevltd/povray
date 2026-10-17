@@ -398,6 +398,12 @@ double IsoSurface::GetPotential (const Vector3d& globalPoint, bool subtractThres
 *
 ******************************************************************************/
 
+// Root finding stops within accuracy before the surface along the ray.
+double IsoSurface::SurfaceTolerance() const
+{
+    return accuracy * MLargestScale(Trans);
+}
+
 void IsoSurface::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread) const
 {
     Vector3d New_Point, TPoint;

@@ -440,7 +440,10 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             ProgressivePhoton photon;
             photon.point = isect.IPoint;
             photon.direction = -ray.Direction;
-            photon.normal = rawnormal;
+            if (!isect.Object->FaceNormal(photon.normal, &isect))
+                photon.normal = rawnormal;
+            else if (dot(photon.normal, ray.Direction) > 0.0)
+                photon.normal.invert();
             photon.flux = LightCol;
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();

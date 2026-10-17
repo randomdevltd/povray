@@ -228,6 +228,7 @@ class Mesh final : public ObjectBase
         virtual bool Shadow_Hint_Intersection(const Ray&, Intersection *, TraceThreadData *) override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        virtual bool FaceNormal(Vector3d&, const Intersection *) const override;
         virtual void UVCoord(Vector2d&, const Intersection *) const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
