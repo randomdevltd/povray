@@ -156,7 +156,7 @@ Volumetric photon collection from group lights is currently rejected; the
 surface membership checks do not substitute for medium ownership.
 
 Classic count, spacing, gather, radius, jitter, autostop, expansion and map-file
-controls do not apply and are rejected. Radiosity is currently rejected.
+controls do not apply and are rejected.
 
 Media photons are enabled by the existing `media` photon setting. Transport stores
 finite photon segments with their incoming flux and extinction. A gather clips each
@@ -185,6 +185,20 @@ Method 2 does not add medium ownership support for light groups or change
 ownership restrictions.
 Subsurface photon illumination is reconstructed before diffusion; the subsurface
 cache is created once, after the maps are built.
+
+## Radiosity
+
+Radiosity works with method 2 as it does with classic photons. The maps are complete
+before the radiosity pretrace starts, so every radiosity sample, in the pretrace and in
+the final trace, gathers photon light where its rays land: a caustic on the floor
+lights a nearby wall through radiosity. Radiosity rays take the diffuse photon term
+only, without phong or specular highlights, as they do with classic photons and with
+light sources. A radiosity cache saved with `+RFO` holds the photon light of the
+render that saved it; loading it with `+RFI` reuses that light even if the photons
+have changed since. `tests/render/progressive_radiosity.pov` lights a wall that
+collects no photons with a glass sphere's floor caustic and requires the bounce to
+match classic photons within 25%; the image does not depend on the thread count, and
+`+C` continues it.
 
 ## Media lights
 
@@ -275,7 +289,7 @@ thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, imag
 independence of the logged budget, the memory budget error and invalid quality;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
 requires its underside to match the lit top, as does a `double_illuminate` disc; the
-emitter, direct-light, volume, media-light, light-group and `.pov4` scripts run with the new estimator.
+emitter, direct-light, volume, media-light, light-group, radiosity and `.pov4` scripts run with the new estimator.
 
 ## Measurements
 
@@ -389,7 +403,7 @@ camera loop, hence its larger value.
 
 ## Limits
 
-- Radiosity and classic photon map files are rejected.
+- Classic photon map files are rejected.
 - The fixed-`k` rule is global; it is not adapted to local noise or gradients,
   and it smooths features narrower than the support at low quality. Sparse
   regions are estimated at the capped radius and stay noisy.

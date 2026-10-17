@@ -874,13 +874,8 @@ void View::StartRender(POVMS_Object& renderOptions)
     if (!progressive && (tracingmethod == 4))
         throw POV_EXCEPTION(kParamErr, "Anti-aliasing method 4 needs progressive rendering (+PR).");
     bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
-    if (viewData.GetSceneData()->photonSettings.Progressive())
-    {
-        if (viewData.GetSceneData()->radiositySettings.radiosityEnabled)
-            throw POV_EXCEPTION(kParamErr, "Photon method 2 does not yet support radiosity.");
-        if (!viewData.GetSceneData()->photonSettings.fileName.empty())
-            throw POV_EXCEPTION(kParamErr, "Photon method 2 does not use classic photon map files.");
-    }
+    if (viewData.GetSceneData()->photonSettings.Progressive() && !viewData.GetSceneData()->photonSettings.fileName.empty())
+        throw POV_EXCEPTION(kParamErr, "Photon method 2 does not use classic photon map files.");
 
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
 
