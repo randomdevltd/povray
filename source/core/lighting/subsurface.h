@@ -361,6 +361,18 @@ class SubsurfaceBoundary final
         /// The profile's total diffuse reflectance at a reduced albedo.
         double Total(double albedo) const;
 
+        /// A part 2^(k/4) reduced mean free paths deep, for k from kLayerFirst to kLayerLast, at the albedo whose u is
+        /// step / kLayerSteps (see doc/PERF.md): for k and k + 1 in BeamRatio's layout, the ratios to the dipole of Rd and its
+        /// disc integral on the near face, then from kLayerFar on, of Rd through to the far face. Built on first use and shared.
+        static const int kLayerFirst = -40, kLayerLast = 48, kLayerFar = 4 * kBeamColumns, kLayerSteps = 4096;
+        const float *Layer(int step, int k) const;
+
+    private:
+        mutable std::mutex layerMutex;
+        mutable std::map<std::pair<int, int>, std::unique_ptr<float[]>> layers;
+
+    public:
+
         /// Beam diffusion over the dipole at a squared optical radius, interpolated within a quarter octave: of Rd for
         /// disc 0, of its integral over the disc for disc 1.
         static double BeamRatio(const float *row, double weight, double radiusSqr, int disc)

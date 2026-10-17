@@ -1177,6 +1177,123 @@ the same pixels before and after: `version4_subsurface_{37,38,40}.pov` with meth
 `+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread), `subsurface_photon_prism`, the flux scene's smooth mesh,
 and the reference scene's studs and both trunks.
 
+## Subsurface method 2 on thin parts
+
+Beam diffusion, like the dipole, takes the medium under the exit point as a half-space. On a part thinner than the
+diffusion, light that reaches the far side leaves there instead of diffusing back, and a layer thin against a reduced
+mean free path passes much of its light straight through without scattering; method 2 summed the near face as a
+half-space and added the far face's points by the profile at the straight distance through the wall. Light leaving the
+lit face of a layer after two or more scatterings, from photons (`sslt-reference Mode=forward Thickness=`, 0.4 to 2
+million each, in the medium method 2 derives, light along the normal), over the half-space's, against the model below:
+
+| | 1.2 mm | 1.7 mm | 4 mm | 12 mm |
+|---|---|---|---|---|
+| high albedo, photons | 0.217 | 0.282 | 0.470 | 0.707 |
+| model | 0.244 | 0.309 | 0.465 | 0.731 |
+| clay R, G, B, photons | 0.206, 0.393, 0.827 | | 0.510, 0.790, 0.997 | |
+| model | 0.242, 0.443, 0.834 | | 0.527, 0.744, 0.986 | |
+| red R, photons / model | | | 0.514 / 0.525 | |
+
+The model: the depth d of material under the exit point, along the inward normal to where the material ends (one ray
+per shading point; a union's inner faces, inside on both sides, do not end it), τ = d in reduced mean free paths, and
+Donner and Jensen's multipole for a layer τ deep with the better dipole's fluence and flux terms (extrapolated
+boundaries 2AD out from both faces), from one source at depth min(1, τ/2) carrying the light that scatters in the
+layer, 1 − e^(−τ). Its ratios to the better dipole at depth 1 — of Rd and of Rd's integral over a disc on the near face,
+and of Rd on the far face over the dipole at the straight distance through the layer — multiply method 2's profile: a
+point less than d/2 under the exit point's tangent plane by the first at its distance (unfolded where it is unfolded),
+the core, disc and ring integrals by the second, and a deeper point (the far face) by the third at its distance along
+the tangent plane. The ratios are tabulated in the beam table's layout (217 columns of squared optical radius), per
+index, albedo (u to 1/4096) and quarter octave of τ from 2⁻¹⁰ to 2¹², interpolated between quarter octaves; images run
+until σ·n·period passes 12, at most 64 a side, and a table is built on first use and shared by all
+threads. A channel more than 20 reduced mean free paths and 15 diffusion lengths deep is left as it was, so the deep
+slabs score as before to within 0.03 levels. In the model a thin part's light falls off within a few depths along it instead of over
+the diffusion length, so a finite wall no longer clips a profile that should reach past it.
+
+**Stepped faces.** Two parallel faces at different heights counted each other where the material is inside under the
+higher face at the lower one's height and at the midpoint between there and the lower point. Two blocks of one merge
+with an air gap between them (`sslt-reference.pov Shape=4 Blocks=1 View=3`, `gap-red` and `gap-high`, scored against new
+walks) passed that test wherever the midpoint fell inside the taller block, so the taller block's top lit the lower
+block's top across the gap. From the lower face the material must now run all the way from under the exit point to under
+the higher point, at a quarter spacing deep: runs to where it leaves the object along 8 directions of the tangent plane,
+taken once for a shading point that meets such a pair, interpolated as 1/run between directions (a straight edge at
+distance a lies a / cos θ away). The lower top's render/walks ratio 2 to 8 pixels beside the gap against 30 to 45
+pixels along it:
+
+| | high albedo | red |
+|---|---|---|
+| before | +46% | +24% |
+| thin parts, midpoint test | +29% | +16% |
+| thin parts, material runs | −4.0% | −0.8% |
+
+What is left there is a strip one or two pixels wide, the taller block's side above the gap (+31 levels at its worst
+pixel; the worst block, +27 here and +34 with the exit term below): a crease from it to the lower top passes both corner tests, which land in
+the taller block.
+
+**Scores** (`sslt-reference.py score`, 160×120, 1024 walks per pixel in the beam-diffusion medium, noise subtracted),
+absolute rms / mean / worst 8×8 block, before = the head after the smooth-mesh change (identical to the profile
+section's beam diffusion column but for the smooth trunk); the gap runs take the bare slab's scale for geometry:
+
+| Run | before | thin parts |
+|---|---|---|
+| slab, red | 4.5 / −3.7 / −4 | 4.5 / −3.7 / −4 |
+| slab, high albedo | 6.7 / −6.7 / −9 | 6.8 / −6.7 / −9 |
+| slab, wax | 5.4 / −4.7 / −7 | 5.4 / −4.7 / −7 |
+| slab, bark | 5.2 / −5.1 / −6 | 5.2 / −5.1 / −6 |
+| slab, clay | 4.7 / −4.6 / −6 | 4.7 / −4.6 / −6 |
+| slab head on, red | 4.1 / −2.4 / −3 | 4.1 / −2.4 / −3 |
+| slab head on, high albedo | 6.9 / −6.9 / −9 | 6.9 / −6.9 / −9 |
+| V-groove and dimple, wax | 6.5 / −4.6 / −19 | 6.5 / −4.6 / −19 |
+| V-groove and dimple, high albedo | 4.6 / +1.7 / +14 | 4.7 / −2.2 / −13 |
+| ridged trunk, bark | 12.1 / −7.5 / −22 | 12.1 / −7.5 / −22 |
+| the same, smooth normals | 12.1 / −7.5 / −22 | 12.1 / −7.5 / −22 |
+| 1.2 mm wall, clay | 56.0 / +39.6 / +60 | 7.6 / −2.4 / −9 |
+| 1.2 mm wall, high albedo | 84.3 / +82.9 / +101 | 7.0 / −5.0 / −13 |
+| bare studs slab, red | 12.5 / +2.9 / −24 | 8.2 / −6.2 / −23 |
+| bare studs slab, high albedo | 24.0 / +22.3 / +31 | 12.3 / −11.1 / −21 |
+| studs, red | 16.3 / +1.1 / −22 | 10.3 / −5.5 / −21 |
+| studs, high albedo | 28.2 / +23.0 / +46 | 8.5 / −2.2 / −22 |
+| blocks with an air gap, red | 14.0 / +2.4 / −24 | 8.8 / −6.2 / −23 |
+| blocks with an air gap, high albedo | 25.3 / +21.7 / +53 | 10.3 / −5.9 / +27 |
+
+Geometry, scaled by each build's own slab ratio (the studs and gaps by the bare slab's):
+
+| Run | before | thin parts |
+|---|---|---|
+| slab, red | 0.6 / +0.0 / +1 | 0.6 / +0.0 / +1 |
+| slab, high albedo | 0.9 / +0.0 / −2 | 0.9 / +0.0 / −2 |
+| slab, wax | 0.7 / +0.0 / +1 | 0.7 / +0.0 / +1 |
+| slab, bark | 0.8 / +0.0 / +2 | 0.8 / +0.0 / +2 |
+| slab, clay | 0.6 / +0.0 / +1 | 0.6 / +0.0 / +1 |
+| slab head on, red | 1.5 / +1.2 / +2 | 1.5 / +1.2 / +2 |
+| slab head on, high albedo | 0.7 / −0.1 / −2 | 0.7 / −0.1 / −2 |
+| V-groove and dimple, wax | 3.7 / −0.1 / −13 | 3.6 / −0.1 / −13 |
+| V-groove and dimple, high albedo | 8.3 / +7.2 / +18 | 5.3 / +3.4 / +14 |
+| ridged trunk, bark | 9.9 / −3.6 / −19 | 9.9 / −3.6 / −19 |
+| the same, smooth normals | 9.9 / −3.6 / −19 | 9.9 / −3.6 / −19 |
+| 1.2 mm wall, clay | 58.2 / +43.2 / +63 | 7.0 / +1.2 / +7 |
+| 1.2 mm wall, high albedo | 88.4 / +87.0 / +105 | 5.0 / −0.9 / −9 |
+| bare studs slab, red | 14.6 / +5.9 / −21 | 5.7 / −3.2 / −20 |
+| bare studs slab, high albedo | 28.5 / +27.0 / +36 | 8.2 / −6.4 / −16 |
+| studs, red | 13.1 / −2.0 / −23 | 8.9 / −0.0 / −15 |
+| studs, high albedo | 16.5 / +2.3 / −32 | 11.3 / +7.9 / +19 |
+| blocks with an air gap, red | 10.6 / −0.9 / −24 | 5.8 / −0.6 / −17 |
+| blocks with an air gap, high albedo | 13.7 / −0.2 / +35 | 9.5 / +4.7 / +35 |
+
+**Cost**, 640×480, CPU-s of two interleaved renders each, with per-block heat maps:
+
+| Run | before | thin parts and exit term | |
+|---|---|---|---|
+| studs, high albedo | 26.1, 25.6 | 29.7, 29.5 | +15% |
+| ridged trunk, bark | 52.8, 51.8 | 55.8, 56.7 | +7% |
+| 1.2 mm wall, clay | 12.0, 12.3 | 14.2, 14.1 | +16% |
+| V-groove and dimple, wax | 16.3, 16.0 | 18.0, 17.9 | +11% |
+| blocks with an air gap, high albedo | 13.0, 13.2 | 14.3, 14.6 | +10% |
+
+The added time is the ratio lookups at every point summed (one table read per channel, shared between equal channels),
+the depth ray and, on stepped faces, the 8 runs; the heat maps spread it over the subsurface pixels.
+
+Method 1 renders the same pixels, bit for bit, before and after (the list in the smooth-mesh section).
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each

@@ -263,6 +263,63 @@ double SubsurfaceBoundary::Total(double albedo) const
     return SubsurfaceDipole(albedo, *this).Disc(HUGE_VAL) * BeamTotalRatio(albedo);
 }
 
+// The better dipole's Rd, and its integral over a disc of radius x, from a source of sign s at signed depth z (above a
+// face where z < 0): the multipole's terms.
+static double LayerRd(const SubsurfaceDipole& d, double xSqr, double z, double s)
+{
+    double r = sqrt(xSqr + Sqr(z)), e = exp(-d.sigma * r);
+    return s * e * (d.fluence / r + d.flux * z * (1.0 + d.sigma * r) / (r * Sqr(r)));
+}
+
+static double LayerDisc(const SubsurfaceDipole& d, double x, double z, double s)
+{
+    double a = fabs(z), r = sqrt(Sqr(x) + Sqr(z));
+    double flux = (z > 0.0 ? 1.0 : -1.0) * (exp(-d.sigma * a) - a * exp(-d.sigma * r) / r);
+    return s * 2.0 * M_PI * (d.fluence * ExpDifference(d.sigma, a, r) + d.flux * flux);
+}
+
+// Donner and Jensen's multipole for a layer tau deep, from one source at min(1, tau / 2) carrying the light that scatters
+// in the layer, 1 - e^-tau, over the better dipole: the light leaving the near face, and the far face (over the dipole at the
+// straight distance through the layer).
+const float *SubsurfaceBoundary::Layer(int step, int k) const
+{
+    std::lock_guard<std::mutex> lock(layerMutex);
+    std::unique_ptr<float[]>& rows = layers[std::make_pair(step, k)];
+    if (rows)
+        return rows.get();
+    rows.reset(new float[2 * kLayerFar]);
+    double u = double(step) / kLayerSteps;
+    SubsurfaceDipole dipole(1.0 - Sqr(u) / 3.0, *this);
+    for (int part = 0; part < 2; part++)
+    {
+        double tau = exp2(0.25 * (k + part)), z = std::min(1.0, 0.5 * tau), scatter = -expm1(-tau), period = 2.0 * (tau + dipole.zb);
+        int images = (dipole.sigma * period > 0.0) ? std::min(64, int(ceil(12.0 / (dipole.sigma * period)))) : 64;
+        float *near = rows.get() + part * 2 * kBeamColumns, *far = near + kLayerFar;
+        double rdRatio = 1.0, discRatio = 1.0, farRatio = 1.0;
+        for (int c = 0; c < kBeamColumns; c++)
+        {
+            double xSqr = ldexp(1.0 + (c % 4) / 4.0, kBeamFirstOctave + c / 4), x = sqrt(xSqr);
+            double rd = 0.0, disc = 0.0, through = 0.0;
+            for (int i = -images; i <= images; i++)
+            {
+                double real = i * period + z, image = i * period - z - dipole.zb;
+                rd += LayerRd(dipole, xSqr, real, 1.0) + LayerRd(dipole, xSqr, image, -1.0);
+                disc += LayerDisc(dipole, x, real, 1.0) + LayerDisc(dipole, x, image, -1.0);
+                through += LayerRd(dipole, xSqr, tau - real, 1.0) + LayerRd(dipole, xSqr, tau - image, -1.0);
+            }
+            double rdDipole = dipole.Rd(xSqr), discDipole = dipole.Disc(x), farDipole = dipole.Rd(xSqr + Sqr(tau));
+            rdRatio = (rdDipole > 0.0) ? std::max(0.0, scatter * rd / rdDipole) : rdRatio;
+            discRatio = (discDipole > 0.0) ? std::max(0.0, scatter * disc / discDipole) : discRatio;
+            farRatio = (farDipole > 0.0) ? std::max(0.0, scatter * through / farDipole) : farRatio;
+            near[2 * c] = float(rdRatio);
+            near[2 * c + 1] = float(discRatio);
+            far[2 * c] = float(farRatio);
+            far[2 * c + 1] = float(farRatio);
+        }
+    }
+    return rows.get();
+}
+
 const SubsurfaceBoundary& SubsurfaceBoundary::For(double eta)
 {
     static std::mutex mutex;
