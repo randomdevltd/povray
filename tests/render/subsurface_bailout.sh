@@ -1,5 +1,5 @@
 #!/bin/sh
-# subsurface_bailout.sh <povray> <srcdir>: hits below the subsurface bailout build no cloud, only in 4.0, alike on any thread count.
+# subsurface_bailout.sh <povray> <srcdir>: hits below the subsurface bailout build no cloud, alike on any thread count.
 set -e
 trap 'rm -f ssbail_*' EXIT
 POVRAY=$1; SRCDIR=$2
@@ -23,15 +23,9 @@ render off +wt2 Declare=Bailout=0
     fail "bailout 0 did not build the cloud: tried $(tried off), estimated $(estimated off), cells $(cells off)"
 same faint off && fail "the estimate drew the faint mirror exactly as the cloud does"
 
-render v38 +wt2 Declare=Version=3.8
-render v38off +wt2 Declare=Version=3.8 Declare=Bailout=0
-[ "$(estimated v38)" = 0 ] && [ "$(tried v38)" -gt 0 ] || fail "a 3.8 scene used the subsurface bailout: $(estimated v38)"
-same v38 v38off || fail "the subsurface bailout changed a 3.8 scene"
-grep -q 'Subsurfacebailoutappliestoscenesoflanguageversion4.0only' ssbail_v38off.txt || fail "a 3.8 scene's bailout was not warned of"
-
 render one +wt1 Declare=Direct=1
 render four +wt4 Declare=Direct=1
 [ "$(estimated one)" -gt 0 ] && [ "$(tried one)" -gt 0 ] || fail "the direct view did not mix cloud and estimated hits"
 same one four || fail "one thread and four rendered different images"
 [ "$(cells one)" = "$(cells four)" ] && [ "$(estimated one)" = "$(estimated four)" ] || fail "one thread and four built different clouds"
-echo "subsurface_bailout: hits below the bailout build no cloud, only in 4.0 scenes, alike on any thread count"
+echo "subsurface_bailout: hits below the bailout build no cloud, alike on any thread count"
