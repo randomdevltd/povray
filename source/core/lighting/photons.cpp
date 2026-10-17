@@ -1191,7 +1191,8 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     photon.extinction = opticalDepth / step;
                     photon.length = step;
                     photon.domain = domain;
-                    photon.set = ray.GetPreparedSetId();
+                    photon.light = threadData->photonSourceLight;
+                    photon.set = std::uint32_t(ray.GetPreparedSetId());
                     bool merged = false;
 #ifndef POV_PROGRESSIVE_VOLUME_POINTS
                     if (threadData->progressiveMedia.size() > firstBeam && (sample > 0 || lastEnd == start))

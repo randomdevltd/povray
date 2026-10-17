@@ -26,12 +26,12 @@ render varying Declare=Variation=0.1 +wt2
 ! cmp -s progressive_volume_prepared.px progressive_volume_varying.px
 render brighter Declare=LampPower=2 +wt2
 awk -v a="$(mean prepared)" -v b="$(mean brighter)" 'BEGIN {exit !(b>1.98*a && b<2.02*a)}'
-if "$POVRAY" +i"$SRCDIR/tests/render/progressive_volume.pov" +w8 +h8 +pr -a -d -p -v -gp -f \
-    Declare=Grouped=1 > progressive_volume_group.log 2>&1; then
-    echo 'progressive_volume: unsupported grouped volume transport was accepted' >&2
-    exit 1
-fi
-grep -q 'does not yet support volumetric photons from light groups' progressive_volume_group.log
+render group Declare=Grouped=1 +wt2
+contributions() {
+    tr '\n' ' ' < "progressive_volume_$1.log" | tr -s ' ' | grep -o '[0-9]* contributions'
+}
+[ "$(contributions group)" = "$(contributions prepared)" ] ||
+    { echo 'progressive_volume: grouped media receive other photons than ungrouped ones' >&2; exit 1; }
 grouped_render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_volume.pov" +w3000 +h2667 +pr -a -d -p -v -gp \
@@ -65,4 +65,4 @@ assert 1.98 < sum(brighter) / sum(one) < 2.02
 PY_GROUPED
 printf 'progressive_volume means: prepared=%s classic=%s\n' "$(mean prepared)" "$(mean classic)"
 rm -f progressive_volume_*.ppm progressive_volume_*.px progressive_volume_*.log
-echo 'progressive_volume: prepared photon gathers, curved segments, extinction, power, threads and group rejection passed'
+echo 'progressive_volume: prepared photon gathers, curved segments, extinction, power, threads and grouped media passed'

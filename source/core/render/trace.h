@@ -231,6 +231,8 @@ class Trace
                 virtual void ComputeMedia(std::vector<Media>&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(const RayInteriorVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(MediaVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
+                /// Sets the surface ending a curved path, for its chords that end at no surface; returns the previous one.
+                virtual ConstObjectPtr SetPathReceiver(ConstObjectPtr) { return nullptr; }
         };
 
         class RadiosityFunctor

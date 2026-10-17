@@ -32,7 +32,9 @@ struct ProgressiveVolumePhoton final
     MathColour flux, extinction;
     std::shared_ptr<const ProgressiveVolumeDomain> domain;
     double length = 0.0;
-    PreparedSetId set = 0;
+    /// The emitting light: a receiving medium accepts the segment by that light's photon membership.
+    const LightSource* light = nullptr;
+    std::uint32_t set = 0;
     unsigned char axis = 0;
 
     double DistanceSquared(const Vector3d& position) const
@@ -87,7 +89,7 @@ class ProgressiveVolumePhotonMap final
             for (size_t i = 0; i < photons.size(); i += stride)
             {
                 std::priority_queue<double> nearest;
-                Nearest(0, photons.size(), photons[i].point, *photons[i].domain, nearest);
+                Nearest(0, photons.size(), photons[i].point, *photons[i].domain, nearest, [](const ProgressiveVolumePhoton&) { return true; });
                 if (!nearest.empty() && nearest.top() > 0.0)
                     radii.push_back(std::sqrt(nearest.top()));
             }
@@ -99,11 +101,15 @@ class ProgressiveVolumePhotonMap final
             }
         }
 
-        /// The distance to the 32nd nearest photon of the same medium, at most four median distances.
         double RadiusAt(const Vector3d& point, const ProgressiveVolumeDomain& domain) const
+            { return RadiusAt(point, domain, [](const ProgressiveVolumePhoton&) { return true; }); }
+
+        /// The distance to the 32nd nearest accepted photon of the same medium, at most four median distances.
+        template<class Accept>
+        double RadiusAt(const Vector3d& point, const ProgressiveVolumeDomain& domain, const Accept& accept) const
         {
             std::priority_queue<double> nearest;
-            Nearest(0, photons.size(), point, domain, nearest, 16.0 * initialRadius * initialRadius);
+            Nearest(0, photons.size(), point, domain, nearest, accept, 16.0 * initialRadius * initialRadius);
             const double local = nearest.size() == 32 ? std::sqrt(nearest.top()) : 4.0 * initialRadius;
             return std::max(1.0e-8, local);
         }
@@ -181,8 +187,10 @@ class ProgressiveVolumePhotonMap final
             VisitRange(middle + 1, end, point, support, visitor);
         }
 
+        template<class Accept>
         void Nearest(size_t begin, size_t end, const Vector3d& point, const ProgressiveVolumeDomain& domain,
-                     std::priority_queue<double>& nearest, double limit = std::numeric_limits<double>::infinity()) const
+                     std::priority_queue<double>& nearest, const Accept& accept,
+                     double limit = std::numeric_limits<double>::infinity()) const
         {
             if (begin == end)
                 return;
@@ -192,15 +200,15 @@ class ProgressiveVolumePhotonMap final
             const auto& photon = photons[middle];
             const Vector3d delta = photon.point - point;
             const double distance2 = photon.DistanceSquared(point);
-            if (distance2 <= limit && *photon.domain == domain && (nearest.size() < 32 || distance2 < nearest.top()))
+            if (distance2 <= limit && *photon.domain == domain && (nearest.size() < 32 || distance2 < nearest.top()) && accept(photon))
             {
                 nearest.push(distance2);
                 if (nearest.size() > 32)
                     nearest.pop();
             }
             const bool left = delta[photon.axis] >= 0;
-            Nearest(left ? begin : middle + 1, left ? middle : end, point, domain, nearest, limit);
-            Nearest(left ? middle + 1 : begin, left ? end : middle, point, domain, nearest, limit);
+            Nearest(left ? begin : middle + 1, left ? middle : end, point, domain, nearest, accept, limit);
+            Nearest(left ? middle + 1 : begin, left ? end : middle, point, domain, nearest, accept, limit);
         }
 };
 

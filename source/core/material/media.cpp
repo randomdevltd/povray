@@ -52,6 +52,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/emitter.h"
+#include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
 #include "core/material/pattern.h"
@@ -1300,6 +1301,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm)
 {
     ModifierScope scope(*this, mods);
+    ReceiverScope receiverScope(*this, isect.Object != nullptr ? isect.Object : pathReceiver);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -2915,9 +2917,15 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                 return;
             MathColour sum;
             const auto domain = VolumeDomain(medias);
-            const double radius = map.RadiusAt(H, *domain);
+            const ConstObjectPtr receiver = photonReceiver;
+            const auto lit = [receiver](const ProgressiveVolumePhoton& photon) {
+                if (photon.light == nullptr || !photon.light->lightGroupLight)
+                    return receiver == nullptr || !Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG);
+                return receiver != nullptr && PhotonLightAffectsObject(photon.light, receiver);
+            };
+            const double radius = map.RadiusAt(H, *domain, lit);
             map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
-                if (!(*photon.domain == *domain))
+                if (!(*photon.domain == *domain) || !lit(photon))
                     return;
                 BasicRay light;
                 light.Direction = photon.direction;
