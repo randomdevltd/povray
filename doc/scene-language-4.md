@@ -312,7 +312,8 @@ outside the photon item position. Parenthesized expressions and signed operands 
 Omitting `method`, or specifying `method 1`, keeps classic photon controls; `quality` requires
 method 2 and cannot be combined with `count`, `spacing`, `gather`, `radius`, `jitter`,
 `autostop` or `expand_thresholds`. An object's `photons { target W }` takes
-a share weight under method 2 (see `doc/progressive-photons.md`). See
+a share weight under method 2 (see `doc/progressive-photons.md`). Light color and fade keep
+their classic meaning for direct light; method 2 calibrates photon power to them. See
 `distribution/scenes/lights/progressive_photons4.pov4`.
 
 ### Static checking

@@ -86,6 +86,13 @@ inline size_t PhotonTargetPick(const std::vector<double>& probability, double& s
     return selected;
 }
 
+/// Whether direction lies in the cone about axis of the given width; projection is their dot product.
+inline bool PhotonConeContains(const Vector3d& direction, const Vector3d& axis, double width, double projection)
+{
+    return width >= 1.0 ? projection >= 1.0 - width :
+        projection >= 0.0 && (direction - axis * projection).lengthSqr() <= width * (2.0 - width);
+}
+
 /// Photon emission: a tenth isotropic, nine tenths over target cones (width = 1 - least cosine); a draw below 0.9 replaces the
 /// isotropic direction by a cone sample of the selected target, picked for every sample. Returns the density per steradian.
 inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::vector<double>& widths, const std::vector<double>& probability,
@@ -107,10 +114,7 @@ inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::
     double pdf = 0.1 / (4.0 * M_PI);
     for (size_t i = 0; i < axes.size(); ++i)
     {
-        const double projection = dot(direction, axes[i]);
-        const bool inside = widths[i] >= 1.0 ? projection >= 1.0 - widths[i] :
-            projection >= 0.0 && (direction - axes[i] * projection).lengthSqr() <= widths[i] * (2.0 - widths[i]);
-        if ((targeted && selected == i) || inside)
+        if ((targeted && selected == i) || PhotonConeContains(direction, axes[i], widths[i], dot(direction, axes[i])))
             pdf += 0.9 * probability[i] / (2.0 * M_PI * widths[i]);
     }
     return pdf;

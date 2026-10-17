@@ -130,19 +130,41 @@ carries emitted flux divided by the complete emission mixture probability and
 batch size. Overlapping target cones are included in that mixture. Surface
 reflection, refraction and spectral splitting retain their transport weights.
 
-An unfaded conventional point light therefore becomes inverse-square under
-method 2. An existing `fade_power 2 fade_distance F` is interpreted by its
-far-field intensity, `2*F*F*color`; its artificial near-field softening is removed.
-Other conventional fade powers are rejected. Parallel photon emitters must be
-unfaded. These are intentional differences from the distance-compensated classic
-map. Fill lights, zero-power sources and lights with both photon reflection and
-refraction disabled retain their direct-light settings, including oriented area
-lights and projected-through sources.
+Method 2 never changes a light's direct illumination: its color, `fade_distance` and
+`fade_power` light the scene exactly as under method 1, and every fade setting is
+accepted. Photon power is calibrated to that direct light instead, at every receiver
+distance. A point, spot or area light emits photons with radiant intensity `color`, and
+every deposit is weighted by `A(L) * L^2`, where `L` is the photon's path length from the
+light to the deposit (through every reflection, refraction and `projected_through`
+aperture, and at least 1e-10) and `A` is the light's own distance attenuation: 1 unfaded,
+`2 / (1 + (L/F)^n)` for `fade_distance F` and `fade_power n`, `L^-n` for `fade_distance 0`.
+Photons spreading through space fall as `1/L^2`, so the weight gives every receiver the
+direct light's irradiance at its distance, as classic photons are compensated: an
+unfaded light's photons do not attenuate, and `fade_power 2 fade_distance 0` makes the
+weight exactly 1 and direct light and photons both inverse-square. A media segment
+records the path length at its start, and a gather weights the part it clips by the
+weight at that part's middle, so constant media still coalesce into long segments.
+Parallel and cylinder colors are irradiance; their photons are weighted by the light's
+fade `A(L)` alone, at their path length from the light's plane, as classic photons and
+their direct light do. Unfaded media lights take no weight (see Media lights).
+
+On `tests/render/progressive_direct_lights.pov` (a radius 0.5 sphere 1.8 from the viewed
+floor point toward the light, method 2 quality 4) an ior 1 sphere passes 1.02 of the direct light at 5
+and at 245 units from the light, for unfaded and every faded light, and 0.99 for parallel
+and cylinder lights; a scattering medium lit through it glows 0.99 of the directly lit
+medium at quality 16 at both distances (0.95 at quality 4, the same as under the earlier
+rule at 245). A glass sphere's caustic is 1.01 of classic's at 5 units and 1.00 at 245;
+the earlier rule, which scaled emission by `A(d) * d^2` at the light-to-target distance
+and let photons fall as `1/r^2` beyond it, gave 0.53 and 0.98. The weights barely vary
+across one receiver, so they add no visible noise: the near glass sphere at 160 by 160,
+quality 1, has relative RMS 0.0356 against quality 64 under this rule and 0.0355 under
+the earlier one, at 2.77 G instructions each. No bound on the weight is needed.
 
 Targets, `collect off`, reflection/refraction switches and `pass_through` retain
 their authoring roles; the number after `target` is a share weight (see Targets).
-Area emitters are sampled over their
-area without requiring the classic photon `area_light` option. Oriented area
+Area lights always emit photons over their
+area; the light's `photons { area_light }` option changes nothing under method 2, while
+classic photons without it leave the light's center, so ported scenes get softer caustics. Oriented area
 lights use the original axes and rectangular photon profile, as classic photons
 do; `orient` only changes their direct-light profile.
 
@@ -154,8 +176,9 @@ emission PDF or redistribute the rejected power.
 `distribution/scenes/lights/progressive_projector.pov` combines an oriented area
 source, a geometric aperture and a glass caustic.
 
-`light_group { ... photons on }` enables group photon transport; `photons off`
-disables it. The default is off before scene version 4.0 and on from 4.0.
+Group lights shoot photons by default in every scene version, as classic photons
+do; `light_group { ... photons off }` disables the group's photon transport under
+method 2 (method 1 ignores the switch) and `photons on` restates the default.
 Photon-only lamps retain group membership without entering the direct-light
 list. Target selection and deposits enforce membership and `global_lights off`;
 surface gathers also match the receiving object, so nearby objects in another
@@ -171,7 +194,11 @@ Media photons are enabled by the existing `media` photon setting. Transport stor
 finite photon segments with their incoming flux and extinction. A gather clips each
 segment to its spherical support and integrates attenuation analytically along the
 clipped length. The estimate divides by the sphere volume, with scattering and phase
-evaluated at the camera sample.
+evaluated at the camera sample. Media glow is deliberately closer to a direct-light
+reference than classic's: a scattering medium lit through an ior 1 target glows within
+1% of the same medium lit directly under method 2 at quality 16 (see Light power and
+authoring) and 72% above it under classic photons, so a ported media scene glows less
+than it did.
 Along a photon path through a medium the integration step is a fortieth of the bounding
 diagonal of the target the photon was aimed at (for an isotropic sample, the target its
 selection draw picks), shrinking as `batches^(-1/7)`, times the `factor` of
@@ -214,6 +241,25 @@ group is removed, and each box matches its half rendered alone within three 16-b
 output levels (see Limits).
 Subsurface photon illumination is reconstructed before diffusion; the subsurface
 cache is created once, after the maps are built.
+
+## Which objects receive photons
+
+Photons are aimed at targets, the objects marked `photons { target }`, but they are
+deposited on any collecting object they reach after at least one reflection or
+refraction; light that hits its first surface directly, or after crossing only
+`pass_through` objects, is never deposited, since direct lighting already counts it.
+A receiver therefore never needs to be a target, and light can be bent around a corner
+by targeting only the first glass or mirror on its way. A photon's first surface must be
+a target (after any `pass_through` objects) or the photon stops there; that includes the
+tenth of a point source's photons that leave isotropically, so those add samples only
+where they meet a target and never start a path at a non-target mirror or glass.
+Later surfaces need not be targets: an object reflects or refracts photons when its own
+`photons { reflection on }` or `refraction on` says so, or when the light's photons block
+turns that on and the object does not turn it off. `collect off` stops an object
+receiving, and an object a light does not illuminate (outside the light's group, or
+in a `global_lights off` group for a global light) receives nothing from it. A deposit
+also needs a finish that uses it: glass with no `diffuse`, `diffuse_back`, `phong`,
+`specular` or subsurface finish stores none.
 
 ## Targets
 
@@ -290,7 +336,7 @@ file is truncated or damaged, when it is a classic map, or when its photons woul
 exceed the memory budget (see Memory and reproducibility). A file shot with another
 render seed is reused with a warning. A classic render cannot load a method 2 file, nor
 method 2 a classic one. With three colour channels the file takes 64 bytes per surface
-deposit and 88 per media segment: on the leaf of the measurements below, at quality 1,
+deposit and 96 per media segment: on the leaf of the measurements below, at quality 1,
 591,415 deposits take 37.9 MB, saving adds 1.1 G instructions to the 168.7 G render,
 and a loaded render gives the same image in 164.1 G.
 `tests/render/progressive_photon_file.sh` saves and loads media, subsurface and
@@ -306,16 +352,19 @@ direct illumination together; it does not scale the glow seen by the camera.
 Classic method 1 continues to ignore media-light photon blocks with a warning.
 Media and conventional lights share the emitter sampling and flux normalization.
 The media light's default direct falloff is inverse-square, clamped within one
-source cell; photons acquire inverse-square falloff by spreading through space.
-There is no independent photon fade override yet.
+source cell; photons acquire inverse-square falloff by spreading through space, so
+they take no weight. A media light's own `fade_distance` and `fade_power` keep their
+meaning for direct light, and its photon deposits are weighted by them like any light's
+(see Light power and authoring).
 
 The position sample's weight already includes its power-table probability;
 shooting applies the light-selection and directional probabilities once. The
 emitter's own neutral container is crossed before the selected target, applying
 transmission and extinction. A refractive emitting container should itself be a
 photon target. Glow along a photon path never adds power to the photon. Direct
-illumination through a participating target is excluded even in an empty batch,
-so it cannot be counted again alongside the photon estimate.
+illumination through a participating target is excluded whenever the prepared set's
+surface map holds deposits, so it cannot be counted again alongside the photon estimate;
+as with classic photons, a set whose photons all missed keeps its filtered shadows.
 
 The candle sample includes an optional water glass:
 
@@ -340,15 +389,15 @@ prism alone and `Declare=PhotonQuality=` raises the photon count.
 ## Memory and reproducibility
 
 The surface map stores 64 bytes per deposit (double position, float direction,
-normal and flux, a receiver index and the tree axis); a media segment takes about
-160 bytes with its bounds. Shooter vectors hold one batch and are released after it is
-merged. Memory grows linearly with quality and with deposits per sample, which depend
-on the scene (spectral bands, bounces, media steps). After the first batch the whole
-emission's storage is projected from its deposits and segments with a 20% margin; if
-it exceeds 40% of the memory available at that moment, at most 6 GB, the render stops
-with an error giving the projection, before more work is done. Otherwise the maps
-reserve that capacity once, so they neither grow by doubling nor shrink by copying,
-and the index is partitioned in place. The log line `Progressive photons:` reports
+normal and flux, a receiver index and the tree axis); a media segment takes 168 bytes
+with its bounds. Shooter vectors hold one batch and are released after it is merged.
+Memory grows linearly with quality and with deposits per sample, which depend
+on the scene (spectral bands, bounces, media steps). After every batch the whole
+emission's storage is projected from the deposits and segments per batch so far, with a
+20% margin; if it exceeds 40% of the memory available after the first batch, at most
+6 GB, the render stops with an error giving the projection, before more work is done.
+Otherwise the maps reserve the projected capacity, so they grow only when a later batch
+deposits more than the earlier ones, and the index is partitioned in place. The log line `Progressive photons:` reports
 batches, emitted samples, deposits, `k`, contributions, preparation time and the peak
 photon storage.
 

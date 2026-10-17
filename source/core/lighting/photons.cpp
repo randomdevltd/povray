@@ -103,6 +103,12 @@ constexpr int PHOTON_BLOCK_MASK = PHOTON_BLOCK_SIZE - 1;
 
 static_assert(PHOTON_BLOCK_POWER < std::numeric_limits<decltype(PHOTON_BLOCK_SIZE)>::digits, "PHOTON_BLOCK_POWER too large");
 
+/// Method 2: a deposit's weight at path length depth from its light, so photons deliver the light's direct irradiance.
+static double PhotonPathWeight(const LightSource* light, double depth)
+{
+    return light != nullptr ? Light_Photon_Path_Weight(light, depth) : 1.0;
+}
+
 class PhotonMap::PhotonBlock final
 {
 public:
@@ -181,6 +187,9 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
             found = (MarchCurvedRay(chord, field, base, bestisect, path) > 0);
             if (found)
             {
+                // Method 2 weights by path length, so each chord starts at the length travelled before it.
+                const bool carry = sceneData->photonSettings.Progressive();
+                const double startDepth = threadData->photonDepth;
                 for (size_t k = 0; k + 1 < path.size(); k++)
                 {
                     chord.Origin = path[k].origin;
@@ -189,10 +198,13 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
                     segment.Depth = path[k].length;
                     segment.Object = nullptr;
                     ComputeInteriorMedia(chord, segment, colour);
+                    if (carry)
+                        threadData->photonDepth += path[k].length;
                 }
                 chord.Origin = path.back().origin;
                 chord.Direction = path.back().direction;
                 found = ShadePhoton(chord, bestisect, colour, weight);
+                threadData->photonDepth = startDepth;
             }
             ray.GetTicket().traceLevel--;
             return found ? bestisect.Depth : HUGE_VAL;
@@ -444,7 +456,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
                 photon.normal = rawnormal;
             else if (dot(photon.normal, ray.Direction) > 0.0)
                 photon.normal.invert();
-            photon.flux = LightCol;
+            photon.flux = LightCol * PhotonPathWeight(threadData->photonSourceLight, threadData->photonDepth);
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();
             threadData->progressiveSurface.push_back(photon);
@@ -1191,6 +1203,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     photon.point = ray.Evaluate(start + 0.5 * step);
                     photon.direction = -ray.Direction;
                     photon.flux = colour;
+                    photon.depth = threadData->photonDepth + start;
                     photon.extinction = opticalDepth / step;
                     photon.length = step;
                     photon.domain = domain;

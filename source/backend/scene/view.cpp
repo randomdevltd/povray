@@ -1944,10 +1944,10 @@ try
         std::vector<ProgressivePhoton>().swap(shooter->progressiveSurface);
         std::vector<ProgressiveVolumePhoton>().swap(shooter->progressiveMedia);
     }
-    if (pass == 0)
     {
+        // each batch projects the final maps from the deposits per batch so far, against the budget read at the first
         constexpr size_t segmentBytes = sizeof(ProgressiveVolumePhoton) + sizeof(ProgressiveVolumePhotonMap::Bounds);
-        const double scale = ProgressivePhotonBudget::memoryMargin * batches;
+        const double scale = ProgressivePhotonBudget::memoryMargin * batches / double(pass + 1);
         double projected = transient * ProgressivePhotonBudget::memoryMargin;
         size_t deposits = 0, segments = 0;
         for (const auto& set : viewData.GetSceneData()->preparedSets)
@@ -1956,7 +1956,11 @@ try
             segments += set->progressiveMedia.photons.size();
             projected += scale * (set->progressiveSurface.photons.size() * sizeof(MappedPhoton) + set->progressiveMedia.photons.size() * segmentBytes);
         }
-        const double budget = ProgressivePhotonMemoryBudget();
+        deposits /= pass + 1;
+        segments /= pass + 1;
+        if (pass == 0)
+            progressivePhotonMemory = ProgressivePhotonMemoryBudget();
+        const double budget = progressivePhotonMemory;
         if (projected > budget)
         {
             for (auto& set : viewData.GetSceneData()->preparedSets)
@@ -1972,11 +1976,18 @@ try
             queue.Fail(kOutOfMemoryErr);
             return;
         }
+        // a projection within 10% of the capacity keeps the block, so batch-to-batch noise does not reallocate
+        const auto grow = [scale](auto& photons) {
+            const double target = scale * double(photons.size());
+            if (target > 1.1 * double(photons.capacity()))
+                photons.reserve(size_t(target));
+        };
         for (auto& set : viewData.GetSceneData()->preparedSets)
-        {
-            set->progressiveSurface.photons.reserve(size_t(scale * set->progressiveSurface.photons.size()));
-            set->progressiveMedia.photons.reserve(size_t(scale * set->progressiveMedia.photons.size()));
-        }
+            if (pass + 1 < batches)
+            {
+                grow(set->progressiveSurface.photons);
+                grow(set->progressiveMedia.photons);
+            }
     }
     if (pass + 1 < batches)
     {

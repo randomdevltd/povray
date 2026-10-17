@@ -32,6 +32,7 @@ struct ProgressiveVolumePhoton final
     MathColour flux, extinction;
     std::shared_ptr<const ProgressiveVolumeDomain> domain;
     double length = 0.0;
+    double depth = -1.0; ///< path length from the light at the segment's start; negative when unknown
     /// The emitting light: a receiving medium accepts the segment by that light's photon membership.
     const LightSource* light = nullptr;
     std::uint32_t set = 0;
@@ -46,9 +47,12 @@ struct ProgressiveVolumePhoton final
         return (delta - direction * along).lengthSqr();
     }
 
-    MathColour Integral(const Vector3d& position, double radius) const
+    /// The flux integrated over the part within radius of position; middle gets the path length at that part's middle.
+    MathColour Integral(const Vector3d& position, double radius, double* middle = nullptr) const
     {
 #ifdef POV_PROGRESSIVE_VOLUME_POINTS
+        if (middle != nullptr)
+            *middle = depth + length * 0.5;
         return (position - point).lengthSqr() <= radius * radius ? flux * Exp(-extinction * (length * 0.5)) * length : MathColour();
 #else
         const Vector3d delta = position - point;
@@ -56,6 +60,8 @@ struct ProgressiveVolumePhoton final
         double first, last;
         if (!ClipPhotonBeam(along + length * 0.5, (delta + direction * along).lengthSqr(), radius, length, first, last))
             return MathColour();
+        if (middle != nullptr)
+            *middle = depth + 0.5 * (first + last);
         MathColour result;
         for (int channel = 0; channel < MathColour::channels; ++channel)
             result[channel] = flux[channel] * PhotonBeamIntegral(extinction[channel], first, last);

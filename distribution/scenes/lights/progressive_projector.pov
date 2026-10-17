@@ -5,7 +5,7 @@ background { rgb <0.03, 0.04, 0.06> }
 light_source { <-4, 5, -4> rgb 0.2 photons { reflection off refraction off } }
 plane { y, 0 pigment { rgb <0.8, 0.85, 0.9> } finish { ambient 0 diffuse 1 } }
 light_source {
-    <0, 6, 0> rgb <8, 5, 2> photon_only
+    <0, 6, 0> rgb <8, 5, 2> photon_only fade_power 2 fade_distance 0
     area_light 0.6*x, 0.6*z, 5, 5 circular orient
     projected_through { box { <-1, 3.5, -1>, <0.2, 3.6, 1> } }
     photons { reflection on refraction on }

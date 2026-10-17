@@ -2929,7 +2929,11 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                     BasicRay light;
                     light.Direction = photon.direction;
                     light.Origin = photon.point - photon.direction;
-                    ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
+                    double middle = photon.depth;
+                    MathColour integral = photon.Integral(H, radius, &middle);
+                    if (photon.light != nullptr && photon.depth >= 0.0)
+                        integral *= Light_Photon_Path_Weight(photon.light, middle);
+                    ComputeMediaScatteringAttenuation(medias, sum, Sc, integral, ray, light);
                     threadData->progressiveContributions++;
                 });
                 Te += sum / ProgressivePhotonBudget::KernelVolume(radius);

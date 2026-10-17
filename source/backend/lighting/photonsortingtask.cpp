@@ -442,7 +442,7 @@ bool PhotonSortingTask::load()
 namespace
 {
 const unsigned char kProgressiveMagic[8] = {'P','O','V','P','H','M','Q',0}, kProgressiveEnd[8] = {'P','H','M','Q','E','N','D',0};
-const std::uint32_t kProgressiveVersion = 1, kAtmosphere = 0xFFFFFFFFu;
+const std::uint32_t kProgressiveVersion = 2, kAtmosphere = 0xFFFFFFFFu;
 
 /// Every object, interior and light a photon can name, numbered in a traversal fixed by the scene's structure.
 struct ProgressiveSceneIndex final
@@ -558,7 +558,7 @@ class PhotonFileReader final
         bool ok = false;
 };
 
-constexpr std::uint64_t kSurfaceRecord = 3 * 8 + 6 * 4 + 4, kSegmentRecord = 7 * 8 + 4 + 4;
+constexpr std::uint64_t kSurfaceRecord = 3 * 8 + 6 * 4 + 4, kSegmentRecord = 8 * 8 + 4 + 4;
 
 template<class T> bool Finite(const T& values, int count)
 {
@@ -666,6 +666,7 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
             out.Colour(segment.flux);
             out.Colour(segment.extinction);
             out.Put(segment.length);
+            out.Put(segment.depth);
             out.Put(domainIds.at(segment.domain.get()));
             const auto light = index.lightIds.find(segment.light);
             if (segment.light != nullptr && light == index.lightIds.end())
@@ -809,6 +810,7 @@ std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_
             segment.flux = in.Colour();
             segment.extinction = in.Colour();
             segment.length = in.Get<double>();
+            segment.depth = in.Get<double>();
             const std::uint32_t domain = in.Get<std::uint32_t>(), light = in.Get<std::uint32_t>();
             if (domain >= domains.size() || (light != 0 && index.Light(light) == nullptr))
                 return damaged;
@@ -820,6 +822,8 @@ std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_
                 return invalid("media segment flux");
             if (!Finite(segment.extinction, MathColour::channels))
                 return invalid("media segment extinction");
+            if (!std::isfinite(segment.depth))
+                return invalid("media segment depth");
             if (!(std::isfinite(segment.length) && segment.length >= 0.0))
                 return "The photon file '" + name + "' holds a non-finite or negative media segment length.";
             segment.domain = domains[domain];
