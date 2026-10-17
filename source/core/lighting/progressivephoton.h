@@ -57,6 +57,13 @@ struct ProgressivePhotonBudget final
     }
 };
 
+/// The method 2 photon memory ceiling and the source that set it: Photon_Memory, POV_PHOTON_MEMORY, the scene, else the default.
+struct ProgressivePhotonCeiling final
+{
+    double bytes = 0.0;   ///< zero when nothing sets it, for 40% of the available memory, at most 6 GB
+    const char* rule = "40% of available memory, at most 6 GB";
+};
+
 /// Sobol points in the emission dimensions, digitally shifted per prepared set; every aligned 2^m block is a net.
 class PhotonSobol final
 {

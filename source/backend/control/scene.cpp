@@ -122,6 +122,8 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
     // the machine's prepared media cell limit; the scene's prepared_media_cells raises it, never lowers it
     sceneData->machinePreparedMediaCells = clip<double>(parseOptions.TryGetFloat(kPOVAttrib_PreparedMediaCells, 1000000.0), 1.0, 1.0e9);
+    // the frontend has checked it is a positive number; it overrides POV_PHOTON_MEMORY and the scene's photons memory
+    sceneData->machinePhotonMemory = parseOptions.TryGetFloat(kPOVAttrib_PhotonMemory, 0.0);
 
     sceneData->inputFile = parseOptions.TryGetUCS2String(kPOVAttrib_InputFile, "object.pov");
     sceneData->headerFile = parseOptions.TryGetUCS2String(kPOVAttrib_IncludeHeader, "");

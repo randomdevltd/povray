@@ -119,6 +119,7 @@ class ScenePhotonSettings final
         double quality = 1.0;
         bool classicOptions = false;
         bool qualitySpecified = false;
+        double memory = 0.0;    ///< the scene's method 2 photon memory ceiling in GB (10^9 bytes); zero when not given
         bool Progressive() const { return method == 2; } ///< quality-budgeted emission into one k-nearest-neighbour map
 
         // photon separation (a.k.a. spacing)

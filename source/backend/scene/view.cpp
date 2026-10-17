@@ -1815,8 +1815,15 @@ void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, un
 void View::QueueProgressivePhotons(size_t seed, int threads)
 {
     const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
-    if (ProgressivePhotonMemoryCeiling() < 0.0)
+    if (ProgressivePhotonEnvironmentCeiling() < 0.0)
         throw POV_EXCEPTION(kParamErr, "POV_PHOTON_MEMORY must be a number of gigabytes greater than zero.");
+    progressivePhotonCeiling = ProgressivePhotonMemoryCeiling(*viewData.GetSceneData());
+    const double sceneBytes = viewData.GetSceneData()->photonSettings.memory * 1.0e9;
+    if (sceneBytes > 0.0 && std::fabs(progressivePhotonCeiling.bytes - sceneBytes) > 1.0e-6 * sceneBytes)
+        MessageFactory(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
+                       viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId)
+            .Info("Photon memory ceiling %g GB (%s) overrides the scene's photons memory %g GB.",
+                  progressivePhotonCeiling.bytes / 1.0e9, progressivePhotonCeiling.rule, sceneBytes / 1.0e9);
     viewData.photonPrepareCPU = 0;
     viewData.photonMapCPU = 0;
     viewData.photonPeakBytes = 0;
@@ -1832,7 +1839,7 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     if (settings.loadFile && !settings.fileName.empty())
     {
         std::uint64_t savedSeed = seed;
-        const std::string error = LoadProgressivePhotons(*viewData.GetSceneData(), ProgressivePhotonMemoryBudget(), savedSeed);
+        const std::string error = LoadProgressivePhotons(*viewData.GetSceneData(), progressivePhotonCeiling, savedSeed);
         if (!error.empty())
             throw POV_EXCEPTION(kParamErr, error);
         MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
@@ -1943,7 +1950,7 @@ try
         deposits /= pass + 1;
         segments /= pass + 1;
         if (pass == 0)
-            progressivePhotonMemory = ProgressivePhotonMemoryBudget();
+            progressivePhotonMemory = ProgressivePhotonMemoryBudget(progressivePhotonCeiling);
         const double budget = progressivePhotonMemory;
         if (projected > budget)
         {
@@ -1955,9 +1962,9 @@ try
             MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
                                     viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
             messages.PossibleError("Photon quality %g would need about %.2f GB for photons (%zu deposits and %zu media segments per batch, "
-                                   "%u batches, projected after batch %u), more than the %.2f GB allowed (%s). Lower the photon quality.",
+                                   "%u batches, projected after batch %u), more than the %.3g GB allowed (%s). Lower the photon quality.",
                                    viewData.GetSceneData()->photonSettings.quality, projected / 1.0e9, deposits, segments, batches,
-                                   pass + 1, budget / 1.0e9, ProgressivePhotonMemoryRule());
+                                   pass + 1, budget / 1.0e9, progressivePhotonCeiling.rule);
             queue.Fail(kOutOfMemoryErr);
             return;
         }

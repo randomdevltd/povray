@@ -436,6 +436,7 @@ SceneData::SceneData() :
     refractionDetail = 0.0;
     preparedMediaCells = 1000000.0;
     machinePreparedMediaCells = 1000000.0;
+    machinePhotonMemory = 0.0;
     dielectrics = false;
     anyOpaque = false;
     firstMediaPrecedence = UINT_MAX;

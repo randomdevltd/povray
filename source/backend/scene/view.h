@@ -708,6 +708,7 @@ class View final
         bool BuildProgressivePhotonMaps(TaskQueue& taskq, unsigned int neighbours, size_t bytes);
         size_t progressivePhotonSeed = 0;
         double progressivePhotonMemory = 0.0;   ///< the photon memory budget, read once at the first batch
+        ProgressivePhotonCeiling progressivePhotonCeiling;   ///< where the budget comes from, resolved once per render
 
         /// Method 4's planning step between two passes.
         void PlanAntialias(TaskQueue& taskq, int pass, int round);

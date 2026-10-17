@@ -37,6 +37,20 @@ cmp progressive_photons4_default_pov.px progressive_photons4_default_pov4.px
 sed 's/method 2 quality (quality \* 1)/quality (quality * 1) method 2/' "$SCENE.pov4" > progressive_photons4_order.pov4
 render order progressive_photons4_order.pov4
 cmp progressive_photons4_native.px progressive_photons4_order.px
+for memory in 'memory (quality * 512)' 'memory(64)' 'memory +64'; do
+    sed "s/method 2 quality (quality \* 1)/$memory method 2 quality (quality * 1)/" "$SCENE.pov4" > progressive_photons4_memory.pov4
+    (unset POV_PHOTON_MEMORY; render memory progressive_photons4_memory.pov4)
+    cmp progressive_photons4_native.px progressive_photons4_memory.px
+done
+for memory in 'memory 0.000001' 'memory (quality * 0.000008)' 'memory(0.000001)' 'memory +0.000001'; do
+    sed "s/method 2 quality (quality \* 1)/method 2 quality (quality * 1) $memory/" "$SCENE.pov4" > progressive_photons4_tiny.pov4
+    if (unset POV_PHOTON_MEMORY; "$POVRAY" +iprogressive_photons4_tiny.pov4 +w8 +h6 -a -d -p -v -gp -f \
+        > progressive_photons4_tiny.log 2>&1); then
+        echo "native photons accepted under a tiny scene memory ceiling: $memory" >&2; exit 1
+    fi
+    tr '\n' ' ' < progressive_photons4_tiny.log | tr -s ' ' | grep -q "more than the 1e-06 GB allowed (set by the scene's photons memory)" ||
+        { cat progressive_photons4_tiny.log; exit 1; }
+done
 for method in '' 'method 1'; do
     sed "s/method 2 quality (quality \* 1)/$method count 8192/" "$SCENE.pov4" > progressive_photons4_legacy.pov4
     render "legacy${method:+_explicit}" progressive_photons4_legacy.pov4
@@ -61,6 +75,13 @@ for quality in 0 -1 16384.5 1e400; do
     fails "method 2 quality $quality" 'Photon quality must be finite'
 done
 fails 'method 3' 'Photon method must be 1'
+for memory in 0 -1 1e400; do
+    fails "method 2 memory $memory" 'Photon memory must be a finite number'
+done
+fails 'method 1 memory 1' 'Photon memory requires method 2'
+fails 'memory 1' 'Photon memory requires method 2'
+fails 'method 2 memory "bad"' 'Photon memory must be a number'
+fails 'method 2 memory(1, 2)' 'Photon memory takes one numeric expression'
 fails 'method 1 quality 1' 'Photon quality requires method 2'
 fails 'quality 1' 'Photon quality requires method 2'
 for controls in 'count 100' 'spacing 0.1' 'gather 20, 100' 'radius 0.1' 'jitter 0.4' 'autostop 0.5' 'expand_thresholds 0.2, 35'; do
@@ -72,7 +93,7 @@ fails 'method 2 quality <1, 2, 3>' 'Photon quality must be a number'
 fails 'method 2 quality(1, 2)' 'Photon quality takes one numeric expression'
 fails 'method 2 if (false) { qualty 1 }' "did you mean 'quality'"
 for parent in 'sphere { 0, 1' 'light_source { <0, 5, 0> rgb 1'; do
-    for controls in 'method 1' 'method 2' 'quality 1' 'quality (1)' 'if (false) { method 2 quality 1 }'; do
+    for controls in 'method 1' 'method 2' 'quality 1' 'quality (1)' 'memory 1' 'memory (1)' 'if (false) { method 2 quality 1 }'; do
         fails_scene "$parent photons { $controls } }" 'only valid inside global_settings'
     done
     fails_scene "fn Controls() { method 2 } $parent photons { Controls() } }" 'only valid inside global_settings'
@@ -85,4 +106,4 @@ render bound progressive_photons4_bound.pov4
 cmp progressive_photons4_native.px progressive_photons4_bound.px
 rm -f progressive_photons4_*.ppm progressive_photons4_*.px progressive_photons4_*.pov \
     progressive_photons4_*.pov4 progressive_photons4_*.pov-state progressive_photons4_*.log
-echo 'progressive_photons4: native and lowered pixels, expressions, classic compatibility and failures passed'
+echo 'progressive_photons4: native and lowered pixels, quality and memory expressions, classic compatibility and failures passed'

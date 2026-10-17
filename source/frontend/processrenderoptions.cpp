@@ -222,6 +222,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
 
     { "Palette",             kPOVAttrib_Palette,            kUseSpecialHandler },
     { "Pause_When_Done",     kPOVAttrib_PauseWhenDone,      kPOVMSType_Bool },
+    { "Photon_Memory",       kPOVAttrib_PhotonMemory,       kUseSpecialHandler },
     { "Post_Frame_Command",  kPOVAttrib_PostFrameCommand,   kUseSpecialHandler },
     { "Post_Frame_Return",   kPOVAttrib_PostFrameCommand,   kUseSpecialHandler },
     { "Post_Scene_Command",  kPOVAttrib_PostSceneCommand,   kUseSpecialHandler },
@@ -617,6 +618,23 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
             if (err == kNoErr)
                 err = POVMSUtil_SetInt(obj, typeKey, intval);
             break;
+
+        case kPOVAttrib_PhotonMemory:
+        {
+            char* end = nullptr;
+            floatval = std::strtod(param, &end);
+            while ((end != param) && isspace(*end))
+                end++;
+            const POVMSFloat stored = POVMSFloat(floatval);
+            if ((end == param) || (*end != '\0') || !std::isfinite(stored) || !(stored > 0.0f))
+            {
+                ParseError("Photon_Memory must be a number of gigabytes greater than zero and within the range of a 32-bit float, found '%s'.", param);
+                err = kParamErr;
+            }
+            else
+                err = POVMSUtil_SetFloat(obj, option->key, stored);
+            break;
+        }
     }
 
     return err;
@@ -787,6 +805,12 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
 
         case kPOVAttrib_IncludeIni:
 
+            break;
+
+        case kPOVAttrib_PhotonMemory:
+
+            if(POVMSUtil_GetFloat(obj, option->key, &floatval) == 0)
+                file->printf("%s=%g\n", option->keyword, (double)floatval);
             break;
 
         case kPOVAttrib_Declare:
