@@ -573,9 +573,19 @@ std::string ProgressivePhotonIdentity(const SceneData& scene)
         << ";mediaSteps=" << settings.maxMediaSteps << ";mediaSpacing=" << settings.mediaSpacingFactor
         << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel) << ";targets=";
     const ProgressiveSceneIndex index(scene);
+    std::vector<const PhotonTargetGroup*> groups;
     for (size_t i = 0; i < index.objects.size(); ++i)
         if (Test_Flag(index.objects[i], PH_TARGET_FLAG))
-            key << i << ':' << index.objects[i]->Ph_Density << ',';
+        {
+            key << i << ':' << index.objects[i]->Ph_Density;
+            if (const PhotonTargetGroup* group = index.objects[i]->photonTargetGroup.get())
+            {
+                if (std::find(groups.begin(), groups.end(), group) == groups.end())
+                    groups.push_back(group);
+                key << 'g' << std::find(groups.begin(), groups.end(), group) - groups.begin();
+            }
+            key << ',';
+        }
     return key.str();
 }
 

@@ -29,6 +29,9 @@ for parallel in 0 1; do
     render "patch${parallel}_one" Declare=Parallel=$parallel Declare=PatchWeight=4 +wt1
     cmp "photon_target_weights_patch$parallel.px" "photon_target_weights_patch${parallel}_one.px"
     cmp "photon_target_weights_patch$parallel.targets" "photon_target_weights_patch${parallel}_one.targets"
+    render "split$parallel" Declare=Parallel=$parallel Declare=PatchWeight=4 Declare=SplitPatch=1
+    cmp "photon_target_weights_patch$parallel.targets" "photon_target_weights_split$parallel.targets"
+    cmp "photon_target_weights_patch$parallel.px" "photon_target_weights_split$parallel.px"
 done
 python3 - <<'PY'
 import re
@@ -65,4 +68,4 @@ SCENE
 refuse nan photon_target_weights_nan.pov
 "$POVRAY" +i"$SRCDIR/tests/render/photon_target_rig.pov" +w8 +h8 -a -d -p -v -f Declare=PatchWeight=0 \
     > photon_target_weights_zero.log 2>&1 || { cat photon_target_weights_zero.log; exit 1; }
-echo 'photon_target_weights: weighted splits, parallel and point suns, thread equality, flux and invalid weights passed'
+echo 'photon_target_weights: weighted splits, parallel and point suns, thread equality, flux, split unions as one target and invalid weights passed'

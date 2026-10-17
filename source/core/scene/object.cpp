@@ -594,6 +594,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Flags   = Old->Flags;
     New->tags = Old->tags;
     New->enclosingTags = Old->enclosingTags;
+    New->photonTargetGroup = Old->photonTargetGroup;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;

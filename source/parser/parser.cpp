@@ -10783,11 +10783,16 @@ void Parser::Link_To_Frame(ObjectPtr Object)
     std::shared_ptr<const TagScope> scope = Object->enclosingTags;
     if (!Object->tags.empty())
         scope = std::make_shared<TagScope>(TagScope{ Object->tags, Object->enclosingTags });
+    std::shared_ptr<const PhotonTargetGroup> group = Object->photonTargetGroup;
+    if (!group && Test_Flag(Object, PH_TARGET_FLAG))
+        group = std::make_shared<PhotonTargetGroup>(PhotonTargetGroup{ Object->BBox });
     for(vector<ObjectPtr>::iterator This_Sib = (reinterpret_cast<CSG *>(Object))->children.begin(); This_Sib != (reinterpret_cast<CSG *>(Object))->children.end(); This_Sib++)
     {
         // Child is no longer inside a CSG object.
         (*This_Sib)->Type &= ~IS_CHILD_OBJECT;
         (*This_Sib)->enclosingTags = scope;
+        if (Test_Flag(*This_Sib, PH_TARGET_FLAG))
+            (*This_Sib)->photonTargetGroup = group;
         Link_To_Frame(*This_Sib);
     }
 

@@ -40,6 +40,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <algorithm>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -152,7 +153,7 @@ void PhotonShootingTask::Run()
 
 namespace
 {
-/// A light's photon target: one object, with its share weight and bounding sphere.
+/// A light's photon target: one object, or the members of a split union with the union's bounds, and its share weight.
 struct ProgressiveTarget final
 {
     ObjectPtr object;
@@ -248,11 +249,15 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
                 continue;
             if (light->Parallel && Test_Flag(object, INFINITE_FLAG))
                 throw POV_EXCEPTION(kParamErr, "Parallel photon emission needs bounded targets.");
-            if (PhotonLightAffectsObject(light, object))
-            {
-                const Vector3d low(object->BBox.lowerLeft);
-                targets.push_back({object, object, low, low + Vector3d(object->BBox.size), double(object->Ph_Density)});
-            }
+            if (!PhotonLightAffectsObject(light, object))
+                continue;
+            const PhotonTargetGroup* group = object->photonTargetGroup.get();
+            const void* key = group ? static_cast<const void*>(group) : object;
+            if (std::any_of(targets.begin(), targets.end(), [key](const ProgressiveTarget& t) { return t.key == key; }))
+                continue;
+            const BoundingBox& box = group ? group->box : object->BBox;
+            const Vector3d low(box.lowerLeft);
+            targets.push_back({object, key, low, low + Vector3d(box.size), double(object->Ph_Density)});
         }
         else if (object->Type & IS_COMPOUND_OBJECT)
             ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets);

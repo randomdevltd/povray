@@ -236,6 +236,16 @@ every light type, parallel and cylinder sources included, and do not change betw
 batches. The split is fixed by the scene, not measured: earlier versions of method 2
 set it from the previous batch's hit rate, which starved targets that are hard to hit.
 
+A `union`, or any other CSG object, flagged with `photons { target W }` is one target
+of weight W, whether or not `split_union` splits it for bounding: the split members
+share one entry, aimed at the bounding sphere of the union's own box, so a split and an
+unsplit union get the same samples, photons and image.
+A target flag on a member inside a flagged union is replaced by the union's, as before.
+Members are separate targets only when the union itself is not flagged and they are.
+Earlier versions made each member of a split union its own target, so a four-blade
+clump took four shares where one was meant. Method 1 still shoots each split member
+separately.
+
 This is the opposite sense of method 1, where the number is a spacing multiplier and
 a smaller value means more photons (`target 0.5` halves the spacing). A scene written
 for one method needs its target numbers revisited for the other.
@@ -384,6 +394,7 @@ emitter, direct-light, volume, volume light-group, media-light, light-group, rad
 `tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with
 weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires the logged split to
 match the weights, the image to match across thread counts and its mean to stay within 3%,
+the blade clump to give the same split and image with `split_union` on as off,
 and negative, infinite and NaN weights to be rejected; the photon-file script also
 refuses a file saved with another target weight.
 
