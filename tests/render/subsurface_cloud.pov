@@ -1,4 +1,4 @@
-// Subsurface method 2 on one translucent object; each Case forces one reason the point cloud cannot serve it.
+// Subsurface method 2 on one translucent object; each Case was once a reason the point cloud could not serve it.
 // 0 closed box; 1 tiny spacing, 1 MB cap; 2 plane, wide spacing; 3 light group on part; 4 thin wall; 5 one cell over cap.
 #version 4.0;
 #ifndef (Case) #declare Case = 0; #end

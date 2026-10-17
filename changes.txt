@@ -362,6 +362,24 @@ New Features
     cloud's peak memory, points built and read and which rule set each
     cell's step, split fallbacks to method 1 by reason, and a warning names
     each reason that costs a noticeable share of the shading points.
+  - Subsurface method 2 no longer hands shading points to method 1. Union
+    inner surfaces and faces that touch, planes, light groups on part of an
+    object, parts with photons off, wide rings, sharp bends, creases, shadow
+    edges and the radiosity pretrace are all served by the cloud; light
+    reaching round a crease is weighed by its distance through the material,
+    and points are set at most three depths z_r apart where a long
+    diffusion would set them farther. A shading point the cloud cannot
+    serve gets no diffuse subsurface light, and a warning names its object.
+    Open skeins lose subsurface when parsed, like other sheets. Changes
+    images where method 2 used to fall back.
+  - Subsurface method 2 lights a hit whose ray weight is
+    below `global_settings { subsurface { bailout FLOAT } }` times
+    `adc_bailout` (8 by default, 0 for off) from its exit point alone, times
+    the diffusion profile's integral, without reading or building its point
+    cloud; such hits get no single scattering, photons or radiosity. Deep
+    mirror reflections and leaves seen through other leaves render faster
+    with changes of a few levels at most. `bailout` is matched by its text
+    and stays free; earlier versions and method 1 are unchanged.
   - Light sources take `photon_only`: the light shoots photons without
     lighting surfaces or media directly.
   - Anti-aliasing method 4 (`+AM4`, with `+PR`) spends a sample budget set

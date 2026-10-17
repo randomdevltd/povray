@@ -151,6 +151,17 @@ Trace::Trace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFl
 
 Trace::~Trace()
 {
+    FlushSubsurfaceCounts();
+}
+
+// Adds this thread's counts of shading points the subsurface cloud could not serve to the shared ones.
+void Trace::FlushSubsurfaceCounts()
+{
+    for (auto& entry : ssltUnserved)
+    {
+        *entry.second.shared += entry.second.pending;
+        entry.second.pending = 0;
+    }
 }
 
 namespace
@@ -1626,7 +1637,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     SubsurfaceLayers single;
                     single.Add(layer, layCol.colour(), MathColour(att));
                     if (single.Finish())
-                        ComputeSubsurfaceScattering(single, isect, ray, tmpCol);
+                        ComputeSubsurfaceScattering(single, isect, ray, weight, tmpCol);
                 }
                 else
                     subsurfaceLayers.Add(layer, layCol.colour(), filCol * att);
@@ -1826,7 +1837,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     }
 
     if (subsurfaceLayers.Finish())
-        ComputeSubsurfaceScattering(subsurfaceLayers, isect, ray, resultColour);
+        ComputeSubsurfaceScattering(subsurfaceLayers, isect, ray, weight, resultColour);
 
     // Calculate transmitted component.
     //
@@ -5349,20 +5360,33 @@ static const double kCloudCore = 0.5;
 static const double kCloudDisc = 1.5;
 static const double kCloudRing = 4.0;
 // Area-light points per cloud point; least cosine between the exit normal and a disc point's, a ring point's, and in
-// a group summed as one; spacings within which a point seen from behind hands over to method 1.
+// a group summed as one.
 static const int kCloudAreaPoints = 4;
 static const double kCloudFlat = 0.5;
 static const double kCloudFold = 0.0;
 static const double kCloudCone = 0.5;
-static const double kCloudCrease = 2.5;
+// Least |cosine| between planes that meet at a crease; spacings into a crease its inside test looks.
+static const double kCloudParallel = 0.999;
+static const double kCloudCreaseProbe = 0.25;
 // Most ring area, over a flat ring's, for a flat ring; visibilities this close agree.
 static const double kCloudDense = 1.33;
 static const float kCloudAgree = 0.02f;
 // Coarse clouds (doc/PERF.md): spacing over the larger of a pixel and z_r; how far an exit point's shadow may stray.
 static const double kCloudCoarse = 4.0;
 static const float kCloudStray = 0.25f;
+// Draws on the tangent disc where a shadow edge falls between coarse points.
+static const int kCloudNearSamples = 24;
+// How far past the tangent disc, over the distance to it, a near-field draw's ray from the base point looks for the surface.
+static const double kCloudNearReach = 4.0;
+// Points over which a cloud point's patch is averaged where the exit point is near it.
+static const int kCloudPatchPoints = 16;
 // Shares of the ring's window above which the surface is whole, and below which an edge is corrected for in full.
 static const double kCloudWhole = 0.95, kCloudEdge = 0.85;
+// Past this many reduced mean free paths deep, and this many diffusion lengths, a part is thick: its far face and the
+// light passing it cannot be told from a half-space's.
+static const double kThickPaths = 20.0, kThickLengths = 15.0;
+// Inner faces (a union's) a run through the material passes before it gives up.
+static const int kThinFaces = 4;
 
 static double CloudWindow(double distSqr, double radiusSqr)
 {
@@ -5752,44 +5776,54 @@ void Trace::SubsurfaceVisibility::Reset(size_t lights)
     lo.assign(n, FLT_MAX);
     mean.assign(n, 0.0f);
     hi.assign(n, -FLT_MAX);
+    counts.assign(n, 0);
     count = 0;
 }
 
+// A point's shadows; a light its part does not use (marked -1) is left out of that light's count.
 void Trace::SubsurfaceVisibility::Add(const float *visibility)
 {
     for (size_t k = 0; k < mean.size(); k++)
     {
+        if (visibility[k] < 0.0f)
+            continue;
         lo[k] = min(lo[k], visibility[k]);
         hi[k] = max(hi[k], visibility[k]);
         mean[k] += visibility[k];
+        counts[k]++;
     }
     count++;
 }
 
 void Trace::SubsurfaceVisibility::Finish()
 {
-    if (count > 0)
-        for (float& v : mean)
-            v /= float(count);
+    for (size_t k = 0; k < mean.size(); k++)
+        if (counts[k] > 0)
+            mean[k] /= float(counts[k]);
 }
 
 bool Trace::SubsurfaceVisibility::Agrees(int light) const
 {
-    if (count == 0)
-        return false;
     for (int k = light * MathColour::channels; k < (light + 1) * MathColour::channels; k++)
-        if (hi[k] - lo[k] > kCloudAgree)
+        if ((counts[k] == 0) || (hi[k] - lo[k] > kCloudAgree))
             return false;
     return true;
 }
 
 // Light entering the surface at point: each light's colour, shadow, cosine and Fresnel transmittance; see doc/PERF.md.
 MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
-                                             int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key)
+                                             int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
+                                             const char* uses)
 {
     MathColour irradiance;
     for (int l = 0; l < lights.size(); l++)
     {
+        if ((uses != nullptr) && !uses[l])
+        {
+            for (int j = 0; (visibility != nullptr) && (j < MathColour::channels); j++)
+                visibility[l * MathColour::channels + j] = -1.0f;
+            continue;
+        }
         const LightSource& lightsource = *lights[l];
         bool sampled = (areaShift != nullptr) && lightsource.Area_Light && qualityFlags.areaLights;
         int points = sampled ? areaPoints : 1;
@@ -5828,13 +5862,14 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
                                              TraceTicket& ticket, std::uint64_t key)
 {
     MathColour irradiance;
-    size_t count = cloud.lights.size();
-    cloud.exitMismatch = false;
+    size_t count = cloud.exitSlot.size();
     cloud.exitLight.assign(count, MathColour());
     cloud.exitDirection.assign(count, Vector3d());
     cloud.exitAgreed.assign(count, 1);
-    for (int l = 0; l < count; l++)
+    cloud.exitStray.assign(count, 0);
+    for (int i = 0; i < count; i++)
     {
+        int l = cloud.exitSlot[i];
         const LightSource& lightsource = *cloud.lights[l];
         Ray lightsourceray(ticket);
         double lightsourcedepth;
@@ -5842,7 +5877,9 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
         ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, out.IPoint, lightcolour, true);
         if (lightcolour.IsNearZero(EPSILON))
             continue;
-        cloud.exitDirection[l] = lightsourceray.Direction;
+        cloud.exitDirection[i] = lightsourceray.Direction;
+        double cos_in = fabs(dot(out.INormal, lightsourceray.Direction));
+        float lit = (cos_in >= EPSILON) ? float(cos_in * ComputeFt(min(cos_in, 1.0), cloud.eta)) : 0.0f;
         if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
         {
             if (disc.Agrees(l) && !coarse)
@@ -5852,18 +5889,104 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
                 MathColour unshadowed = lightcolour;
                 lightsourceray.SetKey(key);
                 TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, out.IPoint, lightcolour, nullptr);
-                cloud.exitAgreed[l] = cloud.local;
-                for (int j = 0; coarse && (j < MathColour::channels); j++)
+                cloud.exitAgreed[i] = cloud.local;
+                for (int j = 0; coarse && (disc.count > 0) && (j < MathColour::channels); j++)
                     if ((fabs(unshadowed[j]) > EPSILON) && (fabs(lightcolour[j] / unshadowed[j] - disc.mean[l * MathColour::channels + j]) > kCloudStray))
-                        cloud.exitMismatch = true;
+                        cloud.exitStray[i] = 1;
             }
         }
-        cloud.exitLight[l] = lightcolour;
-        double cos_in = fabs(dot(out.INormal, lightsourceray.Direction));
-        if (cos_in >= EPSILON)
-            irradiance += lightcolour * float(cos_in * ComputeFt(min(cos_in, 1.0), cloud.eta));
+        cloud.exitLight[i] = lightcolour;
+        irradiance += lightcolour * lit;
     }
     return irradiance;
+}
+
+// The surface's own normal at a hit with this shading normal: on a smooth mesh triangle its face's, not the interpolated one.
+static Vector3d SubsurfaceGeometricNormal(const Intersection& hit, const Vector3d& shading)
+{
+    const Mesh* mesh = dynamic_cast<const Mesh*>(hit.Object);
+    const MESH_TRIANGLE* triangle = static_cast<const MESH_TRIANGLE*>(hit.Pointer);
+    if ((mesh == nullptr) || (triangle == nullptr) || !triangle->Smooth())
+        return shading;
+    Vector3d normal = mesh->Face_Normal(triangle);
+    if (mesh->Trans != nullptr)
+        MTransNormal(normal, normal, mesh->Trans);
+    return normal;
+}
+
+// On a coarse cloud, the profile times the light entering within radius (mm) of the exit point, drawn by the profile's near
+// field on the tangent disc and found on the surface by rays from the base point; see doc/PERF.md.
+PreciseMathColour Trace::ComputeCloudNearField(const Intersection& out, const Vector3d& base, const Vector3d& n, SubsurfaceCloud& cloud,
+                                               const SubsurfaceProfile& profile, double radius, TraceTicket& ticket, std::uint64_t key)
+{
+    double mm = sceneData->mmPerUnit;
+    const Vector3d& x = out.IPoint;
+    double zr = (profile.z_r[0] + profile.z_r[1] + profile.z_r[2]) / 3.0;
+    double norm = 1.0 / zr - 1.0 / sqrt(Sqr(zr) + Sqr(radius));
+    Vector3d t1, t2;
+    ComputeSurfaceTangents(n, t1, t2);
+    PreciseMathColour total;
+    std::vector<Intersection>& hits = ssltScratchHits;
+    Vector2d areaShift(Draw(key, kDrawSubsurface, 0), Draw(key, kDrawSubsurface, 1));
+    double shiftR = Draw(key, kDrawSubsurface, 2), shiftTheta = Draw(key, kDrawSubsurface, 3);
+    for (int k = 0; k < kCloudNearSamples; k++)
+    {
+        // A shifted Fibonacci lattice: radii by r / (z_r^2 + r^2)^1.5 (the profile's near field), angles by the golden ratio.
+        double u = (k + shiftR) / kCloudNearSamples;
+        double r = sqrt(max(0.0, Sqr(1.0 / (1.0 / zr - u * norm)) - Sqr(zr)));
+        double theta = 2.0 * M_PI * (k * 0.6180339887498949 + shiftTheta);
+        Vector3d onPlane = x + (t1 * cos(theta) + t2 * sin(theta)) * (r / mm);
+        Vector3d dir = onPlane - base;
+        double toPlane = dir.length();
+        if (!(toPlane > 0.0))
+            continue;
+        dir /= toPlane;
+        hits.clear();
+        CollectCrossings(cloud.object, base, dir, 0.0, kCloudNearReach * toPlane, hits, ticket);
+        Intersection *nearest = nullptr;
+        for (Intersection& hit : hits)
+            if ((hit.Depth > 0.0) && ((nearest == nullptr) || (hit.Depth < nearest->Depth)))
+                nearest = &hit;
+        double cosPlane = fabs(dot(dir, n));
+        if ((nearest == nullptr) || !(cosPlane > EPSILON))
+            continue;
+        ComputeSSLTNormal(*nearest);
+        Vector3d nq = nearest->INormal.normalized(), face = SubsurfaceGeometricNormal(*nearest, nq).normalized();
+        if (dot(face, dir) < 0.0)
+            face.invert();
+        if (dot(nq, face) < 0.0)
+            nq.invert();
+        double cosHit = dot(face, dir);
+        if (!(cosHit > EPSILON))
+            continue;
+        // The draw's density on the disc, carried to the surface through the solid angle the ray stands for.
+        double perArea = cosHit * Sqr(toPlane) / (cosPlane * Sqr(nearest->Depth)) / (2.0 * M_PI * norm * pow(Sqr(zr) + Sqr(r), 1.5));
+        auto set = cloud.parts->setOf.find(nearest->Object);
+        const std::vector<char>& uses = cloud.parts->sets[(set != cloud.parts->setOf.end()) ? set->second : 0];
+        Vector2d shift(areaShift[U] + k * 0.7548776662466927, areaShift[V] + k * 0.5698402909980532);
+        MathColour irradiance = ComputeSubsurfaceIrradiance(nearest->IPoint, nq, cloud.lights, cloud.eta, 1, &shift, nullptr, ticket,
+                                                            DeriveKey(key, kDrawSubsurface, 16 + k), uses.data());
+        threadData->Stats()[Subsurface_Cloud_Near_Rays] += std::count(uses.begin(), uses.end(), 1);
+        double distSqr = (x - nearest->IPoint).lengthSqr() * Sqr(mm);
+        PreciseMathColour rd = profile.Rd(distSqr);
+        if (ssltThin.active)
+            ssltThin.Apply(rd, distSqr, 0);
+        for (int j = 0; j < MathColour::channels; j++)
+            total[j] += rd[j] * irradiance[j] / perArea;
+    }
+    return total / double(kCloudNearSamples);
+}
+
+// Photons entering at the exit point (normal n, pointing out), where no points near carry them.
+MathColour Trace::ComputeCloudExitPhotons(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket)
+{
+    if (Test_Flag(out.Object, PH_IGNORE_PHOTONS_FLAG))
+        return MathColour();
+    std::unique_ptr<PhotonGatherer>& gatherer = ssltPhotonGatherers[ticket.subsurfaceRecursionDepth - 1];
+    if (!gatherer)
+        gatherer.reset(new PhotonGatherer(&sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap, sceneData->photonSettings));
+    gatherer->map = &sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap;
+    return ComputeSubsurfacePhotonIrradiance(out.IPoint, n, cloud.eta, cloud.object, *gatherer, ticket, true);
 }
 
 // The radiosity cache's light entering at the exit point (normal n, pointing out) for a cloud that carries it.
@@ -5896,23 +6019,6 @@ bool Trace::SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId prep
 {
     return sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
            (sceneData->GetPreparedSet(preparedSetId).surfacePhotonMap.numPhotons > 0) && !Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG);
-}
-
-bool Trace::UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const
-{
-    if ((Test_Flag(receiver, PH_IGNORE_PHOTONS_FLAG) != Test_Flag(root, PH_IGNORE_PHOTONS_FLAG)) ||
-        (Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG) != Test_Flag(root, NO_GLOBAL_LIGHTS_FLAG)) || (receiver->LLights != root->LLights))
-        return false;
-    if (receiver->interior != root->interior)
-        return false;
-    if (const Mesh* mesh = dynamic_cast<const Mesh*>(receiver))
-        if (mesh->Data->Normals != nullptr)
-            return false;
-    if (receiver->Type & IS_COMPOUND_OBJECT)
-        for (ObjectPtr child : static_cast<const CSG*>(receiver)->children)
-            if (!UniformSubsurfacePhotonReceiver(child, root))
-                return false;
-    return true;
 }
 
 struct SubsurfacePhotonBoundaryProbe final
@@ -6316,13 +6422,68 @@ static uint64_t CloudSeed(const SubsurfaceCellKey& key, int stage, int job)
 }
 
 static const int kCloudPointsPerJob = 256;
-// Cells a gather may span along an axis, once clipped to the object's bounds, and along an axis it is unbounded.
-static const double kCloudGatherSpan = 32.0, kCloudUnboundedSpan = 8.0;
+// Times a cell's size may be quadrupled for a ring wider than it; reach, in z_r, of diffusion that never fades on an
+// unbounded object.
+static const int kCloudLifts = 4;
+static const double kCloudUnfadingReach = 1000.0;
+// Shading points a thread leaves unserved before it adds them to the shared count.
+static const std::uint64_t kCloudUnservedBatch = 256;
+// Most depths z_r a cell's diffusion-set step may span.
+static const double kCloudDepthSteps = 3.0;
 // The finest spacing, in cell sides. Least cosine between the view and an axis that sparser lines along it allow for.
 static const double kCloudFinest = 1.0 / 1024.0;
 static const double kCloudOblique = 1.0 / 4.0;
 // Lines across an object's longest side at least, so that one small beside a long diffusion reach is not left a few points.
 static const double kCloudObjectLines = 32.0;
+
+// A cell's step between points on surfaces facing each axis, and the rule that set the finest; floored when the finest
+// floor overrode a step capped by depth.
+void Trace::SubsurfaceCellSteps(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, double step[3], SubsurfaceStepTerm& finestTerm, bool& floored)
+{
+    double size = ldexp(1.0, key.sizeLevel);
+    Vector3d lo = Vector3d(key.x, key.y, key.z) * size;
+    Vector3d hi = lo + Vector3d(size);
+    const BoundingBox& box = cloud.object->BBox;
+    // Points need be no closer than about a pixel where the cell's part of the object comes nearest the camera;
+    // lines along an axis the camera looks across may be sparser, as surfaces facing it are seen obliquely.
+    Vector3d toward;
+    for (int a = 0; a < 3; a++)
+    {
+        double from = max(lo[a], double(box.lowerLeft[a])), to = min(hi[a], double(box.lowerLeft[a] + box.size[a]));
+        toward[a] = max(0.0, max(from - ssltCameraLocation[a], ssltCameraLocation[a] - to));
+    }
+    double nearest = toward.length();
+    double longest = 0.0;
+    for (int a = 0; a < 3; a++)
+        if (box.size[a] < BOUND_HUGE / 4)
+            longest = max(longest, double(box.size[a]));
+    double finestStep = HUGE_VAL;
+    floored = false;
+    for (int a = 0; a < 3; a++)
+    {
+        double facing = ((nearest > 0.0) && (ssltPixelAngle > 0.0)) ? max(toward[a] / nearest, kCloudOblique) : 1.0;
+        double pixel = (ssltPixelSize + nearest * ssltPixelAngle) / sqrt(facing);
+        double diffusion = (key.depthLevel == kCloudNoDepthLevel) ? size / kCloudCellSpacings : ldexp(1.0, key.depthLevel);
+        double s = max(diffusion, pixel) * sceneData->subsurfaceSpacing;
+        SubsurfaceStepTerm term = (pixel > diffusion) ? kStepPixel : kStepDiffusion;
+        if ((longest > 0.0) && (longest / kCloudObjectLines * sceneData->subsurfaceSpacing < s))
+        {
+            s = longest / kCloudObjectLines * sceneData->subsurfaceSpacing;
+            term = kStepObject;
+        }
+        if (size * kCloudFinest > s)
+        {
+            floored = floored || (key.depthLevel != kCloudNoDepthLevel);
+            term = kStepFinest;
+        }
+        step[a] = max(s, size * kCloudFinest);
+        if (step[a] < finestStep)
+        {
+            finestStep = step[a];
+            finestTerm = term;
+        }
+    }
+}
 
 // Points on the object inside one cell, where lines along the axes cross it, each lit by every light. The caller builds
 // it; other threads that need it meanwhile help with its jobs.
@@ -6338,42 +6499,15 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
         for (int a = 0; a < 3; a++)
             empty = empty || (box.lowerLeft[a] > hi[a]) || (box.lowerLeft[a] + box.size[a] < lo[a]);
 
-        // Points need be no closer than about a pixel where the cell's part of the object comes nearest the camera;
-        // lines along an axis the camera looks across may be sparser, as surfaces facing it are seen obliquely.
-        Vector3d toward;
-        for (int a = 0; a < 3; a++)
-        {
-            double from = max(lo[a], double(box.lowerLeft[a])), to = min(hi[a], double(box.lowerLeft[a] + box.size[a]));
-            toward[a] = max(0.0, max(from - ssltCameraLocation[a], ssltCameraLocation[a] - to));
-        }
-        double nearest = toward.length();
-        double longest = 0.0;
-        for (int a = 0; a < 3; a++)
-            if (box.size[a] < BOUND_HUGE / 4)
-                longest = max(longest, double(box.size[a]));
         {
             std::lock_guard<std::mutex> lock(cell.mutex);
+            bool floored;
+            SubsurfaceCellSteps(cloud, key, cell.step, cell.term, floored);
+            if (floored)
+                threadData->Stats()[Subsurface_Cloud_Depth_Floor]++;
             cell.jobs = 0;
-            double finestStep = HUGE_VAL;
             for (int a = 0; a < 3; a++)
             {
-                double facing = ((nearest > 0.0) && (ssltPixelAngle > 0.0)) ? max(toward[a] / nearest, kCloudOblique) : 1.0;
-                double pixel = (ssltPixelSize + nearest * ssltPixelAngle) / sqrt(facing);
-                double step = max(size / kCloudCellSpacings, pixel) * sceneData->subsurfaceSpacing;
-                SubsurfaceStepTerm term = (pixel > size / kCloudCellSpacings) ? kStepPixel : kStepDiffusion;
-                if ((longest > 0.0) && (longest / kCloudObjectLines * sceneData->subsurfaceSpacing < step))
-                {
-                    step = longest / kCloudObjectLines * sceneData->subsurfaceSpacing;
-                    term = kStepObject;
-                }
-                if (size * kCloudFinest > step)
-                    term = kStepFinest;
-                cell.step[a] = max(step, size * kCloudFinest);
-                if (cell.step[a] < finestStep)
-                {
-                    finestStep = cell.step[a];
-                    cell.term = term;
-                }
                 cell.steps[a] = empty ? 0 : max(1, int(ceil(size / (cell.step[a] * sqrt(1.5)))));
                 cell.jobs += cell.steps[a];
             }
@@ -6382,10 +6516,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
         cell.changed.notify_all();
         WorkOnSubsurfaceCell(cloud, key, cell, true);
         threadData->subsurfaceCache->CheckCap();
-
         size_t count = cell.found;
-        cell.failure = (cell.unoriented * 16 > count) ? kCloudUnoriented : kCloudServed;
-        bool usable = !cell.failed && (cell.failure == kCloudServed);
+        bool usable = !cell.failed;
         if (usable)
         {
             cell.points.reserve(count);
@@ -6444,8 +6576,6 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
         }
         cell.usable = usable;
         cell.stage = SubsurfaceCell::kReady;
-        if (!usable && (cell.failure == kCloudServed))
-            cell.failure = kCloudOther;
         if (!usable)
             threadData->subsurfaceCache->Refund(cell);
     }
@@ -6520,8 +6650,8 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     double h = size / steps;
     Vector3d lo = Vector3d(key.x, key.y, key.z) * size;
     double start = lo[a] - h;
-    // Normals point out of the object where a step along them leaves it; a crossing that cannot tell is dropped. The
-    // step shrinks to a quarter of the wall between a crossing and its neighbours, so thin walls are still told apart.
+    // Normals point out of the object where a step along them leaves it; the step shrinks to a quarter of the wall between
+    // a crossing and its neighbours. Inside on both sides, outside on both, or under the floor, a crossing is dropped.
     const double probeMax = 0.05 * h;
     const double probeMin = max(1e-6, 1e-4 * h);
     const double depth = (cloud.flesh != nullptr) && (cloud.flesh->fleshAtDepth || cloud.flesh->emissionAtDepth) ? cloud.flesh->depth : 0.0;
@@ -6544,17 +6674,23 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
         crossings.clear();
         CollectCrossings(cloud.object, origin, dir, h, h + size, crossings, ticket);
         std::sort(crossings.begin(), crossings.end(), [](const Intersection& p, const Intersection& q) { return p.Depth < q.Depth; });
-        size_t kept = 0, dropped = 0;
+        size_t kept = 0;
         for (size_t c = 0; c < crossings.size(); c++)
         {
             Intersection& in = crossings[c];
             if (!(in.Depth < h + size))
                 continue;
+            if (cloud.parts->sheets.count(in.Object) != 0)
+            {
+                threadData->Stats()[Subsurface_Cloud_Dropped_Sheet]++;
+                continue;
+            }
             ComputeSSLTNormal(in);
-            double length = in.INormal.length();
+            Vector3d face = SubsurfaceGeometricNormal(in, in.INormal), shading = in.INormal.normalized();
+            double length = face.length();
             if (!(length > 0.0) || !(length < HUGE_VAL))
                 continue;
-            Vector3d n = in.INormal / length;
+            Vector3d n = face / length;
             double gap = HUGE_VAL;
             if (c > 0)
                 gap = min(gap, in.Depth - crossings[c - 1].Depth);
@@ -6565,7 +6701,8 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             bool behind = (probe >= probeMin) && cloud.object->Inside(in.IPoint - n * probe, threadData);
             if (ahead == behind)
             {
-                dropped++;
+                threadData->Stats()[(probe < probeMin) ? Subsurface_Cloud_Dropped_Thin : ahead ? Subsurface_Cloud_Dropped_Inside
+                                                                                             : Subsurface_Cloud_Dropped_Outside]++;
                 continue;
             }
             if (ahead)
@@ -6580,25 +6717,25 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             point.position = in.IPoint;
             for (int k = 0; k < 3; k++)
                 point.normal[k] = float(n[k]);
-            for (int k = 0; k < MathColour::channels; k++)
-                point.irradiance[k] = 0.0f;
+            for (int k = 0; k < 3; k++)
+                point.irradiance[k] = float(shading[k]);
             double density = 0.0;
             for (int b = 0; b < 3; b++)
                 density += fabs(n[b]) * Sqr(cell.steps[b] / size);
             point.area = float(Sqr(mm) / density);
-            point.id = 0;
+            auto set = cloud.parts->setOf.find(in.Object);
+            point.id = unsigned(((set != cloud.parts->setOf.end()) ? set->second : 0) * 2 + (Test_Flag(in.Object, PH_IGNORE_PHOTONS_FLAG) ? 0 : 1));
             point.axis = a;
             row.push_back(point);
             kept++;
         }
-        if (kept + dropped == 0)
+        if (kept == 0)
             continue;
         if (row.capacity() > capacity)
             threadData->subsurfaceCache->Stage(cell, (row.capacity() - capacity) * sizeof(SubsurfacePoint));
         capacity = row.capacity();
         std::lock_guard<std::mutex> lock(cell.mutex);
         cell.found += kept;
-        cell.unoriented += dropped;
         if (!threadData->subsurfaceCache->CellFits(cell.found * sizeof(SubsurfacePoint)))
             cell.failed = true;
     }
@@ -6630,11 +6767,14 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
     {
         SubsurfacePoint& point = cell.points[k];
         Vector3d normal(point.normal[0], point.normal[1], point.normal[2]);
+        Vector3d shading(point.irradiance[0], point.irradiance[1], point.irradiance[2]);
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
-        MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, normal, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
-                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k));
+        const std::vector<char>& uses = cloud.parts->sets[min(size_t(point.id / 2), cloud.parts->sets.size() - 1)];
+        bool collects = (point.id % 2 != 0);
+        MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, shading, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
+                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k), uses.data());
         MathColour photonEntry;
-        if (gatherer)
+        if (gatherer && collects)
         {
             photonEntry = ComputeSubsurfacePhotonIrradiance(point.position, normal, cloud.eta, cloud.object, *gatherer, ticket, true);
             irradiance += photonEntry;
@@ -6724,31 +6864,168 @@ void Trace::CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vec
     }
 }
 
-// Fixes the object's cloud and collects the cells within reach of the exit point; false where no cloud can serve.
+// The lights of each part of a subsurface object, numbered in the order a walk of its parts meets them.
+const Trace::SubsurfaceParts& Trace::FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId)
+{
+    SubsurfaceParts& parts = ssltParts[std::make_pair((const void*)object, preparedSetId)];
+    if (!parts.sets.empty())
+        return parts;
+    // A disc cutting an intersection or difference is a half-space there, not a sheet.
+    std::vector<ConstObjectPtr> leaves;
+    std::vector<char> cutters;
+    std::vector<std::pair<ConstObjectPtr, bool>> stack(1, std::make_pair(ConstObjectPtr(object), false));
+    while (!stack.empty())
+    {
+        ConstObjectPtr part = stack.back().first;
+        bool cutter = stack.back().second;
+        stack.pop_back();
+        if (part->Type & IS_COMPOUND_OBJECT)
+        {
+            bool cuts = cutter || (dynamic_cast<const CSGIntersection*>(part) != nullptr);
+            const std::vector<ObjectPtr>& children = static_cast<const CSG*>(part)->children;
+            for (auto child = children.rbegin(); child != children.rend(); ++child)
+                stack.push_back(std::make_pair(ConstObjectPtr(*child), cuts));
+        }
+        else
+        {
+            leaves.push_back(part);
+            cutters.push_back(cutter);
+        }
+    }
+    std::vector<std::vector<const LightSource*>> each(leaves.size());
+    for (size_t i = 0; i < leaves.size(); i++)
+    {
+        CollectSubsurfaceLights(leaves[i], each[i], preparedSetId);
+        for (const LightSource *light : each[i])
+            if (std::find(parts.lights.begin(), parts.lights.end(), light) == parts.lights.end())
+                parts.lights.push_back(light);
+        parts.anyCollects = parts.anyCollects || !Test_Flag(leaves[i], PH_IGNORE_PHOTONS_FLAG);
+        if (SubsurfaceSheet(leaves[i], cutters[i]))
+            parts.sheets.insert(leaves[i]);
+    }
+    for (size_t i = 0; i < leaves.size(); i++)
+    {
+        std::vector<char> mask(parts.lights.size(), 0);
+        for (const LightSource *light : each[i])
+            mask[std::find(parts.lights.begin(), parts.lights.end(), light) - parts.lights.begin()] = 1;
+        auto found = std::find(parts.sets.begin(), parts.sets.end(), mask);
+        parts.setOf[leaves[i]] = int(found - parts.sets.begin());
+        if (found == parts.sets.end())
+            parts.sets.push_back(mask);
+    }
+    if (parts.sets.empty())
+        parts.sets.push_back(std::vector<char>(parts.lights.size(), 1));
+    return parts;
+}
+
+// An object for a message: its shape, its first tag if it has one, and the centre of its bounds.
+std::string Trace::DescribeSubsurfaceObject(ConstObjectPtr object)
+{
+    const BoundingBox& box = object->BBox;
+    char text[200];
+    std::snprintf(text, sizeof(text), "%s%s%s at <%.4g, %.4g, %.4g>", ShapeName(object), object->tags.empty() ? "" : " tagged ",
+                  object->tags.empty() ? "" : object->tags[0].c_str(), box.lowerLeft[X] + 0.5 * box.size[X], box.lowerLeft[Y] + 0.5 * box.size[Y],
+                  box.lowerLeft[Z] + 0.5 * box.size[Z]);
+    return text;
+}
+
+// A part with no inside for light to diffuse through: a disc, unless it cuts an intersection or difference, or a mesh with
+// an inside_vector whose triangles leave a border open.
+bool Trace::SubsurfaceSheet(ConstObjectPtr part, bool cutter)
+{
+    if (dynamic_cast<const Disc*>(part) != nullptr)
+        return !cutter;
+    const Mesh *mesh = dynamic_cast<const Mesh*>(part);
+    if ((mesh == nullptr) || !mesh->has_inside_vector)
+        return false;
+    mesh->Resolve();
+    const MESH_DATA *data = mesh->Data;
+    return !threadData->subsurfaceCache->ClosedMesh(data, [data]()
+    {
+        // Vertices are welded by position, as exporters repeat them per face; touching shells share an edge four times.
+        std::unordered_map<std::uint64_t, std::uint32_t> welded;
+        std::vector<std::uint32_t> weld(data->Number_Of_Vertices);
+        for (MeshIndex v = 0; v < data->Number_Of_Vertices; v++)
+        {
+            const MeshVector& at = data->Vertices[v];
+            std::uint32_t bits[3];
+            for (int a = 0; a < 3; a++)
+            {
+                float f = float(at[a]) + 0.0f;
+                std::memcpy(&bits[a], &f, sizeof(f));
+            }
+            std::uint64_t hash = (std::uint64_t(bits[0]) * 0x9E3779B97F4A7C15ull) ^ (std::uint64_t(bits[1]) * 0xC2B2AE3D27D4EB4Full) ^
+                                 (std::uint64_t(bits[2]) * 0x165667B19E3779F9ull);
+            for (;; hash++)
+            {
+                auto found = welded.find(hash);
+                if (found == welded.end())
+                {
+                    weld[v] = welded[hash] = std::uint32_t(v);
+                    break;
+                }
+                const MeshVector& other = data->Vertices[found->second];
+                if ((float(other[X]) == float(at[X])) && (float(other[Y]) == float(at[Y])) && (float(other[Z]) == float(at[Z])))
+                {
+                    weld[v] = found->second;
+                    break;
+                }
+            }
+        }
+        std::unordered_map<std::uint64_t, int> edges;
+        for (MeshIndex i = 0; i < data->Number_Of_Triangles; i++)
+            for (int k = 0; k < 3; k++)
+            {
+                std::uint64_t a = weld[data->Triangles[i].P(k)], b = weld[data->Triangles[i].P((k + 1) % 3)];
+                if (a != b)
+                    edges[(min(a, b) << 32) | max(a, b)]++;
+            }
+        for (const auto& edge : edges)
+            if (edge.second % 2 != 0)
+                return false;
+        return !edges.empty();
+    });
+}
+
+// Fixes the object's cloud and collects the cells within reach of the exit point; see doc/PERF.md.
 bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const SubsurfaceProfile& profile,
                                 const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud)
 {
     cloud.object = SubsurfaceObject(out);
     cloud.preparedSetId = eye.GetPreparedSetId();
     cloud.edge = false;
-    cloud.failure = kCloudOther;
-    if (cloud.photons && !UniformSubsurfacePhotonReceiver(cloud.object, cloud.object))
+    // Each point is lit by its own part's lights, and takes photons if its part collects them.
+    cloud.parts = &FindSubsurfaceParts(cloud.object, eye.GetPreparedSetId());
+    cloud.unserved = kUnservedSheet;
+    if (cloud.parts->sheets.count(out.Object) != 0)
         return false;
-    if (cloud.object->interior == nullptr)
-        return false;
-    // Cloud points hold a shadow per light of the whole object, which a part in a light group of its own cannot use.
-    CollectSubsurfaceLights(cloud.object, cloud.lights, eye.GetPreparedSetId());
-    if (cloud.lights != lights)
+    cloud.lights = cloud.parts->lights;
+    cloud.exitSlot.clear();
+    for (const LightSource *light : lights)
     {
-        cloud.failure = kCloudLights;
-        return false;
+        auto found = std::find(cloud.lights.begin(), cloud.lights.end(), light);
+        cloud.exitSlot.push_back((found != cloud.lights.end()) ? int(found - cloud.lights.begin()) : -1);
     }
+    cloud.unserved = kUnservedLights;
+    if (std::find(cloud.exitSlot.begin(), cloud.exitSlot.end(), -1) != cloud.exitSlot.end())
+        return false;
+    cloud.photons = cloud.parts->anyCollects && sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
+                    (sceneData->GetPreparedSet(eye.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0);
     double mm = sceneData->mmPerUnit;
     double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
-    if (!(sigmaMin > 0.0))
+    double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
+    // The reach stops at the object's bounds' diagonal, or on an unbounded object far against z_r, which also bounds
+    // diffusion that never fades (no absorption).
+    const BoundingBox& box = cloud.object->BBox;
+    double diagonal = 0.0;
+    for (int a = 0; a < 3; a++)
+        diagonal = (box.size[a] < BOUND_HUGE / 4) ? diagonal + Sqr(double(box.size[a])) : HUGE_VAL;
+    cloud.reach = min((sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL, (diagonal < HUGE_VAL) ? sqrt(diagonal) * mm : kCloudUnfadingReach * zr);
+    cloud.unserved = kUnservedReach;
+    if (!(cloud.reach > 0.0) || !std::isfinite(cloud.reach))
         return false;
-    cloud.reach = kCloudReach / sigmaMin;
-    cloud.eta = cloud.object->interior->IOR / sceneData->atmosphereIOR;
+    cloud.unserved = kUnservedCoordinates;
+    cloud.eta = out.Object->interior->IOR / sceneData->atmosphereIOR;
     if (!ssltCameraKnown)
         ssltCameraKnown = threadData->subsurfaceCache->GetCamera(ssltCameraLocation, ssltPixelSize, ssltPixelAngle);
 
@@ -6760,95 +7037,105 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     else
         footprint = ssltPixelSize + (out.IPoint - ssltCameraLocation).length() * ssltPixelAngle;
     cloud.footprint = footprint * mm;
-    cloud.local = (1.0 / sigmaMin / mm < footprint);
+    cloud.local = !cloud.photons && (sigmaMin > 0.0) && (1.0 / sigmaMin / mm < footprint);
     if (cloud.local)
-    {
-        cloud.failure = cloud.photons ? kCloudOther : kCloudServed;
-        return !cloud.photons;
-    }
+        return true;
 
-    // Cells are a power of four in size, at least the diffusion's reach, so a texture that varies it uses few sizes.
+    // Cells are a power of four in size, at least the diffusion's reach and the ring, so a gather spans at most three along
+    // an axis, and a texture that varies the diffusion uses few sizes.
+    Vector3d normal = SubsurfaceGeometricNormal(out, out.INormal).normalized();
     cloud.sizeLevel = 2 * int(ceil(0.5 * log2(cloud.reach / mm)));
-    cloud.size = ldexp(1.0, cloud.sizeLevel);
-    // An unbounded object (a plane) gets no coarse cells, which would reach the horizon and spend the point budget.
-    const BoundingBox& box = cloud.object->BBox;
-    bool unbounded = false;
-    for (int a = 0; a < 3; a++)
-        unbounded = unbounded || (box.size[a] >= BOUND_HUGE / 4);
-    double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
-    double finest = cloud.size / kCloudCellSpacings * sceneData->subsurfaceSpacing * mm;
-    if (unbounded && (finest > kCloudCoarse * max(zr, cloud.footprint)))
+    for (int lift = 0; ; lift++)
     {
-        cloud.failure = kCloudUnbounded;
-        return false;
-    }
-    if (!GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm))
-        return false;
-    const SubsurfaceCell *here = FindSubsurfaceCell(cloud, out.IPoint);
-    if (here == nullptr)
-    {
-        cloud.failure = kCloudMissing;
-        return false;
-    }
-    cloud.failure = kCloudServed;
-    // The disc and ring are sized by the coarsest cell they reach, so that each holds enough of its points.
-    Vector3d normal = out.INormal.normalized();
-    cloud.spacing = here->Spacing(normal);
-    for (int pass = 0; pass < 2; pass++)
-    {
-        double ringSqr = Sqr(kCloudRing * cloud.spacing);
-        for (int i = 0; i < cloud.cells.size(); i++)
+        cloud.size = ldexp(1.0, cloud.sizeLevel);
+        // Points no farther apart than a few depths z_r, at a power of two so that a texture that varies z_r uses few steps;
+        // farther apart, they could not place a shadow edge or the edge of a surface near the exit point.
+        double depthStep = kCloudDepthSteps * zr / mm;
+        cloud.depthLevel = (cloud.size / kCloudCellSpacings > depthStep) ? int(floor(log2(depthStep))) : kCloudNoDepthLevel;
+        // A ring the exit point's cell or a neighbour would make wider than a cell raises its size before any is built.
+        if (lift < kCloudLifts)
         {
-            double distSqr = 0.0;
-            for (int a = 0; a < 3; a++)
+            double spacing = 0.0;
+            for (int k = 0; k < 27; k++)
             {
-                double lo = cloud.coords[i][a] * cloud.size;
-                distSqr += Sqr(max(0.0, max(lo - out.IPoint[a], out.IPoint[a] - lo - cloud.size)));
+                SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(floor(out.IPoint[X] / cloud.size)) + k % 3 - 1,
+                                          std::int64_t(floor(out.IPoint[Y] / cloud.size)) + (k / 3) % 3 - 1,
+                                          std::int64_t(floor(out.IPoint[Z] / cloud.size)) + k / 9 - 1,
+                                          cloud.photons, cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel };
+                double step[3];
+                SubsurfaceStepTerm term;
+                bool floored;
+                SubsurfaceCellSteps(cloud, key, step, term, floored);
+                spacing = max(spacing, SubsurfaceSpacing(step, normal));
             }
-            if (distSqr < ringSqr)
-                cloud.spacing = max(cloud.spacing, cloud.cells[i]->Spacing(normal));
+            if (kCloudRing * spacing > cloud.size)
+            {
+                threadData->Stats()[Subsurface_Cloud_Lifted]++;
+                cloud.sizeLevel += 2;
+                continue;
+            }
         }
+        if (!GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm))
+            return false;
+        // Where no cell near holds points (parts thinner than the probes can tell apart), all is lit as the exit point.
+        const SubsurfaceCell *here = FindSubsurfaceCell(cloud, out.IPoint, true);
+        if (here == nullptr)
+        {
+            threadData->Stats()[Subsurface_Cloud_Alone]++;
+            cloud.local = true;
+            return true;
+        }
+        // The disc and ring are sized by the coarsest cell they reach, so that each holds enough of its points.
+        cloud.spacing = here->Spacing(normal);
+        for (int pass = 0; pass < 2; pass++)
+        {
+            double ringSqr = Sqr(kCloudRing * cloud.spacing);
+            for (int i = 0; i < cloud.cells.size(); i++)
+            {
+                double distSqr = 0.0;
+                for (int a = 0; a < 3; a++)
+                {
+                    double lo = cloud.coords[i][a] * cloud.size;
+                    distSqr += Sqr(max(0.0, max(lo - out.IPoint[a], out.IPoint[a] - lo - cloud.size)));
+                }
+                if (distSqr < ringSqr)
+                    cloud.spacing = max(cloud.spacing, cloud.cells[i]->Spacing(normal));
+            }
+        }
+        // The ring must lie within reach, for its points to be counted.
+        double ring = kCloudRing * cloud.spacing;
+        if (ring * mm <= cloud.reach)
+            return true;
+        cloud.reach = ring * mm;
+        return GatherSubsurfaceCells(cloud, out.IPoint, ring);
     }
-    // The ring must lie within reach, for its points to be counted.
-    double ring = kCloudRing * cloud.spacing * mm;
-    if (ring > cloud.reach)
-    {
-        cloud.reach = ring;
-        return GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm);
-    }
-    return true;
 }
 
-// The cells of the cloud that a sphere touches, built as needed.
+// The cells of the cloud that a sphere touches, built as needed; the radius is at most a cell's side.
 bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre, double radius)
 {
     cloud.cells.clear();
     cloud.coords.clear();
-    // Cells beyond the object's bounds would be empty, so a ring widened by a coarse spacing gathers only those it crosses.
     const BoundingBox& box = cloud.object->BBox;
-    int lo[3], hi[3];
+    double lo[3], hi[3];
     for (int a = 0; a < 3; a++)
     {
-        double from = floor((centre[a] - radius) / cloud.size), to = floor((centre[a] + radius) / cloud.size);
-        bool bounded = (box.size[a] < BOUND_HUGE / 4);
-        if (bounded)
+        lo[a] = floor((centre[a] - radius) / cloud.size);
+        hi[a] = floor((centre[a] + radius) / cloud.size);
+        if (box.size[a] < BOUND_HUGE / 4)
         {
-            from = max(from, ceil(box.lowerLeft[a] / cloud.size) - 1.0);
-            to = min(to, floor((box.lowerLeft[a] + box.size[a]) / cloud.size));
+            lo[a] = max(lo[a], ceil(box.lowerLeft[a] / cloud.size) - 1.0);
+            hi[a] = min(hi[a], floor((box.lowerLeft[a] + box.size[a]) / cloud.size));
         }
-        if (!(fabs(from) < 1073741824.0) || !(fabs(to) < 1073741824.0) || (to - from > (bounded ? kCloudGatherSpan : kCloudUnboundedSpan)))
-        {
-            cloud.failure = kCloudWide;
+        if (!(fabs(lo[a]) < 9e15) || !(fabs(hi[a]) < 9e15))
             return false;
-        }
-        lo[a] = int(from);
-        hi[a] = int(to);
     }
-    for (int cx = lo[X]; cx <= hi[X]; cx++)
-    for (int cy = lo[Y]; cy <= hi[Y]; cy++)
-    for (int cz = lo[Z]; cz <= hi[Z]; cz++)
+    for (double cx = lo[X]; cx <= hi[X]; cx++)
+    for (double cy = lo[Y]; cy <= hi[Y]; cy++)
+    for (double cz = lo[Z]; cz <= hi[Z]; cz++)
     {
-        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, cx, cy, cz, cloud.photons, cloud.radiosity, cloud.medium, cloud.preparedSetId };
+        SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(cx), std::int64_t(cy), std::int64_t(cz), cloud.photons,
+                                  cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
@@ -6860,11 +7147,11 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
                 WorkOnSubsurfaceCell(cloud, key, *cell, false);
             known = cell.get();
         }
+        // A cell is unusable only when its build threw, which stops the render.
         if (!known->usable)
         {
             threadData->subsurfaceCache->CheckCap();
-            cloud.failure = known->failure;
-            return false;
+            throw POV_EXCEPTION_STRING("A subsurface point cloud cell could not be built.");
         }
         if (!known->nodes.empty())
         {
@@ -6875,8 +7162,8 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     return true;
 }
 
-// The gathered cell holding a point, if any.
-const SubsurfaceCell *Trace::FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q)
+// The gathered cell holding a point, if any, or else the nearest gathered cell.
+const SubsurfaceCell *Trace::FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q, bool nearestAny)
 {
     Vector3d key(floor(q[X] / cloud.size), floor(q[Y] / cloud.size), floor(q[Z] / cloud.size));
     for (int i = 0; i < cloud.cells.size(); i++)
@@ -6884,7 +7171,7 @@ const SubsurfaceCell *Trace::FindSubsurfaceCell(const SubsurfaceCloud& cloud, co
             return cloud.cells[i];
     // A point on a cell's face (an object resting on y = 0) can round into the empty cell beside the one holding its surface.
     const SubsurfaceCell *nearest = nullptr;
-    double best = Sqr(1e-6 * cloud.size);
+    double best = nearestAny ? HUGE_VAL : Sqr(1e-6 * cloud.size);
     for (int i = 0; i < cloud.cells.size(); i++)
     {
         double distSqr = 0.0;
@@ -6936,23 +7223,168 @@ bool Trace::LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vecto
     return visibility.count > 0;
 }
 
+// The profile over the patch a point stands for, a disc of its area in its tangent plane: near the exit point x (closer
+// than twice its radius) the mean over 16 sunflower points, so that a coarse point beside x does not flare.
+template <class Profile>
+static PreciseMathColour CloudPatchRd(const Profile& profile, const Vector3d& x, const SubsurfacePoint& p, double mm)
+{
+    double distSqr = (x - p.position).lengthSqr() * Sqr(mm);
+    double radiusSqr = p.area / M_PI;
+    if (distSqr >= 4.0 * radiusSqr)
+        return profile.Rd(distSqr);
+    Vector3d np(p.normal[0], p.normal[1], p.normal[2]), t1, t2;
+    Vector3d helper = (fabs(np[X]) < 0.9) ? Vector3d(1.0, 0.0, 0.0) : Vector3d(0.0, 1.0, 0.0);
+    t1 = cross(np, helper).normalized();
+    t2 = cross(np, t1);
+    double radius = sqrt(radiusSqr) / mm;
+    PreciseMathColour sum;
+    for (int k = 0; k < kCloudPatchPoints; k++)
+    {
+        double r = radius * sqrt((k + 0.5) / kCloudPatchPoints), theta = k * 2.399963229728653;
+        Vector3d q = p.position + (t1 * cos(theta) + t2 * sin(theta)) * r;
+        sum += profile.Rd((x - q).lengthSqr() * Sqr(mm));
+    }
+    return sum / double(kCloudPatchPoints);
+}
+
 // How far a cloud point would be from the exit point x (normal n) were the surface unfolded flat, taking it as the planes
 // through x and the point meeting at a crease; between the straight distance and twice that.
-static double UnfoldedDistance(const Vector3d& x, const Vector3d& n, const SubsurfacePoint& p)
+static double UnfoldedDistance(const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np)
 {
-    Vector3d np(p.normal[0], p.normal[1], p.normal[2]);
-    double straight = (p.position - x).length();
+    double straight = (p - x).length();
     double c = dot(n, np);
-    if (!(c < 0.999) || !(c > -0.999))
+    if (!(c < kCloudParallel) || !(c > -kCloudParallel))
         return straight;
     Vector3d crease = cross(n, np);
     crease /= crease.length();
-    double hx = dot(n, x), hp = dot(np, p.position);
+    double hx = dot(n, x), hp = dot(np, p);
     Vector3d onCrease = (n * (hx - hp * c) + np * (hp - hx * c)) / (1.0 - c * c);
-    Vector3d fromX = x - onCrease, fromP = p.position - onCrease;
+    Vector3d fromX = x - onCrease, fromP = p - onCrease;
     double a = (fromX - crease * dot(fromX, crease)).length(), b = (fromP - crease * dot(fromP, crease)).length();
-    double along = dot(p.position - x, crease);
+    double along = dot(p - x, crease);
     return min(2.0 * straight, max(straight, sqrt(Sqr(a + b) + Sqr(along))));
+}
+
+// Where a point the base point sees from behind (across a crease, or on a parallel face) lies on the exit point x's
+// tangent plane: rotated about the line where the two planes meet, or straight down onto it for parallel planes.
+static Vector3d UnfoldOntoPlane(const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np)
+{
+    double c = dot(n, np);
+    if (!(fabs(c) < kCloudParallel))
+        return p - n * dot(p - x, n);
+    Vector3d crease = cross(n, np).normalized();
+    double hx = dot(n, x), hp = dot(np, p);
+    Vector3d onCrease = (n * (hx - hp * c) + np * (hp - hx * c)) / (1.0 - c * c);
+    Vector3d footX = onCrease + crease * dot(x - onCrease, crease), footP = onCrease + crease * dot(p - onCrease, crease);
+    Vector3d away = footX - x;
+    double a = away.length();
+    return (a > 0.0) ? footP + away * ((p - footP).length() / a) : p - n * dot(p - x, n);
+}
+
+// Whether the material turns the corner where the tangent planes of x (normal n) and p meet, so that light can reach round
+// it: a quarter spacing into the corner, and under x's face just off p's, must be inside; parallel faces must step.
+bool Trace::CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np)
+{
+    double c = dot(n, np);
+    if (!(c < kCloudParallel))
+        return StepInMaterial(cloud, x, n, p, np);
+    if (!(c > -kCloudParallel))
+        return true;
+    Vector3d crease = cross(n, np).normalized();
+    double hx = dot(n, x), hp = dot(np, p);
+    Vector3d onCrease = (n * (hx - hp * c) + np * (hp - hx * c)) / (1.0 - c * c);
+    Vector3d middle = onCrease + crease * (0.5 * (dot(x - onCrease, crease) + dot(p - onCrease, crease)));
+    double probe = kCloudCreaseProbe * cloud.spacing;
+    return InsideByBounds(middle - (n + np).normalized() * probe, cloud.object) && InsideByBounds(middle + (np - n) * probe, cloud.object);
+}
+
+// Whether parallel faces at different heights, x's and p's, join through the material: below the higher one, at the lower
+// one's height, and halfway from there to the lower one, a quarter spacing down, must be inside.
+bool Trace::StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np)
+{
+    double probe = kCloudCreaseProbe * cloud.spacing, offset = dot(p - x, n);
+    if (!(dot(n, np) >= kCloudParallel) || !(fabs(offset) > probe))
+        return true;
+    // From the lower face, the material must run all the way from under x to under p, not just at its midpoint.
+    if (offset > 0.0)
+    {
+        Vector3d lateral = p - x - n * offset;
+        return InsideByBounds(p - n * (offset + probe), cloud.object) && (lateral.length() <= SubsurfaceEscape(cloud, x, n, lateral));
+    }
+    const Vector3d& lower = (offset < 0.0) ? p : x;
+    const Vector3d& upper = (offset < 0.0) ? x : p;
+    Vector3d under = upper - n * fabs(offset);
+    return InsideByBounds(under - n * probe, cloud.object) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object);
+}
+
+double Trace::MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket)
+{
+    // A crossing inside on both sides (a union's inner face) does not end the material.
+    double run = 0.0;
+    for (int tries = 0; tries < kThinFaces; tries++)
+    {
+        Intersection hit;
+        Ray ray(ticket, origin + dir * run, dir, Ray::SubsurfaceRay);
+        if ((run >= reach) || !FindIntersection(object, hit, ray))
+            return HUGE_VAL;
+        run += hit.Depth;
+        if (!InsideByBounds(origin + dir * (run + step), object))
+            return run;
+        run += step;
+    }
+    return HUGE_VAL;
+}
+
+double Trace::SubsurfaceEscape(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& toward)
+{
+    const Vector3d& t1 = ssltEscapeAxes[0], &t2 = ssltEscapeAxes[1];
+    if (!ssltEscapeKnown || ((ssltEscapeAt - x).lengthSqr() > 0.0))
+    {
+        ssltEscapeKnown = true;
+        ssltEscapeAt = x;
+        ComputeSurfaceTangents(n, ssltEscapeAxes[0], ssltEscapeAxes[1]);
+        double probe = kCloudCreaseProbe * cloud.spacing;
+        for (int k = 0; k < kEscapeDirections; k++)
+        {
+            double angle = 2.0 * M_PI * k / kEscapeDirections;
+            ssltEscape[k] = MaterialRun(cloud.object, x - n * probe, t1 * cos(angle) + t2 * sin(angle), cloud.reach / sceneData->mmPerUnit,
+                                        1e-3 * cloud.spacing, *ssltEscapeTicket);
+        }
+    }
+    // A straight edge at distance a lies a / cos(angle) away, so 1 / run is interpolated between directions.
+    double f = atan2(dot(toward, t2), dot(toward, t1)) / (2.0 * M_PI) * kEscapeDirections;
+    f = (f < 0.0) ? f + kEscapeDirections : f;
+    int k = int(floor(f)) % kEscapeDirections;
+    double w = f - floor(f), inverse = (1.0 - w) / ssltEscape[k] + w / ssltEscape[(k + 1) % kEscapeDirections];
+    return (inverse > 0.0) ? 1.0 / inverse : HUGE_VAL;
+}
+
+// Inside_Object, skipping the parts of a union or merge whose bounds do not hold the point.
+bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object)
+{
+    const CSGUnion *csg = dynamic_cast<const CSGUnion*>(object);
+    if ((csg == nullptr) || !object->Clip.empty() || Test_Flag(object, INVERTED_FLAG))
+        return Inside_Object(point, object, threadData);
+    for (ObjectPtr child : csg->children)
+        if ((!(child->Type & LIGHT_SOURCE_OBJECT) || !reinterpret_cast<LightSource*>(child)->children.empty()) &&
+            Inside_BBox(point, child->BBox) && InsideByBounds(point, child))
+            return true;
+    return false;
+}
+
+// A disc point's shadows, photons, and the flesh and emission its light enters by, weighted by the profile rd.
+template <class Visibility, class Cloud>
+static void AddCloudDiscPoint(const SubsurfaceCell& cell, const SubsurfacePoint& p, const PreciseMathColour& rd, const Cloud& cloud,
+                              Visibility& visibility, PreciseMathColour& photons, PreciseMathColour& factor, PreciseMathColour& emission)
+{
+    visibility.Add(cell.visibility.data() + p.id * cell.lights * MathColour::channels);
+    for (int j = 0; cloud.photons && (j < MathColour::channels); j++)
+        photons[j] += rd[j] * p.area * cell.photonEntry[p.id * MathColour::channels + j];
+    for (int j = 0; !cell.entry.empty() && (j < MathColour::channels); j++)
+    {
+        factor[j] += rd[j] * p.area * cell.entry[p.id * 2 * MathColour::channels + j];
+        emission[j] += rd[j] * p.area * cell.entry[(p.id * 2 + 1) * MathColour::channels + j];
+    }
 }
 
 // The diffuse term from the object's cloud around the exit point (core, disc, ring and beyond; see doc/PERF.md); false
@@ -6963,7 +7395,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     double mm = sceneData->mmPerUnit;
     double reachSqr = Sqr(cloud.reach);
 
-    Vector3d n = out.INormal.normalized();
+    Vector3d n = SubsurfaceGeometricNormal(out, out.INormal).normalized();
     // The exit normal points out of the object, away from the base point below it, as the cloud's normals do.
     if (dot(n, out.IPoint - base) < 0.0)
         n.invert();
@@ -6972,6 +7404,8 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     {
         ssltScratchVisibility.Reset(cloud.lights.size());
         MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, false, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
+        if (cloud.photons)
+            here += ComputeCloudExitPhotons(out, n, cloud, ticket);
         if (cloud.medium != nullptr)
             here = here * cloud.flesh->nearby.factor + cloud.flesh->nearby.emission;
         diffuse = MathColour(profile.RdDisc(cloud.reach) * (M_PI * reachSqr) * PreciseMathColour(here) * ftOut);
@@ -6989,11 +7423,37 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     // Points behind the exit point's tangent plane that turn away from it (the far face and the edges of a wall), summed
     // apart from the exit point's own surface.
     PreciseMathColour discLightAcross, ringLightAcross;
+    // Coarse points cannot place a shadow edge or an edge of the surface near the exit point: there the near field is drawn.
+    double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
+    bool coarse = (cloud.spacing * mm > kCloudCoarse * max(zr, cloud.footprint));
+    bool acrossNear = false;
     double discFacing = 1.0, ringFacing = 1.0, ringArea = 0.0, covered = 0.0;
     Vector3d moment(0.0);
-    double creaseSqr = Sqr(kCloudCrease * cloud.spacing * mm);
     bool hidden = false;
     std::vector<int>& stack = ssltScratchStack;
+    // On a part thinner than its diffusion the profile takes the multipole's ratios: on its own face, and through it to a
+    // point more than half its depth under the exit point's tangent plane.
+    SetUpSubsurfaceThin(cloud, x, n, profile, ticket);
+    ssltEscapeKnown = false;
+    ssltEscapeTicket = &ticket;
+    const SubsurfaceThin thin = ssltThin;
+    auto onFace = [&](PreciseMathColour rd, double distSqr)
+    {
+        if (thin.active)
+            thin.Apply(rd, distSqr, 0);
+        return rd;
+    };
+    auto layered = [&](PreciseMathColour rd, const Vector3d& p, double distSqr)
+    {
+        if (!thin.active)
+            return rd;
+        double below = dot(x - p, n) * mm;
+        if (below > 0.5 * thin.depth)
+            thin.Apply(rd, max(0.0, distSqr - Sqr(below)), 2);
+        else
+            thin.Apply(rd, distSqr, 0);
+        return rd;
+    };
     // The ring's points are walked first, so that a shading point handed to method 1 does not pay for the far ones.
     auto walk = [&](bool near)
     {
@@ -7020,11 +7480,14 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                 if (!near && (boxSqr > ringSqr) && (node.area < errorBound * boxSqr) && (node.cone >= kCloudCone))
                 {
                     cell->MarkRead(index);
-                    Vector3d toward = node.centre - base;
-                    if (toward[X] * node.normal[0] + toward[Y] * node.normal[1] + toward[Z] * node.normal[2] > 0.0)
+                    // Points the base point sees from behind are reached around a crease, at their unfolded distance.
+                    Vector3d toward = node.centre - base, nn(node.normal[0], node.normal[1], node.normal[2]);
+                    bool front = (dot(toward, nn) > 0.0);
+                    if (front ? StepInMaterial(cloud, x, n, node.centre, nn)
+                              : ((dot(n, nn) > -kCloudParallel) && CreaseInMaterial(cloud, x, n, node.centre, nn)))
                     {
-                        double distSqr = (x - node.centre).lengthSqr() * Sqr(mm);
-                        PreciseMathColour rd = profile.Rd(distSqr);
+                        double distSqr = Sqr((front ? (x - node.centre).length() : UnfoldedDistance(x, n, node.centre, nn)) * mm);
+                        PreciseMathColour rd = front ? layered(profile.Rd(distSqr), node.centre, distSqr) : onFace(profile.Rd(distSqr), distSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             far[j] += rd[j] * node.irradiance[j];
                     }
@@ -7043,14 +7506,51 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     double distSqr = (x - p.position).lengthSqr() * Sqr(mm);
                     if ((distSqr < ringSqr) != near)
                         continue;
-                    // A point the base point sees from behind is reached only through another part of the surface.
-                    Vector3d toward = p.position - base;
-                    if (toward[X] * p.normal[0] + toward[Y] * p.normal[1] + toward[Z] * p.normal[2] <= 0.0)
+                    // A point the base point sees from behind lies across a crease or on a parallel face: it is weighted at its
+                    // distance unfolded through the material and laid on the exit point's tangent plane; facing walls are left out.
+                    Vector3d toward = p.position - base, np(p.normal[0], p.normal[1], p.normal[2]);
+                    if (dot(toward, np) <= 0.0)
                     {
-                        hidden = hidden || (distSqr < creaseSqr);
+                        if (!(dot(n, np) > -kCloudParallel) || !CreaseInMaterial(cloud, x, n, p.position, np))
+                            continue;
+                        double unfoldedSqr = Sqr(UnfoldedDistance(x, n, p.position, np) * mm);
+                        PreciseMathColour rd = onFace(profile.Rd(unfoldedSqr), unfoldedSqr);
+                        if (!near)
+                        {
+                            for (int j = 0; j < MathColour::channels; j++)
+                                far[j] += rd[j] * p.area * p.irradiance[j];
+                            continue;
+                        }
+                        if (unfoldedSqr >= ringSqr)
+                        {
+                            for (int j = 0; j < MathColour::channels; j++)
+                                far[j] += rd[j] * p.area * p.irradiance[j];
+                            continue;
+                        }
+                        hidden = true;
+                        Vector3d unfolded = UnfoldOntoPlane(x, n, p.position, np);
+                        bool inDisc = (unfoldedSqr < discSqr);
+                        if (inDisc)
+                            AddCloudDiscPoint(*cell, p, rd, cloud, visibility, discPhotons, discFactor, discEmission);
+                        double window = p.area * CloudWindow(unfoldedSqr, ringSqr);
+                        covered += window;
+                        moment += (unfolded - x) * window;
+                        if (!inDisc)
+                            ringArea += p.area;
+                        PreciseMathColour& weight = inDisc ? discWeight : ringWeight;
+                        PreciseMathColour& light = inDisc ? discLight : ringLight;
+                        for (int j = 0; j < MathColour::channels; j++)
+                        {
+                            weight[j] += rd[j] * p.area;
+                            light[j] += rd[j] * p.area * p.irradiance[j];
+                            if (!inDisc)
+                                ringUnfolded[j] += rd[j] * p.area;
+                        }
                         continue;
                     }
-                    PreciseMathColour rd = profile.Rd(distSqr);
+                    if (!StepInMaterial(cloud, x, n, p.position, np))
+                        continue;
+                    PreciseMathColour rd = layered(profile.Rd(distSqr), p.position, distSqr);
                     if (!near)
                     {
                         for (int j = 0; j < MathColour::channels; j++)
@@ -7061,24 +7561,23 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     bool inDisc = (distSqr < discSqr);
                     if ((facing < kCloudFlat) && (dot(p.position - x, n) < 0.0))
                     {
+                        if (inDisc && coarse)
+                        {
+                            acrossNear = true;
+                            continue;
+                        }
                         PreciseMathColour& light = inDisc ? discLightAcross : ringLightAcross;
+                        PreciseMathColour patch = layered(CloudPatchRd(profile, x, p, mm), p.position, distSqr);
                         for (int j = 0; j < MathColour::channels; j++)
-                            light[j] += rd[j] * p.area * p.irradiance[j];
+                            light[j] += patch[j] * p.area * p.irradiance[j];
                         continue;
                     }
                     if (inDisc)
                     {
                         discFacing = min(discFacing, facing);
-                        visibility.Add(cell->visibility.data() + p.id * stride);
-                        for (int j = 0; cloud.photons && (j < MathColour::channels); j++)
-                            discPhotons[j] += rd[j] * p.area * cell->photonEntry[p.id * MathColour::channels + j];
-                        for (int j = 0; !cell->entry.empty() && (j < MathColour::channels); j++)
-                        {
-                            discFactor[j] += rd[j] * p.area * cell->entry[p.id * 2 * MathColour::channels + j];
-                            discEmission[j] += rd[j] * p.area * cell->entry[(p.id * 2 + 1) * MathColour::channels + j];
-                        }
+                        AddCloudDiscPoint(*cell, p, rd, cloud, visibility, discPhotons, discFactor, discEmission);
                     }
-                    double unfoldedSqr = inDisc ? distSqr : Sqr(UnfoldedDistance(x, n, p) * mm);
+                    double unfoldedSqr = inDisc ? distSqr : Sqr(UnfoldedDistance(x, n, p.position, np) * mm);
                     // The window is taken at the centre of the grid square the point's line crosses, free of its jitter.
                     Vector3d square = p.position;
                     for (int b = 1; b < 3; b++)
@@ -7094,7 +7593,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     {
                         ringFacing = min(ringFacing, facing);
                         ringArea += p.area;
-                        PreciseMathColour rdUnfolded = profile.Rd(unfoldedSqr);
+                        PreciseMathColour rdUnfolded = onFace(profile.Rd(unfoldedSqr), unfoldedSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             ringUnfolded[j] += rdUnfolded[j] * p.area;
                     }
@@ -7112,32 +7611,17 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     walk(true);
     double density = ringArea / (M_PI * (ringSqr - discSqr));
     if (hidden)
-    {
         threadData->Stats()[Subsurface_Cloud_Hidden]++;
-        return false;
-    }
-    if ((visibility.count == 0) || (discFacing < kCloudFlat))
-    {
+    if (discFacing < kCloudFlat)
         threadData->Stats()[Subsurface_Cloud_Bent]++;
-        return false;
-    }
-    if (cloud.photons)
-        for (int j = 0; j < MathColour::channels; j++)
-            if (!(discWeight[j] > 0.0))
-            {
-                threadData->Stats()[Subsurface_Cloud_Bent]++;
-                return false;
-            }
+    // A disc with no points facing the exit point's way is lit as the exit point is, shadow-tested there.
+    if (visibility.count == 0)
+        threadData->Stats()[Subsurface_Cloud_Empty_Disc]++;
     visibility.Finish();
-    // Coarse points cannot place a shadow edge between them: the exit point tests its own, and edges go to method 1.
-    double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
-    bool coarse = (cloud.spacing * mm > kCloudCoarse * max(zr, cloud.footprint));
-    for (int l = 0; coarse && (l < cloud.lights.size()); l++)
-        if (!visibility.Agrees(l))
-        {
-            threadData->Stats()[Subsurface_Cloud_Shadow_Edge]++;
-            return false;
-        }
+    std::vector<char>& sampled = ssltScratchSampled;
+    sampled.assign(cloud.exitSlot.size(), 0);
+    for (int i = 0; coarse && (visibility.count > 0) && (i < cloud.exitSlot.size()); i++)
+        sampled[i] = !visibility.Agrees(cloud.exitSlot[i]);
 
     // Where the surface runs out, the core, disc and ring keep their integrals' share inside one straight edge (an open
     // border) or two either side (a narrow strip), placed by the window's covered share and centroid; see doc/PERF.md.
@@ -7166,31 +7650,64 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
 
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, coarse, ticket, key);
-    if (cloud.exitMismatch)
+    // A shadow edge between coarse points, a shadow at the exit point its neighbours do not share, or an edge of the
+    // surface within the disc, is drawn near the exit point.
+    bool nearField = coarse && (acrossNear || cloud.edge);
+    for (int i = 0; i < sampled.size(); i++)
+        nearField = nearField || sampled[i] || cloud.exitStray[i];
+    PreciseMathColour nearSum;
+    if (nearField)
     {
-        threadData->Stats()[Subsurface_Cloud_Exit_Mismatch]++;
-        return false;
+        threadData->Stats()[Subsurface_Cloud_Near_Field]++;
+        nearSum = ComputeCloudNearField(out, base, n, cloud, profile, disc, ticket, DeriveKey(key, kDrawSubsurface, 7));
     }
+    ssltEscapeTicket = &ticket;
     walk(false);
-    here += ComputeCloudExitAmbient(out, n, cloud, ticket);
+    MathColour ambient = ComputeCloudExitAmbient(out, n, cloud, ticket);
+    here += ambient;
     // The core takes the flesh and emission of the disc's points, not those under the exit point.
+    MathColour factor(1.0), emission;
     if (cloud.medium != nullptr)
         for (int j = 0; j < MathColour::channels; j++)
-            here[j] = (discWeight[j] > 0.0) ? here[j] * discFactor[j] / discWeight[j] + discEmission[j] / discWeight[j]
-                                            : here[j] * cloud.flesh->nearby.factor[j] + cloud.flesh->nearby.emission[j];
+        {
+            factor[j] = (discWeight[j] > 0.0) ? discFactor[j] / discWeight[j] : cloud.flesh->nearby.factor[j];
+            emission[j] = (discWeight[j] > 0.0) ? discEmission[j] / discWeight[j] : cloud.flesh->nearby.emission[j];
+            here[j] = here[j] * factor[j] + emission[j];
+        }
+    MathColour extra = ambient * factor + emission;
     if (cloud.photons)
+    {
+        MathColour exitPhotons = (discWeight.Greyscale() > 0.0) ? MathColour() : ComputeCloudExitPhotons(out, n, cloud, ticket);
         for (int j = 0; j < MathColour::channels; j++)
-            here[j] += discPhotons[j] / discWeight[j];
-    PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
-    PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
-    PreciseMathColour sum = far + coreRd * coreShare * PreciseMathColour(here);
-    for (int j = 0; j < MathColour::channels; j++)
-        sum[j] += (discRd[j] - coreRd[j]) * discShare[j] * ((discWeight[j] > 0.0) ? discLight[j] / discWeight[j] : here[j]);
+        {
+            float photons = (discWeight[j] > 0.0) ? discPhotons[j] / discWeight[j] : exitPhotons[j];
+            here[j] += photons;
+            extra[j] += photons;
+        }
+    }
+    auto discOnFace = [&](double radius)
+    {
+        PreciseMathColour rd = profile.RdDisc(radius) * (M_PI * Sqr(radius));
+        if (thin.active)
+            thin.Apply(rd, Sqr(radius), 1);
+        return rd;
+    };
+    PreciseMathColour coreRd = discOnFace(core);
+    PreciseMathColour discRd = discOnFace(disc);
+    PreciseMathColour sum = far;
+    if (nearField)
+        sum += nearSum * PreciseMathColour(factor) + discRd * discShare * PreciseMathColour(extra);
+    else
+    {
+        sum += coreRd * coreShare * PreciseMathColour(here);
+        for (int j = 0; j < MathColour::channels; j++)
+            sum[j] += (discRd[j] - coreRd[j]) * discShare[j] * ((discWeight[j] > 0.0) ? discLight[j] / discWeight[j] : here[j]);
+    }
     // The ring's integral is a flat ring's, times how much nearer its points are than they would be unfolded flat: 1 on a
     // flat surface, and more across a fold, where points around the edge are nearer through the object.
     if ((ringFacing >= kCloudFold) && (density <= kCloudDense))
     {
-        PreciseMathColour ringRd = profile.RdDisc(ring) * (M_PI * ringSqr) - discRd;
+        PreciseMathColour ringRd = discOnFace(ring) - discRd;
         for (int j = 0; j < MathColour::channels; j++)
             if ((ringWeight[j] > 0.0) && (ringUnfolded[j] > 0.0))
                 sum[j] += ringRd[j] * ringShare[j] * (ringWeight[j] / ringUnfolded[j]) * (ringLight[j] / ringWeight[j]);
@@ -7208,7 +7725,10 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
 PreciseMathColour Trace::SubsurfaceProfile::RdDisc(double radius) const
 {
     PreciseMathColour rd;
-    for (int j = 0; j < MathColour::channels; j++)
+    for (int j = 0; (boundary != nullptr) && (j < MathColour::channels); j++)
+        rd[j] = dipole[j].Disc(radius * extinction[j]) * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], Sqr(radius) * extinctionSqr[j], 1) /
+                (M_PI * Sqr(radius));
+    for (int j = 0; (boundary == nullptr) && (j < MathColour::channels); j++)
     {
         double d_r = sqrt(Sqr(z_r[j]) + Sqr(radius));
         double d_v = sqrt(Sqr(z_v[j]) + Sqr(radius));
@@ -7223,9 +7743,75 @@ PreciseMathColour Trace::SubsurfaceProfile::RdDisc(double radius) const
 PreciseMathColour Trace::SubsurfaceProfile::RdTotal() const
 {
     PreciseMathColour rd;
-    for (int j = 0; j < MathColour::channels; j++)
+    for (int j = 0; (boundary != nullptr) && (j < MathColour::channels); j++)
+        rd[j] = dipole[j].Disc(HUGE_VAL) * totalRatio[j];
+    for (int j = 0; (boundary == nullptr) && (j < MathColour::channels); j++)
         rd[j] = scale[j] * 2.0 * M_PI * (exp(-sigma_tr[j] * z_r[j]) + exp(-sigma_tr[j] * z_v[j]));
     return rd;
+}
+
+// Method 2's profile for reduced albedos and extinctions (per mm) at its boundary.
+void Trace::SubsurfaceProfile::SetMethod2(const SubsurfaceBoundary& b, const PreciseMathColour& albedo, const PreciseMathColour& sigma_t)
+{
+    boundary = &b;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        dipole[j] = SubsurfaceDipole(albedo[j], b);
+        this->albedo[j] = albedo[j];
+        extinction[j] = sigma_t[j];
+        extinctionSqr[j] = Sqr(sigma_t[j]);
+        beamRow[j] = b.BeamRow(albedo[j], beamWeight[j]);
+        totalRatio[j] = b.BeamTotalRatio(albedo[j]);
+        scale[j] = 0.0;
+        sigma_tr[j] = dipole[j].sigma * sigma_t[j];
+        z_r[j] = 1.0 / sigma_t[j];
+        z_v[j] = (1.0 + dipole[j].zb) / sigma_t[j];
+    }
+}
+
+void Trace::SubsurfaceThin::Apply(PreciseMathColour& rd, double distSqr, int part) const
+{
+    double ratio = 1.0;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        if (!same[j])
+            ratio = (rows[j] == nullptr) ? 1.0 : SubsurfaceBoundary::BeamRatio(rows[j] + ((part == 2) ? SubsurfaceBoundary::kLayerFar : 0),
+                                                                                 depthWeight[j], distSqr * extinctionSqr[j], (part == 1) ? 1 : 0);
+        rd[j] *= ratio;
+    }
+}
+
+// The material's depth under the exit point x (outward normal n), along -n to where it leaves the object, and the layer
+// tables for it; a part deeper than the diffusion, or with no far face within reach, is left as it is.
+void Trace::SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket)
+{
+    SubsurfaceThin& thin = ssltThin;
+    thin.active = false;
+    double mm = sceneData->mmPerUnit, step = 1e-3 * cloud.spacing;
+    double depth = MaterialRun(cloud.object, x - n * step, -n, cloud.reach / mm, step, ticket);
+    if (!(depth < HUGE_VAL))
+        return;
+    thin.depth = (depth + step) * mm;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double tau = thin.depth * profile.extinction[j];
+        thin.rows[j] = nullptr;
+        if ((tau > kThickPaths) && (profile.dipole[j].sigma * tau > kThickLengths))
+            continue;
+        double f = 4.0 * log2(max(tau, exp2(0.25 * SubsurfaceBoundary::kLayerFirst)));
+        int k = min(SubsurfaceBoundary::kLayerLast - 1, int(floor(f)));
+        thin.depthWeight[j] = min(1.0, f - k);
+        thin.extinctionSqr[j] = profile.extinctionSqr[j];
+        int u = int(floor(sqrt(3.0 * clip(1.0 - profile.albedo[j], 0.0, 1.0)) * SubsurfaceBoundary::kLayerSteps + 0.5));
+        const float *&rows = ssltLayers[std::make_tuple((const void*)profile.boundary, u, k)];
+        if (rows == nullptr)
+            rows = profile.boundary->Layer(u, k);
+        thin.rows[j] = rows;
+        thin.active = true;
+    }
+    for (int j = 0; j < MathColour::channels; j++)
+        thin.same[j] = (j > 0) && (thin.rows[j] == thin.rows[j - 1]) &&
+                       ((thin.rows[j] == nullptr) || ((thin.depthWeight[j] == thin.depthWeight[j - 1]) && (thin.extinctionSqr[j] == thin.extinctionSqr[j - 1])));
 }
 
 // The share of Rd's integral over a flat annulus (radii in mm) inside a straight edge d mm from its centre.
@@ -7250,10 +7836,19 @@ PreciseMathColour Trace::SubsurfaceProfile::RdEdgeShare(double inner, double out
     return share;
 }
 
-// Jensen's dipole diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
+// The diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
 PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr) const
 {
     PreciseMathColour rd;
+    if (boundary != nullptr)
+    {
+        for (int j = 0; j < MathColour::channels; j++)
+        {
+            double xSqr = distSqr * extinctionSqr[j];
+            rd[j] = dipole[j].Rd(xSqr) * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], xSqr, 0) * extinctionSqr[j];
+        }
+        return rd;
+    }
     for (int j = 0; j < MathColour::channels; j++)
     {
         double dSqr_r = Sqr(z_r[j]) + distSqr;
@@ -7456,7 +8051,7 @@ void Trace::SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers&
         flesh.reference = PreciseMathColour(flesh.nearby.flesh);
 }
 
-void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& out, Ray& Eye, MathColour& Final_Colour)
+void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& out, Ray& Eye, double rayWeight, MathColour& Final_Colour)
 {
     const FINISH *Finish = layers.top->Finish;
     int NumSamplesDiffuse = sceneData->subsurfaceSamplesDiffuse;
@@ -7491,8 +8086,15 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     SetUpSubsurfaceFlesh(flesh, layers, out, inward, DeriveKey(key, kDrawSubsurface, 5));
     MathColour reflectance = Finish->SubsurfaceHasColour ? MathColour(flesh.reference) * Finish->Diffuse : layers.reflectance;
 
+    // Method 2 inverts the colour by its own profile's total at the boundary's relative index; see doc/PERF.md.
+    int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
+    const bool pointCloud = (method == kSubsurfaceMethodPointCloud);
+    if (pointCloud && ((ssltBoundary == nullptr) || (ssltBoundary->eta != double(float(eta)))))
+        ssltBoundary = &SubsurfaceBoundary::For(eta);
+
     // user setting specifies reduced scattering coefficient
-    PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
+    PreciseMathColour   alpha_prime     = pointCloud ? ssltBoundary->GetReducedAlbedo(reflectance)
+                                                     : out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
     PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;
@@ -7505,7 +8107,9 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double F_dr   = FresnelDiffuseReflectance(eta);
     double Aconst = ((1 + F_dr) / (1 - F_dr));
     SubsurfaceProfile profile;
-    for (int j = 0; j < MathColour::channels; j++)
+    if (pointCloud)
+        profile.SetMethod2(*ssltBoundary, alpha_prime, sigma_prime_t);
+    for (int j = 0; !pointCloud && (j < MathColour::channels); j++)
     {
         double spt = sigma_prime_s[j] + sigma_a[j];
         profile.scale[j]    = (sigma_prime_s[j] / spt) / (4.0 * M_PI);
@@ -7516,6 +8120,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
     double ftOut   = ComputeFt(cos_out, eta);
+    // Method 2's diffusion leaves with all the light its profile counts: Ft(out) / pi normalised by 1 - Fdr from outside.
+    double ftDiffuse = pointCloud ? ftOut * ssltBoundary->exitScale : ftOut;
 
     // colour dependent diffuse contribution
 
@@ -7532,41 +8138,56 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     std::vector<const LightSource*> lights;
     CollectSubsurfaceLights(out.Object, lights, Eye.GetPreparedSetId());
 
-    // Shading points the cloud cannot serve, and radiosity in the pretrace (the cache still filling), use method 1.
-    int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
+    // Method 2 is the cloud's everywhere, the radiosity pretrace included (its points then carry no radiosity, the cache still
+    // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
     bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();
     Vector3d sampleBase;
     ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
 
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     cloudData.radiosity = cloudRadiosity;
-    cloudData.photons = SubsurfacePhotonsEnabled(out.Object, Eye.GetPreparedSetId());
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
-    const bool tryCloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed);
+    // Below the subsurface bailout a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
+    const bool estimate = pointCloud &&
+                          (rayWeight * layers.weight.WeightMax() < sceneData->subsurfaceBailout * Eye.GetTicket().adcBailout) &&
+                          (FindSubsurfaceParts(SubsurfaceObject(out), Eye.GetPreparedSetId()).sheets.count(out.Object) == 0);
+    if (estimate)
+    {
+        threadData->Stats()[Subsurface_Cloud_Estimated]++;
+        const std::uint64_t estimateKey = DeriveKey(key, kDrawSubsurface, 6);
+        Vector2d shift(Draw(estimateKey, kDrawSubsurface, 0), Draw(estimateKey, kDrawSubsurface, 1));
+        MathColour here = ComputeSubsurfaceIrradiance(out.IPoint, out.INormal.normalized(), lights, out.Object->interior->IOR / sceneData->atmosphereIOR,
+                                                      1, &shift, nullptr, Eye.GetTicket(), estimateKey);
+        if (flesh.PerEntry())
+            here = here * flesh.nearby.factor + flesh.nearby.emission;
+        cloudDiffuse = MathColour(profile.RdTotal() * PreciseMathColour(here) * ftDiffuse);
+    }
+    const bool tryCloud = pointCloud && !estimate;
     if (tryCloud)
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
-    cloudData.failure = kCloudServed;
     bool cloud = tryCloud && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
-                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
-    const bool photonSamples = cloudData.photons && !cloud;
-    if (photonSamples && tryCloud)
+                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftDiffuse, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+    if (cloud && radiosity_needed && !cloudRadiosity)
+        threadData->Stats()[Subsurface_Cloud_Pretrace]++;
+    if (tryCloud && !cloud)
     {
-        // Count the retry's open failure only if the first try also failed to open, so no point is counted twice.
-        const bool openFailed = (cloudData.failure != kCloudServed);
-        cloudData.photons = false;
-        cloud = OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
-                ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
-        if (!openFailed)
-            cloudData.failure = kCloudServed;
+        threadData->Stats()[Subsurface_Cloud_Unserved]++;
+        ConstObjectPtr named = (cloudData.unserved == kUnservedSheet) ? ConstObjectPtr(out.Object) : ConstObjectPtr(SubsurfaceObject(out));
+        SubsurfaceUnservedCount& counter = ssltUnserved[std::make_pair((const void*)named, int(cloudData.unserved))];
+        if (counter.shared == nullptr)
+            counter.shared = &threadData->subsurfaceCache->UnservedCounter(named, cloudData.unserved, DescribeSubsurfaceObject(named));
+        if (++counter.pending == kCloudUnservedBatch)
+        {
+            *counter.shared += counter.pending;
+            counter.pending = 0;
+        }
     }
-    if (tryCloud && !cloud && (cloudData.failure != kCloudServed))
-        threadData->Stats()[IntStatsIndex(Subsurface_Cloud_Unoriented + (cloudData.failure - kCloudUnoriented))]++;
-    const bool photonsOnly = cloud && photonSamples;
-    if (!cloud || photonSamples)
+    const bool photonSamples = !pointCloud && SubsurfacePhotonsEnabled(out.Object, Eye.GetPreparedSetId());
+    if (!pointCloud)
     {
-        std::vector<SubsurfaceCandidate> candidates(photonsOnly ? 0 : lights.size() * NumSamplesDiffuse);
+        std::vector<SubsurfaceCandidate> candidates(lights.size() * NumSamplesDiffuse);
         const std::uint64_t fleshKey = DeriveKey(key, kDrawSubsurface, 4);
         std::unique_ptr<PhotonGatherer>& gatherer = ssltPhotonGatherers[Eye.GetTicket().subsurfaceRecursionDepth - 1];
         MathColour projectedDiffuse;
@@ -7576,13 +8197,11 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
             if (!gatherer)
                 gatherer.reset(new PhotonGatherer(&sceneData->GetPreparedSet(Eye.GetPreparedSetId()).surfacePhotonMap, sceneData->photonSettings));
             gatherer->map = &sceneData->GetPreparedSet(Eye.GetPreparedSetId()).surfacePhotonMap;
-            if (method == kSubsurfaceMethodPointCloud)
-                threadData->Stats()[Subsurface_Photon_Fallbacks]++;
             projectedPhotons = ComputeProjectedSubsurfacePhotons(out, sampleBase, profile, flesh, ftOut, sceneData->subsurfaceSamplesDiffuse, *gatherer,
                                                                  Eye.GetTicket(), key, projectedDiffuse);
         }
 
-        for (int i = 0; (!photonsOnly || !projectedPhotons) && (i < NumSamplesDiffuse); i++)
+        for (int i = 0; i < NumSamplesDiffuse; i++)
         {
             Intersection in;
             ComputeDiffuseSamplePoint(sampleBase, SubsurfaceObject(out), in, sampleArea, Eye.GetTicket(), key, i);
@@ -7604,8 +8223,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                     n.invert();
                 SubsurfaceEntry entry;
                 ComputeSubsurfaceEntry(flesh, in.IPoint, n, Draw(fleshKey, kDrawSubsurface, i), entry);
-                if (!photonsOnly)
-                    Total_Colour += MathColour(rd * PreciseMathColour(entry.emission));
+                Total_Colour += MathColour(rd * PreciseMathColour(entry.emission));
                 rd *= PreciseMathColour(entry.factor);
             }
 
@@ -7619,22 +8237,21 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
             }
 
             // radiosity-alike ambient illumination
-            if (radiosity_needed && !photonsOnly)
+            if (radiosity_needed)
                 // shoot just one random ray to account for ambient illumination (we're averaging stuff anyway)
                 ComputeDiffuseAmbientContribution1(in, rd, Total_Colour, eta, weight, Eye.GetTicket());
 
-            for (int l = 0; !photonsOnly && (l < lights.size()); l++)
+            for (int l = 0; l < lights.size(); l++)
                 ComputeDiffuseCandidate(*lights[l], in, rd, eta, candidates[l * NumSamplesDiffuse + i], Eye.GetTicket());
         }
-        if (!photonsOnly)
-            ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 2));
+        ShadeSubsurfaceCandidates(lights, candidates.data(), NumSamplesDiffuse, Total_Colour, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 2));
         // Rays that leave without meeting the object count as samples of nothing, or open surfaces get twice their light.
         if (NumSamplesDiffuse > 0)
             Total_Colour /= NumSamplesDiffuse;
         if (projectedPhotons)
             Total_Colour += projectedDiffuse;
     }
-    if (cloud)
+    if (cloud || estimate)
         Total_Colour += cloudDiffuse;
     // Looked-up flesh is relative to the reference; emission the same everywhere enters over the whole profile.
     for (int j = 0; flesh.fleshAtDepth && (j < MathColour::channels); j++)
@@ -7642,7 +8259,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     if (Finish->SubsurfaceHasColour)
         Total_Colour *= flesh.entrySkin;
     if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
-        Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftOut);
+        Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftDiffuse);
 
     Vector3d refractedEye;
     if (SSLTComputeRefractedDirection(Eye.Direction, out.INormal, 1.0/eta, refractedEye))
@@ -7665,7 +8282,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
         // colour dependent single scattering contribution
 
-        if (NumSamplesSingle > 0)
+        if ((NumSamplesSingle > 0) && !estimate)
         {
             MathColour singleColour;
             ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, eta, lights,
@@ -7683,7 +8300,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
         // TODO FIXME - account for fresnel attenuation at interfaces
         PreciseMathColour att = Exp(-sigma_prime_t * dist); // TODO should be sigma_t
-        double weight = att.WeightMax();
+        double weight = att.WeightMax() * rayWeight;
         if (weight > Eye.GetTicket().adcBailout)
         {
             if (!found)

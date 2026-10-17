@@ -124,12 +124,232 @@ PreciseMathColour SubsurfaceInterior::GetReducedAlbedo(const MathColour& diffuse
     return result;
 }
 
+// Unpolarised Fresnel reflectance for light inside a medium of relative index eta meeting its boundary at cosine c.
+static double FresnelFromInside(double c, double eta)
+{
+    double s2 = Sqr(eta) * (1.0 - Sqr(c));
+    if (s2 >= 1.0)
+        return 1.0;
+    double ct = sqrt(1.0 - s2), rs = (eta * c - ct) / (eta * c + ct), rp = (c - eta * ct) / (c + eta * ct);
+    return 0.5 * (Sqr(rs) + Sqr(rp));
+}
+
+// Real sources along the beam, by the log of their depth: how many, and the depths they span.
+static const int kBeamDepths = 32;
+static const double kBeamShallowest = 1e-7, kBeamDeepest = 48.0;
+
+SubsurfaceDipole::SubsurfaceDipole(double albedo, const SubsurfaceBoundary& boundary)
+{
+    double absorption = 1.0 - albedo, D = (2.0 * absorption + albedo) / 3.0;
+    sigma = sqrt(absorption / D);
+    zb = 4.0 * boundary.ab * D;
+    fluence = albedo * boundary.cphi / (4.0 * M_PI * D);
+    flux = albedo * boundary.ce / (4.0 * M_PI);
+}
+
+double SubsurfaceDipole::Rd(double xSqr, double depth) const
+{
+    double zv = depth + zb, dr = sqrt(xSqr + Sqr(depth)), dv = sqrt(xSqr + Sqr(zv));
+    double er = exp(-sigma * dr), ev = exp(-sigma * dv);
+    return fluence * (er / dr - ev / dv) + flux * (depth * (1.0 + sigma * dr) * er / (dr * Sqr(dr)) + zv * (1.0 + sigma * dv) * ev / (dv * Sqr(dv)));
+}
+
+// (exp(-sigma a) - exp(-sigma b)) / sigma, which is b - a without absorption.
+static double ExpDifference(double sigma, double a, double b)
+{
+    return (sigma > 0.0) ? -exp(-sigma * a) * expm1(-sigma * (b - a)) / sigma : b - a;
+}
+
+double SubsurfaceDipole::Disc(double x) const
+{
+    double zv = 1.0 + zb, phi = ExpDifference(sigma, 1.0, zv), e = exp(-sigma) + exp(-sigma * zv);
+    if (x < HUGE_VAL)
+    {
+        double dr = sqrt(Sqr(x) + 1.0), dv = sqrt(Sqr(x) + Sqr(zv));
+        phi -= ExpDifference(sigma, dr, dv);
+        e -= exp(-sigma * dr) / dr + zv * exp(-sigma * dv) / dv;
+    }
+    return 2.0 * M_PI * (fluence * phi + flux * e);
+}
+
+SubsurfaceBoundary::SubsurfaceBoundary(double e) :
+    eta(e), c1(0.0), c2(0.0)
+{
+    // Below the critical cosine all light reflects; above it, midpoint sums.
+    double critical = (eta > 1.0) ? sqrt(1.0 - 1.0 / Sqr(eta)) : 0.0;
+    c1 = Sqr(critical) / 2.0;
+    c2 = critical * Sqr(critical) / 3.0;
+    const int steps = 8192;
+    for (int i = 0; i < steps; i++)
+    {
+        double c = critical + (1.0 - critical) * (i + 0.5) / steps, f = FresnelFromInside(c, eta) * (1.0 - critical) / steps;
+        c1 += f * c;
+        c2 += f * Sqr(c);
+    }
+    fdr = 2.0 * c1;
+    exitScale = 1.0 / (Sqr(eta) * (1.0 - fdr));
+    ab = (1.0 + 3.0 * c2) / (1.0 - 2.0 * c1);
+    cphi = 0.25 * (1.0 - 2.0 * c1);
+    ce = 0.5 * (1.0 - 3.0 * c2);
+
+    // Beam diffusion (Habel et al. 2013): real sources of the better dipole along the refracted beam, each damped near the
+    // surface, as a ratio to the dipole at one depth, per row of u and column; Simpson's rule over the log radius.
+    beam.assign(size_t(kBeamRows) * kBeamColumns * 2, 1.0f);
+    beamTotal.assign(kBeamRows, 1.0f);
+    const double logShallowest = log(kBeamShallowest), h = (log(kBeamDeepest) - logShallowest) / kBeamDepths;
+    for (int row = 0; row < kBeamRows; row++)
+    {
+        double u = sqrt(3.0) * row / (kBeamRows - 1), albedo = 1.0 - Sqr(u) / 3.0;
+        SubsurfaceDipole dipole(albedo, *this);
+        auto beamRd = [&](double x)
+        {
+            double sum = 0.0;
+            for (int k = 0; k < kBeamDepths; k++)
+            {
+                double t = exp(logShallowest + (k + 0.5) * h), dr = sqrt(Sqr(x) + Sqr(t));
+                sum += exp(-t) * -expm1(-2.0 * (dr + t)) * dipole.Rd(Sqr(x), t) * t * h;
+            }
+            return albedo * sum;
+        };
+        double x = 0.0, rd = 0.0, disc = 0.0, rdRatio = 1.0, discRatio = 1.0;
+        for (int k = 0; k < kBeamColumns; k++)
+        {
+            double x0 = x, rd0 = rd;
+            x = sqrt(ldexp(1.0 + (k % 4) / 4.0, kBeamFirstOctave + k / 4));
+            rd = beamRd(x);
+            if (k == 0)
+                disc = M_PI * Sqr(x) * rd;
+            else
+            {
+                double mid = sqrt(x0 * x);
+                disc += 2.0 * M_PI * log(x / x0) / 6.0 * (Sqr(x0) * rd0 + 4.0 * Sqr(mid) * beamRd(mid) + Sqr(x) * rd);
+            }
+            double rdDipole = dipole.Rd(Sqr(x)), discDipole = dipole.Disc(x);
+            rdRatio = ((rd > 0.0) && (rdDipole > 0.0)) ? rd / rdDipole : rdRatio;
+            discRatio = (discDipole > 0.0) ? disc / discDipole : discRatio;
+            beam[(size_t(row) * kBeamColumns + k) * 2] = float(rdRatio);
+            beam[(size_t(row) * kBeamColumns + k) * 2 + 1] = float(discRatio);
+        }
+        // Past the last radius the profile is the dipole times its last ratio.
+        double whole = dipole.Disc(HUGE_VAL);
+        beamTotal[row] = (whole > 0.0) ? float((disc + rdRatio * (whole - dipole.Disc(x))) / whole) : float(discRatio);
+    }
+
+    for (int i = 0; i <= kSamples; i++)
+    {
+        double lo = 0.0, hi = 1.0, target = double(i) / kSamples;
+        for (int k = 0; (i > 0) && (i < kSamples) && (k < 60); k++)
+            ((Total(0.5 * (lo + hi)) < target) ? lo : hi) = 0.5 * (lo + hi);
+        reducedAlbedo[i] = (i == 0) ? 0.0f : (i == kSamples) ? 1.0f : float(0.5 * (lo + hi));
+    }
+}
+
+const float *SubsurfaceBoundary::BeamRow(double albedo, double& weight) const
+{
+    double f = sqrt(clip(1.0 - albedo, 0.0, 1.0)) * (kBeamRows - 1);
+    int row = std::min(kBeamRows - 2, int(floor(f)));
+    weight = f - row;
+    return &beam[size_t(row) * kBeamColumns * 2];
+}
+
+double SubsurfaceBoundary::BeamTotalRatio(double albedo) const
+{
+    double f = sqrt(clip(1.0 - albedo, 0.0, 1.0)) * (kBeamRows - 1);
+    int row = std::min(kBeamRows - 2, int(floor(f)));
+    return (1.0 - (f - row)) * beamTotal[row] + (f - row) * beamTotal[row + 1];
+}
+
+double SubsurfaceBoundary::Total(double albedo) const
+{
+    return SubsurfaceDipole(albedo, *this).Disc(HUGE_VAL) * BeamTotalRatio(albedo);
+}
+
+// The better dipole's Rd, and its integral over a disc of radius x, from a source of sign s at signed depth z (above a
+// face where z < 0): the multipole's terms.
+static double LayerRd(const SubsurfaceDipole& d, double xSqr, double z, double s)
+{
+    double r = sqrt(xSqr + Sqr(z)), e = exp(-d.sigma * r);
+    return s * e * (d.fluence / r + d.flux * z * (1.0 + d.sigma * r) / (r * Sqr(r)));
+}
+
+static double LayerDisc(const SubsurfaceDipole& d, double x, double z, double s)
+{
+    double a = fabs(z), r = sqrt(Sqr(x) + Sqr(z));
+    double flux = (z > 0.0 ? 1.0 : -1.0) * (exp(-d.sigma * a) - a * exp(-d.sigma * r) / r);
+    return s * 2.0 * M_PI * (d.fluence * ExpDifference(d.sigma, a, r) + d.flux * flux);
+}
+
+// Donner and Jensen's multipole for a layer tau deep, from one source at min(1, tau / 2) carrying the light that scatters
+// in the layer, 1 - e^-tau, over the better dipole: the light leaving the near face, and the far face (over the dipole at the
+// straight distance through the layer).
+const float *SubsurfaceBoundary::Layer(int step, int k) const
+{
+    std::lock_guard<std::mutex> lock(layerMutex);
+    std::unique_ptr<float[]>& rows = layers[std::make_pair(step, k)];
+    if (rows)
+        return rows.get();
+    rows.reset(new float[2 * kLayerFar]);
+    double u = double(step) / kLayerSteps;
+    SubsurfaceDipole dipole(1.0 - Sqr(u) / 3.0, *this);
+    for (int part = 0; part < 2; part++)
+    {
+        double tau = exp2(0.25 * (k + part)), z = std::min(1.0, 0.5 * tau), scatter = -expm1(-tau), period = 2.0 * (tau + dipole.zb);
+        int images = (dipole.sigma * period > 0.0) ? std::min(64, int(ceil(12.0 / (dipole.sigma * period)))) : 64;
+        float *near = rows.get() + part * 2 * kBeamColumns, *far = near + kLayerFar;
+        double rdRatio = 1.0, discRatio = 1.0, farRatio = 1.0;
+        for (int c = 0; c < kBeamColumns; c++)
+        {
+            double xSqr = ldexp(1.0 + (c % 4) / 4.0, kBeamFirstOctave + c / 4), x = sqrt(xSqr);
+            double rd = 0.0, disc = 0.0, through = 0.0;
+            for (int i = -images; i <= images; i++)
+            {
+                double real = i * period + z, image = i * period - z - dipole.zb;
+                rd += LayerRd(dipole, xSqr, real, 1.0) + LayerRd(dipole, xSqr, image, -1.0);
+                disc += LayerDisc(dipole, x, real, 1.0) + LayerDisc(dipole, x, image, -1.0);
+                through += LayerRd(dipole, xSqr, tau - real, 1.0) + LayerRd(dipole, xSqr, tau - image, -1.0);
+            }
+            double rdDipole = dipole.Rd(xSqr), discDipole = dipole.Disc(x), farDipole = dipole.Rd(xSqr + Sqr(tau));
+            rdRatio = (rdDipole > 0.0) ? std::max(0.0, scatter * rd / rdDipole) : rdRatio;
+            discRatio = (discDipole > 0.0) ? std::max(0.0, scatter * disc / discDipole) : discRatio;
+            farRatio = (farDipole > 0.0) ? std::max(0.0, scatter * through / farDipole) : farRatio;
+            near[2 * c] = float(rdRatio);
+            near[2 * c + 1] = float(discRatio);
+            far[2 * c] = float(farRatio);
+            far[2 * c + 1] = float(farRatio);
+        }
+    }
+    return rows.get();
+}
+
+const SubsurfaceBoundary& SubsurfaceBoundary::For(double eta)
+{
+    static std::mutex mutex;
+    static std::map<float, std::unique_ptr<SubsurfaceBoundary>> boundaries;
+    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_ptr<SubsurfaceBoundary>& boundary = boundaries[float(eta)];
+    if (!boundary)
+        boundary.reset(new SubsurfaceBoundary(float(eta)));
+    return *boundary;
+}
+
+PreciseMathColour SubsurfaceBoundary::GetReducedAlbedo(const MathColour& diffuseReflectance) const
+{
+    PreciseMathColour result;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double i = clip(double(diffuseReflectance[j]), 0.0, 1.0) * kSamples;
+        int i0 = int(floor(i)), i1 = int(ceil(i));
+        result[j] = (1.0 - (i - i0)) * reducedAlbedo[i0] + (i - i0) * reducedAlbedo[i1];
+    }
+    return result;
+}
+
 size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
     size_t h = std::hash<const void*>()(k.object) ^ (std::hash<const void*>()(k.medium) * 31u) ^
                (std::hash<size_t>()(k.preparedSetId) * 65599u);
-    for (int v : { k.sizeLevel, k.x, k.y, k.z, int(k.radiosity), int(k.photons) })
-        h = h * 1000003u ^ std::hash<int>()(v);
+    for (std::int64_t v : { std::int64_t(k.sizeLevel), k.x, k.y, k.z, std::int64_t(k.radiosity), std::int64_t(k.photons), std::int64_t(k.depthLevel) })
+        h = h * 1000003u ^ std::hash<std::int64_t>()(v);
     return h;
 }
 
@@ -331,6 +551,38 @@ bool SubsurfaceCache::CellFits(size_t bytes)
     return false;
 }
 
+std::atomic<std::uint64_t>& SubsurfaceCache::UnservedCounter(const void *object, SubsurfaceUnserved reason, const std::string& description)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_ptr<UnservedEntry>& entry = unserved[std::make_pair(object, int(reason))];
+    if (!entry)
+    {
+        entry.reset(new UnservedEntry());
+        entry->description = description;
+    }
+    return entry->count;
+}
+
+std::vector<SubsurfaceCache::UnservedObject> SubsurfaceCache::Unserved() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<UnservedObject> list;
+    for (const auto& entry : unserved)
+        list.push_back({ entry.second->description, SubsurfaceUnserved(entry.first.second), entry.second->count.load() });
+    std::sort(list.begin(), list.end(), [](const UnservedObject& a, const UnservedObject& b)
+              { return (a.description != b.description) ? a.description < b.description : a.reason < b.reason; });
+    return list;
+}
+
+bool SubsurfaceCache::ClosedMesh(const void *mesh, const std::function<bool()>& compute)
+{
+    std::lock_guard<std::mutex> lock(closedMeshesMutex);
+    auto found = closedMeshes.find(mesh);
+    if (found != closedMeshes.end())
+        return found->second;
+    return closedMeshes[mesh] = compute();
+}
+
 void SubsurfaceCache::CheckCap() const
 {
     size_t needed;
@@ -360,11 +612,21 @@ bool SubsurfaceCache::Progress(double fraction, double& heldMB, double& projecte
     progress = fraction;
     if (projected || !(fraction >= 0.25))
         return false;
+    // Cells already built serve the rest of the image, so the clouds grow more slowly as it goes: the projection takes
+    // the rate between a quarter and a half of the image, which still overshoots, rather than the first quarter's mean.
+    if (firstFraction == 0.0)
+    {
+        firstFraction = fraction;
+        firstCharged = charged;
+        return false;
+    }
+    if (!(fraction >= 0.5) || !(fraction > firstFraction))
+        return false;
     projected = true;
     heldMB = charged / 1048576.0;
-    projectedMB = heldMB / fraction;
+    projectedMB = heldMB + (double(charged) - double(firstCharged)) / (fraction - firstFraction) * (1.0 - fraction) / 1048576.0;
     capMB = cap / 1048576.0;
-    return (charged > fraction * cap);
+    return (projectedMB > capMB);
 }
 
 SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
@@ -481,6 +743,11 @@ static int BuildSubsurfaceNode(std::vector<SubsurfacePoint>& points, std::vector
 }
 
 double SubsurfaceCell::Spacing(const Vector3d& normal) const
+{
+    return SubsurfaceSpacing(step, normal);
+}
+
+double SubsurfaceSpacing(const double step[3], const Vector3d& normal)
 {
     double facing = 0.0, density = 0.0;
     for (int a = 0; a < 3; a++)

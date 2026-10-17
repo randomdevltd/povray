@@ -12,7 +12,7 @@
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 1
-  subsurface { samples Diffuse, Single method Method spacing Spacing memory Memory }
+  subsurface { samples Diffuse, Single method Method spacing Spacing memory Memory #ifdef (Bailout) bailout Bailout #end }
 }
 #include "projections.inc"
 

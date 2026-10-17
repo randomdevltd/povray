@@ -281,23 +281,27 @@ typedef enum INTSTATS
     Subsurface_Photon_Searches,
     Subsurface_Photon_Candidates,
     Subsurface_Photon_Accepted,
-    Subsurface_Photon_Fallbacks,
     Subsurface_Photon_Boundaries_Computed,
     Subsurface_Photon_Boundaries_Reused,
     Subsurface_Walls,
     Subsurface_Thin_Walls,
     Subsurface_Cloud_Attempts,
     Subsurface_Cloud_Served,
+    Subsurface_Cloud_Unserved, ///< shading points the cloud could not serve, left without diffuse subsurface light
+    Subsurface_Cloud_Pretrace, ///< shading points the cloud served in the radiosity pretrace
+    Subsurface_Cloud_Alone, ///< shading points with no cell of points near, lit as the exit point
+    Subsurface_Cloud_Estimated, ///< shading points below the subsurface bailout, lit as the exit point without the cloud
+    Subsurface_Cloud_Empty_Disc, ///< shading points with no points facing their way in the disc
+    Subsurface_Cloud_Lifted, ///< gathers whose cell size was raised to hold the ring
+    Subsurface_Cloud_Dropped_Inside, ///< crossings dropped as inside on both sides, outside on both, or closer than the probe floor
+    Subsurface_Cloud_Dropped_Outside,
+    Subsurface_Cloud_Dropped_Thin,
+    Subsurface_Cloud_Dropped_Sheet, ///< crossings dropped on parts with no inside
+    Subsurface_Cloud_Depth_Floor, ///< cells whose depth-capped step the finest floor overrode
     Subsurface_Cloud_Bent,
     Subsurface_Cloud_Hidden,
-    Subsurface_Cloud_Shadow_Edge,
-    Subsurface_Cloud_Exit_Mismatch,
-    Subsurface_Cloud_Unoriented, ///< shading points without a cloud, by SubsurfaceCloudFailure from kCloudUnoriented on
-    Subsurface_Cloud_Unbounded,
-    Subsurface_Cloud_Wide,
-    Subsurface_Cloud_Lights,
-    Subsurface_Cloud_Missing,
-    Subsurface_Cloud_Other,
+    Subsurface_Cloud_Near_Field, ///< shading points that sampled the near field for a shadow edge between coarse points
+    Subsurface_Cloud_Near_Rays, ///< the shadow rays that took
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample

@@ -106,6 +106,7 @@
 #include "core/shape/portal.h"
 #include "core/shape/prism.h"
 #include "core/shape/quadric.h"
+#include "core/shape/skein.h"
 #include "core/shape/sor.h"
 #include "core/shape/sphere.h"
 #include "core/shape/spheresweep.h"
@@ -7996,6 +7997,12 @@ void Parser::Parse_Global_Settings()
                         if (!(sceneData->subsurfaceMemory >= 1.0))
                             Error("Subsurface memory must be at least 1 (MB).");
                     }
+                    else if (CurrentTokenText() == "bailout")
+                    {
+                        sceneData->subsurfaceBailout = Parse_Float();
+                        if (!(sceneData->subsurfaceBailout >= 0.0))
+                            Error("Subsurface bailout must be 0 or more.");
+                    }
                     else
                     {
                         UNGET
@@ -10520,6 +10527,12 @@ bool Strip_Subsurface_Without_Inside(ObjectPtr Object, SubsurfaceStrip& Strip)
         Kind = "bicubic_patch";
     else if (dynamic_cast<Parametric *>(Object) != nullptr)
         Kind = "parametric";
+    else if (Skein *AsSkein = dynamic_cast<Skein *>(Object))
+    {
+        if (AsSkein->data && AsSkein->data->closed)
+            return false;
+        Kind = "open skein";
+    }
     else
         return false;
 

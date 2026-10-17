@@ -41,11 +41,15 @@
 
 // C++ variants of C standard header files
 #include <cstdint>
+#include <cstring>
 
 // C++ standard header files
 #include <atomic>
 #include <condition_variable>
+#include <map>
+#include <functional>
 #include <memory>
+#include <string>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -108,21 +112,24 @@ enum SubsurfaceMethod
     kSubsurfaceMethodPointCloud = 2,
 };
 
+/// Why the cloud left a shading point without diffuse subsurface light.
+enum SubsurfaceUnserved
+{
+    kUnservedSheet,       ///< the exit point is on an open sheet (a disc, or a mesh with a border), which has no inside
+    kUnservedLights,      ///< the exit point's part has a light the object's parts were not found to have
+    kUnservedReach,       ///< the diffusion's reach is not finite
+    kUnservedCoordinates, ///< the cells lie too far from the origin to be numbered
+    kUnservedReasons
+};
+
+/// The depth level of a cell whose step the diffusion and pixel rules alone set.
+const int kCloudNoDepthLevel = -10000;
+
 /// Memory all subsurface clouds may take together unless global_settings { subsurface { memory MB } } says otherwise.
 const double kSubsurfaceMemoryMB = 1024.0;
 
-/// Why a shading point that asked for the point cloud got method 1; the statistics count each from Subsurface_Cloud_Unoriented.
-enum SubsurfaceCloudFailure
-{
-    kCloudServed = 0,
-    kCloudUnoriented, ///< over 1 in 16 of a cell's crossings could not be told inside from outside
-    kCloudUnbounded,  ///< an unbounded object whose cells would be too coarse
-    kCloudWide,       ///< the reach spans more cells than a cloud gathers
-    kCloudLights,     ///< part of the object has lights of its own (a light group)
-    kCloudMissing,    ///< no cell holds the exit point
-    kCloudOther,      ///< no interior or diffusion, photons the cloud cannot take, or a cell whose build threw
-    kCloudFailures
-};
+/// The multiple of adc_bailout under which method 2 lights a hit as its exit point is lit, unless global_settings { subsurface { bailout F } } says otherwise.
+const double kSubsurfaceBailout = 8.0;
 
 /// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, or the floor.
 enum SubsurfaceStepTerm { kStepDiffusion, kStepPixel, kStepObject, kStepFinest, kStepTerms };
@@ -138,10 +145,11 @@ struct SubsurfaceCloudStatistics final
 struct SubsurfacePoint final
 {
     Vector3d position;
-    float normal[3]; ///< pointing out of the object
-    float irradiance[MathColour::channels];
+    float normal[3]; ///< the surface's own, pointing out of the object; a smooth mesh's interpolated normal only sets its light's cosine
+    float irradiance[MathColour::channels]; ///< until lit, the shading normal
+    static_assert(MathColour::channels >= 3, "a point keeps its shading normal in its irradiance until lit");
     float area;
-    unsigned id : 30; ///< index into the cell's visibility, which stays in build order
+    unsigned id : 30; ///< index into the cell's visibility, which stays in build order; while casting, its part's light set and photons
     unsigned axis : 2; ///< that of the line that found it
 };
 
@@ -157,6 +165,9 @@ struct SubsurfaceNode final
     int first, count; ///< points of a leaf; for an inner node, count is 0 and first the second child
 };
 
+/// The distance between points with these steps along the axes on a surface with this unit normal.
+double SubsurfaceSpacing(const double step[3], const Vector3d& normal);
+
 /// The irradiance cloud of one object in one cube of space, with its point hierarchy; see doc/PERF.md.
 struct SubsurfaceCell final
 {
@@ -169,7 +180,6 @@ struct SubsurfaceCell final
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
-    SubsurfaceCloudFailure failure = kCloudServed; ///< why it is unusable
     SubsurfaceStepTerm term = kStepDiffusion; ///< the rule that set its finest step
     size_t charged = 0, staged = 0; ///< bytes of its finished arrays counted against the cap; of its rows while casting
     bool settled = false; ///< charged or refunded, after which its rows no longer count
@@ -182,14 +192,14 @@ struct SubsurfaceCell final
     size_t PointsRead() const; ///< points under a node a gather has used
 
     /// Building goes in stages, each split into jobs that every thread needing the cell meanwhile takes a share of.
-    /// A cell that fails (a crossing that cannot be oriented, an exception) ends ready but unusable.
+    /// A cell whose build throws ends ready but unusable, and the render stops.
     enum Stage { kCasting, kLighting, kReady };
     std::mutex mutex;
     std::condition_variable changed;
     Stage stage = kCasting;
     int jobs = 0, next = 0, done = 0, steps[3] = {}; ///< steps: lines per row along each axis
     std::atomic<bool> failed{false};
-    size_t found = 0, unoriented = 0; ///< while casting: points kept, crossings dropped
+    size_t found = 0; ///< while casting: points kept
     std::vector<std::vector<SubsurfacePoint>> rows; ///< points found by each row of lines while casting
 };
 
@@ -198,15 +208,16 @@ struct SubsurfaceCellKey final
 {
     const void *object;
     int sizeLevel;
-    int x, y, z;
+    std::int64_t x, y, z;
     bool photons;
     bool radiosity; ///< whether its points carry the radiosity cache's light as well as the lights'
     const void *medium; ///< the texture layer whose flesh and skin its points look up where light enters, or null
     size_t preparedSetId;
+    int depthLevel; ///< where the diffusion would set too coarse a step for its depth, the step is 2^depthLevel scene units
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
-               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId;
+               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel;
     }
 };
 
@@ -262,9 +273,15 @@ class SubsurfaceCache final
         void Refund(SubsurfaceCell& cell);
         /// Throws the fatal error once any cell has passed the cap.
         void CheckCap() const;
-        /// The share of the image done; once past a quarter, whether finished cells at that rate would pass the cap.
+        /// The share of the image done; once past half, whether cells built at the second quarter's rate would pass the cap.
         bool Progress(double fraction, double& heldMB, double& projectedMB, double& capMB);
         SubsurfaceCloudStatistics Statistics() const;
+        /// The count of shading points of one object the cloud could not serve for one reason, for the render's warnings.
+        std::atomic<std::uint64_t>& UnservedCounter(const void *object, SubsurfaceUnserved reason, const std::string& description);
+        struct UnservedObject { std::string description; SubsurfaceUnserved reason; std::uint64_t count; };
+        std::vector<UnservedObject> Unserved() const;
+        /// Whether a mesh's triangles close it: each edge shared by exactly two of them; computed once per mesh.
+        bool ClosedMesh(const void *mesh, const std::function<bool()>& compute);
         /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
         void SetCamera(const Vector3d& location, double pixelSize, double pixelAngle);
         bool GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const;
@@ -272,10 +289,15 @@ class SubsurfaceCache final
     private:
         mutable std::mutex mutex;
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
+        struct UnservedEntry { std::string description; std::atomic<std::uint64_t> count{0}; };
+        std::map<std::pair<const void*, int>, std::unique_ptr<UnservedEntry>> unserved;
+        std::map<const void*, bool> closedMeshes;
+        std::mutex closedMeshesMutex;
         std::mutex photonBoundariesMutex;
         std::unordered_map<const PhotonMap*, std::unique_ptr<SubsurfacePhotonBoundaries>> photonBoundaries;
         size_t cap, charged = 0, staged = 0, peak = 0, refused = 0;
-        double progress = 0.0, refusedAt = 0.0;
+        double progress = 0.0, refusedAt = 0.0, firstFraction = 0.0;
+        size_t firstCharged = 0;
         bool projected = false;
         double spacing;
         bool cameraSet = false;
@@ -299,6 +321,91 @@ inline double FresnelDiffuseReflectance(double eta)
         return ( (1.0-1.0/eta) + 3*pow(1.0-1.0/eta,4.5) ) / 4.0;
 #endif
 }
+
+class SubsurfaceBoundary;
+
+/// d'Eon's better dipole in units of the reduced mean free path, for one reduced albedo at one boundary.
+struct SubsurfaceDipole final
+{
+    double fluence, flux; ///< the weights of the fluence and flux terms: albedo cphi / (4 pi D), albedo ce / (4 pi)
+    double sigma, zb; ///< the transport coefficient; how far the virtual source lies above a real one, 4 A D
+    SubsurfaceDipole() = default;
+    SubsurfaceDipole(double albedo, const SubsurfaceBoundary& boundary);
+    /// Rd at squared radius xSqr from a real source at depth.
+    double Rd(double xSqr, double depth = 1.0) const;
+    /// Rd integrated over a disc of radius x, or the whole plane if x is infinite.
+    double Disc(double x) const;
+};
+
+/// Method 2's boundary at one relative index: Fresnel moments, beam diffusion's ratio to the better dipole, and the reduced
+/// albedo whose total diffuse reflectance is a given colour; built once per index and shared. See doc/PERF.md.
+class SubsurfaceBoundary final
+{
+    public:
+        explicit SubsurfaceBoundary(double eta);
+        /// The boundary for eta, built on first use.
+        static const SubsurfaceBoundary& For(double eta);
+        PreciseMathColour GetReducedAlbedo(const MathColour& diffuseReflectance) const;
+        double eta;
+        double c1, c2; ///< the Fresnel reflectance from inside times the cosine (squared) integrated over cosines 0 to 1
+        double fdr; ///< the diffuse Fresnel reflectance from inside, 2 c1
+        double exitScale; ///< 1 / T, T = 1 - the diffuse Fresnel reflectance from outside = eta^2 (1 - fdr)
+        double ab, cphi, ce; ///< the dipole's boundary factor (1 + 3 c2) / (1 - 2 c1); the fluence's and flux's shares of exitance
+
+        /// Beam diffusion's table: rows by u = sqrt(3 (1 - albedo)), columns by squared optical radius, four to an octave
+        /// from 2^kBeamFirstOctave; each entry the ratio to the dipole of Rd and of Rd's integral over the disc.
+        static const int kBeamRows = 128, kBeamOctaves = 54, kBeamColumns = 4 * kBeamOctaves + 1, kBeamFirstOctave = -27;
+        /// The row at or below a reduced albedo, and the weight of the next.
+        const float *BeamRow(double albedo, double& weight) const;
+        /// Beam diffusion over the dipole for the whole plane.
+        double BeamTotalRatio(double albedo) const;
+        /// The profile's total diffuse reflectance at a reduced albedo.
+        double Total(double albedo) const;
+
+        /// A part 2^(k/4) reduced mean free paths deep, for k from kLayerFirst to kLayerLast, at the albedo whose u is
+        /// step / kLayerSteps (see doc/PERF.md): for k and k + 1 in BeamRatio's layout, the ratios to the dipole of Rd and its
+        /// disc integral on the near face, then from kLayerFar on, of Rd through to the far face. Built on first use and shared.
+        static const int kLayerFirst = -40, kLayerLast = 48, kLayerFar = 4 * kBeamColumns, kLayerSteps = 4096;
+        const float *Layer(int step, int k) const;
+
+    private:
+        mutable std::mutex layerMutex;
+        mutable std::map<std::pair<int, int>, std::unique_ptr<float[]>> layers;
+
+    public:
+
+        /// Beam diffusion over the dipole at a squared optical radius, interpolated within a quarter octave: of Rd for
+        /// disc 0, of its integral over the disc for disc 1.
+        static double BeamRatio(const float *row, double weight, double radiusSqr, int disc)
+        {
+            std::uint64_t bits, unit;
+            std::memcpy(&bits, &radiusSqr, sizeof(bits));
+            unit = (bits & 0xFFFFFFFFFFFFFull) | 0x3FF0000000000000ull;
+            double mantissa;
+            std::memcpy(&mantissa, &unit, sizeof(mantissa));
+            double s = 4.0 * (mantissa - 1.0);
+            int quarter = int(s), k = 4 * (int((bits >> 52) & 0x7FF) - 1023 - kBeamFirstOctave) + quarter;
+            double p = s - quarter;
+            if (k < 0)
+            {
+                k = 0;
+                p = 0.0;
+            }
+            else if (k > kBeamColumns - 2)
+            {
+                k = kBeamColumns - 2;
+                p = 1.0;
+            }
+            const float *a = row + 2 * k + disc, *b = a + 2 * kBeamColumns;
+            return (1.0 - weight) * (a[0] + p * (a[2] - a[0])) + weight * (b[0] + p * (b[2] - b[0]));
+        }
+
+    private:
+        static const int kSamples = 100;
+        float reducedAlbedo[kSamples + 1];
+        std::vector<float> beam; ///< per row and column: the ratios of Rd and of its disc integral
+        std::vector<float> beamTotal; ///< per row: the ratio of the integrals over the plane
+};
 
 /// @}
 ///

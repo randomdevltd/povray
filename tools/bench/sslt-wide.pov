@@ -9,7 +9,7 @@
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 80
-  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing } #end
+  #if (Subsurface) subsurface { samples Diffuse, Single method Method spacing Spacing #ifdef (Bailout) bailout Bailout #end } #end
 }
 
 camera { spherical angle 360 180 location <0, 1.6, 0> look_at <0, 1.6, 1> }

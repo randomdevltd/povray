@@ -395,6 +395,7 @@ void TraceTask::Run()
     } while(forever);
 #endif
 
+    trace.FlushSubsurfaceCounts();
     GetViewData()->SetHighestTraceLevel(trace.GetHighestTraceLevel());
 }
 
