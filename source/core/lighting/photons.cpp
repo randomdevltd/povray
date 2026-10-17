@@ -440,7 +440,10 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             ProgressivePhoton photon;
             photon.point = isect.IPoint;
             photon.direction = -ray.Direction;
-            photon.normal = rawnormal;
+            if (!isect.Object->FaceNormal(photon.normal, &isect))
+                photon.normal = rawnormal;
+            else if (dot(photon.normal, ray.Direction) > 0.0)
+                photon.normal.invert();
             photon.flux = LightCol;
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();
@@ -1173,7 +1176,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
             if (interval.ds <= 0.0)
                 continue;
             const int count = std::max(minsamples, int(std::min(double(sceneData->photonSettings.maxMediaSteps),
-                                                               std::ceil(interval.ds / threadData->photonSpread))));
+                                                               std::ceil(interval.ds / (threadData->photonSpread * sceneData->photonSettings.mediaSpacingFactor)))));
             const double step = interval.ds / count;
             for (int sample = 0; sample < count; ++sample)
             {

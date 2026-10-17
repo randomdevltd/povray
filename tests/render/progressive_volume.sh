@@ -30,6 +30,16 @@ if cmp -s progressive_volume_prepared.px progressive_volume_varying.px; then
     echo 'progressive_volume: variation changed nothing' >&2
     exit 1
 fi
+stored() {
+    tr '\n' ' ' < "progressive_volume_$1.log" | tr -s ' ' | grep -o 'Media photons stored: [0-9]*' | grep -o '[0-9]*$'
+}
+render spaced Declare=Variation=0.1 Declare=MediaSpacing=4 +wt2
+[ "$(stored spaced)" -lt "$(stored varying)" ] || { echo 'progressive_volume: the media spacing factor changes no step' >&2; exit 1; }
+awk -v a="$(mean spaced)" -v b="$(mean varying)" 'BEGIN {exit !(a>0.97*b && a<1.03*b)}'
+render decoy_first Declare=Variation=0.1 Declare=Decoy=1 +wt2
+render decoy_last Declare=Variation=0.1 Declare=Decoy=2 +wt2
+awk -v a="$(stored decoy_first)" -v b="$(stored decoy_last)" 'BEGIN {exit !(a>0.98*b && a<1.02*b)}' ||
+    { echo 'progressive_volume: media steps depend on the order of targets' >&2; exit 1; }
 render brighter Declare=LampPower=2 +wt2
 awk -v a="$(mean prepared)" -v b="$(mean brighter)" 'BEGIN {exit !(b>1.98*a && b<2.02*a)}'
 render group Declare=Grouped=1 +wt2
@@ -71,4 +81,4 @@ assert 1.98 < sum(brighter) / sum(one) < 2.02
 PY_GROUPED
 printf 'progressive_volume means: prepared=%s classic=%s\n' "$(mean prepared)" "$(mean classic)"
 rm -f progressive_volume_*.ppm progressive_volume_*.px progressive_volume_*.log
-echo 'progressive_volume: prepared photon gathers, curved segments, extinction, power, threads and grouped media passed'
+echo 'progressive_volume: prepared photon gathers, curved segments, extinction, media spacing, target steps, power, threads and grouped media passed'

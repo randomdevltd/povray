@@ -1792,7 +1792,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 {
                     MathColour photonsContribution;
 
-                    ComputePhotonDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, rawnormal, layCol.colour(), photonsContribution, att, isect.Object, relativeIor, *surfacePhotonGatherer, weight);
+                    ComputePhotonDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, rawnormal, isect, layCol.colour(), photonsContribution, att, isect.Object, relativeIor, *surfacePhotonGatherer, weight);
 
 #if POV_EXPERIMENTAL_BRILLIANCE_OUT
                     if(layer->Finish->BrillianceOut != 1.0)
@@ -2460,7 +2460,7 @@ POV_COLD_PATH static double NearestBothSides(const ProgressivePhotonMap& map, co
 }
 
 void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
-                                      const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, PhotonGatherer& gatherer, double pathWeight)
+                                      const Intersection& Isect, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, PhotonGatherer& gatherer, double pathWeight)
 {
     if (sceneData->photonSettings.Progressive())
     {
@@ -2473,24 +2473,28 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         if (receiver == ProgressivePhotonMap::noReceiver)
             return;
         threadData->Stats()[Gather_Performed_Count]++;
+        Vector3d Face_Normal = Raw_Normal;
+        if (Object->FaceNormal(Face_Normal, &Isect) && dot(Face_Normal, Eye.Direction) > 0.0)
+            Face_Normal.invert();
         const bool doubleIlluminate = Test_Flag(Object, DOUBLE_ILLUMINATE_FLAG);
-        const double slab = kPhotonSlab * map.BaseRadius(receiver);
+        const double slab = kPhotonSlab * map.BaseRadius(receiver) + Object->SurfaceTolerance();
         auto& nearest = threadData->photonNeighbours;
         double support;
         if (Finish->DiffuseBack != 0.0 || doubleIlluminate)
-            support = NearestBothSides(map, IPoint, Raw_Normal, receiver, nearest, [&](const MappedPhoton& photon) {
-                const double cosine = dot(Raw_Normal, photon.Direction());
+            support = NearestBothSides(map, IPoint, Face_Normal, receiver, nearest, [&](const MappedPhoton& photon) {
+                const double cosine = dot(Face_Normal, photon.Direction());
                 return photon.receiver == receiver && std::abs(cosine) > EPSILON &&
-                       (PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab) || PhotonSurfaceMatchBehind(photon, IPoint, Raw_Normal, slab));
+                       (PhotonSurfaceMatch(photon, IPoint, Face_Normal, slab) || PhotonSurfaceMatchBehind(photon, IPoint, Face_Normal, slab));
             });
         else
-            support = map.Nearest(IPoint, Raw_Normal, receiver, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
+            support = map.Nearest(IPoint, Face_Normal, receiver, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
                 const Vector3d direction = photon.Direction();
-                if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Raw_Normal, slab))
+                if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Face_Normal, slab))
                     return false;
-                return std::abs(dot(Raw_Normal, direction)) > EPSILON && !(dot(Layer_Normal, direction) < EPSILON);
+                return std::abs(dot(Face_Normal, direction)) > EPSILON && !(dot(Layer_Normal, direction) < EPSILON);
             });
         const double support2 = support * support;
+        const bool irid = Finish->Irid > 0.0;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
         unsigned int index = 0;
         MathColour sum;
@@ -2514,6 +2518,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                 if (Finish->Specular > 0.0)
                     ComputeSpecularColour(Finish, direction, -Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
             }
+            if (irid)
+                ComputeIridColour(Finish, direction, Eye.Direction, Layer_Normal, IPoint, contribution);
             sum += contribution;
             threadData->progressiveContributions++;
         }
@@ -6152,7 +6158,7 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
             return irradiance;
         std::uint32_t tested = ProgressivePhotonMap::noReceiver;
         bool inside = false;
-        const double slab = kPhotonSlab * map.BaseRadius(exact);
+        const double slab = kPhotonSlab * map.BaseRadius(exact) + receiver->SurfaceTolerance();
         auto& nearest = threadData->photonNeighbours;
         const double support = map.Nearest(point, n, exact, cap, nearest, [&](const MappedPhoton& photon) {
             if (photon.receiver != exact)

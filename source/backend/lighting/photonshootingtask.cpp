@@ -170,9 +170,7 @@ class SurfaceLightEmitter final : public Emitter
             Vector3d point = light.Center;
             if (light.Parallel)
             {
-                size_t selected = 0;
-                while (selected + 1 < targets.size() && s >= probability[selected])
-                    s -= probability[selected++];
+                const size_t selected = PhotonTargetPick(probability, s);
                 return ParallelDisc(selected, std::min(1.0, s / probability[selected]), t);
             }
             if (light.Area_Light)
@@ -332,6 +330,11 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             if (!light->Parallel)
                 pdf = PhotonTargetMixture(axes, widths, probability[li], uSample, vSample, sobol(sampleIndex, PhotonSobol::kTargeted),
                                           sobol(sampleIndex, PhotonSobol::kTarget), direction, selectedTarget, targeted);
+            else if (!light->emitter)
+            {
+                double s = sobol(sampleIndex, PhotonSobol::kPositionS);
+                selectedTarget = PhotonTargetPick(probability[li], s);
+            }
             TraceTicket ticket(maxTraceLevel, adcBailout);
             Ray ray(ticket);
             ray.Origin = origin.position;
@@ -368,12 +371,12 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                     ray.AppendInterior(interior);
             }
             data->photonSourceLight = light;
-            data->photonTargetObject = targets[li].front();
+            data->photonTargetObject = targets[li][selectedTarget];
             data->Light_Is_Global = !light->lightGroupLight;
             data->passThruPrev = true;
             data->passThruThis = false;
             data->photonDepth = projectionDepth;
-            data->photonSpread = std::max(1.0e-8, Vector3d(targets[li].front()->BBox.size).length() * 0.025) *
+            data->photonSpread = std::max(1.0e-8, Vector3d(targets[li][selectedTarget]->BBox.size).length() * 0.025) *
                                  spreadScale;
             MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(lights.size(), pdf);
             flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());

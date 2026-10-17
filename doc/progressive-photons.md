@@ -48,9 +48,19 @@ scattering) remain hashed per-sample random numbers.
 A surface receiver gathers the `k` nearest compatible deposits on the same object.
 A deposit is compatible when its surface normal is within 60 degrees of the
 receiver's and its offset from the mean of the two tangent planes,
-`|0.5 dot(p - x, n_x + n_p)|`, is at most a tenth of that receiver's base radius;
-that offset is zero for any two points on a sphere or a cylinder, so curvature does
-not reject photons. Deposits arriving from behind a receiver without
+`|0.5 dot(p - x, n_x + n_p)|`, is at most a tenth of that receiver's base radius plus
+its intersection tolerance; that offset is zero for any two points on a sphere or a
+cylinder, so curvature does not reject photons. Both tests use the normal of the face
+hit: a `smooth_triangle`, a smooth mesh triangle or a `smooth` height field cell
+interpolates a shading normal that does not lie on its flat face, and measured against
+it most neighbours on the face fell outside the slab (a smooth wavy mesh received 0.63
+of classic's light, a smooth height field 0.68). Shading still uses the interpolated
+normal. The tolerance is zero for exact solvers; an `isosurface` stops root finding
+within its `accuracy` before the surface, and a `parametric`'s interval subdivision
+reports hits up to about four times its `accuracy` either side, so their tolerances are
+that `accuracy` and eight times it, scaled by the object's transform. Without them a
+focused caustic on a default-accuracy isosurface kept 0.23 of its light and on a
+parametric 0.45. Deposits arriving from behind a receiver without
 `diffuse_back`, or entering a subsurface receiver at grazing angles, are not
 counted. The support `r` is the distance to the `k`-th compatible deposit, capped
 at eight times the receiver's base radius, which is the median `k`-th-neighbour
@@ -94,7 +104,7 @@ most 0.016.
 `k` grows with the batch count as `k = 48 (batches / 4)^(2/3)`, clamped to
 8..256, the kernel-density rate for a two-dimensional density: quality 1 uses
 48 neighbours, quality 4 uses 121 and quality 16 uses the cap of 256. The same
-estimator feeds diffuse, phong and specular photon lighting and subsurface entry,
+estimator feeds diffuse, phong, specular and `irid` photon lighting and subsurface entry,
 including the shared subsurface point cloud, whose boundary probe uses the base
 radius. A subsurface receiver that is a CSG gathers deposits on its members.
 
@@ -162,6 +172,16 @@ finite photon segments with their incoming flux and extinction. A gather clips e
 segment to its spherical support and integrates attenuation analytically along the
 clipped length. The estimate divides by the sphere volume, with scattering and phase
 evaluated at the camera sample.
+Along a photon path through a medium the integration step is a fortieth of the bounding
+diagonal of the target the photon was aimed at (for an isotropic sample, the target its
+selection draw picks), shrinking as `batches^(-1/7)`, times the `factor` of
+`media N, factor`; each media interval takes at most `N` steps and at least the medium's
+own minimum samples. As with classic photons a larger factor takes fewer, longer steps:
+on `tests/render/progressive_volume.pov` with varying extinction, factor 4 stores 4% fewer
+segments at `media 16` and 44% fewer at `media 64`, and changes the mean by under 0.2%.
+With several targets the step used to come from the light's first target whatever the
+photon was aimed at, so the segment count depended on the order of targets in the scene
+(406,000 or 470,000 segments for the same scene there); it now differs by 0.1%.
 The existing media step limit and sampling settings control extinction integration;
 method 4 shares its prepared coefficient field with camera transport. Its coarse
 direct-light sampling still gathers photons at every coefficient sample.
@@ -324,7 +344,13 @@ covers thread-count equality for every light type and media, dispersion, subsurf
 thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
 independence of the logged budget, the memory budget error and invalid quality;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
-requires its underside to match the lit top, as does a `double_illuminate` disc; the
+requires its underside to match the lit top, as does a `double_illuminate` disc;
+`tests/render/progressive_receivers.sh` focuses a caustic on a wavy floor built as a mesh, a
+smooth mesh, a height field, a smooth height field, an isosurface and a parametric, and
+requires each to match classic photons within 5% (the parametric within 10%: with its
+slab disabled it still reaches only 0.93 of classic there), the smooth forms to match the
+faceted ones and the isosurface to match a tight-accuracy one, and requires an `irid`
+finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 
 ## Measurements

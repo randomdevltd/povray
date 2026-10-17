@@ -306,7 +306,7 @@ function word in a body is the keyword itself (`filter 0.5`, while `filter(A, F)
 
 `global_settings { photons { method 2 quality (Budget * 2) } }` enables progressive
 photons. These method and quality controls belong to the photon block inside
-`global_settings`; object and light photon blocks take transport flags instead. The quality expression must be a finite number greater than zero and at most 64;
+`global_settings`; object and light photon blocks take transport flags instead. The quality expression must be a finite number greater than zero and at most 16384;
 it defaults to 1. `quality` is contextual and stays available as a binding or function name
 outside the photon item position. Parenthesized expressions and signed operands work there.
 Omitting `method`, or specifying `method 1`, keeps classic photon controls; `quality` requires

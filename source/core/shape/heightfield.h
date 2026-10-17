@@ -105,6 +105,7 @@ class HField final : public ObjectBase
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        virtual bool FaceNormal(Vector3d&, const Intersection *) const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;
@@ -114,6 +115,8 @@ class HField final : public ObjectBase
         void Compute_HField(const ImageData *image);
     protected:
         static DBL normalize(Vector3d& A, const Vector3d& B);
+        /// The unsmoothed normal of the cell triangle at local offset x, z in cell px, pz, transformed and unnormalised.
+        Vector3d Facet_Normal(int px, int pz, DBL x, DBL z) const;
         void smooth_height_field(int xsize, int zsize);
         bool intersect_pixel(int x, int z, const BasicRay& ray, DBL height1, DBL height2, IStack &HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
         static int add_single_normal(HF_VAL **data, int xsize, int zsize, int x0, int z0,int x1, int z1,int x2, int z2, Vector3d& N);
