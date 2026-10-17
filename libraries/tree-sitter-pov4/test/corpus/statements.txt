@@ -106,3 +106,23 @@ include "colors.inc";
       alternative: (body)))
   (include_statement
     file: (string)))
+
+==================
+Inputs
+==================
+input Quality = 3; input Name;
+let L = { input: 1 };
+---
+
+(source_file
+  (input_statement
+    name: (identifier)
+    default: (number))
+  (input_statement
+    name: (identifier))
+  (let_statement
+    name: (identifier)
+    value: (dictionary
+      (pair
+        key: (identifier)
+        value: (number)))))

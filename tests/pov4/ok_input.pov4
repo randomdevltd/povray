@@ -1,0 +1,6 @@
+include "scene.inc";
+input Radius = 0.5;
+input Label;
+input Spare = 0;
+debug(concat("pov4 input ", Label, "\n"));
+sphere { 0, Radius * 2 pigment { rgb 1 } }

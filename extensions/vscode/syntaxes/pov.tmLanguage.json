@@ -62,7 +62,7 @@
     },
     "statement": {
       "name": "keyword.control.pov",
-      "match": "\\b(?:continue|function|include|global|return|break|false|while|else|null|step|true|for|let|fn|if|in|to)\\b"
+      "match": "\\b(?:continue|function|include|global|return|break|false|input|while|else|null|step|true|for|let|fn|if|in|to)\\b"
     },
     "colorop": {
       "name": "support.function.color.pov",

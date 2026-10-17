@@ -1,0 +1,3 @@
+include "scene.inc";
+input Size = "large";
+sphere { 0, Size * 2 }

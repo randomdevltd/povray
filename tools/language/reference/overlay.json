@@ -59,6 +59,7 @@
  "words": {
   "let": { "kind": "statement", "text": "Binds a name in the current function scope; repeats rebind." },
   "global": { "kind": "statement", "text": "Binds a name at file scope: global X = E; visible in the file's functions and included files." },
+  "input": { "kind": "statement", "text": "Declares a scene parameter supplied with Declare=Name=Value: input Q = 3; has a default, input Q; must be supplied. Typed from usage; supplying an undeclared name is an error." },
   "fn": { "kind": "statement", "text": "Defines a named function; shorthand for a let-bound lambda." },
   "return": { "kind": "statement", "text": "Ends the function with a value; error after items were emitted." },
   "if": { "kind": "statement", "text": "Runs its body when the condition is true; else supplies the alternative." },

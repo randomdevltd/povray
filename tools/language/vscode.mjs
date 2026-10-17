@@ -11,7 +11,7 @@ const reserved = JSON.parse(readFileSync(join(root, 'tools/language/keywords.jso
 const blockDoc = JSON.parse(readFileSync(join(root, 'tools/language/grammar/blocks.json'), 'utf8'));
 
 // Word classes mirror libraries/tree-sitter-pov4/words.js.
-const STATEMENT = ['if', 'else', 'for', 'while', 'break', 'continue', 'include', 'let', 'fn', 'global',
+const STATEMENT = ['if', 'else', 'for', 'while', 'break', 'continue', 'include', 'let', 'fn', 'global', 'input',
     'return', 'null', 'in', 'to', 'step', 'true', 'false', 'function'];
 const DIRECTIVE = ['append', 'breakpoint', 'case', 'declare', 'deprecated', 'elseif', 'end', 'fclose', 'fopen',
     'ifdef', 'ifndef', 'local', 'macro', 'read', 'switch', 'undef', 'write'];

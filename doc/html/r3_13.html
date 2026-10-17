@@ -99,6 +99,9 @@
   <td><div class="divh3"><a title="3.13.2.14" href="#r3_13_2_14">Limits and Testing Options</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.13.2.15" href="#r3_13_2_15">Scene Inputs</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.13.3" href="#r3_13_3">Converting Scenes with the Codemod</a></strong></div></td>
 </tr>
 <tr>
@@ -593,7 +596,7 @@ isosurface {
 <tr><td><code>debug(S)</code>, <code>warning(S)</code>, <code>error(S)</code></td><td>The classic <code>#debug</code>, <code>#warning</code> and <code>#error</code>.</td></tr>
 <tr><td><code>array(N[, Fill])</code></td><td>An array of <code>N</code> elements, all <code>null</code> or all <code>Fill</code>.</td></tr>
 </table>
-<p>The words <code>let</code>, <code>fn</code>, <code>return</code>, <code>null</code>, <code>in</code>, <code>step</code> and <code>continue</code> are reserved in 4.0 beside the classic reserved words, and a name cannot be a reserved word. <code>len</code>, <code>map</code>, <code>push</code> and <code>keys</code> are not reserved: a name resolves to a 4.0 binding first, then to a classic declaration of that name, then to the built-in. Names that start with <code>__pov4_</code> belong to the evaluator.</p>
+<p>The words <code>let</code>, <code>fn</code>, <code>input</code>, <code>return</code>, <code>null</code>, <code>in</code>, <code>step</code> and <code>continue</code> are reserved in 4.0 beside the classic reserved words, and a name cannot be a reserved word. <code>len</code>, <code>map</code>, <code>push</code> and <code>keys</code> are not reserved: a name resolves to a 4.0 binding first, then to a classic declaration of that name, then to the built-in. Names that start with <code>__pov4_</code> belong to the evaluator.</p>
 <p>Comments are <code>//</code> and <code>/* */</code> (not nested). A <code>;</code> after an item is allowed and ignored; <code>let</code>, assignment, <code>global</code>, <code>include</code> and <code>return</code> statements end with <code>;</code>.</p>
 </div>
 
@@ -691,6 +694,32 @@ object { __pov4_1 }
 object { __pov4_1 translate &lt;3, 0, 0&gt; }
 </pre>
 <p>The scene starts with <code>#version 4;</code>. Every <code>let</code> that binds a block becomes a <code>#declare</code> of a name that begins with <code>__pov4_</code>, and each manifested item becomes the classic text for it.</p>
+</div>
+
+<a name="r3_13_2_15"></a>
+<div class="content-level-h4" contains="Scene Inputs" id="r3_13_2_15">
+<h4>3.13.2.15 Scene Inputs</h4>
+<p>An <code>input</code> statement declares a value that the person rendering the scene supplies with the <code>Declare</code> option, on the command line or in an INI file (see <a href="r3_2.html#r3_2_5_1">Constant</a>):</p>
+<pre>
+input Count;
+input Radius = 0.5;
+input Label = "plain";
+for (I = 1 to Count) {
+  sphere { &lt;I, 0, 0&gt;, Radius }
+}
+debug(concat(Label, "\n"));
+</pre>
+<pre>
+povray +Irow.pov4 Declare=Count=5 Declare=Label="five balls"
+</pre>
+<ul>
+  <li><code>input X;</code> declares a required input: rendering without <code>Declare=X=...</code> is an error at the declaration.</li>
+  <li><code>input X = E;</code> declares an optional input whose default is <code>E</code>.</li>
+  <li>An input binds <code>X</code> at file scope, like <code>global</code>. Inputs are declared at the top level of a file, once; an included <code>.inc4</code> may declare its own.</li>
+  <li>A supplied value is a number when it is written as one, and a string otherwise. <code>Declare=Label="five balls"</code> and <code>Declare=Label=five</code> both supply strings, and <code>Declare=Label=</code> supplies the empty string.</li>
+</ul>
+<p>Inputs are typed like everything else in 4.0. A default fixes the type, so <code>input Label = "plain";</code> followed by <code>Label * 2</code> fails where it is used, and so does <code>Declare=Radius=big</code>, at the declaration. An input without a default takes its type from how the scene uses it: <code>Count</code> above is a loop bound, so <code>Declare=Count=many</code> fails at <code>Count</code> with the message <code>Input 'Count' is used here as a number or a vector or a colour, but Declare=Count supplies a string.</code> Uses in different branches are united, as for function parameters, and an input the scene never uses accepts any value.</p>
+<p>A 4.0 scene accepts only the values it declares. A <code>Declare</code> that names no input is an error, with a suggestion when the name is close to one that exists, so a misspelt option cannot be silently ignored. A supplied input that the scene never reads is warned about. Both are reported once every file of the scene has been checked. The values the renderer supplies itself, such as <code>clock_delta</code>, <code>final_frame</code> and <code>image_width</code>, are not inputs and need no declaration.</p>
 </div>
 
 <a name="r3_13_3"></a>

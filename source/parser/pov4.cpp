@@ -14,6 +14,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -84,7 +85,7 @@ const size_t kEvaluatorStack = size_t(256) << 20;
 
 enum class NK : unsigned char
 {
-    File, Let, Global, Assign, FnDef, Params, Param, If, While, For, ForIn, Break, Continue, Return, Include,
+    File, Let, Global, Assign, FnDef, Params, Param, If, While, For, ForIn, Break, Continue, Return, Include, Input,
     Keyword, Comma, Spread, Number, String, Ident, Builtin, True, False, Null, Vector, Array, Dict, Pair,
     Block, FunctionBlock, Cond, Binary, Unary, Lambda, Colour, Channel, Call, Index, Member, Body
 };
@@ -806,6 +807,24 @@ private:
         std::vector<CheckFn*> stack;
         bool checking = false;
     };
+    struct Supplied { PValue value; unsigned ty; };
+    struct InputData
+    {
+        const Node* decl = nullptr;
+        unsigned def = TY_NONE;
+        unsigned use = TY_NONE;
+        const Node* usedAt = nullptr;
+        bool referenced = false;
+    };
+    std::map<std::string, Supplied> mSupplied;
+    std::unordered_map<int, InputData> mInputs;
+
+    InputData* InputOf(const Node* n, CheckCtx& ctx);
+    unsigned InputTy(int sym, bool checking) const;
+    void MarkInputRefs(const Node* n);
+    void ValidateInputs();
+    void FinishInputs();
+    std::string NearestName(const std::string& name, const std::vector<std::string>& names) const;
 
     void Check(Program& p);
     void CollectFns(const Node* n, std::unordered_set<const Node*>& seen, std::unordered_map<int, CheckFn>& fns);
@@ -825,10 +844,23 @@ Pov4Evaluator::Pov4Evaluator(Parser& parser) :
 {
     for (int i = 0; Reserved_Words[i].Token_Name != nullptr; ++i)
         mReserved.insert(Reserved_Words[i].Token_Name);
-    for (const char* w : {"let", "fn", "global", "return", "null", "in", "to", "step", "continue"})
+    for (const char* w : {"let", "fn", "global", "input", "return", "null", "in", "to", "step", "continue"})
         mReserved.insert(w);
     mFileScope = std::make_shared<Scope>(nullptr);
     mScope = mFileScope;
+    static const std::unordered_set<std::string> kRendererDeclares = { "clock_delta", "final_clock", "final_frame",
+        "frame_number", "image_height", "image_width", "initial_clock", "initial_frame", "input_file_name" };
+    for (const auto& d : mScene.declaredVariables)
+    {
+        if (kRendererDeclares.count(d.first) != 0)
+            continue;
+        const std::string& text = d.second;
+        double number = 0.0;
+        if ((text.size() >= 2) && (text.front() == '"') && (text.back() == '"'))
+            mSupplied[d.first] = { MakeString(UTF8toUCS2String(text.substr(1, text.size() - 2))), TY_STR };
+        else if (ParseNumber(text, number))
+            mSupplied[d.first] = { PValue::Number(number), TY_NUM };
+    }
 }
 
 Pov4Evaluator::~Pov4Evaluator()
@@ -1116,6 +1148,16 @@ const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
                     Fail(k, "Only blocks can follow one another in a binding.");
         return &node;
     }
+    if (type == "input_statement")
+    {
+        Node& node = NewNode(p, NK::Input, n);
+        node.sym = CheckedName(p, Field(n, "name"));
+        node.text = mSymbolNames[node.sym];
+        node.a = named("default");
+        if (std::strcmp(ts_node_type(ts_node_parent(n)), "source_file") != 0)
+            Fail(&node, "An input can only be declared at the top level of a file.");
+        return &node;
+    }
     if ((type == "parameters") || (type == "lambda") || (type == "function_definition"))
     {
         auto lowerParams = [&](TSNode params) -> const Node* {
@@ -1348,16 +1390,140 @@ void Pov4Evaluator::Check(Program& p)
     std::unordered_map<int, CheckFn> fns;
     std::unordered_set<const Node*> seen;
     CollectFns(p.root, seen, fns);
+    std::unordered_set<int> declared;
+    for (const Node* n : p.root->kids)
+    {
+        if (n->kind != NK::Input)
+            continue;
+        auto in = mInputs.find(n->sym);
+        if (in != mInputs.end())
+            Fail(n, "Input '%s' is already declared at %s:%u:%u.", n->text.c_str(),
+                 UCS2toSysString(mFiles[in->second.decl->file]).c_str(), in->second.decl->line, in->second.decl->column);
+        mInputs[n->sym].decl = n;
+        declared.insert(n->sym);
+    }
     CheckCtx infer;
     infer.scopes.assign(1, {});
     infer.fns = &fns;
     infer.checking = false;
-    CheckItems(p.root->kids, infer);
-    CheckCtx check;
-    check.scopes.assign(1, {});
-    check.fns = &fns;
+    CheckCtx check = infer;
     check.checking = true;
+    for (const auto& in : mInputs)
+        if (declared.count(in.first) == 0)
+            infer.scopes[0][in.first] = in.second.def;
+    CheckItems(p.root->kids, infer);
+    ValidateInputs();
+    for (const auto& in : mInputs)
+        if (declared.count(in.first) == 0)
+            check.scopes[0][in.first] = InputTy(in.first, true);
     CheckItems(p.root->kids, check);
+}
+
+unsigned Pov4Evaluator::InputTy(int sym, bool checking) const
+{
+    const InputData& in = mInputs.at(sym);
+    if (!checking || (in.def != TY_NONE))
+        return in.def;
+    auto s = mSupplied.find(mSymbolNames[sym]);
+    return (s != mSupplied.end()) ? (s->second.ty | in.use) : in.use;
+}
+
+Pov4Evaluator::InputData* Pov4Evaluator::InputOf(const Node* n, CheckCtx& ctx)
+{
+    if (n->kind != NK::Ident)
+        return nullptr;
+    auto in = mInputs.find(n->sym);
+    if (in == mInputs.end())
+        return nullptr;
+    for (size_t s = 1; s < ctx.scopes.size(); ++s)
+        if (ctx.scopes[s].count(n->sym) != 0)
+            return nullptr;
+    for (const CheckFn* f : ctx.stack)
+        if (std::find(f->params.begin(), f->params.end(), n->sym) != f->params.end())
+            return nullptr;
+    return &in->second;
+}
+
+void Pov4Evaluator::MarkInputRefs(const Node* n)
+{
+    if (n == nullptr)
+        return;
+    if (n->kind == NK::Ident)
+    {
+        auto in = mInputs.find(n->sym);
+        if (in != mInputs.end())
+            in->second.referenced = true;
+    }
+    for (const Node* k : n->kids)
+        MarkInputRefs(k);
+    for (const Node* k : {n->a, n->b, n->c, n->d})
+        MarkInputRefs(k);
+}
+
+void Pov4Evaluator::ValidateInputs()
+{
+    auto fits = [](unsigned have, unsigned want) {
+        return ((have == TY_NUM) ? (want & (TY_NUMERIC | TY_NULL)) : (want & have)) != 0;
+    };
+    for (const auto& entry : mInputs)
+    {
+        const InputData& in = entry.second;
+        auto s = mSupplied.find(in.decl->text);
+        if (s == mSupplied.end())
+            continue;
+        const char* name = in.decl->text.c_str();
+        std::string have = TyName(s->second.ty);
+        if ((in.def != TY_NONE) && !fits(s->second.ty, in.def))
+            Fail(in.decl, "Input '%s' defaults to %s, but Declare=%s supplies %s.",
+                 name, TyName(in.def).c_str(), name, have.c_str());
+        if ((in.use != TY_NONE) && !fits(s->second.ty, in.use))
+            Fail(in.usedAt, "Input '%s' is used here as %s, but Declare=%s supplies %s.",
+                 name, TyName(in.use).c_str(), name, have.c_str());
+    }
+}
+
+std::string Pov4Evaluator::NearestName(const std::string& name, const std::vector<std::string>& names) const
+{
+    std::string best;
+    size_t bestDistance = (name.size() >= 5) ? 3 : 2;
+    for (const std::string& n : names)
+    {
+        size_t d = EditDistance(name, n);
+        if (d < bestDistance)
+        {
+            bestDistance = d;
+            best = n;
+        }
+    }
+    return best;
+}
+
+void Pov4Evaluator::FinishInputs()
+{
+    std::vector<std::string> names;
+    for (const auto& in : mInputs)
+        names.push_back(in.second.decl->text);
+    std::sort(names.begin(), names.end());
+    for (const std::string& name : names)
+    {
+        const InputData& in = mInputs.at(mSymbols.at(name));
+        if (in.referenced || (mSupplied.count(name) == 0))
+            continue;
+        UCS2String file = mFiles[in.decl->file];
+        mParser.Warning(SourceInfo(file, SourcePosition(in.decl->line, in.decl->column, 0)),
+                        "%s:%u:%u: Declare=%s supplies input '%s', which the scene never uses.",
+                        UCS2toSysString(file).c_str(), in.decl->line, in.decl->column, name.c_str(), name.c_str());
+    }
+    for (const auto& s : mSupplied)
+    {
+        auto sym = mSymbols.find(s.first);
+        if ((sym != mSymbols.end()) && (mInputs.count(sym->second) != 0))
+            continue;
+        std::string near = NearestName(s.first, names);
+        std::string note = near.empty() ? std::string(".") : "; did you mean '" + near + "'?";
+        Fail(nullptr, "Declare=%s supplies a value, but the scene declares no input '%s'%s",
+             s.first.c_str(), s.first.c_str(), note.c_str());
+    }
 }
 
 void Pov4Evaluator::CheckItems(const std::vector<const Node*>& items, CheckCtx& ctx)
@@ -1383,6 +1549,13 @@ unsigned Pov4Evaluator::LookupTy(int sym, CheckCtx& ctx, bool& found) const
 
 void Pov4Evaluator::Constrain(const Node* n, unsigned mask, CheckCtx& ctx)
 {
+    if (InputData* in = InputOf(n, ctx))
+    {
+        if (in->usedAt == nullptr)
+            in->usedAt = n;
+        in->use |= mask;
+        return;
+    }
     if (ctx.stack.empty() || (n->kind != NK::Ident))
         return;
     bool found = false;
@@ -1518,6 +1691,15 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
             if (!ctx.stack.empty())
                 ctx.stack.back()->ret |= (n->a != nullptr) ? TypeOf(n->a, ctx) : TY_NULL;
             break;
+        case NK::Input:
+            if (n->a != nullptr)
+            {
+                unsigned t = TypeOf(n->a, ctx);
+                if (!ctx.checking)
+                    mInputs[n->sym].def = (t == TY_NULL) ? TY_NONE : t;
+            }
+            ctx.scopes.back()[n->sym] = InputTy(n->sym, ctx.checking);
+            break;
         case NK::Include:
         {
             unsigned t = OperandTy(n->a, TY_STR, ctx);
@@ -1540,7 +1722,10 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
 void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
 {
     if (n->kind == NK::FunctionBlock)
+    {
+        MarkInputRefs(n);
         return;
+    }
     const std::string word = Normalised(n->text);
     const Pov4BlockSchema* schema = FindPov4BlockSchema(word.data(), word.size());
     for (const Node* k : n->kids)
@@ -1551,7 +1736,10 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
             continue;
         }
         if (k->kind == NK::FunctionBlock)
+        {
+            MarkInputRefs(k);
             continue;
+        }
         if ((k->kind == NK::Keyword) && (schema != nullptr))
         {
             bool legal = false;
@@ -1703,6 +1891,8 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
             return TY_NONE;
         case NK::Ident:
         {
+            if (InputData* in = InputOf(n, ctx))
+                in->referenced = true;
             bool found = false;
             return LookupTy(n->sym, ctx, found);
         }
@@ -1723,6 +1913,10 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
                 return (i != sigs.end()) ? i->second.ret : TY_NONE;
             }
         case NK::Lambda:
+            ctx.scopes.emplace_back();
+            if (n->a != nullptr)
+                for (const Node* param : n->a->kids)
+                    ctx.scopes.back()[param->sym] = TY_NONE;
             if (n->b != nullptr)
             {
                 if (n->b->kind == NK::Body)
@@ -1730,6 +1924,7 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
                 else
                     (void)TypeOf(n->b, ctx);
             }
+            ctx.scopes.pop_back();
             return TY_FN;
         case NK::Binary:
         {
@@ -1820,6 +2015,11 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
 unsigned Pov4Evaluator::CheckCall(const Node* n, CheckCtx& ctx)
 {
     const Node* callee = n->a;
+    auto visitArgs = [&]() {
+        for (const Node* k : n->kids)
+            (void)TypeOf(k, ctx);
+        return TY_NONE;
+    };
     auto arityText = [](unsigned char lo, unsigned char hi) -> std::string {
         return (lo == hi) ? std::to_string(lo) : std::to_string(lo) + " to " + std::to_string(hi);
     };
@@ -1828,7 +2028,7 @@ unsigned Pov4Evaluator::CheckCall(const Node* n, CheckCtx& ctx)
         const auto& sigs = BuiltinSigs();
         auto i = sigs.find(BI(callee->op));
         if (i == sigs.end())
-            return TY_NONE;
+            return visitArgs();
         const BuiltinSig& s = i->second;
         std::string ar = arityText(s.minArgs, s.maxArgs);
         if (ctx.checking && ((n->kids.size() < s.minArgs) || (n->kids.size() > s.maxArgs)))
@@ -1838,7 +2038,10 @@ unsigned Pov4Evaluator::CheckCall(const Node* n, CheckCtx& ctx)
         {
             unsigned need = s.args[(k < 3) ? k : 0];
             if (need == TY_NONE)
+            {
+                (void)TypeOf(n->kids[k], ctx);
                 continue;
+            }
             unsigned t = OperandTy(n->kids[k], need, ctx);
             if (ctx.checking && (t != TY_NONE) && ((t & need) == 0))
                 Fail(n->kids[k], "Argument %d of '%s' must be %s, not %s.",
@@ -1852,7 +2055,10 @@ unsigned Pov4Evaluator::CheckCall(const Node* n, CheckCtx& ctx)
         unsigned bound = LookupTy(callee->sym, ctx, found);
         auto fi = (found && (bound != TY_NONE) && ((bound & TY_FN) == 0)) ? ctx.fns->end() : ctx.fns->find(callee->sym);
         if (fi == ctx.fns->end())
-            return TY_NONE;
+        {
+            (void)TypeOf(callee, ctx);
+            return visitArgs();
+        }
         CheckFn& f = fi->second;
         size_t required = 0;
         if (f.def->a != nullptr)
@@ -1875,7 +2081,9 @@ unsigned Pov4Evaluator::CheckCall(const Node* n, CheckCtx& ctx)
         }
         return f.ret;
     }
-    return TY_NONE;
+    if (callee != nullptr)
+        (void)TypeOf(callee, ctx);
+    return visitArgs();
 }
 
 //------------------------------------------------------------------------------
@@ -2772,6 +2980,26 @@ Pov4Evaluator::Flow Pov4Evaluator::Exec(const Node* n, Output& out)
         case NK::FnDef:
             Bind(n->sym, Eval(n), false);
             return Flow::Normal;
+        case NK::Input:
+        {
+            auto s = mSupplied.find(n->text);
+            if (s != mSupplied.end())
+                Bind(n->sym, s->second.value, true);
+            else if (n->a != nullptr)
+                Bind(n->sym, Store(Eval(n->a), n->a), true);
+            else
+            {
+                std::vector<std::string> unclaimed;
+                for (const auto& u : mSupplied)
+                    if (mInputs.count(Intern(u.first)) == 0)
+                        unclaimed.push_back(u.first);
+                std::string near = NearestName(n->text, unclaimed);
+                std::string note = near.empty() ? std::string() : " Declare=" + near + " was supplied; is it misspelt?";
+                Fail(n, "Input '%s' has no default, so it must be supplied: Declare=%s=<value>.%s",
+                     n->text.c_str(), n->text.c_str(), note.c_str());
+            }
+            return Flow::Normal;
+        }
         case NK::If:
             for (const Node* branch = n; branch != nullptr; )
             {
@@ -4077,6 +4305,7 @@ void Pov4Evaluator::Run()
     if (ExecItems(main.root->kids, scene) != Flow::Normal)
         Fail(main.root, "'break', 'continue' or 'return' outside a loop or function.");
     Flush();
+    FinishInputs();
 }
 
 namespace

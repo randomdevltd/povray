@@ -64,7 +64,7 @@ const NODE_SHAPES = {
     classic: { declare_directive: ['target', 'variable'], macro_directive: ['name', 'function'],
         block: ['name', 'block'] },
     pov4: { let_statement: ['name', 'variable'], global_statement: ['name', 'variable'],
-        function_definition: ['name', 'function'], block: ['name', 'block'] },
+        input_statement: ['name', 'variable'], function_definition: ['name', 'function'], block: ['name', 'block'] },
 };
 
 function treeSymbols(node, language, text, decls) {

@@ -99,6 +99,10 @@ current scope. Parameters may have defaults. Functions are closures; arguments a
   macro does.
 - `let X;` declares `X` as `null`; `defined(X)` is false while `X` is `null`, so `X = null;`
   plays the part of classic `#undef X`.
+- `input X;` and `input X = E;` (top level of a file only) bind `X` at file scope to the value
+  supplied with `Declare=X=V` on the command line or in an INI file, or else to the default `E`.
+  An input without a default must be supplied. Every `Declare` given to a 4.0 scene must name an
+  input; renderer-provided values such as `clock_delta` and `image_width` are exempt.
 
 An `.inc4` include runs in the including file's scope (as classic includes do).
 
@@ -115,7 +119,7 @@ An agent-facing index of every block and item lives in `tools/language/reference
 - Comments `// ...` and `/* ... */` (not nested).
 - Numbers as classic: `1`, `.5`, `1e-3`. Strings as classic, same escapes.
 - Identifiers as classic; they may not be a reserved word. Reserved words are the classic reserved
-  words plus `let`, `fn`, `return`, `null`, `in`, `step`, `continue`. (`if`, `else`, `for`,
+  words plus `let`, `fn`, `input`, `return`, `null`, `in`, `step`, `continue`. (`if`, `else`, `for`,
   `while`, `break`, `include`, `global`, `to`, `true`, `false` are already classic reserved words.)
   The 4.0 built-ins `len`, `map`, `push` and `keys` are not reserved: a name resolves to a 4.0
   binding first, then to a classic declaration of that name, then to the built-in. Names starting
@@ -135,6 +139,7 @@ include "colors.inc4";             // 4.0 include: runs in this scope
 include "textures.inc";            // classic include: see "Mixing languages"
 
 let X = 1;   X = X + 1;   global Seed = seed(42);
+input Quality = 3;   input Name;   // supplied with Declare=Quality=5 Declare=Name="sky"
 fn F(A, B = 2) { A * B }
 
 if (X > 1) { ... } else if (X < 0) { ... } else { ... }
@@ -271,6 +276,12 @@ Right after parsing, before anything runs, each file is statically checked:
   its position needs — a string added to a number, a member or index on a type that has
   none, a wrong argument count, or a call passing a string to a parameter the function
   uses as a number. Names that resolve to nothing (classic interop) stay unchecked.
+- **Inputs are typed like parameters.** An `input` with a default has the default's type,
+  so usage that disagrees with it fails where it is used. Otherwise the input's type is
+  what the scene's usage allows (united across branches); a supplied value outside it
+  fails at the first such use, and one that contradicts the default fails at the
+  declaration. A supplied input that nothing reads is a warning; a `Declare` naming no
+  input is an error, reported once every file has been checked.
 - Untaken branches are checked too: a typo inside `if (false) { ... }` still fails.
 
 ### Render-time functions

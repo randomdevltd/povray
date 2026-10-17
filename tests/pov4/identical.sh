@@ -21,7 +21,7 @@ render "$DIR/basics.pov4" pov4_v37_new +ML3.7
 cmp pov4_v37_classic.px pov4_v37_new.px
 echo "pov4 +ML3.7: identical to the classic scene at #version 3.7"
 fails() {
-    if "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f > "pov4_$1.log" 2>&1; then
+    if "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f $3 > "pov4_$1.log" 2>&1; then
         echo "pov4 $1: expected a parse error"; exit 1
     fi
     tr -d "\n" < "pov4_$1.log" | grep -q "$2"
@@ -39,9 +39,14 @@ fails err_operand "The left operand of '+' must be a number, vector or colour, n
 fails err_param "'Scale' uses parameter 'V' as"
 fails err_arity "'Place' takes 2 arguments, but this call passes 1."
 fails err_logic "'Both' uses parameter 'P' as a number or a vector or a colour, but this call passes a string."
+fails err_input_required "err_input_required.pov4:2:1: Input 'Count' has no default, so it must be supplied"
+fails err_input_type "err_input_type.pov4:3:15: Input 'Count' is used here as a number" 'Declare=Count="many"'
+fails err_input_default "err_input_default.pov4:3:13: The left operand of '\*' must be a number"
+fails err_input_unknown "no input 'Qualty'; did you mean 'Quality'?" Declare=Qualty=5
+fails ok_input "ok_input.pov4:2:1: Input 'Radius' defaults to a number, but Declare=Radius supplies a string." "Declare=Radius=big Declare=Label=x"
 accepts() {
-    "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f > "pov4_$1.log" 2>&1 || { cat "pov4_$1.log"; exit 1; }
-    [ -z "$2" ] || grep -q "$2" "pov4_$1.log"
+    "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f $3 > "pov4_$1.log" 2>&1 || { cat "pov4_$1.log"; exit 1; }
+    [ -z "$2" ] || tr -d "\n" < "pov4_$1.log" | grep -q "$2"
     echo "pov4 $1: accepted"
 }
 accepts ok_vector_builtins
@@ -49,4 +54,6 @@ accepts ok_negate
 accepts ok_string_compare
 accepts ok_debug_statement "pov4 debug statement"
 accepts ok_bare_comparisons "pov4 bare comparisons"
+accepts ok_input "pov4 input hi" "Declare=Label=hi"
+accepts ok_input "Declare=Spare supplies input 'Spare', which the scene never uses." 'Declare=Label="ab" Declare=Spare=1'
 rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov
