@@ -349,6 +349,7 @@ class SubsurfaceBoundary final
         double eta;
         double c1, c2; ///< the Fresnel reflectance from inside times the cosine (squared) integrated over cosines 0 to 1
         double fdr; ///< the diffuse Fresnel reflectance from inside, 2 c1
+        double exitScale; ///< 1 / T, T = 1 - the diffuse Fresnel reflectance from outside = eta^2 (1 - fdr)
         double ab, cphi, ce; ///< the dipole's boundary factor (1 + 3 c2) / (1 - 2 c1); the fluence's and flux's shares of exitance
 
         /// Beam diffusion's table: rows by u = sqrt(3 (1 - albedo)), columns by squared optical radius, four to an octave
