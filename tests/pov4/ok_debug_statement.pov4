@@ -1,0 +1,3 @@
+include "scene.inc";
+fn G() { debug("pov4 debug statement\n"); warning("pov4 warning statement"); return 1; }
+sphere { 0, G() pigment { rgb 1 } }

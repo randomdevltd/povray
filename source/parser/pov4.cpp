@@ -185,6 +185,7 @@ constexpr unsigned TY_FRAG = 1u << 7;
 constexpr unsigned TY_HANDLE = 1u << 8;
 constexpr unsigned TY_NULL = 1u << 9;
 constexpr unsigned TY_NUMERIC = TY_NUM | TY_VEC | TY_COLOUR;
+constexpr unsigned TY_VECARG = TY_NUM | TY_VEC; // a number promotes to a vector
 
 std::string TyName(unsigned ty)
 {
@@ -260,10 +261,11 @@ const std::unordered_map<BI, BuiltinSig>& BuiltinSigs()
         { B_mod, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_pow, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_max, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_min, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_select, { 3, 4, { TY_NUMERIC, TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
-        { B_vdot, { 2, 2, { TY_VEC, TY_VEC }, TY_NUM } }, { B_vcross, { 2, 2, { TY_VEC, TY_VEC }, TY_NUM } },
-        { B_vlength, { 1, 1, { TY_VEC }, TY_NUM } }, { B_vnormalize, { 1, 1, { TY_VEC }, TY_VEC } },
-        { B_vrotate, { 2, 2, { TY_VEC, TY_VEC }, TY_VEC } },
-        { B_vaxis_rotate, { 3, 3, { TY_VEC, TY_VEC, TY_NUMERIC }, TY_VEC } },
+        { B_vdot, { 2, 2, { TY_VECARG, TY_VECARG }, TY_NUM } },
+        { B_vcross, { 2, 2, { TY_VECARG, TY_VECARG }, TY_VEC } },
+        { B_vlength, { 1, 1, { TY_VECARG }, TY_NUM } }, { B_vnormalize, { 1, 1, { TY_VECARG }, TY_VEC } },
+        { B_vrotate, { 2, 2, { TY_VECARG, TY_VECARG }, TY_VEC } },
+        { B_vaxis_rotate, { 3, 3, { TY_VECARG, TY_VECARG, TY_NUMERIC }, TY_VEC } },
         { B_strlen, { 1, 1, { TY_STR }, TY_NUM } }, { B_strcmp, { 2, 2, { TY_STR, TY_STR }, TY_NUM } },
         { B_asc, { 1, 1, { TY_STR }, TY_NUM } }, { B_val, { 1, 1, { TY_STR }, TY_NUM } },
         { B_concat, { 0, 255, { TY_STR }, TY_STR } }, { B_chr, { 1, 1, { TY_NUM }, TY_STR } },
@@ -1731,10 +1733,13 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
             return TY_FN;
         case NK::Binary:
         {
-            unsigned lt = OperandTy(n->a, TY_NUMERIC, ctx);
-            unsigned rt = OperandTy(n->b, TY_NUMERIC, ctx);
+            const bool arithmetic = (n->op == OpAdd) || (n->op == OpSub) || (n->op == OpMul) || (n->op == OpDiv);
+            const unsigned comparable = TY_NUMERIC | TY_NULL | TY_STR;
+            const unsigned use = ((n->op == OpEq) || (n->op == OpNe)) ? comparable : TY_NUMERIC;
+            unsigned lt = OperandTy(n->a, use, ctx);
+            unsigned rt = OperandTy(n->b, use, ctx);
             const char* op = OpName(Op(n->op));
-            if ((n->op == OpAdd) || (n->op == OpSub) || (n->op == OpMul) || (n->op == OpDiv))
+            if (arithmetic)
             {
                 if (ctx.checking && (lt != TY_NONE) && ((lt & TY_NUMERIC) == 0))
                     Fail(n->a, "The left operand of '%s' must be a number, vector or colour, not %s.", op, TyName(lt).c_str());
@@ -1746,7 +1751,6 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
             }
             if (ctx.checking)
             {
-                const unsigned comparable = TY_NUMERIC | TY_NULL | TY_STR;
                 if ((lt != TY_NONE) && ((lt & comparable) == 0))
                     Fail(n->a, "The operands of '%s' must be numbers, vectors, colours or strings, not %s.", op, TyName(lt).c_str());
                 if ((rt != TY_NONE) && ((rt & comparable) == 0))
@@ -1760,7 +1764,9 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
             unsigned t = OperandTy(n->a, need, ctx);
             if (ctx.checking && (t != TY_NONE) && ((t & need) == 0))
                 Fail(n->a, "The operand of '%s' must be a number, vector or colour, not %s.", OpName(Op(n->op)), TyName(t).c_str());
-            return TY_NUM;
+            if (n->op == OpNot)
+                return TY_NUM;
+            return (t == TY_NONE) ? TY_NONE : ((t & TY_NUMERIC) != 0) ? (t & TY_NUMERIC) : TY_NUM;
         }
         case NK::Cond:
         {
@@ -2423,6 +2429,8 @@ void Pov4Evaluator::SceneOutput::Put(const Item& item, bool spliced)
 
 void Pov4Evaluator::ListOutput::Put(const Item& item, bool spliced)
 {
+    if ((item.kind == Item::Val) && (item.value.type == PValue::Null))
+        return;
     if ((item.kind == Item::Val) && (item.value.type == PValue::Frag))
     {
         for (const Item& i : item.value.As<Items>())

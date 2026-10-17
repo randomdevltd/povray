@@ -1,0 +1,3 @@
+include "scene.inc";
+fn Both(P) { let R = (P && 1); return R; }
+sphere { 0, Both("s") }

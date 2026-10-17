@@ -1,0 +1,6 @@
+include "scene.inc";
+fn Opt(O, K, Default) { for (Key in O) { if (Key == K) { return O[K]; } } return Default; }
+fn Same(A, B) { return (A != B) ? 0 : 1; }
+let D = { a: 1 };
+let V = Opt(D, "a", 0);
+sphere { 0, V * Same("x", "x") * Same(2, 2) pigment { rgb 1 } }

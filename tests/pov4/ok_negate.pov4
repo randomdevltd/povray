@@ -1,0 +1,7 @@
+include "scene.inc";
+fn F(V) { return vnormalize(V); }
+let C = <1, 2, 3>;
+let D = F(-<C.x, C.y, C.z>);
+let E = F(-C) + F(+C) + F(-x);
+let K = vrotate(-x, -<0, 90, 0>);
+sphere { -D + E + K, 0.5 pigment { rgb 1 } }

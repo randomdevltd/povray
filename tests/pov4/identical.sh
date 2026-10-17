@@ -37,4 +37,14 @@ fails err_member "has no member 'size'."
 fails err_operand "The left operand of '+' must be a number, vector or colour, not a string."
 fails err_param "'Scale' uses parameter 'V' as"
 fails err_arity "'Place' takes 2 arguments, but this call passes 1."
+fails err_logic "'Both' uses parameter 'P' as a number or a vector or a colour, but this call passes a string."
+accepts() {
+    "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f > "pov4_$1.log" 2>&1 || { cat "pov4_$1.log"; exit 1; }
+    [ -z "$2" ] || grep -q "$2" "pov4_$1.log"
+    echo "pov4 $1: accepted"
+}
+accepts ok_vector_builtins
+accepts ok_negate
+accepts ok_string_compare
+accepts ok_debug_statement "pov4 debug statement"
 rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov
