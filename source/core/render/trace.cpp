@@ -7759,7 +7759,10 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
 PreciseMathColour Trace::SubsurfaceProfile::RdDisc(double radius) const
 {
     PreciseMathColour rd;
-    for (int j = 0; j < MathColour::channels; j++)
+    for (int j = 0; (boundary != nullptr) && (j < MathColour::channels); j++)
+        rd[j] = dipole[j].Disc(radius * extinction[j]) * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], Sqr(radius) * extinctionSqr[j], 1) /
+                (M_PI * Sqr(radius));
+    for (int j = 0; (boundary == nullptr) && (j < MathColour::channels); j++)
     {
         double d_r = sqrt(Sqr(z_r[j]) + Sqr(radius));
         double d_v = sqrt(Sqr(z_v[j]) + Sqr(radius));
@@ -7774,9 +7777,29 @@ PreciseMathColour Trace::SubsurfaceProfile::RdDisc(double radius) const
 PreciseMathColour Trace::SubsurfaceProfile::RdTotal() const
 {
     PreciseMathColour rd;
-    for (int j = 0; j < MathColour::channels; j++)
+    for (int j = 0; (boundary != nullptr) && (j < MathColour::channels); j++)
+        rd[j] = dipole[j].Disc(HUGE_VAL) * totalRatio[j];
+    for (int j = 0; (boundary == nullptr) && (j < MathColour::channels); j++)
         rd[j] = scale[j] * 2.0 * M_PI * (exp(-sigma_tr[j] * z_r[j]) + exp(-sigma_tr[j] * z_v[j]));
     return rd;
+}
+
+// Method 2's profile for reduced albedos and extinctions (per mm) at its boundary.
+void Trace::SubsurfaceProfile::SetMethod2(const SubsurfaceBoundary& b, const PreciseMathColour& albedo, const PreciseMathColour& sigma_t)
+{
+    boundary = &b;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        dipole[j] = SubsurfaceDipole(albedo[j], b);
+        extinction[j] = sigma_t[j];
+        extinctionSqr[j] = Sqr(sigma_t[j]);
+        beamRow[j] = b.BeamRow(albedo[j], beamWeight[j]);
+        totalRatio[j] = b.BeamTotalRatio(albedo[j]);
+        scale[j] = 0.0;
+        sigma_tr[j] = dipole[j].sigma * sigma_t[j];
+        z_r[j] = 1.0 / sigma_t[j];
+        z_v[j] = (1.0 + dipole[j].zb) / sigma_t[j];
+    }
 }
 
 // The share of Rd's integral over a flat annulus (radii in mm) inside a straight edge d mm from its centre.
@@ -7801,10 +7824,19 @@ PreciseMathColour Trace::SubsurfaceProfile::RdEdgeShare(double inner, double out
     return share;
 }
 
-// Jensen's dipole diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
+// The diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
 PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr) const
 {
     PreciseMathColour rd;
+    if (boundary != nullptr)
+    {
+        for (int j = 0; j < MathColour::channels; j++)
+        {
+            double xSqr = distSqr * extinctionSqr[j];
+            rd[j] = dipole[j].Rd(xSqr) * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], xSqr, 0) * extinctionSqr[j];
+        }
+        return rd;
+    }
     for (int j = 0; j < MathColour::channels; j++)
     {
         double dSqr_r = Sqr(z_r[j]) + distSqr;
@@ -8042,7 +8074,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     SetUpSubsurfaceFlesh(flesh, layers, out, inward, DeriveKey(key, kDrawSubsurface, 5));
     MathColour reflectance = Finish->SubsurfaceHasColour ? MathColour(flesh.reference) * Finish->Diffuse : layers.reflectance;
 
-    // Method 2 inverts the colour and shapes its profile with the diffuse Fresnel reflectance itself; see doc/PERF.md.
+    // Method 2 inverts the colour by its own profile's total at the boundary's relative index; see doc/PERF.md.
     int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
     const bool pointCloud = (method == kSubsurfaceMethodPointCloud);
     if (pointCloud && ((ssltBoundary == nullptr) || (ssltBoundary->eta != double(float(eta)))))
@@ -8060,10 +8092,12 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     PreciseMathColour   sigma_t_xo      = sigma_prime_t / (1.0-g);
     PreciseMathColour   sigma_s         = sigma_prime_s / (1.0-g);
 
-    double F_dr   = pointCloud ? ssltBoundary->fdr : FresnelDiffuseReflectance(eta);
+    double F_dr   = FresnelDiffuseReflectance(eta);
     double Aconst = ((1 + F_dr) / (1 - F_dr));
     SubsurfaceProfile profile;
-    for (int j = 0; j < MathColour::channels; j++)
+    if (pointCloud)
+        profile.SetMethod2(*ssltBoundary, alpha_prime, sigma_prime_t);
+    for (int j = 0; !pointCloud && (j < MathColour::channels); j++)
     {
         double spt = sigma_prime_s[j] + sigma_a[j];
         profile.scale[j]    = (sigma_prime_s[j] / spt) / (4.0 * M_PI);

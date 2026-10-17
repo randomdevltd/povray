@@ -1032,6 +1032,124 @@ reflectance stays the colour (the head-on slabs below render Ft² times the colo
 absorbs less: the high-albedo material's reduced albedo goes from 0.99885 to 0.99971 and its diffusion length from 17
 to 34 reduced mean free paths. 2 c1 holds for any η, where the polynomial fails below 1.
 
+**The profile.** Method 2's profile is now photon beam diffusion (Habel, Christensen and Jarosz 2013): real sources of
+d'Eon's better dipole (2012) spread along the refracted beam, falling off as e^(−t) with depth t and damped near the
+surface by 1 − e^(−2(d_r + t)), with the albedo squared, as pbrt's. The better dipole takes Grosjean's diffusion
+coefficient D = (2σa + σs′) / 3σt′², a virtual source 4AD above each real one with A = (1 + 3 c2) / (1 − 2 c1), and
+both the fluence and the flux at the surface, weighted (1 − 2 c1) / 4 and (1 − 3 c2) / 2; in closed form it gives Rd,
+its integral over a disc and over the plane. Beam diffusion is tabulated per index as its ratio to the better dipole at
+one depth: 128 rows by u = √(3(1 − albedo)), 217 columns of squared optical radius, four to an octave from 2⁻²⁷,
+each the ratio of Rd and of Rd's disc integral (Simpson's rule over the log radius), and per row the ratio of the
+totals. A lookup reads the octave and quarter from the bits of the squared radius and interpolates bilinearly, so Rd,
+`RdDisc` and `RdEdgeShare` stay the better dipole's closed forms times a ratio, and the far field keeps the dipole's
+exact decay. The colour inverts through the same total. Building the table takes about 0.07 CPU-s per index, once.
+
+The media the profiles derive differ: each inverts the same colour to a reduced albedo, and a profile whose total is lower
+at a given albedo needs less absorption to reach it. `sslt-reference.py`'s MEDIA lists them for the five reference
+materials; the walks below are made in each profile's own medium (four media from one set of walks: flights scatter
+only and each medium weighs a walk by e^(−σa·length), the analog walk's expectation for it; its classic medium matches
+the earlier walk images to 0.1% in every run's channel means, χ² per pixel 0.88 to 1.05).
+
+| reduced albedo, R G B | classic table | 2 c1 dipole | better dipole | beam diffusion |
+|---|---|---|---|---|
+| red | 0.9792, 0.5204, 0.4069 | 0.9934, 0.5637, 0.4388 | 0.9937, 0.7212, 0.6021 | 0.9949, 0.7782, 0.6945 |
+| high albedo | 0.99885 | 0.99971 | 0.99968 | 0.99985 |
+| wax | 0.9533, 0.8764, 0.4553 | 0.9811, 0.9316, 0.4926 | 0.9831, 0.9500, 0.6356 | 0.9859, 0.9572, 0.7177 |
+| bark | 0.9067, 0.8497, 0.7647 | 0.9507, 0.9065, 0.8269 | 0.9595, 0.9302, 0.8800 | 0.9657, 0.9407, 0.8992 |
+| clay | 0.9776, 0.9225, 0.7647 | 0.9912, 0.9613, 0.8269 | 0.9913, 0.9671, 0.8800 | 0.9931, 0.9723, 0.8992 |
+
+**Half-space**, light and view along the normal, multiple scattering. In the walks' earlier (classic) medium, each
+profile's head-on pixel (Ft² times its total) over the photons' (`Mode=forward`, plane integrals):
+
+| profile | high albedo | red: R | G | B |
+|---|---|---|---|---|
+| classic dipole (method 1, method 2 before) | 1.061 | 1.388 | 3.93 | 5.07 |
+| dipole with 2 c1 | 0.963 | 1.052 | 3.43 | 4.53 |
+| better dipole | 0.968 | 0.992 | 2.01 | 2.67 |
+| beam diffusion | 0.933 | 0.936 | 1.151 | 1.220 |
+
+Method 2 as each build renders it (Ft² times the colour, which the head-on slabs match to within 1.8%) over 2 million
+photons in the medium that build derives:
+
+| build | high albedo | red | wax | bark | clay |
+|---|---|---|---|---|---|
+| classic Fdr (before) | 1.060 | 1.389, 3.90, 5.08 | 1.548, 1.92, 4.29 | 1.724, 1.94, 2.27 | 1.346, 1.66, 2.27 |
+| 2 c1 dipole | 0.957 | 0.984, 3.12, 4.18 | 1.047, 1.25, 3.45 | 1.168, 1.32, 1.60 | 1.017, 1.13, 1.60 |
+| better dipole | 0.963 | 0.976, 1.38, 1.69 | 1.008, 1.04, 1.62 | 1.057, 1.09, 1.14 | 1.014, 1.04, 1.14 |
+| beam diffusion | 0.929 | 0.937, 1.004, 1.051 | 0.950, 0.957, 1.061 | 0.975, 0.983, 0.996 | 0.959, 0.973, 0.996 |
+
+**Scores** (`sslt-reference.py score`, 160×120, as in the table of the subsurface reference section): before = the
+classic-Fdr head against the classic walks (that table's numbers); each later build against walks in its own medium,
+1024 walks per pixel (noise 1.2 to 3.0 levels, subtracted from the rms). Absolute rms / mean / worst 8×8 block:
+
+| Run | before | 2 c1 dipole | better dipole | beam diffusion (shipped) | beam diffusion / walks, R, G, B |
+|---|---|---|---|---|---|
+| slab, red | 35.0 / +34.5 / +39 | 28.0 / +22.1 / +29 | 9.6 / +6.5 / +8 | 4.5 / −3.7 / −4 | 0.925, 0.933, 0.967 |
+| slab, high albedo | 7.4 / +7.4 / +8 | 3.9 / −3.8 / −6 | 3.3 / −3.2 / −6 | 6.7 / −6.7 / −9 | 0.938 |
+| slab, wax | 34.9 / +34.7 / +38 | 20.2 / +15.2 / +12 | 7.7 / +3.4 / +1 | 5.4 / −4.7 / −7 | 0.925, 0.913, 0.968 |
+| slab, bark | 34.4 / +34.3 / +37 | 14.7 / +13.5 / +14 | 2.2 / +1.4 / +2 | 5.2 / −5.1 / −6 | 0.928, 0.924, 0.927 |
+| slab, clay | 30.6 / +30.1 / +33 | 12.4 / +8.6 / +7 | 2.2 / +0.9 / +2 | 4.7 / −4.6 / −6 | 0.950, 0.938, 0.931 |
+| slab head on, red | 35.8 / +35.1 / +38 | 28.9 / +22.9 / +28 | 10.8 / +7.6 / +9 | 4.1 / −2.4 / −3 | 0.927, 0.975, 1.016 |
+| slab head on, high albedo | 6.0 / +5.9 / +7 | 4.1 / −4.1 / −6 | 3.6 / −3.6 / −5 | 6.9 / −6.9 / −9 | 0.936 |
+| V-groove and dimple, wax | 34.0 / +33.6 / +41 | 20.4 / +15.6 / +17 | 8.6 / +2.9 / −14 | 6.5 / −4.6 / −19 | 0.932, 0.896, 0.969 |
+| V-groove and dimple, high albedo | 23.1 / +22.6 / +35 | 7.8 / +6.2 / +20 | 6.3 / +4.6 / +16 | 4.6 / +1.7 / +14 | 1.017 |
+| ridged trunk, bark | 25.4 / +21.8 / +32 | 13.4 / +6.1 / −19 | 9.9 / −2.5 / −18 | 12.1 / −7.5 / −22 | 0.849, 0.865, 0.895 |
+| 1.2 mm wall, clay | 68.1 / +59.5 / +74 | 59.3 / +47.7 / +63 | 57.9 / +44.0 / +63 | 56.0 / +39.6 / +60 | 3.327, 1.932, 0.858 |
+| 1.2 mm wall, high albedo | 99.9 / +98.7 / +112 | 87.4 / +86.2 / +102 | 88.1 / +86.6 / +105 | 84.3 / +82.9 / +101 | 2.84 |
+| bare studs slab, red | 38.7 / +37.1 / +43 | 30.5 / +28.6 / +34 | 15.1 / +12.0 / −14 | 12.5 / +2.9 / −24 | 1.258, 0.889, 0.946 |
+| bare studs slab, high albedo | 44.0 / +42.0 / +50 | 28.7 / +26.8 / +35 | 26.5 / +24.9 / +34 | 24.0 / +22.3 / +31 | 1.332 |
+| studs, red | 35.6 / +32.5 / +46 | 28.4 / +24.8 / +39 | 16.8 / +9.6 / +22 | 16.3 / +1.1 / −22 | 1.268, 0.821, 0.874 |
+| studs, high albedo | 44.5 / +40.9 / +63 | 31.5 / +27.2 / +48 | 30.2 / +25.4 / +48 | 28.2 / +23.0 / +46 | 1.386 |
+
+Geometry (scaled by each build's own slab ratio; the studs by the bare slab's), rms / mean / worst block:
+
+| Run | before | 2 c1 dipole | better dipole | beam diffusion |
+|---|---|---|---|---|
+| slabs, the five materials | 0.5 to 1.0 | 0.8 to 1.0 | 0.7 to 0.9 | 0.6 to 0.9 |
+| V-groove and dimple, wax | 4.3 / −0.3 / −17 | 4.0 / +0.7 / −14 | 3.8 / −0.5 / −14 | 3.7 / −0.1 / −13 |
+| V-groove and dimple, high albedo | 17.1 / +16.3 / +29 | 10.5 / +9.4 / +23 | 8.4 / +7.3 / +18 | 8.3 / +7.2 / +18 |
+| ridged trunk, bark | 11.0 / −3.5 / −26 | 11.0 / −3.8 / −26 | 10.0 / −3.5 / −18 | 9.9 / −3.6 / −19 |
+| 1.2 mm wall, clay | 53.8 / +32.8 / +49 | 58.8 / +39.0 / +59 | 58.2 / +42.9 / +63 | 58.2 / +43.2 / +63 |
+| 1.2 mm wall, high albedo | 95.3 / +94.1 / +107 | 89.8 / +88.5 / +104 | 90.1 / +88.6 / +107 | 88.4 / +87.0 / +105 |
+| bare studs slab, red | 14.5 / +5.5 / −23 | 16.8 / +7.5 / −22 | 13.9 / +5.6 / −19 | 14.6 / +5.9 / −21 |
+| bare studs slab, high albedo | 38.8 / +36.6 / +44 | 31.3 / +29.5 / +38 | 28.7 / +27.2 / +36 | 28.5 / +27.0 / +36 |
+| studs against bare, red | 14.4 / −2.6 / −25 | 13.8 / −2.3 / −25 | 13.1 / −1.9 / −21 | 13.1 / −2.0 / −23 |
+| studs against bare, high albedo | 17.7 / +1.9 / −36 | 16.1 / +2.4 / −31 | 16.7 / +2.3 / −31 | 16.5 / +2.3 / −32 |
+
+**Cost**, method 2 at 640×480 on the reference scene, CPU-s, mean of two interleaved renders, with
+per-block heat maps for each:
+
+| Run | classic Fdr (before) | 2 c1 dipole | better dipole | beam diffusion |
+|---|---|---|---|---|
+| studs, high albedo | 22.9 | 23.2 | 23.8 (+4%) | 26.0 (+13%) |
+| ridged trunk, bark | 46.5 | 47.1 | 49.1 (+6%) | 51.6 (+11%) |
+| 1.2 mm wall, clay | 10.2 | 10.0 | 10.6 (+4%) | 12.2 (+20%) |
+| V-groove and dimple, wax | 13.6 | 13.4 | 14.1 (+4%) | 16.4 (+20%) |
+
+The cloud is the same in every build but the trunk's (bark's longer diffusion sets coarser cells: 8 cells and 78877
+points instead of 67 and 467170, for the same time); the added time is the profile's, spread over the subsurface
+pixels in the heat maps with no hot spot (they are wall-clock per block, so they vary with the box's load). A first
+beam table looked the radius up by its logarithm through a call into another file: +16 to +36%.
+
+**Why beam diffusion.** The better dipole is closer on the high-albedo slabs (3.3 against 6.7 levels) and on bark and
+clay, but it holds 1.2 to 1.7 times the light in the low-albedo channels (red's green and blue, wax's blue), a change of
+hue, as the dipole with 2 c1 does at 2.8 to 4.2 times. Beam diffusion is within 0.90 to 1.02 of the walks in every
+channel on the slabs and grooves (the trunk 0.85 to 0.90), and its error is nearly the same in every channel: a 3 to 9%
+deficit on the slabs. That deficit is
+the exit term rather than the profile: Rd counts light that has left the surface, and the renderer's directional term,
+Ft(out) / π, carries only 1 − F̄dr of it from outside (0.908 at η 1.5, 0.923 at 1.4). `score --normalise-exit` divides
+the renders by it, as pbrt's normalised term would: beam diffusion then scores 1.9, 3.5, 1.5, 0.9 and 1.9 on the five
+slabs (ratios 0.998 to 1.065), 4.1 on the wax groove and 10.2 on the trunk, but 11.2 on the high-albedo groove, 35.0
+on the high-albedo studs and 93.7 on the high-albedo wall, where the semi-infinite profile on a thin part already gives
+too much. The renderer keeps Ft(out) / π here.
+
+Thin parts are the largest error left: the 1.2 mm walls at 2.8 to 3.3 times the walks and the 4 mm studs slab at 1.33
+(high albedo) are the semi-infinite profile on a part thinner than the diffusion, unchanged in kind by the profile.
+
+Method 1 renders the same pixels, bit for bit, before and after: `version4_subsurface_{37,38,40}.pov` with methods 0 and
+1 and `_no_version` at `+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread; with several, its photon map
+differs from run to run on one build), `subsurface_photon_prism`, and the reference scene's studs and trunk.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
