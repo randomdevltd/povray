@@ -1735,8 +1735,9 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
         {
             const bool arithmetic = (n->op == OpAdd) || (n->op == OpSub) || (n->op == OpMul) || (n->op == OpDiv);
             const unsigned comparable = TY_NUMERIC | TY_NULL | TY_STR;
-            unsigned lt = OperandTy(n->a, arithmetic ? TY_NUMERIC : comparable, ctx);
-            unsigned rt = OperandTy(n->b, arithmetic ? TY_NUMERIC : comparable, ctx);
+            const unsigned use = ((n->op == OpEq) || (n->op == OpNe)) ? comparable : TY_NUMERIC;
+            unsigned lt = OperandTy(n->a, use, ctx);
+            unsigned rt = OperandTy(n->b, use, ctx);
             const char* op = OpName(Op(n->op));
             if (arithmetic)
             {
