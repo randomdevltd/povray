@@ -49,7 +49,7 @@ module.exports = grammar({
 
     _statement: ($) => choice($.let_statement, $.global_statement, $.assignment, $.function_definition,
       $.if_statement, $.while_statement, $.for_statement, $.break_statement, $.continue_statement,
-      $.return_statement, $.include_statement),
+      $.return_statement, $.include_statement, $.input_statement),
     _value: ($) => seq(field('value', $._expression), repeat(field('value', $.block))),
     let_statement: ($) => seq('let', field('name', $.identifier), optional(seq('=', $._value)), ';'),
     global_statement: ($) => seq('global', field('name', $.identifier), '=', $._value, ';'),
@@ -71,6 +71,8 @@ module.exports = grammar({
     continue_statement: (_) => seq('continue', ';'),
     return_statement: ($) => seq('return', optional(field('value', $._expression)), ';'),
     include_statement: ($) => seq('include', field('file', $._expression), ';'),
+    input_statement: ($) => seq('input', field('name', $.identifier),
+      optional(seq('=', field('default', $._expression))), ';'),
 
     ...expressionFamily('_expression', '', COMPARISONS),
     ...expressionFamily('_item_expression', 'item', COMPARISONS.filter(([op]) => op !== '<')),

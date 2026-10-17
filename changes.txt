@@ -172,6 +172,21 @@ Changed Behaviour
   - Build: `configure` adds `-fno-finite-math-only`, `-fno-associative-math`
     and `-fsigned-zeros` after `-ffast-math`, and has a new `--disable-simd`
     option. A build made with `-ffast-math` alone renders black.
+  - `Declare=NAME=VALUE` accepts string values on the command line and in INI
+    files. A value quoted with `"` or `'` is a string taken verbatim: the
+    quotes only delimit it and backslashes are not escapes, so
+    `Declare=Dir="C:\work"` arrives as written. That is exact on the command
+    line; in INI files the reader still treats `\"` and `\\` as escapes when it
+    looks for the closing quote, as it always has, but keeps both characters,
+    so `\\` arrives as two backslashes and a `\"` inside a `"`-quoted value is
+    an embedded quote, which is an error. Unquoted text that is not a
+    complete finite number is now a string too; before, a leading number was
+    kept and the rest dropped (`5abc`, `50%` and `1,5` became 5, 50 and 1) or
+    the value became 0, and `nan` or `inf` became numbers. `Declare=X=` is now
+    the empty string instead of an error. A quoted value used to be refused on
+    the command line and dropped from INI files. Numbers keep full double
+    precision (`Declare=N=1234567` was 1234570). A malformed `Declare` (no
+    `NAME=`, an unbalanced or embedded quote) now stops the render.
 
 New Features
 ------------
@@ -230,6 +245,14 @@ New Features
     where a number is needed, a wrong argument count, an unknown member), and block
     keywords are validated against the mined tables, so `finish { phon 1 }` is
     caught before the scene runs, including in branches that never execute.
+  - `input Name;` and `input Name = Default;` declare the parameters a `.pov4`
+    scene takes from `Declare=Name=Value` on the command line or in an INI
+    file. An input's type is inferred from how the scene uses it, or fixed by
+    its default; a supplied value of the wrong type, a missing value for an
+    input without a default, and a `Declare` that names no input are errors,
+    and a supplied input the scene never uses is warned about. In a `.pov4`
+    scene every `Declare` must now name an input. `input` is a reserved word
+    in 4.0.
   - A VS Code extension ships in `extensions/vscode`: highlighting for both
     languages generated from the shared word tables, completion aware of the
     enclosing block's legal keywords, and on-save diagnostics parsed from the

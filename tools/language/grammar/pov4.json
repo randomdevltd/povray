@@ -596,7 +596,8 @@
    "break_statement",
    "continue_statement",
    "return_statement",
-   "include_statement"
+   "include_statement",
+   "input_statement"
   ],
   "expressions": [
    "conditional_expression",
@@ -749,6 +750,10 @@
     {
      "t": "sym",
      "name": "include_statement"
+    },
+    {
+     "t": "sym",
+     "name": "input_statement"
     }
    ]
   },
@@ -1370,6 +1375,56 @@
         "t": "sym",
         "name": "_expression"
        }
+      },
+      {
+       "t": "str",
+       "v": ";"
+      }
+     ]
+    }
+   ]
+  },
+  "input_statement": {
+   "productions": [
+    {
+     "t": "seq",
+     "of": [
+      {
+       "t": "str",
+       "v": "input"
+      },
+      {
+       "t": "field",
+       "name": "name",
+       "of": {
+        "t": "sym",
+        "name": "identifier"
+       }
+      },
+      {
+       "t": "choice",
+       "of": [
+        {
+         "t": "seq",
+         "of": [
+          {
+           "t": "str",
+           "v": "="
+          },
+          {
+           "t": "field",
+           "name": "default",
+           "of": {
+            "t": "sym",
+            "name": "_expression"
+           }
+          }
+         ]
+        },
+        {
+         "t": "blank"
+        }
+       ]
       },
       {
        "t": "str",

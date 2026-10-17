@@ -195,6 +195,10 @@
           "named": true
         },
         {
+          "type": "input_statement",
+          "named": true
+        },
+        {
           "type": "keyword",
           "named": true
         },
@@ -691,6 +695,10 @@
           "named": true
         },
         {
+          "type": "input_statement",
+          "named": true
+        },
+        {
           "type": "keyword",
           "named": true
         },
@@ -839,6 +847,10 @@
         },
         {
           "type": "index_expression",
+          "named": true
+        },
+        {
+          "type": "input_statement",
           "named": true
         },
         {
@@ -2773,6 +2785,116 @@
     }
   },
   {
+    "type": "input_statement",
+    "named": true,
+    "fields": {
+      "default": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "array",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "builtin",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
+            "type": "conditional_expression",
+            "named": true
+          },
+          {
+            "type": "dictionary",
+            "named": true
+          },
+          {
+            "type": "false",
+            "named": true
+          },
+          {
+            "type": "function_block",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "member_expression",
+            "named": true
+          },
+          {
+            "type": "null",
+            "named": true
+          },
+          {
+            "type": "number",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "true",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "vector",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "lambda",
     "named": true,
     "fields": {
@@ -3708,6 +3830,10 @@
           "named": true
         },
         {
+          "type": "input_statement",
+          "named": true
+        },
+        {
           "type": "keyword",
           "named": true
         },
@@ -4263,6 +4389,10 @@
   },
   {
     "type": "include",
+    "named": false
+  },
+  {
+    "type": "input",
     "named": false
   },
   {

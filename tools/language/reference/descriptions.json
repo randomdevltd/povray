@@ -1811,6 +1811,11 @@
    "code": "union { include \"parts.inc\"; pigment { rgb <1, 0.6, 0.2> } translate <-2.5, 0, 0> }",
    "from": "tests/pov4/interop.pov4:4"
   },
+  "input": {
+   "rank": 1012,
+   "code": "input Label;",
+   "from": "tests/pov4/ok_input.pov4:3"
+  },
   "inside_vector": {
    "rank": 1023,
    "code": "inside_vector <0, 0, 1>",

@@ -44,6 +44,8 @@ continue_statement := "continue" ";";
 return_statement := "return" (value: _expression | ε) ";";
 
 include_statement := "include" file: _expression ";";
+
+input_statement := "input" name: identifier ("=" default: _expression | ε) ";";
 ```
 
 ### Expressions

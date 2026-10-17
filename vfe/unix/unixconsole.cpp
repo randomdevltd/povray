@@ -594,6 +594,11 @@ int main (int argc, char **argv)
     // set all options and start rendering
     if (session->SetOptions(opts) != vfeNoError)
     {
+        std::string message;
+        vfeSession::MessageType type;
+        while (session->GetNextNonStatusMessage(type, message))
+            if (type == vfeSession::mError)
+                fprintf(stderr, "%s\n", message.c_str());
         fprintf(stderr,"\nProblem with option setting\n");
         for(int loony=0;loony<argc_copy;loony++)
         {

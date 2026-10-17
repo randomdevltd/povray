@@ -27,6 +27,7 @@ parser's own word lists, never hand-copied.
 
 ```pov
 let X = 1;   X = X + 1;   global Seed = seed(42);   fn F(A, B = 2) { A * B }
+input Quality = 3;   input Name;   // Declare=Quality=5 Declare=Name="sky"; no default = required
 if (X > 1) { ... } else if (X < 0) { ... } else { ... }   while (X < 10) { ... }
 for (I = 0 to 9) { ... }        // inclusive; for (V in A) takes arrays, dict keys, fragments
 [for (I = 0 to 9) { I * I }]     // array comprehension;  { A: 1, "b c": 2, [K]: 3 } dictionary

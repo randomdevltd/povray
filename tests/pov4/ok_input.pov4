@@ -1,0 +1,8 @@
+include "scene.inc";
+input Radius = 0.5;
+input Label;
+input Spare = 0;
+fn Order(K) { if (K < "m") { return " early"; } return " late"; }
+debug(concat("pov4 input ", Label, Order(Label), (Label < "m") ? "" : "!", "\n"));
+fn Grow(Label, Size = Label * 2) { return Size; }
+sphere { 0, Grow(Radius) pigment { rgb 1 } }

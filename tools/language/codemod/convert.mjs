@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { at, contentItems, isExpressionIf, parse, root, scan } from '../classic.mjs';
 
-const NEW_RESERVED = new Set(['let', 'fn', 'return', 'null', 'in', 'step', 'continue']);
+const NEW_RESERVED = new Set(['let', 'fn', 'input', 'return', 'null', 'in', 'step', 'continue']);
 const RESERVED = new Set([...JSON.parse(readFileSync(join(root, 'tools/language/keywords.json'), 'utf8'))
   .map((k) => k.word), ...NEW_RESERVED]);
 const OPERATORS = { '=': '==', '&': '&&', '|': '||' };

@@ -37,10 +37,14 @@
 #include "frontend/processrenderoptions.h"
 
 // C++ variants of C standard header files
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 // C++ standard header files
-//  (none at the moment)
+#include <string>
+#include <vector>
 
 // POV-Ray header files (base module)
 #include "base/fileutil.h"
@@ -67,6 +71,35 @@ namespace pov_frontend
 {
 
 using namespace pov_base;
+
+namespace
+{
+
+std::string ShortestDouble(double d)
+{
+    char text[32];
+    for (int digits = 15; digits <= 17; ++digits)
+    {
+        std::snprintf(text, sizeof(text), "%.*g", digits, d);
+        if (std::strtod(text, nullptr) == d)
+            break;
+    }
+    return text;
+}
+
+std::string ShortestFloat(float f)
+{
+    char text[32];
+    for (int digits = 6; digits <= 9; ++digits)
+    {
+        std::snprintf(text, sizeof(text), "%.*g", digits, double(f));
+        if (std::strtof(text, nullptr) == f)
+            break;
+    }
+    return text;
+}
+
+}
 
 /*****************************************************************************
 * Local preprocessor defines
@@ -137,7 +170,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
 
     { "Debug_Console",       kPOVAttrib_DebugConsole,       kPOVMSType_Bool },
     { "Debug_File",          kPOVAttrib_DebugFile,          kPOVMSType_UCS2String },
-    { "Declare",             kPOVAttrib_Declare,            kUseSpecialHandler },
+    { "Declare",             kPOVAttrib_Declare,            kUseSpecialHandler, kINIOptFlag_RawExpression },
     { "Display",             kPOVAttrib_Display,            kPOVMSType_Bool },
     { "Display_Gamma",       kPOVAttrib_DisplayGamma,       kUseSpecialHandler },
     { "Dither",              kPOVAttrib_Dither,             kPOVMSType_Bool },
@@ -397,6 +430,7 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
     int intval = 0;
     int intval2 = 0;
     int err = kNoErr;
+    bool listReady = false;
 
     switch(option->key)
     {
@@ -470,39 +504,61 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                 err = kObjectAccessErr;
             else
                 err = POVMSObject_Get(obj, &list, option->key);
+            listReady = (err == kNoErr);
 
             // add value to list
             if(err == kNoErr)
                 err = POVMSObject_New(&decobj, kPOVMSType_WildCard);
             if(err == kNoErr)
             {
-                char *ptr = nullptr;
-
-                err = POVMSUtil_SetString(&decobj, kPOVAttrib_Identifier, strtok(param, "="));
-                if(err == kNoErr)
+                std::string text(param), name, value;
+                size_t eq = text.find('=');
+                auto trim = [](const std::string& t) {
+                    size_t b = t.find_first_not_of(" \t"), e = t.find_last_not_of(" \t\r\n");
+                    return (b == std::string::npos) ? std::string() : t.substr(b, e - b + 1);
+                };
+                if (eq != std::string::npos)
                 {
-                    ptr = strtok(nullptr, "");
-                    if (ptr == nullptr)
-                        err = kParseErr;
+                    name = trim(text.substr(0, eq));
+                    value = trim(text.substr(eq + 1));
                 }
-                if(err == kNoErr)
+                const bool quoted = !value.empty() && ((value[0] == '"') || (value[0] == '\''));
+                if (name.empty())
                 {
-                    if (strchr(ptr, '"') != nullptr)
+                    ParseError("Declare expects NAME=VALUE, found '%s'.", param);
+                    err = kParamErr;
+                }
+                else if (quoted && ((value.size() < 2) || (value.find(value[0], 1) != value.size() - 1)))
+                {
+                    ParseError("Declare=%s has a malformed quoted value: %s", name.c_str(), value.c_str());
+                    err = kParamErr;
+                }
+                if (err == kNoErr)
+                    err = POVMSUtil_SetString(&decobj, kPOVAttrib_Identifier, name.c_str());
+                if (err == kNoErr)
+                {
+                    char* end = nullptr;
+                    double number = value.empty() ? 0.0 : std::strtod(value.c_str(), &end);
+                    // An unquoted value that is entirely a number is a float; anything else is a string.
+                    if (!quoted && !value.empty() && (*end == 0) && std::isfinite(number))
                     {
-                        ptr = strchr(ptr, '"') + 1;
-                        strtok(ptr, "\"");
-                        err = POVMSUtil_SetString(&decobj, kPOVAttrib_Value, ptr);
+                        err = POVMSUtil_SetFloat(&decobj, kPOVAttrib_Value, number);
+                        if (err == kNoErr)
+                            err = POVMSUtil_SetString(&decobj, kPOVAttrib_ValueText, ShortestDouble(number).c_str());
                     }
                     else
-                        err = POVMSUtil_SetFloat(&decobj, kPOVAttrib_Value, std::atof(ptr));
+                        err = POVMSUtil_SetString(&decobj, kPOVAttrib_Value,
+                                                  (quoted ? value.substr(1, value.size() - 2) : value).c_str());
                 }
                 if(err == kNoErr)
                     err = POVMSAttrList_Append(&list, &decobj);
                 else
-                    err = POVMSObject_Delete(&decobj);
+                    (void)POVMSObject_Delete(&decobj);
             }
             if(err == kNoErr)
                 err = POVMSObject_Set(obj, &list, option->key);
+            else if(listReady)
+                (void)POVMSAttrList_Delete(&list);
             break;
 
         case kPOVAttrib_FatalErrorCommand:
@@ -700,6 +756,7 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
     POVMSInt intval;
     int err = 0;
     int l;
+    int textlen = 0;
     int i,imax;
     POVMSAttribute item;
     char *bufptr;
@@ -761,7 +818,24 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
                         bufptr[0] = 0;
                         if((POVMSUtil_GetFloat(&decobj, kPOVAttrib_Value, &floatval) == 0) &&
                            (POVMSAttr_Get(&item, kPOVMSType_CString, bufptr, &l) == 0))
-                            file->printf("%s=%s=%g\n", option->keyword, bufptr, (float)floatval);
+                        {
+                            std::vector<char> text(32, 0);
+                            int numlen = int(text.size());
+                            if(POVMSUtil_GetString(&decobj, kPOVAttrib_ValueText, text.data(), &numlen) == 0)
+                                file->printf("%s=%s=%s\n", option->keyword, bufptr, text.data());
+                            else
+                                file->printf("%s=%s=%s\n", option->keyword, bufptr, ShortestFloat(floatval).c_str());
+                        }
+                        else if((POVMSUtil_GetStringLength(&decobj, kPOVAttrib_Value, &textlen) == 0) &&
+                                (POVMSAttr_Get(&item, kPOVMSType_CString, bufptr, &l) == 0))
+                        {
+                            std::vector<char> text(textlen + 1, 0);
+                            if(POVMSUtil_GetString(&decobj, kPOVAttrib_Value, text.data(), &textlen) == 0)
+                            {
+                                const char quote = (std::strchr(text.data(), '"') != nullptr) ? '\'' : '"';
+                                file->printf("%s=%s=%c%s%c\n", option->keyword, bufptr, quote, text.data(), quote);
+                            }
+                        }
                         delete[] bufptr;
                     }
                     (void)POVMSAttr_Delete(&item);

@@ -3,7 +3,7 @@
 
 const reserved = require('../../tools/language/keywords.json');
 
-const STATEMENT = ['if', 'else', 'for', 'while', 'break', 'continue', 'include', 'let', 'fn', 'global',
+const STATEMENT = ['if', 'else', 'for', 'while', 'break', 'continue', 'include', 'let', 'fn', 'global', 'input',
   'return', 'null', 'in', 'to', 'step', 'true', 'false', 'function'];
 const DIRECTIVE = ['append', 'breakpoint', 'case', 'declare', 'deprecated', 'elseif', 'end', 'fclose', 'fopen',
   'ifdef', 'ifndef', 'local', 'macro', 'read', 'switch', 'undef', 'write'];

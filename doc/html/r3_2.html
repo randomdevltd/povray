@@ -1652,9 +1652,9 @@ assumptions it should make while parsing it.</p>
 <h4>3.2.5.1 Constant</h4>
 <table width="100%" class="option-list">
 <tr>
-<td width="30%"><code>Declare=IDENTIFIER=FLOAT</code></td>
+<td width="30%"><code>Declare=IDENTIFIER=FLOAT</code><br><code>Declare=IDENTIFIER="STRING"</code></td>
 
-<td width="70%"> Declares an identifier with a float value</td>
+<td width="70%"> Declares an identifier with a float or string value</td>
 </tr>
 </table>
 
@@ -1666,7 +1666,14 @@ laced on the command-line, you can therefore also declare on the command-line
 <pre>  Declare=MyValue=24 </pre>
 
 <p>This would be the same as a <code>#declare MyValue=24;</code> in a scene file. The value on the
-right-hand side must be a constant float value.</p>
+right-hand side is a float when it is written as a number, and a string otherwise: <code>Declare=Name="a b"</code>
+(quoted with <code>"</code> or <code>'</code>) and <code>Declare=Name=ab</code> declare strings, and <code>Declare=Name=</code>
+declares the empty string. A string is taken verbatim: the quotes only delimit it and a backslash is an ordinary
+character, so <code>Declare=Dir="C:\work"</code> declares the text <code>C:\work</code>. A value that is malformed,
+such as one with unbalanced quotes, stops the render.</p>
+
+<p>A 4.0 scene (<code>.pov4</code>) receives these values through <code>input</code> declarations, and every
+<code>Declare</code> given to it must name one. See <a href="r3_13.html#r3_13_2_15">Scene Inputs</a>.</p>
 
 <p>A possible use could be switching off radiosity or photons from command-line:</p>
 <pre>
