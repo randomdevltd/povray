@@ -48,6 +48,18 @@ Changed Behaviour
     16384. It works with radiosity, with media photons from light-group lights,
     and with save_file and load_file for its own maps.
 
+  - Photon method 2 no longer changes direct lighting: lights keep their
+    authored color and fade, any fade_power and faded parallel or cylinder
+    lights are accepted, and lights without targets are unaffected. Photon
+    power is calibrated instead: toward each target a light's photons deliver
+    the direct light's irradiance at the light-to-target distance and spread
+    as 1/r^2 beyond it; parallel and cylinder photons carry the light's fade
+    along their path. Unfaded lights near their targets therefore give darker
+    caustics than classic photons; `fade_power 2 fade_distance 0` keeps
+    inverse-square light for direct light and photons alike. Light-group lights
+    shoot method 2 photons by default in every scene version, and a refracting
+    target's shadow is replaced by photons only when photons were deposited.
+
   - Photon method 2 reads the number after `photons { target }` as a share
     weight (default 1, opposite to the method 1 spacing multiplier): a light
     splits its targeted photons between its targets in proportion to their

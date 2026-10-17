@@ -265,7 +265,8 @@ Omitting `method`, or specifying `method 1`, keeps classic photon controls; `qua
 method 2 and cannot be combined with `count`, `spacing`, `gather`, `radius`, `jitter`,
 `autostop` or `expand_thresholds`. `learn on`, also contextual and also method 2 only, lets
 each target learn where its photons deliver power; an object's `photons { target W }` takes
-a share weight under method 2 (see `doc/progressive-photons.md`). See
+a share weight under method 2 (see `doc/progressive-photons.md`). Light color and fade keep
+their classic meaning for direct light; method 2 calibrates photon power to them. See
 `distribution/scenes/lights/progressive_photons4.pov4`.
 
 ### Static checking
