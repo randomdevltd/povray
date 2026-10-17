@@ -124,6 +124,64 @@ PreciseMathColour SubsurfaceInterior::GetReducedAlbedo(const MathColour& diffuse
     return result;
 }
 
+// Unpolarised Fresnel reflectance for light inside a medium of relative index eta meeting its boundary at cosine c.
+static double FresnelFromInside(double c, double eta)
+{
+    double s2 = Sqr(eta) * (1.0 - Sqr(c));
+    if (s2 >= 1.0)
+        return 1.0;
+    double ct = sqrt(1.0 - s2), rs = (eta * c - ct) / (eta * c + ct), rp = (c - eta * ct) / (c + eta * ct);
+    return 0.5 * (Sqr(rs) + Sqr(rp));
+}
+
+SubsurfaceBoundary::SubsurfaceBoundary(double e) :
+    eta(e), c1(0.0), c2(0.0)
+{
+    // Below the critical cosine all light reflects; above it, midpoint sums.
+    double critical = (eta > 1.0) ? sqrt(1.0 - 1.0 / Sqr(eta)) : 0.0;
+    c1 = Sqr(critical) / 2.0;
+    c2 = critical * Sqr(critical) / 3.0;
+    const int steps = 8192;
+    for (int i = 0; i < steps; i++)
+    {
+        double c = critical + (1.0 - critical) * (i + 0.5) / steps, f = FresnelFromInside(c, eta) * (1.0 - critical) / steps;
+        c1 += f * c;
+        c2 += f * Sqr(c);
+    }
+    fdr = 2.0 * c1;
+    double A = (1.0 + fdr) / (1.0 - fdr);
+    for (int i = 0; i <= kSamples; i++)
+    {
+        double lo = 0.0, hi = 1.0, target = double(i) / kSamples;
+        for (int k = 0; (i > 0) && (i < kSamples) && (k < 60); k++)
+            ((DiffuseReflectance(A, 0.5 * (lo + hi)) < target) ? lo : hi) = 0.5 * (lo + hi);
+        reducedAlbedo[i] = (i == 0) ? 0.0f : (i == kSamples) ? 1.0f : float(0.5 * (lo + hi));
+    }
+}
+
+const SubsurfaceBoundary& SubsurfaceBoundary::For(double eta)
+{
+    static std::mutex mutex;
+    static std::map<float, std::unique_ptr<SubsurfaceBoundary>> boundaries;
+    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_ptr<SubsurfaceBoundary>& boundary = boundaries[float(eta)];
+    if (!boundary)
+        boundary.reset(new SubsurfaceBoundary(float(eta)));
+    return *boundary;
+}
+
+PreciseMathColour SubsurfaceBoundary::GetReducedAlbedo(const MathColour& diffuseReflectance) const
+{
+    PreciseMathColour result;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double i = clip(double(diffuseReflectance[j]), 0.0, 1.0) * kSamples;
+        int i0 = int(floor(i)), i1 = int(ceil(i));
+        result[j] = (1.0 - (i - i0)) * reducedAlbedo[i0] + (i - i0) * reducedAlbedo[i1];
+    }
+    return result;
+}
+
 size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
     size_t h = std::hash<const void*>()(k.object) ^ (std::hash<const void*>()(k.medium) * 31u) ^
