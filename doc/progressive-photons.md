@@ -154,8 +154,8 @@ preserve this relationship. Photon maps are shared by a prepared scene set,
 not allocated per light group.
 Media segments follow the same membership, described with media photons below.
 
-Classic count, spacing, gather, radius, jitter, autostop, expansion and map-file
-controls do not apply and are rejected.
+Classic count, spacing, gather, radius, jitter, autostop and expansion controls do
+not apply and are rejected.
 
 Media photons are enabled by the existing `media` photon setting. Transport stores
 finite photon segments with their incoming flux and extinction. A gather clips each
@@ -208,6 +208,33 @@ have changed since. `tests/render/progressive_radiosity.pov` lights a wall that
 collects no photons with a glass sphere's floor caustic and requires the bounce to
 match classic photons within 25%; the image does not depend on the thread count, and
 `+C` continues it.
+
+## Photon files
+
+`photons { save_file "name" }` and `load_file "name"` keep the classic syntax. With
+`save_file`, a render writes every prepared set's maps once the last batch is merged,
+before they are indexed: the surface deposits with their receivers, and the media
+segments with their medium lists and emitting lights. With `load_file`, the render
+reads them instead of shooting and indexes them as a shot render would, so a loaded
+render of the same scene is identical to the render that saved the file, and a moved
+camera sees the same photons. An animation or a series of camera moves can therefore
+shoot once.
+
+The file names its format version and the settings that decide its contents: quality,
+batch count and size, shards, `k`, the emission sequence's dimensions, the photon
+trace level, `adc_bailout`, media steps and spacing, and the colour channel layout. It
+also records how many objects, interiors and lights the scene has, numbering
+receivers, media and lights in the scene's own order, and each prepared set's key.
+Loading fails with an error naming the difference when any of these differs, when the
+file is truncated or damaged, when it is a classic map, or when its photons would
+exceed the memory budget (see Memory and reproducibility). A file shot with another
+render seed is reused with a warning. A classic render cannot load a method 2 file, nor
+method 2 a classic one. With three colour channels the file takes 64 bytes per surface
+deposit and 88 per media segment: on the leaf of the measurements below, at quality 1,
+591,415 deposits take 37.9 MB, saving adds 1.1 G instructions to the 168.7 G render,
+and a loaded render gives the same image in 164.1 G.
+`tests/render/progressive_photon_file.sh` saves and loads media, subsurface and
+dispersion scenes, turns the camera, and checks each error.
 
 ## Media lights
 
@@ -298,7 +325,7 @@ thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, imag
 independence of the logged budget, the memory budget error and invalid quality;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
 requires its underside to match the lit top, as does a `double_illuminate` disc; the
-emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity and `.pov4` scripts run with the new estimator.
+emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 
 ## Measurements
 
@@ -412,7 +439,10 @@ camera loop, hence its larger value.
 
 ## Limits
 
-- Classic photon map files are rejected.
+- A photon file is checked against the scene's structure and photon settings, not its
+  geometry: as with classic files, a scene whose objects or lights moved reuses the
+  saved photons. The file is written in the machine's byte order; loading it on another
+  platform, or on a build with other colour channels, fails.
 - The fixed-`k` rule is global; it is not adapted to local noise or gradients,
   and it smooths features narrower than the support at low quality. Sparse
   regions are estimated at the capped radius and stay noisy.

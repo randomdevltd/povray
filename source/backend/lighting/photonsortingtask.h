@@ -43,6 +43,8 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
+#include <string>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -59,6 +61,15 @@ namespace pov
 {
 
 class ViewThreadData;
+class ScenePhotonSettings;
+class SceneData;
+
+/// The settings a method 2 photon file must have been shot with to be loaded.
+std::string ProgressivePhotonIdentity(const ScenePhotonSettings& settings);
+/// Writes every prepared set's merged, unbuilt method 2 maps to the photon file; returns why it failed, or nothing.
+std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed);
+/// Reads unbuilt maps written by SaveProgressivePhotons into the prepared sets; returns why it failed, or nothing.
+std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_t& savedSeed);
 
 class PhotonSortingTask final : public RenderTask
 {

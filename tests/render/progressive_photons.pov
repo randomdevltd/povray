@@ -17,6 +17,8 @@
 #ifndef (InactiveLights) #declare InactiveLights = 0; #end
 #ifndef (OnlyVolume) #declare OnlyVolume = 0; #end
 #ifndef (Curved) #declare Curved = 0; #end
+#ifndef (PhotonFile) #declare PhotonFile = 0; #end
+#ifndef (CameraTurn) #declare CameraTurn = 0; #end
 global_settings {
     assumed_gamma 1
     max_trace_level 8
@@ -25,6 +27,7 @@ global_settings {
         #if (Method > 0) method Method #end
         #if (Method = 2) quality PhotonQuality #else count PhotonCount #end
         #if (Mist) media 32 #end
+        #if (PhotonFile = 1) save_file "progressive_photons.photons" #elseif (PhotonFile = 2) load_file "progressive_photons.photons" #end
     }
 }
 camera {
@@ -32,6 +35,7 @@ camera {
     look_at <0, 0, 0>
     right x*image_width/image_height
     angle 40
+    #if (CameraTurn != 0) rotate CameraTurn*y #end
 }
 light_source {
     <-2, 6, -1> color rgb LampPower photon_only PhotonOnly

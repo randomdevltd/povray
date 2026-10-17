@@ -874,8 +874,6 @@ void View::StartRender(POVMS_Object& renderOptions)
     if (!progressive && (tracingmethod == 4))
         throw POV_EXCEPTION(kParamErr, "Anti-aliasing method 4 needs progressive rendering (+PR).");
     bool resumed = progressive && renderOptions.Exist(kPOVAttrib_ProgressLevel);
-    if (viewData.GetSceneData()->photonSettings.Progressive() && !viewData.GetSceneData()->photonSettings.fileName.empty())
-        throw POV_EXCEPTION(kParamErr, "Photon method 2 does not use classic photon map files.");
 
     seed = renderOptions.TryGetInt(kPOVAttrib_StochasticSeed, 0);
 
@@ -1739,6 +1737,8 @@ void View::SetNextRectangle(TaskQueue&, shared_ptr<ViewData::BlockIdSet> bsl, un
     viewData.SetNextRectangle(*bsl, fs);
 }
 
+static double ProgressivePhotonMemoryBudget();
+
 void View::QueueProgressivePhotons(size_t seed, int threads)
 {
     const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
@@ -1746,11 +1746,33 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     viewData.photonMapCPU = 0;
     viewData.photonPeakBytes = 0;
     viewData.photonThreads = std::min(unsigned(ProgressivePhotonBudget::shards), unsigned(std::max(1, threads)));
+    progressivePhotonSeed = seed;
     for (auto& set : viewData.GetSceneData()->preparedSets)
     {
         set->progressiveSurface = ProgressivePhotonMap();
         set->progressiveMedia = ProgressiveVolumePhotonMap();
         set->progressiveFeedback.clear();
+    }
+    const ScenePhotonSettings& settings = viewData.GetSceneData()->photonSettings;
+    if (settings.loadFile && !settings.fileName.empty())
+    {
+        std::uint64_t savedSeed = seed;
+        const std::string error = LoadProgressivePhotons(*viewData.GetSceneData(), ProgressivePhotonMemoryBudget(), savedSeed);
+        if (!error.empty())
+            throw POV_EXCEPTION(kParamErr, error);
+        MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        if (savedSeed != seed)
+            messages.Warning(kWarningGeneral, "The photon file '%s' was shot with seed %llu, this render uses seed %llu; "
+                             "its photons are reused unchanged.", settings.fileName.c_str(),
+                             static_cast<unsigned long long>(savedSeed), static_cast<unsigned long long>(seed));
+        renderTasks.AppendFunction([this, budget](TaskQueue& queue) {
+            Timer timer;
+            if (BuildProgressivePhotonMaps(queue, budget.neighbours, 0))
+                viewData.photonMapCPU = viewData.photonPrepareCPU = timer.ElapsedThreadCPUTime();
+        });
+        renderTasks.AppendSync();
+        return;
     }
     auto* photonTotal = new ViewThreadData(&viewData, seed);
     photonTotal->timeType = TraceThreadData::kPhotonTime;
@@ -1885,21 +1907,28 @@ try
             set->progressiveMedia.photons.reserve(size_t(scale * set->progressiveMedia.photons.size()));
         }
     }
-    const bool last = pass + 1 == batches;
-    for (auto& set : viewData.GetSceneData()->preparedSets)
+    if (pass + 1 < batches)
     {
-        bytes += set->progressiveSurface.photons.capacity() * sizeof(MappedPhoton) +
-                 set->progressiveMedia.photons.capacity() * sizeof(ProgressiveVolumePhoton);
-        if (!last)
-            continue;
-        set->progressiveSurface.Build(neighbours);
-        set->progressiveMedia.Build();
-        bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
+        for (const auto& set : viewData.GetSceneData()->preparedSets)
+            bytes += set->progressiveSurface.photons.capacity() * sizeof(MappedPhoton) +
+                     set->progressiveMedia.photons.capacity() * sizeof(ProgressiveVolumePhoton);
+        viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
+        viewData.photonMapCPU += timer.ElapsedThreadCPUTime();
+        return;
     }
-    if (last)
-        viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
-    viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
-    viewData.photonMapCPU += timer.ElapsedThreadCPUTime();
+    const ScenePhotonSettings& settings = viewData.GetSceneData()->photonSettings;
+    if (!settings.loadFile && !settings.fileName.empty())
+    {
+        const std::string error = SaveProgressivePhotons(*viewData.GetSceneData(), progressivePhotonSeed);
+        if (!error.empty())
+        {
+            MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
+                                    viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+            messages.Warning(kWarningGeneral, "Could not save the photon file '%s': %s.", settings.fileName.c_str(), error.c_str());
+        }
+    }
+    if (BuildProgressivePhotonMaps(queue, neighbours, bytes))
+        viewData.photonMapCPU += timer.ElapsedThreadCPUTime();
 }
 catch (std::bad_alloc&)
 {
@@ -1909,6 +1938,32 @@ catch (std::bad_alloc&)
         set->progressiveMedia = ProgressiveVolumePhotonMap();
     }
     queue.Fail(kOutOfMemoryErr);
+}
+
+bool View::BuildProgressivePhotonMaps(TaskQueue& queue, unsigned int neighbours, size_t bytes)
+try
+{
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+    {
+        bytes += set->progressiveSurface.photons.capacity() * sizeof(MappedPhoton) +
+                 set->progressiveMedia.photons.capacity() * sizeof(ProgressiveVolumePhoton);
+        set->progressiveSurface.Build(neighbours);
+        set->progressiveMedia.Build();
+        bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
+    }
+    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
+    viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
+    return true;
+}
+catch (std::bad_alloc&)
+{
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+    {
+        set->progressiveSurface = ProgressivePhotonMap();
+        set->progressiveMedia = ProgressiveVolumePhotonMap();
+    }
+    queue.Fail(kOutOfMemoryErr);
+    return false;
 }
 
 void View::ReleaseProgressiveData(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> workers, ViewThreadData* total)
