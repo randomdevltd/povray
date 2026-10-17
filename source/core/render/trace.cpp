@@ -7904,8 +7904,15 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     SetUpSubsurfaceFlesh(flesh, layers, out, inward, DeriveKey(key, kDrawSubsurface, 5));
     MathColour reflectance = Finish->SubsurfaceHasColour ? MathColour(flesh.reference) * Finish->Diffuse : layers.reflectance;
 
+    // Method 2 inverts the colour and shapes its profile with the diffuse Fresnel reflectance itself; see doc/PERF.md.
+    int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
+    const bool pointCloud = (method == kSubsurfaceMethodPointCloud);
+    if (pointCloud && ((ssltBoundary == nullptr) || (ssltBoundary->eta != double(float(eta)))))
+        ssltBoundary = &SubsurfaceBoundary::For(eta);
+
     // user setting specifies reduced scattering coefficient
-    PreciseMathColour   alpha_prime     = out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
+    PreciseMathColour   alpha_prime     = pointCloud ? ssltBoundary->GetReducedAlbedo(reflectance)
+                                                     : out.Object->interior->subsurface->GetReducedAlbedo(reflectance);
     PreciseMathColour   sigma_prime_s   = 1.0 / PreciseMathColour(Finish->SubsurfaceTranslucency);
 
     PreciseMathColour   sigma_prime_t   = sigma_prime_s / alpha_prime;
@@ -7915,7 +7922,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     PreciseMathColour   sigma_t_xo      = sigma_prime_t / (1.0-g);
     PreciseMathColour   sigma_s         = sigma_prime_s / (1.0-g);
 
-    double F_dr   = FresnelDiffuseReflectance(eta);
+    double F_dr   = pointCloud ? ssltBoundary->fdr : FresnelDiffuseReflectance(eta);
     double Aconst = ((1 + F_dr) / (1 - F_dr));
     SubsurfaceProfile profile;
     for (int j = 0; j < MathColour::channels; j++)
@@ -7947,7 +7954,6 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     // Method 2 is the cloud's everywhere, the radiosity pretrace included (its points then carry no radiosity, the cache still
     // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
-    int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
     bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();
     Vector3d sampleBase;
     ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
@@ -7957,7 +7963,6 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
-    const bool pointCloud = (method == kSubsurfaceMethodPointCloud);
     // Below the subsurface bailout (4.0) a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
     const bool estimate = pointCloud && (sceneData->EffectiveLanguageVersion() >= 400) &&
                           (rayWeight * layers.weight.WeightMax() < sceneData->subsurfaceBailout * Eye.GetTicket().adcBailout) &&

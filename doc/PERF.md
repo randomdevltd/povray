@@ -825,6 +825,29 @@ times the walks at high albedo against 1.075 on the deep slab, the 20 mm block 1
 | Creases unfolded (`sslt-studs.pov`, 1×) | red 13.2 / −3.2, high 15.8 / +3.4; method 1 27.4 / −17.6, 32.1 / −22.6 | against bare: red 14.4 / −2.58, high 17.7 / +1.92; method 1 29.7 / −16.9, 34.0 / −23.9: holds |
 | The dipole 1.79 times the walks on the bare slab, "a constant of units" | | not units: 1.075 on the deep slab, 1.68 on the 0.4-deep bare slab (thin against a 34 mm diffusion length) |
 
+## Subsurface method 2's profile
+
+Method 2 builds its medium and profile for the shading point's relative index η from the Fresnel reflectance from
+inside, F(μ): its moments c1 = ∫₀¹ F μ dμ and c2 = ∫₀¹ F μ² dμ, integrated once per index (`SubsurfaceBoundary` in
+`source/core/lighting/subsurface.cpp`; total reflection below the critical cosine, midpoint sums above it). Method 1
+keeps everything here as it was.
+
+**Fresnel diffuse reflectance.** The classic approximation (`FresnelDiffuseReflectance`, which method 1 keeps) is far
+below the diffuse reflectance from inside, F̄dr = 2 c1, which Jensen's polynomial fits; with A = (1 + F̄dr) / (1 − F̄dr)
+it puts the dipole's virtual source at z_r (1 + 4A/3):
+
+| η | classic F̄dr | Jensen's polynomial | 2 c1 | virtual source, classic → 2 c1 |
+|---|---|---|---|---|
+| 1.3 | 0.059 | 0.4448 | 0.4445 | 2.50 → 4.47 z_r |
+| 1.4 | 0.074 | 0.5295 | 0.5290 | 2.55 → 5.33 z_r |
+| 1.45 | 0.082 | 0.5650 | 0.5645 | 2.57 → 5.79 z_r |
+| 1.5 | 0.089 | 0.5967 | 0.5963 | 2.59 → 6.27 z_r |
+
+Method 2 takes 2 c1, for its dipole and for the table that inverts the colour to a reduced albedo, so the total diffuse
+reflectance stays the colour (the head-on slabs below render Ft² times the colour to within 1.2%) while the medium
+absorbs less: the high-albedo material's reduced albedo goes from 0.99885 to 0.99971 and its diffusion length from 17
+to 34 reduced mean free paths. 2 c1 holds for any η, where the polynomial fails below 1.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each

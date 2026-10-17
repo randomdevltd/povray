@@ -320,6 +320,24 @@ inline double FresnelDiffuseReflectance(double eta)
 #endif
 }
 
+/// Method 2's boundary for one relative index of refraction: the Fresnel moments from inside, and the reduced albedo whose
+/// profile's total diffuse reflectance is a given colour; built once per index and shared. See doc/PERF.md.
+class SubsurfaceBoundary final
+{
+    public:
+        explicit SubsurfaceBoundary(double eta);
+        /// The boundary for eta, built on first use.
+        static const SubsurfaceBoundary& For(double eta);
+        PreciseMathColour GetReducedAlbedo(const MathColour& diffuseReflectance) const;
+        double eta;
+        double c1, c2; ///< the Fresnel reflectance from inside times the cosine (squared) integrated over cosines 0 to 1
+        double fdr; ///< the diffuse Fresnel reflectance from inside, 2 c1
+
+    private:
+        static const int kSamples = 100;
+        float reducedAlbedo[kSamples + 1];
+};
+
 /// @}
 ///
 //##############################################################################

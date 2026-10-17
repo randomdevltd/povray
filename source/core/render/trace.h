@@ -428,6 +428,7 @@ class Trace
         Vector3d ssltCameraLocation;
         double ssltPixelSize = 0.0, ssltPixelAngle = 0.0;
         bool ssltCameraKnown = false;
+        const SubsurfaceBoundary *ssltBoundary = nullptr; ///< method 2's boundary for the last index it shaded
         /// Per light and channel, the lowest, mean and highest visibility of a few cloud points.
         struct SubsurfaceVisibility
         {
