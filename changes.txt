@@ -566,10 +566,13 @@ Miscellaneous:
     hand listing.
   - In `.pov4` scenes, comparisons and `&&` / `||` no longer need parentheses
     outside conditions: `let V = A == B;`, `return A > B;` and
-    `A > 1 ? 5 : 6` parse. A parenthesised `(C < 0 ? A : B)` now groups as
-    `(C < 0) ? A : B`, as in classic, where it used to compare `C` with the
-    conditional. A comparison inside a vector still needs parentheses, and a
-    bare `<` after a block item still starts a vector.
+    `A > 1 ? 5 : 6` parse. Every `?:` whose condition is a comparison or
+    `&&` / `||` now groups as the condition, as in classic: `(C < 0 ? A : B)`
+    and `Case == 14 ? 2001 : 4` used to compare against the conditional, as
+    `C < (0 ? A : B)` and `Case == (14 ? 2001 : 4)`. A comparison inside a
+    vector still needs parentheses, and so does a bare `<` after an item in
+    any item list (block and function bodies, the top level, arrays), where
+    it starts a vector: `fn Lt(A, B) { (A < B) }`.
 
 Development Related
 -------------------

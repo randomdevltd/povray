@@ -10,6 +10,8 @@ let Got = [Ret(A, B), Last(A, B), A > B, 2 > 1, A == B, A && B, A > 1 ? 5 : 6, (
   Less, !A || B >= 2, (H < 0 ? H + 360 : H), ((L) => L <= 0)(H)];
 let Want = [Paren(A, B), (A > B), (A > B), (2 > 1), (A == B), (A && B), (A > 1) ? 5 : 6, ((A < B) || (B < A)),
   (A < B), ((!A) || (B >= 2)), 330, 1];
+let Scaled = box { -1, 1 scale A > B ? 2 : 1 };
+if (max_extent(Scaled).x != 2) { error("bare comparison in a block item differs"); }
 for (I = 0 to 11) { if (Got[I] != Want[I]) { error(concat("bare comparison ", str(I, 0, 0), " differs")); } }
 debug("pov4 bare comparisons\n");
 sphere { 0, 1 scale A > B ? 1 : 2 pigment { rgb 1 } }

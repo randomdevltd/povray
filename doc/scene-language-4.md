@@ -168,9 +168,10 @@ Changes from classic expressions: equality is `==` (classic `=`, with the same e
 `&&` binds tighter than `||`. Comparisons and logical operators need no parentheses:
 `let Ok = A > 0 && A < 2;`, `return A == B;`, `I < 2 ? A : B`, `filter(L, (P) => P > 0)`.
 Two places keep them parenthesised so vectors stay unambiguous: a vector component
-(`<1, (A > 0), 3>`; `<1, 2 > 1, 3>` is a syntax error), and a bare `<` after a block item,
-which starts a vector, so juxtaposed vectors (`box { <0, 0, 0> <1, 1, 1> }`) are two items;
-write `(A < B);` as a statement, while `A > B;` needs nothing. Everything else keeps classic meaning, including float→vector promotion,
+(`<1, (A > 0), 3>`; `<1, 2 > 1, 3>` is a syntax error), and a bare `<` after an item in any
+item list (block and function bodies, the top level, arrays, comprehension bodies), which starts a
+vector, so juxtaposed vectors (`box { <0, 0, 0> <1, 1, 1> }`) are two items. There `A > B` needs
+nothing, but write `fn Lt(A, B) { (A < B) }` and `[(a < b), 1]`. Everything else keeps classic meaning, including float→vector promotion,
 `.x/.y/.z/.t/.red/.green/.blue/.filter/.transmit` members, `x`, `y`, `z`, `t`, `u`, `v`, `pi`,
 `clock` and every classic built-in function.
 

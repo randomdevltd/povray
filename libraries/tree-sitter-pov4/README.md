@@ -29,9 +29,10 @@ which the renderer rejects as a name.
 
 Comparisons and logical operators (`comparison_expression`) parse in every expression
 position with their usual precedence, with two exceptions that keep vectors unambiguous:
-vector components take no bare comparison, so `>` always closes a vector, and in a list of
-block items a bare `<` after an item starts a vector, so juxtaposed vectors are separate
-items (`A > B` is an item, `A < B` needs parentheses there). The grammar keeps one copy of
+vector components take no bare comparison, so `>` always closes a vector, and in any item
+list (block and function bodies, the top level, arrays, comprehension bodies) a bare `<` after
+an item starts a vector, so juxtaposed vectors are separate items: `A > B` is an item there,
+but `fn Lt(A, B) { (A < B) }` and `[(a < b), 1]` need their parentheses. The grammar keeps one copy of
 the operator rules per context (`_expression`, `_item_expression`, `_component`). Vectors take any number (two or
 more) of components. Indexing and member access need no space before `[` or `.`: `A[0]`, `V.x`. A
 spaced `[` starts a new item, so map entries such as `[0 color Red] [1 color Blue]`

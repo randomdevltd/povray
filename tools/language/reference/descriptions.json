@@ -1551,9 +1551,9 @@
    "from": "doc/html/r3_10.html"
   },
   "error": {
-   "rank": 1035,
-   "code": "refused splice.pov:3:9 syntax-error",
-   "from": "doc/html/r3_13.html"
+   "rank": 84,
+   "code": "if (max_extent(Scaled).x != 2) { error(\"bare comparison in a block item differs\"); }",
+   "from": "tests/pov4/ok_bare_comparisons.pov4:14"
   },
   "error_bound": {
    "rank": 68,
@@ -2574,9 +2574,9 @@
    "from": "doc/html/r3_4.html"
   },
   "scale": {
-   "rank": 50,
-   "code": "object { Ball translate x * 2.5 scale Scale(1.5) }",
-   "from": "tests/pov4/basics.pov4:7"
+   "rank": 47,
+   "code": "let Scaled = box { -1, 1 scale A > B ? 2 : 1 };",
+   "from": "tests/pov4/ok_bare_comparisons.pov4:13"
   },
   "scallop_wave": {
    "rank": 1060,
