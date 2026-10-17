@@ -1,0 +1,16 @@
+// tags_inherit: classic twin of tags_inherit.pov4
+#version 4.0;
+#declare inherit = 0.5;
+global_settings { assumed_gamma 1.0 }
+light_source { <4, 6, -3> rgb 1 }
+camera { location <0, 0, -6> look_at 0 filter_tags { "kit" } }
+union {
+  sphere { -x * 1.5, 0.5 pigment { color rgb <1, 0.3, 0.2> } }
+  sphere { 0, 0.5 pigment { color rgb <0.3, 1, 0.2> } tags { inherit } }
+  sphere { x * 1.5, 0.5 pigment { color rgb <0.2, 0.3, 1> } tags { none } }
+  sphere { y * 1.2, 0.5 pigment { color rgb 1 } tags { "other" } }
+  sphere { -y * 1.2, 0.5 pigment { color rgb <1, 1, 0.2> } tags { "kit", "b" } }
+  sphere { <1.5, 1.2, 0>, 0.5 pigment { color rgb <1, 0.2, 1> } tags { "other" } }
+  scale inherit * 2
+  tags { "kit" }
+}

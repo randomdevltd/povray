@@ -114,6 +114,51 @@ if cmp -s render_tags_children_all.px render_tags_children_ref_m1_s1.px; then
     exit 1
 fi
 
+# Tags inherit down the tree; tagged copies the path to what it selects, expands once and never sees its own tree.
+inherit=tests/render/render_tags_inherit.pov
+for filter in 0 1 2 3 4 5 6; do
+    render "inherit_f$filter" "$inherit" Declare=Case=1 Declare=Filter="$filter"
+    render "inherit_ref$filter" "$inherit" Declare=Case=1 Declare=Filter="$filter" Declare=Reference=1
+    equal "inherit_f$filter" "inherit_ref$filter"
+done
+for filter in 0 1 2 3 4 5 6 7; do
+    render "inherit_replace_f$filter" "$inherit" Declare=Case=9 Declare=Filter="$filter"
+    render "inherit_replace_ref$filter" "$inherit" Declare=Case=9 Declare=Filter="$filter" Declare=Reference=1
+    equal "inherit_replace_f$filter" "inherit_replace_ref$filter"
+done
+for case in 2 3 4 5 6 7; do
+    render "inherit_c$case" "$inherit" Declare=Case="$case"
+    render "inherit_c${case}_ref" "$inherit" Declare=Case="$case" Declare=Reference=1
+    equal "inherit_c$case" "inherit_c${case}_ref"
+done
+for view in 0 1; do
+    for filter in 1 2; do
+        render "inherit_portal_v${view}_f$filter" "$inherit" Declare=Case=8 Declare=Side="$view" Declare=Filter="$filter"
+        render "inherit_portal_v${view}_f${filter}_ref" "$inherit" Declare=Case=8 Declare=Side="$view" Declare=Filter="$filter" Declare=Reference=1
+        equal "inherit_portal_v${view}_f$filter" "inherit_portal_v${view}_f${filter}_ref"
+    done
+    if cmp -s "render_tags_inherit_portal_v${view}_f1.px" "render_tags_inherit_portal_v${view}_f2.px"; then
+        echo "portal mouth $view: the tag filter changed nothing" >&2
+        exit 1
+    fi
+done
+[ "$(grep 'Finite Objects' render_tags_inherit_c6.log)" = "$(grep 'Finite Objects' render_tags_inherit_c6_ref.log)" ] || {
+    echo "a declared selection placed twice selected again" >&2
+    exit 1
+}
+tr '\n' ' ' < render_tags_inherit_c7.log | tr -s ' ' | grep -q '1 built for parse-time queries' || {
+    cat render_tags_inherit_c7.log
+    exit 1
+}
+for check in 10 11; do
+    if "$POVRAY" +i"$SRCDIR/tests/render/render_tags_invalid.pov" +w8 +h8 -a -d -p -v -gp -f \
+        Declare=Check="$check" > "render_tags_invalid_$check.log" 2>&1; then
+        echo "invalid render tag syntax accepted: $check" >&2
+        exit 1
+    fi
+    tr -d '\n' < "render_tags_invalid_$check.log" | grep -q 'none } stands alone' || { cat "render_tags_invalid_$check.log"; exit 1; }
+done
+
 # Deferred meshes are built after every filter is known, once each, and only where some view keeps them.
 meshes() {
     tr '\n' ' ' < "render_tags_$1.log" | tr -s ' ' | grep -q "Deferred meshes: $2" || {
@@ -262,4 +307,4 @@ paste -d' ' render_tags_parallel.hex render_tags_parallel_a.hex render_tags_para
     END { if (other || a < 200 || b < 200) { printf "parallel worlds: %d from a, %d from b, %d from neither\n", a, b, other > "/dev/stderr"; exit 1 } }'
 
 rm -f render_tags_*.ppm render_tags_*.px render_tags_*.hex render_tags_*.log render_tags_photon_maps.ph render_tags_legacy.ph render_tags_radiosity.rca.set-* rendertags_generated.ini
-echo "render_tags: expressions, macros, CSG, lights, screens and portals passed"
+echo "render_tags: expressions, inheritance, selections, macros, CSG, lights, screens and portals passed"

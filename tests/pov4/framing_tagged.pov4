@@ -1,0 +1,14 @@
+// framing_tagged: look_at a tagged selection of what a loop placed, and place a moved copy; tagged stays a free name
+let refraction_detail = 5;                                // the setting below stays a word
+global_settings { assumed_gamma 1.0 refraction_detail 1 }
+light_source { <4, 6, -3> rgb 1 }
+plane { y, -1 pigment { checker color rgb 0.8 color rgb <0.25, 0.3, 0.4> } }
+for (I = -1 to 1) {
+  sphere { x * I * 0.75, 0.25 pigment { color rgb 0.9 } tags { "subject" } }
+}
+torus { 0.55, 0.18 translate <1, 1.8, 0> pigment { color rgb <0.95, 0.8, 0.2> } tags { "subject-draft" } }
+let Draft = concat("subject", "-draft");
+let Row = tagged { "subject*" & !Draft };
+camera { location <0, 0, -10> right x * 4 / 3 up y look_at Row }
+let tagged = 1;
+object { Row translate y * 0.8 scale tagged }
