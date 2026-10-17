@@ -41,6 +41,7 @@
 
 // C++ variants of C standard header files
 #include <cstdint>
+#include <cstring>
 
 // C++ standard header files
 #include <atomic>
@@ -320,8 +321,23 @@ inline double FresnelDiffuseReflectance(double eta)
 #endif
 }
 
-/// Method 2's boundary for one relative index of refraction: the Fresnel moments from inside, and the reduced albedo whose
-/// profile's total diffuse reflectance is a given colour; built once per index and shared. See doc/PERF.md.
+class SubsurfaceBoundary;
+
+/// d'Eon's better dipole in units of the reduced mean free path, for one reduced albedo at one boundary.
+struct SubsurfaceDipole final
+{
+    double fluence, flux; ///< the weights of the fluence and flux terms: albedo cphi / (4 pi D), albedo ce / (4 pi)
+    double sigma, zb; ///< the transport coefficient; how far the virtual source lies above a real one, 4 A D
+    SubsurfaceDipole() = default;
+    SubsurfaceDipole(double albedo, const SubsurfaceBoundary& boundary);
+    /// Rd at squared radius xSqr from a real source at depth.
+    double Rd(double xSqr, double depth = 1.0) const;
+    /// Rd integrated over a disc of radius x, or the whole plane if x is infinite.
+    double Disc(double x) const;
+};
+
+/// Method 2's boundary at one relative index: Fresnel moments, beam diffusion's ratio to the better dipole, and the reduced
+/// albedo whose total diffuse reflectance is a given colour; built once per index and shared. See doc/PERF.md.
 class SubsurfaceBoundary final
 {
     public:
@@ -332,10 +348,49 @@ class SubsurfaceBoundary final
         double eta;
         double c1, c2; ///< the Fresnel reflectance from inside times the cosine (squared) integrated over cosines 0 to 1
         double fdr; ///< the diffuse Fresnel reflectance from inside, 2 c1
+        double ab, cphi, ce; ///< the dipole's boundary factor (1 + 3 c2) / (1 - 2 c1); the fluence's and flux's shares of exitance
+
+        /// Beam diffusion's table: rows by u = sqrt(3 (1 - albedo)), columns by squared optical radius, four to an octave
+        /// from 2^kBeamFirstOctave; each entry the ratio to the dipole of Rd and of Rd's integral over the disc.
+        static const int kBeamRows = 128, kBeamOctaves = 54, kBeamColumns = 4 * kBeamOctaves + 1, kBeamFirstOctave = -27;
+        /// The row at or below a reduced albedo, and the weight of the next.
+        const float *BeamRow(double albedo, double& weight) const;
+        /// Beam diffusion over the dipole for the whole plane.
+        double BeamTotalRatio(double albedo) const;
+        /// The profile's total diffuse reflectance at a reduced albedo.
+        double Total(double albedo) const;
+
+        /// Beam diffusion over the dipole at a squared optical radius, interpolated within a quarter octave: of Rd for
+        /// disc 0, of its integral over the disc for disc 1.
+        static double BeamRatio(const float *row, double weight, double radiusSqr, int disc)
+        {
+            std::uint64_t bits, unit;
+            std::memcpy(&bits, &radiusSqr, sizeof(bits));
+            unit = (bits & 0xFFFFFFFFFFFFFull) | 0x3FF0000000000000ull;
+            double mantissa;
+            std::memcpy(&mantissa, &unit, sizeof(mantissa));
+            double s = 4.0 * (mantissa - 1.0);
+            int quarter = int(s), k = 4 * (int((bits >> 52) & 0x7FF) - 1023 - kBeamFirstOctave) + quarter;
+            double p = s - quarter;
+            if (k < 0)
+            {
+                k = 0;
+                p = 0.0;
+            }
+            else if (k > kBeamColumns - 2)
+            {
+                k = kBeamColumns - 2;
+                p = 1.0;
+            }
+            const float *a = row + 2 * k + disc, *b = a + 2 * kBeamColumns;
+            return (1.0 - weight) * (a[0] + p * (a[2] - a[0])) + weight * (b[0] + p * (b[2] - b[0]));
+        }
 
     private:
         static const int kSamples = 100;
         float reducedAlbedo[kSamples + 1];
+        std::vector<float> beam; ///< per row and column: the ratios of Rd and of its disc integral
+        std::vector<float> beamTotal; ///< per row: the ratio of the integrals over the plane
 };
 
 /// @}

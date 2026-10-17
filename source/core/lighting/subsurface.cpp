@@ -134,6 +134,44 @@ static double FresnelFromInside(double c, double eta)
     return 0.5 * (Sqr(rs) + Sqr(rp));
 }
 
+// Real sources along the beam, by the log of their depth: how many, and the depths they span.
+static const int kBeamDepths = 32;
+static const double kBeamShallowest = 1e-7, kBeamDeepest = 48.0;
+
+SubsurfaceDipole::SubsurfaceDipole(double albedo, const SubsurfaceBoundary& boundary)
+{
+    double absorption = 1.0 - albedo, D = (2.0 * absorption + albedo) / 3.0;
+    sigma = sqrt(absorption / D);
+    zb = 4.0 * boundary.ab * D;
+    fluence = albedo * boundary.cphi / (4.0 * M_PI * D);
+    flux = albedo * boundary.ce / (4.0 * M_PI);
+}
+
+double SubsurfaceDipole::Rd(double xSqr, double depth) const
+{
+    double zv = depth + zb, dr = sqrt(xSqr + Sqr(depth)), dv = sqrt(xSqr + Sqr(zv));
+    double er = exp(-sigma * dr), ev = exp(-sigma * dv);
+    return fluence * (er / dr - ev / dv) + flux * (depth * (1.0 + sigma * dr) * er / (dr * Sqr(dr)) + zv * (1.0 + sigma * dv) * ev / (dv * Sqr(dv)));
+}
+
+// (exp(-sigma a) - exp(-sigma b)) / sigma, which is b - a without absorption.
+static double ExpDifference(double sigma, double a, double b)
+{
+    return (sigma > 0.0) ? -exp(-sigma * a) * expm1(-sigma * (b - a)) / sigma : b - a;
+}
+
+double SubsurfaceDipole::Disc(double x) const
+{
+    double zv = 1.0 + zb, phi = ExpDifference(sigma, 1.0, zv), e = exp(-sigma) + exp(-sigma * zv);
+    if (x < HUGE_VAL)
+    {
+        double dr = sqrt(Sqr(x) + 1.0), dv = sqrt(Sqr(x) + Sqr(zv));
+        phi -= ExpDifference(sigma, dr, dv);
+        e -= exp(-sigma * dr) / dr + zv * exp(-sigma * dv) / dv;
+    }
+    return 2.0 * M_PI * (fluence * phi + flux * e);
+}
+
 SubsurfaceBoundary::SubsurfaceBoundary(double e) :
     eta(e), c1(0.0), c2(0.0)
 {
@@ -149,14 +187,80 @@ SubsurfaceBoundary::SubsurfaceBoundary(double e) :
         c2 += f * Sqr(c);
     }
     fdr = 2.0 * c1;
-    double A = (1.0 + fdr) / (1.0 - fdr);
+    ab = (1.0 + 3.0 * c2) / (1.0 - 2.0 * c1);
+    cphi = 0.25 * (1.0 - 2.0 * c1);
+    ce = 0.5 * (1.0 - 3.0 * c2);
+
+    // Beam diffusion (Habel et al. 2013): real sources of the better dipole along the refracted beam, each damped near the
+    // surface, as a ratio to the dipole at one depth, per row of u and column; Simpson's rule over the log radius.
+    beam.assign(size_t(kBeamRows) * kBeamColumns * 2, 1.0f);
+    beamTotal.assign(kBeamRows, 1.0f);
+    const double logShallowest = log(kBeamShallowest), h = (log(kBeamDeepest) - logShallowest) / kBeamDepths;
+    for (int row = 0; row < kBeamRows; row++)
+    {
+        double u = sqrt(3.0) * row / (kBeamRows - 1), albedo = 1.0 - Sqr(u) / 3.0;
+        SubsurfaceDipole dipole(albedo, *this);
+        auto beamRd = [&](double x)
+        {
+            double sum = 0.0;
+            for (int k = 0; k < kBeamDepths; k++)
+            {
+                double t = exp(logShallowest + (k + 0.5) * h), dr = sqrt(Sqr(x) + Sqr(t));
+                sum += exp(-t) * -expm1(-2.0 * (dr + t)) * dipole.Rd(Sqr(x), t) * t * h;
+            }
+            return albedo * sum;
+        };
+        double x = 0.0, rd = 0.0, disc = 0.0, rdRatio = 1.0, discRatio = 1.0;
+        for (int k = 0; k < kBeamColumns; k++)
+        {
+            double x0 = x, rd0 = rd;
+            x = sqrt(ldexp(1.0 + (k % 4) / 4.0, kBeamFirstOctave + k / 4));
+            rd = beamRd(x);
+            if (k == 0)
+                disc = M_PI * Sqr(x) * rd;
+            else
+            {
+                double mid = sqrt(x0 * x);
+                disc += 2.0 * M_PI * log(x / x0) / 6.0 * (Sqr(x0) * rd0 + 4.0 * Sqr(mid) * beamRd(mid) + Sqr(x) * rd);
+            }
+            double rdDipole = dipole.Rd(Sqr(x)), discDipole = dipole.Disc(x);
+            rdRatio = ((rd > 0.0) && (rdDipole > 0.0)) ? rd / rdDipole : rdRatio;
+            discRatio = (discDipole > 0.0) ? disc / discDipole : discRatio;
+            beam[(size_t(row) * kBeamColumns + k) * 2] = float(rdRatio);
+            beam[(size_t(row) * kBeamColumns + k) * 2 + 1] = float(discRatio);
+        }
+        // Past the last radius the profile is the dipole times its last ratio.
+        double whole = dipole.Disc(HUGE_VAL);
+        beamTotal[row] = (whole > 0.0) ? float((disc + rdRatio * (whole - dipole.Disc(x))) / whole) : float(discRatio);
+    }
+
     for (int i = 0; i <= kSamples; i++)
     {
         double lo = 0.0, hi = 1.0, target = double(i) / kSamples;
         for (int k = 0; (i > 0) && (i < kSamples) && (k < 60); k++)
-            ((DiffuseReflectance(A, 0.5 * (lo + hi)) < target) ? lo : hi) = 0.5 * (lo + hi);
+            ((Total(0.5 * (lo + hi)) < target) ? lo : hi) = 0.5 * (lo + hi);
         reducedAlbedo[i] = (i == 0) ? 0.0f : (i == kSamples) ? 1.0f : float(0.5 * (lo + hi));
     }
+}
+
+const float *SubsurfaceBoundary::BeamRow(double albedo, double& weight) const
+{
+    double f = sqrt(clip(1.0 - albedo, 0.0, 1.0)) * (kBeamRows - 1);
+    int row = std::min(kBeamRows - 2, int(floor(f)));
+    weight = f - row;
+    return &beam[size_t(row) * kBeamColumns * 2];
+}
+
+double SubsurfaceBoundary::BeamTotalRatio(double albedo) const
+{
+    double f = sqrt(clip(1.0 - albedo, 0.0, 1.0)) * (kBeamRows - 1);
+    int row = std::min(kBeamRows - 2, int(floor(f)));
+    return (1.0 - (f - row)) * beamTotal[row] + (f - row) * beamTotal[row + 1];
+}
+
+double SubsurfaceBoundary::Total(double albedo) const
+{
+    return SubsurfaceDipole(albedo, *this).Disc(HUGE_VAL) * BeamTotalRatio(albedo);
 }
 
 const SubsurfaceBoundary& SubsurfaceBoundary::For(double eta)

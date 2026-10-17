@@ -1070,10 +1070,17 @@ class Trace
     /// @{
     ///
 
-        /// Per-channel constants of the dipole diffusion profile at one shading point.
+        /// Per-channel constants of the diffusion profile at one shading point: method 1's classic dipole, or method 2's
+        /// better dipole times beam diffusion's ratio from its boundary (see doc/PERF.md); lengths in mm.
         struct SubsurfaceProfile
         {
             PreciseMathColour scale, sigma_tr, z_r, z_v;
+            const SubsurfaceBoundary *boundary = nullptr; ///< method 2's, or null for the classic dipole
+            SubsurfaceDipole dipole[MathColour::channels]; ///< method 2's, in reduced mean free paths
+            double extinction[MathColour::channels], extinctionSqr[MathColour::channels], beamWeight[MathColour::channels];
+            double totalRatio[MathColour::channels];
+            const float *beamRow[MathColour::channels];
+            void SetMethod2(const SubsurfaceBoundary& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
             PreciseMathColour Rd(double distSqr) const;
             PreciseMathColour RdDisc(double radius) const;
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
