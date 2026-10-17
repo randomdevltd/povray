@@ -57,11 +57,21 @@ binary_expression :=
   | left: _expression operator: "*" right: _expression
   | left: _expression operator: "/" right: _expression;
 
+comparison_expression :=
+  | left: _expression operator: "||" right: _expression
+  | left: _expression operator: "&&" right: _expression
+  | left: _expression operator: "==" right: _expression
+  | left: _expression operator: "!=" right: _expression
+  | left: _expression operator: "<" right: _expression
+  | left: _expression operator: "<=" right: _expression
+  | left: _expression operator: ">" right: _expression
+  | left: _expression operator: ">=" right: _expression;
+
 unary_expression := operator: ("-" | "+" | "!") operand: _expression;
 
 lambda := parameters: (parameters | identifier) "=>" body: (body | _expression);
 
-colour_expression := (operator: colour_operator value: _expression | operator: color_operator (value: _expression | ε) | channel) channel*;
+colour_expression := (operator: colour_operator value: _component | operator: color_operator (value: _component | ε) | channel) channel*;
 
 call_expression := function: _postfix arguments: arguments;
 
@@ -81,17 +91,52 @@ false := "false";
 
 null := "null";
 
-vector := "<" _expression "," _expression ("," _expression)* ">";
+vector := "<" _component "," _component ("," _component)* ">";
 
 dictionary := "{" ((pair | spread) ("," (pair | spread))* ("," | ε) | ε) "}";
 
-parenthesized_expression := "(" _comparable ")";
+parenthesized_expression := "(" _expression ")";
 
 block := name: (keyword | "to" as keyword) "{" _item* "}";
 
-function_block := "function" (parameters: function_parameters | width: _size "," height: _size | ε) "{" (keyword | _comparable | ",")* "}";
+function_block := "function" (parameters: function_parameters | width: _size "," height: _size | ε) "{" (keyword | _expression | ",")* "}";
 
 array := "[" _item* "]";
+```
+
+### Expression contexts
+
+Block items take `_item_expression`, which has no `<` operator, so a `<` after an item starts a vector. Vector components, colour values and spreads take `_component`, which has no comparison, so `>` always closes a vector. Each repeats the operator rules above over its own context.
+
+```ebnf
+_expression :=
+  | conditional_expression
+  | binary_expression
+  | comparison_expression
+  | unary_expression
+  | lambda
+  | colour_expression
+  | _postfix
+  | array;
+
+_item_expression :=
+  | _conditional_expression_item as conditional_expression
+  | _binary_expression_item as binary_expression
+  | _comparison_expression_item as comparison_expression
+  | _unary_expression_item as unary_expression
+  | _lambda_item as lambda
+  | colour_expression
+  | _postfix
+  | array;
+
+_component :=
+  | _conditional_expression_component as conditional_expression
+  | _binary_expression_component as binary_expression
+  | _unary_expression_component as unary_expression
+  | _lambda_component as lambda
+  | colour_expression
+  | _postfix
+  | array;
 ```
 
 ### Other named rules
@@ -105,25 +150,15 @@ parameter := name: identifier ("=" default: _expression | ε);
 
 body := "{" _item* "}";
 
-comparison_expression :=
-  | left: _comparable operator: "||" right: _comparable
-  | left: _comparable operator: "&&" right: _comparable
-  | left: _comparable operator: "==" right: _comparable
-  | left: _comparable operator: "!=" right: _comparable
-  | left: _comparable operator: "<" right: _comparable
-  | left: _comparable operator: "<=" right: _comparable
-  | left: _comparable operator: ">" right: _comparable
-  | left: _comparable operator: ">=" right: _comparable;
-
 channel :=
-  | name: colour_channel value: _expression
+  | name: colour_channel value: _component
   | name: colour_channel;
 
 arguments := "(" ((_expression | spread) ("," (_expression | spread))* ("," | ε) | ε) ")";
 
 pair := (key: (identifier | string) | "[" computed: _expression "]") ":" value: _expression;
 
-spread := "..." _expression;
+spread := "..." _component;
 
 function_parameters := "(" ((identifier | builtin) ("," (identifier | builtin))* | ε) ")";
 ```

@@ -32,7 +32,7 @@ for (I = 0 to 9) { ... }        // inclusive; for (V in A) takes arrays, dict ke
 [for (I = 0 to 9) { I * I }]     // array comprehension;  { A: 1, "b c": 2, [K]: 3 } dictionary
 ```
 
-Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >=`; `== !=`; `&&`; `||`; `C ? A : B`; lambda. `==`, `&&`, `||` replace classic `=`, `&`, `|`; comparisons and logic need parentheses outside conditions.
+Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >=`; `== !=`; `&&`; `||`; `C ? A : B`; lambda. `==`, `&&`, `||` replace classic `=`, `&`, `|`; comparisons and logic need no parentheses except inside a vector `<1, (A > 0), 3>` and for a bare `<` after a block item, which starts a vector.
 
 ## Blocks
 

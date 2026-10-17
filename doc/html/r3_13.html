@@ -465,7 +465,7 @@ sphere { &lt;0, 2, 0&gt;, Total / 2 pigment { rgb &lt;1, 1, 0.2&gt; } }
 <ul>
   <li><strong>Equality is <code>==</code>.</strong> It keeps the classic epsilon comparison, so <code>(0.1 + 0.2 == 0.3)</code> is 1. The single <code>=</code> is assignment only.</li>
   <li><strong>The logical operators are <code>&amp;&amp;</code> and <code>||</code></strong> (classic <code>&amp;</code> and <code>|</code>), <code>&amp;&amp;</code> binds tighter than <code>||</code>, and both short-circuit when the left operand is a float that decides the result.</li>
-  <li><strong>Comparisons and logical operators need parentheses except in conditions.</strong> As in classic, <code>&lt;</code> would otherwise open a vector. They are free in <code>if (...)</code>, <code>while (...)</code> and render-time function bodies. Block items, vector components, <code>let</code> values and arguments take only <code>+ - * /</code>, so write <code>(I &lt; 2) ? A : B</code> and <code>filter(L, (P) =&gt; (P &gt; 0))</code>. This is also why <code>box { &lt;0, 0, 0&gt; &lt;1, 1, 1&gt; }</code> is two vectors and why a <code>&gt;</code> always closes a vector.</li>
+  <li><strong>Comparisons and logical operators need no parentheses, except where a vector could start or end.</strong> Write <code>let Ok = A &gt; 0 &amp;&amp; A &lt; 2;</code>, <code>return A == B;</code>, <code>I &lt; 2 ? A : B</code> and <code>filter(L, (P) =&gt; P &gt; 0)</code>. A vector component takes no bare comparison, so a <code>&gt;</code> always closes a vector: write <code>&lt;1, (A &gt; 0), 3&gt;</code>. Among block items a bare <code>&lt;</code> after an item starts a vector, which is why <code>box { &lt;0, 0, 0&gt; &lt;1, 1, 1&gt; }</code> is two vectors; there write <code>(A &lt; B)</code>, while <code>A &gt; B</code> needs nothing.</li>
 </ul>
 <p>Everything else is classic: float to vector promotion, the members <code>.x .y .z .t .red .green .blue .filter .transmit</code>, the names <code>x y z t u v pi clock</code>, and every classic built-in function.</p>
 <pre>
@@ -517,10 +517,10 @@ camera { location &lt;0, 3, -9&gt; look_at &lt;0, 1, 0&gt; }
 light_source { &lt;5, 8, -6&gt; rgb 1 }
 let Scale = (S) =&gt; S * 2;
 let Points = map(range(0, 9), (I) =&gt; &lt;I - 4.5, Scale(sin(I)), 0&gt;);
-let Up = filter(Points, (P) =&gt; (P.y &gt; 0));
+let Up = filter(Points, (P) =&gt; P.y &gt; 0);
 for (P in Up) { sphere { P, 0.3 pigment { rgb &lt;P.y / 2, 0.4, 0.8&gt; } } }
 </pre>
-<p><code>range(A, B)</code> includes both ends and steps as the classic <code>#for</code>, and the lambda in <code>filter</code> returns a condition, so its comparison has parentheses. A <code>{</code> after <code>=&gt;</code> always starts a body. Write <code>=&gt; ({ ... })</code> for a lambda that returns a dictionary.</p>
+<p><code>range(A, B)</code> includes both ends and steps as the classic <code>#for</code>, and the lambda in <code>filter</code> returns a condition. A <code>{</code> after <code>=&gt;</code> always starts a body. Write <code>=&gt; ({ ... })</code> for a lambda that returns a dictionary.</p>
 <p>The conditional operator <code>C ? A : B</code> replaces the <code>#if</code> that stood inside an expression:</p>
 <pre>
 // classic:  color rgb &lt;1, #if (Hot) 0.2 #else 0.8 #end, 0&gt;

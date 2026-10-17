@@ -32,6 +32,10 @@
           "named": true
         },
         {
+          "type": "comparison_expression",
+          "named": true
+        },
+        {
           "type": "conditional_expression",
           "named": true
         },
@@ -136,6 +140,10 @@
         },
         {
           "type": "colour_expression",
+          "named": true
+        },
+        {
+          "type": "comparison_expression",
           "named": true
         },
         {
@@ -296,6 +304,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -389,6 +401,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -504,6 +520,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -616,6 +636,10 @@
         },
         {
           "type": "colour_expression",
+          "named": true
+        },
+        {
+          "type": "comparison_expression",
           "named": true
         },
         {
@@ -763,6 +787,10 @@
         },
         {
           "type": "colour_expression",
+          "named": true
+        },
+        {
+          "type": "comparison_expression",
           "named": true
         },
         {
@@ -1450,6 +1478,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -1540,6 +1572,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -1627,6 +1663,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -1760,6 +1800,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -1847,6 +1891,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -1940,6 +1988,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -2027,6 +2079,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -2343,6 +2399,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -2479,6 +2539,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -2572,6 +2636,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -2741,6 +2809,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -2858,6 +2930,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -3039,6 +3115,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -3143,6 +3223,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -3236,6 +3320,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {
@@ -3459,6 +3547,10 @@
             "named": true
           },
           {
+            "type": "comparison_expression",
+            "named": true
+          },
+          {
             "type": "conditional_expression",
             "named": true
           },
@@ -3561,6 +3653,10 @@
         },
         {
           "type": "colour_expression",
+          "named": true
+        },
+        {
+          "type": "comparison_expression",
           "named": true
         },
         {
@@ -3795,6 +3891,10 @@
           },
           {
             "type": "colour_expression",
+            "named": true
+          },
+          {
+            "type": "comparison_expression",
             "named": true
           },
           {

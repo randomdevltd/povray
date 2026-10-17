@@ -165,11 +165,12 @@ Bodies always take braces. There is no `switch`; the codemod writes `if` chains.
 Changes from classic expressions: equality is `==` (classic `=`, with the same epsilon comparison:
 `(0.1 + 0.2 == 0.3)` is 1), logical operators are `&&` / `||`
 (classic `&` / `|`) and short-circuit when the left operand is a float that decides the result, and
-`&&` binds tighter than `||`. As in classic, comparisons and logical operators (`<` ... `||`) need
-parentheses except in conditions (`if (A < B)`, `while (...)`) and render-time function bodies:
-block items, vector components, `let` values and arguments take only `+ - * /`, so juxtaposed
-vectors (`box { <0, 0, 0> <1, 1, 1> }`) are two items and `>` always closes a vector. Write
-`(I < 2) ? A : B`, `filter(L, (P) => (P > 0))`. Everything else keeps classic meaning, including float→vector promotion,
+`&&` binds tighter than `||`. Comparisons and logical operators need no parentheses:
+`let Ok = A > 0 && A < 2;`, `return A == B;`, `I < 2 ? A : B`, `filter(L, (P) => P > 0)`.
+Two places keep them parenthesised so vectors stay unambiguous: a vector component
+(`<1, (A > 0), 3>`; `<1, 2 > 1, 3>` is a syntax error), and a bare `<` after a block item,
+which starts a vector, so juxtaposed vectors (`box { <0, 0, 0> <1, 1, 1> }`) are two items;
+write `(A < B);` as a statement, while `A > B;` needs nothing. Everything else keeps classic meaning, including float→vector promotion,
 `.x/.y/.z/.t/.red/.green/.blue/.filter/.transmit` members, `x`, `y`, `z`, `t`, `u`, `v`, `pi`,
 `clock` and every classic built-in function.
 

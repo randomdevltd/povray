@@ -564,6 +564,12 @@ Miscellaneous:
     block schema had silently never learned. The schema miner derives them
     from the parser's text comparisons, so future contextual keywords need no
     hand listing.
+  - In `.pov4` scenes, comparisons and `&&` / `||` no longer need parentheses
+    outside conditions: `let V = A == B;`, `return A > B;` and
+    `A > 1 ? 5 : 6` parse. A parenthesised `(C < 0 ? A : B)` now groups as
+    `(C < 0) ? A : B`, as in classic, where it used to compare `C` with the
+    conditional. A comparison inside a vector still needs parentheses, and a
+    bare `<` after a block item still starts a vector.
 
 Development Related
 -------------------

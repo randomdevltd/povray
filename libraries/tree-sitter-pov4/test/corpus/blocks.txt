@@ -214,10 +214,28 @@ let T = texture { pigment { P } } texture { pigment { Q } };
         (identifier)))))
 
 ==================
-Comparisons need parentheses outside conditions
-:error
+A bare < after a block item starts a vector
 ==================
-let A = B < C;
+cylinder { A <0, 1, 0> R }
+object { B scale A > 1 ? 2 : 3 }
 ---
 
-
+(source_file
+  (block
+    (keyword)
+    (identifier)
+    (vector
+      (number)
+      (number)
+      (number))
+    (identifier))
+  (block
+    (keyword)
+    (identifier)
+    (keyword)
+    (conditional_expression
+      (comparison_expression
+        (identifier)
+        (number))
+      (number)
+      (number))))
