@@ -251,7 +251,7 @@ void BoundingTask::SendFatalError(Exception& e)
 
 
 MeshBuildTask::MeshBuildTask(std::shared_ptr<BackendSceneData> sd, size_t sd_seed, unsigned int t, TraceThreadData *pd) :
-    SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), sd_seed), boost::bind(&MeshBuildTask::SendFatalError, this, _1), "Mesh", sd),
+    SceneTask(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sd), sd_seed, false), boost::bind(&MeshBuildTask::SendFatalError, this, _1), "Mesh", sd),
     sceneData(sd),
     seed(sd_seed),
     threads(t),
