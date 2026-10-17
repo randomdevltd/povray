@@ -2915,25 +2915,31 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
             const auto& map = set->progressiveMedia;
             if (map.photons.empty())
                 return;
-            MathColour sum;
             const auto domain = VolumeDomain(medias);
             const ConstObjectPtr receiver = photonReceiver;
-            const auto lit = [receiver](const ProgressiveVolumePhoton& photon) {
-                if (photon.light == nullptr || !photon.light->lightGroupLight)
-                    return receiver == nullptr || !Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG);
-                return receiver != nullptr && PhotonLightAffectsObject(photon.light, receiver);
+            const bool global = receiver == nullptr || !Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG);
+            if (!global && !map.grouped)
+                return;
+            const auto gather = [&](const auto& accept) {
+                MathColour sum;
+                const double radius = map.RadiusAt(H, *domain, accept);
+                map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
+                    if (!(*photon.domain == *domain) || !accept(photon))
+                        return;
+                    BasicRay light;
+                    light.Direction = photon.direction;
+                    light.Origin = photon.point - photon.direction;
+                    ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
+                    threadData->progressiveContributions++;
+                });
+                Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
             };
-            const double radius = map.RadiusAt(H, *domain, lit);
-            map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
-                if (!(*photon.domain == *domain) || !lit(photon))
-                    return;
-                BasicRay light;
-                light.Direction = photon.direction;
-                light.Origin = photon.point - photon.direction;
-                ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
-                threadData->progressiveContributions++;
-            });
-            Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
+            if (map.grouped)
+                gather([receiver, global](const ProgressiveVolumePhoton& photon) {
+                    return photon.grouped ? receiver != nullptr && PhotonLightAffectsObject(photon.light, receiver) : global;
+                });
+            else
+                gather([](const ProgressiveVolumePhoton&) { return true; });
             return;
         }
         return;

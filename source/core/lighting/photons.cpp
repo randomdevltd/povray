@@ -1192,6 +1192,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     photon.length = step;
                     photon.domain = domain;
                     photon.light = threadData->photonSourceLight;
+                    photon.grouped = photon.light != nullptr && photon.light->lightGroupLight;
                     photon.set = std::uint32_t(ray.GetPreparedSetId());
                     bool merged = false;
 #ifndef POV_PROGRESSIVE_VOLUME_POINTS

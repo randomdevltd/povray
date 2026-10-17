@@ -36,6 +36,8 @@ struct ProgressiveVolumePhoton final
     const LightSource* light = nullptr;
     std::uint32_t set = 0;
     unsigned char axis = 0;
+    /// Whether light is a light-group light.
+    bool grouped = false;
 
     double DistanceSquared(const Vector3d& position) const
     {
@@ -67,11 +69,14 @@ class ProgressiveVolumePhotonMap final
     public:
         std::vector<ProgressiveVolumePhoton> photons;
         double initialRadius = 0.0;
+        /// Whether any segment comes from a light-group light, so that gathers must test membership.
+        bool grouped = false;
         struct Bounds { Vector3d low, high; };
         std::vector<Bounds> bounds;
 
         void Build()
         {
+            grouped = std::any_of(photons.begin(), photons.end(), [](const ProgressiveVolumePhoton& photon) { return photon.grouped; });
             if (photons.empty())
                 return;
             Vector3d low = photons.front().point, high = low;
