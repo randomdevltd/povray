@@ -1795,7 +1795,8 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     viewThreadData.push_back(photonTotal);
     auto controller = std::make_shared<Timer>();
     renderTasks.AppendFunction([controller](TaskQueue&) { controller->Reset(); });
-    for (unsigned int pass = 0; pass < budget.batches; ++pass)
+    const bool pilot = viewData.GetSceneData()->photonSettings.learnTargets;
+    for (int pass = pilot ? ProgressivePhotonBudget::pilotPass : 0; pass < int(budget.batches); pass = pass < 0 ? 0 : pass + 1)
     {
         auto shooters = std::make_shared<std::vector<ViewThreadData*>>();
         auto collect = [this, shooters](ThreadData* thread) {
@@ -1809,7 +1810,12 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
                 return new PhotonShootingTask(&viewData, nullptr, seed, pass, shard, workers);
             }, collect);
         renderTasks.AppendSync();
-        renderTasks.AppendFunction(boost::bind(&View::PreparePhotonBatch, this, _1, shooters, pass, budget.batches, budget.neighbours));
+        if (pass < 0)
+        {
+            renderTasks.AppendFunction(boost::bind(&View::LearnPhotonPilot, this, _1, shooters, photonTotal));
+            continue;
+        }
+        renderTasks.AppendFunction(boost::bind(&View::PreparePhotonBatch, this, _1, shooters, unsigned(pass), budget.batches, budget.neighbours));
         renderTasks.AppendFunction(boost::bind(&View::ReleaseProgressiveData, this, _1, shooters, photonTotal));
     }
     renderTasks.AppendFunction([this, controller](TaskQueue&) { viewData.photonPrepareCPU = controller->ElapsedThreadCPUTime(); });
@@ -1835,28 +1841,61 @@ static double ProgressivePhotonMemoryBudget()
     return std::min(ProgressivePhotonBudget::memoryCeiling, ProgressivePhotonBudget::memoryShare * available);
 }
 
+/// Adds the shooters' target counts to their sets' and relearns each target's density; the pilot adds only the cell counts.
+void View::MergePhotonFeedback(const std::vector<ViewThreadData*>& shooters, bool pilot)
+{
+    for (auto* shooter : shooters)
+        for (auto& observation : shooter->progressiveFeedback)
+        {
+            if (pilot)
+                observation.aimed = observation.deposits = 0;
+            auto& feedback = viewData.GetSceneData()->GetPreparedSet(observation.set).progressiveFeedback;
+            auto previous = std::find_if(feedback.begin(), feedback.end(), [&](const ProgressivePhotonFeedback& entry) {
+                return entry.light == observation.light && entry.target == observation.target;
+            });
+            if (previous == feedback.end())
+                feedback.push_back(std::move(observation));
+            else
+            {
+                previous->aimed += observation.aimed;
+                previous->deposits += observation.deposits;
+                for (size_t cell = 0; cell < previous->shots.size(); ++cell)
+                {
+                    previous->shots[cell] += observation.shots[cell];
+                    previous->delivered[cell] += observation.delivered[cell];
+                }
+            }
+        }
+    for (auto& set : viewData.GetSceneData()->preparedSets)
+        for (auto& target : set->progressiveFeedback)
+            if (!target.shots.empty())
+                target.density.Learn(target.shots.data(), target.delivered.data());
+}
+
+void View::LearnPhotonPilot(TaskQueue&, std::shared_ptr<std::vector<ViewThreadData*>> shooters, ViewThreadData* total)
+{
+    MergePhotonFeedback(*shooters, true);
+    POV_LONG wall = 0;
+    for (auto* shooter : *shooters)
+    {
+        total->cpuTime += shooter->cpuTime;
+        wall = std::max(wall, shooter->realTime);
+        viewThreadData.erase(std::find(viewThreadData.begin(), viewThreadData.end(), shooter));
+        delete shooter;
+    }
+    total->realTime += wall;
+    shooters->clear();
+}
+
 void View::PreparePhotonBatch(TaskQueue& queue, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
                                     unsigned int batches, unsigned int neighbours)
 try
 {
     Timer timer;
     size_t bytes = 0;
+    MergePhotonFeedback(*shooters, false);
     for (auto* shooter : *shooters)
     {
-        for (const auto& observation : shooter->progressiveFeedback)
-        {
-            auto& feedback = viewData.GetSceneData()->GetPreparedSet(observation.set).progressiveFeedback;
-            auto previous = std::find_if(feedback.begin(), feedback.end(), [&](const ProgressivePhotonFeedback& entry) {
-                return entry.light == observation.light && entry.target == observation.target;
-            });
-            if (previous == feedback.end())
-                feedback.push_back(observation);
-            else
-            {
-                previous->aimed += observation.aimed;
-                previous->deposits += observation.deposits;
-            }
-        }
         bytes += shooter->progressiveSurface.capacity() * sizeof(ProgressivePhoton) +
                  shooter->progressiveMedia.capacity() * sizeof(ProgressiveVolumePhoton);
     }

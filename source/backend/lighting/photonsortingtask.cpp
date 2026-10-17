@@ -571,7 +571,12 @@ std::string ProgressivePhotonIdentity(const SceneData& scene)
         << ";shards=" << ProgressivePhotonBudget::shards << ";k=" << budget.neighbours << ";sobol=" << PhotonSobol::kDimensions
         << ";trace=" << settings.Max_Trace_Level << ";adc=" << settings.adcBailout
         << ";mediaSteps=" << settings.maxMediaSteps << ";mediaSpacing=" << settings.mediaSpacingFactor
-        << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel) << ";targets=";
+        << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel) << ";learn=";
+    if (settings.learnTargets)
+        key << PhotonTargetDensity::resolution << '/' << PhotonTargetDensity::exploration << '/' << PhotonTargetDensity::pilotSamples;
+    else
+        key << "off";
+    key << ";targets=";
     const ProgressiveSceneIndex index(scene);
     std::vector<const PhotonTargetGroup*> groups;
     for (size_t i = 0; i < index.objects.size(); ++i)

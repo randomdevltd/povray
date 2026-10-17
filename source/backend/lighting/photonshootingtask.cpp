@@ -123,7 +123,7 @@ void PhotonShootingTask::Run()
     // quit right away if photons not enabled
     if (!GetSceneData()->photonSettings.photonsEnabled) return;
 
-    if (progressivePass >= 0)
+    if (progressivePass >= 0 || progressivePass == ProgressivePhotonBudget::pilotPass)
     {
         auto* data = GetViewDataPtr();
         for (unsigned int shard = progressiveShard; shard < ProgressivePhotonBudget::shards; shard += progressiveWorkers)
@@ -167,8 +167,10 @@ struct ProgressiveTarget final
 class SurfaceLightEmitter final : public Emitter
 {
     public:
-        SurfaceLightEmitter(const LightSource& light, const std::vector<ProgressiveTarget>& targets, const std::vector<double>& probability) :
-            light(light), targets(targets), probability(probability) {}
+        SurfaceLightEmitter(const LightSource& light, const std::vector<ProgressiveTarget>& targets, const std::vector<double>& probability,
+                            const std::vector<const PhotonTargetDensity*>& learned) :
+            light(light), targets(targets), probability(probability), learned(learned) {}
+        mutable unsigned int cell = 0; ///< the cell of the last parallel sample in its target's disc square
         const MathColour& Intensity() const override { return light.colour; }
         const Vector3d& Centre() const override { return light.Center; }
         double Radius() const override { return (light.Axis1.length() + light.Axis2.length()) * 0.5; }
@@ -183,7 +185,10 @@ class SurfaceLightEmitter final : public Emitter
             if (light.Parallel)
             {
                 const size_t selected = PhotonTargetPick(probability, s);
-                return ParallelDisc(selected, std::min(1.0, s / probability[selected]), t);
+                double radial = std::min(1.0, s / probability[selected]);
+                const double warped = learned.empty() || !learned[selected] ? (cell = PhotonTargetDensity::Cell(radial, t), 1.0) :
+                    learned[selected]->Warp(radial, t, cell);
+                return ParallelDisc(selected, radial, t, warped);
             }
             if (light.Area_Light)
             {
@@ -215,11 +220,11 @@ class SurfaceLightEmitter final : public Emitter
             const Vector3d c = target.Centre();
             return c - light.Direction * dot(c - light.Center, light.Direction);
         }
-        EmitterSample ParallelDisc(size_t selected, double radial, double turn) const
+        /// A point on the selected target's disc, (radial, turn) its square; its density counts every disc holding it.
+        EmitterSample ParallelDisc(size_t selected, double radial, double turn, double warped) const
         {
-            const Vector3d axis = light.Direction;
-            const Vector3d u = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
-            const Vector3d v = cross(axis, u);
+            Vector3d u, v;
+            PhotonConeFrame(light.Direction, u, v);
             const double r = targets[selected].Radius() * std::sqrt(radial);
             const double angle = 2.0 * M_PI * turn;
             const Vector3d point = DiscCentre(targets[selected]) + u * (r * std::cos(angle)) + v * (r * std::sin(angle));
@@ -227,12 +232,17 @@ class SurfaceLightEmitter final : public Emitter
             for (size_t i = 0; i < targets.size(); ++i)
             {
                 const double r2 = Sqr(targets[i].Radius());
-                if (i == selected || (point - DiscCentre(targets[i])).lengthSqr() <= r2)
-                    pdf += probability[i] / (M_PI * r2);
+                const Vector3d offset = point - DiscCentre(targets[i]);
+                if (i == selected)
+                    pdf += probability[i] * warped / (M_PI * r2);
+                else if (offset.lengthSqr() <= r2)
+                    pdf += probability[i] / (M_PI * r2) * (learned.empty() || !learned[i] ? 1.0 :
+                        learned[i]->Density(offset.lengthSqr() / r2, PhotonTurn(offset, u, v)));
             }
             return {point, MathColour(1.0 / pdf), pdf};
         }
         const std::vector<double>& probability;
+        const std::vector<const PhotonTargetDensity*>& learned;
 };
 
 void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets)
@@ -268,8 +278,10 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
 void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
 {
     auto* data = GetViewDataPtr();
-    constexpr unsigned int batch = ProgressivePhotonBudget::batchSize;
+    const bool pilot = int(pass) == ProgressivePhotonBudget::pilotPass;
+    const unsigned int batch = pilot ? PhotonTargetDensity::pilotSamples : ProgressivePhotonBudget::batchSize;
     const auto& settings = GetSceneData()->photonSettings;
+    const unsigned int cells = settings.learnTargets ? PhotonTargetDensity::cells : 0;
     const double spreadScale = ProgressivePhotonBudget(settings.quality).BeamSpreadScale();
     for (PreparedSetId setId = 0; setId < GetSceneData()->preparedSets.size(); ++setId)
     {
@@ -295,8 +307,9 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             if (!lights[li]->emitter && !lights[li]->Area_Light && !lights[li]->Parallel)
                 trace.FindContainingInteriors(lights[li]->Center, pointInteriors[li], setId);
         std::vector<std::vector<double>> probability(lights.size());
+        std::vector<std::vector<const PhotonTargetDensity*>> learned(lights.size());
         std::vector<size_t> feedbackOffset;
-        for (size_t li = 0; li < lights.size(); ++li)
+        for (size_t li = 0, entry = 0; li < lights.size(); ++li)
         {
             feedbackOffset.push_back(data->progressiveFeedback.size());
             double total = 0.0;
@@ -306,20 +319,28 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 probability[li].push_back(target.weight / total);
                 data->progressiveFeedback.push_back({lights[li], target.key, setId, unsigned(probability[li].size()), target.weight});
+                data->progressiveFeedback.back().shots.assign(cells, 0);
+                data->progressiveFeedback.back().delivered.assign(cells, 0);
+                const auto same = [&](const ProgressivePhotonFeedback& f) { return f.light == lights[li] && f.target == target.key; };
+                auto known = entry < set.progressiveFeedback.size() && same(set.progressiveFeedback[entry]) ?
+                    set.progressiveFeedback.begin() + entry : std::find_if(set.progressiveFeedback.begin(), set.progressiveFeedback.end(), same);
+                learned[li].push_back(known != set.progressiveFeedback.end() && !known->density.Uniform() ? &known->density : nullptr);
+                ++entry;
             }
         }
         std::vector<Vector3d> axes;
         std::vector<double> widths;
         RayInteriorVector originInteriors;
-        const PhotonSobol sobol(DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhotonMap, 0));
+        const auto setKey = DeriveKey(data->stochasticRandomSeedBase, pilot ? kDrawPhotonMap : kDrawPhoton, setId);
+        const PhotonSobol sobol(DeriveKey(setKey, kDrawPhotonMap, pilot ? 1 : 0));
         for (unsigned int index = shard; index < batch; index += ProgressivePhotonBudget::shards)
         {
             Cooperate();
-            const std::uint64_t sampleIndex = std::uint64_t(pass) * batch + index;
-            const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhoton, sampleIndex);
+            const std::uint64_t sampleIndex = pilot ? index : std::uint64_t(pass) * batch + index;
+            const auto key = DeriveKey(setKey, kDrawPhoton, sampleIndex);
             const size_t li = std::min(lights.size() - 1, size_t(sobol(sampleIndex, PhotonSobol::kLight) * lights.size()));
             LightSource* light = lights[li];
-            SurfaceLightEmitter fallback(*light, targets[li], probability[li]);
+            SurfaceLightEmitter fallback(*light, targets[li], probability[li], learned[li]);
             const Emitter& emitter = light->emitter ? *light->emitter : fallback;
             const EmitterSample origin =
                 emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key);
@@ -339,14 +360,17 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             Vector3d direction = emitter.Direction(origin, uSample, vSample, pdf);
             bool targeted = false;
             size_t selectedTarget = 0;
+            unsigned int cell = 0;
             if (!light->Parallel)
-                pdf = PhotonTargetMixture(axes, widths, probability[li], uSample, vSample, sobol(sampleIndex, PhotonSobol::kTargeted),
-                                          sobol(sampleIndex, PhotonSobol::kTarget), direction, selectedTarget, targeted);
+                pdf = PhotonTargetMixture(axes, widths, probability[li], learned[li], uSample, vSample,
+                                          sobol(sampleIndex, PhotonSobol::kTargeted), sobol(sampleIndex, PhotonSobol::kTarget),
+                                          direction, selectedTarget, targeted, cell);
             else if (!light->emitter)
             {
                 double s = sobol(sampleIndex, PhotonSobol::kPositionS);
                 selectedTarget = PhotonTargetPick(probability[li], s);
                 targeted = true;
+                cell = fallback.cell;
             }
             TraceTicket ticket(maxTraceLevel, adcBailout);
             Ray ray(ticket);
@@ -355,10 +379,15 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ray.SetPreparedSetId(setId);
             ray.SetKey(key);
             ray.SetFlags(Ray::PrimaryRay, false, true);
-            data->Stats()[Number_Of_Photons_Shot]++;
+            if (!pilot)
+                data->Stats()[Number_Of_Photons_Shot]++;
             auto* feedback = targeted ? &data->progressiveFeedback[feedbackOffset[li] + selectedTarget] : nullptr;
             if (feedback)
+            {
                 feedback->aimed++;
+                if (cells)
+                    feedback->shots[cell]++;
+            }
             double projectionDepth = 0.0;
             if (light->Projected_Through_Object)
             {
@@ -395,11 +424,27 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(lights.size(), pdf);
             flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
             ColourChannel unused;
-            const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
+            const size_t surfaceBefore = data->progressiveSurface.size(), mediaBefore = data->progressiveMedia.size();
+            const size_t before = surfaceBefore + mediaBefore;
+            const double emitted = flux.Greyscale();
             if (!flux.IsZero())
                 trace.TraceRay(ray, flux, unused, 1.0, false);
             if (feedback)
-                feedback->deposits += data->progressiveSurface.size() + data->progressiveMedia.size() - before;
+            {
+                const size_t made = data->progressiveSurface.size() + data->progressiveMedia.size() - before;
+                feedback->deposits += made;
+                if (cells && made)
+                {
+                    double delivered = 0.0;
+                    for (size_t i = surfaceBefore; i < data->progressiveSurface.size(); ++i)
+                        delivered += data->progressiveSurface[i].flux.Greyscale();
+                    for (size_t i = mediaBefore; i < data->progressiveMedia.size(); ++i)
+                        delivered += data->progressiveMedia[i].flux.Greyscale();
+                    // integer units keep the merged counts independent of the order shards finish in
+                    feedback->delivered[cell] +=
+                        std::uint64_t(std::llround(delivered / (std::max(1e-30, emitted) * PhotonTargetDensity::deliveredUnit)));
+                }
+            }
         }
     }
 }

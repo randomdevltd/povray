@@ -24,7 +24,8 @@ struct ProgressivePhoton final
     PreparedSetId set = 0;
 };
 
-/// One light's target in a prepared set: the samples aimed at it and the deposits they made, summed over batches.
+/// One light's target in a prepared set: the samples aimed at it and the deposits they made, summed over batches, and per
+/// cell of its emission square the shots and the power they delivered, which its learned density follows.
 struct ProgressivePhotonFeedback final
 {
     const LightSource* light;
@@ -33,6 +34,8 @@ struct ProgressivePhotonFeedback final
     unsigned int ordinal;
     double weight;
     std::uint64_t aimed = 0, deposits = 0;
+    std::vector<std::uint64_t> shots, delivered;
+    PhotonTargetDensity density;
 };
 
 struct ProgressivePhotonBatch final

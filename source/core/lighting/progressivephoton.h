@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
+#include <vector>
 
 namespace pov
 {
@@ -13,6 +14,7 @@ struct ProgressivePhotonBudget final
 {
     static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
+    static constexpr int pilotPass = -2; ///< the pass number of the learning pilot shot before the first batch
     /// Quality 16384 emits 2^32 samples per prepared set, the length of the emission sequence; memory is bounded separately.
     static constexpr double maxQuality = 16384.0;
     static constexpr double memoryShare = 0.4, memoryCeiling = 6.0 * 1024 * 1024 * 1024, memoryMargin = 1.2;
@@ -122,6 +124,73 @@ class PhotonSobol final
         {
             static const Table table;
             return table.v;
+        }
+};
+
+/// A density learned over a target's emission square [0,1)^2: a piecewise-constant grid mixed with a uniform floor and
+/// sampled by inverse CDF, so stratified inputs stay stratified. Its mean is 1, so it never changes the target's share.
+class PhotonTargetDensity final
+{
+    public:
+        static constexpr unsigned int resolution = 16, cells = resolution * resolution;
+        static constexpr double exploration = 0.5; ///< the uniform share every cell keeps
+        static constexpr unsigned int pilotSamples = 16384; ///< shot before the first batch to learn from, then discarded
+        static constexpr double deliveredUnit = 1.0 / 1024; ///< delivered power is counted in these shares of a shot's power
+        static unsigned int Cell(double u, double v)
+        {
+            const auto index = [](double x) { return std::min(resolution - 1, unsigned(std::max(0.0, x) * resolution)); };
+            return index(u) * resolution + index(v);
+        }
+        bool Uniform() const { return density.empty(); }
+        /// The learned part follows the power delivered per shot in each cell; with none delivered it stays uniform.
+        void Learn(const std::uint64_t* shots, const std::uint64_t* delivered)
+        {
+            std::vector<double> rate(cells, 0.0);
+            double total = 0.0;
+            for (unsigned int c = 0; c < cells; ++c)
+                total += rate[c] = shots[c] ? double(delivered[c]) / double(shots[c]) : 0.0;
+            if (!(total > 0.0))
+                return;
+            density.assign(cells, 0.0);
+            rows.assign(resolution + 1, 0.0);
+            columns.assign(resolution * (resolution + 1), 0.0);
+            for (unsigned int r = 0; r < resolution; ++r)
+            {
+                double* column = &columns[r * (resolution + 1)];
+                for (unsigned int c = 0; c < resolution; ++c)
+                {
+                    const unsigned int i = r * resolution + c;
+                    density[i] = exploration + (1.0 - exploration) * cells * rate[i] / total;
+                    column[c + 1] = column[c] + density[i];
+                }
+                rows[r + 1] = rows[r] + column[resolution];
+                for (unsigned int c = 1; c <= resolution; ++c)
+                    column[c] /= column[resolution];
+            }
+            for (unsigned int r = 1; r <= resolution; ++r)
+                rows[r] /= rows[resolution];
+        }
+        double Density(double u, double v) const { return density.empty() ? 1.0 : density[Cell(u, v)]; }
+        /// Moves (u, v) by the inverse CDF and returns the density there and its cell.
+        double Warp(double& u, double& v, unsigned int& cell) const
+        {
+            if (density.empty())
+            {
+                cell = Cell(u, v);
+                return 1.0;
+            }
+            const unsigned int r = Invert(&rows[0], u);
+            cell = r * resolution + Invert(&columns[r * (resolution + 1)], v);
+            return density[cell];
+        }
+    private:
+        std::vector<double> density, rows, columns;
+        static unsigned int Invert(const double* cdf, double& x)
+        {
+            const unsigned int i = std::min(resolution - 1, unsigned(std::upper_bound(cdf + 1, cdf + resolution, x) - (cdf + 1)));
+            const double t = (x - cdf[i]) / (cdf[i + 1] - cdf[i]);
+            x = std::min((i + std::min(std::max(t, 0.0), 1.0)) / resolution, std::nextafter(1.0, 0.0));
+            return i;
         }
 };
 

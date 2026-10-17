@@ -704,6 +704,8 @@ class View final
         void PreparePhotonBatch(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> shooters, unsigned int pass,
                                       unsigned int batches, unsigned int neighbours);
         void ReleaseProgressiveData(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> workers, ViewThreadData* total);
+        void MergePhotonFeedback(const std::vector<ViewThreadData*>& shooters, bool pilot);
+        void LearnPhotonPilot(TaskQueue& taskq, std::shared_ptr<std::vector<ViewThreadData*>> shooters, ViewThreadData* total);
         /// Indexes the merged or loaded photon maps, counting bytes already held; false when out of memory, the queue then failing.
         bool BuildProgressivePhotonMaps(TaskQueue& taskq, unsigned int neighbours, size_t bytes);
         size_t progressivePhotonSeed = 0;

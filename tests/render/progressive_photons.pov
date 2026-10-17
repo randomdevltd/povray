@@ -20,13 +20,14 @@
 #ifndef (PhotonFile) #declare PhotonFile = 0; #end
 #ifndef (CameraTurn) #declare CameraTurn = 0; #end
 #ifndef (TargetWeight) #declare TargetWeight = 1; #end
+#ifndef (Learn) #declare Learn = 0; #end
 global_settings {
     assumed_gamma 1
     max_trace_level 8
     #if (Subsurface) mm_per_unit 1 subsurface { method 1 samples 16, 0 } #end
     photons {
         #if (Method > 0) method Method #end
-        #if (Method = 2) quality PhotonQuality #else count PhotonCount #end
+        #if (Method = 2) quality PhotonQuality learn Learn #else count PhotonCount #end
         #if (Mist) media 32 #end
         #if (PhotonFile = 1) save_file "progressive_photons.photons" #elseif (PhotonFile = 2) load_file "progressive_photons.photons" #end
     }

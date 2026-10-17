@@ -115,6 +115,41 @@ int main()
         catch (const std::invalid_argument&) { rejected = true; }
         assert(rejected);
     }
+    using pov::PhotonTargetDensity;
+    constexpr unsigned int cells = PhotonTargetDensity::cells, side = PhotonTargetDensity::resolution;
+    std::vector<std::uint64_t> shots(cells, 100), hits(cells, 0);
+    PhotonTargetDensity density;
+    density.Learn(shots.data(), hits.data());
+    assert(density.Uniform() && density.Density(0.3, 0.7) == 1.0);
+    for (unsigned int r = 2; r < 4; ++r)
+        for (unsigned int c = 5; c < 9; ++c)
+            hits[r * side + c] = 30 + 10 * c;
+    shots[3 * side + 6] = 0;
+    density.Learn(shots.data(), hits.data());
+    assert(!density.Uniform());
+    double mean = 0.0, least = 1e9;
+    for (unsigned int i = 0; i < cells; ++i)
+    {
+        const double d = density.Density((i / side + 0.5) / side, (i % side + 0.5) / side);
+        mean += d / cells;
+        least = std::min(least, d);
+    }
+    assert(std::abs(mean - 1.0) < 1e-12 && std::abs(least - PhotonTargetDensity::exploration) < 1e-12);
+    const PhotonSobol square(11);
+    const unsigned int draws = 1u << 18;
+    std::vector<double> count(cells, 0.0);
+    for (unsigned int i = 0; i < draws; ++i)
+    {
+        double u = square(i, PhotonSobol::kPolar), v = square(i, PhotonSobol::kAzimuth);
+        unsigned int cell;
+        const double at = density.Warp(u, v, cell);
+        assert(u >= 0.0 && u < 1.0 && v >= 0.0 && v < 1.0);
+        assert(cell == PhotonTargetDensity::Cell(u, v) && at == density.Density(u, v));
+        count[cell] += 1.0;
+    }
+    for (unsigned int i = 0; i < cells; ++i)
+        assert(std::abs(count[i] * cells / draws - density.Density((i / side + 0.5) / side, (i % side + 0.5) / side)) < 0.02);
+    std::cout << "learned target density: mean 1, floor " << least << ", warped draws follow it\n";
     std::cout << "progressive photon budget and emission sequence passed\n";
     return 0;
 }

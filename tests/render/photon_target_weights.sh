@@ -24,6 +24,9 @@ refuse() {
 }
 for parallel in 0 1; do
     render "even$parallel" Declare=Parallel=$parallel
+    render "unlearned$parallel" Declare=Parallel=$parallel Declare=Learn=0
+    cmp "photon_target_weights_even$parallel.targets" "photon_target_weights_unlearned$parallel.targets" > /dev/null &&
+        { echo "photon_target_weights: learning changed no deposits" >&2; exit 1; }
     render "canopy$parallel" Declare=Parallel=$parallel Declare=CanopyWeight=4
     render "patch$parallel" Declare=Parallel=$parallel Declare=PatchWeight=4
     render "patch${parallel}_one" Declare=Parallel=$parallel Declare=PatchWeight=4 +wt1
@@ -48,7 +51,7 @@ def mean(name):
     return sum(256 * data[i] + data[i + 1] for i in range(0, len(data), 2)) / (len(data) / 2)
 
 for parallel, isotropic in ((0, 0.1), (1, 0.0)):
-    for name, share in (('even', 0.5), ('canopy', 0.2), ('patch', 0.8)):
+    for name, share in (('even', 0.5), ('unlearned', 0.5), ('canopy', 0.2), ('patch', 0.8)):
         got, aimed = split(f'{name}{parallel}')
         print(f'photon_target_weights: parallel {parallel} {name}: patch share {got:.4f} (expected {share}), '
               f'{aimed} aimed, image mean {mean(name + str(parallel)) / mean("even" + str(parallel)):.4f} of even')
@@ -66,6 +69,11 @@ light_source { <0, 5, 0> rgb 1 }
 sphere { 0, 1 pigment { rgbf 1 } photons { target Big - Big refraction on } }
 SCENE
 refuse nan photon_target_weights_nan.pov
+sed 's/method 2/method 1 learn on/; s/target Big - Big/target/' photon_target_weights_nan.pov > photon_target_weights_classic.pov
+"$POVRAY" +iphoton_target_weights_classic.pov +w8 +h8 -a -d -p -v -f > photon_target_weights_classic.log 2>&1 &&
+    { echo "photon_target_weights: method 1 accepted learn" >&2; exit 1; }
+tr '\n' ' ' < photon_target_weights_classic.log | tr -s ' ' | grep -q 'learn requires method 2' ||
+    { cat photon_target_weights_classic.log; exit 1; }
 "$POVRAY" +i"$SRCDIR/tests/render/photon_target_rig.pov" +w8 +h8 -a -d -p -v -f Declare=PatchWeight=0 \
     > photon_target_weights_zero.log 2>&1 || { cat photon_target_weights_zero.log; exit 1; }
-echo 'photon_target_weights: weighted splits, parallel and point suns, thread equality, flux, split unions as one target and invalid weights passed'
+echo 'photon_target_weights: weighted splits, parallel and point suns, learning, thread equality, flux, split unions as one target and invalid weights passed'

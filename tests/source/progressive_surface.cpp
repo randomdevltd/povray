@@ -237,26 +237,41 @@ int main()
 
     std::vector<pov::Vector3d> axes = {pov::Vector3d(0, 0, 1), pov::Vector3d(1, 0, 0), pov::Vector3d(0, -1, 0)};
     const std::vector<double> widths = {0.02, 0.3, 2.0}, chance = {0.5, 0.3, 0.2};
-    std::mt19937_64 emission(13);
-    const unsigned int samples = 1u << 21;
-    double whole = 0.0, narrow = 0.0, outside = 0.0;
-    for (unsigned int i = 0; i < samples; ++i)
+    std::vector<std::uint64_t> shots(pov::PhotonTargetDensity::cells, 64), hits(pov::PhotonTargetDensity::cells, 0);
+    for (unsigned int c = 0; c < pov::PhotonTargetDensity::cells; c += 7)
+        hits[c] = 5 + c % 40;
+    pov::PhotonTargetDensity patchy, other;
+    patchy.Learn(shots.data(), hits.data());
+    std::reverse(hits.begin(), hits.end());
+    other.Learn(shots.data(), hits.data());
+    for (const std::vector<const pov::PhotonTargetDensity*>& learned :
+         {std::vector<const pov::PhotonTargetDensity*>{}, std::vector<const pov::PhotonTargetDensity*>{&patchy, &other, &patchy}})
     {
-        const double u = unit(emission), v = unit(emission);
-        const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z));
-        pov::Vector3d direction(r * std::cos(2.0 * pi * v), r * std::sin(2.0 * pi * v), z);
-        size_t selected;
-        bool targeted;
-        const double pdf = pov::PhotonTargetMixture(axes, widths, chance, u, v, unit(emission), unit(emission), direction, selected, targeted);
-        const double weight = 1.0 / (samples * pdf);
-        whole += weight;
-        narrow += direction[pov::Z] >= 1.0 - widths[0] ? weight : 0.0;
-        outside += direction[pov::Z] < 0.0 && direction[pov::X] < 0.0 ? weight : 0.0;
+        std::mt19937_64 emission(13);
+        const unsigned int samples = 1u << 21;
+        double whole = 0.0, narrow = 0.0, outside = 0.0, wide = 0.0;
+        for (unsigned int i = 0; i < samples; ++i)
+        {
+            const double u = unit(emission), v = unit(emission);
+            const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z));
+            pov::Vector3d direction(r * std::cos(2.0 * pi * v), r * std::sin(2.0 * pi * v), z);
+            size_t selected;
+            bool targeted;
+            unsigned int cell;
+            const double pdf = pov::PhotonTargetMixture(axes, widths, chance, learned, u, v, unit(emission), unit(emission), direction,
+                                                        selected, targeted, cell);
+            const double weight = 1.0 / (samples * pdf);
+            whole += weight;
+            narrow += direction[pov::Z] >= 1.0 - widths[0] ? weight : 0.0;
+            wide += direction[pov::X] >= 1.0 - widths[1] && direction[pov::Y] > 0.0 ? weight : 0.0;
+            outside += direction[pov::Z] < 0.0 && direction[pov::X] < 0.0 ? weight : 0.0;
+        }
+        std::cout << "target mixture" << (learned.empty() ? "" : " with learned densities") << ": sphere " << whole / (4.0 * pi)
+                  << ", narrow cone " << narrow / (2.0 * pi * widths[0]) << ", half a wide cone " << wide / (pi * widths[1])
+                  << ", untargeted octant pair " << outside / pi << " of their solid angles\n";
+        assert(std::abs(whole / (4.0 * pi) - 1.0) < 0.01 && std::abs(narrow / (2.0 * pi * widths[0]) - 1.0) < 0.01);
+        assert(std::abs(wide / (pi * widths[1]) - 1.0) < 0.01 && std::abs(outside / pi - 1.0) < 0.02);
     }
-    std::cout << "target mixture: sphere " << whole / (4.0 * pi) << ", narrow cone " << narrow / (2.0 * pi * widths[0])
-              << ", untargeted octant pair " << outside / pi << " of their solid angles\n";
-    assert(std::abs(whole / (4.0 * pi) - 1.0) < 0.01 && std::abs(narrow / (2.0 * pi * widths[0]) - 1.0) < 0.01);
-    assert(std::abs(outside / pi - 1.0) < 0.02);
     std::cout << "progressive photon density estimator passed\n";
     return 0;
 }

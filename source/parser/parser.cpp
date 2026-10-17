@@ -7812,6 +7812,11 @@ void Parser::Parse_Global_Settings()
                         sceneData->photonSettings.quality = quality;
                         sceneData->photonSettings.qualitySpecified = true;
                     }
+                    else if (CurrentTokenText() == "learn")
+                    {
+                        sceneData->photonSettings.learnTargets = Allow_Float(1.0) > 0.0;
+                        sceneData->photonSettings.learnSpecified = true;
+                    }
                     else
                     {
                         UNGET
@@ -7825,6 +7830,8 @@ void Parser::Parse_Global_Settings()
                 Error("Photon method 2 uses quality instead of count, spacing, gather, radius, jitter, autostop or expand_thresholds.");
             if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.qualitySpecified)
                 Error("Photon quality requires method 2.");
+            if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.learnSpecified)
+                Error("Photon learn requires method 2.");
             if (sceneData->photonSettings.maxGatherCount > 0)
                 sceneData->photonSettings.photonsEnabled = true;
             else

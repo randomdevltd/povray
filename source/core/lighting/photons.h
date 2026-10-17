@@ -119,6 +119,8 @@ class ScenePhotonSettings final
         double quality = 1.0;
         bool classicOptions = false;
         bool qualitySpecified = false;
+        bool learnTargets = false; ///< method 2 `learn`: learn where within each target its photons deliver power
+        bool learnSpecified = false;
         bool Progressive() const { return method == 2; } ///< quality-budgeted emission into one k-nearest-neighbour map
 
         // photon separation (a.k.a. spacing)

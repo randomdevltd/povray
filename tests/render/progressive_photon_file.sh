@@ -49,9 +49,15 @@ head -c $((bytes / 2)) progressive_photon_file.whole > "$FILE"
 refuse halved 'truncated or damaged' Declare=Dispersion=1.03
 rm -f "$FILE"
 refuse missing 'Cannot open the photon file' Declare=Dispersion=1.03
+render learn-plain Declare=Dispersion=1.03 Declare=Learn=1 +wt2
+render learn-saved Declare=Dispersion=1.03 Declare=Learn=1 Declare=PhotonFile=1 +wt4
+render learn-loaded Declare=Dispersion=1.03 Declare=Learn=1 Declare=PhotonFile=2 +wt1
+cmp progressive_photon_file_learn-plain.px progressive_photon_file_learn-saved.px
+cmp progressive_photon_file_learn-saved.px progressive_photon_file_learn-loaded.px
+refuse learn 'other photon settings' Declare=Dispersion=1.03
 render classic_saved Declare=Method=1 Declare=PhotonFile=1 +wt2
 refuse classic 'not a photon method 2 file'
 render classic_loaded Declare=Method=1 Declare=PhotonFile=2 +wt2
 cmp progressive_photon_file_classic_saved.px progressive_photon_file_classic_loaded.px
 rm -f "$FILE" progressive_photon_file.whole progressive_photon_file_*.ppm progressive_photon_file_*.px progressive_photon_file_*.log
-echo 'progressive_photon_file: saved and loaded maps, moved camera, mismatch, truncation and classic files passed'
+echo 'progressive_photon_file: saved and loaded maps, learned emission, moved camera, mismatch, truncation and classic files passed'

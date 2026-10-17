@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Photon target allocation: one photon-only sun, a wide wavy glass canopy over a mirror-floored pool that sends light out twice refracted onto the white wall, and a sparse clump of glass blades on the near bank that is hard to hit. Declares PhotonQuality, CanopyWeight and PatchWeight (the number after target), UseCanopy and UsePatch (isolate one target), SplitPatch (split_union for the blades, still one target), Parallel (parallel sun instead of a distant point sun), Bands. +w640 +h360 -a.
+// Photon target allocation: one photon-only sun, a wide wavy glass canopy over a mirror-floored pool that sends light out twice refracted onto the white wall, and a sparse clump of glass blades on the near bank that is hard to hit. Declares PhotonQuality, Learn (learning within targets, on by default), CanopyWeight and PatchWeight (the number after target), UseCanopy and UsePatch (isolate one target), SplitPatch (split_union for the blades, still one target), Parallel (1, the default, a parallel sun; 0 a sun SunDistance away), Bands. +w640 +h360 -a.
 #version 3.8;
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #ifndef (CanopyWeight) #declare CanopyWeight = 1; #end
@@ -11,13 +11,14 @@
 #ifndef (Bands) #declare Bands = 9; #end
 #ifndef (Power) #declare Power = 1.5; #end
 #ifndef (Detail) #declare Detail = 1; #end
-#ifndef (Parallel) #declare Parallel = 0; #end
+#ifndef (Parallel) #declare Parallel = 1; #end
+#ifndef (Learn) #declare Learn = 1; #end
 #ifndef (SunDistance) #declare SunDistance = 200; #end
 #ifndef (SplitPatch) #declare SplitPatch = 0; #end
 #declare Sun = vnormalize(<-0.25, -1.2, 1>);
 global_settings {
   assumed_gamma 1 max_trace_level 16 refraction_detail Detail
-  photons { method 2 quality PhotonQuality }
+  photons { method 2 quality PhotonQuality learn Learn }
 }
 camera { location <0.8, 2.6, -5.0> look_at <0.3, 0.9, 6> angle 82 right x * image_width / image_height }
 background { rgb <0.010, 0.014, 0.030> }

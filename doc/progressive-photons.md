@@ -246,6 +246,52 @@ Earlier versions made each member of a split union its own target, so a four-bla
 clump took four shares where one was meant. Method 1 still shoots each split member
 separately.
 
+### Learning within a target
+
+```pov
+global_settings { photons { method 2 quality 1 learn on } }
+```
+
+`learn on` (or bare `learn`) lets each light and target pair learn where, within the
+target's share, its photons deliver power; `learn off` is the default. The target's
+emission square is the unit square that the stratified sample dimensions map onto it:
+for point, spot, area and media emitters, the share of the cone width (uniform in solid
+angle) and the turn about the cone axis; for parallel and cylinder sources, the share of
+the target disc's area and the turn about its centre. A 16 by 16 grid over that square
+counts, from the start of the render, the shots aimed into each cell and the share of
+their emitted power that the deposits they made carry (in units of 1/1024 of a shot, so
+merging shards is exact). Before each batch the grid becomes a piecewise-constant density
+proportional to each cell's delivered power per shot, mixed half and half with a uniform
+floor (`PhotonTargetDensity::exploration`), so no cell drops below half its uniform
+density and no photon carries more than twice the weight it would without learning. The
+batch draws its cone or disc position from that density by inverse CDF of the Sobol
+values, so each batch stays a stratified net of the warped square. Learning never moves
+samples between targets: a target's share is still its weight. Every photon carries the
+emitted flux divided by its full mixture density: the isotropic part, and for each target
+cone or disc that holds the direction or position, its share times its learned density
+there; nothing rejected is renormalized. A target that has delivered nothing stays uniform.
+
+A shot counts by the power its deposits carry rather than by their number: counting
+deposits favoured paths that split into many deposits (dispersion bands, the mirror-floored
+pool of the rig) and doubled the cost without lowering the error. The first batch would
+have nothing to learn from, a quarter of the render at quality 1, so a pilot of 16,384
+samples (`PhotonTargetDensity::pilotSamples`) is shot before it, with its own digital shift
+of the Sobol sequence and its own per-sample random numbers. It only fills the grids: its
+deposits are discarded and it is not counted as shot photons, though its cost is in the
+photon time. The batches' emission sequence, and so its aligned-block property, is
+unchanged, and the pilot's shards merge by integer sums, so the maps still do not depend
+on the thread count. Without the pilot the first batch is uniform and the patch error of
+the rig at quality 1 was 0.71 instead of 0.59 (point sun, 25% floor).
+
+Learning is off by default because it raises the cost of every batch (more shots reach a
+deposit, and the pilot) while the gather keeps `k` fixed by quality, so the extra deposits
+narrow the kernel but do not average more photons. At equal instructions it helps where a
+target's bounding sphere is mostly empty, such as thin, patchy glass under a parallel sun,
+and it hurts a target that fills its sphere and also throws dim light wide: on the glass
+sphere test the Fresnel halo comes from rim cells that deliver little power, gets fewer
+photons, and turns speckled. See the measurements below; `tests/render/photon_target_rig.pov`
+turns it on.
+
 This is the opposite sense of method 1, where the number is a spacing multiplier and
 a smaller value means more photons (`target 0.5` halves the spacing). A scene written
 for one method needs its target numbers revisited for the other.
@@ -280,8 +326,9 @@ shoot once.
 
 The file names its format version and the settings that decide its contents: quality,
 batch count and size, shards, `k`, the emission sequence's dimensions, the photon
-trace level, `adc_bailout`, media steps and spacing, the colour channel layout and
-every target's weight. It
+trace level, `adc_bailout`, media steps and spacing, the colour channel layout,
+whether targets learn (with the grid size, floor and pilot size) and every target's
+weight, marking the members of a split target union. It
 also records how many objects, interiors and lights the scene has, numbering
 receivers, media and lights in the scene's own order, and each prepared set's key.
 Loading fails with an error naming the difference when any of these differs, when the
@@ -395,8 +442,13 @@ emitter, direct-light, volume, volume light-group, media-light, light-group, rad
 weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires the logged split to
 match the weights, the image to match across thread counts and its mean to stay within 3%,
 the blade clump to give the same split and image with `split_union` on as off,
+learning to change the deposits but not the split, `learn` to be rejected under method 1,
 and negative, infinite and NaN weights to be rejected; the photon-file script also
-refuses a file saved with another target weight.
+saves and reloads a learned emission and refuses a file saved with another target weight
+or learning setting. `tests/source/progressive_photon.cpp` checks that a learned density
+has mean 1 and the floor as its least value and that warped Sobol draws follow it, and
+`tests/source/progressive_surface.cpp` that the emission mixture still integrates to the
+true solid angles with learned densities on overlapping cones.
 
 ## Measurements
 
@@ -460,6 +512,48 @@ lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%, 
 the earlier prototype +0.6%, +1.0%, +0.2%). Before deposits were indexed by normal
 direction its quality 1 camera work was 244 G, as much as classic, because gathers on
 the unlit face scanned the lit face's deposits within the cap.
+
+### Target weights and learning
+
+`tests/render/photon_target_rig.pov` at 640x360, no anti-aliasing, four threads, parallel
+sun (its default). Errors are relative RMS of linear light against a quality 64 render
+without learning, over pixels its photons light (above the unlit image by 0.02, reference
+at most 1): the blade patch on the near bank, and the canopy, pool and wall above it. The
+baseline is the previous build, which split a parallel light's samples evenly; weights alone
+at 1:1 reproduce it exactly. Rows of a block cost about the same instructions.
+
+| configuration | G instructions | patch | canopy, pool, wall |
+|---|---:|---:|---:|
+| baseline, quality 1 | 25.5 | 0.784 | 0.491 |
+| patch weight 2, quality 1.25 | 25.6 | 0.670 | 0.518 |
+| patch weight 4, quality 1.5 | 25.4 | 0.542 | 0.554 |
+| learning, quality 0.75 | 27.5 | 0.584 | 0.500 |
+| learning, patch weight 2, quality 0.75 | 25.4 | 0.519 | 0.565 |
+| baseline, quality 4 | 58.1 | 0.546 | 0.361 |
+| patch weight 2, quality 5 | 57.7 | 0.476 | 0.394 |
+| patch weight 4, quality 6 | 55.8 | 0.391 | 0.438 |
+| learning, quality 2.5 | 58.7 | 0.381 | 0.359 |
+| learning, patch weight 2, quality 3 | 58.8 | 0.342 | 0.394 |
+| learning, patch weight 4, quality 3.5 | 57.9 | 0.362 | 0.448 |
+
+At equal quality, learning makes each batch dearer (quality 1: 32.0 G instead of 25.5 G)
+because more of its shots reach a deposit; at equal instructions it lowers the patch error
+by 25-30% and leaves the canopy where it was. The weight moves error from the canopy to the
+patch at any budget. With the old distant point sun (`Parallel=0`, hit-rate allocation
+in the baseline) the baseline gave 0.83 and 0.49 at 27.7 G; weights 1:1 at quality 1.75
+gave 0.62 and 0.47 at 32.1 G, and learning at quality 1 gave 0.56 and 0.50 at 30.1 G.
+Learning changes no mean: the image mean with learning is 0.994 (point sun) and 0.997
+(parallel) of the mean without it at quality 4.
+
+On single-target scenes at quality 1 (RMSE against the references of the measurements
+above), learning costs 1.5x on the glass sphere for 1.4x its error (0.0038 against 0.0027;
+its halo comes from rim cells), and on the water 3% more for 5% less error (0.0167 against
+0.0176). On the leaf it costs 20% more for 14% less error (0.00184 against 0.00215). Mean ratios against the references stay within 2%
+(sphere 0.989, water 1.001, leaf 1.000). A 32 by 32 grid cost 5% more than 16 by 16 and
+was no better (patch 0.59 against 0.59 at quality 1, 0.44 against 0.40 at quality 4, point
+sun); a 25% floor gave patch 0.55 against 0.51 for 50% (parallel, quality 1) and cost 10%
+more; counting deposits instead of power raised the cost by 70% over no learning and the
+patch error with it (0.73 against 0.64, point sun, quality 1).
 
 ### Where the work goes
 
