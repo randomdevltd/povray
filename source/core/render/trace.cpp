@@ -5382,6 +5382,11 @@ static const double kCloudNearReach = 4.0;
 static const int kCloudPatchPoints = 16;
 // Shares of the ring's window above which the surface is whole, and below which an edge is corrected for in full.
 static const double kCloudWhole = 0.95, kCloudEdge = 0.85;
+// Past this many reduced mean free paths deep, and this many diffusion lengths, a part is thick: its far face and the
+// light passing it cannot be told from a half-space's.
+static const double kThickPaths = 20.0, kThickLengths = 15.0;
+// Inner faces (a union's) a run through the material passes before it gives up.
+static const int kThinFaces = 4;
 
 static double CloudWindow(double distSqr, double radiusSqr)
 {
@@ -5962,7 +5967,10 @@ PreciseMathColour Trace::ComputeCloudNearField(const Intersection& out, const Ve
         MathColour irradiance = ComputeSubsurfaceIrradiance(nearest->IPoint, nq, cloud.lights, cloud.eta, 1, &shift, nullptr, ticket,
                                                             DeriveKey(key, kDrawSubsurface, 16 + k), uses.data());
         threadData->Stats()[Subsurface_Cloud_Near_Rays] += std::count(uses.begin(), uses.end(), 1);
-        PreciseMathColour rd = profile.Rd((x - nearest->IPoint).lengthSqr() * Sqr(mm));
+        double distSqr = (x - nearest->IPoint).lengthSqr() * Sqr(mm);
+        PreciseMathColour rd = profile.Rd(distSqr);
+        if (ssltThin.active)
+            ssltThin.Apply(rd, distSqr, 0);
         for (int j = 0; j < MathColour::channels; j++)
             total[j] += rd[j] * irradiance[j] / perArea;
     }
@@ -7297,10 +7305,58 @@ bool Trace::StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, cons
     double probe = kCloudCreaseProbe * cloud.spacing, offset = dot(p - x, n);
     if (!(dot(n, np) >= kCloudParallel) || !(fabs(offset) > probe))
         return true;
+    // From the lower face, the material must run all the way from under x to under p, not just at its midpoint.
+    if (offset > 0.0)
+    {
+        Vector3d lateral = p - x - n * offset;
+        return InsideByBounds(p - n * (offset + probe), cloud.object) && (lateral.length() <= SubsurfaceEscape(cloud, x, n, lateral));
+    }
     const Vector3d& lower = (offset < 0.0) ? p : x;
     const Vector3d& upper = (offset < 0.0) ? x : p;
     Vector3d under = upper - n * fabs(offset);
     return InsideByBounds(under - n * probe, cloud.object) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object);
+}
+
+double Trace::MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket)
+{
+    // A crossing inside on both sides (a union's inner face) does not end the material.
+    double run = 0.0;
+    for (int tries = 0; tries < kThinFaces; tries++)
+    {
+        Intersection hit;
+        Ray ray(ticket, origin + dir * run, dir, Ray::SubsurfaceRay);
+        if ((run >= reach) || !FindIntersection(object, hit, ray))
+            return HUGE_VAL;
+        run += hit.Depth;
+        if (!InsideByBounds(origin + dir * (run + step), object))
+            return run;
+        run += step;
+    }
+    return HUGE_VAL;
+}
+
+double Trace::SubsurfaceEscape(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& toward)
+{
+    const Vector3d& t1 = ssltEscapeAxes[0], &t2 = ssltEscapeAxes[1];
+    if (!ssltEscapeKnown || ((ssltEscapeAt - x).lengthSqr() > 0.0))
+    {
+        ssltEscapeKnown = true;
+        ssltEscapeAt = x;
+        ComputeSurfaceTangents(n, ssltEscapeAxes[0], ssltEscapeAxes[1]);
+        double probe = kCloudCreaseProbe * cloud.spacing;
+        for (int k = 0; k < kEscapeDirections; k++)
+        {
+            double angle = 2.0 * M_PI * k / kEscapeDirections;
+            ssltEscape[k] = MaterialRun(cloud.object, x - n * probe, t1 * cos(angle) + t2 * sin(angle), cloud.reach / sceneData->mmPerUnit,
+                                        1e-3 * cloud.spacing, *ssltEscapeTicket);
+        }
+    }
+    // A straight edge at distance a lies a / cos(angle) away, so 1 / run is interpolated between directions.
+    double f = atan2(dot(toward, t2), dot(toward, t1)) / (2.0 * M_PI) * kEscapeDirections;
+    f = (f < 0.0) ? f + kEscapeDirections : f;
+    int k = int(floor(f)) % kEscapeDirections;
+    double w = f - floor(f), inverse = (1.0 - w) / ssltEscape[k] + w / ssltEscape[(k + 1) % kEscapeDirections];
+    return (inverse > 0.0) ? 1.0 / inverse : HUGE_VAL;
 }
 
 // Inside_Object, skipping the parts of a union or merge whose bounds do not hold the point.
@@ -7375,6 +7431,29 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     Vector3d moment(0.0);
     bool hidden = false;
     std::vector<int>& stack = ssltScratchStack;
+    // On a part thinner than its diffusion the profile takes the multipole's ratios: on its own face, and through it to a
+    // point more than half its depth under the exit point's tangent plane.
+    SetUpSubsurfaceThin(cloud, x, n, profile, ticket);
+    ssltEscapeKnown = false;
+    ssltEscapeTicket = &ticket;
+    const SubsurfaceThin thin = ssltThin;
+    auto onFace = [&](PreciseMathColour rd, double distSqr)
+    {
+        if (thin.active)
+            thin.Apply(rd, distSqr, 0);
+        return rd;
+    };
+    auto layered = [&](PreciseMathColour rd, const Vector3d& p, double distSqr)
+    {
+        if (!thin.active)
+            return rd;
+        double below = dot(x - p, n) * mm;
+        if (below > 0.5 * thin.depth)
+            thin.Apply(rd, max(0.0, distSqr - Sqr(below)), 2);
+        else
+            thin.Apply(rd, distSqr, 0);
+        return rd;
+    };
     // The ring's points are walked first, so that a shading point handed to method 1 does not pay for the far ones.
     auto walk = [&](bool near)
     {
@@ -7408,7 +7487,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                               : ((dot(n, nn) > -kCloudParallel) && CreaseInMaterial(cloud, x, n, node.centre, nn)))
                     {
                         double distSqr = Sqr((front ? (x - node.centre).length() : UnfoldedDistance(x, n, node.centre, nn)) * mm);
-                        PreciseMathColour rd = profile.Rd(distSqr);
+                        PreciseMathColour rd = front ? layered(profile.Rd(distSqr), node.centre, distSqr) : onFace(profile.Rd(distSqr), distSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             far[j] += rd[j] * node.irradiance[j];
                     }
@@ -7435,7 +7514,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                         if (!(dot(n, np) > -kCloudParallel) || !CreaseInMaterial(cloud, x, n, p.position, np))
                             continue;
                         double unfoldedSqr = Sqr(UnfoldedDistance(x, n, p.position, np) * mm);
-                        PreciseMathColour rd = profile.Rd(unfoldedSqr);
+                        PreciseMathColour rd = onFace(profile.Rd(unfoldedSqr), unfoldedSqr);
                         if (!near)
                         {
                             for (int j = 0; j < MathColour::channels; j++)
@@ -7471,7 +7550,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     }
                     if (!StepInMaterial(cloud, x, n, p.position, np))
                         continue;
-                    PreciseMathColour rd = profile.Rd(distSqr);
+                    PreciseMathColour rd = layered(profile.Rd(distSqr), p.position, distSqr);
                     if (!near)
                     {
                         for (int j = 0; j < MathColour::channels; j++)
@@ -7488,7 +7567,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                             continue;
                         }
                         PreciseMathColour& light = inDisc ? discLightAcross : ringLightAcross;
-                        PreciseMathColour patch = CloudPatchRd(profile, x, p, mm);
+                        PreciseMathColour patch = layered(CloudPatchRd(profile, x, p, mm), p.position, distSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             light[j] += patch[j] * p.area * p.irradiance[j];
                         continue;
@@ -7514,7 +7593,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     {
                         ringFacing = min(ringFacing, facing);
                         ringArea += p.area;
-                        PreciseMathColour rdUnfolded = profile.Rd(unfoldedSqr);
+                        PreciseMathColour rdUnfolded = onFace(profile.Rd(unfoldedSqr), unfoldedSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             ringUnfolded[j] += rdUnfolded[j] * p.area;
                     }
@@ -7582,6 +7661,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
         threadData->Stats()[Subsurface_Cloud_Near_Field]++;
         nearSum = ComputeCloudNearField(out, base, n, cloud, profile, disc, ticket, DeriveKey(key, kDrawSubsurface, 7));
     }
+    ssltEscapeTicket = &ticket;
     walk(false);
     MathColour ambient = ComputeCloudExitAmbient(out, n, cloud, ticket);
     here += ambient;
@@ -7605,8 +7685,15 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
             extra[j] += photons;
         }
     }
-    PreciseMathColour coreRd = profile.RdDisc(core) * (M_PI * coreSqr);
-    PreciseMathColour discRd = profile.RdDisc(disc) * (M_PI * discSqr);
+    auto discOnFace = [&](double radius)
+    {
+        PreciseMathColour rd = profile.RdDisc(radius) * (M_PI * Sqr(radius));
+        if (thin.active)
+            thin.Apply(rd, Sqr(radius), 1);
+        return rd;
+    };
+    PreciseMathColour coreRd = discOnFace(core);
+    PreciseMathColour discRd = discOnFace(disc);
     PreciseMathColour sum = far;
     if (nearField)
         sum += nearSum * PreciseMathColour(factor) + discRd * discShare * PreciseMathColour(extra);
@@ -7620,7 +7707,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     // flat surface, and more across a fold, where points around the edge are nearer through the object.
     if ((ringFacing >= kCloudFold) && (density <= kCloudDense))
     {
-        PreciseMathColour ringRd = profile.RdDisc(ring) * (M_PI * ringSqr) - discRd;
+        PreciseMathColour ringRd = discOnFace(ring) - discRd;
         for (int j = 0; j < MathColour::channels; j++)
             if ((ringWeight[j] > 0.0) && (ringUnfolded[j] > 0.0))
                 sum[j] += ringRd[j] * ringShare[j] * (ringWeight[j] / ringUnfolded[j]) * (ringLight[j] / ringWeight[j]);
@@ -7670,6 +7757,7 @@ void Trace::SubsurfaceProfile::SetMethod2(const SubsurfaceBoundary& b, const Pre
     for (int j = 0; j < MathColour::channels; j++)
     {
         dipole[j] = SubsurfaceDipole(albedo[j], b);
+        this->albedo[j] = albedo[j];
         extinction[j] = sigma_t[j];
         extinctionSqr[j] = Sqr(sigma_t[j]);
         beamRow[j] = b.BeamRow(albedo[j], beamWeight[j]);
@@ -7679,6 +7767,51 @@ void Trace::SubsurfaceProfile::SetMethod2(const SubsurfaceBoundary& b, const Pre
         z_r[j] = 1.0 / sigma_t[j];
         z_v[j] = (1.0 + dipole[j].zb) / sigma_t[j];
     }
+}
+
+void Trace::SubsurfaceThin::Apply(PreciseMathColour& rd, double distSqr, int part) const
+{
+    double ratio = 1.0;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        if (!same[j])
+            ratio = (rows[j] == nullptr) ? 1.0 : SubsurfaceBoundary::BeamRatio(rows[j] + ((part == 2) ? SubsurfaceBoundary::kLayerFar : 0),
+                                                                                 depthWeight[j], distSqr * extinctionSqr[j], (part == 1) ? 1 : 0);
+        rd[j] *= ratio;
+    }
+}
+
+// The material's depth under the exit point x (outward normal n), along -n to where it leaves the object, and the layer
+// tables for it; a part deeper than the diffusion, or with no far face within reach, is left as it is.
+void Trace::SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket)
+{
+    SubsurfaceThin& thin = ssltThin;
+    thin.active = false;
+    double mm = sceneData->mmPerUnit, step = 1e-3 * cloud.spacing;
+    double depth = MaterialRun(cloud.object, x - n * step, -n, cloud.reach / mm, step, ticket);
+    if (!(depth < HUGE_VAL))
+        return;
+    thin.depth = (depth + step) * mm;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        double tau = thin.depth * profile.extinction[j];
+        thin.rows[j] = nullptr;
+        if ((tau > kThickPaths) && (profile.dipole[j].sigma * tau > kThickLengths))
+            continue;
+        double f = 4.0 * log2(max(tau, exp2(0.25 * SubsurfaceBoundary::kLayerFirst)));
+        int k = min(SubsurfaceBoundary::kLayerLast - 1, int(floor(f)));
+        thin.depthWeight[j] = min(1.0, f - k);
+        thin.extinctionSqr[j] = profile.extinctionSqr[j];
+        int u = int(floor(sqrt(3.0 * clip(1.0 - profile.albedo[j], 0.0, 1.0)) * SubsurfaceBoundary::kLayerSteps + 0.5));
+        const float *&rows = ssltLayers[std::make_tuple((const void*)profile.boundary, u, k)];
+        if (rows == nullptr)
+            rows = profile.boundary->Layer(u, k);
+        thin.rows[j] = rows;
+        thin.active = true;
+    }
+    for (int j = 0; j < MathColour::channels; j++)
+        thin.same[j] = (j > 0) && (thin.rows[j] == thin.rows[j - 1]) &&
+                       ((thin.rows[j] == nullptr) || ((thin.depthWeight[j] == thin.depthWeight[j - 1]) && (thin.extinctionSqr[j] == thin.extinctionSqr[j - 1])));
 }
 
 // The share of Rd's integral over a flat annulus (radii in mm) inside a straight edge d mm from its centre.

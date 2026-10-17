@@ -30,6 +30,7 @@ RUNS = [
     ('trunk-bark', 2, 3, {}), ('trunk-smooth-bark', 2, 3, {'Smooth': 1}),
     ('wall-clay', 3, 4, {}), ('wall-high', 3, 1, {}),
     ('bare-red', 4, 0, {'Bare': 1}), ('bare-high', 4, 1, {'Bare': 1}), ('studs-red', 4, 0, {}), ('studs-high', 4, 1, {}),
+    ('gap-red', 4, 0, {'Blocks': 1, 'View': 3}), ('gap-high', 4, 1, {'Blocks': 1, 'View': 3}),
 ]
 WIDTH, HEIGHT, BLOCK, WALKS = 160, 120, 8, 2048
 SHARED = {'trunk-smooth-bark': 'trunk-bark'}  # the walks take the smooth surface either mesh samples

@@ -45,6 +45,7 @@
 // C++ standard header files
 #include <memory>
 #include <map>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -1078,7 +1079,7 @@ class Trace
             const SubsurfaceBoundary *boundary = nullptr; ///< method 2's, or null for the classic dipole
             SubsurfaceDipole dipole[MathColour::channels]; ///< method 2's, in reduced mean free paths
             double extinction[MathColour::channels], extinctionSqr[MathColour::channels], beamWeight[MathColour::channels];
-            double totalRatio[MathColour::channels];
+            double totalRatio[MathColour::channels], albedo[MathColour::channels];
             const float *beamRow[MathColour::channels];
             void SetMethod2(const SubsurfaceBoundary& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
             PreciseMathColour Rd(double distSqr) const;
@@ -1086,6 +1087,21 @@ class Trace
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
             PreciseMathColour RdTotal() const;
         };
+
+        /// Method 2 on a part thinner than its diffusion: the multipole's ratios to the profile for the material's depth under
+        /// the exit point, on its own face and through to the far one; see doc/PERF.md.
+        struct SubsurfaceThin
+        {
+            bool active = false;
+            double depth = 0.0; ///< through the material under the exit point, in mm
+            const float *rows[MathColour::channels]; ///< the layer table at the albedo, or null where thick
+            double depthWeight[MathColour::channels], extinctionSqr[MathColour::channels];
+            bool same[MathColour::channels]; ///< whether a channel's ratios are the previous channel's
+            /// Multiplies rd by the ratios at squared distance distSqr (mm^2): part 0 Rd, 1 its disc integral (radius squared), 2 Rd through.
+            void Apply(PreciseMathColour& rd, double distSqr, int part) const;
+        };
+        SubsurfaceThin ssltThin;
+        std::map<std::tuple<const void*, int, int>, const float*> ssltLayers;
 
         /// A texture's subsurface layers blended as the viewer sees them: reflectance and colour weighted by each layer's
         /// opacity and filter, their sum, and the topmost layer, whose finish they scatter with.
@@ -1170,6 +1186,7 @@ class Trace
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
+        void SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket);
         std::unique_ptr<PhotonGatherer> ssltPhotonGatherers[2];
         std::vector<std::unique_ptr<PhotonGatherer>> surfacePhotonGatherers;
         size_t surfacePhotonGatherDepth = 0;
@@ -1214,6 +1231,16 @@ class Trace
         bool StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool InsideByBounds(const Vector3d& point, ObjectPtr object);
+        /// How far the material runs from origin along dir before it leaves the object, up to reach; see doc/PERF.md.
+        double MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket);
+        /// How far the material runs from under the exit point x toward a direction in its tangent plane, from runs along a
+        /// few directions kept for the shading point.
+        double SubsurfaceEscape(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& toward);
+        static const int kEscapeDirections = 8;
+        double ssltEscape[kEscapeDirections];
+        Vector3d ssltEscapeAt, ssltEscapeAxes[2];
+        bool ssltEscapeKnown = false;
+        TraceTicket *ssltEscapeTicket = nullptr;
         bool SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId preparedSetId) const;
         bool RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double radius,
                                              Vector3d& outward, TraceTicket& ticket);
