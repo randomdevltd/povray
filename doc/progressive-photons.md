@@ -455,8 +455,8 @@ finish to tint the caustic as classic photons do, each colour channel within 5%;
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 `tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with
 weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires the logged split to
-match the weights, the image to match across thread counts and its mean to stay within 3%,
-the blade clump to give the same split and image with `split_union` on as off,
+match the weights, the image to match across thread counts and the photon-only image mean
+to stay within 3%, the grass clump to give the same split and image with `split_union` on as off,
 and negative, infinite and NaN weights to be rejected; the photon-file script also
 refuses a file saved with another target weight.
 
@@ -526,24 +526,26 @@ the unlit face scanned the lit face's deposits within the cap.
 ### Target weights
 
 `tests/render/photon_target_rig.pov` at 640x360, no anti-aliasing, four threads, parallel
-sun (its default). Errors are relative RMS of linear light against a quality 64 render,
-over pixels its photons light (above the unlit image by 0.02, reference at most 1): the
-blade patch on the near bank, and the canopy, pool and wall above it. The baseline is the
-previous build, which split a parallel light's samples evenly; weights alone at 1:1
-reproduce it exactly. Rows of a block cost about the same instructions.
+sun (its default), `PhotonOnly=1`. A low sun shines through a canopy of glass leaves (target
+1) onto a wavy pool with a mirror bottom that throws twice-refracted light on the wall, and
+onto a clump of glass grass on the near bank (target 2, its weight varied). The counts are
+exact; the parse alone is 10.1 G instructions.
 
-| configuration | G instructions | patch | canopy, pool, wall |
+| grass weight, quality | G instructions | canopy aimed / deposits | grass aimed / deposits |
 |---|---:|---:|---:|
-| baseline, quality 1 | 25.5 | 0.784 | 0.491 |
-| patch weight 2, quality 1.25 | 25.6 | 0.670 | 0.518 |
-| patch weight 4, quality 1.5 | 25.4 | 0.542 | 0.554 |
-| baseline, quality 4 | 58.1 | 0.546 | 0.361 |
-| patch weight 2, quality 5 | 57.7 | 0.476 | 0.394 |
-| patch weight 4, quality 6 | 55.8 | 0.391 | 0.438 |
+| 1, quality 1 | 29.0 | 131,072 / 38,471 | 131,072 / 62,486 |
+| 2, quality 1 | 29.6 | 87,382 / 25,429 | 174,762 / 83,471 |
+| 4, quality 1 | 30.5 | 52,429 / 14,877 | 209,715 / 99,662 |
+| 1, quality 4 | 77.6 | 524,288 / 151,328 | 524,288 / 250,131 |
+| 2, quality 4 | 81.5 | 349,525 / 100,700 | 699,051 / 332,423 |
+| 4, quality 4 | 85.9 | 209,715 / 59,825 | 838,861 / 399,251 |
 
-The weight moves error from the canopy to the patch at any budget. With the old distant
-point sun (`Parallel=0`, hit-rate allocation in the baseline) the baseline gave 0.83 and
-0.49 at 27.7 G, and weights 1:1 at quality 1.75 gave 0.62 and 0.47 at 32.1 G.
+The aimed samples split exactly 1:1, 2:1 and 4:1, and each target's deposits per aimed
+sample stay the same (about 0.29 for the canopy and 0.48 for the grass), so the weight moves
+photons from one target to the other; a grass sample deposits more, so a larger grass weight
+raises the instructions at a fixed quality, by at most 11% here. Image error against a quality 16 reference at this
+size (253 G) is not reported: single runs did not fall consistently with quality on the
+canopy, so the reference's own noise would decide any comparison.
 
 ### Where the work goes
 

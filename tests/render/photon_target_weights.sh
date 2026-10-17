@@ -7,7 +7,7 @@ trap 'rm -f photon_target_weights_*' EXIT
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/photon_target_rig.pov" +w160 +h90 -a -d -p +v -gp +fp16 File_Gamma=1 \
-        +o"photon_target_weights_$name.ppm" Declare=PhotonQuality=0.25 Declare=Bands=3 "$@" \
+        +o"photon_target_weights_$name.ppm" Declare=PhotonQuality=0.25 Declare=Bands=3 Declare=PhotonOnly=1 "$@" \
         > "photon_target_weights_$name.log" 2>&1 || { cat "photon_target_weights_$name.log"; exit 1; }
     tail -c 86400 "photon_target_weights_$name.ppm" > "photon_target_weights_$name.px"
     tr '\n' ' ' < "photon_target_weights_$name.log" | tr -s ' ' | grep -o 'Photon targets (set 0): [^.]*' \
