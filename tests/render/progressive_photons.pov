@@ -19,6 +19,7 @@
 #ifndef (Curved) #declare Curved = 0; #end
 #ifndef (PhotonFile) #declare PhotonFile = 0; #end
 #ifndef (CameraTurn) #declare CameraTurn = 0; #end
+#ifndef (TargetWeight) #declare TargetWeight = 1; #end
 global_settings {
     assumed_gamma 1
     max_trace_level 8
@@ -75,7 +76,7 @@ sphere {
     interior { ior 1.5 dispersion Dispersion
         #if (Curved) media { method 3 refraction 0.1 density { spherical scale 1.2 translate 1.1*y } } #end
     }
-    photons { target reflection on refraction on }
+    photons { target TargetWeight reflection on refraction on }
 }
 #if (Mist)
     box { <-3, 0.001, -3>, <3, 3, 3> hollow pigment { rgbt 1 }

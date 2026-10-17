@@ -649,6 +649,7 @@ check: all
 	sh \$(top_srcdir)/tests/render/progressive_receivers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photon_file.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/photon_target_weights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_direct_lights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_emitter_parity.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photons4.sh \$(top_builddir)/unix/povray \$(top_srcdir)

@@ -486,6 +486,7 @@ class Parser final
 
         /// @note This method includes an implied `Parse_End()`.
         ObjectPtr Parse_Object_Mods (ObjectPtr Object);
+        void Parse_Photon_Target(ObjectPtr Object);
 
         ObjectPtr Parse_Object (void);
         void Parse_Bound_Clip (std::vector<ObjectPtr>& objects, bool notexture = true);
@@ -743,6 +744,9 @@ class Parser final
         /// The far mouths of portals made while post-processing an object, to link with it; and all made so far.
         std::vector<Portal*> mPortalImages;
         std::vector<const Portal*> mPortalImagesMade;
+        /// The first `photons { target }` value photon method 2 cannot use as a share weight, and its line.
+        double mInvalidPhotonTarget = 0.0;
+        POV_LONG mInvalidPhotonTargetLine = 0;
 
         // tokenize.h/tokenize.cpp
         typedef enum cond_type

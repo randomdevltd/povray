@@ -25,9 +25,9 @@ scenes. Quality is not an exposure control.
 
 ## Emission
 
-Batches are shot in order, each split into sixteen logical shards. Each target's
-hit rate in one batch sets its selection probability in the next, with an
-exploration floor; the first batch selects targets uniformly. Ten percent of
+Batches are shot in order, each split into sixteen logical shards. A light's
+targeted samples are split between its targets in proportion to their target
+weights (see Targets), the same in every batch and for every light type. Ten percent of
 samples from a nonparallel source are isotropic. Every deposit carries emitted flux
 divided by the complete mixture density of the direction actually taken, including
 overlapping target cones; samples rejected by an aperture are not renormalized.
@@ -39,7 +39,7 @@ source's target disc (a volume emitter uses the first for its power-table cell),
 the polar and azimuthal direction within the selected target cone or the sphere,
 the targeted-or-isotropic choice and the target. Every aligned block of 2^m samples,
 and therefore every batch, is a digital net, so each batch covers the emission
-domain evenly however the earlier batches adapted target probabilities. Choices
+domain evenly. Choices
 after the first surface (reflection, refraction, roulette, dispersion bands, media
 scattering) remain hashed per-sample random numbers.
 
@@ -139,9 +139,8 @@ refraction disabled retain their direct-light settings, including oriented area
 lights and projected-through sources.
 
 Targets, `collect off`, reflection/refraction switches and `pass_through` retain
-their authoring roles. Numerical target density is replaced by measured targeting:
-previous-batch hit rates guide the next batch, with an exploration floor and an
-isotropic component for nonparallel sources. Area emitters are sampled over their
+their authoring roles; the number after `target` is a share weight (see Targets).
+Area emitters are sampled over their
 area without requiring the classic photon `area_light` option. Oriented area
 lights use the original axes and rectangular photon profile, as classic photons
 do; `orient` only changes their direct-light profile.
@@ -215,6 +214,35 @@ output levels (see Limits).
 Subsurface photon illumination is reconstructed before diffusion; the subsurface
 cache is created once, after the maps are built.
 
+## Targets
+
+```pov
+object { Canopy photons { target refraction on } }      // weight 1
+object { Blades photons { target 4 refraction on } }    // four times the canopy's share
+object { Pebble photons { target 0 } }                  // not a target
+```
+
+Under method 2 the number after `target` is the object's share weight: among the
+targets of one light, a targeted sample picks a target with probability proportional to
+its weight, so equal weights split the samples evenly and a bigger weight gives more
+photons. Bare `target` is weight 1 and `target 0` removes the target. A weight that
+is negative, infinite or not a number is an error under method 2. The weight moves
+samples between targets, never power: every photon still carries the emitted flux divided by the complete mixture density of its direction (or, for a parallel
+source, of its position on the target discs), so the image converges to the same light
+whatever the weights, and only its noise moves between targets. Give the weight to the
+target whose caustic must be sharp, such as thin or patchy glass near the camera; a big
+target that only casts broad light needs few photons. The weights are the same for
+every light type, parallel and cylinder sources included, and do not change between
+batches. The split is fixed by the scene, not measured: earlier versions of method 2
+set it from the previous batch's hit rate, which starved targets that are hard to hit.
+
+This is the opposite sense of method 1, where the number is a spacing multiplier and
+a smaller value means more photons (`target 0.5` halves the spacing). A scene written
+for one method needs its target numbers revisited for the other.
+
+The `Photon targets` log line gives, per light, each target's weight, the samples aimed
+at it and the deposits they made.
+
 ## Radiosity
 
 Radiosity works with method 2 as it does with classic photons. The maps are complete
@@ -242,7 +270,8 @@ shoot once.
 
 The file names its format version and the settings that decide its contents: quality,
 batch count and size, shards, `k`, the emission sequence's dimensions, the photon
-trace level, `adc_bailout`, media steps and spacing, and the colour channel layout. It
+trace level, `adc_bailout`, media steps and spacing, the colour channel layout and
+every target's weight. It
 also records how many objects, interiors and lights the scene has, numbering
 receivers, media and lights in the scene's own order, and each prepared set's key.
 Loading fails with an error naming the difference when any of these differs, when the
@@ -352,6 +381,11 @@ slab disabled it still reaches only 0.93 of classic there), the smooth forms to 
 faceted ones and the isosurface to match a tight-accuracy one, and requires an `irid`
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
+`tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with
+weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires the logged split to
+match the weights, the image to match across thread counts and its mean to stay within 3%,
+and negative, infinite and NaN weights to be rejected; the photon-file script also
+refuses a file saved with another target weight.
 
 ## Measurements
 
