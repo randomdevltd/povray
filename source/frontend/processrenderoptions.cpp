@@ -38,7 +38,9 @@
 
 // C++ variants of C standard header files
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 // C++ standard header files
 #include <string>
@@ -493,12 +495,12 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                 if (name.empty())
                 {
                     ParseError("Declare expects NAME=VALUE, found '%s'.", param);
-                    err = kParseErr;
+                    err = kParamErr;
                 }
-                else if (quoted && ((value.size() < 2) || (value.back() != value[0])))
+                else if (quoted && ((value.size() < 2) || (value.find(value[0], 1) != value.size() - 1)))
                 {
-                    ParseError("Declare=%s has an unterminated quoted value.", name.c_str());
-                    err = kParseErr;
+                    ParseError("Declare=%s has a malformed quoted value: %s", name.c_str(), value.c_str());
+                    err = kParamErr;
                 }
                 if (err == kNoErr)
                     err = POVMSUtil_SetString(&decobj, kPOVAttrib_Identifier, name.c_str());
@@ -508,7 +510,13 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                     double number = value.empty() ? 0.0 : std::strtod(value.c_str(), &end);
                     // An unquoted value that is entirely a number is a float; anything else is a string.
                     if (!quoted && !value.empty() && (*end == 0) && std::isfinite(number))
+                    {
+                        char text[32];
+                        std::snprintf(text, sizeof(text), "%.17g", number);
                         err = POVMSUtil_SetFloat(&decobj, kPOVAttrib_Value, number);
+                        if (err == kNoErr)
+                            err = POVMSUtil_SetString(&decobj, kPOVAttrib_ValueText, text);
+                    }
                     else
                         err = POVMSUtil_SetString(&decobj, kPOVAttrib_Value,
                                                   (quoted ? value.substr(1, value.size() - 2) : value).c_str());
@@ -516,7 +524,7 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                 if(err == kNoErr)
                     err = POVMSAttrList_Append(&list, &decobj);
                 else
-                    err = POVMSObject_Delete(&decobj);
+                    (void)POVMSObject_Delete(&decobj);
             }
             if(err == kNoErr)
                 err = POVMSObject_Set(obj, &list, option->key);
@@ -779,13 +787,23 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
                         bufptr[0] = 0;
                         if((POVMSUtil_GetFloat(&decobj, kPOVAttrib_Value, &floatval) == 0) &&
                            (POVMSAttr_Get(&item, kPOVMSType_CString, bufptr, &l) == 0))
-                            file->printf("%s=%s=%g\n", option->keyword, bufptr, (float)floatval);
+                        {
+                            std::vector<char> text(32, 0);
+                            int numlen = int(text.size());
+                            if(POVMSUtil_GetString(&decobj, kPOVAttrib_ValueText, text.data(), &numlen) == 0)
+                                file->printf("%s=%s=%s\n", option->keyword, bufptr, text.data());
+                            else
+                                file->printf("%s=%s=%.9g\n", option->keyword, bufptr, double(floatval));
+                        }
                         else if((POVMSUtil_GetStringLength(&decobj, kPOVAttrib_Value, &textlen) == 0) &&
                                 (POVMSAttr_Get(&item, kPOVMSType_CString, bufptr, &l) == 0))
                         {
                             std::vector<char> text(textlen + 1, 0);
                             if(POVMSUtil_GetString(&decobj, kPOVAttrib_Value, text.data(), &textlen) == 0)
-                                file->printf("%s=%s=\"%s\"\n", option->keyword, bufptr, text.data());
+                            {
+                                const char quote = (std::strchr(text.data(), '"') != nullptr) ? '\'' : '"';
+                                file->printf("%s=%s=%c%s%c\n", option->keyword, bufptr, quote, text.data(), quote);
+                            }
                         }
                         delete[] bufptr;
                     }

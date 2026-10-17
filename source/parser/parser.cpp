@@ -303,7 +303,7 @@ void Parser::Run()
                     {
                         std::string tmp(i->second, 1, i->second.length() - 2);
                         Temp_Entry = mSymbolStack.GetGlobalTable()->Add_Symbol(i->first, STRING_ID_TOKEN);
-                        Temp_Entry->Data = String_Literal_To_UCS2(tmp);
+                        Temp_Entry->Data = String_To_UCS2(tmp.c_str());
                     }
                     else
                     {

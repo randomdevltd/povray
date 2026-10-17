@@ -1,3 +1,0 @@
-include "scene.inc";
-input Count;
-for (I = 1 to Count) { sphere { <I, 0, 0>, 0.4 } }

@@ -663,6 +663,7 @@ enum
     kPOVAttrib_RenderOptions         = 'ROpt',
     kPOVAttrib_Identifier            = 'Iden',
     kPOVAttrib_Value                 = 'Valu',
+    kPOVAttrib_ValueText             = 'VTxt',
     kPOVAttrib_ProgressStatus        = 'ProS',
     kPOVAttrib_MosaicPreviewSize     = 'MPSi',
 

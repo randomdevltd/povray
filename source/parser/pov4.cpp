@@ -805,6 +805,7 @@ private:
         std::vector<std::unordered_map<int, unsigned>> scopes;
         std::unordered_map<int, CheckFn>* fns = nullptr;
         std::vector<CheckFn*> stack;
+        std::unordered_set<int> rebound;
         bool checking = false;
     };
     struct Supplied { PValue value; unsigned ty; };
@@ -1433,7 +1434,7 @@ Pov4Evaluator::InputData* Pov4Evaluator::InputOf(const Node* n, CheckCtx& ctx)
     if (n->kind != NK::Ident)
         return nullptr;
     auto in = mInputs.find(n->sym);
-    if (in == mInputs.end())
+    if ((in == mInputs.end()) || (ctx.rebound.count(n->sym) != 0))
         return nullptr;
     for (size_t s = 1; s < ctx.scopes.size(); ++s)
         if (ctx.scopes[s].count(n->sym) != 0)
@@ -1519,8 +1520,8 @@ void Pov4Evaluator::FinishInputs()
         auto sym = mSymbols.find(s.first);
         if ((sym != mSymbols.end()) && (mInputs.count(sym->second) != 0))
             continue;
-        std::string near = NearestName(s.first, names);
-        std::string note = near.empty() ? std::string(".") : "; did you mean '" + near + "'?";
+        std::string guess = NearestName(s.first, names);
+        std::string note = guess.empty() ? std::string(".") : "; did you mean '" + guess + "'?";
         Fail(nullptr, "Declare=%s supplies a value, but the scene declares no input '%s'%s",
              s.first.c_str(), s.first.c_str(), note.c_str());
     }
@@ -1609,10 +1610,18 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                 else if (n->c->kind == NK::Member)
                     (void)OperandTy(n->c->a, TY_DICT | TY_NUMERIC | TY_HANDLE, ctx);
                 if (n->c->kind == NK::Ident)
+                {
+                    if (InputOf(n->c, ctx) != nullptr)
+                        ctx.rebound.insert(n->c->sym);
                     ctx.scopes.back()[n->c->sym] = ty;
+                }
             }
             else
+            {
+                if ((mInputs.count(n->sym) != 0) && ((n->kind == NK::Global) || (ctx.scopes.size() == 1)))
+                    ctx.rebound.insert(n->sym);
                 ctx.scopes.back()[n->sym] = ty;
+            }
             break;
         }
         case NK::FnDef:
@@ -1635,6 +1644,13 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                 }
                 ctx.stack.pop_back();
                 ctx.scopes.pop_back();
+            }
+            for (size_t i = 0; (n->a != nullptr) && (i < n->a->kids.size()); ++i)
+            {
+                const Node* def = n->a->kids[i]->a;
+                unsigned use = (fi != ctx.fns->end()) ? fi->second.use[i] : TY_NONE;
+                if (def != nullptr)
+                    (void)((use != TY_NONE) ? OperandTy(def, use, ctx) : TypeOf(def, ctx));
             }
             ctx.scopes.back()[n->sym] = TY_FN;
             break;
@@ -1698,6 +1714,7 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                 if (!ctx.checking)
                     mInputs[n->sym].def = (t == TY_NULL) ? TY_NONE : t;
             }
+            ctx.rebound.erase(n->sym);
             ctx.scopes.back()[n->sym] = InputTy(n->sym, ctx.checking);
             break;
         case NK::Include:
@@ -1776,7 +1793,7 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
         if ((k->kind == NK::Ident) && (schema != nullptr) && ctx.checking)
         {
             // A typo of a reserved word reaches here as an identifier (it is not reserved).
-            // Only report when a near miss exists; otherwise it may name a classic value.
+            // Only report when a guess miss exists; otherwise it may name a classic value.
             // Classic values are conventionally capitalised, so only lower-case names are flagged.
             bool found = false;
             LookupTy(k->sym, ctx, found);
@@ -1913,6 +1930,10 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
                 return (i != sigs.end()) ? i->second.ret : TY_NONE;
             }
         case NK::Lambda:
+            if (n->a != nullptr)
+                for (const Node* param : n->a->kids)
+                    if (param->a != nullptr)
+                        (void)TypeOf(param->a, ctx);
             ctx.scopes.emplace_back();
             if (n->a != nullptr)
                 for (const Node* param : n->a->kids)
@@ -1930,7 +1951,9 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
         {
             const bool arithmetic = (n->op == OpAdd) || (n->op == OpSub) || (n->op == OpMul) || (n->op == OpDiv);
             const unsigned comparable = TY_NUMERIC | TY_NULL | TY_STR;
-            const unsigned use = ((n->op == OpEq) || (n->op == OpNe)) ? comparable : TY_NUMERIC;
+            const bool logical = (n->op == OpAnd) || (n->op == OpOr);
+            const unsigned use = ((n->op == OpEq) || (n->op == OpNe)) ? comparable :
+                                 (arithmetic || logical) ? TY_NUMERIC : (TY_NUMERIC | TY_STR);
             unsigned lt = OperandTy(n->a, use, ctx);
             unsigned rt = OperandTy(n->b, use, ctx);
             const char* op = OpName(Op(n->op));
@@ -2993,8 +3016,8 @@ Pov4Evaluator::Flow Pov4Evaluator::Exec(const Node* n, Output& out)
                 for (const auto& u : mSupplied)
                     if (mInputs.count(Intern(u.first)) == 0)
                         unclaimed.push_back(u.first);
-                std::string near = NearestName(n->text, unclaimed);
-                std::string note = near.empty() ? std::string() : " Declare=" + near + " was supplied; is it misspelt?";
+                std::string guess = NearestName(n->text, unclaimed);
+                std::string note = guess.empty() ? std::string() : " Declare=" + guess + " was supplied; is it misspelt?";
                 Fail(n, "Input '%s' has no default, so it must be supplied: Declare=%s=<value>.%s",
                      n->text.c_str(), n->text.c_str(), note.c_str());
             }

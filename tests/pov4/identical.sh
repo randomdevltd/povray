@@ -40,7 +40,7 @@ fails err_param "'Scale' uses parameter 'V' as"
 fails err_arity "'Place' takes 2 arguments, but this call passes 1."
 fails err_logic "'Both' uses parameter 'P' as a number or a vector or a colour, but this call passes a string."
 fails err_input_required "err_input_required.pov4:2:1: Input 'Count' has no default, so it must be supplied"
-fails err_input_type "err_input_type.pov4:3:15: Input 'Count' is used here as a number" 'Declare=Count="many"'
+fails err_input_required "err_input_required.pov4:3:15: Input 'Count' is used here as a number" 'Declare=Count="many"'
 fails err_input_default "err_input_default.pov4:3:13: The left operand of '\*' must be a number"
 fails err_input_unknown "no input 'Qualty'; did you mean 'Quality'?" Declare=Qualty=5
 fails ok_input "ok_input.pov4:2:1: Input 'Radius' defaults to a number, but Declare=Radius supplies a string." "Declare=Radius=big Declare=Label=x"
@@ -54,6 +54,7 @@ accepts ok_negate
 accepts ok_string_compare
 accepts ok_debug_statement "pov4 debug statement"
 accepts ok_bare_comparisons "pov4 bare comparisons"
-accepts ok_input "pov4 input hi" "Declare=Label=hi"
+accepts ok_input "pov4 input hi early" "Declare=Label=hi"
+accepts ok_input "pov4 input C:.work early" 'Declare=Label="C:\work"'
 accepts ok_input "Declare=Spare supplies input 'Spare', which the scene never uses." 'Declare=Label="ab" Declare=Spare=1'
 rm -f pov4_*.ppm pov4_*.px pov4_*.log pov4_*_lowered.pov

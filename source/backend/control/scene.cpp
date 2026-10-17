@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <iomanip>
 #include <sstream>
 
 // Boost header files
@@ -186,7 +187,10 @@ void Scene::StartParser(POVMS_Object& parseOptions)
                     break;
 
                 case kPOVMSType_Float:
-                    sstr << d.TryGetFloat(kPOVAttrib_Value, 0.0);
+                    if (d.Exist(kPOVAttrib_ValueText))
+                        sstr << d.TryGetString(kPOVAttrib_ValueText, "0");
+                    else
+                        sstr << std::setprecision(9) << d.TryGetFloat(kPOVAttrib_Value, 0.0);
                     break;
 
                 default:
