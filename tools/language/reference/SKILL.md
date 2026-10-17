@@ -47,14 +47,14 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `blob` | 42 | Metaball surface from sphere and cylinder strength components. |
 | `box` | 37 | Box from two opposite corner vectors. |
 | `bump_map` | 33 | Normal perturbation pattern wrapping a 2-D image file. |
-| `camera` | 34 | The eye: location, direction, projection type, lens effects. |
-| `composite` | 79 | Legacy CSG grouping from before union; still parsed. |
+| `camera` | 35 | The eye: location, direction, projection type, lens effects. |
+| `composite` | 80 | Legacy CSG grouping from before union; still parsed. |
 | `cone` | 38 | Cone or frustum from two end points and radii; open removes the caps. |
 | `cubic` | 37 | Third-degree polynomial shape; a special case of poly. |
 | `cylinder` | 38 | Cylinder from two end points and one radius; open removes the caps. |
 | `default` | — | Item values every later object begins from: default { texture { ... } }. |
 | `density` | 105 | Pattern block scaling media density across its container. |
-| `difference` | 79 | CSG: first child minus every following child. |
+| `difference` | 80 | CSG: first child minus every following child. |
 | `disc` | 37 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
 | `finish` | 34 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
@@ -62,21 +62,21 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `height_field` | 63 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
 | `interior` | 14 | Inside-the-surface properties: ior, caustics, fading, media. |
-| `intersection` | 79 | CSG: points inside every child. |
+| `intersection` | 80 | CSG: points inside every child. |
 | `isosurface` | 49 | Implicit surface where f(x,y,z) is zero, solved while rendering. |
 | `isosurface_mesh` | 49 | Isosurface tessellated into a mesh2 at parse time, sharp edges exact. |
 | `julia_fractal` | 60 | 3-D slice of a 4-D quaternion Julia set. |
 | `lathe` | 41 | Solid of revolution: a 2-D profile curve spun about y. |
 | `lemon` | 38 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
-| `light_group` | 79 | Objects lit only by the lights named inside it. |
+| `light_group` | 80 | Objects lit only by the lights named inside it. |
 | `light_source` | 63 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
 | `media` | 28 | Participating medium: scattering, emission, absorption, intervals; its light_source is a volume light, not a scene light. |
-| `merge` | 79 | CSG union that removes inner surfaces, for transparent children. |
+| `merge` | 80 | CSG union that removes inner surfaces, for transparent children. |
 | `mesh` | 40 | One object collecting explicit triangle components. |
 | `mesh2` | 45 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
 | `normal` | 105 | Perturbed surface normals: bump pattern, bump map, slope. |
-| `object` | 79 | Copies or wraps an already-declared object with new modifiers. |
+| `object` | 80 | Copies or wraps an already-declared object with new modifiers. |
 | `ovus` | 40 | Egg shape from bottom and top radius, with radius, distance and precision controls. |
 | `parametric` | 44 | Surface from three functions of u and v; precompute caches its mesh. |
 | `pigment` | 105 | Surface colour: a pattern, colour map or image map. |
@@ -95,11 +95,13 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `sphere` | 37 | Sphere from a center and a radius. |
 | `sphere_sweep` | 41 | Tube of varying radius sweeping a spline of sphere centers. |
 | `superellipsoid` | 37 | Superquadric shape, rounded box to pinched cylinder, from two exponents. |
+| `tagged` | — | Object value: copies of the objects placed so far that a tag expression selects, with the containers around them, as in look_at tagged { "subject" } or object { tagged { "statue" } translate x }. Expands once; matched by text before a block, so tagged stays free as a name. |
+| `tags` | 2 | Names a filter matches: omitted inherits the parent's, a list replaces them, inherit adds them, none clears them; a later tags block on the same object replaces earlier ones. |
 | `text` | 41 | TrueType font rendered as geometry, with thickness and offset. |
 | `texture` | 108 | One material layer: pigment, normal, finish and transformations. |
 | `torus` | 37 | Ring in the x-z plane from major and minor radii. |
 | `triangle` | 37 | Flat triangle from three corner points. |
-| `union` | 79 | CSG: children grouped as one object. |
+| `union` | 80 | CSG: children grouped as one object. |
 <!-- generated:end block table -->
 
 ## Rules of thumb

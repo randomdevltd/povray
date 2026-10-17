@@ -8,7 +8,8 @@
   "builtin",
   "colour_operator",
   "color_operator",
-  "colour_channel"
+  "colour_channel",
+  "tag_keyword"
  ],
  "extras": [
   {
@@ -620,6 +621,7 @@
    "parenthesized_expression",
    "block",
    "function_block",
+   "tag_filter",
    "array"
   ],
   "postfix": [
@@ -636,7 +638,8 @@
    "dictionary",
    "parenthesized_expression",
    "block",
-   "function_block"
+   "function_block",
+   "tag_filter"
   ],
   "primary": [
    "number",
@@ -649,7 +652,8 @@
    "dictionary",
    "parenthesized_expression",
    "block",
-   "function_block"
+   "function_block",
+   "tag_filter"
   ],
   "lexical": [
    "break_statement",
@@ -3015,6 +3019,10 @@
     {
      "t": "sym",
      "name": "function_block"
+    },
+    {
+     "t": "sym",
+     "name": "tag_filter"
     }
    ]
   },
@@ -3735,6 +3743,361 @@
     {
      "t": "sym",
      "name": "identifier"
+    }
+   ]
+  },
+  "tag_filter": {
+   "productions": [
+    {
+     "t": "seq",
+     "of": [
+      {
+       "t": "field",
+       "name": "name",
+       "of": {
+        "t": "alias",
+        "of": {
+         "t": "sym",
+         "name": "tag_keyword"
+        },
+        "name": "keyword"
+       }
+      },
+      {
+       "t": "str",
+       "v": "{"
+      },
+      {
+       "t": "choice",
+       "of": [
+        {
+         "t": "field",
+         "name": "filter",
+         "of": {
+          "t": "sym",
+          "name": "_tag_expression"
+         }
+        },
+        {
+         "t": "blank"
+        }
+       ]
+      },
+      {
+       "t": "str",
+       "v": "}"
+      }
+     ]
+    }
+   ]
+  },
+  "_tag_expression": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "sym",
+     "name": "string"
+    },
+    {
+     "t": "sym",
+     "name": "identifier"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_tag_call"
+     },
+     "name": "call_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_tag_member"
+     },
+     "name": "member_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_tag_index"
+     },
+     "name": "index_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "choice",
+      "of": [
+       {
+        "t": "str",
+        "v": "any"
+       },
+       {
+        "t": "str",
+        "v": "none"
+       }
+      ]
+     },
+     "name": "constant"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_tag_parenthesized"
+     },
+     "name": "parenthesized_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_tag_not"
+     },
+     "name": "unary_expression"
+    },
+    {
+     "t": "alias",
+     "of": {
+      "t": "sym",
+      "name": "_tag_binary"
+     },
+     "name": "binary_expression"
+    }
+   ]
+  },
+  "_tag_parenthesized": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "seq",
+     "of": [
+      {
+       "t": "str",
+       "v": "("
+      },
+      {
+       "t": "sym",
+       "name": "_tag_expression"
+      },
+      {
+       "t": "str",
+       "v": ")"
+      }
+     ]
+    }
+   ]
+  },
+  "_tag_call": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "seq",
+     "of": [
+      {
+       "t": "field",
+       "name": "function",
+       "of": {
+        "t": "choice",
+        "of": [
+         {
+          "t": "sym",
+          "name": "identifier"
+         },
+         {
+          "t": "sym",
+          "name": "builtin"
+         }
+        ]
+       }
+      },
+      {
+       "t": "field",
+       "name": "arguments",
+       "of": {
+        "t": "sym",
+        "name": "arguments"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "_tag_member": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "seq",
+     "of": [
+      {
+       "t": "field",
+       "name": "object",
+       "of": {
+        "t": "sym",
+        "name": "identifier"
+       }
+      },
+      {
+       "t": "token",
+       "immediate": true,
+       "of": {
+        "t": "str",
+        "v": "."
+       }
+      },
+      {
+       "t": "field",
+       "name": "member",
+       "of": {
+        "t": "sym",
+        "name": "identifier"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "_tag_index": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "seq",
+     "of": [
+      {
+       "t": "field",
+       "name": "object",
+       "of": {
+        "t": "sym",
+        "name": "identifier"
+       }
+      },
+      {
+       "t": "token",
+       "immediate": true,
+       "of": {
+        "t": "str",
+        "v": "["
+       }
+      },
+      {
+       "t": "field",
+       "name": "index",
+       "of": {
+        "t": "sym",
+        "name": "_expression"
+       }
+      },
+      {
+       "t": "str",
+       "v": "]"
+      }
+     ]
+    }
+   ]
+  },
+  "_tag_not": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "v": 3,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "!"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operand",
+        "of": {
+         "t": "sym",
+         "name": "_tag_expression"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "_tag_binary": {
+   "hidden": true,
+   "productions": [
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 2,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_tag_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "&"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_tag_expression"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "t": "prec",
+     "kind": "left",
+     "v": 1,
+     "of": {
+      "t": "seq",
+      "of": [
+       {
+        "t": "field",
+        "name": "left",
+        "of": {
+         "t": "sym",
+         "name": "_tag_expression"
+        }
+       },
+       {
+        "t": "field",
+        "name": "operator",
+        "of": {
+         "t": "str",
+         "v": "|"
+        }
+       },
+       {
+        "t": "field",
+        "name": "right",
+        "of": {
+         "t": "sym",
+         "name": "_tag_expression"
+        }
+       }
+      ]
+     }
     }
    ]
   },

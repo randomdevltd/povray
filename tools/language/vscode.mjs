@@ -38,7 +38,9 @@ const KEYWORD = [...new Set([...reserved.map((w) => w.word), ...contextual])].fi
 const SCENE = ['background', 'default', 'fog', 'photons', 'radiosity', 'rainbow', 'sky_sphere'];
 const blockNames = [...Object.keys(blockDoc.blocks), ...SCENE].sort();
 const blockSet = new Set(blockNames);
-const itemKeywords = KEYWORD.filter((w) => !blockSet.has(w));
+// Contextual words that open a block only when a brace follows, and are free names elsewhere.
+const SELECTORS = ['tagged'];
+const itemKeywords = KEYWORD.filter((w) => !blockSet.has(w) && !SELECTORS.includes(w));
 
 const CONSTANTS = ['clock', 'clock_on', 'no', 'now', 'off', 'on', 'pi', 't', 'tau', 'u', 'v', 'version',
     'x', 'y', 'z', 'yes'];
@@ -53,7 +55,8 @@ const grammar = {
     patterns: [
         { include: '#comment' }, { include: '#string' }, { include: '#directive' }, { include: '#statement' },
         { include: '#colorop' }, { include: '#colorword' }, { include: '#channel' }, { include: '#constant' },
-        { include: '#builtin' }, { include: '#block' }, { include: '#item' }, { include: '#number' },
+        { include: '#builtin' }, { include: '#block' }, { include: '#selector' }, { include: '#item' },
+        { include: '#number' },
     ],
     repository: {
         comment: { patterns: [
@@ -69,6 +72,7 @@ const grammar = {
         constant: { name: 'constant.language.pov', match: words(CONSTANTS) },
         builtin: { name: 'support.function.builtin.pov', match: words(BUILTINS) },
         block: { name: 'keyword.other.block.pov', match: words(blockNames) },
+        selector: { name: 'keyword.other.block.pov', match: `\\b(?:${SELECTORS.join('|')})\\b(?=\\s*\\{)` },
         item: { name: 'keyword.other.item.pov', match: words(itemKeywords) },
         number: { name: 'constant.numeric.pov', match: '(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?' },
     },

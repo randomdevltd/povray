@@ -2168,6 +2168,11 @@
    "code": "noise_generator : 2",
    "from": "doc/html/r3_4.html"
   },
+  "none": {
+   "rank": 52,
+   "code": "global_settings { filter_tags { \"preview\" | none } }",
+   "from": "doc/html/r3_4.html"
+  },
   "normal": {
    "code": "normal { NORMAL_BODY }",
    "from": "doc/html/r3_10.html:12"
@@ -2780,9 +2785,8 @@
    "from": "doc/html/r3_6.html"
   },
   "tags": {
-   "rank": 16,
    "code": "tags { \"doors\" }",
-   "from": "doc/html/r3_10.html"
+   "from": "doc/html/r3_10.html:8"
   },
   "tan": {
    "rank": 1046,
