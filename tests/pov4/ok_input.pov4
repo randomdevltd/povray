@@ -4,4 +4,5 @@ input Label;
 input Spare = 0;
 fn Order(K) { if (K < "m") { return " early"; } return " late"; }
 debug(concat("pov4 input ", Label, Order(Label), (Label < "m") ? "" : "!", "\n"));
-sphere { 0, Radius * 2 pigment { rgb 1 } }
+fn Grow(Label, Size = Label * 2) { return Size; }
+sphere { 0, Grow(Radius) pigment { rgb 1 } }

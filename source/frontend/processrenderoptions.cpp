@@ -72,6 +72,35 @@ namespace pov_frontend
 
 using namespace pov_base;
 
+namespace
+{
+
+std::string ShortestDouble(double d)
+{
+    char text[32];
+    for (int digits = 15; digits <= 17; ++digits)
+    {
+        std::snprintf(text, sizeof(text), "%.*g", digits, d);
+        if (std::strtod(text, nullptr) == d)
+            break;
+    }
+    return text;
+}
+
+std::string ShortestFloat(float f)
+{
+    char text[32];
+    for (int digits = 6; digits <= 9; ++digits)
+    {
+        std::snprintf(text, sizeof(text), "%.*g", digits, double(f));
+        if (std::strtof(text, nullptr) == f)
+            break;
+    }
+    return text;
+}
+
+}
+
 /*****************************************************************************
 * Local preprocessor defines
 ******************************************************************************/
@@ -401,6 +430,7 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
     int intval = 0;
     int intval2 = 0;
     int err = kNoErr;
+    bool listReady = false;
 
     switch(option->key)
     {
@@ -474,6 +504,7 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                 err = kObjectAccessErr;
             else
                 err = POVMSObject_Get(obj, &list, option->key);
+            listReady = (err == kNoErr);
 
             // add value to list
             if(err == kNoErr)
@@ -511,11 +542,9 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
                     // An unquoted value that is entirely a number is a float; anything else is a string.
                     if (!quoted && !value.empty() && (*end == 0) && std::isfinite(number))
                     {
-                        char text[32];
-                        std::snprintf(text, sizeof(text), "%.17g", number);
                         err = POVMSUtil_SetFloat(&decobj, kPOVAttrib_Value, number);
                         if (err == kNoErr)
-                            err = POVMSUtil_SetString(&decobj, kPOVAttrib_ValueText, text);
+                            err = POVMSUtil_SetString(&decobj, kPOVAttrib_ValueText, ShortestDouble(number).c_str());
                     }
                     else
                         err = POVMSUtil_SetString(&decobj, kPOVAttrib_Value,
@@ -528,6 +557,8 @@ int ProcessRenderOptions::ReadSpecialOptionHandler(INI_Parser_Table *option, cha
             }
             if(err == kNoErr)
                 err = POVMSObject_Set(obj, &list, option->key);
+            else if(listReady)
+                (void)POVMSAttrList_Delete(&list);
             break;
 
         case kPOVAttrib_FatalErrorCommand:
@@ -793,7 +824,7 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
                             if(POVMSUtil_GetString(&decobj, kPOVAttrib_ValueText, text.data(), &numlen) == 0)
                                 file->printf("%s=%s=%s\n", option->keyword, bufptr, text.data());
                             else
-                                file->printf("%s=%s=%.9g\n", option->keyword, bufptr, double(floatval));
+                                file->printf("%s=%s=%s\n", option->keyword, bufptr, ShortestFloat(floatval).c_str());
                         }
                         else if((POVMSUtil_GetStringLength(&decobj, kPOVAttrib_Value, &textlen) == 0) &&
                                 (POVMSAttr_Get(&item, kPOVMSType_CString, bufptr, &l) == 0))

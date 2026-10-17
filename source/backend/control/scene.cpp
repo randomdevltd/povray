@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 
@@ -190,7 +191,16 @@ void Scene::StartParser(POVMS_Object& parseOptions)
                     if (d.Exist(kPOVAttrib_ValueText))
                         sstr << d.TryGetString(kPOVAttrib_ValueText, "0");
                     else
-                        sstr << std::setprecision(9) << d.TryGetFloat(kPOVAttrib_Value, 0.0);
+                    {
+                        const float f = d.TryGetFloat(kPOVAttrib_Value, 0.0);
+                        for (int digits = 6; digits <= 9; ++digits)
+                        {
+                            sstr.str("");
+                            sstr << std::setprecision(digits) << f;
+                            if (std::strtof(sstr.str().c_str(), nullptr) == f)
+                                break;
+                        }
+                    }
                     break;
 
                 default:

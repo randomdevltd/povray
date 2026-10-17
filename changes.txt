@@ -175,7 +175,11 @@ Changed Behaviour
   - `Declare=NAME=VALUE` accepts string values on the command line and in INI
     files. A value quoted with `"` or `'` is a string taken verbatim: the
     quotes only delimit it and backslashes are not escapes, so
-    `Declare=Dir="C:\work"` arrives as written. Unquoted text that is not a
+    `Declare=Dir="C:\work"` arrives as written. That is exact on the command
+    line; in INI files the reader still treats `\"` and `\\` as escapes when it
+    looks for the closing quote, as it always has, but keeps both characters,
+    so `\\` arrives as two backslashes and a `\"` inside a `"`-quoted value is
+    an embedded quote, which is an error. Unquoted text that is not a
     complete finite number is now a string too; before, a leading number was
     kept and the rest dropped (`5abc`, `50%` and `1,5` became 5, 50 and 1) or
     the value became 0, and `nan` or `inf` became numbers. `Declare=X=` is now

@@ -1611,14 +1611,14 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                     (void)OperandTy(n->c->a, TY_DICT | TY_NUMERIC | TY_HANDLE, ctx);
                 if (n->c->kind == NK::Ident)
                 {
-                    if (InputOf(n->c, ctx) != nullptr)
+                    if (ctx.stack.empty() && (ctx.scopes.size() == 1) && (InputOf(n->c, ctx) != nullptr))
                         ctx.rebound.insert(n->c->sym);
                     ctx.scopes.back()[n->c->sym] = ty;
                 }
             }
             else
             {
-                if ((mInputs.count(n->sym) != 0) && ((n->kind == NK::Global) || (ctx.scopes.size() == 1)))
+                if ((mInputs.count(n->sym) != 0) && ctx.stack.empty() && (ctx.scopes.size() == 1))
                     ctx.rebound.insert(n->sym);
                 ctx.scopes.back()[n->sym] = ty;
             }
@@ -1645,13 +1645,16 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                 ctx.stack.pop_back();
                 ctx.scopes.pop_back();
             }
+            ctx.scopes.emplace_back();
             for (size_t i = 0; (n->a != nullptr) && (i < n->a->kids.size()); ++i)
             {
-                const Node* def = n->a->kids[i]->a;
+                const Node* param = n->a->kids[i];
                 unsigned use = (fi != ctx.fns->end()) ? fi->second.use[i] : TY_NONE;
-                if (def != nullptr)
-                    (void)((use != TY_NONE) ? OperandTy(def, use, ctx) : TypeOf(def, ctx));
+                if (param->a != nullptr)
+                    (void)((use != TY_NONE) ? OperandTy(param->a, use, ctx) : TypeOf(param->a, ctx));
+                ctx.scopes.back()[param->sym] = TY_NONE;
             }
+            ctx.scopes.pop_back();
             ctx.scopes.back()[n->sym] = TY_FN;
             break;
         }
@@ -1793,7 +1796,7 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx)
         if ((k->kind == NK::Ident) && (schema != nullptr) && ctx.checking)
         {
             // A typo of a reserved word reaches here as an identifier (it is not reserved).
-            // Only report when a guess miss exists; otherwise it may name a classic value.
+            // Only report when a near miss exists; otherwise it may name a classic value.
             // Classic values are conventionally capitalised, so only lower-case names are flagged.
             bool found = false;
             LookupTy(k->sym, ctx, found);
@@ -1930,14 +1933,14 @@ unsigned Pov4Evaluator::TypeOf(const Node* n, CheckCtx& ctx)
                 return (i != sigs.end()) ? i->second.ret : TY_NONE;
             }
         case NK::Lambda:
-            if (n->a != nullptr)
-                for (const Node* param : n->a->kids)
-                    if (param->a != nullptr)
-                        (void)TypeOf(param->a, ctx);
             ctx.scopes.emplace_back();
             if (n->a != nullptr)
                 for (const Node* param : n->a->kids)
+                {
+                    if (param->a != nullptr)
+                        (void)TypeOf(param->a, ctx);
                     ctx.scopes.back()[param->sym] = TY_NONE;
+                }
             if (n->b != nullptr)
             {
                 if (n->b->kind == NK::Body)
