@@ -145,8 +145,9 @@ struct SubsurfaceCloudStatistics final
 struct SubsurfacePoint final
 {
     Vector3d position;
-    float normal[3]; ///< pointing out of the object
-    float irradiance[MathColour::channels];
+    float normal[3]; ///< the surface's own, pointing out of the object; a smooth mesh's interpolated normal only sets its light's cosine
+    float irradiance[MathColour::channels]; ///< until lit, the shading normal
+    static_assert(MathColour::channels >= 3, "a point keeps its shading normal in its irradiance until lit");
     float area;
     unsigned id : 30; ///< index into the cell's visibility, which stays in build order; while casting, its part's light set and photons
     unsigned axis : 2; ///< that of the line that found it

@@ -27,11 +27,12 @@ RUNS = [
     ('slab-red', 0, 0, {}), ('slab-high', 0, 1, {}), ('slab-wax', 0, 2, {}), ('slab-bark', 0, 3, {}), ('slab-clay', 0, 4, {}),
     ('head-on-red', 0, 0, {'View': 1}), ('head-on-high', 0, 1, {'View': 1}),
     ('notch-wax', 1, 2, {}), ('notch-high', 1, 1, {}),
-    ('trunk-bark', 2, 3, {}),
+    ('trunk-bark', 2, 3, {}), ('trunk-smooth-bark', 2, 3, {'Smooth': 1}),
     ('wall-clay', 3, 4, {}), ('wall-high', 3, 1, {}),
     ('bare-red', 4, 0, {'Bare': 1}), ('bare-high', 4, 1, {'Bare': 1}), ('studs-red', 4, 0, {}), ('studs-high', 4, 1, {}),
 ]
 WIDTH, HEIGHT, BLOCK, WALKS = 160, 120, 8, 2048
+SHARED = {'trunk-smooth-bark': 'trunk-bark'}  # the walks take the smooth surface either mesh samples
 IORS = [1.5, 1.5, 1.45, 1.4, 1.4]
 MEDIA = {
     'fdr': ['0.993424403,0.563735471,0.438775771', '0.999705255', '0.981075651,0.931631333,0.492624062',
@@ -50,7 +51,9 @@ def commands(args):
             continue
         keys = {'Shape': shape, 'Material': material, **extra}
         ref = ' '.join(f'{k}={v}' for k, v in keys.items()) + (' Entry=beam' if args.entry == 'beam' else '')
-        if args.media:
+        if name in SHARED:
+            pass
+        elif args.media:
             media = args.media.split(',')
             albedo = ':'.join('table' if m == 'classic' else MEDIA[m][material] for m in media)
             outs = ','.join(f'{out / walked(name, args.entry, m)}.pfm' for m in media)
@@ -68,6 +71,7 @@ def rendered(name, tag):
 
 
 def walked(name, entry, medium=''):
+    name = SHARED.get(name, name)
     return f'{name}-{medium}' if medium else f'{name}-{entry}' if entry == 'beam' else name
 
 

@@ -13,6 +13,7 @@
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (Spacing) #declare Spacing = 1; #end
 #ifndef (Facets) #declare Facets = 480; #end
+#ifndef (Smooth) #declare Smooth = 0; #end
 #declare MmPerUnit = array[5] { 10, 10, 80, 40, 10 };
 global_settings {
   assumed_gamma 1.0
@@ -35,7 +36,7 @@ global_settings {
 #macro Cool() light_source { <3.5, 2.2, 1.0>, rgb <0.7, 0.8, 1.0> * 0.5 } #end
 #macro Camera(Location, Target, Angle) camera { perspective location Location look_at Target angle Angle right x * 4 / 3 } #end
 
-// The trunk of sslt-wide.pov, NA facets around by NH along: a closed mesh2 with ridged bark.
+// The trunk of sslt-wide.pov, NA facets around by NH along: a closed mesh2 with ridged bark, with Smooth the surface's own normals.
 #macro Trunk(Radius, Height, NA, NH)
   #local C = NA * (NH + 1);
   mesh2 {
@@ -47,6 +48,18 @@ global_settings {
       #end #end
       <0, 0, 0>, <0, Height, 0>
     }
+    #if (Smooth)
+      normal_vectors { C + 2,
+        #for (J, 0, NH) #for (K, 0, NA - 1)
+          #local T = 2 * pi * K / NA; #local Y = Height * J / NH;
+          #local Rr = Radius * (1 + 0.06 * sin(9 * T + 0.7 * Y) + 0.03 * sin(31 * T - 2.3 * Y) - 0.1 * J / NH);
+          #local Rt = Radius * (0.54 * cos(9 * T + 0.7 * Y) + 0.93 * cos(31 * T - 2.3 * Y));
+          #local Ry = Radius * (0.042 * cos(9 * T + 0.7 * Y) - 0.069 * cos(31 * T - 2.3 * Y) - 0.1 / Height);
+          <Rr * cos(T) + Rt * sin(T), -Rr * Ry, Rr * sin(T) - Rt * cos(T)>,
+        #end #end
+        -y, y
+      }
+    #end
     face_indices { 2 * NA * NH + 2 * NA,
       #for (J, 0, NH - 1) #for (K, 0, NA - 1)
         #local A0 = J * NA + K; #local A1 = J * NA + mod(K + 1, NA);
@@ -54,6 +67,15 @@ global_settings {
       #end #end
       #for (K, 0, NA - 1) <C, K, mod(K + 1, NA)>, <C + 1, NH * NA + K, NH * NA + mod(K + 1, NA)>, #end
     }
+    #if (Smooth)
+      normal_indices { 2 * NA * NH + 2 * NA,
+        #for (J, 0, NH - 1) #for (K, 0, NA - 1)
+          #local A0 = J * NA + K; #local A1 = J * NA + mod(K + 1, NA);
+          <A0, A1, A1 + NA>, <A0, A1 + NA, A0 + NA>,
+        #end #end
+        #for (K, 0, NA - 1) <C, C, C>, <C + 1, C + 1, C + 1>, #end
+      }
+    #end
     inside_vector y
   }
 #end

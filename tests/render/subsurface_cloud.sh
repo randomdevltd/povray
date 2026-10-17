@@ -1,6 +1,6 @@
 #!/bin/sh
-# subsurface_cloud.sh <povray> <srcdir>: a plane, a light group's part and a thin wall are served by the point cloud, a cloud
-# past its memory cap stops the render, the cloud and image do not depend on thread count, and a user-defined panorama is served.
+# subsurface_cloud.sh <povray> <srcdir>: a plane, a light group's part, a thin wall and a smooth mesh (by its face's area) are served
+# by the point cloud, a cloud past its memory cap stops the render, the cloud and image do not depend on threads, a panorama is served.
 set -e
 trap 'rm -f sscloud_*' EXIT
 POVRAY=$1; SRCDIR=$2
@@ -35,6 +35,17 @@ for c in 2:plane 3:group 4:thin; do
     has ${c#*:} 'Subsurfacemethod2left' && fail "the ${c#*:} left shading points without subsurface light"
     share ${c#*:} 100 || fail "the ${c#*:} was not served by the cloud: $(served ${c#*:})"
 done
+
+flux=$SRCDIR/tests/render/subsurface_photon_flux.pov
+for m in 1:flat 2:smooth; do
+    render ${m#*:} "$flux" +w64 +h48 +wt2 Declare=Photons=0 Declare=Direct=1 Declare=MeshMode=${m%:*}; text ${m#*:}
+    share ${m#*:} 100 || fail "the ${m#*:} mesh was not served by the cloud: $(served ${m#*:})"
+done
+centre() { tail -c 18432 "sscloud_$1.ppm" | od -An -v -tu1 | awk '{ for (k = 1; k <= NF; k++) b[n++] = $k }
+    END { for (i = 0; i < n / 2; i++) { p = int(i / 3); if (p % 64 >= 16 && p % 64 < 48 && p >= 768 && p < 2304) s += b[2 * i] * 256 + b[2 * i + 1] } print s }'; }
+ratio=$(echo "$(centre smooth) $(centre flat)" | awk '{ printf "%.3f", $1 / $2 }')
+awk -v r="$ratio" 'BEGIN { exit !(r > 0.975 && r < 1.01) }' ||
+    fail "a smooth mesh's points did not take their face's area: smooth over flat $ratio, expected 0.993 from its normals' cosines (0.898 when points took the interpolated normal's area)"
 
 bench=$SRCDIR/tools/bench/sslt-projection.pov
 render mercator "$bench" +w96 +h48 +wt2 Declare=Camera=0 Declare=Count=400; text mercator

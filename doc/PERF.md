@@ -963,6 +963,36 @@ Method 1 renders the same pixels, bit for bit, before and after: `version4_subsu
 1 and `_no_version` at `+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread; with several, its photon map
 differs from run to run on one build), `subsurface_photon_prism`, and the reference scene's studs and trunk.
 
+## Subsurface method 2 on smooth meshes
+
+A cloud point stands for h²/|n|₁ of surface and is compared with its neighbours by its normal; both took the normal
+the surface reported, which on a smooth mesh triangle is the one interpolated from its vertices, not the triangle's own.
+A point on a face whose vertex normals lean away from it then stood for too little surface: on
+`tests/render/subsurface_photon_flux.pov` (`Photons=0 Direct=1`, a light straight down), whose box mesh has a top of two
+smooth triangles with vertex normals leaning up to 37° before the mesh's scale, the top came out 10% dark against the
+same box with flat triangles, beyond the cosine its vertex normals give the light. (`doc/SUBSURFACE_PHOTONS.md` measured 18.7% on the same
+face's photons, which then went to method 1.) Method 2 now takes the triangle's face normal for a point's side, area,
+facing and hierarchy, and for the exit point's tangent plane, and the interpolated normal only for the cosine of the light
+entering there, which the point keeps in its irradiance until it is lit (no memory). The coarse cloud's near-field
+draws take the face normal for the area a draw stands for in the same way. Other shapes report their geometric normal
+and are unchanged, bit for bit; method 1 is untouched.
+
+Smooth top over flat top, mean of the central 32×24 of 64×48 pixels (the prediction: each pixel's cosine from its
+vertex normals, through the mesh's scale, times the entry and exit Fresnel transmittance):
+
+| | before | after | predicted |
+|---|---|---|---|
+| smooth / flat | 0.898 | 0.9965 | 0.993 |
+
+`tests/render/subsurface_cloud.sh` checks the ratio. `tools/bench/sslt-reference.pov` takes `Smooth=1` for the ridged
+trunk with its surface's own normals (`trunk-smooth-bark` in `sslt-reference.py`, scored against the same walks as the
+flat trunk, which follow the smooth surface): 12.09 / −7.55 / −22.0 before and 12.06 / −7.51 / −22.4 after (geometry 9.91
+and 9.89), as the 480 × 96 facets lean little against their vertices; the other runs render the same pixels. At
+640×480 the smooth trunk takes 52.5 and 52.5 CPU-s before and 50.5 and 52.0 after (heat maps alike). Method 1 renders
+the same pixels before and after: `version4_subsurface_{37,38,40}.pov` with methods 0 and 1 and `_no_version` at
+`+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread), `subsurface_photon_prism`, the flux scene's smooth mesh,
+and the reference scene's studs and both trunks.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
