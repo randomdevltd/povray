@@ -40,6 +40,8 @@
 // C++ standard header files
 
 // Boost header files
+#include <new>
+
 #include <boost/bind.hpp>
 
 // POV-Ray header files (base module)
@@ -159,6 +161,14 @@ int TaskQueue::FailureCode(int defval)
         return failed;
 }
 
+void TaskQueue::Fail(int code)
+{
+    std::lock_guard<std::recursive_mutex> lock(queueMutex);
+
+    if(failed == kNoError)
+        failed = code;
+}
+
 ThreadData *TaskQueue::AppendTask(Task *task)
 {
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
@@ -179,6 +189,16 @@ void TaskQueue::AppendSync()
     queuedTasks.push(TaskEntry::kSync);
 
     Notify();
+}
+
+void TaskQueue::AppendDeferredTask(const boost::function0<Task*>& factory, const boost::function1<void, ThreadData*>& created)
+{
+    AppendFunction([this, factory, created](TaskQueue&) {
+        std::shared_ptr<Task> task(factory());
+        created(task->GetDataPtr());
+        activeTasks.push_back(TaskEntry(task));
+        task->Start(boost::bind(&TaskQueue::Notify, this));
+    });
 }
 
 void TaskQueue::AppendMessage(POVMS_Message& msg)
@@ -205,10 +225,12 @@ bool TaskQueue::Process()
 
     for(list<TaskEntry>::iterator i(activeTasks.begin()); i != activeTasks.end();)
     {
+        // read done first: a task records its failure before it is done
+        const bool done = i->GetTask()->IsDone();
         if(failed == kNoError)
             failed = i->GetTask()->FailureCode();
 
-        if(i->GetTask()->IsDone() == true)
+        if(done)
         {
             list<TaskEntry>::iterator e(i);
             i++;
@@ -251,7 +273,7 @@ bool TaskQueue::Process()
             }
             case TaskEntry::kFunction:
             {
-                try { queuedTasks.front().GetFunction()(*this); } catch(pov_base::Exception&) { }
+                try { queuedTasks.front().GetFunction()(*this); } catch(pov_base::Exception&) { } catch(std::bad_alloc&) { failed = kOutOfMemoryErr; }
                 queuedTasks.pop();
                 break;
             }

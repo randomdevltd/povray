@@ -135,6 +135,7 @@ class IsoSurface final : public ObjectBase
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual double GetPotential (const Vector3d&, bool subtractThreshold, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        virtual double SurfaceTolerance() const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;

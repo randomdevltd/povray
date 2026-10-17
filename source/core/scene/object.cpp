@@ -594,6 +594,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Flags   = Old->Flags & ~FRAME_TARGET_FLAG;
     New->tags = Old->tags;
     New->inheritTags = Old->inheritTags;
+    New->photonTargetGroup = Old->photonTargetGroup;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;
@@ -601,6 +602,8 @@ ObjectPtr Copy_Object (ObjectPtr Old)
 
     // TODO FIXME - An explanation WHY this is important would be nice [CLi]
     New->LLights.clear(); // important
+    New->PhotonLights.clear();
+    New->photonGroupEnabled = Old->photonGroupEnabled;
 
     New->Texture = Copy_Textures (Old->Texture);
     New->Interior_Texture = Copy_Textures (Old->Interior_Texture);

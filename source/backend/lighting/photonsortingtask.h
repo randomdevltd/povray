@@ -43,6 +43,8 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdint>
+#include <string>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -59,6 +61,21 @@ namespace pov
 {
 
 class ViewThreadData;
+class ScenePhotonSettings;
+class SceneData;
+
+/// The settings a method 2 photon file must have been shot with to be loaded.
+std::string ProgressivePhotonIdentity(const SceneData& scene);
+/// Writes every prepared set's merged, unbuilt method 2 maps to the photon file; returns why it failed, or nothing.
+std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed);
+/// The POV_PHOTON_MEMORY ceiling in bytes, read once: zero when unset, negative when it is not a positive number of GB.
+double ProgressivePhotonMemoryCeiling();
+/// The bytes method 2 photons may use: the POV_PHOTON_MEMORY ceiling, else 40% of available memory, at most 6 GB.
+double ProgressivePhotonMemoryBudget();
+/// Names where ProgressivePhotonMemoryBudget comes from, for messages.
+const char* ProgressivePhotonMemoryRule();
+/// Reads unbuilt maps written by SaveProgressivePhotons into the prepared sets; returns why it failed, or nothing.
+std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_t& savedSeed);
 
 class PhotonSortingTask final : public RenderTask
 {

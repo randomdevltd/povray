@@ -114,6 +114,7 @@ class SmoothTriangle final : public Triangle
         virtual ObjectPtr Copy() override;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        virtual bool FaceNormal(Vector3d& result, const Intersection *) const override { result = Normal_Vector; return true; }
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;

@@ -43,6 +43,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
 #include <memory>
 #include <queue>
 #include <thread>
@@ -73,8 +74,8 @@ class Task
 
         inline bool IsPaused() { return !done && paused; }
         inline bool IsRunning() { return !done && !paused && !stopRequested && (taskThread != nullptr); }
-        inline bool IsDone() { return done; }
-        inline bool Failed() { return done && (failed != kNoError); }
+        inline bool IsDone() { return done.load(std::memory_order_acquire); }
+        inline bool Failed() { return IsDone() && (failed.load(std::memory_order_relaxed) != kNoError); }
 
         int FailureCode(int defval = kNoError);
 
@@ -113,10 +114,10 @@ class Task
         volatile bool stopRequested;
         /// paused flag
         volatile bool paused;
-        /// done flag
-        volatile bool done;
+        /// done flag, stored with release after failed so a reader that sees it also sees the failure
+        std::atomic<bool> done;
         /// failed code
-        volatile int failed;
+        std::atomic<int> failed;
         // pointer to timer or `nullptr`
         Timer *timer;
         // real time spend in task

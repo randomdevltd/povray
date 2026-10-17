@@ -40,6 +40,33 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Photon method 2 supports oriented area sources and projected-through apertures.
+
+  - Photon method 2 now shoots every batch into one map, with Sobol-stratified
+    emission and a k-nearest-neighbour kernel gather, and traces the camera once.
+    It no longer needs +PR, accepts anti-aliasing, and its quality is at most
+    16384. It works with radiosity, with media photons from light-group lights,
+    and with save_file and load_file for its own maps.
+
+  - Photon method 2 no longer changes direct lighting: lights keep their
+    authored color and fade, any fade_power and faded parallel or cylinder
+    lights are accepted, and lights without targets are unaffected. Photon
+    power is calibrated instead: every deposit is weighted by the light's
+    fade times the square of its path length from the light, so photons
+    deliver the direct light's irradiance at every distance and an unfaded
+    light's photons do not attenuate, as with classic photons; parallel and
+    cylinder photons carry the light's fade along their path. `fade_power 2
+    fade_distance 0` keeps inverse-square light for direct light and photons
+    alike. Light-group lights shoot method 2 photons by default in every scene
+    version, and a refracting target's shadow is replaced by photons only when
+    photons were deposited.
+
+  - Photon method 2 reads the number after `photons { target }` as a share
+    weight (default 1, opposite to the method 1 spacing multiplier): a light
+    splits its targeted photons between its targets in proportion to their
+    weights, instead of by the previous batch's hit rate. A split union marked
+    as a target stays one target.
+
   - Any new behaviour formerly activated by `#version 3.71` now requires
     `#version 3.8` (or higher); specifying `#version 3.71` will trigger a
     corresponding warning.
@@ -240,6 +267,10 @@ New Features
     `--list` prints the block index; regeneration from the
     manual and fixtures is byte-stable and tested, so the cards cannot drift
     from the parsers.
+  - Native `.pov4` photon blocks accept method 2 and quality expressions, including
+    parentheses and signed operands. Method and quality controls are rejected in
+    object and light photon blocks. `quality` is matched by text and remains
+    available as an identifier; the schema, editor completion and reference agree.
   - `.pov4` files are statically checked right after parsing: types are inferred
     from usage and mismatches are reported with the source position (a string used
     where a number is needed, a wrong argument count, an unknown member), and block

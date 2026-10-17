@@ -39,12 +39,16 @@
 // C++ variants of C standard header files
 // C++ standard header files
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -53,6 +57,10 @@
 #include "core/bounding/boundingbox.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
+#include "core/lighting/progressivephotonmap.h"
+#include "core/lighting/progressivevolumemap.h"
+#include "core/material/interior.h"
+#include "core/material/media.h"
 #include "core/math/matrix.h"
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
@@ -431,6 +439,458 @@ bool PhotonSortingTask::load()
     }
     const bool closed = fclose(f) == 0;
     return ok && closed;
+}
+
+
+namespace
+{
+const unsigned char kProgressiveMagic[8] = {'P','O','V','P','H','M','Q',0}, kProgressiveEnd[8] = {'P','H','M','Q','E','N','D',0};
+const std::uint32_t kProgressiveVersion = 2, kAtmosphere = 0xFFFFFFFFu;
+
+/// Every object, interior and light a photon can name, numbered in a traversal fixed by the scene's structure.
+struct ProgressiveSceneIndex final
+{
+    std::vector<ConstObjectPtr> objects;
+    std::unordered_map<ConstObjectPtr, std::uint32_t> objectIds;
+    std::vector<const Interior*> interiors;
+    std::unordered_map<const Interior*, std::uint32_t> interiorIds;
+    std::unordered_map<const Media*, std::pair<std::uint32_t, std::uint32_t>> mediaIds;
+    std::unordered_map<const LightSource*, std::uint32_t> lightIds;
+    const SceneData& scene;
+
+    explicit ProgressiveSceneIndex(const SceneData& scene) : scene(scene)
+    {
+        for (ObjectPtr object : scene.objects)
+            Visit(object);
+        for (const auto* lights : {&scene.lightSources, &scene.lightGroupLightSources})
+            for (size_t i = 0; i < lights->size(); ++i)
+            {
+                Visit((*lights)[i]);
+                lightIds.emplace((*lights)[i], std::uint32_t(2 * i + (lights == &scene.lightSources ? 1 : 2)));
+            }
+        for (const auto& set : scene.preparedSets)
+            for (ObjectPtr view : set->views)
+                Visit(view);
+        for (size_t i = 0; i < scene.atmosphere.size(); ++i)
+            mediaIds.emplace(&scene.atmosphere[i], std::make_pair(kAtmosphere, std::uint32_t(i)));
+    }
+
+    void Visit(ConstObjectPtr object)
+    {
+        if (object == nullptr || !objectIds.emplace(object, std::uint32_t(objects.size())).second)
+            return;
+        objects.push_back(object);
+        if (const Interior* interior = object->interior.get())
+            if (interiorIds.emplace(interior, std::uint32_t(interiors.size())).second)
+            {
+                for (size_t i = 0; i < interior->media.size(); ++i)
+                    mediaIds.emplace(&interior->media[i], std::make_pair(std::uint32_t(interiors.size()), std::uint32_t(i)));
+                interiors.push_back(interior);
+            }
+        if (const auto* compound = dynamic_cast<const CompoundObject*>(object))
+            for (ObjectPtr child : compound->children)
+                Visit(child);
+    }
+
+    const LightSource* Light(std::uint32_t code) const
+    {
+        const auto& lights = (code & 1) ? scene.lightSources : scene.lightGroupLightSources;
+        const size_t index = (code - 1) / 2;
+        return code == 0 ? nullptr : index < lights.size() ? lights[index] : nullptr;
+    }
+
+    std::string Shape() const
+    {
+        std::ostringstream shape;
+        shape << objects.size() << " objects, " << interiors.size() << " interiors and "
+              << scene.lightSources.size() + scene.lightGroupLightSources.size() << " lights";
+        return shape.str();
+    }
+};
+
+class PhotonFileWriter final
+{
+    public:
+        explicit PhotonFileWriter(const std::string& name) : file(std::fopen(name.c_str(), "wb")) {}
+        ~PhotonFileWriter() { if (file) std::fclose(file); }
+        template<class T> void Put(const T& value) { Bytes(&value, sizeof(value)); }
+        void Bytes(const void* data, size_t size) { ok = ok && file && (size == 0 || std::fwrite(data, size, 1, file) == 1); }
+        void String(const std::string& text) { Put(std::uint32_t(text.size())); Bytes(text.data(), text.size()); }
+        void Colour(const MathColour& colour) { for (int c = 0; c < MathColour::channels; ++c) Put(colour[c]); }
+        bool Close() { const bool closed = file && std::fclose(file) == 0; file = nullptr; return ok && closed; }
+    private:
+        std::FILE* file;
+        bool ok = true;
+};
+
+class PhotonFileReader final
+{
+    public:
+        explicit PhotonFileReader(const std::string& name) : file(std::fopen(name.c_str(), "rb"))
+        {
+            if (file && std::fseek(file, 0, SEEK_END) == 0)
+            {
+                const long end = std::ftell(file);
+                remaining = end > 0 ? std::uint64_t(end) : 0;
+                ok = std::fseek(file, 0, SEEK_SET) == 0;
+            }
+        }
+        ~PhotonFileReader() { if (file) std::fclose(file); }
+        bool Opened() const { return file != nullptr; }
+        bool Good() const { return ok; }
+        std::uint64_t Remaining() const { return remaining; }
+        template<class T> T Get() { T value{}; Bytes(&value, sizeof(value)); return value; }
+        void Bytes(void* data, size_t size)
+        {
+            ok = ok && size <= remaining && (size == 0 || std::fread(data, size, 1, file) == 1);
+            remaining = ok ? remaining - size : 0;
+        }
+        std::string String()
+        {
+            const std::uint32_t size = Get<std::uint32_t>();
+            std::string text(Fits(size, 1) ? size : 0, '\0');
+            Bytes(&text[0], text.size());
+            return text;
+        }
+        MathColour Colour() { MathColour colour; for (int c = 0; c < MathColour::channels; ++c) colour[c] = Get<ColourChannel>(); return colour; }
+        /// Whether count records of the given size can still follow; a damaged count fails here instead of allocating.
+        bool Fits(std::uint64_t count, std::uint64_t size) { ok = ok && count <= remaining / size; return ok; }
+    private:
+        std::FILE* file;
+        std::uint64_t remaining = 0;
+        bool ok = false;
+};
+
+constexpr std::uint64_t kSurfaceRecord = 3 * 8 + 6 * 4 + 4, kSegmentRecord = 8 * 8 + 4 + 4;
+
+template<class T> bool Finite(const T& values, int count)
+{
+    for (int i = 0; i < count; ++i)
+        if (!std::isfinite(double(values[i])))
+            return false;
+    return true;
+}
+}
+
+std::string ProgressivePhotonIdentity(const SceneData& scene)
+{
+    const ScenePhotonSettings& settings = scene.photonSettings;
+    const ProgressivePhotonBudget budget(settings.quality);
+    std::ostringstream key;
+    key << std::setprecision(std::numeric_limits<DBL>::max_digits10)
+        << "quality=" << settings.quality << ";batches=" << budget.batches << ";batch=" << ProgressivePhotonBudget::batchSize
+        << ";shards=" << ProgressivePhotonBudget::shards << ";k=" << budget.neighbours << ";sobol=" << PhotonSobol::kDimensions
+        << ";trace=" << settings.Max_Trace_Level << ";adc=" << settings.adcBailout
+        << ";mediaSteps=" << settings.maxMediaSteps << ";mediaSpacing=" << settings.mediaSpacingFactor
+        << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel) << ";targets=";
+    const ProgressiveSceneIndex index(scene);
+    std::vector<const PhotonTargetGroup*> groups;
+    for (size_t i = 0; i < index.objects.size(); ++i)
+        if (Test_Flag(index.objects[i], PH_TARGET_FLAG))
+        {
+            key << i << ':' << index.objects[i]->Ph_Density;
+            if (const PhotonTargetGroup* group = index.objects[i]->photonTargetGroup.get())
+            {
+                if (std::find(groups.begin(), groups.end(), group) == groups.end())
+                    groups.push_back(group);
+                key << 'g' << std::find(groups.begin(), groups.end(), group) - groups.begin();
+            }
+            key << ',';
+        }
+    return key.str();
+}
+
+std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
+{
+    const ProgressiveSceneIndex index(scene);
+    PhotonFileWriter out(scene.photonSettings.fileName);
+    out.Bytes(kProgressiveMagic, sizeof(kProgressiveMagic));
+    out.Put(kProgressiveVersion);
+    out.String(ProgressivePhotonIdentity(scene));
+    out.Put(seed);
+    out.String(index.Shape());
+    out.Put(std::uint32_t(scene.preparedSets.size()));
+    for (const auto& set : scene.preparedSets)
+    {
+        out.String(set->photonKey);
+        const auto& surface = set->progressiveSurface;
+        out.Put(std::uint32_t(surface.Receivers().size()));
+        for (ConstObjectPtr receiver : surface.Receivers())
+        {
+            const auto found = index.objectIds.find(receiver);
+            if (found == index.objectIds.end())
+                return "a photon receiver is not part of the scene's object tree";
+            out.Put(found->second);
+        }
+        out.Put(std::uint64_t(surface.photons.size()));
+        for (const MappedPhoton& photon : surface.photons)
+        {
+            for (unsigned int a = 0; a < 3; ++a)
+                out.Put(photon.point[a]);
+            out.Bytes(photon.direction, sizeof(photon.direction));
+            out.Bytes(photon.normal, sizeof(photon.normal));
+            out.Colour(photon.flux);
+            out.Put(std::uint32_t(photon.receiver));
+        }
+        std::unordered_map<const ProgressiveVolumeDomain*, std::uint32_t> domainIds;
+        std::vector<const ProgressiveVolumeDomain*> domains;
+        for (const auto& segment : set->progressiveMedia.photons)
+            if (domainIds.emplace(segment.domain.get(), std::uint32_t(domains.size())).second)
+                domains.push_back(segment.domain.get());
+        out.Put(std::uint32_t(domains.size()));
+        for (const ProgressiveVolumeDomain* domain : domains)
+        {
+            out.Put(std::uint32_t(domain->media.size()));
+            for (const Media* medium : domain->media)
+            {
+                const auto found = index.mediaIds.find(medium);
+                if (found == index.mediaIds.end())
+                    return "a media photon's medium is not part of the scene";
+                out.Put(found->second.first);
+                out.Put(found->second.second);
+            }
+            out.Put(std::uint32_t(domain->modifiers.size()));
+            for (size_t i = 0; i < domain->modifiers.size(); ++i)
+            {
+                const auto found = index.interiorIds.find(domain->modifiers[i]);
+                if (found == index.interiorIds.end())
+                    return "a media photon's modifier is not part of the scene";
+                out.Put(found->second);
+                out.Put(std::uint64_t(domain->below[i]));
+            }
+        }
+        out.Put(std::uint64_t(set->progressiveMedia.photons.size()));
+        for (const auto& segment : set->progressiveMedia.photons)
+        {
+            for (unsigned int a = 0; a < 3; ++a)
+                out.Put(segment.point[a]);
+            for (unsigned int a = 0; a < 3; ++a)
+                out.Put(segment.direction[a]);
+            out.Colour(segment.flux);
+            out.Colour(segment.extinction);
+            out.Put(segment.length);
+            out.Put(segment.depth);
+            out.Put(domainIds.at(segment.domain.get()));
+            const auto light = index.lightIds.find(segment.light);
+            if (segment.light != nullptr && light == index.lightIds.end())
+                return "a media photon's light is not part of the scene";
+            out.Put(light == index.lightIds.end() ? std::uint32_t(0) : light->second);
+        }
+    }
+    out.Bytes(kProgressiveEnd, sizeof(kProgressiveEnd));
+    return out.Close() ? std::string() : "the file could not be written";
+}
+
+double ProgressivePhotonMemoryCeiling()
+{
+    static const double ceiling = [] {
+        const char* text = std::getenv("POV_PHOTON_MEMORY");
+        if (text == nullptr || *text == '\0')
+            return 0.0;
+        char* end = nullptr;
+        const double gigabytes = std::strtod(text, &end);
+        return std::isfinite(gigabytes) && gigabytes > 0.0 && *end == '\0' ? gigabytes * 1.0e9 : -1.0;
+    }();
+    return ceiling;
+}
+
+double ProgressivePhotonMemoryBudget()
+{
+    if (ProgressivePhotonMemoryCeiling() > 0.0)
+        return ProgressivePhotonMemoryCeiling();
+    double available = ProgressivePhotonBudget::memoryCeiling / ProgressivePhotonBudget::memoryShare;
+    std::ifstream meminfo("/proc/meminfo");
+    std::string field;
+    double kilobytes;
+    while (meminfo >> field >> kilobytes)
+    {
+        if (field == "MemAvailable:")
+        {
+            available = kilobytes * 1024.0;
+            break;
+        }
+        meminfo.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    return std::min(ProgressivePhotonBudget::memoryCeiling, ProgressivePhotonBudget::memoryShare * available);
+}
+
+const char* ProgressivePhotonMemoryRule()
+{
+    return ProgressivePhotonMemoryCeiling() > 0.0 ? "set by POV_PHOTON_MEMORY" : "40% of available memory, at most 6 GB";
+}
+
+std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_t& savedSeed)
+{
+    const std::string& name = scene.photonSettings.fileName;
+    PhotonFileReader in(name);
+    if (!in.Opened())
+        return "Cannot open the photon file '" + name + "'.";
+    const std::string damaged = "The photon file '" + name + "' is truncated or damaged.";
+    const auto invalid = [&name](const char* field) { return "The photon file '" + name + "' holds a non-finite " + field + "."; };
+    unsigned char magic[sizeof(kProgressiveMagic)];
+    in.Bytes(magic, sizeof(magic));
+    if (!in.Good() || std::memcmp(magic, kProgressiveMagic, sizeof(magic)) != 0)
+        return "'" + name + "' is not a photon method 2 file; classic photon maps cannot be loaded by method 2.";
+    const std::uint32_t version = in.Get<std::uint32_t>();
+    if (in.Good() && version != kProgressiveVersion)
+        return "The photon file '" + name + "' has format version " + std::to_string(version) + "; this build reads version " +
+               std::to_string(kProgressiveVersion) + ".";
+    const std::string identity = in.String(), expected = ProgressivePhotonIdentity(scene);
+    savedSeed = in.Get<std::uint64_t>();
+    const ProgressiveSceneIndex index(scene);
+    const std::string shape = in.String();
+    if (in.Good() && shape != index.Shape())
+        return "The photon file '" + name + "' was saved for a scene with " + shape + "; this scene has " + index.Shape() + ".";
+    if (in.Good() && identity != expected)
+        return "The photon file '" + name + "' was saved with other photon settings (" + identity + "); this scene has " + expected + ".";
+    const std::uint32_t sets = in.Get<std::uint32_t>();
+    std::map<std::string, PreparedSet*> wanted;
+    for (const auto& set : scene.preparedSets)
+        wanted.emplace(set->photonKey, set.get());
+    if (in.Good() && (sets != scene.preparedSets.size() || wanted.size() != sets))
+        return "The photon file '" + name + "' was saved for other prepared scene sets; regenerate it.";
+    constexpr double segmentBytes = sizeof(ProgressiveVolumePhoton) + sizeof(ProgressiveVolumePhotonMap::Bounds);
+    double bytes = 0.0;
+    std::vector<const PreparedSet*> loaded;
+    for (std::uint32_t s = 0; in.Good() && s < sets; ++s)
+    {
+        const auto target = wanted.find(in.String());
+        if (in.Good() && target == wanted.end())
+            return "The photon file '" + name + "' was saved for other prepared scene sets; regenerate it.";
+        PreparedSet* set = in.Good() ? target->second : nullptr;
+        if (set != nullptr && std::find(loaded.begin(), loaded.end(), set) != loaded.end())
+            return damaged;
+        loaded.push_back(set);
+        const std::uint32_t receiverCount = in.Get<std::uint32_t>();
+        bytes += double(receiverCount) * sizeof(ConstObjectPtr);
+        if (bytes > budget)
+            break;
+        std::vector<ConstObjectPtr> receivers;
+        for (std::uint32_t i = 0; in.Fits(receiverCount, 4) && i < receiverCount; ++i)
+        {
+            const std::uint32_t id = in.Get<std::uint32_t>();
+            if (id >= index.objects.size())
+                return damaged;
+            receivers.push_back(index.objects[id]);
+        }
+        const std::uint64_t count = in.Get<std::uint64_t>();
+        if (!in.Fits(count, kSurfaceRecord + MathColour::channels * sizeof(ColourChannel)))
+            return damaged;
+        bytes += double(count) * sizeof(MappedPhoton);
+        if (bytes > budget)
+            break;
+        std::vector<MappedPhoton> photons(count);
+        for (MappedPhoton& photon : photons)
+        {
+            for (unsigned int a = 0; a < 3; ++a)
+                photon.point[a] = in.Get<double>();
+            in.Bytes(photon.direction, sizeof(photon.direction));
+            in.Bytes(photon.normal, sizeof(photon.normal));
+            photon.flux = in.Colour();
+            const std::uint32_t receiver = in.Get<std::uint32_t>();
+            if (receiver >= receivers.size())
+                return damaged;
+            if (!Finite(photon.point, 3))
+                return invalid("surface photon point");
+            if (!Finite(photon.direction, 3))
+                return invalid("surface photon direction");
+            if (!Finite(photon.normal, 3))
+                return invalid("surface photon normal");
+            if (!Finite(photon.flux, MathColour::channels))
+                return invalid("surface photon flux");
+            photon.receiver = receiver;
+            photon.axis = 0;
+        }
+        const std::uint32_t domainCount = in.Get<std::uint32_t>();
+        std::vector<std::shared_ptr<const ProgressiveVolumeDomain>> domains;
+        for (std::uint32_t d = 0; in.Fits(domainCount, 8) && d < domainCount; ++d)
+        {
+            auto domain = std::make_shared<ProgressiveVolumeDomain>();
+            const std::uint32_t media = in.Get<std::uint32_t>();
+            bytes += sizeof(ProgressiveVolumeDomain) + double(media) * sizeof(const Media*);
+            if (bytes > budget)
+                break;
+            for (std::uint32_t m = 0; in.Fits(media, 8) && m < media; ++m)
+            {
+                const std::uint32_t owner = in.Get<std::uint32_t>(), slot = in.Get<std::uint32_t>();
+                const std::vector<Media>* list = owner == kAtmosphere ? &scene.atmosphere :
+                                                 owner < index.interiors.size() ? &index.interiors[owner]->media : nullptr;
+                if (list == nullptr || slot >= list->size())
+                    return damaged;
+                domain->media.push_back(&(*list)[slot]);
+            }
+            const std::uint32_t modifiers = in.Get<std::uint32_t>();
+            bytes += double(modifiers) * (sizeof(const Interior*) + sizeof(size_t));
+            if (bytes > budget)
+                break;
+            for (std::uint32_t m = 0; in.Fits(modifiers, 12) && m < modifiers; ++m)
+            {
+                const std::uint32_t owner = in.Get<std::uint32_t>();
+                if (owner >= index.interiors.size())
+                    return damaged;
+                domain->modifiers.push_back(index.interiors[owner]);
+                domain->below.push_back(size_t(in.Get<std::uint64_t>()));
+            }
+            domains.push_back(std::move(domain));
+        }
+        if (bytes > budget)
+            break;
+        const std::uint64_t segments = in.Get<std::uint64_t>();
+        if (!in.Fits(segments, kSegmentRecord + 2 * MathColour::channels * sizeof(ColourChannel)))
+            return damaged;
+        bytes += double(segments) * segmentBytes;
+        if (bytes > budget)
+            break;
+        std::vector<ProgressiveVolumePhoton> media(segments);
+        for (ProgressiveVolumePhoton& segment : media)
+        {
+            for (unsigned int a = 0; a < 3; ++a)
+                segment.point[a] = in.Get<double>();
+            for (unsigned int a = 0; a < 3; ++a)
+                segment.direction[a] = in.Get<double>();
+            segment.flux = in.Colour();
+            segment.extinction = in.Colour();
+            segment.length = in.Get<double>();
+            segment.depth = in.Get<double>();
+            const std::uint32_t domain = in.Get<std::uint32_t>(), light = in.Get<std::uint32_t>();
+            if (domain >= domains.size() || (light != 0 && index.Light(light) == nullptr))
+                return damaged;
+            if (!Finite(segment.point, 3))
+                return invalid("media segment point");
+            if (!Finite(segment.direction, 3))
+                return invalid("media segment direction");
+            if (!Finite(segment.flux, MathColour::channels))
+                return invalid("media segment flux");
+            if (!Finite(segment.extinction, MathColour::channels))
+                return invalid("media segment extinction");
+            if (!std::isfinite(segment.depth))
+                return invalid("media segment depth");
+            if (!(std::isfinite(segment.length) && segment.length >= 0.0))
+                return "The photon file '" + name + "' holds a non-finite or negative media segment length.";
+            segment.domain = domains[domain];
+            segment.light = index.Light(light);
+            segment.grouped = segment.light != nullptr && segment.light->lightGroupLight;
+            segment.set = std::uint32_t(std::find_if(scene.preparedSets.begin(), scene.preparedSets.end(),
+                [set](const std::unique_ptr<PreparedSet>& candidate) { return candidate.get() == set; }) - scene.preparedSets.begin());
+        }
+        if (!in.Good())
+            return damaged;
+        set->progressiveSurface.Restore(std::move(receivers), std::move(photons));
+        set->progressiveMedia.photons = std::move(media);
+    }
+    if (bytes > budget)
+    {
+        std::ostringstream message;
+        message << std::setprecision(3) << "The photon file '" << name << "' needs at least " << bytes / 1.0e9
+                << " GB for photons, more than the " << budget / 1.0e9 << " GB allowed ("
+                << ProgressivePhotonMemoryRule() << ").";
+        return message.str();
+    }
+    unsigned char end[sizeof(kProgressiveEnd)];
+    in.Bytes(end, sizeof(end));
+    if (!in.Good() || std::memcmp(end, kProgressiveEnd, sizeof(end)) != 0 || in.Remaining() != 0)
+        return damaged;
+    return std::string();
 }
 
 }

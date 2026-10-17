@@ -3406,6 +3406,7 @@
         "prepared_media_cells",
         "pretrace_end",
         "pretrace_start",
+        "quality",
         "radiosity",
         "radius",
         "recursion_limit",
@@ -3435,6 +3436,8 @@
           "load_file",
           "max_trace_level",
           "media",
+          "method",
+          "quality",
           "radius",
           "save_file",
           "spacing"

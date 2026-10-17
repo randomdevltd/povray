@@ -231,6 +231,8 @@ class Trace
                 virtual void ComputeMedia(std::vector<Media>&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(const RayInteriorVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(MediaVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
+                /// Sets the surface ending a curved path, for its chords that end at no surface; returns the previous one.
+                virtual ConstObjectPtr SetPathReceiver(ConstObjectPtr) { return nullptr; }
         };
 
         class RadiosityFunctor
@@ -833,8 +835,8 @@ class Trace
 
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
-                                       const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation,
-                                       ConstObjectPtr Object, double relativeIor, PhotonGatherer& renderer);
+                                       const Intersection& Isect, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation,
+                                       ConstObjectPtr Object, double relativeIor, PhotonGatherer& renderer, double pathWeight);
 
     ///
     /// @}

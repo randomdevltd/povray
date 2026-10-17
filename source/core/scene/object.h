@@ -175,6 +175,7 @@ namespace pov
 
 class Portal;
 class Emitter;
+struct PhotonTargetGroup final { BoundingBox box; }; ///< the bounds of the split union the group was
 
 /// Abstract base class for all geometric objects.
 class ObjectBase
@@ -188,6 +189,8 @@ class ObjectBase
         std::vector<ObjectPtr> Bound;
         std::vector<ObjectPtr> Clip;
         std::vector<LightSource*> LLights;  ///< Used for light groups.
+        std::vector<LightSource*> PhotonLights;
+        bool photonGroupEnabled = false;
         BoundingBox BBox;
         TRANSFORM *Trans;
         SNGL Ph_Density;
@@ -197,6 +200,8 @@ class ObjectBase
         std::vector<std::string> tags;
         /// whether the parent's effective tags add to `tags`: true when omitted or written with `inherit`
         bool inheritTags = true;
+        /// Shared by the members of a split union that was one photon target, so method 2 keeps them one target.
+        std::shared_ptr<const PhotonTargetGroup> photonTargetGroup;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -222,7 +227,8 @@ class ObjectBase
             Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
-            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags)
+            Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup)
         {
             if (transplant)
             {
@@ -233,6 +239,7 @@ class ObjectBase
                 o.Bound.clear();
                 o.Clip.clear();
                 o.LLights.clear();
+                o.PhotonLights.clear();
             }
         }
         virtual ~ObjectBase();
@@ -251,6 +258,10 @@ class ObjectBase
         virtual double GetPotential (const Vector3d&, bool subtractThreshold, TraceThreadData *) const;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const = 0;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const = 0;
+        /// The unsmoothed unit normal of the face hit, either way round; false when Normal() already is that normal.
+        virtual bool FaceNormal(Vector3d&, const Intersection *) const { return false; }
+        /// How far a reported intersection may lie from the true surface, in world units.
+        virtual double SurfaceTolerance() const { return 0.0; }
         virtual void UVCoord(Vector2d&, const Intersection *) const;
         virtual void Translate(const Vector3d&, const TRANSFORM *) = 0;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) = 0;
@@ -364,6 +375,7 @@ class LightSource final : public CompoundObject
         const Portal *portal = nullptr;                 ///< in an image, the portal it is seen through
         std::shared_ptr<const Emitter> emitter;         ///< where it emits from, for a light drawn as sample positions
         ConstObjectPtr emitterContainer = nullptr;      ///< for a media light, the object holding its medium
+        bool mediaPhotonOptions = false, mediaPhotonLegacyOptions = false;
 
         LightSource();
         virtual ~LightSource() override;

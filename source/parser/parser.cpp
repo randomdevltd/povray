@@ -70,6 +70,7 @@
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
 #include "core/lighting/radiosity.h"
+#include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
 #include "core/material/blendmap.h"
 #include "core/material/interior.h"
@@ -351,6 +352,23 @@ void Parser::Run()
                 sceneData->lightGroupLightSources[i]->lightGroupLight = true;
             }
 
+            for (LightSource* light : sceneData->mediaLights)
+            {
+                if (!sceneData->photonSettings.Progressive())
+                {
+                    Set_Flag(light, PH_RFR_OFF_FLAG);
+                    Set_Flag(light, PH_RFL_OFF_FLAG);
+                    Clear_Flag(light, PH_RFR_ON_FLAG);
+                    Clear_Flag(light, PH_RFL_ON_FLAG);
+                    if (light->mediaPhotonOptions)
+                        Warning("photons in a media light_source are ignored by photon method 1.");
+                }
+                else if (light->mediaPhotonLegacyOptions)
+                    Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
+            }
+            if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
+                Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
+                      "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
             Make_Portal_Lights();
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
@@ -4000,6 +4018,7 @@ ObjectPtr Parser::Parse_Light_Group()
     Object = new CSGUnion();
 
     Object->Type |= LIGHT_GROUP_OBJECT;
+    Object->photonGroupEnabled = true;
     Set_Flag(Object, NO_GLOBAL_LIGHTS_FLAG);
 
     while ((Local = Parse_Object()) != nullptr)
@@ -4065,19 +4084,18 @@ ObjectPtr Parser::Parse_Light_Group()
         END_CASE
 
         CASE(PHOTONS_TOKEN)
+            Get_Token();
+            if (CurrentTrueTokenId() != LEFT_CURLY_TOKEN)
+            {
+                UNGET
+                Object->photonGroupEnabled = Parse_Float() > 0.0;
+                break;
+            }
+            UNGET
             Parse_Begin();
             EXPECT
                 CASE(TARGET_TOKEN)
-                    Object->Ph_Density = Allow_Float(1.0);
-                    if (Object->Ph_Density > 0)
-                    {
-                        Set_Flag(Object,PH_TARGET_FLAG);
-                        CheckPassThru(reinterpret_cast<ObjectPtr>(Object), PH_TARGET_FLAG);
-                    }
-                    else
-                    {
-                        Clear_Flag(Object, PH_TARGET_FLAG);
-                    }
+                    Parse_Photon_Target(reinterpret_cast<ObjectPtr>(Object));
                 END_CASE
 
                 CASE(REFRACTION_TOKEN)
@@ -7828,13 +7846,27 @@ void Parser::Parse_Global_Settings()
             //  sceneData->photonSettings.photonReflectionBlur = false; // off by default
 
             sceneData->photonSettings.surfaceCount = 0;
+            sceneData->photonSettings.method = 1;
+            sceneData->photonSettings.quality = 1.0;
+            sceneData->photonSettings.classicOptions = false;
+            sceneData->photonSettings.qualitySpecified = false;
             //  sceneData->photonSettings.globalCount = 0;
 
             sceneData->surfacePhotonMinGatherRad = -1;
 
             Parse_Begin();
             EXPECT
+                CASE(METHOD_TOKEN)
+                    {
+                        const double method = Parse_Float();
+                        if (method != 1.0 && method != 2.0)
+                            Error("Photon method must be 1 (classic) or 2.");
+                        sceneData->photonSettings.method = int(method);
+                    }
+                END_CASE
+
                 CASE(RADIUS_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->surfacePhotonMinGatherRad = Allow_Float(-1.0);
                     Parse_Comma();
                     sceneData->surfacePhotonMinGatherRadMult = Allow_Float(1.0);
@@ -7845,6 +7877,7 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 CASE(SPACING_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.surfaceSeparation = Parse_Float();
                 END_CASE
 
@@ -7856,6 +7889,7 @@ void Parser::Parse_Global_Settings()
 #endif
 
                 CASE (EXPAND_THRESHOLDS_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.expandTolerance = Parse_Float(); Parse_Comma();
                     sceneData->photonSettings.minExpandCount = Parse_Float();
                     if (sceneData->photonSettings.expandTolerance < 0.0)
@@ -7871,20 +7905,24 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 CASE (GATHER_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.minGatherCount = (int)Parse_Float();
                     Parse_Comma();
                     sceneData->photonSettings.maxGatherCount = (int)Parse_Float();
                 END_CASE
 
                 CASE (JITTER_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.jitter = Parse_Float();
                 END_CASE
 
                 CASE (COUNT_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.surfaceCount = (int)Parse_Float();
                 END_CASE
 
                 CASE (AUTOSTOP_TOKEN)
+                    sceneData->photonSettings.classicOptions = true;
                     sceneData->photonSettings.autoStopPercent = Parse_Float();
                 END_CASE
 
@@ -7931,12 +7969,27 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 OTHERWISE
-                    UNGET
-                    EXIT
+                    if (CurrentTokenText() == "quality")
+                    {
+                        const double quality = Parse_Float();
+                        if (!std::isfinite(quality) || quality <= 0.0 || quality > ProgressivePhotonBudget::maxQuality)
+                            Error("Photon quality must be finite, greater than zero and at most 16384.");
+                        sceneData->photonSettings.quality = quality;
+                        sceneData->photonSettings.qualitySpecified = true;
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
                 END_CASE
             END_EXPECT
 
             // max_gather_count = 0  means no photon maps
+            if (sceneData->photonSettings.Progressive() && sceneData->photonSettings.classicOptions)
+                Error("Photon method 2 uses quality instead of count, spacing, gather, radius, jitter, autostop or expand_thresholds.");
+            if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.qualitySpecified)
+                Error("Photon quality requires method 2.");
             if (sceneData->photonSettings.maxGatherCount > 0)
                 sceneData->photonSettings.photonsEnabled = true;
             else
@@ -8269,6 +8322,25 @@ void Parser::Parse_Global_Settings()
 
 //******************************************************************************
 
+// Method 1 reads the value as a spacing multiplier, method 2 as a share weight; either way zero or less clears the flag.
+void Parser::Parse_Photon_Target(ObjectPtr Object)
+{
+    const DBL value = Allow_Float(1.0);
+    Object->Ph_Density = value;
+    if (!(std::isfinite(Object->Ph_Density) && Object->Ph_Density >= 0) && mInvalidPhotonTargetLine == 0)
+    {
+        mInvalidPhotonTarget = value;
+        mInvalidPhotonTargetLine = std::max<POV_LONG>(1, CurrentFilePosition().line);
+    }
+    if (Object->Ph_Density > 0)
+    {
+        Set_Flag(Object, PH_TARGET_FLAG);
+        CheckPassThru(Object, PH_TARGET_FLAG);
+    }
+    else
+        Clear_Flag(Object, PH_TARGET_FLAG);
+}
+
 // be aware that this method may change the address of Object
 // (this will only happen if Object is CSG and the invert_object keyword is parsed)
 ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
@@ -8316,16 +8388,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             Parse_Begin();
             EXPECT
                 CASE(TARGET_TOKEN)
-                    Object->Ph_Density = Allow_Float(1.0);
-                    if (Object->Ph_Density > 0)
-                    {
-                        Set_Flag(Object,PH_TARGET_FLAG);
-                        CheckPassThru(Object, PH_TARGET_FLAG);
-                    }
-                    else
-                    {
-                        Clear_Flag(Object, PH_TARGET_FLAG);
-                    }
+                    Parse_Photon_Target(Object);
                 END_CASE
 
                 CASE(REFRACTION_TOKEN)
@@ -10139,6 +10202,7 @@ void Parser::MAError (const char *, long)
 static void Add_Local_Light(ObjectPtr object, LightSource *light)
 {
     object->LLights.push_back(light);
+    object->PhotonLights.push_back(light);
     if (object->Type & IS_COMPOUND_OBJECT)
         for (ObjectPtr child : reinterpret_cast<CompoundObject *>(object)->children)
             Add_Local_Light(child, light);
@@ -10170,15 +10234,19 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
         light->Light_Type = FILL_LIGHT_SOURCE;
-    // classic photons do not shoot from it
-    Set_Flag(light, PH_RFR_OFF_FLAG);
-    Set_Flag(light, PH_RFL_OFF_FLAG);
+    light->mediaPhotonOptions = settings.photonOptions;
+    light->mediaPhotonLegacyOptions = settings.photonLegacyOptions;
+    if (settings.photonRefraction >= 0)
+        Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
+    if (settings.photonReflection >= 0)
+        Set_Flag(light, settings.photonReflection ? PH_RFL_ON_FLAG : PH_RFL_OFF_FLAG);
     sceneData->mediaLights.push_back(light);
     if (mLightGroups.empty())
         sceneData->lightSources.push_back(light);
     else
     {
         light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
+        light->photonGroupEnabled = mLightGroups.back()->photonGroupEnabled;
         sceneData->lightGroupLightSources.push_back(light);
         mGroupMediaLights.emplace_back(mLightGroups.back(), light);
     }
@@ -10939,11 +11007,16 @@ void Parser::Split_Union(ObjectPtr Object)
         return;
     }
 
+    std::shared_ptr<const PhotonTargetGroup> group = Object->photonTargetGroup;
+    if (!group && Test_Flag(Object, PH_TARGET_FLAG))
+        group = std::make_shared<PhotonTargetGroup>(PhotonTargetGroup{ Object->BBox });
     // Link all children of a union to the frame; their tags already hold what they inherited from it.
     for (ObjectPtr child : static_cast<CSG *>(Object)->children)
     {
         // Child is no longer inside a CSG object.
         child->Type &= ~IS_CHILD_OBJECT;
+        if (Test_Flag(child, PH_TARGET_FLAG))
+            child->photonTargetGroup = group;
         Split_Union(child);
     }
 

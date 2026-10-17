@@ -50,6 +50,7 @@
 #include "core/lighting/lightsource.h"
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
+#include <algorithm>
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -84,6 +85,38 @@ void Give_Group_Lights(CompoundObject *object, const std::vector<LightSource *>&
     }
 }
 
+
+void AddPhotonLights(ObjectPtr object, const std::vector<LightSource*>& lights)
+{
+    for (LightSource* light : lights)
+        if (std::find(object->PhotonLights.begin(), object->PhotonLights.end(), light) == object->PhotonLights.end())
+            object->PhotonLights.push_back(light);
+    if (auto* compound = dynamic_cast<CompoundObject*>(object))
+        for (ObjectPtr child : compound->children)
+            AddPhotonLights(child, lights);
+}
+
+}
+
+void Promote_Photon_Lights(CSG* object)
+{
+    std::vector<LightSource*> lights;
+    for (ObjectPtr child : object->children)
+        if ((child->Type & LIGHT_GROUP_LIGHT_OBJECT) == LIGHT_GROUP_LIGHT_OBJECT)
+        {
+            auto* light = static_cast<LightSource*>(child);
+            light->photonGroupEnabled = object->photonGroupEnabled;
+            lights.push_back(light);
+        }
+    AddPhotonLights(object, lights);
+}
+
+bool PhotonLightAffectsObject(const LightSource* light, ConstObjectPtr object)
+{
+    if (!light->lightGroupLight)
+        return !Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG);
+    return light->photonGroupEnabled && std::any_of(object->PhotonLights.begin(), object->PhotonLights.end(),
+        [light](const LightSource* member) { return member == light || (member->lightGroupLight && member->index == light->index); });
 }
 
 bool Light_Group_Lights_Something(const CSG *group)
@@ -107,6 +140,8 @@ void Assign_Light_Groups(ObjectPtr object, std::unordered_set<ConstObjectPtr>& l
     for (ObjectPtr child : compound->children)
         Assign_Light_Groups(child, lit);
     CSG *group = dynamic_cast<CSG *>(object);
+    if ((group != nullptr) && ((object->Type & LIGHT_GROUP_OBJECT) != 0))
+        Promote_Photon_Lights(group);
     if ((group == nullptr) || ((object->Type & LIGHT_GROUP_OBJECT) == 0) || !group->lightGroupActive)
         return;
     std::vector<LightSource *> lights;

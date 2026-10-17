@@ -94,10 +94,8 @@ Task::~Task()
 
 int Task::FailureCode(int defval)
 {
-    if(failed == kNoError)
-        return defval;
-    else
-        return failed;
+    const int code = failed.load(std::memory_order_relaxed);
+    return code == kNoError ? defval : code;
 }
 
 POV_LONG Task::ConsumedRealTime() const
@@ -179,7 +177,7 @@ void Task::TaskThread(const boost::function0<void>& completion)
     {
         failed = result;
         timer = nullptr;
-        done = true;
+        done.store(true, std::memory_order_release);
         return;
     }
 
@@ -267,7 +265,7 @@ void Task::TaskThread(const boost::function0<void>& completion)
     }
 
     timer = nullptr;
-    done = true;
+    done.store(true, std::memory_order_release);
 
     Cleanup();
 

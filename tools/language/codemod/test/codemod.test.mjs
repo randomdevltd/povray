@@ -14,7 +14,7 @@ const check = (path, text) => {
   assert.equal(text, readFileSync(expected(path), 'latin1'));
 };
 
-for (const scene of ['declarations', 'control', 'values', 'expressions', 'framing', 'tags']) {
+for (const scene of ['declarations', 'control', 'values', 'expressions', 'framing', 'tags', 'photons']) {
   test(`converts ${scene}.pov`, () => {
     const [result] = new Program().convertScene(join(dir, `${scene}.pov`));
     assert.deepEqual(result.refusals, []);

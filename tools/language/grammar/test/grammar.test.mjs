@@ -54,6 +54,9 @@ test('mined keyword sets match known parser content', () => {
     // Contextual keywords, matched by text in the parser, are items too.
     for (const w of ['refraction_detail', 'prepared_media_cells', 'atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])
         assert.ok(blocks.global_settings.items.includes(w), `global_settings item '${w}'`);
+    for (const w of ['method', 'quality'])
+        assert.ok(blocks.global_settings.nested.photons.includes(w), `photon item '${w}'`);
+    assert.ok(!JSON.parse(read('tools/language/keywords.json')).some((k) => k.word === 'quality'));
     for (const w of ['refraction_detail', 'auto']) assert.ok(blocks.media.items.includes(w), `media item '${w}'`);
 });
 

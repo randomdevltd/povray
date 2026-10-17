@@ -117,6 +117,8 @@ TRANSFORM *Create_Transform (void);
 TRANSFORM *Copy_Transform (const TRANSFORM *Old);
 void Destroy_Transform (TRANSFORM *Trans);
 DBL *Create_Float (void);
+/// The largest length of a unit axis after the transform, 1 for none.
+DBL MLargestScale (const TRANSFORM *trans);
 void MInvers (MATRIX r, const MATRIX m);
 int MInvers3(const Matrix3x3& inM, Matrix3x3& outM);
 

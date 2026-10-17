@@ -38,7 +38,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
 
 // POV-Ray header files (base module)
 #include "base/pov_err.h"
@@ -1015,6 +1015,16 @@ void Destroy_Transform (TRANSFORM *Trans)
 {
     if (Trans != nullptr)
         delete Trans;
+}
+
+DBL MLargestScale (const TRANSFORM *trans)
+{
+    if (trans == nullptr)
+        return 1.0;
+    DBL largest = 0.0;
+    for (int i = 0; i < 3; i++)
+        largest = std::max(largest, Vector3d(trans->matrix[i][0], trans->matrix[i][1], trans->matrix[i][2]).length());
+    return largest;
 }
 
 

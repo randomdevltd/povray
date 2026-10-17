@@ -108,13 +108,19 @@ class TaskQueue final
         bool Failed();
 
         int FailureCode(int defval = kNoError);
+        /// Fails the queue from a queued function; the queue stops before its next entry.
+        void Fail(int code);
 
         ThreadData *AppendTask(Task *task);
+        void AppendDeferredTask(const boost::function0<Task*>& factory, const boost::function1<void, ThreadData*>& created);
         void AppendSync();
         void AppendMessage(POVMS_Message& msg);
         void AppendFunction(const boost::function1<void, TaskQueue&>& fn);
 
         bool Process();
+
+        /// Keeps Process from running entries until the lock is released, so a render is queued whole.
+        std::unique_lock<std::recursive_mutex> Hold() { return std::unique_lock<std::recursive_mutex>(queueMutex); }
 
         void Notify();
     private:

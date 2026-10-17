@@ -52,6 +52,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/emitter.h"
+#include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
 #include "core/material/pattern.h"
@@ -1300,6 +1301,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm)
 {
     ModifierScope scope(*this, mods);
+    ReceiverScope receiverScope(*this, isect.Object != nullptr ? isect.Object : pathReceiver);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -1616,7 +1618,7 @@ DBL MediaFunction::PreparedResolution(MediaVector& medias, const Ray& ray)
         }
     if (!requested)
         return 0.0;
-    if (ray.IsPhotonRay())
+    if (ray.IsPhotonRay() && !threadData->GetSceneData()->photonSettings.Progressive())
     {
         WarnFastMedia(threadData, *requested, kFastPhoton, "Photon propagation uses classic media sampling.");
         return 0.0;
@@ -2134,6 +2136,14 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                     lit = group;
                 }
                 emission += scattering * light * step;
+                if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
+                    threadData->GetSceneData()->photonSettings.Progressive())
+                {
+                    photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
+                    MathColour indirect;
+                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(cell.s0 + step * 0.5));
+                    emission += indirect * step;
+                }
             }
             accumulated += emission * Exp(-(transmitted + depth * 0.5));
             transmitted += depth;
@@ -2659,7 +2669,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     {
         P = H;
 
-        if (!prepared || ray.IsPhotonRay() || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
+        if (!prepared || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
             Evaluate_Density_Pigment((*i)->Density, P, C0, threadData);
 
         if (modifiers != nullptr)
@@ -2679,7 +2689,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         }
     }
     if (modifiers != nullptr)
-        AddModifiedCoefficients(medias, &densityScratch[0], H, (prepared && !ray.IsPhotonRay()) ? ModifierSource::kCamera : ModifierSource::kPattern,
+        AddModifiedCoefficients(medias, &densityScratch[0], H, prepared ? ModifierSource::kCamera : ModifierSource::kPattern,
                                 Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
                                 ray.IsShadowTestRay() ? nullptr : &Scattering, !ray.IsRadiosityRay());
 
@@ -2702,7 +2712,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
             photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
-        if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0))
+        if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0 ||
+           threadData->GetSceneData()->photonSettings.Progressive()))
         {
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);
         }
@@ -2868,8 +2879,75 @@ void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSou
 }
 
 
+std::shared_ptr<const ProgressiveVolumeDomain> MediaFunction::VolumeDomain(const MediaVector& medias)
+{
+    bool match = volumeDomain && volumeDomain->media.size() == medias.size() &&
+                 volumeDomain->modifiers.size() == (modifiers ? modifiers->size() : 0);
+    for (size_t i = 0; match && i < medias.size(); ++i)
+        match = volumeDomain->media[i] == medias[i];
+    for (size_t i = 0; match && modifiers && i < modifiers->size(); ++i)
+        match = volumeDomain->modifiers[i] == (*modifiers)[i].interior && volumeDomain->below[i] == (*modifiers)[i].below;
+    if (!match)
+    {
+        auto domain = std::make_shared<ProgressiveVolumeDomain>();
+        domain->media.assign(medias.begin(), medias.end());
+        if (modifiers)
+            for (const auto& modifier : *modifiers)
+            {
+                domain->modifiers.push_back(modifier.interior);
+                domain->below.push_back(modifier.below);
+            }
+        volumeDomain = domain;
+    }
+    return volumeDomain;
+}
+
 void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H)
 {
+    if (threadData->GetSceneData()->photonSettings.Progressive() && photonGatherer)
+    {
+        if (!threadData->GetSceneData()->photonSettings.photonsEnabled)
+            return;
+        for (const auto& set : threadData->GetSceneData()->preparedSets)
+        {
+            if (&set->mediaPhotonMap != photonGatherer->map)
+                continue;
+            const auto& map = set->progressiveMedia;
+            if (map.photons.empty())
+                return;
+            const auto domain = VolumeDomain(medias);
+            const ConstObjectPtr receiver = photonReceiver;
+            const bool global = receiver == nullptr || !Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG);
+            if (!global && !map.grouped)
+                return;
+            const auto gather = [&](const auto& accept) {
+                MathColour sum;
+                const double radius = map.RadiusAt(H, *domain, accept);
+                map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
+                    if (!(*photon.domain == *domain) || !accept(photon))
+                        return;
+                    BasicRay light;
+                    light.Direction = photon.direction;
+                    light.Origin = photon.point - photon.direction;
+                    double middle = photon.depth;
+                    MathColour integral = photon.Integral(H, radius, &middle);
+                    if (photon.light != nullptr && photon.depth >= 0.0)
+                        integral *= Light_Photon_Path_Weight(photon.light, middle);
+                    ComputeMediaScatteringAttenuation(medias, sum, Sc, integral, ray, light);
+                    threadData->progressiveContributions++;
+                });
+                Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
+            };
+            if (map.grouped)
+                gather([receiver, global](const ProgressiveVolumePhoton& photon) {
+                    return photon.grouped ? receiver != nullptr && PhotonLightAffectsObject(photon.light, receiver) : global;
+                });
+            else
+                gather([](const ProgressiveVolumePhoton&) { return true; });
+            return;
+        }
+        return;
+    }
     BasicRay Light_Ray;
     DBL r;
     int j;

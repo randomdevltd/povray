@@ -7,13 +7,21 @@
 #ifndef (Shimmer) #declare Shimmer = 1; #end
 #ifndef (FlameLight) #declare FlameLight = 1; #end
 #ifndef (FlameSamples) #declare FlameSamples = 32; #end
+#ifndef (WaterGlass) #declare WaterGlass = 0; #end
+#ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #declare Wick = <0, 1.32, 0>;
 #declare WickY = Wick.y;
 #declare Back = 1.6;
-#declare Mist = 0.04;
+#ifndef (Mist) #declare Mist = 0.04; #end
 
-global_settings { assumed_gamma 1 }
-camera { location <0.5, 1.7, -2.1> look_at <0, 2.1, 0> angle 55 right x * 3 / 4 }
+global_settings { assumed_gamma 1
+  #if (WaterGlass) max_trace_level 20 photons { method 2 quality PhotonQuality } #end
+}
+#if (WaterGlass)
+  camera { location <1.1, 1.8, -1.9> look_at <0.2, 1.15, 0> angle 42 right x * image_width/image_height }
+#else
+  camera { location <0.5, 1.7, -2.1> look_at <0, 2.1, 0> angle 55 right x * 3 / 4 }
+#end
 difference {
   box { <-3.1, -0.1, -4.1>, <3.1, 4.1, Back> }
   box { <-3, 0, -4>, <3, 4, Back + 1> }
@@ -36,6 +44,19 @@ light_source { <-6, 3.4, -3> rgb <0.8, 1, 1.6> spotlight point_at <-1.8, 1.4, Ba
   light_source { Wick + y * 0.12 rgb <1.5, 0.85, 0.4> fade_distance 1 fade_power 2 }
 #end
 box { <-0.9, 0, -0.6>, <0.9, 0.9, 0.6> pigment { rgb <0.3, 0.17, 0.09> } }
+#if (WaterGlass)
+  difference {
+    cylinder { <0.43, 0.901, 0>, <0.43, 1.5, 0>, 0.15 }
+    cylinder { <0.43, 0.921, 0>, <0.43, 1.51, 0>, 0.14 }
+    pigment { rgbt 1 } finish { diffuse 0 reflection { 0, 1 fresnel } conserve_energy }
+    interior { ior 1.5 } photons { target reflection on refraction on collect off }
+  }
+  cylinder {
+    <0.43, 0.921, 0>, <0.43, 1.35, 0>, 0.14
+    pigment { rgbt 1 } finish { diffuse 0 reflection { 0, 1 fresnel } conserve_energy }
+    interior { ior 1.33 } photons { target reflection on refraction on collect off }
+  }
+#end
 union {
   box { <-0.52, -0.52, 0.01>, <0.52, 0.52, 0.04> pigment { rgb <0.12, 0.07, 0.04> } }
   box {
@@ -50,13 +71,17 @@ union {
 cylinder { <0, 0.9, 0>, <0, 1.3, 0>, 0.12 pigment { rgb <0.95, 0.9, 0.8> } }
 cylinder { <0, 1.28, 0>, Wick, 0.008 pigment { rgb 0.05 } }
 
-box { <-2.99, 0.01, -3.99>, <2.99, 3.98, Back - 0.01> pigment { rgbt 1 } interior { media { scattering { 1, rgb Mist } absorption 0.01 } } }
+box { <-2.99, 0.01, -3.99>, <2.99, 3.98, Back - 0.01> pigment { rgbt 1 }
+      interior { media { scattering { 1, rgb Mist } absorption 0.01 } }
+      #if (WaterGlass) photons { pass_through collect off } #end }
 sphere {
   0, 1 pigment { rgbt 1 }
   interior {
     media {
       mix add emission rgb <14, 6, 1.6> * 200 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-      #if (FlameLight) light_source { samples FlameSamples } #end
+      #if (FlameLight) light_source { samples FlameSamples
+        #if (WaterGlass) photons { reflection on refraction on } #end
+      } #end
     }
   }
   scale <0.06, 0.16, 0.06> translate Wick + y * 0.13
@@ -65,6 +90,7 @@ sphere {
   cone {
     Wick + y * 0.2, 0.22, Wick + y * 2.6, 0.6
     pigment { rgbt 1 }
+    #if (WaterGlass) photons { pass_through collect off } #end
     interior {
       media {
         mix add
@@ -83,6 +109,7 @@ sphere {
   cone {
     Wick, 0.2, <0, 3.95, 0>, 1.4
     pigment { rgbt 1 }
+    #if (WaterGlass) photons { pass_through collect off } #end
     interior {
       #if (Plume)
         media {

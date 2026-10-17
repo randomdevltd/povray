@@ -65,6 +65,8 @@ bool Light_Group_Lights_Something(const CSG *group);
 /// Gives the objects of every active light group below and at an object its group's lights, inner groups first; `lit`
 /// holds the objects a group has given lights to, which an enclosing group's lights are then added to.
 void Assign_Light_Groups(ObjectPtr object, std::unordered_set<ConstObjectPtr>& lit);
+void Promote_Photon_Lights(CSG *object);
+bool PhotonLightAffectsObject(const LightSource* light, ConstObjectPtr object);
 bool Check_Photon_Light_Group(ConstObjectPtr Object);
 
 /// @}
