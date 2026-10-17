@@ -50,6 +50,7 @@
 #include "base/image/colourspace.h"
 
 // POV-Ray header files (core module)
+#include "core/lighting/subsurface.h"
 #include "core/material/noise.h"
 #include "core/material/pattern.h"
 #include "core/bounding/boundingbox.h"
@@ -450,6 +451,7 @@ SceneData::SceneData() :
     firstMediaPrecedence = UINT_MAX;
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;
+    subsurfaceMemory = kSubsurfaceMemoryMB;
 
     bspMaxDepth = 0;
     bspObjectIsectCost = bspBaseAccessCost = bspChildAccessCost = bspMissChance = 0.0f;

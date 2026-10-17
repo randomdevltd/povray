@@ -38,6 +38,7 @@
 
 // C++ variants of C standard header files
 #include <cmath>
+#include <cstdio>
 
 // C++ standard header files
 #include <algorithm>
@@ -122,9 +123,6 @@ PreciseMathColour SubsurfaceInterior::GetReducedAlbedo(const MathColour& diffuse
         result[i] = (precomputedReducedAlbedo.get())(diffuseReflectance[i]);
     return result;
 }
-
-// Points in all subsurface clouds together: about 120 bytes each with the hierarchy, and 12 more per light.
-static const size_t kSubsurfacePointBudget = size_t(1) << 20;
 
 size_t SubsurfaceCellKeyHash::operator()(const SubsurfaceCellKey& k) const
 {
@@ -272,20 +270,130 @@ std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey
     return slot;
 }
 
-bool SubsurfaceCache::Reserve(size_t points)
+SubsurfaceCache::SubsurfaceCache(double capMB, double spacing) :
+    cap(size_t(std::max(1.0, capMB) * 1048576.0)),
+    spacing(spacing)
+{}
+
+void SubsurfaceCache::Charge(SubsurfaceCell& cell)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    if (reserved + points > kSubsurfacePointBudget)
-        return false;
-    reserved += points;
-    return true;
+    size_t bytes = cell.Bytes();
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        staged -= std::min(staged, cell.staged);
+        cell.staged = 0;
+        cell.settled = true;
+        if ((refused == 0) && (charged + bytes <= cap))
+        {
+            charged += bytes;
+            cell.charged = bytes;
+            peak = std::max(peak, charged + staged);
+            return;
+        }
+        if (refused == 0)
+        {
+            refused = charged + bytes;
+            refusedAt = progress;
+        }
+    }
+    CheckCap();
 }
 
-
-void SubsurfaceCache::Release(size_t points)
+void SubsurfaceCache::Stage(SubsurfaceCell& cell, size_t bytes)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    reserved -= std::min(points, reserved);
+    if (cell.settled)
+        return;
+    staged += bytes;
+    cell.staged += bytes;
+    peak = std::max(peak, charged + staged);
+}
+
+void SubsurfaceCache::Refund(SubsurfaceCell& cell)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    charged -= std::min(charged, cell.charged);
+    staged -= std::min(staged, cell.staged);
+    cell.charged = cell.staged = 0;
+    cell.settled = true;
+}
+
+bool SubsurfaceCache::CellFits(size_t bytes)
+{
+    if (bytes <= cap)
+        return true;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (refused == 0)
+    {
+        refused = bytes;
+        refusedAt = progress;
+    }
+    return false;
+}
+
+void SubsurfaceCache::CheckCap() const
+{
+    size_t needed;
+    double at;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        needed = refused;
+        at = refusedAt;
+    }
+    if (needed == 0)
+        return;
+    // A cap or spacing that would hold what was built so far; cloud memory goes about as 1/spacing^2.
+    auto roundUp = [](double v) { double unit = std::pow(10.0, std::floor(std::log10(v)) - 1.0); return std::ceil(v / unit) * unit; };
+    double neededMB = needed / 1048576.0, capMB = cap / 1048576.0;
+    double coarser = roundUp(spacing * std::sqrt(neededMB / capMB));
+    char text[640];
+    std::snprintf(text, sizeof(text), "Subsurface clouds need at least %.4g MB at spacing %g after %.0f%% of the image, past their memory cap "
+                  "of %.4g MB, so the render stopped. Raise the cap above memory %g, or set spacing %g or more (about %.3g MB for "
+                  "what was built so far), in global_settings { subsurface { ... } }; the rest of the image will need more.",
+                  neededMB, spacing, 100.0 * at, capMB, roundUp(neededMB), coarser, neededMB * (spacing / coarser) * (spacing / coarser));
+    throw POV_EXCEPTION(kOutOfMemoryErr, text);
+}
+
+bool SubsurfaceCache::Progress(double fraction, double& heldMB, double& projectedMB, double& capMB)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    progress = fraction;
+    if (projected || !(fraction >= 0.25))
+        return false;
+    projected = true;
+    heldMB = charged / 1048576.0;
+    projectedMB = heldMB / fraction;
+    capMB = cap / 1048576.0;
+    return (charged > fraction * cap);
+}
+
+SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
+{
+    SubsurfaceCloudStatistics stats;
+    std::vector<std::shared_ptr<SubsurfaceCell>> all;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        stats.spacing = spacing;
+        stats.peakBytes = double(peak);
+        stats.chargedBytes = double(charged);
+        all.reserve(cells.size());
+        for (const auto& slot : cells)
+            all.push_back(slot.second);
+    }
+    for (const std::shared_ptr<SubsurfaceCell>& cell : all)
+    {
+        std::lock_guard<std::mutex> cellLock(cell->mutex);
+        if (cell->usable && !cell->points.empty())
+        {
+            double points = double(cell->points.size());
+            stats.cells += 1.0;
+            stats.points += points;
+            stats.read += double(cell->PointsRead());
+            stats.termCells[cell->term] += 1.0;
+            stats.termPoints[cell->term] += points;
+        }
+    }
+    return stats;
 }
 
 void SubsurfaceCache::SetCamera(const Vector3d& location, double pixelSize, double pixelAngle)
@@ -391,6 +499,51 @@ void SubsurfaceCell::BuildHierarchy()
         nodes.reserve(points.size());
         BuildSubsurfaceNode(points, nodes, 0, int(points.size()));
     }
+    size_t words = (nodes.size() + 31) / 32;
+    read.reset(new std::atomic<std::uint32_t>[words]);
+    for (size_t i = 0; i < words; i++)
+        read[i].store(0, std::memory_order_relaxed);
+}
+
+size_t SubsurfaceCell::Bytes() const
+{
+    return sizeof(SubsurfaceCell) + points.capacity() * sizeof(SubsurfacePoint) + nodes.capacity() * sizeof(SubsurfaceNode) +
+           (visibility.capacity() + ambient.capacity() + photonEntry.capacity() + entry.capacity()) * sizeof(float) +
+           (read ? (nodes.size() + 31) / 32 * sizeof(std::uint32_t) : 0) + rows.capacity() * sizeof(std::vector<SubsurfacePoint>);
+}
+
+void SubsurfaceCell::Release()
+{
+    std::vector<SubsurfacePoint>().swap(points);
+    std::vector<SubsurfaceNode>().swap(nodes);
+    std::vector<float>().swap(visibility);
+    std::vector<float>().swap(ambient);
+    std::vector<float>().swap(photonEntry);
+    std::vector<float>().swap(entry);
+    read.reset();
+}
+
+void SubsurfaceCell::MarkRead(int node) const
+{
+    std::uint32_t bit = std::uint32_t(1) << (node & 31);
+    std::atomic<std::uint32_t>& word = read[node >> 5];
+    if ((word.load(std::memory_order_relaxed) & bit) == 0)
+        word.fetch_or(bit, std::memory_order_relaxed);
+}
+
+size_t SubsurfaceCell::PointsRead() const
+{
+    if (nodes.empty() || !read)
+        return 0;
+    std::function<size_t(int, bool)> count = [&](int index, bool used) -> size_t
+    {
+        const SubsurfaceNode& node = nodes[index];
+        used = used || ((read[index >> 5].load(std::memory_order_relaxed) >> (index & 31)) & 1);
+        if (node.count > 0)
+            return used ? size_t(node.count) : 0;
+        return count(index + 1, used) + count(node.first, used);
+    };
+    return count(0, false);
 }
 
 }

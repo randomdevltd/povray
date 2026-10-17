@@ -1126,6 +1126,7 @@ class Trace
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
             int sizeLevel = 0;
             double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
+            SubsurfaceCloudFailure failure = kCloudServed; ///< why the cloud could not be opened
             bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
             bool photons = false;
             bool radiosity = false; ///< the points carry the radiosity cache's light too

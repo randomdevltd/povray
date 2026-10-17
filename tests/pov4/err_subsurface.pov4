@@ -1,0 +1,2 @@
+include "scene.inc";
+global_settings { subsurface { method 2 memroy 256 } }

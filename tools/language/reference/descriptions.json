@@ -1556,8 +1556,8 @@
    "from": "doc/html/r3_13.html"
   },
   "error_bound": {
-   "rank": 55,
-   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT }",
+   "rank": 68,
+   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT memory FLOAT }",
    "from": "doc/html/r3_6.html"
   },
   "evaluate": {
@@ -2055,6 +2055,11 @@
    "rank": 1022,
    "code": "media_interaction : on",
    "from": "doc/html/r3_12.html"
+  },
+  "memory": {
+   "rank": 68,
+   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT memory FLOAT }",
+   "from": "doc/html/r3_6.html"
   },
   "merge": {
    "code": "merge { SOLID_OBJECTS... [OBJECT_MODIFIERS...] }",
@@ -2658,8 +2663,8 @@
    "from": "doc/html/r3_5.html:3"
   },
   "spacing": {
-   "rank": 55,
-   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT }",
+   "rank": 68,
+   "code": "subsurface { method 2 spacing FLOAT error_bound FLOAT memory FLOAT }",
    "from": "doc/html/r3_6.html"
   },
   "specular": {

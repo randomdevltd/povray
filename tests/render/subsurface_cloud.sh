@@ -1,0 +1,57 @@
+#!/bin/sh
+# subsurface_cloud.sh <povray> <srcdir>: each reason the point cloud cannot serve is warned by name, a cloud past its
+# memory cap stops the render, the cloud and image do not depend on thread count, and a user-defined panorama is served.
+set -e
+trap 'rm -f sscloud_*' EXIT
+POVRAY=$1; SRCDIR=$2
+render() {
+    name=$1; scene=$2; shift 2
+    "$POVRAY" +i"$scene" +L"$SRCDIR/distribution/include" -d -p -a +fp16 +o"sscloud_$name.ppm" "$@" > "sscloud_$name.log" 2>&1
+}
+text() { tr -d ' \r\n' < "sscloud_$1.log" > "sscloud_$1.txt"; }
+fail() { echo "subsurface_cloud: $*"; exit 1; }
+has() { grep -q -- "$2" "sscloud_$1.txt"; }
+warned() { has "$1" "Subsurfacemethod2fellbacktomethod1for[0-9]*of[0-9]*shadingpointsas$2"; }
+served() { sed -n 's/.*Method2pointcloud:\([0-9]*\)shadingpointstried,\([0-9]*\)served.*/\1 \2/p' "sscloud_$1.txt"; }
+share() { served "$1" | { read tried got; [ "$tried" -gt 0 ] && [ $((got * 100)) -ge $((tried * $2)) ]; }; }
+built() { sed -n 's/.*Method2pointcloudatspacing[0-9.]*:[0-9.]*MBagainstthecap,peak[0-9.]*MBwithrowsbeingcast;[0-9]*cells,\([0-9]*\)pointsbuilt,\([0-9]*\)read;.*/\1 \2/p' "sscloud_$1.txt"; }
+held() { sed -n 's/.*Method2pointcloudatspacing[0-9.]*:\([0-9.]*\)MBagainstthecap.*/\1/p' "sscloud_$1.txt"; }
+
+case=$SRCDIR/tests/render/subsurface_cloud.pov
+render plain "$case" +w64 +h48 +wt2 Declare=Case=0; text plain
+has plain 'Subsurfacemethod2fellback' && fail "a closed box warned of a fallback"
+share plain 95 || fail "a closed box was not served by the cloud: $(served plain)"
+if render capped "$case" +w64 +h48 +wt2 Declare=Case=1; then fail "a cloud past its memory cap did not stop the render"; fi
+text capped
+has capped 'Subsurfacecloudsneedatleast[0-9.]*MBatspacing0.02after[0-9]*%oftheimage,pasttheirmemorycapof1MB' ||
+    fail "no error names the memory cap"
+has capped 'Raisethecapabovememory[0-9.]*,orsetspacing[0-9.]*ormore(about[0-9.]*MB' || fail "the memory error gives no remedies"
+if render cell "$case" +w64 +h48 +wt2 Declare=Case=5; then fail "a cell past the memory cap did not stop the render"; fi
+text cell
+has cell 'Subsurfacecloudsneedatleast1[.0-9]*MBatspacing0.0001after' || fail "a cell past the cap was not stopped as it cast"
+render plane "$case" +w64 +h48 +wt2 Declare=Case=2; text plane
+warned plane 'theobjectisunbounded' || fail "no warning names an unbounded object"
+render group "$case" +w64 +h48 +wt2 Declare=Case=3; text group
+warned group 'partoftheobjectislitbyalightgroup' || fail "no warning names a light group"
+render thin "$case" +w64 +h48 +wt2 Declare=Case=4; text thin
+warned thin 'over1in16surfacecrossings' || fail "no warning names unoriented crossings"
+
+bench=$SRCDIR/tools/bench/sslt-projection.pov
+render mercator "$bench" +w96 +h48 +wt2 Declare=Camera=0 Declare=Count=400; text mercator
+has mercator 'Subsurfacemethod2fellback' && fail "the user-defined panorama warned of a fallback"
+share mercator 98 || fail "the user-defined panorama was not served by the cloud: $(served mercator)"
+built mercator | { read points read; [ "$points" -gt 0 ] && [ "$read" -gt 0 ] && [ "$read" -le "$points" ]; } ||
+    fail "the statistics do not report points built and read: $(built mercator)"
+cap=$(held mercator | awk '{print int($1) + 1}')
+render near "$bench" +w96 +h48 +wt2 Declare=Camera=0 Declare=Count=400 Declare=Memory=$cap || fail "a cloud just under its cap stopped the render"
+text near
+[ "$(built near)" = "$(built mercator)" ] || fail "a cloud just under its cap was built differently"
+render coarse "$bench" +w96 +h48 +wt2 Declare=Camera=0 Declare=Count=400 Declare=Spacing=2; text coarse
+fine=$(built mercator | cut -d' ' -f1); coarse=$(built coarse | cut -d' ' -f1)
+[ $((coarse * 8)) -ge "$fine" ] && [ $((coarse * 2)) -le "$fine" ] || fail "spacing 2 did not build about a quarter of the points: $fine, $coarse"
+render one "$bench" +w160 +h90 +wt1 Declare=Camera=1 Declare=Count=1000; text one
+render many "$bench" +w160 +h90 Declare=Camera=1 Declare=Count=1000; text many
+tail -c 86400 sscloud_one.ppm > sscloud_one.px; tail -c 86400 sscloud_many.ppm > sscloud_many.px
+cmp -s sscloud_one.px sscloud_many.px || fail "one thread and many rendered different images"
+[ -n "$(built one)" ] && [ "$(built one)" = "$(built many)" ] || fail "one thread and many built different clouds"
+echo "subsurface_cloud: fallbacks are warned by reason, the memory cap stops the render, and the cloud is the same on any thread count"

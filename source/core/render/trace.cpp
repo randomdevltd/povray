@@ -6316,9 +6316,9 @@ static uint64_t CloudSeed(const SubsurfaceCellKey& key, int stage, int job)
 }
 
 static const int kCloudPointsPerJob = 256;
-// Points a cell may hold, and the finest spacing, in cell sides; past the first a cell is left to method 1. Least
-// cosine between the view and an axis that sparser lines along it allow for.
-static const size_t kCloudCellPoints = size_t(1) << 18;
+// Cells a gather may span along an axis, once clipped to the object's bounds, and along an axis it is unbounded.
+static const double kCloudGatherSpan = 32.0, kCloudUnboundedSpan = 8.0;
+// The finest spacing, in cell sides. Least cosine between the view and an axis that sparser lines along it allow for.
 static const double kCloudFinest = 1.0 / 1024.0;
 static const double kCloudOblique = 1.0 / 4.0;
 // Lines across an object's longest side at least, so that one small beside a long diffusion reach is not left a few points.
@@ -6354,14 +6354,26 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
         {
             std::lock_guard<std::mutex> lock(cell.mutex);
             cell.jobs = 0;
+            double finestStep = HUGE_VAL;
             for (int a = 0; a < 3; a++)
             {
                 double facing = ((nearest > 0.0) && (ssltPixelAngle > 0.0)) ? max(toward[a] / nearest, kCloudOblique) : 1.0;
                 double pixel = (ssltPixelSize + nearest * ssltPixelAngle) / sqrt(facing);
                 double step = max(size / kCloudCellSpacings, pixel) * sceneData->subsurfaceSpacing;
-                if (longest > 0.0)
-                    step = min(step, longest / kCloudObjectLines * sceneData->subsurfaceSpacing);
+                SubsurfaceStepTerm term = (pixel > size / kCloudCellSpacings) ? kStepPixel : kStepDiffusion;
+                if ((longest > 0.0) && (longest / kCloudObjectLines * sceneData->subsurfaceSpacing < step))
+                {
+                    step = longest / kCloudObjectLines * sceneData->subsurfaceSpacing;
+                    term = kStepObject;
+                }
+                if (size * kCloudFinest > step)
+                    term = kStepFinest;
                 cell.step[a] = max(step, size * kCloudFinest);
+                if (cell.step[a] < finestStep)
+                {
+                    finestStep = cell.step[a];
+                    cell.term = term;
+                }
                 cell.steps[a] = empty ? 0 : max(1, int(ceil(size / (cell.step[a] * sqrt(1.5)))));
                 cell.jobs += cell.steps[a];
             }
@@ -6369,9 +6381,11 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
         }
         cell.changed.notify_all();
         WorkOnSubsurfaceCell(cloud, key, cell, true);
+        threadData->subsurfaceCache->CheckCap();
 
         size_t count = cell.found;
-        bool usable = !cell.failed && (cell.unoriented * 16 <= count);
+        cell.failure = (cell.unoriented * 16 > count) ? kCloudUnoriented : kCloudServed;
+        bool usable = !cell.failed && (cell.failure == kCloudServed);
         if (usable)
         {
             cell.points.reserve(count);
@@ -6400,7 +6414,10 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             if (usable && key.radiosity)
                 AddSubsurfaceAmbient(cloud, cell);
             if (usable)
+            {
                 cell.BuildHierarchy();
+                threadData->subsurfaceCache->Charge(cell);
+            }
         }
         FinishSubsurfaceCell(cell, usable);
     }
@@ -6411,23 +6428,26 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
     }
 }
 
-// Marks a cell ready, releasing the budget of one that cannot be used, and wakes the threads waiting on it.
+// Marks a cell ready, refunding the memory of one that cannot be used, and wakes the threads waiting on it.
 void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
 {
     {
         std::lock_guard<std::mutex> lock(cell.mutex);
         if (cell.stage == SubsurfaceCell::kReady)
             return;
-        // Rows still being cast (by a thread the builder's exception left behind) stay until the cell goes.
+        // Rows and arrays a thread the builder's exception left behind may still be filling stay until the cell goes.
         if (cell.done == cell.jobs)
+        {
             cell.rows.clear();
+            if (!usable)
+                cell.Release();
+        }
         cell.usable = usable;
         cell.stage = SubsurfaceCell::kReady;
+        if (!usable && (cell.failure == kCloudServed))
+            cell.failure = kCloudOther;
         if (!usable)
-        {
-            threadData->subsurfaceCache->Release(cell.reserved);
-            cell.reserved = 0;
-        }
+            threadData->subsurfaceCache->Refund(cell);
     }
     cell.changed.notify_all();
 }
@@ -6510,6 +6530,7 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     dir[a] = 1.0;
     uint64_t state = CloudSeed(key, 0, job);
     std::vector<SubsurfacePoint>& row = cell.rows[job];
+    size_t capacity = row.capacity();
     std::vector<Intersection> crossings;
     for (int j = 0; (j < steps) && !cell.failed; j++)
     {
@@ -6572,15 +6593,13 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
         }
         if (kept + dropped == 0)
             continue;
-        bool reserved = (kept == 0) || threadData->subsurfaceCache->Reserve(kept);
+        if (row.capacity() > capacity)
+            threadData->subsurfaceCache->Stage(cell, (row.capacity() - capacity) * sizeof(SubsurfacePoint));
+        capacity = row.capacity();
         std::lock_guard<std::mutex> lock(cell.mutex);
-        if (reserved && (cell.stage == SubsurfaceCell::kReady))
-            threadData->subsurfaceCache->Release(kept);
-        else if (reserved)
-            cell.reserved += kept;
         cell.found += kept;
         cell.unoriented += dropped;
-        if (!reserved || (cell.found > kCloudCellPoints))
+        if (!threadData->subsurfaceCache->CellFits(cell.found * sizeof(SubsurfacePoint)))
             cell.failed = true;
     }
 }
@@ -6712,6 +6731,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     cloud.object = SubsurfaceObject(out);
     cloud.preparedSetId = eye.GetPreparedSetId();
     cloud.edge = false;
+    cloud.failure = kCloudOther;
     if (cloud.photons && !UniformSubsurfacePhotonReceiver(cloud.object, cloud.object))
         return false;
     if (cloud.object->interior == nullptr)
@@ -6719,7 +6739,10 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     // Cloud points hold a shadow per light of the whole object, which a part in a light group of its own cannot use.
     CollectSubsurfaceLights(cloud.object, cloud.lights, eye.GetPreparedSetId());
     if (cloud.lights != lights)
+    {
+        cloud.failure = kCloudLights;
         return false;
+    }
     double mm = sceneData->mmPerUnit;
     double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
     if (!(sigmaMin > 0.0))
@@ -6739,7 +6762,10 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     cloud.footprint = footprint * mm;
     cloud.local = (1.0 / sigmaMin / mm < footprint);
     if (cloud.local)
+    {
+        cloud.failure = cloud.photons ? kCloudOther : kCloudServed;
         return !cloud.photons;
+    }
 
     // Cells are a power of four in size, at least the diffusion's reach, so a texture that varies it uses few sizes.
     cloud.sizeLevel = 2 * int(ceil(0.5 * log2(cloud.reach / mm)));
@@ -6752,12 +6778,19 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
     double finest = cloud.size / kCloudCellSpacings * sceneData->subsurfaceSpacing * mm;
     if (unbounded && (finest > kCloudCoarse * max(zr, cloud.footprint)))
+    {
+        cloud.failure = kCloudUnbounded;
         return false;
+    }
     if (!GatherSubsurfaceCells(cloud, out.IPoint, cloud.reach / mm))
         return false;
     const SubsurfaceCell *here = FindSubsurfaceCell(cloud, out.IPoint);
     if (here == nullptr)
+    {
+        cloud.failure = kCloudMissing;
         return false;
+    }
+    cloud.failure = kCloudServed;
     // The disc and ring are sized by the coarsest cell they reach, so that each holds enough of its points.
     Vector3d normal = out.INormal.normalized();
     cloud.spacing = here->Spacing(normal);
@@ -6791,12 +6824,23 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
 {
     cloud.cells.clear();
     cloud.coords.clear();
+    // Cells beyond the object's bounds would be empty, so a ring widened by a coarse spacing gathers only those it crosses.
+    const BoundingBox& box = cloud.object->BBox;
     int lo[3], hi[3];
     for (int a = 0; a < 3; a++)
     {
         double from = floor((centre[a] - radius) / cloud.size), to = floor((centre[a] + radius) / cloud.size);
-        if (!(fabs(from) < 1073741824.0) || !(fabs(to) < 1073741824.0) || (to - from > 8.0))
+        bool bounded = (box.size[a] < BOUND_HUGE / 4);
+        if (bounded)
+        {
+            from = max(from, ceil(box.lowerLeft[a] / cloud.size) - 1.0);
+            to = min(to, floor((box.lowerLeft[a] + box.size[a]) / cloud.size));
+        }
+        if (!(fabs(from) < 1073741824.0) || !(fabs(to) < 1073741824.0) || (to - from > (bounded ? kCloudGatherSpan : kCloudUnboundedSpan)))
+        {
+            cloud.failure = kCloudWide;
             return false;
+        }
         lo[a] = int(from);
         hi[a] = int(to);
     }
@@ -6817,7 +6861,11 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
             known = cell.get();
         }
         if (!known->usable)
+        {
+            threadData->subsurfaceCache->CheckCap();
+            cloud.failure = known->failure;
             return false;
+        }
         if (!known->nodes.empty())
         {
             cloud.cells.push_back(known);
@@ -6871,6 +6919,7 @@ bool Trace::LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vecto
     while (cell->nodes[index].count == 0)
         index = (boxSqr(cell->nodes[index + 1]) <= boxSqr(cell->nodes[cell->nodes[index].first])) ? index + 1 : cell->nodes[index].first;
     const SubsurfaceNode& leaf = cell->nodes[index];
+    cell->MarkRead(index);
     Vector3d n = normal.normalized();
     if (boxSqr(leaf) > Sqr(kCloudDisc * cell->Spacing(n)))
         return false;
@@ -6970,6 +7019,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     continue;
                 if (!near && (boxSqr > ringSqr) && (node.area < errorBound * boxSqr) && (node.cone >= kCloudCone))
                 {
+                    cell->MarkRead(index);
                     Vector3d toward = node.centre - base;
                     if (toward[X] * node.normal[0] + toward[Y] * node.normal[1] + toward[Z] * node.normal[2] > 0.0)
                     {
@@ -6986,6 +7036,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     stack.push_back(node.first);
                     continue;
                 }
+                cell->MarkRead(index);
                 for (int i = node.first; i < node.first + node.count; i++)
                 {
                     const SubsurfacePoint& p = cell->points[i];
@@ -7493,17 +7544,25 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
-    if ((method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed))
+    const bool tryCloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed);
+    if (tryCloud)
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
-    bool cloud = (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed) && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
+    cloudData.failure = kCloudServed;
+    bool cloud = tryCloud && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
                  ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
     const bool photonSamples = cloudData.photons && !cloud;
-    if (photonSamples && (method == kSubsurfaceMethodPointCloud) && (cloudRadiosity || !radiosity_needed))
+    if (photonSamples && tryCloud)
     {
+        // Count the retry's open failure only if the first try also failed to open, so no point is counted twice.
+        const bool openFailed = (cloudData.failure != kCloudServed);
         cloudData.photons = false;
         cloud = OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftOut, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+        if (!openFailed)
+            cloudData.failure = kCloudServed;
     }
+    if (tryCloud && !cloud && (cloudData.failure != kCloudServed))
+        threadData->Stats()[IntStatsIndex(Subsurface_Cloud_Unoriented + (cloudData.failure - kCloudUnoriented))]++;
     const bool photonsOnly = cloud && photonSamples;
     if (!cloud || photonSamples)
     {

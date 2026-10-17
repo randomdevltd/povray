@@ -327,8 +327,9 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
     // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
     if (!subsurfaceCameraSet)
     {
-        // A pixel spans pixelSize + pixelAngle * distance; zero for camera types this does not model.
+        // A pixel spans pixelSize + pixelAngle * distance.
         double pixelSize = 0.0, pixelAngle = 0.0;
+        Vector3d location = camera.Location;
         if ((width > 0.0) && (height > 0.0))
         {
             switch (camera.Type)
@@ -352,13 +353,66 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
                     pixelAngle = M_PI / width;
                     break;
                 default:
+                    MeasureCameraPixel(width, height, location, pixelSize, pixelAngle);
                     break;
             }
         }
-        threadData->subsurfaceCache->SetCamera(camera.Location, pixelSize, pixelAngle);
+        threadData->subsurfaceCache->SetCamera(location, pixelSize, pixelAngle);
         subsurfaceCameraSet = true;
     }
     TraceSamples(colour, x, y, width, height, TraceTicket(maxTraceLevel, adcBailout, sceneData->outputAlpha), 1.0);
+}
+
+// The coarsest of a grid of pixels out to the rim, as spherical cameras take the equator's: the cloud then needs no more
+// points than the sparsest part of the view shows. Each side comes from its corner rays; seams and outliers are skipped.
+void TracePixel::MeasureCameraPixel(DBL width, DBL height, Vector3d& location, double& pixelSize, double& pixelAngle)
+{
+    static const int kGrid = 5;
+    static const double kOutlier = 8.0;
+    struct ProbeGuard final
+    {
+        bool &probe, &blur;
+        const bool savedProbe, savedBlur;
+        ProbeGuard(bool& p, bool& b) : probe(p), blur(b), savedProbe(p), savedBlur(b) { probe = true; blur = false; }
+        ~ProbeGuard() { probe = savedProbe; blur = savedBlur; }
+    } guard(differentialProbe, useFocalBlur);
+    auto angle = [](const Ray& p, const Ray& q) { return 2.0 * asin(min(1.0, 0.5 * (p.Direction - q.Direction).length())); };
+    auto smaller = [](double a, double b) { return ((a > 0.0) && (b > 0.0)) ? min(a, b) : max(a, b); };
+    auto coarsest = [](std::vector<double>& values)
+    {
+        if (values.empty())
+            return 0.0;
+        std::vector<double> sorted(values);
+        std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
+        double median = sorted[sorted.size() / 2], most = 0.0;
+        for (double v : values)
+            if ((median <= 0.0) || (v <= kOutlier * median))
+                most = max(most, v);
+        return most;
+    };
+    TraceTicket ticket(maxTraceLevel, adcBailout, sceneData->outputAlpha);
+    Ray topLeft(ticket), topRight(ticket), bottomLeft(ticket), bottomRight(ticket);
+    std::vector<double> angles, sizes;
+    for (int i = 0; i < kGrid; i++)
+        for (int j = 0; j < kGrid; j++)
+        {
+            DBL x = 0.5 + i * max(0.0, width - 1.0) / (kGrid - 1), y = 0.5 + j * max(0.0, height - 1.0) / (kGrid - 1);
+            if (!CreateCameraRay(topLeft, x - 0.5, y - 0.5, width, height, 0) || !CreateCameraRay(topRight, x + 0.5, y - 0.5, width, height, 0) ||
+                !CreateCameraRay(bottomLeft, x - 0.5, y + 0.5, width, height, 0) || !CreateCameraRay(bottomRight, x + 0.5, y + 0.5, width, height, 0))
+                continue;
+            double acrossX = 0.5 * (angle(topLeft, topRight) + angle(bottomLeft, bottomRight));
+            double acrossY = 0.5 * (angle(topLeft, bottomLeft) + angle(topRight, bottomRight));
+            if (!(max(acrossX, acrossY) < M_PI / 4))
+                continue;
+            double spreadX = 0.5 * ((topRight.Origin - topLeft.Origin).length() + (bottomRight.Origin - bottomLeft.Origin).length());
+            double spreadY = 0.5 * ((bottomLeft.Origin - topLeft.Origin).length() + (bottomRight.Origin - topRight.Origin).length());
+            angles.push_back(smaller(acrossX, acrossY));
+            sizes.push_back(smaller(spreadX, spreadY));
+        }
+    pixelAngle = coarsest(angles);
+    pixelSize = coarsest(sizes);
+    if (CreateCameraRay(topLeft, 0.5 * width, 0.5 * height, width, height, 0))
+        location = topLeft.Origin;
 }
 
 void TracePixel::TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTColour& colour)

@@ -326,6 +326,19 @@ New Features
     `thickness` items for flesh under a skin; `volume_sampling { depth FLOAT
     spread FLOAT }` to read patterns below the surface; and incident photons
     now light subsurface materials.
+  - Subsurface method 2 measures a pixel for cylinder, mesh and user-defined
+    cameras (including `projections.inc`) from the camera's own rays, so their
+    point clouds are spaced by the view instead of at the finest spacing. The
+    cloud no longer has a point budget: every cell is built at its own
+    spacing, so the image does not depend on thread count or order, and
+    `global_settings { subsurface { memory FLOAT } }` (megabytes, 1024 by
+    default; `memory` is matched by its text) caps the clouds' memory, past
+    which the render stops with an error suggesting a cap or a `spacing`
+    that would fit; `spacing` scales every point step, so cloud memory goes
+    about as 1/spacing^2. The render statistics report the spacing, the
+    cloud's peak memory, points built and read and which rule set each
+    cell's step, split fallbacks to method 1 by reason, and a warning names
+    each reason that costs a noticeable share of the shading points.
   - Light sources take `photon_only`: the light shoots photons without
     lighting surfaces or media directly.
   - Anti-aliasing method 4 (`+AM4`, with `+PR`) spends a sample budget set

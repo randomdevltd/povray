@@ -26,7 +26,7 @@ In method 2, points behind the shading point's tangent plane that turn away from
 
 Projected photon sampling avoids the original uniform-direction concentration on thin surfaces and its grazing area-weight clamp. It uses the configured diffuse sample count at both permitted subsurface recursion depths; analytic diffuse and single scattering retain their existing recursive sample limit. This adds linear work for secondary receivers without creating additional recursive rays. Unsupported geometry retains the classic estimator and its variance, clamp and recursive-count limitations. Receiver and hemisphere filtering happens after the capped gather, so rejected deposits can occupy its allowance. The cloud refines from geometry and analytic illumination, rather than photon colour variation; a resolved total flux does not prove that narrow spectral bands are resolved.
 
-An analytic retry uses separate cache cells. Under point-budget pressure, photon work can exhaust the shared budget before that retry and force the analytic sampled fallback too. Inactive photon paths retain the original rendering; arbitrary unrelated nonempty maps are not guaranteed to preserve the analytic approximation once the point budget is exhausted.
+An analytic retry uses separate cache cells, which count against the same memory cap as the photon cells; a render that passes the cap stops instead of falling back. Inactive photon paths retain the original rendering.
 
 ## Reproducible fixtures
 

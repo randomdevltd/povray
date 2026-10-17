@@ -382,19 +382,50 @@ drops more than one in sixteen is left to method 1. Points are lit once, four po
 128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
 cube comes nearest it if that is coarser, and never under a 1024th of the side; a pixel spans a size plus an angle
 times the distance, for perspective, orthographic, spherical, fisheye, ultra-wide, omnimax and panoramic cameras
-(for spherical and panoramic ones, a pixel at the equator, coarser than one toward the poles); cylinder, mesh and
-user-defined cameras get no pixel size, so their cubes take the finest spacing, and a plane under one can spend the
-point budget before its shading points fall back to method 1.
+(for spherical and panoramic ones, a pixel at the equator, coarser than one toward the poles). For cylinder, mesh and
+user-defined cameras (`projections.inc`) the camera's rays at the four corners of each pixel of a 5×5 grid across the
+image give each side's angle and, where the origins move, its size; per side the smaller of the two where both have one,
+and over the grid the coarsest, as spherical cameras take the equator, so a cloud needs no more points than the sparsest
+part of the view shows. A pixel spanning over 45° is a seam, not a pixel, and is skipped.
 Lines along an axis the camera looks across are spaced up to twice as widely, by one over the square root of the
 cosine between the axis and the direction to the camera, since surfaces facing that axis are seen obliquely; a point
 then stands for 1/Σ(|nₐ|/hₐ²) of surface. The camera is set once for the render, and a cube is lit from a fresh trace
 level and at full quality, so it comes out the same whichever thread builds it, from a camera ray, a reflection, the
 radiosity pretrace or a radiosity sample (whose trace leaves out area lights). Threads that need a cube while it is
 built take jobs from its building, so it does not hold them up; an exception in any job leaves the cube unusable
-instead of holding up the threads waiting on it. A cube of more than 262144 points is left to method 1, as is an
-unbounded object such as a plane where its cubes would be coarse (below). A budget of about a million
-points (about 120 bytes each, and 12 per light) covers all objects; once it is spent, cubes built later go to method 1,
-and which cubes those are depends on the order threads reach them, so it can vary between renders.
+instead of holding up the threads waiting on it. Every cube is built at its own spacing, from the pixel, diffusion and
+object rules alone, so the cloud, and with it the image, is the same whichever threads build it and in whatever order.
+
+Two global levers make a large render fit. `spacing` multiplies every cube's step (the pixel, diffusion and object terms
+alike; only the 1/1024-of-a-cube floor, a lower bound, is left as it is), so points and memory go about as
+1/spacing²: spacing 4 builds about a sixteenth of the points, and the cloud resolves the diffusion's detail that much
+more coarsely. Where the pixel sets the step, memory also goes as 1/pixel², so a proof render's statistics, scaled by
+the square of the resolution ratio, predict a print render's. A coarse spacing can widen the ring past the diffusion's
+reach; the gather then widens with it, over the cubes the object's bounds cross, up to 32 along a bounded axis and 8
+along an unbounded one (a plane's), rather than handing the shading point to method 1.
+
+All clouds together may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`, 1024 by default).
+Each finished cube's footprint counts against it in real bytes, by the capacity of what it holds: the cube itself,
+points (about 56 bytes each), hierarchy nodes, per-light shadows (12 bytes per point and light), radiosity, entry and
+photon arrays and read marks. A cube's footprint depends on the scene alone, and every cube the render needs is built,
+so whether the clouds pass the cap, and the render stops, is the same on any thread count; only how far the render got
+before stopping, and so the figures in the error, depend on thread timing. The rows a cube casts into are counted in the
+reported peak but never decide the stop, except that a cube whose own points alone pass the cap stops the render while
+it is cast, so one cube cannot outgrow memory either. The error gives the memory held so far, the share of the image
+done, the cap, and a cap or spacing that would hold what was built so far. Once a quarter of the image is done, a
+warning says when the clouds at that rate would pass the cap; it is an estimate, and only passing the cap stops the
+render. A cube is never coarsened, and no shading point falls back to method 1, for memory. An unbounded object such as
+a plane is left to method 1 where its cubes would be coarse (below).
+
+The statistics report the spacing in force, the memory counted against the cap, the peak with rows being cast, the cubes
+built, their points, the points the gathers read (those under a node a gather used, alone or summed as a group, which
+measures how much of the cloud was built for nothing), and the cubes and points whose step the pixel, the diffusion, the
+object's size or the floor set. They split the shading points left to method 1 by reason: unoriented crossings, an
+unbounded object, a reach wider than the cubes gathered, a light group, an exit point in no cube, and others (no
+interior or diffusion, uneven photons, a build that threw), beside the per-point reasons of the sum below. A warning
+names each whole-cloud reason with its count and likely cause once those reasons together reach 1% of the shading points
+tried, or once all fallbacks together reach a quarter; another names the per-point reasons once they alone reach a
+quarter.
 
 **The sum.** Around the exit point, a core half a spacing across is lit as the exit point is, from its own light and
 its own shadow test where the nearby points disagree on a light's shadow (so shadow edges stay sharp); out to 1.5
@@ -433,7 +464,7 @@ has, so no final-trace sample counts and a cube does not depend on the tile that
 bound is widened up to fourfold, then deeper bounces are tried, and a point still without one takes its cube's mean.
 The pretrace uses method 1, since the cache is incomplete while it runs. With `radiosity { subsurface on }`, gathers
 at the deepest bounce use cubes without radiosity, so the same parts of an object can be built twice, once of each
-kind, from the one point budget.
+kind, within the one memory cap.
 
 **Single scattering.** A light in front of the surface whose shadow the disc agrees on needs no samples: on a flat
 surface the path in from the light is a fixed multiple of the path out, which gives the sampled estimate's expectation
