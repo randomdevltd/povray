@@ -5,8 +5,9 @@ work budget:
 
 ```pov
 global_settings {
-    photons { method 2 quality 1 }
+    photons { method 2 quality 1 }         // add `learn on` to learn within targets
 }
+object { Glass photons { target 2 refraction on } }   // target weight 2
 ```
 
 `quality` is a finite number greater than zero and at most 16384 (2^32 samples per
@@ -27,10 +28,12 @@ scenes. Quality is not an exposure control.
 
 Batches are shot in order, each split into sixteen logical shards. A light's
 targeted samples are split between its targets in proportion to their target
-weights (see Targets), the same in every batch and for every light type. Ten percent of
-samples from a nonparallel source are isotropic. Every deposit carries emitted flux
-divided by the complete mixture density of the direction actually taken, including
-overlapping target cones; samples rejected by an aperture are not renormalized.
+weights (see Targets), the same in every batch and for every light type; with `learn on`
+each target's cone or disc is warped by a density learned from the earlier batches and a
+pilot. Ten percent of samples from a nonparallel source are isotropic. Every deposit
+carries emitted flux divided by the complete mixture density of the direction actually
+taken, including overlapping target cones and their learned densities; samples rejected
+by an aperture are not renormalized.
 
 Emission is driven by a seven-dimensional Sobol sequence, indexed by the global
 sample number and digitally shifted once per prepared set from the render seed.
@@ -39,8 +42,7 @@ source's target disc (a volume emitter uses the first for its power-table cell),
 the polar and azimuthal direction within the selected target cone or the sphere,
 the targeted-or-isotropic choice and the target. Every aligned block of 2^m samples,
 and therefore every batch, is a digital net, so each batch covers the emission
-domain evenly. Choices
-after the first surface (reflection, refraction, roulette, dispersion bands, media
+domain evenly (in the warped square when targets learn). Choices after the first surface (reflection, refraction, roulette, dispersion bands, media
 scattering) remain hashed per-sample random numbers.
 
 ## Estimator
@@ -626,4 +628,8 @@ camera loop, hence its larger value.
 - A CSG subsurface receiver's slab and boundary probe use the whole map's median base
   radius (see CSG receivers).
 - Media noise does not fall with quality on the tested scene; only the cost grows.
+- Target weights are set by hand; nothing measures which target the image needs. Learning
+  works only within a target, counts power delivered anywhere rather than where the camera
+  sees it, and can starve a target's dim, widely spread light (see Learning within a
+  target).
 

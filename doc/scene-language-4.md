@@ -263,7 +263,10 @@ it defaults to 1. `quality` is contextual and stays available as a binding or fu
 outside the photon item position. Parenthesized expressions and signed operands work there.
 Omitting `method`, or specifying `method 1`, keeps classic photon controls; `quality` requires
 method 2 and cannot be combined with `count`, `spacing`, `gather`, `radius`, `jitter`,
-`autostop` or `expand_thresholds`. See `distribution/scenes/lights/progressive_photons4.pov4`.
+`autostop` or `expand_thresholds`. `learn on`, also contextual and also method 2 only, lets
+each target learn where its photons deliver power; an object's `photons { target W }` takes
+a share weight under method 2 (see `doc/progressive-photons.md`). See
+`distribution/scenes/lights/progressive_photons4.pov4`.
 
 ### Static checking
 
