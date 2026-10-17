@@ -183,6 +183,24 @@ static double ReducedAlbedo(double reflectance, double ior)
     return (1.0 - p) * node(int(i0)) + p * node(int(std::ceil(rd)));
 }
 
+// Albedo=r,g,b[:r,g,b...] (one value for all channels allowed): media given by their reduced albedos, else the renderer's.
+static std::vector<std::vector<double>> albedos;
+static double MediumAlbedo(size_t k, int j, double reflectance, double ior)
+{
+    return albedos.empty() ? ReducedAlbedo(reflectance, ior) : albedos[k][albedos[k].size() == 1 ? 0 : j];
+}
+
+static std::vector<std::string> Split(const std::string& text, char by)
+{
+    std::vector<std::string> parts(1);
+    for (char c : text)
+        if (c == by)
+            parts.emplace_back();
+        else
+            parts.back().push_back(c);
+    return parts;
+}
+
 static uint64_t Mix(uint64_t z)
 {
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
@@ -313,6 +331,53 @@ static double Walk(V x, V d, int j, const Medium& m, Rng& rng)
     return sum;
 }
 
+// The same walk for several media of one reduced scattering coefficient at once: flights scatter only, and each medium's
+// score is the walk's times exp(-σa·length), which is the analog walk's expectation for that medium (diffuse entry only).
+static void WalkMedia(V x, V d, int j, double sigmaS, const std::vector<double>& sigmaA, Rng& rng, double *score)
+{
+    V p = x;
+    double weight = 1.0, length = 0.0, least = *std::min_element(sigmaA.begin(), sigmaA.end());
+    std::fill(score, score + sigmaA.size(), 0.0);
+    for (int order = 1, step = 0; step < 10000000; step++)
+    {
+        double s = -std::log(1.0 - rng()) / sigmaS, tn, tf;
+        if (!Crossing(p, d, s, true, tn, tf))
+        {
+            p = p + d * s;
+            length += s;
+            order++;
+            d = Isotropic(rng);
+            if (weight * std::exp(-least * length) < 0.05)
+            {
+                if (rng() < 0.5)
+                    return;
+                weight *= 2.0;
+            }
+            continue;
+        }
+        V n = Normal(p + d * (0.5 * (tn + tf)));
+        double c = Dot(n, d);
+        if (c < 0.0)
+        {
+            n = n * -1.0;
+            c = -c;
+        }
+        if (rng() >= FresnelInside(c, eta))
+        {
+            if (order > 2)
+            {
+                double e = weight * Entering(p + d * tf, n, j) / transmitted;
+                for (size_t k = 0; k < sigmaA.size(); k++)
+                    score[k] = e * std::exp(-sigmaA[k] * (length + tn));
+            }
+            return;
+        }
+        p = p + d * tn;
+        length += tn;
+        d = d - n * (2.0 * c);
+    }
+}
+
 struct Material { double pigment[3], diffuse, mfp[3], ior; };
 static const Material kMaterials[] = {
     { { 0.85, 0.12, 0.08 }, 0.75, { 3.0, 1.6, 0.9 }, 1.5 },
@@ -375,7 +440,7 @@ static int Forward(const std::map<std::string, std::string>& args, const Materia
     std::printf("{\"photons\": %ld, \"angle\": %g, \"channels\": [", photons, angle * 180.0 / M_PI);
     for (int j = 0; j < 3; j++)
     {
-        double albedo = ReducedAlbedo(mat.pigment[j] * mat.diffuse, mat.ior), sigmaT = mm / mat.mfp[j] / albedo;
+        double albedo = MediumAlbedo(0, j, mat.pigment[j] * mat.diffuse, mat.ior), sigmaT = mm / mat.mfp[j] / albedo;
         unsigned count = std::max(1u, std::thread::hardware_concurrency());
         std::vector<std::thread> threads;
         std::vector<double> tally(size_t(count) * 4, 0.0);
@@ -451,8 +516,8 @@ int main(int argc, char **argv)
         if (!eq)
         {
             std::fprintf(stderr, "usage: sslt-reference Shape=N Material=N [Entry=beam View= Zoom= Bare= Blocks= Depth= W= H= Walks= Threads= Out=x.pfm Err=x.pfm]"
-                                 " (Err: standard errors, -1 off the object)\n"
-                                 "       sslt-reference Mode=forward Material=N [Photons= Angle= Thickness=mm Cone=cos]\n");
+                                 " [Albedo=r,g,b[:r,g,b...] with Out= and Err= a comma list, one per medium] (Err: standard errors, -1 off the object)\n"
+                                 "       sslt-reference Mode=forward Material=N [Albedo=r,g,b Photons= Angle= Thickness=mm Cone=cos]\n");
             return 2;
         }
         args[std::string(argv[i], size_t(eq - argv[i]))] = eq + 1;
@@ -463,6 +528,13 @@ int main(int argc, char **argv)
     eta = mat.ior;
     const double mmPerUnit[] = { 10.0, 10.0, 80.0, 40.0, 10.0 };
     double mm = mmPerUnit[shape];
+    if (args.count("Albedo"))
+        for (const std::string& medium : Split(args["Albedo"], ':'))
+        {
+            albedos.emplace_back();
+            for (const std::string& value : Split(medium, ','))
+                albedos.back().push_back(std::atof(value.c_str()));
+        }
     if (args.count("Mode") && args["Mode"] == "forward")
         return Forward(args, mat, mm);
     int width = int(number("W", 160)), height = int(number("H", 120)), walks = int(number("Walks", 1024));
@@ -515,15 +587,22 @@ int main(int argc, char **argv)
         target = view == 1 ? V{ 2.15, 0.55, -0.6 } : view == 2 ? V{ -1.49, 0.5, 0.75 } : view == 3 ? V{ 0.02, 0.4, -0.4 } : zoom == 1 ? V{ 0, 0.3, 0.1 } : V{ -1.7, 0.5, -0.1 };
         angle = 42.0 / zoom;
     }
-    Medium media[3];
-    for (int j = 0; j < 3; j++)
-    {
-        media[j].albedo = ReducedAlbedo(mat.pigment[j] * mat.diffuse, mat.ior);
-        media[j].sigmaT = mm / mat.mfp[j] / media[j].albedo;
-    }
+    size_t kinds = std::max<size_t>(1, albedos.size());
+    std::vector<Medium> media(kinds * 3);
+    for (size_t k = 0; k < kinds; k++)
+        for (int j = 0; j < 3; j++)
+        {
+            media[k * 3 + j].albedo = MediumAlbedo(k, j, mat.pigment[j] * mat.diffuse, mat.ior);
+            media[k * 3 + j].sigmaT = mm / mat.mfp[j] / media[k * 3 + j].albedo;
+        }
     // A pixel is π times the radiance: Ft out over η² times the radiance inside, where diffuse light of transmitted flux E is
     // η² E / (π (1 - F̄dr)) and a beam of fluence φ scatters σs φ / 4π.
     beams = args.count("Entry") && args["Entry"] == "beam";
+    if (beams && kinds > 1)
+    {
+        std::fprintf(stderr, "several media take diffuse entry only\n");
+        return 2;
+    }
     transmitted = 0.0;
     for (int i = 0; i < 100000; i++)
         transmitted += Ft((i + 0.5) / 100000, eta) * 2.0 * (i + 0.5) / 100000 / 100000;
@@ -533,8 +612,11 @@ int main(int argc, char **argv)
     bool grey[3] = { false, true, true };
     for (int j = 1; j < 3; j++)
         for (const Light& l : lights)
-            grey[j] = grey[j] && media[j].sigmaT == media[0].sigmaT && media[j].albedo == media[0].albedo && l.colour[j] == l.colour[0];
-    std::vector<double> image(size_t(width) * height * 3, 0.0), error(image.size(), -1.0);
+            for (size_t k = 0; k < kinds; k++)
+                grey[j] = grey[j] && media[k * 3 + j].sigmaT == media[k * 3].sigmaT && media[k * 3 + j].albedo == media[k * 3].albedo &&
+                          l.colour[j] == l.colour[0];
+    std::vector<double> image(size_t(width) * height * 3 * kinds, 0.0), error(image.size(), -1.0);
+    size_t plane = size_t(width) * height * 3;
     std::atomic<int> nextRow(0);
     auto work = [&]()
     {
@@ -560,21 +642,35 @@ int main(int argc, char **argv)
                     size_t at = (size_t(row) * width + col) * 3 + j;
                     if (grey[j])
                     {
-                        image[at] = image[at - j];
-                        error[at] = error[at - j];
+                        for (size_t k = 0; k < kinds; k++)
+                        {
+                            image[k * plane + at] = image[k * plane + at - j];
+                            error[k * plane + at] = error[k * plane + at - j];
+                        }
                         continue;
                     }
                     Rng rng{ Mix(uint64_t(row) * 0x9E3779B97F4A7C15ull ^ uint64_t(col) * 0xC2B2AE3D27D4EB4Full ^ uint64_t(j)) };
-                    double sum = 0.0, sumSq = 0.0;
+                    std::vector<double> sum(kinds, 0.0), sumSq(kinds, 0.0), score(kinds), sigmaA(kinds);
+                    for (size_t k = 0; k < kinds; k++)
+                        sigmaA[k] = media[k * 3 + j].sigmaT * (1.0 - media[k * 3 + j].albedo);
                     for (int w = 0; w < walks; w++)
                     {
-                        double v = Walk(x, d, j, media[j], rng);
-                        sum += v;
-                        sumSq += v * v;
+                        if (kinds == 1)
+                            score[0] = Walk(x, d, j, media[j], rng);
+                        else
+                            WalkMedia(x, d, j, mm / mat.mfp[j], sigmaA, rng, score.data());
+                        for (size_t k = 0; k < kinds; k++)
+                        {
+                            sum[k] += score[k];
+                            sumSq[k] += score[k] * score[k];
+                        }
                     }
-                    double mean = sum / walks;
-                    image[at] = scale * mean;
-                    error[at] = scale * std::sqrt(std::max(0.0, sumSq / walks - mean * mean) / walks);
+                    for (size_t k = 0; k < kinds; k++)
+                    {
+                        double mean = sum[k] / walks;
+                        image[k * plane + at] = scale * mean;
+                        error[k * plane + at] = scale * std::sqrt(std::max(0.0, sumSq[k] / walks - mean * mean) / walks);
+                    }
                 }
             }
     };
@@ -585,8 +681,16 @@ int main(int argc, char **argv)
     for (std::thread& t : threads)
         t.join();
     std::fprintf(stderr, "beam entries found %ld, not found %ld\n", entriesFound.load(), entriesMissed.load());
-    WritePfm(args.count("Out") ? args["Out"].c_str() : "reference.pfm", image, width, height);
+    std::vector<std::string> outs = Split(args.count("Out") ? args["Out"] : "reference.pfm", ','), errs;
     if (args.count("Err"))
-        WritePfm(args["Err"].c_str(), error, width, height);
+        errs = Split(args["Err"], ',');
+    for (size_t k = 0; k < kinds; k++)
+    {
+        std::vector<double> one(image.begin() + k * plane, image.begin() + (k + 1) * plane), bars(error.begin() + k * plane, error.begin() + (k + 1) * plane);
+        if (k < outs.size())
+            WritePfm(outs[k].c_str(), one, width, height);
+        if (k < errs.size())
+            WritePfm(errs[k].c_str(), bars, width, height);
+    }
     return 0;
 }
