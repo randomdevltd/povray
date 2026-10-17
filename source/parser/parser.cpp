@@ -7990,8 +7990,17 @@ void Parser::Parse_Global_Settings()
                 END_CASE
 
                 OTHERWISE
-                    UNGET
-                    EXIT
+                    if (CurrentTokenText() == "memory")
+                    {
+                        sceneData->subsurfaceMemory = Parse_Float();
+                        if (!(sceneData->subsurfaceMemory >= 1.0))
+                            Error("Subsurface memory must be at least 1 (MB).");
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
                 END_CASE
             END_EXPECT
             Parse_End();

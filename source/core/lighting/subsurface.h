@@ -108,6 +108,32 @@ enum SubsurfaceMethod
     kSubsurfaceMethodPointCloud = 2,
 };
 
+/// Memory all subsurface clouds may take together unless global_settings { subsurface { memory MB } } says otherwise.
+const double kSubsurfaceMemoryMB = 1024.0;
+
+/// Why a shading point that asked for the point cloud got method 1; the statistics count each from Subsurface_Cloud_Unoriented.
+enum SubsurfaceCloudFailure
+{
+    kCloudServed = 0,
+    kCloudUnoriented, ///< over 1 in 16 of a cell's crossings could not be told inside from outside
+    kCloudUnbounded,  ///< an unbounded object whose cells would be too coarse
+    kCloudWide,       ///< the reach spans more cells than a cloud gathers
+    kCloudLights,     ///< part of the object has lights of its own (a light group)
+    kCloudMissing,    ///< no cell holds the exit point
+    kCloudOther,      ///< no interior or diffusion, photons the cloud cannot take, or a cell whose build threw
+    kCloudFailures
+};
+
+/// Which rule set a cell's point step: the diffusion (a 128th of the cell), the pixel, the object's size, or the floor.
+enum SubsurfaceStepTerm { kStepDiffusion, kStepPixel, kStepObject, kStepFinest, kStepTerms };
+
+/// The clouds' totals for the render statistics.
+struct SubsurfaceCloudStatistics final
+{
+    double spacing = 1.0, peakBytes = 0.0, chargedBytes = 0.0, cells = 0.0, points = 0.0, read = 0.0;
+    double termCells[kStepTerms] = {}, termPoints[kStepTerms] = {};
+};
+
 /// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
 struct SubsurfacePoint final
 {
@@ -143,18 +169,27 @@ struct SubsurfaceCell final
     double step[3] = {}; ///< between points on a surface facing each axis, in scene units
     int lights = 0;
     bool usable = false;
+    SubsurfaceCloudFailure failure = kCloudServed; ///< why it is unusable
+    SubsurfaceStepTerm term = kStepDiffusion; ///< the rule that set its finest step
+    size_t charged = 0, staged = 0; ///< bytes of its finished arrays counted against the cap; of its rows while casting
+    bool settled = false; ///< charged or refunded, after which its rows no longer count
+    std::unique_ptr<std::atomic<std::uint32_t>[]> read; ///< a bit per node whose points a gather has used, alone or summed
     void BuildHierarchy();
     double Spacing(const Vector3d& normal) const; ///< between points on a surface with this unit normal
+    size_t Bytes() const; ///< held by the cell and its arrays
+    void Release(); ///< frees its arrays, for a cell that cannot be used
+    void MarkRead(int node) const;
+    size_t PointsRead() const; ///< points under a node a gather has used
 
     /// Building goes in stages, each split into jobs that every thread needing the cell meanwhile takes a share of.
-    /// A cell that fails (too many points, a crossing that cannot be oriented, an exception) ends ready but unusable.
+    /// A cell that fails (a crossing that cannot be oriented, an exception) ends ready but unusable.
     enum Stage { kCasting, kLighting, kReady };
     std::mutex mutex;
     std::condition_variable changed;
     Stage stage = kCasting;
     int jobs = 0, next = 0, done = 0, steps[3] = {}; ///< steps: lines per row along each axis
     std::atomic<bool> failed{false};
-    size_t found = 0, reserved = 0, unoriented = 0; ///< while casting: points kept, points reserved, crossings dropped
+    size_t found = 0, unoriented = 0; ///< while casting: points kept, crossings dropped
     std::vector<std::vector<SubsurfacePoint>> rows; ///< points found by each row of lines while casting
 };
 
@@ -209,16 +244,27 @@ class SubsurfacePhotonBoundaries final
         void Allocate(const PhotonMap& map);
 };
 
-/// Irradiance clouds built on demand and shared by all render threads, up to a point budget.
+/// Irradiance clouds built on demand and shared by all render threads, within a memory cap that stops the render.
 class SubsurfaceCache final
 {
     public:
+        explicit SubsurfaceCache(double capMB = kSubsurfaceMemoryMB, double spacing = 1.0);
         SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
         /// The cell for key, and whether the caller is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);
-        /// Reserves room for points; false once the budget is spent.
-        bool Reserve(size_t points);
-        void Release(size_t points);
+        /// Counts a finished cell's bytes against the cap, so that whether a render stops depends on the scene alone; throws
+        /// the fatal error once the clouds pass it.
+        void Charge(SubsurfaceCell& cell);
+        /// Rows a cell casts into, counted only in the peak.
+        void Stage(SubsurfaceCell& cell, size_t bytes);
+        /// Whether one cell's own points fit the cap; past it, the stop is recorded, as no total could then fit.
+        bool CellFits(size_t bytes);
+        void Refund(SubsurfaceCell& cell);
+        /// Throws the fatal error once any cell has passed the cap.
+        void CheckCap() const;
+        /// The share of the image done; once past a quarter, whether finished cells at that rate would pass the cap.
+        bool Progress(double fraction, double& heldMB, double& projectedMB, double& capMB);
+        SubsurfaceCloudStatistics Statistics() const;
         /// The camera that cells space their points for: the first view to set it, so every thread builds alike.
         void SetCamera(const Vector3d& location, double pixelSize, double pixelAngle);
         bool GetCamera(Vector3d& location, double& pixelSize, double& pixelAngle) const;
@@ -228,7 +274,10 @@ class SubsurfaceCache final
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
         std::mutex photonBoundariesMutex;
         std::unordered_map<const PhotonMap*, std::unique_ptr<SubsurfacePhotonBoundaries>> photonBoundaries;
-        size_t reserved = 0;
+        size_t cap, charged = 0, staged = 0, peak = 0, refused = 0;
+        double progress = 0.0, refusedAt = 0.0;
+        bool projected = false;
+        double spacing;
         bool cameraSet = false;
         Vector3d cameraLocation;
         double cameraPixelSize = 0.0, cameraPixelAngle = 0.0;

@@ -49,7 +49,7 @@ const CURATION = {
 };
 
 // Nested rows emitted into pov4schema.h: only genuine sub-blocks, not value positions.
-const NESTED_IN_HEADER = new Set(['reflection', 'scattering', 'photons', 'radiosity']);
+const NESTED_IN_HEADER = new Set(['reflection', 'scattering', 'photons', 'radiosity', 'subsurface']);
 
 const pad = (s) => s.replace(/[^\n]/g, ' ');
 // Single-pass context scanner: blanks comments and literals without letting their

@@ -151,6 +151,8 @@ class TracePixel final : public Trace
         GenericScalarFunctionInstancePtr mpCameraDirectionFn[3];
 
         bool CreateCameraRay(Ray& ray, DBL x, DBL y, DBL width, DBL height, size_t ray_number);
+        /// A pixel's span as a size plus an angle times the distance, and the image centre's eye, from the camera's own rays.
+        void MeasureCameraPixel(DBL width, DBL height, Vector3d& location, double& pixelSize, double& pixelAngle);
         /// While set, camera rays take the path key of the camera ray this far away in the image.
         bool shiftKey = false;
         Vector2d keyShift;

@@ -280,6 +280,8 @@ class SceneData
         double subsurfaceErrorBound;
         /// point-cloud method: point spacing relative to the automatic spacing
         double subsurfaceSpacing;
+        /// point-cloud method: the memory all clouds may take, in MB, past which the render stops
+        double subsurfaceMemory;
 
         // ********************************************************************************
         // temporary variables for BSP testing ... we may or may not keep these in future

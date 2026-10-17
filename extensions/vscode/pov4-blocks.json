@@ -3379,6 +3379,7 @@
         "max_trace_level",
         "maximum_reuse",
         "media",
+        "memory",
         "mesh_cache",
         "method",
         "minimum_reuse",
@@ -3449,6 +3450,7 @@
         ],
         "subsurface": [
           "error_bound",
+          "memory",
           "method",
           "radiosity",
           "samples",

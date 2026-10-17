@@ -292,6 +292,12 @@ typedef enum INTSTATS
     Subsurface_Cloud_Hidden,
     Subsurface_Cloud_Shadow_Edge,
     Subsurface_Cloud_Exit_Mismatch,
+    Subsurface_Cloud_Unoriented, ///< shading points without a cloud, by SubsurfaceCloudFailure from kCloudUnoriented on
+    Subsurface_Cloud_Unbounded,
+    Subsurface_Cloud_Wide,
+    Subsurface_Cloud_Lights,
+    Subsurface_Cloud_Missing,
+    Subsurface_Cloud_Other,
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample
