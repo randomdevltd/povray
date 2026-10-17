@@ -1,7 +1,6 @@
 // Subsurface in a wide, busy view: a 360-degree spherical camera, 13 lights (two soft area suns), about 20000 small
 // objects, bark-like mesh2 trunks and a small smooth mesh with subsurface, each covering few pixels; see doc/PERF.md.
 #version 3.7;
-#ifdef (Version) #version Version; #end
 #ifndef (Diffuse) #declare Diffuse = 6; #end
 #ifndef (Single) #declare Single = 3; #end
 #ifndef (Subsurface) #declare Subsurface = 1; #end

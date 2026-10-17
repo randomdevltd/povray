@@ -1,7 +1,6 @@
-// A wax sphere seen only in a faint mirror, and with Direct=1 another seen directly; Version, Bailout and Reflect vary
+// A wax sphere seen only in a faint mirror, and with Direct=1 another seen directly; Bailout and Reflect vary
 // the subsurface bailout's inputs.
 #version 4.0;
-#ifdef (Version) #version Version; #end
 #ifndef (Direct) #declare Direct = 0; #end
 #ifndef (Reflect) #declare Reflect = 0.02; #end
 global_settings {

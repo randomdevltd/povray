@@ -621,19 +621,16 @@ semi-infinite medium is, and stud walls are a little bright in red near their ba
 ## Subsurface bailout
 
 `adc_bailout` only decides whether a ray is traced, so a reflection or refraction of small weight that meets a
-subsurface object used to pay for a full cloud gather and for building any cells it reached. With `#version 4.0` and
-method 2, a hit whose ray weight times the subsurface layers' opacity is below `bailout` (8 by default) times the ray's
+subsurface object used to pay for a full cloud gather and for building any cells it reached. With method 2, a hit whose ray weight times the subsurface layers' opacity is below `bailout` (8 by default) times the ray's
 `adc_bailout` is lit as its exit point is: the light entering there (each light once, an area light at one drawn
 point), times the flesh's mean entry factor where the flesh is looked up, times the profile's integral over the plane
 (`RdTotal`) and the exit Fresnel term. It has no single scattering, photons or radiosity, reads no cell and builds
 none; a hit on an open sheet still counts as unserved. The unscattered ray through the object is traced as before (it
 carries the incoming weight). Primary rays have weight 1 and are never cut; radiosity gather rays carry
 (0.5 × brightness)^(depth + 1) against the radiosity `adc_bailout` of 0.01, so with the default only their fourth
-bounce and deeper are cut. Method 1 and scenes before 4.0 are untouched: the subsurface scenes of
-`tests/render/version4_subsurface_{37,38}.pov` (method 2), `version4_subsurface_40.pov` (method 1),
-`subsurface_leaf.pov`, `tools/bench/sslt-open.pov` case 5 (methods 1 and 2) and `sslt-bailout.pov` case 1 (method 1)
-render pixel-identical to the build before. `tests/render/subsurface_bailout.sh` checks that hits seen only in a faint
-mirror build no cell, that the bailout is off before 4.0, and that the image and cloud are the same on one thread and
+bounce and deeper are cut. Method 1 is untouched: `tests/render/version4_subsurface_40.pov`, `tools/bench/sslt-open.pov` case 5 and
+`sslt-bailout.pov` case 1, each with method 1, render pixel-identical to the build before. `tests/render/subsurface_bailout.sh` checks that hits seen only in a faint
+mirror build no cell, and that the image and cloud are the same on one thread and
 four.
 
 `tools/bench/sslt-bailout.pov` has six stacked thin leaves passing 40% of the light (case 0, 200×150) and wax spheres
@@ -656,7 +653,7 @@ longer built. The default is 8, the largest setting whose worst block stays unde
 small objects of `sslt-projection.pov` (`Camera=1 Count=1000`, 320×160), where the unscattered ray of one box meets
 the next at about 3% weight, 8 lights 1620 of 50945 hits from their exit point, builds 1377 cells instead of 1521
 (1.11 M points instead of 1.23 M) and takes 4.28 CPU-s instead of 4.34, at rms 0.02 and worst block 0.15.
-`sslt-wide.pov` at 1600×800 (`Version=4.0 Method=2`) has no hit under it: the same 40404 hits and 491 cells, an
+`sslt-wide.pov` at 1600×800 (`Method=2`) has no hit under it: the same 40404 hits and 491 cells, an
 identical image, 15.1 and 15.2 CPU-s.
 
 ## Subsurface flesh and skin

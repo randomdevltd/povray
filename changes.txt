@@ -349,7 +349,7 @@ New Features
     serve gets no diffuse subsurface light, and a warning names its object.
     Open skeins lose subsurface when parsed, like other sheets. Changes
     images where method 2 used to fall back.
-  - With `#version 4.0`, subsurface method 2 lights a hit whose ray weight is
+  - Subsurface method 2 lights a hit whose ray weight is
     below `global_settings { subsurface { bailout FLOAT } }` times
     `adc_bailout` (8 by default, 0 for off) from its exit point alone, times
     the diffusion profile's integral, without reading or building its point
