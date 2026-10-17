@@ -2494,6 +2494,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                 return std::abs(dot(Face_Normal, direction)) > EPSILON && !(dot(Layer_Normal, direction) < EPSILON);
             });
         const double support2 = support * support;
+        const bool irid = Finish->Irid > 0.0;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
         unsigned int index = 0;
         MathColour sum;
@@ -2517,6 +2518,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                 if (Finish->Specular > 0.0)
                     ComputeSpecularColour(Finish, direction, -Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
             }
+            if (irid)
+                ComputeIridColour(Finish, direction, Eye.Direction, Layer_Normal, IPoint, contribution);
             sum += contribution;
             threadData->progressiveContributions++;
         }

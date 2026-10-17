@@ -104,7 +104,7 @@ most 0.016.
 `k` grows with the batch count as `k = 48 (batches / 4)^(2/3)`, clamped to
 8..256, the kernel-density rate for a two-dimensional density: quality 1 uses
 48 neighbours, quality 4 uses 121 and quality 16 uses the cap of 256. The same
-estimator feeds diffuse, phong and specular photon lighting and subsurface entry,
+estimator feeds diffuse, phong, specular and `irid` photon lighting and subsurface entry,
 including the shared subsurface point cloud, whose boundary probe uses the base
 radius. A subsurface receiver that is a CSG gathers deposits on its members.
 
@@ -339,7 +339,8 @@ requires its underside to match the lit top, as does a `double_illuminate` disc;
 smooth mesh, a height field, a smooth height field, an isosurface and a parametric, and
 requires each to match classic photons within 5% (the parametric within 10%: with its
 slab disabled it still reaches only 0.93 of classic there), the smooth forms to match the
-faceted ones and the isosurface to match a tight-accuracy one; the
+faceted ones and the isosurface to match a tight-accuracy one, and requires an `irid`
+finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 
 ## Measurements

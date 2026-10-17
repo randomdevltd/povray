@@ -4,6 +4,7 @@
 #ifndef (Receiver) #declare Receiver = 0; #end  // 0 mesh, 1 smooth mesh, 2 height_field, 3 smooth height_field, 4 isosurface, 5 parametric
 #ifndef (Accuracy) #declare Accuracy = 0.001; #end
 #ifndef (Count) #declare Count = 400000; #end
+#ifndef (Irid) #declare Irid = 0; #end
 global_settings { assumed_gamma 1 photons { #if (Method = 2) method 2 quality 1 #else count Count #end } }
 camera { orthographic location <0, 10, 0> look_at <0, 0, 0> right 4 * x up 3 * z }
 light_source { <0, 8, 0> rgb 0.5 fade_power 2 fade_distance 0.70710678 photon_only on photons { refraction on reflection off } }
@@ -35,4 +36,4 @@ sphere { <0, 1.5, 0>, 1 pigment { rgbf 1 } interior { ior 1.5 } photons { target
     contained_by { box { <-2, -0.1, -1.5>, <2, 0.1, 1.5> } } precompute 12 x, y, z accuracy Accuracy }
 #break
 #end
-object { Floor pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
+object { Floor pigment { rgb 1 } finish { ambient 0 diffuse 1 #if (Irid) irid { 0.8 thickness 0.5 turbulence 0 } #end } }
