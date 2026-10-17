@@ -172,6 +172,16 @@ finite photon segments with their incoming flux and extinction. A gather clips e
 segment to its spherical support and integrates attenuation analytically along the
 clipped length. The estimate divides by the sphere volume, with scattering and phase
 evaluated at the camera sample.
+Along a photon path through a medium the integration step is a fortieth of the bounding
+diagonal of the target the photon was aimed at (for an isotropic sample, the target its
+selection draw picks), shrinking as `batches^(-1/7)`, times the `factor` of
+`media N, factor`; each media interval takes at most `N` steps and at least the medium's
+own minimum samples. As with classic photons a larger factor takes fewer, longer steps:
+on `tests/render/progressive_volume.pov` with varying extinction, factor 4 stores 4% fewer
+segments at `media 16` and 44% fewer at `media 64`, and changes the mean by under 0.2%.
+With several targets the step used to come from the light's first target whatever the
+photon was aimed at, so the segment count depended on the order of targets in the scene
+(406,000 or 470,000 segments for the same scene there); it now differs by 0.1%.
 The existing media step limit and sampling settings control extinction integration;
 method 4 shares its prepared coefficient field with camera transport. Its coarse
 direct-light sampling still gathers photons at every coefficient sample.

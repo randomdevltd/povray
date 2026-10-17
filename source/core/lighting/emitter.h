@@ -77,17 +77,24 @@ class Emitter
         }
 };
 
-/// Photon emission: a tenth isotropic, nine tenths over target cones (width = 1 - least cosine); a draw below 0.9 replaces
-/// the isotropic direction by a cone sample. Returns the mixture density per steradian.
+/// The target that selector, uniform in [0, 1), picks by probability; selector keeps its remainder.
+inline size_t PhotonTargetPick(const std::vector<double>& probability, double& selector)
+{
+    size_t selected = 0;
+    while (selected + 1 < probability.size() && selector >= probability[selected])
+        selector -= probability[selected++];
+    return selected;
+}
+
+/// Photon emission: a tenth isotropic, nine tenths over target cones (width = 1 - least cosine); a draw below 0.9 replaces the
+/// isotropic direction by a cone sample of the selected target, picked for every sample. Returns the density per steradian.
 inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::vector<double>& widths, const std::vector<double>& probability,
                                   double u, double v, double draw, double selector, Vector3d& direction, size_t& selected, bool& targeted)
 {
     targeted = draw < 0.9;
-    selected = 0;
+    selected = PhotonTargetPick(probability, selector);
     if (targeted)
     {
-        while (selected + 1 < axes.size() && selector >= probability[selected])
-            selector -= probability[selected++];
         const Vector3d axis = axes[selected];
         Vector3d s = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
         const Vector3d t = cross(axis, s);

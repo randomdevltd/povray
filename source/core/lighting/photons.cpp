@@ -1176,7 +1176,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
             if (interval.ds <= 0.0)
                 continue;
             const int count = std::max(minsamples, int(std::min(double(sceneData->photonSettings.maxMediaSteps),
-                                                               std::ceil(interval.ds / threadData->photonSpread))));
+                                                               std::ceil(interval.ds / (threadData->photonSpread * sceneData->photonSettings.mediaSpacingFactor)))));
             const double step = interval.ds / count;
             for (int sample = 0; sample < count; ++sample)
             {
