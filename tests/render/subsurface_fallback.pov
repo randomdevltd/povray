@@ -1,6 +1,5 @@
-// Subsurface method 2 where its cloud used to hand shading points to method 1, one Case each: 0 a union's overlapping parts, 1 an open
-// mesh, 2 a disc, 3 a wall under the probe floor, 4 a plane, 5 a light group, 6 a reach past the cells, 7 parts sharing a face, 8 no
-// absorption, 9 photons on one part, 10 a cell with no points, 11 thin rods, 12 a step, 13 radiosity, 14 a thin layered sheet.
+// Former method 1 fallbacks by Case: 0 union overlap, 1 open mesh, 2 disc, 3 wall under the probe floor, 4 plane, 5 light group,
+// 6 wide ring, 7 shared face, 8 no absorption, 9 photons, 10 empty cell, 11 rods, 12 step, 13 radiosity, 14 layers, 15-17 solids.
 #version 4.0;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Method) #declare Method = 2; #end
@@ -77,6 +76,24 @@ light_source { Sun }
     #break
   #case (12)
     merge { box { <-0.8, 0, -0.6>, <0.8, 0.3, 0.6> } box { <-0.8, 0.3, 0.1>, <0.8, 0.9, 0.6> } material { Skin } }
+    #break
+  #case (15)
+    mesh2 {
+      vertex_vectors { 24,
+        <-0.6,0,-0.6>,<0.6,0,-0.6>,<0.6,1,-0.6>,<-0.6,1,-0.6>, <-0.6,0,0.6>,<0.6,0,0.6>,<0.6,1,0.6>,<-0.6,1,0.6>,
+        <-0.6,0,-0.6>,<-0.6,1,-0.6>,<-0.6,1,0.6>,<-0.6,0,0.6>, <0.6,0,-0.6>,<0.6,1,-0.6>,<0.6,1,0.6>,<0.6,0,0.6>,
+        <-0.6,0,-0.6>,<0.6,0,-0.6>,<0.6,0,0.6>,<-0.6,0,0.6>, <-0.6,1,-0.6>,<0.6,1,-0.6>,<0.6,1,0.6>,<-0.6,1,0.6> }
+      face_indices { 12, <0,1,2>,<0,2,3>, <4,6,5>,<4,7,6>, <8,10,9>,<8,11,10>, <12,13,14>,<12,14,15>, <16,18,17>,<16,19,18>,
+        <20,21,22>,<20,22,23> }
+      inside_vector y
+      material { Skin }
+    }
+    #break
+  #case (16)
+    intersection { box { <-0.6, 0, -0.6>, <0.6, 1, 0.6> } disc { <0, 0.7, 0>, y, 2 } material { Skin } }
+    #break
+  #case (17)
+    merge { box { <-0.6, 0, -0.6>, <-0.02, 1, 0.6> } box { <0.02, 0, -0.6>, <0.6, 0.6, 0.6> } material { Skin } }
     #break
   #case (14)
     #for (I, 0, 3)

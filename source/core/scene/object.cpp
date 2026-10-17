@@ -54,6 +54,7 @@
 #include "core/shape/box.h"
 #include "core/shape/cone.h"
 #include "core/shape/csg.h"
+#include "core/shape/disc.h"
 #include "core/shape/mesh.h"
 #include "core/shape/plane.h"
 #include "core/shape/sphere.h"
@@ -997,6 +998,7 @@ const char *ShapeName(ConstObjectPtr object)
     if (dynamic_cast<const Sphere *>(object) != nullptr)       return "sphere";
     if (dynamic_cast<const Cone *>(object) != nullptr)         return "cone or cylinder";
     if (dynamic_cast<const Mesh *>(object) != nullptr)         return "mesh";
+    if (dynamic_cast<const Disc *>(object) != nullptr)         return "disc";
     if (dynamic_cast<const CSGMerge *>(object) != nullptr)     return "merge";
     if (dynamic_cast<const CSGUnion *>(object) != nullptr)     return "union";
     if (dynamic_cast<const CSGIntersection *>(object) != nullptr) return "intersection or difference";

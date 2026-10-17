@@ -591,9 +591,9 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, floa
             {
                 MessageFactory messages(sceneData->warningLevel, "Subsurface", sceneData->backendAddress, sceneData->frontendAddress,
                                         sceneData->sceneId, viewId);
-                messages.Warning(kWarningGeneral, "Subsurface clouds hold %.4g MB after a quarter of the image; at that rate they would "
-                                 "reach about %.4g MB, past their memory cap of %.4g MB, and the render stops if they pass it. Raise memory "
-                                 "or spacing in global_settings { subsurface { ... } }.", heldMB, projectedMB, capMB);
+                messages.Warning(kWarningGeneral, "Subsurface clouds hold %.4g MB after half the image; growing as they did over its second "
+                                 "quarter they would reach at most about %.4g MB, past their memory cap of %.4g MB, and the render stops if "
+                                 "they pass it. Raise memory or spacing in global_settings { subsurface { ... } }.", heldMB, projectedMB, capMB);
             }
 
             POVMS_Object obj(kPOVObjectClass_RenderProgress);
@@ -1453,10 +1453,6 @@ void View::StopRender()
     RenderBackend::SendViewFailedResult(viewData.viewId, kUserAbortErr, viewData.sceneData->frontendAddress);
 }
 
-// Shares of the shading points tried on the cloud that, falling back to method 1, warn: for clouds that could not be
-// built, and for all reasons together.
-static const double kCloudWarnMissing = 0.01;
-static const double kCloudWarnFallback = 0.25;
 
 void View::GetStatistics(POVMS_Object& renderStats)
 {
@@ -1472,10 +1468,10 @@ void View::GetStatistics(POVMS_Object& renderStats)
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
         double mean = double(stats[Subsurface_Photon_Radius_Sum]) / photonGathers;
         double variance = max(0.0, double(stats[Subsurface_Photon_Radius_Squared_Sum]) / photonGathers - Sqr(mean));
-        messages.Info("Entry gathers: cloud %.0f, sampled %.0f, fallback %.0f; searches %.0f; deposits %.0f/%.0f accepted; boundaries %.0f computed, %.0f reused; "
+        messages.Info("Entry gathers: cloud %.0f, sampled %.0f; searches %.0f; deposits %.0f/%.0f accepted; boundaries %.0f computed, %.0f reused; "
                       "radius %.6g +/- %.6g.",
                       double(stats[Subsurface_Photon_Cloud_Gathers]), double(stats[Subsurface_Photon_Sample_Gathers]),
-                      double(stats[Subsurface_Photon_Fallbacks]), double(stats[Subsurface_Photon_Searches]),
+                      double(stats[Subsurface_Photon_Searches]),
                       double(stats[Subsurface_Photon_Accepted]), double(stats[Subsurface_Photon_Candidates]),
                       double(stats[Subsurface_Photon_Boundaries_Computed]), double(stats[Subsurface_Photon_Boundaries_Reused]), mean, sqrt(variance));
     }
@@ -1485,16 +1481,17 @@ void View::GetStatistics(POVMS_Object& renderStats)
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
         double attempts = double(stats[Subsurface_Cloud_Attempts]), served = double(stats[Subsurface_Cloud_Served]);
-        double failed[kCloudFailures] = {};
-        for (int f = kCloudUnoriented; f < kCloudFailures; f++)
-            failed[f] = double(stats[IntStatsIndex(Subsurface_Cloud_Unoriented + (f - kCloudUnoriented))]);
-        messages.Info("Method 2 point cloud: %.0f shading points tried, %.0f served; method 1 for %.0f (unoriented %.0f, unbounded %.0f, "
-                      "too wide %.0f, light group %.0f, no cell %.0f, other %.0f, bent disc %.0f, hidden %.0f, shadow edge %.0f, "
-                      "exit mismatch %.0f).",
-                      attempts, served, attempts - served, failed[kCloudUnoriented], failed[kCloudUnbounded], failed[kCloudWide],
-                      failed[kCloudLights], failed[kCloudMissing], failed[kCloudOther], double(stats[Subsurface_Cloud_Bent]),
-                      double(stats[Subsurface_Cloud_Hidden]), double(stats[Subsurface_Cloud_Shadow_Edge]),
-                      double(stats[Subsurface_Cloud_Exit_Mismatch]));
+        messages.Info("Method 2 point cloud: %.0f shading points tried, %.0f served (%.0f in the radiosity pretrace), %.0f left without "
+                      "subsurface light; discs bending %.0f, with points unfolded across creases %.0f; near field drawn at %.0f, with %.0f "
+                      "shadow rays; lit as the exit point with no points near %.0f, with none facing in the disc %.0f; gathers with larger "
+                      "cells %.0f; crossings dropped as inside on both sides %.0f, outside on both %.0f, closer than the probes %.0f, "
+                      "on open sheets %.0f.",
+                      attempts, served, double(stats[Subsurface_Cloud_Pretrace]), double(stats[Subsurface_Cloud_Unserved]),
+                      double(stats[Subsurface_Cloud_Bent]), double(stats[Subsurface_Cloud_Hidden]), double(stats[Subsurface_Cloud_Near_Field]),
+                      double(stats[Subsurface_Cloud_Near_Rays]), double(stats[Subsurface_Cloud_Alone]), double(stats[Subsurface_Cloud_Empty_Disc]),
+                      double(stats[Subsurface_Cloud_Lifted]), double(stats[Subsurface_Cloud_Dropped_Inside]),
+                      double(stats[Subsurface_Cloud_Dropped_Outside]), double(stats[Subsurface_Cloud_Dropped_Thin]),
+                      double(stats[Subsurface_Cloud_Dropped_Sheet]));
         if (viewData.subsurfaceCache)
         {
             SubsurfaceCloudStatistics cloud = viewData.subsurfaceCache->Statistics();
@@ -1505,35 +1502,27 @@ void View::GetStatistics(POVMS_Object& renderStats)
                           cloud.termCells[kStepPixel], cloud.termPoints[kStepPixel], cloud.termCells[kStepDiffusion],
                           cloud.termPoints[kStepDiffusion], cloud.termCells[kStepObject], cloud.termPoints[kStepObject],
                           cloud.termCells[kStepFinest], cloud.termPoints[kStepFinest]);
+            const char *reasons[kUnservedReasons] = {
+                "it is an open sheet (a disc, or a mesh whose triangles leave a border), with no inside for light to diffuse through",
+                "its part has a light the object's other parts were not found to have",
+                "the diffusion's reach is not finite",
+                "its cells lie too far from the origin to be numbered",
+            };
+            for (const auto& object : viewData.subsurfaceCache->Unserved())
+                messages.Warning(kWarningGeneral, "Subsurface method 2 left %.0f shading points of the %s without diffuse subsurface light, "
+                                 "as %s.", double(object.count), object.description.c_str(), reasons[object.reason]);
         }
+    }
 
-        const char *causes[kCloudFailures] = {
-            nullptr,
-            "over 1 in 16 surface crossings in a cell could not be told inside from outside (walls thinner than about a "
-            "twentieth of the cloud's spacing, or coincident surfaces); thicken the walls or lower subsurface spacing",
-            "the object is unbounded (a plane or another infinite shape) and its cells would be too coarse for its diffusion; "
-            "bound it, or use method 1 on it",
-            "the diffusion reaches across more cells than a cloud gathers, as the cloud's spacing is coarse beside the diffusion",
-            "part of the object is lit by a light group of its own, which its cloud's shared shadows cannot hold",
-            "the exit point lies in no cell of the cloud",
-            "the object has no interior or no diffusion, takes photons unevenly, or a cell's build failed",
-        };
-        // Whole clouds missing are a setting or a limit to fix, so any share warns; points the geometry turns away warn when common.
-        double missing = 0.0;
-        for (int f = kCloudUnoriented; f < kCloudFailures; f++)
-            missing += failed[f];
-        double fallback = attempts - served;
-        if ((missing >= kCloudWarnMissing * attempts) || (fallback >= kCloudWarnFallback * attempts))
-            for (int f = kCloudUnoriented; f < kCloudFailures; f++)
-                if (failed[f] > 0.0)
-                    messages.Warning(kWarningGeneral, "Subsurface method 2 fell back to method 1 for %.0f of %.0f shading points as %s.",
-                                     failed[f], attempts, causes[f]);
-        if (fallback - missing >= kCloudWarnFallback * attempts)
-            messages.Warning(kWarningGeneral, "Subsurface method 2 fell back to method 1 for %.0f of %.0f shading points where the surface bends "
-                             "within the shading disc (%.0f) or folds into a crease (%.0f), or a shadow edge falls between coarse points (%.0f) or "
-                             "differs at the exit point (%.0f); lower subsurface spacing to keep more of them on the cloud.",
-                             fallback - missing, attempts, double(stats[Subsurface_Cloud_Bent]), double(stats[Subsurface_Cloud_Hidden]),
-                             double(stats[Subsurface_Cloud_Shadow_Edge]), double(stats[Subsurface_Cloud_Exit_Mismatch]));
+    if (stats[Subsurface_Cloud_Depth_Floor] > 0)
+    {
+        MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
+                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+        messages.Warning(kWarningGeneral, "%.0f subsurface point cloud cells could not set their points three depths z_r apart, as "
+                         "a cell's finest step is a 1024th of its side; where their points lie over four times the larger of z_r and a "
+                         "pixel apart, shadow and surface edges are drawn near each exit point instead. A diffusion this long against its "
+                         "depth may also need a larger memory cap.",
+                         double(stats[Subsurface_Cloud_Depth_Floor]));
     }
 
     if (stats[Subsurface_Thin_Walls] > 0)
