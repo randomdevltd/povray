@@ -1,5 +1,5 @@
 // Concave creases on one subsurface object: studs at three pitches, a step and a slot on a slab; Fillet, Sink, Zoom, View (1 slot,
-// 2 tight row, 3 gap), Bare (slab alone), Blocks (two blocks with an air gap) and Reference (as tools/bench/sslt-reference.cpp).
+// 2 tight row, 3 gap), Bare (slab alone), Blocks (two blocks with an air gap) and Reference (as sslt-reference.cpp Shape=4).
 #version 3.7;
 #ifndef (Diffuse) #declare Diffuse = 74; #end
 #ifndef (Single) #declare Single = 21; #end
