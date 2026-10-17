@@ -361,6 +361,8 @@ New Features
     fixed 32 MB, dropping the least recently used, and builds them for the
     relative index to within 2^-12, so continuously varying colours, depths
     and refracting media no longer grow memory without bound.
+  - A subsurface colour channel of 0 renders black with method 2 instead of
+    at full brightness.
   - Light sources take `photon_only`: the light shoots photons without
     lighting surfaces or media directly.
   - Anti-aliasing method 4 (`+AM4`, with `+PR`) spends a sample budget set
