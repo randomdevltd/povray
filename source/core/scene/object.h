@@ -175,6 +175,7 @@ namespace pov
 
 class Portal;
 class Emitter;
+struct PhotonTargetGroup final { BoundingBox box; }; ///< the bounds of the split union the group was
 
 /// Abstract base class for all geometric objects.
 class ObjectBase
@@ -199,6 +200,8 @@ class ObjectBase
         std::vector<std::string> tags;
         /// whether the parent's effective tags add to `tags`: true when omitted or written with `inherit`
         bool inheritTags = true;
+        /// Shared by the members of a split union that was one photon target, so method 2 keeps them one target.
+        std::shared_ptr<const PhotonTargetGroup> photonTargetGroup;
 
 #ifdef OBJECT_DEBUG_HELPER
         ObjectDebugHelper Debug;
@@ -225,7 +228,7 @@ class ObjectBase
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
-            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags)
+            BBox(o.BBox), tags(o.tags), inheritTags(o.inheritTags), photonTargetGroup(o.photonTargetGroup)
         {
             if (transplant)
             {

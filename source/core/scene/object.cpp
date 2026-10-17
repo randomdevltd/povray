@@ -594,6 +594,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->Flags   = Old->Flags & ~FRAME_TARGET_FLAG;
     New->tags = Old->tags;
     New->inheritTags = Old->inheritTags;
+    New->photonTargetGroup = Old->photonTargetGroup;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;

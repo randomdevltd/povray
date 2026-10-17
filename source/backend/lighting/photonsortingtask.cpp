@@ -569,8 +569,9 @@ template<class T> bool Finite(const T& values, int count)
 }
 }
 
-std::string ProgressivePhotonIdentity(const ScenePhotonSettings& settings)
+std::string ProgressivePhotonIdentity(const SceneData& scene)
 {
+    const ScenePhotonSettings& settings = scene.photonSettings;
     const ProgressivePhotonBudget budget(settings.quality);
     std::ostringstream key;
     key << std::setprecision(std::numeric_limits<DBL>::max_digits10)
@@ -578,7 +579,21 @@ std::string ProgressivePhotonIdentity(const ScenePhotonSettings& settings)
         << ";shards=" << ProgressivePhotonBudget::shards << ";k=" << budget.neighbours << ";sobol=" << PhotonSobol::kDimensions
         << ";trace=" << settings.Max_Trace_Level << ";adc=" << settings.adcBailout
         << ";mediaSteps=" << settings.maxMediaSteps << ";mediaSpacing=" << settings.mediaSpacingFactor
-        << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel);
+        << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel) << ";targets=";
+    const ProgressiveSceneIndex index(scene);
+    std::vector<const PhotonTargetGroup*> groups;
+    for (size_t i = 0; i < index.objects.size(); ++i)
+        if (Test_Flag(index.objects[i], PH_TARGET_FLAG))
+        {
+            key << i << ':' << index.objects[i]->Ph_Density;
+            if (const PhotonTargetGroup* group = index.objects[i]->photonTargetGroup.get())
+            {
+                if (std::find(groups.begin(), groups.end(), group) == groups.end())
+                    groups.push_back(group);
+                key << 'g' << std::find(groups.begin(), groups.end(), group) - groups.begin();
+            }
+            key << ',';
+        }
     return key.str();
 }
 
@@ -588,7 +603,7 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
     PhotonFileWriter out(scene.photonSettings.fileName);
     out.Bytes(kProgressiveMagic, sizeof(kProgressiveMagic));
     out.Put(kProgressiveVersion);
-    out.String(ProgressivePhotonIdentity(scene.photonSettings));
+    out.String(ProgressivePhotonIdentity(scene));
     out.Put(seed);
     out.String(index.Shape());
     out.Put(std::uint32_t(scene.preparedSets.size()));
@@ -678,14 +693,14 @@ std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_
     if (in.Good() && version != kProgressiveVersion)
         return "The photon file '" + name + "' has format version " + std::to_string(version) + "; this build reads version " +
                std::to_string(kProgressiveVersion) + ".";
-    const std::string identity = in.String(), expected = ProgressivePhotonIdentity(scene.photonSettings);
-    if (in.Good() && identity != expected)
-        return "The photon file '" + name + "' was saved with other photon settings (" + identity + "); this scene has " + expected + ".";
+    const std::string identity = in.String(), expected = ProgressivePhotonIdentity(scene);
     savedSeed = in.Get<std::uint64_t>();
     const ProgressiveSceneIndex index(scene);
     const std::string shape = in.String();
     if (in.Good() && shape != index.Shape())
         return "The photon file '" + name + "' was saved for a scene with " + shape + "; this scene has " + index.Shape() + ".";
+    if (in.Good() && identity != expected)
+        return "The photon file '" + name + "' was saved with other photon settings (" + identity + "); this scene has " + expected + ".";
     const std::uint32_t sets = in.Get<std::uint32_t>();
     std::map<std::string, PreparedSet*> wanted;
     for (const auto& set : scene.preparedSets)

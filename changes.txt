@@ -48,6 +48,12 @@ Changed Behaviour
     16384. It works with radiosity, with media photons from light-group lights,
     and with save_file and load_file for its own maps.
 
+  - Photon method 2 reads the number after `photons { target }` as a share
+    weight (default 1, opposite to the method 1 spacing multiplier): a light
+    splits its targeted photons between its targets in proportion to their
+    weights, instead of by the previous batch's hit rate. A split union marked
+    as a target stays one target.
+
   - Any new behaviour formerly activated by `#version 3.71` now requires
     `#version 3.8` (or higher); specifying `#version 3.71` will trigger a
     corresponding warning.

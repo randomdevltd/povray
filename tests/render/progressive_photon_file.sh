@@ -43,6 +43,7 @@ fi
 refuse classic_reads_new 'Could not load photon map' Declare=Method=1
 refuse quality 'other photon settings' Declare=Dispersion=1.03 Declare=PhotonQuality=0.5
 refuse shape 'saved for a scene with' Declare=Dispersion=1.03 Declare=InactiveLights=2
+refuse weight 'other photon settings' Declare=Dispersion=1.03 Declare=TargetWeight=2
 cp "$FILE" progressive_photon_file.whole
 bytes=$(wc -c < progressive_photon_file.whole)
 head -c $((bytes - 20)) progressive_photon_file.whole > "$FILE"

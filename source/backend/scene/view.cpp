@@ -1484,6 +1484,21 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       static_cast<unsigned long long>(stored), budget.neighbours, ProgressivePhotonBudget::capScale,
                       static_cast<unsigned long long>(contributing), viewData.photonPrepareCPU / 1000.0,
                       viewData.photonMapCPU / 1000.0, viewData.photonPeakBytes);
+        for (const auto& set : viewData.GetSceneData()->preparedSets)
+        {
+            std::ostringstream line;
+            const LightSource* light = nullptr;
+            for (const auto& target : set->progressiveFeedback)
+            {
+                if (target.light != light)
+                    line << (light ? "; " : "") << (target.light->lightGroupLight ? "group light " : "light ") << target.light->index + 1 << ':';
+                light = target.light;
+                line << " target " << target.ordinal << " weight " << target.weight << " aimed " << target.aimed
+                     << " deposits " << target.deposits;
+            }
+            if (light)
+                messages.Info("Photon targets (set %u): %s.", unsigned(&set - &viewData.GetSceneData()->preparedSets[0]), line.str().c_str());
+        }
     }
 
     double photonGathers = double(stats[Subsurface_Photon_Cloud_Gathers]) + double(stats[Subsurface_Photon_Sample_Gathers]);
@@ -1884,8 +1899,6 @@ try
 {
     Timer timer;
     size_t bytes = 0;
-    for (auto& set : viewData.GetSceneData()->preparedSets)
-        set->progressiveFeedback.clear();
     for (auto* shooter : *shooters)
     {
         for (const auto& observation : shooter->progressiveFeedback)
@@ -1898,8 +1911,8 @@ try
                 feedback.push_back(observation);
             else
             {
-                previous->attempted += observation.attempted;
-                previous->hit += observation.hit;
+                previous->aimed += observation.aimed;
+                previous->deposits += observation.deposits;
             }
         }
         bytes += shooter->progressiveSurface.capacity() * sizeof(ProgressivePhoton) +

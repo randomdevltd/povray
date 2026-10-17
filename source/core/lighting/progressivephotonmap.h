@@ -24,12 +24,15 @@ struct ProgressivePhoton final
     PreparedSetId set = 0;
 };
 
+/// One light's target in a prepared set: the samples aimed at it and the deposits they made, summed over batches.
 struct ProgressivePhotonFeedback final
 {
     const LightSource* light;
-    ObjectPtr target;
+    const void* target;
     PreparedSetId set;
-    std::uint64_t attempted = 0, hit = 0;
+    unsigned int ordinal;
+    double weight;
+    std::uint64_t aimed = 0, deposits = 0;
 };
 
 struct ProgressivePhotonBatch final

@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Photon target allocation: one photon-only sun, a wide wavy glass canopy over a mirror-floored pool that sends light out twice refracted onto the white wall, and a sparse clump of glass blades on the near bank that is hard to hit. Declares PhotonQuality, CanopyWeight and PatchWeight (the number after target), UseCanopy and UsePatch (isolate one target), Parallel (parallel sun instead of a distant point sun), Bands. +w640 +h360 -a.
+// Photon target allocation: one photon-only sun, a wide wavy glass canopy over a mirror-floored pool that sends light out twice refracted onto the white wall, and a sparse clump of glass blades on the near bank that is hard to hit. Declares PhotonQuality, CanopyWeight and PatchWeight (the number after target), UseCanopy and UsePatch (isolate one target), SplitPatch (split_union for the blades, still one target), Parallel (1, the default, a parallel sun; 0 a sun SunDistance away), Bands. +w640 +h360 -a.
 #version 3.8;
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #ifndef (CanopyWeight) #declare CanopyWeight = 1; #end
@@ -11,8 +11,9 @@
 #ifndef (Bands) #declare Bands = 9; #end
 #ifndef (Power) #declare Power = 1.5; #end
 #ifndef (Detail) #declare Detail = 1; #end
-#ifndef (Parallel) #declare Parallel = 0; #end
+#ifndef (Parallel) #declare Parallel = 1; #end
 #ifndef (SunDistance) #declare SunDistance = 200; #end
+#ifndef (SplitPatch) #declare SplitPatch = 0; #end
 #declare Sun = vnormalize(<-0.25, -1.2, 1>);
 global_settings {
   assumed_gamma 1 max_trace_level 16 refraction_detail Detail
@@ -64,8 +65,7 @@ box { <-7, 0.005, 6.9>, <7, 7.5, 7.2> pigment { rgb 0.7 } finish { ambient 0 dif
       sphere { 0, 1 scale <0.024 + 0.006 * rand(R), L, 0.0011> rotate <-25 + 50 * rand(R), -35 + 70 * rand(R), -20 + 40 * rand(R)>
         translate <0.55 * sin(radians(A)), L + 0.03, 0.55 * cos(radians(A))> }
     #end
-    // one target: a split union would make each blade its own target
-    split_union off
+    split_union SplitPatch
     texture { Clear }
     interior { ior 1.52 dispersion PatchDispersion dispersion_samples Bands }
     scale 1.8 translate <0.9, 0, -0.35>

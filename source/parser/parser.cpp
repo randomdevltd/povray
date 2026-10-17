@@ -366,6 +366,9 @@ void Parser::Run()
                 else if (light->mediaPhotonLegacyOptions)
                     Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
             }
+            if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
+                Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
+                      "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
             if (sceneData->photonSettings.Progressive())
                 for (const auto* lights : {&sceneData->lightSources, &sceneData->lightGroupLightSources})
                     for (LightSource* light : *lights)
@@ -4115,16 +4118,7 @@ ObjectPtr Parser::Parse_Light_Group()
             Parse_Begin();
             EXPECT
                 CASE(TARGET_TOKEN)
-                    Object->Ph_Density = Allow_Float(1.0);
-                    if (Object->Ph_Density > 0)
-                    {
-                        Set_Flag(Object,PH_TARGET_FLAG);
-                        CheckPassThru(reinterpret_cast<ObjectPtr>(Object), PH_TARGET_FLAG);
-                    }
-                    else
-                    {
-                        Clear_Flag(Object, PH_TARGET_FLAG);
-                    }
+                    Parse_Photon_Target(reinterpret_cast<ObjectPtr>(Object));
                 END_CASE
 
                 CASE(REFRACTION_TOKEN)
@@ -8351,6 +8345,25 @@ void Parser::Parse_Global_Settings()
 
 //******************************************************************************
 
+// Method 1 reads the value as a spacing multiplier, method 2 as a share weight; either way zero or less clears the flag.
+void Parser::Parse_Photon_Target(ObjectPtr Object)
+{
+    const DBL value = Allow_Float(1.0);
+    Object->Ph_Density = value;
+    if (!(std::isfinite(Object->Ph_Density) && Object->Ph_Density >= 0) && mInvalidPhotonTargetLine == 0)
+    {
+        mInvalidPhotonTarget = value;
+        mInvalidPhotonTargetLine = std::max<POV_LONG>(1, CurrentFilePosition().line);
+    }
+    if (Object->Ph_Density > 0)
+    {
+        Set_Flag(Object, PH_TARGET_FLAG);
+        CheckPassThru(Object, PH_TARGET_FLAG);
+    }
+    else
+        Clear_Flag(Object, PH_TARGET_FLAG);
+}
+
 // be aware that this method may change the address of Object
 // (this will only happen if Object is CSG and the invert_object keyword is parsed)
 ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
@@ -8398,16 +8411,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             Parse_Begin();
             EXPECT
                 CASE(TARGET_TOKEN)
-                    Object->Ph_Density = Allow_Float(1.0);
-                    if (Object->Ph_Density > 0)
-                    {
-                        Set_Flag(Object,PH_TARGET_FLAG);
-                        CheckPassThru(Object, PH_TARGET_FLAG);
-                    }
-                    else
-                    {
-                        Clear_Flag(Object, PH_TARGET_FLAG);
-                    }
+                    Parse_Photon_Target(Object);
                 END_CASE
 
                 CASE(REFRACTION_TOKEN)
@@ -11026,11 +11030,16 @@ void Parser::Split_Union(ObjectPtr Object)
         return;
     }
 
+    std::shared_ptr<const PhotonTargetGroup> group = Object->photonTargetGroup;
+    if (!group && Test_Flag(Object, PH_TARGET_FLAG))
+        group = std::make_shared<PhotonTargetGroup>(PhotonTargetGroup{ Object->BBox });
     // Link all children of a union to the frame; their tags already hold what they inherited from it.
     for (ObjectPtr child : static_cast<CSG *>(Object)->children)
     {
         // Child is no longer inside a CSG object.
         child->Type &= ~IS_CHILD_OBJECT;
+        if (Test_Flag(child, PH_TARGET_FLAG))
+            child->photonTargetGroup = group;
         Split_Union(child);
     }
 

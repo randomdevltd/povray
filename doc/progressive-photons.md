@@ -7,6 +7,7 @@ work budget:
 global_settings {
     photons { method 2 quality 1 }
 }
+object { Glass photons { target 2 refraction on } }   // target weight 2
 ```
 
 `quality` is a finite number greater than zero and at most 16384 (2^32 samples per
@@ -25,9 +26,9 @@ scenes. Quality is not an exposure control.
 
 ## Emission
 
-Batches are shot in order, each split into sixteen logical shards. Each target's
-hit rate in one batch sets its selection probability in the next, with an
-exploration floor; the first batch selects targets uniformly. Ten percent of
+Batches are shot in order, each split into sixteen logical shards. A light's
+targeted samples are split between its targets in proportion to their target
+weights (see Targets), the same in every batch and for every light type. Ten percent of
 samples from a nonparallel source are isotropic. Every deposit carries emitted flux
 divided by the complete mixture density of the direction actually taken, including
 overlapping target cones; samples rejected by an aperture are not renormalized.
@@ -39,7 +40,7 @@ source's target disc (a volume emitter uses the first for its power-table cell),
 the polar and azimuthal direction within the selected target cone or the sphere,
 the targeted-or-isotropic choice and the target. Every aligned block of 2^m samples,
 and therefore every batch, is a digital net, so each batch covers the emission
-domain evenly however the earlier batches adapted target probabilities. Choices
+domain evenly. Choices
 after the first surface (reflection, refraction, roulette, dispersion bands, media
 scattering) remain hashed per-sample random numbers.
 
@@ -139,9 +140,8 @@ refraction disabled retain their direct-light settings, including oriented area
 lights and projected-through sources.
 
 Targets, `collect off`, reflection/refraction switches and `pass_through` retain
-their authoring roles. Numerical target density is replaced by measured targeting:
-previous-batch hit rates guide the next batch, with an exploration floor and an
-isotropic component for nonparallel sources. Area emitters are sampled over their
+their authoring roles; the number after `target` is a share weight (see Targets).
+Area emitters are sampled over their
 area without requiring the classic photon `area_light` option. Oriented area
 lights use the original axes and rectangular photon profile, as classic photons
 do; `orient` only changes their direct-light profile.
@@ -215,6 +215,45 @@ output levels (see Limits).
 Subsurface photon illumination is reconstructed before diffusion; the subsurface
 cache is created once, after the maps are built.
 
+## Targets
+
+```pov
+object { Canopy photons { target refraction on } }      // weight 1
+object { Blades photons { target 4 refraction on } }    // four times the canopy's share
+object { Pebble photons { target 0 } }                  // not a target
+```
+
+Under method 2 the number after `target` is the object's share weight: among the
+targets of one light, a targeted sample picks a target with probability proportional to
+its weight, so equal weights split the samples evenly and a bigger weight gives more
+photons. Bare `target` is weight 1 and `target 0` removes the target. A weight that
+is negative, infinite or not a number is an error under method 2. The weight moves
+samples between targets, never power: every photon still carries the emitted flux divided by the complete mixture density of its direction (or, for a parallel
+source, of its position on the target discs), so the image converges to the same light
+whatever the weights, and only its noise moves between targets. Give the weight to the
+target whose caustic must be sharp, such as thin or patchy glass near the camera; a big
+target that only casts broad light needs few photons. The weights are the same for
+every light type, parallel and cylinder sources included, and do not change between
+batches. The split is fixed by the scene, not measured: earlier versions of method 2
+set it from the previous batch's hit rate, which starved targets that are hard to hit.
+
+A `union`, or any other CSG object, flagged with `photons { target W }` is one target
+of weight W, whether or not `split_union` splits it for bounding: the split members
+share one entry, aimed at the bounding sphere of the union's own box, so a split and an
+unsplit union get the same samples, photons and image.
+A target flag on a member inside a flagged union is replaced by the union's, as before.
+Members are separate targets only when the union itself is not flagged and they are.
+Earlier versions made each member of a split union its own target, so a four-blade
+clump took four shares where one was meant. Method 1 still shoots each split member
+separately.
+
+This is the opposite sense of method 1, where the number is a spacing multiplier and
+a smaller value means more photons (`target 0.5` halves the spacing). A scene written
+for one method needs its target numbers revisited for the other.
+
+The `Photon targets` log line gives, per light, each target's weight, the samples aimed
+at it and the deposits they made.
+
 ## Radiosity
 
 Radiosity works with method 2 as it does with classic photons. The maps are complete
@@ -242,7 +281,8 @@ shoot once.
 
 The file names its format version and the settings that decide its contents: quality,
 batch count and size, shards, `k`, the emission sequence's dimensions, the photon
-trace level, `adc_bailout`, media steps and spacing, and the colour channel layout. It
+trace level, `adc_bailout`, media steps and spacing, the colour channel layout and
+every target's weight. It
 also records how many objects, interiors and lights the scene has, numbering
 receivers, media and lights in the scene's own order, and each prepared set's key.
 Loading fails with an error naming the difference when any of these differs, when the
@@ -352,6 +392,12 @@ slab disabled it still reaches only 0.93 of classic there), the smooth forms to 
 faceted ones and the isosurface to match a tight-accuracy one, and requires an `irid`
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
+`tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with
+weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires the logged split to
+match the weights, the image to match across thread counts and its mean to stay within 3%,
+the blade clump to give the same split and image with `split_union` on as off,
+and negative, infinite and NaN weights to be rejected; the photon-file script also
+refuses a file saved with another target weight.
 
 ## Measurements
 
@@ -415,6 +461,28 @@ lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%, 
 the earlier prototype +0.6%, +1.0%, +0.2%). Before deposits were indexed by normal
 direction its quality 1 camera work was 244 G, as much as classic, because gathers on
 the unlit face scanned the lit face's deposits within the cap.
+
+### Target weights
+
+`tests/render/photon_target_rig.pov` at 640x360, no anti-aliasing, four threads, parallel
+sun (its default). Errors are relative RMS of linear light against a quality 64 render,
+over pixels its photons light (above the unlit image by 0.02, reference at most 1): the
+blade patch on the near bank, and the canopy, pool and wall above it. The baseline is the
+previous build, which split a parallel light's samples evenly; weights alone at 1:1
+reproduce it exactly. Rows of a block cost about the same instructions.
+
+| configuration | G instructions | patch | canopy, pool, wall |
+|---|---:|---:|---:|
+| baseline, quality 1 | 25.5 | 0.784 | 0.491 |
+| patch weight 2, quality 1.25 | 25.6 | 0.670 | 0.518 |
+| patch weight 4, quality 1.5 | 25.4 | 0.542 | 0.554 |
+| baseline, quality 4 | 58.1 | 0.546 | 0.361 |
+| patch weight 2, quality 5 | 57.7 | 0.476 | 0.394 |
+| patch weight 4, quality 6 | 55.8 | 0.391 | 0.438 |
+
+The weight moves error from the canopy to the patch at any budget. With the old distant
+point sun (`Parallel=0`, hit-rate allocation in the baseline) the baseline gave 0.83 and
+0.49 at 27.7 G, and weights 1:1 at quality 1.75 gave 0.62 and 0.47 at 32.1 G.
 
 ### Where the work goes
 
@@ -487,4 +555,5 @@ camera loop, hence its larger value.
 - A CSG subsurface receiver's slab and boundary probe use the whole map's median base
   radius (see CSG receivers).
 - Media noise does not fall with quality on the tested scene; only the cost grows.
+- Target weights are set by hand; nothing measures which target the image needs.
 
