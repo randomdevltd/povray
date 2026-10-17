@@ -25,15 +25,18 @@ render outside_receiver Declare=OutsideLens=0
 cmp progressive_group_outside_receiver.px progressive_group_isolated.px
 cmp progressive_group_isolated.px progressive_group_global.px
 render disabled Declare=GroupPhotons=0
-render legacy_disabled Declare=Version=3.8
+render legacy_disabled Declare=Version=3.8 Declare=GroupPhotons=0
 cmp progressive_group_disabled.px progressive_group_legacy_disabled.px
 od -An -v -t u1 progressive_group_disabled.px | awk '{for(i=1;i<=NF;i++) if($i!=0) exit 1}'
 od -An -v -t u1 progressive_group_grouped.px | awk '{for(i=1;i<=NF;i++) lit=lit || $i>0} END {exit !lit}'
 render legacy_enabled Declare=Version=3.8 Declare=GroupPhotons=1 Declare=Reference=1
 render legacy_global Declare=Version=3.8 Declare=Grouped=0 Declare=Reference=1
 cmp progressive_group_legacy_enabled.px progressive_group_legacy_global.px
+# group lights shoot photons by default in every language version, as classic photons do
+render legacy_default Declare=Version=3.8 Declare=Reference=1
+cmp progressive_group_legacy_default.px progressive_group_legacy_enabled.px
 render direct_group Declare=GroupPhotons=0 Declare=PhotonOnly=0 Declare=Reference=1 Declare=InverseSquare=0
 render direct_global Declare=Grouped=0 Declare=SourceRefraction=0 Declare=PhotonOnly=0 Declare=Reference=1 Declare=InverseSquare=0
 cmp progressive_group_direct_group.px progressive_group_direct_global.px
 rm -f progressive_group_*.ppm progressive_group_*.px progressive_group_*.log
-echo 'progressive_photon_groups: source membership, cloned groups, outside receivers and versioned switches passed'
+echo 'progressive_photon_groups: source membership, cloned groups, outside receivers and default and switched group photons passed'

@@ -3834,7 +3834,7 @@ ObjectPtr Parser::Parse_Light_Group()
     Object = new CSGUnion();
 
     Object->Type |= LIGHT_GROUP_OBJECT;
-    Object->photonGroupEnabled = sceneData->EffectiveLanguageVersion() >= 400;
+    Object->photonGroupEnabled = true;
     Set_Flag(Object, NO_GLOBAL_LIGHTS_FLAG);
 
     while ((Local = Parse_Object()) != nullptr)
