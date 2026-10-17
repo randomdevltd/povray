@@ -430,7 +430,7 @@ class Trace
         Vector3d ssltCameraLocation;
         double ssltPixelSize = 0.0, ssltPixelAngle = 0.0;
         bool ssltCameraKnown = false;
-        const SubsurfaceBoundary *ssltBoundary = nullptr; ///< method 2's boundary for the last index it shaded
+        std::shared_ptr<const SubsurfaceBoundary> ssltBoundary; ///< method 2's boundary for the last index it shaded
         /// Per light and channel, the lowest, mean and highest visibility of a few cloud points.
         struct SubsurfaceVisibility
         {
@@ -1077,12 +1077,12 @@ class Trace
         struct SubsurfaceProfile
         {
             PreciseMathColour scale, sigma_tr, z_r, z_v;
-            const SubsurfaceBoundary *boundary = nullptr; ///< method 2's, or null for the classic dipole
+            std::shared_ptr<const SubsurfaceBoundary> boundary; ///< method 2's, or null for the classic dipole
             SubsurfaceDipole dipole[MathColour::channels]; ///< method 2's, in reduced mean free paths
             double extinction[MathColour::channels], extinctionSqr[MathColour::channels], beamWeight[MathColour::channels];
             double totalRatio[MathColour::channels], albedo[MathColour::channels];
             const float *beamRow[MathColour::channels];
-            void SetMethod2(const SubsurfaceBoundary& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
+            void SetMethod2(const std::shared_ptr<const SubsurfaceBoundary>& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
             PreciseMathColour Rd(double distSqr) const;
             PreciseMathColour RdDisc(double radius) const;
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
