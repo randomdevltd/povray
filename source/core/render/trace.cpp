@@ -617,6 +617,7 @@ double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colou
     // Radiance over n squared holds along the path; media of the earlier chords apply at their own index.
     double current = (march > 0) ? ClampIndex(base + field.Offset(bestisect.IPoint), bestisect.IPoint) : path.back().index;
     double length = 0.0;
+    const ConstObjectPtr outerReceiver = media.SetPathReceiver(march > 0 ? bestisect.Object : nullptr);
     for (size_t k = path.size() - 1; k-- > 0;)
     {
         const CurvedStep& piece = path[k];
@@ -639,6 +640,7 @@ double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colou
                 ComputeFog(chord, segment, colour, transm);
         }
     }
+    media.SetPathReceiver(outerReceiver);
     colour *= Sqr(path.front().index / current);
     return (depth < HUGE_VAL) ? depth + length : HUGE_VAL;
 }

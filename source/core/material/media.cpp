@@ -52,6 +52,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/emitter.h"
+#include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
 #include "core/material/pattern.h"
@@ -1300,6 +1301,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm)
 {
     ModifierScope scope(*this, mods);
+    ReceiverScope receiverScope(*this, isect.Object != nullptr ? isect.Object : pathReceiver);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -2913,19 +2915,31 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
             const auto& map = set->progressiveMedia;
             if (map.photons.empty())
                 return;
-            MathColour sum;
             const auto domain = VolumeDomain(medias);
-            const double radius = map.RadiusAt(H, *domain);
-            map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
-                if (!(*photon.domain == *domain))
-                    return;
-                BasicRay light;
-                light.Direction = photon.direction;
-                light.Origin = photon.point - photon.direction;
-                ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
-                threadData->progressiveContributions++;
-            });
-            Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
+            const ConstObjectPtr receiver = photonReceiver;
+            const bool global = receiver == nullptr || !Test_Flag(receiver, NO_GLOBAL_LIGHTS_FLAG);
+            if (!global && !map.grouped)
+                return;
+            const auto gather = [&](const auto& accept) {
+                MathColour sum;
+                const double radius = map.RadiusAt(H, *domain, accept);
+                map.Visit(H, radius, [&](const ProgressiveVolumePhoton& photon) {
+                    if (!(*photon.domain == *domain) || !accept(photon))
+                        return;
+                    BasicRay light;
+                    light.Direction = photon.direction;
+                    light.Origin = photon.point - photon.direction;
+                    ComputeMediaScatteringAttenuation(medias, sum, Sc, photon.Integral(H, radius), ray, light);
+                    threadData->progressiveContributions++;
+                });
+                Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
+            };
+            if (map.grouped)
+                gather([receiver, global](const ProgressiveVolumePhoton& photon) {
+                    return photon.grouped ? receiver != nullptr && PhotonLightAffectsObject(photon.light, receiver) : global;
+                });
+            else
+                gather([](const ProgressiveVolumePhoton&) { return true; });
             return;
         }
         return;

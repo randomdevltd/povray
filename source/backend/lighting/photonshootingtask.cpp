@@ -269,8 +269,6 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ProgressiveTargets(set.objects, light, selected);
             if (selected.empty())
                 continue;
-            if (light->lightGroupLight && GetSceneData()->interiorMedia && GetSceneData()->photonSettings.maxMediaSteps > 0)
-                throw POV_EXCEPTION(kParamErr, "Photon method 2 does not yet support volumetric photons from light groups.");
             lights.push_back(light);
             targets.push_back(std::move(selected));
         }

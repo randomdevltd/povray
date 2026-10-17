@@ -152,11 +152,10 @@ surface gathers also match the receiving object, so nearby objects in another
 group cannot receive those deposits. Group cloning and render-tag filtering
 preserve this relationship. Photon maps are shared by a prepared scene set,
 not allocated per light group.
-Volumetric photon collection from group lights is currently rejected; the
-surface membership checks do not substitute for medium ownership.
+Media segments follow the same membership, described with media photons below.
 
-Classic count, spacing, gather, radius, jitter, autostop, expansion and map-file
-controls do not apply and are rejected. Radiosity is currently rejected.
+Classic count, spacing, gather, radius, jitter, autostop and expansion controls do
+not apply and are rejected.
 
 Media photons are enabled by the existing `media` photon setting. Transport stores
 finite photon segments with their incoming flux and extinction. A gather clips each
@@ -178,13 +177,64 @@ remain approximations; a small number of photons can still miss a narrow caustic
 Each segment records the exact active medium list and modifier ownership/order.
 Gathering and support selection require that same list, avoiding transfer
 between nearby unrelated containers. This deliberately truncates support at a
-change of medium stack; it does not correct kernel bias at that boundary. The
-existing rejection of volume photons from light-group sources remains in place.
-Method 2 does not add medium ownership support for light groups or change
-`global_lights off` behavior. Shared media must still follow the existing scene
-ownership restrictions.
+change of medium stack; it does not correct kernel bias at that boundary.
+
+Each segment also records the light that emitted it. A camera sample in a medium
+accepts a segment by the rule surface photons and direct media lighting use: the
+receiver is the surface that ends the sample's media interval, and a group light's
+segment counts only where that surface belongs to the light's group with group
+photons on, while a global light's segment counts unless that surface is in a
+`global_lights off` group. An interval ending at no surface, in the atmosphere, takes
+global lights only. On a curved ray the chords before the last end at no surface, so
+they take the surface that ends the whole path. The 32-neighbour support counts
+accepted segments only. `tests/render/progressive_volume_groups.pov` lights two
+scattering boxes, one in a `global_lights off` group with its own lamp and one with a
+global lamp: neither lamp lights the other box, although the same lamps do when the
+group is removed, and each box matches its half rendered alone within three 16-bit
+output levels (see Limits).
 Subsurface photon illumination is reconstructed before diffusion; the subsurface
 cache is created once, after the maps are built.
+
+## Radiosity
+
+Radiosity works with method 2 as it does with classic photons. The maps are complete
+before the radiosity pretrace starts, so every radiosity sample, in the pretrace and in
+the final trace, gathers photon light where its rays land: a caustic on the floor
+lights a nearby wall through radiosity. Radiosity rays take the diffuse photon term
+only, without phong or specular highlights, as they do with classic photons and with
+light sources. A radiosity cache saved with `+RFO` holds the photon light of the
+render that saved it; loading it with `+RFI` reuses that light even if the photons
+have changed since. `tests/render/progressive_radiosity.pov` lights a wall that
+collects no photons with a glass sphere's floor caustic and requires the bounce to
+match classic photons within 25%; the image does not depend on the thread count, and
+`+C` continues it.
+
+## Photon files
+
+`photons { save_file "name" }` and `load_file "name"` keep the classic syntax. With
+`save_file`, a render writes every prepared set's maps once the last batch is merged,
+before they are indexed: the surface deposits with their receivers, and the media
+segments with their medium lists and emitting lights. With `load_file`, the render
+reads them instead of shooting and indexes them as a shot render would, so a loaded
+render of the same scene is identical to the render that saved the file, and a moved
+camera sees the same photons. An animation or a series of camera moves can therefore
+shoot once.
+
+The file names its format version and the settings that decide its contents: quality,
+batch count and size, shards, `k`, the emission sequence's dimensions, the photon
+trace level, `adc_bailout`, media steps and spacing, and the colour channel layout. It
+also records how many objects, interiors and lights the scene has, numbering
+receivers, media and lights in the scene's own order, and each prepared set's key.
+Loading fails with an error naming the difference when any of these differs, when the
+file is truncated or damaged, when it is a classic map, or when its photons would
+exceed the memory budget (see Memory and reproducibility). A file shot with another
+render seed is reused with a warning. A classic render cannot load a method 2 file, nor
+method 2 a classic one. With three colour channels the file takes 64 bytes per surface
+deposit and 88 per media segment: on the leaf of the measurements below, at quality 1,
+591,415 deposits take 37.9 MB, saving adds 1.1 G instructions to the 168.7 G render,
+and a loaded render gives the same image in 164.1 G.
+`tests/render/progressive_photon_file.sh` saves and loads media, subsurface and
+dispersion scenes, turns the camera, and checks each error.
 
 ## Media lights
 
@@ -275,7 +325,7 @@ thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, imag
 independence of the logged budget, the memory budget error and invalid quality;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
 requires its underside to match the lit top, as does a `double_illuminate` disc; the
-emitter, direct-light, volume, media-light, light-group and `.pov4` scripts run with the new estimator.
+emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 
 ## Measurements
 
@@ -389,13 +439,21 @@ camera loop, hence its larger value.
 
 ## Limits
 
-- Radiosity and classic photon map files are rejected.
+- A photon file is checked against the scene's structure and photon settings, not its
+  geometry: as with classic files, a scene whose objects or lights moved reuses the
+  saved photons. The file is written in the machine's byte order; loading it on another
+  platform, or on a build with other colour channels, fails.
 - The fixed-`k` rule is global; it is not adapted to local noise or gradients,
   and it smooths features narrower than the support at low quality. Sparse
   regions are estimated at the capped radius and stay noisy.
 - Density is still truncated at object edges and at changes of medium; there is
   no boundary correction.
-- Volumetric photons from light-group sources are rejected.
+- A medium's base support is the median over all its segments, including segments
+  that a light group keeps from it, so a medium crossed by another group's photons can
+  differ from the same medium alone by a few 16-bit output levels.
+- Direct media lighting on the chords of a curved ray still sees the global lights
+  only, even in a `global_lights off` group; their media photons follow the surface
+  that ends the path.
 - Deposits per sample, and therefore memory, are not bounded by quality alone; a
   quality whose projected storage exceeds the memory budget stops the render.
 - Receivers with fewer than `k` deposits, and sparse regions of any receiver, are

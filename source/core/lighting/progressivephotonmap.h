@@ -192,6 +192,19 @@ class ProgressivePhotonMap final
             return selected[selected.size() / 2];
         }
 
+        /// The receivers by id, as the photons' receiver fields index them.
+        const std::vector<ConstObjectPtr>& Receivers() const { return receivers; }
+
+        /// Replaces an unbuilt map with stored photons whose receiver fields index objects.
+        void Restore(std::vector<ConstObjectPtr> objects, std::vector<MappedPhoton> stored)
+        {
+            receivers = std::move(objects);
+            receiverIds.clear();
+            for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                receiverIds.emplace(receivers[id], id);
+            photons = std::move(stored);
+        }
+
         std::uint32_t Receiver(ConstObjectPtr object) const
         {
             const auto found = receiverIds.find(object);

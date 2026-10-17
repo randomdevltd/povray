@@ -138,6 +138,8 @@ class MediaFunction : public Trace::MediaFunctor
         virtual void ComputeMedia(const RayInteriorVector& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         virtual void ComputeMedia(MediaVector& medias, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         void ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm);
+        virtual ConstObjectPtr SetPathReceiver(ConstObjectPtr receiver) override
+            { const ConstObjectPtr previous = pathReceiver; pathReceiver = receiver; return previous; }
     protected:
         /// The current segment's subtract and multiply interiors, or nullptr.
         const MediaModifierVector *modifiers;
@@ -152,6 +154,16 @@ class MediaFunction : public Trace::MediaFunctor
             ModifierScope(MediaFunction& f, const MediaModifierVector *m) : owner(f), saved(f.modifiers)
                 { owner.modifiers = (m != nullptr && !m->empty()) ? m : nullptr; }
             ~ModifierScope() { owner.modifiers = saved; }
+        };
+
+        /// The surface ending the current segment, whose light membership decides which media photons it receives.
+        ConstObjectPtr photonReceiver = nullptr, pathReceiver = nullptr;
+        struct ReceiverScope final
+        {
+            MediaFunction& owner;
+            ConstObjectPtr saved;
+            ReceiverScope(MediaFunction& f, ConstObjectPtr receiver) : owner(f), saved(f.photonReceiver) { owner.photonReceiver = receiver; }
+            ~ReceiverScope() { owner.photonReceiver = saved; }
         };
 
         /// The finest prepared step of the modifiers' varying densities, or HUGE_VAL.
