@@ -66,6 +66,7 @@ template <typename T>
 class Counter final
 {
     public:
+#if POV_RENDER_STATS
         Counter() { value = 0; } // assumes for all types of T that 0 is a valid assignment
         virtual ~Counter() { }
         inline T operator+(T other) { return value + other; }
@@ -80,6 +81,18 @@ class Counter final
 
     private:
         volatile T value;
+#else
+        Counter() { }
+        inline T operator+(T other) { return other; }
+        inline T operator-(T other) { return -other; }
+        inline T operator++(int) { return 0; }
+        inline T operator--(int) { return 0; }
+        inline void operator+=(T) { }
+        inline void operator-=(T) { }
+        inline const T operator=(T other) { return other; }
+        inline operator T() const { return 0; }
+        bool SafeRead(unsigned int, T *result) const { *result = 0; return true; }
+#endif
 };
 
 template <typename T, int numElem>
