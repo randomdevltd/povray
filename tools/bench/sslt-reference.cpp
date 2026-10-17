@@ -183,11 +183,11 @@ static double ReducedAlbedo(double reflectance, double ior)
     return (1.0 - p) * node(int(i0)) + p * node(int(std::ceil(rd)));
 }
 
-// Albedo=r,g,b[:r,g,b...] (one value for all channels allowed): media given by their reduced albedos, else the renderer's.
+// Albedo=r,g,b[:r,g,b...] (one value for all channels allowed, "table" the renderer's): media by their reduced albedos.
 static std::vector<std::vector<double>> albedos;
 static double MediumAlbedo(size_t k, int j, double reflectance, double ior)
 {
-    return albedos.empty() ? ReducedAlbedo(reflectance, ior) : albedos[k][albedos[k].size() == 1 ? 0 : j];
+    return (albedos.empty() || albedos[k].empty()) ? ReducedAlbedo(reflectance, ior) : albedos[k][albedos[k].size() == 1 ? 0 : j];
 }
 
 static std::vector<std::string> Split(const std::string& text, char by)
@@ -533,7 +533,8 @@ int main(int argc, char **argv)
         {
             albedos.emplace_back();
             for (const std::string& value : Split(medium, ','))
-                albedos.back().push_back(std::atof(value.c_str()));
+                if (value != "table")
+                    albedos.back().push_back(std::atof(value.c_str()));
         }
     if (args.count("Mode") && args["Mode"] == "forward")
         return Forward(args, mat, mm);
