@@ -315,15 +315,16 @@ void SubsurfaceBoundary::BuildLayer(int step, int k, float *rows) const
     }
 }
 
-const SubsurfaceBoundary& SubsurfaceBoundary::For(double eta)
+double SubsurfaceBoundary::Quantise(double eta)
 {
-    static std::mutex mutex;
-    static std::map<float, std::unique_ptr<SubsurfaceBoundary>> boundaries;
-    std::lock_guard<std::mutex> lock(mutex);
-    std::unique_ptr<SubsurfaceBoundary>& boundary = boundaries[float(eta)];
-    if (!boundary)
-        boundary.reset(new SubsurfaceBoundary(float(eta)));
-    return *boundary;
+    int exponent;
+    double mantissa = frexp(eta, &exponent);
+    return ldexp(std::round(ldexp(mantissa, 13)), exponent - 13);
+}
+
+size_t SubsurfaceBoundary::Bytes()
+{
+    return sizeof(SubsurfaceBoundary) + (size_t(kBeamRows) * kBeamColumns * 2 + kBeamRows) * sizeof(float);
 }
 
 PreciseMathColour SubsurfaceBoundary::GetReducedAlbedo(const MathColour& diffuseReflectance) const
@@ -559,7 +560,7 @@ std::shared_ptr<const void> SubsurfaceCache::Table(const TableKey& key, size_t b
         tableUse.splice(tableUse.begin(), tableUse, found->second.use);
         return found->second.table;
     }
-    tableLayers++;
+    (key.step < 0 ? tableBoundaries : tableLayers)++;
     tableUse.push_front(key);
     tables[key] = TableEntry{ table, bytes, tableUse.begin() };
     tablesHeld += bytes;
@@ -583,6 +584,20 @@ std::shared_ptr<const float> SubsurfaceCache::Layer(const SubsurfaceBoundary& bo
         float *rows = new float[SubsurfaceBoundary::kLayerFloats];
         boundary.BuildLayer(step, k, rows);
         return std::shared_ptr<const void>(rows, [counted, bytes](const void *p) { delete[] static_cast<const float*>(p); counted->live -= bytes; });
+    }));
+}
+
+std::shared_ptr<const SubsurfaceBoundary> SubsurfaceCache::Boundary(double eta)
+{
+    const size_t bytes = SubsurfaceBoundary::Bytes();
+    std::shared_ptr<TableBytes> counted = tableBytes;
+    return std::static_pointer_cast<const SubsurfaceBoundary>(Table({ eta, -1, 0 }, bytes, [&]()
+    {
+        return std::shared_ptr<const void>(new SubsurfaceBoundary(eta), [counted, bytes](const void *p)
+        {
+            delete static_cast<const SubsurfaceBoundary*>(p);
+            counted->live -= bytes;
+        });
     }));
 }
 
@@ -692,6 +707,7 @@ SubsurfaceCloudStatistics SubsurfaceCache::Statistics() const
     }
     {
         std::lock_guard<std::mutex> lock(tablesMutex);
+        stats.boundaries = double(tableBoundaries);
         stats.layers = double(tableLayers);
         stats.evicted = double(tablesEvicted);
         stats.tablesPeakBytes = double(tableBytes->peak.load());

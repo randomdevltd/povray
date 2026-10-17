@@ -427,7 +427,8 @@ done, the cap, and a cap or spacing that would hold what was built so far. Once 
 warning says when the clouds, growing as they did between a quarter and a half of it, would pass the cap. Cells already
 built serve the rest of the image, so growth slows: one render that took the first quarter's rate projected 3407 MB
 and peaked at 1657 MB. The two-point rate still overshoots; it is an upper estimate, and only passing the cap stops the
-render. A cube is never coarsened for memory. An unbounded object such as a plane gets cubes like any other.
+render. A cube is never coarsened for memory. An unbounded object such as a plane gets cubes like any other. Method 2's
+profile tables are held apart from the clouds, within a fixed 32 MB (**Subsurface method 2's tables**).
 
 The statistics report the spacing in force, the memory counted against the cap, the peak with rows being cast, the cubes
 built, their points, the points the gathers read (those under a node a gather used, alone or summed as a group, which
@@ -855,7 +856,7 @@ one depth: 128 rows by u = √(3(1 − albedo)), 217 columns of squared optical 
 each the ratio of Rd and of Rd's disc integral (Simpson's rule over the log radius), and per row the ratio of the
 totals. A lookup reads the octave and quarter from the bits of the squared radius and interpolates bilinearly, so Rd,
 `RdDisc` and `RdEdgeShare` stay the better dipole's closed forms times a ratio, and the far field keeps the dipole's
-exact decay. The colour inverts through the same total. Building the table takes about 0.07 CPU-s per index, once.
+exact decay. The colour inverts through the same total. Building the table takes about 0.07 CPU-s per index; see **Subsurface method 2's tables** for how many are kept.
 
 The media the profiles derive differ: each inverts the same colour to a reduced albedo, and a profile whose total is lower
 at a given albedo needs less absorption to reach it. `sslt-reference.py`'s MEDIA lists them for the five reference
@@ -1021,7 +1022,7 @@ the core, disc and ring integrals by the second, and a deeper point (the far fac
 the tangent plane. The ratios are tabulated in the beam table's layout (217 columns of squared optical radius), per
 index, albedo (u to 1/4096) and quarter octave of τ from 2⁻¹⁰ to 2¹², interpolated between quarter octaves; images run
 until σ·n·period passes 12, at most 64 a side, and a table is built on first use and shared by all
-threads. A channel more than 20 reduced mean free paths and 15 diffusion lengths deep is left as it was, so the deep
+threads (within a cap; see **Subsurface method 2's tables**). A channel more than 20 reduced mean free paths and 15 diffusion lengths deep is left as it was, so the deep
 slabs score as before to within 0.03 levels. In the model a thin part's light falls off within a few depths along it instead of over
 the diffusion length, so a finite wall no longer clips a profile that should reach past it.
 
@@ -1171,6 +1172,59 @@ renderer over the walks, per channel:
 
 Method 1 renders the same pixels, bit for bit (the list in the smooth-mesh section). The scale is one multiply per shading
 point; the cost is that of the thin parts' section.
+
+## Subsurface method 2's tables
+
+Method 2's boundary (beam table, Fresnel moments, albedo inversion: 222 KB, about 0.07 CPU-s to build) was kept for every
+distinct single-precision index, and a thin part's layer table (6944 bytes) for every albedo step and quarter octave of
+depth it met, both for the life of the process and built under a lock all threads shared. Neither had a bound: a pigment
+that varies continuously over a thin part asks for a table at nearly every shading point (up to 7094 albedo steps by 88
+depths per index, 4.3 GB), and media refraction (`refraction` in an interior's media) varies the index with position, so
+a boundary was built at nearly every shading point.
+
+Both now live in the render's subsurface cache, within a fixed 32 MB (`kSubsurfaceTablesMB`) that is not counted against
+the clouds' `memory`: past it the least recently used are dropped. A table is a function of its key alone, so dropping
+and rebuilding one changes no value, and the image stays independent of thread count and of what the cache held. Tables
+are built outside the cache's lock, which is held only to look up and insert (a thread that built one another thread
+inserted first discards its copy). Each thread keeps the last 32 layer tables it used, and its current boundary, so most
+lookups take no lock; those, and the tables a shading point is using, stay alive after the cache drops them, under 1 MB a
+thread. The boundary is built for the index rounded to 12 bits after its leading one (a step of 2⁻¹², 1/4096 between 1 and
+2): 1.5 is unchanged, 1.45 and 1.4 move by 4.9·10⁻⁵ and 9.8·10⁻⁵. The render statistics give the boundaries and layer
+tables built, those dropped and the most alive at once (table bytes, with any a thread still holds).
+
+`tools/bench/sslt-tables.pov` is the load: Case 0 a wedge 0.2 to 7.9 mm deep (ior 1.45) whose colour runs along it, at
+160×120; Case 1 a sphere of ior 1.4 whose media add `refraction 0.2` across it, at 64×48. CPU-s and peak resident memory
+of the whole render (one run each), table bytes from the statistics:
+
+| | before | layer tables capped | and boundaries |
+|---|---|---|---|
+| wedge, CPU-s / peak RSS | 7.41 / 208 MB | 8.24 / 99 MB | 9.09 / 100 MB |
+| wedge, tables built / dropped / peak alive | | 26276 / 21444 / 32.05 MB | 2 + 26338 / 21508 / 32.26 MB |
+| varying index, CPU-s / peak RSS | 61.3 / 258 MB | 66.0 / 261 MB | 33.2 / 101 MB |
+| varying index, tables built / dropped / peak alive | | 2724 / 0 / 18.0 MB | 492 + 1478 / 1429 / 32.68 MB |
+
+Before, the wedge held about 109 MB more (by peak RSS against the capped build) and the sphere a boundary per shading
+point. Capping the layer tables alone renders the wedge, which drops 21444 of them, the same pixels; with the index
+rounded the sphere is within 0.0078 levels of the exact index everywhere (rms 0.0010), and the wedge, at ior 1.45, rms
+0.052 with 97 pixels over half a level (at most 2.86), all in a band at its dark end, consistent with where a channel's
+depth passes the thick-part threshold of the thin parts' section and the profile switches from the layer to the
+half-space, which the index's shift moves by under a pixel.
+
+The reference runs (`sslt-reference.py`, 160×120, as scored above): with the layer tables capped all 19 render the same
+pixels; with the index rounded too the 12 at ior 1.5 do, and the 7 at 1.45 and 1.4 (wax, bark, clay) differ by rms 0.0015
+to 0.0024 levels, mean within 0.0015, at most 0.20 at a pixel, which bounds each score's change (rms and mean by those,
+the worst block by 0.2), so the scores in the sections above stand as printed. These scenes build one boundary and 4 to 19 layer tables,
+0.34 to 0.45 MB, as before. At 640×480, CPU-s of two interleaved renders each, with per-block heat maps:
+
+| Run | before | after |
+|---|---|---|
+| studs, high albedo | 29.3, 29.0 | 29.4, 30.1 |
+| 1.2 mm wall, clay | 14.1, 14.3 | 14.1, 14.3 |
+| blocks with an air gap, high albedo | 14.6, 14.3 | 14.9, 14.5 |
+| V-groove and dimple, wax | 18.1, 18.3 | 18.0, 18.3 |
+
+`tests/render/subsurface_tables.sh` renders the wedge at 80×60 on one thread and two: the tables must pass their cap,
+stay within it but for what the threads hold, and the two images must match.
 
 ## Mesh memory
 

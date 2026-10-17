@@ -7751,9 +7751,10 @@ PreciseMathColour Trace::SubsurfaceProfile::RdTotal() const
 }
 
 // Method 2's profile for reduced albedos and extinctions (per mm) at its boundary.
-void Trace::SubsurfaceProfile::SetMethod2(const SubsurfaceBoundary& b, const PreciseMathColour& albedo, const PreciseMathColour& sigma_t)
+void Trace::SubsurfaceProfile::SetMethod2(const std::shared_ptr<const SubsurfaceBoundary>& shared, const PreciseMathColour& albedo, const PreciseMathColour& sigma_t)
 {
-    boundary = &b;
+    boundary = shared;
+    const SubsurfaceBoundary& b = *shared;
     for (int j = 0; j < MathColour::channels; j++)
     {
         dipole[j] = SubsurfaceDipole(albedo[j], b);
@@ -8095,8 +8096,9 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // Method 2 inverts the colour by its own profile's total at the boundary's relative index; see doc/PERF.md.
     int method = (Finish->SubsurfaceMethod != 0) ? Finish->SubsurfaceMethod : sceneData->subsurfaceMethod;
     const bool pointCloud = (method == kSubsurfaceMethodPointCloud);
-    if (pointCloud && ((ssltBoundary == nullptr) || (ssltBoundary->eta != double(float(eta)))))
-        ssltBoundary = &SubsurfaceBoundary::For(eta);
+    const double boundaryEta = SubsurfaceBoundary::Quantise(eta);
+    if (pointCloud && ((ssltBoundary == nullptr) || (ssltBoundary->eta != boundaryEta)))
+        ssltBoundary = threadData->subsurfaceCache->Boundary(boundaryEta);
 
     // user setting specifies reduced scattering coefficient
     PreciseMathColour   alpha_prime     = pointCloud ? ssltBoundary->GetReducedAlbedo(reflectance)
@@ -8114,7 +8116,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double Aconst = ((1 + F_dr) / (1 - F_dr));
     SubsurfaceProfile profile;
     if (pointCloud)
-        profile.SetMethod2(*ssltBoundary, alpha_prime, sigma_prime_t);
+        profile.SetMethod2(ssltBoundary, alpha_prime, sigma_prime_t);
     for (int j = 0; !pointCloud && (j < MathColour::channels); j++)
     {
         double spt = sigma_prime_s[j] + sigma_a[j];

@@ -145,7 +145,7 @@ struct SubsurfaceCloudStatistics final
 {
     double spacing = 1.0, peakBytes = 0.0, chargedBytes = 0.0, cells = 0.0, points = 0.0, read = 0.0;
     double termCells[kStepTerms] = {}, termPoints[kStepTerms] = {};
-    double layers = 0.0, evicted = 0.0, tablesPeakBytes = 0.0; ///< method 2's tables built, dropped for the cap, and the most alive at once
+    double boundaries = 0.0, layers = 0.0, evicted = 0.0, tablesPeakBytes = 0.0; ///< method 2's tables built, dropped for the cap, and the most alive at once
 };
 
 /// A point of a subsurface irradiance cloud: the light entering the surface there, and the area it stands for (mm^2).
@@ -295,12 +295,14 @@ class SubsurfaceCache final
         /// A layer table of the boundary (SubsurfaceBoundary::BuildLayer), kept within kSubsurfaceTablesMB with the
         /// least recently used dropped first; a table is a function of its key alone, so dropping one costs only time.
         std::shared_ptr<const float> Layer(const SubsurfaceBoundary& boundary, int step, int k);
+        /// The boundary for a quantised index (SubsurfaceBoundary::Quantise), kept as the layer tables are.
+        std::shared_ptr<const SubsurfaceBoundary> Boundary(double eta);
 
     private:
         struct TableKey
         {
             double eta;
-            int step, k;
+            int step, k; ///< a layer table's; step -1 for the boundary itself
             bool operator==(const TableKey& o) const { return (eta == o.eta) && (step == o.step) && (k == o.k); }
         };
         struct TableKeyHash { size_t operator()(const TableKey& key) const; };
@@ -311,7 +313,7 @@ class SubsurfaceCache final
         mutable std::mutex tablesMutex;
         std::unordered_map<TableKey, TableEntry, TableKeyHash> tables;
         std::list<TableKey> tableUse; ///< most recently used first
-        size_t tablesHeld = 0, tableLayers = 0, tablesEvicted = 0;
+        size_t tablesHeld = 0, tableLayers = 0, tableBoundaries = 0, tablesEvicted = 0;
         std::shared_ptr<TableBytes> tableBytes = std::make_shared<TableBytes>();
         mutable std::mutex mutex;
         std::unordered_map<SubsurfaceCellKey, std::shared_ptr<SubsurfaceCell>, SubsurfaceCellKeyHash> cells;
@@ -364,13 +366,15 @@ struct SubsurfaceDipole final
 };
 
 /// Method 2's boundary at one relative index: Fresnel moments, beam diffusion's ratio to the better dipole, and the reduced
-/// albedo whose total diffuse reflectance is a given colour; built once per index and shared. See doc/PERF.md.
+/// albedo whose total diffuse reflectance is a given colour; SubsurfaceCache keeps them. See doc/PERF.md.
 class SubsurfaceBoundary final
 {
     public:
         explicit SubsurfaceBoundary(double eta);
-        /// The boundary for eta, built on first use.
-        static const SubsurfaceBoundary& For(double eta);
+        /// The index a boundary is built for: eta rounded to 12 bits after its leading one, a step of 2^-12 from 1 to 2.
+        static double Quantise(double eta);
+        /// Bytes a boundary holds.
+        static size_t Bytes();
         PreciseMathColour GetReducedAlbedo(const MathColour& diffuseReflectance) const;
         double eta;
         double c1, c2; ///< the Fresnel reflectance from inside times the cosine (squared) integrated over cosines 0 to 1
