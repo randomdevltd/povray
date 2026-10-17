@@ -5981,6 +5981,19 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
     return irradiance;
 }
 
+// The surface's own normal at a hit with this shading normal: on a smooth mesh triangle its face's, not the interpolated one.
+static Vector3d SubsurfaceGeometricNormal(const Intersection& hit, const Vector3d& shading)
+{
+    const Mesh* mesh = dynamic_cast<const Mesh*>(hit.Object);
+    const MESH_TRIANGLE* triangle = static_cast<const MESH_TRIANGLE*>(hit.Pointer);
+    if ((mesh == nullptr) || (triangle == nullptr) || !triangle->Smooth())
+        return shading;
+    Vector3d normal = mesh->Face_Normal(triangle);
+    if (mesh->Trans != nullptr)
+        MTransNormal(normal, normal, mesh->Trans);
+    return normal;
+}
+
 // On a coarse cloud, the profile times the light entering within radius (mm) of the exit point, drawn by the profile's near
 // field on the tangent disc and found on the surface by rays from the base point; see doc/PERF.md.
 PreciseMathColour Trace::ComputeCloudNearField(const Intersection& out, const Vector3d& base, const Vector3d& n, SubsurfaceCloud& cloud,
@@ -6018,10 +6031,12 @@ PreciseMathColour Trace::ComputeCloudNearField(const Intersection& out, const Ve
         if ((nearest == nullptr) || !(cosPlane > EPSILON))
             continue;
         ComputeSSLTNormal(*nearest);
-        Vector3d nq = nearest->INormal.normalized();
-        if (dot(nq, dir) < 0.0)
+        Vector3d nq = nearest->INormal.normalized(), face = SubsurfaceGeometricNormal(*nearest, nq).normalized();
+        if (dot(face, dir) < 0.0)
+            face.invert();
+        if (dot(nq, face) < 0.0)
             nq.invert();
-        double cosHit = dot(nq, dir);
+        double cosHit = dot(face, dir);
         if (!(cosHit > EPSILON))
             continue;
         // The draw's density on the disc, carried to the surface through the solid angle the ray stands for.
@@ -6801,10 +6816,11 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 continue;
             }
             ComputeSSLTNormal(in);
-            double length = in.INormal.length();
+            Vector3d face = SubsurfaceGeometricNormal(in, in.INormal), shading = in.INormal.normalized();
+            double length = face.length();
             if (!(length > 0.0) || !(length < HUGE_VAL))
                 continue;
-            Vector3d n = in.INormal / length;
+            Vector3d n = face / length;
             double gap = HUGE_VAL;
             if (c > 0)
                 gap = min(gap, in.Depth - crossings[c - 1].Depth);
@@ -6831,8 +6847,8 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             point.position = in.IPoint;
             for (int k = 0; k < 3; k++)
                 point.normal[k] = float(n[k]);
-            for (int k = 0; k < MathColour::channels; k++)
-                point.irradiance[k] = 0.0f;
+            for (int k = 0; k < 3; k++)
+                point.irradiance[k] = float(shading[k]);
             double density = 0.0;
             for (int b = 0; b < 3; b++)
                 density += fabs(n[b]) * Sqr(cell.steps[b] / size);
@@ -6881,10 +6897,11 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
     {
         SubsurfacePoint& point = cell.points[k];
         Vector3d normal(point.normal[0], point.normal[1], point.normal[2]);
+        Vector3d shading(point.irradiance[0], point.irradiance[1], point.irradiance[2]);
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
         const std::vector<char>& uses = cloud.parts->sets[min(size_t(point.id / 2), cloud.parts->sets.size() - 1)];
         bool collects = (point.id % 2 != 0);
-        MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, normal, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
+        MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, shading, cloud.lights, cloud.eta, kCloudAreaPoints, &areaShift,
                                                             cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k), uses.data());
         MathColour photonEntry;
         if (gatherer && collects)
@@ -7156,7 +7173,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
 
     // Cells are a power of four in size, at least the diffusion's reach and the ring, so a gather spans at most three along
     // an axis, and a texture that varies the diffusion uses few sizes.
-    Vector3d normal = out.INormal.normalized();
+    Vector3d normal = SubsurfaceGeometricNormal(out, out.INormal).normalized();
     cloud.sizeLevel = 2 * int(ceil(0.5 * log2(cloud.reach / mm)));
     for (int lift = 0; ; lift++)
     {
@@ -7460,7 +7477,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     double mm = sceneData->mmPerUnit;
     double reachSqr = Sqr(cloud.reach);
 
-    Vector3d n = out.INormal.normalized();
+    Vector3d n = SubsurfaceGeometricNormal(out, out.INormal).normalized();
     // The exit normal points out of the object, away from the base point below it, as the cloud's normals do.
     if (dot(n, out.IPoint - base) < 0.0)
         n.invert();
