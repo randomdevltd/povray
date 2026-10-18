@@ -9578,7 +9578,7 @@ bool Parser::Parse_RValue (TokenId Previous, TokenId *NumberPtr, void **DataPtr,
     void *Temp_Data;
     POV_PARAM *New_Par;
     bool Found=true;
-    int Temp_Count=3000000; // TODO FIXME - magic value!
+    POV_LONG Temp_Count = -1; // tokens are counted only when this is set to mTokenCount
     bool oldOkToDeclare = IsOkToDeclare();
     int Terms;
     bool function_identifier;
@@ -9737,7 +9737,7 @@ bool Parser::Parse_RValue (TokenId Previous, TokenId *NumberPtr, void **DataPtr,
             }
 
             // get the number of tokens found
-            Temp_Count = mTokenCount - Temp_Count;
+            Temp_Count = (Temp_Count < 0) ? 0 : mTokenCount - Temp_Count;
 
             if ((Temp_Count != 1) && had_callable_identifier)
                 // no tokens have been found or a function call had no parameters in parenthesis
