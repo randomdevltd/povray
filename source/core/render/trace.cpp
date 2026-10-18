@@ -68,6 +68,7 @@
 #include "core/material/texture.h"
 #include "core/material/warp.h"
 #include "core/math/matrix.h"
+#include "core/math/simd.h"
 #include "core/render/ray.h"
 #include "core/scene/atmosphere.h"
 #include "core/scene/object.h"
@@ -7907,6 +7908,14 @@ void Trace::SubsurfaceProfile::SetMethod2(const std::shared_ptr<const Subsurface
         z_r[j] = 1.0 / sigma_t[j];
         z_v[j] = (1.0 + dipole[j].zb) / sigma_t[j];
     }
+    static_assert(MathColour::channels <= 4, "Rd takes the channels in one vector of four");
+    for (int k = 0; k < 4; k++)
+    {
+        const int j = min(k, MathColour::channels - 1);
+        const double values[5] = { extinctionSqr[j], dipole[j].sigma, 1.0 + dipole[j].zb, dipole[j].fluence, dipole[j].flux };
+        for (int v = 0; v < 5; v++)
+            lanes[v][k] = values[v];
+    }
 }
 
 void Trace::SubsurfaceThin::Apply(PreciseMathColour& rd, double distSqr, int part) const
@@ -7988,11 +7997,16 @@ PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr) const
     PreciseMathColour rd;
     if (boundary != nullptr)
     {
+        // SubsurfaceDipole::Rd at a real source one path deep, the channels in one vector.
+        typedef simd::Vec<double, 4> V;
+        const V ext2 = V::load(lanes[0]), sigma = V::load(lanes[1]), zv = V::load(lanes[2]), one(1.0);
+        const V xSqr = ext2 * V(distSqr), dr = simd::sqrt(xSqr + one), dv = simd::sqrt(xSqr + zv * zv);
+        const V er = simd::exp(-(sigma * dr)), ev = simd::exp(-(sigma * dv)), ir = one / dr, iv = one / dv;
+        const V real = (one + sigma * dr) * er * (ir * ir * ir), image = zv * (one + sigma * dv) * ev * (iv * iv * iv);
+        double v[4];
+        ((V::load(lanes[3]) * (er * ir - ev * iv) + V::load(lanes[4]) * (real + image)) * ext2).store(v);
         for (int j = 0; j < MathColour::channels; j++)
-        {
-            double xSqr = distSqr * extinctionSqr[j];
-            rd[j] = dipole[j].Rd(xSqr) * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], xSqr, 0) * extinctionSqr[j];
-        }
+            rd[j] = v[j] * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], distSqr * extinctionSqr[j], 0);
         return rd;
     }
     for (int j = 0; j < MathColour::channels; j++)

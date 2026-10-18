@@ -1082,6 +1082,8 @@ class Trace
             double extinction[MathColour::channels], extinctionSqr[MathColour::channels], beamWeight[MathColour::channels];
             double totalRatio[MathColour::channels], albedo[MathColour::channels];
             const float *beamRow[MathColour::channels];
+            /// Method 2's extinction squared, dipole sigma, virtual depth, fluence and flux weights by lane (the last channel twice), for Rd.
+            double lanes[5][4];
             void SetMethod2(const std::shared_ptr<const SubsurfaceBoundary>& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
             PreciseMathColour Rd(double distSqr) const;
             PreciseMathColour RdDisc(double radius) const;
