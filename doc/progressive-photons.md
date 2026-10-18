@@ -341,7 +341,8 @@ deposit and 96 per media segment: on the leaf of the measurements below, at qual
 and a loaded render gives the same image in 164.1 G.
 `tests/render/progressive_photon_file.sh` saves and loads media, subsurface and
 dispersion scenes, turns the camera, and checks each error, including a load refused
-under a tiny `POV_PHOTON_MEMORY` ceiling.
+under a tiny ceiling from the option, the environment and the scene, and accepted when the
+option raises a tiny scene ceiling.
 
 ## Media lights
 
@@ -400,10 +401,28 @@ emission's storage is projected from the deposits and segments per batch so far,
 projection and the batch it was made after, before more work is done. By default the
 ceiling is 40% of the memory available after the first batch, at most 6 GB; it is read
 once per render, so the same scene can be refused on a busy machine and accepted on an
-idle one. The environment variable `POV_PHOTON_MEMORY` sets the ceiling instead, in GB
-(10^9 bytes, any positive number such as `0.5` or `24`), with no reference to free
-memory; it is read once per process, applies to loading a photon file too, and a value
-that is not a positive number stops the render with an error.
+idle one. Three settings replace it with a fixed ceiling in GB (10^9 bytes, any positive
+finite number such as `0.5` or `24`), with no reference to free memory:
+
+```pov
+global_settings { photons { method 2 quality 8 memory 12 } }
+```
+
+```
+povray +Iscene.pov Photon_Memory=24       // or Photon_Memory=24 in povray.ini
+POV_PHOTON_MEMORY=24 povray +Iscene.pov
+```
+
+The first that is given wins: the `Photon_Memory` command-line or INI option, then the
+`POV_PHOTON_MEMORY` environment variable (read once per process), then the scene's
+`memory`, then the default. The ceiling is a property of the machine, so whoever runs the
+render can always raise or lower what a scene asks for; when an option or the environment
+overrides a different scene value, the log says so in one line naming the ceiling used.
+`memory` is accepted only with `method 2`, like `quality`. A value that is zero, negative,
+not finite or not a number is a parse error at the scene line, an option error, or, for the
+environment variable, an error when method 2 photons start. The error for a projection or
+photon file over the ceiling names where the ceiling came from, and loading a photon file
+uses the same ceiling as shooting.
 Otherwise the maps reserve the projected capacity, so they grow only when a later batch
 deposits more than the earlier ones, and the index is partitioned in place. The log line `Progressive photons:` reports
 batches, emitted samples, deposits, `k`, contributions, preparation time and the peak
@@ -441,9 +460,12 @@ every cone. `tests/render/progressive_photons.sh`
 covers thread-count equality for every light type and media, dispersion, subsurface,
 thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
 independence of the logged budget, the default memory budget error, refusal under a tiny
-`POV_PHOTON_MEMORY` ceiling, acceptance under a generous one, invalid ceilings and invalid
-quality; every other render there runs under a generous ceiling, so no result depends on free
-memory;
+ceiling and acceptance under a generous one from the scene's `memory`, `Photon_Memory` and
+`POV_PHOTON_MEMORY`, their precedence (the option over the environment over the scene, in
+both directions, with the override line), `memory` under method 1, and invalid ceilings in
+all three (`abc`, 0, negative, NaN) and invalid quality; every other render there runs under
+a generous ceiling, so no result depends on free memory; `tests/render/progressive_photons4.sh`
+accepts `memory` expressions in a `.pov4` scene and rejects invalid ones;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
 requires its underside to match the lit top, as does a `double_illuminate` disc;
 `tests/render/progressive_receivers.sh` focuses a caustic on a wavy floor built as a mesh, a

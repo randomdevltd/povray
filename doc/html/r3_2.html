@@ -123,6 +123,9 @@
   <td><div class="divh3"><a title="3.2.5.6" href="#r3_2_5_6">Prepared Media Cells</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.2.5.7" href="#r3_2_5_7">Photon Memory</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.2.6" href="#r3_2_6">Shell Command Options</a></strong></div></td>
 </tr>
 <tr>
@@ -1834,6 +1837,30 @@ is an error.</p>
 <pre>
 -- povray.ini on a render farm's final machines
 Prepared_Media_Cells=8000000
+</pre>
+</div>
+
+<a name="r3_2_5_7"></a>
+<div class="content-level-h4" contains="Photon Memory" id="r3_2_5_7">
+<h4>3.2.5.7 Photon Memory</h4>
+<p>Syntax:</p>
+<pre>
+Photon_Memory=GB
+</pre>
+<p>Sets the ceiling on <a href="r3_4.html#r3_4_3_4_3_progressive">photon method 2</a> storage, in GB (10<sup>9</sup> bytes):
+any finite number greater than zero, such as <code>0.5</code> or <code>24</code>. It is accepted in an INI file and on the
+command line, where it is written the same way. A render whose projected photon storage, or whose loaded photon file,
+would pass the ceiling stops with an error naming this option. Without a ceiling from any source the limit is 40% of the
+memory available after the first photon batch, at most 6 GB, so the same scene can pass on an idle machine and fail on a
+busy one; a fixed ceiling removes that dependence.</p>
+<p>The ceiling can come from three places, and the first one given applies: this option, then the
+<code>POV_PHOTON_MEMORY</code> environment variable (also in GB), then the scene's <code>photons { memory GB }</code> in
+<code>global_settings</code>. How much memory photons may take is a property of the machine, so the person running the
+render can raise or lower what a scene asks for without editing it; when this option or the environment variable
+overrides a different scene value, the render says so in one line giving the ceiling used. A value that is zero,
+negative, not finite or not a number is an error. The option does nothing for scenes without method 2 photons.</p>
+<pre>
+povray +Iscene.pov Photon_Memory=24
 </pre>
 </div>
 

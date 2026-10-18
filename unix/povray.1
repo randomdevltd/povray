@@ -155,6 +155,12 @@ Limit which tagged objects, lights, portals and cameras take part in the render,
 using the Boolean grammar of \fBfilter_tags\fP. It is applied after parsing and
 is never visible to the scene; quote the expression for the shell. See doc/render\-tags.md.
 .TP
+\fBPhoton_Memory\fP=\fIGB\fP
+Set the ceiling on photon method 2 storage in GB (10^9 bytes), any positive finite
+number. It overrides the \fBPOV_PHOTON_MEMORY\fP environment variable, which overrides
+the scene's \fBphotons { memory\fP \fIGB\fP \fB}\fP; without any of them the ceiling is
+40% of the available memory, at most 6 GB. See doc/progressive\-photons.md.
+.TP
 \fBML\fP\fIn.n\fP or \fBPov4_Version\fP=\fIn.n\fP
 Run a .pov4 scene with the defaults of language version n.n instead of 4.0.
 .TP

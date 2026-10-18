@@ -7850,6 +7850,7 @@ void Parser::Parse_Global_Settings()
             sceneData->photonSettings.quality = 1.0;
             sceneData->photonSettings.classicOptions = false;
             sceneData->photonSettings.qualitySpecified = false;
+            sceneData->photonSettings.memory = 0.0;
             //  sceneData->photonSettings.globalCount = 0;
 
             sceneData->surfacePhotonMinGatherRad = -1;
@@ -7977,6 +7978,13 @@ void Parser::Parse_Global_Settings()
                         sceneData->photonSettings.quality = quality;
                         sceneData->photonSettings.qualitySpecified = true;
                     }
+                    else if (CurrentTokenText() == "memory")
+                    {
+                        const double memory = Parse_Float();
+                        if (!std::isfinite(memory) || memory <= 0.0)
+                            Error("Photon memory must be a finite number of gigabytes greater than zero.");
+                        sceneData->photonSettings.memory = memory;
+                    }
                     else
                     {
                         UNGET
@@ -7990,6 +7998,8 @@ void Parser::Parse_Global_Settings()
                 Error("Photon method 2 uses quality instead of count, spacing, gather, radius, jitter, autostop or expand_thresholds.");
             if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.qualitySpecified)
                 Error("Photon quality requires method 2.");
+            if (sceneData->photonSettings.method == 1 && sceneData->photonSettings.memory > 0.0)
+                Error("Photon memory requires method 2.");
             if (sceneData->photonSettings.maxGatherCount > 0)
                 sceneData->photonSettings.photonsEnabled = true;
             else

@@ -87,7 +87,7 @@ enum class NK : unsigned char
 {
     File, Let, Global, Assign, FnDef, Params, Param, If, While, For, ForIn, Break, Continue, Return, Include, Input,
     Keyword, Comma, Spread, Number, String, Ident, Builtin, True, False, Null, Vector, Array, Dict, Pair,
-    Block, FunctionBlock, Cond, Binary, Unary, Lambda, Colour, Channel, Call, Index, Member, Body, PhotonQuality
+    Block, FunctionBlock, Cond, Binary, Unary, Lambda, Colour, Channel, Call, Index, Member, Body, PhotonValue
 };
 
 enum Op : unsigned char { OpOr, OpAnd, OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpAdd, OpSub, OpMul, OpDiv, OpNeg, OpPlus, OpNot };
@@ -1065,20 +1065,26 @@ void Pov4Evaluator::LowerTagExpression(Program& p, TSNode n, Node& into)
     into.kids.push_back(Lower(p, n));
 }
 
+// quality and memory are matched by text in a photon block and take one numeric operand
+static bool PhotonValueWord(const std::string& text)
+{
+    return (text == "quality") || (text == "memory");
+}
+
 const Node* Pov4Evaluator::PhotonOperand(Program& p, const Node* n, const Node*& word)
 {
     DepthGuard depth(*this, n);
-    if ((n->kind == NK::Call) && (n->a->kind == NK::Ident) && (n->a->text == "quality"))
+    if ((n->kind == NK::Call) && (n->a->kind == NK::Ident) && PhotonValueWord(n->a->text))
     {
         if ((n->kids.size() != 1) || (n->kids[0]->kind == NK::Spread))
-            Fail(n, "Photon quality takes one numeric expression.");
+            Fail(n, "Photon %s takes one numeric expression.", n->a->text.c_str());
         word = n->a;
         return n->kids[0];
     }
     if ((n->kind != NK::Binary) && (n->kind != NK::Cond))
         return nullptr;
     const Node* value = nullptr;
-    if ((n->kind == NK::Binary) && (n->a->kind == NK::Ident) && (n->a->text == "quality") &&
+    if ((n->kind == NK::Binary) && (n->a->kind == NK::Ident) && PhotonValueWord(n->a->text) &&
         ((n->op == OpAdd) || (n->op == OpSub)))
     {
         word = n->a;
@@ -1106,7 +1112,7 @@ void Pov4Evaluator::LowerPhotonItems(Program& p, Node& body)
         const Node* item = body.kids[i];
         const Node* word = nullptr;
         const Node* value = PhotonOperand(p, item, word);
-        if ((item->kind == NK::Ident) && (item->text == "quality"))
+        if ((item->kind == NK::Ident) && PhotonValueWord(item->text))
         {
             word = item;
             if (i + 1 < body.kids.size())
@@ -1127,10 +1133,10 @@ void Pov4Evaluator::LowerPhotonItems(Program& p, Node& body)
         if (value != nullptr)
         {
             p.nodes.push_back(*word);
-            Node& quality = p.nodes.back();
-            quality.kind = NK::PhotonQuality;
-            quality.a = value;
-            body.kids[i] = &quality;
+            Node& photonValue = p.nodes.back();
+            photonValue.kind = NK::PhotonValue;
+            photonValue.a = value;
+            body.kids[i] = &photonValue;
         }
         if (item->kind == NK::If)
         {
@@ -1863,11 +1869,11 @@ void Pov4Evaluator::CheckNode(const Node* n, CheckCtx& ctx)
                 Fail(n->a, "The file name of an include must be a string, not %s.", TyName(t).c_str());
             break;
         }
-        case NK::PhotonQuality:
+        case NK::PhotonValue:
         {
             unsigned t = OperandTy(n->a, TY_NUM, ctx);
             if (ctx.checking && (t != TY_NONE) && ((t & TY_NUM) == 0))
-                Fail(n->a, "Photon quality must be a number, not %s.", TyName(t).c_str());
+                Fail(n->a, "Photon %s must be a number, not %s.", n->text.c_str(), TyName(t).c_str());
             break;
         }
         case NK::Block:
@@ -1911,9 +1917,9 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
         if (word == "photons")
         {
             if (ctx.checking && !ctx.photonSettingsAllowed &&
-                ((k->kind == NK::PhotonQuality) ||
+                ((k->kind == NK::PhotonValue) ||
                  (((k->kind == NK::Keyword) || (k->kind == NK::Ident)) &&
-                  ((k->text == "method") || (k->text == "quality")))))
+                  ((k->text == "method") || PhotonValueWord(k->text)))))
                 Fail(k, "Photon '%s' is only valid inside global_settings.", k->text.c_str());
             if (k->kind == NK::If)
             {
@@ -2735,7 +2741,7 @@ void Pov4Evaluator::TextOutput::Put(const Item& item, bool spliced)
             return;
         case Item::Keyword:
             if ((context == "photons") && !photonSettingsAllowed &&
-                ((item.text == "method") || (item.text == "quality")))
+                ((item.text == "method") || PhotonValueWord(item.text)))
                 ev.Fail(item.at, "Photon '%s' is only valid inside global_settings.", item.text.c_str());
             ev.mPrinted.insert(ev.mPrinted.end(), item.refs.begin(), item.refs.end());
             Append(item.text, item.at);
@@ -3374,9 +3380,9 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
 {
     switch (n->kind)
     {
-        case NK::PhotonQuality:
-            out.Put(Item(Item::Keyword, "quality", "quality", n), false);
-            out.Put(Item(PValue::Number(Float(Eval(n->a), n->a, "Photon quality")), n->a), false);
+        case NK::PhotonValue:
+            out.Put(Item(Item::Keyword, n->text, n->text, n), false);
+            out.Put(Item(PValue::Number(Float(Eval(n->a), n->a, ("Photon " + n->text).c_str())), n->a), false);
             return;
         case NK::Keyword:
             out.Put(Item(Item::Keyword, n->text, n->text, n), false);

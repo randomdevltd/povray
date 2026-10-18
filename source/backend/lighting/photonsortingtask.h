@@ -49,6 +49,7 @@
 
 // POV-Ray header files (base module)
 #include "core/lighting/photons_fwd.h"
+#include "core/lighting/progressivephoton.h"
 
 // POV-Ray header files (core module)
 #include "core/render/trace.h"
@@ -69,13 +70,13 @@ std::string ProgressivePhotonIdentity(const SceneData& scene);
 /// Writes every prepared set's merged, unbuilt method 2 maps to the photon file; returns why it failed, or nothing.
 std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed);
 /// The POV_PHOTON_MEMORY ceiling in bytes, read once: zero when unset, negative when it is not a positive number of GB.
-double ProgressivePhotonMemoryCeiling();
-/// The bytes method 2 photons may use: the POV_PHOTON_MEMORY ceiling, else 40% of available memory, at most 6 GB.
-double ProgressivePhotonMemoryBudget();
-/// Names where ProgressivePhotonMemoryBudget comes from, for messages.
-const char* ProgressivePhotonMemoryRule();
+double ProgressivePhotonEnvironmentCeiling();
+/// The ceiling from the first source that sets it: the Photon_Memory option, POV_PHOTON_MEMORY, the scene's photons memory.
+ProgressivePhotonCeiling ProgressivePhotonMemoryCeiling(const SceneData& scene);
+/// The bytes method 2 photons may use: the ceiling, else 40% of the memory available now, at most 6 GB.
+double ProgressivePhotonMemoryBudget(const ProgressivePhotonCeiling& ceiling);
 /// Reads unbuilt maps written by SaveProgressivePhotons into the prepared sets; returns why it failed, or nothing.
-std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_t& savedSeed);
+std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeiling& ceiling, std::uint64_t& savedSeed);
 
 class PhotonSortingTask final : public RenderTask
 {

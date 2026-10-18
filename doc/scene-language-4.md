@@ -305,13 +305,16 @@ function word in a body is the keyword itself (`filter 0.5`, while `filter(A, F)
 ### Progressive photons
 
 `global_settings { photons { method 2 quality (Budget * 2) } }` enables progressive
-photons. These method and quality controls belong to the photon block inside
+photons. These method, quality and memory controls belong to the photon block inside
 `global_settings`; object and light photon blocks take transport flags instead. The quality expression must be a finite number greater than zero and at most 16384;
 it defaults to 1. `quality` is contextual and stays available as a binding or function name
 outside the photon item position. Parenthesized expressions and signed operands work there.
 Omitting `method`, or specifying `method 1`, keeps classic photon controls; `quality` requires
 method 2 and cannot be combined with `count`, `spacing`, `gather`, `radius`, `jitter`,
-`autostop` or `expand_thresholds`. An object's `photons { target W }` takes
+`autostop` or `expand_thresholds`. `memory (Gigabytes)` in the same block sets the method 2
+photon storage ceiling in GB (10^9 bytes), a finite number greater than zero; like `quality`
+it is contextual, accepts expressions, and requires method 2. The `Photon_Memory=GB` option
+and the `POV_PHOTON_MEMORY` environment variable override it, in that order. An object's `photons { target W }` takes
 a share weight under method 2 (see `doc/progressive-photons.md`). Light color and fade keep
 their classic meaning for direct light; method 2 calibrates photon power to them. See
 `distribution/scenes/lights/progressive_photons4.pov4`.

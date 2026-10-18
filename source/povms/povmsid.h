@@ -372,6 +372,7 @@ enum
     kPOVAttrib_ClocklessAnimation    = 'Ckla',
     kPOVAttrib_FilterTags            = 'FiTa',
     kPOVAttrib_PreparedMediaCells    = 'PrMC',
+    kPOVAttrib_PhotonMemory          = 'PhMC',
     kPOVAttrib_RealTimeRaytracing    = 'RTRa',
     kPOVAttrib_Version               = 'Vers',
     kPOVAttrib_Pov4Version           = 'P4Ve',

@@ -67,6 +67,16 @@ Changed Behaviour
     weights, instead of by the previous batch's hit rate. A split union marked
     as a target stays one target.
 
+  - Photon method 2's storage ceiling can be set in the scene with
+    `photons { method 2 memory GB }` and on the command line or in an INI file
+    with `Photon_Memory=GB`, as well as with the POV_PHOTON_MEMORY environment
+    variable (GB = 10^9 bytes). The option overrides the environment variable,
+    which overrides the scene, which overrides the default of 40% of the
+    available memory, at most 6 GB; an override of a different scene value is
+    logged in one line. Errors for photons or a photon file over the ceiling
+    name the setting it came from. `memory` requires method 2, is accepted in
+    `.pov4` scenes, and must be a finite number greater than zero.
+
   - Any new behaviour formerly activated by `#version 3.71` now requires
     `#version 3.8` (or higher); specifying `#version 3.71` will trigger a
     corresponding warning.

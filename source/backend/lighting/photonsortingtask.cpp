@@ -681,7 +681,7 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
     return out.Close() ? std::string() : "the file could not be written";
 }
 
-double ProgressivePhotonMemoryCeiling()
+double ProgressivePhotonEnvironmentCeiling()
 {
     static const double ceiling = [] {
         const char* text = std::getenv("POV_PHOTON_MEMORY");
@@ -694,10 +694,22 @@ double ProgressivePhotonMemoryCeiling()
     return ceiling;
 }
 
-double ProgressivePhotonMemoryBudget()
+ProgressivePhotonCeiling ProgressivePhotonMemoryCeiling(const SceneData& scene)
 {
-    if (ProgressivePhotonMemoryCeiling() > 0.0)
-        return ProgressivePhotonMemoryCeiling();
+    ProgressivePhotonCeiling ceiling;
+    if (scene.machinePhotonMemory > 0.0)
+        ceiling = { scene.machinePhotonMemory * 1.0e9, "set by the Photon_Memory option" };
+    else if (ProgressivePhotonEnvironmentCeiling() > 0.0)
+        ceiling = { ProgressivePhotonEnvironmentCeiling(), "set by the POV_PHOTON_MEMORY environment variable" };
+    else if (scene.photonSettings.memory > 0.0)
+        ceiling = { scene.photonSettings.memory * 1.0e9, "set by the scene's photons memory" };
+    return ceiling;
+}
+
+double ProgressivePhotonMemoryBudget(const ProgressivePhotonCeiling& ceiling)
+{
+    if (ceiling.bytes > 0.0)
+        return ceiling.bytes;
     double available = ProgressivePhotonBudget::memoryCeiling / ProgressivePhotonBudget::memoryShare;
     std::ifstream meminfo("/proc/meminfo");
     std::string field;
@@ -714,12 +726,7 @@ double ProgressivePhotonMemoryBudget()
     return std::min(ProgressivePhotonBudget::memoryCeiling, ProgressivePhotonBudget::memoryShare * available);
 }
 
-const char* ProgressivePhotonMemoryRule()
-{
-    return ProgressivePhotonMemoryCeiling() > 0.0 ? "set by POV_PHOTON_MEMORY" : "40% of available memory, at most 6 GB";
-}
-
-std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_t& savedSeed)
+std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeiling& ceiling, std::uint64_t& savedSeed)
 {
     const std::string& name = scene.photonSettings.fileName;
     PhotonFileReader in(name);
@@ -750,6 +757,7 @@ std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_
     if (in.Good() && (sets != scene.preparedSets.size() || wanted.size() != sets))
         return "The photon file '" + name + "' was saved for other prepared scene sets; regenerate it.";
     constexpr double segmentBytes = sizeof(ProgressiveVolumePhoton) + sizeof(ProgressiveVolumePhotonMap::Bounds);
+    const double budget = ProgressivePhotonMemoryBudget(ceiling);
     double bytes = 0.0;
     std::vector<const PreparedSet*> loaded;
     for (std::uint32_t s = 0; in.Good() && s < sets; ++s)
@@ -882,8 +890,7 @@ std::string LoadProgressivePhotons(SceneData& scene, double budget, std::uint64_
     {
         std::ostringstream message;
         message << std::setprecision(3) << "The photon file '" << name << "' needs at least " << bytes / 1.0e9
-                << " GB for photons, more than the " << budget / 1.0e9 << " GB allowed ("
-                << ProgressivePhotonMemoryRule() << ").";
+                << " GB for photons, more than the " << budget / 1.0e9 << " GB allowed (" << ceiling.rule << ").";
         return message.str();
     }
     unsigned char end[sizeof(kProgressiveEnd)];

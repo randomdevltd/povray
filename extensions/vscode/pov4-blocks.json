@@ -3436,6 +3436,7 @@
           "load_file",
           "max_trace_level",
           "media",
+          "memory",
           "method",
           "quality",
           "radius",
