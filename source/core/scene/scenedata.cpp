@@ -443,7 +443,6 @@ SceneData::SceneData() :
     subsurfaceErrorBound = 0.1;
     subsurfaceSpacing = 1.0;
     subsurfaceMemory = kSubsurfaceMemoryMB;
-    subsurfaceBailout = kSubsurfaceBailout;
 
     bspMaxDepth = 0;
     bspObjectIsectCost = bspBaseAccessCost = bspChildAccessCost = bspMissChance = 0.0f;

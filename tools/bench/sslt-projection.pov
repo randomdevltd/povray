@@ -12,7 +12,7 @@
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 1
-  subsurface { samples Diffuse, Single method Method spacing Spacing memory Memory #ifdef (Bailout) bailout Bailout #end }
+  subsurface { samples Diffuse, Single method Method spacing Spacing memory Memory }
 }
 #include "projections.inc"
 
@@ -46,7 +46,7 @@ sky_sphere { pigment { gradient y colour_map { [0 rgb <0.05, 0.05, 0.08>] [1 rgb
     translate z * Distance
     rotate <-Elevation, Azimuth, 0>
     pigment { rgb <0.85, 0.55 + 0.3 * rand(Seed), 0.4> }
-    finish { ambient 0 diffuse 0.15 subsurface { translucency Translucency * <1, 0.7, 0.5> } }
+    finish { ambient 0 diffuse 0.15 subsurface { translucency Translucency * <1, 0.7, 0.5> #ifdef (MinimumInfluence) minimum_influence MinimumInfluence #end } }
     interior { ior 1.4 }
   }
 #end

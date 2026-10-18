@@ -2517,31 +2517,38 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         END_CASE
 
         CASE (SUBSURFACE_TOKEN)
-            mExperimentalFlags.subsurface = true;
-            New->UseSubsurface = true;
+        {
+            // a block giving only minimum_influence leaves subsurface off, so #default can carry the scene's value
+            bool otherItem = false, influence = false;
             Parse_Begin();
             EXPECT
                 CASE (ANISOTROPY_TOKEN)
                     Parse_Colour(New->SubsurfaceAnisotropy);
+                    otherItem = true;
                 END_CASE
                 CASE (TRANSLUCENCY_TOKEN)
                     Parse_Colour(New->SubsurfaceTranslucency);
+                    otherItem = true;
                 END_CASE
                 CASE (METHOD_TOKEN)
                     New->SubsurfaceMethod = Parse_Int_With_Range(kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, "subsurface method");
+                    otherItem = true;
                 END_CASE
                 CASE (COLOUR_TOKEN)
                     Parse_Colour(New->SubsurfaceColour);
                     New->SubsurfaceHasColour = true;
                     Destroy_Pigment(New->SubsurfacePigment);
                     New->SubsurfacePigment = nullptr;
+                    otherItem = true;
                 END_CASE
                 CASE (PIGMENT_TOKEN)
                     Parse_Subsurface_Pigment(New->SubsurfacePigment);
                     New->SubsurfaceHasColour = true;
+                    otherItem = true;
                 END_CASE
                 CASE (EMISSION_TOKEN)
                     New->SubsurfaceEmits = true;
+                    otherItem = true;
                     if (AllowToken(PIGMENT_TOKEN))
                         Parse_Subsurface_Pigment(New->SubsurfaceEmissionPigment);
                     else
@@ -2553,6 +2560,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                 END_CASE
                 CASE (THICKNESS_TOKEN)
                     New->SubsurfaceThicknessSet = true;
+                    otherItem = true;
                     if (AllowToken(PIGMENT_TOKEN))
                         Parse_Subsurface_Pigment(New->SubsurfaceThicknessPigment);
                     else
@@ -2563,6 +2571,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                     }
                 END_CASE
                 CASE (VOLUME_SAMPLING_TOKEN)
+                    otherItem = true;
                     if (Parse_Begin(false))
                     {
                         New->SubsurfaceVolume = true;
@@ -2587,11 +2596,27 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
                         New->SubsurfaceVolume = ((int) Allow_Float(1.0) != 0);
                 END_CASE
                 OTHERWISE
-                    UNGET
-                    EXIT
+                    if (CurrentTokenText() == "minimum_influence")
+                    {
+                        influence = true;
+                        New->SubsurfaceMinimumInfluence = Parse_Float();
+                        if (!(New->SubsurfaceMinimumInfluence >= 0.0))
+                            Error("Subsurface minimum_influence must be 0 or more.");
+                    }
+                    else
+                    {
+                        UNGET
+                        EXIT
+                    }
                 END_CASE
             END_EXPECT
             Parse_End();
+            if (otherItem || !influence)
+            {
+                mExperimentalFlags.subsurface = true;
+                New->UseSubsurface = true;
+            }
+        }
         END_CASE
 
         CASE (USE_ALPHA_TOKEN)

@@ -290,7 +290,7 @@ typedef enum INTSTATS
     Subsurface_Cloud_Unserved, ///< shading points the cloud could not serve, left without diffuse subsurface light
     Subsurface_Cloud_Pretrace, ///< shading points the cloud served in the radiosity pretrace
     Subsurface_Cloud_Alone, ///< shading points with no cell of points near, lit as the exit point
-    Subsurface_Cloud_Estimated, ///< shading points below the subsurface bailout, lit as the exit point without the cloud
+    Subsurface_Cloud_Estimated, ///< shading points below their finish's minimum_influence, lit as the exit point without the cloud
     Subsurface_Cloud_Empty_Disc, ///< shading points with no points facing their way in the disc
     Subsurface_Cloud_Lifted, ///< gathers whose cell size was raised to hold the ring
     Subsurface_Cloud_Dropped_Inside, ///< crossings dropped as inside on both sides, outside on both, or closer than the probe floor

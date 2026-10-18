@@ -803,43 +803,66 @@ along it against the reference before (high albedo; red 15%), and 6% (red 1%) af
 than the walks where the diffusion is long against the part (high-albedo stud tops, thin blocks), as the dipole on a
 semi-infinite medium is, and stud walls are a little bright in red near their base.
 
-## Subsurface bailout
+## Subsurface minimum influence
 
 `adc_bailout` only decides whether a ray is traced, so a reflection or refraction of small weight that meets a
-subsurface object used to pay for a full cloud gather and for building any cells it reached. With method 2, a hit whose ray weight times the subsurface layers' opacity is below `bailout` (8 by default) times the ray's
-`adc_bailout` is lit as its exit point is: the light entering there (each light once, an area light at one drawn
-point), times the flesh's mean entry factor where the flesh is looked up, times the profile's integral over the plane
-(`RdTotal`) and the exit Fresnel term. It has no single scattering, photons or radiosity, reads no cell and builds
-none; a hit on an open sheet still counts as unserved. The unscattered ray through the object is traced as before (it
-carries the incoming weight). Primary rays have weight 1 and are never cut; radiosity gather rays carry
-(0.5 × brightness)^(depth + 1) against the radiosity `adc_bailout` of 0.01, so with the default only their fourth
-bounce and deeper are cut. Method 1 is untouched: `tests/render/version4_subsurface_40.pov`, `tools/bench/sslt-open.pov` case 5 and
-`sslt-bailout.pov` case 1, each with method 1, render pixel-identical to the build before. `tests/render/subsurface_bailout.sh` checks that hits seen only in a faint
-mirror build no cell, and that the image and cloud are the same on one thread and
-four.
+subsurface object used to pay for a full cloud gather and for building any cells it reached. With method 2, a hit whose
+ray weight times the subsurface layers' opacity is below its finish's `subsurface { minimum_influence F }` is lit as
+its exit point is: the light entering there (each light once, an area light at one drawn point), times the flesh's mean
+entry factor where the flesh is looked up, times the profile's integral over the plane (`RdTotal`) and the exit Fresnel
+term. It has no single scattering, photons or radiosity, reads no cell and builds none; a hit on an open sheet still
+counts as unserved. The unscattered ray through the object is traced as before (it carries the incoming weight).
 
-`tools/bench/sslt-bailout.pov` has six stacked thin leaves passing 40% of the light (case 0, 200×150) and wax spheres
-between mirrors of reflection 0.7 over a floor of 0.06 (case 1, 400×300); `-A +WT1`, CPU-seconds the mean of two runs,
-errors in levels of 255 against `bailout 0`, worst block the largest 8×8 block mean. The subsurface cost is the
-render's CPU time less that with subsurface off (0.21 s for the leaves, 0.35 s for the mirrors):
+The threshold is an absolute share of the pixel, unrelated to `adc_bailout`. It is read from the topmost subsurface
+layer's finish, where `translucency` and `method` are read, so it is set per object, and `#default { finish {
+subsurface { minimum_influence F } } }` sets it for every finish made after it. A `subsurface` block that gives only
+`minimum_influence` does not switch subsurface on, so that default leaves objects without subsurface alone. The test is
+one multiply and compare on a value already loaded. Camera rays are cut too: a camera ray has weight 1, so it is cut
+where its subsurface layers are nearly see-through (opacity below `minimum_influence`), and a ray that has passed
+through see-through layers or off mirrors carries less weight still. Radiosity gather rays carry (0.5 × brightness)^(depth
++ 1). Method 1 is untouched: `tests/render/version4_subsurface_40.pov`, `tools/bench/sslt-open.pov` case 5 and
+`sslt-bailout.pov` case 1, each with method 1, render pixel-identical to the build before.
+`tests/render/subsurface_minimum_influence.sh` checks that hits seen only in a faint mirror build no cell with the
+default, that `#default` and a finish's own value both reach the hit, that a `#default` giving only `minimum_influence`
+changes nothing else, and that the image and cloud are the same on one thread and four.
 
-| `bailout` | leaves CPU-s | cost removed | estimated hits | rms / mean / worst | mirrors CPU-s | cost removed | estimated hits | rms / mean / worst |
-|---|---|---|---|---|---|---|---|---|
-| 0 | 8.68 | | 0 of 157489 | | 2.72 | | 0 of 46658 | |
-| 2 | 7.18 | 18% | 32757 | 0.23 / +0.05 / 0.9 | 2.72 | 0% | 253 | 0.02 / 0.00 / 0.1 |
-| 4 | 6.42 | 27% | 51022 | 0.65 / −0.22 / 2.8 | 2.69 | 1% | 788 | 0.06 / 0.00 / 0.4 |
-| 8 | 5.89 | 33% | 63634 | 0.68 / −0.06 / 2.5 | 2.68 | 2% | 2094 | 0.21 / 0.00 / 1.9 |
-| 16 | 4.97 | 44% | 85728 | 1.29 / −0.07 / 6.6 | 2.05 | 28% | 12845 | 0.60 / −0.06 / 3.8 |
-| 32 | 4.11 | 54% | 104785 | 3.16 / −1.33 / 11.1 | 2.05 | 29% | 13097 | 0.70 / −0.06 / 3.8 |
+The estimate is brighter than the cloud on thin see-through leaves, so the default is set by the stacked leaves of
+`tools/bench/sslt-bailout.pov`: case 2, eight face-on discs each passing 40% of the light (hidden behind one another,
+and with `Direct=1` stepped so a crescent of every disc shows), case 0, six leaves, and case 1, wax spheres between
+mirrors of reflection 0.7 over a floor of 0.06. `-A +WT1 +BS8`, 200×150 (case 1 400×300), instructions in G, errors in
+levels of 255 against `minimum_influence 0`, worst block the largest 8×8 block mean, cost removed as a share of the
+subsurface cost (the render less that with subsurface off: 3.37, 2.47, 1.84 and 3.73 G):
 
-Every leaf shows somewhere in front, so the leaves build their 28 cells at every setting and the saving is the
-gathers alone; at 16 the mirrors' floor reflection (0.06) falls under the bailout and two cells (8300 points) are no
-longer built. The default is 8, the largest setting whose worst block stays under three levels in both. On the many
-small objects of `sslt-projection.pov` (`Camera=1 Count=1000`, 320×160), where the unscattered ray of one box meets
-the next at about 3% weight, 8 lights 1620 of 50945 hits from their exit point, builds 1377 cells instead of 1521
-(1.11 M points instead of 1.23 M) and takes 4.28 CPU-s instead of 4.34, at rms 0.02 and worst block 0.15.
-`sslt-wide.pov` at 1600×800 (`Method=2`) has no hit under it: the same 40404 hits and 491 cells, an
-identical image, 15.1 and 15.2 CPU-s.
+| `minimum_influence` | hidden G | removed | rms / mean / worst | direct G | removed | rms / mean / worst |
+|---|---|---|---|---|---|---|
+| 0 | 364.50 | | | 237.28 | | |
+| 0.001 | 364.48 | 0% | 0.00 / +0.00 / 0.0 | 237.28 | 0% | 0.00 / +0.00 / 0.0 |
+| 0.002 | 359.51 | 1% | 0.17 / +0.00 / 0.2 | 235.61 | 1% | 0.13 / +0.00 / 0.1 |
+| 0.003 | 323.99 | 11% | 0.46 / +0.14 / 0.9 | 222.18 | 6% | 0.53 / +0.14 / 1.6 |
+| 0.005 | 285.77 | 22% | 1.04 / +0.47 / 2.0 | 204.15 | 14% | 1.51 / +0.49 / 5.3 |
+| 0.01 | 218.68 | 40% | 2.01 / +0.93 / 5.1 | 166.67 | 30% | 3.45 / +1.35 / 9.6 |
+| 0.0314 | 162.13 | 56% | 3.27 / +1.45 / 9.6 | 127.00 | 47% | 6.31 / +2.81 / 15.5 |
+
+| `minimum_influence` | six leaves G | removed | rms / mean / worst | mirrors G | removed | rms / mean / worst |
+|---|---|---|---|---|---|---|
+| 0 | 92.70 | | | 20.60 | | |
+| 0.002 | 92.70 | 0% | 0.00 / +0.00 / 0.0 | 20.60 | 0% | 0.00 / +0.00 / 0.0 |
+| 0.005 | 83.09 | 11% | 0.44 / +0.08 / 2.6 | 20.57 | 0% | 0.01 / −0.00 / 0.0 |
+| 0.01 | 72.86 | 22% | 0.84 / +0.24 / 3.1 | 20.49 | 1% | 0.03 / +0.00 / 0.1 |
+| 0.0314 | 60.96 | 35% | 2.42 / +0.68 / 10.9 | 19.90 | 4% | 0.32 / +0.00 / 3.3 |
+
+0.0314 is the threshold the earlier relative setting gave by default (8 × `adc_bailout` 1/255). The weights through
+the stack come in steps of the faces' transmission, so 0.004 and 0.005 cut the same hits. The default is 0.002, the
+largest of 0.001, 0.002, 0.005, 0.01, ... whose worst block stays within three levels on both stacks; it removes 1% of
+the stacks' subsurface cost and changes nothing in the leaves or mirrors. On the many small objects of
+`sslt-projection.pov` (`Camera=1 Count=1000`, 320×160, method 2 at spacing 1), where the unscattered ray of one box
+meets the next at about 3% weight, 0.002 cuts no hit: 33.38 G, 1757 cells and 1.41 M points, where 0.0314 estimates
+2229 hits and builds 1422 cells (1.15 M points) in 30.55 G at rms 0.06 and worst block 0.15 (0.01: 811 hits, 32.14 G,
+worst 0.04); a finish on many small boxes can take a larger value of its own. `sslt-skin.pov`, `sslt-shadow-edges.pov`,
+`sslt-lamps.pov`, `sslt-studs.pov` (320×240) and `sslt-wide.pov` (a 200×200 window of 4000×2000), each with
+`Method=2 Spacing=1`, have no hit under the threshold before or after: identical images, and instructions within 0.2%
+of the global setting's (9.03, 28.45, 18.61, 88.05 and 50.50 G against 9.03, 28.45, 18.62, 88.22 and 50.49 G). With
+0.031373, the old default's value, the projection scene estimates the same 2229 hits as before in 30.55 G against 30.56 G.
 
 ## Subsurface flesh and skin
 
@@ -1302,7 +1325,7 @@ from outside, η² (1 − 2 c1): 0.908 at η 1.5, 0.923 at 1.4 (see **Subsurface
 pbrt's normalised term does, brought the slabs to within 1 to 7% of the walks, but made the thin parts worse while the
 half-space profile still gave them too much (rms 11.2 on the high-albedo groove, 35.0 on the studs, 93.7 on the wall).
 With the thin parts' layer model it no longer does, so method 2 now takes Ft(out) / (π (1 − F̄dr)) for its diffuse term,
-the bailout's estimate and uniform emission; single scattering keeps Ft(out). A thick flat piece now reflects its
+the minimum-influence estimate and uniform emission; single scattering keeps Ft(out). A thick flat piece now reflects its
 colour times the light entering it in all, as its albedo inversion intends, so seen head on it is about a tenth brighter
 than with method 1, which keeps Ft(out) / π. Absolute rms / mean / worst block:
 

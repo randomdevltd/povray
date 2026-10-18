@@ -292,8 +292,6 @@ class SceneData
         double subsurfaceSpacing;
         /// point-cloud method: the memory all clouds may take, in MB, past which the render stops
         double subsurfaceMemory;
-        /// point-cloud method, language version 4.0: the multiple of adc_bailout under which a hit's subsurface light is estimated
-        double subsurfaceBailout;
 
         // ********************************************************************************
         // temporary variables for BSP testing ... we may or may not keep these in future

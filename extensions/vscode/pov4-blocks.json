@@ -2685,6 +2685,7 @@
         "irid",
         "metallic",
         "method",
+        "minimum_influence",
         "phong",
         "phong_size",
         "pigment",
@@ -2719,6 +2720,7 @@
           "depth",
           "emission",
           "method",
+          "minimum_influence",
           "pigment",
           "spread",
           "thickness",
@@ -3370,7 +3372,6 @@
         "atmospheric_ior",
         "auto",
         "autostop",
-        "bailout",
         "brightness",
         "brilliance",
         "charset",
@@ -3468,7 +3469,6 @@
           "subsurface"
         ],
         "subsurface": [
-          "bailout",
           "error_bound",
           "memory",
           "method",

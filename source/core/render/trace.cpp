@@ -8465,9 +8465,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     cloudData.flesh = &flesh;
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
-    // Below the subsurface bailout a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
-    const bool estimate = pointCloud &&
-                          (rayWeight * layers.weight.WeightMax() < sceneData->subsurfaceBailout * Eye.GetTicket().adcBailout) &&
+    // Below the finish's minimum influence a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
+    const bool estimate = pointCloud && (rayWeight * layers.weight.WeightMax() < Finish->SubsurfaceMinimumInfluence) &&
                           (FindSubsurfaceParts(SubsurfaceObject(out), Eye.GetPreparedSetId()).sheets.count(out.Object) == 0);
     if (estimate)
     {

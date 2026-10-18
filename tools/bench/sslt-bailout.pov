@@ -1,5 +1,5 @@
-// Subsurface hits of low ray weight: Case 0 six stacked thin leaves that let part of the light through, lit from behind;
-// Case 1 wax spheres between two facing mirrors over a glossy floor. Bailout sets subsurface { bailout }; see doc/PERF.md.
+// Subsurface hits of low ray weight: Case 0 six stacked leaves passing part of the light, lit from behind; Case 1 wax spheres
+// between facing mirrors over a glossy floor; Case 2 eight face-on discs, Direct=1 showing each. See doc/PERF.md.
 #version 4.0;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Diffuse) #declare Diffuse = 74; #end
@@ -10,12 +10,13 @@
 #ifndef (Leaves) #declare Leaves = 6; #end
 #ifndef (Through) #declare Through = 0.4; #end
 #ifndef (Mirror) #declare Mirror = 0.7; #end
+#ifndef (Direct) #declare Direct = 0; #end
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 20
-  max_trace_level 24
+  max_trace_level (Case = 2 ? 40 : 24)
   #if (Subsurface)
-    subsurface { samples Diffuse, Single method Method spacing Spacing #ifdef (Bailout) bailout Bailout #end }
+    subsurface { samples Diffuse, Single method Method spacing Spacing }
   #end
 }
 
@@ -39,7 +40,24 @@ background { rgb <0.55, 0.7, 0.9> }
     translate <0.35 * (rand(Seed) - 0.5), 0.35 * (rand(Seed) - 0.5), 0.12 * I>
     texture {
       pigment { rgbt <0.45, 0.75, 0.25, Through> }
-      finish { ambient 0 diffuse 0.9 subsurface { translucency 1.0 } }
+      finish { ambient 0 diffuse 0.9 subsurface { translucency 1.0 #ifdef (MinimumInfluence) minimum_influence MinimumInfluence #end } }
+    }
+    interior { ior 1.4 }
+  }
+#end
+#elseif (Case = 2)
+camera { location <0, 0, -4> look_at <0, 0, 0> angle 40 right x * image_width / image_height }
+light_source { <-2, 3, 12> rgb <1, 0.95, 0.8> * 1.6 area_light <1, 0, 0>, <0, 1, 0>, 2, 2 adaptive 0 }
+light_source { <3, 2, -8> rgb <0.6, 0.7, 0.9> * 0.3 }
+background { rgb <0.55, 0.7, 0.9> }
+#declare Step = (Direct ? 0.13 : 0);
+// A disc's two faces each pass the root of Through, so the disc passes Through.
+#for (I, 0, 7)
+  cylinder { <0, 0, 0>, <0, 0, 0.03>, (Direct ? 0.8 : 0.9)
+    translate <Step * (I - 3.5), 0.5 * Step * (I - 3.5), 0.1 * I>
+    texture {
+      pigment { rgbt <0.45, 0.75, 0.25, sqrt(Through)> }
+      finish { ambient 0 diffuse 0.9 subsurface { translucency 1.0 #ifdef (MinimumInfluence) minimum_influence MinimumInfluence #end } }
     }
     interior { ior 1.4 }
   }
@@ -57,7 +75,7 @@ box { <-2, 0, -1.25>, <2, 2, -1.2> pigment { rgb 1 } finish { Glass } }
 #for (I, 0, 4)
   sphere { <-1.2 + 0.6 * I, 0.22, 0.4 * (rand(Seed) - 0.5)>, 0.2
     pigment { rgb <0.95, 0.75 - 0.1 * I, 0.45 + 0.08 * I> }
-    finish { ambient 0 diffuse 0.8 specular 0.2 roughness 0.02 subsurface { translucency <2, 1.2, 0.7> } }
+    finish { ambient 0 diffuse 0.8 specular 0.2 roughness 0.02 subsurface { translucency <2, 1.2, 0.7> #ifdef (MinimumInfluence) minimum_influence MinimumInfluence #end } }
     interior { ior 1.45 }
   }
 #end

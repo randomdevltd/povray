@@ -1523,7 +1523,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
                       "subsurface light; discs bending %.0f, with points unfolded across creases %.0f; near field drawn at %.0f, with %.0f "
                       "shadow rays; lit as the exit point with no points near %.0f, with none facing in the disc %.0f; gathers with larger "
                       "cells %.0f; crossings dropped as inside on both sides %.0f, outside on both %.0f, closer than the probes %.0f, "
-                      "on open sheets %.0f; %.0f shading points below the subsurface bailout lit as their exit point, without the cloud.",
+                      "on open sheets %.0f; %.0f shading points below their minimum_influence lit as their exit point, without the cloud.",
                       attempts, served, double(stats[Subsurface_Cloud_Pretrace]), double(stats[Subsurface_Cloud_Unserved]),
                       double(stats[Subsurface_Cloud_Bent]), double(stats[Subsurface_Cloud_Hidden]), double(stats[Subsurface_Cloud_Near_Field]),
                       double(stats[Subsurface_Cloud_Near_Rays]), double(stats[Subsurface_Cloud_Alone]), double(stats[Subsurface_Cloud_Empty_Disc]),

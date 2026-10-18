@@ -116,6 +116,9 @@ struct Texture_Struct final : public Pattern_Struct
     std::vector<TEXTURE*> Materials; // used for `material_map` (and only there)
 };
 
+/// The least ray weight times layer opacity at which method 2 reads a hit's cloud, unless the finish's subsurface { minimum_influence } says otherwise.
+const double kSubsurfaceMinimumInfluence = 0.002;
+
 struct Finish_Struct final
 {
     SNGL Diffuse, DiffuseBack, Brilliance;
@@ -138,6 +141,7 @@ struct Finish_Struct final
     SNGL SubsurfaceThickness;
     SNGL SubsurfaceDepth;  ///< mean depth of volume_sampling lookups below the surface, in mm; 0 takes half the translucency
     SNGL SubsurfaceSpread; ///< their standard deviation, in mm; 0 takes half the translucency
+    SNGL SubsurfaceMinimumInfluence; ///< method 2 lights a hit of less ray weight times layer opacity from its exit point alone
     //MathColour SigmaPrimeS, SigmaA;
     SNGL Reflection_Falloff;  // Added by MBP 8/27/98
     bool Reflection_Fresnel;

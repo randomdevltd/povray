@@ -12,7 +12,7 @@ global_settings {
   assumed_gamma 1
   max_trace_level 8
   mm_per_unit 10
-  subsurface { samples 12, 4 method 2 spacing Spacing memory SubsurfaceMemory bailout 8 }
+  subsurface { samples 12, 4 method 2 spacing Spacing memory SubsurfaceMemory }
   #switch (Photons)
     #case (1) photons { count 200000 } #break
     #case (2) photons { method 2 quality 0.25 memory PhotonMemory } #break

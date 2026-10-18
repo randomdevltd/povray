@@ -129,9 +129,6 @@ const int kCloudNoDepthLevel = -10000;
 /// Memory all subsurface clouds may take together unless global_settings { subsurface { memory MB } } says otherwise.
 const double kSubsurfaceMemoryMB = 1024.0;
 
-/// The multiple of adc_bailout under which method 2 lights a hit as its exit point is lit, unless global_settings { subsurface { bailout F } } says otherwise.
-const double kSubsurfaceBailout = 8.0;
-
 /// Memory method 2's boundary and layer tables keep for reuse, besides those render threads are using; see doc/PERF.md.
 const double kSubsurfaceTablesMB = 32.0;
 
