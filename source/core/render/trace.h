@@ -1074,6 +1074,7 @@ class Trace
 
         /// Per-channel constants of the diffusion profile at one shading point: method 1's classic dipole, or method 2's
         /// better dipole times beam diffusion's ratio from its boundary (see doc/PERF.md); lengths in mm.
+        struct SubsurfaceThin;
         struct SubsurfaceProfile
         {
             PreciseMathColour scale, sigma_tr, z_r, z_v;
@@ -1085,7 +1086,8 @@ class Trace
             /// Method 2's extinction squared, dipole sigma, virtual depth, fluence and flux weights by lane (the last channel twice), for Rd.
             double lanes[5][4];
             void SetMethod2(const std::shared_ptr<const SubsurfaceBoundary>& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
-            PreciseMathColour Rd(double distSqr) const;
+            /// With thin, times its near-face ratios (part 0), looked up at the same column as beam diffusion's.
+            PreciseMathColour Rd(double distSqr, const SubsurfaceThin *thin = nullptr) const;
             PreciseMathColour RdDisc(double radius) const;
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
             PreciseMathColour RdTotal() const;

@@ -7577,12 +7577,6 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     ssltEscapeKnown = false;
     ssltEscapeTicket = &ticket;
     const SubsurfaceThin thin = ssltThin;
-    auto onFace = [&](PreciseMathColour rd, double distSqr)
-    {
-        if (thin.active)
-            thin.Apply(rd, distSqr, 0);
-        return rd;
-    };
     auto layered = [&](PreciseMathColour rd, const Vector3d& p, double distSqr)
     {
         if (!thin.active)
@@ -7592,6 +7586,17 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
             thin.Apply(rd, max(0.0, distSqr - Sqr(below)), 2);
         else
             thin.Apply(rd, distSqr, 0);
+        return rd;
+    };
+    const SubsurfaceThin *nearFace = thin.active ? &thin : nullptr;
+    auto faceRd = [&](double distSqr) { return profile.Rd(distSqr, nearFace); };
+    auto layeredRd = [&](const Vector3d& p, double distSqr)
+    {
+        double below = dot(x - p, n) * mm;
+        if (!thin.active || !(below > 0.5 * thin.depth))
+            return faceRd(distSqr);
+        PreciseMathColour rd = profile.Rd(distSqr);
+        thin.Apply(rd, max(0.0, distSqr - Sqr(below)), 2);
         return rd;
     };
     // The ring's points are walked first, so that a shading point handed to method 1 does not pay for the far ones.
@@ -7627,7 +7632,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                               : ((dot(n, nn) > -kCloudParallel) && CreaseInMaterial(cloud, x, n, node.centre, nn)))
                     {
                         double distSqr = Sqr((front ? (x - node.centre).length() : UnfoldedDistance(x, n, node.centre, nn)) * mm);
-                        PreciseMathColour rd = front ? layered(profile.Rd(distSqr), node.centre, distSqr) : onFace(profile.Rd(distSqr), distSqr);
+                        PreciseMathColour rd = front ? layeredRd(node.centre, distSqr) : faceRd(distSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             far[j] += rd[j] * node.irradiance[j];
                     }
@@ -7654,7 +7659,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                         if (!(dot(n, np) > -kCloudParallel) || !CreaseInMaterial(cloud, x, n, p.position, np))
                             continue;
                         double unfoldedSqr = Sqr(UnfoldedDistance(x, n, p.position, np) * mm);
-                        PreciseMathColour rd = onFace(profile.Rd(unfoldedSqr), unfoldedSqr);
+                        PreciseMathColour rd = faceRd(unfoldedSqr);
                         if (!near)
                         {
                             for (int j = 0; j < MathColour::channels; j++)
@@ -7690,7 +7695,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     }
                     if (!StepInMaterial(cloud, x, n, p.position, np))
                         continue;
-                    PreciseMathColour rd = layered(profile.Rd(distSqr), p.position, distSqr);
+                    PreciseMathColour rd = layeredRd(p.position, distSqr);
                     if (!near)
                     {
                         for (int j = 0; j < MathColour::channels; j++)
@@ -7733,7 +7738,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
                     {
                         ringFacing = min(ringFacing, facing);
                         ringArea += p.area;
-                        PreciseMathColour rdUnfolded = onFace(profile.Rd(unfoldedSqr), unfoldedSqr);
+                        PreciseMathColour rdUnfolded = faceRd(unfoldedSqr);
                         for (int j = 0; j < MathColour::channels; j++)
                             ringUnfolded[j] += rdUnfolded[j] * p.area;
                     }
@@ -7992,7 +7997,7 @@ PreciseMathColour Trace::SubsurfaceProfile::RdEdgeShare(double inner, double out
 }
 
 // The diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
-PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr) const
+PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr, const SubsurfaceThin *thin) const
 {
     PreciseMathColour rd;
     if (boundary != nullptr)
@@ -8006,7 +8011,14 @@ PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr) const
         double v[4];
         ((V::load(lanes[3]) * (er * ir - ev * iv) + V::load(lanes[4]) * (real + image)) * ext2).store(v);
         for (int j = 0; j < MathColour::channels; j++)
-            rd[j] = v[j] * SubsurfaceBoundary::BeamRatio(beamRow[j], beamWeight[j], distSqr * extinctionSqr[j], 0);
+        {
+            int k;
+            double p;
+            SubsurfaceBoundary::BeamColumn(distSqr * extinctionSqr[j], k, p);
+            rd[j] = v[j] * SubsurfaceBoundary::BeamAt(beamRow[j], beamWeight[j], k, p, 0);
+            if ((thin != nullptr) && (thin->rows[j] != nullptr))
+                rd[j] *= SubsurfaceBoundary::BeamAt(thin->rows[j], thin->depthWeight[j], k, p, 0);
+        }
         return rd;
     }
     for (int j = 0; j < MathColour::channels; j++)

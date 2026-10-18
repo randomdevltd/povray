@@ -406,6 +406,14 @@ class SubsurfaceBoundary final
         /// disc 0, of its integral over the disc for disc 1.
         static double BeamRatio(const float *row, double weight, double radiusSqr, int disc)
         {
+            int k;
+            double p;
+            BeamColumn(radiusSqr, k, p);
+            return BeamAt(row, weight, k, p, disc);
+        }
+        /// BeamRatio's column at a squared optical radius, and the share of the next.
+        static void BeamColumn(double radiusSqr, int& column, double& next)
+        {
             std::uint64_t bits, unit;
             std::memcpy(&bits, &radiusSqr, sizeof(bits));
             unit = (bits & 0xFFFFFFFFFFFFFull) | 0x3FF0000000000000ull;
@@ -424,6 +432,12 @@ class SubsurfaceBoundary final
                 k = kBeamColumns - 2;
                 p = 1.0;
             }
+            column = k;
+            next = p;
+        }
+        /// BeamRatio at a column found by BeamColumn.
+        static double BeamAt(const float *row, double weight, int k, double p, int disc)
+        {
             const float *a = row + 2 * k + disc, *b = a + 2 * kBeamColumns;
             return (1.0 - weight) * (a[0] + p * (a[2] - a[0])) + weight * (b[0] + p * (b[2] - b[0]));
         }
