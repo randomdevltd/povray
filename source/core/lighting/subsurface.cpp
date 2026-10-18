@@ -50,6 +50,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/photons.h"
+#include "core/math/simd.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -265,18 +266,21 @@ double SubsurfaceBoundary::Total(double albedo) const
 }
 
 // The better dipole's Rd, and its integral over a disc of radius x, from a source of sign s at signed depth z (above a
-// face where z < 0): the multipole's terms.
-static double LayerRd(const SubsurfaceDipole& d, double xSqr, double z, double s)
+// face where z < 0): the multipole's terms, at four squared radii (x the square root of xSqr) at once.
+typedef simd::Vec<double, 4> LayerLanes;
+static LayerLanes LayerRd(const SubsurfaceDipole& d, LayerLanes xSqr, double z, double s)
 {
-    double r = sqrt(xSqr + Sqr(z)), e = exp(-d.sigma * r);
-    return s * e * (d.fluence / r + d.flux * z * (1.0 + d.sigma * r) / (r * Sqr(r)));
+    LayerLanes r = simd::sqrt(xSqr + LayerLanes(Sqr(z))), e = simd::exp(LayerLanes(-d.sigma) * r);
+    return LayerLanes(s) * e * (LayerLanes(d.fluence) / r + LayerLanes(d.flux * z) * (LayerLanes(1.0) + LayerLanes(d.sigma) * r) / (r * (r * r)));
 }
 
-static double LayerDisc(const SubsurfaceDipole& d, double x, double z, double s)
+static LayerLanes LayerDisc(const SubsurfaceDipole& d, LayerLanes x, double z, double s)
 {
-    double a = fabs(z), r = sqrt(Sqr(x) + Sqr(z));
-    double flux = (z > 0.0 ? 1.0 : -1.0) * (exp(-d.sigma * a) - a * exp(-d.sigma * r) / r);
-    return s * 2.0 * M_PI * (d.fluence * ExpDifference(d.sigma, a, r) + d.flux * flux);
+    double a = fabs(z), ea = exp(-d.sigma * a);
+    LayerLanes r = simd::sqrt(x * x + LayerLanes(Sqr(z))), er = simd::exp(LayerLanes(-d.sigma) * r);
+    LayerLanes flux = LayerLanes(z > 0.0 ? 1.0 : -1.0) * (LayerLanes(ea) - LayerLanes(a) * er / r);
+    LayerLanes diff = (d.sigma > 0.0) ? LayerLanes(-ea) * simd::expm1(LayerLanes(-d.sigma) * (r - LayerLanes(a))) / LayerLanes(d.sigma) : r - LayerLanes(a);
+    return LayerLanes(s * 2.0 * M_PI) * (LayerLanes(d.fluence) * diff + LayerLanes(d.flux) * flux);
 }
 
 // Donner and Jensen's multipole for a layer tau deep, from one source at min(1, tau / 2) carrying the light that scatters
@@ -292,17 +296,33 @@ void SubsurfaceBoundary::BuildLayer(int step, int k, float *rows) const
         int images = (dipole.sigma * period > 0.0) ? std::min(64, int(ceil(12.0 / (dipole.sigma * period)))) : 64;
         float *near = rows + part * 2 * kBeamColumns, *far = near + kLayerFar;
         double rdRatio = 1.0, discRatio = 1.0, farRatio = 1.0;
+        double sums[3][4];
         for (int c = 0; c < kBeamColumns; c++)
         {
             double xSqr = ldexp(1.0 + (c % 4) / 4.0, kBeamFirstOctave + c / 4), x = sqrt(xSqr);
-            double rd = 0.0, disc = 0.0, through = 0.0;
-            for (int i = -images; i <= images; i++)
+            // The image sums run over four columns at a time, the ratios after them column by column.
+            if (c % 4 == 0)
             {
-                double real = i * period + z, image = i * period - z - dipole.zb;
-                rd += LayerRd(dipole, xSqr, real, 1.0) + LayerRd(dipole, xSqr, image, -1.0);
-                disc += LayerDisc(dipole, x, real, 1.0) + LayerDisc(dipole, x, image, -1.0);
-                through += LayerRd(dipole, xSqr, tau - real, 1.0) + LayerRd(dipole, xSqr, tau - image, -1.0);
+                double lanes[4];
+                for (int l = 0; l < 4; l++)
+                {
+                    const int column = std::min(c + l, kBeamColumns - 1);
+                    lanes[l] = ldexp(1.0 + (column % 4) / 4.0, kBeamFirstOctave + column / 4);
+                }
+                const LayerLanes xs = LayerLanes::load(lanes), xl = simd::sqrt(xs);
+                LayerLanes rd(0.0), disc(0.0), through(0.0);
+                for (int i = -images; i <= images; i++)
+                {
+                    double real = i * period + z, image = i * period - z - dipole.zb;
+                    rd = rd + (LayerRd(dipole, xs, real, 1.0) + LayerRd(dipole, xs, image, -1.0));
+                    disc = disc + (LayerDisc(dipole, xl, real, 1.0) + LayerDisc(dipole, xl, image, -1.0));
+                    through = through + (LayerRd(dipole, xs, tau - real, 1.0) + LayerRd(dipole, xs, tau - image, -1.0));
+                }
+                rd.store(sums[0]);
+                disc.store(sums[1]);
+                through.store(sums[2]);
             }
+            double rd = sums[0][c % 4], disc = sums[1][c % 4], through = sums[2][c % 4];
             double rdDipole = dipole.Rd(xSqr), discDipole = dipole.Disc(x), farDipole = dipole.Rd(xSqr + Sqr(tau));
             rdRatio = (rdDipole > 0.0) ? std::max(0.0, scatter * rd / rdDipole) : rdRatio;
             discRatio = (discDipole > 0.0) ? std::max(0.0, scatter * disc / discDipole) : discRatio;
