@@ -227,6 +227,8 @@ class Mesh final : public ObjectBase
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool Shadow_Hint_Intersection(const Ray&, Intersection *, TraceThreadData *) override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
+        /// Inside by the parity of crossings along a world-space direction: on a closed mesh, the inside_vector's answer.
+        bool InsideAlong(const Vector3d& point, const Vector3d& direction, TraceThreadData *Thread) const;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
         virtual bool FaceNormal(Vector3d&, const Intersection *) const override;
         virtual void UVCoord(Vector2d&, const Intersection *) const override;

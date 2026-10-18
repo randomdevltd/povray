@@ -271,6 +271,14 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
 bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 {
     Resolve();
+    if (has_inside_vector==false)
+        return false;
+    return InsideAlong(IPoint, Data->Inside_Vect, Thread);
+}
+
+bool Mesh::InsideAlong(const Vector3d& IPoint, const Vector3d& direction, TraceThreadData *Thread) const
+{
+    Resolve();
     bool inside;
     MeshIndex i;
     unsigned int found;
@@ -280,7 +288,7 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     if (has_inside_vector==false)
         return false;
 
-    ray.Direction = Data->Inside_Vect;
+    ray.Direction = direction;
     ray.Origin = IPoint;
 
     /* Transform the ray into mesh space. */

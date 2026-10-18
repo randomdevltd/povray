@@ -7435,7 +7435,8 @@ bool Trace::CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, co
     Vector3d onCrease = (n * (hx - hp * c) + np * (hp - hx * c)) / (1.0 - c * c);
     Vector3d middle = onCrease + crease * (0.5 * (dot(x - onCrease, crease) + dot(p - onCrease, crease)));
     double probe = kCloudCreaseProbe * cloud.spacing;
-    return InsideByBounds(middle - (n + np).normalized() * probe, cloud.object) && InsideByBounds(middle + (np - n) * probe, cloud.object);
+    const Vector3d out = (n + np).normalized();
+    return InsideByBounds(middle - out * probe, cloud.object, &out) && InsideByBounds(middle + (np - n) * probe, cloud.object, &n);
 }
 
 // Whether parallel faces at different heights, x's and p's, join through the material: below the higher one, at the lower
@@ -7449,12 +7450,12 @@ bool Trace::StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, cons
     if (offset > 0.0)
     {
         Vector3d lateral = p - x - n * offset;
-        return InsideByBounds(p - n * (offset + probe), cloud.object) && (lateral.length() <= SubsurfaceEscape(cloud, x, n, lateral));
+        return InsideByBounds(p - n * (offset + probe), cloud.object, &n) && (lateral.length() <= SubsurfaceEscape(cloud, x, n, lateral));
     }
     const Vector3d& lower = (offset < 0.0) ? p : x;
     const Vector3d& upper = (offset < 0.0) ? x : p;
     Vector3d under = upper - n * fabs(offset);
-    return InsideByBounds(under - n * probe, cloud.object) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object);
+    return InsideByBounds(under - n * probe, cloud.object, &n) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object, &n);
 }
 
 double Trace::MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket)
@@ -7468,7 +7469,7 @@ double Trace::MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector
         if ((run >= reach) || !FindIntersection(object, hit, ray))
             return HUGE_VAL;
         run += hit.Depth;
-        if (!InsideByBounds(origin + dir * (run + step), object))
+        if (!InsideByBounds(origin + dir * (run + step), object, &dir))
             return run;
         run += step;
     }
@@ -7500,14 +7501,27 @@ double Trace::SubsurfaceEscape(const SubsurfaceCloud& cloud, const Vector3d& x, 
 }
 
 // Inside_Object, skipping the parts of a union or merge whose bounds do not hold the point.
-bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object)
+bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector3d *out)
 {
     const CSGUnion *csg = dynamic_cast<const CSGUnion*>(object);
     if ((csg == nullptr) || !object->Clip.empty() || Test_Flag(object, INVERTED_FLAG))
+    {
+        // A closed mesh answers alike along any line, so it is asked along the caller's short way out, not its inside_vector.
+        const bool meshLike = ((object->Type & (HIERARCHY_OK_OBJECT | IS_COMPOUND_OBJECT)) == HIERARCHY_OK_OBJECT);
+        const Mesh *mesh = (out != nullptr) && meshLike && object->Clip.empty() ? dynamic_cast<const Mesh*>(object) : nullptr;
+        if (mesh != nullptr)
+        {
+            auto known = ssltClosedMeshes.find(mesh);
+            if (known == ssltClosedMeshes.end())
+                known = ssltClosedMeshes.emplace(mesh, mesh->has_inside_vector && !SubsurfaceSheet(mesh, false)).first;
+            if (known->second)
+                return mesh->InsideAlong(point, *out, threadData);
+        }
         return Inside_Object(point, object, threadData);
+    }
     for (ObjectPtr child : csg->children)
         if ((!(child->Type & LIGHT_SOURCE_OBJECT) || !reinterpret_cast<LightSource*>(child)->children.empty()) &&
-            Inside_BBox(point, child->BBox) && InsideByBounds(point, child))
+            Inside_BBox(point, child->BBox) && InsideByBounds(point, child, out))
             return true;
     return false;
 }
