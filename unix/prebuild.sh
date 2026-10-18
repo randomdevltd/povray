@@ -670,6 +670,7 @@ check: all
 	sh \$(top_srcdir)/tests/render/refraction_detail.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/token_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/parser_token_count.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 
 # Install scripts in povlibdir.
 nobase_povlib_SCRIPTS = `echo $scriptfiles`
