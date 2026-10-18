@@ -1072,9 +1072,17 @@ class Trace
     /// @{
     ///
 
+        struct SubsurfaceThin;
+        /// Method 2's log Rd at one reduced albedo, by squared optical radius in BeamRatio's layout but finer, filled as read.
+        struct SubsurfaceRdTable
+        {
+            static const int kRdPerOctave = 16, kRdColumns = kRdPerOctave * SubsurfaceBoundary::kBeamOctaves + 1;
+            const SubsurfaceBoundary *boundary = nullptr;
+            double albedo = -1.0;
+            std::vector<double> logRd;
+        };
         /// Per-channel constants of the diffusion profile at one shading point: method 1's classic dipole, or method 2's
         /// better dipole times beam diffusion's ratio from its boundary (see doc/PERF.md); lengths in mm.
-        struct SubsurfaceThin;
         struct SubsurfaceProfile
         {
             PreciseMathColour scale, sigma_tr, z_r, z_v;
@@ -1085,6 +1093,9 @@ class Trace
             const float *beamRow[MathColour::channels];
             /// Method 2's extinction squared, dipole sigma, virtual depth, fluence and flux weights by lane (the last channel twice), for Rd.
             double lanes[5][4];
+            /// The thread's tables for this profile's albedos, set for a gather; Rd evaluates the dipole where they are not.
+            mutable SubsurfaceRdTable *table[MathColour::channels] = {};
+            double FillRd(int channel, int column) const;
             void SetMethod2(const std::shared_ptr<const SubsurfaceBoundary>& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
             /// With thin, times its near-face ratios (part 0), looked up at the same column as beam diffusion's.
             PreciseMathColour Rd(double distSqr, const SubsurfaceThin *thin = nullptr) const;
@@ -1107,6 +1118,9 @@ class Trace
             void Apply(PreciseMathColour& rd, double distSqr, int part) const;
         };
         SubsurfaceThin ssltThin;
+        /// Rd tables per subsurface recursion depth, one per channel.
+        SubsurfaceRdTable ssltRdTables[2][MathColour::channels];
+        void AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket);
         /// The layer tables this thread used last, by key, so that most lookups take no lock.
         struct SubsurfaceLayerSlot { double eta = 0.0; int step = -1, k = 0; std::shared_ptr<const float> rows; };
         static const int kLayerSlots = 32;

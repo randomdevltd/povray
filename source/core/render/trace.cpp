@@ -7573,6 +7573,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     std::vector<int>& stack = ssltScratchStack;
     // On a part thinner than its diffusion the profile takes the multipole's ratios: on its own face, and through it to a
     // point more than half its depth under the exit point's tangent plane.
+    AttachRdTables(profile, ticket);
     SetUpSubsurfaceThin(cloud, x, n, profile, ticket);
     ssltEscapeKnown = false;
     ssltEscapeTicket = &ticket;
@@ -7996,14 +7997,108 @@ PreciseMathColour Trace::SubsurfaceProfile::RdEdgeShare(double inner, double out
     return share;
 }
 
+// log Rd (in reduced mean free paths, with beam diffusion) at one channel's column; underflow is floored, so it interpolates.
+double Trace::SubsurfaceProfile::FillRd(int channel, int column) const
+{
+    const int per = SubsurfaceRdTable::kRdPerOctave;
+    const double xSqr = ldexp(1.0 + double(column % per) / per, column / per + SubsurfaceBoundary::kBeamFirstOctave);
+    const double rd = dipole[channel].Rd(xSqr) * SubsurfaceBoundary::BeamRatio(beamRow[channel], beamWeight[channel], xSqr, 0);
+    return log(max(rd, DBL_MIN));
+}
+
+void Trace::AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket)
+{
+    SubsurfaceRdTable *tables = ssltRdTables[min(max(int(ticket.subsurfaceRecursionDepth) - 1, 0), 1)];
+    bool used[MathColour::channels] = {};
+    int slot[MathColour::channels];
+    auto find = [&](int j)
+    {
+        for (int i = 0; i < MathColour::channels; i++)
+            if ((tables[i].boundary == profile.boundary.get()) && (tables[i].albedo == profile.albedo[j]))
+                return i;
+        return -1;
+    };
+    for (int j = 0; j < MathColour::channels; j++)
+        if ((slot[j] = find(j)) >= 0)
+            used[slot[j]] = true;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        if ((slot[j] < 0) && ((slot[j] = find(j)) < 0))
+        {
+            int i = 0;
+            while (used[i])
+                i++;
+            tables[i].boundary = profile.boundary.get();
+            tables[i].albedo = profile.albedo[j];
+            tables[i].logRd.assign(SubsurfaceRdTable::kRdColumns, std::numeric_limits<double>::quiet_NaN());
+            slot[j] = i;
+        }
+        used[slot[j]] = true;
+        profile.table[j] = &tables[slot[j]];
+    }
+}
+
 // The diffusion profile Rd, per channel, at squared distance distSqr (mm^2) from the exit point.
 PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr, const SubsurfaceThin *thin) const
 {
     PreciseMathColour rd;
+    typedef simd::Vec<double, 4> V;
+    bool tabled = (boundary != nullptr) && (table[0] != nullptr);
+    for (int j = 0; tabled && (j < MathColour::channels); j++)
+        tabled = (table[j]->boundary == boundary.get()) && (table[j]->albedo == albedo[j]);
+    if (tabled)
+    {
+        // log Rd between the two columns about each channel's squared optical radius, the channels' exponentials in one vector.
+        double l[4];
+        int beamColumn[MathColour::channels];
+        double beamNext[MathColour::channels];
+        for (int j = 0; j < MathColour::channels; j++)
+        {
+            const double xSqr = distSqr * extinctionSqr[j];
+            std::uint64_t bits, unit;
+            std::memcpy(&bits, &xSqr, sizeof(bits));
+            unit = (bits & 0xFFFFFFFFFFFFFull) | 0x3FF0000000000000ull;
+            double mantissa;
+            std::memcpy(&mantissa, &unit, sizeof(mantissa));
+            const double s = SubsurfaceRdTable::kRdPerOctave * (mantissa - 1.0);
+            const int sub = int(s);
+            int k = SubsurfaceRdTable::kRdPerOctave * (int((bits >> 52) & 0x7FF) - 1023 - SubsurfaceBoundary::kBeamFirstOctave) + sub;
+            double p = s - sub;
+            if (k < 0)
+            {
+                k = 0;
+                p = 0.0;
+            }
+            else if (k > SubsurfaceRdTable::kRdColumns - 2)
+            {
+                k = SubsurfaceRdTable::kRdColumns - 2;
+                p = 1.0;
+            }
+            double *t = table[j]->logRd.data() + k;
+            if (!(t[0] == t[0]))
+                t[0] = FillRd(j, k);
+            if (!(t[1] == t[1]))
+                t[1] = FillRd(j, k + 1);
+            l[j] = t[0] + p * (t[1] - t[0]);
+            const int per = SubsurfaceRdTable::kRdPerOctave / 4;
+            beamColumn[j] = k / per;
+            beamNext[j] = ((k % per) + p) / per;
+        }
+        for (int j = MathColour::channels; j < 4; j++)
+            l[j] = l[MathColour::channels - 1];
+        double v[4];
+        (simd::exp(V::load(l)) * V::load(lanes[0])).store(v);
+        for (int j = 0; j < MathColour::channels; j++)
+        {
+            rd[j] = v[j];
+            if ((thin != nullptr) && (thin->rows[j] != nullptr))
+                rd[j] *= SubsurfaceBoundary::BeamAt(thin->rows[j], thin->depthWeight[j], beamColumn[j], beamNext[j], 0);
+        }
+        return rd;
+    }
     if (boundary != nullptr)
     {
         // SubsurfaceDipole::Rd at a real source one path deep, the channels in one vector.
-        typedef simd::Vec<double, 4> V;
         const V ext2 = V::load(lanes[0]), sigma = V::load(lanes[1]), zv = V::load(lanes[2]), one(1.0);
         const V xSqr = ext2 * V(distSqr), dr = simd::sqrt(xSqr + one), dv = simd::sqrt(xSqr + zv * zv);
         const V er = simd::exp(-(sigma * dr)), ev = simd::exp(-(sigma * dv)), ir = one / dr, iv = one / dv;
