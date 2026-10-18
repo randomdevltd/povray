@@ -7147,8 +7147,9 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     cloud.unserved = kUnservedLights;
     if (std::find(cloud.exitSlot.begin(), cloud.exitSlot.end(), -1) != cloud.exitSlot.end())
         return false;
+    const PreparedSet& photonSet = sceneData->GetPreparedSet(eye.GetPreparedSetId());
     cloud.photons = cloud.parts->anyCollects && sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
-                    (sceneData->GetPreparedSet(eye.GetPreparedSetId()).surfacePhotonMap.numPhotons > 0);
+                    ((photonSet.surfacePhotonMap.numPhotons > 0) || !photonSet.progressiveSurface.photons.empty());
     double mm = sceneData->mmPerUnit;
     double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
     double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
