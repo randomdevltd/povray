@@ -5454,6 +5454,9 @@ static const double kCloudCone = 0.5;
 // Least |cosine| between planes that meet at a crease; spacings into a crease its inside test looks.
 static const double kCloudParallel = 0.999;
 static const double kCloudCreaseProbe = 0.25;
+// A closed mesh's inside probes lean off the crease they would cross (times the normals' difference) and off a face's normal.
+static const double kCloudCreaseLean = 0.5;
+static const Vector3d kCloudProbeSkew = Vector3d(0.2361, 0.5772, 0.7818) * 0.05;
 // Most ring area, over a flat ring's, for a flat ring; visibilities this close agree.
 static const double kCloudDense = 1.33;
 static const float kCloudAgree = 0.02f;
@@ -7435,8 +7438,8 @@ bool Trace::CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, co
     Vector3d onCrease = (n * (hx - hp * c) + np * (hp - hx * c)) / (1.0 - c * c);
     Vector3d middle = onCrease + crease * (0.5 * (dot(x - onCrease, crease) + dot(p - onCrease, crease)));
     double probe = kCloudCreaseProbe * cloud.spacing;
-    const Vector3d out = (n + np).normalized();
-    return InsideByBounds(middle - out * probe, cloud.object, &out) && InsideByBounds(middle + (np - n) * probe, cloud.object, &n);
+    const Vector3d out = (n + np).normalized(), lean = out + (n - np) * kCloudCreaseLean, up = n + kCloudProbeSkew;
+    return InsideByBounds(middle - out * probe, cloud.object, &lean) && InsideByBounds(middle + (np - n) * probe, cloud.object, &up);
 }
 
 // Whether parallel faces at different heights, x's and p's, join through the material: below the higher one, at the lower
@@ -7446,16 +7449,17 @@ bool Trace::StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, cons
     double probe = kCloudCreaseProbe * cloud.spacing, offset = dot(p - x, n);
     if (!(dot(n, np) >= kCloudParallel) || !(fabs(offset) > probe))
         return true;
+    const Vector3d up = n + kCloudProbeSkew;
     // From the lower face, the material must run all the way from under x to under p, not just at its midpoint.
     if (offset > 0.0)
     {
         Vector3d lateral = p - x - n * offset;
-        return InsideByBounds(p - n * (offset + probe), cloud.object, &n) && (lateral.length() <= SubsurfaceEscape(cloud, x, n, lateral));
+        return InsideByBounds(p - n * (offset + probe), cloud.object, &up) && (lateral.length() <= SubsurfaceEscape(cloud, x, n, lateral));
     }
     const Vector3d& lower = (offset < 0.0) ? p : x;
     const Vector3d& upper = (offset < 0.0) ? x : p;
     Vector3d under = upper - n * fabs(offset);
-    return InsideByBounds(under - n * probe, cloud.object, &n) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object, &n);
+    return InsideByBounds(under - n * probe, cloud.object, &up) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object, &up);
 }
 
 // FindIntersection for a caller that needs only the nearest hit's depth: a mesh skips the boxes behind its nearest hit.
@@ -7531,7 +7535,7 @@ bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector
     const CSGUnion *csg = dynamic_cast<const CSGUnion*>(object);
     if ((csg == nullptr) || !object->Clip.empty() || Test_Flag(object, INVERTED_FLAG))
     {
-        // A closed mesh answers alike along any line, so it is asked along the caller's short way out, not its inside_vector.
+        // A closed mesh answers alike along any line that misses its edges, so it is asked along the caller's short way out.
         const bool meshLike = ((object->Type & (HIERARCHY_OK_OBJECT | IS_COMPOUND_OBJECT)) == HIERARCHY_OK_OBJECT);
         const Mesh *mesh = (out != nullptr) && meshLike && object->Clip.empty() ? dynamic_cast<const Mesh*>(object) : nullptr;
         if (mesh != nullptr)
@@ -7540,7 +7544,7 @@ bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector
             if (known == ssltClosedMeshes.end())
                 known = ssltClosedMeshes.emplace(mesh, mesh->has_inside_vector && !SubsurfaceSheet(mesh, false)).first;
             if (known->second)
-                return mesh->InsideAlong(point, *out, threadData);
+                return mesh->InsideAlong(point, out->normalized(), threadData);
         }
         return Inside_Object(point, object, threadData);
     }
