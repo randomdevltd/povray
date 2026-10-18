@@ -1206,6 +1206,11 @@
    "code": "background {rgb 1}",
    "from": "doc/html/r3_3.html:16"
   },
+  "bailout": {
+   "rank": 28,
+   "code": "subsurface { bailout FLOAT }",
+   "from": "doc/html/r3_6.html"
+  },
   "bezier_spline": {
    "rank": 1042,
    "code": "bezier_spline | linear_sweep | conic_sweep",

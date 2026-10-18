@@ -58,7 +58,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `disc` | 37 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
 | `finish` | 34 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
-| `global_settings` | 57 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
+| `global_settings` | 58 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
 | `height_field` | 63 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
 | `interior` | 14 | Inside-the-surface properties: ior, caustics, fading, media. |
