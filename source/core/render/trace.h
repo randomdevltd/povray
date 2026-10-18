@@ -1254,6 +1254,7 @@ class Trace
         bool StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector3d *out = nullptr);
+        bool FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& ray);
         std::unordered_map<const void*, bool> ssltClosedMeshes; ///< whether a mesh met by InsideByBounds is closed
         /// How far the material runs from origin along dir before it leaves the object, up to reach; see doc/PERF.md.
         double MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket);

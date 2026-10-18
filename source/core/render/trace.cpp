@@ -7458,6 +7458,31 @@ bool Trace::StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, cons
     return InsideByBounds(under - n * probe, cloud.object, &n) && InsideByBounds((under + lower) * 0.5 - n * probe, cloud.object, &n);
 }
 
+// FindIntersection for a caller that needs only the nearest hit's depth: a mesh skips the boxes behind its nearest hit.
+bool Trace::FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& ray)
+{
+    const bool meshLike = ((object->Type & (HIERARCHY_OK_OBJECT | IS_COMPOUND_OBJECT)) == HIERARCHY_OK_OBJECT);
+    Mesh *mesh = meshLike ? dynamic_cast<Mesh*>(object) : nullptr;
+    if (mesh == nullptr)
+        return FindIntersection(object, isect, ray);
+    const Vector3d inverse(1.0 / ray.GetDirection()[X], 1.0 / ray.GetDirection()[Y], 1.0 / ray.GetDirection()[Z]);
+    const BBoxVector3d origin(ray.Origin), invdir(inverse);
+    const BBoxDirection variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
+    if (!object->Intersect_BBox(variant, origin, invdir, HUGE_VAL) || (!object->Bound.empty() && !Ray_In_Bound(ray, object->Bound, threadData)))
+        return false;
+    IStack depthstack(stackPool);
+    if (!mesh->Nearest_Intersections(ray, depthstack, threadData))
+        return false;
+    double closest = HUGE_VAL;
+    for (; depthstack->size() > 0; depthstack->pop())
+        if ((depthstack->top().Depth < closest) && (ray.IsSubsurfaceRay() || (depthstack->top().Depth >= MIN_ISECT_DEPTH)))
+        {
+            isect = depthstack->top();
+            closest = isect.Depth;
+        }
+    return closest < HUGE_VAL;
+}
+
 double Trace::MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket)
 {
     // A crossing inside on both sides (a union's inner face) does not end the material.
@@ -7466,7 +7491,7 @@ double Trace::MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector
     {
         Intersection hit;
         Ray ray(ticket, origin + dir * run, dir, Ray::SubsurfaceRay);
-        if ((run >= reach) || !FindIntersection(object, hit, ray))
+        if ((run >= reach) || !FindNearestDepth(object, hit, ray))
             return HUGE_VAL;
         run += hit.Depth;
         if (!InsideByBounds(origin + dir * (run + step), object, &dir))
