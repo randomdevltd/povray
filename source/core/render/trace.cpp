@@ -5470,7 +5470,7 @@ static const int kCloudPatchPoints = 16;
 static const double kCloudWhole = 0.95, kCloudEdge = 0.85;
 // Past this many reduced mean free paths deep, and this many diffusion lengths, a part is thick: its far face and the
 // light passing it cannot be told from a half-space's.
-static const double kThickPaths = 20.0, kThickLengths = 15.0;
+static const double kThickPaths = 12.0, kThickLengths = 10.0;
 // Inner faces (a union's) a run through the material passes before it gives up.
 static const int kThinFaces = 4;
 

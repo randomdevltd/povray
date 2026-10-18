@@ -1206,7 +1206,7 @@ the core, disc and ring integrals by the second, and a deeper point (the far fac
 the tangent plane. The ratios are tabulated in the beam table's layout (217 columns of squared optical radius), per
 index, albedo (u to 1/4096) and quarter octave of τ from 2⁻¹⁰ to 2¹², interpolated between quarter octaves; images run
 until σ·n·period passes 12, at most 64 a side, and a table is built on first use and shared by all
-threads (within a cap; see **Subsurface method 2's tables**). A channel more than 20 reduced mean free paths and 15 diffusion lengths deep is left as it was, so the deep
+threads (within a cap; see **Subsurface method 2's tables**). A channel more than 12 reduced mean free paths and 10 diffusion lengths deep is left as it was (the multipole moves the light within the reach of a part that deep by at most 1e-4 of it, over albedos 0.5 to 0.999), so the deep
 slabs score as before to within 0.03 levels. In the model a thin part's light falls off within a few depths along it instead of over
 the diffusion length, so a finite wall no longer clips a profile that should reach past it.
 
