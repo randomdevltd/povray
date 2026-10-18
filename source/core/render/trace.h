@@ -1077,7 +1077,7 @@ class Trace
         struct SubsurfaceRdTable
         {
             static const int kRdPerOctave = 16, kRdColumns = kRdPerOctave * SubsurfaceBoundary::kBeamOctaves + 1;
-            const SubsurfaceBoundary *boundary = nullptr;
+            double eta = 0.0; ///< the boundary's, which with the albedo defines the table; a boundary's address may be reused
             double albedo = -1.0;
             std::vector<double> logRd;
         };
@@ -1090,6 +1090,7 @@ class Trace
             SubsurfaceDipole dipole[MathColour::channels]; ///< method 2's, in reduced mean free paths
             double extinction[MathColour::channels], extinctionSqr[MathColour::channels], beamWeight[MathColour::channels];
             double totalRatio[MathColour::channels], albedo[MathColour::channels];
+            double eta = 0.0; ///< method 2's boundary's
             const float *beamRow[MathColour::channels];
             /// Method 2's extinction squared, dipole sigma, virtual depth, fluence and flux weights by lane (the last channel twice), for Rd.
             double lanes[5][4];

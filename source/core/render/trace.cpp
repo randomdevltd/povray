@@ -7944,6 +7944,7 @@ void Trace::SubsurfaceProfile::SetMethod2(const std::shared_ptr<const Subsurface
 {
     boundary = shared;
     const SubsurfaceBoundary& b = *shared;
+    eta = b.eta;
     for (int j = 0; j < MathColour::channels; j++)
     {
         dipole[j] = SubsurfaceDipole(albedo[j], b);
@@ -8051,13 +8052,15 @@ double Trace::SubsurfaceProfile::FillRd(int channel, int column) const
 
 void Trace::AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket)
 {
+    if (profile.boundary == nullptr)
+        return;
     SubsurfaceRdTable *tables = ssltRdTables[min(max(int(ticket.subsurfaceRecursionDepth) - 1, 0), 1)];
     bool used[MathColour::channels] = {};
     int slot[MathColour::channels];
     auto find = [&](int j)
     {
         for (int i = 0; i < MathColour::channels; i++)
-            if ((tables[i].boundary == profile.boundary.get()) && (tables[i].albedo == profile.albedo[j]))
+            if ((tables[i].eta == profile.eta) && (tables[i].albedo == profile.albedo[j]))
                 return i;
         return -1;
     };
@@ -8071,7 +8074,7 @@ void Trace::AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& 
             int i = 0;
             while (used[i])
                 i++;
-            tables[i].boundary = profile.boundary.get();
+            tables[i].eta = profile.eta;
             tables[i].albedo = profile.albedo[j];
             tables[i].logRd.assign(SubsurfaceRdTable::kRdColumns, std::numeric_limits<double>::quiet_NaN());
             slot[j] = i;
@@ -8088,7 +8091,7 @@ PreciseMathColour Trace::SubsurfaceProfile::Rd(double distSqr, const SubsurfaceT
     typedef simd::Vec<double, 4> V;
     bool tabled = (boundary != nullptr) && (table[0] != nullptr);
     for (int j = 0; tabled && (j < MathColour::channels); j++)
-        tabled = (table[j]->boundary == boundary.get()) && (table[j]->albedo == albedo[j]);
+        tabled = (table[j]->eta == eta) && (table[j]->albedo == albedo[j]);
     if (tabled)
     {
         // log Rd between the two columns about each channel's squared optical radius, the channels' exponentials in one vector.
