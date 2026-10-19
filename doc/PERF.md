@@ -560,10 +560,17 @@ object, and each crossing is a point standing for h²/|n|₁ of surface (h the g
 point per grid square on a patch facing an axis and no clumps. All crossings along a line are collected by testing it
 again past the farthest one found, since one test of a blob returns only the nearest interval. A point's normal is
 turned to point out of the object, by testing which side of it is inside: primitives report normals with no regard to
-a `difference` inverting them, and a mesh's follow its winding. Crossings whose sides cannot be told apart (parts
-thinner than about a twentieth of the spacing, a union's inner surfaces) are dropped, and a cube that
-drops more than one in sixteen is left to method 1. Points are lit once, four points of each area light apiece, and keep each light's shadow. The spacing is a
-128th of the cube's side, a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
+a `difference` inverting them, and a mesh's follow its winding. A crossing inside on both sides (a union's inner
+surfaces, parts sharing a face), outside on both, or between walls closer than the probe floor (a ten-thousandth of the
+step) is dropped by itself; the cube keeps the rest. A part with no inside for light to diffuse through, a disc (whose
+inside is a half-space), unless it cuts an intersection or difference, or a mesh with an `inside_vector` whose
+triangles leave a border (an edge used an odd number of times, its vertices welded by position, as exporters repeat
+them per face), adds no points, and a shading point on it gets no diffuse subsurface light, named in a warning; open
+skeins, like triangles and meshes without an `inside_vector`, lose subsurface when parsed. Points are lit once, four points of each area light apiece, by the
+lights of their own part (a part in a light group has its own), take photons if their own part collects them, and keep
+each light's shadow. The spacing is a 128th of the cube's side, or three depths z_r where that is finer (a power of two
+at most that, kept in the cube's key, so that points can place a shadow edge or the edge of a surface near the exit
+point when the diffusion is long against z_r), a sixteenth to a quarter of the diffusion length, or a pixel of the view's camera where the
 cube comes nearest it if that is coarser, and never under a 1024th of the side; a pixel spans a size plus an angle
 times the distance, for perspective, orthographic, spherical, fisheye, ultra-wide, omnimax and panoramic cameras
 (for spherical and panoramic ones, a pixel at the equator, coarser than one toward the poles). For cylinder, mesh and
@@ -577,16 +584,20 @@ then stands for 1/Σ(|nₐ|/hₐ²) of surface. The camera is set once for the r
 level and at full quality, so it comes out the same whichever thread builds it, from a camera ray, a reflection, the
 radiosity pretrace or a radiosity sample (whose trace leaves out area lights). Threads that need a cube while it is
 built take jobs from its building, so it does not hold them up; an exception in any job leaves the cube unusable
-instead of holding up the threads waiting on it. Every cube is built at its own spacing, from the pixel, diffusion and
+instead of holding up the threads waiting on it, and the render stops. Every cube is built at its own spacing, from the pixel, diffusion and
 object rules alone, so the cloud, and with it the image, is the same whichever threads build it and in whatever order.
 
 Two global levers make a large render fit. `spacing` multiplies every cube's step (the pixel, diffusion and object terms
 alike; only the 1/1024-of-a-cube floor, a lower bound, is left as it is), so points and memory go about as
 1/spacing²: spacing 4 builds about a sixteenth of the points, and the cloud resolves the diffusion's detail that much
 more coarsely. Where the pixel sets the step, memory also goes as 1/pixel², so a proof render's statistics, scaled by
-the square of the resolution ratio, predict a print render's. A coarse spacing can widen the ring past the diffusion's
-reach; the gather then widens with it, over the cubes the object's bounds cross, up to 32 along a bounded axis and 8
-along an unbounded one (a plane's), rather than handing the shading point to method 1.
+the square of the resolution ratio, predict a print render's. A ring the exit point's cube or one of its 26 neighbours would
+make wider than a cube raises the cubes' size by fours before any is built, so a gather spans at most three cubes along an axis; cube
+coordinates are 64-bit. The reach stops at the diagonal of the object's bounds, or a thousand depths z_r on an unbounded
+object, which also bounds a material with no absorption. A large bounded object of a nearly non-absorbing material
+then gets cubes as large as itself with points three z_r apart, so its cloud can be large; where a cube's side passes
+1024 steps of three z_r, its finest floor (a 1024th of the side) sets the step instead, a warning counts those cubes,
+and their edges are drawn near each exit point as on a coarse cloud.
 
 All clouds together may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`, 1024 by default).
 Each finished cube's footprint counts against it in real bytes, by the capacity of what it holds: the cube itself,
@@ -596,20 +607,21 @@ so whether the clouds pass the cap, and the render stops, is the same on any thr
 before stopping, and so the figures in the error, depend on thread timing. The rows a cube casts into are counted in the
 reported peak but never decide the stop, except that a cube whose own points alone pass the cap stops the render while
 it is cast, so one cube cannot outgrow memory either. The error gives the memory held so far, the share of the image
-done, the cap, and a cap or spacing that would hold what was built so far. Once a quarter of the image is done, a
-warning says when the clouds at that rate would pass the cap; it is an estimate, and only passing the cap stops the
-render. A cube is never coarsened, and no shading point falls back to method 1, for memory. An unbounded object such as
-a plane is left to method 1 where its cubes would be coarse (below).
+done, the cap, and a cap or spacing that would hold what was built so far. Once half the image is done, a
+warning says when the clouds, growing as they did between a quarter and a half of it, would pass the cap. Cells already
+built serve the rest of the image, so growth slows: one render that took the first quarter's rate projected 3407 MB
+and peaked at 1657 MB. The two-point rate still overshoots; it is an upper estimate, and only passing the cap stops the
+render. A cube is never coarsened for memory. An unbounded object such as a plane gets cubes like any other. Method 2's
+profile tables are held apart from the clouds, within a fixed 32 MB (**Subsurface method 2's tables**).
 
 The statistics report the spacing in force, the memory counted against the cap, the peak with rows being cast, the cubes
 built, their points, the points the gathers read (those under a node a gather used, alone or summed as a group, which
 measures how much of the cloud was built for nothing), and the cubes and points whose step the pixel, the diffusion, the
-object's size or the floor set. They split the shading points left to method 1 by reason: unoriented crossings, an
-unbounded object, a reach wider than the cubes gathered, a light group, an exit point in no cube, and others (no
-interior or diffusion, uneven photons, a build that threw), beside the per-point reasons of the sum below. A warning
-names each whole-cloud reason with its count and likely cause once those reasons together reach 1% of the shading points
-tried, or once all fallbacks together reach a quarter; another names the per-point reasons once they alone reach a
-quarter.
+object's size or the floor set. They count the shading points tried and served (those in the radiosity pretrace among them), discs
+that bend, shading points with points unfolded across creases, those whose near field was drawn and the shadow rays that
+took, those lit as the exit point (no points near, or none facing in the disc), gathers whose cubes were raised, and the
+crossings dropped by kind. Method 2 never hands a shading point to method 1: one the cloud cannot serve gets no diffuse
+subsurface light, and a warning names its object (shape, first tag and the centre of its bounds) with the count.
 
 **The sum.** Around the exit point, a core half a spacing across is lit as the exit point is, from its own light and
 its own shadow test where the nearby points disagree on a light's shadow (so shadow edges stay sharp); out to 1.5
@@ -619,11 +631,19 @@ they would be with the surface unfolded flat (taking the planes through the exit
 crease), which is 1 on a flat surface and more across an edge, unless the ring holds more than 1.33 times a flat
 ring's area or faces away from the exit point (a thin part's far side), where its points are summed as they are;
 beyond, points are summed in groups whose area is small against their distance (`error_bound`, 0.1) and whose normals
-agree. A point counts only if the sampled method's base point, under the exit point, sees it from the inside, which
-keeps light from crossing gaps between parts of an object. Where the disc bends by more
-than 60° (edges, tight curves) or a point within 2.5 spacings is seen from behind (creases), the shading point uses
-method 1. The disc and ring are sized by the coarsest cube they reach, so where cubes of different spacing meet each
-still holds enough points. Diffusion shorter than a pixel is taken as lit like the exit point.
+agree. A point the sampled method's base point, under the exit point, sees from behind lies across a crease (a
+stud's wall seen from the slab around it) or on a parallel face (the slab seen from the stud's top): it is weighed by
+the profile at its distance unfolded through the material, taking the planes through the exit point and the point to
+meet at a crease, and laid on the exit point's tangent plane for the disc, the ring and the edge window; walls facing
+each other, and points whose tangent plane meets the exit point's where the material does not turn the corner (inside
+tests a quarter spacing into the corner and under the exit point's face just off the other), stay out, so light does
+not cross the gap between two studs. Parallel faces at different heights, seen from behind or in front, count only where
+the material steps between them (inside under the higher face at the lower one's height, and halfway from there to the
+lower one), so two blocks of one merge with an air gap between them do not light each other across it. A disc that bends
+sharply is served as it is. Points across a convex edge near the exit point are averaged over their patch rather than taken at the
+point. The disc and ring are sized by the coarsest cube they reach, so where cubes of different spacing meet each
+still holds enough points. Diffusion shorter than a pixel (its own length, not the reach capped by the bounds) is taken as lit like the exit
+point.
 
 **Edges.** Where the surface runs out (an open border), the closed-form core, disc and ring integrals
 would count surface that is not there. A window (1 − r²/R²)² over the ring measures how much of a plane the points
@@ -636,17 +656,20 @@ against what a single edge leaving that share would give. Each of core, disc and
 integral inside the edges, summed along the far side of the chord. Shares above 0.95 count as whole and the correction
 reaches full strength at 0.85, so curved and bumpy surfaces are left alone. Single scattering near an edge is sampled.
 
-**Coarse clouds.** A material whose diffusion is long against its depth z_r (marble seen from a distance) gets cubes
-whose points lie far apart. Where they are more than four times the larger of a pixel and z_r apart, the exit point
-tests its own shadows, and a shading point whose shadow differs from its neighbours' by over a quarter, or near which
-they disagree, uses method 1; an unbounded object gets no such cubes at all.
+**Coarse clouds.** Points still more than four times the larger of a pixel and z_r apart (a coarse `spacing`, or the
+finest floor) cannot place a shadow edge or an edge of the surface near the exit point. There, where the disc's points
+disagree on a shadow, the exit point's own shadow differs from theirs, or the surface runs out, the disc is drawn
+instead: 24 keyed draws on the tangent disc by the profile's near field r/(z_r² + r²)^1.5, each found on the surface by
+a ray from the base point as the sampled method finds its points, lit and shadow-tested.
 
 **Radiosity.** With subsurface radiosity on, cubes built in the final trace (kept apart from those without it) add
 the radiosity cache's light to each point, entering along the normal as the sampled method takes it, and the core adds
 the exit point's own. Points read only the pretrace's and loaded samples, as a final-trace query from a tile no tile
 has, so no final-trace sample counts and a cube does not depend on the tile that builds it; where none is near, the
 bound is widened up to fourfold, then deeper bounces are tried, and a point still without one takes its cube's mean.
-The pretrace uses method 1, since the cache is incomplete while it runs. With `radiosity { subsurface on }`, gathers
+In the pretrace, while the cache is incomplete, the cloud's points carry no radiosity. With radiosity on, the pretrace and the final trace build their cubes apart, so cubes the final trace needs
+are built twice, once without the cache's light; sharing the points and adding the light to the second would save that.
+With `radiosity { subsurface on }`, gathers
 at the deepest bounce use cubes without radiosity, so the same parts of an object can be built twice, once of each
 kind, within the one memory cap.
 
@@ -725,6 +748,122 @@ Tried and not kept:
 - One cloud per object laid out by the first shading point: a floor seen from close to far gets one spacing, and the
   first shading point's material fixes it for a texture that varies the diffusion.
 
+## Subsurface method 2 without method 1
+
+Method 2 used to hand shading points it could not serve to method 1, which is grainy, slower, and was the only source
+of the difference between the two at creases. It now serves all of them (the rules are under the point cloud above);
+`tests/render/subsurface_fallback.pov` forces each former reason, one case at a time, and
+`tests/render/subsurface_fallback.sh` checks that every shading point is served, the radiosity pretrace included.
+
+**Shadow edges.** `tools/bench/sslt-shadow-edges.pov` puts a grid of thin rods' shadows, from a small area light and a
+point light, on a high-albedo slab and cylinder whose diffusion is long against z_r, so cubes of 128 points per side
+lie about ten z_r apart; 640×480, 74, 21, `+WT1`, tuned builds, against method 1 at 592, 168:
+
+| | CPU-s | rms | Worst block |
+|---|---|---|---|
+| method 1 | 12.7 | 4.69 | 2.8 |
+| method 2, handing shadow edges to method 1 (67% of shading points) | 13.0 | 7.14 | 64.1 |
+| method 2, steps capped at three z_r, reach at the bounds | 13.3–13.4 | 3.75 | 12.7 |
+
+The worst block before was a flare on the slab's front face below its top edge: points across the convex edge, a
+spacing apart beside a z_r a tenth of that, were taken at their centres. Drawing the near field at the shadow edges
+instead of capping the step, with 8, 16, 24 and 64 draws, left rms errors of 10.8, 7.9, 8.3 and 6.8, so the draws are
+kept only for clouds coarse by `spacing`.
+
+**Creases.** Method 1 cannot be the reference here: its base point's rays never reach a stud's wall or the slab around a
+stud, so it leaves out light that diffuses round the corner. `tools/bench/sslt-reference.cpp` (then; now its `Shape=4`,
+under **Subsurface reference** below) renders a physically based reference for `tools/bench/sslt-studs.pov`
+with `Fillet=0 Reference=1` (point lights, no floor, no highlight, single scattering off): random walks through the
+homogeneous medium of the same reduced coefficients, Fresnel boundaries of index 1.5, scored with the light entering
+where a walk leaves after two or more scatterings. Its layout is written out apart from the scene's, so its object mask
+must match a render's pixel for pixel (it does, at every view used here). On the bare slab's flat top (`Bare=1`) with a
+high albedo (`Colour=1.2 Mfp=2`, reflectance 0.9), where the dipole holds, the dipole is 1.79 times the walks in every
+channel alike: the two take the light leaving a surface in different units, and 1.79 is that constant (it is not; see
+**Subsurface reference**: the bare slab is thin against the diffusion, and those walks lacked a 1/(1 − F̄dr)). With the
+default red (reflectance 0.64, 0.09, 0.06) the dipole is 1.81, 4.31 and 5.51 times them: at low albedo the dipole and
+its Fresnel approximation are that far from the transport, which this change does not touch, so the red reference is
+scaled per channel. At 160×120 and 1024 walks the reference's own noise is about 10 levels rms. Levels of 255 over the
+object, 320×240 and 4096 walks for the red studs, 160×120 and 1024 or 2048 walks for the rest:
+
+| | red 1× | red 4× | red slot | red tight row | high albedo 1× | high albedo 4× |
+|---|---|---|---|---|---|---|
+| method 1, 592 samples | 27.4 / −17.6 | 32.7 / −20.8 | 24.3 / −18.6 | 30.3 / −20.6 | 32.1 / −22.6 | 38.6 / −22.8 |
+| method 2, creases to method 1 | 28.1 / −17.3 | 33.9 / −21.0 | | | | |
+| method 2, creases unfolded | 13.2 / −3.2 | 12.6 / −2.3 | 13.2 / −3.0 | 10.8 / −1.4 | 15.8 / +3.4 | 13.8 / +6.1 |
+
+(rms / mean.) Choices taken from the reference, at 160×120: unfolding only across creases with a midpoint test keeping
+light from crossing gaps gave rms 19.7 on red 1×, without the midpoint test 16.5, weighing every point the base point
+sees from behind at its unfolded distance 13.8; leaving parallel faces out made red worse (15.4) and high albedo no
+better; capping the ring's gain over a flat ring across a fold at 1, 2, 4 or not at all changed rms by under 0.1, so it
+is not capped. Requiring the material to turn each corner on both sides, and parallel faces to step through it, then
+gave (rms / mean, 160×120) red 13.5 / −3.2 at 1×, 12.9 / −2.3 at 4×, 13.2 / −3.0 in the slot and 10.8 / −1.4 on the
+tight row, and high albedo 15.8 / +3.4, 13.8 / +6.1, 13.6 / +9.0 and 11.7 / +7.7. With `Blocks=1 View=3` (two blocks
+of one merge, 0.05 apart, well within reach) the lower block's top beside the gap came out 21% brighter than farther
+along it against the reference before (high albedo; red 15%), and 6% (red 1%) after. What remains: method 2 is brighter
+than the walks where the diffusion is long against the part (high-albedo stud tops, thin blocks), as the dipole on a
+semi-infinite medium is, and stud walls are a little bright in red near their base.
+
+## Subsurface minimum influence
+
+`adc_bailout` only decides whether a ray is traced, so a reflection or refraction of small weight that meets a
+subsurface object used to pay for a full cloud gather and for building any cells it reached. With method 2, a hit whose
+ray weight times the subsurface layers' opacity is below its finish's `subsurface { minimum_influence F }` is lit as
+its exit point is: the light entering there (each light once, an area light at one drawn point), times the flesh's mean
+entry factor where the flesh is looked up, times the profile's integral over the plane (`RdTotal`) and the exit Fresnel
+term. It has no single scattering, photons or radiosity, reads no cell and builds none; a hit on an open sheet still
+counts as unserved. The unscattered ray through the object is traced as before (it carries the incoming weight).
+
+The threshold is an absolute share of the pixel, unrelated to `adc_bailout`. It is read from the topmost subsurface
+layer's finish, where `translucency` and `method` are read, so it is set per object, and `#default { finish {
+subsurface { minimum_influence F } } }` sets it for every finish made after it. A `subsurface` block that gives only
+`minimum_influence` does not switch subsurface on, so that default leaves objects without subsurface alone. The test is
+one multiply and compare on a value already loaded. Camera rays are cut too: a camera ray has weight 1, so it is cut
+where its subsurface layers are nearly see-through (opacity below `minimum_influence`), and a ray that has passed
+through see-through layers or off mirrors carries less weight still. Radiosity gather rays carry (0.5 × brightness)^(depth
++ 1). Method 1 is untouched: `tests/render/version4_subsurface_40.pov`, `tools/bench/sslt-open.pov` case 5 and
+`sslt-bailout.pov` case 1, each with method 1, render pixel-identical to the build before.
+`tests/render/subsurface_minimum_influence.sh` checks that hits seen only in a faint mirror build no cell with the
+default, that `#default` and a finish's own value both reach the hit, that a `#default` giving only `minimum_influence`
+changes nothing else, and that the image and cloud are the same on one thread and four.
+
+The estimate is brighter than the cloud on thin see-through leaves, so the default is set by the stacked leaves of
+`tools/bench/sslt-bailout.pov`: case 2, eight face-on discs each passing 40% of the light (hidden behind one another,
+and with `Direct=1` stepped so a crescent of every disc shows), case 0, six leaves, and case 1, wax spheres between
+mirrors of reflection 0.7 over a floor of 0.06. `-A +WT1 +BS8`, 200×150 (case 1 400×300), instructions in G, errors in
+levels of 255 against `minimum_influence 0`, worst block the largest 8×8 block mean, cost removed as a share of the
+subsurface cost (the render less that with subsurface off: 3.37, 2.47, 1.84 and 3.73 G):
+
+| `minimum_influence` | hidden G | removed | rms / mean / worst | direct G | removed | rms / mean / worst |
+|---|---|---|---|---|---|---|
+| 0 | 364.50 | | | 237.28 | | |
+| 0.001 | 364.48 | 0% | 0.00 / +0.00 / 0.0 | 237.28 | 0% | 0.00 / +0.00 / 0.0 |
+| 0.002 | 359.51 | 1% | 0.17 / +0.00 / 0.2 | 235.61 | 1% | 0.13 / +0.00 / 0.1 |
+| 0.003 | 323.99 | 11% | 0.46 / +0.14 / 0.9 | 222.18 | 6% | 0.53 / +0.14 / 1.6 |
+| 0.005 | 285.77 | 22% | 1.04 / +0.47 / 2.0 | 204.15 | 14% | 1.51 / +0.49 / 5.3 |
+| 0.01 | 218.68 | 40% | 2.01 / +0.93 / 5.1 | 166.67 | 30% | 3.45 / +1.35 / 9.6 |
+| 0.0314 | 162.13 | 56% | 3.27 / +1.45 / 9.6 | 127.00 | 47% | 6.31 / +2.81 / 15.5 |
+
+| `minimum_influence` | six leaves G | removed | rms / mean / worst | mirrors G | removed | rms / mean / worst |
+|---|---|---|---|---|---|---|
+| 0 | 92.70 | | | 20.60 | | |
+| 0.002 | 92.70 | 0% | 0.00 / +0.00 / 0.0 | 20.60 | 0% | 0.00 / +0.00 / 0.0 |
+| 0.005 | 83.09 | 11% | 0.44 / +0.08 / 2.6 | 20.57 | 0% | 0.01 / −0.00 / 0.0 |
+| 0.01 | 72.86 | 22% | 0.84 / +0.24 / 3.1 | 20.49 | 1% | 0.03 / +0.00 / 0.1 |
+| 0.0314 | 60.96 | 35% | 2.42 / +0.68 / 10.9 | 19.90 | 4% | 0.32 / +0.00 / 3.3 |
+
+0.0314 is the threshold the earlier relative setting gave by default (8 × `adc_bailout` 1/255). The weights through
+the stack come in steps of the faces' transmission, so 0.004 and 0.005 cut the same hits. The default is 0.003, the
+largest round value whose worst block stays within three levels on both stacks (0.005 reaches 5.3 on the direct stack);
+it removes 11% and 6% of the stacks' subsurface cost and changes nothing in the leaves or mirrors. On the many small objects of
+`sslt-projection.pov` (`Camera=1 Count=1000`, 320×160, method 2 at spacing 1), where the unscattered ray of one box
+meets the next at about 3% weight, 0.003 cuts no hit: 33.21 G, 1757 cells and 1.41 M points, where 0.0314 estimates
+2229 hits and builds 1422 cells (1.15 M points) in 30.55 G at rms 0.06 and worst block 0.15 (0.01: 811 hits, 32.14 G,
+worst 0.04); a finish on many small boxes can take a larger value of its own. `sslt-skin.pov`, `sslt-shadow-edges.pov`,
+`sslt-lamps.pov`, `sslt-studs.pov` (320×240) and `sslt-wide.pov` (a 200×200 window of 4000×2000), each with
+`Method=2 Spacing=1`, have no hit under the threshold before or after: identical images, and instructions within 0.2%
+of the global setting's (9.03, 28.45, 18.61, 88.05 and 50.50 G against 9.03, 28.45, 18.62, 88.22 and 50.49 G). With
+0.031373, the old default's value, the projection scene estimates the same 2229 hits as before in 30.55 G against 30.56 G.
+
 ## Subsurface flesh and skin
 
 A texture's subsurface layers are blended into the colour the viewer sees, by each layer's opacity and filter as the
@@ -745,7 +884,7 @@ than the spacing keep their points. The point step is also capped so that at lea
 side: it was sized from the diffusion reach and the pixel alone, so a small object beside a long reach got a few points
 and cells with none, and every shading point near them went to method 1. A point lying on a cell's face (an object
 resting on y = 0) is matched to the nearest gathered cell instead of the empty one beside it. The render reports, for
-method 2, how many shading points the cloud served and why the rest went to method 1.
+method 2, how many shading points the cloud served.
 
 A finish's `colour` or `pigment` gives the flesh inside a colour of its own; the texture's pigment is then a skin light
 crosses on the way in and out, each crossing letting through the pigment to the power of half the relative
@@ -807,6 +946,509 @@ case 4's error from 3.29 to 3.16 and case 3's from 0.82 to 0.80.
 
 Subsurface light still does not cross between separate objects: a flesh object inside a skin object does not glow
 through it.
+
+## Subsurface reference
+
+Method 2 was judged above against method 1 at eight times its samples, and method 1 is an approximation too: the
+dipole, and rays from under the exit point that never reach round a corner. `tools/bench/sslt-reference.cpp` (`c++ -O2
+-std=c++17 -pthread`) is an independent reference with nothing of the dipole: random walks through the homogeneous
+medium the renderer derives from a finish (reduced scattering 1/translucency per mm, the reduced albedo the renderer's own
+table gives the reflectance, isotropic scattering, the interior's ior), Fresnel reflection at every boundary. A walk
+starts along the refracted eye ray and scores light scattered two or more times, as the renderer's diffuse term is with
+single scattering off. By default it scores where it leaves: the light the surface takes in there (each point light's
+colour, cosine and Fresnel transmittance, shadowed), entering as diffuse light of that transmitted flux, so a pixel, π
+times the radiance, is Ft(eye)·E[weight · light in] / (1 − F̄dr), F̄dr the hemispherical Fresnel reflectance from outside.
+With `Entry=beam` it takes each light's refracted beam at every collision instead, which is exact where the beam enters
+through a flat face, apart from the beam's own reflections inside; on a curved face the entry can go unresolved (the
+walks count those on stderr: none on the slab and walls, 2 to 49% on the dimple, studs and trunk). `Mode=forward`
+shoots photons into a half-space or a layer. Shapes are signed-distance bounds, sphere-traced, matched shape for shape
+by `tools/bench/sslt-reference.pov`: a slab 24 units deep (`View=1`: lit and seen along the normal), a 90° V-groove and
+a spherical dimple 0.18 deep in a block 2 deep, the ridged trunk of `sslt-wide.pov` (in the scene a 480 × 96 `mesh2`, in
+the walks the smooth surface it samples), a 1.2 mm wall, and the studs of `sslt-studs.pov` (`Bare=1`: its slab, 0.4 deep,
+alone); materials red and high albedo (`sslt-studs.pov`), wax (`sslt-lamps.pov`), bark (`sslt-wide.pov`) and clay
+(`sslt-open.pov`). `tools/bench/sslt-reference.py commands DIR` prints one command per walk image and per render
+(`--tag`/`--declare` for another method or build, `--entry beam`), and `score DIR` the tables below, with a sheet per run
+(render, walks, difference ×4). Every walk image carries per-pixel standard errors, which the rms subtracts; at 2048
+walks per pixel and 160×120 they are 0.8 to 2.5 levels per pixel.
+
+**Checks on a half-space**, ior 1.5, light and view along the normal, per unit irradiance, light scattered two or more
+times (beam entry from 16×12 images, standard error 0.2 to 0.3%):
+
+| | high albedo | red: R | G | B |
+|---|---|---|---|---|
+| photons, exact | 0.782 | 0.4234 | 0.02112 | 0.01091 |
+| walks, beam entry | 0.778 | 0.4230 | 0.02094 | 0.01085 |
+| walks, diffuse entry | 0.781 | 0.4286 | 0.02194 | 0.01138 |
+| `reference-subsurface-plane.py`, the renderer's Fdr | 0.829 | 0.5875 | 0.0829 | 0.0553 |
+| the same with Jensen's Fdr (`--jensen`, same medium) | 0.751 | 0.4454 | 0.0724 | 0.0494 |
+| method 2 | 0.828 | 0.5837 | 0.0829 | 0.0553 |
+
+Method 2 renders the plane integrator's dipole to within 0.7%, and the two walk estimators agree with the photons to
+within 1% (beam) and 5% (diffuse entry, which is high at low albedo). The dipole is 6% above the transport at high
+albedo and 1.39, 3.9 and 5.1 times it in red's channels; with Jensen's Fdr it is 4% below at high albedo. On a layer
+1.2 mm deep of clay, seen within 8° of the normal, diffuse entry is 16, 12 and 6% above the photons and beam entry 1.6
+to 1.9% below them (the beam's reflection off the far face is left out). The scores below use diffuse entry; on the
+walls, where beams resolve everywhere, beam entry puts method 2 at 4.52, 2.76, 1.60 (clay) and 3.71 (high albedo)
+times the walks instead of 3.97, 2.50, 1.53 and 3.34.
+
+**Scores** at the head of method 2 without method 1, 160×120, no anti-aliasing, levels of 255 over the pixels both
+cover (no mask mismatches but 4 on the trunk's silhouette). "Geometry" scales the walks per channel by method 2's
+ratio on the deep slab of the same material, so the flat surface's error drops out (its residue, 0.5 to 1.0 rms, is the
+slabs' own row); "against bare" scales by the bare studs slab instead, leaving the studs alone. Method 1 at 592 samples
+is scaled by its own slab ratio and carries its own noise. rms / mean / worst 8×8 block:
+
+| Run | Method 2 / walks, R, G, B | Method 2 absolute | Method 2 geometry | Method 1 geometry | Method 2 CPU-s |
+|---|---|---|---|---|---|
+| slab, red | 1.351, 3.586, 4.594 | 35.1 / +34.5 / +38.9 | 0.73 / +0.02 / +1.5 | 1.37 / +0.01 / +1.4 | 0.84 |
+| slab, high albedo | 1.075 | 7.38 / +7.36 / +8.5 | 0.48 / +0.01 / −1.2 | 0.65 / 0.00 / +0.7 | 0.90 |
+| slab, wax | 1.477, 1.801, 3.855 | 34.9 / +34.7 / +38.4 | 0.82 / +0.02 / +2.4 | 1.57 / +0.01 / +1.6 | 0.76 |
+| slab, bark | 1.604, 1.798, 2.081 | 34.4 / +34.3 / +37.2 | 1.04 / +0.01 / +1.9 | 0.94 / +0.01 / +1.8 | 0.83 |
+| slab, clay | 1.300, 1.556, 2.084 | 30.6 / +30.1 / +33.2 | 0.95 / +0.01 / +2.6 | 1.04 / +0.01 / +1.5 | 0.83 |
+| V-groove and dimple, wax | 1.474, 1.762, 3.888 | 34.0 / +33.6 / +40.7 | 4.27 / −0.32 / −16.7 | 8.76 / −4.52 / −15.7 | 0.88 |
+| the dimple alone (40×32 pixels) | | 35.5 / +35.1 / +40.4 | 4.56 / +1.49 / +9.5 | 9.75 / −6.40 / −12.6 | |
+| V-groove and dimple, high albedo | 1.279 | 23.1 / +22.6 / +34.6 | 17.1 / +16.3 / +29.1 | 11.6 / +4.07 / +24.3 | 0.91 |
+| ridged trunk, bark | 1.474, 1.701, 2.042 | 25.4 / +21.8 / +32.4 | 11.0 / −3.55 / −25.9 | 12.9 / −6.78 / −27.7 | 2.79 |
+| 1.2 mm wall, clay | 3.974, 2.495, 1.534 | 68.1 / +59.5 / +74.4 | 53.8 / +32.8 / +48.6 | 53.8 / +33.2 / +48.0 | 0.70 |
+| 1.2 mm wall, high albedo | 3.343 | 99.9 / +98.7 / +111.8 | 95.3 / +94.1 / +107.0 | 95.4 / +94.1 / +106.4 | 0.69 |
+| bare studs slab, red | 1.740, 3.477, 4.550 | 38.7 / +37.1 / +42.7 | 14.5 / +5.55 / −22.8 | 14.2 / +5.34 / −18.2 | 0.64 |
+| bare studs slab, high albedo | 1.676 | 44.0 / +42.1 / +50.0 | 38.8 / +36.7 / +44.3 | 38.4 / +36.3 / +44.3 | 0.65 |
+| studs, red | 1.726, 3.159, 4.255 | 35.6 / +32.5 / +45.5 | 17.4 / +3.04 / −21.7 | 22.6 / −11.5 / −31.4 | 1.54 |
+| the same against bare | | | 14.4 / −2.58 / −25.1 | 29.7 / −16.9 / −34.7 | |
+| studs, high albedo | 1.734 | 44.5 / +40.9 / +62.9 | 40.0 / +36.0 / +58.2 | 26.3 / +9.88 / +34.0 | 1.68 |
+| the same against bare | | | 17.7 / +1.92 / −36.4 | 34.0 / −23.9 / −61.9 | |
+
+Where the part is thin against the diffusion, the dipole's semi-infinite medium dominates: the 4 mm studs slab is 1.68
+times the walks at high albedo against 1.075 on the deep slab, the 20 mm block 1.28, and the 1.2 mm walls 3.3 to 4.
+
+**Earlier decisions against the walks** (they were judged against method 1 × 8):
+
+| Decision | Then | Against the walks |
+|---|---|---|
+| Hand no shading points over at bends and creases (`sslt-lamps.pov`); not kept, now shipped | a small concave dimple 14 levels bright, block edges 6 dark | wax dimple: method 2 4.56 / +1.49 / +9.5, method 1 9.75 / −6.40 / −12.6; method 2 is the closer, and method 1 is dark there |
+| `sslt-wide.pov` bark "not close at any setting" | up to 8.6 levels light in 8-pixel blocks | ridged trunk: method 2 11.0 / −3.55 / −25.9, method 1 12.9 / −6.78 / −27.7; both dark in bands along the ridges, method 2 the closer |
+| Thin rod and wall close at spacing 0.5 (`sslt-open.pov` case 6) | rms 1.60 against 1.88 | 1.2 mm wall: methods 2 and 1 alike and 1.5 to 4 times the walks; neither is close |
+| Creases unfolded (`sslt-studs.pov`, 1×) | red 13.2 / −3.2, high 15.8 / +3.4; method 1 27.4 / −17.6, 32.1 / −22.6 | against bare: red 14.4 / −2.58, high 17.7 / +1.92; method 1 29.7 / −16.9, 34.0 / −23.9: holds |
+| The dipole 1.79 times the walks on the bare slab, "a constant of units" | | not units: 1.075 on the deep slab, 1.68 on the 0.4-deep bare slab (thin against a 34 mm diffusion length) |
+
+## Subsurface method 2's profile
+
+Method 2 builds its medium and profile for the shading point's relative index η from the Fresnel reflectance from
+inside, F(μ): its moments c1 = ∫₀¹ F μ dμ and c2 = ∫₀¹ F μ² dμ, integrated once per index (`SubsurfaceBoundary` in
+`source/core/lighting/subsurface.cpp`; total reflection below the critical cosine, midpoint sums above it). Method 1
+keeps everything here as it was.
+
+**Fresnel diffuse reflectance.** The classic approximation (`FresnelDiffuseReflectance`, which method 1 keeps) is far
+below the diffuse reflectance from inside, F̄dr = 2 c1, which Jensen's polynomial fits; with A = (1 + F̄dr) / (1 − F̄dr)
+it puts the dipole's virtual source at z_r (1 + 4A/3):
+
+| η | classic F̄dr | Jensen's polynomial | 2 c1 | virtual source, classic → 2 c1 |
+|---|---|---|---|---|
+| 1.3 | 0.059 | 0.4448 | 0.4445 | 2.50 → 4.47 z_r |
+| 1.4 | 0.074 | 0.5295 | 0.5290 | 2.55 → 5.33 z_r |
+| 1.45 | 0.082 | 0.5650 | 0.5645 | 2.57 → 5.79 z_r |
+| 1.5 | 0.089 | 0.5967 | 0.5963 | 2.59 → 6.27 z_r |
+
+Method 2 takes 2 c1, for its dipole and for the table that inverts the colour to a reduced albedo, so the total diffuse
+reflectance stays the colour (the head-on slabs below render Ft² times the colour to within 1.2%) while the medium
+absorbs less: the high-albedo material's reduced albedo goes from 0.99885 to 0.99971 and its diffusion length from 17
+to 34 reduced mean free paths. 2 c1 holds for any η, where the polynomial fails below 1.
+
+**The profile.** Method 2's profile is now photon beam diffusion (Habel, Christensen and Jarosz 2013): real sources of
+d'Eon's better dipole (2012) spread along the refracted beam, falling off as e^(−t) with depth t and damped near the
+surface by 1 − e^(−2(d_r + t)), with the albedo squared, as pbrt's. The better dipole takes Grosjean's diffusion
+coefficient D = (2σa + σs′) / 3σt′², a virtual source 4AD above each real one with A = (1 + 3 c2) / (1 − 2 c1), and
+both the fluence and the flux at the surface, weighted (1 − 2 c1) / 4 and (1 − 3 c2) / 2; in closed form it gives Rd,
+its integral over a disc and over the plane. Beam diffusion is tabulated per index as its ratio to the better dipole at
+one depth: 128 rows by u = √(3(1 − albedo)), 217 columns of squared optical radius, four to an octave from 2⁻²⁷,
+each the ratio of Rd and of Rd's disc integral (Simpson's rule over the log radius), and per row the ratio of the
+totals. A lookup reads the octave and quarter from the bits of the squared radius and interpolates bilinearly, so Rd,
+`RdDisc` and `RdEdgeShare` stay the better dipole's closed forms times a ratio, and the far field keeps the dipole's
+exact decay. The colour inverts through the same total. Building the table takes about 0.07 CPU-s per index; see **Subsurface method 2's tables** for how many are kept.
+
+The media the profiles derive differ: each inverts the same colour to a reduced albedo, and a profile whose total is lower
+at a given albedo needs less absorption to reach it. `sslt-reference.py`'s MEDIA lists them for the five reference
+materials; the walks below are made in each profile's own medium (four media from one set of walks: flights scatter
+only and each medium weighs a walk by e^(−σa·length), the analog walk's expectation for it; its classic medium matches
+the earlier walk images to 0.1% in every run's channel means, χ² per pixel 0.88 to 1.05).
+
+| reduced albedo, R G B | classic table | 2 c1 dipole | better dipole | beam diffusion |
+|---|---|---|---|---|
+| red | 0.9792, 0.5204, 0.4069 | 0.9934, 0.5637, 0.4388 | 0.9937, 0.7212, 0.6021 | 0.9949, 0.7782, 0.6945 |
+| high albedo | 0.99885 | 0.99971 | 0.99968 | 0.99985 |
+| wax | 0.9533, 0.8764, 0.4553 | 0.9811, 0.9316, 0.4926 | 0.9831, 0.9500, 0.6356 | 0.9859, 0.9572, 0.7177 |
+| bark | 0.9067, 0.8497, 0.7647 | 0.9507, 0.9065, 0.8269 | 0.9595, 0.9302, 0.8800 | 0.9657, 0.9407, 0.8992 |
+| clay | 0.9776, 0.9225, 0.7647 | 0.9912, 0.9613, 0.8269 | 0.9913, 0.9671, 0.8800 | 0.9931, 0.9723, 0.8992 |
+
+**Half-space**, light and view along the normal, multiple scattering. In the walks' earlier (classic) medium, each
+profile's head-on pixel (Ft² times its total) over the photons' (`Mode=forward`, plane integrals):
+
+| profile | high albedo | red: R | G | B |
+|---|---|---|---|---|
+| classic dipole (method 1, method 2 before) | 1.061 | 1.388 | 3.93 | 5.07 |
+| dipole with 2 c1 | 0.963 | 1.052 | 3.43 | 4.53 |
+| better dipole | 0.968 | 0.992 | 2.01 | 2.67 |
+| beam diffusion | 0.933 | 0.936 | 1.151 | 1.220 |
+
+Method 2 as each build renders it (Ft² times the colour, which the head-on slabs match to within 1.8%) over 2 million
+photons in the medium that build derives:
+
+| build | high albedo | red | wax | bark | clay |
+|---|---|---|---|---|---|
+| classic Fdr (before) | 1.060 | 1.389, 3.90, 5.08 | 1.548, 1.92, 4.29 | 1.724, 1.94, 2.27 | 1.346, 1.66, 2.27 |
+| 2 c1 dipole | 0.957 | 0.984, 3.12, 4.18 | 1.047, 1.25, 3.45 | 1.168, 1.32, 1.60 | 1.017, 1.13, 1.60 |
+| better dipole | 0.963 | 0.976, 1.38, 1.69 | 1.008, 1.04, 1.62 | 1.057, 1.09, 1.14 | 1.014, 1.04, 1.14 |
+| beam diffusion | 0.929 | 0.937, 1.004, 1.051 | 0.950, 0.957, 1.061 | 0.975, 0.983, 0.996 | 0.959, 0.973, 0.996 |
+
+**Scores** (`sslt-reference.py score`, 160×120, as in the table of the subsurface reference section): before = the
+classic-Fdr head against the classic walks (that table's numbers); each later build against walks in its own medium,
+1024 walks per pixel (noise 1.2 to 3.0 levels, subtracted from the rms). Absolute rms / mean / worst 8×8 block:
+
+| Run | before | 2 c1 dipole | better dipole | beam diffusion (shipped) | beam diffusion / walks, R, G, B |
+|---|---|---|---|---|---|
+| slab, red | 35.0 / +34.5 / +39 | 28.0 / +22.1 / +29 | 9.6 / +6.5 / +8 | 4.5 / −3.7 / −4 | 0.925, 0.933, 0.967 |
+| slab, high albedo | 7.4 / +7.4 / +8 | 3.9 / −3.8 / −6 | 3.3 / −3.2 / −6 | 6.7 / −6.7 / −9 | 0.938 |
+| slab, wax | 34.9 / +34.7 / +38 | 20.2 / +15.2 / +12 | 7.7 / +3.4 / +1 | 5.4 / −4.7 / −7 | 0.925, 0.913, 0.968 |
+| slab, bark | 34.4 / +34.3 / +37 | 14.7 / +13.5 / +14 | 2.2 / +1.4 / +2 | 5.2 / −5.1 / −6 | 0.928, 0.924, 0.927 |
+| slab, clay | 30.6 / +30.1 / +33 | 12.4 / +8.6 / +7 | 2.2 / +0.9 / +2 | 4.7 / −4.6 / −6 | 0.950, 0.938, 0.931 |
+| slab head on, red | 35.8 / +35.1 / +38 | 28.9 / +22.9 / +28 | 10.8 / +7.6 / +9 | 4.1 / −2.4 / −3 | 0.927, 0.975, 1.016 |
+| slab head on, high albedo | 6.0 / +5.9 / +7 | 4.1 / −4.1 / −6 | 3.6 / −3.6 / −5 | 6.9 / −6.9 / −9 | 0.936 |
+| V-groove and dimple, wax | 34.0 / +33.6 / +41 | 20.4 / +15.6 / +17 | 8.6 / +2.9 / −14 | 6.5 / −4.6 / −19 | 0.932, 0.896, 0.969 |
+| V-groove and dimple, high albedo | 23.1 / +22.6 / +35 | 7.8 / +6.2 / +20 | 6.3 / +4.6 / +16 | 4.6 / +1.7 / +14 | 1.017 |
+| ridged trunk, bark | 25.4 / +21.8 / +32 | 13.4 / +6.1 / −19 | 9.9 / −2.5 / −18 | 12.1 / −7.5 / −22 | 0.849, 0.865, 0.895 |
+| 1.2 mm wall, clay | 68.1 / +59.5 / +74 | 59.3 / +47.7 / +63 | 57.9 / +44.0 / +63 | 56.0 / +39.6 / +60 | 3.327, 1.932, 0.858 |
+| 1.2 mm wall, high albedo | 99.9 / +98.7 / +112 | 87.4 / +86.2 / +102 | 88.1 / +86.6 / +105 | 84.3 / +82.9 / +101 | 2.84 |
+| bare studs slab, red | 38.7 / +37.1 / +43 | 30.5 / +28.6 / +34 | 15.1 / +12.0 / −14 | 12.5 / +2.9 / −24 | 1.258, 0.889, 0.946 |
+| bare studs slab, high albedo | 44.0 / +42.0 / +50 | 28.7 / +26.8 / +35 | 26.5 / +24.9 / +34 | 24.0 / +22.3 / +31 | 1.332 |
+| studs, red | 35.6 / +32.5 / +46 | 28.4 / +24.8 / +39 | 16.8 / +9.6 / +22 | 16.3 / +1.1 / −22 | 1.268, 0.821, 0.874 |
+| studs, high albedo | 44.5 / +40.9 / +63 | 31.5 / +27.2 / +48 | 30.2 / +25.4 / +48 | 28.2 / +23.0 / +46 | 1.386 |
+
+Geometry (scaled by each build's own slab ratio; the studs by the bare slab's), rms / mean / worst block:
+
+| Run | before | 2 c1 dipole | better dipole | beam diffusion |
+|---|---|---|---|---|
+| slabs, the five materials | 0.5 to 1.0 | 0.8 to 1.0 | 0.7 to 0.9 | 0.6 to 0.9 |
+| V-groove and dimple, wax | 4.3 / −0.3 / −17 | 4.0 / +0.7 / −14 | 3.8 / −0.5 / −14 | 3.7 / −0.1 / −13 |
+| V-groove and dimple, high albedo | 17.1 / +16.3 / +29 | 10.5 / +9.4 / +23 | 8.4 / +7.3 / +18 | 8.3 / +7.2 / +18 |
+| ridged trunk, bark | 11.0 / −3.5 / −26 | 11.0 / −3.8 / −26 | 10.0 / −3.5 / −18 | 9.9 / −3.6 / −19 |
+| 1.2 mm wall, clay | 53.8 / +32.8 / +49 | 58.8 / +39.0 / +59 | 58.2 / +42.9 / +63 | 58.2 / +43.2 / +63 |
+| 1.2 mm wall, high albedo | 95.3 / +94.1 / +107 | 89.8 / +88.5 / +104 | 90.1 / +88.6 / +107 | 88.4 / +87.0 / +105 |
+| bare studs slab, red | 14.5 / +5.5 / −23 | 16.8 / +7.5 / −22 | 13.9 / +5.6 / −19 | 14.6 / +5.9 / −21 |
+| bare studs slab, high albedo | 38.8 / +36.6 / +44 | 31.3 / +29.5 / +38 | 28.7 / +27.2 / +36 | 28.5 / +27.0 / +36 |
+| studs against bare, red | 14.4 / −2.6 / −25 | 13.8 / −2.3 / −25 | 13.1 / −1.9 / −21 | 13.1 / −2.0 / −23 |
+| studs against bare, high albedo | 17.7 / +1.9 / −36 | 16.1 / +2.4 / −31 | 16.7 / +2.3 / −31 | 16.5 / +2.3 / −32 |
+
+**Cost**, method 2 at 640×480 on the reference scene, CPU-s, mean of two interleaved renders, with
+per-block heat maps for each:
+
+| Run | classic Fdr (before) | 2 c1 dipole | better dipole | beam diffusion |
+|---|---|---|---|---|
+| studs, high albedo | 22.9 | 23.2 | 23.8 (+4%) | 26.0 (+13%) |
+| ridged trunk, bark | 46.5 | 47.1 | 49.1 (+6%) | 51.6 (+11%) |
+| 1.2 mm wall, clay | 10.2 | 10.0 | 10.6 (+4%) | 12.2 (+20%) |
+| V-groove and dimple, wax | 13.6 | 13.4 | 14.1 (+4%) | 16.4 (+20%) |
+
+The cloud is the same in every build but the trunk's (bark's longer diffusion sets coarser cells: 8 cells and 78877
+points instead of 67 and 467170, for the same time); the added time is the profile's, spread over the subsurface
+pixels in the heat maps with no hot spot (they are wall-clock per block, so they vary with the box's load). A first
+beam table looked the radius up by its logarithm through a call into another file: +16 to +36%.
+
+**Why beam diffusion.** The better dipole is closer on the high-albedo slabs (3.3 against 6.7 levels) and on bark and
+clay, but it holds 1.2 to 1.7 times the light in the low-albedo channels (red's green and blue, wax's blue), a change of
+hue, as the dipole with 2 c1 does at 2.8 to 4.2 times. Beam diffusion is within 0.90 to 1.02 of the walks in every
+channel on the slabs and grooves (the trunk 0.85 to 0.90), and its error is nearly the same in every channel: a 3 to 9%
+deficit on the slabs. That deficit is
+the exit term rather than the profile: Rd counts light that has left the surface, and the renderer's directional term,
+Ft(out) / π, carries only 1 − F̄dr of it from outside (0.908 at η 1.5, 0.923 at 1.4). `score --normalise-exit` divides
+the renders by it, as pbrt's normalised term would: beam diffusion then scores 1.9, 3.5, 1.5, 0.9 and 1.9 on the five
+slabs (ratios 0.998 to 1.065), 4.1 on the wax groove and 10.2 on the trunk, but 11.2 on the high-albedo groove, 35.0
+on the high-albedo studs and 93.7 on the high-albedo wall, where the semi-infinite profile on a thin part already gives
+too much. The renderer keeps Ft(out) / π here.
+
+Thin parts are the largest error left: the 1.2 mm walls at 2.8 to 3.3 times the walks and the 4 mm studs slab at 1.33
+(high albedo) are the semi-infinite profile on a part thinner than the diffusion, unchanged in kind by the profile.
+
+Method 1 renders the same pixels, bit for bit, before and after: `version4_subsurface_{37,38,40}.pov` with methods 0 and
+1 and `_no_version` at `+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread; with several, its photon map
+differs from run to run on one build), `subsurface_photon_prism`, and the reference scene's studs and trunk.
+
+## Subsurface method 2 on smooth meshes
+
+A cloud point stands for h²/|n|₁ of surface and is compared with its neighbours by its normal; both took the normal
+the surface reported, which on a smooth mesh triangle is the one interpolated from its vertices, not the triangle's own.
+A point on a face whose vertex normals lean away from it then stood for too little surface: on
+`tests/render/subsurface_photon_flux.pov` (`Photons=0 Direct=1`, a light straight down), whose box mesh has a top of two
+smooth triangles with vertex normals leaning up to 37° before the mesh's scale, the top came out 10% dark against the
+same box with flat triangles, beyond the cosine its vertex normals give the light. (`doc/SUBSURFACE_PHOTONS.md` measured 18.7% on the same
+face's photons, which then went to method 1.) Method 2 now takes the triangle's face normal for a point's side, area,
+facing and hierarchy, and for the exit point's tangent plane, and the interpolated normal only for the cosine of the light
+entering there, which the point keeps in its irradiance until it is lit (no memory). The coarse cloud's near-field
+draws take the face normal for the area a draw stands for in the same way. Other shapes report their geometric normal
+and are unchanged, bit for bit; method 1 is untouched.
+
+Smooth top over flat top, mean of the central 32×24 of 64×48 pixels (the prediction: each pixel's cosine from its
+vertex normals, through the mesh's scale, times the entry and exit Fresnel transmittance):
+
+| | before | after | predicted |
+|---|---|---|---|
+| smooth / flat | 0.898 | 0.9965 | 0.993 |
+
+`tests/render/subsurface_cloud.sh` checks the ratio. `tools/bench/sslt-reference.pov` takes `Smooth=1` for the ridged
+trunk with its surface's own normals (`trunk-smooth-bark` in `sslt-reference.py`, scored against the same walks as the
+flat trunk, which follow the smooth surface): 12.09 / −7.55 / −22.0 before and 12.06 / −7.51 / −22.4 after (geometry 9.91
+and 9.89), as the 480 × 96 facets lean little against their vertices; the other runs render the same pixels. At
+640×480 the smooth trunk takes 52.5 and 52.5 CPU-s before and 50.5 and 52.0 after (heat maps alike). Method 1 renders
+the same pixels before and after: `version4_subsurface_{37,38,40}.pov` with methods 0 and 1 and `_no_version` at
+`+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread), `subsurface_photon_prism`, the flux scene's smooth mesh,
+and the reference scene's studs and both trunks.
+
+## Subsurface method 2 on thin parts
+
+Beam diffusion, like the dipole, takes the medium under the exit point as a half-space. On a part thinner than the
+diffusion, light that reaches the far side leaves there instead of diffusing back, and a layer thin against a reduced
+mean free path passes much of its light straight through without scattering; method 2 summed the near face as a
+half-space and added the far face's points by the profile at the straight distance through the wall. Light leaving the
+lit face of a layer after two or more scatterings, from photons (`sslt-reference Mode=forward Thickness=`, 0.4 to 2
+million each, in the medium method 2 derives, light along the normal), over the half-space's, against the model below:
+
+| | 1.2 mm | 1.7 mm | 4 mm | 12 mm |
+|---|---|---|---|---|
+| high albedo, photons | 0.217 | 0.282 | 0.470 | 0.707 |
+| model | 0.244 | 0.309 | 0.465 | 0.731 |
+| clay R, G, B, photons | 0.206, 0.393, 0.827 | | 0.510, 0.790, 0.997 | |
+| model | 0.242, 0.443, 0.834 | | 0.527, 0.744, 0.986 | |
+| red R, photons / model | | | 0.514 / 0.525 | |
+
+The model: the depth d of material under the exit point, along the inward normal to where the material ends (one ray
+per shading point; a union's inner faces, inside on both sides, do not end it), τ = d in reduced mean free paths, and
+Donner and Jensen's multipole for a layer τ deep with the better dipole's fluence and flux terms (extrapolated
+boundaries 2AD out from both faces), from one source at depth min(1, τ/2) carrying the light that scatters in the
+layer, 1 − e^(−τ). Its ratios to the better dipole at depth 1 — of Rd and of Rd's integral over a disc on the near face,
+and of Rd on the far face over the dipole at the straight distance through the layer — multiply method 2's profile: a
+point less than d/2 under the exit point's tangent plane by the first at its distance (unfolded where it is unfolded),
+the core, disc and ring integrals by the second, and a deeper point (the far face) by the third at its distance along
+the tangent plane. The ratios are tabulated in the beam table's layout (217 columns of squared optical radius), per
+index, albedo (u to 1/4096) and quarter octave of τ from 2⁻¹⁰ to 2¹², interpolated between quarter octaves; images run
+until σ·n·period passes 12, at most 64 a side, and a table is built on first use and shared by all
+threads (within a cap; see **Subsurface method 2's tables**). A channel more than 12 reduced mean free paths and 10 diffusion lengths deep is left as it was (the multipole moves the light within the reach of a part that deep by at most 1e-4 of it, over albedos 0.5 to 0.999), so the deep
+slabs score as before to within 0.03 levels. In the model a thin part's light falls off within a few depths along it instead of over
+the diffusion length, so a finite wall no longer clips a profile that should reach past it.
+
+**Stepped faces.** Two parallel faces at different heights counted each other where the material is inside under the
+higher face at the lower one's height and at the midpoint between there and the lower point. Two blocks of one merge
+with an air gap between them (`sslt-reference.pov Shape=4 Blocks=1 View=3`, `gap-red` and `gap-high`, scored against new
+walks) passed that test wherever the midpoint fell inside the taller block, so the taller block's top lit the lower
+block's top across the gap. From the lower face the material must now run all the way from under the exit point to under
+the higher point, at a quarter spacing deep: runs to where it leaves the object along 8 directions of the tangent plane,
+taken once for a shading point that meets such a pair, interpolated as 1/run between directions (a straight edge at
+distance a lies a / cos θ away). The lower top's render/walks ratio 2 to 8 pixels beside the gap against 30 to 45
+pixels along it:
+
+| | high albedo | red |
+|---|---|---|
+| before | +46% | +24% |
+| thin parts, midpoint test | +29% | +16% |
+| thin parts, material runs | −4.0% | −0.8% |
+
+What is left there is a strip one or two pixels wide, the taller block's side above the gap (+31 levels at its worst
+pixel; the worst block, +27 here and +34 with the exit term below): a crease from it to the lower top passes both corner tests, which land in
+the taller block.
+
+**Scores** (`sslt-reference.py score`, 160×120, 1024 walks per pixel in the beam-diffusion medium, noise subtracted),
+absolute rms / mean / worst 8×8 block, before = the head after the smooth-mesh change (identical to the profile
+section's beam diffusion column but for the smooth trunk); the gap runs take the bare slab's scale for geometry:
+
+| Run | before | thin parts |
+|---|---|---|
+| slab, red | 4.5 / −3.7 / −4 | 4.5 / −3.7 / −4 |
+| slab, high albedo | 6.7 / −6.7 / −9 | 6.8 / −6.7 / −9 |
+| slab, wax | 5.4 / −4.7 / −7 | 5.4 / −4.7 / −7 |
+| slab, bark | 5.2 / −5.1 / −6 | 5.2 / −5.1 / −6 |
+| slab, clay | 4.7 / −4.6 / −6 | 4.7 / −4.6 / −6 |
+| slab head on, red | 4.1 / −2.4 / −3 | 4.1 / −2.4 / −3 |
+| slab head on, high albedo | 6.9 / −6.9 / −9 | 6.9 / −6.9 / −9 |
+| V-groove and dimple, wax | 6.5 / −4.6 / −19 | 6.5 / −4.6 / −19 |
+| V-groove and dimple, high albedo | 4.6 / +1.7 / +14 | 4.7 / −2.2 / −13 |
+| ridged trunk, bark | 12.1 / −7.5 / −22 | 12.1 / −7.5 / −22 |
+| the same, smooth normals | 12.1 / −7.5 / −22 | 12.1 / −7.5 / −22 |
+| 1.2 mm wall, clay | 56.0 / +39.6 / +60 | 7.6 / −2.4 / −9 |
+| 1.2 mm wall, high albedo | 84.3 / +82.9 / +101 | 7.0 / −5.0 / −13 |
+| bare studs slab, red | 12.5 / +2.9 / −24 | 8.2 / −6.2 / −23 |
+| bare studs slab, high albedo | 24.0 / +22.3 / +31 | 12.3 / −11.1 / −21 |
+| studs, red | 16.3 / +1.1 / −22 | 10.3 / −5.5 / −21 |
+| studs, high albedo | 28.2 / +23.0 / +46 | 8.5 / −2.2 / −22 |
+| blocks with an air gap, red | 14.0 / +2.4 / −24 | 8.8 / −6.2 / −23 |
+| blocks with an air gap, high albedo | 25.3 / +21.7 / +53 | 10.3 / −5.9 / +27 |
+
+Geometry, scaled by each build's own slab ratio (the studs and gaps by the bare slab's):
+
+| Run | before | thin parts |
+|---|---|---|
+| slab, red | 0.6 / +0.0 / +1 | 0.6 / +0.0 / +1 |
+| slab, high albedo | 0.9 / +0.0 / −2 | 0.9 / +0.0 / −2 |
+| slab, wax | 0.7 / +0.0 / +1 | 0.7 / +0.0 / +1 |
+| slab, bark | 0.8 / +0.0 / +2 | 0.8 / +0.0 / +2 |
+| slab, clay | 0.6 / +0.0 / +1 | 0.6 / +0.0 / +1 |
+| slab head on, red | 1.5 / +1.2 / +2 | 1.5 / +1.2 / +2 |
+| slab head on, high albedo | 0.7 / −0.1 / −2 | 0.7 / −0.1 / −2 |
+| V-groove and dimple, wax | 3.7 / −0.1 / −13 | 3.6 / −0.1 / −13 |
+| V-groove and dimple, high albedo | 8.3 / +7.2 / +18 | 5.3 / +3.4 / +14 |
+| ridged trunk, bark | 9.9 / −3.6 / −19 | 9.9 / −3.6 / −19 |
+| the same, smooth normals | 9.9 / −3.6 / −19 | 9.9 / −3.6 / −19 |
+| 1.2 mm wall, clay | 58.2 / +43.2 / +63 | 7.0 / +1.2 / +7 |
+| 1.2 mm wall, high albedo | 88.4 / +87.0 / +105 | 5.0 / −0.9 / −9 |
+| bare studs slab, red | 14.6 / +5.9 / −21 | 5.7 / −3.2 / −20 |
+| bare studs slab, high albedo | 28.5 / +27.0 / +36 | 8.2 / −6.4 / −16 |
+| studs, red | 13.1 / −2.0 / −23 | 8.9 / −0.0 / −15 |
+| studs, high albedo | 16.5 / +2.3 / −32 | 11.3 / +7.9 / +19 |
+| blocks with an air gap, red | 10.6 / −0.9 / −24 | 5.8 / −0.6 / −17 |
+| blocks with an air gap, high albedo | 13.7 / −0.2 / +35 | 9.5 / +4.7 / +35 |
+
+**Cost**, 640×480, CPU-s of two interleaved renders each, with per-block heat maps:
+
+| Run | before | thin parts and exit term | |
+|---|---|---|---|
+| studs, high albedo | 26.1, 25.6 | 29.7, 29.5 | +15% |
+| ridged trunk, bark | 52.8, 51.8 | 55.8, 56.7 | +7% |
+| 1.2 mm wall, clay | 12.0, 12.3 | 14.2, 14.1 | +16% |
+| V-groove and dimple, wax | 16.3, 16.0 | 18.0, 17.9 | +11% |
+| blocks with an air gap, high albedo | 13.0, 13.2 | 14.3, 14.6 | +10% |
+
+The added time is the ratio lookups at every point summed (one table read per channel, shared between equal channels),
+the depth ray and, on stepped faces, the 8 runs; the heat maps spread it over the subsurface pixels.
+
+Method 1 renders the same pixels, bit for bit, before and after (the list in the smooth-mesh section).
+
+## Subsurface method 2's exit term
+
+Rd counts all the light that leaves the surface, while the directional term Ft(out) / π carries only 1 − F̄dr of it
+from outside, η² (1 − 2 c1): 0.908 at η 1.5, 0.923 at 1.4 (see **Subsurface method 2's profile**). Dividing by it, as
+pbrt's normalised term does, brought the slabs to within 1 to 7% of the walks, but made the thin parts worse while the
+half-space profile still gave them too much (rms 11.2 on the high-albedo groove, 35.0 on the studs, 93.7 on the wall).
+With the thin parts' layer model it no longer does, so method 2 now takes Ft(out) / (π (1 − F̄dr)) for its diffuse term,
+the minimum-influence estimate and uniform emission; single scattering keeps Ft(out). A thick flat piece now reflects its
+colour times the light entering it in all, as its albedo inversion intends, so seen head on it is about a tenth brighter
+than with method 1, which keeps Ft(out) / π. Absolute rms / mean / worst block:
+
+| Run | before, exit term alone | thin parts | thin parts and exit term |
+|---|---|---|---|
+| slab, red | 1.9 / +1.7 / +3 | 4.5 / −3.7 / −4 | 1.9 / +1.7 / +3 |
+| slab, high albedo | 3.5 / +3.4 / +5 | 6.8 / −6.7 / −9 | 3.5 / +3.3 / +5 |
+| slab, wax | 1.5 / +0.9 / +2 | 5.4 / −4.7 / −7 | 1.5 / +0.9 / +2 |
+| slab, bark | 0.9 / +0.3 / +2 | 5.2 / −5.1 / −6 | 0.9 / +0.3 / +2 |
+| slab, clay | 1.9 / +1.5 / +3 | 4.7 / −4.6 / −6 | 1.9 / +1.5 / +3 |
+| slab head on, red | 3.1 / +2.9 / +4 | 4.1 / −2.4 / −3 | 3.1 / +2.9 / +4 |
+| slab head on, high albedo | 3.3 / +3.2 / +5 | 6.9 / −6.9 / −9 | 3.3 / +3.2 / +5 |
+| V-groove and dimple, wax | 4.1 / +0.8 / −13 | 6.5 / −4.6 / −19 | 4.0 / +0.8 / −13 |
+| V-groove and dimple, high albedo | 11.2 / +10.3 / +22 | 4.7 / −2.2 / −13 | 7.6 / +6.3 / +17 |
+| ridged trunk, bark | 10.2 / −3.6 / −19 | 12.1 / −7.5 / −22 | 10.2 / −3.6 / −19 |
+| the same, smooth normals | 10.2 / −3.6 / −20 | 12.1 / −7.5 / −22 | 10.2 / −3.6 / −20 |
+| 1.2 mm wall, clay | 61.2 / +45.7 / +66 | 7.6 / −2.4 / −9 | 7.7 / +2.3 / +9 |
+| 1.2 mm wall, high albedo | 93.7 / +92.3 / +110 | 7.0 / −5.0 / −13 | 5.3 / +1.1 / −8 |
+| bare studs slab, red | 15.8 / +7.6 / −21 | 8.2 / −6.2 / −23 | 5.4 / −1.9 / −19 |
+| bare studs slab, high albedo | 31.9 / +30.5 / +40 | 12.3 / −11.1 / −21 | 6.9 / −4.3 / −14 |
+| studs, red | 18.4 / +5.4 / −20 | 10.3 / −5.5 / −21 | 9.2 / −1.5 / −18 |
+| studs, high albedo | 35.0 / +30.6 / +54 | 8.5 / −2.2 / −22 | 9.6 / +4.4 / +16 |
+| blocks with an air gap, red | 16.8 / +6.9 / −21 | 8.8 / −6.2 / −23 | 6.5 / −2.1 / −20 |
+| blocks with an air gap, high albedo | 32.5 / +29.6 / +61 | 10.3 / −5.9 / +27 | 8.7 / +0.9 / +34 |
+
+Against the thin parts alone it is better on every run but three: the high-albedo groove (4.7 to 7.6; the layer model left it at 0.97 of the walks,
+the exit term puts it at 1.07), the high-albedo studs (8.5 to 9.6, at 1.07) and the clay wall (7.6 to 7.7). The
+renderer over the walks, per channel:
+
+| Run | thin parts | thin parts and exit term |
+|---|---|---|
+| slab, red | 0.925, 0.933, 0.967 | 1.019, 1.028, 1.065 |
+| slab, high albedo | 0.938, 0.937, 0.937 | 1.032, 1.032, 1.032 |
+| slab, wax | 0.925, 0.913, 0.968 | 1.010, 0.998, 1.057 |
+| slab, bark | 0.928, 0.924, 0.927 | 1.005, 1.001, 1.005 |
+| slab, clay | 0.950, 0.938, 0.931 | 1.029, 1.016, 1.009 |
+| slab head on, red | 0.927, 0.975, 1.016 | 1.021, 1.073, 1.118 |
+| slab head on, high albedo | 0.936, 0.936, 0.936 | 1.031, 1.031, 1.031 |
+| V-groove and dimple, wax | 0.930, 0.897, 0.969 | 1.015, 0.980, 1.058 |
+| V-groove and dimple, high albedo | 0.974, 0.974, 0.974 | 1.072, 1.072, 1.072 |
+| ridged trunk, bark | 0.850, 0.865, 0.895 | 0.920, 0.937, 0.970 |
+| the same, smooth normals | 0.851, 0.866, 0.896 | 0.922, 0.938, 0.970 |
+| 1.2 mm wall, clay | 1.042, 0.971, 0.885 | 1.129, 1.052, 0.959 |
+| 1.2 mm wall, high albedo | 0.928, 0.927, 0.924 | 1.022, 1.020, 1.017 |
+| bare studs slab, red | 0.861, 0.856, 0.945 | 0.948, 0.942, 1.040 |
+| bare studs slab, high albedo | 0.858, 0.858, 0.858 | 0.945, 0.945, 0.944 |
+| studs, red | 0.919, 0.827, 0.879 | 1.012, 0.911, 0.968 |
+| studs, high albedo | 0.970, 0.969, 0.969 | 1.068, 1.067, 1.067 |
+| blocks with an air gap, red | 0.870, 0.842, 0.929 | 0.958, 0.927, 1.023 |
+| blocks with an air gap, high albedo | 0.921, 0.919, 0.918 | 1.015, 1.012, 1.011 |
+
+Method 1 renders the same pixels, bit for bit (the list in the smooth-mesh section). The scale is one multiply per shading
+point; the cost is that of the thin parts' section.
+
+## Subsurface method 2's tables
+
+Method 2's boundary (beam table, Fresnel moments, albedo inversion: 222 KB, about 0.07 CPU-s to build) was kept for every
+distinct single-precision index, and a thin part's layer table (6944 bytes) for every albedo step and quarter octave of
+depth it met, both for the life of the process and built under a lock all threads shared. Neither had a bound: a pigment
+that varies continuously over a thin part asks for a table at nearly every shading point (up to 7094 albedo steps by 88
+depths per index, 4.3 GB), and media refraction (`refraction` in an interior's media) varies the index with position, so
+a boundary was built at nearly every shading point.
+
+Both now live in the render's subsurface cache, within a fixed 32 MB (`kSubsurfaceTablesMB`) that is not counted against
+the clouds' `memory`: past it the least recently used are dropped. A table is a function of its key alone, so dropping
+and rebuilding one changes no value, and the image stays independent of thread count and of what the cache held. Tables
+are built outside the cache's lock, which is held only to look up and insert (a thread that built one another thread
+inserted first discards its copy). Each thread keeps the last 32 layer tables it used, and its current boundary, so most
+lookups take no lock; those, and the tables a shading point is using, stay alive after the cache drops them, under 1 MB a
+thread. The boundary is built for the index rounded to 12 bits after its leading one (a step of 2⁻¹², 1/4096 between 1 and
+2): 1.5 is unchanged, 1.45 and 1.4 move by 4.9·10⁻⁵ and 9.8·10⁻⁵. The render statistics give the boundaries and layer
+tables built, those dropped and the most alive at once (table bytes, with any a thread still holds).
+
+`tools/bench/sslt-tables.pov` is the load: Case 0 a wedge 0.2 to 7.9 mm deep (ior 1.45) whose colour runs along it, at
+160×120; Case 1 a sphere of ior 1.4 whose media add `refraction 0.2` across it, at 64×48. CPU-s and peak resident memory
+of the whole render (one run each), table bytes from the statistics:
+
+| | before | layer tables capped | and boundaries |
+|---|---|---|---|
+| wedge, CPU-s / peak RSS | 7.41 / 208 MB | 8.24 / 99 MB | 9.09 / 100 MB |
+| wedge, tables built / dropped / peak alive | | 26276 / 21444 / 32.05 MB | 2 + 26338 / 21508 / 32.26 MB |
+| varying index, CPU-s / peak RSS | 61.3 / 258 MB | 66.0 / 261 MB | 33.2 / 101 MB |
+| varying index, tables built / dropped / peak alive | | 2724 / 0 / 18.0 MB | 492 + 1478 / 1429 / 32.68 MB |
+
+Before, the wedge held about 109 MB more (by peak RSS against the capped build) and the sphere a boundary per shading
+point. Capping the layer tables alone renders the wedge, which drops 21444 of them, the same pixels; with the index
+rounded the sphere is within 0.0078 levels of the exact index everywhere (rms 0.0010), and the wedge, at ior 1.45, rms
+0.052 with 97 pixels over half a level (at most 2.86), all in a band at its dark end, consistent with where a channel's
+depth passes the thick-part threshold of the thin parts' section and the profile switches from the layer to the
+half-space, which the index's shift moves by under a pixel.
+
+The reference runs (`sslt-reference.py`, 160×120, as scored above): with the layer tables capped all 19 render the same
+pixels; with the index rounded too the 12 at ior 1.5 do, and the 7 at 1.45 and 1.4 (wax, bark, clay) differ by rms 0.0015
+to 0.0024 levels, mean within 0.0015, at most 0.20 at a pixel, which bounds each score's change (rms and mean by those,
+the worst block by 0.2), so the scores in the sections above stand as printed. These scenes build one boundary and 4 to 19 layer tables,
+0.34 to 0.45 MB, as before. At 640×480, CPU-s of two interleaved renders each, with per-block heat maps:
+
+| Run | before | after |
+|---|---|---|
+| studs, high albedo | 29.3, 29.0 | 29.4, 30.1 |
+| 1.2 mm wall, clay | 14.1, 14.3 | 14.1, 14.3 |
+| blocks with an air gap, high albedo | 14.6, 14.3 | 14.9, 14.5 |
+| V-groove and dimple, wax | 18.1, 18.3 | 18.0, 18.3 |
+
+`tests/render/subsurface_tables.sh` renders the wedge at 80×60 on one thread and two: the tables must pass their cap,
+stay within it but for what the threads hold, and the two images must match.
+
+**A channel that reflects nothing.** A colour channel of reflectance 0 (`pigment { rgb <1, 0, 0> }` with any `diffuse`)
+inverts to a reduced albedo of 0, so the reduced extinction, scattering over albedo, is infinite and the profile NaN;
+clipped, the channel came out at full brightness on every pixel of the object, with methods 1 and 2 alike, in every build
+since the cloud (a red sphere, 64×48, `diffuse` 0.6 and 1: green and blue 255 on all 1848 of its pixels). Method 2 now
+gives a channel a reduced albedo of at least 10⁻⁴ (`kSubsurfaceAlbedoFloor`): the extinction stays finite (10⁴ times the
+scattering), the channel scatters next to nothing, and only channels the colour table would put below 10⁻⁴ change. The
+sphere's green and blue are now 0 on every pixel, and its red has a mean of 113.64 and 137.44 levels against 113.61 and
+137.40 for `rgb <1, 0.002, 0.002>` (rms 1.17 and 1.07 between them, at most 18 levels at a pixel). A colour without a
+zero channel renders the same pixels as before. Method 1 is left as it was.
+
+The other end, a channel of albedo 1, has no absorption, so its depth never passes the thick-part test and every such
+part takes the layer model; its table stops at τ = 2¹², so a deeper part reads a layer 2¹² deep. An albedo just below 1
+does the same until σ·τ passes 15, so this is not a case of its own. Against a layer 10⁴ deep (the table's formulas at
+η 1.5), the 2¹² layer's near-face Rd ratio is within 0.04% out to 362 reduced mean free paths, 0.8% low at 1024 and 15%
+at 2896; its disc integral is within 10⁻⁴ out to 2896, and
+its ratio through to the far face 2.6% low. It is left as it is.
 
 ## Mesh memory
 
@@ -1496,7 +2138,7 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Noise: 55% of the standard benchmark; AVX-512 or a vectorised octave loop.
 - Media: extinction along shadow rays, 363 M density evaluations in the haze window, is still its largest cost;
   skipping any safely needs bounds on the density.
-- Subsurface: method 2 still hands sharp edges and creases to method 1, and samples single scattering from lights
+- Subsurface: method 2 samples single scattering from lights
   behind the surface. At equal quality it needs spacing 0.35 at the rim of `sslt-open.pov` Case 2 and 0.25 under the
   small mesh in `sslt-wide.pov`, and at 1600×800 that scene's bark comes out up to 8.6 levels light at any spacing.
 - Radiosity: irradiance gradients (Ward and Heckbert, over a stratified gather) were tried. Against converged renders

@@ -44,7 +44,9 @@
 
 // C++ standard header files
 #include <memory>
+#include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -250,6 +252,8 @@ class Trace
               CooperateFunctor& cf, MediaFunctor& mf, RadiosityFunctor& af);
 
         virtual ~Trace();
+        /// Adds this thread's counts of shading points the subsurface cloud left unserved to the shared ones.
+        void FlushSubsurfaceCounts();
 
         /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
@@ -426,10 +430,12 @@ class Trace
         Vector3d ssltCameraLocation;
         double ssltPixelSize = 0.0, ssltPixelAngle = 0.0;
         bool ssltCameraKnown = false;
+        std::shared_ptr<const SubsurfaceBoundary> ssltBoundary; ///< method 2's boundary for the last index it shaded
         /// Per light and channel, the lowest, mean and highest visibility of a few cloud points.
         struct SubsurfaceVisibility
         {
             std::vector<float> lo, mean, hi;
+            std::vector<int> counts;
             void Reset(size_t lights);
             void Add(const float *visibility);
             void Finish();
@@ -438,7 +444,8 @@ class Trace
         };
         /// Scratch space for subsurface cloud queries.
         std::vector<int> ssltScratchStack;
-        std::vector<char> ssltScratchClosed;
+        std::vector<char> ssltScratchClosed, ssltScratchSampled;
+        std::vector<Intersection> ssltScratchHits;
         SubsurfaceVisibility ssltScratchVisibility;
         /// Thread data.
         TraceThreadData *threadData;
@@ -1065,15 +1072,60 @@ class Trace
     /// @{
     ///
 
-        /// Per-channel constants of the dipole diffusion profile at one shading point.
+        struct SubsurfaceThin;
+        /// Method 2's log Rd at one reduced albedo, by squared optical radius in BeamRatio's layout but finer, filled as read.
+        struct SubsurfaceRdTable
+        {
+            static const int kRdPerOctave = 16, kRdColumns = kRdPerOctave * SubsurfaceBoundary::kBeamOctaves + 1;
+            double eta = 0.0; ///< the boundary's, which with the albedo defines the table; a boundary's address may be reused
+            double albedo = -1.0;
+            std::vector<double> logRd;
+        };
+        /// Per-channel constants of the diffusion profile at one shading point: method 1's classic dipole, or method 2's
+        /// better dipole times beam diffusion's ratio from its boundary (see doc/PERF.md); lengths in mm.
         struct SubsurfaceProfile
         {
             PreciseMathColour scale, sigma_tr, z_r, z_v;
-            PreciseMathColour Rd(double distSqr) const;
+            std::shared_ptr<const SubsurfaceBoundary> boundary; ///< method 2's, or null for the classic dipole
+            SubsurfaceDipole dipole[MathColour::channels]; ///< method 2's, in reduced mean free paths
+            double extinction[MathColour::channels], extinctionSqr[MathColour::channels], beamWeight[MathColour::channels];
+            double totalRatio[MathColour::channels], albedo[MathColour::channels];
+            double eta = 0.0; ///< method 2's boundary's
+            const float *beamRow[MathColour::channels];
+            /// Method 2's extinction squared, dipole sigma, virtual depth, fluence and flux weights by lane (the last channel twice), for Rd.
+            double lanes[5][4];
+            /// The thread's tables for this profile's albedos, set for a gather; Rd evaluates the dipole where they are not.
+            mutable SubsurfaceRdTable *table[MathColour::channels] = {};
+            double FillRd(int channel, int column) const;
+            void SetMethod2(const std::shared_ptr<const SubsurfaceBoundary>& boundary, const PreciseMathColour& albedo, const PreciseMathColour& extinction);
+            /// With thin, times its near-face ratios (part 0), looked up at the same column as beam diffusion's.
+            PreciseMathColour Rd(double distSqr, const SubsurfaceThin *thin = nullptr) const;
             PreciseMathColour RdDisc(double radius) const;
             PreciseMathColour RdEdgeShare(double inner, double outer, double d) const;
             PreciseMathColour RdTotal() const;
         };
+
+        /// Method 2 on a part thinner than its diffusion: the multipole's ratios to the profile for the material's depth under
+        /// the exit point, on its own face and through to the far one; see doc/PERF.md.
+        struct SubsurfaceThin
+        {
+            bool active = false;
+            double depth = 0.0; ///< through the material under the exit point, in mm
+            const float *rows[MathColour::channels]; ///< the layer table at the albedo, or null where thick
+            std::shared_ptr<const float> hold[MathColour::channels]; ///< keeps rows alive
+            double depthWeight[MathColour::channels], extinctionSqr[MathColour::channels];
+            bool same[MathColour::channels]; ///< whether a channel's ratios are the previous channel's
+            /// Multiplies rd by the ratios at squared distance distSqr (mm^2): part 0 Rd, 1 its disc integral (radius squared), 2 Rd through.
+            void Apply(PreciseMathColour& rd, double distSqr, int part) const;
+        };
+        SubsurfaceThin ssltThin;
+        /// Rd tables per subsurface recursion depth, one per channel.
+        SubsurfaceRdTable ssltRdTables[2][MathColour::channels];
+        void AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket);
+        /// The layer tables this thread used last, by key, so that most lookups take no lock.
+        struct SubsurfaceLayerSlot { double eta = 0.0; int step = -1, k = 0; std::shared_ptr<const float> rows; };
+        static const int kLayerSlots = 32;
+        SubsurfaceLayerSlot ssltLayers[kLayerSlots];
 
         /// A texture's subsurface layers blended as the viewer sees them: reflectance and colour weighted by each layer's
         /// opacity and filter, their sum, and the topmost layer, whose finish they scatter with.
@@ -1120,36 +1172,53 @@ class Trace
         };
 
         /// An object's irradiance cloud as one shading point sees it: its levels, lights and the cells within reach.
+        /// The lights of every part of a subsurface object, and which of them light each part (a light group's part has its
+        /// own), in a fixed order so that every thread numbers them alike; and whether any part collects photons.
+        struct SubsurfaceParts
+        {
+            std::vector<const LightSource*> lights;
+            std::vector<std::vector<char>> sets;
+            std::unordered_map<const void*, int> setOf;
+            std::unordered_set<const void*> sheets; ///< parts with no inside (discs, meshes with a border): no subsurface
+            bool anyCollects = false;
+        };
+
         struct SubsurfaceCloud
         {
             PreparedSetId preparedSetId = 0;
             ObjectPtr object = nullptr;
             const SubsurfaceFlesh *flesh = nullptr;
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
-            int sizeLevel = 0;
+            int sizeLevel = 0, depthLevel = kCloudNoDepthLevel;
+            SubsurfaceUnserved unserved = kUnservedSheet; ///< why the cloud could not be opened
             double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
-            SubsurfaceCloudFailure failure = kCloudServed; ///< why the cloud could not be opened
-            bool local = false; ///< diffusion within about a pixel: all of it is lit as the exit point is
+            bool local = false; ///< diffusion within about a pixel, or no points near: all of it is lit as the exit point is
             bool photons = false;
             bool radiosity = false; ///< the points carry the radiosity cache's light too
             double footprint = 0.0; ///< a pixel's span at the exit point, in mm
-            std::vector<const LightSource*> lights;
-            std::vector<MathColour> exitLight; ///< per light, at the exit point, shadowed
+            const SubsurfaceParts *parts = nullptr;
+            std::vector<const LightSource*> lights; ///< those of all its parts, which its points' shadows are kept by
+            std::vector<int> exitSlot; ///< for each light of the exit point's part, its place in lights
+            std::vector<MathColour> exitLight; ///< per light of the exit point's part, at the exit point, shadowed
             std::vector<Vector3d> exitDirection; ///< zero where the light sends nothing to the exit point
             std::vector<char> exitAgreed; ///< whether the light's shadow holds around the exit point
             bool edge = false; ///< the surface runs out within the ring
-            bool exitMismatch = false; ///< on a coarse cloud, whether the exit point's shadow differs from its neighbours'
+            std::vector<char> exitStray; ///< on a coarse cloud, whether the light's shadow at the exit point differs from its neighbours'
             std::vector<const SubsurfaceCell*> cells;
             std::vector<Vector3d> coords;
         };
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
+        void SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket);
         std::unique_ptr<PhotonGatherer> ssltPhotonGatherers[2];
         std::vector<std::unique_ptr<PhotonGatherer>> surfacePhotonGatherers;
         size_t surfacePhotonGatherDepth = 0;
         /// The finished cells this thread has used, so it need not ask the shared cache again.
         std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
+        std::map<std::pair<const void*, PreparedSetId>, SubsurfaceParts> ssltParts;
+        struct SubsurfaceUnservedCount { std::atomic<std::uint64_t> *shared = nullptr; std::uint64_t pending = 0; };
+        std::map<std::pair<const void*, int>, SubsurfaceUnservedCount> ssltUnserved;
 
         struct ScreenViews;
         struct ScreenViewsDeleter final { void operator()(ScreenViews *views) const; };
@@ -1178,9 +1247,27 @@ class Trace
         MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket,
                                          std::uint64_t key);
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
-                                               int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key);
+                                               int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
+                                               const char* uses = nullptr);
+        const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
+        std::string DescribeSubsurfaceObject(ConstObjectPtr object);
+        bool SubsurfaceSheet(ConstObjectPtr part, bool cutter);
+        bool StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
+        bool CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
+        bool InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector3d *out = nullptr);
+        bool FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& ray);
+        std::unordered_map<const void*, bool> ssltClosedMeshes; ///< whether a mesh met by InsideByBounds is closed
+        /// How far the material runs from origin along dir before it leaves the object, up to reach; see doc/PERF.md.
+        double MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket);
+        /// How far the material runs from under the exit point x toward a direction in its tangent plane, from runs along a
+        /// few directions kept for the shading point.
+        double SubsurfaceEscape(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& toward);
+        static const int kEscapeDirections = 8;
+        double ssltEscape[kEscapeDirections];
+        Vector3d ssltEscapeAt, ssltEscapeAxes[2];
+        bool ssltEscapeKnown = false;
+        TraceTicket *ssltEscapeTicket = nullptr;
         bool SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId preparedSetId) const;
-        bool UniformSubsurfacePhotonReceiver(ConstObjectPtr receiver, ConstObjectPtr root) const;
         bool RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double radius,
                                              Vector3d& outward, TraceTicket& ticket);
         bool ProbeSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double tolerance,
@@ -1194,8 +1281,12 @@ class Trace
                                                TraceTicket& ticket, std::uint64_t key, MathColour& diffuse);
         MathColour ComputeCloudExitIrradiance(const Intersection& out, const SubsurfaceVisibility& disc, SubsurfaceCloud& cloud, bool coarse,
                                               TraceTicket& ticket, std::uint64_t key);
+        PreciseMathColour ComputeCloudNearField(const Intersection& out, const Vector3d& base, const Vector3d& n, SubsurfaceCloud& cloud,
+                                                const SubsurfaceProfile& profile, double radius, TraceTicket& ticket, std::uint64_t key);
+        MathColour ComputeCloudExitPhotons(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);
         MathColour ComputeCloudExitAmbient(const Intersection& out, const Vector3d& n, const SubsurfaceCloud& cloud, TraceTicket& ticket);
         void BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell);
+        void SubsurfaceCellSteps(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, double step[3], SubsurfaceStepTerm& finestTerm, bool& floored);
         void FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable);
         void AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& cell);
         void WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder);
@@ -1205,12 +1296,12 @@ class Trace
         bool OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const SubsurfaceProfile& profile,
                                  const std::vector<const LightSource*>& lights, SubsurfaceCloud& cloud);
         bool GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre, double radius);
-        const SubsurfaceCell *FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q);
+        const SubsurfaceCell *FindSubsurfaceCell(const SubsurfaceCloud& cloud, const Vector3d& q, bool nearestAny = false);
         bool LookupSubsurfaceVisibility(const SubsurfaceCloud& cloud, const Vector3d& q, const Vector3d& normal, SubsurfaceVisibility& visibility);
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
-        void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, MathColour& colour);
+        void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
                                   std::uint64_t key);
         MathColour ComputeSubsurfaceSkin(const SubsurfaceFlesh& flesh, const Vector3d& point);

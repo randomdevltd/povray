@@ -144,6 +144,16 @@ UV_HASH_TABLE **Mesh::UV_Hash_Table;
 *
 ******************************************************************************/
 
+bool Mesh::Nearest_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
+{
+    Resolve();
+    Thread->Stats()[Ray_Mesh_Tests]++;
+    if (!Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread, true))
+        return false;
+    Thread->Stats()[Ray_Mesh_Tests_Succeeded]++;
+    return true;
+}
+
 bool Mesh::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     Resolve();
@@ -199,7 +209,7 @@ DBL Mesh::mesh_ray(const BasicRay& ray, BasicRay& New_Ray) const
     return len;
 }
 
-bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread)
+bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly)
 {
     MeshIndex i;
     bool found;
@@ -231,7 +241,7 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
     {
         /* Use the mesh's bounding hierarchy. */
 
-        return(intersect_bbox_tree(New_Ray, ray, len, shadow, Depth_Stack, Thread));
+        return(intersect_bbox_tree(New_Ray, ray, len, shadow, Depth_Stack, Thread, nearestOnly));
     }
 
     return(found);
@@ -271,6 +281,14 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
 bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
 {
     Resolve();
+    if (has_inside_vector==false)
+        return false;
+    return InsideAlong(IPoint, Data->Inside_Vect, Thread);
+}
+
+bool Mesh::InsideAlong(const Vector3d& IPoint, const Vector3d& direction, TraceThreadData *Thread) const
+{
+    Resolve();
     bool inside;
     MeshIndex i;
     unsigned int found;
@@ -280,7 +298,7 @@ bool Mesh::Inside(const Vector3d& IPoint, TraceThreadData *Thread) const
     if (has_inside_vector==false)
         return false;
 
-    ray.Direction = Data->Inside_Vect;
+    ray.Direction = direction;
     ray.Origin = IPoint;
 
     /* Transform the ray into mesh space. */
@@ -1650,13 +1668,13 @@ static MeshShadowHint& shadow_hint(TraceThreadData *Thread, const void *mesh, in
     return Thread->meshShadowHints[(int(h >> 58) + o) & (TraceThreadData::MESH_SHADOW_HINTS - 1)];
 }
 
-bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread)
+bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly)
 {
     bool found = false;
     DBL Best = BOUND_HUGE;
     std::int32_t nearest = -1;
 
-    Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
+    Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, nearestOnly || !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
         const MESH_TRIANGLE *triangle = &Data->Triangles[leaf];
         DBL hit;
         if (intersect_mesh_triangle(ray, leaf, Thread, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))

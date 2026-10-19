@@ -162,7 +162,7 @@ template<typename T> POV_SIMD_INLINE SVec<T> abs(SVec<T> a) { return SVec<T>(std
     template<typename T> POV_SIMD_INLINE SVec<T> f(SVec<T> a, SVec<T> b) { return SVec<T>(std::f(a.v, b.v)); }
 #define POV_SIMD_MATH_ALL(M1, M2) \
     M1(sin) M1(cos) M1(tan) M1(asin) M1(acos) M1(atan) M1(sinh) M1(cosh) M1(tanh) M1(asinh) M1(acosh) M1(atanh) \
-    M1(exp) M1(log) M1(log10) M2(pow) M2(atan2)
+    M1(exp) M1(expm1) M1(log) M1(log10) M2(pow) M2(atan2)
 
 POV_SIMD_MATH_ALL(POV_SIMD_MATH1, POV_SIMD_MATH2)
 
@@ -272,7 +272,8 @@ POV_SIMD_INLINE NVec<T, N> TrigByLane(NVec<T, N> a, F f)
 
 POV_SIMD_TRIG(sin) POV_SIMD_TRIG(cos) POV_SIMD_TRIG(tan)
 POV_SIMD_MATH1(asin) POV_SIMD_MATH1(acos) POV_SIMD_MATH1(atan) POV_SIMD_MATH1(sinh) POV_SIMD_MATH1(cosh) POV_SIMD_MATH1(tanh)
-POV_SIMD_MATH1(asinh) POV_SIMD_MATH1(acosh) POV_SIMD_MATH1(atanh) POV_SIMD_MATH1(exp) POV_SIMD_MATH1(log) POV_SIMD_MATH1(log10)
+POV_SIMD_MATH1(asinh) POV_SIMD_MATH1(acosh) POV_SIMD_MATH1(atanh) POV_SIMD_MATH1(exp) POV_SIMD_MATH1(expm1) POV_SIMD_MATH1(log)
+POV_SIMD_MATH1(log10)
 POV_SIMD_MATH2(pow) POV_SIMD_MATH2(atan2)
 
 #undef POV_SIMD_MATH1

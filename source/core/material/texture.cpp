@@ -286,6 +286,7 @@ FINISH *Create_Finish()
     New->SubsurfaceThickness = 1.0;
     New->SubsurfaceDepth = 0.0;
     New->SubsurfaceSpread = 0.0;
+    New->SubsurfaceMinimumInfluence = kSubsurfaceMinimumInfluence;
     New->SubsurfaceHasColour = false;
     New->SubsurfaceEmits = false;
     New->SubsurfaceThicknessSet = false;

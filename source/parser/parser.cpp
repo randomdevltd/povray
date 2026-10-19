@@ -108,6 +108,7 @@
 #include "core/shape/portal.h"
 #include "core/shape/prism.h"
 #include "core/shape/quadric.h"
+#include "core/shape/skein.h"
 #include "core/shape/sor.h"
 #include "core/shape/sphere.h"
 #include "core/shape/spheresweep.h"
@@ -10818,6 +10819,12 @@ bool Strip_Subsurface_Without_Inside(ObjectPtr Object, SubsurfaceStrip& Strip)
         Kind = "bicubic_patch";
     else if (dynamic_cast<Parametric *>(Object) != nullptr)
         Kind = "parametric";
+    else if (Skein *AsSkein = dynamic_cast<Skein *>(Object))
+    {
+        if (AsSkein->data && AsSkein->data->closed)
+            return false;
+        Kind = "open skein";
+    }
     else
         return false;
 

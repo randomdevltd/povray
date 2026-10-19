@@ -522,6 +522,10 @@
    "text": "Omitting method retains method 1 and its classic controls.",
    "doc": "r3_4.html#r3_4_3_4_3"
   },
+  "minimum_influence": {
+   "text": "The minimum_influence item gives the least share of the pixel a subsurface hit must carry for method 2 to read its cloud.",
+   "doc": "r3_6.html#r3_6_1_3_3_4"
+  },
   "minimum_reuse": {
    "text": "The minimum effective radius ratio is set by minimum_reuse float value.",
    "doc": "r3_4.html#r3_4_3_3_3_10"
@@ -2106,6 +2110,11 @@
   "metric": {
    "rank": 1019,
    "code": "metric METRIC_VALUE",
+   "from": "doc/html/r3_6.html"
+  },
+  "minimum_influence": {
+   "rank": 68,
+   "code": "finish { subsurface { translucency COLOR minimum_influence FLOAT } }",
    "from": "doc/html/r3_6.html"
   },
   "minimum_reuse": {

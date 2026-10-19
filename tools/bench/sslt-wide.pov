@@ -76,7 +76,7 @@ plane { y, 0 pigment { rgb <0.35, 0.3, 0.25> } }
 #end
 #declare Bark = texture {
   pigment { rgb <0.55, 0.42, 0.3> }
-  finish { diffuse 0.7 subsurface { translucency <1.2, 0.8, 0.5> } }
+  finish { diffuse 0.7 subsurface { translucency <1.2, 0.8, 0.5> #ifdef (MinimumInfluence) minimum_influence MinimumInfluence #end } }
 }
 #declare TrunkMesh = Trunk(0.35, 5, 160, 120)
 #for (I, 0, 5)
@@ -87,7 +87,7 @@ plane { y, 0 pigment { rgb <0.35, 0.3, 0.25> } }
 // A small smooth mesh: a squashed sphere of smooth triangles.
 #declare Skin = texture {
   pigment { rgb <0.9, 0.65, 0.5> }
-  finish { diffuse 0.7 subsurface { translucency <2, 1, 0.6> } }
+  finish { diffuse 0.7 subsurface { translucency <2, 1, 0.6> #ifdef (MinimumInfluence) minimum_influence MinimumInfluence #end } }
 }
 #declare NU = 48; #declare NV = 24;
 mesh2 {
