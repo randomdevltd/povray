@@ -2625,20 +2625,18 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
             });
         const bool irid = Finish->Irid > 0.0;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
-        auto gather = [&]() {
-            const double support2 = support * support;
+        auto& parts = threadData->photonContributions;
+        auto contributions = [&]() {
+            std::sort_heap(nearest.begin(), nearest.end());
             unsigned int index = 0;
-            MathColour sum;
+            parts.clear();
             for (const auto& neighbour : nearest)
             {
-                const double weight = PhotonKernel::Weight(neighbour.distance2, support2);
-                if (!(weight > 0.0))
-                    continue;
                 const auto& photon = map.photons[neighbour.index];
                 const Vector3d direction = photon.Direction();
                 const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
                 // a deposit's density follows the cosine on the face it landed on. why: doc/progressive-photons.md#estimator
-                const MathColour incident = photon.flux * (weight / std::abs(dot(photon.Normal(), direction)));
+                const MathColour incident = photon.flux / std::abs(dot(photon.Normal(), direction));
                 MathColour contribution;
                 if (!(sceneData->useSubsurface && Finish->UseSubsurface))
                     ComputeDiffuseColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident,
@@ -2652,12 +2650,13 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                 }
                 if (irid)
                     ComputeIridColour(Finish, direction, Eye.Direction, Layer_Normal, IPoint, contribution);
-                sum += contribution;
+                parts.push_back(contribution);
                 threadData->progressiveContributions++;
             }
-            return MathColour(sum * PhotonKernel::Normaliser(support2));
         };
-        MathColour estimate = gather();
+        contributions();
+        double chosen2 = 0.0;
+        MathColour estimate = map.NarrowedEstimate(nearest, parts, IPoint, Face_Normal, support, &chosen2);
         // why: doc/progressive-photons.md#boundaries
         const Vector3d n = Face_Normal / length;
         Vector3d t1, t2;
@@ -2697,6 +2696,7 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         {
             const double reach = std::min(support, kPhotonReach * base);
             const size_t own = nearest.size();
+            std::make_heap(nearest.begin(), nearest.end());
             map.NearestOther(IPoint, Face_Normal, cls, receiver, reach, nearest, [&](const MappedPhoton& photon) {
                 const Vector3d direction = photon.Direction();
                 const double sheet = join + map.ReceiverObject(photon.receiver)->SurfaceTolerance();
@@ -2710,11 +2710,14 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
                     return map.photons[neighbour.index].receiver != receiver; }))
             {
                 support = nearest.size() >= map.neighbours ? std::sqrt(nearest.front().distance2) : ProgressivePhotonBudget::capScale * base;
-                estimate = gather();
+                contributions();
+                estimate = map.NarrowedEstimate(nearest, parts, IPoint, Face_Normal, support, &chosen2);
             }
-            if (!nearest.empty() && leaves(support, reach))
+            else
+                std::sort_heap(nearest.begin(), nearest.end());
+            if (!nearest.empty() && leaves(std::sqrt(chosen2), reach))
             {
-                const double covered = PhotonCoverage(IPoint, n, t1, t2, support, slab, join, Object, top, map, cls, reach, probing());
+                const double covered = PhotonCoverage(IPoint, n, t1, t2, std::sqrt(chosen2), slab, join, Object, top, map, cls, reach, probing());
                 if (covered > 0.0)
                     estimate /= covered;
             }

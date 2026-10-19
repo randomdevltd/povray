@@ -15,6 +15,7 @@ struct Deposit final
 {
     pov::Vector3d point, direction, normal;
     pov::MathColour flux;
+    unsigned int bands = 1;
 };
 
 double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point, const pov::Vector3d& normal,
@@ -30,6 +31,26 @@ double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point
     double sum = 0.0;
     for (const auto& neighbour : nearest)
         sum += map.photons[neighbour.index].flux.Greyscale() * pov::PhotonKernel::Weight(neighbour.distance2, support * support);
+    return sum * pov::PhotonKernel::Normaliser(support * support);
+}
+
+/// The gather as the renderer runs it: fixed k (when fixed), or narrowed to where the density looks uniform.
+double Narrowed(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point, const pov::Vector3d& normal, bool fixed = false)
+{
+    std::vector<pov::PhotonNeighbour> nearest;
+    const double slab = pov::kPhotonSlab * map.BaseRadius(0);
+    const double support = map.Nearest(point, normal, 0, map.Cap(0), nearest, [&](const pov::MappedPhoton& photon) {
+        return pov::PhotonSurfaceMatch(photon, point, normal, slab);
+    });
+    std::sort_heap(nearest.begin(), nearest.end());
+    std::vector<pov::MathColour> parts;
+    for (const auto& neighbour : nearest)
+        parts.push_back(map.photons[neighbour.index].flux);
+    if (!fixed)
+        return map.NarrowedEstimate(nearest, parts, point, normal, support).Greyscale();
+    double sum = 0.0;
+    for (size_t i = 0; i < nearest.size(); ++i)
+        sum += parts[i].Greyscale() * pov::PhotonKernel::Weight(nearest[i].distance2, support * support);
     return sum * pov::PhotonKernel::Normaliser(support * support);
 }
 
@@ -361,6 +382,49 @@ int main()
     }
     std::cout << "aiming plane: sphere shadow " << area / pi << " of exact\n";
     assert(std::abs(area / pi - 1.0) < 0.01);
+
+    // narrowing: unbiased on a uniform plane, sharper at a light edge, and never narrower than eight photon samples
+    for (const unsigned int cluster : {1u, 8u})
+    {
+        int owner = 0;
+        pov::ProgressivePhotonMap edge;
+        std::mt19937_64 lit(17);
+        for (unsigned int i = 0; i < 160000 / cluster; ++i)
+        {
+            Deposit deposit;
+            plane(unit(lit), unit(lit), deposit.point, deposit.normal);
+            if (deposit.point[pov::X] > 0.0 && i % 2)
+                continue;
+            deposit.direction = deposit.normal;
+            deposit.flux = pov::MathColour(1.0e-5 * (deposit.point[pov::X] > 0.0 ? 1.0 : 4.0));
+            deposit.bands = cluster;
+            for (unsigned int b = 0; b < cluster; ++b)
+                edge.Add(deposit, reinterpret_cast<pov::ConstObjectPtr>(&owner), 1.0 / cluster);
+        }
+        edge.Build(48);
+        double fixedFlat = 0.0, narrowFlat = 0.0, fixedEdge = 0.0, narrowEdge = 0.0;
+        unsigned int same = 0;
+        const double r = edge.BaseRadius(0);
+        for (int i = 0; i < 2000; ++i)
+        {
+            const pov::Vector3d flat(-3.0 - unit(queries), 0.0, 4.0 * unit(queries) - 2.0), side(-0.3 * r, 0.0, 4.0 * unit(queries) - 2.0);
+            const pov::Vector3d up(0, 1, 0);
+            const double a = Narrowed(edge, flat, up), b = Narrowed(edge, flat, up, true);
+            narrowFlat += a;
+            fixedFlat += b;
+            same += std::abs(a - b) <= 1.0e-5 * b;
+            narrowEdge += Narrowed(edge, side, up);
+            fixedEdge += Narrowed(edge, side, up, true);
+        }
+        const double truth = 2000.0 * 160000.0 / cluster / 100.0 * 4.0e-5;
+        std::cout << "narrowing, clusters of " << cluster << ": flat " << narrowFlat / truth << " (fixed k " << fixedFlat / truth << ", "
+                  << same / 20.0 << "% unchanged), just inside an 8:1 light edge " << narrowEdge / truth << " (fixed k " << fixedEdge / truth << ")" << std::endl;
+        assert(std::abs(narrowFlat / truth - 1.0) < 0.02);
+        if (cluster == 1)
+            assert(std::abs(narrowEdge / truth - 1.0) < 0.95 * std::abs(fixedEdge / truth - 1.0));
+        else
+            assert(same == 2000 && std::abs(narrowEdge - fixedEdge) <= 1.0e-5 * fixedEdge);
+    }
     std::cout << "progressive photon density estimator passed\n";
     return 0;
 }

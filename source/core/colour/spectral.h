@@ -100,6 +100,12 @@ class SpectralBand final
             return wavelength;
         }
 
+        /// Get nominal bandwidth.
+        float GetBandwidth() const
+        {
+            return bandwidth;
+        }
+
         /// Get corrected IOR
         double GetDispersionIOR(double nominalIOR, double nominalDispersion) const
         {

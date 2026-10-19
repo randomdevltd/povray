@@ -459,6 +459,8 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             photon.flux = LightCol * PhotonPathWeight(threadData->photonSourceLight, threadData->photonDepth);
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();
+            if (ray.IsMonochromaticRay())
+                photon.bands = unsigned(std::max(1L, std::lround(SPECTRAL_BANDWIDTH / ray.GetSpectralBand().GetBandwidth())));
             threadData->progressiveSurface.push_back(photon);
             threadData->Stats()[Number_Of_Photons_Stored]++;
         }

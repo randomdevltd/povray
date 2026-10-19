@@ -90,7 +90,7 @@ Epanechnikov kernel `2 (1 - d^2/r^2) / (pi r^2)`. For a uniform deposit density
 the expected estimate equals the true irradiance both when `r` is the `k`-th
 distance and when it is the cap; on a sphere, the set within a straight-line
 distance `r` has area exactly `pi r^2`. A diffuse, phong, specular or `irid` gather then
-divides by the share of the support that lies on the receiving surface where that share is
+narrows `r` where the deposits inside it are not uniform (see Narrowing), and divides by the share of the support that lies on the receiving surface where that share is
 below one (see Boundaries). A deposit's flux is divided by its cosine on the face it landed
 on, not on the shading point's: the density of deposits on a face follows that face's
 cosine, which for a deposit taken from another surface, or from a curved or smooth-normal
@@ -145,6 +145,44 @@ three-dimensional kernel rate (`32 (batches / 4)^(4/7)`) helped at quality 4 and
 quality 0.25, so the count stays fixed; the remaining noise there comes from camera and
 media sampling.
 
+### Narrowing
+
+A fixed `k` is a compromise: at a focused caustic, a light edge or a receiver edge the
+`k`-th neighbour lies across the feature, so the estimate spreads the feature over `r`
+(a focus bleeds into a disc, a sharp dapple loses its rim, a narrow ledge darkens), while
+on a smooth density the same `k` is what keeps the noise down. The gather therefore still
+finds the `k` nearest compatible deposits, but estimates over the widest of up to four
+nested supports over which those deposits look uniform. The supports hold `k/8` (at
+least 8), `k/4` and `k/2` photon samples and the full `r`; at quality 1 that is 8, 12,
+24 and 48. A wider support is accepted only when, for every narrower one and every
+colour channel, the flux inside the narrower disc is the share of the wider disc's flux
+that its area predicts, within three standard deviations of a binomial split
+(`p (1 - p) sum c^2` with `p` the area share and `c` the contributions), and when the
+kernel-weighted centroid of the wider disc's deposits, projected into the tangent plane,
+lies within two standard deviations (`2 r / sqrt(3 m)` for `m` deposits) of the shading
+point. The first test catches a peak or a step inside the support, the second a feature
+or an edge to one side. Narrowing never widens the support, gathers nothing extra and
+costs 0.2 to 1.5% more instructions on the measured scenes (sorting the neighbours and
+the nested sums).
+
+Deposits of one photon sample that a dispersive interface split into `n` bands land
+as a cluster of `n` deposits, so the support sizes count photon samples, each deposit
+counting `1/n`, and each deposit's term in the variance is weighted by `n`. With seven to
+nine bands, `k/8` samples is more deposits than `k`, so dispersed light keeps the full
+support at quality 1 to 4: counting deposits instead makes the twice-refracted wall
+caustic of `tests/render/photon_target_rig.pov` grainier (RMSE 0.184 against 0.096 at
+quality 1), because a test that treats clustered deposits as independent sees structure
+in noise. Deposits store the band count, to within a factor of the square root of two,
+in four bits beside the receiver index.
+
+On a uniform plane of independent random deposits the narrowed estimate reads 0.988
+of the irradiance (the fixed-`k` one 1.000): where deposits clump by chance the tests
+sometimes accept a narrower support whose own estimate is low. Shot deposits are
+stratified and clump less; over four seeds the measured image means stay within 1.2% of
+their references at quality 1 on the scenes measured while it was built. A centroid limit of 1.5 standard
+deviations cuts the error by a further 5 to 10% but reads 0.978 on that plane, and 2.5
+reads 0.996 but gives up a third of the gain on the water caustic.
+
 ### Boundaries
 
 The normaliser `pi r^2` assumes that the whole support disc lies on the receiving surface.
@@ -194,7 +232,7 @@ other receiver's deposits within a quarter of the support, makes it a light feat
 probe misses the object, or another receiver's deposits are there, or the receiver's
 deposits meet another receiver's within the tangent-plane slab anywhere (coincident or
 overlapping pieces), the gather adds the deposits of the other objects within reach,
-takes the distance to the `k`-th of them all as its support, repeats the eighths test on
+narrows again, repeats the eighths test on
 that support against the whole class, and measures the coverage only if that test fails. A collecting object that received no
 deposit gathers the deposits within reach of three times the median base radius of its
 class, over the same coverage.
@@ -405,7 +443,7 @@ render of the same scene is identical to the render that saved the file, and a m
 camera sees the same photons. An animation or a series of camera moves can therefore
 shoot once.
 
-The file names its format version and the settings that decide its contents: quality,
+The file names its format version (3; other versions are refused) and the settings that decide its contents: quality,
 batch count and size, shards, `k`, the shooting sequence's dimensions, the photon
 trace level, `adc_bailout`, media steps and spacing, the colour channel layout and
 every target's weight. It
@@ -470,7 +508,7 @@ prism alone and `Declare=PhotonQuality=` raises the photon count.
 ## Memory and reproducibility
 
 The surface map stores 64 bytes per deposit (double position, float direction,
-normal and flux, a receiver index and the tree axis); a media segment takes 168 bytes
+normal and flux, a receiver index, the band count and the tree axis); a media segment takes 168 bytes
 with its bounds. Shooter vectors hold one batch and are released after it is merged.
 Memory grows linearly with quality and with deposits per sample, which depend
 on the scene (spectral bands, bounces, media steps). After every batch the whole
@@ -718,6 +756,11 @@ Shooting costs 12,800 (sphere) to 20,000 (leaf) instructions per deposit at ever
 so it is set by the photons asked for; camera work barely depends on quality.
 
 ## Limits
+
+- Narrowing only shrinks the support: a smooth region keeps the noise of `k`. At one camera
+  sample per pixel a narrowed focus smaller than a pixel is read at the pixel centre; with
+  anti-aliasing the two estimators come much closer.
+- A prepared set may hold at most 67,108,863 receiving objects.
 
 - A photon file is checked against the scene's structure and photon settings, not its
   geometry: as with classic files, a scene whose objects or lights moved reuses the

@@ -446,7 +446,7 @@ bool PhotonSortingTask::load()
 namespace
 {
 const unsigned char kProgressiveMagic[8] = {'P','O','V','P','H','M','Q',0}, kProgressiveEnd[8] = {'P','H','M','Q','E','N','D',0};
-const std::uint32_t kProgressiveVersion = 2, kAtmosphere = 0xFFFFFFFFu;
+const std::uint32_t kProgressiveVersion = 3, kAtmosphere = 0xFFFFFFFFu;
 
 /// Every object, interior and light a photon can name, numbered in a traversal fixed by the scene's structure.
 struct ProgressiveSceneIndex final
@@ -632,7 +632,7 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
             out.Bytes(photon.direction, sizeof(photon.direction));
             out.Bytes(photon.normal, sizeof(photon.normal));
             out.Colour(photon.flux);
-            out.Put(std::uint32_t(photon.receiver));
+            out.Put(std::uint32_t(photon.receiver) | (std::uint32_t(photon.bandCode) << 26));
         }
         std::unordered_map<const ProgressiveVolumeDomain*, std::uint32_t> domainIds;
         std::vector<const ProgressiveVolumeDomain*> domains;
@@ -797,8 +797,8 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
             in.Bytes(photon.direction, sizeof(photon.direction));
             in.Bytes(photon.normal, sizeof(photon.normal));
             photon.flux = in.Colour();
-            const std::uint32_t receiver = in.Get<std::uint32_t>();
-            if (receiver >= receivers.size())
+            const std::uint32_t packed = in.Get<std::uint32_t>(), receiver = packed & ProgressivePhotonMap::noReceiver;
+            if ((packed >> 30) || receiver >= receivers.size())
                 return damaged;
             if (!Finite(photon.point, 3))
                 return invalid("surface photon point");
@@ -809,6 +809,7 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
             if (!Finite(photon.flux, MathColour::channels))
                 return invalid("surface photon flux");
             photon.receiver = receiver;
+            photon.bandCode = packed >> 26;
             photon.axis = 0;
         }
         const std::uint32_t domainCount = in.Get<std::uint32_t>();

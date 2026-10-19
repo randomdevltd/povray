@@ -81,6 +81,11 @@ Changed Behaviour
     name the setting it came from. `memory` requires method 2, is accepted in
     `.pov4` scenes, and must be a finite number greater than zero.
 
+  - Photon method 2 gathers narrow their support, down to an eighth of the
+    neighbour count, where the deposits inside it are not uniform. Deposits
+    split by dispersion count as one photon sample. Method 2 photon files are
+    format version 3.
+
   - Photon method 2 gathers estimate over the receiving surface rather than
     the receiving object: where a gather's support leaves its object it
     continues onto nearby objects lit by the same lights and divides by the

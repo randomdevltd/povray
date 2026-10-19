@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -23,6 +24,7 @@ struct ProgressivePhoton final
     MathColour flux;
     ConstObjectPtr object = nullptr;
     PreparedSetId set = 0;
+    unsigned int bands = 1;   ///< dispersion bands its photon sample was split into, which land as one cluster
 };
 
 /// One light's target in a prepared set: the samples aimed at it and the deposits they made, summed over batches.
@@ -44,6 +46,8 @@ struct ProgressivePhotonBatch final
 
 /// Least cosine between receiver and photon normals, and the symmetric tangent-plane offset as a share of the base radius.
 constexpr double kPhotonNormalAgreement = 0.5, kPhotonSlab = 0.1;
+/// Narrowing tests: standard deviations allowed for an inner disc's flux share and for the weighted centroid's offset.
+constexpr double kPhotonShareSigma = 3.0, kPhotonCentroidSigma = 2.0;
 /// Boundaries: deposits expected in each eighth of a disc's outer band, how far a gather continues onto other receivers
 /// (in base radii) and the probes that measure the covered share of a disc. why: doc/progressive-photons.md#boundaries
 constexpr double kPhotonSectorDeposits = 3.0, kPhotonReach = 3.0;
@@ -58,10 +62,13 @@ struct MappedPhoton final
     Vector3d point;
     float direction[3], normal[3];
     MathColour flux;
-    std::uint32_t receiver : 30, axis : 2;
+    std::uint32_t receiver : 26, bandCode : 4, axis : 2;
 
     Vector3d Direction() const { return Vector3d(direction[0], direction[1], direction[2]); }
     Vector3d Normal() const { return Vector3d(normal[0], normal[1], normal[2]); }
+    /// The dispersion bands of its sample, stored to within a factor of the square root of two (1 to 181).
+    double Bands() const { return std::exp2(0.5 * bandCode); }
+    static std::uint32_t BandCode(unsigned int bands) { return std::uint32_t(std::min(15.0, std::round(2.0 * std::log2(std::max(1u, bands))))); }
 };
 
 /// Same sheet of the receiver: normals agree and the offset from the mean tangent plane, exact for spheres and cylinders, is small.
@@ -90,7 +97,7 @@ struct PhotonNeighbour final
 class ProgressivePhotonMap final
 {
     public:
-        static constexpr std::uint32_t noReceiver = (1u << 30) - 1;
+        static constexpr std::uint32_t noReceiver = (1u << 26) - 1;
         std::vector<MappedPhoton> photons;
         unsigned int neighbours = ProgressivePhotonBudget::baseNeighbours;
 
@@ -107,8 +114,13 @@ class ProgressivePhotonMap final
             stored.flux = photon.flux * scale;
             auto found = receiverIds.emplace(object, std::uint32_t(receivers.size()));
             if (found.second)
+            {
+                if (receivers.size() >= noReceiver)
+                    throw std::length_error("Photon method 2 supports at most 67,108,863 receiving objects per prepared set.");
                 receivers.push_back(object);
+            }
             stored.receiver = found.first->second;
+            stored.bandCode = MappedPhoton::BandCode(photon.bands);
             stored.axis = 0;
             photons.push_back(stored);
         }
@@ -353,6 +365,82 @@ class ProgressivePhotonMap final
             if (heap.size() < neighbours)
                 return cap;
             return std::sqrt(heap.front().distance2);
+        }
+
+        /// The kernel estimate from sorted (nearest first, as Nearest gathered them) and each photon's contribution, over the
+        /// widest support down to k/8 samples where the density looks uniform. why: doc/progressive-photons.md#narrowing
+        template<class Colour>
+        Colour NarrowedEstimate(const std::vector<PhotonNeighbour>& sorted, const std::vector<Colour>& parts,
+                                const Vector3d& point, const Vector3d& normal, double support,
+                                double* chosenSupport2 = nullptr) const
+        {
+            constexpr int kC = Colour::channels;
+            static thread_local std::vector<double> samples, flux, spread;
+            const size_t n = sorted.size();
+            samples.assign(n + 1, 0.0);
+            flux.assign((n + 1) * kC, 0.0);
+            spread.assign((n + 1) * kC, 0.0);
+            for (size_t i = 0; i < n; ++i)
+            {
+                const double bands = photons[sorted[i].index].Bands();
+                samples[i + 1] = samples[i] + 1.0 / bands;
+                for (int c = 0; c < kC; ++c)
+                {
+                    flux[(i + 1) * kC + c] = flux[i * kC + c] + parts[i][c];
+                    spread[(i + 1) * kC + c] = spread[i * kC + c] + bands * parts[i][c] * parts[i][c];
+                }
+            }
+            const double top = support * support, length = normal.length();
+            const Vector3d unit = length > 0.0 ? normal / length : Vector3d(0.0);
+            double radii[4];
+            unsigned int levels = 0;
+            const double least = std::min(double(neighbours), 8.0);
+            for (const unsigned int shift : {3u, 2u, 1u})
+            {
+                const double wanted = std::max(least, double(neighbours >> shift));
+                const size_t at = size_t(std::lower_bound(samples.begin() + 1, samples.end(), wanted - 1.0e-9) - samples.begin());
+                const double r2 = at <= n ? std::min(top, sorted[at - 1].distance2) : top;
+                if (r2 > 0.0 && (levels == 0 || r2 > radii[levels - 1]))
+                    radii[levels++] = r2;
+            }
+            if (levels == 0 || top > radii[levels - 1])
+                radii[levels++] = top;
+            size_t inside[4];
+            Colour chosen;
+            for (unsigned int j = 0; j < levels; ++j)
+            {
+                const double r2 = radii[j];
+                size_t m = 0;
+                Colour sum;
+                Vector3d offset(0.0);
+                double weight = 0.0;
+                for (; m < n && sorted[m].distance2 < r2; ++m)
+                {
+                    const double w = PhotonKernel::Weight(sorted[m].distance2, r2);
+                    sum += parts[m] * w;
+                    weight += w;
+                    offset += (photons[sorted[m].index].point - point) * w;
+                }
+                inside[j] = m;
+                bool uniform = true;
+                for (unsigned int i = 0; uniform && i < j; ++i)
+                {
+                    const double share = radii[i] / r2;
+                    for (int c = 0; uniform && c < kC; ++c)
+                        uniform = std::abs(flux[inside[i] * kC + c] - share * flux[m * kC + c]) <=
+                                  kPhotonShareSigma * std::sqrt(share * (1.0 - share) * spread[m * kC + c]) + 1.0e-12 * std::abs(flux[m * kC + c]);
+                }
+                // a uniform density puts the weighted centroid within about r / sqrt(3 m) of the point, in the tangent plane
+                offset -= unit * dot(offset, unit);
+                if (uniform && j > 0 && m > 0 && offset.lengthSqr() > kPhotonCentroidSigma * kPhotonCentroidSigma * r2 * weight * weight / (3.0 * double(m)))
+                    uniform = false;
+                if (j > 0 && !uniform)
+                    break;
+                chosen = sum * PhotonKernel::Normaliser(r2);
+                if (chosenSupport2)
+                    *chosenSupport2 = r2;
+            }
+            return chosen;
         }
 
     private:

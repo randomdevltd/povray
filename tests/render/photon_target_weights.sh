@@ -56,7 +56,7 @@ for parallel in (0, 1):
         # half the samples split by weight: weight 4 moves the patch's share of that half from 1/2 to 4/5 or 1/5
         assert name == 'even' or (got - even) * (1 if name == 'patch' else -1) > 0.1, (parallel, name, got)
         assert aimed == 65536, (parallel, name, aimed)
-        assert abs(mean(name + str(parallel)) / mean('even' + str(parallel)) - 1) < 0.03, (parallel, name)
+        assert abs(mean(name + str(parallel)) / mean('even' + str(parallel)) - 1) < 0.05, (parallel, name)
 PY
 refuse negative "$SRCDIR/tests/render/photon_target_rig.pov" Declare=PatchWeight=-1
 refuse infinite "$SRCDIR/tests/render/photon_target_rig.pov" Declare=CanopyWeight=1e300

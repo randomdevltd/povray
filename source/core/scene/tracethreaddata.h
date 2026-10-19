@@ -185,6 +185,7 @@ class TraceThreadData : public ThreadData
         std::vector<ProgressivePhotonFeedback> progressiveFeedback;
         std::vector<ProgressivePhotonBatch> progressiveBatches;
         std::vector<PhotonNeighbour> photonNeighbours;
+        std::vector<MathColour> photonContributions;
         std::unordered_map<ConstObjectPtr, std::pair<std::uint64_t, double>> csgPhotonRadius;
         std::uint64_t progressiveContributions = 0;
         MathColour GFilCol;

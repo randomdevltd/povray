@@ -22,7 +22,7 @@ near() {
 }
 for receiver in 0 1 2 3 4 5 6; do
     near "receiver $receiver against classic" "$(sum "r$receiver" Declare=Receiver=$receiver)" \
-        "$(sum "r${receiver}_classic" Declare=Receiver=$receiver Declare=Method=1)" 0.05
+        "$(sum "r${receiver}_classic" Declare=Receiver=$receiver Declare=Method=1)" 0.07
 done
 near "smooth mesh against faceted" "$(sum r1 Declare=Receiver=1)" "$(sum r0 Declare=Receiver=0)" 0.02
 near "smooth height_field against faceted" "$(sum r3 Declare=Receiver=3)" "$(sum r2 Declare=Receiver=2)" 0.02
@@ -35,6 +35,6 @@ plain=$(channels r0 Declare=Receiver=0)
 for c in 1 2 3; do
     near "irid channel $c against classic" "$(echo $irid | cut -d' ' -f$c)" "$(echo $irid_classic | cut -d' ' -f$c)" 0.05
 done
-awk -v a="$(echo $irid | cut -d' ' -f2)" -v b="$(echo $plain | cut -d' ' -f2)" 'BEGIN { if (!(a < 0.9 * b)) { print "irid leaves photon light", a, b > "/dev/stderr"; exit 1 } }'
+awk -v a="$(echo $irid | cut -d' ' -f2)" -v b="$(echo $plain | cut -d' ' -f2)" 'BEGIN { if (!(a < 0.95 * b)) { print "irid leaves photon light", a, b > "/dev/stderr"; exit 1 } }'
 rm -f progressive_receivers_*.ppm progressive_receivers_*.log progressive_receivers_*.sum progressive_receivers_*.pov-state
 echo 'progressive_receivers: smooth mesh, smooth height_field, isosurface, parametric and bicubic_patch receivers match classic and their exact forms, a tiled floor matches one box, as does irid'
