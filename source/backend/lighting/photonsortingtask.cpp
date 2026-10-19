@@ -57,6 +57,7 @@
 #include "core/bounding/boundingbox.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
+#include "core/lighting/photonaim.h"
 #include "core/lighting/progressivephotonmap.h"
 #include "core/lighting/progressivevolumemap.h"
 #include "core/material/interior.h"
@@ -580,6 +581,7 @@ std::string ProgressivePhotonIdentity(const SceneData& scene)
     key << std::setprecision(std::numeric_limits<DBL>::max_digits10)
         << "quality=" << settings.quality << ";batches=" << budget.batches << ";batch=" << ProgressivePhotonBudget::batchSize
         << ";shards=" << ProgressivePhotonBudget::shards << ";k=" << budget.neighbours << ";sobol=" << PhotonSobol::kDimensions
+        << ";aim=" << PhotonAimDomain::cells << '/' << PhotonAimDomain::targetShare
         << ";trace=" << settings.Max_Trace_Level << ";adc=" << settings.adcBailout
         << ";mediaSteps=" << settings.maxMediaSteps << ";mediaSpacing=" << settings.mediaSpacingFactor
         << ";channels=" << MathColour::channels << 'x' << sizeof(ColourChannel) << ";targets=";

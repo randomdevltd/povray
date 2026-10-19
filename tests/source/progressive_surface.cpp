@@ -1,4 +1,5 @@
 #include "core/lighting/emitter.h"
+#include "core/lighting/photonaim.h"
 #include "core/lighting/progressivephotonmap.h"
 
 #include <algorithm>
@@ -235,28 +236,94 @@ int main()
     }
     std::cout << "partitioned nearest neighbours match a brute-force search\n";
 
-    std::vector<pov::Vector3d> axes = {pov::Vector3d(0, 0, 1), pov::Vector3d(1, 0, 0), pov::Vector3d(0, -1, 0)};
-    const std::vector<double> widths = {0.02, 0.3, 2.0}, chance = {0.5, 0.3, 0.2};
-    std::mt19937_64 emission(13);
-    const unsigned int samples = 1u << 21;
-    double whole = 0.0, narrow = 0.0, outside = 0.0;
+    std::mt19937_64 aiming(13);
+    for (int i = 0; i < 10000; ++i)
+    {
+        const double x = unit(aiming), y = unit(aiming);
+        double cx, cy, bx, by;
+        const double r = pov::PhotonAimDomain::Disc(x, y, cx, cy);
+        pov::PhotonAimDomain::Square(r, std::atan2(cy, cx), bx, by);
+        assert(std::abs(bx - x) < 1e-9 && std::abs(by - y) < 1e-9);
+    }
+    // a sphere and a flat box seen from a point light and from a small area light, and their shadows under a parallel light
+    const auto hits = [](const pov::Vector3d& o, const pov::Vector3d& d, const pov::PhotonAimBound& b) {
+        if (b.sphereRadius > 0.0)
+        {
+            const pov::Vector3d m = b.sphereCentre - o;
+            const double along = dot(m, d);
+            return along > 0.0 && m.lengthSqr() - along * along <= b.sphereRadius * b.sphereRadius;
+        }
+        double t0 = 0.0, t1 = 1e30;
+        for (int k = 0; k < 3; ++k)
+        {
+            if (std::abs(d[k]) < 1e-15)
+            {
+                if (o[k] < b.low[k] || o[k] > b.high[k])
+                    return false;
+                continue;
+            }
+            const double a = (b.low[k] - o[k]) / d[k], c = (b.high[k] - o[k]) / d[k];
+            t0 = std::max(t0, std::min(a, c));
+            t1 = std::min(t1, std::max(a, c));
+        }
+        return t0 <= t1;
+    };
+    std::vector<pov::PhotonAimBound> bounds(2);
+    bounds[0].sphereCentre = pov::Vector3d(0, 0, 5);
+    bounds[0].sphereRadius = 1.0;
+    bounds[0].low = bounds[0].sphereCentre - pov::Vector3d(1.0);
+    bounds[0].high = bounds[0].sphereCentre + pov::Vector3d(1.0);
+    bounds[0].weight = 1.0;
+    bounds[0].target = 0;
+    bounds[1].low = pov::Vector3d(2, -3, 4);
+    bounds[1].high = pov::Vector3d(6, -2.9, 9);
+    bounds[1].weight = 3.0;
+    bounds[1].target = 1;
+    for (double lightRadius : {0.0, 0.3})
+    {
+        pov::PhotonAimDomain cap;
+        cap.BuildCap(pov::Vector3d(0.0), lightRadius, bounds, nullptr, nullptr, 0.0);
+        assert(!cap.Empty());
+        const unsigned int samples = 1u << 20;
+        double sphere = 0.0, box = 0.0, total = 0.0;
+        for (double m : cap.mass)
+            total += m;
+        assert(std::abs(total - 1.0) < 1e-9);
+        for (unsigned int i = 0; i < samples; ++i)
+        {
+            // every direction that reaches a bound from anywhere on the light lies in a cell of positive mass
+            const double z = 1.0 - 2.0 * unit(aiming), r = std::sqrt(std::max(0.0, 1.0 - z * z)), turn = 2.0 * pi * unit(aiming);
+            const pov::Vector3d d(r * std::cos(turn), r * std::sin(turn), z);
+            const pov::Vector3d o = pov::Vector3d(unit(aiming) - 0.5, unit(aiming) - 0.5, 0.0) * (lightRadius * 1.4);
+            if (hits(o, d, bounds[0]) || hits(o, d, bounds[1]))
+            {
+                std::uint32_t cell;
+                assert(cap.Locate(d, cell) && cap.mass[cell] > 0.0);
+            }
+            const auto pick = cap.Sample(unit(aiming), unit(aiming));
+            box += pick.target == 1 ? 1.0 / samples : 0.0;
+            if (lightRadius == 0.0 && hits(pov::Vector3d(0.0), cap.Direction(pick.x, pick.y), bounds[0]))
+                sphere += 1.0 / (samples * cap.Pdf(pick.cell));
+        }
+        const double exact = 2.0 * pi * (1.0 - std::sqrt(1.0 - 1.0 / 25.0));
+        std::cout << "aiming cap, light radius " << lightRadius << ": sphere solid angle " << sphere / exact
+                  << " of exact, weight 3 box share " << box << "\n";
+        assert(lightRadius > 0.0 || std::abs(sphere / exact - 1.0) < 0.01);
+        assert(box > pov::PhotonAimDomain::targetShare * 0.75);
+    }
+    pov::PhotonAimDomain sheet;
+    sheet.BuildPlane(pov::Vector3d(0, 0, -20), pov::Vector3d(0, 0, 1), bounds, nullptr, 0.0);
+    double area = 0.0;
+    const unsigned int samples = 1u << 20;
     for (unsigned int i = 0; i < samples; ++i)
     {
-        const double u = unit(emission), v = unit(emission);
-        const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z));
-        pov::Vector3d direction(r * std::cos(2.0 * pi * v), r * std::sin(2.0 * pi * v), z);
-        size_t selected;
-        bool targeted;
-        const double pdf = pov::PhotonTargetMixture(axes, widths, chance, u, v, unit(emission), unit(emission), direction, selected, targeted);
-        const double weight = 1.0 / (samples * pdf);
-        whole += weight;
-        narrow += direction[pov::Z] >= 1.0 - widths[0] ? weight : 0.0;
-        outside += direction[pov::Z] < 0.0 && direction[pov::X] < 0.0 ? weight : 0.0;
+        const auto pick = sheet.Sample(unit(aiming), unit(aiming));
+        const pov::Vector3d p = sheet.Point(pick.x, pick.y);
+        if ((pov::Vector3d(p[pov::X], p[pov::Y], 5.0) - bounds[0].sphereCentre).lengthSqr() <= 1.0)
+            area += 1.0 / (samples * sheet.Pdf(pick.cell));
     }
-    std::cout << "target mixture: sphere " << whole / (4.0 * pi) << ", narrow cone " << narrow / (2.0 * pi * widths[0])
-              << ", untargeted octant pair " << outside / pi << " of their solid angles\n";
-    assert(std::abs(whole / (4.0 * pi) - 1.0) < 0.01 && std::abs(narrow / (2.0 * pi * widths[0]) - 1.0) < 0.01);
-    assert(std::abs(outside / pi - 1.0) < 0.02);
+    std::cout << "aiming plane: sphere shadow " << area / pi << " of exact\n";
+    assert(std::abs(area / pi - 1.0) < 0.01);
     std::cout << "progressive photon density estimator passed\n";
     return 0;
 }

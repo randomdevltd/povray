@@ -77,6 +77,8 @@ class Sphere final : public ObjectBase
         DBL Radius;
 
         Sphere();
+        /// Whether Center and Radius hold the sphere's world bounds (spherical mode).
+        bool Spherical() const { return !Do_Ellipsoid; }
 
         virtual ObjectPtr Copy() override;
 

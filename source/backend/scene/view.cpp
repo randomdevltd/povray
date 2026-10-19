@@ -1477,7 +1477,7 @@ void View::GetStatistics(POVMS_Object& renderStats)
         MessageFactory messages(viewData.sceneData->warningLevel, "Progressive photons", viewData.sceneData->backendAddress,
                                 viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
         const ProgressivePhotonBudget budget(viewData.GetSceneData()->photonSettings.quality);
-        messages.Info("Progressive photons: %u emission batches (%llu samples/set), %llu deposits, k %u, cap %.3g x base radius, %llu contributions; preparation CPU %.3f s (maps %.3f s); photon map peak %zu bytes.",
+        messages.Info("Progressive photons: %u shooting batches (%llu samples/set), %llu deposits, k %u, cap %.3g x base radius, %llu contributions; preparation CPU %.3f s (maps %.3f s); photon map peak %zu bytes.",
                       budget.batches, static_cast<unsigned long long>(budget.EmittedSamples()),
                       static_cast<unsigned long long>(stored), budget.neighbours, ProgressivePhotonBudget::capScale,
                       static_cast<unsigned long long>(contributing), viewData.photonPrepareCPU / 1000.0,
@@ -1853,6 +1853,7 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     viewThreadData.push_back(photonTotal);
     auto controller = std::make_shared<Timer>();
     renderTasks.AppendFunction([controller](TaskQueue&) { controller->Reset(); });
+    renderTasks.AppendFunction([this](TaskQueue&) { PrepareProgressiveAiming(*viewData.GetSceneData()); });
     for (unsigned int pass = 0; pass < budget.batches; ++pass)
     {
         auto shooters = std::make_shared<std::vector<ViewThreadData*>>();

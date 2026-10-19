@@ -56,6 +56,7 @@
 
 // POV-Ray header files (core module)
 #include "core/lighting/radiosity.h"
+#include "core/lighting/photonaim.h"
 #include "core/lighting/progressivephotonmap.h"
 #include "core/lighting/progressivevolumemap.h"
 #include "core/bounding/boundingbox_fwd.h"
@@ -92,6 +93,13 @@ void ResolveInheritedTags(ObjectPtr object, const std::vector<std::string> *inhe
 /// Destroys the descendants of a parsed root that the filter removes; the root itself is left to the caller.
 TagSelection PruneTagged(ObjectPtr object, const TagFilter& filter, std::vector<LightSource*>& removedLights);
 
+/// A photon light of a prepared set and where its method 2 photons are aimed.
+struct ProgressiveAiming final
+{
+    LightSource* light;
+    PhotonAimDomain domain;
+};
+
 struct PreparedSet final
 {
     std::vector<ObjectPtr> objects;
@@ -113,6 +121,7 @@ struct PreparedSet final
     ProgressivePhotonMap progressiveSurface;
     ProgressiveVolumePhotonMap progressiveMedia;
     std::vector<ProgressivePhotonFeedback> progressiveFeedback;
+    std::vector<ProgressiveAiming> progressiveAiming;
     std::string photonKey;
     unsigned int boundingMethod = 0;
     unsigned int numberOfFiniteObjects = 0;

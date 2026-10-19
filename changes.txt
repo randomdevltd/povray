@@ -62,10 +62,17 @@ Changed Behaviour
     photons were deposited.
 
   - Photon method 2 reads the number after `photons { target }` as a share
-    weight (default 1, opposite to the method 1 spacing multiplier): a light
-    splits its targeted photons between its targets in proportion to their
-    weights, instead of by the previous batch's hit rate. A split union marked
-    as a target stays one target.
+    weight (default 1, opposite to the method 1 spacing multiplier), instead of
+    splitting by the previous batch's hit rate. A split union marked as a target
+    stays one target.
+
+  - Photon method 2 aims each light's photons over one domain covering the
+    bounds of its targets' pieces (each union member, and a sphere's own
+    bounds), within any aperture, spot cone and cylinder radius, instead of a
+    cone or disc per target plus a tenth isotropic. Half the photons spread
+    over that domain by solid angle times target weight, half are split
+    between targets by weight. Far fewer photons miss, so each quality step
+    stores more photons and costs more work.
 
   - Photon method 2's storage ceiling can be set in the scene with
     `photons { method 2 memory GB }` and on the command line or in an INI file

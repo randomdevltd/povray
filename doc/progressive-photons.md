@@ -11,9 +11,9 @@ object { Glass photons { target 2 refraction on } }   // target weight 2
 ```
 
 `quality` is a finite number greater than zero and at most 16384 (2^32 samples per
-set, the length of the emission sequence), default 1; photon storage is bounded by
+set, the length of the shooting sequence), default 1; photon storage is bounded by
 memory instead (see below). It sets
-`ceil(4 * quality)` emission batches of 65,536 samples per prepared scene set. All
+`ceil(4 * quality)` shooting batches of 65,536 samples per prepared scene set. All
 batches are deposited into one surface map and one media map per set; each deposit
 carries its emitted flux divided by the batch count, so the image brightness does not
 depend on quality. The maps are built once, after the last batch, before radiosity
@@ -24,23 +24,41 @@ Nothing in the photon budget depends on the image size. `method 1` selects class
 photons. Omitting the method retains classic behavior, including in version 4
 scenes. Quality is not an exposure control.
 
-## Emission
+## Aiming
 
-Batches are shot in order, each split into sixteen logical shards. A light's
-targeted samples are split between its targets in proportion to their target
-weights (see Targets), the same in every batch and for every light type. Ten percent of
-samples from a nonparallel source are isotropic. Every deposit carries emitted flux
-divided by the complete mixture density of the direction actually taken, including
-overlapping target cones; samples rejected by an aperture are not renormalized.
+Batches are shot in order, each split into sixteen logical shards. Each light aims
+over one domain, built once per prepared set before the first batch: the directions
+from the light that can reach any of its targets, or for a parallel or cylinder light
+the part of its plane whose beam can. The domain is a square of 128 by 128 cells mapped
+onto a cap of directions about the light by the concentric map, which keeps area, so
+every cell holds the same solid angle (for a parallel light, onto the rectangle of the
+plane holding the targets' shadows). A cell belongs to the domain when it can reach the
+bounds of a target's pieces: each member of a target union, recursively, by its box,
+and a sphere by its own centre and radius. From an area light, a volume emitter or a
+spot, the test widens by the source's radius and keeps to the spot's falloff cone; a
+`projected_through` aperture keeps only the cells that can reach its bounds too, and a
+cylinder light only those within its falloff radius. Cells that no target can reach
+receive no samples, so the domain needs no isotropic share.
 
-Emission is driven by a seven-dimensional Sobol sequence, indexed by the global
+Half of a light's samples spread over every cell of the domain in proportion to its
+solid angle (or area) times the heaviest weight of the targets reaching it; the other
+half are split between the targets by weight, each spread evenly over its own cells, so
+a small target keeps its share however large the others are (see Targets). Every
+deposit carries the emitted flux divided by the density of its cell, the sum of both
+halves; the density is piecewise constant over the cells, so it is exact for every
+direction taken, wherever targets overlap, and the image converges to the same light
+whatever the split. Samples an aperture rejects are not renormalized. The same domain
+serves every batch: it is built from the scene alone, so it does not depend on the
+batch or thread count. Why one domain and not a cone per target, with measurements:
+see Aiming domain under Measurements.
+
+Shooting is driven by a five-dimensional Sobol sequence, indexed by the global
 sample number and digitally shifted once per prepared set from the render seed.
-Its dimensions choose the light, the position on an area light or a parallel
-source's target disc (a volume emitter uses the first for its power-table cell),
-the polar and azimuthal direction within the selected target cone or the sphere,
-the targeted-or-isotropic choice and the target. Every aligned block of 2^m samples,
-and therefore every batch, is a digital net, so each batch covers the emission
-domain evenly. Choices
+Its dimensions choose the light, the position on an area light (a volume emitter uses
+the first for its power-table cell) and the point within the domain's square, which
+also picks the half and the target (for a parallel or cylinder light the position
+dimensions choose the point of its plane). Every aligned block of 2^m samples, and
+therefore every batch, is a digital net, so each batch covers the aiming domain evenly. Choices
 after the first surface (reflection, refraction, roulette, dispersion bands, media
 scattering) remain hashed per-sample random numbers.
 
@@ -126,8 +144,8 @@ the count stays fixed; the remaining noise there comes from camera and media sam
 Point and spot source colors specify radiant intensity. Area-light intensity is
 distributed over the emitting area; parallel source colors specify irradiance.
 Sources are sampled through `Emitter`, including media emitters. Each deposit
-carries emitted flux divided by the complete emission mixture probability and
-batch size. Overlapping target cones are included in that mixture. Surface
+carries emitted flux divided by the aiming domain's density and the batch
+size (see Aiming). Surface
 reflection, refraction and spectral splitting retain their transport weights.
 
 Method 2 never changes a light's direct illumination: its color, `fade_distance` and
@@ -149,12 +167,13 @@ fade `A(L)` alone, at their path length from the light's plane, as classic photo
 their direct light do. Unfaded media lights take no weight (see Media lights).
 
 On `tests/render/progressive_direct_lights.pov` (a radius 0.5 sphere 1.8 from the viewed
-floor point toward the light, method 2 quality 4) an ior 1 sphere passes 1.02 of the direct light at 5
-and at 245 units from the light, for unfaded and every faded light, and 0.99 for parallel
-and cylinder lights; a scattering medium lit through it glows 0.99 of the directly lit
-medium at quality 16 at both distances (0.95 at quality 4, the same as under the earlier
-rule at 245). A glass sphere's caustic is 1.01 of classic's at 5 units and 1.00 at 245;
-the earlier rule, which scaled emission by `A(d) * d^2` at the light-to-target distance
+floor point toward the light, method 2 quality 4) an ior 1 sphere passes 1.000 of the direct light at
+5 and at 245 units from the light, for unfaded and every faded light, and 1.002 for parallel
+and cylinder lights; a scattering medium lit through it glows 0.96 of the directly lit
+medium at quality 16 at both distances, 0.961 to 0.966 over six seeds (with a cone per
+target it was 0.93 to 0.96 over the same seeds and 0.99 only at the default seed, so the
+remaining 4% is the media estimator's). A glass sphere's caustic is 1.01 of classic's at 5 units and 1.00 at 245;
+the earlier rule, which scaled photon power by `A(d) * d^2` at the light-to-target distance
 and let photons fall as `1/r^2` beyond it, gave 0.53 and 0.98. The weights barely vary
 across one receiver, so they add no visible noise: the near glass sphere at 160 by 160,
 quality 1, has relative RMS 0.0356 against quality 64 under this rule and 0.0355 under
@@ -168,11 +187,11 @@ classic photons without it leave the light's center, so ported scenes get softer
 lights use the original axes and rectangular photon profile, as classic photons
 do; `orient` only changes their direct-light profile.
 
-`projected_through` retains the classic geometric aperture: missed emission
+`projected_through` retains the classic geometric aperture: missed
 samples contribute zero, and accepted rays start past its last intersection.
 The skipped segment does not cast shadows or attenuate photons. Containing
 interiors are found at the new origin. The aperture does not renormalize the
-emission PDF or redistribute the rejected power.
+aiming PDF or redistribute the rejected power.
 `distribution/scenes/lights/progressive_projector.pov` combines an oriented area
 source, a geometric aperture and a glass caustic.
 
@@ -196,12 +215,12 @@ segment to its spherical support and integrates attenuation analytically along t
 clipped length. The estimate divides by the sphere volume, with scattering and phase
 evaluated at the camera sample. Media glow is deliberately closer to a direct-light
 reference than classic's: a scattering medium lit through an ior 1 target glows within
-1% of the same medium lit directly under method 2 at quality 16 (see Light power and
+4% of the same medium lit directly under method 2 at quality 16 (see Light power and
 authoring) and 72% above it under classic photons, so a ported media scene glows less
 than it did.
 Along a photon path through a medium the integration step is a fortieth of the bounding
-diagonal of the target the photon was aimed at (for an isotropic sample, the target its
-selection draw picks), shrinking as `batches^(-1/7)`, times the `factor` of
+diagonal of the target the photon was aimed at (the heaviest target whose bounds reach
+its cell), shrinking as `batches^(-1/7)`, times the `factor` of
 `media N, factor`; each media interval takes at most `N` steps and at least the medium's
 own minimum samples. As with classic photons a larger factor takes fewer, longer steps:
 on `tests/render/progressive_volume.pov` with varying extinction, factor 4 stores 4% fewer
@@ -250,9 +269,12 @@ refraction; light that hits its first surface directly, or after crossing only
 `pass_through` objects, is never deposited, since direct lighting already counts it.
 A receiver therefore never needs to be a target, and light can be bent around a corner
 by targeting only the first glass or mirror on its way. A photon's first surface must be
-a target (after any `pass_through` objects) or the photon stops there; that includes the
-tenth of a point source's photons that leave isotropically, so those add samples only
-where they meet a target and never start a path at a non-target mirror or glass.
+a target (after any `pass_through` objects) or the photon stops there, so a path never
+starts at a non-target mirror or glass: light through a non-target is direct light with
+a filtered shadow, and photons would count it twice. Aiming therefore covers only the
+targets' bounds, and an object in front of a target, target or not, needs no
+special case: a photon aimed past a hidden target that meets another target first
+continues from it, and one stopped by a non-target makes no deposit.
 Later surfaces need not be targets: an object reflects or refracts photons when its own
 `photons { reflection on }` or `refraction on` says so, or when the light's photons block
 turns that on and the object does not turn it off. `collect off` stops an object
@@ -269,24 +291,29 @@ object { Blades photons { target 4 refraction on } }    // four times the canopy
 object { Pebble photons { target 0 } }                  // not a target
 ```
 
-Under method 2 the number after `target` is the object's share weight: among the
-targets of one light, a targeted sample picks a target with probability proportional to
-its weight, so equal weights split the samples evenly and a bigger weight gives more
-photons. Bare `target` is weight 1 and `target 0` removes the target. A weight that
+Under method 2 the number after `target` is the object's share weight. Half of a
+light's samples are split between its targets in proportion to their weights, each
+target's share spread evenly over the cells its pieces can reach; the other half
+spread over the whole domain by solid angle, each cell weighted by the heaviest target
+weight reaching it (see Aiming). Equal weights therefore give every target at
+least a quarter of an even split, however small it is, and a big target the
+photons its size calls for; a bigger weight gives more photons in both halves. Bare
+`target` is weight 1 and `target 0` removes the target. A weight that
 is negative, infinite or not a number is an error under method 2. The weight moves
-samples between targets, never power: every photon still carries the emitted flux divided by the complete mixture density of its direction (or, for a parallel
-source, of its position on the target discs), so the image converges to the same light
-whatever the weights, and only its noise moves between targets. Give the weight to the
-target whose caustic must be sharp, such as thin or patchy glass near the camera; a big
-target that only casts broad light needs few photons. The weights are the same for
-every light type, parallel and cylinder sources included, and do not change between
-batches. The split is fixed by the scene, not measured: earlier versions of method 2
-set it from the previous batch's hit rate, which starved targets that are hard to hit.
+samples between targets, never power: every photon carries the emitted flux divided by
+the density of its cell, so the image converges to the same light whatever the
+weights, and only its noise moves between targets. Give the weight to the
+target whose caustic must be sharp, such as thin or patchy glass near the camera. The
+weights are the same for every light type, parallel and cylinder sources included,
+and do not change between batches. The split is fixed by the scene, not measured: an
+earlier version set it from the previous batch's hit rate, which starved targets that
+are hard to hit, and learning a density from where photons land did not pay for itself
+(see Aiming domain under Measurements).
 
 A `union`, or any other CSG object, flagged with `photons { target W }` is one target
 of weight W, whether or not `split_union` splits it for bounding: the split members
-share one entry, aimed at the bounding sphere of the union's own box, so a split and an
-unsplit union get the same samples, photons and image.
+share one entry and their pieces form its cells, so a split and an unsplit union get the
+same samples, photons and image.
 A target flag on a member inside a flagged union is replaced by the union's, as before.
 Members are separate targets only when the union itself is not flagged and they are.
 Earlier versions made each member of a split union its own target, so a four-blade
@@ -297,8 +324,8 @@ This is the opposite sense of method 1, where the number is a spacing multiplier
 a smaller value means more photons (`target 0.5` halves the spacing). A scene written
 for one method needs its target numbers revisited for the other.
 
-The `Photon targets` log line gives, per light, each target's weight, the samples aimed
-at it and the deposits they made.
+The `Photon targets` log line gives, per light, each target's weight, the samples drawn
+in cells where it is the heaviest target and the deposits they made.
 
 ## Radiosity
 
@@ -326,7 +353,7 @@ camera sees the same photons. An animation or a series of camera moves can there
 shoot once.
 
 The file names its format version and the settings that decide its contents: quality,
-batch count and size, shards, `k`, the emission sequence's dimensions, the photon
+batch count and size, shards, `k`, the shooting sequence's dimensions, the photon
 trace level, `adc_bailout`, media steps and spacing, the colour channel layout and
 every target's weight. It
 also records how many objects, interiors and lights the scene has, numbering
@@ -346,7 +373,7 @@ option raises a tiny scene ceiling.
 
 ## Media lights
 
-Media lights now use method 2 through the same emission interface. Their
+Media lights now use method 2 through the same `Emitter` interface. Their
 `light_source { photons { refraction on reflection off } }` block controls
 transport just as it does for ordinary lights. Omitting those switches leaves
 the target's settings in control. `brightness` scales emitted photon power and
@@ -396,7 +423,7 @@ normal and flux, a receiver index and the tree axis); a media segment takes 168 
 with its bounds. Shooter vectors hold one batch and are released after it is merged.
 Memory grows linearly with quality and with deposits per sample, which depend
 on the scene (spectral bands, bounces, media steps). After every batch the whole
-emission's storage is projected from the deposits and segments per batch so far, with a
+shoot's storage is projected from the deposits and segments per batch so far, with a
 20% margin; if it exceeds the memory ceiling, the render stops with an error giving the
 projection and the batch it was made after, before more work is done. By default the
 ceiling is 40% of the memory available after the first batch, at most 6 GB; it is read
@@ -434,7 +461,7 @@ rebuilt identically, `+C` continues a render with the same photons.
 
 ## Changes from the earlier prototype
 
-The earlier method 2 traced one full camera pass per emission batch (four at
+The earlier method 2 traced one full camera pass per shooting batch (four at
 quality 1), averaged the passes with a shrinking box-kernel radius chosen from a
 pilot batch, required `+PR -A`, and grouped batches differently at 8,000,000
 pixels and above. Each pass repeated camera, direct-light and subsurface work. Its
@@ -454,9 +481,11 @@ irradiance within 1% on a plane and on a sphere, including at a support of about
 radii, and within 2% in a sparse region gathered at the cap; that close receivers keep
 separate supports; that a 20-photon caustic, alone or beside a dense receiver, gets a usable
 radius and a nonzero estimate; that the partitioned search, one- and two-sided, returns the
-same neighbours as a brute-force search; and that the target-cone and isotropic emission
-mixture integrates to the true solid angle over the sphere, inside a narrow cone and outside
-every cone. `tests/render/progressive_photons.sh`
+same neighbours as a brute-force search; and that the aiming domain's square and disc
+maps invert each other, that every direction reaching a sphere or a box from a point or a
+small area light lies in a cell with samples, that the density integrates to a sphere's
+solid angle and to its shadow's area under a parallel light within 1%, and that a weight
+of 3 gives a small box more than its share of the per-target half. `tests/render/progressive_photons.sh`
 covers thread-count equality for every light type and media, dispersion, subsurface,
 thin, close, curved and reflected cases, anti-aliasing, `+C`, linear power, image-size
 independence of the logged budget, the default memory budget error, refusal under a tiny
@@ -475,20 +504,22 @@ faceted ones and the isosurface and the parametric to match tight-accuracy ones,
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 `tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with
-weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires the logged split to
-match the weights, the image to match across thread counts and the photon-only image mean
+weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires a weight of 4 to
+raise or lower the patch's logged share by more than a tenth, the image to match across thread counts and the photon-only image mean
 to stay within 3%, the grass clump to give the same split and image with `split_union` on as off,
 and negative, infinite and NaN weights to be rejected; the photon-file script also
 refuses a file saved with another target weight.
 
 ## Measurements
 
-User-space instruction counts of whole renders (parse, emission, maps and camera), four
+User-space instruction counts of whole renders (parse, shooting, maps and camera), four
 threads, counters not multiplexed; one run each. Errors are linear-light RMSE over
 pixels whose reference value is at most 1 (the few focal pixels above 1 are sampled
 differently by every camera pattern and would otherwise dominate). "Earlier method 2"
 is the multi-pass prototype described above. Classic photons use `fade_distance
-sqrt(0.5)` so their power matches.
+sqrt(0.5)` so their power matches. The tables before Aiming domain were measured with
+the earlier aiming of a cone or disc per target; the aiming domain wastes far fewer
+samples, so each quality now costs more and stores more deposits (see Aiming domain).
 
 Glass sphere caustic, `tests/render/progressive_photons.pov`, 96 by 64, photon-only.
 The no-anti-aliasing reference is quality 64 with another seed; two such seeds differ
@@ -516,19 +547,19 @@ water box, where the kernel spreads deposits that classic gathers keep sharp.
 | quality 1 | 17.9 G | 0.0176 | 0.0285 |
 | quality 4 | 38.5 G | 0.0092 | 0.0216 |
 
-Emission and kernel ablations, RMSE against the same-camera reference:
+Shooting and kernel ablations, RMSE against the same-camera reference:
 
 | change at quality 1 (quality 4) | sphere | water |
 |---|---:|---:|
 | as described | 0.0027 (0.0014) | 0.0176 (0.0092) |
-| hashed random emission | 0.0041 (0.0025) | 0.0625 (0.0377) |
+| hashed random shooting | 0.0041 (0.0025) | 0.0625 (0.0377) |
 | box kernel | 0.0045 (0.0033) | 0.0296 |
 | cone kernel | 0.0027 (0.0014) | 0.0158 |
 | `k` base 16 / 96 instead of 48 | 0.0047 / 0.0035 | 0.0284 / 0.0279 |
 | cap 4 / 16 base radii instead of 8 | 0.0058 / 0.0019 | 0.0175 / 0.0176 |
 
-Stratified emission is the largest single gain: on the water caustic, random emission
-at quality 4 (0.0377) is no better than stratified emission at quality 0.25 (0.0362),
+Stratified shooting is the largest single gain: on the water caustic, random shooting
+at quality 4 (0.0377) is no better than stratified shooting at quality 0.25 (0.0362),
 with sixteen times fewer photons. The cap changes no image here but costs work on the
 water scene: 16.2 G at a cap of 4, 17.9 G at 8 and 23.3 G at 16; on the leaf below it
 is 170 G, 169 G and 178 G.
@@ -544,35 +575,84 @@ the earlier prototype +0.6%, +1.0%, +0.2%). Before deposits were indexed by norm
 direction its quality 1 camera work was 244 G, as much as classic, because gathers on
 the unlit face scanned the lit face's deposits within the cap.
 
-### Target weights
+### Aiming domain
 
-`tests/render/photon_target_rig.pov` at 640x360, no anti-aliasing, four threads, parallel
-sun (its default), `PhotonOnly=1`. A low sun shines through a canopy of glass leaves (target
-1) onto a wavy pool with a mirror bottom that throws twice-refracted light on the wall, and
-onto a clump of glass grass on the near bank (target 2, its weight varied). The counts are
-exact; the parse alone is 10.1 G instructions.
+Shooting used to aim each sample at one target's bounding sphere (a cone of directions,
+or a disc for a parallel light), splitting samples between targets by weight, plus a tenth
+isotropic for nonparallel lights. Measured at quality 1, most samples deposited nothing:
+the bounding sphere of a target's box is far larger than the target (a glass sphere fills
+a third of its cone, so 66% of the sphere scene's samples met the floor first), a sparse
+union is mostly empty space (89% of the rig's samples and 95% of a canopy of 60 small
+discs deposited nothing), an aperture rejected 94% of each prism beam's samples on the
+leaf, an opaque object over a target stopped 90%, and the isotropic tenth deposited on 0-1%
+of its samples. Where cones overlap, up to 27% of the samples aimed at one target met
+another first (two spheres in line; 8% on the rig); the density was exact, so this cost
+nothing in bias. An empty sample costs about 5,000 instructions (a scene whose samples are
+95% empty shoots at 4,900 per sample) and a depositing one about 16,000 (a scene whose
+samples are 95% depositing shoots at 15,900), so the empty samples took about 15% (water)
+to 43% (sphere) of the shooting work on the sample scenes and over 90% where a target was
+hidden or sparse. Every sample also evaluated every target's cone: with 64 small targets
+the cone aiming cost 4.35 G at quality 1 for 87,000 deposits, the domain 3.08 G for
+120,000.
 
-| grass weight, quality | G instructions | canopy aimed / deposits | grass aimed / deposits |
-|---|---:|---:|---:|
-| 1, quality 1 | 29.0 | 131,072 / 38,471 | 131,072 / 62,486 |
-| 2, quality 1 | 29.6 | 87,382 / 25,429 | 174,762 / 83,471 |
-| 4, quality 1 | 30.5 | 52,429 / 14,877 | 209,715 / 99,662 |
-| 1, quality 4 | 77.6 | 524,288 / 151,328 | 524,288 / 250,131 |
-| 2, quality 4 | 81.5 | 349,525 / 100,700 | 699,051 / 332,423 |
-| 4, quality 4 | 85.9 | 209,715 / 59,825 | 838,861 / 399,251 |
+`tests/render/photon_aim_cases.pov` adds five layouts, photon-only on a white floor:
+two glass spheres in line along the light, a glass sphere the light reaches only through a
+mirror, an opaque box over a glass sphere, a sparse canopy of 60 glass discs and 64 small
+glass spheres that are each a target. Image error against a quality 64 reference with
+another seed, over pixels whose reference is at most 1, each image clipped at 1 so that
+the few focal pixels the camera samples differently do not decide it; at equal
+instructions, interpolated in log-log between quality 0.5, 1 and 2 of each aiming to
+the cost of the cone aiming at quality 1 (four threads, counts exact):
 
-The aimed samples split exactly 1:1, 2:1 and 4:1, and each target's deposits per aimed
-sample stay the same (about 0.29 for the canopy and 0.48 for the grass), so the weight moves
-photons from one target to the other; a grass sample deposits more, so a larger grass weight
-raises the instructions at a fixed quality, by at most 11% here. Image error against a quality 16 reference at this
-size (253 G) is not reported: single runs did not fall consistently with quality on the
-canopy, so the reference's own noise would decide any comparison.
+| scene | cone aiming, quality 1 | instructions | aiming domain at equal cost | ratio |
+|---|---:|---:|---:|---:|
+| sphere, `progressive_photons.pov` 192x128 | 0.0066 | 2.5 G | 0.0049 | 0.74 |
+| water, `photon-budget-water.pov` 500x333 | 0.0264 | 7.0 G | 0.0231 | 0.87 |
+| target rig, parallel sun, 640x360 | 0.0466 | 29.0 G | 0.0413 | 0.89 |
+| target rig, its grass patch only | 0.0411 | 29.0 G | 0.0444 | 1.08 |
+| target rig, sun 200 units away | 0.0481 | 27.8 G | 0.0414 | 0.86 |
+| target rig, sun 200 units away, grass patch | 0.0441 | 27.8 G | 0.0440 | 1.00 |
+| two spheres in line | 0.0182 | 3.7 G | 0.0108 | 0.59 |
+| sphere seen through a mirror | 0.0062 | 3.6 G | 0.0049 | 0.79 |
+| sphere under an opaque box | 0.00046 | 1.8 G | 0.00050 | 1.08 |
+| sparse canopy of 60 discs | 0.0367 | 3.9 G | 0.0083 | 0.23 |
+| 64 small targets | 0.0095 | 4.3 G | 0.0078 | 0.83 |
+
+On the leaf (`subsurface_leaf.pov` with `photons { method 2 quality Q }`, 160 by 120, the
+prism lights alone) the error is 0.0249 to 0.0252 for both aimings at every quality, set by
+subsurface and camera sampling; there the domain makes every sample pass the apertures, so
+quality 0.25 shoots 2.5 million deposits for 80 G instructions where the cone aiming shot
+0.6 million at quality 1 for 44 G. On the prism sample at 128 by 72 against a quality 4
+reference the domain at quality 0.25 (1,278 G, 0.0133) matches the cone aiming at quality
+0.5 (1,100 G, 0.0136). The deposited power summed over every sample, which the image
+converges to, agrees with the cone aiming within 0.01% for point, area, spot, parallel and
+cylinder lights over three seeds each.
+
+Splitting every sample evenly by solid angle alone gave 0.84 on the rig and 0.83 with the
+far sun, but 1.35 and 1.20 on the grass patch: a small target got photons in proportion to
+its size and lost its caustic. Half by solid angle and half by target keeps the patch
+within 8% and loses at most 5% elsewhere. Learning a density over the domain between
+batches from where samples deposited (from deposit counts or from delivered power, with a
+uniform half or fifth as a floor), or loading one learned from a quality 8 render
+beforehand, gave no consistent gain: from 0.6 to 1.0 of the domain's error on most scenes,
+but 1.7 to 3.0 times it under the opaque box, where concentrating photons on the visible
+part shrank the floor's base radius and left its faint reflections at a smaller cap.
+Learning is therefore not used, and the density does not change between batches.
+
+Against classic photons at classic's own instruction counts (1, 4 and 16 million photons
+on the sphere and the layouts, 0.2, 0.8 and 3.2 million on the rig, spacing 0.02, 0.01 and
+0.005 on the water), the domain's error is 0.3 to 0.7 of classic's, except on the water at
+spacing 0.005 (100 G), where classic's 0.0081 beats the domain's 0.0105 extrapolated from
+quality 2.
+
+Building the domain takes 0.05 G instructions for a point light and one target, 0.19 G for
+1,300 pieces, 1.2 G for 10,000 and 11.6 G for 100,000 (2.0 G for a parallel light).
 
 ### Where the work goes
 
 Each scene and configuration is rendered three times: the full image, one pixel, and one
 pixel with photons off (`+Q8`, the earlier prototype with `+PR`). Shooting is the one-pixel
-run minus the photons-off run (emission, deposits and map build); camera is the full run
+run minus the photons-off run (shooting, deposits and map build); camera is the full run
 minus the one-pixel run. Instructions are exact; wall seconds are single runs at four
 threads on a shared machine, within about 0.3 s, and the start-up of each run is about
 0.8 s. "Per shot" and "per deposit" divide the shooting instructions by the photons shot
@@ -639,5 +719,9 @@ camera loop, hence its larger value.
 - A CSG subsurface receiver's slab and boundary probe use the whole map's median base
   radius (see CSG receivers).
 - Media noise does not fall with quality on the tested scene; only the cost grows.
-- Target weights are set by hand; nothing measures which target the image needs.
+- Target weights are set by hand; nothing measures which target the image needs, and the
+  aiming does not depend on the camera.
+- The aiming domain is rastered at 128 by 128 cells, so a target much smaller than a cell
+  (many small targets spread over a wide cap) still receives samples over its whole cell;
+  building it grows with the number of target pieces (see Aiming domain).
 
