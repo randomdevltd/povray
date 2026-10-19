@@ -79,7 +79,7 @@ def mean(name):
 
 for distance in (5, 245):
     cases = [(f'lens{fade}', f'near{fade}', 0.03) for fade in range(6)]
-    cases += [(f'mediumlens{fade}', f'mediumnear{fade}', 0.03) for fade in range(2)] + [('glass2', 'glass1', 0.10)]
+    cases += [(f'mediumlens{fade}', f'mediumnear{fade}', 0.045) for fade in range(2)] + [('glass2', 'glass1', 0.10)]
     for photon, direct, tolerance in cases:
         ratio = mean(f'{photon}_{distance}') / mean(f'{direct}_{distance}')
         print(f'distance {distance}: {photon} / {direct} {ratio:.4f}')

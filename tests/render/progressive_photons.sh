@@ -129,7 +129,7 @@ done
     overrides option_up 64 'Photon_Memory option' 0.001
     ceiling option_down "$too_much (set by the Photon_Memory option)" Declare=PhotonMemory=64 Photon_Memory=0.001
     overrides option_down 0.001 'Photon_Memory option' 64
-    for value in 0 -1; do
+    for value in 0 -1 1e300; do
         ceiling "scene_$value" 'Photon memory must be a finite number of gigabytes greater than zero' Declare=PhotonMemory="$value"
         refused "scene_$value" "photons.pov' line [0-9]*: Parse Error: Photon memory"
     done

@@ -810,7 +810,7 @@ int ProcessRenderOptions::WriteSpecialOptionHandler(INI_Parser_Table *option, PO
         case kPOVAttrib_PhotonMemory:
 
             if(POVMSUtil_GetFloat(obj, option->key, &floatval) == 0)
-                file->printf("%s=%g\n", option->keyword, (double)floatval);
+                file->printf("%s=%.9g\n", option->keyword, (double)floatval);
             break;
 
         case kPOVAttrib_Declare:

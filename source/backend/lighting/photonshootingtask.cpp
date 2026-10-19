@@ -54,6 +54,7 @@
 #include "core/render/ray.h"
 #include "core/scene/object.h"
 #include "core/shape/csg.h"
+#include "core/shape/sphere.h"
 #include "core/support/octree.h"
 #include "core/support/statistics.h"
 
@@ -160,31 +161,25 @@ struct ProgressiveTarget final
     const void* key;
     Vector3d low, high;
     double weight;
-    Vector3d Centre() const { return (low + high) * 0.5; }
     double Radius() const { return (high - low).length() * 0.5; }
 };
 
+/// Positions on a light that is not a medium: its centre, or a point of its area.
 class SurfaceLightEmitter final : public Emitter
 {
     public:
-        SurfaceLightEmitter(const LightSource& light, const std::vector<ProgressiveTarget>& targets, const std::vector<double>& probability) :
-            light(light), targets(targets), probability(probability) {}
+        explicit SurfaceLightEmitter(const LightSource& light) : light(light) {}
         const MathColour& Intensity() const override { return light.colour; }
         const Vector3d& Centre() const override { return light.Center; }
-        double Radius() const override { return (light.Axis1.length() + light.Axis2.length()) * 0.5; }
+        double Radius() const override { return light.Area_Light ? (light.Axis1.length() + light.Axis2.length()) * 0.5 : 0.0; }
         double NearDistance() const override { return EPSILON; }
         EmitterSample Sample(double s, std::uint64_t key) const override
         {
             return SampleSquare(s, Draw(key, kDrawPhoton, 7), key);
         }
-        EmitterSample SampleSquare(double s, double t, std::uint64_t key) const override
+        EmitterSample SampleSquare(double s, double t, std::uint64_t) const override
         {
             Vector3d point = light.Center;
-            if (light.Parallel)
-            {
-                const size_t selected = PhotonTargetPick(probability, s);
-                return ParallelDisc(selected, std::min(1.0, s / probability[selected]), t);
-            }
             if (light.Area_Light)
             {
                 double u = s - 0.5, v = t - 0.5;
@@ -198,44 +193,33 @@ class SurfaceLightEmitter final : public Emitter
             }
             return {point, MathColour(1.0), 1.0};
         }
-        Vector3d Direction(const EmitterSample& sample, double u, double v, double& pdf) const override
-        {
-            if (light.Parallel)
-            {
-                pdf = 1.0;
-                return light.Direction;
-            }
-            return Emitter::Direction(sample, u, v, pdf);
-        }
     private:
         const LightSource& light;
-        const std::vector<ProgressiveTarget>& targets;
-        Vector3d DiscCentre(const ProgressiveTarget& target) const
-        {
-            const Vector3d c = target.Centre();
-            return c - light.Direction * dot(c - light.Center, light.Direction);
-        }
-        EmitterSample ParallelDisc(size_t selected, double radial, double turn) const
-        {
-            const Vector3d axis = light.Direction;
-            const Vector3d u = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
-            const Vector3d v = cross(axis, u);
-            const double r = targets[selected].Radius() * std::sqrt(radial);
-            const double angle = 2.0 * M_PI * turn;
-            const Vector3d point = DiscCentre(targets[selected]) + u * (r * std::cos(angle)) + v * (r * std::sin(angle));
-            double pdf = 0.0;
-            for (size_t i = 0; i < targets.size(); ++i)
-            {
-                const double r2 = Sqr(targets[i].Radius());
-                if (i == selected || (point - DiscCentre(targets[i])).lengthSqr() <= r2)
-                    pdf += probability[i] / (M_PI * r2);
-            }
-            return {point, MathColour(1.0 / pdf), pdf};
-        }
-        const std::vector<double>& probability;
 };
 
-void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets)
+/// The boxes of a target's union members, recursively, a sphere's own bounds, and any other object's box.
+void TargetBounds(ConstObjectPtr object, double weight, std::uint32_t target, std::vector<PhotonAimBound>& bounds)
+{
+    if (const auto* csg = dynamic_cast<const CSGUnion*>(object))
+    {
+        for (ConstObjectPtr child : csg->children)
+            TargetBounds(child, weight, target, bounds);
+        return;
+    }
+    if (Vector3d(object->BBox.size).lengthSqr() <= 0.0)
+        return;
+    const Vector3d low(object->BBox.lowerLeft);
+    bounds.push_back({low, low + Vector3d(object->BBox.size), weight, target});
+    if (const auto* sphere = dynamic_cast<const Sphere*>(object))
+        if (sphere->Spherical())
+        {
+            bounds.back().sphereCentre = sphere->Center;
+            bounds.back().sphereRadius = sphere->Radius;
+        }
+}
+
+void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource* light, std::vector<ProgressiveTarget>& targets,
+                        std::vector<PhotonAimBound>* bounds)
 {
     for (ObjectPtr object : objects)
     {
@@ -248,21 +232,71 @@ void ProgressiveTargets(const std::vector<ObjectPtr>& objects, const LightSource
                   ((flags & PH_RFL_ON_FLAG) && !(flags & PH_RFL_OFF_FLAG))))
                 continue;
             if (light->Parallel && Test_Flag(object, INFINITE_FLAG))
-                throw POV_EXCEPTION(kParamErr, "Parallel photon emission needs bounded targets.");
+                throw POV_EXCEPTION(kParamErr, "Parallel photon aiming needs bounded targets.");
             if (!PhotonLightAffectsObject(light, object))
                 continue;
             const PhotonTargetGroup* group = object->photonTargetGroup.get();
             const void* key = group ? static_cast<const void*>(group) : object;
-            if (std::any_of(targets.begin(), targets.end(), [key](const ProgressiveTarget& t) { return t.key == key; }))
-                continue;
-            const BoundingBox& box = group ? group->box : object->BBox;
-            const Vector3d low(box.lowerLeft);
-            targets.push_back({object, key, low, low + Vector3d(box.size), double(object->Ph_Density)});
+            auto known = std::find_if(targets.begin(), targets.end(), [key](const ProgressiveTarget& t) { return t.key == key; });
+            if (known == targets.end())
+            {
+                const BoundingBox& box = group ? group->box : object->BBox;
+                const Vector3d low(box.lowerLeft);
+                targets.push_back({object, key, low, low + Vector3d(box.size), double(object->Ph_Density)});
+                known = targets.end() - 1;
+            }
+            if (bounds)
+                TargetBounds(object, known->weight, std::uint32_t(known - targets.begin()), *bounds);
         }
         else if (object->Type & IS_COMPOUND_OBJECT)
-            ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets);
+            ProgressiveTargets(static_cast<CSG*>(object)->children, light, targets, bounds);
     }
 }
+
+bool ProgressiveLight(const LightSource* light)
+{
+    return !(light->Light_Type == FILL_LIGHT_SOURCE || light->colour.IsZero() ||
+             (Test_Flag(light, PH_RFR_OFF_FLAG) && Test_Flag(light, PH_RFL_OFF_FLAG)));
+}
+}
+
+void PrepareProgressiveAiming(SceneData& scene)
+{
+    for (PreparedSetId setId = 0; setId < scene.preparedSets.size(); ++setId)
+    {
+        auto& set = scene.GetPreparedSet(setId);
+        set.progressiveAiming.clear();
+        for (LightSource* light : set.lights)
+        {
+            if (!ProgressiveLight(light))
+                continue;
+            std::vector<ProgressiveTarget> targets;
+            std::vector<PhotonAimBound> bounds;
+            ProgressiveTargets(set.objects, light, targets, &bounds);
+            if (targets.empty())
+                continue;
+            set.progressiveAiming.push_back({light, PhotonAimDomain()});
+            auto& domain = set.progressiveAiming.back().domain;
+            PhotonAimBound gate;
+            const PhotonAimBound* aperture = nullptr;
+            if (light->Projected_Through_Object)
+            {
+                const auto& box = light->Projected_Through_Object->BBox;
+                gate = {Vector3d(box.lowerLeft), Vector3d(box.lowerLeft) + Vector3d(box.size), 1.0, 0};
+                aperture = &gate;
+            }
+            if (light->Parallel)
+                domain.BuildPlane(light->Center, light->Direction, bounds, aperture, light->Light_Type == CYLINDER_SOURCE ? light->Falloff : 0.0);
+            else
+            {
+                const SurfaceLightEmitter surface(*light);
+                const Emitter& emitter = light->emitter ? *light->emitter : surface;
+                const bool spot = light->Light_Type == SPOT_SOURCE;
+                domain.BuildCap(emitter.Centre(), emitter.Radius(), bounds, aperture, spot ? &light->Direction : nullptr,
+                                spot && light->Radius > 0.0 ? light->Falloff : 0.0);
+            }
+        }
+    }
 }
 
 void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
@@ -274,42 +308,22 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
     for (PreparedSetId setId = 0; setId < GetSceneData()->preparedSets.size(); ++setId)
     {
         auto& set = GetSceneData()->GetPreparedSet(setId);
-        std::vector<LightSource*> lights;
-        std::vector<std::vector<ProgressiveTarget>> targets;
-        for (LightSource* light : set.lights)
-        {
-            if (light->Light_Type == FILL_LIGHT_SOURCE || light->colour.IsZero() ||
-                (Test_Flag(light, PH_RFR_OFF_FLAG) && Test_Flag(light, PH_RFL_OFF_FLAG)))
-                continue;
-            std::vector<ProgressiveTarget> selected;
-            ProgressiveTargets(set.objects, light, selected);
-            if (selected.empty())
-                continue;
-            lights.push_back(light);
-            targets.push_back(std::move(selected));
-        }
-        if (lights.empty())
+        if (set.progressiveAiming.empty())
             continue;
-        std::vector<RayInteriorVector> pointInteriors(lights.size());
-        for (size_t li = 0; li < lights.size(); ++li)
-            if (!lights[li]->emitter && !lights[li]->Area_Light && !lights[li]->Parallel)
-                trace.FindContainingInteriors(lights[li]->Center, pointInteriors[li], setId);
-        std::vector<std::vector<double>> probability(lights.size());
+        const size_t count = set.progressiveAiming.size();
+        std::vector<std::vector<ProgressiveTarget>> targets(count);
+        std::vector<RayInteriorVector> pointInteriors(count);
         std::vector<size_t> feedbackOffset;
-        for (size_t li = 0; li < lights.size(); ++li)
+        for (size_t li = 0; li < count; ++li)
         {
+            const LightSource* light = set.progressiveAiming[li].light;
+            ProgressiveTargets(set.objects, light, targets[li], nullptr);
+            if (!light->emitter && !light->Area_Light && !light->Parallel)
+                trace.FindContainingInteriors(light->Center, pointInteriors[li], setId);
             feedbackOffset.push_back(data->progressiveFeedback.size());
-            double total = 0.0;
             for (const ProgressiveTarget& target : targets[li])
-                total += target.weight;
-            for (const ProgressiveTarget& target : targets[li])
-            {
-                probability[li].push_back(target.weight / total);
-                data->progressiveFeedback.push_back({lights[li], target.key, setId, unsigned(probability[li].size()), target.weight});
-            }
+                data->progressiveFeedback.push_back({light, target.key, setId, unsigned(data->progressiveFeedback.size() - feedbackOffset[li] + 1), target.weight});
         }
-        std::vector<Vector3d> axes;
-        std::vector<double> widths;
         RayInteriorVector originInteriors;
         const PhotonSobol sobol(DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhotonMap, 0));
         for (unsigned int index = shard; index < batch; index += ProgressivePhotonBudget::shards)
@@ -317,36 +331,29 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             Cooperate();
             const std::uint64_t sampleIndex = std::uint64_t(pass) * batch + index;
             const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhoton, sampleIndex);
-            const size_t li = std::min(lights.size() - 1, size_t(sobol(sampleIndex, PhotonSobol::kLight) * lights.size()));
-            LightSource* light = lights[li];
-            SurfaceLightEmitter fallback(*light, targets[li], probability[li]);
-            const Emitter& emitter = light->emitter ? *light->emitter : fallback;
-            const EmitterSample origin =
-                emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key);
-            axes.clear();
-            widths.clear();
-            for (const ProgressiveTarget& target : targets[li])
+            const size_t li = std::min(count - 1, size_t(sobol(sampleIndex, PhotonSobol::kLight) * count));
+            LightSource* light = set.progressiveAiming[li].light;
+            const PhotonAimDomain& domain = set.progressiveAiming[li].domain;
+            data->Stats()[Number_Of_Photons_Shot]++;
+            if (domain.Empty())
+                continue;
+            const auto pick = light->Parallel ?
+                domain.Sample(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT)) :
+                domain.Sample(sobol(sampleIndex, PhotonSobol::kPolar), sobol(sampleIndex, PhotonSobol::kAzimuth));
+            const double pdf = domain.Pdf(pick.cell);
+            EmitterSample origin;
+            Vector3d direction;
+            if (light->Parallel)
             {
-                const Vector3d delta = target.Centre() - origin.position;
-                const double distance = delta.length();
-                const double radius = target.Radius();
-                axes.push_back(distance > EPSILON ? delta / distance : Vector3d(0, 0, 1));
-                const double sine2 = distance > radius ? radius * radius / (distance * distance) : 1.0;
-                widths.push_back(distance > radius ? sine2 / (1.0 + std::sqrt(std::max(0.0, 1.0 - sine2))) : 2.0);
+                origin = {domain.Point(pick.x, pick.y), MathColour(1.0), 1.0};
+                direction = light->Direction;
             }
-            double pdf;
-            const double uSample = sobol(sampleIndex, PhotonSobol::kPolar), vSample = sobol(sampleIndex, PhotonSobol::kAzimuth);
-            Vector3d direction = emitter.Direction(origin, uSample, vSample, pdf);
-            bool targeted = false;
-            size_t selectedTarget = 0;
-            if (!light->Parallel)
-                pdf = PhotonTargetMixture(axes, widths, probability[li], uSample, vSample, sobol(sampleIndex, PhotonSobol::kTargeted),
-                                          sobol(sampleIndex, PhotonSobol::kTarget), direction, selectedTarget, targeted);
-            else if (!light->emitter)
+            else
             {
-                double s = sobol(sampleIndex, PhotonSobol::kPositionS);
-                selectedTarget = PhotonTargetPick(probability[li], s);
-                targeted = true;
+                const SurfaceLightEmitter surface(*light);
+                const Emitter& emitter = light->emitter ? *light->emitter : surface;
+                origin = emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key);
+                direction = domain.Direction(pick.x, pick.y);
             }
             TraceTicket ticket(maxTraceLevel, adcBailout);
             Ray ray(ticket);
@@ -355,10 +362,9 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ray.SetPreparedSetId(setId);
             ray.SetKey(key);
             ray.SetFlags(Ray::PrimaryRay, false, true);
-            data->Stats()[Number_Of_Photons_Shot]++;
-            auto* feedback = targeted ? &data->progressiveFeedback[feedbackOffset[li] + selectedTarget] : nullptr;
-            if (feedback)
-                feedback->aimed++;
+            const size_t aimed = std::min<size_t>(targets[li].size() - 1, pick.target);
+            auto& feedback = data->progressiveFeedback[feedbackOffset[li] + aimed];
+            feedback.aimed++;
             double projectionDepth = 0.0;
             if (light->Projected_Through_Object)
             {
@@ -384,7 +390,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                 for (Interior* interior : originInteriors)
                     ray.AppendInterior(interior);
             }
-            const ProgressiveTarget& aim = targets[li][selectedTarget];
+            const ProgressiveTarget& aim = targets[li][aimed];
             data->photonSourceLight = light;
             data->photonTargetObject = aim.object;
             data->Light_Is_Global = !light->lightGroupLight;
@@ -392,14 +398,13 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->passThruThis = false;
             data->photonDepth = projectionDepth;
             data->photonSpread = std::max(1.0e-8, aim.Radius() * 0.05) * spreadScale;
-            MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(lights.size(), pdf);
+            MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
             flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
             if (!flux.IsZero())
                 trace.TraceRay(ray, flux, unused, 1.0, false);
-            if (feedback)
-                feedback->deposits += data->progressiveSurface.size() + data->progressiveMedia.size() - before;
+            feedback.deposits += data->progressiveSurface.size() + data->progressiveMedia.size() - before;
         }
     }
 }

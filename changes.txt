@@ -42,13 +42,13 @@ Changed Behaviour
 
   - Photon method 2 supports oriented area sources and projected-through apertures.
 
-  - Photon method 2 now shoots every batch into one map, with Sobol-stratified
-    emission and a k-nearest-neighbour kernel gather, and traces the camera once.
-    It no longer needs +PR, accepts anti-aliasing, and its quality is at most
-    16384. It works with radiosity, with media photons from light-group lights,
-    and with save_file and load_file for its own maps.
+  - Photon method 2 shoots every batch into one map, with Sobol-stratified
+    shooting and a k-nearest-neighbour kernel gather, and traces the camera
+    once, with any anti-aliasing. Its quality is at most 16384. It works with
+    radiosity, with media photons from light-group lights, and with save_file
+    and load_file for its own maps.
 
-  - Photon method 2 no longer changes direct lighting: lights keep their
+  - Photon method 2 never changes direct lighting: lights keep their
     authored color and fade, any fade_power and faded parallel or cylinder
     lights are accepted, and lights without targets are unaffected. Photon
     power is calibrated instead: every deposit is weighted by the light's
@@ -62,10 +62,14 @@ Changed Behaviour
     photons were deposited.
 
   - Photon method 2 reads the number after `photons { target }` as a share
-    weight (default 1, opposite to the method 1 spacing multiplier): a light
-    splits its targeted photons between its targets in proportion to their
-    weights, instead of by the previous batch's hit rate. A split union marked
-    as a target stays one target.
+    weight (default 1, opposite to the method 1 spacing multiplier). A split
+    union marked as a target stays one target.
+
+  - Photon method 2 aims each light's photons over one domain covering the
+    bounds of its targets' pieces (each union member, and a sphere's own
+    bounds), within any aperture, spot cone and cylinder radius. Half the
+    photons spread over that domain by solid angle times target weight, half
+    are split between targets by weight.
 
   - Photon method 2's storage ceiling can be set in the scene with
     `photons { method 2 memory GB }` and on the command line or in an INI file
@@ -716,6 +720,10 @@ Miscellaneous:
   - Fix long-standing bug in Julia fractal primitive using hypercomplex numbers.
   - Fix `sphere_sweep` crashing multi-threaded renders when a later sweep had
     more segments than the first one a thread intersected.
+  - Fix `parametric` hits placed up to 0.08 units early, or missed, for rays
+    nearly parallel to a coordinate plane: a perspective view lost a row of
+    pixels and misplaced its pattern, and a caustic focused on it showed a dark
+    seam under both photon methods.
   - Fix CPU feature detection (the `cpuid` probe could be optimised away),
     which gave AMD CPUs the portable noise code.
   - The `.pov4` static checker now accepts the contextual keywords — those

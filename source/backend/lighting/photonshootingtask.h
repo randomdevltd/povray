@@ -58,6 +58,9 @@
 namespace pov
 {
 
+/// Builds every photon light's aiming domain in every prepared set, before the first method 2 batch.
+void PrepareProgressiveAiming(SceneData& scene);
+
 class PhotonShootingTask final : public RenderTask
 {
     public:

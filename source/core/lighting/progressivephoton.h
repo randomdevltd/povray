@@ -13,7 +13,7 @@ struct ProgressivePhotonBudget final
 {
     static constexpr unsigned int batchSize = 65536;
     static constexpr unsigned int shards = 16;
-    /// Quality 16384 emits 2^32 samples per prepared set, the length of the emission sequence; memory is bounded separately.
+    /// Quality 16384 emits 2^32 samples per prepared set, the length of the shooting sequence; memory is bounded separately.
     static constexpr double maxQuality = 16384.0;
     static constexpr double memoryShare = 0.4, memoryCeiling = 6.0 * 1024 * 1024 * 1024, memoryMargin = 1.2;
     static constexpr unsigned int minNeighbours = 8, maxNeighbours = 256;
@@ -37,7 +37,7 @@ struct ProgressivePhotonBudget final
 
     std::uint64_t EmittedSamples() const { return std::uint64_t(batches) * batchSize; }
 
-    /// The whole emission's bytes projected after batch pass + 1 from that batch's shooter bytes and the maps so far.
+    /// All batches' bytes projected after batch pass + 1 from that batch's shooter bytes and the maps so far.
     static double ProjectedBytes(double shooterBytes, double mapBytes, unsigned int pass, unsigned int batches)
     {
         return memoryMargin * (shooterBytes + mapBytes * batches / double(pass + 1));
@@ -64,11 +64,11 @@ struct ProgressivePhotonCeiling final
     const char* rule = "40% of available memory, at most 6 GB";
 };
 
-/// Sobol points in the emission dimensions, digitally shifted per prepared set; every aligned 2^m block is a net.
+/// Sobol points in the shooting dimensions, digitally shifted per prepared set; every aligned 2^m block is a net.
 class PhotonSobol final
 {
     public:
-        enum Dimension : unsigned int { kLight, kPositionS, kPositionT, kPolar, kAzimuth, kTargeted, kTarget, kDimensions };
+        enum Dimension : unsigned int { kLight, kPositionS, kPositionT, kPolar, kAzimuth, kDimensions };
 
         explicit PhotonSobol(std::uint64_t seed)
         {
@@ -104,11 +104,11 @@ class PhotonSobol final
             std::uint32_t v[kDimensions][32];
             Table()
             {
-                // Joe and Kuo primitive polynomials and initial numbers for dimensions 2 to 7
-                static const unsigned int degree[kDimensions] = { 0, 1, 2, 3, 3, 4, 4 };
-                static const unsigned int poly[kDimensions] = { 0, 0, 1, 1, 2, 1, 4 };
+                // Joe and Kuo primitive polynomials and initial numbers for dimensions 2 to 5
+                static const unsigned int degree[kDimensions] = { 0, 1, 2, 3, 3 };
+                static const unsigned int poly[kDimensions] = { 0, 0, 1, 1, 2 };
                 static const std::uint32_t initial[kDimensions][4] = {
-                    {}, { 1 }, { 1, 3 }, { 1, 3, 1 }, { 1, 1, 1 }, { 1, 1, 3, 3 }, { 1, 3, 5, 13 } };
+                    {}, { 1 }, { 1, 3 }, { 1, 3, 1 }, { 1, 1, 1 } };
                 for (unsigned int k = 0; k < 32; ++k)
                     v[0][k] = 1u << (31 - k);
                 for (unsigned int d = 1; d < kDimensions; ++d)

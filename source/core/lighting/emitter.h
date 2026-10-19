@@ -77,49 +77,6 @@ class Emitter
         }
 };
 
-/// The target that selector, uniform in [0, 1), picks by probability; selector keeps its remainder.
-inline size_t PhotonTargetPick(const std::vector<double>& probability, double& selector)
-{
-    size_t selected = 0;
-    while (selected + 1 < probability.size() && selector >= probability[selected])
-        selector -= probability[selected++];
-    return selected;
-}
-
-/// Whether direction lies in the cone about axis of the given width; projection is their dot product.
-inline bool PhotonConeContains(const Vector3d& direction, const Vector3d& axis, double width, double projection)
-{
-    return width >= 1.0 ? projection >= 1.0 - width :
-        projection >= 0.0 && (direction - axis * projection).lengthSqr() <= width * (2.0 - width);
-}
-
-/// Photon emission: a tenth isotropic, nine tenths over target cones (width = 1 - least cosine); a draw below 0.9 replaces the
-/// isotropic direction by a cone sample of the selected target, picked for every sample. Returns the density per steradian.
-inline double PhotonTargetMixture(const std::vector<Vector3d>& axes, const std::vector<double>& widths, const std::vector<double>& probability,
-                                  double u, double v, double draw, double selector, Vector3d& direction, size_t& selected, bool& targeted)
-{
-    targeted = draw < 0.9;
-    selected = PhotonTargetPick(probability, selector);
-    if (targeted)
-    {
-        const Vector3d axis = axes[selected];
-        Vector3d s = cross(std::abs(axis[Y]) < 0.9 ? Vector3d(0, 1, 0) : Vector3d(1, 0, 0), axis).normalized();
-        const Vector3d t = cross(axis, s);
-        const double deficit = u * widths[selected];
-        const double z = 1.0 - deficit;
-        const double r = std::sqrt(std::max(0.0, deficit * (2.0 - deficit)));
-        const double angle = 2.0 * M_PI * v;
-        direction = axis * z + s * (r * std::cos(angle)) + t * (r * std::sin(angle));
-    }
-    double pdf = 0.1 / (4.0 * M_PI);
-    for (size_t i = 0; i < axes.size(); ++i)
-    {
-        if ((targeted && selected == i) || PhotonConeContains(direction, axes[i], widths[i], dot(direction, axes[i])))
-            pdf += 0.9 * probability[i] / (2.0 * M_PI * widths[i]);
-    }
-    return pdf;
-}
-
 struct MediaLight final ///< the `light_source { }` block of an emitting medium
 {
     int samples = 32;

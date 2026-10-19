@@ -1,5 +1,5 @@
 #!/bin/sh
-# photon_target_weights.sh <povray> <srcdir>: method 2 splits a light's samples between its targets by their target weights.
+# photon_target_weights.sh <povray> <srcdir>: method 2 moves a light's samples between its targets by weight, never its light.
 set -eu
 POVRAY=$1
 SRCDIR=$2
@@ -20,7 +20,7 @@ refuse() {
         echo "photon_target_weights: $name rendered" >&2
         exit 1
     fi
-    grep -q 'share weight' "photon_target_weights_$name.log" || { cat "photon_target_weights_$name.log"; exit 1; }
+    tr '\n' ' ' < "photon_target_weights_$name.log" | tr -s ' ' | grep -q 'share weight' || { cat "photon_target_weights_$name.log"; exit 1; }
 }
 for parallel in 0 1; do
     render "even$parallel" Declare=Parallel=$parallel
@@ -47,13 +47,15 @@ def mean(name):
     data = Path(f'photon_target_weights_{name}.px').read_bytes()
     return sum(256 * data[i] + data[i + 1] for i in range(0, len(data), 2)) / (len(data) / 2)
 
-for parallel, isotropic in ((0, 0.1), (1, 0.0)):
-    for name, share in (('even', 0.5), ('canopy', 0.2), ('patch', 0.8)):
+for parallel in (0, 1):
+    even = split(f'even{parallel}')[0]
+    for name in ('even', 'canopy', 'patch'):
         got, aimed = split(f'{name}{parallel}')
-        print(f'photon_target_weights: parallel {parallel} {name}: patch share {got:.4f} (expected {share}), '
+        print(f'photon_target_weights: parallel {parallel} {name}: patch share {got:.4f} (even {even:.4f}), '
               f'{aimed} aimed, image mean {mean(name + str(parallel)) / mean("even" + str(parallel)):.4f} of even')
-        assert abs(got - share) < 0.002, (parallel, name, got)
-        assert abs(aimed - 65536 * (1 - isotropic)) < 16, (parallel, name, aimed)
+        # half the samples split by weight: weight 4 moves the patch's share of that half from 1/2 to 4/5 or 1/5
+        assert name == 'even' or (got - even) * (1 if name == 'patch' else -1) > 0.1, (parallel, name, got)
+        assert aimed == 65536, (parallel, name, aimed)
         assert abs(mean(name + str(parallel)) / mean('even' + str(parallel)) - 1) < 0.03, (parallel, name)
 PY
 refuse negative "$SRCDIR/tests/render/photon_target_rig.pov" Declare=PatchWeight=-1

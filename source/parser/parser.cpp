@@ -7982,8 +7982,9 @@ void Parser::Parse_Global_Settings()
                     else if (CurrentTokenText() == "memory")
                     {
                         const double memory = Parse_Float();
-                        if (!std::isfinite(memory) || memory <= 0.0)
-                            Error("Photon memory must be a finite number of gigabytes greater than zero.");
+                        const float stored = float(memory);
+                        if (!std::isfinite(memory) || !std::isfinite(stored) || !(stored > 0.0f))
+                            Error("Photon memory must be a finite number of gigabytes greater than zero and within the range of a 32-bit float.");
                         sceneData->photonSettings.memory = memory;
                     }
                     else
