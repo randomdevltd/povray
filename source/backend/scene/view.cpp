@@ -46,6 +46,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <limits>
+#include <map>
+#include <unordered_map>
 #include <sstream>
 
 // Boost header files
@@ -2006,6 +2008,25 @@ catch (std::bad_alloc&)
     queue.Fail(kOutOfMemoryErr);
 }
 
+static void PhotonReceiverTops(ConstObjectPtr object, ConstObjectPtr top, std::unordered_map<ConstObjectPtr, ConstObjectPtr>& tops)
+{
+    tops.emplace(object, top);
+    if (const CompoundObject* compound = dynamic_cast<const CompoundObject*>(object))
+        if (dynamic_cast<const LightSource*>(object) == nullptr)
+            for (ObjectPtr child : compound->children)
+                PhotonReceiverTops(child, top, tops);
+}
+
+/// What decides which lights' photons an object collects: global lights, and its light groups' lights.
+static std::vector<std::uintptr_t> PhotonLightKey(ConstObjectPtr object)
+{
+    std::vector<std::uintptr_t> key(1, Test_Flag(object, NO_GLOBAL_LIGHTS_FLAG) ? 1 : 0);
+    for (const LightSource* light : object->PhotonLights)
+        key.push_back(std::uintptr_t(light));
+    std::sort(key.begin() + 1, key.end());
+    return key;
+}
+
 bool View::BuildProgressivePhotonMaps(TaskQueue& queue, unsigned int neighbours, size_t bytes)
 try
 {
@@ -2013,7 +2034,30 @@ try
     {
         bytes += set->progressiveSurface.photons.capacity() * sizeof(MappedPhoton) +
                  set->progressiveMedia.photons.capacity() * sizeof(ProgressiveVolumePhoton);
-        set->progressiveSurface.Build(neighbours);
+        // why: doc/progressive-photons.md#boundaries
+        const auto& receivers = set->progressiveSurface.Receivers();
+        std::unordered_map<ConstObjectPtr, ConstObjectPtr> topOf;
+        for (ConstObjectPtr object : set->objects)
+            PhotonReceiverTops(object, object, topOf);
+        std::vector<ConstObjectPtr> tops(receivers.size());
+        std::vector<std::uint32_t> classes(receivers.size());
+        std::map<std::vector<std::uintptr_t>, std::uint32_t> classOf;
+        for (size_t id = 0; id < receivers.size(); ++id)
+        {
+            const auto found = topOf.find(receivers[id]);
+            tops[id] = found == topOf.end() ? receivers[id] : found->second;
+            classes[id] = classOf.emplace(PhotonLightKey(receivers[id]), std::uint32_t(classOf.size())).first->second;
+        }
+        ProgressivePhotonMap::Placement bare;
+        for (const auto& placed : topOf)
+            if (!(placed.first->Type & IS_COMPOUND_OBJECT) && !Test_Flag(placed.first, PH_IGNORE_PHOTONS_FLAG) &&
+                set->progressiveSurface.Receiver(placed.first) == ProgressivePhotonMap::noReceiver)
+            {
+                const auto found = classOf.find(PhotonLightKey(placed.first));
+                if (found != classOf.end())
+                    bare.emplace(placed.first, std::make_pair(placed.second, found->second));
+            }
+        set->progressiveSurface.Build(neighbours, classes, tops, std::move(bare));
         set->progressiveMedia.Build();
         bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
     }

@@ -81,6 +81,15 @@ Changed Behaviour
     name the setting it came from. `memory` requires method 2, is accepted in
     `.pov4` scenes, and must be a finite number greater than zero.
 
+  - Photon method 2 gathers estimate over the receiving surface rather than
+    the receiving object: where a gather's support leaves its object it
+    continues onto nearby objects lit by the same lights and divides by the
+    share of the support that lies on that surface, measured by rays along
+    the normal. Object edges, narrow strips, glyph strokes, holes, CSG cuts,
+    small objects and surfaces built from many objects (tiled floors, split
+    unions) no longer lose light at their edges, and an object that received
+    no photon takes its neighbours' light.
+
   - Any new behaviour formerly activated by `#version 3.71` now requires
     `#version 3.8` (or higher); specifying `#version 3.71` will trigger a
     corresponding warning.

@@ -213,6 +213,8 @@ struct TraceTicket final
 ///
 /// This class provides the fundamental functionality to trace rays and determine the effective colour of an object.
 ///
+class ProgressivePhotonMap;
+
 class Trace
 {
     public:
@@ -840,6 +842,12 @@ class Trace
     /// @{
     ///
 
+        bool PhotonProbe(const Vector3d& point, const Vector3d& n, const Vector3d& probe, double depth, double slab, double join,
+                         ConstObjectPtr own, ConstObjectPtr top, const ProgressivePhotonMap* map, std::uint32_t cls, Ray& ray,
+                         double* area = nullptr);
+        double PhotonCoverage(const Vector3d& point, const Vector3d& n, const Vector3d& t1, const Vector3d& t2, double radius, double slab,
+                              double join, ConstObjectPtr own, ConstObjectPtr top, const ProgressivePhotonMap& map, std::uint32_t cls,
+                              double reach, Ray& ray);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoint, const Ray& Eye, const Vector3d& Layer_Normal, const Vector3d& Raw_Normal,
                                        const Intersection& Isect, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation,

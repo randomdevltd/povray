@@ -12,6 +12,7 @@
 #include <limits>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace pov
 {
@@ -43,6 +44,14 @@ struct ProgressivePhotonBatch final
 
 /// Least cosine between receiver and photon normals, and the symmetric tangent-plane offset as a share of the base radius.
 constexpr double kPhotonNormalAgreement = 0.5, kPhotonSlab = 0.1;
+/// Boundaries: deposits expected in each eighth of a disc's outer band, how far a gather continues onto other receivers
+/// (in base radii) and the probes that measure the covered share of a disc. why: doc/progressive-photons.md#boundaries
+constexpr double kPhotonSectorDeposits = 3.0, kPhotonReach = 3.0;
+/// The tangent-plane slab, as a share of the base radius, within which another object continues a receiver's surface.
+constexpr double kPhotonJoinSlab = 0.01;
+constexpr unsigned int kPhotonCoverageProbes = 16, kPhotonFineCoverageProbes = 64;
+/// A covered share below this is measured again with the finer probes.
+constexpr double kPhotonFineCoverage = 0.75;
 
 struct MappedPhoton final
 {
@@ -104,9 +113,25 @@ class ProgressivePhotonMap final
             photons.push_back(stored);
         }
 
-        void Build(unsigned int k)
+        /// The scene object holding a collecting object and the class of receivers lit by the same lights, by object.
+        using Placement = std::unordered_map<ConstObjectPtr, std::pair<ConstObjectPtr, std::uint32_t>>;
+
+        /// Builds the trees. classes[id] groups the receivers lit by the same lights, whose surfaces a gather may continue
+        /// onto, tops[id] is the scene object holding each receiver (both default to the receiver itself), and bare places
+        /// the collecting objects that received no deposit.
+        void Build(unsigned int k, const std::vector<std::uint32_t>& classes = {}, const std::vector<ConstObjectPtr>& tops = {},
+                   Placement bare = {})
         {
             neighbours = k;
+            bareObjects = std::move(bare);
+            receiverTop = tops.size() == receivers.size() ? tops : receivers;
+            receiverClass = classes;
+            if (receiverClass.size() != receivers.size())
+            {
+                receiverClass.resize(receivers.size());
+                for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                    receiverClass[id] = id;
+            }
             Partition();
             baseRadius.assign(receivers.size(), 0.0);
             sparseRadius.assign(receivers.size(), 0.0);
@@ -175,6 +200,7 @@ class ProgressivePhotonMap final
                     }
                 globalRadius = std::max(1.0e-8, ExtentRadius(low, high, photons.size(), k));
             }
+            BuildClasses(count);
             generation = ++Generations();
         }
 
@@ -215,6 +241,66 @@ class ProgressivePhotonMap final
         }
 
         ConstObjectPtr ReceiverObject(std::uint32_t id) const { return receivers[id]; }
+
+        /// The scene object holding a receiver, whose surface coverage probes test.
+        ConstObjectPtr Top(std::uint32_t id) const { return receiverTop[id]; }
+
+        /// The class of receivers whose deposits a receiver's gathers may continue onto.
+        std::uint32_t Class(std::uint32_t id) const { return id < receiverClass.size() ? receiverClass[id] : noReceiver; }
+
+        /// The median base radius over a class's receivers.
+        double ClassRadius(std::uint32_t cls) const { return cls < classRadius.size() ? classRadius[cls] : globalRadius; }
+
+        /// Whether a scene object holds a collecting object of the class.
+        bool InClass(ConstObjectPtr top, std::uint32_t cls) const
+        {
+            return cls < classTops.size() && classTops[cls].count(top) > 0;
+        }
+
+        /// Places a collecting object that received no deposit: its scene object and class; false when it has none.
+        bool Bare(ConstObjectPtr object, ConstObjectPtr& top, std::uint32_t& cls) const
+        {
+            const auto found = bareObjects.find(object);
+            if (found == bareObjects.end())
+                return false;
+            top = found->second.first;
+            cls = found->second.second;
+            return true;
+        }
+
+        /// Whether another receiver of the receiver's class holds deposits facing normal whose bounds come within reach of point.
+        bool OtherNear(const Vector3d& point, const Vector3d& normal, std::uint32_t receiver, double reach) const
+        {
+            if (receiver >= crowded.size() || !crowded[receiver])
+                return false;
+            const auto range = classRanges[receiverClass[receiver]];
+            const double bound = reach * reach, length = normal.length();
+            return OtherNearParts(range.first, range.second, point, normal / length, receiver, bound);
+        }
+
+        /// Adds to heap the nearest accepted photons within reach on the receivers of class other than skip, keeping the k
+        /// nearest overall; the heap holds skip's own neighbours, as Nearest left it. why: doc/progressive-photons.md#boundaries
+        template<class Accept>
+        void NearestOther(const Vector3d& point, const Vector3d& normal, std::uint32_t cls, std::uint32_t skip, double reach,
+                          std::vector<PhotonNeighbour>& heap, Accept&& accept, bool twoSided = false) const
+        {
+            if (cls >= classRanges.size())
+                return;
+            const auto range = classRanges[cls];
+            double bound = reach * reach;
+            if (heap.size() == neighbours)
+                bound = std::min(bound, heap.front().distance2);
+            const double length = normal.length();
+            auto usable = [&](const PhotonPartition& part) {
+                const double cosine = length > 0.0 ? std::max(-1.0, std::min(1.0, dot(normal, part.axis) / length)) : 1.0;
+                auto facing = [&](double c) {
+                    const double closest = c >= part.cosSpread ? 1.0 : c * part.cosSpread + std::sqrt(1.0 - c * c) * part.sinSpread;
+                    return part.length * length * closest >= kPhotonNormalAgreement;
+                };
+                return facing(cosine) || (twoSided && facing(-cosine));
+            };
+            NearestParts(range.first, range.second, point, skip, bound, heap, accept, usable);
+        }
 
         /// The typical support on a receiver, from its spacing when it holds fewer than k photons, else over the whole map.
         double BaseRadius(std::uint32_t id) const
@@ -296,6 +382,15 @@ class ProgressivePhotonMap final
         std::vector<ConstObjectPtr> receivers;
         std::unordered_map<ConstObjectPtr, std::uint32_t> receiverIds;
         std::vector<double> baseRadius, sparseRadius;
+        std::vector<std::uint32_t> receiverClass;
+        std::vector<ConstObjectPtr> receiverTop;
+        std::vector<std::uint32_t> classOrder;
+        std::vector<char> crowded;
+        std::vector<double> classRadius;
+        std::vector<std::unordered_set<ConstObjectPtr>> classTops;
+        Placement bareObjects;
+        std::vector<std::pair<Vector3d, Vector3d>> classBounds;
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> classRanges;
         double globalRadius = 1.0e-8;
         std::uint64_t generation = 0;
 
@@ -376,6 +471,150 @@ class ProgressivePhotonMap final
                 partitions.push_back(part);
                 BuildRange(begin, end, 0);
             }
+        }
+
+        /// A tree over the partitions of every class shared by several receivers: each class's partition ids in classOrder
+        /// form an implicit binary tree whose middle element of each range carries the bounds of the range.
+        void BuildClasses(const std::vector<size_t>& count)
+        {
+            classOrder.clear();
+            classBounds.clear();
+            classRanges.clear();
+            const std::uint32_t classes = receiverClass.empty() ? 0 : 1 + *std::max_element(receiverClass.begin(), receiverClass.end());
+            std::vector<std::uint32_t> members(classes, 0);
+            for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                if (count[id] > 0)
+                    ++members[receiverClass[id]];
+            std::vector<std::vector<std::uint32_t>> parts(classes);
+            for (std::uint32_t i = 0; i < partitions.size(); ++i)
+            {
+                const std::uint32_t cls = receiverClass[photons[partitions[i].begin].receiver];
+                if (members[cls] > 1)
+                    parts[cls].push_back(i);
+            }
+            std::vector<std::vector<double>> radii(classes);
+            for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                if (count[id] > 0)
+                    radii[receiverClass[id]].push_back(BaseRadius(id));
+            classRadius.assign(classes, globalRadius);
+            for (std::uint32_t cls = 0; cls < classes; ++cls)
+                if (!radii[cls].empty())
+                {
+                    std::nth_element(radii[cls].begin(), radii[cls].begin() + radii[cls].size() / 2, radii[cls].end());
+                    classRadius[cls] = radii[cls][radii[cls].size() / 2];
+                }
+            classTops.assign(classes, {});
+            for (std::uint32_t id = 0; id < receivers.size(); ++id)
+                classTops[receiverClass[id]].insert(receiverTop[id]);
+            for (const auto& placed : bareObjects)
+                if (placed.second.second < classes)
+                    classTops[placed.second.second].insert(placed.second.first);
+            classRanges.assign(classes, {0, 0});
+            for (std::uint32_t cls = 0; cls < classes; ++cls)
+            {
+                classRanges[cls].first = std::uint32_t(classOrder.size());
+                classOrder.insert(classOrder.end(), parts[cls].begin(), parts[cls].end());
+                classRanges[cls].second = std::uint32_t(classOrder.size());
+            }
+            classBounds.resize(classOrder.size());
+            for (const auto& range : classRanges)
+                BuildParts(range.first, range.second);
+            // receivers whose deposit bounds meet another receiver's within the tangent-plane slab, facing alike
+            crowded.assign(receivers.size(), 0);
+            for (std::uint32_t i = 0; i < partitions.size(); ++i)
+            {
+                const std::uint32_t id = photons[partitions[i].begin].receiver;
+                const auto range = receiverClass[id] < classRanges.size() ? classRanges[receiverClass[id]] : std::make_pair(0u, 0u);
+                if (!crowded[id] && range.first < range.second)
+                    crowded[id] = Touches(range.first, range.second, partitions[i], id, kPhotonSlab * BaseRadius(id));
+            }
+        }
+
+        bool Touches(std::uint32_t begin, std::uint32_t end, const PhotonPartition& part, std::uint32_t skip, double reach) const
+        {
+            if (begin >= end)
+                return false;
+            const std::uint32_t middle = begin + (end - begin) / 2;
+            auto apart = [&](const Vector3d& low, const Vector3d& high) {
+                for (unsigned int a = 0; a < 3; ++a)
+                    if (low[a] > part.high[a] + reach || high[a] < part.low[a] - reach)
+                        return true;
+                return false;
+            };
+            if (apart(classBounds[middle].first, classBounds[middle].second))
+                return false;
+            const PhotonPartition& other = partitions[classOrder[middle]];
+            if (photons[other.begin].receiver != skip && !apart(other.low, other.high) && dot(other.axis, part.axis) > 0.0)
+                return true;
+            return Touches(begin, middle, part, skip, reach) || Touches(middle + 1, end, part, skip, reach);
+        }
+
+        void BuildParts(std::uint32_t begin, std::uint32_t end)
+        {
+            if (begin >= end)
+                return;
+            Vector3d low = partitions[classOrder[begin]].low, high = partitions[classOrder[begin]].high;
+            for (std::uint32_t i = begin + 1; i < end; ++i)
+                for (unsigned int a = 0; a < 3; ++a)
+                {
+                    low[a] = std::min(low[a], partitions[classOrder[i]].low[a]);
+                    high[a] = std::max(high[a], partitions[classOrder[i]].high[a]);
+                }
+            const Vector3d span = high - low;
+            unsigned int axis = span[X] >= span[Y] ? X : Y;
+            if (span[Z] > span[axis])
+                axis = Z;
+            const std::uint32_t middle = begin + (end - begin) / 2;
+            std::nth_element(classOrder.begin() + begin, classOrder.begin() + middle, classOrder.begin() + end, [&](std::uint32_t a, std::uint32_t b) {
+                return partitions[a].low[axis] + partitions[a].high[axis] < partitions[b].low[axis] + partitions[b].high[axis]; });
+            classBounds[middle] = {low, high};
+            BuildParts(begin, middle);
+            BuildParts(middle + 1, end);
+        }
+
+        double RangeDistance2(std::uint32_t middle, const Vector3d& point) const
+        {
+            double d2 = 0.0;
+            for (unsigned int a = 0; a < 3; ++a)
+            {
+                const double d = std::max(0.0, std::max(classBounds[middle].first[a] - point[a], point[a] - classBounds[middle].second[a]));
+                d2 += d * d;
+            }
+            return d2;
+        }
+
+        bool OtherNearParts(std::uint32_t begin, std::uint32_t end, const Vector3d& point, const Vector3d& normal, std::uint32_t skip, double bound) const
+        {
+            if (begin >= end)
+                return false;
+            const std::uint32_t middle = begin + (end - begin) / 2;
+            if (RangeDistance2(middle, point) > bound)
+                return false;
+            const PhotonPartition& part = partitions[classOrder[middle]];
+            if (photons[part.begin].receiver != skip && part.Distance2(point) <= bound)
+            {
+                const double c = std::max(-1.0, std::min(1.0, dot(normal, part.axis)));
+                const double closest = c >= part.cosSpread ? 1.0 : c * part.cosSpread + std::sqrt(1.0 - c * c) * part.sinSpread;
+                if (part.length * closest >= kPhotonNormalAgreement)
+                    return true;
+            }
+            return OtherNearParts(begin, middle, point, normal, skip, bound) || OtherNearParts(middle + 1, end, point, normal, skip, bound);
+        }
+
+        template<class Accept, class Usable>
+        void NearestParts(std::uint32_t begin, std::uint32_t end, const Vector3d& point, std::uint32_t skip, double& bound,
+                          std::vector<PhotonNeighbour>& heap, Accept& accept, Usable& usable) const
+        {
+            if (begin >= end)
+                return;
+            const std::uint32_t middle = begin + (end - begin) / 2;
+            if (RangeDistance2(middle, point) > bound)
+                return;
+            const PhotonPartition& part = partitions[classOrder[middle]];
+            if (photons[part.begin].receiver != skip && part.Distance2(point) <= bound && usable(part))
+                NearestRange(part.begin, part.end, point, bound, heap, accept);
+            NearestParts(begin, middle, point, skip, bound, heap, accept, usable);
+            NearestParts(middle + 1, end, point, skip, bound, heap, accept, usable);
         }
 
         void BuildRange(size_t begin, size_t end, unsigned int depth)

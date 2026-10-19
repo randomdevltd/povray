@@ -26,6 +26,7 @@ for receiver in 0 1 2 3 4 5 6; do
 done
 near "smooth mesh against faceted" "$(sum r1 Declare=Receiver=1)" "$(sum r0 Declare=Receiver=0)" 0.02
 near "smooth height_field against faceted" "$(sum r3 Declare=Receiver=3)" "$(sum r2 Declare=Receiver=2)" 0.02
+near "floor of 32 by 32 boxes against one box" "$(sum r7 Declare=Receiver=7)" "$(sum r8 Declare=Receiver=8)" 0.02
 near "isosurface against tight accuracy" "$(sum r4 Declare=Receiver=4)" "$(sum r4_tight Declare=Receiver=4 Declare=Accuracy=0.00002)" 0.03
 near "parametric against tight accuracy" "$(sum r5 Declare=Receiver=5)" "$(sum r5_tight Declare=Receiver=5 Declare=Accuracy=0.0001)" 0.03
 irid=$(channels irid Declare=Irid=1)
@@ -36,4 +37,4 @@ for c in 1 2 3; do
 done
 awk -v a="$(echo $irid | cut -d' ' -f2)" -v b="$(echo $plain | cut -d' ' -f2)" 'BEGIN { if (!(a < 0.9 * b)) { print "irid leaves photon light", a, b > "/dev/stderr"; exit 1 } }'
 rm -f progressive_receivers_*.ppm progressive_receivers_*.log progressive_receivers_*.sum progressive_receivers_*.pov-state
-echo 'progressive_receivers: smooth mesh, smooth height_field, isosurface, parametric and bicubic_patch receivers match classic and their exact forms, as does irid'
+echo 'progressive_receivers: smooth mesh, smooth height_field, isosurface, parametric and bicubic_patch receivers match classic and their exact forms, a tiled floor matches one box, as does irid'

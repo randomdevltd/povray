@@ -46,6 +46,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <memory>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -2463,6 +2464,108 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
 #define POV_COLD_PATH
 #endif
 
+// The eighths of the support disc, in angle order around normal from t1, holding no gathered deposit in its outer band:
+// the radii where k deposits put about three in each eighth, at least the outer half. Returns the empty ones as bits.
+static unsigned int PhotonEmptySectors(const ProgressivePhotonMap& map, const std::vector<PhotonNeighbour>& nearest, const Vector3d& point,
+                                       const Vector3d& t1, const Vector3d& t2, double support, double& band)
+{
+    static const unsigned char kOctant[8] = { 0, 1, 7, 6, 3, 2, 4, 5 };
+    const double outer = support * support;
+    size_t inside = 0;
+    for (const auto& neighbour : nearest)
+        inside += neighbour.distance2 <= outer;
+    band = std::sqrt(std::max(0.25, 1.0 - 8.0 * kPhotonSectorDeposits / std::max<size_t>(1, inside)));
+    const double inner = band * band * outer;
+    unsigned int filled = 0;
+    for (const auto& neighbour : nearest)
+    {
+        if (neighbour.distance2 < inner || neighbour.distance2 > outer)
+            continue;
+        const Vector3d d = map.photons[neighbour.index].point - point;
+        const double u = dot(d, t1), v = dot(d, t2);
+        filled |= 1u << kOctant[(u >= 0.0 ? 0u : 4u) + (v >= 0.0 ? 0u : 2u) + (std::abs(u) >= std::abs(v) ? 0u : 1u)];
+        if (filled == 0xffu)
+            return 0;
+    }
+    return ~filled & 0xffu;
+}
+
+// The same tangents for either side of a sheet, so both sides probe the same points.
+static void PhotonTangents(const Vector3d& n, Vector3d& t1, Vector3d& t2)
+{
+    unsigned int axis = std::abs(n[X]) >= std::abs(n[Y]) ? X : Y;
+    if (std::abs(n[Z]) > std::abs(n[axis]))
+        axis = Z;
+    const Vector3d side = n[axis] < 0.0 ? -n : n;
+    t1 = cross(side, std::abs(side[X]) < 0.6 ? Vector3d(1.0, 0.0, 0.0) : Vector3d(0.0, 1.0, 0.0)).normalized();
+    t2 = cross(side, t1);
+}
+
+namespace
+{
+struct PhotonClassCondition final : public RayObjectCondition
+{
+    const ProgressivePhotonMap& map;
+    std::uint32_t cls;
+    PhotonClassCondition(const ProgressivePhotonMap& m, std::uint32_t c) : map(m), cls(c) {}
+    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return map.InClass(object, cls); }
+};
+}
+
+bool Trace::PhotonProbe(const Vector3d& point, const Vector3d& n, const Vector3d& probe, double depth, double slab, double join,
+                        ConstObjectPtr own, ConstObjectPtr top, const ProgressivePhotonMap* map, std::uint32_t cls, Ray& ray, double* area)
+{
+    ray.Origin = probe + n * depth;
+    ray.Direction = -n;
+    Intersection best;
+    best.Depth = 2.0 * depth;
+    if (map != nullptr)
+    {
+        // the first surface of any object collecting the same lights' photons
+        if (!FindIntersection(best, ray, PhotonClassCondition(*map, cls), TrueRayObjectCondition()) || !(best.Depth <= 2.0 * depth))
+            return false;
+    }
+    else if (!FindIntersection(const_cast<ObjectPtr>(top), best, ray, 2.0 * depth))
+        return false;
+    if (best.Object == nullptr || Test_Flag(best.Object, PH_IGNORE_PHOTONS_FLAG))
+        return false;
+    Vector3d m;
+    if (!best.Object->FaceNormal(m, &best))
+        best.Object->Normal(m, &best, threadData);
+    const double length = m.length();
+    if (!(length > 0.0))
+        return false;
+    m /= dot(m, n) < 0.0 ? -length : length;
+    const double sheet = best.Object == own ? slab : join + best.Object->SurfaceTolerance();
+    if (!(dot(m, n) >= kPhotonNormalAgreement && std::abs(0.5 * dot(best.IPoint - point, n + m)) <= sheet))
+        return false;
+    // the kernel at the hit per unit of the disc's area: a curved surface holds more area than its shadow on the disc
+    if (area != nullptr)
+        *area = PhotonKernel::Weight((best.IPoint - point).lengthSqr(), depth * depth) / dot(m, n);
+    return true;
+}
+
+double Trace::PhotonCoverage(const Vector3d& point, const Vector3d& n, const Vector3d& t1, const Vector3d& t2, double radius, double slab,
+                             double join, ConstObjectPtr own, ConstObjectPtr top, const ProgressivePhotonMap& map, std::uint32_t cls,
+                             double reach, Ray& ray)
+{
+    auto measure = [&](unsigned int probes) {
+        double covered = 0.0, total = 0.0, area;
+        for (unsigned int j = 0; j < probes; ++j)
+        {
+            const double s2 = (j + 0.5) / probes, angle = j * 2.399963229728653, offset = std::sqrt(s2) * radius;
+            total += 1.0 - s2;
+            const Vector3d probe = point + (t1 * std::cos(angle) + t2 * std::sin(angle)) * offset;
+            if (PhotonProbe(point, n, probe, radius, slab, join, own, top, offset <= reach ? &map : nullptr, cls, ray, &area))
+                covered += area;
+        }
+        return covered / total;
+    };
+    // a share measured by few probes divides the estimate by its own error. why: doc/progressive-photons.md#boundaries
+    const double share = measure(kPhotonCoverageProbes);
+    return share < kPhotonFineCoverage ? measure(kPhotonFineCoverageProbes) : share;
+}
+
 /// Gathers photons from both sides of a sheet, kept out of line so the one-sided gather stays as compiled before.
 template<class Accept>
 POV_COLD_PATH static double NearestBothSides(const ProgressivePhotonMap& map, const Vector3d& point, const Vector3d& normal, std::uint32_t receiver,
@@ -2482,60 +2585,141 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
         if (sceneData->useSubsurface && Finish->UseSubsurface && (Eye.IsRadiosityRay() || (Finish->Phong == 0.0 && Finish->Specular == 0.0)))
             return;
         const std::uint32_t receiver = map.Receiver(Object);
-        if (receiver == ProgressivePhotonMap::noReceiver)
+        ConstObjectPtr top = nullptr;
+        std::uint32_t cls = ProgressivePhotonMap::noReceiver;
+        if (receiver != ProgressivePhotonMap::noReceiver)
+        {
+            top = map.Top(receiver);
+            cls = map.Class(receiver);
+        }
+        else if (!map.Bare(Object, top, cls))
             return;
         threadData->Stats()[Gather_Performed_Count]++;
         Vector3d Face_Normal = Raw_Normal;
         if (Object->FaceNormal(Face_Normal, &Isect) && dot(Face_Normal, Eye.Direction) > 0.0)
             Face_Normal.invert();
+        const double length = Face_Normal.length();
+        if (!(length > 0.0))
+            return;
         const bool doubleIlluminate = Test_Flag(Object, DOUBLE_ILLUMINATE_FLAG);
-        const double slab = kPhotonSlab * map.BaseRadius(receiver) + Object->SurfaceTolerance();
+        const bool twoSided = Finish->DiffuseBack != 0.0 || doubleIlluminate;
+        const double base = receiver != ProgressivePhotonMap::noReceiver ? map.BaseRadius(receiver) : map.ClassRadius(cls);
+        const double slab = kPhotonSlab * base + Object->SurfaceTolerance();
+        // another object continues the surface only where it lies in its plane, so a parallel sheet close below stays apart
+        const double join = kPhotonJoinSlab * base + Object->SurfaceTolerance();
         auto& nearest = threadData->photonNeighbours;
-        double support;
-        if (Finish->DiffuseBack != 0.0 || doubleIlluminate)
+        nearest.clear();
+        double support = ProgressivePhotonBudget::capScale * base;
+        if (receiver != ProgressivePhotonMap::noReceiver && twoSided)
             support = NearestBothSides(map, IPoint, Face_Normal, receiver, nearest, [&](const MappedPhoton& photon) {
                 const double cosine = dot(Face_Normal, photon.Direction());
                 return photon.receiver == receiver && std::abs(cosine) > EPSILON &&
                        (PhotonSurfaceMatch(photon, IPoint, Face_Normal, slab) || PhotonSurfaceMatchBehind(photon, IPoint, Face_Normal, slab));
             });
-        else
+        else if (receiver != ProgressivePhotonMap::noReceiver)
             support = map.Nearest(IPoint, Face_Normal, receiver, map.Cap(receiver), nearest, [&](const MappedPhoton& photon) {
                 const Vector3d direction = photon.Direction();
                 if (photon.receiver != receiver || !PhotonSurfaceMatch(photon, IPoint, Face_Normal, slab))
                     return false;
                 return std::abs(dot(Face_Normal, direction)) > EPSILON && !(dot(Layer_Normal, direction) < EPSILON);
             });
-        const double support2 = support * support;
         const bool irid = Finish->Irid > 0.0;
         const auto key = DeriveKey(Eye.GetKey(), kDrawPhoton, 0);
-        unsigned int index = 0;
-        MathColour sum;
-        for (const auto& neighbour : nearest)
-        {
-            const double weight = PhotonKernel::Weight(neighbour.distance2, support2);
-            if (!(weight > 0.0))
-                continue;
-            const auto& photon = map.photons[neighbour.index];
-            const Vector3d direction = photon.Direction();
-            const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
-            const MathColour incident = photon.flux * (weight / std::abs(dot(Raw_Normal, direction)));
-            MathColour contribution;
-            if (!(sceneData->useSubsurface && Finish->UseSubsurface))
-                ComputeDiffuseColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident,
-                                     Layer_Pigment_Colour, relativeIor, Attenuation, backside, key, index++);
-            if (!Eye.IsRadiosityRay() && !backside)
+        auto gather = [&]() {
+            const double support2 = support * support;
+            unsigned int index = 0;
+            MathColour sum;
+            for (const auto& neighbour : nearest)
             {
-                if (Finish->Phong > 0.0)
-                    ComputePhongColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
-                if (Finish->Specular > 0.0)
-                    ComputeSpecularColour(Finish, direction, -Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
+                const double weight = PhotonKernel::Weight(neighbour.distance2, support2);
+                if (!(weight > 0.0))
+                    continue;
+                const auto& photon = map.photons[neighbour.index];
+                const Vector3d direction = photon.Direction();
+                const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
+                // a deposit's density follows the cosine on the face it landed on. why: doc/progressive-photons.md#estimator
+                const MathColour incident = photon.flux * (weight / std::abs(dot(photon.Normal(), direction)));
+                MathColour contribution;
+                if (!(sceneData->useSubsurface && Finish->UseSubsurface))
+                    ComputeDiffuseColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident,
+                                         Layer_Pigment_Colour, relativeIor, Attenuation, backside, key, index++);
+                if (!Eye.IsRadiosityRay() && !backside)
+                {
+                    if (Finish->Phong > 0.0)
+                        ComputePhongColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
+                    if (Finish->Specular > 0.0)
+                        ComputeSpecularColour(Finish, direction, -Eye.Direction, Layer_Normal, contribution, incident, Layer_Pigment_Colour, relativeIor);
+                }
+                if (irid)
+                    ComputeIridColour(Finish, direction, Eye.Direction, Layer_Normal, IPoint, contribution);
+                sum += contribution;
+                threadData->progressiveContributions++;
             }
-            if (irid)
-                ComputeIridColour(Finish, direction, Eye.Direction, Layer_Normal, IPoint, contribution);
-            sum += contribution;
-            threadData->progressiveContributions++;
+            return MathColour(sum * PhotonKernel::Normaliser(support2));
+        };
+        MathColour estimate = gather();
+        // why: doc/progressive-photons.md#boundaries
+        const Vector3d n = Face_Normal / length;
+        Vector3d t1, t2;
+        PhotonTangents(n, t1, t2);
+        std::unique_ptr<Ray> ray;
+        auto probing = [&]() -> Ray& {
+            if (!ray)
+                ray.reset(new Ray(const_cast<TraceTicket&>(Eye.GetTicket()), IPoint, -n, Ray::OtherRay));
+            return *ray;
+        };
+        // a disc may leave the surface where an eighth of its outer band holds no deposit and probing finds no surface there
+        auto leaves = [&](double radius, double reach) {
+            static const double kSector[8][2] = { {0.9239, 0.3827}, {0.3827, 0.9239}, {-0.3827, 0.9239}, {-0.9239, 0.3827},
+                                                  {-0.9239, -0.3827}, {-0.3827, -0.9239}, {0.3827, -0.9239}, {0.9239, -0.3827} };
+            double band;
+            const unsigned int empty = PhotonEmptySectors(map, nearest, IPoint, t1, t2, radius, band);
+            if (empty == 0)
+                return false;
+            const double at = 0.5 * (1.0 + band) * radius;
+            // probe every other eighth of each run of empty ones, and a lone one
+            const unsigned int start = empty == 0xffu ? 0u : unsigned(__builtin_ctz(~empty & 0xffu));
+            for (unsigned int step = 0, run = 0; step < 8; ++step)
+            {
+                const unsigned int k = (start + 1 + step) % 8;
+                run = (empty & (1u << k)) ? run + 1 : 0;
+                if (run == 0 || (run % 2 == 1 && (run > 1 || (empty & (1u << ((k + 1) % 8))))))
+                    continue;
+                const Vector3d probe = IPoint + (t1 * kSector[k][0] + t2 * kSector[k][1]) * at;
+                if (!PhotonProbe(IPoint, n, probe, radius, slab, join, Object, top, at <= reach ? &map : nullptr, cls, probing()))
+                    return true;
+                if (reach == 0.0 && receiver != ProgressivePhotonMap::noReceiver && map.OtherNear(probe, n, receiver, 0.25 * radius))
+                    return true;
+            }
+            return false;
+        };
+        if (receiver == ProgressivePhotonMap::noReceiver || map.OtherNear(IPoint, n, receiver, slab) || (!nearest.empty() && leaves(support, 0.0)))
+        {
+            const double reach = std::min(support, kPhotonReach * base);
+            const size_t own = nearest.size();
+            map.NearestOther(IPoint, Face_Normal, cls, receiver, reach, nearest, [&](const MappedPhoton& photon) {
+                const Vector3d direction = photon.Direction();
+                const double sheet = join + map.ReceiverObject(photon.receiver)->SurfaceTolerance();
+                if (twoSided)
+                    return std::abs(dot(Face_Normal, direction)) > EPSILON &&
+                           (PhotonSurfaceMatch(photon, IPoint, Face_Normal, sheet) || PhotonSurfaceMatchBehind(photon, IPoint, Face_Normal, sheet));
+                return PhotonSurfaceMatch(photon, IPoint, Face_Normal, sheet) && std::abs(dot(Face_Normal, direction)) > EPSILON &&
+                       !(dot(Layer_Normal, direction) < EPSILON);
+            }, twoSided);
+            if (nearest.size() != own || std::any_of(nearest.begin(), nearest.end(), [&](const PhotonNeighbour& neighbour) {
+                    return map.photons[neighbour.index].receiver != receiver; }))
+            {
+                support = nearest.size() >= map.neighbours ? std::sqrt(nearest.front().distance2) : ProgressivePhotonBudget::capScale * base;
+                estimate = gather();
+            }
+            if (!nearest.empty() && leaves(support, reach))
+            {
+                const double covered = PhotonCoverage(IPoint, n, t1, t2, support, slab, join, Object, top, map, cls, reach, probing());
+                if (covered > 0.0)
+                    estimate /= covered;
+            }
         }
-        colour += sum * PhotonKernel::Normaliser(support2);
+        colour += estimate;
         return;
     }
     double Cos_Shadow_Angle;

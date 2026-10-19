@@ -117,7 +117,7 @@ int main()
         std::cout << "uniform sphere, " << photons << " photons: mean estimate / analytic irradiance " << ratio << "\n";
         assert(std::abs(ratio - 1.0) < 0.01);
     }
-    int owners[2];
+    int owners[3];
     pov::ProgressivePhotonMap layered, bright;
     for (unsigned int i = 0; i < 40000; ++i)
     {
@@ -235,6 +235,43 @@ int main()
         assert(std::equal(got.begin(), got.end(), all.begin()));
     }
     std::cout << "partitioned nearest neighbours match a brute-force search\n";
+
+    // three receivers on one plane, the first two lit by the same lights: a gather continues onto the second within reach
+    pov::ProgressivePhotonMap shared;
+    std::mt19937_64 pieces(21);
+    for (unsigned int i = 0; i < 6000; ++i)
+    {
+        Deposit deposit;
+        deposit.point = pov::Vector3d(unit(pieces), 0.0, unit(pieces));
+        deposit.normal = pov::Vector3d(0.3 * gauss(pieces), 1.0, 0.3 * gauss(pieces)).normalized();
+        deposit.direction = deposit.normal;
+        deposit.flux = pov::MathColour(1.0);
+        shared.Add(deposit, reinterpret_cast<pov::ConstObjectPtr>(&owners[i % 3]), 1.0);
+    }
+    shared.Build(24, {0, 0, 1});
+    for (int i = 0; i < 300; ++i)
+    {
+        const pov::Vector3d point(unit(pieces), 0.0, unit(pieces)), normal(0.0, 1.0, 0.0);
+        const double cap = 0.05 + 0.2 * unit(pieces), reach = 0.3 * unit(pieces);
+        auto accept = [&](const pov::MappedPhoton& photon) { return dot(photon.Normal(), normal) >= 0.9; };
+        shared.Nearest(point, normal, 0, cap, found, [&](const pov::MappedPhoton& photon) { return photon.receiver == 0 && accept(photon); });
+        std::make_heap(found.begin(), found.end());
+        shared.NearestOther(point, normal, shared.Class(0), 0, reach, found, accept);
+        std::vector<double> all, got;
+        for (const auto& photon : shared.photons)
+            if (accept(photon) && (photon.point - point).lengthSqr() <= (photon.receiver == 0 ? cap * cap : photon.receiver == 1 ? reach * reach : -1.0))
+                all.push_back((photon.point - point).lengthSqr());
+        std::sort(all.begin(), all.end());
+        all.resize(std::min<size_t>(24, all.size()));
+        for (const auto& neighbour : found)
+        {
+            assert(shared.photons[neighbour.index].receiver != 2);
+            got.push_back(neighbour.distance2);
+        }
+        std::sort(got.begin(), got.end());
+        assert(got == all);
+    }
+    std::cout << "a gather continues onto receivers of its class within reach, as a brute-force search does\n";
 
     std::mt19937_64 aiming(13);
     for (int i = 0; i < 10000; ++i)

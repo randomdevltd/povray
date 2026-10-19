@@ -2,7 +2,7 @@
 #version 3.8;
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (Receiver) #declare Receiver = 0; #end  // 0 mesh, 1 smooth mesh, 2 height_field, 3 smooth height_field, 4 isosurface, 5 parametric,
-                                                // 6 a coarse bicubic_patch
+                                                // 6 a coarse bicubic_patch, 7 a flat floor of 32 by 32 boxes, 8 one box
 #ifndef (Accuracy) #declare Accuracy = 0.001; #end
 #ifndef (Count) #declare Count = 400000; #end
 #ifndef (Irid) #declare Irid = 0; #end
@@ -40,6 +40,12 @@ sphere { <0, 1.5, 0>, 1 pigment { rgbf 1 } interior { ior 1.5 } photons { target
   #declare Floor = bicubic_patch { type 1 flatness 0 u_steps 1 v_steps 1
     <-2, 0, -1.5>, <-0.7, 0.4, -1.5>, <0.7, -0.4, -1.5>, <2, 0, -1.5>, <-2, 0.3, -0.5>, <-0.7, -0.6, -0.5>, <0.7, 0.6, -0.5>, <2, 0.3, -0.5>,
     <-2, -0.3, 0.5>, <-0.7, 0.6, 0.5>, <0.7, -0.6, 0.5>, <2, -0.3, 0.5>, <-2, 0, 1.5>, <-0.7, -0.4, 1.5>, <0.7, 0.4, 1.5>, <2, 0, 1.5> }
+#break
+#case (7)
+  #declare Floor = union { #for (I, 0, 31) #for (J, 0, 31) box { <-2 + I / 8, -0.1, -1.5 + 3 * J / 32>, <-2 + (I + 1) / 8, 0, -1.5 + 3 * (J + 1) / 32> } #end #end }
+#break
+#case (8)
+  #declare Floor = box { <-2, -0.1, -1.5>, <2, 0, 1.5> }
 #break
 #end
 object { Floor pigment { rgb 1 } finish { ambient 0 diffuse 1 #if (Irid) irid { 0.8 thickness 0.5 turbulence 0 } #end } }

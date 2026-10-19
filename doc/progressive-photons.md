@@ -64,7 +64,9 @@ scattering) remain hashed per-sample random numbers.
 
 ## Estimator
 
-A surface receiver gathers the `k` nearest compatible deposits on the same object.
+A surface receiver gathers the `k` nearest compatible deposits on the same object, and
+continues onto the surface around it where its support leaves that object (see
+Boundaries).
 A deposit is compatible when its surface normal is within 60 degrees of the
 receiver's and its offset from the mean of the two tangent planes,
 `|0.5 dot(p - x, n_x + n_p)|`, is at most a tenth of that receiver's base radius plus
@@ -87,7 +89,12 @@ distance over up to 128 of its own deposits. Each deposit is weighted by the
 Epanechnikov kernel `2 (1 - d^2/r^2) / (pi r^2)`. For a uniform deposit density
 the expected estimate equals the true irradiance both when `r` is the `k`-th
 distance and when it is the cap; on a sphere, the set within a straight-line
-distance `r` has area exactly `pi r^2`.
+distance `r` has area exactly `pi r^2`. A diffuse, phong, specular or `irid` gather then
+divides by the share of the support that lies on the receiving surface where that share is
+below one (see Boundaries). A deposit's flux is divided by its cosine on the face it landed
+on, not on the shading point's: the density of deposits on a face follows that face's
+cosine, which for a deposit taken from another surface, or from a curved or smooth-normal
+face, differs from the shading point's; on one flat face the two are the same.
 
 A receiver holding fewer than `k` deposits takes its base radius from their extent,
 the `k`-th neighbour distance of that many deposits spread evenly over a square with
@@ -137,6 +144,60 @@ and a fixed neighbour count. Its noise does not fall with quality: on
 three-dimensional kernel rate (`32 (batches / 4)^(4/7)`) helped at quality 4 and hurt at
 quality 0.25, so the count stays fixed; the remaining noise there comes from camera and
 media sampling.
+
+### Boundaries
+
+The normaliser `pi r^2` assumes that the whole support disc lies on the receiving surface.
+Where part of it does not (at the edge of an object, across a strip or a glyph stroke
+narrower than the support, over a hole or a CSG cut, on a small object such as a pebble)
+the estimate reads low by the kernel's share outside the surface: half at a straight
+edge, with the loss reaching one support inwards. A surface built from many objects (a
+tiled floor, a union of triangles, a sphere split into pieces) has such an edge at every
+seam, and a piece holding few deposits takes a support far wider than itself. One cause
+covers the whole family: the estimate is normalised over the object, while light lands on
+the surface. The gather therefore estimates over the receiving surface and divides by the
+part of the support that lies on it.
+
+The receiving surface around a shading point is its own object together with, within three
+base radii, every object that collects the photons of the same lights (the same
+light-group membership and `global_lights` setting); beyond that reach only its own object
+counts. Deposits on those objects are accepted by the usual normal test and a tangent-plane
+slab of a hundredth of the base radius (plus both objects' intersection tolerances) rather than
+a tenth: tiles, split unions and the pieces of a split sphere lie in one another's planes to
+rounding, while a thin plate a little above a wider one is a separate sheet whose deposits
+must not light the lower one's shadow (with a tenth, a plate 0.004 above another lit the
+lower plate's shadow strip, next to the upper plate's edge, to 0.99 of the lit level at
+quality 0.25, against 0.87 with a hundredth; see Receiver edges and pieces). Objects with `collect off`, and objects lit by other lights, never
+take part, and subsurface entry still takes only the receiving object's deposits. The covered share of a support of
+radius `r` is measured by 16 probes at fixed points of the tangent-plane disc (a sunflower
+spiral, even over its area): each is a ray along the normal from `r` above the disc to `r`
+below it, tested against the scene's objects of that class (only the own object beyond the
+reach), and it counts when the first such surface it meets passes the gather's normal test
+and its tangent-plane slab, the narrow one for another object. Each covered probe counts
+the kernel at the point it hit over the cosine between the two normals, so a curved surface
+counts the area it holds over the disc; the kernel-weighted share of covered probes divides
+the estimate. A share below three quarters is measured again with 64 probes: dividing by a
+share that 16 probes resolve coarsely biases the estimate high on receivers narrower than
+the support (by 8% to 26% on the target rig's pool rim and wall lip against the same
+estimator at quality 64; 64 probes leave 2% to 8%).
+Because the first surface decides, the part of a floor hidden under a pebble or a box that
+collects the same lights is not counted, and holds no deposits either. Both sides of a sheet
+use the same probe points.
+
+Probing every gather would pay for 16 rays at every shaded point, so a gather first decides
+from its own deposits whether its support may leave the surface. When
+every eighth of the outer band of the support holds a deposit (the band holds about three
+deposits per eighth, and is at least the outer half of the disc), the support is taken to
+lie on the surface and the estimate is unchanged. An empty eighth is probed at the middle of
+the band, every other one along a run of empty eighths: the own object there, with no
+other receiver's deposits within a quarter of the support, makes it a light feature. If a
+probe misses the object, or another receiver's deposits are there, or the receiver's
+deposits meet another receiver's within the tangent-plane slab anywhere (coincident or
+overlapping pieces), the gather adds the deposits of the other objects within reach,
+takes the distance to the `k`-th of them all as its support, repeats the eighths test on
+that support against the whole class, and measures the coverage only if that test fails. A collecting object that received no
+deposit gathers the deposits within reach of three times the median base radius of its
+class, over the same coverage.
 
 ## Light power and authoring
 
@@ -460,7 +521,8 @@ irradiance within 1% on a plane and on a sphere, including at a support of about
 radii, and within 2% in a sparse region gathered at the cap; that close receivers keep
 separate supports; that a 20-photon caustic, alone or beside a dense receiver, gets a usable
 radius and a nonzero estimate; that the partitioned search, one- and two-sided, returns the
-same neighbours as a brute-force search; and that the aiming domain's square and disc
+same neighbours as a brute-force search, and that a gather continued onto the receivers of its
+class within reach returns those a brute-force search does; and that the aiming domain's square and disc
 maps invert each other, that every direction reaching a sphere or a box from a point or a
 small area light lies in a cell with samples, that the density integrates to a sphere's
 solid angle and to its shadow's area under a parallel light within 1%, and that a weight
@@ -479,7 +541,8 @@ requires its underside to match the lit top, as does a `double_illuminate` disc;
 `tests/render/progressive_receivers.sh` focuses a caustic on a wavy floor built as a mesh, a
 smooth mesh, a height field, a smooth height field, an isosurface, a parametric and a
 `bicubic_patch` at `u_steps 1`, and requires each to match classic photons within 5%, the smooth forms to match the
-faceted ones and the isosurface and the parametric to match tight-accuracy ones, and requires an `irid`
+faceted ones, the isosurface and the parametric to match tight-accuracy ones and a flat floor of
+32 by 32 boxes to match one box within 2%, and requires an `irid`
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 `tests/render/progressive_direct_lights.sh` requires an ior 1 lens to pass the direct light
@@ -579,6 +642,61 @@ photons), the spheres in line 84 G (5.9 G; 100,000, 400,000, 1,600,000, 6,400,00
 25,600,000 photons) and the sparse canopy 8.7 G (4.3 G; 25,000 to 6,400,000 photons).
 Classic photons use `fade_distance sqrt(0.5)` so their power matches.
 
+### Receiver edges and pieces
+
+`tools/bench/photon-receiver-edges.pov` puts a family of receivers, each under the dappled
+light of a bumped glass slab and a photon-only lamp, 128 by 96, one sample per pixel: a
+floor ending in the light, six strips 0.02 to 0.64 wide, tiled floors, 400 flat-topped discs
+and 400 squashed spheres as separate objects, glyph tops of `text`, a sphere cap split into
+48 CSG pieces, a mesh missing 30% of its cells, a floor with CSG holes beside a clipped plane,
+and two boxes with different pigments meeting in the light. The reference for each is its
+twin with an unbroken surface at the same height, over the receiver's pixels (for the round
+pebbles, the same scene at quality 64). "Ratio" is the image mean over the twin's at the same
+quality, which does not depend on anti-aliasing; RMSE is against the twin at quality 64 with
+another seed (the twin itself reads 0.0966 at quality 1).
+
+| receiver | ratio, quality 0.25 / 1 / 4, per object | over the surface | RMSE quality 1, per object | over the surface |
+|---|---|---|---:|---:|
+| floor edge + corner | 0.997 / 0.999 / 0.999 | 1.000 / 1.000 / 1.000 | 0.0988 | 0.0987 |
+| strips 0.02-0.64 | 0.923 / 0.936 / 0.950 | 0.997 / 0.998 / 0.998 | 0.1023 | 0.0934 |
+| tiles 16x16 boxes union | 0.923 / 0.950 / 0.974 | 0.999 / 0.999 / 1.000 | 0.1018 | 0.0966 |
+| tiles 64x64 boxes union | 0.430 / 0.585 / 0.719 | 0.999 / 0.999 / 1.000 | 0.1852 | 0.0967 |
+| tiles 64x64 triangle pairs | 0.216 / 0.303 / 0.447 | 1.000 / 1.000 / 1.000 | 0.2798 | 0.0967 |
+| tiles 64x64 separate boxes | 0.430 / 0.585 / 0.719 | 0.999 / 0.999 / 1.000 | 0.1852 | 0.0967 |
+| tiles 128x128 separate boxes | 0.152 / 0.228 / 0.313 | 0.997 / 0.999 / 1.000 | 0.3239 | 0.0966 |
+| 400 flat pebbles | 0.771 / 0.814 / 0.846 | 0.993 / 0.996 / 0.996 | 0.1223 | 0.0938 |
+| 400 round pebbles | 0.892 / 0.934 / 0.958 | 0.979 / 0.995 / 1.003 | 0.0822 | 0.0801 |
+| text glyph tops | 0.895 / 0.919 / 0.939 | 0.996 / 0.999 / 0.999 | 0.1114 | 0.1003 |
+| sphere cap in 48 pieces | 0.968 / 0.979 / 0.988 | 1.000 / 1.000 / 1.000 | 0.0919 | 0.0904 |
+| mesh with 30% holes | 0.925 / 0.940 / 0.954 | 0.996 / 0.997 / 0.999 | 0.1036 | 0.0986 |
+| CSG holes + clipped plane | 0.987 / 0.989 / 0.990 | 1.000 / 1.000 / 1.000 | 0.1009 | 0.1004 |
+| two textures side by side | 0.998 / 0.998 / 0.999 | 1.001 / 1.000 / 1.000 | 0.0623 | 0.0622 |
+
+A thin plate 0.004 above a wider one, lit at a grazing angle (`Case=11`), shades a strip of
+the lower plate about 0.02 wide beside the upper plate's edge. The strip is narrower than the
+support, so the fixed-`k` estimate smooths it: over the surface it reads 0.88, 0.78 and 0.69
+of the lit level at quality 0.25, 1 and 4, against 0.46 at quality 64; per object it read
+0.49, 0.45 and 0.42, only because the lower plate's support ran over the upper plate and lost
+the light that the smoothing brought in.
+
+On `tests/render/photon_target_rig.pov` (photon-only, 640 by 360, quality 1, one sample per
+pixel) the change is mixed. Against a classic render of 5,000,000 photons it moves 2.1% of
+the pixels closer by more than 0.004 in luminance and 1.9% farther (summed 134 against 119),
+and against a per-object quality 64 render 1.6% closer and 2.6% farther (155 against 162).
+The changed pixels lie on the wall's top lip, the pool's coping and the tree's branches,
+receivers narrower than the support, where the per-object estimate darkened a crease and
+the estimate over the surface averages the light along the receiver instead. The branches
+read about twice their quality 64 level where the correction is largest; the cause is not
+found.
+
+Instructions at quality 1 (four threads), per object and over the surface: the sphere 5.02 G
+and 5.07 G, the water 7.84 G and 7.99 G, the rig 41.4 G and 47.1 G, a glass ball over 64 by 64
+separate boxes 5.15 G and 8.03 G, the same over one box 4.18 G and 4.26 G. With
+anti-aliasing (`+A0 +AM1 +R4`) every camera sample pays the test and probes: the sphere 9.0 G
+and 9.9 G, the spheres in line 17.3 G and 19.4 G, the ball over the boxes 12.0 G and 60.8 G.
+On scenes without receiver edges the images are the same, so at equal instructions the
+error there is 4% to 13% higher. The leaf is unchanged to the bit.
+
 ### Where the work goes
 
 Each scene is rendered three times: the full image, one pixel, and one pixel with photons
@@ -608,10 +726,14 @@ so it is set by the photons asked for; camera work barely depends on quality.
 - The fixed-`k` rule is global; it is not adapted to local noise or gradients,
   and it smooths features narrower than the support at low quality. Sparse
   regions are estimated at the capped radius and stay noisy.
-- Density is truncated at object edges and at changes of medium; there is no boundary
-  correction, so a receiver's estimate reads low within one support of its edge (about
-  half at a straight edge), and a surface built from many small objects (a tiled floor)
-  reads low throughout.
+- Density is still truncated at changes of medium, and at the boundary of a surface where
+  the eighths test passes: a hole smaller than the support with deposits all around it, or
+  an edge beyond the probed band. A surface hidden by an object that collects other lights'
+  photons, or none, is counted as covered.
+- A receiver narrower than the support is estimated as the average of the light along it,
+  and a shadow beside an edge is smoothed rather than darkened with the edge (see Receiver
+  edges and pieces). With anti-aliasing the eighths test and probes run at every camera
+  sample, which multiplies their cost on tiled floors.
 - A medium's base support is the median over all its segments, including segments
   that a light group keeps from it, so a medium crossed by another group's photons can
   differ from the same medium alone by a few 16-bit output levels.
