@@ -72,13 +72,13 @@ its intersection tolerance; that offset is zero for any two points on a sphere o
 cylinder, so curvature does not reject photons. Both tests use the normal of the face
 hit: a `smooth_triangle`, a smooth mesh triangle, a `smooth` height field cell or a
 `bicubic_patch` subpatch triangle interpolates a shading normal that does not lie on its
-flat face, and measured against it most neighbours on the face fell outside the slab (a
-smooth wavy mesh received 0.63 of classic's light, a smooth height field 0.68 and a wavy
-patch at `u_steps 1` 0.84). Shading still uses the interpolated
+flat face, and measured against it most neighbours on the face fall outside the slab (a
+smooth wavy mesh would receive 0.63 of classic's light, a smooth height field 0.68 and a
+wavy patch at `u_steps 1` 0.82). Shading still uses the interpolated
 normal. The tolerance is zero for exact solvers; an `isosurface` stops root finding
 within its `accuracy` before the surface, and a `parametric`'s interval subdivision
 within its `accuracy` of it, so their tolerance is that `accuracy`, scaled by the
-object's transform. Without it a focused caustic on a default-accuracy isosurface kept
+object's transform. Without it a focused caustic on a default-accuracy isosurface keeps
 0.23 of its light. Deposits arriving from behind a receiver without
 `diffuse_back`, or entering a subsurface receiver at grazing angles, are not
 counted. The support `r` is the distance to the `k`-th compatible deposit, capped
@@ -130,14 +130,13 @@ radius. A subsurface receiver that is a CSG gathers deposits on its members.
 Media deposits are finite beam segments. A camera sample gathers the segments
 within the distance of the 32nd nearest segment of the same medium list, capped at
 four times the median such distance, and divides by the sphere volume; the
-clipped segment is integrated analytically. This volume estimator keeps the
-box kernel and fixed neighbour count of the earlier prototype, now over the
-single map. Its noise does not fall with quality: on `tests/render/progressive_volume.pov`
-at 96 by 96, two seeds differ by an RMSE of 0.0053 at quality 0.25, 1 and 4 alike, while
-the render costs 216 G, 760 G and 2,855 G instructions. Scaling the neighbour count with
-the batch count at the three-dimensional kernel rate (`32 (batches / 4)^(4/7)`) moved
-that difference to 0.0065 at quality 0.25 and 0.0049 at quality 4, for 4% more work, so
-the count stays fixed; the remaining noise there comes from camera and media sampling.
+clipped segment is integrated analytically. This volume estimator uses a box kernel
+and a fixed neighbour count. Its noise does not fall with quality: on
+`tests/render/progressive_volume.pov` two seeds differ by about the same RMSE at quality
+0.25, 1 and 4. Scaling the neighbour count with the batch count at the
+three-dimensional kernel rate (`32 (batches / 4)^(4/7)`) helped at quality 4 and hurt at
+quality 0.25, so the count stays fixed; the remaining noise there comes from camera and
+media sampling.
 
 ## Light power and authoring
 
@@ -169,15 +168,12 @@ their direct light do. Unfaded media lights take no weight (see Media lights).
 On `tests/render/progressive_direct_lights.pov` (a radius 0.5 sphere 1.8 from the viewed
 floor point toward the light, method 2 quality 4) an ior 1 sphere passes 1.000 of the direct light at
 5 and at 245 units from the light, for unfaded and every faded light, and 1.002 for parallel
-and cylinder lights; a scattering medium lit through it glows 0.96 of the directly lit
-medium at quality 16 at both distances, 0.961 to 0.966 over six seeds (with a cone per
-target it was 0.93 to 0.96 over the same seeds and 0.99 only at the default seed, so the
-remaining 4% is the media estimator's). A glass sphere's caustic is 1.01 of classic's at 5 units and 1.00 at 245;
-the earlier rule, which scaled photon power by `A(d) * d^2` at the light-to-target distance
-and let photons fall as `1/r^2` beyond it, gave 0.53 and 0.98. The weights barely vary
-across one receiver, so they add no visible noise: the near glass sphere at 160 by 160,
-quality 1, has relative RMS 0.0356 against quality 64 under this rule and 0.0355 under
-the earlier one, at 2.77 G instructions each. No bound on the weight is needed.
+and cylinder lights; a scattering medium lit through it glows 0.96 (0.960 to 0.967 over six seeds at quality 16, at 5 and at 245 units) of the directly
+lit medium, the media estimator's remaining loss. A glass sphere's caustic is 1.005 of
+classic's at 5 units and 0.995 at 245. Scaling photon power by `A(d) * d^2` at the
+light-to-target distance instead, and letting photons fall as `1/r^2` beyond it, gives
+0.53 and 0.98. The weights barely vary across one receiver, so they add no visible
+noise. No bound on the weight is needed.
 
 Targets, `collect off`, reflection/refraction switches and `pass_through` retain
 their authoring roles; the number after `target` is a share weight (see Targets).
@@ -225,9 +221,8 @@ its cell), shrinking as `batches^(-1/7)`, times the `factor` of
 own minimum samples. As with classic photons a larger factor takes fewer, longer steps:
 on `tests/render/progressive_volume.pov` with varying extinction, factor 4 stores 4% fewer
 segments at `media 16` and 44% fewer at `media 64`, and changes the mean by under 0.2%.
-With several targets the step used to come from the light's first target whatever the
-photon was aimed at, so the segment count depended on the order of targets in the scene
-(406,000 or 470,000 segments for the same scene there); it now differs by 0.1%.
+Where targets of equal weight overlap, a cell's step comes from the smaller, so the
+segment count does not depend on the order of targets in the scene.
 The existing media step limit and sampling settings control extinction integration;
 method 4 shares its prepared coefficient field with camera transport. Its coarse
 direct-light sampling still gathers photons at every coefficient sample.
@@ -305,20 +300,17 @@ the density of its cell, so the image converges to the same light whatever the
 weights, and only its noise moves between targets. Give the weight to the
 target whose caustic must be sharp, such as thin or patchy glass near the camera. The
 weights are the same for every light type, parallel and cylinder sources included,
-and do not change between batches. The split is fixed by the scene, not measured: an
-earlier version set it from the previous batch's hit rate, which starved targets that
-are hard to hit, and learning a density from where photons land did not pay for itself
-(see Aiming domain under Measurements).
+and do not change between batches. The split is fixed by the scene, not measured: a
+split by hit rate starves targets that are hard to hit, and learning a density from where
+photons land does not pay for itself (see Aiming domain under Measurements).
 
 A `union`, or any other CSG object, flagged with `photons { target W }` is one target
 of weight W, whether or not `split_union` splits it for bounding: the split members
 share one entry and their pieces form its cells, so a split and an unsplit union get the
 same samples, photons and image.
-A target flag on a member inside a flagged union is replaced by the union's, as before.
+A target flag on a member inside a flagged union is replaced by the union's.
 Members are separate targets only when the union itself is not flagged and they are.
-Earlier versions made each member of a split union its own target, so a four-blade
-clump took four shares where one was meant. Method 1 still shoots each split member
-separately.
+Method 1 shoots each split member separately.
 
 This is the opposite sense of method 1, where the number is a spacing multiplier and
 a smaller value means more photons (`target 0.5` halves the spacing). A scene written
@@ -363,9 +355,7 @@ file is truncated or damaged, when it is a classic map, or when its photons woul
 exceed the memory budget (see Memory and reproducibility). A file shot with another
 render seed is reused with a warning. A classic render cannot load a method 2 file, nor
 method 2 a classic one. With three colour channels the file takes 64 bytes per surface
-deposit and 96 per media segment: on the leaf of the measurements below, at quality 1,
-591,415 deposits take 37.9 MB, saving adds 1.1 G instructions to the 168.7 G render,
-and a loaded render gives the same image in 164.1 G.
+deposit and 96 per media segment; a loaded render skips shooting and gives the same image.
 `tests/render/progressive_photon_file.sh` saves and loads media, subsurface and
 dispersion scenes, turns the camera, and checks each error, including a load refused
 under a tiny ceiling from the option, the environment and the scene, and accepted when the
@@ -373,7 +363,7 @@ option raises a tiny scene ceiling.
 
 ## Media lights
 
-Media lights now use method 2 through the same `Emitter` interface. Their
+Media lights use method 2 through the same `Emitter` interface. Their
 `light_source { photons { refraction on reflection off } }` block controls
 transport just as it does for ordinary lights. Omitting those switches leaves
 the target's settings in control. `brightness` scales emitted photon power and
@@ -459,17 +449,6 @@ Deposits are merged in shard order, so the maps, and the image, do not depend on
 the number of threads on the same build and platform. Because the maps are
 rebuilt identically, `+C` continues a render with the same photons.
 
-## Changes from the earlier prototype
-
-The earlier method 2 traced one full camera pass per shooting batch (four at
-quality 1), averaged the passes with a shrinking box-kernel radius chosen from a
-pilot batch, required `+PR -A`, and grouped batches differently at 8,000,000
-pixels and above. Each pass repeated camera, direct-light and subsurface work. Its
-surface acceptance slab, `|dot(p - x, n_x)| <= 0.05 r`, rejects deposits on
-receivers curved at a radius smaller than about ten gather radii: on a sphere the
-gathered fraction is 0.50 at `r = 0.2 R` and 0.25 at `r = 0.4 R`. That schedule,
-the pilot, the per-pixel estimator state and the image-size threshold are gone.
-
 ## Tests
 
 `tests/source/progressive_photon.cpp` checks the budget, the per-batch memory projection,
@@ -503,6 +482,9 @@ smooth mesh, a height field, a smooth height field, an isosurface, a parametric 
 faceted ones and the isosurface and the parametric to match tight-accuracy ones, and requires an `irid`
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
+`tests/render/progressive_direct_lights.sh` requires an ior 1 lens to pass the direct light
+within 3% for every fade, a scattering medium lit through it to glow within 4.5% of the
+directly lit medium at quality 16, and a glass caustic to match classic photons within 10%.
 `tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with
 weights 1:1, 4:1 and 1:4 under a point and a parallel sun and requires a weight of 4 to
 raise or lower the patch's logged share by more than a tenth, the image to match across thread counts and the photon-only image mean
@@ -512,188 +494,110 @@ refuses a file saved with another target weight.
 
 ## Measurements
 
-User-space instruction counts of whole renders (parse, shooting, maps and camera), four
-threads, counters not multiplexed; one run each. Errors are linear-light RMSE over
-pixels whose reference value is at most 1 (the few focal pixels above 1 are sampled
-differently by every camera pattern and would otherwise dominate). "Earlier method 2"
-is the multi-pass prototype described above. Classic photons use `fade_distance
-sqrt(0.5)` so their power matches. The tables before Aiming domain were measured with
-the earlier aiming of a cone or disc per target; the aiming domain wastes far fewer
-samples, so each quality now costs more and stores more deposits (see Aiming domain).
-
-Glass sphere caustic, `tests/render/progressive_photons.pov`, 96 by 64, photon-only.
-The no-anti-aliasing reference is quality 64 with another seed; two such seeds differ
-by 0.0009, and a classic 4,194,304-photon render differs from it by 0.0026.
-
-| render | instructions | RMSE, no AA reference | RMSE, 36-sample reference |
-|---|---:|---:|---:|
-| classic 1,048,576 photons | 3.53 G | 0.0048 | 0.0048 |
-| earlier method 2, quality 1 | 3.13 G | (4 jittered samples) | 0.0073 |
-| quality 1 | 2.26 G | 0.0027 | 0.0042 |
-| quality 1, `+A0 +AM1 +R4` | 3.14 G | | 0.0016 |
-| quality 4 | 8.55 G | 0.0014 | 0.0039 |
-| earlier method 2, quality 4 | 10.94 G | (16 jittered samples) | 0.0036 |
-
-Water caustic, `tools/bench/photon-budget-water.pov`, 1000 by 667, no anti-aliasing.
-References: quality 16 with another seed (two seeds differ by 0.0040) and classic
-spacing 0.005; the two references differ by 0.0149, mostly at the shadow edge of the
-water box, where the kernel spreads deposits that classic gathers keep sharp.
-
-| render | instructions | RMSE vs quality 16 | RMSE vs classic 0.005 |
-|---|---:|---:|---:|
-| classic spacing 0.02 | 24.4 G | 0.0247 | 0.0351 |
-| classic spacing 0.01 | 41.1 G | 0.0090 | 0.0169 |
-| earlier method 2, quality 1 | 64.3 G | 0.0647 | 0.0705 |
-| quality 1 | 17.9 G | 0.0176 | 0.0285 |
-| quality 4 | 38.5 G | 0.0092 | 0.0216 |
-
-Shooting and kernel ablations, RMSE against the same-camera reference:
-
-| change at quality 1 (quality 4) | sphere | water |
-|---|---:|---:|
-| as described | 0.0027 (0.0014) | 0.0176 (0.0092) |
-| hashed random shooting | 0.0041 (0.0025) | 0.0625 (0.0377) |
-| box kernel | 0.0045 (0.0033) | 0.0296 |
-| cone kernel | 0.0027 (0.0014) | 0.0158 |
-| `k` base 16 / 96 instead of 48 | 0.0047 / 0.0035 | 0.0284 / 0.0279 |
-| cap 4 / 16 base radii instead of 8 | 0.0058 / 0.0019 | 0.0175 / 0.0176 |
-
-Stratified shooting is the largest single gain: on the water caustic, random shooting
-at quality 4 (0.0377) is no better than stratified shooting at quality 0.25 (0.0362),
-with sixteen times fewer photons. The cap changes no image here but costs work on the
-water scene: 16.2 G at a cap of 4, 17.9 G at 8 and 23.3 G at 16; on the leaf below it
-is 170 G, 169 G and 178 G.
-
-Leaf, `tests/render/subsurface_leaf.pov` with `photons { method 2 quality Q }` in
-place of its classic block, 320 by 240, both prisms, subsurface method 2 with 64
-samples. Here image error is dominated by subsurface and camera sampling, not photons:
-against a 9-sample classic 1,600,000-photon reference the RMSE is 0.028 for classic,
-quality 1 and quality 4 alike, 0.019 for the earlier prototype (four camera samples) and
-0.014 for quality 1 with four anti-aliasing samples. With the sun, fill and sky off, the
-lit leaf's mean is within 2.3% of classic per channel (quality 1: +1.2%, +0.6%, +2.1%;
-the earlier prototype +0.6%, +1.0%, +0.2%). Before deposits were indexed by normal
-direction its quality 1 camera work was 244 G, as much as classic, because gathers on
-the unlit face scanned the lit face's deposits within the cap.
+Instructions are user-space instruction counts of whole renders (parse, shooting, maps and
+camera), four threads unless stated, counted exactly; one run each. Image error is the
+linear-light RMSE against a quality 64 render with another seed, over pixels whose
+reference is at most 1, each image clipped at 1, so that the few focal pixels that every
+camera pattern samples differently do not decide it. Errors are given at one camera sample
+per pixel (`-A`), where they include sub-pixel structure that anti-aliasing averages away,
+and, where measured, with anti-aliasing `+A0 +AM1 +R4` (about 15 samples per pixel on these
+scenes). Each reference is rendered by the same build and with the same sampling as the
+images it judges. "At equal instructions" interpolates each method's error in log-log
+between quality 0.5, 1 and 2 to the instructions of a cone per target at quality 1.
 
 ### Aiming domain
 
-Shooting used to aim each sample at one target's bounding sphere (a cone of directions,
-or a disc for a parallel light), splitting samples between targets by weight, plus a tenth
-isotropic for nonparallel lights. Measured at quality 1, most samples deposited nothing:
-the bounding sphere of a target's box is far larger than the target (a glass sphere fills
-a third of its cone, so 66% of the sphere scene's samples met the floor first), a sparse
-union is mostly empty space (89% of the rig's samples and 95% of a canopy of 60 small
-discs deposited nothing), an aperture rejected 94% of each prism beam's samples on the
-leaf, an opaque object over a target stopped 90%, and the isotropic tenth deposited on 0-1%
-of its samples. Where cones overlap, up to 27% of the samples aimed at one target met
-another first (two spheres in line; 8% on the rig); the density was exact, so this cost
-nothing in bias. An empty sample costs about 5,000 instructions (a scene whose samples are
-95% empty shoots at 4,900 per sample) and a depositing one about 16,000 (a scene whose
-samples are 95% depositing shoots at 15,900), so the empty samples took about 15% (water)
-to 43% (sphere) of the shooting work on the sample scenes and over 90% where a target was
-hidden or sparse. Every sample also evaluated every target's cone: with 64 small targets
-the cone aiming cost 4.35 G at quality 1 for 87,000 deposits, the domain 3.08 G for
-120,000.
+Aiming each sample at one target's bounding sphere instead (a cone of directions, or a disc
+for a parallel light), splitting samples between targets by weight, plus a tenth
+isotropic for nonparallel lights, leaves most samples depositing nothing at quality 1: the
+bounding sphere of a target's box is far larger than the target (a glass sphere fills a
+third of its cone, so 66% of the sphere scene's samples meet the floor first), a sparse
+union is mostly empty space (89% of the rig's samples and 95% of a canopy of 60 small discs
+deposit nothing), an aperture rejects 94% of each prism beam's samples on the leaf, an
+opaque object over a target stops 90%, and the isotropic tenth deposits on 0-1% of its
+samples. An empty sample costs about 5,000 instructions and a depositing one about
+16,000, so the empty samples take 15% (water) to 43% (sphere) of the shooting work on the
+sample scenes and over 90% where a target is hidden or sparse.
 
-`tests/render/photon_aim_cases.pov` adds five layouts, photon-only on a white floor:
+`tests/render/photon_aim_cases.pov` holds five layouts, photon-only on a white floor:
 two glass spheres in line along the light, a glass sphere the light reaches only through a
 mirror, an opaque box over a glass sphere, a sparse canopy of 60 glass discs and 64 small
-glass spheres that are each a target. Image error against a quality 64 reference with
-another seed, over pixels whose reference is at most 1, each image clipped at 1 so that
-the few focal pixels the camera samples differently do not decide it; at equal
-instructions, interpolated in log-log between quality 0.5, 1 and 2 of each aiming to
-the cost of the cone aiming at quality 1 (four threads, counts exact):
+glass spheres that are each a target. Error at equal instructions, the aiming domain over
+a cone per target, quality 1 of the cones:
 
-| scene | cone aiming, quality 1 | instructions | aiming domain at equal cost | ratio |
-|---|---:|---:|---:|---:|
-| sphere, `progressive_photons.pov` 192x128 | 0.0066 | 2.5 G | 0.0049 | 0.74 |
-| water, `photon-budget-water.pov` 500x333 | 0.0264 | 7.0 G | 0.0231 | 0.87 |
-| target rig, parallel sun, 640x360 | 0.0466 | 29.0 G | 0.0413 | 0.89 |
-| target rig, its grass patch only | 0.0411 | 29.0 G | 0.0444 | 1.08 |
-| target rig, sun 200 units away | 0.0481 | 27.8 G | 0.0414 | 0.86 |
-| target rig, sun 200 units away, grass patch | 0.0441 | 27.8 G | 0.0440 | 1.00 |
-| two spheres in line | 0.0182 | 3.7 G | 0.0108 | 0.59 |
-| sphere seen through a mirror | 0.0062 | 3.6 G | 0.0049 | 0.79 |
-| sphere under an opaque box | 0.00046 | 1.8 G | 0.00050 | 1.08 |
-| sparse canopy of 60 discs | 0.0367 | 3.9 G | 0.0083 | 0.23 |
-| 64 small targets | 0.0095 | 4.3 G | 0.0078 | 0.83 |
+| scene | instructions, cones, quality 1 | RMSE, no AA | ratio | instructions, cones, AA | RMSE, AA | ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| sphere, `progressive_photons.pov` 192x128 photon-only | 2.47 G | 0.0081 / 0.0068 | 0.84 | 6.3 G | 0.00389 / 0.00196 | 0.50 |
+| water, `photon-budget-water.pov` 500x333 | 6.93 G | 0.0283 / 0.0251 | 0.89 | 63.2 G | 0.0253 / 0.0197 | 0.78 |
+| target rig, parallel sun, 640x360 photon-only | 28.9 G | 0.0523 / 0.0474 | 0.90 | | | |
+| two spheres in line, 320x240 | 3.61 G | 0.0206 / 0.0143 | 0.69 | 15.9 G | 0.0119 / 0.0063 | 0.53 |
+| sparse canopy of 60 discs | 3.90 G | 0.0480 / 0.0234 | 0.49 | 44.3 G | 0.0436 / 0.0151 | 0.35 |
+| 64 small targets | 4.30 G | 0.0096 / 0.0080 | 0.83 | 12.0 G | 0.0135 / 0.0110 | 0.81 |
+| glass ball over 64 by 64 boxes, 256x192 | 2.72 G | 0.0043 / 0.0020 | 0.46 | 7.9 G | 0.00077 / 0.00062 | 0.80 |
+
+The advantage holds with anti-aliasing and grows where the error at one sample per pixel is
+set by the camera rather than the photons (the sphere, the spheres in line, the canopy).
+The rig is not rendered with anti-aliasing (its camera work at about 15 samples per pixel
+exceeds the budget of these runs). Each quality step stores more deposits and costs more:
+in the render queue (all threads, quality 1, one run each) the sphere takes 7.53 G against
+5.15 G with cones, the water 12.99 G against 12.16 G, the rig 45.0 G against 33.3 G, the
+spheres in line 9.95 G against 7.85 G, the canopy 8.46 G against 8.31 G, the 64 small
+targets 7.16 G against 8.68 G (every sample there also evaluated every target's cone) and
+the ball over the boxes 8.16 G against 5.85 G.
 
 On the leaf (`subsurface_leaf.pov` with `photons { method 2 quality Q }`, 160 by 120, the
-prism lights alone) the error is 0.0249 to 0.0252 for both aimings at every quality, set by
-subsurface and camera sampling; there the domain makes every sample pass the apertures, so
-quality 0.25 shoots 2.5 million deposits for 80 G instructions where the cone aiming shot
-0.6 million at quality 1 for 44 G. On the prism sample at 128 by 72 against a quality 4
-reference the domain at quality 0.25 (1,278 G, 0.0133) matches the cone aiming at quality
-0.5 (1,100 G, 0.0136). The deposited power summed over every sample, which the image
-converges to, agrees with the cone aiming within 0.01% for point, area, spot, parallel and
-cylinder lights over three seeds each.
+prism lights alone, 61 dispersion bands) the domain makes every sample pass the prisms'
+apertures, so quality 1 stores 9.9 million deposits (1.2 GB of map) and takes 213 G in the
+queue against 41 G with cones; the image there is set by subsurface and camera sampling, so
+such a scene wants a lower quality (quality 0.25 stores 2.5 million deposits for 80 G).
 
-Splitting every sample evenly by solid angle alone gave 0.84 on the rig and 0.83 with the
-far sun, but 1.35 and 1.20 on the grass patch: a small target got photons in proportion to
-its size and lost its caustic. Half by solid angle and half by target keeps the patch
-within 8% and loses at most 5% elsewhere. Learning a density over the domain between
-batches from where samples deposited (from deposit counts or from delivered power, with a
-uniform half or fifth as a floor), or loading one learned from a quality 8 render
-beforehand, gave no consistent gain: from 0.6 to 1.0 of the domain's error on most scenes,
-but 1.7 to 3.0 times it under the opaque box, where concentrating photons on the visible
-part shrank the floor's base radius and left its faint reflections at a smaller cap.
-Learning is therefore not used, and the density does not change between batches.
+Splitting every sample by solid angle alone improves the whole rig image but loses the
+small grass patch's caustic (its error rises by a third): a small target gets photons in
+proportion to its size. Half by solid angle and half by target keeps the patch's error
+within 8% of a cone per target while gaining elsewhere. Learning a density over the domain
+between batches from where samples deposited, or loading one learned from a quality 8
+render, gives no consistent gain: 0.6 to 1.0 of the domain's error on most scenes, but 1.7
+to 3.0 times it under the opaque box, where concentrating photons on the visible part
+shrinks the floor's base radius and leaves its faint reflections at a smaller cap. The
+density therefore does not change between batches.
 
-Against classic photons at classic's own instruction counts (1, 4 and 16 million photons
-on the sphere and the layouts, 0.2, 0.8 and 3.2 million on the rig, spacing 0.02, 0.01 and
-0.005 on the water), the domain's error is 0.3 to 0.7 of classic's, except on the water at
-spacing 0.005 (100 G), where classic's 0.0081 beats the domain's 0.0105 extrapolated from
-quality 2.
+A scattering medium lit through an ior 1 lens (`tests/render/progressive_direct_lights.pov`,
+quality 16) glows 0.960 to 0.967 of the directly lit medium over six seeds with the domain,
+and 0.933 to 0.961 with cones; the remaining loss is the media estimator's.
 
 Building the domain takes 0.05 G instructions for a point light and one target, 0.19 G for
 1,300 pieces, 1.2 G for 10,000 and 11.6 G for 100,000 (2.0 G for a parallel light).
 
+### Against classic photons
+
+Classic photons at a ladder of their own settings, at one sample per pixel against one
+quality 64 method 2 reference per scene, need these instructions to reach the error of method 2 at
+quality 1: the sphere 55 G (method 2 5.0 G; classic counts 262,144, 1,048,576, 4,194,304,
+16,777,216 and 67,108,864 photons), the water 20 G (7.8 G; spacing 0.02, 0.01, 0.005,
+0.0035 and 0.0025), the rig 368 G (41 G; 200,000, 800,000, 3,200,000 and 5,000,000
+photons), the spheres in line 84 G (5.9 G; 100,000, 400,000, 1,600,000, 6,400,000 and
+25,600,000 photons) and the sparse canopy 8.7 G (4.3 G; 25,000 to 6,400,000 photons).
+Classic photons use `fade_distance sqrt(0.5)` so their power matches.
+
 ### Where the work goes
 
-Each scene and configuration is rendered three times: the full image, one pixel, and one
-pixel with photons off (`+Q8`, the earlier prototype with `+PR`). Shooting is the one-pixel
-run minus the photons-off run (shooting, deposits and map build); camera is the full run
-minus the one-pixel run. Instructions are exact; wall seconds are single runs at four
-threads on a shared machine, within about 0.3 s, and the start-up of each run is about
-0.8 s. "Per shot" and "per deposit" divide the shooting instructions by the photons shot
-and stored.
+Each scene is rendered three times: the full image, one pixel, and one pixel with photons
+off (`+Q8`). Shooting is the one-pixel run minus the photons-off run (shooting, deposits and
+map build); camera is the full run minus the one-pixel run.
 
-Sphere, 96 by 64, photon-only:
+| scene, quality | photons off | shooting | camera | total | shot | deposits | map peak |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| sphere 192x128 photon-only, 0.25 | 0.14 G | 1.17 G | 0.23 G | 1.55 G | 65,536 | 89,310 | 22 MB |
+| sphere, 1 | 0.14 G | 4.59 G | 0.27 G | 5.00 G | 262,144 | 357,214 | 41 MB |
+| sphere, 4 | 0.14 G | 18.47 G | 0.34 G | 18.95 G | 1,048,576 | 1,428,867 | 123 MB |
+| water 500x333, 0.25 | 0.18 G | 1.03 G | 2.47 G | 3.67 G | 65,536 | 62,320 | 11 MB |
+| water, 1 | 0.18 G | 4.12 G | 3.54 G | 7.84 G | 262,144 | 249,279 | 25 MB |
+| water, 4 | 0.18 G | 16.61 G | 6.26 G | 23.05 G | 1,048,576 | 997,120 | 83 MB |
+| leaf 160x120, 0.25 | 0.14 G | 49.6 G | 30.1 G | 79.8 G | 65,536 | 2,475,391 | |
+| leaf, 1 | 0.14 G | 198.3 G | 30.9 G | 229.4 G | 262,144 | 9,901,569 | 1.2 GB |
 
-| render | photons off | shooting | camera | total | peak RSS | shot | deposits | per shot | per deposit |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| classic 1,048,576 | 0.14 G | 3.20 G / 0.1 s | 0.2 G / 0.2 s | 3.5 G / 1.4 s | 42 MB | 157,873 | 441,368 | 20,279 | 7,254 |
-| earlier method 2, quality 1 | 0.97 G | 1.90 G / 0.3 s | 0.3 G / 0.0 s | 3.1 G / 1.4 s | 38 MB | 327,680 | 132,029 | 5,788 | 14,366 |
-| quality 0.25 | 0.14 G | 0.48 G / 0.0 s | 0.0 G / 0.0 s | 0.7 G / 0.8 s | 31 MB | 65,536 | 26,390 | 7,347 | 18,246 |
-| quality 1 | 0.14 G | 2.02 G / 0.0 s | 0.1 G / 0.1 s | 2.3 G / 1.1 s | 41 MB | 262,144 | 105,536 | 7,714 | 19,160 |
-| quality 4 | 0.14 G | 8.36 G / 1.0 s | 0.1 G / 1.8 s | 8.6 G / 3.9 s | 62 MB | 1,048,576 | 422,196 | 7,971 | 19,797 |
-
-Water, 1000 by 667:
-
-| render | photons off | shooting | camera | total | peak RSS | shot | deposits | per shot | per deposit |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| classic spacing 0.02 | 0.29 G | 6.01 G / 0.8 s | 18.1 G / 1.6 s | 24.4 G / 3.2 s | 51 MB | 568,787 | 352,315 | 10,567 | 17,060 |
-| classic spacing 0.01 | 0.29 G | 23.88 G / 2.1 s | 17.0 G / 0.8 s | 41.1 G / 3.7 s | 93 MB | 2,272,472 | 1,409,299 | 10,510 | 16,946 |
-| earlier method 2, quality 1 | 1.48 G | 2.88 G / 0.1 s | 59.9 G / 4.2 s | 64.3 G / 5.5 s | 84 MB | 327,680 | 203,653 | 8,784 | 14,133 |
-| quality 0.25 | 0.29 G | 0.72 G / 0.1 s | 10.2 G / 0.9 s | 11.2 G / 1.8 s | 50 MB | 65,536 | 40,691 | 11,000 | 17,716 |
-| quality 1 | 0.29 G | 3.05 G / 0.6 s | 14.6 G / 1.6 s | 17.9 G / 3.0 s | 61 MB | 262,144 | 162,775 | 11,649 | 18,760 |
-| quality 4 | 0.29 G | 12.39 G / 2.1 s | 25.9 G / 1.0 s | 38.5 G / 3.9 s | 91 MB | 1,048,576 | 651,087 | 11,813 | 19,025 |
-
-Leaf, 320 by 240:
-
-| render | photons off | shooting | camera | total | peak RSS | shot | deposits | per shot | per deposit |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| classic 400,000 | 0.16 G | 37.2 G / 3.6 s | 252 G / 26.4 s | 290 G / 30.8 s | 225 MB | 658,246 | 1,803,296 | 56,513 | 20,629 |
-| earlier method 2, quality 1 | 1.23 G | 14.4 G / 2.0 s | 626 G / 63.4 s | 642 G / 66.6 s | 214 MB | 327,680 | 745,239 | 44,075 | 19,380 |
-| quality 0.25 | 0.16 G | 3.0 G / 0.3 s | 155 G / 15.6 s | 158 G / 16.7 s | 137 MB | 65,536 | 147,862 | 45,809 | 20,304 |
-| quality 1 | 0.16 G | 12.3 G / 1.2 s | 156 G / 14.4 s | 169 G / 16.4 s | 170 MB | 262,144 | 591,415 | 46,985 | 20,826 |
-| quality 4 | 0.16 G | 49.6 G / 6.0 s | 159 G / 14.7 s | 209 G / 21.5 s | 277 MB | 1,048,576 | 2,363,821 | 47,252 | 20,961 |
-
-Shooting costs 17,700 to 21,000 instructions per deposit at every quality on all three
-scenes, so it is set by the photons asked for. Camera work with the single map barely depends on
-quality (the leaf's 155 G to 159 G from quality 0.25 to 4), while the earlier prototype
-repeated it once per pass. The prototype's photons-off control still runs its progressive
-camera loop, hence its larger value.
+Shooting costs 12,800 (sphere) to 20,000 (leaf) instructions per deposit at every quality,
+so it is set by the photons asked for; camera work barely depends on quality.
 
 ## Limits
 
@@ -704,12 +608,14 @@ camera loop, hence its larger value.
 - The fixed-`k` rule is global; it is not adapted to local noise or gradients,
   and it smooths features narrower than the support at low quality. Sparse
   regions are estimated at the capped radius and stay noisy.
-- Density is still truncated at object edges and at changes of medium; there is
-  no boundary correction.
+- Density is truncated at object edges and at changes of medium; there is no boundary
+  correction, so a receiver's estimate reads low within one support of its edge (about
+  half at a straight edge), and a surface built from many small objects (a tiled floor)
+  reads low throughout.
 - A medium's base support is the median over all its segments, including segments
   that a light group keeps from it, so a medium crossed by another group's photons can
   differ from the same medium alone by a few 16-bit output levels.
-- Direct media lighting on the chords of a curved ray still sees the global lights
+- Direct media lighting on the chords of a curved ray sees the global lights
   only, even in a `global_lights off` group; their media photons follow the surface
   that ends the path.
 - Deposits per sample, and therefore memory, are not bounded by quality alone; a
@@ -718,7 +624,11 @@ camera loop, hence its larger value.
   estimated at the capped support: their energy is kept but spread over it.
 - A CSG subsurface receiver's slab and boundary probe use the whole map's median base
   radius (see CSG receivers).
-- Media noise does not fall with quality on the tested scene; only the cost grows.
+- Media noise falls little with quality on the tested volume scene; only the cost grows
+  (not re-measured with the aiming domain).
+- A target behind an aperture receives every sample the domain aims at it, so a scene
+  whose targets sit behind apertures, with many dispersion bands, stores many deposits
+  per quality step (see Aiming domain).
 - Target weights are set by hand; nothing measures which target the image needs, and the
   aiming does not depend on the camera.
 - The aiming domain is rastered at 128 by 128 cells, so a target much smaller than a cell
