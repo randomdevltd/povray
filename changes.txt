@@ -432,7 +432,7 @@ New Features
     images where method 2 used to fall back.
   - Subsurface method 2 lights a hit whose ray weight times its layers'
     opacity is below its finish's `subsurface { minimum_influence FLOAT }`
-    (0.002 by default, 0 for off; `#default { finish { subsurface {
+    (0.003 by default, 0 for off; `#default { finish { subsurface {
     minimum_influence FLOAT } } }` sets it for a scene) from its exit point
     alone, times the diffusion profile's integral, without reading or
     building its point cloud; such hits get no single scattering, photons

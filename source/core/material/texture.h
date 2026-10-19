@@ -117,7 +117,7 @@ struct Texture_Struct final : public Pattern_Struct
 };
 
 /// The least ray weight times layer opacity at which method 2 reads a hit's cloud, unless the finish's subsurface { minimum_influence } says otherwise.
-const double kSubsurfaceMinimumInfluence = 0.002;
+const double kSubsurfaceMinimumInfluence = 0.003;
 
 struct Finish_Struct final
 {

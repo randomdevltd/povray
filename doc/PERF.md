@@ -852,11 +852,11 @@ subsurface cost (the render less that with subsurface off: 3.37, 2.47, 1.84 and 
 | 0.0314 | 60.96 | 35% | 2.42 / +0.68 / 10.9 | 19.90 | 4% | 0.32 / +0.00 / 3.3 |
 
 0.0314 is the threshold the earlier relative setting gave by default (8 × `adc_bailout` 1/255). The weights through
-the stack come in steps of the faces' transmission, so 0.004 and 0.005 cut the same hits. The default is 0.002, the
-largest of 0.001, 0.002, 0.005, 0.01, ... whose worst block stays within three levels on both stacks; it removes 1% of
-the stacks' subsurface cost and changes nothing in the leaves or mirrors. On the many small objects of
+the stack come in steps of the faces' transmission, so 0.004 and 0.005 cut the same hits. The default is 0.003, the
+largest round value whose worst block stays within three levels on both stacks (0.005 reaches 5.3 on the direct stack);
+it removes 11% and 6% of the stacks' subsurface cost and changes nothing in the leaves or mirrors. On the many small objects of
 `sslt-projection.pov` (`Camera=1 Count=1000`, 320×160, method 2 at spacing 1), where the unscattered ray of one box
-meets the next at about 3% weight, 0.002 cuts no hit: 33.38 G, 1757 cells and 1.41 M points, where 0.0314 estimates
+meets the next at about 3% weight, 0.003 cuts no hit: 33.21 G, 1757 cells and 1.41 M points, where 0.0314 estimates
 2229 hits and builds 1422 cells (1.15 M points) in 30.55 G at rms 0.06 and worst block 0.15 (0.01: 811 hits, 32.14 G,
 worst 0.04); a finish on many small boxes can take a larger value of its own. `sslt-skin.pov`, `sslt-shadow-edges.pov`,
 `sslt-lamps.pov`, `sslt-studs.pov` (320×240) and `sslt-wide.pov` (a 200×200 window of 4000×2000), each with
