@@ -454,10 +454,6 @@
    "text": "Regardless of the projection type all cameras use location, right, up, direction, and other keywords to determine the location and orientation of the camera.",
    "doc": "r3_4.html#r3_4_2_1"
   },
-  "look_at": {
-   "text": "The look_at vector tells POV-Ray to pan and tilt the camera until it is looking at the specified x, y, z coordinates.",
-   "doc": "r3_4.html#r3_4_2_1_1"
-  },
   "looks_like": {
    "text": "Using looks_like is as an easy way to override this behavior.",
    "doc": "r3_4.html#r3_4_3_1_7"

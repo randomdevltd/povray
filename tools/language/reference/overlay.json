@@ -1,6 +1,6 @@
 {
  "format": "pov4-reference-overlay/1",
- "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss — 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
+ "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss \u2014 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
  "blocks": {
   "bicubic_patch": "Bezier patch surface from a 4x4 control-point grid.",
   "box": "Box from two opposite corner vectors.",
@@ -58,54 +58,205 @@
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file."
  },
  "words": {
-  "quality": { "kind": "item", "text": "Progressive photon budget for photons { method 2 quality FLOAT }; finite, positive and at most 16384, default 1. Contextual: remains available as an identifier." },
-  "let": { "kind": "statement", "text": "Binds a name in the current function scope; repeats rebind." },
-  "global": { "kind": "statement", "text": "Binds a name at file scope: global X = E; visible in the file's functions and included files." },
-  "input": { "kind": "statement", "text": "Declares a scene parameter supplied with Declare=Name=Value: input Q = 3; has a default, input Q; must be supplied. Typed from usage; supplying an undeclared name is an error." },
-  "fn": { "kind": "statement", "text": "Defines a named function; shorthand for a let-bound lambda." },
-  "return": { "kind": "statement", "text": "Ends the function with a value; error after items were emitted." },
-  "if": { "kind": "statement", "text": "Runs its body when the condition is true; else supplies the alternative." },
-  "else": { "kind": "statement", "text": "The alternative arm of an if: else { ... } or else if (C) { ... }." },
-  "while": { "kind": "statement", "text": "Repeats its body while the condition holds." },
-  "for": { "kind": "statement", "text": "for (I = A to B) counts inclusively, step S optional; for (V in A) iterates an array, dictionary keys or a fragment." },
-  "break": { "kind": "statement", "text": "Ends the nearest enclosing loop." },
-  "include": { "kind": "statement", "text": "include \"file.inc4\"; runs another file in the including file's scope." },
-  "true": { "kind": "literal", "text": "Boolean true." },
-  "false": { "kind": "literal", "text": "Boolean false." },
-  "null": { "kind": "literal", "text": "The empty value; let X; binds X as null." },
-  "in": { "kind": "statement", "text": "for (V in A) iterates an array, dictionary keys or fragment." },
-  "step": { "kind": "statement", "text": "for (I = A to B step S) sets the increment; default 1." },
-  "continue": { "kind": "statement", "text": "Starts the next loop iteration." },
-  "rgb": { "kind": "function", "text": "Colour from a vector or one grey level: rgb <1, 0, 0>, rgb 0.5." },
-  "rgbf": { "kind": "function", "text": "Colour with a filter value appended: rgbf <r, g, b, f>." },
-  "rgbt": { "kind": "function", "text": "Colour with a transmit value appended: rgbt <r, g, b, t>." },
-  "rgbft": { "kind": "function", "text": "Colour with filter and transmit values appended: rgbft <r, g, b, f, t>." },
-  "srgb": { "kind": "function", "text": "Colour taken from the sRGB space and converted to linear rgb." },
-  "color": { "kind": "function", "text": "Optional head of a colour value: color rgb <1, 0, 0>, color Red; spelled colour too." },
-  "colour": { "kind": "function", "text": "Optional head of a colour value: colour rgb <1, 0, 0>, colour Red; spelled color too." },
-  "background": { "kind": "block", "text": "The colour or pigment shown behind every object." },
-  "sky_sphere": { "kind": "block", "text": "A pigment wrapped on a huge sphere around the scene to suggest a sky." },
-  "fog": { "kind": "block", "text": "Fades distant objects toward a colour; fog_type picks flat fog or ground mist." },
-  "rainbow": { "kind": "block", "text": "An arc of colour bands across the sky: direction, angle, width, distance." },
-  "default": { "kind": "block", "text": "Item values every later object begins from: default { texture { ... } }." },
-  "tagged": { "kind": "block", "text": "Object value: copies of the objects placed so far that a tag expression selects, with the containers around them, as in look_at tagged { \"subject\" } or object { tagged { \"statue\" } translate x }. Expands once; matched by text before a block, so tagged stays free as a name." },
-  "inherit": { "kind": "item", "text": "In a tags list: adds the parent's effective tags, as in tags { \"leaf\", inherit }. Matched by text, so inherit stays free as a name." },
-  "prepared_media_cells": { "kind": "item", "text": "Cell limit for a medium's prepared density grid; grids coarsen to fit, and a warning names the fitted resolution." },
-  "atmospheric_dispersion": { "kind": "item", "text": "Wavelength-dependent spread of the atmosphere's refraction." },
-  "mesh_cache": { "kind": "item", "text": "Directory where finished isosurface_mesh and skein_mesh meshes are kept between renders." },
-  "interface_texture": { "kind": "item", "text": "Texture of the interface where coincident media surfaces merge: the average of its objects' textures." },
-  "max_angle": { "kind": "item", "text": "Degrees the gradient may turn across a cube before isosurface_mesh splits it; smaller follows curves more closely." },
-  "min_size": { "kind": "item", "text": "Smallest cube isosurface_mesh will split, in object units; thinner detail is missed." },
-  "len": { "kind": "function", "text": "Element count of an array or string; key count of a dictionary." },
-  "range": { "kind": "function", "text": "Inclusive array from A to B stepping S (default 1)." },
-  "map": { "kind": "function", "text": "New array with F applied to every element." },
-  "filter": { "kind": "function", "text": "New array keeping elements where F(P) is true." },
-  "push": { "kind": "function", "text": "New array with V appended; arrays have fixed size." },
-  "keys": { "kind": "function", "text": "Array of a dictionary's keys." },
-  "defined": { "kind": "function", "text": "False while the name is unbound or null." },
-  "debug": { "kind": "function", "text": "Writes S to the debug output stream." },
-  "warning": { "kind": "function", "text": "Writes S to the warning stream." },
-  "error": { "kind": "function", "text": "Writes S to the error stream and aborts." },
-  "array": { "kind": "function", "text": "New N-element array, every element Fill (default null)." }
+  "quality": {
+   "kind": "item",
+   "text": "Progressive photon budget for photons { method 2 quality FLOAT }; finite, positive and at most 16384, default 1. Contextual: remains available as an identifier."
+  },
+  "let": {
+   "kind": "statement",
+   "text": "Binds a name in the current function scope; repeats rebind."
+  },
+  "global": {
+   "kind": "statement",
+   "text": "Binds a name at file scope: global X = E; visible in the file's functions and included files."
+  },
+  "input": {
+   "kind": "statement",
+   "text": "Declares a scene parameter supplied with Declare=Name=Value: input Q = 3; has a default, input Q; must be supplied. Typed from usage; supplying an undeclared name is an error."
+  },
+  "fn": {
+   "kind": "statement",
+   "text": "Defines a named function; shorthand for a let-bound lambda."
+  },
+  "return": {
+   "kind": "statement",
+   "text": "Ends the function with a value; error after items were emitted."
+  },
+  "if": {
+   "kind": "statement",
+   "text": "Runs its body when the condition is true; else supplies the alternative."
+  },
+  "else": {
+   "kind": "statement",
+   "text": "The alternative arm of an if: else { ... } or else if (C) { ... }."
+  },
+  "while": {
+   "kind": "statement",
+   "text": "Repeats its body while the condition holds."
+  },
+  "for": {
+   "kind": "statement",
+   "text": "for (I = A to B) counts inclusively, step S optional; for (V in A) iterates an array, dictionary keys or a fragment."
+  },
+  "break": {
+   "kind": "statement",
+   "text": "Ends the nearest enclosing loop."
+  },
+  "include": {
+   "kind": "statement",
+   "text": "include \"file.inc4\"; runs another file in the including file's scope."
+  },
+  "true": {
+   "kind": "literal",
+   "text": "Boolean true."
+  },
+  "false": {
+   "kind": "literal",
+   "text": "Boolean false."
+  },
+  "null": {
+   "kind": "literal",
+   "text": "The empty value; let X; binds X as null."
+  },
+  "in": {
+   "kind": "statement",
+   "text": "for (V in A) iterates an array, dictionary keys or fragment."
+  },
+  "step": {
+   "kind": "statement",
+   "text": "for (I = A to B step S) sets the increment; default 1."
+  },
+  "continue": {
+   "kind": "statement",
+   "text": "Starts the next loop iteration."
+  },
+  "rgb": {
+   "kind": "function",
+   "text": "Colour from a vector or one grey level: rgb <1, 0, 0>, rgb 0.5."
+  },
+  "rgbf": {
+   "kind": "function",
+   "text": "Colour with a filter value appended: rgbf <r, g, b, f>."
+  },
+  "rgbt": {
+   "kind": "function",
+   "text": "Colour with a transmit value appended: rgbt <r, g, b, t>."
+  },
+  "rgbft": {
+   "kind": "function",
+   "text": "Colour with filter and transmit values appended: rgbft <r, g, b, f, t>."
+  },
+  "srgb": {
+   "kind": "function",
+   "text": "Colour taken from the sRGB space and converted to linear rgb."
+  },
+  "color": {
+   "kind": "function",
+   "text": "Optional head of a colour value: color rgb <1, 0, 0>, color Red; spelled colour too."
+  },
+  "colour": {
+   "kind": "function",
+   "text": "Optional head of a colour value: colour rgb <1, 0, 0>, colour Red; spelled color too."
+  },
+  "background": {
+   "kind": "block",
+   "text": "The colour or pigment shown behind every object."
+  },
+  "sky_sphere": {
+   "kind": "block",
+   "text": "A pigment wrapped on a huge sphere around the scene to suggest a sky."
+  },
+  "fog": {
+   "kind": "block",
+   "text": "Fades distant objects toward a colour; fog_type picks flat fog or ground mist."
+  },
+  "rainbow": {
+   "kind": "block",
+   "text": "An arc of colour bands across the sky: direction, angle, width, distance."
+  },
+  "default": {
+   "kind": "block",
+   "text": "Item values every later object begins from: default { texture { ... } }."
+  },
+  "tagged": {
+   "kind": "block",
+   "text": "Object value: copies of the objects placed so far that a tag expression selects, with the containers around them, as in look_at tagged { \"subject\" } or object { tagged { \"statue\" } translate x }. Expands once; matched by text before a block, so tagged stays free as a name."
+  },
+  "inherit": {
+   "kind": "item",
+   "text": "In a tags list: adds the parent's effective tags, as in tags { \"leaf\", inherit }. Matched by text, so inherit stays free as a name."
+  },
+  "prepared_media_cells": {
+   "kind": "item",
+   "text": "Cell limit for a medium's prepared density grid; grids coarsen to fit, and a warning names the fitted resolution."
+  },
+  "atmospheric_dispersion": {
+   "kind": "item",
+   "text": "Wavelength-dependent spread of the atmosphere's refraction."
+  },
+  "mesh_cache": {
+   "kind": "item",
+   "text": "Directory where finished isosurface_mesh and skein_mesh meshes are kept between renders."
+  },
+  "interface_texture": {
+   "kind": "item",
+   "text": "Texture of the interface where coincident media surfaces merge: the average of its objects' textures."
+  },
+  "max_angle": {
+   "kind": "item",
+   "text": "Degrees the gradient may turn across a cube before isosurface_mesh splits it; smaller follows curves more closely."
+  },
+  "min_size": {
+   "kind": "item",
+   "text": "Smallest cube isosurface_mesh will split, in object units; thinner detail is missed."
+  },
+  "len": {
+   "kind": "function",
+   "text": "Element count of an array or string; key count of a dictionary."
+  },
+  "range": {
+   "kind": "function",
+   "text": "Inclusive array from A to B stepping S (default 1)."
+  },
+  "map": {
+   "kind": "function",
+   "text": "New array with F applied to every element."
+  },
+  "filter": {
+   "kind": "function",
+   "text": "New array keeping elements where F(P) is true."
+  },
+  "push": {
+   "kind": "function",
+   "text": "New array with V appended; arrays have fixed size."
+  },
+  "keys": {
+   "kind": "function",
+   "text": "Array of a dictionary's keys."
+  },
+  "defined": {
+   "kind": "function",
+   "text": "False while the name is unbound or null."
+  },
+  "debug": {
+   "kind": "function",
+   "text": "Writes S to the debug output stream."
+  },
+  "warning": {
+   "kind": "function",
+   "text": "Writes S to the warning stream."
+  },
+  "error": {
+   "kind": "function",
+   "text": "Writes S to the error stream and aborts."
+  },
+  "array": {
+   "kind": "function",
+   "text": "New N-element array, every element Fill (default null)."
+  },
+  "look_at": {
+   "kind": "item",
+   "text": "Aims the camera at a point, or frames an object: look_at <Point> pans and tilts as usual; look_at ObjectIdentifier frames a declared object's bounds; look_at tagged { TAG_EXPRESSION } frames everything the expression selects (targets must be written before the camera). Optional frame multiplier, default 0.9: look_at Subject, 0.8. Framing never moves the camera; it zooms after the scene parses. A later look_at <Point> replaces the framing; mesh cameras reject it."
+  }
  }
 }

@@ -5,6 +5,8 @@
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '../..');
@@ -218,6 +220,34 @@ export function generate() {
     return { mined: Object.keys(descriptions).length, snippets: Object.keys(snippets).length };
 }
 
+// ---------------------------------------------------------------- staleness
+
+// The mined cards freeze one sentence of the manual per word, so a manual edit that adds or
+// rewrites sections does not reach them until --generate runs again. The stamp records what the
+// last generation saw; lookups warn when the manual has moved on.
+const docState = () => {
+    const dir = join(repo, 'doc/html');
+    const hash = createHash('sha256');
+    for (const f of readdirSync(dir).filter((x) => /^r3_\d+\.html$/.test(x)).sort()) {
+        hash.update(f);
+        hash.update(readFileSync(join(dir, f)));
+    }
+    let commit = 'unknown';
+    try {
+        commit = execSync('git log -1 --format=%H -- doc/html', { cwd: repo }).toString().trim();
+    } catch { /* no git: the content hash still catches edits */ }
+    return { commit, digest: hash.digest('hex').slice(0, 16) };
+};
+
+function checkFresh() {
+    try {
+        const stamp = JSON.parse(readFileSync(join(dataDir, '.stamp'), 'utf8'));
+        const now = docState();
+        if (stamp.digest !== now.digest)
+            console.error(`warning: doc/html changed since the last --generate (${stamp.commit}); the cards may be stale — run: node tools/language/reference.mjs --generate`);
+    } catch { /* no stamp: first run or old checkout, say nothing */ }
+}
+
 // ---------------------------------------------------------------- rendering
 
 function descriptionOf(word) {
@@ -346,11 +376,13 @@ if (invokedDirectly) {
         console.log(indexTable());
     } else if (arg === '--generate') {
         const { mined, snippets } = generate();
+        writeFileSync(join(dataDir, '.stamp'), JSON.stringify(docState()) + '\n');
         console.log(`descriptions.json: ${mined} descriptions, ${snippets} snippets; SKILL.md table refreshed`);
     } else if (!arg || arg.startsWith('-')) {
         console.error('usage: node tools/language/reference.mjs <term> | --list | --generate');
         process.exit(2);
     } else {
+        checkFresh();
         const result = lookup(arg);
         if (result.card) {
             if (result.note) console.log(result.note);
