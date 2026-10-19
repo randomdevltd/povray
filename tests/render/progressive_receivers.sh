@@ -20,7 +20,7 @@ near() {
     awk -v what="$1" -v a="$2" -v b="$3" -v share="$4" 'BEGIN {
         if (!(b > 0 && a > (1 - share) * b && a < (1 + share) * b)) { print what, a, b > "/dev/stderr"; exit 1 } }'
 }
-for receiver in 0 1 2 3 4 5; do
+for receiver in 0 1 2 3 4 5 6; do
     near "receiver $receiver against classic" "$(sum "r$receiver" Declare=Receiver=$receiver)" \
         "$(sum "r${receiver}_classic" Declare=Receiver=$receiver Declare=Method=1)" 0.05
 done
@@ -36,4 +36,4 @@ for c in 1 2 3; do
 done
 awk -v a="$(echo $irid | cut -d' ' -f2)" -v b="$(echo $plain | cut -d' ' -f2)" 'BEGIN { if (!(a < 0.9 * b)) { print "irid leaves photon light", a, b > "/dev/stderr"; exit 1 } }'
 rm -f progressive_receivers_*.ppm progressive_receivers_*.log progressive_receivers_*.sum progressive_receivers_*.pov-state
-echo 'progressive_receivers: smooth mesh, smooth height_field, isosurface and parametric receivers match classic and their exact forms, as does irid'
+echo 'progressive_receivers: smooth mesh, smooth height_field, isosurface, parametric and bicubic_patch receivers match classic and their exact forms, as does irid'

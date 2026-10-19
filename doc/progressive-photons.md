@@ -52,10 +52,11 @@ receiver's and its offset from the mean of the two tangent planes,
 `|0.5 dot(p - x, n_x + n_p)|`, is at most a tenth of that receiver's base radius plus
 its intersection tolerance; that offset is zero for any two points on a sphere or a
 cylinder, so curvature does not reject photons. Both tests use the normal of the face
-hit: a `smooth_triangle`, a smooth mesh triangle or a `smooth` height field cell
-interpolates a shading normal that does not lie on its flat face, and measured against
-it most neighbours on the face fell outside the slab (a smooth wavy mesh received 0.63
-of classic's light, a smooth height field 0.68). Shading still uses the interpolated
+hit: a `smooth_triangle`, a smooth mesh triangle, a `smooth` height field cell or a
+`bicubic_patch` subpatch triangle interpolates a shading normal that does not lie on its
+flat face, and measured against it most neighbours on the face fell outside the slab (a
+smooth wavy mesh received 0.63 of classic's light, a smooth height field 0.68 and a wavy
+patch at `u_steps 1` 0.84). Shading still uses the interpolated
 normal. The tolerance is zero for exact solvers; an `isosurface` stops root finding
 within its `accuracy` before the surface, and a `parametric`'s interval subdivision
 within its `accuracy` of it, so their tolerance is that `accuracy`, scaled by the
@@ -468,8 +469,8 @@ accepts `memory` expressions in a `.pov4` scene and rejects invalid ones;
 `tests/render/progressive_surface.sh` also lights a thin `diffuse_back` disc from behind and
 requires its underside to match the lit top, as does a `double_illuminate` disc;
 `tests/render/progressive_receivers.sh` focuses a caustic on a wavy floor built as a mesh, a
-smooth mesh, a height field, a smooth height field, an isosurface and a parametric, and
-requires each to match classic photons within 5%, the smooth forms to match the
+smooth mesh, a height field, a smooth height field, an isosurface, a parametric and a
+`bicubic_patch` at `u_steps 1`, and requires each to match classic photons within 5%, the smooth forms to match the
 faceted ones and the isosurface and the parametric to match tight-accuracy ones, and requires an `irid`
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.

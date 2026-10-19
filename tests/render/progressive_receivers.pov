@@ -1,7 +1,8 @@
 // A glass ball focuses a photon-only lamp onto a wavy floor, built as each kind of receiver in turn.
 #version 3.8;
 #ifndef (Method) #declare Method = 2; #end
-#ifndef (Receiver) #declare Receiver = 0; #end  // 0 mesh, 1 smooth mesh, 2 height_field, 3 smooth height_field, 4 isosurface, 5 parametric
+#ifndef (Receiver) #declare Receiver = 0; #end  // 0 mesh, 1 smooth mesh, 2 height_field, 3 smooth height_field, 4 isosurface, 5 parametric,
+                                                // 6 a coarse bicubic_patch
 #ifndef (Accuracy) #declare Accuracy = 0.001; #end
 #ifndef (Count) #declare Count = 400000; #end
 #ifndef (Irid) #declare Irid = 0; #end
@@ -34,6 +35,11 @@ sphere { <0, 1.5, 0>, 1 pigment { rgbf 1 } interior { ior 1.5 } photons { target
 #case (5)
   #declare Floor = parametric { function { u } function { 0.02 * sin(3 * u) * sin(3 * v) } function { v } <-2, -1.5>, <2, 1.5>
     contained_by { box { <-2, -0.1, -1.5>, <2, 0.1, 1.5> } } precompute 12 x, y, z accuracy Accuracy }
+#break
+#case (6)
+  #declare Floor = bicubic_patch { type 1 flatness 0 u_steps 1 v_steps 1
+    <-2, 0, -1.5>, <-0.7, 0.4, -1.5>, <0.7, -0.4, -1.5>, <2, 0, -1.5>, <-2, 0.3, -0.5>, <-0.7, -0.6, -0.5>, <0.7, 0.6, -0.5>, <2, 0.3, -0.5>,
+    <-2, -0.3, 0.5>, <-0.7, 0.6, 0.5>, <0.7, -0.6, 0.5>, <2, -0.3, 0.5>, <-2, 0, 1.5>, <-0.7, -0.4, 1.5>, <0.7, 0.4, 1.5>, <2, 0, 1.5> }
 #break
 #end
 object { Floor pigment { rgb 1 } finish { ambient 0 diffuse 1 #if (Irid) irid { 0.8 thickness 0.5 turbulence 0 } #end } }

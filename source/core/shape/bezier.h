@@ -121,6 +121,7 @@ class BicubicPatch final : public NonsolidObject
         virtual bool All_Intersections(const Ray&, IStack&, TraceThreadData *) override;
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        virtual bool FaceNormal(Vector3d&, const Intersection *) const override;
         virtual void UVCoord(Vector2d&, const Intersection *) const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
@@ -134,7 +135,7 @@ class BicubicPatch final : public NonsolidObject
         typedef DBL      TripleDouble[3];
 
         static void bezier_value(const ControlPoints *cp, DBL u0, DBL v0, Vector3d& P, Vector3d& N);
-        bool intersect_subpatch(const BasicRay&, const TripleVector3d&, const DBL [3], const DBL [3], DBL *, Vector3d&, Vector3d&, DBL *, DBL *) const;
+        bool intersect_subpatch(const BasicRay&, const TripleVector3d&, const DBL [3], const DBL [3], DBL *, Vector3d&, Vector3d&, Vector3d&, DBL *, DBL *) const;
         static bool spherical_bounds_check(const BasicRay &, const Vector3d& c, DBL);
         int intersect_bicubic_patch0(const BasicRay& , IStack&, TraceThreadData *Thread);
         static DBL point_plane_distance(const Vector3d&, const Vector3d&, DBL);

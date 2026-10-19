@@ -531,7 +531,15 @@ bool BicubicPatch::subpatch_normal(const Vector3d& v1, const Vector3d& v2, const
 *
 ******************************************************************************/
 
-bool BicubicPatch::intersect_subpatch(const BasicRay &ray, const TripleVector3d& V1, const DBL uu[3], const DBL vv[3], DBL *Depth, Vector3d& P, Vector3d& N, DBL *u, DBL *v) const
+/// A hit on a subpatch triangle, carrying the triangle's own normal for FaceNormal.
+static Intersection FacetHit(DBL depth, const Vector3d& point, const Vector3d& normal, const Vector3d& facet, const Vector2d& uv, ObjectPtr object)
+{
+    Intersection hit(depth, point, normal, uv, object);
+    hit.LocalIPoint = facet;
+    return hit;
+}
+
+bool BicubicPatch::intersect_subpatch(const BasicRay &ray, const TripleVector3d& V1, const DBL uu[3], const DBL vv[3], DBL *Depth, Vector3d& P, Vector3d& N, Vector3d& F, DBL *u, DBL *v) const
 {
     DBL squared_b0, squared_b1;
     DBL d, n, a, b, r;
@@ -557,6 +565,7 @@ bool BicubicPatch::intersect_subpatch(const BasicRay &ray, const TripleVector3d&
     d = 1.0 / sqrt(d);
 
     B[2] *= d;
+    F = B[2];
 
     /* Degenerate triangle. */
 
@@ -876,7 +885,7 @@ int BicubicPatch::bezier_subpatch_intersect(const BasicRay &ray, const ControlPo
     TripleVector3d V1;
     DBL u, v, Depth;
     DBL uu[3], vv[3];
-    Vector3d P, N;
+    Vector3d P, N, F;
     Vector2d UV;
     Vector2d uv_point, tpoint;
 
@@ -887,7 +896,7 @@ int BicubicPatch::bezier_subpatch_intersect(const BasicRay &ray, const ControlPo
     uu[0] = u0; uu[1] = u0; uu[2] = u1;
     vv[0] = v0; vv[1] = v1; vv[2] = v1;
 
-    if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, &u, &v))
+    if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, F, &u, &v))
     {
         if (Clip.empty() || Point_In_Clip(P, Clip, Thread))
         {
@@ -898,7 +907,7 @@ int BicubicPatch::bezier_subpatch_intersect(const BasicRay &ray, const ControlPo
 
             UV[U] = tpoint[0];
             UV[V] = tpoint[1];
-            Depth_Stack->push(Intersection(Depth, P, N, UV, this));
+            Depth_Stack->push(FacetHit(Depth, P, N, F, UV, this));
 
             cnt++;
         }
@@ -910,7 +919,7 @@ int BicubicPatch::bezier_subpatch_intersect(const BasicRay &ray, const ControlPo
     uu[1] = uu[2]; uu[2] = u1;
     vv[1] = vv[2]; vv[2] = v0;
 
-    if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, &u, &v))
+    if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, F, &u, &v))
     {
         if (Clip.empty() || Point_In_Clip(P, Clip, Thread))
         {
@@ -921,7 +930,7 @@ int BicubicPatch::bezier_subpatch_intersect(const BasicRay &ray, const ControlPo
 
             UV[U] = tpoint[0];
             UV[V] = tpoint[1];
-            Depth_Stack->push(Intersection(Depth, P, N, UV, this));
+            Depth_Stack->push(FacetHit(Depth, P, N, F, UV, this));
 
             cnt++;
         }
@@ -1457,7 +1466,7 @@ int BicubicPatch::bezier_tree_walker(const BasicRay &ray, const BEZIER_NODE *Nod
     int i, cnt = 0;
     DBL Depth, u, v;
     DBL uu[3], vv[3];
-    Vector3d N, P;
+    Vector3d N, P, F;
     TripleVector3d V1;
     Vector2d UV;
     Vector2d uv_point, tpoint;
@@ -1508,7 +1517,7 @@ int BicubicPatch::bezier_tree_walker(const BasicRay &ray, const BEZIER_NODE *Nod
          * intersections in the triangles.
          */
 
-        if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, &u, &v))
+        if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, F, &u, &v))
         {
             if (Clip.empty() || Point_In_Clip(P, Clip, Thread))
             {
@@ -1519,7 +1528,7 @@ int BicubicPatch::bezier_tree_walker(const BasicRay &ray, const BEZIER_NODE *Nod
 
                 UV[U] = tpoint[0];
                 UV[V] = tpoint[1];
-                Depth_Stack->push(Intersection(Depth, P, N, UV, this));
+                Depth_Stack->push(FacetHit(Depth, P, N, F, UV, this));
 
                 cnt++;
             }
@@ -1531,7 +1540,7 @@ int BicubicPatch::bezier_tree_walker(const BasicRay &ray, const BEZIER_NODE *Nod
         uu[1] = uu[2]; uu[2] = Vertices->uvbnds[1];
         vv[1] = vv[2]; vv[2] = Vertices->uvbnds[2];
 
-        if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, &u, &v))
+        if (intersect_subpatch(ray, V1, uu, vv, &Depth, P, N, F, &u, &v))
         {
             if (Clip.empty() || Point_In_Clip(P, Clip, Thread))
             {
@@ -1542,7 +1551,7 @@ int BicubicPatch::bezier_tree_walker(const BasicRay &ray, const BEZIER_NODE *Nod
 
                 UV[U] = tpoint[0];
                 UV[V] = tpoint[1];
-                Depth_Stack->push(Intersection(Depth, P, N, UV, this));
+                Depth_Stack->push(FacetHit(Depth, P, N, F, UV, this));
 
                 cnt++;
             }
@@ -1720,6 +1729,12 @@ void BicubicPatch::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData
     /* Use preocmputed normal. */
 
     Result = Inter->INormal;
+}
+
+bool BicubicPatch::FaceNormal(Vector3d& result, const Intersection *inter) const
+{
+    result = inter->LocalIPoint;
+    return true;
 }
 
 

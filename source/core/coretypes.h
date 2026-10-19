@@ -418,7 +418,8 @@ class Intersection final
         /// @note These values may be invalid or meaningless depending on the type of object intersected.
         /// @{
 
-        /// Point of the intersection in local coordinate space (used by Blob and SpindleTorus)
+        /// Point of the intersection in local coordinate space (used by Blob and SpindleTorus), or the normal of the flat
+        /// subpatch triangle hit (used by BicubicPatch)
         /// @note This value is invalid in Blob if haveLocalIPoint is false.
         Vector3d LocalIPoint;
         /// Generic auxiliary float data #1 (used by Prism, Lathe)
