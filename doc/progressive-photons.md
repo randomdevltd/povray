@@ -58,10 +58,9 @@ it most neighbours on the face fell outside the slab (a smooth wavy mesh receive
 of classic's light, a smooth height field 0.68). Shading still uses the interpolated
 normal. The tolerance is zero for exact solvers; an `isosurface` stops root finding
 within its `accuracy` before the surface, and a `parametric`'s interval subdivision
-reports hits up to about four times its `accuracy` either side, so their tolerances are
-that `accuracy` and eight times it, scaled by the object's transform. Without them a
-focused caustic on a default-accuracy isosurface kept 0.23 of its light and on a
-parametric 0.45. Deposits arriving from behind a receiver without
+within its `accuracy` of it, so their tolerance is that `accuracy`, scaled by the
+object's transform. Without it a focused caustic on a default-accuracy isosurface kept
+0.23 of its light. Deposits arriving from behind a receiver without
 `diffuse_back`, or entering a subsurface receiver at grazing angles, are not
 counted. The support `r` is the distance to the `k`-th compatible deposit, capped
 at eight times the receiver's base radius, which is the median `k`-th-neighbour
@@ -470,9 +469,8 @@ accepts `memory` expressions in a `.pov4` scene and rejects invalid ones;
 requires its underside to match the lit top, as does a `double_illuminate` disc;
 `tests/render/progressive_receivers.sh` focuses a caustic on a wavy floor built as a mesh, a
 smooth mesh, a height field, a smooth height field, an isosurface and a parametric, and
-requires each to match classic photons within 5% (the parametric within 10%: with its
-slab disabled it still reaches only 0.93 of classic there), the smooth forms to match the
-faceted ones and the isosurface to match a tight-accuracy one, and requires an `irid`
+requires each to match classic photons within 5%, the smooth forms to match the
+faceted ones and the isosurface and the parametric to match tight-accuracy ones, and requires an `irid`
 finish to tint the caustic as classic photons do, each colour channel within 5%; the
 emitter, direct-light, volume, volume light-group, media-light, light-group, radiosity, photon-file and `.pov4` scripts run with the new estimator.
 `tests/render/photon_target_weights.sh` renders `tests/render/photon_target_rig.pov` with

@@ -185,6 +185,8 @@ bool Parametric::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         }
         parX = parY = 0;
         TLen = 0;
+        // A cell is entered where the ray has entered all three of its coordinate slabs.
+        TPotRes = -BOUND_HUGE;
 
         /* X */
         if (SectorNum[i] < MaxPrecompX)
@@ -264,7 +266,7 @@ bool Parametric::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                 i--;
                 continue;
             }
-            if ((TPotRes = YRayMin) > TResult)
+            if ((TPotRes = std::max(TPotRes, YRayMin)) > TResult)
             {
                 i--;
                 continue;
@@ -313,7 +315,7 @@ bool Parametric::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                 i--;
                 continue;
             }
-            if ((TPotRes = ZRayMin) > TResult)
+            if ((TPotRes = std::max(TPotRes, ZRayMin)) > TResult)
             {
                 i--;
                 continue;
@@ -447,10 +449,10 @@ bool Parametric::Inside(const Vector3d&, TraceThreadData *Thread) const
  *
  ******************************************************************************/
 
-// Interval subdivision reports a hit up to about four times its accuracy from the surface, either side.
+// Interval subdivision stops within its accuracy of the surface.
 double Parametric::SurfaceTolerance() const
 {
-    return 8.0 * accuracy * MLargestScale(Trans);
+    return accuracy * MLargestScale(Trans);
 }
 
 void Parametric::Normal(Vector3d& Result, Intersection *Inter, TraceThreadData *Thread) const

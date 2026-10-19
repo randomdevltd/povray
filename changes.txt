@@ -716,6 +716,10 @@ Miscellaneous:
   - Fix long-standing bug in Julia fractal primitive using hypercomplex numbers.
   - Fix `sphere_sweep` crashing multi-threaded renders when a later sweep had
     more segments than the first one a thread intersected.
+  - Fix `parametric` hits placed up to 0.08 units early, or missed, for rays
+    nearly parallel to a coordinate plane: a perspective view lost a row of
+    pixels and misplaced its pattern, and a caustic focused on it showed a dark
+    seam under both photon methods.
   - Fix CPU feature detection (the `cpuid` probe could be optimised away),
     which gave AMD CPUs the portable noise code.
   - The `.pov4` static checker now accepts the contextual keywords — those
