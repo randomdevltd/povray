@@ -1779,7 +1779,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                      (layer->Finish->Specular    != 0.0) ||
                      (layer->Finish->Phong       != 0.0)) &&
                     ((!layer->Finish->AlphaKnockout) ||
-                     (att != 0.0)))
+                     (att != 0.0)) &&
+                    !LightsAddNothing(layer->Finish, att))
                 {
                     MathColour classicContribution;
 
@@ -2262,6 +2263,16 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
     TraceRay(nray, colour, transm, weight, false);
 
     return false;
+}
+
+// Whether every light's term for this finish is an exact zero: a diffuse term scaled by attenuation 0 (or no diffuse at all) and no
+// highlights; iridescence only scales the sum. A mark such a skipped loop could have left says a random draw shaped a zero.
+bool Trace::LightsAddNothing(const FINISH *finish, double attenuation) const
+{
+    const bool noDiffuse = ((attenuation == 0.0) && (finish->Crand <= 0.0)) ||
+                           ((finish->Diffuse * finish->BrillianceAdjust <= 0.0) && (finish->DiffuseBack * finish->BrillianceAdjust <= 0.0)) ||
+                           (sceneData->useSubsurface && finish->UseSubsurface);
+    return noDiffuse && (finish->Phong <= 0.0) && (finish->Specular <= 0.0);
 }
 
 // see Diffuse in the v3.6 code (lighting.cpp)
