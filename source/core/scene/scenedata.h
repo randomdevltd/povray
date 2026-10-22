@@ -235,6 +235,8 @@ class SceneData
         bool explicitNoiseGenerator;
         /// bounding method selector
         unsigned int boundingMethod;
+        /// the render's thread count (+WT), for preparation work that splits into independent parts
+        unsigned int workThreads = 1;
         /// Working gamma.
         pov_base::SimpleGammaCurvePtr workingGamma;
         /// Working gamma to sRGB encoding/decoding.

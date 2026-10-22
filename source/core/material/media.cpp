@@ -41,6 +41,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -62,6 +63,7 @@
 #include "core/scene/object.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
+#include "core/support/parallel.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -272,8 +274,17 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
     if (media.mix == kMediaBlendMultiply)
         effect = std::max(effect, 1.0);
     const DBL cellWidth = std::max(cell[X], std::max(cell[Y], cell[Z]));
-    for (int z = 0; z < nz; z++)
-        for (int y = 0; y < ny; y++)
+    // Cells are independent, so slabs of them are built on the render's thread count, each by one thread: the same grid on any count.
+    const size_t workers = (density.size() >= 4096) ? std::min<size_t>(nz, ttd->GetSceneData()->workThreads) : 1;
+    std::vector<std::unique_ptr<TraceThreadData>> helpers;
+    for (size_t i = 1; i < workers; ++i)
+        helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(ttd->GetSceneData()), i, false));
+    std::atomic<bool> unusable(false);
+    ParallelFor(size_t(nz), workers, [&](size_t slab, size_t worker)
+    {
+        TraceThreadData *td = (worker == 0) ? ttd : helpers[worker - 1].get();
+        const int z = int(slab);
+        for (int y = 0; (y < ny) && !unusable.load(std::memory_order_relaxed); y++)
             for (int x = 0; x < nx; x++)
             {
                 MathColour& value = density[(size_t(z) * ny + y) * nx + x];
@@ -287,12 +298,12 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
                                                                    (y + 0.25 + 0.5 * dy) * cell[Y],
                                                                    (z + 0.25 + 0.5 * dz) * cell[Z]);
                             MathColour sample;
-                            Evaluate_Density_Pigment(media.Density, point, sample, ttd);
+                            Evaluate_Density_Pigment(media.Density, point, sample, td);
                             for (int ch = 0; ch < MathColour::channels; ch++)
                                 if (!std::isfinite(sample[ch]) || (sample[ch] < 0.0))
                                 {
-                                    density.clear();
-                                    return false;
+                                    unusable.store(true, std::memory_order_relaxed);
+                                    return;
                                 }
                             value += sample;
                             if (first)
@@ -311,6 +322,12 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
                 rough[(size_t(z) * ny + y) * nx + x] =
                     effect * cellWidth * (highValue - lowValue).Max() > 1.0 / 1024.0;
             }
+    });
+    if (unusable)
+    {
+        density.clear();
+        return false;
+    }
     return true;
 }
 
