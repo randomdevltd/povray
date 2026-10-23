@@ -45,7 +45,6 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
-#include <map>
 #include <mutex>
 
 // POV-Ray header files (base module)
@@ -143,9 +142,18 @@ class Media::FastCache final
             bool Depth(const Vector3d& point, MathColour& result) const;
         };
 
+        /// one light's grid, keyed by the light's scene index: the LightSource a ray carries is a per-thread copy
+        struct LightGrid final
+        {
+            size_t index = 0;
+            std::once_flag once;
+            std::shared_ptr<const Optical> grid;
+        };
+        static constexpr int kLightGrids = 4;
+        /// taken only to claim a slot; readers find a published slot without it
         std::mutex lightMutex;
-        /// keyed by the light's scene index: the LightSource a ray carries is a per-thread copy, so its address is not stable
-        std::map<size_t, std::shared_ptr<const Optical>> lights;
+        std::atomic<int> lightCount{0};
+        LightGrid lights[kLightGrids];
 
         bool EnsureField(Media& media, TraceThreadData *ttd);
         bool Segment(const Ray& ray, DBL& from, DBL& to) const;
@@ -468,7 +476,16 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
         WarnFastMedia(ttd, media, kFastCoarse, detail, container);
     }
     grid->prefix.resize(size_t(grid->n[0]) * grid->n[1] * (grid->n[2] + 1));
-    for (int y = 0; y < grid->n[1]; y++)
+    // Columns along the light are independent, so rows of them are shared out like the density grid's slabs.
+    const size_t cells = size_t(grid->n[0]) * grid->n[1] * grid->n[2];
+    const size_t workers = (cells >= 4096) ? std::min<size_t>(grid->n[1], ttd->GetSceneData()->workThreads) : 1;
+    std::vector<std::unique_ptr<TraceThreadData>> helpers;
+    for (size_t i = 1; i < workers; ++i)
+        helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(ttd->GetSceneData()), i, false));
+    ParallelFor(size_t(grid->n[1]), workers, [&](size_t row, size_t worker)
+    {
+        TraceThreadData *td = (worker == 0) ? ttd : helpers[worker - 1].get();
+        const int y = int(row);
         for (int x = 0; x < grid->n[0]; x++)
             for (int z = 0; z < grid->n[2]; z++)
             {
@@ -476,11 +493,12 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
                                        grid->v * (grid->lo[1] + (y + 0.5) * grid->ds[1]) +
                                        grid->w * (grid->lo[2] + (z + 0.5) * grid->ds[2]);
                 MathColour value;
-                if (!Inside_Object(point, container, ttd) || !DensityAt(point, value))
+                if (!Inside_Object(point, container, td) || !DensityAt(point, value))
                     value.Clear();
                 grid->prefix[grid->Index(x, y, z + 1)] = grid->prefix[grid->Index(x, y, z)] +
                                                           value * media.Extinction * grid->ds[2];
             }
+    });
     return grid;
 }
 
@@ -493,18 +511,30 @@ bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, cons
         return false;
     if (!EnsureField(media, ttd))
         return false;
-    std::shared_ptr<const Optical> grid;
+    LightGrid *slot = nullptr;
+    const int known = lightCount.load(std::memory_order_acquire);
+    for (int i = 0; (i < known) && !slot; i++)
+        if (lights[i].index == light.index)
+            slot = &lights[i];
+    if (!slot)
     {
         std::lock_guard<std::mutex> guard(lightMutex);
-        auto found = lights.find(light.index);
-        if (found == lights.end())
+        const int count = lightCount.load(std::memory_order_relaxed);
+        for (int i = known; (i < count) && !slot; i++)
+            if (lights[i].index == light.index)
+                slot = &lights[i];
+        if (!slot)
         {
-            if (lights.size() >= 4)
+            if (count >= kLightGrids)
                 return false;
-            found = lights.emplace(light.index, BuildOptical(media, light, ttd)).first;
+            slot = &lights[count];
+            slot->index = light.index;
+            lightCount.store(count + 1, std::memory_order_release);
         }
-        grid = found->second;
     }
+    // Each light is built once outside the claim lock, so other lights' readers and builders never wait on it.
+    std::call_once(slot->once, [&] { slot->grid = BuildOptical(media, light, ttd); });
+    const Optical *grid = slot->grid.get();
     MathColour first, last;
     if (!grid || !grid->Depth(a, first) || !grid->Depth(b, last))
         return false;
