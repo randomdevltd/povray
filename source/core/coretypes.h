@@ -44,6 +44,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <atomic>
 #include <memory>
 #include <stack>
 #include <string>
@@ -666,13 +667,14 @@ class GenericFunctionContextFactory
         virtual GenericFunctionContextPtr CreateFunctionContext(TraceThreadData* pTd) = 0;
 
     private:
-        mutable size_t mRefCounter;
+        /// counted from every thread that makes or drops a function context, so it is atomic
+        mutable std::atomic<size_t> mRefCounter;
         friend void intrusive_ptr_add_ref(GenericFunctionContextFactory* f);
         friend void intrusive_ptr_release(GenericFunctionContextFactory* f);
 };
 
-inline void intrusive_ptr_add_ref(GenericFunctionContextFactory* f) { ++f->mRefCounter; }
-inline void intrusive_ptr_release(GenericFunctionContextFactory* f) { if (!(--f->mRefCounter)) delete f; }
+inline void intrusive_ptr_add_ref(GenericFunctionContextFactory* f) { f->mRefCounter.fetch_add(1, std::memory_order_relaxed); }
+inline void intrusive_ptr_release(GenericFunctionContextFactory* f) { if (f->mRefCounter.fetch_sub(1, std::memory_order_acq_rel) == 1) delete f; }
 
 typedef boost::intrusive_ptr<GenericFunctionContextFactory> GenericFunctionContextFactoryIPtr;
 typedef GenericFunctionContextFactory*                      GenericFunctionContextFactoryTPtr;
