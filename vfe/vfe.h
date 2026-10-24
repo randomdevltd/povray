@@ -49,6 +49,7 @@
 #include "povms/povmscpp.h"
 #include "povms/povmsid.h"
 
+#include "frontend/cameraprocessing.h"
 #include "frontend/console.h"
 #include "frontend/display.h"
 #include "frontend/filemessagehandler.h"
@@ -240,6 +241,7 @@ namespace vfe
       virtual Display *CreateDisplay(unsigned int width, unsigned int height)
         { return m_Session->CreateDisplay(width, height) ; }
       bool HandleShelloutCancel();
+      void StartCameraView();
 
       RenderFrontend<vfeParserMessageHandler,FileMessageHandler,vfeRenderMessageHandler,ImageMessageHandler> renderFrontend;
       POVMSAddress backendAddress;
@@ -248,6 +250,8 @@ namespace vfe
       RenderFrontendBase::SceneId sceneId;
       RenderFrontendBase::ViewId viewId;
       std::shared_ptr<AnimationProcessing> animationProcessing ;
+      std::shared_ptr<CameraProcessing> cameraProcessing;
+      POVMS_Object cameraOptions;
       std::shared_ptr<ImageProcessing> imageProcessing ;
       std::shared_ptr<ShelloutProcessing> shelloutProcessing;
       Console **consoleResult;

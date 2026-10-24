@@ -98,6 +98,14 @@ bool LegacyPhotonMapEligible(const SceneData& scene)
     return true;
 }
 
+// Sets a map's gather options from the scene's radius each time, as they scale that radius in place.
+void SetGatherOptions(const SceneData& scene, ScenePhotonSettings& settings, PhotonMap& map, bool media)
+{
+    map.minGatherRad = media ? scene.mediaPhotonMinGatherRad : scene.surfacePhotonMinGatherRad;
+    map.minGatherRadMult = media ? scene.mediaPhotonMinGatherRadMult : scene.surfacePhotonMinGatherRadMult;
+    map.setGatherOptions(settings, media);
+}
+
 std::string PhotonSettingsKey(const ScenePhotonSettings& settings)
 {
     std::ostringstream key;
@@ -176,9 +184,9 @@ void PhotonSortingTask::Run()
         for (const auto& set : GetSceneData()->preparedSets)
         {
             if (set->surfacePhotonMap.numPhotons > 0)
-                set->surfacePhotonMap.setGatherOptions(GetSceneData()->photonSettings, false);
+                SetGatherOptions(*GetSceneData(), GetSceneData()->photonSettings, set->surfacePhotonMap, false);
             if (set->mediaPhotonMap.numPhotons > 0)
-                set->mediaPhotonMap.setGatherOptions(GetSceneData()->photonSettings, true);
+                SetGatherOptions(*GetSceneData(), GetSceneData()->photonSettings, set->mediaPhotonMap, true);
         }
     }
 
@@ -217,12 +225,12 @@ void PhotonSortingTask::sortPhotonMap()
         if (set.surfacePhotonMap.numPhotons > 0)
         {
             set.surfacePhotonMap.buildTree();
-            set.surfacePhotonMap.setGatherOptions(GetSceneData()->photonSettings, false);
+            SetGatherOptions(*GetSceneData(), GetSceneData()->photonSettings, set.surfacePhotonMap, false);
         }
         if (set.mediaPhotonMap.numPhotons > 0)
         {
             set.mediaPhotonMap.buildTree();
-            set.mediaPhotonMap.setGatherOptions(GetSceneData()->photonSettings, true);
+            SetGatherOptions(*GetSceneData(), GetSceneData()->photonSettings, set.mediaPhotonMap, true);
         }
     }
 

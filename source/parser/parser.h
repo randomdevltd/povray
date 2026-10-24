@@ -732,6 +732,10 @@ class Parser final
 
         bool Had_Max_Trace_Level;
         bool mHadCamera;
+        unsigned int mPlainCameras = 0; ///< accepted cameras without an output block
+        bool mOutputWritten = false; ///< the camera block being parsed writes an output item itself
+        std::vector<Camera> mScreenViews; ///< screen cameras collected as views, so a repeated screen is collected once
+        bool mDefaultRightIsAspect = false; ///< the default camera's right is the image aspect, not a fixed 1.33
         int Max_Trace_Level;
 
         ExperimentalFlags mExperimentalFlags;
@@ -913,6 +917,9 @@ class Parser final
         ObjectPtr Parse_Tagged(bool warnEmpty);
         ObjectPtr Copy_Tagged(ObjectPtr object, const TagFilter& filter, const std::vector<std::string> *inherited);
         void Parse_Camera_Radiosity_Size(Camera& New);
+        void Parse_Camera_Output(Camera& New);
+        void Apply_Camera_Aspect(Camera& New);
+        void Collect_Output_Camera(const Camera& camera);
         void Parse_Tags(std::vector<std::string>& tags, bool *inherit = nullptr);
         void Parse_Filter_Tags(TagFilter& filter, const char *keyword = "filter_tags");
         void Parse_Frame();

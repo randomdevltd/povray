@@ -267,6 +267,10 @@ void Camera::Init()
     Radiosity_Width = 0;
     Radiosity_Height = 0;
     No_Radiosity = false;
+    output = Output();
+    aspectRole = AspectRole::Fixed;
+    aspect = 0.0;
+    focalDefault = false;
     tags.clear();
     filterTags = TagFilter();
 
@@ -379,6 +383,10 @@ Camera& Camera::operator=(const Camera& src)
     Radiosity_Width = src.Radiosity_Width;
     Radiosity_Height = src.Radiosity_Height;
     No_Radiosity = src.No_Radiosity;
+    output = src.output;
+    aspectRole = src.aspectRole;
+    aspect = src.aspect;
+    focalDefault = src.focalDefault;
     tags = src.tags;
     filterTags = src.filterTags;
     frameBounds = src.frameBounds;

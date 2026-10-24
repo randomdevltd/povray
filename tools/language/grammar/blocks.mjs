@@ -39,6 +39,7 @@ const CURATION = {
     interior: ['Parse_Interior'],
     media: ['Parse_Media'],
     camera: ['Parse_Camera', 'Parse_Camera_Mods', 'Parse_Camera_Look_At'],
+    output: ['Parse_Camera_Output'],
     tags: ['Parse_Tags'],
     global_settings: ['Parse_Global_Settings'],
     object: ['Parse_Object', 'Parse_Object_Mods'],

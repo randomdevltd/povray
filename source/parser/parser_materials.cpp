@@ -41,7 +41,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
-//  (none at the moment)
+#include <algorithm>
 
 // POV-Ray header files (base module)
 #include "base/fileinputoutput.h"
@@ -1576,9 +1576,27 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
                         if (projection)
                             Error("screen takes only one camera.");
                         projection = std::make_shared<Camera>(Default_Camera);
+                        mOutputWritten = false;
                         Parse_Camera(*projection);
                         if (projection->Type == MESH_CAMERA)
                             Error("mesh_camera cannot be a screen's camera.");
+                        if (!mOutputWritten && projection->output.given)
+                        {
+                            // an output inherited from a declared camera does not make the screen's camera a view
+                            projection->output = Camera::Output();
+                            Apply_Camera_Aspect(*projection);
+                        }
+                        else if (projection->output.given && !sceneData->clocklessAnimation &&
+                                 MatchesTags(projection->tags, sceneData->parseFilterTags) &&
+                                 std::none_of(mScreenViews.begin(), mScreenViews.end(), [&](const Camera& view) {
+                                     return view.SameView(*projection) && (view.output.file == projection->output.file) &&
+                                            (view.output.width == projection->output.width) &&
+                                            (view.output.height == projection->output.height);
+                                 }))
+                        {
+                            mScreenViews.push_back(*projection);
+                            Collect_Output_Camera(*projection);
+                        }
                     END_CASE
 
                     CASE (FALLBACK_TOKEN)

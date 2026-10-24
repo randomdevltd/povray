@@ -58,6 +58,7 @@
 
 // POV-Ray header files (frontend module)
 #include "frontend/animationprocessing.h"
+#include "frontend/cameraprocessing.h"
 #include "frontend/renderfrontend.h"
 #include "frontend/shelloutprocessing.h"
 
@@ -121,6 +122,9 @@ class SimpleFrontend final
         RenderFrontendBase::ViewId viewId;
         std::shared_ptr<ImageProcessing> imageProcessing;
         std::shared_ptr<AnimationProcessing> animationProcessing;
+        std::shared_ptr<CameraProcessing> cameraProcessing;
+        POVMS_Object cameraOptions;
+        bool givenImage = false;
         std::shared_ptr<ShelloutProcessing> shelloutProcessing;
         boost::function<Console *()> createConsole;
         boost::function<Display *(unsigned int, unsigned int)> createDisplay;
@@ -157,6 +161,7 @@ bool SimpleFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::Start(POVMS_Object
         return false;
 
     animationProcessing.reset();
+    cameraProcessing.reset();
 
     POVMS_List declares;
     if(opts.Exist(kPOVAttrib_Declare) == true)
@@ -186,6 +191,8 @@ bool SimpleFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::Start(POVMS_Object
         else
             imageProcessing = std::shared_ptr<ImageProcessing>(new ImageProcessing(options));
     }
+
+    givenImage = (img != nullptr);
 
     Path ip (opts.TryGetString(kPOVAttrib_InputFile, ""));
     shelloutProcessing.reset(new ShelloutProcessing(opts, UCS2toSysString(ip.GetFile()), width, height));
@@ -341,6 +348,44 @@ State SimpleFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::Process()
                     state = kStopping;
                     return kStopping;
                 case SceneData::Scene_Ready:
+                    if ((cameraProcessing == nullptr) && !renderFrontend.GetSceneCameras(sceneId).empty())
+                    {
+                        // camera output blocks write a fresh image per camera to its own file: no animation, given image or STDOUT
+                        if ((animationProcessing != nullptr) || givenImage ||
+                            ((imageProcessing != nullptr) && (imageProcessing->OutputIsStdout() || imageProcessing->OutputIsStderr())))
+                        {
+                            state = kFailed;
+                            return kFailed;
+                        }
+                        cameraProcessing = std::make_shared<CameraProcessing>();
+                    }
+                    if (cameraProcessing != nullptr)
+                    {
+                        try
+                        {
+                            if (!cameraProcessing->Resolved())
+                            {
+                                cameraOptions = options;
+                                cameraProcessing->Resolve(renderFrontend.GetSceneCameras(sceneId), cameraOptions,
+                                                          [this](const UCS2String& file) {
+                                    POVMS_Object named(cameraOptions);
+                                    named.SetUCS2String(kPOVAttrib_OutputFile, file.c_str());
+                                    return (imageProcessing != nullptr) ? imageProcessing->GetOutputFilename(named, 0, 0) : file;
+                                });
+                            }
+                            options = cameraProcessing->ViewOptions(cameraOptions);
+                            if (imageProcessing != nullptr)
+                            {
+                                imageProcessing = std::make_shared<ImageProcessing>(options);
+                                options.SetUCS2String(kPOVAttrib_OutputFile, imageProcessing->GetOutputFilename(options, 0, 0).c_str());
+                            }
+                        }
+                        catch(pov_base::Exception&)
+                        {
+                            state = kFailed;
+                            return kFailed;
+                        }
+                    }
                     try { viewId = renderFrontend.CreateView(sceneId, options, imageProcessing, createDisplay); }
                     catch(pov_base::Exception&)
                     {
@@ -356,6 +401,12 @@ State SimpleFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::Process()
                         {
                             // this is not a failure; continue has been requested and
                             // the file has already been rendered, so we skip it.
+                            if ((cameraProcessing != nullptr) && cameraProcessing->MoreCameras())
+                            {
+                                try { renderFrontend.CloseView(viewId); } catch(...) { } // Ignore any error here!
+                                cameraProcessing->NextCamera();
+                                return kParsing;
+                            }
                             if ((animationProcessing != nullptr) && (animationProcessing->MoreFrames() == true))
                             {
                                 animationProcessing->ComputeNextFrame();
@@ -409,6 +460,13 @@ State SimpleFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::Process()
                         }
                     }
 
+                    if ((cameraProcessing != nullptr) && cameraProcessing->MoreCameras())
+                    {
+                        try { renderFrontend.CloseView(viewId); } catch(...) { } // Ignore any error here!
+                        cameraProcessing->NextCamera();
+                        state = kParsing;
+                        return kParsing;
+                    }
                     if ((animationProcessing != nullptr) && (animationProcessing->MoreFrames() == true))
                     {
                         try { renderFrontend.CloseView(viewId); } catch(...) { } // Ignore any error here!
@@ -446,6 +504,7 @@ State SimpleFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::Process()
             try { renderFrontend.CloseView(viewId); } catch(...) { } // Ignore any error here!
             try { renderFrontend.CloseScene(sceneId); } catch(...) { } // Ignore any error here!
             animationProcessing.reset();
+            cameraProcessing.reset();
 
             state = kReady;
 
