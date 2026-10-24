@@ -1,5 +1,5 @@
 .PHONY: check-prepared-sets
 check-prepared-sets:
 	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(CXXFLAGS) -c "$(PREPARED_SOURCE)" -o "$(PREPARED_OBJECT)"
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o "$(PREPARED_BINARY)" "$(PREPARED_OBJECT)" $(LDADD) $(LIBS)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o "$(PREPARED_BINARY)" "$(PREPARED_OBJECT)" $(LDADD) $(top_builddir)/source/libpovray.a $(LIBS)
 	"$(PREPARED_BINARY)"
