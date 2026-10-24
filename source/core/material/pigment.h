@@ -44,6 +44,7 @@
 
 // C++ standard header files
 #include <memory>
+#include <functional>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -142,6 +143,10 @@ void Destroy_Pigment(PIGMENT *Pigment);
 void Post_Pigment(PIGMENT *Pigment, bool* pHasFilter = nullptr);
 bool Compute_Pigment(TransColour& colour, const PIGMENT *Pigment, const Vector3d& IPoint, const Intersection *Intersect, const Ray *ray, TraceThreadData *Thread);
 bool PigmentRequiresRayContext(const PIGMENT *pigment);
+/// Whether evaluating it may test a scene object, which no copy of the parser's functions can take along.
+bool PigmentTestsObjects(const PIGMENT *pigment);
+/// Calls `visit` on each function slot in a pigment tree; `own` first gives it blend maps of its own, so the slots can be rebound.
+void ForEachPigmentFunction(PIGMENT *pigment, bool own, const std::function<void(GenericScalarFunctionPtr&)>& visit);
 void Evaluate_Density_Pigment(std::vector<PIGMENT*>& Density, const Vector3d& p, MathColour& c, TraceThreadData *ttd);
 
 /// Most points the batched Evaluate_Density_Pigment takes at once.

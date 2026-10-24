@@ -46,11 +46,14 @@
 #include <cstdio>
 #include <limits>
 #include <mutex>
+#include <unordered_set>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
 
 // POV-Ray header files (core module)
+#include "base/timer.h"
+
 #include "core/lighting/emitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
@@ -155,7 +158,16 @@ class Media::FastCache final
         std::atomic<int> lightCount{0};
         LightGrid lights[kLightGrids];
 
+        /// a grid the eager threads finished before the render; the first EnsureField takes it instead of building one
+        std::shared_ptr<EagerField> prepared;
+        Vector3d cell;
+        DBL effect = 0.0, cellWidth = 0.0;
+
         bool EnsureField(Media& media, TraceThreadData *ttd);
+        /// Checks the medium and fits the grid to the bounds and cell limit, sizing its arrays; false where BuildField fails first.
+        bool SizeGrid(const Media& media, const Vector3d& lo, const Vector3d& hi, DBL cellLimit);
+        /// Fills one z slab of cells; false if a sample is negative or not finite.
+        bool FillSlab(Media& media, int z, TraceThreadData *td, const std::atomic<bool>& unusable);
         bool Segment(const Ray& ray, DBL& from, DBL& to) const;
         bool DensityAt(const Vector3d& point, MathColour& result) const;
         bool Contains(const Vector3d& point) const;
@@ -164,8 +176,141 @@ class Media::FastCache final
                           MathColour& result, TraceThreadData *ttd);
     private:
         bool BuildField(Media& media, TraceThreadData *ttd);
+        bool TakePrepared();
         std::shared_ptr<const Optical> BuildOptical(const Media& media, const LightSource& light, TraceThreadData *ttd) const;
 };
+
+class Media::EagerField final
+{
+    public:
+        EagerField(const std::shared_ptr<FastCache>& cache, const std::shared_ptr<Media>& copy, DBL limit) :
+            target(cache), medium(copy), grid(nullptr, cache->step), requestedStep(cache->step), cellLimit(limit) {}
+        std::weak_ptr<FastCache> target;
+        /// what the build evaluates: a copy of the medium whose functions are the eager threads' own
+        std::shared_ptr<Media> medium;
+        FastCache grid;
+        DBL requestedStep, cellLimit;
+        std::atomic<int> next{0};
+        std::atomic<bool> unusable{false}, stopped{false};
+        std::atomic<unsigned char> reads{0};
+        std::atomic<POV_LONG> cpuTime{0};
+};
+
+std::shared_ptr<Media::EagerField> Media::PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const
+{
+    if (!fastCache || (Sample_Method != 4) || Density.empty() || fastCache->prepared || (fastCache->container == nullptr))
+        return nullptr;
+    std::shared_ptr<EagerField> field(new EagerField(fastCache, copy, cellLimit));
+    field->grid.coarseStep = fastCache->coarseStep;
+    field->grid.coarseCells = fastCache->coarseCells;
+    Vector3d lo, hi;
+    Make_min_max_from_BBox(lo, hi, fastCache->container->BBox);
+    if (!field->grid.SizeGrid(*copy, lo, hi, cellLimit))
+        return nullptr;
+    return field;
+}
+
+unsigned char WorkEagerField(Media::EagerField& field, TraceThreadData *thread, const std::function<bool()>& stop)
+{
+    Timer timer;
+    thread->globalsRead = 0;
+    while (!field.unusable.load(std::memory_order_relaxed) && !(stop && (field.stopped.load(std::memory_order_relaxed) || stop())))
+    {
+        const int z = field.next.fetch_add(1, std::memory_order_relaxed);
+        if (z >= field.grid.nz)
+            break;
+        bool filled = false;
+        try
+        {
+            filled = field.grid.FillSlab(*field.medium, z, thread, field.unusable);
+        }
+        catch (...)
+        {
+            // a claimed slab left unfilled must never be handed to the render
+        }
+        if (!filled)
+            field.unusable.store(true, std::memory_order_relaxed);
+    }
+    const unsigned char reads = thread->globalsRead;
+    field.reads.fetch_or(reads, std::memory_order_relaxed);
+    if (timer.HasValidThreadCPUTime())
+        field.cpuTime.fetch_add(timer.ElapsedThreadCPUTime(), std::memory_order_relaxed);
+    return reads;
+}
+
+void EagerFieldSlabs(const Media::EagerField& field, int& claimed, int& total)
+{
+    total = field.grid.nz;
+    claimed = std::min(field.next.load(std::memory_order_relaxed), total);
+}
+
+POV_LONG EagerFieldCpuTime(const Media::EagerField& field)
+{
+    return field.cpuTime.load(std::memory_order_relaxed);
+}
+
+void StopEagerField(Media::EagerField& field)
+{
+    field.stopped.store(true, std::memory_order_relaxed);
+}
+
+void CollectPreparedCaches(ConstObjectPtr object, std::unordered_set<const void *>& caches)
+{
+    if (object->interior != nullptr)
+        for (const Media& medium : object->interior->media)
+            if (medium.fastCache && (medium.fastCache->container == object))
+                caches.insert(medium.fastCache.get());
+}
+
+bool EagerFieldKept(const Media::EagerField& field, const std::unordered_set<const void *>& caches)
+{
+    const std::shared_ptr<Media::FastCache> target = field.target.lock();
+    return target && (caches.count(target.get()) != 0);
+}
+
+bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, DBL cellLimit, const std::vector<TraceThreadData *>& threads,
+                      const std::function<bool(unsigned char)>& changed, const std::function<void()>& cooperate)
+{
+    const std::shared_ptr<Media::FastCache> target = field->target.lock();
+    if (!target || target->prepared || (target->container == nullptr) || (target->step != field->requestedStep) || (cellLimit != field->cellLimit))
+        return false;
+    Vector3d lo, hi;
+    Make_min_max_from_BBox(lo, hi, target->container->BBox);
+    const Vector3d size = hi - lo;
+    for (int axis = 0; axis < 3; ++axis)
+        if ((lo[axis] != field->grid.low[axis]) || (size[axis] != field->grid.size[axis]))
+            return false;
+    if (field->next.load(std::memory_order_relaxed) < field->grid.nz)
+        ParallelFor(threads.size(), threads.size(), [&](size_t, size_t worker)
+        {
+            WorkEagerField(*field, threads[worker], std::function<bool()>());
+        }, cooperate);
+    if (field->unusable.load(std::memory_order_relaxed) || changed(field->reads.load(std::memory_order_relaxed)))
+        return false;
+    field->medium.reset();
+    target->prepared = field;
+    return true;
+}
+
+bool Media::FastCache::TakePrepared()
+{
+    FastCache& grid = prepared->grid;
+    low = grid.low;
+    size = grid.size;
+    step = grid.step;
+    coarseStep = grid.coarseStep;
+    coarseCells = grid.coarseCells;
+    nx = grid.nx;
+    ny = grid.ny;
+    nz = grid.nz;
+    cell = grid.cell;
+    effect = grid.effect;
+    cellWidth = grid.cellWidth;
+    density.swap(grid.density);
+    rough.swap(grid.rough);
+    prepared.reset();
+    return true;
+}
 
 bool Media::FastCache::Segment(const Ray& ray, DBL& from, DBL& to) const
 {
@@ -222,7 +367,7 @@ static void CoarseGridDetail(char *detail, size_t length, const char *what, DBL 
 bool Media::FastCache::EnsureField(Media& media, TraceThreadData *ttd)
 {
     std::call_once(fieldOnce, [&] {
-        fieldReady = BuildField(media, ttd);
+        fieldReady = prepared ? TakePrepared() : BuildField(media, ttd);
         if (!fieldReady)
             WarnFastMedia(ttd, media, failureReason, failure.c_str(), container);
         else if (coarseCells > 0.0)
@@ -236,7 +381,7 @@ bool Media::FastCache::EnsureField(Media& media, TraceThreadData *ttd)
     return fieldReady;
 }
 
-bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
+bool Media::FastCache::SizeGrid(const Media& media, const Vector3d& lo, const Vector3d& hi, DBL cellLimit)
 {
     for (int ch = 0; ch < MathColour::channels; ch++)
         if (!std::isfinite(media.Extinction[ch]) || (media.Extinction[ch] < 0.0))
@@ -246,8 +391,8 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
             ((pigment->Type <= LAST_SPECIAL_PATTERN) ||
              (dynamic_cast<const ContinuousPattern*>(pigment->pattern.get()) == nullptr)))
             return false;
-    Make_min_max_from_BBox(low, size, container->BBox);
-    size -= low;
+    low = lo;
+    size = hi - lo;
     if (!std::isfinite(size[X]) || !std::isfinite(size[Y]) || !std::isfinite(size[Z]) ||
         (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
         return false;
@@ -256,7 +401,7 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
     if (step > 0.0)
     {
         DBL needed;
-        const DBL fitted = FitGridStep(size, step, ttd->GetSceneData()->EffectivePreparedMediaCells(), needed);
+        const DBL fitted = FitGridStep(size, step, cellLimit, needed);
         if (fitted != step)
         {
             coarseStep = step;
@@ -272,16 +417,65 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
         return false;
     }
     nx = int(sx); ny = int(sy); nz = int(sz);
-    const Vector3d cell(size[X] / nx, size[Y] / ny, size[Z] / nz);
+    cell = Vector3d(size[X] / nx, size[Y] / ny, size[Z] / nz);
     density.resize(size_t(nx) * ny * nz);
     rough.resize(density.size());
-    DBL effect = 0.0;
+    effect = 0.0;
     for (int ch = 0; ch < MathColour::channels; ch++)
         effect = std::max(effect, DBL(std::max(fabs(media.Extinction[ch]),
                           std::max(fabs(media.Scattering[ch]), fabs(media.Emission[ch])))));
     if (media.mix == kMediaBlendMultiply)
         effect = std::max(effect, 1.0);
-    const DBL cellWidth = std::max(cell[X], std::max(cell[Y], cell[Z]));
+    cellWidth = std::max(cell[X], std::max(cell[Y], cell[Z]));
+    return true;
+}
+
+bool Media::FastCache::FillSlab(Media& media, int z, TraceThreadData *td, const std::atomic<bool>& unusable)
+{
+    for (int y = 0; (y < ny) && !unusable.load(std::memory_order_relaxed); y++)
+        for (int x = 0; x < nx; x++)
+        {
+            MathColour& value = density[(size_t(z) * ny + y) * nx + x];
+            MathColour lowValue, highValue;
+            bool first = true;
+            for (int dz = 0; dz < 2; dz++)
+                for (int dy = 0; dy < 2; dy++)
+                    for (int dx = 0; dx < 2; dx++)
+                    {
+                        const Vector3d point = low + Vector3d((x + 0.25 + 0.5 * dx) * cell[X],
+                                                               (y + 0.25 + 0.5 * dy) * cell[Y],
+                                                               (z + 0.25 + 0.5 * dz) * cell[Z]);
+                        MathColour sample;
+                        Evaluate_Density_Pigment(media.Density, point, sample, td);
+                        for (int ch = 0; ch < MathColour::channels; ch++)
+                            if (!std::isfinite(sample[ch]) || (sample[ch] < 0.0))
+                                return false;
+                        value += sample;
+                        if (first)
+                        {
+                            lowValue = highValue = sample;
+                            first = false;
+                        }
+                        else
+                            for (int ch = 0; ch < MathColour::channels; ch++)
+                            {
+                                lowValue[ch] = std::min(lowValue[ch], sample[ch]);
+                                highValue[ch] = std::max(highValue[ch], sample[ch]);
+                            }
+                    }
+            value *= 0.125;
+            rough[(size_t(z) * ny + y) * nx + x] =
+                effect * cellWidth * (highValue - lowValue).Max() > 1.0 / 1024.0;
+        }
+    return true;
+}
+
+bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
+{
+    Vector3d lo, hi;
+    Make_min_max_from_BBox(lo, hi, container->BBox);
+    if (!SizeGrid(media, lo, hi, ttd->GetSceneData()->EffectivePreparedMediaCells()))
+        return false;
     // Cells are independent, so slabs of them are built on the render's thread count, each by one thread: the same grid on any count.
     const size_t workers = (density.size() >= 4096) ? std::min<size_t>(nz, ttd->GetSceneData()->workThreads) : 1;
     std::vector<std::unique_ptr<TraceThreadData>> helpers;
@@ -290,46 +484,8 @@ bool Media::FastCache::BuildField(Media& media, TraceThreadData *ttd)
     std::atomic<bool> unusable(false);
     ParallelFor(size_t(nz), workers, [&](size_t slab, size_t worker)
     {
-        TraceThreadData *td = (worker == 0) ? ttd : helpers[worker - 1].get();
-        const int z = int(slab);
-        for (int y = 0; (y < ny) && !unusable.load(std::memory_order_relaxed); y++)
-            for (int x = 0; x < nx; x++)
-            {
-                MathColour& value = density[(size_t(z) * ny + y) * nx + x];
-                MathColour lowValue, highValue;
-                bool first = true;
-                for (int dz = 0; dz < 2; dz++)
-                    for (int dy = 0; dy < 2; dy++)
-                        for (int dx = 0; dx < 2; dx++)
-                        {
-                            const Vector3d point = low + Vector3d((x + 0.25 + 0.5 * dx) * cell[X],
-                                                                   (y + 0.25 + 0.5 * dy) * cell[Y],
-                                                                   (z + 0.25 + 0.5 * dz) * cell[Z]);
-                            MathColour sample;
-                            Evaluate_Density_Pigment(media.Density, point, sample, td);
-                            for (int ch = 0; ch < MathColour::channels; ch++)
-                                if (!std::isfinite(sample[ch]) || (sample[ch] < 0.0))
-                                {
-                                    unusable.store(true, std::memory_order_relaxed);
-                                    return;
-                                }
-                            value += sample;
-                            if (first)
-                            {
-                                lowValue = highValue = sample;
-                                first = false;
-                            }
-                            else
-                                for (int ch = 0; ch < MathColour::channels; ch++)
-                                {
-                                    lowValue[ch] = std::min(lowValue[ch], sample[ch]);
-                                    highValue[ch] = std::max(highValue[ch], sample[ch]);
-                                }
-                        }
-                value *= 0.125;
-                rough[(size_t(z) * ny + y) * nx + x] =
-                    effect * cellWidth * (highValue - lowValue).Max() > 1.0 / 1024.0;
-            }
+        if (!FillSlab(media, int(slab), (worker == 0) ? ttd : helpers[worker - 1].get(), unusable))
+            unusable.store(true, std::memory_order_relaxed);
     });
     if (unusable)
     {

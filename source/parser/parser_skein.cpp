@@ -241,10 +241,12 @@ ObjectPtr Parser::Parse_Skein_Mesh()
     const UCS2String cacheDir = mMeshCacheDir;
     std::vector<FUNCTION> functions;
     CollectSkeinFunctions(skein->data->steps, functions);
+    const bool eager = SelfContained(functions);
     boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(functions);
     std::shared_ptr<SkeinMeshBuildSource> source(new SkeinMeshBuildSource());
     source->skein = skein;
     RebindSkeinSteps(skein->data->steps, functionVM.get(), source->originalFunctions);
+    functionVM.reset(); // the build may count references to the snapshot from now on
     std::shared_ptr<DeferredMeshState> deferred = RecordMeshBuild(
         [skein, minSize, maxAngle, closed, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
@@ -265,7 +267,7 @@ ObjectPtr Parser::Parse_Skein_Mesh()
             const std::vector<TraceThreadData *> threads(1, thread);
             const std::string problem = skein->Tessellate(threads, minSize, maxAngle, built, [&state]()
             {
-                if (state.cancelled->load(std::memory_order_relaxed))
+                if (state.Cancelled())
                     throw std::runtime_error("Mesh build cancelled.");
             });
             if (!problem.empty())
@@ -308,8 +310,12 @@ ObjectPtr Parser::Parse_Skein_Mesh()
                 object->has_inside_vector = true;
                 object->Type &= ~PATCH_OBJECT;
             }
+            if (state.Cancelled())
+                throw std::runtime_error("Mesh build cancelled.");
             object->Compute_BBox();
             object->Build_Mesh_BBox_Tree();
+            if (state.Cancelled())
+                throw std::runtime_error("Mesh build cancelled.");
             const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
             std::ostringstream debug;
             debug << "skein_mesh: " << triangles << " triangles, " << vertices << " vertices, " << built.openEdges << " open edges, "
@@ -318,7 +324,7 @@ ObjectPtr Parser::Parse_Skein_Mesh()
             state.debug = debug.str();
             Write_Generated_Mesh(key, *object, state, firstWarning);
             return object;
-        }, source);
+        }, source, eager);
 
     Mesh *object = new Mesh();
     object->BBox = skein->BBox;

@@ -43,7 +43,9 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <functional>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -98,6 +100,8 @@ class MeshBuildTask final : public SceneTask
         TraceThreadData *parseData;
         POV_LONG buildCpuTime;
 
+        static const POV_LONG kWastedEagerWarning;
+        void FinishMediaFields(const TraceThreadData& final, const std::unordered_set<const void *>& caches, const std::function<void()>& cooperate);
         void SendFatalError(pov_base::Exception& e);
 };
 

@@ -45,6 +45,7 @@
 
 // C++ variants of C standard header files
 #include <cstdint>
+#include <functional>
 
 // C++ standard header files
 #include <set>
@@ -335,7 +336,19 @@ class FunctionVM : public GenericFunctionContextFactory
         bool Describe(FUNCTION fn, std::string& out) const;
         bool CanExecuteBatch(FUNCTION fn) const;
         bool PreferBatch(FUNCTION fn) const;
+        /// How functions reach others through their private data (a pigment's function patterns), which calls do not show.
+        struct PrivateFunctions final
+        {
+            /// Adds the functions a function's private data runs; false if it holds something no snapshot can take.
+            std::function<bool(const FunctionCode&, std::vector<FUNCTION>&)> list;
+            /// Rebinds the functions in private data copied into a snapshot, each made by `bind` from its id.
+            std::function<void(FunctionCode&, const std::function<GenericScalarFunctionPtr(FUNCTION)>& bind)> rebind;
+        };
+        void SetPrivateFunctions(const PrivateFunctions& functions) { privateFunctions = functions; }
+        /// A copy of the functions `roots` reach through calls and private data, whose private data runs only the copy.
         boost::intrusive_ptr<FunctionVM> Snapshot(const std::vector<FUNCTION>& roots);
+        /// Calls `visit` once for each live function `roots` reach, the roots included; false if a snapshot cannot take one.
+        bool ForEachReachable(const std::vector<FUNCTION>& roots, const std::function<void(FUNCTION, const FunctionCode&)>& visit) const;
 
         FUNCTION_PTR CopyFunction(FUNCTION_PTR pK);
         void DestroyFunction(FUNCTION_PTR pK);
@@ -343,6 +356,8 @@ class FunctionVM : public GenericFunctionContextFactory
         virtual GenericFunctionContextPtr CreateFunctionContext(TraceThreadData* pTd) override;
 
     private:
+
+        PrivateFunctions privateFunctions;
 
         void BuildRangePlan(FUNCTION fn);
         void PlanBatch(FUNCTION fn);

@@ -374,6 +374,7 @@ enum
     kPOVAttrib_PreparedMediaCells    = 'PrMC',
     kPOVAttrib_PhotonMemory          = 'PhMC',
     kPOVAttrib_RealTimeRaytracing    = 'RTRa',
+    kPOVAttrib_EagerPreparation      = 'EaPr',
     kPOVAttrib_Version               = 'Vers',
     kPOVAttrib_Pov4Version           = 'P4Ve',
     kPOVAttrib_Pov4LoweredFile       = 'P4Lo',

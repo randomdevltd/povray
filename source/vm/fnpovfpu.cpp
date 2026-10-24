@@ -267,21 +267,36 @@ using std::min;
 using std::max;
 using std::vector;
 
+bool FunctionVM::ForEachReachable(const std::vector<FUNCTION>& roots, const std::function<void(FUNCTION, const FunctionCode&)>& visit) const
+{
+    bool complete = true;
+    std::vector<bool> seen(functions.size(), false);
+    std::function<void(FUNCTION)> walk = [&](FUNCTION fn)
+    {
+        if ((fn >= functions.size()) || seen[fn] || (functions[fn].reference_count == 0))
+            return;
+        seen[fn] = true;
+        const FunctionCode& code = functions[fn].fn;
+        if (visit)
+            visit(fn, code);
+        for (unsigned int pc = 0; pc < code.program_size; ++pc)
+            if (GET_OP(code.program[pc]) == OPCODE_CALL)
+                walk(GET_K(code.program[pc]));
+        std::vector<FUNCTION> inner;
+        if ((code.private_data != nullptr) && privateFunctions.list && !privateFunctions.list(code, inner))
+            complete = false;
+        for (FUNCTION k : inner)
+            walk(k);
+    };
+    for (FUNCTION root : roots)
+        walk(root);
+    return complete;
+}
+
 boost::intrusive_ptr<FunctionVM> FunctionVM::Snapshot(const std::vector<FUNCTION>& roots)
 {
     std::vector<bool> reachable(functions.size(), false);
-    std::function<void(FUNCTION)> visit = [&](FUNCTION fn)
-    {
-        if ((fn >= functions.size()) || reachable[fn] || (functions[fn].reference_count == 0))
-            return;
-        reachable[fn] = true;
-        const FunctionCode& code = functions[fn].fn;
-        for (unsigned int pc = 0; pc < code.program_size; ++pc)
-            if (GET_OP(code.program[pc]) == OPCODE_CALL)
-                visit(GET_K(code.program[pc]));
-    };
-    for (FUNCTION root : roots)
-        visit(root);
+    ForEachReachable(roots, [&reachable](FUNCTION fn, const FunctionCode&) { reachable[fn] = true; });
 
     boost::intrusive_ptr<FunctionVM> copy(new FunctionVM());
     copy->Reset();
@@ -334,6 +349,15 @@ boost::intrusive_ptr<FunctionVM> FunctionVM::Snapshot(const std::vector<FUNCTION
         target.batchStack = source.batchStack;
         target.batchMath = source.batchMath;
     }
+    // copied private data still runs this VM's functions until each is rebound to its twin in the copy
+    if (privateFunctions.rebind)
+        for (size_t i = 0; i < functions.size(); ++i)
+            if (reachable[i] && (copy->functions[i].fn.private_data != nullptr))
+                privateFunctions.rebind(copy->functions[i].fn, [&copy](FUNCTION k) -> GenericScalarFunctionPtr
+                {
+                    ++copy->functions[k].reference_count;
+                    return new CustomFunction(copy.get(), new FUNCTION(k));
+                });
     for (FUNCTION root : roots)
         if ((root < copy->functions.size()) && reachable[root])
             ++copy->functions[root].reference_count;

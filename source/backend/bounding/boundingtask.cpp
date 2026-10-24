@@ -40,9 +40,11 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -60,6 +62,7 @@
 #include "core/scene/object.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/csg.h"
+#include "core/material/media.h"
 #include "core/shape/mesh.h"
 #include "core/support/parallel.h"
 
@@ -267,13 +270,16 @@ MeshBuildTask::~MeshBuildTask()
 
 void MeshBuildTask::Run()
 {
+    Timer phase;
     std::vector<std::shared_ptr<DeferredMeshState>> needed;
     std::unordered_set<const DeferredMeshState *> queued;
     std::unordered_set<ConstObjectPtr> visited;
+    std::unordered_set<const void *> caches;
     std::function<void(ObjectPtr)> collect = [&](ObjectPtr object)
     {
         if ((object == nullptr) || !visited.insert(object).second)
             return;
+        CollectPreparedCaches(object, caches);
         if (Mesh *mesh = dynamic_cast<Mesh *>(object))
         {
             if (mesh->Pending() && !mesh->Deferred()->reported && queued.insert(mesh->Deferred().get()).second)
@@ -293,20 +299,16 @@ void MeshBuildTask::Run()
     for (Camera *camera : FramedCameras(*sceneData))
         collect(camera->frameTarget.get());
 
+    DeferredMeshPool *pool = sceneData->meshPool.get();
+    unsigned int discarded = 0;
+    POV_LONG wasted = 0;
     std::vector<std::unique_ptr<TraceThreadData>> workers;
     const size_t count = std::max<size_t>(1, std::min<size_t>(threads, needed.size()));
     for (size_t i = 0; i < count; ++i)
         workers.emplace_back(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sceneData), seed + i + 1, false));
     try
     {
-        std::vector<POV_LONG> cpu(count, 0);
-        ParallelFor(needed.size(), count, [&](size_t i, size_t worker)
-        {
-            Timer timer;
-            needed[i]->Build(workers[worker].get());
-            if (timer.HasValidThreadCPUTime())
-                cpu[worker] += timer.ElapsedThreadCPUTime();
-        }, [&]()
+        const auto cooperate = [&]()
         {
             try
             {
@@ -317,18 +319,85 @@ void MeshBuildTask::Run()
                 sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
                 throw;
             }
-        });
+        };
+        if (pool != nullptr)
+        {
+            // what no set keeps is never built: queued builds are skipped and running ones stop
+            for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)
+                if (std::shared_ptr<DeferredMeshState> state = recorded.lock())
+                    if (!state->reported && (queued.count(state.get()) == 0))
+                        state->Discard();
+            // the rest of a media grid is filled below on every thread, not on one eager thread each
+            for (const auto& media : sceneData->eagerMediaFields)
+            {
+                StopEagerField(*media.second);
+                if (!EagerFieldKept(*media.second, caches))
+                    media.first->Discard();
+            }
+            const size_t helpers = std::min<size_t>(count, (threads > pool->ThreadCount()) ? threads - pool->ThreadCount() : 1);
+            std::vector<POV_LONG> cpu(helpers, 0);
+            ParallelFor(needed.size(), helpers, [&](size_t i, size_t worker)
+            {
+                Timer timer;
+                needed[i]->TryBuild(workers[worker].get(), -(int(worker) + 1));
+                if (timer.HasValidThreadCPUTime())
+                    cpu[worker] += timer.ElapsedThreadCPUTime();
+            }, cooperate);
+            for (size_t worker = (helpers > 1) ? 0 : 1; worker < helpers; ++worker)
+                buildCpuTime += cpu[worker];
+            pool->Finish(cooperate);
+
+            for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)
+                if (std::shared_ptr<DeferredMeshState> state = recorded.lock())
+                    if (state->discarded && (state->startedAt != std::chrono::steady_clock::time_point()))
+                    {
+                        ++discarded;
+                        wasted += state->cpuTime;
+                    }
+            bool sceneFilters = false;
+            for (const auto& filter : sceneData->preparedSetFilters)
+                sceneFilters = sceneFilters || filter.first.specified;
+            if ((wasted >= kWastedEagerWarning) && sceneFilters)
+                mpMessageFactory->Warning(kWarningGeneral, "Eager preparation built %u mesh(es) that the scene's tag filters left out, spending "
+                                          "%.1f CPU-seconds for nothing. Give the filter as Filter_Tags on the command line or in an INI file, "
+                                          "so builds start only when a kept object places them, or turn eager preparation off "
+                                          "(Eager_Preparation=off, -WE).", discarded, wasted / 1000.0);
+            else if (wasted >= kWastedEagerWarning)
+                mpMessageFactory->Warning(kWarningGeneral, "Eager preparation built %u mesh(es) declared but never placed, spending %.1f "
+                                          "CPU-seconds for nothing. Remove the unused declarations, or turn eager preparation off "
+                                          "(Eager_Preparation=off, -WE).", discarded, wasted / 1000.0);
+        }
+        std::vector<POV_LONG> cpu(count, 0);
+        ParallelFor(needed.size(), count, [&](size_t i, size_t worker)
+        {
+            Timer timer;
+            needed[i]->Build(workers[worker].get(), -(int(worker) + 1));
+            if (timer.HasValidThreadCPUTime())
+                cpu[worker] += timer.ElapsedThreadCPUTime();
+        }, cooperate);
         // A single build runs on this task's own thread, whose time is counted already.
         for (size_t worker = (count > 1) ? 0 : 1; worker < count; ++worker)
             buildCpuTime += cpu[worker];
+        if (!sceneData->eagerMediaFields.empty() || !sceneData->eagerMediaUnsafe.empty())
+            FinishMediaFields(*workers.front(), caches, cooperate);
     }
     catch (const StopThreadException&)
     {
+        if (pool != nullptr)
+        {
+            pool->Stop();
+            pool->Dispose();
+        }
         throw;
     }
     catch (...)
     {
         sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+        if (pool != nullptr)
+        {
+            pool->Stop();
+            pool->Dispose();
+        }
         for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)
             if (std::shared_ptr<DeferredMeshState> state = recorded.lock())
             if (std::exception_ptr failure = state->Failure())
@@ -346,15 +415,34 @@ void MeshBuildTask::Run()
     }
     for (const std::unique_ptr<TraceThreadData>& worker : workers)
         parseData->Stats() += worker->Stats();
+    for (const std::shared_ptr<DeferredMeshState>& state : needed)
+        state->Release();
+    POV_LONG eagerCpuTime = 0;
+    unsigned int eagerThreads = 0;
+    if (pool != nullptr)
+    {
+        eagerThreads = pool->Started();
+        for (const std::unique_ptr<TraceThreadData>& data : pool->Dispose())
+            parseData->Stats() += data->Stats();
+        eagerCpuTime = pool->CpuTime();
+        buildCpuTime += eagerCpuTime;
+    }
+    std::vector<std::pair<std::shared_ptr<DeferredMeshState>, std::shared_ptr<Media::EagerField>>>().swap(sceneData->eagerMediaFields);
+    std::vector<std::weak_ptr<Media::FastCache>>().swap(sceneData->eagerMediaUnsafe);
 
-    unsigned int built = 0;
+    unsigned int built = 0, builtAhead = 0, rebuilds = 0;
     for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)
     {
         std::shared_ptr<DeferredMeshState> state = recorded.lock();
-        if ((state == nullptr) || state->reported || !state->Built())
+        if (state == nullptr)
+            continue;
+        rebuilds += state->rebuilds;
+        if (state->reported || state->discarded || !state->Built())
             continue;
         state->reported = true;
         ++built;
+        if (state->lane > 0)
+            ++builtAhead;
         for (const std::string& warning : state->warnings)
             mpMessageFactory->WarningAt(kWarningGeneral, state->source, "%s", warning.c_str());
         if (!state->debug.empty())
@@ -399,10 +487,73 @@ void MeshBuildTask::Run()
 
     const size_t recorded = sceneData->deferredMeshes.size();
     if (recorded > 0)
+    {
+        const unsigned int queries = sceneData->deferredMeshesBuiltForQueries;
         mpMessageFactory->Info("Deferred meshes: %u recorded, %u built for parse-time queries, %u built for the scene, %u not needed.",
-                               unsigned(recorded), sceneData->deferredMeshesBuiltForQueries, built,
-                               unsigned(recorded - sceneData->deferredMeshesBuiltForQueries - built));
+                               unsigned(recorded), queries, built, unsigned(recorded - queries - built));
+        const POV_LONG phaseCpu = (phase.HasValidThreadCPUTime() ? phase.ElapsedThreadCPUTime() : 0) + buildCpuTime - eagerCpuTime;
+        mpMessageFactory->Info("Mesh build phase: %.3f s wall, %.3f s CPU on %u thread(s); parse-time query builds: %.3f s wall, %.3f s CPU.",
+                               phase.ElapsedRealTime() / 1000.0, phaseCpu / 1000.0, unsigned(count),
+                               sceneData->meshQueryRealTime / 1000.0, sceneData->meshQueryCpuTime / 1000.0);
+        if (pool != nullptr)
+            mpMessageFactory->Info("Eager preparation: %u of %u queried meshes and %u of %u scene meshes built ahead; %u build(s) "
+                                   "discarded unused (%.3f s CPU), %u redone after a global setting changed, %u left to the end of the parse "
+                                   "because a function tests an object or runs a function a snapshot cannot take; %.3f s CPU on %u thread(s).",
+                                   sceneData->deferredMeshesQueriedBuiltAhead, queries, builtAhead, built, discarded, wasted / 1000.0, rebuilds,
+                                   sceneData->deferredMeshesLeftToTask, eagerCpuTime / 1000.0, eagerThreads);
+    }
     std::vector<std::weak_ptr<DeferredMeshState>>().swap(sceneData->deferredMeshes);
+}
+
+// below this many CPU milliseconds discarded eager builds go unreported but in the summary
+const POV_LONG MeshBuildTask::kWastedEagerWarning = 1000;
+
+void MeshBuildTask::FinishMediaFields(const TraceThreadData& final, const std::unordered_set<const void *>& caches, const std::function<void()>& cooperate)
+{
+    const auto kept = [&caches](const std::vector<std::weak_ptr<Media::FastCache>>& list)
+    {
+        unsigned int count = 0;
+        for (const std::weak_ptr<Media::FastCache>& cache : list)
+            if (const std::shared_ptr<Media::FastCache> live = cache.lock())
+                count += (caches.count(live.get()) != 0) ? 1 : 0;
+        return count;
+    };
+    const unsigned int unsafe = kept(sceneData->eagerMediaUnsafe);
+    const MeshBuildGlobals now = MeshBuildGlobals::Of(final);
+    std::vector<std::unique_ptr<TraceThreadData>> data;
+    std::vector<TraceThreadData *> helpers;
+    for (unsigned int i = 0; i < threads; ++i)
+    {
+        data.emplace_back(new TraceThreadData(std::dynamic_pointer_cast<SceneData>(sceneData), seed + i + 1, false));
+        helpers.push_back(data.back().get());
+    }
+    Timer finishing;
+    unsigned int prepared = 0;
+    int claimed = 0, slabs = 0;
+    POV_LONG cpu = 0;
+    std::unordered_set<const Media::EagerField *> fields;
+    for (const auto& media : sceneData->eagerMediaFields)
+    {
+        if (!fields.insert(media.second.get()).second || media.first->discarded)
+            continue;
+        int before, total;
+        EagerFieldSlabs(*media.second, before, total);
+        claimed += before;
+        slabs += total;
+        const MeshBuildGlobals& recorded = media.first->recordedGlobals;
+        for (TraceThreadData *helper : helpers)
+            helper->FreezeGlobals(recorded.noiseGenerator, recorded.workingGamma, recorded.numberOfWaves);
+        if (FinishEagerField(media.second, sceneData->EffectivePreparedMediaCells(), helpers,
+                             [&](unsigned char reads) { return recorded.Differs(now, reads); }, cooperate))
+            ++prepared;
+        cpu += EagerFieldCpuTime(*media.second);
+    }
+    for (const std::unique_ptr<TraceThreadData>& helper : data)
+        parseData->Stats() += helper->Stats();
+    mpMessageFactory->Info("Eager media grids: %u of %u prepared before the render, %u more left to it by a density that tests an object or "
+                           "runs a function a snapshot cannot take; %d of their %d slabs built during the parse; %.3f s CPU in all, %.3f s "
+                           "finishing after it.", prepared, unsigned(fields.size()), unsafe, claimed, slabs, cpu / 1000.0,
+                           finishing.ElapsedRealTime() / 1000.0);
 }
 
 std::vector<Camera *> FramedCameras(SceneData& sceneData)

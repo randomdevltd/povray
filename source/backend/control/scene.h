@@ -203,6 +203,8 @@ class Scene final
         void SendDoneMessage(TaskQueue& taskq);
         void PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, size_t seed, unsigned int workers);
         void FinishSetBounds(TaskQueue& taskq);
+        /// Stops the eager mesh threads and drops their builds, once the parser no longer runs.
+        void StopMeshPool();
 
         /**
          *  Thread controlling the parser task queue.

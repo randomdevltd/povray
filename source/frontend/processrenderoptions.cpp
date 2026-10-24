@@ -177,6 +177,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Dither_Method",       kPOVAttrib_DitherMethod,       kUseSpecialHandler },
     { "Draw_Vistas",         kPOVAttrib_DrawVistas,         kPOVMSType_Bool },
 
+    { "Eager_Preparation",   kPOVAttrib_EagerPreparation,   kPOVMSType_Bool },
     { "End_Column",          kPOVAttrib_Right,              kPOVMSType_Float },
     { "End_Row",             kPOVAttrib_Bottom,             kPOVMSType_Float },
 
@@ -401,6 +402,7 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
 
     { "V",   kNoParameter,                  kNoParameter,           kPOVAttrib_Verbose },
 
+    { "WE",  kNoParameter,                  kNoParameter,           kPOVAttrib_EagerPreparation },
     { "WL",  kPOVAttrib_WarningLevel,       kPOVMSType_Int,         kNoParameter },
     { "WT",  kPOVAttrib_MaxRenderThreads,   kPOVMSType_Int,         kNoParameter },
     { "W",   kPOVAttrib_Width,              kPOVMSType_Int,         kNoParameter },

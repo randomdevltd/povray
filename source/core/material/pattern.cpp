@@ -261,7 +261,7 @@ int GetNoiseGen (const TPATTERN *TPat, const TraceThreadData *pThread)
 {
     int noise_gen = TPat->pattern->noiseGenerator;
     if (noise_gen == kNoiseGen_Default)
-        noise_gen = pThread->GetSceneData()->noiseGenerator;
+        noise_gen = pThread->NoiseGenerator();
     return noise_gen;
 }
 
@@ -290,7 +290,7 @@ int BasicPattern::GetNoiseGen(const TraceThreadData *pThread) const
 {
     int noise_gen = noiseGenerator;
     if (noise_gen == kNoiseGen_Default)
-        noise_gen = pThread->GetSceneData()->noiseGenerator;
+        noise_gen = pThread->NoiseGenerator();
     return noise_gen;
 }
 
@@ -8625,7 +8625,7 @@ DBL RipplesPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIse
     DBL scalar =0.0;
     Vector3d point;
 
-    for (i = 0; i < pThread->numberOfWaves; i++)
+    for (i = 0; i < pThread->NumberOfWaves(); i++)
     {
         point = EPoint - pThread->waveSources[i];
         length = point.length();
@@ -9074,7 +9074,7 @@ DBL WavesPattern::EvaluateRaw(const Vector3d& EPoint, const Intersection *pIsect
     DBL scalar = 0.0;
     Vector3d point;
 
-    for (i = 0; i < pThread->numberOfWaves; i++)
+    for (i = 0; i < pThread->NumberOfWaves(); i++)
     {
         point = EPoint - pThread->waveSources[i];
         length = point.length();

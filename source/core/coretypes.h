@@ -145,6 +145,7 @@ class Media final
 {
     public:
         class FastCache;
+        class EagerField;
         int Type;
         int Intervals;
         int Min_Samples;
@@ -196,6 +197,9 @@ class Media final
         /// object: the container; refractionDetail: the effective refraction_detail in scene units, 0 when auto has none to derive;
         /// cellLimit: the effective prepared media cell limit, 0 for none.
         void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0);
+        /// Plans building its prepared density grid ahead of the render from `copy`, a copy whose functions other threads
+        /// may run; null when it has no prepared grid or the grid cannot be sized now.
+        std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const;
         /// Whether it only bends rays, with nothing to absorb, emit or scatter.
         bool OnlyRefracts() const { return (Refraction != 0.0) && !use_absorption && !use_emission && !use_scattering; }
         /// Whether its prepared grid was fitted to this container.

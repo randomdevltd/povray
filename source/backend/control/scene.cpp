@@ -53,6 +53,7 @@
 
 // POV-Ray header files (core module)
 #include "core/scene/tracethreaddata.h"
+#include "core/shape/mesh.h"
 #include "core/shape/portal.h"
 
 // POV-Ray header files (POVMS module)
@@ -96,6 +97,7 @@ Scene::~Scene()
     if (parserControlThread != nullptr)
         parserControlThread->join();
     delete parserControlThread;
+    StopMeshPool();
 
     for(std::vector<TraceThreadData*>::iterator i(sceneThreadData.begin()); i != sceneThreadData.end(); i++)
         delete (*i);
@@ -214,6 +216,11 @@ void Scene::StartParser(POVMS_Object& parseOptions)
         }
     }
 
+    // the parser holds one of the +WT threads, so +WT1 leaves none for eager builds
+    const int eagerThreads = clip<int>(parseOptions.TryGetInt(kPOVAttrib_MaxRenderThreads, 1), 1, SIGNED16_MAX) - 1;
+    if (parseOptions.TryGetBool(kPOVAttrib_EagerPreparation, true) && (eagerThreads > 0))
+        sceneData->meshPool = std::make_shared<DeferredMeshPool>(unsigned(eagerThreads));
+
     // do parsing
     sceneThreadData.push_back(dynamic_cast<TraceThreadData *>(parserTasks.AppendTask(new ParserTask(
         sceneData, pov_parser::ParserOptions(bool(parseOptions.Exist(kPOVAttrib_Clock)), parseOptions.TryGetFloat(kPOVAttrib_Clock, 0.0), seed,
@@ -286,8 +293,23 @@ void Scene::FinishSetBounds(TaskQueue& taskq)
     taskq.AppendFunction(boost::bind(&Scene::SendDoneMessage, this, _1));
 }
 
+void Scene::StopMeshPool()
+{
+    if (sceneData->meshPool != nullptr)
+    {
+        sceneData->meshPool->Stop();
+        sceneData->meshPool->Dispose();
+    }
+}
+
 void Scene::StopParser()
 {
+    if (sceneData->meshPool != nullptr)
+    {
+        // a mesh build task helper runs a build inline, without cooperating, so it must see the stop as well
+        sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+        sceneData->meshPool->Stop();
+    }
     parserTasks.Stop();
 
     RenderBackend::SendSceneFailedResult(sceneData->sceneId, kUserAbortErr, sceneData->frontendAddress);
@@ -296,10 +318,14 @@ void Scene::StopParser()
 void Scene::PauseParser()
 {
     parserTasks.Pause();
+    if (sceneData->meshPool != nullptr)
+        sceneData->meshPool->Pause();
 }
 
 void Scene::ResumeParser()
 {
+    if (sceneData->meshPool != nullptr)
+        sceneData->meshPool->Resume();
     parserTasks.Resume();
 }
 
@@ -443,6 +469,7 @@ void Scene::ParserControlThread()
 
         if((parserTasks.IsDone() == true) && (parserTasks.Failed() == true) && (sentFailedResult == false))
         {
+            StopMeshPool();
             RenderBackend::SendSceneFailedResult(sceneData->sceneId, parserTasks.FailureCode(kUncategorizedError), sceneData->frontendAddress);
             sentFailedResult = true;
         }

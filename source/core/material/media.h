@@ -43,8 +43,10 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -239,6 +241,24 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };
+
+/// Fills unclaimed slabs of an eager density grid on `thread` until none are left, it is stopped or `stop` says so (with no
+/// `stop`, a stopped grid is filled too); returns the TraceThreadData::globalsRead bits that reading took.
+unsigned char WorkEagerField(Media::EagerField& field, TraceThreadData *thread, const std::function<bool()>& stop);
+/// How many of its slabs have been claimed so far, and how many it has.
+void EagerFieldSlabs(const Media::EagerField& field, int& claimed, int& total);
+/// Stops the eager threads claiming more of its slabs; whoever finishes it fills the rest.
+void StopEagerField(Media::EagerField& field);
+/// The CPU time its fills took.
+POV_LONG EagerFieldCpuTime(const Media::EagerField& field);
+/// Adds the prepared caches whose container is `object` itself, the ones a kept object may hand a grid to.
+void CollectPreparedCaches(ConstObjectPtr object, std::unordered_set<const void *>& caches);
+/// Whether the medium it was planned for still has its cache, and that cache is one of `caches`.
+bool EagerFieldKept(const Media::EagerField& field, const std::unordered_set<const void *>& caches);
+/// For a kept field only: fills what the eager threads left on `threads`, then gives the grid to its medium if the container's bounds
+/// and `cellLimit` still match and `changed` finds no setting it read changed; returns whether it did. Else the render builds it.
+bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, DBL cellLimit, const std::vector<TraceThreadData *>& threads,
+                      const std::function<bool(unsigned char)>& changed, const std::function<void()>& cooperate);
 
 /// @}
 ///
