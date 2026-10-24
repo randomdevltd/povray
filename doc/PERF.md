@@ -423,7 +423,7 @@ interval against 10.1 before, at 1.3 Gcycles against 7.3 for a 64×48 render, wi
 
 While preparation succeeds, `resolution` is the quality dial for camera and shadow integration: a smaller positive width keeps more detail and takes more preparation, memory and steps; a larger width is cheaper and coarser. An explicit positive value overrides the auto width. The classic sampling controls (`intervals`, `samples`, `jitter`, `aa_level`, `aa_threshold`, `confidence`, `variance` and `ratio`) are parsed but ignored on the prepared path. If preparation falls back or the ray is a photon ray, classic method 3 evaluation uses those controls without changing the stored method. Explicit methods 1, 2 and 3 select classic behavior throughout.
 
-The first stage uses a fixed dense grid with a cap of one million density cells and one million cells per optical grid. Up to four optical grids are kept per medium. The field covers the container box; the container geometry clips ray segments and optical-depth construction, so field interpolation does not dilute density at a boundary. An unbounded or degenerate container, an unsupported pigment, non-finite or negative density, negative extinction, or a grid over the cap uses the classic path. Multiple simultaneous media and rays that need over 4096 steps also use classic evaluation. Portals, point lights and area lights do not use a light-aligned optical grid. Grid construction is lazy, shared among render threads and included in the first trace; subsequent rays reuse it. This is a finite-resolution approximation: subcell sampling can miss thin features and softens shadow edges. Reducing the cell width approaches the underlying continuous field where it is well behaved, but need not reproduce classic media's finite quadrature exactly.
+The first stage uses a fixed dense grid with a cap of one million density cells and one million cells per optical grid. Up to four optical grids are kept per medium. The field covers the container box; the container geometry clips ray segments and optical-depth construction, so field interpolation does not dilute density at a boundary. An unbounded or degenerate container, an unsupported pigment, non-finite or negative density, negative extinction, or a grid over the cap uses the classic path. Multiple simultaneous media and rays that need over 4096 steps also use classic evaluation. Portals, point lights and area lights do not use a light-aligned optical grid. A density grid is built across the `+WT` threads in z slabs, and each optical-depth grid in light-aligned columns (grids of 4096 cells or more), each cell by one thread, so a grid is the same on any thread count. With eager preparation (the default, see below) a density grid is filled before the render, starting on spare threads during the parse; with it off, for a density that tests an object, and for every optical-depth grid, construction waits for the first ray that needs the grid and is included in that trace. Subsequent rays reuse it. This is a finite-resolution approximation: subcell sampling can miss thin features and softens shadow edges. Reducing the cell width approaches the underlying continuous field where it is well behaved, but need not reproduce classic media's finite quadrature exactly.
 
 `tools/bench/media-self-shadow.pov` selects the mode with `Declare=Fast=1` and its cell width with `Declare=CellSize=0.1`. `tools/bench/media-fast-combinations.pov` exercises several containers, overlapping media, turbulent and function densities, emission, absorption, scattering, two parallel lights and an optional area light (`Declare=Area=1`). Compare paired 16-bit PPM files with `tools/bench/compare-media-fast.py`; use `+PR -A` at the same size and sampling settings. `distribution/scenes/interior/media/media5.pov` is a stock no-opt-in regression scene.
 
@@ -2012,7 +2012,8 @@ tree there. Parser tokens, declarations and object modifiers remain on the parse
 A declaration records a deferred mesh without building it. Copying, instancing, transforming and texturing it do not
 build it. Operations that actually inspect geometry (`trace`, `inside`, extents, mesh cameras, and bounding, clipping
 or object-pattern objects) build it on the parser thread; otherwise a mesh is built after parsing, once the tag
-filters show some view keeps an object using it (see [render tags](render-tags.md#phases-and-deferred-meshes)). A
+filters show some view keeps an object using it (see [render tags](render-tags.md#phases-and-deferred-meshes)), unless
+[eager preparation](#eager-preparation) starts it earlier on a spare thread while the parser runs. A
 pending mesh's box is a placeholder, so each compound holding one is rebounded from scratch once the mesh resolves;
 tracing never checks for pending meshes. Diagnostics are emitted in declaration order. Each generated build gets a
 frozen function-VM snapshot, so later function declarations and assignments neither race nor wait for it. Reusing a
@@ -2050,6 +2051,48 @@ tube whose grid reaches the 256-patch limit but meshes to 70k triangles drops 6�
 With `global_settings { mesh_cache }` (doc/povm.md) a generated mesh is built once per build of POV-Ray and
 read back afterwards. A 200-pixel render of a scene with two isosurface meshes (77k and 287k triangles) and twelve
 skein meshes parses in 40.4 s uncached, 42.4 s when it fills the cache and 0.21 s from it, with identical pixels.
+
+## Eager preparation
+
+The parser runs on one thread, so the other `+WT` threads used to sit idle until the parse ended. Eager preparation
+(`Eager_Preparation`, INI, on by default; `+WE`/`-WE`) hands them the deferred work as soon as it exists: a pool of
+`+WT` - 1 threads (none at `+WT1`) builds each `isosurface_mesh`, `skein_mesh` and `mesh2 { povm }` as the parser
+records it, and fills z slabs of a method 4 medium's density grid once its top-level container is complete. When the
+parse ends, the mesh build phase finishes what is left on all `+WT` threads and hands the grids to the render.
+
+- A build evaluates a snapshot of the parser's functions with the noise generator, working gamma and wave count
+  frozen when it was queued. If it read one that a later `global_settings` changed, the thread that joins it builds it
+  again, so images match eager preparation off. Functions that test an object cannot be snapshotted and wait for the
+  end of the parse.
+- A parse-time geometry query uses a finished build, waits for a running one or runs a queued one on the parser thread.
+- With `Filter_Tags` on the command line or in an INI file, a mesh build is queued only when a kept object places the
+  mesh. Filters set in the scene are known only at its end, so there every recorded mesh builds and the builds no
+  prepared set keeps are discarded; a CPU-second or more of discarded builds raises a warning with the remedy (give the
+  filter on the command line, remove unused declarations, or `-WE`).
+- Eager grids are sized by the render's cell limit; a grid whose container bounds, cell limit or settings read changed
+  later is left for the render to build as before. Eager preparation also fills the grids of kept containers that no
+  ray reaches, which a lazy build skips. Optical-depth grids stay with the render.
+- With it off, meshes are built after the parse (parse-time queries on the parser thread) and density grids on the
+  first ray, as before.
+
+Measured on a quiet host (load 3.6-4.5), 4 CPUs via `taskset`, `+WT4`, three runs each, eager preparation off against
+on:
+
+| Fixture | Wall | User-space instructions |
+|---|---:|---:|
+| `tools/bench/parse-mesh-overlap.pov`: eight `isosurface_mesh` declared before a parse-heavy macro loop | 8.3 → 6.7 s | 177.0 → 176.7 G |
+| a 1M-cell method 4 density grid declared before a long parse loop | 6.0 → 4.3 s | +1.6% |
+
+The parse itself takes as long beside the meshes and up to 7% longer beside the grid. Keeping one of the eight meshes
+with a command-line filter costs +0.4% instructions; before builds were gated on placement it cost +193%, as the
+unused builds were made and thrown away.
+
+Limits: discarded builds cost CPU when the filter is only in the scene; meshes built side by side raise peak memory;
+`+WT` above the CPUs available makes the eager threads compete with the parser.
+
+`tests/render/eager_preparation.sh` compares eager preparation on and off at `+WT1`, `+WT4` and `+WT8`: the same
+images and deferred-mesh counts, builds redone after late settings, discards, placement gating, the warning, `.povm`,
+media grids, parse errors and stops.
 
 ## Classic parser: lex once
 

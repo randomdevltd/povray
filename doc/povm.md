@@ -19,7 +19,9 @@ The file read, triangle preparation and cached-tree load or build are recorded a
 continues with later declarations, instances and transforms; a geometry query loads the mesh then, and otherwise it is
 loaded after parsing, once every tag filter is known, and only if some view keeps an object that uses it (see
 [render tags](render-tags.md#phases-and-deferred-meshes)). Up to `+WT` meshes load concurrently; `+WT1` loads them
-serially.
+serially. With eager preparation (`Eager_Preparation`, on by default) a load starts earlier instead, on one of `+WT` - 1
+spare threads while the parser continues, and a load no view keeps is thrown away (see
+[Symmetric MultiProcessing](html/r3_2.html#r3_2_8_1)).
 
 ## Layout
 

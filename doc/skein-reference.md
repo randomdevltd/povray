@@ -327,7 +327,10 @@ The parser records each mesh build and continues. Copies, transforms, textures a
 do not build it, but `trace`, `inside`, extent queries and mesh cameras build it when they need
 its geometry. Every other mesh is built after parsing, once all tag filters are known, and only
 if some view keeps an object that uses it; those builds run on up to `+WT` threads, and `+WT1`
-is serial. See [render tags](render-tags.md#phases-and-deferred-meshes).
+is serial. With eager preparation (`Eager_Preparation`, on by default) the build starts earlier
+instead, on one of `+WT` - 1 spare threads while the parser continues, and a build no view keeps
+is thrown away. See [render tags](render-tags.md#phases-and-deferred-meshes) and
+[Symmetric MultiProcessing](html/r3_2.html#r3_2_8_1).
 
 A function that maps a skein cannot sample a `screen` pigment: its geometry must agree
 for camera rays, photons and mesh preparation. That is an error for both `skein` and

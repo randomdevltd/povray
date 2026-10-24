@@ -389,10 +389,10 @@ New Features
     between overlapping and shared surfaces.
   - `global_settings { mesh_cache "directory" }` keeps finished
     `isosurface_mesh` and `skein_mesh` meshes between renders.
-  - Command-line: `Filter_Tags`, `Pov4_Version` (`+ML`) and
-    `Pov4_Lowered_File` (`+GL`); `Prepared_Media_Cells` joins the INI options
-    that work on the command line too; `.pov4` is recognised as a scene
-    extension.
+  - Command-line: `Filter_Tags`, `Pov4_Version` (`+ML`),
+    `Pov4_Lowered_File` (`+GL`) and `Eager_Preparation` (`+WE`/`-WE`);
+    `Prepared_Media_Cells` joins the INI options that work on the command
+    line too; `.pov4` is recognised as a scene extension.
   - `isosurface_mesh` takes everything an `isosurface` takes and builds a
     `mesh2` of its surface at parse time, keeping sharp edges exact. Copies of
     a declared one share their triangles.
@@ -571,15 +571,22 @@ Performance Improvements
     work threads before the render; `+WT1` has none, so nothing changes
     there. Images match it off. On 4 CPUs at `+WT4` on a quiet host, three
     runs each: eight meshes declared before a long parse loop
-    (`tools/bench/parse-mesh-overlap.pov`) take 6.6 instead of 8.4 s wall
+    (`tools/bench/parse-mesh-overlap.pov`) take 6.7 instead of 8.3 s wall
     for the same instructions, and a 1M-cell grid before a long parse loop
-    4.4 instead of 6.0 s for 1.9% more; the parse takes as long for the
+    4.3 instead of 6.0 s for 1.6% more; the parse takes as long for the
     meshes and up to 7% longer beside the grid. A
     command-line or INI `Filter_Tags` starts a mesh build only when a kept
     object places the mesh, so keeping one of eight costs 0.4% more
     instructions; filters set in the scene are known only at its end, and
     discarding a CPU-second or more of builds raises a warning. Eager grids
     are sized like the render's, but include containers no ray reaches.
+  - Media method 4: a prepared density grid is built in z slabs across the
+    `+WT` threads, and each light's optical-depth grid in columns, instead of
+    on the first thread that needs it while the others wait; a built
+    optical-depth grid is found without a lock. Images are the same on any
+    thread count. `tools/bench/media-fast-combinations.pov` (`Fast=1
+    CellSize=0.02`, 320x180) traces in 8.5 instead of 11.9 s at `+WT8`, with
+    0.4% fewer instructions.
   - Isosurfaces: the function interpreter is decoded once with computed-goto
     dispatch, evaluates four points per call and takes its maths from xsimd,
     and shadow rays search for any root instead of the first (`isocacti.pov`
@@ -758,6 +765,13 @@ Miscellaneous:
     vector still needs parentheses, and so does a bare `<` after an item in
     any item list (block and function bodies, the top level, arrays), where
     it starts a vector: `fn Lt(A, B) { (A < B) }`.
+  - Fix a use after free when a union whose interior holds a method 4
+    medium with a prepared grid, or a medium that is a light, was split for
+    bounding: such a union is now placed whole, as with `split_union off`,
+    whatever `Split_Unions` says. The image is unchanged.
+  - Fix a race on function reference counts when render threads and grid or
+    mesh build threads evaluated the same function at once, which could free
+    a function still in use.
 
 Development Related
 -------------------

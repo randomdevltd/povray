@@ -99,6 +99,12 @@ Enable BVH (Bounding Volume Hierarchy) bounding (the default).
 .TP
 \fBBM2\fP or \fBBounding_Method\fP=\fB2\fP
 Enable BSP (Binary Space Partitioning) tree bounding.
+.TP
+\fBWE\fP or \fBEager_Preparation\fP=\fIbool\fP
+While the parser runs, build each isosurface_mesh, skein_mesh and mesh2 povm,
+and fill method 4 media density grids, on \fBWT\fP \- 1 spare threads (none at
+\fB+WT1\fP); the rest is finished on all threads before the render. On by
+default; \fB\-WE\fP builds meshes after the parse and grids on the first ray.
 .SS Output options:
 .TP
 \fBH\fP\fIn\fP or \fBHeight\fP=\fIinteger\fP
