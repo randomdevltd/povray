@@ -369,6 +369,8 @@ class ViewData final
         POV_LONG photonMapCPU = 0;
         size_t photonPeakBytes = 0;
         unsigned int photonThreads = 0;
+        /// The sets this view shoots photons for, in the order a render of its camera alone registers them, which keys their draws.
+        std::vector<PreparedSetId> photonSets;
         bool KeepsLatticeSamples() const { return latticeSamplesActive; }
 
         /// Method 4: a pixel's index in its per-pixel state, which covers the render area only.
@@ -519,6 +521,8 @@ class ViewData final
         Camera camera;
         std::shared_ptr<SubsurfaceCache> subsurfaceCache;
         RadiosityCaches radiosityCaches;
+        /// the scene's views share their radiosity caches, and an earlier view made them
+        bool reusesRadiosity = false;
         /// scene data
         std::shared_ptr<BackendSceneData> sceneData;
         /// view id

@@ -47,6 +47,7 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <string>
 
 // Boost header files
 #include <boost/bind.hpp>
@@ -70,6 +71,7 @@
 #include "core/shape/csg.h"
 #include "core/shape/mesh.h"
 #include "core/shape/plane.h"
+#include "core/shape/portal.h"
 #include "core/shape/sphere.h"
 #include "core/support/octree.h"
 
@@ -130,8 +132,14 @@ ViewData::ViewData(shared_ptr<BackendSceneData> sd) :
     sceneData(sd),
     qualityFlags(9)
 {
-    for (size_t id = 0; id < sd->preparedSets.size(); ++id)
-        radiosityCaches.push_back(std::make_shared<RadiosityCache>(sd->radiositySettings));
+    reusesRadiosity = sd->multipleCameras && !sd->sharedRadiosityCaches.empty();
+    if (reusesRadiosity)
+        radiosityCaches = sd->sharedRadiosityCaches;
+    else
+        for (size_t id = 0; id < sd->preparedSets.size(); ++id)
+            radiosityCaches.push_back(std::make_shared<RadiosityCache>(sd->radiositySettings));
+    if (sd->multipleCameras)
+        sd->sharedRadiosityCaches = radiosityCaches;
 }
 
 ViewData::~ViewData()
@@ -826,6 +834,46 @@ static vector<shared_ptr<ScreenPretrace>> ScreenPretraces(ViewData& viewData, un
     return passes;
 }
 
+// The collected camera a view names, or the scene's camera.
+static const Camera& ViewCamera(const SceneData& scene, POVMS_Object& renderOptions)
+{
+    if (!renderOptions.Exist(kPOVAttrib_CameraIndex))
+        return scene.parsedCamera;
+    const int index = renderOptions.GetInt(kPOVAttrib_CameraIndex);
+    if (!scene.multipleCameras)
+        throw POV_EXCEPTION(kParamErr, "A view selects a camera, but the scene has no camera with an output block.");
+    if ((index < 0) || (size_t(index) >= scene.cameras.size()))
+        throw POV_EXCEPTION(kParamErr, "A view names camera " + std::to_string(index) + ", but the scene has " +
+                                       std::to_string(scene.cameras.size()) + " with output blocks.");
+    return scene.cameras[index];
+}
+
+// The sets a render of this camera alone registers, in its order: its own, then its screens' and portals'.
+static vector<PreparedSetId> PhotonSets(const SceneData& scene, const Camera& camera)
+{
+    vector<PreparedSetId> sets;
+    if (!scene.multipleCameras)
+    {
+        for (PreparedSetId id = 0; id < scene.preparedSets.size(); ++id)
+            sets.push_back(id);
+        return sets;
+    }
+    auto add = [&](const TagFilter& filter) {
+        const PreparedSetId id = scene.FindPreparedSet(scene.EffectiveFilterTags(filter));
+        if (std::find(sets.begin(), sets.end(), id) == sets.end())
+            sets.push_back(id);
+    };
+    add(camera.filterTags);
+    for (const shared_ptr<const Camera>& screen : scene.screenCameras)
+        add(screen->filterTags);
+    for (const Portal *portal : scene.portalMouths)
+    {
+        add(portal->frontFilterTags);
+        add(portal->backFilterTags);
+    }
+    return sets;
+}
+
 void View::StartRender(POVMS_Object& renderOptions)
 {
     unsigned int tracingmethod = 0;
@@ -851,6 +899,15 @@ void View::StartRender(POVMS_Object& renderOptions)
 
     viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>(viewData.sceneData->subsurfaceMemory, viewData.sceneData->subsurfaceSpacing);
     viewData.qualityFlags = QualityFlags(clip(renderOptions.TryGetInt(kPOVAttrib_Quality, 9), 0, 9));
+    {
+        // each view of the scene starts from the settings parsing left, which this one narrows below
+        BackendSceneData& scene = *viewData.GetSceneData();
+        if (scene.viewDefaults == nullptr)
+            scene.viewDefaults.reset(new BackendSceneData::ViewDefaults{scene.photonSettings, scene.radiositySettings, scene.useSubsurface});
+        scene.photonSettings = scene.viewDefaults->photons;
+        scene.radiositySettings = scene.viewDefaults->radiosity;
+        scene.useSubsurface = scene.viewDefaults->useSubsurface;
+    }
 
     if(renderOptions.TryGetBool(kPOVAttrib_Antialias, false) == true)
         tracingmethod = clip(renderOptions.TryGetInt(kPOVAttrib_SamplingMethod, 1), 0, 4); // TODO FIXME - magic number in clip
@@ -899,6 +956,12 @@ void View::StartRender(POVMS_Object& renderOptions)
     Path radiosityStateFile;
     if (progressive && radiosityOn && !saveRadiosityCache)
         radiosityStateFile = Path(renderOptions.TryGetUCS2String(kPOVAttrib_RadiosityStateFile, ""));
+    // a cache shared by views is loaded, saved and kept beside a state file by the first view only
+    if (viewData.reusesRadiosity)
+    {
+        loadRadiosityCache = saveRadiosityCache = false;
+        radiosityStateFile = Path();
+    }
     bool resumeRadiosity = resumed && radiosityOn && (saveRadiosityCache || !radiosityStateFile.Empty());
     bool skipPretrace = false;
     if (loadRadiosityCache || saveRadiosityCache || !radiosityStateFile.Empty())
@@ -991,7 +1054,8 @@ void View::StartRender(POVMS_Object& renderOptions)
     // TODO FIXME - need to check this in front end, then change this code to set the values to default
     if ((viewData.renderArea.left >= viewData.GetWidth()) || (viewData.renderArea.top >= viewData.GetHeight()))
         throw POV_EXCEPTION(kParamErr, "Invalid start column or row");
-    if ((viewData.renderArea.right >= viewData.GetWidth()) || (viewData.renderArea.bottom >= viewData.GetHeight()))
+    if ((viewData.renderArea.right >= viewData.GetWidth()) || (viewData.renderArea.bottom >= viewData.GetHeight()) ||
+        (viewData.renderArea.right < viewData.renderArea.left) || (viewData.renderArea.bottom < viewData.renderArea.top))
         throw POV_EXCEPTION(kParamErr, "Invalid end column or row");
 
     viewData.blockSize = renderOptions.TryGetInt(kPOVAttrib_RenderBlockSize, 32);
@@ -1056,8 +1120,9 @@ void View::StartRender(POVMS_Object& renderOptions)
         viewData.rtrData = new RTRData(viewData, maxRenderThreads);
 
     // camera changes without parsing
+    const Camera& viewCamera = ViewCamera(*viewData.GetSceneData(), renderOptions);
     if(renderOptions.Exist(kPOVAttrib_SceneCamera) == false)
-        viewData.camera = viewData.GetSceneData()->parsedCamera;
+        viewData.camera = viewCamera;
     else // INCOMPLETE EXPERIMENTAL [trf]
     {
         POVMS_Object camera;
@@ -1065,7 +1130,7 @@ void View::StartRender(POVMS_Object& renderOptions)
         renderOptions.Get(kPOVAttrib_SceneCamera, camera);
 
         // TODO FIXME - clear by setting scene's camera, but not sure if this is the way to go in the long run [trf]
-        viewData.camera = viewData.GetSceneData()->parsedCamera;
+        viewData.camera = viewCamera;
 
         bool had_location = false;
         bool had_direction = false;
@@ -1170,6 +1235,12 @@ void View::StartRender(POVMS_Object& renderOptions)
         }
     }
 
+    viewData.photonSets = PhotonSets(*viewData.GetSceneData(), viewData.camera);
+    if (viewData.GetSceneData()->multipleCameras && viewData.GetSceneData()->photonSettings.photonsEnabled &&
+        !viewData.GetSceneData()->photonSettings.fileName.empty())
+        throw POV_EXCEPTION(kParamErr, "A photons save_file or load_file cannot be used with camera output blocks: each camera "
+                                       "shoots its own maps.");
+
     const SceneData& scene = *viewData.GetSceneData();
     const bool hidesInteriorMedia = scene.interiorMedia && scene.solidBlocksInteriorMedia;
     if (!scene.atmosphere.empty() || (scene.fog != nullptr) || hidesInteriorMedia)
@@ -1228,7 +1299,26 @@ void View::StartRender(POVMS_Object& renderOptions)
         renderTasks.AppendSync();
     }
     */
-    if(viewData.GetSceneData()->photonSettings.photonsEnabled && viewData.GetSceneData()->photonSettings.method == 1)
+    BackendSceneData& photonScene = *viewData.GetSceneData();
+    const bool shootPhotons = photonScene.photonSettings.photonsEnabled &&
+        ((photonScene.photonSettings.method == 1) || photonScene.photonSettings.Progressive()) &&
+        !(photonScene.photonSettings.loadFile && !photonScene.photonSettings.fileName.empty());
+    const BackendSceneData::ShotPhotons* shot = photonScene.shotPhotons.get();
+    const bool reusePhotons = shootPhotons && (shot != nullptr) && (shot->sets == viewData.photonSets) && (shot->seed == seed) &&
+                              (shot->threads == maxRenderThreads);
+    if (reusePhotons)
+    {
+        photonScene.photonSettings = shot->settings;
+        photonScene.shotPhotons->views++;
+        // building method 2 maps leaves a view the default subsurface cache; a view reusing them takes the same
+        if (photonScene.photonSettings.Progressive())
+            viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
+        MessageFactory(photonScene.warningLevel, "Photons", photonScene.backendAddress, photonScene.frontendAddress,
+                       photonScene.sceneId, viewData.viewId)
+            .Info("Photon maps shot once for this scene's sets are reused by this camera (view %u of those sharing them).",
+                  photonScene.shotPhotons->views);
+    }
+    else if(viewData.GetSceneData()->photonSettings.photonsEnabled && viewData.GetSceneData()->photonSettings.method == 1)
     {
         if (!viewData.GetSceneData()->photonSettings.fileName.empty() && viewData.GetSceneData()->photonSettings.loadFile)
         {
@@ -1280,6 +1370,11 @@ void View::StartRender(POVMS_Object& renderOptions)
     }
     else if (viewData.GetSceneData()->photonSettings.photonsEnabled && viewData.GetSceneData()->photonSettings.Progressive())
         QueueProgressivePhotons(seed, maxRenderThreads);
+    if (shootPhotons && !reusePhotons)
+        renderTasks.AppendFunction([this, seed, maxRenderThreads](TaskQueue&) {
+            BackendSceneData& scene = *viewData.GetSceneData();
+            scene.shotPhotons.reset(new BackendSceneData::ShotPhotons{viewData.photonSets, seed, maxRenderThreads, scene.photonSettings, 1});
+        });
 
     // do radiosity pretrace
     if(viewData.GetSceneData()->radiositySettings.radiosityEnabled && !skipPretrace)
@@ -1853,7 +1948,7 @@ void View::QueueProgressivePhotons(size_t seed, int threads)
     viewThreadData.push_back(photonTotal);
     auto controller = std::make_shared<Timer>();
     renderTasks.AppendFunction([controller](TaskQueue&) { controller->Reset(); });
-    renderTasks.AppendFunction([this](TaskQueue&) { PrepareProgressiveAiming(*viewData.GetSceneData()); });
+    renderTasks.AppendFunction([this](TaskQueue&) { PrepareProgressiveAiming(*viewData.GetSceneData(), viewData.photonSets); });
     for (unsigned int pass = 0; pass < budget.batches; ++pass)
     {
         auto shooters = std::make_shared<std::vector<ViewThreadData*>>();

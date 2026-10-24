@@ -183,6 +183,9 @@
   <td><div class="divh3"><a title="3.4.2.6" href="#r3_4_2_6">Screen Cameras</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.2.7" href="#r3_4_2_7">Camera Output</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.3" href="#r3_4_3">Lighting Types</a></strong></div></td>
 </tr>
 <tr>
@@ -757,7 +760,8 @@ CAMERA_MODIFIER:
   variance Blur_Variance | [bokeh { pigment { BOKEH } }] |
   NORMAL | TRANSFORMATION | [MESHCAM_SMOOTH] |
   radiosity_size &lt;Width, Height&gt; | no_radiosity |
-  tags { "NAME" [, "NAME"...] } | filter_tags { TAG_FILTER }
+  tags { "NAME" [, "NAME"...] } | filter_tags { TAG_FILTER } |
+  output { [size &lt;Width, Height&gt;] [window &lt;SC, SR, EC, ER&gt;] [file "NAME"] }
 MESHCAM_MODIFIERS:
   rays per pixel Value,
   distribution type Value,
@@ -1681,6 +1685,90 @@ camera { ... radiosity_size &lt;Width, Height&gt; }
 camera { ... no_radiosity }
 </pre>
 <p><code>radiosity_size</code> sets the frame, in pixels from 1 to 65535 each, of the pretrace pass made for that camera, the render's size by default; a smaller frame is cheaper and coarser. <code>no_radiosity</code> makes no pass for that camera and shades its view with radiosity off. Unlike other camera behaviour keywords, both may follow a declared camera's identifier, as in <code>camera { View no_radiosity }</code>. On the render's own camera either one draws a warning and is ignored. See <a href="r3_10.html#r3_10_2_5">Screen Cameras and Radiosity</a>.</p>
+</div>
+
+<a name="r3_4_2_7"></a>
+<div class="content-level-h4" contains="Camera Output" id="r3_4_2_7">
+<h4>3.4.2.7 Camera Output</h4>
+<pre>
+camera { ... output }
+camera { ... output { [size &lt;Width, Height&gt;] [window &lt;SC, SR, EC, ER&gt;] [file "NAME"] } }
+</pre>
+<p>A camera with an <code>output</code> item renders as its own view. When a scene has any such camera, the scene is parsed
+and prepared once and each of those cameras, in the order the scene declares them, renders into its own image; cameras
+without an <code>output</code> item are not rendered, and each draws a warning saying so. A scene without any
+<code>output</code> item renders exactly as before: its last camera, with the usual warning if there are several. This works
+at every <code>#version</code> and in both scene languages; no option turns it on.</p>
+<p>Each image is the same as a render of the scene with only that camera in it, at that size and window, except for radiosity (below): a camera's
+<a href="r3_5.html#r3_5_1_5_13"><code>filter_tags</code></a> select its own part of the scene, and cameras are chosen with
+tags as objects are, so <a href="r3_2.html#r3_2_5_5"><code>Filter_Tags</code></a> on the command line can render one camera
+of many. If it removes every camera with an <code>output</code> item, the scene renders as one without them. A
+<code>mesh_camera</code> works as any other, so a set of bake cameras shares one parse, and cameras made in a loop give a
+turntable from one render (see <code>scenes/camera/turntable.pov</code>).</p>
+<p>A bare <code>output</code> renders the camera with the defaults: the command line's <code>Width</code>,
+<code>Height</code> and window, into the default file. In a block, every part is optional. A later <code>output</code> in the
+same camera, bare or a block, replaces an earlier one entirely, including one from the declared camera it is built from: so
+<code>camera { C output }</code> drops the size that <code>C</code> gave.</p>
+<p>The parts of the block:</p>
+<ul>
+<li><code>size</code> is the camera's image width and height in whole pixels, from 1 to 65535. The command line's
+<code>Width</code> and <code>Height</code> are only the default for cameras without one, and the values of
+<code>image_width</code> and <code>image_height</code>. A camera that leaves <code>right</code> at its default, itself or in
+the declared camera it is built from, takes the vectors and default focal distance a render at its own size gives it: where
+the default <code>right</code> follows the image (scenes of 3.8 and later) its aspect follows its own image, and where it is
+the fixed 1.33 of older scenes it stays 1.33, as in a render of that camera alone. A <code>right</code> written in the camera
+is kept.</li>
+<li><code>window</code> is the part of the camera's own image to render, in the units of
+<a href="r3_2.html#r3_2_2_3"><code>Start_Column</code>, <code>Start_Row</code>, <code>End_Column</code> and
+<code>End_Row</code></a>: values below 1 are fractions, others pixel numbers from 1. A camera with a size and no window
+renders all of its image; one with neither takes the command line's window. Pixels outside the window are left empty, and a
+window that ends before it starts is an error.</li>
+<li><code>file</code> names the image as <code>+O</code> would: the render's file type applies, its extension is added unless
+the name ends with it, and a name without a directory is written beside the render's output file. Without it the image goes to
+the output name with <code>-</code> and the camera's number among the rendering cameras, from 1 and zero-padded so the files
+sort (<code>scene-01.png</code> to <code>scene-12.png</code>), like animation frames. Each image has its own render state file,
+so <code>+C</code> continues each camera separately and skips those already written. Two cameras whose files come out the same
+are an error; names that reach one file by different paths, such as <code>./x</code> and <code>x</code>, are not caught.</li>
+</ul>
+<p>A screen's camera may carry <code>output</code> too, written in the screen's own camera block: it renders as a view in its
+place among the others and still draws the screen, and it is a view only once however often the screen is repeated, and only
+if <code>Filter_Tags</code> keeps it. An <code>output</code> inherited from a declared camera does not make a screen's camera a
+view. Its <code>size</code> gives that one camera its aspect, so it applies to the screen as well. A screen's camera that leaves
+<code>right</code> at its default takes the aspect of the command line's size, once for the whole render, so a camera of
+another size that sees such a screen shows it at that aspect, where a render of that camera alone at its size would derive the
+screen at its own aspect; give the screen's camera an explicit <code>right</code> to make them agree. Before version 3.5 a camera
+starts from the settings of the camera before it, as it always has; give each camera what it uses. <code>output</code> is a
+keyword only in a camera, and <code>window</code> and <code>file</code> only in its block, so all stay free as names. In the
+classic language a declared camera named <code>output</code> written first in a camera block is that camera; in the 4.0
+language a bound name <code>output</code> is its value, so write <code>output { }</code> there.</p>
+<p>Cameras with <code>output</code> items cannot be used with an animation or with output to STDOUT, nor with a photons
+<code>save_file</code> or <code>load_file</code>. A camera that fails partway through stops the render with an error, and the
+images before it are kept.</p>
+<p>Work that does not depend on the camera is done once: parsing, bounding, meshes, prepared media, and photon maps of
+either method, which depend only on the scene, its settings and the prepared selections they are shot for. A camera whose
+image needs the same selections as the last one shot reuses those maps, with a log line saying so; one that selects different
+objects shoots its own, since a selection's photons are drawn in the order its own render would shoot them. Subsurface cells
+are made per camera, as they are sized by its pixels.</p>
+<p>Radiosity is shared instead: each prepared selection has one radiosity cache for the whole render, and each camera, in
+declaration order, adds its own pretrace to it before it renders, so later cameras reuse the samples of earlier ones and take
+few of their own. This is the one thing that depends on the order of the cameras: the first camera matches its render alone,
+and later ones differ slightly from theirs, while the result is the same from run to run and with any number of threads.
+Rendering only some of the cameras, through <code>Filter_Tags</code>, or continuing with <code>+C</code> after some cameras
+are already written, leaves their samples out of the cache, so the remaining images differ slightly from those of a full,
+uninterrupted run. <code>+RFI</code> loads a cache file once before the first camera and <code>+RFO</code> saves the shared
+cache once, with every camera's samples; an existing cache file loaded with <code>+RFI</code> is the way to give every camera
+the same samples whatever the order. A few things remain shared that a render of one camera would not share:</p>
+<ul>
+<li>A prepared medium keeps optical-depth grids for at most four parallel lights. Grids are built as cameras need them and kept
+for the render, so when cameras light one medium with more than four parallel lights between them, a later camera samples the
+rest the classic way. The image is correct; only that camera's media sampling differs from its own render.</li>
+<li>Media warnings given once per scene appear only for the first camera that triggers them, as the scene is prepared once.</li>
+<li>The parse statistics are reported once, for the selection of the first camera; each camera's render statistics are its own.</li>
+<li>When cameras select different parts of the scene, each part has its own radiosity cache, and <code>+RFO</code> and
+<code>+RFI</code> files are named per part with a <code>.set-</code> suffix, as for screens and portals.</li>
+<li>A camera of its own size takes vectors that are the stored ones multiplied by the ratio of the two aspects, where a render at
+that size builds them directly; the two can differ in the last bit of a value, so a rare pixel may differ in its last bit.</li>
+</ul>
 </div>
 
 <a name="r3_4_3"></a>

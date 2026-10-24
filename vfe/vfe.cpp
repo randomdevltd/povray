@@ -631,6 +631,7 @@ bool VirtualFrontEnd::Start(POVMS_Object& opts)
 
   m_Session->Clear();
   animationProcessing.reset() ;
+  cameraProcessing.reset();
   m_PauseRequested = m_PausedAfterFrame = false;
   m_PostPauseState = kReady;
 
@@ -928,6 +929,43 @@ bool VirtualFrontEnd::HandleShelloutCancel()
   return true;
 }
 
+// The next camera with an output block: its options, a fresh image and its output file.
+void VirtualFrontEnd::StartCameraView()
+{
+  if (!cameraProcessing->Resolved())
+  {
+    if (animationProcessing != nullptr)
+      throw POV_EXCEPTION(kParamErr, "Camera output blocks render the cameras of one parse, so they cannot be combined with an animation.");
+    if ((imageProcessing != nullptr) && (imageProcessing->OutputIsStdout() || imageProcessing->OutputIsStderr()))
+      throw POV_EXCEPTION(kParamErr, "Camera output blocks write an image per camera, so the output cannot go to STDOUT or STDERR.");
+    cameraOptions = options;
+    cameraProcessing->Resolve(renderFrontend.GetSceneCameras(sceneId), cameraOptions, [this](const UCS2String& file) {
+      POVMS_Object named(cameraOptions);
+      named.SetUCS2String(kPOVAttrib_OutputFile, file.c_str());
+      return (imageProcessing != nullptr) ? imageProcessing->GetOutputFilename(named, 0, 0) : file;
+    });
+    // every camera's file is checked before the first renders, so a refused path fails before any image is written
+    for (const UCS2String& file : cameraProcessing->Files())
+      if (m_Session->TestAccessAllowed(file, true) == false)
+        throw POV_EXCEPTION(kCannotOpenFileErr, "IO Restrictions prohibit write access to '" + UCS2toSysString(file) + "'");
+  }
+  options = cameraProcessing->ViewOptions(cameraOptions);
+  if (m_Session->OutputToFileSet())
+  {
+    imageProcessing.reset();
+    imageProcessing = std::make_shared<ImageProcessing>(options);
+    UCS2String filename = imageProcessing->GetOutputFilename(options, 0, 0);
+    options.SetUCS2String(kPOVAttrib_OutputFile, filename.c_str());
+    if (m_Session->TestAccessAllowed(filename, true) == false)
+      throw POV_EXCEPTION(kCannotOpenFileErr, "IO Restrictions prohibit write access to '" + UCS2toSysString(filename) + "'");
+    shelloutProcessing->SetOutputFile(UCS2toSysString(filename));
+    m_Session->AdviseOutputFilename(filename);
+  }
+  const string str((boost::format("Rendering camera %u of %u.") % (cameraProcessing->Position() + 1) %
+                    cameraProcessing->Count()).str());
+  m_Session->AppendStreamMessage(vfeSession::mInformation, str.c_str());
+}
+
 State VirtualFrontEnd::Process()
 {
   if (state == kReady)
@@ -1100,6 +1138,19 @@ State VirtualFrontEnd::Process()
             // case.
             return state;
           }
+          if ((cameraProcessing == nullptr) && !renderFrontend.GetSceneCameras(sceneId).empty())
+            cameraProcessing = std::make_shared<CameraProcessing>();
+          if (cameraProcessing != nullptr)
+          {
+            try { StartCameraView(); }
+            catch(pov_base::Exception& e)
+            {
+              m_Session->SetFailed();
+              m_Session->AppendErrorMessage (e.what()) ;
+              m_Session->AppendStatusMessage (e.what()) ;
+              return state = kFailed;
+            }
+          }
           try { viewId = renderFrontend.CreateView(sceneId, options, imageProcessing, boost::bind(&vfe::VirtualFrontEnd::CreateDisplay, this, _1, _2)); }
           catch(pov_base::Exception& e)
           {
@@ -1127,6 +1178,11 @@ State VirtualFrontEnd::Process()
                */
               try { renderFrontend.CloseView(viewId); }
               catch (pov_base::Exception&) { /* Ignore any error here! */ }
+              if ((cameraProcessing != nullptr) && cameraProcessing->MoreCameras())
+              {
+                cameraProcessing->NextCamera();
+                return state = kParsing;
+              }
               try { renderFrontend.CloseScene(sceneId); }
               catch (pov_base::Exception&) { /* Ignore any error here! */ }
 
@@ -1245,6 +1301,21 @@ State VirtualFrontEnd::Process()
     case kPostFrameShellout:
       if (shelloutProcessing->ShelloutRunning() || HandleShelloutCancel())
         return state;
+      if ((cameraProcessing != nullptr) && cameraProcessing->MoreCameras())
+      {
+        try { renderFrontend.CloseView(viewId); }
+        catch (pov_base::Exception&) { /* Ignore any error here! */ }
+        cameraProcessing->NextCamera();
+        m_Session->SetPixelsRendered(0, m_Session->GetTotalPixels());
+        m_Session->SetPercentComplete(0);
+        if (m_PauseRequested)
+        {
+          m_PostPauseState = kParsing;
+          m_PauseRequested = false;
+          return state = kPostShelloutPause;
+        }
+        return state = kParsing;
+      }
       if ((animationProcessing == nullptr) || animationProcessing->MoreFrames() == false)
       {
         m_Session->SetSucceeded (true);
@@ -1321,6 +1392,7 @@ State VirtualFrontEnd::Process()
       try { renderFrontend.CloseScene(sceneId); }
       catch (pov_base::Exception&) { /* Ignore any error here! */ }
       animationProcessing.reset();
+      cameraProcessing.reset();
       imageProcessing.reset();
 
       // we only run the post-scene or failed action if we have passed the pre-scene point

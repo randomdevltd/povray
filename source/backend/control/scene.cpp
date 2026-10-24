@@ -451,6 +451,30 @@ void Scene::SendDoneMessage(TaskQueue&)
     doneMessage.SetSourceAddress(sceneData->backendAddress);
     doneMessage.SetDestinationAddress(sceneData->frontendAddress);
     doneMessage.SetInt(kPOVAttrib_LegacyGammaMode, sceneData->gammaMode);
+    if (sceneData->multipleCameras)
+    {
+        POVMS_List outputs;
+        for (const Camera& camera : sceneData->cameras)
+        {
+            POVMS_Object output(kPOVMSType_WildCard);
+            if (camera.output.width > 0)
+            {
+                output.SetInt(kPOVAttrib_Width, POVMSInt(camera.output.width));
+                output.SetInt(kPOVAttrib_Height, POVMSInt(camera.output.height));
+            }
+            if (camera.output.window)
+            {
+                output.SetFloat(kPOVAttrib_Left, POVMSFloat(camera.output.edges[0]));
+                output.SetFloat(kPOVAttrib_Top, POVMSFloat(camera.output.edges[1]));
+                output.SetFloat(kPOVAttrib_Right, POVMSFloat(camera.output.edges[2]));
+                output.SetFloat(kPOVAttrib_Bottom, POVMSFloat(camera.output.edges[3]));
+            }
+            if (!camera.output.file.empty())
+                output.SetUCS2String(kPOVAttrib_OutputFile, camera.output.file.c_str());
+            outputs.Append(output);
+        }
+        doneMessage.Set(kPOVAttrib_CameraOutputs, outputs);
+    }
     if (sceneData->workingGamma)
     {
         doneMessage.SetInt(kPOVAttrib_WorkingGammaType, sceneData->workingGamma->GetTypeId());

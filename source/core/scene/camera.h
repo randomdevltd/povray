@@ -132,6 +132,20 @@ public:
     unsigned int Radiosity_Width;           // [screen cameras] radiosity pretrace frame size; 0 takes the render's
     unsigned int Radiosity_Height;
     bool No_Radiosity;                      // [screen cameras] no radiosity pretrace, and its view is shaded without radiosity
+    /// [Cameras] the camera's own image: zero size, no window or no file takes the render's
+    struct Output final
+    {
+        bool given = false;
+        unsigned int width = 0, height = 0;
+        bool window = false;
+        DBL edges[4] = { 0.0, 0.0, 0.0, 0.0 };
+        UCS2String file;
+    } output;
+    /// how the image aspect `aspect` entered the vectors, so a camera of another size can take its own: fixed by the
+    /// scene, in right, in right and direction (an angle), or in up and direction (an orthographic angle)
+    enum class AspectRole : unsigned char { Fixed, Right, RightDirection, UpDirection } aspectRole = AspectRole::Fixed;
+    DBL aspect = 0.0;
+    bool focalDefault = false; ///< Focal_Distance was taken from the direction, not a focal_point
     std::vector<std::string> tags;
     TagFilter filterTags;
     /// look_at an object or tagged selection: a copy of it taken as the camera is parsed, measured and framed once the
