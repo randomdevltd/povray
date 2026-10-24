@@ -677,6 +677,11 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
     }
 }
 
+bool Media::PreparedFor(ConstObjectPtr object) const
+{
+    return fastCache && (fastCache->container == object);
+}
+
 void Media::PostProcess()
 {
     int i;
