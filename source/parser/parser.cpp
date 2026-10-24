@@ -10961,6 +10961,12 @@ bool Parser::Splits_Union(ObjectPtr Object, bool warn)
         (dynamic_cast<CSGMerge *>(Object) != nullptr))
         return false;
 
+    // A medium prepared over the union, or a light made from it, keeps a pointer to the union, so the union stays whole.
+    if ((Object->interior != nullptr) &&
+        std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
+                    [Object](const Media& medium) { return medium.light || medium.PreparedFor(Object); }))
+        return false;
+
     /*
      * [DB 8/94]
      *

@@ -198,6 +198,8 @@ class Media final
         void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0);
         /// Whether it only bends rays, with nothing to absorb, emit or scatter.
         bool OnlyRefracts() const { return (Refraction != 0.0) && !use_absorption && !use_emission && !use_scattering; }
+        /// Whether its prepared grid was fitted to this container.
+        bool PreparedFor(ConstObjectPtr object) const;
 };
 
 /// @}
