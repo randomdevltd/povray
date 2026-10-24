@@ -842,8 +842,6 @@ std::shared_ptr<Mesh> DeferredMeshState::Build(TraceThreadData *thread)
     if (phase == Phase::Recorded)
     {
         phase = Phase::Building;
-        Work run;
-        run.swap(work);
         lock.unlock();
         std::shared_ptr<Mesh> built;
         std::exception_ptr error;
@@ -851,17 +849,15 @@ std::shared_ptr<Mesh> DeferredMeshState::Build(TraceThreadData *thread)
         {
             if ((cancelled != nullptr) && cancelled->load(std::memory_order_relaxed))
                 throw std::runtime_error("Mesh build cancelled.");
-            built = run(thread, *this);
+            built = work(thread, *this);
         }
         catch (...)
         {
             error = std::current_exception();
         }
-        run = nullptr;
         lock.lock();
         mesh = built;
         failure = error;
-        keepAlive.reset();
         phase = Phase::Done;
         finished.notify_all();
     }
@@ -869,6 +865,15 @@ std::shared_ptr<Mesh> DeferredMeshState::Build(TraceThreadData *thread)
     if (failure)
         std::rethrow_exception(failure);
     return mesh;
+}
+
+void DeferredMeshState::Release()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (phase != Phase::Done)
+        return;
+    work = nullptr;
+    keepAlive.reset();
 }
 
 bool DeferredMeshState::Built() const

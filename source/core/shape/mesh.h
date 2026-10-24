@@ -138,6 +138,8 @@ struct DeferredMeshState final
 
     /// Runs the work on this thread unless it has run or is running; either way returns its mesh or rethrows its failure.
     std::shared_ptr<Mesh> Build(TraceThreadData *thread);
+    /// Drops the work and what it keeps alive; only the thread that joined the build may call it, as they hold the parser's functions.
+    void Release();
     bool Built() const;
     std::exception_ptr Failure() const;
 

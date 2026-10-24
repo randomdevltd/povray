@@ -346,6 +346,8 @@ void MeshBuildTask::Run()
     }
     for (const std::unique_ptr<TraceThreadData>& worker : workers)
         parseData->Stats() += worker->Stats();
+    for (const std::shared_ptr<DeferredMeshState>& state : needed)
+        state->Release();
 
     unsigned int built = 0;
     for (const std::weak_ptr<DeferredMeshState>& recorded : sceneData->deferredMeshes)

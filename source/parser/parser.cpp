@@ -227,8 +227,10 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
             }
             catch (const std::exception& error)
             {
+                state.Release();
                 Error(state.source, "%s", error.what());
             }
+            state.Release();
             state.reported = true;
             ++sceneData->deferredMeshesBuiltForQueries;
             for (const std::string& warning : state.warnings)
