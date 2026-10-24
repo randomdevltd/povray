@@ -57,6 +57,11 @@ operators are kept as written; its operands are string values, written as litera
 calls such as `concat(...)`, members or indexes, and are evaluated like any other value. `tagged` is a keyword only when a `{` follows it, so it remains free
 as a name: `let tagged = 1;` still works.
 
+A camera's `output` item (bare, or `output { size <w, h> window <sc, sr, ec, er> file "name" }`)
+renders it as its own view. `output` is a keyword only in a camera; where a name `output` is bound,
+a bare `output` is that value, so write `output { }` there. `window` and `file` count only inside
+the block.
+
 A `tags` list takes the same values, plus `inherit` and `none`, which follow the
 [inheritance rules](render-tags.md#inheritance): `tags { ...Tags, inherit }` keeps the
 parent's tags whatever the spread holds. `inherit` stays free as a name outside `tags`.

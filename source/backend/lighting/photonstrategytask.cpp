@@ -122,7 +122,7 @@ void PhotonStrategyTask::Run()
 
     /*  loop through global light sources  */
     GetViewDataPtr()->Light_Is_Global = true;
-    for (PreparedSetId preparedSetId = 0; preparedSetId < GetSceneData()->preparedSets.size(); ++preparedSetId)
+    for (PreparedSetId preparedSetId : GetViewData()->photonSets)
     {
         PreparedSet& set = GetSceneData()->GetPreparedSet(preparedSetId);
         for (LightSource *light : set.lights)

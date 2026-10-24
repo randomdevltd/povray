@@ -3388,10 +3388,10 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
             out.Put(Item(Item::Keyword, n->text, n->text, n), false);
             return;
         case NK::Ident:
-            // tagged is a selector only before a brace, so a bound name of that spelling is its value
+            // tagged and a bare output are items only when no name of that spelling is bound; a bound name is its value
             if (out.IsBlock() && ((static_cast<TextOutput&>(out).lastKeyword == "mix") ||
                                   (ContextualItem(static_cast<TextOutput&>(out).context, n->text) &&
-                                   !((n->text == "tagged") && FindBinding(n)))))
+                                   !(((n->text == "tagged") || (n->text == "output")) && FindBinding(n)))))
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
                 return;
@@ -4631,6 +4631,7 @@ void RunOnEvaluatorStack(std::function<void()> body)
 void Parser::Run_Pov4()
 {
     mHadCamera = false;
+    mPlainCameras = 0;
     RunOnEvaluatorStack([this]() {
         Pov4Evaluator evaluator(*this);
         evaluator.Run();

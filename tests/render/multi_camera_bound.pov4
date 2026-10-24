@@ -1,0 +1,5 @@
+// A bound name output is its value, not the camera item: this scene renders its one camera as usual.
+let output = <0, 0.6, 0>;
+camera { location <0, 1.5, -4> look_at output }
+sphere { output, 0.5 pigment { rgb <0.9, 0.4, 0.2> } }
+light_source { <-3, 5, -4> rgb 1 }

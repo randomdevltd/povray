@@ -4,7 +4,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { root } from '../classic.mjs';
 import { Program, writeConversion } from '../codemod/convert.mjs';
 import { classifyDiff, compareImages, decodePng, encodePng } from './png.mjs';
@@ -32,6 +32,13 @@ function parseOptions(argv) {
 const sha = (...parts) => createHash('sha256').update(parts.join('\0')).digest('hex');
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const writeJson = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(value, null, 1) + '\n'); };
+
+// A scene whose cameras have output items writes an image per camera; the first stands for the scene.
+function firstCameraImage(output) {
+  const stem = basename(output, '.png');
+  const first = readdirSync(dirname(output)).find((f) => f.startsWith(`${stem}-`) && /^-0*1\.png$/.test(f.slice(stem.length)));
+  if (first) copyFileSync(join(dirname(output), first), output);
+}
 
 function* povFiles(dir) {
   for (const entry of readdirSync(dir).sort()) {
@@ -166,6 +173,7 @@ function renderOne(job, binary, timeout) {
     child.on('close', (code) => {
       clearTimeout(timer);
       writeFileSync(job.output.replace(/\.png$/, '.log'), log);
+      if (code === 0 && !existsSync(job.output)) firstCameraImage(job.output);
       const status = timedOut ? 'timeout' : code === 0 && existsSync(job.output) ? 'ok' : 'error';
       writeJson(job.status, { status, seconds: (Date.now() - started) / 1000, message: status === 'error' ? errorMessage(log) : '',
         hash: job.hash });

@@ -128,6 +128,9 @@ struct SceneData final
 
     bool verbose;
 
+    /// for each camera the parse collected for `Cameras`, its own size, window and output file where it gives them
+    std::vector<POVMS_Object> cameraOutputs;
+
     struct final
     {
         int legacyGammaMode;
@@ -305,6 +308,7 @@ class RenderFrontend : public RenderFrontendBase
         void CloseScene(SceneId sid);
 
         SceneData::SceneState GetSceneState(SceneId sid);
+        std::vector<POVMS_Object> GetSceneCameras(SceneId sid);
 
         void StartParser(SceneId sid, POVMS_Object& obj);
         void PauseParser(SceneId sid);
@@ -423,6 +427,13 @@ SceneData::SceneState RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::G
         return shi->second.data.state;
     else
         return SceneData::Scene_Unknown;
+}
+
+template<class PARSER_MH, class FILE_MH, class RENDER_MH, class IMAGE_MH>
+std::vector<POVMS_Object> RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::GetSceneCameras(SceneId sid)
+{
+    typename SceneHandlerMap::iterator shi(scenehandler.find(sid));
+    return (shi != scenehandler.end()) ? shi->second.data.cameraOutputs : std::vector<POVMS_Object>();
 }
 
 template<class PARSER_MH, class FILE_MH, class RENDER_MH, class IMAGE_MH>
@@ -800,6 +811,18 @@ void RenderFrontend<PARSER_MH, FILE_MH, RENDER_MH, IMAGE_MH>::HandleParserMessag
         if(ident == kPOVMsgIdent_Done)
         {
             GetBackwardCompatibilityData(shi->second.data, msg);
+            shi->second.data.cameraOutputs.clear();
+            if (msg.Exist(kPOVAttrib_CameraOutputs))
+            {
+                POVMS_List outputs;
+                msg.Get(kPOVAttrib_CameraOutputs, outputs);
+                for (int i = 1; i <= outputs.GetListSize(); i++)
+                {
+                    POVMS_Object output;
+                    outputs.GetNth(i, output);
+                    shi->second.data.cameraOutputs.push_back(output);
+                }
+            }
             shi->second.data.state = SceneData::Scene_Ready;
         }
         else if(ident == kPOVMsgIdent_Failed)

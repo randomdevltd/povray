@@ -1,0 +1,26 @@
+// This work is licensed under the Creative Commons Attribution 3.0 Unported License.
+// To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
+// or send a letter to Creative Commons, 444 Castro Street, Suite 900, Mountain View,
+// California, 94041, USA.
+
+// Persistence Of Vision Raytracer sample file.
+// This file demonstrates a turntable from one render, as turntable.pov does: a camera every Step degrees, each with a bare
+// output, so one parse writes turntable-01.png, turntable-02.png, ...
+//
+// +w320 +h240 Declare=Step=30
+
+input Step = 30;
+if (Step <= 0) { error("Step must be a number of degrees greater than 0."); }
+global_settings { assumed_gamma 1.0 }
+
+for (I = 0 to 359 / Step) {
+  camera { location vrotate(<0, 2, -6>, y * I * Step) look_at <0, 1, 0> angle 40 output }
+}
+
+light_source { <-4, 8, -6> color rgb 1 }
+plane { y, 0 pigment { checker color rgb 0.8 color rgb 0.4 } }
+lathe {
+  cubic_spline 7, <0.3, -0.1>, <0.3, 0>, <0.9, 0.6>, <0.5, 1.6>, <0.4, 2.2>, <0.6, 2.4>, <0.6, 2.5>
+  pigment { color rgb <0.9, 0.8, 0.5> } finish { phong 0.8 reflection 0.1 }
+}
+box { <0.9, 0, -0.3>, <1.5, 0.6, 0.3> pigment { color rgb <0.2, 0.5, 0.8> } }

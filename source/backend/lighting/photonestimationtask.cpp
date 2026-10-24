@@ -110,8 +110,9 @@ void PhotonEstimationTask::Run()
     DBL factor;
     DBL largestSetEstimate = 0.0;
     GetViewDataPtr()->Light_Is_Global = true;
-    for (const auto& preparedSet : GetSceneData()->preparedSets)
+    for (PreparedSetId id : GetViewData()->photonSets)
     {
+        PreparedSet* preparedSet = &GetSceneData()->GetPreparedSet(id);
         photonCountEstimate = 0.0;
         for (LightSource *light : preparedSet->lights)
             if (light->Light_Type != FILL_LIGHT_SOURCE)
