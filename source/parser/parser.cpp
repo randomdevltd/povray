@@ -464,6 +464,7 @@ void Parser::Run()
             solidMediaSeen = false;
             hollowDeprecationWarned = false;
             defaultMix = kMediaBlendAuto;
+            defaultFadeCutoff = kFadeCutoffAuto;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -859,12 +860,8 @@ void Parser::Frame_Init()
 
 //******************************************************************************
 
-// About adc_bailout / 1000: media lights of 4.0 scenes leave out points they light less than this.
-static const double kDefaultFadeCutoff = 4.0e-6;
-
 void Parser::InitDefaults(int version)
 {
-    defaultFadeCutoff = (version >= 400) ? kDefaultFadeCutoff : 0.0;
     if (!sceneData->explicitSubsurfaceMethod && !defaultsModified)
         sceneData->subsurfaceMethod = (version >= 400) ? kSubsurfaceMethodPointCloud : kSubsurfaceMethodSampled;
     // Initialize defaults depending on version:
@@ -7809,6 +7806,18 @@ void Parser::Parse_Default ()
             EXPECT
                 CASE (MIX_TOKEN)
                     defaultMix = Parse_Mix ();
+                END_CASE
+
+                CASE (LIGHT_SOURCE_TOKEN)
+                    Parse_Begin ();
+                    while (!Peek_Token(RIGHT_CURLY_TOKEN))
+                    {
+                        Get_Token ();
+                        if (CurrentTokenText() != "fade_cutoff")
+                            Error("A #default media light_source accepts only fade_cutoff, not '%s'.", CurrentTokenText().c_str());
+                        defaultFadeCutoff = Parse_Fade_Cutoff ();
+                    }
+                    Parse_End ();
                 END_CASE
 
                 OTHERWISE

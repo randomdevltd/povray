@@ -1094,9 +1094,9 @@
    "from": "doc/html/r3_4.html"
   },
   "ambient": {
-   "rank": 17,
-   "code": "finish{ambient 1}",
-   "from": "doc/html/r3_3.html"
+   "rank": 71,
+   "code": "plane { y, 0 pigment { color rgb 0.8 } finish { ambient 0 diffuse 1 } }",
+   "from": "tests/pov4/default_media.pov4:5"
   },
   "ambient_light": {
    "rank": 39,
@@ -1146,7 +1146,7 @@
   "assumed_gamma": {
    "rank": 37,
    "code": "global_settings { assumed_gamma 1.0 }",
-   "from": "tests/pov4/framing.pov4:2"
+   "from": "tests/pov4/default_media.pov4:3"
   },
   "atan": {
    "rank": 1047,
@@ -1275,8 +1275,8 @@
    "from": "doc/html/r3_3.html"
   },
   "camera": {
-   "code": "camera { location <0, 0, -10> right x * 4 / 3 up y look_at Subject, 0.8 }",
-   "from": "tests/pov4/framing.pov4:11"
+   "code": "camera { location <0, 2, -4> look_at <0, 0, 4> }",
+   "from": "tests/pov4/default_media.pov4:4"
   },
   "caustics": {
    "rank": 31,
@@ -1456,8 +1456,8 @@
    "from": "tests/pov4/ok_debug_statement.pov4:2"
   },
   "default": {
-   "code": "default { finish { ambient 0.1 } }",
-   "from": "doc/html/r3_13.html:3"
+   "code": "default { media { mix replace light_source { fade_cutoff 0.05 } } }",
+   "from": "tests/pov4/default_media.pov4:2"
   },
   "defined": {
    "rank": 72,
@@ -1498,9 +1498,9 @@
    "from": "tests/pov4/components.pov4:16"
   },
   "diffuse": {
-   "rank": 22,
-   "code": "finish { diffuse 0.9 }",
-   "from": "doc/html/r3_9.html"
+   "rank": 71,
+   "code": "plane { y, 0 pigment { color rgb 0.8 } finish { ambient 0 diffuse 1 } }",
+   "from": "tests/pov4/default_media.pov4:5"
   },
   "direction": {
    "rank": 11,
@@ -1607,9 +1607,9 @@
    "from": "doc/html/r3_7.html"
   },
   "fade_cutoff": {
-   "rank": 1058,
-   "code": "fade_distance Value | fade_power Value | fade_cutoff Value",
-   "from": "doc/html/r3_12.html"
+   "rank": 67,
+   "code": "default { media { mix replace light_source { fade_cutoff 0.05 } } }",
+   "from": "tests/pov4/default_media.pov4:2"
   },
   "fade_distance": {
    "rank": 1019,
@@ -1732,7 +1732,7 @@
   },
   "global_settings": {
    "code": "global_settings { assumed_gamma 1.0 }",
-   "from": "tests/pov4/framing.pov4:2"
+   "from": "tests/pov4/default_media.pov4:3"
   },
   "gradient": {
    "rank": 21,
@@ -1838,8 +1838,8 @@
    "from": "doc/html/r3_4.html"
   },
   "interior": {
-   "code": "interior { INTERIOR_ITEMS... }",
-   "from": "doc/html/r3_5.html:16"
+   "code": "interior { media { emission 50 light_source { samples 4 } } }",
+   "from": "tests/pov4/default_media.pov4:6"
   },
   "interior_texture": {
    "rank": 35,
@@ -1946,8 +1946,8 @@
    "from": "doc/html/r3_4.html:2"
   },
   "light_source": {
-   "code": "light_source { <4, 6, -3> rgb 1 }",
-   "from": "tests/pov4/framing.pov4:3"
+   "code": "light_source { fade_cutoff 0.05 }",
+   "from": "tests/pov4/default_media.pov4:2"
   },
   "linear_spline": {
    "rank": 1024,
@@ -1970,14 +1970,14 @@
    "from": "doc/html/r3_4.html"
   },
   "location": {
-   "rank": 54,
-   "code": "camera { location <0, 1.6, -4.5> look_at <0, 0.9, 0> }",
-   "from": "tests/pov4/stills.pov4:4"
+   "rank": 48,
+   "code": "camera { location <0, 2, -4> look_at <0, 0, 4> }",
+   "from": "tests/pov4/default_media.pov4:4"
   },
   "look_at": {
-   "rank": 54,
-   "code": "camera { location <0, 1.6, -4.5> look_at <0, 0.9, 0> }",
-   "from": "tests/pov4/stills.pov4:4"
+   "rank": 48,
+   "code": "camera { location <0, 2, -4> look_at <0, 0, 4> }",
+   "from": "tests/pov4/default_media.pov4:4"
   },
   "looks_like": {
    "rank": 23,
@@ -2059,8 +2059,8 @@
    "from": "doc/html/r3_4.html"
   },
   "media": {
-   "code": "media { mix add emission rgb <0.4, 0.1, 0> }",
-   "from": "tests/pov4/interop.pov4:10"
+   "code": "media { mix replace light_source { fade_cutoff 0.05 } }",
+   "from": "tests/pov4/default_media.pov4:2"
   },
   "media_attenuation": {
    "rank": 1022,
@@ -2125,9 +2125,9 @@
    "from": "doc/html/r3_4.html"
   },
   "mix": {
-   "rank": 81,
-   "code": "media { mix add | replace | subtract | multiply priority Integer MEDIA_ITEMS... }",
-   "from": "doc/html/r3_7.html"
+   "rank": 67,
+   "code": "default { media { mix replace light_source { fade_cutoff 0.05 } } }",
+   "from": "tests/pov4/default_media.pov4:2"
   },
   "mm_per_unit": {
    "rank": 77,
@@ -2351,8 +2351,8 @@
    "from": "doc/html/r3_6.html"
   },
   "plane": {
-   "code": "plane { y, -1.5 pigment { checker color rgb 0.8 color rgb <0.25, 0.3, 0.4> } }",
-   "from": "tests/pov4/framing.pov4:4"
+   "code": "plane { y, 0 pigment { color rgb 0.8 } finish { ambient 0 diffuse 1 } }",
+   "from": "tests/pov4/default_media.pov4:5"
   },
   "png": {
    "rank": 26,

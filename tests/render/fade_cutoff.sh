@@ -35,5 +35,24 @@ for fade in 0 1; do
     [ "$(drops c40_$fade)" -ge $(( W * H )) ] || fail "fade $fade: only $(drops c40_$fade) light tests dropped"
     [ "$(drops n40_$fade)" -eq 0 ] || fail "fade $fade: the near light was dropped"
 done
+# a very far light falls below the 4.0 default and is kept under 3.8
+render v40 fade_cutoff Declare=Far=2
+[ "$(drops v40)" -gt 0 ] || fail "the 4.0 default dropped nothing of a very far light"
+render v38 fade_cutoff_38 Declare=Far=2
+[ "$(drops v38)" -eq 0 ] || fail "#version 3.8 dropped a very far light"
+# #default gives media lights parsed after it their starting value; a light's own value overrides it, a #version switch keeps it
+render e40 fade_cutoff Declare=DefaultCutoff=0.01
+same e40 n40_0
+[ "$(drops e40)" -gt 0 ] || fail "#default fade_cutoff dropped nothing"
+render s40 fade_cutoff Declare=DefaultCutoff=0.01 Declare=Switch=1
+same s40 n40_0
+[ "$(drops s40)" -eq "$(drops e40)" ] || fail "a #version switch lost the #default fade_cutoff"
+render l40 fade_cutoff Declare=DefaultCutoff=0.01 Declare=DefaultLast=1
+same l40 d40_0
+[ "$(drops l40)" -eq 0 ] || fail "#default fade_cutoff reached lights parsed before it"
+render o40 fade_cutoff Declare=DefaultCutoff=0.01 Declare=Cutoff=0
+same o40 d40_0
+[ "$(drops o40)" -eq 0 ] || fail "a light's fade_cutoff did not override #default"
 bad Declare=Cutoff=-1
+bad Declare=DefaultCutoff=-1
 echo "fade_cutoff: ok"

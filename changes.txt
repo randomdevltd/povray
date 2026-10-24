@@ -396,7 +396,10 @@ New Features
     attenuated to the emitter's nearest reach, is fainter than the value (on
     the 0 to 1 scale of `adc_bailout`) at a lit point, it is left out there,
     with no shadow ray. 0.000004 by default under #version 4.0 and later, 0
-    (off) before; independent of `fade_power`.
+    (off) before; independent of `fade_power`. `#default { media { light_source
+    { fade_cutoff Value } } }` sets the starting value of media lights parsed
+    after it; the media block of #default gives default values (`mix`,
+    `light_source { fade_cutoff }`), it is not a template.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction
     between overlapping and shared surfaces.

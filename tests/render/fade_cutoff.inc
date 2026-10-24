@@ -21,5 +21,13 @@ box { <-2, -1, -2>, <2, 0, 2> pigment { rgb 1 } finish { ambient 0 emission 0 di
   }
 #end
 
+#ifndef (DefaultLast) #declare DefaultLast = 0; #end
+#macro SetDefault() #default { media { light_source { fade_cutoff DefaultCutoff } } } #end
+#ifdef (DefaultCutoff) #if (!DefaultLast) SetDefault() #end #end
+#ifdef (Switch) #include "fade_cutoff_switch.inc" #end
 EmittingBall(<-0.5, 1, 0.5>)
-#if (Far) EmittingBall(<30, 1, 26>) #end
+#switch (Far)
+  #case (1) EmittingBall(<30, 1, 26>) #break
+  #case (2) EmittingBall(<1500, 1, 1500>) #break
+#end
+#ifdef (DefaultCutoff) #if (DefaultLast) SetDefault() #end #end

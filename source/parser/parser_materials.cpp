@@ -3909,7 +3909,8 @@ void Parser::Parse_Media(vector<Media>& medialist)
 void Parser::Parse_Media_Light(Media& medium)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
-    light->fadeCutoff = defaultFadeCutoff;
+    light->fadeCutoff = (defaultFadeCutoff >= 0.0) ? defaultFadeCutoff :
+                        (sceneData->EffectiveLanguageVersion() >= 400) ? kDefaultFadeCutoff : 0.0;
 
     Parse_Begin();
 

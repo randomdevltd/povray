@@ -122,6 +122,11 @@ using namespace pov;
 
 const int TOKEN_OVERFLOW_RESET_COUNT = 2500;
 
+/// Media lights' fade_cutoff by scene version from 4.0 on, about adc_bailout / 1000; 0 (off) before.
+const double kDefaultFadeCutoff = 4.0e-6;
+/// No `#default` fade_cutoff given, so each media light takes its version's.
+const double kFadeCutoffAuto = -1.0;
+
 /*****************************************************************************
 * Global preprocessor defines
 ******************************************************************************/
@@ -835,7 +840,7 @@ class Parser final
         bool defaultsModified   : 1;        ///< Whether a `default` statement has been encountered.
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
-        double defaultFadeCutoff;           ///< `fade_cutoff` media lights start from, by language version.
+        double defaultFadeCutoff;           ///< `fade_cutoff` of `#default { media { light_source { } } }`, or kFadeCutoffAuto.
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
         bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.
