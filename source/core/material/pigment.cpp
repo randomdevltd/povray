@@ -465,6 +465,57 @@ bool Compute_Pigment (TransColour& colour, const PIGMENT *Pigment, const Vector3
     return Pigment->Blend_Map->Compute (colour, value, TPoint, Intersect, ray, Thread);
 }
 
+bool PigmentTestsObjects(const PIGMENT *pigment)
+{
+    if (pigment == nullptr)
+        return false;
+    const BasicPattern *pattern = pigment->pattern.get();
+    if ((dynamic_cast<const ObjectPattern *>(pattern) != nullptr) || (dynamic_cast<const PotentialPattern *>(pattern) != nullptr) ||
+        (dynamic_cast<const ScreenPattern *>(pattern) != nullptr))
+        return true;
+    if (const PigmentPattern *nested = dynamic_cast<const PigmentPattern *>(pattern))
+        if (PigmentTestsObjects(nested->pPigment))
+            return true;
+    if (const PigmentBlendMap *map = dynamic_cast<const PigmentBlendMap *>(pigment->Blend_Map.get()))
+        for (const PigmentBlendMapEntry& entry : map->Blend_Map_Entries)
+            if (PigmentTestsObjects(entry.Vals))
+                return true;
+    return false;
+}
+
+void ForEachPigmentFunction(PIGMENT *pigment, bool own, const std::function<void(GenericScalarFunctionPtr&)>& visit)
+{
+    if (pigment == nullptr)
+        return;
+    BasicPattern *pattern = pigment->pattern.get();
+    if (FunctionPattern *function = dynamic_cast<FunctionPattern *>(pattern))
+        visit(function->pFn);
+    else if (ColourFunctionPattern *colours = dynamic_cast<ColourFunctionPattern *>(pattern))
+    {
+        for (GenericScalarFunctionPtr& channel : colours->pFn)
+            if (channel != nullptr)
+                visit(channel);
+    }
+    else if (PigmentPattern *nested = dynamic_cast<PigmentPattern *>(pattern))
+        ForEachPigmentFunction(nested->pPigment, own, visit);
+    const PigmentBlendMap *map = dynamic_cast<const PigmentBlendMap *>(pigment->Blend_Map.get());
+    if (map == nullptr)
+        return;
+    if (own)
+    {
+        // a copied pigment shares its blend map with the original until it takes a copy of it here
+        std::shared_ptr<PigmentBlendMap> copy(new PigmentBlendMap(map->Type));
+        copy->blendMode = map->blendMode;
+        copy->blendGamma = map->blendGamma;
+        for (const PigmentBlendMapEntry& entry : map->Blend_Map_Entries)
+            copy->Blend_Map_Entries.push_back(PigmentBlendMapEntry{ entry.value, Copy_Pigment(entry.Vals) });
+        pigment->Blend_Map = copy;
+        map = copy.get();
+    }
+    for (const PigmentBlendMapEntry& entry : map->Blend_Map_Entries)
+        ForEachPigmentFunction(entry.Vals, own, visit);
+}
+
 bool PigmentRequiresRayContext(const PIGMENT *pigment)
 {
     if (pigment == nullptr)

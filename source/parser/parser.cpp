@@ -156,6 +156,43 @@ const DBL INFINITE_VOLUME = BOUND_HUGE;
 
 //******************************************************************************
 
+// A pigment function's pigment runs functions of its own, which a snapshot copies and rebinds; an object test or foreign function it cannot.
+static FunctionVM::PrivateFunctions PigmentFunctions()
+{
+    const FNCODE_PRIVATE_COPY_METHOD pigment = reinterpret_cast<FNCODE_PRIVATE_COPY_METHOD>(Copy_Pigment);
+    FunctionVM::PrivateFunctions functions;
+    functions.list = [pigment](const FunctionCode& code, std::vector<FUNCTION>& out) -> bool
+    {
+        if (code.private_copy_method != pigment)
+            return true;
+        PIGMENT *data = static_cast<PIGMENT *>(code.private_data);
+        bool complete = !PigmentTestsObjects(data);
+        ForEachPigmentFunction(data, false, [&](GenericScalarFunctionPtr& slot)
+        {
+            if (const FunctionVM::CustomFunction *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
+                out.push_back(custom->Id());
+            else
+                complete = false;
+        });
+        return complete;
+    };
+    functions.rebind = [pigment](FunctionCode& code, const std::function<GenericScalarFunctionPtr(FUNCTION)>& bind)
+    {
+        if (code.private_copy_method != pigment)
+            return;
+        ForEachPigmentFunction(static_cast<PIGMENT *>(code.private_data), true, [&](GenericScalarFunctionPtr& slot)
+        {
+            if (const FunctionVM::CustomFunction *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
+            {
+                const FUNCTION id = custom->Id();
+                delete slot;
+                slot = bind(id);
+            }
+        });
+    };
+    return functions;
+}
+
 Parser::Parser(shared_ptr<SceneData> sd, const Options& opts,
                GenericMessenger& mf, FileResolver& fr, ProgressReporter& pr, TraceThreadData& td) :
     sceneData(sd),
@@ -190,6 +227,7 @@ Parser::Parser(shared_ptr<SceneData> sd, const Options& opts,
         mBetaFeatureFlags.realTimeRaytracing = true;
 
     sceneData->functionContextFactory = mpFunctionVM;
+    mpFunctionVM->SetPrivateFunctions(PigmentFunctions());
 }
 
 Parser::~Parser()
