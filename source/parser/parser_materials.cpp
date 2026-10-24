@@ -3909,6 +3909,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
 void Parser::Parse_Media_Light(Media& medium)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
+    light->fadeCutoff = defaultFadeCutoff;
 
     Parse_Begin();
 
@@ -3972,14 +3973,27 @@ void Parser::Parse_Media_Light(Media& medium)
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "fade_cutoff")
+                light->fadeCutoff = Parse_Fade_Cutoff();
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
     Parse_End();
 
     medium.light = light;
+}
+
+double Parser::Parse_Fade_Cutoff()
+{
+    const double cutoff = Parse_Float();
+    if (!std::isfinite(cutoff) || (cutoff < 0.0))
+        Error("A media light_source's fade_cutoff must be finite and not negative.");
+    return cutoff;
 }
 
 

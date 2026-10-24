@@ -859,8 +859,12 @@ void Parser::Frame_Init()
 
 //******************************************************************************
 
+// About adc_bailout / 1000: media lights of 4.0 scenes leave out points they light less than this.
+static const double kDefaultFadeCutoff = 4.0e-6;
+
 void Parser::InitDefaults(int version)
 {
+    defaultFadeCutoff = (version >= 400) ? kDefaultFadeCutoff : 0.0;
     if (!sceneData->explicitSubsurfaceMethod && !defaultsModified)
         sceneData->subsurfaceMethod = (version >= 400) ? kSubsurfaceMethodPointCloud : kSubsurfaceMethodSampled;
     // Initialize defaults depending on version:
@@ -10566,6 +10570,7 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     light->Area_Size2 = 1;
     light->Fade_Distance = settings.fadeDistance;
     light->Fade_Power = settings.fadePower;
+    light->fadeCutoff = settings.fadeCutoff;
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)

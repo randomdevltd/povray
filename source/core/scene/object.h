@@ -353,6 +353,7 @@ class LightSource final : public CompoundObject
         Vector3d Direction, Center, Points_At, Axis1, Axis2;
         DBL Coeff, Radius, Falloff;
         DBL Fade_Distance, Fade_Power;
+        DBL fadeCutoff = 0.0; ///< media light: a point it would light less than this, at its nearest, is left out
         int Area_Size1, Area_Size2;
         int Adaptive_Level;
         ObjectPtr Projected_Through_Object;

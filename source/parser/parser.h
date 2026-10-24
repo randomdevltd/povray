@@ -607,6 +607,7 @@ class Parser final
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
         void Parse_Media_Light(Media& medium);
+        double Parse_Fade_Cutoff();
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
         /// Gives the atmosphere the ior of air from version 4.0, of vacuum before it.
@@ -834,6 +835,7 @@ class Parser final
         bool defaultsModified   : 1;        ///< Whether a `default` statement has been encountered.
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
+        double defaultFadeCutoff;           ///< `fade_cutoff` media lights start from, by language version.
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
         bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.
