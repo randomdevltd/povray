@@ -1606,6 +1606,11 @@
    "code": "fade_color : <0,0,0>",
    "from": "doc/html/r3_7.html"
   },
+  "fade_cutoff": {
+   "rank": 1058,
+   "code": "fade_distance Value | fade_power Value | fade_cutoff Value",
+   "from": "doc/html/r3_12.html"
+  },
   "fade_distance": {
    "rank": 1019,
    "code": "fade_distance : 0.0",

@@ -69,7 +69,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `lathe` | 41 | Solid of revolution: a 2-D profile curve spun about y. |
 | `lemon` | 38 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
 | `light_group` | 80 | Objects lit only by the lights named inside it. |
-| `light_source` | 63 | A light: position, colour, area, shadowing and photon options. |
+| `light_source` | 64 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
 | `media` | 28 | Participating medium: scattering, emission, absorption, intervals; its light_source is a volume light, not a scene light. |
 | `merge` | 80 | CSG union that removes inner surfaces, for transparent children. |
