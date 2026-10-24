@@ -299,3 +299,66 @@ let W = tagged /* note */ { Tag & !concat("a", X) | D.k };
         right: (member_expression
           object: (identifier)
           member: (identifier))))))
+
+==================
+A camera's output block, and output as a name before anything but a brace
+==================
+let output = 1;
+camera { location <0, 1, -4> output { size <64, 48> window <0, 0, 1, 0.5> file "front" } }
+---
+
+(source_file
+  (let_statement
+    name: (identifier)
+    value: (number))
+  (block
+    name: (keyword)
+    (keyword)
+    (vector
+      (number)
+      (number)
+      (unary_expression
+        operand: (number)))
+    (block
+      name: (keyword)
+      (keyword)
+      (vector
+        (number)
+        (number))
+      (identifier)
+      (vector
+        (number)
+        (number)
+        (number)
+        (number))
+      (identifier)
+      (string))))
+
+==================
+A bare output is an item name; the evaluator reads a bound output as its value
+==================
+camera { location <0, 1, -4> output }
+let output = <0, 1, 0>;
+camera { location output }
+---
+
+(source_file
+  (block
+    name: (keyword)
+    (keyword)
+    (vector
+      (number)
+      (number)
+      (unary_expression
+        operand: (number)))
+    (identifier))
+  (let_statement
+    name: (identifier)
+    value: (vector
+      (number)
+      (number)
+      (number)))
+  (block
+    name: (keyword)
+    (keyword)
+    (identifier)))

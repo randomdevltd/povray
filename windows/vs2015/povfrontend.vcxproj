@@ -386,6 +386,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\source\frontend\animationprocessing.cpp" />
+    <ClCompile Include="..\..\source\frontend\cameraprocessing.cpp" />
     <ClCompile Include="..\..\source\frontend\console.cpp" />
     <ClCompile Include="..\..\source\frontend\display.cpp" />
     <ClCompile Include="..\..\source\frontend\filemessagehandler.cpp" />
@@ -409,6 +410,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\source\frontend\animationprocessing.h" />
+    <ClInclude Include="..\..\source\frontend\cameraprocessing.h" />
     <ClInclude Include="..\..\source\frontend\configfrontend.h" />
     <ClInclude Include="..\..\source\frontend\console.h" />
     <ClInclude Include="..\..\source\frontend\console_fwd.h" />

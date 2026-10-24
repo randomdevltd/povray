@@ -260,12 +260,13 @@ bool ProgressiveLight(const LightSource* light)
 }
 }
 
-void PrepareProgressiveAiming(SceneData& scene)
+void PrepareProgressiveAiming(SceneData& scene, const std::vector<PreparedSetId>& sets)
 {
-    for (PreparedSetId setId = 0; setId < scene.preparedSets.size(); ++setId)
+    for (auto& set : scene.preparedSets)
+        set->progressiveAiming.clear();
+    for (PreparedSetId setId : sets)
     {
         auto& set = scene.GetPreparedSet(setId);
-        set.progressiveAiming.clear();
         for (LightSource* light : set.lights)
         {
             if (!ProgressiveLight(light))
@@ -305,8 +306,10 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
     constexpr unsigned int batch = ProgressivePhotonBudget::batchSize;
     const auto& settings = GetSceneData()->photonSettings;
     const double spreadScale = ProgressivePhotonBudget(settings.quality).BeamSpreadScale();
-    for (PreparedSetId setId = 0; setId < GetSceneData()->preparedSets.size(); ++setId)
+    const std::vector<PreparedSetId>& sets = GetViewData()->photonSets;
+    for (size_t ordinal = 0; ordinal < sets.size(); ++ordinal)
     {
+        const PreparedSetId setId = sets[ordinal];
         auto& set = GetSceneData()->GetPreparedSet(setId);
         if (set.progressiveAiming.empty())
             continue;
@@ -325,12 +328,12 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
                 data->progressiveFeedback.push_back({light, target.key, setId, unsigned(data->progressiveFeedback.size() - feedbackOffset[li] + 1), target.weight});
         }
         RayInteriorVector originInteriors;
-        const PhotonSobol sobol(DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhotonMap, 0));
+        const PhotonSobol sobol(DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, ordinal), kDrawPhotonMap, 0));
         for (unsigned int index = shard; index < batch; index += ProgressivePhotonBudget::shards)
         {
             Cooperate();
             const std::uint64_t sampleIndex = std::uint64_t(pass) * batch + index;
-            const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, setId), kDrawPhoton, sampleIndex);
+            const auto key = DeriveKey(DeriveKey(data->stochasticRandomSeedBase, kDrawPhoton, ordinal), kDrawPhoton, sampleIndex);
             const size_t li = std::min(count - 1, size_t(sobol(sampleIndex, PhotonSobol::kLight) * count));
             LightSource* light = set.progressiveAiming[li].light;
             const PhotonAimDomain& domain = set.progressiveAiming[li].domain;

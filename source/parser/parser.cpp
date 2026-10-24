@@ -585,6 +585,8 @@ void Parser::Run()
                 "Add 'hollow' to the object, or use #version 4.0.");
 
     sceneData->parsedMaxTraceLevel = Max_Trace_Level;
+    if (sceneData->multipleCameras)
+        sceneData->parsedCamera = sceneData->cameras.front();
     Check_Portal_Cameras();
     if (sceneData->parsedCamera.No_Radiosity || (sceneData->parsedCamera.Radiosity_Width > 0))
         Warning("radiosity_size and no_radiosity apply only to a screen's camera; the render's camera ignores them.");
@@ -722,6 +724,7 @@ void Parser::InitDefaults(int version)
             pigmentColour = MathColour(1.0);
             ambientLevel = 0.0;
             rightLength = sceneData->aspectRatio;
+            mDefaultRightIsAspect = true;
             break;
 
         case DefaultsVersion::kLegacy:
@@ -729,6 +732,7 @@ void Parser::InitDefaults(int version)
             pigmentColour = MathColour(0.0);
             ambientLevel = 0.1;
             rightLength = 1.33;
+            mDefaultRightIsAspect = false;
             break;
 
         default:
@@ -1561,8 +1565,13 @@ void Parser::Parse_Camera (Camera& Cam)
             END_CASE
 
             OTHERWISE
-                UNGET
-                EXIT
+                if (CurrentTokenText() == "output")
+                    Parse_Camera_Output(New);
+                else
+                {
+                    UNGET
+                    EXIT
+                }
             END_CASE
         END_EXPECT
 
@@ -1885,9 +1894,12 @@ void Parser::Parse_Camera (Camera& Cam)
             had_up = true;
 
         // handle "right"
+        bool derivedRight = false;
         if (New.Right[X] == HUGE_VAL)
         {
             New.Right = old_right; // restore default right
+            derivedRight = mDefaultRightIsAspect && (old_right[X] == sceneData->aspectRatio) &&
+                           (old_right[Y] == 0.0) && (old_right[Z] == 0.0);
         }
         else
             had_right = true;
@@ -1967,6 +1979,7 @@ void Parser::Parse_Camera (Camera& Cam)
             New.Look_At = old_look_at; // restore default look_at
 
         // apply "orthographic"
+        bool orthoResized = false;
         if (New.Type == ORTHOGRAPHIC_CAMERA)
         {
             // only if neither up nor right have been specified
@@ -1982,15 +1995,28 @@ void Parser::Parse_Camera (Camera& Cam)
                 {
                     New.Right *= (k1 / k2);
                     New.Up    *= (k1 / k2);
+                    orthoResized = true;
                 }
             }
         }
+
+        const bool angleApplied = had_angle && (New.Angle > 0.0) && ((New.Type == PERSPECTIVE_CAMERA) || (New.Type == ORTHOGRAPHIC_CAMERA));
+        New.aspect = sceneData->aspectRatio;
+        if (!derivedRight)
+            New.aspectRole = Camera::AspectRole::Fixed;
+        else if (orthoResized && angleApplied)
+            New.aspectRole = Camera::AspectRole::UpDirection;
+        else if (angleApplied && !orthoResized)
+            New.aspectRole = Camera::AspectRole::RightDirection;
+        else
+            New.aspectRole = Camera::AspectRole::Right;
 
         // apply "focal_point"
         if (New.Focal_Point[X] != HUGE_VAL)
         {
             tempv = New.Focal_Point - New.Location;
             New.Focal_Distance = tempv.length();
+            New.focalDefault = false;
         }
         else
             New.Focal_Point = old_focal_point; // restore default focal_point
@@ -2217,11 +2243,17 @@ void Parser::Parse_Camera (Camera& Cam)
                 New.Focal_Point = tempv;
                 tempv = New.Focal_Point - New.Location;
                 New.Focal_Distance = tempv.length();
+                New.focalDefault = false;
             END_CASE
 
             OTHERWISE
-                UNGET
-                EXIT
+                if (CurrentTokenText() == "output")
+                    Parse_Camera_Output(New);
+                else
+                {
+                    UNGET
+                    EXIT
+                }
             END_CASE
         END_EXPECT
     }
@@ -2230,9 +2262,14 @@ void Parser::Parse_Camera (Camera& Cam)
 
     // Make sure the focal distance hasn't been explicitly given; framing defaults it from the framed direction
     if ((New.Focal_Distance < 0.0) && !New.frameBounds)
+    {
         New.Focal_Distance = Direction_Length;
+        New.focalDefault = true;
+    }
     if (New.Focal_Distance == 0.0)
         New.Focal_Distance = 1.0;
+
+    Apply_Camera_Aspect(New);
 
     // Print a warning message if vectors are not perpendicular. [DB 10/94]
     k1 = dot(New.Right, New.Up);
@@ -2529,12 +2566,103 @@ bool Parser::Parse_Camera_Mods(Camera& New)
         END_CASE
 
         OTHERWISE
-            UNGET
-            return false;
+            if (CurrentTokenText() != "output")
+            {
+                UNGET
+                return false;
+            }
+            Parse_Camera_Output(New);
         END_CASE
     END_EXPECT
 
     return true;
+}
+
+// output, or output { size <w, h> window <sc, sr, ec, er> file "name" }: render this camera as its own view.
+void Parser::Parse_Camera_Output(Camera& New)
+{
+    Camera::Output output;
+    output.given = true;
+    mOutputWritten = true;
+    if (!Peek_Token(LEFT_CURLY_TOKEN))
+    {
+        New.output = output;
+        return;
+    }
+    Parse_Begin();
+    EXPECT
+        CASE (SIZE_TOKEN)
+        {
+            Vector2d size;
+            Parse_UV_Vect(size);
+            if (!(size.x() >= 1.0) || !(size.y() >= 1.0) || (size.x() > 65535.0) || (size.y() > 65535.0) ||
+                (size.x() != std::floor(size.x())) || (size.y() != std::floor(size.y())))
+                Error("output size needs a whole width and height from 1 to 65535 pixels.");
+            output.width = (unsigned int)size.x();
+            output.height = (unsigned int)size.y();
+        }
+        END_CASE
+
+        OTHERWISE
+            if (CurrentTokenText() == "window")
+            {
+                VECTOR_4D edges;
+                Parse_Vector4D(edges);
+                for (int i = 0; i < 4; i++)
+                {
+                    if (!std::isfinite(edges[i]) || (edges[i] < 0.0))
+                        Error("output window takes start column, start row, end column and end row, none negative.");
+                    output.edges[i] = edges[i];
+                }
+                output.window = true;
+            }
+            else if (CurrentTokenText() == "file")
+            {
+                UCS2 *file = Parse_String(true);
+                output.file = UCS2String(file);
+                POV_FREE(file);
+                if (output.file.empty())
+                    Error("output file needs a name.");
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
+        END_CASE
+    END_EXPECT
+    Parse_End();
+    New.output = output;
+}
+
+// A camera with an output item renders as its own view, in declaration order with the others.
+void Parser::Collect_Output_Camera(const Camera& camera)
+{
+    if (!sceneData->multipleCameras && (mPlainCameras > 0))
+        Warning("%u camera(s) before this one have no output and are not rendered: a scene with camera output items "
+                "renders only the cameras that have one.", mPlainCameras);
+    sceneData->multipleCameras = true;
+    sceneData->cameras.push_back(camera);
+}
+
+// A camera whose vectors took the render's aspect takes its own image's instead, as a render at that size derives them.
+void Parser::Apply_Camera_Aspect(Camera& New)
+{
+    if ((New.aspectRole == Camera::AspectRole::Fixed) || !(New.aspect > 0.0))
+        return;
+    const DBL target = (New.output.width > 0) ? DBL(New.output.width) / DBL(New.output.height) : sceneData->aspectRatio;
+    const DBL factor = target / New.aspect;
+    if (New.aspectRole == Camera::AspectRole::UpDirection)
+        New.Up /= factor;
+    else
+        New.Right *= factor;
+    if (New.aspectRole != Camera::AspectRole::Right)
+    {
+        New.Direction *= factor;
+        if (New.focalDefault)
+            New.Focal_Distance *= factor;
+    }
+    New.aspect = target;
 }
 
 void Parser::Parse_Camera_Radiosity_Size(Camera& New)
@@ -3091,6 +3219,8 @@ void Parser::Check_Portal_Cameras()
             continue;
         const Portal *portal = static_cast<Portal *>(object);
         bool inside = Inside_Object(sceneData->parsedCamera.Location, portal->body, &mThreadData);
+        for (const Camera& camera : sceneData->cameras)
+            inside = inside || Inside_Object(camera.Location, portal->body, &mThreadData);
         for (const std::weak_ptr<const Camera>& candidate : sceneData->screenCameraCandidates)
             if (std::shared_ptr<const Camera> camera = candidate.lock())
                 inside = inside || Inside_Object(camera->Location, portal->body, &mThreadData);
@@ -7513,6 +7643,7 @@ void Parser::Parse_Default ()
 void Parser::Parse_Frame ()
 {
     mHadCamera = false;
+    mPlainCameras = 0;
     Parse_Frame_Items();
     // parsedCamera still holds the frame's default, exactly as in a scene without a camera.
     if (!mHadCamera && sceneData->parseFilterTags.specified)
@@ -7584,21 +7715,23 @@ void Parser::Parse_Frame_Items ()
         CASE (CAMERA_TOKEN)
         {
             Camera candidate = (sceneData->EffectiveLanguageVersion() >= 350) ? Default_Camera : sceneData->parsedCamera;
+            candidate.output = Camera::Output();
             Parse_Camera(candidate);
             if (!MatchesTags(candidate.tags, sceneData->parseFilterTags))
                 break;
-            if (sceneData->EffectiveLanguageVersion() >= 350)
-            {
-                if (sceneData->clocklessAnimation == false)
-                {
-                    if (mHadCamera)
-                        Warning("More than one camera in scene. Ignoring previous camera(s).");
-                }
-            }
+            const bool ownView = candidate.output.given && !sceneData->clocklessAnimation;
+            if (!ownView && sceneData->multipleCameras)
+                Warning("This camera has no output and is not rendered: a scene with camera output items renders only the "
+                        "cameras that have one.");
+            else if ((sceneData->EffectiveLanguageVersion() >= 350) && !sceneData->clocklessAnimation && !ownView && mHadCamera)
+                Warning("More than one camera in scene. Ignoring previous camera(s).");
             mHadCamera = true;
+            mPlainCameras += ownView ? 0 : 1;
             sceneData->parsedCamera = candidate;
-            if (sceneData->clocklessAnimation == true)
-                sceneData->cameras.push_back(sceneData->parsedCamera);
+            if (ownView)
+                Collect_Output_Camera(candidate);
+            else if (sceneData->clocklessAnimation)
+                sceneData->cameras.push_back(candidate);
         }
         END_CASE
 

@@ -333,6 +333,14 @@ New Features
     limit. Each distinct selection is prepared once as its own scene (objects,
     bounding tree, lights, portal images, photon maps, radiosity cache), so a
     scene can hold several views of itself.
+  - A camera's `output` item renders it as its own view: a scene whose
+    cameras carry `output`, or `output { size <w, h> window <sc, sr, ec, er>
+    file "name" }`, is parsed and prepared once and renders each of them into
+    its own image, at its own size, window and file, at every `#version`.
+    Each image matches a render of that camera alone, and photon maps are shot
+    once and reused by cameras that select the same objects. A scene without
+    `output` items renders as before. `output`, and `window` and `file` inside
+    it, are matched by text and stay free as names.
   - Tags are inherited down the object tree: an object that writes no `tags`
     takes its parent's effective tags, `tags { "a" }` replaces them, `tags {
     "a", inherit }` adds to them, and `tags { none }` or `tags {}` has none. A

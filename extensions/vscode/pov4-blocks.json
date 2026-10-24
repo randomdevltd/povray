@@ -3286,6 +3286,7 @@
         "normal",
         "omnimax",
         "orthographic",
+        "output",
         "panoramic",
         "perspective",
         "pigment",
@@ -3334,6 +3335,7 @@
           "normal",
           "omnimax",
           "orthographic",
+          "output",
           "panoramic",
           "perspective",
           "right",
@@ -3353,6 +3355,14 @@
           "pigment"
         ]
       }
+    },
+    "output": {
+      "items": [
+        "file",
+        "size",
+        "window"
+      ],
+      "nested": {}
     },
     "tags": {
       "items": [

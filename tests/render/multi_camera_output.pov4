@@ -1,0 +1,9 @@
+// Camera output in the 4.0 language: two cameras of their own size, one into its own file, and a bare output; Cam renders one alone.
+input Cam = -1;
+global_settings { assumed_gamma 1 ambient_light 0 }
+if (Cam == -1 || Cam == 0) { camera { location <0.5, 1.1, -1.4> look_at <0, 0.6, 0> angle 35 if (Cam == -1) { output { size <48, 64> } } } }
+if (Cam == -1 || Cam == 1) { camera { location <0, 4, -6> look_at <0, 0.5, 0> angle 50 if (Cam == -1) { output { size <32, 16> file "multi_camera_four" } } } }
+if (Cam == -1 || Cam == 2) { camera { location <3, 3, -3> look_at <0, 0.5, 0> angle 45 if (Cam == -1) { output } } }
+plane { y, 0 pigment { checker rgb 0.9 rgb 0.5 } }
+sphere { <0, 0.6, 0>, 0.5 pigment { rgb <0.9, 0.4, 0.2> } finish { phong 0.6 } }
+light_source { <-3, 5, -4> rgb 1 }

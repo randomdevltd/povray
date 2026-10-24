@@ -45,6 +45,8 @@
 
 // C++ standard header files
 #include <map>
+#include <memory>
+#include <vector>
 
 // POV-Ray header files (base module)
 #include "base/stringtypes.h"
@@ -127,6 +129,26 @@ class BackendSceneData final : public SceneData
          *                          responsible for freeing the pointer!
          */
         OStream *CreateFile(POVMSContext ctx, const UCS2String& filename, unsigned int stype, bool append);
+
+        /// Settings a view narrows by its quality flags and the photon estimate rescales: each view starts from what parsing left.
+        struct ViewDefaults final
+        {
+            ScenePhotonSettings photons;
+            SceneRadiositySettings radiosity;
+            bool useSubsurface;
+        };
+        std::unique_ptr<ViewDefaults> viewDefaults;
+
+        /// Photon maps depend on the scene, its settings and the sets shot, not the camera: a view shooting the same sets reuses them.
+        struct ShotPhotons final
+        {
+            std::vector<PreparedSetId> sets;
+            size_t seed;
+            int threads;
+            ScenePhotonSettings settings;
+            unsigned int views;
+        };
+        std::unique_ptr<ShotPhotons> shotPhotons;
 
     private:
 #ifdef USE_SCENE_FILE_MAPPING
