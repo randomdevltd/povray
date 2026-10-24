@@ -566,7 +566,7 @@ GeneratedMeshKey Generated_Mesh_Key(const UCS2String& dir, const std::string& de
     if (definition.empty())
         return GeneratedMeshKey();
     std::string full = definition;
-    Describe_Bytes(full, thread->GetSceneData()->noiseGenerator);
+    Describe_Bytes(full, thread->NoiseGenerator());
     return Generated_Mesh_Key(dir, full);
 }
 
@@ -758,7 +758,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
     MESH_DATA& data = *mesh->Data;
 
     unsigned char header[POVM_HEADER_BYTES];
-    if (!file->read(header, sizeof(header)) || (std::memcmp(header, POVM_MAGIC, sizeof(POVM_MAGIC)) != 0))
+    if (!file->seekg(0) || !file->read(header, sizeof(header)) || (std::memcmp(header, POVM_MAGIC, sizeof(POVM_MAGIC)) != 0))
         throw PovmError("'%s' is not a povm file.", name.c_str());
     const uint32_t version = Word(header + 4), flags = Word(header + 8);
     const uint64_t vertices = Word(header + 12), normals = Word(header + 16), uvs = Word(header + 20), faces = Word(header + 24);
@@ -790,7 +790,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
 
     uint64_t hash = Hash_Bytes(header, sizeof(header), 0);
     const auto read = [&](void *dst, size_t words) {
-        if (state.cancelled->load(std::memory_order_relaxed))
+        if (state.Cancelled())
             throw PovmError("Mesh build cancelled.");
         if (!file->read(dst, words * 4))
             throw PovmError("Cannot read povm file '%s'.", name.c_str());
@@ -877,7 +877,7 @@ void Parser::Parse_Povm(Mesh *mesh, PovmTreeKey& key)
 
     for (MeshIndex i = 0; i < data.Number_Of_Triangles; ++i)
     {
-        if (((i & 0xFFFF) == 0) && state.cancelled->load(std::memory_order_relaxed))
+        if (((i & 0xFFFF) == 0) && state.Cancelled())
             throw PovmError("Mesh build cancelled.");
         MESH_TRIANGLE& t = data.Triangles[i];
         const Vector3d P1(data.Vertices[t.P1()]), P2(data.Vertices[t.P2()]), P3(data.Vertices[t.P3()]);

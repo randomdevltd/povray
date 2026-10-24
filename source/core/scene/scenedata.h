@@ -45,6 +45,7 @@
 
 // C++ standard header files
 #include <atomic>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
@@ -79,6 +80,7 @@ using namespace pov_base;
 class BSPTree;
 class SubsurfaceCache;
 struct DeferredMeshState;
+class DeferredMeshPool;
 
 /// What remains of an object under a filter. An excluded object is empty space, so an excluded inverted operand, such
 /// as a difference's cutter, is everything; `Part` means some descendants were removed.
@@ -178,6 +180,16 @@ class SceneData
         std::vector<std::weak_ptr<DeferredMeshState>> deferredMeshes;
         std::shared_ptr<std::atomic<bool>> meshBuildCancelled = std::make_shared<std::atomic<bool>>(false);
         unsigned int deferredMeshesBuiltForQueries = 0;
+        unsigned int deferredMeshesQueriedBuiltAhead = 0;
+        /// meshes left to the mesh build task: a function tests an object or runs a function a snapshot cannot take
+        unsigned int deferredMeshesLeftToTask = 0;
+        /// threads that build recorded meshes while the parser runs, when eager preparation is on
+        std::shared_ptr<DeferredMeshPool> meshPool;
+        /// prepared media density grids the eager threads build, with each job that works on one
+        std::vector<std::pair<std::shared_ptr<DeferredMeshState>, std::shared_ptr<Media::EagerField>>> eagerMediaFields;
+        /// caches whose density a snapshot cannot take (an object test or a foreign function)
+        std::vector<std::weak_ptr<Media::FastCache>> eagerMediaUnsafe;
+        POV_LONG meshQueryRealTime = 0, meshQueryCpuTime = 0; ///< milliseconds the parser spent on builds for geometry queries
         std::vector<std::unique_ptr<PreparedSet>> preparedSets;
         std::map<TagFilter, PreparedSetId> preparedSetFilters;
         unsigned int maxPreparedSetFiniteObjects = 0;

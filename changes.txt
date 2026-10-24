@@ -564,6 +564,22 @@ Performance Improvements
     triangles take 1.66 s instead of 5.65 s wall at `+WT4` (-70.6%); eight
     noise-displaced `isosurface_mesh` builds take 3.6 s instead of 17.2 s at
     `+WT8` (-79%), though a run on a saturated host gained nothing.
+  - Eager preparation (on by default; `Eager_Preparation=off` or `-WE` turns
+    it off): generated and loaded meshes build on `+WT` - 1 spare threads
+    while the parser runs, and a method 4 medium's prepared density grid
+    starts there once its container is complete, the rest filled on all
+    work threads before the render; `+WT1` has none, so nothing changes
+    there. Images match it off. On 4 CPUs at `+WT4` on a quiet host, three
+    runs each: eight meshes declared before a long parse loop
+    (`tools/bench/parse-mesh-overlap.pov`) take 6.6 instead of 8.4 s wall
+    for the same instructions, and a 1M-cell grid before a long parse loop
+    4.4 instead of 6.0 s for 1.9% more; the parse takes as long for the
+    meshes and up to 7% longer beside the grid. A
+    command-line or INI `Filter_Tags` starts a mesh build only when a kept
+    object places the mesh, so keeping one of eight costs 0.4% more
+    instructions; filters set in the scene are known only at its end, and
+    discarding a CPU-second or more of builds raises a warning. Eager grids
+    are sized like the render's, but include containers no ray reaches.
   - Isosurfaces: the function interpreter is decoded once with computed-goto
     dispatch, evaluates four points per call and takes its maths from xsimd,
     and shadow rays search for any root instead of the first (`isocacti.pov`

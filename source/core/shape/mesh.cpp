@@ -74,6 +74,8 @@
 
 // POV-Ray header files (base module)
 #include "base/pov_err.h"
+#include "base/timer.h"
+#include "base/image/colourspace.h"
 
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
@@ -836,44 +838,140 @@ void Mesh::SetDeferred(const std::shared_ptr<DeferredMeshState>& state)
     deferred = state;
 }
 
-std::shared_ptr<Mesh> DeferredMeshState::Build(TraceThreadData *thread)
+MeshBuildGlobals MeshBuildGlobals::Of(const TraceThreadData& thread)
 {
-    std::unique_lock<std::mutex> lock(mutex);
-    if (phase == Phase::Recorded)
+    const unsigned char read = thread.globalsRead;
+    MeshBuildGlobals globals;
+    globals.noiseGenerator = thread.NoiseGenerator();
+    globals.workingGamma = thread.WorkingGamma();
+    globals.numberOfWaves = thread.NumberOfWaves();
+    thread.globalsRead = read;
+    return globals;
+}
+
+bool MeshBuildGlobals::Differs(const MeshBuildGlobals& now, unsigned char read) const
+{
+    const bool sameGamma = (workingGamma == now.workingGamma) ||
+                           ((workingGamma != nullptr) && (now.workingGamma != nullptr) &&
+                            (workingGamma->GetTypeId() == now.workingGamma->GetTypeId()) && (workingGamma->GetParam() == now.workingGamma->GetParam()));
+    return (((read & TraceThreadData::kReadNoiseGenerator) != 0) && (noiseGenerator != now.noiseGenerator)) ||
+           (((read & TraceThreadData::kReadWorkingGamma) != 0) && !sameGamma) ||
+           (((read & TraceThreadData::kReadNumberOfWaves) != 0) && (numberOfWaves != now.numberOfWaves));
+}
+
+bool DeferredMeshState::Cancelled() const
+{
+    return ((cancelled != nullptr) && cancelled->load(std::memory_order_relaxed)) || discarded.load(std::memory_order_relaxed) ||
+           ((lane > 0) && interrupted.load(std::memory_order_relaxed));
+}
+
+void DeferredMeshState::Run(std::unique_lock<std::mutex>& lock, TraceThreadData *thread, int buildLane)
+{
+    phase = Phase::Building;
+    startedAt = std::chrono::steady_clock::now();
+    lane = buildLane;
+    warnings.clear();
+    debug.clear();
+    const MeshBuildGlobals globals = (thread != nullptr) ? MeshBuildGlobals::Of(*thread) : MeshBuildGlobals();
+    if (thread != nullptr)
+        thread->globalsRead = 0;
+    lock.unlock();
+    Timer timer;
+    std::shared_ptr<Mesh> built;
+    std::exception_ptr error;
+    try
     {
-        phase = Phase::Building;
-        lock.unlock();
-        std::shared_ptr<Mesh> built;
-        std::exception_ptr error;
-        try
-        {
-            if ((cancelled != nullptr) && cancelled->load(std::memory_order_relaxed))
-                throw std::runtime_error("Mesh build cancelled.");
-            built = work(thread, *this);
-        }
-        catch (...)
-        {
-            error = std::current_exception();
-        }
-        lock.lock();
+        if (Cancelled())
+            throw std::runtime_error("Mesh build cancelled.");
+        built = work(thread, *this);
+    }
+    catch (...)
+    {
+        error = std::current_exception();
+    }
+    const POV_LONG cpu = timer.HasValidThreadCPUTime() ? timer.ElapsedThreadCPUTime() : 0;
+    lock.lock();
+    cpuTime += cpu;
+    const bool sceneCancelled = (cancelled != nullptr) && cancelled->load(std::memory_order_relaxed);
+    if (!sceneCancelled && (discarded.load(std::memory_order_relaxed) || (error && (buildLane > 0) && interrupted.load(std::memory_order_relaxed))))
+    {
+        // a discarded build is dropped even if it finished, and an interrupted one is not a failure: it can run again
+        phase = Phase::Recorded;
+        warnings.clear();
+        debug.clear();
+    }
+    else
+    {
         mesh = built;
         failure = error;
+        builtWith = globals;
+        builtReads = (thread != nullptr) ? thread->globalsRead : 0;
         phase = Phase::Done;
-        finished.notify_all();
     }
-    finished.wait(lock, [this]() { return phase == Phase::Done; });
+    finished.notify_all();
+}
+
+std::shared_ptr<Mesh> DeferredMeshState::Build(TraceThreadData *thread, int buildLane)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    while (true)
+    {
+        if (phase == Phase::Recorded)
+        {
+            Run(lock, thread, buildLane);
+            if (phase == Phase::Recorded)
+                throw std::runtime_error("Mesh build cancelled.");
+        }
+        else if (phase == Phase::Building)
+            finished.wait(lock, [this]() { return phase != Phase::Building; });
+        else if ((thread != nullptr) && (lane > 0) && builtWith.Differs(MeshBuildGlobals::Of(*thread), builtReads))
+        {
+            phase = Phase::Recorded;
+            mesh.reset();
+            failure = nullptr;
+            ++rebuilds;
+        }
+        else
+            break;
+    }
     if (failure)
         std::rethrow_exception(failure);
     return mesh;
 }
 
+bool DeferredMeshState::TryBuild(TraceThreadData *thread, int buildLane)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if ((phase != Phase::Recorded) || discarded.load(std::memory_order_relaxed))
+        return false;
+    Run(lock, thread, buildLane);
+    return true;
+}
+
+void DeferredMeshState::Discard()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    discarded.store(true, std::memory_order_relaxed);
+    if (phase == Phase::Building)
+        return;
+    phase = Phase::Recorded;
+    mesh.reset();
+    failure = nullptr;
+    warnings.clear();
+    debug.clear();
+    work = nullptr;
+    keepAlive.reset();
+}
+
 void DeferredMeshState::Release()
 {
     std::lock_guard<std::mutex> lock(mutex);
-    if (phase != Phase::Done)
+    if (phase == Phase::Building)
         return;
     work = nullptr;
     keepAlive.reset();
+    if (discarded.load(std::memory_order_relaxed))
+        mesh.reset();
 }
 
 bool DeferredMeshState::Built() const
@@ -882,10 +980,144 @@ bool DeferredMeshState::Built() const
     return (phase == Phase::Done) && !failure;
 }
 
+bool DeferredMeshState::Pending() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return phase == Phase::Recorded;
+}
+
 std::exception_ptr DeferredMeshState::Failure() const
 {
     std::lock_guard<std::mutex> lock(mutex);
     return failure;
+}
+
+DeferredMeshPool::DeferredMeshPool(unsigned int count) :
+    threadCount(count)
+{
+}
+
+DeferredMeshPool::~DeferredMeshPool()
+{
+    Stop();
+}
+
+void DeferredMeshPool::Submit(const std::shared_ptr<DeferredMeshState>& state, const std::shared_ptr<SceneData>& sceneData, size_t seed)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (stopping)
+        return;
+    retained.push_back(state);
+    queue.push_back(state);
+    if ((threads.size() < threadCount) && (queue.size() > threads.size() - busy))
+    {
+        const size_t index = threads.size();
+        running.resize(threadCount, nullptr);
+        threadData.emplace_back(new TraceThreadData(sceneData, seed + index + 1, false));
+        threads.emplace_back(&DeferredMeshPool::Work, this, index);
+    }
+    else
+        wake.notify_one();
+}
+
+void DeferredMeshPool::Work(size_t index)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    while (true)
+    {
+        wake.wait(lock, [this]() { return stopping || (!paused && !queue.empty()); });
+        if (stopping)
+            break;
+        std::shared_ptr<DeferredMeshState> state = std::move(queue.front());
+        queue.pop_front();
+        running[index] = state.get();
+        ++busy;
+        TraceThreadData *data = threadData[index].get();
+        lock.unlock();
+        // the pool's two references are all an orphan has left: its mesh was released unused
+        if (state.use_count() > 2)
+        {
+            data->FreezeGlobals(state->recordedGlobals.noiseGenerator, state->recordedGlobals.workingGamma, state->recordedGlobals.numberOfWaves);
+            Timer timer;
+            state->TryBuild(data, int(index) + 1);
+            if (timer.HasValidThreadCPUTime())
+                cpuTime.fetch_add(timer.ElapsedThreadCPUTime(), std::memory_order_relaxed);
+        }
+        lock.lock();
+        running[index] = nullptr;
+        --busy;
+        if (state->interrupted.exchange(false) && !stopping && !state->discarded.load(std::memory_order_relaxed) && state->Pending())
+            queue.push_front(state);
+        idle.notify_all();
+    }
+}
+
+unsigned int DeferredMeshPool::Started()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return unsigned(threadData.size());
+}
+
+void DeferredMeshPool::Pause()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    paused = true;
+    for (DeferredMeshState *state : running)
+        if (state != nullptr)
+            state->interrupted.store(true, std::memory_order_relaxed);
+}
+
+void DeferredMeshPool::Resume()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    paused = false;
+    wake.notify_all();
+}
+
+void DeferredMeshPool::Finish(const std::function<void()>& cooperate)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    while (!threads.empty() && !(queue.empty() && (busy == 0)))
+    {
+        idle.wait_for(lock, std::chrono::milliseconds(100));
+        lock.unlock();
+        cooperate();
+        lock.lock();
+    }
+    Join(lock);
+}
+
+void DeferredMeshPool::Stop()
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    queue.clear();
+    for (DeferredMeshState *state : running)
+        if (state != nullptr)
+            state->interrupted.store(true, std::memory_order_relaxed);
+    Join(lock);
+}
+
+void DeferredMeshPool::Join(std::unique_lock<std::mutex>& lock)
+{
+    stopping = true;
+    wake.notify_all();
+    std::vector<std::thread> joining;
+    joining.swap(threads);
+    lock.unlock();
+    for (std::thread& thread : joining)
+        thread.join();
+    lock.lock();
+}
+
+std::vector<std::unique_ptr<TraceThreadData>> DeferredMeshPool::Dispose()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    for (const std::shared_ptr<DeferredMeshState>& state : retained)
+        state->Release();
+    std::vector<std::shared_ptr<DeferredMeshState>>().swap(retained);
+    std::vector<std::unique_ptr<TraceThreadData>> data;
+    data.swap(threadData);
+    return data;
 }
 
 bool Mesh::Resolve() const

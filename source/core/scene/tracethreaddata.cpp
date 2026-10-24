@@ -64,7 +64,10 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed, boo
     qualityFlags(9),
     stochasticRandomSeedBase(seed),
     mpCrackleCache(new CrackleCache),
-    mpRenderStats(new RenderStatistics)
+    mpRenderStats(new RenderStatistics),
+    noiseGeneratorSource(&sd->noiseGenerator),
+    workingGammaSource(&sd->workingGamma),
+    frozenNoiseGenerator(0)
 {
     isoShadowFrom = isoShadowTo = 0.0;
     for(int i = 0; i < 4; i++)
@@ -120,6 +123,19 @@ TraceThreadData::TraceThreadData(std::shared_ptr<SceneData> sd, size_t seed, boo
 
     numberOfWaves = sd->numberOfWaves;
     Initialize_Waves(waveFrequencies, waveSources, numberOfWaves);
+}
+
+void TraceThreadData::FreezeGlobals(int noiseGenerator, const pov_base::SimpleGammaCurvePtr& workingGamma, unsigned int waves)
+{
+    if (waves != numberOfWaves)
+    {
+        numberOfWaves = waves;
+        Initialize_Waves(waveFrequencies, waveSources, numberOfWaves);
+    }
+    frozenNoiseGenerator = noiseGenerator;
+    frozenWorkingGamma = workingGamma;
+    noiseGeneratorSource = &frozenNoiseGenerator;
+    workingGammaSource = &frozenWorkingGamma;
 }
 
 TraceThreadData::~TraceThreadData()

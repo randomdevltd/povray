@@ -53,6 +53,7 @@
 #include "base/types.h"
 #include "base/messenger.h"
 #include "base/colour.h"
+#include "base/image/colourspace_fwd.h"
 
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
@@ -238,6 +239,14 @@ class TraceThreadData : public ThreadData
 
         inline std::shared_ptr<const SceneData> GetSceneData() const { return sceneData; }
 
+        /// The noise generator, working gamma and wave count this thread evaluates with: the scene's, or a mesh build's frozen copies.
+        inline int NoiseGenerator() const { globalsRead |= kReadNoiseGenerator; return *noiseGeneratorSource; }
+        inline const pov_base::SimpleGammaCurvePtr& WorkingGamma() const { globalsRead |= kReadWorkingGamma; return *workingGammaSource; }
+        inline unsigned int NumberOfWaves() const { globalsRead |= kReadNumberOfWaves; return numberOfWaves; }
+        void FreezeGlobals(int noiseGenerator, const pov_base::SimpleGammaCurvePtr& workingGamma, unsigned int waves);
+        enum : unsigned char { kReadNoiseGenerator = 1, kReadWorkingGamma = 2, kReadNumberOfWaves = 4 };
+        mutable unsigned char globalsRead = 0; ///< Which of them this thread has read since it was last cleared.
+
     protected:
         /// scene data
         std::shared_ptr<SceneData> sceneData;
@@ -245,6 +254,11 @@ class TraceThreadData : public ThreadData
         RenderStatistics* mpRenderStats;
 
     private:
+
+        const int *noiseGeneratorSource;
+        const pov_base::SimpleGammaCurvePtr *workingGammaSource;
+        int frozenNoiseGenerator;
+        pov_base::SimpleGammaCurvePtr frozenWorkingGamma;
 
         TraceThreadData() = delete;
         TraceThreadData(const TraceThreadData&) = delete;

@@ -456,9 +456,19 @@ class Parser final
         void Cleanup();
 
         inline TraceThreadData *GetParserDataPtr() { return &mThreadData; }
+        /// Records a deferred mesh build, and queues it on the eager threads when there are any and `eager` allows.
         std::shared_ptr<DeferredMeshState> RecordMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
-                                                          const std::shared_ptr<void>& keepAlive = std::shared_ptr<void>());
+                                                          const std::shared_ptr<void>& keepAlive = std::shared_ptr<void>(), bool eager = true);
+        /// Whether a snapshot can take the functions `roots` reach: no pigment of theirs tests an object or runs a foreign function.
+        bool SelfContained(const std::vector<FUNCTION>& roots) const;
+        /// Queues the prepared density grids of the media in a completed top-level object on the eager threads.
+        void RecordMediaFields(ObjectPtr object, ObjectPtr parent);
+        void RecordMediaField(Media& medium);
+        void LeaveMediaField(const Media& medium);
         bool Resolve_Mesh_Geometry(ObjectPtr object);
+        void QueueMeshBuild(const std::shared_ptr<DeferredMeshState>& state);
+        /// Queues the eager builds of the meshes a kept top-level object holds, when a filter set from the start gates them.
+        void QueuePlacedMeshes(ObjectPtr object);
 
         // parse.h/parse.cpp
         void Parse_Error (TokenId Token_Id);

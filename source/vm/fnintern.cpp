@@ -1196,7 +1196,7 @@ DBL f_witch_of_agnesi_2d(FPUContext *ctx, DBL *ptr, unsigned int) // 75
 DBL f_noise3d(FPUContext *ctx, DBL *ptr, unsigned int) // 76
 {
     Vector3d Vec = Vector3d(PARAM_X, PARAM_Y, PARAM_Z);
-    return Noise(Vec, ctx->threaddata->GetSceneData()->noiseGenerator);
+    return Noise(Vec, ctx->threaddata->NoiseGenerator());
 }
 
 DBL f_pattern(FPUContext *ctx, DBL *ptr, unsigned int fn) // 77

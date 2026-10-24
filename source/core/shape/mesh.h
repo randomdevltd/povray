@@ -44,21 +44,25 @@
 
 // C++ standard header files
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 // POV-Ray header files (base module)
-//  (none at the moment)
+#include "base/image/colourspace_fwd.h"
 
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox_fwd.h"
 #include "core/scene/object.h"
+#include "core/scene/scenedata_fwd.h"
 
 namespace pov
 {
@@ -123,6 +127,18 @@ using MESH_TRIANGLE = Mesh_Triangle_Struct; ///< @deprecated
 
 class Mesh;
 
+/// The scene settings a build may read that the parser may still change after recording it.
+struct MeshBuildGlobals final
+{
+    int noiseGenerator = 0;
+    pov_base::SimpleGammaCurvePtr workingGamma;
+    unsigned int numberOfWaves = 0;
+
+    static MeshBuildGlobals Of(const TraceThreadData& thread);
+    /// Whether a build that read the settings in `read` (TraceThreadData::globalsRead bits) would see others in `now`.
+    bool Differs(const MeshBuildGlobals& now, unsigned char read) const;
+};
+
 /// Geometry the parser recorded but has not built: a generated or loaded mesh that is built once, when first needed.
 struct DeferredMeshState final
 {
@@ -135,12 +151,28 @@ struct DeferredMeshState final
     std::string debug;
     std::vector<std::string> warnings;
     bool reported = false;
+    std::chrono::steady_clock::time_point startedAt;
+    bool awaitingPlacement = false; ///< Queued for an eager thread only once a kept object places it (parser thread only).
+    int lane = 0;           ///< The thread that built it: 0 the parser, n > 0 the n-th eager thread, n < 0 the -n-th mesh build thread.
+    POV_LONG cpuTime = 0;   ///< CPU milliseconds its build took on that thread.
+    MeshBuildGlobals recordedGlobals; ///< The settings when it was recorded, which an eager build evaluates with.
+    unsigned int rebuilds = 0;        ///< Eager builds redone because a setting they read changed later.
+    std::atomic<bool> discarded{false};
+    std::atomic<bool> interrupted{false};
 
+    /// Whether a running build should stop: the whole scene is cancelled, or this build is discarded or interrupted.
+    bool Cancelled() const;
     /// Runs the work on this thread unless it has run or is running; either way returns its mesh or rethrows its failure.
-    std::shared_ptr<Mesh> Build(TraceThreadData *thread);
+    /// An eager build made under settings other than `thread`'s is built again here.
+    std::shared_ptr<Mesh> Build(TraceThreadData *thread, int buildLane = 0);
+    /// Runs the work on this thread only if nobody has started it and it is not discarded; returns whether it ran.
+    bool TryBuild(TraceThreadData *thread, int buildLane);
+    /// Marks it unused: a queued build never starts, a running one stops, and a finished one's mesh and sources are freed here.
+    void Discard();
     /// Drops the work and what it keeps alive; only the thread that joined the build may call it, as they hold the parser's functions.
     void Release();
     bool Built() const;
+    bool Pending() const;
     std::exception_ptr Failure() const;
 
 private:
@@ -149,6 +181,49 @@ private:
     enum class Phase { Recorded, Building, Done } phase = Phase::Recorded;
     std::shared_ptr<Mesh> mesh;
     std::exception_ptr failure;
+    MeshBuildGlobals builtWith;
+    unsigned char builtReads = 0;
+
+    void Run(std::unique_lock<std::mutex>& lock, TraceThreadData *thread, int buildLane);
+};
+
+/// Builds recorded meshes on spare threads while the parser runs; whoever needs a mesh joins its build.
+class DeferredMeshPool final
+{
+    public:
+        explicit DeferredMeshPool(unsigned int threadCount);
+        ~DeferredMeshPool();
+
+        unsigned int ThreadCount() const { return threadCount; }
+        unsigned int Started();
+        /// Queues a build; the first one starts the threads, whose data is made here on the parser's thread.
+        void Submit(const std::shared_ptr<DeferredMeshState>& state, const std::shared_ptr<SceneData>& sceneData, size_t seed);
+        /// Interrupts the running builds, which go back to the queue, and holds the queue until Resume.
+        void Pause();
+        void Resume();
+        /// Waits until the queue is empty and the threads are idle, calling `cooperate` meanwhile, then stops the threads.
+        void Finish(const std::function<void()>& cooperate);
+        /// Drops the queue, interrupts the running builds and stops the threads.
+        void Stop();
+        /// Once stopped, hands over the threads' data and drops the builds; call it where the parser's functions may be released.
+        std::vector<std::unique_ptr<TraceThreadData>> Dispose();
+        POV_LONG CpuTime() const { return cpuTime.load(std::memory_order_relaxed); }
+
+    private:
+        unsigned int threadCount;
+        std::mutex mutex;
+        std::condition_variable wake, idle;
+        std::deque<std::shared_ptr<DeferredMeshState>> queue;
+        std::vector<std::shared_ptr<DeferredMeshState>> retained;
+        std::vector<std::unique_ptr<TraceThreadData>> threadData;
+        std::vector<DeferredMeshState *> running;
+        std::vector<std::thread> threads;
+        unsigned int busy = 0;
+        bool paused = false, stopping = false;
+        std::atomic<POV_LONG> cpuTime{0};
+
+        void Work(size_t index);
+        void Join(std::unique_lock<std::mutex>& lock);
 };
 
 /// Indices a triangle may carry beyond its vertices, `width` per triangle, stored only once triangles differ.

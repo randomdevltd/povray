@@ -236,8 +236,99 @@ Parser::~Parser()
     delete fnVMContext;
 }
 
+bool Parser::SelfContained(const std::vector<FUNCTION>& roots) const
+{
+    return mpFunctionVM->ForEachReachable(roots, std::function<void(FUNCTION, const FunctionCode&)>());
+}
+
+static bool HasPendingMesh(ObjectPtr object)
+{
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        return mesh->Pending();
+    if (const CompoundObject *compound = dynamic_cast<const CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            if (HasPendingMesh(child))
+                return true;
+    return false;
+}
+
+void Parser::RecordMediaFields(ObjectPtr object, ObjectPtr parent)
+{
+    if ((object == nullptr) || (sceneData->meshPool == nullptr))
+        return;
+    // a container's box is final once its top-level object completes, unless a pending mesh still sets it
+    if ((object->interior != nullptr) && ((parent == nullptr) || (object->interior != parent->interior)) && !HasPendingMesh(object))
+        for (Media& medium : object->interior->media)
+            RecordMediaField(medium);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            RecordMediaFields(child, object);
+}
+
+// A grid whose density a snapshot cannot take is left to the render, which the log counts.
+void Parser::LeaveMediaField(const Media& medium)
+{
+    sceneData->eagerMediaUnsafe.push_back(medium.fastCache);
+}
+
+void Parser::RecordMediaField(Media& medium)
+{
+    if (!medium.fastCache || (medium.Sample_Method != 4) || medium.Density.empty())
+        return;
+    std::shared_ptr<Media> copy(new Media(medium));
+    std::vector<std::pair<GenericScalarFunctionPtr *, FUNCTION>> slots;
+    for (PIGMENT *pigment : copy->Density)
+    {
+        if (PigmentTestsObjects(pigment))
+            return LeaveMediaField(medium);
+        bool known = true;
+        ForEachPigmentFunction(pigment, true, [&](GenericScalarFunctionPtr& slot)
+        {
+            if (const FunctionVM::CustomFunction *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
+                slots.push_back(std::make_pair(&slot, custom->Id()));
+            else
+                known = false;
+        });
+        if (!known)
+            return LeaveMediaField(medium);
+    }
+    if (!slots.empty())
+    {
+        std::vector<FUNCTION> roots;
+        for (const auto& slot : slots)
+            roots.push_back(slot.second);
+        if (!SelfContained(roots))
+            return LeaveMediaField(medium);
+        boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(roots);
+        for (const auto& slot : slots)
+        {
+            delete *slot.first;
+            *slot.first = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(slot.second));
+        }
+    }
+    std::shared_ptr<Media::EagerField> field = medium.PlanEagerField(copy, sceneData->EffectivePreparedMediaCells());
+    if (field == nullptr)
+        return;
+    // one job per eager thread, all claiming slabs of the same grid
+    for (unsigned int i = 0; i < sceneData->meshPool->ThreadCount(); ++i)
+    {
+        std::shared_ptr<DeferredMeshState> job(new DeferredMeshState());
+        job->cancelled = sceneData->meshBuildCancelled;
+        job->recordedGlobals.noiseGenerator = sceneData->noiseGenerator;
+        job->recordedGlobals.workingGamma = sceneData->workingGamma;
+        job->recordedGlobals.numberOfWaves = sceneData->numberOfWaves;
+        job->work = [field](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
+        {
+            WorkEagerField(*field, thread, [&state]() { return state.Cancelled(); });
+            return std::shared_ptr<Mesh>();
+        };
+        sceneData->eagerMediaFields.push_back(std::make_pair(job, field));
+        sceneData->meshPool->Submit(job, sceneData, 0);
+    }
+}
+
 std::shared_ptr<DeferredMeshState> Parser::RecordMeshBuild(const std::function<std::shared_ptr<Mesh>(TraceThreadData *, DeferredMeshState&)>& work,
-                                                          const std::shared_ptr<void>& keepAlive)
+                                                          const std::shared_ptr<void>& keepAlive, bool eager)
 {
     std::shared_ptr<DeferredMeshState> state(new DeferredMeshState());
     state->work = work;
@@ -246,10 +337,46 @@ std::shared_ptr<DeferredMeshState> Parser::RecordMeshBuild(const std::function<s
     if (HaveCurrentMessageContext())
         state->source = SourceInfo(CurrentMessageContext());
     sceneData->deferredMeshes.push_back(state);
+    if (!eager && (sceneData->meshPool != nullptr))
+        ++sceneData->deferredMeshesLeftToTask;
+    // with a filter known from the start, a build waits until a kept object places the mesh
+    if (eager && (sceneData->meshPool != nullptr))
+    {
+        if (sceneData->parseFilterTags.specified)
+            state->awaitingPlacement = true;
+        else
+            QueueMeshBuild(state);
+    }
     return state;
 }
 
-// A geometry query during parsing builds the mesh now, on the parser thread; everything else waits for the scene sets.
+void Parser::QueueMeshBuild(const std::shared_ptr<DeferredMeshState>& state)
+{
+    state->awaitingPlacement = false;
+    state->recordedGlobals.noiseGenerator = sceneData->noiseGenerator;
+    state->recordedGlobals.workingGamma = sceneData->workingGamma;
+    state->recordedGlobals.numberOfWaves = sceneData->numberOfWaves;
+    sceneData->meshPool->Submit(state, sceneData, 0);
+}
+
+void Parser::QueuePlacedMeshes(ObjectPtr object)
+{
+    if (object == nullptr)
+        return;
+    if (Mesh *mesh = dynamic_cast<Mesh *>(object))
+    {
+        if (mesh->Pending() && mesh->Deferred()->awaitingPlacement && !mesh->Deferred()->reported)
+            QueueMeshBuild(mesh->Deferred());
+        return;
+    }
+    if (LightSource *light = dynamic_cast<LightSource *>(object))
+        QueuePlacedMeshes(light->Projected_Through_Object);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            QueuePlacedMeshes(child);
+}
+
+// A geometry query during parsing joins the mesh's build, running it here unless an eager thread has; the rest waits for the scene sets.
 bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 {
     if (Mesh *mesh = dynamic_cast<Mesh *>(object))
@@ -259,6 +386,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
         DeferredMeshState& state = *mesh->Deferred();
         if (!state.reported)
         {
+            Timer timer;
             try
             {
                 state.Build(GetParserDataPtr());
@@ -266,9 +394,21 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
             catch (const std::exception& error)
             {
                 state.Release();
+                // a stop cancelled the build: the user's abort is the report, not a parse error
+                if (sceneData->meshBuildCancelled->load(std::memory_order_relaxed))
+                {
+                    state.reported = true;
+                    return false;
+                }
                 Error(state.source, "%s", error.what());
             }
             state.Release();
+            state.awaitingPlacement = false;
+            if (state.lane > 0)
+                ++sceneData->deferredMeshesQueriedBuiltAhead;
+            sceneData->meshQueryRealTime += timer.ElapsedRealTime();
+            if (timer.HasValidThreadCPUTime())
+                sceneData->meshQueryCpuTime += timer.ElapsedThreadCPUTime();
             state.reported = true;
             ++sceneData->deferredMeshesBuiltForQueries;
             for (const std::string& warning : state.warnings)
@@ -2319,6 +2459,8 @@ void Parser::Parse_Camera_Look_At(Camera& camera)
     {
         // measured once deferred meshes are built, by the scene's mesh pass
         camera.frameTarget = target;
+        if ((sceneData->meshPool != nullptr) && sceneData->parseFilterTags.specified)
+            QueuePlacedMeshes(target.get());
         camera.frameSelection = selected;
         camera.frameSource = source;
         camera.frameBounds = true;
@@ -3352,11 +3494,13 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
     FunctionVM::CustomFunction *function = dynamic_cast<FunctionVM::CustomFunction *>(iso->Function);
     POV_PARSER_ASSERT(function != nullptr);
     const FUNCTION functionId = function->Id();
+    const bool eager = SelfContained(std::vector<FUNCTION>(1, functionId));
     boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(std::vector<FUNCTION>(1, functionId));
     std::shared_ptr<IsoMeshBuildSource> source(new IsoMeshBuildSource());
     source->iso = iso;
     source->originalFunction.reset(iso->Function);
     iso->Function = new FunctionVM::CustomFunction(functionVM.get(), new FUNCTION(functionId));
+    functionVM.reset(); // the build may count references to the snapshot from now on
     std::shared_ptr<DeferredMeshState> deferred = RecordMeshBuild(
         [iso, minSize, maxAngle, cacheDir](TraceThreadData *thread, DeferredMeshState& state) -> std::shared_ptr<Mesh>
         {
@@ -3374,7 +3518,7 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
             const std::vector<TraceThreadData *> threads(1, thread);
             const std::string problem = iso->Tessellate(threads, minSize, maxAngle, built, report, [&state]()
             {
-                if (state.cancelled->load(std::memory_order_relaxed))
+                if (state.Cancelled())
                     throw std::runtime_error("Mesh build cancelled.");
             });
             if (!problem.empty())
@@ -3385,8 +3529,12 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
                 warning << "isosurface_mesh: max_gradient is too low; " << report.missedCells << " cells it ruled out touch the surface.";
                 state.warnings.push_back(warning.str());
             }
+            if (state.Cancelled())
+                throw std::runtime_error("Mesh build cancelled.");
             object->Compute_BBox();
             object->Build_Mesh_BBox_Tree();
+            if (state.Cancelled())
+                throw std::runtime_error("Mesh build cancelled.");
             const DBL seconds = std::chrono::duration<DBL>(std::chrono::steady_clock::now() - start).count();
             std::ostringstream debug;
             debug << "isosurface_mesh: " << built.Triangles() << " triangles, " << built.Vertices() << " vertices, " << report.openEdges
@@ -3396,7 +3544,7 @@ ObjectPtr Parser::Parse_Isosurface_Mesh()
             state.debug = debug.str();
             Write_Generated_Mesh(key, *object, state, firstWarning);
             return object;
-        }, source);
+        }, source, eager);
 
     Mesh *object = new Mesh();
     object->BBox = iso->BBox;
@@ -7716,6 +7864,9 @@ void Parser::Parse_Frame_Items ()
             {
                 Remove_Subsurface_Without_Inside (Object);
                 Link_To_Frame (Object);
+                RecordMediaFields(Object, nullptr);
+                if ((sceneData->meshPool != nullptr) && sceneData->parseFilterTags.specified)
+                    QueuePlacedMeshes(Object);
             }
             for (Portal *image : mPortalImages)
                 Link_To_Frame(image);

@@ -548,13 +548,13 @@ void GenericPigmentBlendMap::Blend(TransColour& result, const TransColour& colou
     {
         case 1:
             // linear blending
-            if (GammaCurve::IsNeutral(thread->GetSceneData()->workingGamma))
+            if (GammaCurve::IsNeutral(thread->WorkingGamma()))
                 result = colour1 * weight1 + colour2 * weight2;
             else
             {
-                result = GammaCurve::Encode(thread->GetSceneData()->workingGamma,
-                                            GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour1) * weight1
-                                          + GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour2) * weight2);
+                result = GammaCurve::Encode(thread->WorkingGamma(),
+                                            GammaCurve::Decode(thread->WorkingGamma(), colour1) * weight1
+                                          + GammaCurve::Decode(thread->WorkingGamma(), colour2) * weight2);
             }
             break;
 
@@ -564,12 +564,12 @@ void GenericPigmentBlendMap::Blend(TransColour& result, const TransColour& colou
                 result = colour1 * weight1 + colour2 * weight2;
             else
             {
-                result.filter() = GammaCurve::Encode(thread->GetSceneData()->workingGamma,
-                                                     GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour1.filter()) * weight1
-                                                   + GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour2.filter()) * weight2);
-                result.transm() = GammaCurve::Encode(thread->GetSceneData()->workingGamma,
-                                                     GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour1.transm()) * weight1
-                                                   + GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour2.transm()) * weight2);
+                result.filter() = GammaCurve::Encode(thread->WorkingGamma(),
+                                                     GammaCurve::Decode(thread->WorkingGamma(), colour1.filter()) * weight1
+                                                   + GammaCurve::Decode(thread->WorkingGamma(), colour2.filter()) * weight2);
+                result.transm() = GammaCurve::Encode(thread->WorkingGamma(),
+                                                     GammaCurve::Decode(thread->WorkingGamma(), colour1.transm()) * weight1
+                                                   + GammaCurve::Decode(thread->WorkingGamma(), colour2.transm()) * weight2);
                 result.colour() = GammaCurve::Decode(blendGamma,
                                                      GammaCurve::Encode(blendGamma, colour1.colour()) * weight1
                                                    + GammaCurve::Encode(blendGamma, colour2.colour()) * weight2);
@@ -578,16 +578,16 @@ void GenericPigmentBlendMap::Blend(TransColour& result, const TransColour& colou
 
         case 3:
             // linear blending of colours combined with gamma blending of brightness
-            if (GammaCurve::IsNeutral(blendGamma) && GammaCurve::IsNeutral(thread->GetSceneData()->workingGamma))
+            if (GammaCurve::IsNeutral(blendGamma) && GammaCurve::IsNeutral(thread->WorkingGamma()))
                 result = colour1 * weight1 + colour2 * weight2;
             else
             {
                 ColourChannel targetBrightness = GammaCurve::Decode(blendGamma,
                                                                     GammaCurve::Encode(blendGamma, colour1.colour().Greyscale()) * weight1
                                                                   + GammaCurve::Encode(blendGamma, colour2.colour().Greyscale()) * weight2);
-                result = GammaCurve::Encode(thread->GetSceneData()->workingGamma,
-                                            GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour1) * weight1
-                                          + GammaCurve::Decode(thread->GetSceneData()->workingGamma, colour2) * weight2);
+                result = GammaCurve::Encode(thread->WorkingGamma(),
+                                            GammaCurve::Decode(thread->WorkingGamma(), colour1) * weight1
+                                          + GammaCurve::Decode(thread->WorkingGamma(), colour2) * weight2);
                 ColourChannel actualBrightness = result.colour().Greyscale();
                 if (fabs(actualBrightness) >= EPSILON)
                     result.colour() *= targetBrightness / actualBrightness;
@@ -739,7 +739,7 @@ void Evaluate_Density_Pigment(vector<PIGMENT*>& Density, const Vector3d& p, Math
 // Whether Blend() reduces to colour1 * weight1 + colour2 * weight2.
 static bool Blends_Linearly(const GenericPigmentBlendMap& map, TraceThreadData *ttd)
 {
-    const bool working = GammaCurve::IsNeutral(ttd->GetSceneData()->workingGamma);
+    const bool working = GammaCurve::IsNeutral(ttd->WorkingGamma());
     switch (map.blendMode)
     {
         case 1:  return working;
