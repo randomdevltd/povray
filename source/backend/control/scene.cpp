@@ -231,6 +231,7 @@ void Scene::StartParser(POVMS_Object& parseOptions)
 
 void Scene::PrepareSetBounds(TaskQueue& taskq, unsigned int boundingThreshold, size_t seed, unsigned int workers)
 {
+    sceneData->workThreads = workers;
     // Parser teardown has released rejected roots, unused declarations and default materials.
     sceneData->FinalizeScreenCameras();
     sceneData->RegisterPreparedSet(sceneData->EffectiveFilterTags(sceneData->parsedCamera.filterTags));
