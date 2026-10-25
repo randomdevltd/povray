@@ -47,7 +47,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `blob` | 42 | Metaball surface from sphere and cylinder strength components. |
 | `box` | 37 | Box from two opposite corner vectors. |
 | `bump_map` | 33 | Normal perturbation pattern wrapping a 2-D image file. |
-| `camera` | 35 | The eye: location, direction, projection type, lens effects. |
+| `camera` | 36 | The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse. |
 | `composite` | 80 | Legacy CSG grouping from before union; still parsed. |
 | `cone` | 38 | Cone or frustum from two end points and radii; open removes the caps. |
 | `cubic` | 37 | Third-degree polynomial shape; a special case of poly. |
@@ -77,6 +77,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `mesh2` | 45 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
 | `normal` | 105 | Perturbed surface normals: bump pattern, bump map, slope. |
 | `object` | 80 | Copies or wraps an already-declared object with new modifiers. |
+| `output` | 3 | Camera item that renders this camera as its own view: the scene parses once, each camera with one renders its own image in order, cameras without one are not rendered. Bare output keeps the command line's size, window and file; the block's parts are optional, and a later output replaces an earlier one. Refused with animation, STDOUT output or photon save_file/load_file. |
 | `ovus` | 40 | Egg shape from bottom and top radius, with radius, distance and precision controls. |
 | `parametric` | 44 | Surface from three functions of u and v; precompute caches its mesh. |
 | `pigment` | 105 | Surface colour: a pattern, colour map or image map. |
