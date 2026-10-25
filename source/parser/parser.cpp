@@ -464,6 +464,7 @@ void Parser::Run()
             solidMediaSeen = false;
             hollowDeprecationWarned = false;
             defaultMix = kMediaBlendAuto;
+            defaultFadeCutoff = kFadeCutoffAuto;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -7807,6 +7808,18 @@ void Parser::Parse_Default ()
                     defaultMix = Parse_Mix ();
                 END_CASE
 
+                CASE (LIGHT_SOURCE_TOKEN)
+                    Parse_Begin ();
+                    while (!Peek_Token(RIGHT_CURLY_TOKEN))
+                    {
+                        Get_Token ();
+                        if (CurrentTokenText() != "fade_cutoff")
+                            Error("A #default media light_source accepts only fade_cutoff, not '%s'.", CurrentTokenText().c_str());
+                        defaultFadeCutoff = Parse_Fade_Cutoff ();
+                    }
+                    Parse_End ();
+                END_CASE
+
                 OTHERWISE
                     UNGET
                     EXIT
@@ -10566,6 +10579,7 @@ void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
     light->Area_Size2 = 1;
     light->Fade_Distance = settings.fadeDistance;
     light->Fade_Power = settings.fadePower;
+    light->fadeCutoff = settings.fadeCutoff;
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)

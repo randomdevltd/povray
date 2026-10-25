@@ -111,6 +111,10 @@
    "kind": "literal",
    "text": "Boolean true."
   },
+  "fade_cutoff": {
+   "kind": "item",
+   "text": "In a media light_source { }: an intensity on the 0 to 1 scale of adc_bailout; a point the light would reach with less, taken at the emitter's nearest sample, leaves the light out entirely (no shadow ray, cache entry or media sample work). Applies to the physical 1/r^2 falloff and to fade_distance/fade_power alike. Default 0.000004 under #version 4.0 and later, 0 (off) before; default { media { light_source { fade_cutoff V } } } gives media lights parsed after it that starting value (the media block of default gives values, mix and light_source { fade_cutoff }, not a template); a light's own fade_cutoff overrides both. Matched by text, so fade_cutoff stays free as a name."
+  },
   "false": {
    "kind": "literal",
    "text": "Boolean false."

@@ -644,6 +644,19 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
     return pow(Distance, -Light->Fade_Power);
 }
 
+bool Light_Below_Fade_Cutoff(const LightSource *Light, const Vector3d& Point)
+{
+    if ((Light->emitter == nullptr) || !(Light->fadeCutoff > 0.0))
+        return false;
+    const Emitter& emitter = *Light->emitter;
+    const DBL nearest = std::max((Point - emitter.Centre()).length() - emitter.Radius(), emitter.NearDistance());
+    const DBL attenuation = Light_Distance_Attenuation(Light, nearest);
+    DBL brightest = 0.0;
+    for (int i = 0; i < MathColour::channels; i++)
+        brightest = std::max(brightest, fabs(double(Light->colour[i])) * attenuation); // magnitude: negative lights count too
+    return brightest < Light->fadeCutoff;
+}
+
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)
 {
     if (Light->Fade_Power <= 0.0)

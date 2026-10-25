@@ -3195,6 +3195,12 @@ void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsour
 
     // Get the light source colour.
     lightcolour = lightsource.colour;
+    if (Light_Below_Fade_Cutoff(&lightsource, ipoint))
+    {
+        lightcolour.Clear();
+        threadData->Stats()[Fade_Cutoff_Drops]++;
+        return;
+    }
 
     // Attenuate light source color.
     if (lightsource.Area_Light && lightsource.Use_Full_Area_Lighting && qualityFlags.areaLights && !forceAttenuate)
@@ -5279,7 +5285,7 @@ bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light
     //
     // Test for PURE zero, because we only want to skip this if we're out
     // of the range of a spot light or cylinder light.  Very dim lights
-    // should not be ignored.
+    // should not be ignored, unless a media light's fade_cutoff drops them.
 
     if(colour.IsNearZero(EPSILON))
     {
