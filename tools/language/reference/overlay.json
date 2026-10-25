@@ -50,7 +50,8 @@
   "density": "Pattern block scaling media density across its container.",
   "interior": "Inside-the-surface properties: ior, caustics, fading, media.",
   "media": "Participating medium: scattering, emission, absorption, intervals; its light_source is a volume light, not a scene light.",
-  "camera": "The eye: location, direction, projection type, lens effects.",
+  "camera": "The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse.",
+ "output": "Camera item that renders this camera as its own view: the scene parses once, each camera with one renders its own image in order, cameras without one are not rendered. Bare output keeps the command line's size, window and file; the block's parts are optional, and a later output replaces an earlier one. Refused with animation, STDOUT output or photon save_file/load_file.",
   "global_settings": "Renderer-wide scene options: radiosity, photons, gamma, tracing depth.",
   "object": "Copies or wraps an already-declared object with new modifiers.",
   "light_source": "A light: position, colour, area, shadowing and photon options.",
@@ -257,6 +258,18 @@
   "look_at": {
    "kind": "item",
    "text": "Aims the camera at a point, or frames an object: look_at <Point> pans and tilts as usual; look_at ObjectIdentifier frames a declared object's bounds; look_at tagged { TAG_EXPRESSION } frames everything the expression selects (targets must be written before the camera). Optional frame multiplier, default 0.9: look_at Subject, 0.8. Framing never moves the camera; it zooms after the scene parses. A later look_at <Point> replaces the framing; mesh cameras reject it."
+  },
+  "file": {
+   "kind": "item",
+   "text": "Names a camera output's image file, as +O would: the render's file type applies, the extension is added unless the name ends with it, and a name without a directory is written beside the render's output file. Without one the output name gains '-' and the camera's number among the rendering cameras, from 1 and zero-padded to sort; two cameras whose files come out the same are an error. Matched by text inside output { }, so file stays free as a name."
+  },
+  "window": {
+   "kind": "item",
+   "text": "The part of a camera's own image its output renders: <SC, SR, EC, ER> in Start_Column, Start_Row, End_Column, End_Row units, values below 1 fractions, others pixel numbers from 1. A camera with a size and no window renders all of its image; one with neither takes the command line's window. Pixels outside are left empty, and a window that ends before it starts, or a negative edge, is an error. Matched by text inside output { }, so window stays free as a name."
+  },
+  "size": {
+   "kind": "item",
+   "text": "In camera output, the image's <Width, Height> in whole pixels, 1 to 65535; a camera without one takes the command line's Width and Height, the values of image_width and image_height, and a camera leaving right at its default takes the aspect its own size gives it. In a facets pattern, size switches facet creation to curved surfaces only."
   }
  }
 }
