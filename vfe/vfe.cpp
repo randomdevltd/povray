@@ -977,7 +977,6 @@ void VirtualFrontEnd::StartCameraView()
                       UCS2toSysString(cameraProcessing->Files()[cameraProcessing->Position()])).str());
     m_Session->AppendStreamMessage(vfeSession::mInformation, str.c_str());
   }
-  m_Session->AppendStreamMessage(vfeSession::mInformation, str.c_str());
 }
 
 State VirtualFrontEnd::Process()
