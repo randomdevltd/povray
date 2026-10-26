@@ -337,6 +337,9 @@ New Features
     cameras carry `output`, or `output { size <w, h> window <sc, sr, ec, er>
     file "name" }`, is parsed and prepared once and renders each of them into
     its own image, at its own size, window and file, at every `#version`.
+    The console announces each view as `Rendering camera <n> of <m>, <w> by
+    <h>, to <file>.`, with its place among the cameras, its pixel size and
+    the image it writes; the file is left out when the render writes none.
     Each image matches a render of that camera alone, and photon maps are shot
     once and reused by cameras that select the same objects. A scene without
     `output` items renders as before. `output`, and `window` and `file` inside

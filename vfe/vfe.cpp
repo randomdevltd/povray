@@ -961,8 +961,22 @@ void VirtualFrontEnd::StartCameraView()
     shelloutProcessing->SetOutputFile(UCS2toSysString(filename));
     m_Session->AdviseOutputFilename(filename);
   }
-  const string str((boost::format("Rendering camera %u of %u.") % (cameraProcessing->Position() + 1) %
-                    cameraProcessing->Count()).str());
+  // the file is fed to the format, never spliced into it, so a name holding % cannot break it
+  if (cameraProcessing->Files().empty())
+  {
+    const string str((boost::format("Rendering camera %u of %u, %u by %u.") %
+                      (cameraProcessing->Position() + 1) % cameraProcessing->Count() %
+                      options.TryGetInt(kPOVAttrib_Width, 160) % options.TryGetInt(kPOVAttrib_Height, 120)).str());
+    m_Session->AppendStreamMessage(vfeSession::mInformation, str.c_str());
+  }
+  else
+  {
+    const string str((boost::format("Rendering camera %u of %u, %u by %u, to %s.") %
+                      (cameraProcessing->Position() + 1) % cameraProcessing->Count() %
+                      options.TryGetInt(kPOVAttrib_Width, 160) % options.TryGetInt(kPOVAttrib_Height, 120) %
+                      UCS2toSysString(cameraProcessing->Files()[cameraProcessing->Position()])).str());
+    m_Session->AppendStreamMessage(vfeSession::mInformation, str.c_str());
+  }
   m_Session->AppendStreamMessage(vfeSession::mInformation, str.c_str());
 }
 
