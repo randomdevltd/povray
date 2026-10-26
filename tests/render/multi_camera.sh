@@ -135,11 +135,11 @@ run screen_radiosity "$screen" Declare=Radiosity=1 +o"multi_camera_screen_radios
 # an inherited output makes no screen view, a repeated screen is one view, and Filter_Tags can drop a screen's view
 rm -f multi_camera_view.ppm
 run inherited "$screen" Declare=Case=1 +o"multi_camera_inherited.ppm"
-logged inherited "Renderingcamera1of1." && [ -s multi_camera_view.ppm ] || fail "a screen inherited a declared camera's output"
+logged inherited "Renderingcamera1of1,64by48,to" && [ -s multi_camera_view.ppm ] || fail "a screen inherited a declared camera's output"
 run repeated "$screen" Declare=Case=2 +o"multi_camera_repeated.ppm"
-logged repeated "Renderingcamera2of2." || fail "a repeated screen gave more than one view"
+logged repeated "Renderingcamera2of2,64by48,to" || fail "a repeated screen gave more than one view"
 run filtered "$screen" Declare=Case=3 'Filter_Tags="main" | none' +o"multi_camera_filtered.ppm"
-logged filtered "Renderingcamera1of1." || fail "Filter_Tags kept a screen's view"
+logged filtered "Renderingcamera1of1,64by48,to" || fail "Filter_Tags kept a screen's view"
 
 # a turntable of twelve cameras made in a loop, with method 2 photons shot once; frames are numbered 01 to 12
 turntable=$SRCDIR/tests/render/multi_camera_turntable.pov
