@@ -40,6 +40,10 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Requested method 4 constant media own prepared layout metadata without
+    allocating constant density cells. Prepared modifier fields also select
+    fixed integration when the underlying media are constant.
+
   - Prepared method 4 scattering samples camera distance and volume-light
     position jointly, sharing each light's sample budget across a geometric
     ray segment and its numerical refraction chords. Optical-depth and glow

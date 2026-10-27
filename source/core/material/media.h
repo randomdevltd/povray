@@ -175,7 +175,7 @@ class MediaFunction : public Trace::MediaFunctor
         };
 
         /// The finest prepared step of the modifiers' varying densities, or HUGE_VAL.
-        DBL ModifierResolution() const;
+        DBL ModifierResolution(const Ray& ray) const;
         /// Where a modifier's density comes from: its prepared grid for camera samples or field marching, else its pattern.
         enum class ModifierSource { kPattern, kCamera, kField };
         /// A modifier medium's density at a point, from its prepared grid where the source allows and the grid holds it.

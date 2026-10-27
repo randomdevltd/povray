@@ -129,6 +129,7 @@ class Media::FastCache final
         DBL coarseStep = 0.0, coarseCells = 0.0;
         std::once_flag fieldOnce;
         bool fieldReady = false;
+        bool constantDensity = false;
         unsigned failureReason = kFastField;
         std::string failure = "The density pattern or coefficients cannot be prepared; check for unsupported patterns or negative/non-finite values.";
         Vector3d low, size;
@@ -368,6 +369,8 @@ static void CoarseGridDetail(char *detail, size_t length, const char *what, DBL 
 
 bool Media::FastCache::EnsureField(Media& media, TraceThreadData *ttd)
 {
+    if (constantDensity)
+        return fieldReady;
     std::call_once(fieldOnce, [&] {
         fieldReady = prepared ? TakePrepared() : BuildField(media, ttd);
         if (!fieldReady)
@@ -502,6 +505,11 @@ bool Media::FastCache::DensityAt(const Vector3d& point, MathColour& result) cons
     if ((point[X] < low[X]) || (point[Y] < low[Y]) || (point[Z] < low[Z]) ||
         (point[X] > low[X] + size[X]) || (point[Y] > low[Y] + size[Y]) || (point[Z] > low[Z] + size[Z]))
         return false;
+    if (constantDensity)
+    {
+        result = MathColour(1.0);
+        return fieldReady;
+    }
     int base[3];
     DBL blend[3];
     const int n[3] = { nx, ny, nz };
@@ -535,6 +543,11 @@ bool Media::FastCache::Contains(const Vector3d& point) const
 
 bool Media::FastCache::CameraDensityAt(const Vector3d& point, MathColour& result) const
 {
+    if (constantDensity)
+    {
+        result = MathColour(1.0);
+        return fieldReady;
+    }
     const int n[3] = { nx, ny, nz };
     int base[3];
     for (int axis = 0; axis < 3; axis++)
@@ -857,7 +870,7 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
         if ((refractionDetail > 0.0) && (Refraction != 0.0) && (FastResolution > 0.0))
             FastResolution = min(FastResolution, 0.5 * refractionDetail);
     }
-    if ((FastResolution <= 0.0) || Density.empty())
+    if ((FastResolution <= 0.0) || !std::isfinite(FastResolution))
         return;
     if (fastCache && (fastCache->container != object))
     {
@@ -870,9 +883,25 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
         // exceed the cell limit becomes the widest step that fits, reported when the field is first built.
         DBL needed = 0.0;
         const DBL requested = FastResolution;
-        if (cellLimit > 0.0)
+        if (!Density.empty() && (cellLimit > 0.0))
             FastResolution = FitGridStep(ContainerSize(object), FastResolution, cellLimit, needed);
         fastCache.reset(new FastCache(object, FastResolution));
+        if (Density.empty())
+        {
+            fastCache->constantDensity = true;
+            Vector3d high;
+            Make_min_max_from_BBox(fastCache->low, high, object->BBox);
+            fastCache->size = high - fastCache->low;
+            bool ready = true;
+            for (int axis = 0; axis < 3; axis++)
+                ready = ready && std::isfinite(fastCache->low[axis]) && std::isfinite(fastCache->size[axis]) &&
+                        (fastCache->size[axis] > 0.0) && (fastCache->size[axis] < BOUND_HUGE * 0.5);
+            for (int ch = 0; ch < MathColour::channels; ch++)
+                ready = ready && std::isfinite(Extinction[ch]) && (Extinction[ch] >= 0.0) &&
+                        std::isfinite(Emission[ch]) && std::isfinite(Scattering[ch]);
+            fastCache->fieldReady = ready;
+            fastCache->failure = "The constant medium has no finite usable layout or has invalid coefficients.";
+        }
         if (FastResolution != requested)
         {
             fastCache->coarseStep = requested;
@@ -1600,7 +1629,19 @@ bool RefractionField::Ahead(const Vector3d& origin, const Vector3d& direction, D
     return true;
 }
 
-DBL MediaFunction::ModifierResolution() const
+static bool ModifierAffectsTransport(const Media& medium, bool emission, bool scattering)
+{
+    return (medium.mix == kMediaBlendMultiply) || medium.use_extinction ||
+           (emission && medium.use_emission) || (scattering && medium.use_scattering);
+}
+
+static bool ModifierAffectsTransport(const Media& medium, const Ray& ray)
+{
+    return ModifierAffectsTransport(medium, !ray.IsShadowTestRay() && !ray.IsRadiosityRay() && !ray.IsPhotonRay(),
+                                   !ray.IsShadowTestRay());
+}
+
+DBL MediaFunction::ModifierResolution(const Ray& ray) const
 {
     DBL resolution = HUGE_VAL;
     if (modifiers == nullptr)
@@ -1608,7 +1649,7 @@ DBL MediaFunction::ModifierResolution() const
     for (const MediaModifier& modifier : *modifiers)
     {
         const Media& medium = *modifier.medium;
-        if (medium.Density.empty())
+        if (medium.Density.empty() || !ModifierAffectsTransport(medium, ray))
             continue;
         if (medium.FastResolution > 0.0)
         {
@@ -1649,6 +1690,8 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
     for (const MediaModifier& modifier : *modifiers)
     {
         Media& medium = *modifier.medium;
+        if (!ModifierAffectsTransport(medium, emission != nullptr, scattering != nullptr))
+            continue;
         MathColour local;
         ModifierDensity(medium, point, source, local);
         if (medium.mix == kMediaBlendMultiply)
@@ -2288,16 +2331,21 @@ static bool BelowMediaOpacity(const MediaIntervalVector& intervals, int points, 
 DBL MediaFunction::PreparedResolution(MediaVector& medias, const Ray& ray)
 {
     DBL resolution = HUGE_VAL;
-    Media* requested = nullptr;
+    Media *requested = nullptr;
     bool mixed = false;
-    for (Media* medium : medias)
-        if (!medium->Density.empty() && (!ray.IsShadowTestRay() || medium->use_extinction))
-        {
-            if (medium->Sample_Method == 4)
-                requested = medium;
-            else
-                mixed = true;
-        }
+    auto request = [&](Media& medium) {
+        if (medium.Sample_Method == 4)
+            requested = &medium;
+        else if (!medium.Density.empty())
+            mixed = true;
+    };
+    for (Media *medium : medias)
+        if (!ray.IsShadowTestRay() || medium->use_extinction)
+            request(*medium);
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if (ModifierAffectsTransport(*modifier.medium, ray))
+                request(*modifier.medium);
     if (!requested)
         return 0.0;
     if (ray.IsPhotonRay() && !threadData->GetSceneData()->photonSettings.Progressive())
@@ -2313,20 +2361,28 @@ DBL MediaFunction::PreparedResolution(MediaVector& medias, const Ray& ray)
         return 0.0;
     }
     bool ready = true;
-    for (Media* medium : medias)
-    {
-        if (medium->Density.empty() || (ray.IsShadowTestRay() && !medium->use_extinction))
-            continue;
-        if (!medium->fastCache)
+    auto layout = [&](Media& medium) {
+        if (medium.Density.empty() && (medium.Sample_Method != 4))
+            return;
+        if (!medium.fastCache || !(medium.FastResolution > 0.0) ||
+            (medium.fastCache->constantDensity && !medium.fastCache->fieldReady))
         {
-            WarnFastMedia(threadData, *medium, kFastContainer,
-                          "No unique finite container is available for this medium. Use a bounded container with its own interior.");
+            WarnFastMedia(threadData, medium, kFastContainer,
+                          "No finite prepared layout is available. Use a bounded container with its own interior.",
+                          medium.fastCache ? medium.fastCache->container : nullptr);
             ready = false;
         }
         else
-            resolution = std::min(resolution, medium->FastResolution);
-    }
-    return ready ? resolution : 0.0;
+            resolution = std::min(resolution, medium.FastResolution);
+    };
+    for (Media *medium : medias)
+        if (!ray.IsShadowTestRay() || medium->use_extinction)
+            layout(*medium);
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if (ModifierAffectsTransport(*modifier.medium, ray))
+                layout(*modifier.medium);
+    return ready && (resolution < HUGE_VAL) ? resolution : 0.0;
 }
 
 void MediaFunction::PreparedRange(MediaVector& medias, const Ray& ray, DBL& from, DBL& to)
@@ -2367,7 +2423,7 @@ DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, 
         if (medium->fastCache->Segment(ray, entry, exit))
             count += ceil((exit - entry) * divisor / (medium->FastResolution * coarsening));
     }
-    const DBL modifierResolution = ModifierResolution();
+    const DBL modifierResolution = ModifierResolution(ray);
     if (modifierResolution < HUGE_VAL)
         count += ceil((to - from) * divisor / (modifierResolution * coarsening));
     return count;
@@ -2439,7 +2495,7 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
         if (medium->fastCache->Segment(ray, from, to))
             step = std::min(step, medium->FastResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     }
-    const DBL modifierResolution = ModifierResolution();
+    const DBL modifierResolution = ModifierResolution(ray);
     if (modifierResolution < HUGE_VAL)
         step = std::min(step, modifierResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     return step;
@@ -2451,6 +2507,10 @@ bool MediaFunction::PrepareFields(MediaVector& medias, const Ray& ray)
     for (Media* medium : medias)
         if (!medium->Density.empty() && (!ray.IsShadowTestRay() || medium->use_extinction))
             ready = medium->fastCache->EnsureField(*medium, threadData) && ready;
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if (!modifier.medium->Density.empty() && ModifierAffectsTransport(*modifier.medium, ray))
+                ready = modifier.medium->fastCache->EnsureField(*modifier.medium, threadData) && ready;
     return ready;
 }
 
