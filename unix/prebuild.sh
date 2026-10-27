@@ -623,6 +623,7 @@ CONFIG_CLEAN_FILES =
 # Render a test scene for 'make check'.
 # This is meant to run before 'make install'.
 check: all
+	+sh "\$(top_srcdir)/tools/bench/check-sphere-intersection.sh" "\$(top_builddir)" "\$(top_builddir)/tests/sphere-intersection"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)

@@ -222,12 +222,12 @@ bool Sphere::Intersect(const BasicRay& ray, const Vector3d& Center, DBL Radius2,
 
     t_Closest_Approach = dot(Origin_To_Center, ray.Direction);
 
-    if ((OCSquared >= Radius2) && (t_Closest_Approach < EPSILON))
+    if ((OCSquared >= Radius2) && (t_Closest_Approach < 0.0))
         return(false);
 
     t_Half_Chord_Squared = Radius2 - OCSquared + Sqr(t_Closest_Approach);
 
-    if (t_Half_Chord_Squared > EPSILON)
+    if (t_Half_Chord_Squared > 0.0)
     {
         Half_Chord = sqrt(t_Half_Chord_Squared);
 
