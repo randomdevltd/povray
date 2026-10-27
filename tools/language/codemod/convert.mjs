@@ -660,7 +660,7 @@ function convertUnit(unit, context) {
   // media, whose glow then needs a new look, since the light, not the emission, lights the scene.
   function mediaLight(node) {
     if (node.childForFieldName('name')?.text !== 'media') return;
-    const entries = items(node.children.slice(1, -1));
+    const entries = items(node.children.slice(1, -1)).filter((c) => c.type !== '{' && c.type !== '}');
     const word = (c) => (c.type === 'identifier' || c.type === 'keyword') && !COMMENTS.includes(c.type);
     const mediaItem = new Set(['method', 'intervals', 'samples', 'confidence', 'variance', 'ratio', 'jitter',
       'eccentricity', 'extinction', 'absorption', 'emission', 'scattering', 'refraction', 'refraction_detail',
@@ -684,18 +684,37 @@ function convertUnit(unit, context) {
     const at = entries.indexOf(lamp);
     const emission = entries.slice(0, at).find((c) => word(c) && c.text === 'emission');
     let pigment = '';
+    let valueEntries = [];
     if (emission) {
       let j = entries.indexOf(emission) + 1;
       while (j < at && !stopWord(entries[j])) j++;
-      if (j > entries.indexOf(emission) + 1) {
-        pigment = ` pigment { ${text.slice(entries[entries.indexOf(emission) + 1].startIndex, (j < at ? entries[j] : lamp).startIndex).trim()} }`;
-        edit(emission.startIndex, (j < at ? entries[j] : lamp).startIndex, '');
+      valueEntries = entries.slice(entries.indexOf(emission) + 1, j);
+      if (valueEntries.length > 0) {
+        const valueEnd = j < at ? entries[j].startIndex : spaceBefore(lamp.startIndex);   // the lamp's own removal eats that space
+        let value = text.slice(valueEntries[0].startIndex, valueEnd).trim();
+        if (/^[-+.(0-9]/.test(value)) value = `rgb ${value}`;   // a bare number is a grey to the emission, not yet to a pigment
+        pigment = ` pigment { ${value} }`;
+        edit(emission.startIndex, valueEnd, '');
       }
     }
     const inner = lampEntries.map((entry) => entry.text).join(' ');
     const note = dropped ? ` /* dropped${dropped}: a volume falls off by attenuation */` : '';
     remove(lamp);
-    insert(node.endIndex, ` light {${pigment} ${inner}${note} }`);
+    // the media keeps its other items; without any, only the light block remains
+    const rest = entries.filter((c) => c !== lamp && c !== emission && !valueEntries.includes(c) && !COMMENTS.includes(c.type));
+    const lamp2 = `light {${pigment} ${inner}${note} }`;
+    if (hasAncestor(node, 'default_directive'))
+    {
+      // #default's media keeps giving media values; its light is the interior's, its own block beside it
+      if (rest.length === 0)
+        replace(node, `interior { ${lamp2} }`);
+      else
+        insert(node.endIndex, ` interior { ${lamp2} }`);
+    }
+    else if (rest.length === 0)
+      replace(node, lamp2);
+    else
+      insert(node.endIndex, ` ${lamp2}`);
     remark(node, 'media-light', 'the light block moved out of media to its interior');
   }
 
