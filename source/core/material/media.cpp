@@ -58,6 +58,7 @@
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
+#include "core/lighting/progressivephoton.h"
 #include "core/material/pattern.h"
 #include "core/material/pigment.h"
 #include "core/math/chi2.h"
@@ -998,13 +999,19 @@ class VolumeEmitter final : public Emitter
 
         EmitterSample Sample(double s, std::uint64_t key, TraceThreadData *td = nullptr) const override
         {
+            return SamplePosition(EmitterDraw(s, Draw(key, kDrawEmitter, 0), Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2)), td);
+        }
+
+        EmitterSample SamplePosition(const EmitterDraw& draw, TraceThreadData *td) const
+        {
+            const double s = draw.choose;
             const bool uniform = probability.empty() || (s < 0.5);
             const double pick = probability.empty() ? s : (uniform ? 2.0 * s : 2.0 * s - 1.0);
             Vector3d q;
             size_t index;
             if (uniform)
             {
-                q = Vector3d(pick, Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2));
+                q = Vector3d(pick, draw.y, draw.z);
                 const int x = min(nx - 1, int(q[X] * nx));
                 const int y = min(ny - 1, int(q[Y] * ny));
                 const int z = min(nz - 1, int(q[Z] * nz));
@@ -1013,9 +1020,9 @@ class VolumeEmitter final : public Emitter
             else
             {
                 index = min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), pick) - cdf.begin()));
-                q = Vector3d((index % nx + Draw(key, kDrawEmitter, 0)) / nx,
-                             ((index / nx) % ny + Draw(key, kDrawEmitter, 1)) / ny,
-                             (index / (size_t(nx) * ny) + Draw(key, kDrawEmitter, 2)) / nz);
+                q = Vector3d((index % nx + draw.x) / nx,
+                             ((index / nx) % ny + draw.y) / ny,
+                             (index / (size_t(nx) * ny) + draw.z) / nz);
             }
             EmitterSample sample;
             sample.position = low + Vector3d(q[X] * size[X], q[Y] * size[Y], q[Z] * size[Z]);
@@ -1094,15 +1101,16 @@ class VolumeEmitter final : public Emitter
             return length;
         }
 
-        bool SampleToward(const Vector3d& from, double s, double t, std::uint64_t key, TraceThreadData *td,
+        bool SampleToward(const Vector3d& from, const EmitterDraw& draw, TraceThreadData *td,
                           EmitterSample& sample) const override
         {
+            const double s = draw.choose, t = draw.x;
             const Vector3d toCentre = centre - from;
             const double d = toCentre.length();
             const double chordShare = 0.5 * min(1.0, max(0.0, 2.0 - 0.5 * d / radius));
             if (chordShare == 0.0)
             {
-                sample = Sample(s, key, td);
+                sample = SamplePosition(draw, td);
                 const double r2 = (sample.position - from).lengthSqr();
                 if (r2 > 0.0)
                     sample.weight /= r2;
@@ -1132,7 +1140,7 @@ class VolumeEmitter final : public Emitter
                 sample.weight = MathColour();
                 if (!(length > 0.0))
                     return true;
-                double at = Draw(key, kDrawEmitter, 3) * length;
+                double at = draw.y * length;
                 depth = pieces.back().second;
                 for (const auto& piece : pieces)
                 {
@@ -1148,7 +1156,7 @@ class VolumeEmitter final : public Emitter
             }
             else
             {
-                sample = Sample((s - chordShare) / (1.0 - chordShare), key, td);
+                sample = SamplePosition(EmitterDraw((s - chordShare) / (1.0 - chordShare), draw.x, draw.y, draw.z), td);
                 const Vector3d delta = sample.position - from;
                 depth = delta.length();
                 if (!(depth > 0.0))
@@ -3195,22 +3203,33 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
         {
             if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
-            const int points = lights[i].light->emitter ? max(1, lights[i].light->Area_Size1) :
-                               (lights[i].light->Area_Light ? kMediaAreaLightPoints : 1);
+            if (lights[i].light->emitter)
+            {
+                const int count = max(1, lights[i].light->Area_Size1);
+                const std::uint64_t key = DeriveKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex - 1), kDrawAreaLight, i);
+                const PhotonSobol sequence(key);
+                for (int j = 0; j < count; j++)
+                {
+                    const EmitterDraw draw(sequence(j, 0), sequence(j, 1), sequence(j, 2), sequence(j, 3));
+                    Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
+                    if (trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
+                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering,
+                                                         Light_Colour / (4.0 * M_PI * count), ray, Light_Ray);
+                }
+                continue;
+            }
+            const int points = lights[i].light->Area_Light ? kMediaAreaLightPoints : 1;
             MathColour Lit_Colour;
             for(int j = 0; j < points; j++)
             {
                 const double kj = k * points + j;
                 const double su = lightSampleShift[U] + kj * 0.7548776662466927 + i * 0.6180339887498949;
                 const double sv = lightSampleShift[V] + kj * 0.5698402909980532 + i * 0.4142135623730950;
-                const Vector2d areaSample(lights[i].light->emitter ? (j + su - floor(su)) / points : su - floor(su), sv - floor(sv));
+                const Vector2d areaSample(su - floor(su), sv - floor(sv));
                 Light_Ray.SetKey(DeriveKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex - 1), kDrawEmitter, i * points + j));
                 if (!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
                 {
-                    if (lights[i].light->emitter)
-                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Light_Colour / (4.0 * M_PI * points), ray, Light_Ray);
-                    else
-                        Lit_Colour += Light_Colour;
+                    Lit_Colour += Light_Colour;
                 }
             }
             if(!Lit_Colour.IsZero())

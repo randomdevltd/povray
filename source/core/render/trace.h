@@ -95,6 +95,8 @@ struct ContainingInteriorsPointObjectCondition final : public PointObjectConditi
     RayInteriorVector &containingInteriors;
 };
 
+struct EmitterDraw;
+
 struct LitInterval final
 {
     bool lit;
@@ -324,6 +326,9 @@ class Trace
 
         bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                      MathColour& colour, const Vector2d& uv, bool shadows = true,
+                                     const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
+        bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
+                                     MathColour& colour, const EmitterDraw& draw, bool shadows = true,
                                      const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
 
     protected: // TODO FIXME - should be private

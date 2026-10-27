@@ -58,6 +58,7 @@
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/radiosity.h"
+#include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
 #include "core/material/interior.h"
 #include "core/material/media.h"
@@ -3069,16 +3070,16 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
     {
         const int count = max(1, lightsource.Area_Size1);
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
+        const PhotonSobol sequence(DeriveKey(key, kDrawAreaLight, 0));
         MarkGrain();
         for (int k = 0; k < count; k++)
         {
             Ray sampleRay(lightsourceray);
             sampleRay.SetKey(DeriveKey(key, kDrawEmitter, k));
-            const Vector2d uv((k + Draw(key, kDrawFullAreaLight, 2 * k)) / count,
-                              Draw(key, kDrawFullAreaLight, 2 * k + 1));
+            const EmitterDraw draw(sequence(k, 0), sequence(k, 1), sequence(k, 2), sequence(k, 3));
             MathColour incoming, tmp;
             double distance;
-            SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, uv, true, geometricNormal, object->interior.get());
+            SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, draw, true, geometricNormal, object->interior.get());
             incoming /= M_PI * count;
             bool backside = false;
             if (!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (dot(layer_normal, sampleRay.Direction) < EPSILON))
@@ -3844,12 +3845,20 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
                                     MathColour& colour, const Vector2d& uv, bool shadows,
                                     const Vector3d* receiverNormal, Interior* receiverInterior)
 {
+    const EmitterDraw draw(uv[U], uv[V], Draw(ray.GetKey(), kDrawEmitter, 2), Draw(ray.GetKey(), kDrawEmitter, 3));
+    return SampleEmitterConnection(light, point, ray, depth, colour, draw, shadows, receiverNormal, receiverInterior);
+}
+
+bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
+                                    MathColour& colour, const EmitterDraw& draw, bool shadows,
+                                    const Vector3d* receiverNormal, Interior* receiverInterior)
+{
     if (light.portal != nullptr)
         throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
     MarkGrain();
     EmitterSample sample;
     colour.Clear();
-    if (!light.emitter->SampleToward(point, uv[U], uv[V], ray.GetKey(), threadData, sample))
+    if (!light.emitter->SampleToward(point, draw, threadData, sample))
         return false;
     const Vector3d delta = sample.position - point;
     depth = delta.length();

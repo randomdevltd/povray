@@ -51,6 +51,12 @@ namespace pov
 
 class TraceThreadData;
 
+struct EmitterDraw final
+{
+    double choose, x, y, z;
+    EmitterDraw(double choose, double x, double y, double z) : choose(choose), x(x), y(y), z(z) {}
+};
+
 struct EmitterSample final
 {
     Vector3d position;
@@ -72,9 +78,8 @@ class Emitter
         virtual EmitterSample SampleSquare(double s, double, std::uint64_t key, TraceThreadData *td = nullptr) const { return Sample(s, key, td); }
         /// A position seen from `from`, drawn by direction over the emitter's cone and then along the chord inside it,
         /// at any distance: weight carries the absolute ∫j dV / r² estimate, without receiver response.
-        /// s and t are the direction draws, key the detail within the chord. False where unsupported.
-        virtual bool SampleToward(const Vector3d& from, double s, double t, std::uint64_t key, TraceThreadData *td,
-                                  EmitterSample& sample) const { (void)from; (void)s; (void)t; (void)key; (void)td; (void)sample; return false; }
+        virtual bool SampleToward(const Vector3d& from, const EmitterDraw& draw, TraceThreadData *td,
+                                  EmitterSample& sample) const { (void)from; (void)draw; (void)td; (void)sample; return false; }
         virtual double DirectionalWeight(const Vector3d& outgoing) const { (void)outgoing; return 1.0; }
         virtual Vector3d Direction(const EmitterSample&, double u, double v, double& pdf) const ///< isotropic, pdf per steradian
         {
