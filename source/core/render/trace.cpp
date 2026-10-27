@@ -3251,6 +3251,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             double jitter_v = (double)v;
             bool backside = false;
             bool geometryCarried = false;
+            MathColour weight(1.0);
             MathColour tmpCol;
 
             const std::uint64_t cell = std::uint64_t(v) * lightsource.Area_Size1 + u;
@@ -3260,7 +3261,6 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                 jitter_v += Draw(key, kDrawFullAreaLight, 2 * cell + 1) - 0.5;
             }
 
-            MathColour weight;
             if(lightsource.emitter != nullptr)
             {
                 jitterAxis1 = emitterFar ? Vector3d(0.0) :
@@ -3725,7 +3725,7 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
         const int rays = far ? 1 : lightsource.Area_Size1;
         for(int k = 0; k < rays; k++)
         {
-            MathColour weight;
+            MathColour weight(1.0);
             bool geometryCarried = false;
             const Vector3d offset = far ? Vector3d(0.0) :
                                     EmitterNearOffset(lightsource, ipoint, (k + Draw(lightsourceray.GetKey(), kDrawAreaLight, k)) / rays,
