@@ -3309,8 +3309,10 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, jitterAxis1 + jitterAxis2);
             // Calculate distance- and angle-based light attenuation
             if (geometryCarried)
+            {
                 // the chord draw's weight already carries its own 1/r^2, exact at any distance
                 attenuatedLightcolour = sampleLightcolour * weight;
+            }
             else
             {
                 attenuatedLightcolour = sampleLightcolour * Attenuate_Light(&lightsource, lsr, lightsourcedepth);

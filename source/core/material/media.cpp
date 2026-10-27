@@ -981,6 +981,7 @@ class VolumeEmitter final : public Emitter
         double meanChord = 1.0;            ///< thin fallback: 4V/A of the container
         double inverseMeanDensity = 0.0;   ///< thin fallback: 1 over the density field's mean, 0 when it is flat
         bool thin = false;                 ///< no medium of the interior has any extinction
+        bool flatDensity = true;           ///< no medium carries a density pigment, so the fallback stays unshaped
 
         virtual const MathColour& Intensity() const override { return intensity; }
         virtual const Vector3d& Centre() const override { return centre; }
@@ -1021,7 +1022,7 @@ class VolumeEmitter final : public Emitter
         /// The per-cell law's emission coefficient: L times density-weighted extinction, or L over the mean chord.
         MathColour EmissionAt(const Vector3d& p, TraceThreadData *td) const
         {
-            MathColour density, coefficient;
+            MathColour density((thin && flatDensity) ? 1.0 : 0.0), coefficient;
             for (const EmitterMedium& medium : media)
             {
                 MathColour local;
@@ -1105,29 +1106,57 @@ class VolumeEmitter final : public Emitter
         }
 };
 
-/// The surface area of the container as the lattice sees it: its boundary faces, cell by cell.
-static double LatticeSurfaceArea(const vector<char>& grid, const int *n, const Vector3d& cell)
+/// The area of one projection of the points: the bins their shadows fall in, each of the bin's area.
+static double ProjectedArea(const vector<Vector3d>& points, const Vector3d& axis, const Vector3d& u, const Vector3d& v, double bin)
 {
-    const double face[3] = { cell[Y] * cell[Z], cell[X] * cell[Z], cell[X] * cell[Y] };
-    double area = 0.0;
-    const int stride[3] = { 1, n[X], n[X] * n[Y] };
-    for (int z = 0; z < n[Z]; z++)
-        for (int y = 0; y < n[Y]; y++)
-            for (int x = 0; x < n[X]; x++)
-            {
-                const size_t index = (size_t(z) * n[Y] + y) * n[X] + x;
-                if (!grid[index])
-                    continue;
-                const int at[3] = { x, y, z };
-                for (int axis = 0; axis < 3; axis++)
-                {
-                    const int other = at[axis] + 1;
-                    const bool neighbour = (other < n[axis]) && grid[index + stride[axis]];
-                    if (!neighbour)
-                        area += face[axis];
-                }
-            }
-    return area;
+    double u0 = HUGE_VAL, v0 = -HUGE_VAL, vLow = HUGE_VAL;
+    for (const Vector3d& p : points)
+    {
+        u0 = std::min(u0, dot(p, u));
+        vLow = std::min(vLow, dot(p, v));
+        v0 = std::max(v0, dot(p, v));
+    }
+    if (!(v0 > vLow))
+        return 0.0;
+    const size_t columns = size_t((v0 - vLow) / bin) + 1;
+    std::unordered_set<size_t> shadow;
+    shadow.reserve(2 * points.size());
+    for (const Vector3d& p : points)
+    {
+        const size_t i = size_t((dot(p, u) - u0) / bin);
+        const size_t j = size_t((dot(p, v) - vLow) / bin);
+        shadow.insert(j * columns + i);
+    }
+    return shadow.size() * bin * bin;
+}
+
+/// The container's surface area by Cauchy's theorem, four times its mean projected area, here the mean over
+/// thirteen directions of the area its inside probe points shadow. A sphere gives its exact area from any
+/// direction; the raster of each shadow keeps a share of a bin, which two directions at each scale remove.
+static double ContainerSurfaceArea(const vector<Vector3d>& points, double bin)
+{
+    static const double kSqrt3 = 0.5773502691896258, kSqrt2 = 0.4082482904638630, kInvSqrt2 = 0.7071067811865476;
+    const Vector3d directions[13] = {
+        Vector3d(1.0, 0.0, 0.0), Vector3d(0.0, 1.0, 0.0), Vector3d(0.0, 0.0, 1.0),
+        Vector3d(kSqrt3, kSqrt3, kSqrt3), Vector3d(kSqrt3, kSqrt3, -kSqrt3), Vector3d(kSqrt3, -kSqrt3, kSqrt3),
+        Vector3d(kSqrt3, -kSqrt3, -kSqrt3),
+        Vector3d(kInvSqrt2, kInvSqrt2, 0.0), Vector3d(kInvSqrt2, -kInvSqrt2, 0.0), Vector3d(kInvSqrt2, 0.0, kInvSqrt2),
+        Vector3d(kInvSqrt2, 0.0, -kInvSqrt2), Vector3d(0.0, kInvSqrt2, kInvSqrt2), Vector3d(0.0, kInvSqrt2, -kInvSqrt2)
+    };
+    double total = 0.0;
+    int counted = 0;
+    for (const Vector3d& d : directions)
+    {
+        const Vector3d u = ((fabs(d[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), d) : cross(Vector3d(1.0, 0.0, 0.0), d)).normalized();
+        const Vector3d v = cross(d, u);
+        const double area = ProjectedArea(points, d, u, v, bin);
+        if (area > 0.0)
+        {
+            total += area;
+            counted++;
+        }
+    }
+    return (counted > 0) ? 4.0 * total / counted : 0.0;
 }
 
 }
@@ -1149,6 +1178,8 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
         const DBL resolution = (medium.FastResolution > 0.0) ? medium.FastResolution : AutomaticResolution(container);
         step = std::max(step, resolution);
     }
+    if (interior.media.empty())
+        step = AutomaticResolution(container);
     if (!(step > 0.0))
     {
         failure = "its container is unbounded";
@@ -1176,10 +1207,13 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
     }
     emitter->thin = !hasExtinction;   // the law draws on extinction; without any, the container's mean chord stands in
     emitter->lightPigment = settings.pigment;
+    for (const EmitterMedium& medium : emitter->media)
+        emitter->flatDensity = emitter->flatDensity && medium.density->empty();
+    const bool flatDensity = emitter->flatDensity;
     vector<double> power;
     double total = 0.0;
     Vector3d points[8];
-    vector<char> grid(size_t(n[X]) * n[Y] * n[Z], 0);
+    vector<Vector3d> probes;
     size_t insideProbes = 0;
     MathColour densitySum;
     double densityWeight = 0.0;
@@ -1201,10 +1235,13 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
                 }
                 if (inside == 0)
                     continue;
-                grid[(size_t(z) * n[Y] + y) * n[X] + x] = 1;
+                for (size_t k = 0; k < inside; k++)
+                    probes.push_back(points[k]);
                 if (emitter->thin)
                 {
                     MathColour density[8];
+                    for (size_t k = 0; k < inside; k++)
+                        density[k].Set(flatDensity ? 1.0 : 0.0);
                     for (const EmitterMedium& medium : emitter->media)
                     {
                         MathColour local[8];
@@ -1218,12 +1255,15 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
                 }
             }
     const double volume = insideProbes * share;
-    const double area = LatticeSurfaceArea(grid, n, cellSize);
     if (!(volume > 0.0))
     {
         failure = "its container is empty";
         return nullptr;
     }
+    const double bin = 0.5 * (cellSize[X] + cellSize[Y] + cellSize[Z]);
+    const double areaCoarse = ContainerSurfaceArea(probes, bin);
+    const double areaFine = ContainerSurfaceArea(probes, bin * 0.5);
+    const double area = std::max(0.0, 2.0 * areaFine - areaCoarse);
     emitter->meanChord = (area > 0.0) ? 4.0 * volume / area : 4.0 * volume;
     if (emitter->thin && (densityWeight > 0.0))
     {
@@ -1254,6 +1294,8 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
                 if (inside == 0)
                     continue;
                 MathColour cellPower, density[8];
+                for (size_t k = 0; k < inside; k++)
+                    density[k].Set(flatDensity ? 1.0 : 0.0);
                 for (const EmitterMedium& medium : emitter->media)
                 {
                     MathColour local[8];
@@ -1290,7 +1332,7 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
     if (!(total > 0.0) || !std::isfinite(total))
     {
         failure = (emitter->inverseMeanDensity == 0.0) ? "its density is zero throughout its container" :
-                  hasExtinction ? "its media have no extinction for the light to draw on" : "its brightness is zero";
+                  hasExtinction ? "its media have no extinction for the light to draw on" : "its brightness or pigment is zero";
         return nullptr;
     }
     emitter->centre /= total;
