@@ -227,6 +227,11 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect);
         bool ComputeSpotLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
         bool ComputeCylinderLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
+        void ComputeMediaCoefficients(MediaVector& medias, const Ray& ray, const Vector3d& point, bool prepared,
+                                      MathColour& emission, MathColour& extinction, MathColour& scattering);
+        void ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
+                                        const MediaInterval& interval, const Ray& ray, DBL depth, const Vector3d& point,
+                                        const MathColour& scattering, MathColour& emission, bool prepared, bool use_scattering);
         void ComputeOneMediaSample(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray &ray, DBL d0, MathColour& SampCol,
                                    MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared = false,
                                    MathColour *scattering = nullptr);

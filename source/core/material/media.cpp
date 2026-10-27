@@ -2562,15 +2562,32 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             ((photonGatherer == nullptr) ||
              (threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap.numPhotons == 0)))
             stride = std::max(1, std::min(count, int(ScatteringStep(medias, interval) / step)));
+        struct Cell final
+        {
+            DBL at;
+            MathColour emission, extinction, scattering;
+        };
+        vector<Cell> cells(count);
+        for (int j = 0; j < count; j++)
+        {
+            Cell& cell = cells[j];
+            cell.at = interval.s0 + j * step + 0.5 * step;
+            ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), true,
+                                     cell.emission, cell.extinction, cell.scattering);
+        }
         MathColour light;
         int lit = -1;
         for (int j = 0; j < count; j++)
         {
             MediaInterval cell(interval.lit, 0, interval.s0 + j * step, interval.s0 + (j + 1) * step,
                                step, interval.l0, interval.l1);
-            MathColour emission, depth, scattering;
-            ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, depth, 3,
-                                  ignore_photons, use_scattering && (stride == 1), false, true, &scattering);
+            const Cell& coefficients = cells[j];
+            MathColour emission = coefficients.emission;
+            const MathColour depth = coefficients.extinction * step;
+            const MathColour& scattering = coefficients.scattering;
+            ComputeMediaSampleLighting(medias, lights, cell, ray, coefficients.at, ray.Evaluate(coefficients.at),
+                                      scattering, emission, true, use_scattering && (stride == 1));
+            emission *= step;
             if (stride > 1)
             {
                 const int group = j / stride, first = group * stride, size = std::min(stride, count - first);
@@ -3092,30 +3109,18 @@ bool MediaFunction::ComputeCylinderLightInterval(const Ray &ray, const LightSour
 *   Col          - color of current sample
 ******************************************************************************/
 
-void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray &ray, DBL d0, MathColour& SampCol,
-                                          MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared,
-                                          MathColour *scattering)
+void MediaFunction::ComputeMediaCoefficients(MediaVector& medias, const Ray& ray, const Vector3d& H, bool prepared,
+                                              MathColour& Emission, MathColour& Extinction, MathColour& Scattering)
 {
-    // NK samples - moved d0 to parameter list
-    DBL d1;
-    Vector3d P, H;
-    MathColour C0;
-    MathColour Emission, Extinction, Scattering;
     const bool appearance = !ray.IsShadowTestRay() && !ray.IsRadiosityRay() && !ray.IsPhotonRay();
-
+    MathColour C0;
     threadData->Stats()[Media_Samples]++;
-
-    // Set up sampling location.
-    d0 *= mediainterval.ds;
-    d1 = mediainterval.s0 + d0;
-    H = ray.Evaluate(d1);
-
     // Get coefficients in current sample location.
     if (modifiers != nullptr)
         densityScratch.clear();
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
-        P = H;
+        const Vector3d& P = H;
 
         if (!prepared || !(*i)->fastCache || !(*i)->fastCache->CameraDensityAt(P, C0))
             Evaluate_Density_Pigment((*i)->Density, P, C0, threadData);
@@ -3139,22 +3144,20 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
         AddModifiedCoefficients(medias, &densityScratch[0], H, prepared ? ModifierSource::kCamera : ModifierSource::kPattern,
                                 Extinction, appearance ? &Emission : nullptr,
                                 ray.IsShadowTestRay() ? nullptr : &Scattering);
+}
 
-    // Get estimate for the total optical depth of the current interval.
-    SampOptDepth = Extinction * mediainterval.ds;
-    if (scattering != nullptr)
-        *scattering = Scattering;
-
-    if(sample_method != 3)
-        mediainterval.od += SampOptDepth;
-
+void MediaFunction::ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
+                                                const MediaInterval& mediainterval, const Ray& ray, DBL d1,
+                                                const Vector3d& H, const MathColour& Scattering, MathColour& Emission,
+                                                bool prepared, bool use_scattering)
+{
     const bool emptyScattering = prepared && Scattering.IsZero();
     if (emptyScattering && !ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && mediainterval.lit)
         lightSampleIndex++;
     if(!ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && !emptyScattering)
     {
         if(mediainterval.lit)
-            ComputeMediaLight(medias, lights, mediainterval, ray, d1, P, Scattering, Emission);
+            ComputeMediaLight(medias, lights, mediainterval, ray, d1, H, Scattering, Emission);
 
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
@@ -3165,6 +3168,27 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
             ComputeMediaPhotons(medias, Emission, Scattering, ray, H);
         }
     }
+}
+
+void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray &ray, DBL d0, MathColour& SampCol,
+                                          MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared,
+                                          MathColour *scattering)
+{
+    d0 *= mediainterval.ds;
+    const DBL d1 = mediainterval.s0 + d0;
+    const Vector3d H = ray.Evaluate(d1);
+    MathColour Emission, Extinction, Scattering;
+    ComputeMediaCoefficients(medias, ray, H, prepared, Emission, Extinction, Scattering);
+
+    // Get estimate for the total optical depth of the current interval.
+    SampOptDepth = Extinction * mediainterval.ds;
+    if (scattering != nullptr)
+        *scattering = Scattering;
+
+    if(sample_method != 3)
+        mediainterval.od += SampOptDepth;
+
+    ComputeMediaSampleLighting(medias, lights, mediainterval, ray, d1, H, Scattering, Emission, prepared, use_scattering);
 
     if(sample_method == 3)
     {
