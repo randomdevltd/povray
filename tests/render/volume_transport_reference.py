@@ -34,6 +34,11 @@ def read_ppm(path):
                            for i in range(0, len(raw), 2)]
 
 
+def top_down_x(column, width, frame):
+    """The supplied up=z/deferred look_at camera resolves to a negative right basis."""
+    return frame * (0.5 - (column + 0.5) / width)
+
+
 def boxes(case):
     boxes = [(-0.5, 0.5, 1, 2, -0.4, 0.4)]
     if case in (2, 3):
@@ -81,7 +86,7 @@ def reference(width, height, case=1, sigma=0, elevation=0, gain=1, divisions=20,
     for row in range(height):
         rz = frame * (0.5 - (row + 0.5) / height)
         for col in range(width):
-            rx = frame * ((col + 0.5) / width - 0.5)
+            rx = top_down_x(col, width, frame)
             rgb = [0.0, 0.0, 0.0]
             for sx, sy0, sz, color, dv in source:
                 sy = sy0 + elevation - probe
@@ -138,7 +143,7 @@ def cube_reference(width, height, gap=0, probe=0):
     for row in range(height):
         z = 0.02 * (0.5 - (row + 0.5) / height)
         for col in range(width):
-            x = 0.02 * ((col + 0.5) / width - 0.5)
+            x = top_down_x(col, width, 0.02)
             planes = []
             for depth in [max(0, gap - probe), 1 + gap - probe]:
                 value = 0
@@ -155,7 +160,7 @@ def half_box_reference(width, height):
     for row in range(height):
         z = 2 * (0.5 - (row + 0.5) / height)
         for col in range(width):
-            x = 2 * ((col + 0.5) / width - 0.5)
+            x = top_down_x(col, width, 2)
             planes = []
             for depth in [1, 2]:
                 value = 0

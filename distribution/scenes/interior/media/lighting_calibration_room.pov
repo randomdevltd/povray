@@ -1,5 +1,5 @@
 // Metre-scale calibration room: Source=1 sphere, 2 bulb envelope, 3 monitor, 4/5 strip.
-// Radio=0/1, Samples=16, ShowProbes=1; linear HDR, common preview exposure -6 stops, AA off.
+// Radio=0/1, Samples=16, ShowProbes=1; linear HDR, common preview exposure -1 stop, AA off.
 #version 3.8;
 #ifndef (Source) #declare Source = 1; #end
 #ifndef (Radio) #declare Radio = 0; #end

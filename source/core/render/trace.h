@@ -323,7 +323,8 @@ class Trace
                         const Vector2d* areaSample = nullptr); // TODO FIXME - this should not be exposed here
 
         bool SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
-                                     MathColour& colour, const Vector2d& uv, bool shadows = true, bool receiverBoundary = false);
+                                     MathColour& colour, const Vector2d& uv, bool shadows = true,
+                                     const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
 
     protected: // TODO FIXME - should be private
 
@@ -724,10 +725,10 @@ class Trace
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         bool LightsAddNothing(const FINISH *finish, double attenuation) const;
         void ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const  Ray& eye, const Vector3d& layer_normal, const MathColour& layer_pigment_colour,
-                                 MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
+                                 MathColour& colour, double attenuation, ObjectPtr object, double relativeIor, const Vector3d& geometricNormal);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
-                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1);
+                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1, const Vector3d* geometricNormal = nullptr);
         /// The ray, distance and unshadowed colour of a light; `false` if it cannot light this side of the surface.
         bool ComputeOneLightReach(const LightSource &lightsource, const FINISH *finish, const Vector3d& ipoint, const Vector3d& layer_normal, ConstObjectPtr object,
                                   double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour, bool& backside);
@@ -748,12 +749,12 @@ class Trace
         /// Classic lighting for radiosity rays: shadow-tests lights brightest first until the untested ones carry at most a
         /// quarter of the unshadowed light; unless they carry 5% or less, one drawn by its light then stands for them all.
         void ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
-                                        const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
+                                        const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor, const Vector3d* geometricNormal);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
                                          double lightsourcedepth, Ray& lightsourceray, const MathColour& lightcolour,
-                                         ConstObjectPtr object, double relativeIor); // JN2007: Full area lighting
+                                         ConstObjectPtr object, double relativeIor, const Vector3d* geometricNormal = nullptr); // JN2007: Full area lighting
 
         /// Compute the direction, distance and unshadowed brightness of an unshadowed light source.
         ///

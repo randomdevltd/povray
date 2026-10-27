@@ -12,7 +12,7 @@ from pathlib import Path
 import sys
 
 sys.dont_write_bytecode = True
-from volume_transport_reference import compare, read_ppm
+from volume_transport_reference import compare, read_ppm, top_down_x
 
 
 def sphere_integral(distance, radius=1):
@@ -49,7 +49,7 @@ def surface_reference(width, height):
     for row in range(height):
         z = 0.2 * (0.5 - (row + 0.5) / height)
         for col in range(width):
-            x = 0.2 * ((col + 0.5) / width - 0.5)
+            x = top_down_x(col, width, 0.2)
             values.extend([2 / (x * x + z * z + 4) ** 1.5] * 3)
     return values
 
@@ -73,7 +73,7 @@ def hemisphere_reference(width, height, divisions):
     for row in range(height):
         z = 0.2 * (0.5 - (row + 0.5) / height)
         for col in range(width):
-            x = 0.2 * ((col + 0.5) / width - 0.5)
+            x = top_down_x(col, width, 0.2)
             value = sum(sy / ((sx - x) ** 2 + sy * sy + (sz - z) ** 2) ** 1.5
                         for sx, sy, sz in cells) * weight
             values.extend([value] * 3)

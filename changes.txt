@@ -401,17 +401,18 @@ New Features
     step budget; splitting long containers or a coarser resolution avoids
     that.
   - A finite object can be an independent volume light: `interior { light { } }`.
-    The projected-area normalization below is exploratory, not a settled
-    source contract; unused container padding remains an unresolved case.
-    Its pigment and topology define its proposed source; media density, extinction and
-    prepared grids affect transport separately. Nits use j(x,w)=L*pigment(x)*projected_area(w)/V, with the true
-    self-occluded projected silhouette counted once in each direction.
-    This is a reference calibration, not equal brightness at every receiver.
+    Its pigment and declared emitting region define its source; media density,
+    extinction and prepared grids affect transport separately. Nits use
+    isotropic j=L*pigment/(4V/A), with true geometric boundary area including
+    cavities and excluding internal union seams.
+    This is a reference calibration, not equal brightness at every receiver;
+    changing unused container extent is not guaranteed to preserve it.
+    Surface emission can approximate a volume, without exact angular identity.
     Lumens normalize total generated flux with the renderer's greyscale
     convention, before absorption. `scale_lumens(Phi,c)` explicitly converts
     author-stated metres per scene unit. Uniform dilation preserves nits
     illumination and changes fixed-lumen illumination inversely with area.
-    Geometry, angular shape and flux normalization use convergence checks and warn
+    Geometry and flux normalization use convergence checks and warn
     when their numerical discrepancy remains above the preparation target.
   - Direct surface lighting, scattering media and progressive photons use the
     same finite source at every distance. Sampling never collapses it to a

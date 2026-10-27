@@ -53,12 +53,13 @@ inversely with area. Compare several sample counts with a converged reference,
 reporting image error, preparation and tracing instructions, peak memory and
 normalization discrepancy. A pleasant room image does not replace these checks.
 
-The projected-area angular model remains exploratory. For a uniform source it
-was proposed to match the
-distant intensity of its diffuse surface. It does not promise identical near
-illumination or equivalence between arbitrary volumetric and surface texture
-patterns. Published product angular data, or explicitly labelled geometric
-references, are required before claiming a realistic bulb, strip or display match.
+The isotropic volume is the reference source. A diffuse surface is a useful
+author-chosen approximation, not an identical angular source. Compare probe
+values and room illumination quantitatively and report differences without
+retuning either arm. A transparent source alone is not a complete optical model
+of an opaque display or a scattering lamp envelope: explicit backing and any
+separate diffuser belong to the authored representation. Published angular data
+or labelled idealizations are required before claiming realistic product matches.
 
 ## Room scene controls
 
@@ -70,8 +71,8 @@ white to isolate photometric calibration; the quoted product colour temperatures
 are not a claim of spectral or colour matching. The A60 envelope reuses the
 sphere-derived luminance and therefore does not claim to emit exactly 806 lm.
 
-Render unclipped linear HDR with AA off; apply the same -6-stop preview exposure
-(multiplier 1/64) and the same display conversion to every arm. The scene does
+Render unclipped linear HDR with AA off; apply the same -1-stop preview exposure
+(multiplier 1/2) and the same display conversion to every arm. The scene does
 not scale source brightness to make previews fit an LDR output range. Source
 appearance is authored independently at its nominal luminance; `no_radiosity`
 keeps that appearance from becoming an additional gathered emission source.

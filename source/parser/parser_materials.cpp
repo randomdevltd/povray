@@ -4205,10 +4205,6 @@ void Parser::Parse_Interior(InteriorPtr& interior)
 
     Parse_End();
 
-    if (interior->light)
-        for (const Media& medium : interior->media)
-            if ((medium.mix == kMediaBlendSubtract) || (medium.mix == kMediaBlendMultiply))
-                Error("An interior light needs media that add or replace, not ones that subtract or multiply.");
 }
 
 int Parser::Parse_Mix()

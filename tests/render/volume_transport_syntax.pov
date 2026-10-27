@@ -22,6 +22,12 @@ box {
   <-0.5, 1, -0.4>, <0.5, 2, 0.4> pigment { rgbt 1 } hollow no_image
   interior {
     #if (Case = 21) media { light_source { } } #end
+    #if (Case = 25 | Case = 26)
+      media { method 3 absorption 0.1 }
+      media { method 4 resolution 0.25
+        #if (Case = 25) mix multiply density { rgb 1 }
+        #else mix subtract density { rgb 0 } #end }
+    #end
     light {
       samples 64 fade_cutoff 0
       #switch (Case)

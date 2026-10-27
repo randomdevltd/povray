@@ -51,7 +51,7 @@ for value in 20 21; do
         exit 1
     fi
 done
-for value in 7 11 12 13 14 15 16 22 23 24; do
+for value in 7 11 12 13 14 15 16 22 23 24 25 26; do
     syntax "$value" || { cat "syntax_$value.log"; exit 1; }
 done
 for pair in '22 cluster_radii' '23 far_radii' '24 fade_cutoff'; do

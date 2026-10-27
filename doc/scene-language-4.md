@@ -22,16 +22,14 @@ Generated C sources are committed; renderer builds do not run the generator.
 
 ## Independent volume lights
 
-The projected-area normalization below is exploratory, not a settled source
-contract. Transparent emission, scattering diffusers and surface emission must
-be distinguished; the effect of unused container padding remains unresolved.
-
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
 attenuation 2, 1 samples 16 } }`. The source depends on its object's geometry
 and its own pigment, independently of media coefficients and density. Nits use
-the directional geometry reference `j(x,w) = L * pigment(x) * projected_area(w) / V`; this normalizes source strength,
-not every nearby receiver reading. Lumens normalize generated flux before media
-attenuation, using the renderer's greyscale convention. `scale_lumens(phi,c)`
+the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
+source strength, not every nearby receiver reading. The declared emitting region affects this
+calibration; unused container padding is not guaranteed to be neutral. Surface
+emission is an author-chosen approximation, not exact angular identity. Lumens
+normalize generated flux before media attenuation, using the renderer's greyscale convention. `scale_lumens(phi,c)`
 takes explicit metres per scene unit; no light unit reads `mm_per_unit`.
 
 The two attenuation values are power then scale; a single value is the scale
