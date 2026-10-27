@@ -7,8 +7,9 @@ sphere {
   interior {
     media {
       method 4
+      emission rgb <14, 6, 1.6> * 200
       density { spherical color_map { [0 rgb 0] [1 rgb 1] } }
-    } light { pigment { rgb <14, 6, 1.6> * 200 } samples 32 brightness 2 shadowless /* dropped fade_power 2 fade_distance 1: a volume falls off by attenuation */ }
+    } light { pigment { pigment_pattern { spherical color_map { [0 rgb 0] [1 rgb 1] } } color_map { [0 rgb 0] [1 rgb <14, 6, 1.6> * 200] } } samples 32 brightness 2 shadowless /* dropped fade_power 2 fade_distance 1: a volume falls off by attenuation */ }
   }
   translate y
 }

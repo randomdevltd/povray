@@ -1,4 +1,5 @@
 #version 3.8;
+#ifndef (VolumeSource) #declare VolumeSource = 0; #end
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #ifndef (LampPower) #declare LampPower = 40; #end
@@ -39,6 +40,18 @@ camera {
     angle 40
     #if (CameraTurn != 0) rotate CameraTurn*y #end
 }
+#if (VolumeSource)
+#declare VolumeLamp = union {
+    #switch (VolumeSource)
+        #case (2) box { <-0.8, -0.02, -0.5>, <0.8, 0.02, 0.5> } #break
+        #case (3) cylinder { <-0.8, 0, 0>, <0.8, 0, 0>, 0.05 } #break
+        #else sphere { 0, 0.2 }
+    #end
+    hollow no_image pigment { rgbt 1 }
+    interior { light { brightness LampPower samples 16 photons { reflection on refraction on } } }
+}
+object { VolumeLamp translate <-2, 6, -1> }
+#else
 light_source {
     <-2, 6, -1> color rgb LampPower photon_only PhotonOnly
     photons { reflection on refraction on }
@@ -50,6 +63,7 @@ light_source {
     #end
     #if (LampType != 2 & LampType != 4) fade_power 2 fade_distance FadeDistance #end
 }
+#end
 #for (Index, 1, InactiveLights)
     light_source { <Index, 5, -2> rgb 0 }
 #end

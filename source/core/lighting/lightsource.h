@@ -91,6 +91,7 @@ DBL Attenuate_Light(const LightSource *Light_Source, const Ray &Light_Source_Ray
 /// The distance part of Attenuate_Light(): the authored fade, or the volume-light law for an emitter.
 DBL Light_Distance_Attenuation(const LightSource *Light_Source, DBL Distance);
 /// A volume light's artistic falloff at a lit point: 1 within its reach, 1/attenuation scale far away.
+DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length);
 DBL Light_Emitter_Falloff_Factor(const LightSource *Light_Source, const Vector3d& Point);
 /// Whether a volume light's fade_cutoff leaves it out at Point: its radiance over the solid angle of its nearest
 /// reach, scaled by its falloff, falls below the cutoff.

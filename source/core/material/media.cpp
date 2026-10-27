@@ -49,7 +49,7 @@
 #include <unordered_set>
 
 // POV-Ray header files (base module)
-//  (none at the moment)
+#include "base/pov_err.h"
 
 // POV-Ray header files (core module)
 #include "base/timer.h"
@@ -61,6 +61,7 @@
 #include "core/material/pattern.h"
 #include "core/material/pigment.h"
 #include "core/math/chi2.h"
+#include "core/math/matrix.h"
 #include "core/render/ray.h"
 #include "core/scene/object.h"
 #include "core/scene/scenedata.h"
@@ -953,225 +954,216 @@ MediaLight::~MediaLight()
 namespace
 {
 
-/// The emission coefficient of one medium of a light's interior at a point: its density pigments and extinction.
-struct EmitterMedium
-{
-    vector<PIGMENT*> *density = nullptr;   ///< borrowed from the medium, which outlives the light
-    MathColour extinction;                 ///< absorption plus scattering's share of extinction, per channel
-};
-
-/// An emitting interior as a light: a table of the power of each cell of its grid inside the container.
+// The prepared table is a proposal only; the uniform component preserves unprobed geometry and pigment support.
 class VolumeEmitter final : public Emitter
 {
     public:
-        Vector3d low, cell;
-        int nx = 1, ny = 1;
-        vector<std::uint32_t> cells;
-        vector<unsigned char> inside;
-        vector<double> cdf;
-        vector<MathColour> weights;
-        MathColour intensity;
-        Vector3d centre;
-        double radius = 0.0, radianceBound = 0.0;
-        // the law's emission coefficient at a point, for near-field draws
-        ObjectPtr container = nullptr;
-        vector<EmitterMedium> media;
-        PIGMENT *lightPigment = nullptr;   ///< borrowed from the light block
-        MathColour baseRadiance;           ///< brightness, or lumens over pi times the container's surface area
-        double meanChord = 1.0;            ///< thin fallback: 4V/A of the container
-        double inverseMeanDensity = 0.0;   ///< thin fallback: 1 over the density field's mean, 0 when it is flat
-        bool thin = false;                 ///< no medium of the interior has any extinction
-        bool flatDensity = true;           ///< no medium carries a density pigment, so the fallback stays unshaped
+        ObjectPtr container = nullptr, geometry = nullptr;
+        PIGMENT *lightPigment = nullptr;
+        Vector3d low, size, centre;
+        int nx = 1, ny = 1, nz = 1;
+        vector<double> cdf, probability;
+        MathColour coefficient, intensity;
+        double radius = 0.0, boxVolume = 0.0;
 
-        virtual const MathColour& Intensity() const override { return intensity; }
-        virtual const Vector3d& Centre() const override { return centre; }
-        virtual double Radius() const override { return radius; }
-        virtual EmitterSample Sample(double s, std::uint64_t key) const override
-        {
-            const size_t i = std::min(cells.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), s) - cdf.begin()));
-            const std::uint32_t index = cells[i];
-            const std::uint32_t x = index % nx, y = (index / nx) % ny, z = index / (std::uint32_t(nx) * ny);
-            // a point in one of the cell's octants inside the container, each equally likely
-            const unsigned mask = inside[i];
-            int count = 0;
-            for (int k = 0; k < 8; k++)
-                count += (mask >> k) & 1;
-            int pick = std::min(count - 1, int(Draw(key, kDrawEmitter, 3) * count)), octant = 0;
-            for (; (pick > 0) || !((mask >> octant) & 1); octant++)
-                if ((mask >> octant) & 1)
-                    pick--;
-            EmitterSample sample;
-            sample.position = low + Vector3d((x + 0.5 * ((octant & 1) + Draw(key, kDrawEmitter, 0))) * cell[X],
-                                             (y + 0.5 * (((octant >> 1) & 1) + Draw(key, kDrawEmitter, 1))) * cell[Y],
-                                             (z + 0.5 * ((octant >> 2) + Draw(key, kDrawEmitter, 2))) * cell[Z]);
-            sample.weight = weights[i];
-            sample.pdf = (cdf[i] - (i > 0 ? cdf[i - 1] : 0.0)) / (cell[X] * cell[Y] * cell[Z] * count / 8.0);
-            return sample;
-        }
-        virtual double RadianceBound() const override { return radianceBound; }
+        ~VolumeEmitter() override { Destroy_Object(geometry); }
 
-        /// The radiance the light block states at a point.
-        MathColour RadianceAt(const Vector3d& p, TraceThreadData *td) const
-        {
-            if (lightPigment == nullptr)
-                return baseRadiance;
-            TransColour colour;
-            Compute_Pigment(colour, lightPigment, p, nullptr, nullptr, td);
-            return baseRadiance * colour.colour();
-        }
-        /// The per-cell law's emission coefficient: L times density-weighted extinction, or L over the mean chord.
+        const MathColour& Intensity() const override { return intensity; }
+        const Vector3d& Centre() const override { return centre; }
+        double Radius() const override { return radius; }
+
         MathColour EmissionAt(const Vector3d& p, TraceThreadData *td) const
         {
-            MathColour density((thin && flatDensity) ? 1.0 : 0.0), coefficient;
-            for (const EmitterMedium& medium : media)
-            {
-                MathColour local;
-                Evaluate_Density_Pigment(*medium.density, p, local, td);
-                if (thin)
-                    density += local;
-                else
-                    coefficient += local * medium.extinction;
-            }
-            if (thin)
-                coefficient = density * (inverseMeanDensity / meanChord);
-            return RadianceAt(p, td) * coefficient;
+            if (!Inside_Object(geometry ? (p - centre) / radius : p, geometry ? geometry : container, td))
+                return MathColour();
+            if (!lightPigment)
+                return coefficient;
+            TransColour colour;
+            Compute_Pigment(colour, lightPigment, p, nullptr, nullptr, td);
+            const MathColour j = coefficient * colour.colour();
+            if (!std::isfinite(j.Weight()) || (j.Min() < 0.0))
+                throw POV_EXCEPTION_STRING("Interior light's pigment is negative or not finite.");
+            return j;
         }
 
-        virtual bool SampleToward(const Vector3d& from, double s, double t, std::uint64_t key, TraceThreadData *td,
-                                  EmitterSample& sample) const override
+        double PositionPdf(const Vector3d& p) const
+        {
+            const Vector3d q((p[X] - low[X]) / size[X], (p[Y] - low[Y]) / size[Y], (p[Z] - low[Z]) / size[Z]);
+            if ((q[X] < 0.0) || (q[Y] < 0.0) || (q[Z] < 0.0) || (q[X] > 1.0) || (q[Y] > 1.0) || (q[Z] > 1.0))
+                return 0.0;
+            const int x = min(nx - 1, int(q[X] * nx)), y = min(ny - 1, int(q[Y] * ny)), z = min(nz - 1, int(q[Z] * nz));
+            const size_t index = (size_t(z) * ny + y) * nx + x;
+            return probability.empty() ? 1.0 / boxVolume : (0.5 + 0.5 * probability[index] * probability.size()) / boxVolume;
+        }
+
+        EmitterSample Sample(double s, std::uint64_t key, TraceThreadData *td = nullptr) const override
+        {
+            const bool uniform = probability.empty() || (s < 0.5);
+            const double pick = probability.empty() ? s : (uniform ? 2.0 * s : 2.0 * s - 1.0);
+            Vector3d q;
+            size_t index;
+            if (uniform)
+            {
+                q = Vector3d(pick, Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2));
+                const int x = min(nx - 1, int(q[X] * nx));
+                const int y = min(ny - 1, int(q[Y] * ny));
+                const int z = min(nz - 1, int(q[Z] * nz));
+                index = (size_t(z) * ny + y) * nx + x;
+            }
+            else
+            {
+                index = min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), pick) - cdf.begin()));
+                q = Vector3d((index % nx + Draw(key, kDrawEmitter, 0)) / nx,
+                             ((index / nx) % ny + Draw(key, kDrawEmitter, 1)) / ny,
+                             (index / (size_t(nx) * ny) + Draw(key, kDrawEmitter, 2)) / nz);
+            }
+            EmitterSample sample;
+            sample.position = low + Vector3d(q[X] * size[X], q[Y] * size[Y], q[Z] * size[Z]);
+            sample.pdf = probability.empty() ? 1.0 / boxVolume :
+                         (0.5 + 0.5 * probability[index] * probability.size()) / boxVolume;
+            sample.weight = EmissionAt(sample.position, td) / sample.pdf;
+            return sample;
+        }
+
+        void CloseOccupancyBoundaries(ObjectPtr object) const
+        {
+            Set_Flag(object, CLOSED_FLAG);
+            if (object->Type & IS_COMPOUND_OBJECT)
+                for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
+                    CloseOccupancyBoundaries(child);
+            for (ObjectPtr clip : object->Clip)
+                CloseOccupancyBoundaries(clip);
+        }
+
+        void Boundaries(ObjectPtr object, const Ray& ray, double start, double end, TraceThreadData *td,
+                        vector<double>& cuts) const
+        {
+            if (object->Type & IS_COMPOUND_OBJECT)
+            {
+                for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
+                    Boundaries(child, ray, start, end, td, cuts);
+            }
+            else
+            {
+                IStack stack(td->stackPool);
+                if (object->All_Intersections(ray, stack, td))
+                    for (; stack->size() > 0; stack->pop())
+                    {
+                        const double depth = stack->top().Depth;
+                        if ((depth > start) && (depth < end))
+                            cuts.push_back(depth);
+                    }
+            }
+            for (ObjectPtr clip : object->Clip)
+                Boundaries(clip, ray, start, end, td, cuts);
+        }
+
+        double Chord(const Vector3d& from, const Vector3d& dir, double reach, TraceThreadData *td,
+                     vector<std::pair<double, double>>& pieces) const
+        {
+            const Vector3d relative = (from - centre) / radius;
+            const double offset = -dot(relative, dir) - 2.0;
+            const Vector3d origin = cross(dir, cross(relative, dir)) - dir * 2.0;
+            const double start = -offset, end = start + reach / radius;
+            TraceTicket ticket(1, 0.0);
+            Ray ray(ticket, origin, dir);
+            vector<double> cuts(1, start);
+            Boundaries(geometry, ray, start, end, td, cuts);
+            cuts.push_back(end);
+            std::sort(cuts.begin(), cuts.end());
+            pieces.clear();
+            double length = 0.0;
+            bool previousInside = false;
+            for (size_t i = 1; i < cuts.size(); i++)
+            {
+                const double a = cuts[i - 1], b = cuts[i];
+                if (!(b > a))
+                    continue;
+                const bool inside = Inside_Object(origin + dir * (a + 0.5 * (b - a)), geometry, td);
+                if (inside)
+                {
+                    const double low = (a + offset) * radius, high = (b + offset) * radius;
+                    if (previousInside)
+                        pieces.back().second = high;
+                    else
+                        pieces.emplace_back(low, high);
+                    length += (b - a) * radius;
+                }
+                previousInside = inside;
+            }
+            return length;
+        }
+
+        bool SampleToward(const Vector3d& from, double s, double t, std::uint64_t key, TraceThreadData *td,
+                          EmitterSample& sample) const override
         {
             const Vector3d toCentre = centre - from;
             const double d = toCentre.length();
-            double cosMax = -1.0, solid = 4.0 * M_PI;
-            if (d > radius * 1.000001)
+            double cap = 2.0;
+            if (d > radius)
             {
-                cosMax = std::sqrt(std::max(0.0, 1.0 - Sqr(radius / d)));
-                solid = 2.0 * M_PI * (1.0 - cosMax);
+                const double q = Sqr(radius / d);
+                cap = q / (1.0 + std::sqrt(max(0.0, 1.0 - q)));
             }
-            const double cosTheta = 1.0 - s * (1.0 - cosMax), sinTheta = std::sqrt(std::max(0.0, 1.0 - Sqr(cosTheta))), phi = 2.0 * M_PI * t;
-            const Vector3d w = (d > 0.0) ? toCentre / d : Vector3d(0.0, 0.0, 1.0);
-            const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
-            const Vector3d dir = (u * (sinTheta * std::cos(phi)) + cross(w, u) * (sinTheta * std::sin(phi)) + w * cosTheta).normalized();
-            TraceTicket ticket(1, 0.0);
-            Ray ray(ticket, from, dir);
-            IStack stack(td->stackPool);
-            // the middle crossings of a pathologically divided container may not fit; the first 254 and the
-            // last are kept, so the chord's final piece still ends at its true exit, never at the reach cap
-            double cuts[257];
-            int count = 0;
-            bool overflowed = false;
-            double last = 0.0;
-            cuts[count++] = 0.0;
-            if (container->All_Intersections(ray, stack, td))
-                for (; (stack->size() > 0); stack->pop())
-                {
-                    const double depth = stack->top().Depth;
-                    if (depth <= 0.0)
-                        continue;
-                    if (count < 255)
-                        cuts[count++] = depth;
-                    else
-                        overflowed = true;
-                    last = std::max(last, depth);
-                }
-            if (overflowed && (last > 0.0))
-                cuts[count++] = last;
-            std::sort(cuts, cuts + count);
-            const double reach = d + radius;
-            cuts[count++] = reach;
-            double inside[256][2];
-            int pieces = 0;
-            double length = 0.0;
-            for (int i = 0; i + 1 < count; i++)
+            const double solid = 2.0 * M_PI * cap;
+            vector<std::pair<double, double>> pieces;
+            double length, depth;
+            if (s < 0.5)
             {
-                const double a = cuts[i], b = std::min(cuts[i + 1], reach);
-                if ((b <= a) || !Inside_Object(from + dir * (0.5 * (a + b)), container, td))
-                    continue;
-                inside[pieces][0] = a;
-                inside[pieces][1] = b;
-                pieces++;
-                length += b - a;
-            }
-            if (!(length > 0.0))
-            {
+                const double h = (2.0 * s) * cap, cosTheta = 1.0 - h;
+                const double sinTheta = std::sqrt(max(0.0, h * (2.0 - h))), phi = 2.0 * M_PI * t;
+                const Vector3d w = (d > 0.0) ? toCentre / d : Vector3d(0.0, 0.0, 1.0);
+                const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
+                const Vector3d dir = (u * (sinTheta * std::cos(phi)) + cross(w, u) * (sinTheta * std::sin(phi)) + w * cosTheta).normalized();
+                length = Chord(from, dir, d + radius, td, pieces);
                 sample.position = centre;
                 sample.pdf = 0.0;
-                sample.weight = MathColour(0.0);
+                sample.weight = MathColour();
+                if (!(length > 0.0))
+                    return true;
+                double at = Draw(key, kDrawEmitter, 3) * length;
+                depth = pieces.back().second;
+                for (const auto& piece : pieces)
+                {
+                    const double span = piece.second - piece.first;
+                    if (at <= span)
+                    {
+                        depth = piece.first + at;
+                        break;
+                    }
+                    at -= span;
+                }
+                sample.position = from + dir * depth;
+            }
+            else
+            {
+                sample = Sample(2.0 * s - 1.0, key, td);
+                const Vector3d delta = sample.position - from;
+                depth = delta.length();
+                if (!(depth > 0.0))
+                {
+                    sample.weight.Clear();
+                    return true;
+                }
+                length = Chord(from, delta / depth, d + radius, td, pieces);
+            }
+            if (!(depth > 0.0))
+            {
+                sample.weight.Clear();
+                sample.pdf = 0.0;
                 return true;
             }
-            double at = Draw(key, kDrawEmitter, 0) * length, depth = inside[0][0];
-            for (int i = 0; i < pieces; i++)
-            {
-                const double piece = inside[i][1] - inside[i][0];
-                if ((at <= piece) || (i == pieces - 1))
-                {
-                    depth = inside[i][0] + std::min(at, piece);
-                    break;
-                }
-                at -= piece;
-            }
-            sample.position = from + dir * depth;
-            sample.pdf = 0.0;
-            // the draw covers solid angle times chord at 1/r^2, whose r^2 cancels: what is left is exactly that
-            // chord's whole contribution, as a multiple of the emitter's total intensity
-            const MathColour emission = EmissionAt(sample.position, td);
-            sample.weight = (solid * length / intensity.Weight()) * emission;
+            bool inChord = false;
+            for (const auto& piece : pieces)
+                inChord = inChord || ((depth >= piece.first) && (depth <= piece.second));
+            const double r2 = depth * depth;
+            const double chordPdf = (inChord && (length > 0.0)) ? 1.0 / (solid * length * r2) : 0.0;
+            sample.pdf = 0.5 * chordPdf + 0.5 * PositionPdf(sample.position);
+            sample.weight = EmissionAt(sample.position, td) / (r2 * sample.pdf);
             return true;
         }
+
 };
-
-/// The area of one projection of the points: the bins their shadows fall in, each of the bin's area.
-static double ProjectedArea(const vector<Vector3d>& points, const Vector3d& axis, const Vector3d& u, const Vector3d& v, double bin)
-{
-    double u0 = HUGE_VAL, v0 = -HUGE_VAL, vLow = HUGE_VAL;
-    for (const Vector3d& p : points)
-    {
-        u0 = std::min(u0, dot(p, u));
-        vLow = std::min(vLow, dot(p, v));
-        v0 = std::max(v0, dot(p, v));
-    }
-    if (!(v0 > vLow))
-        return 0.0;
-    const size_t columns = size_t((v0 - vLow) / bin) + 1;
-    std::unordered_set<size_t> shadow;
-    shadow.reserve(2 * points.size());
-    for (const Vector3d& p : points)
-    {
-        const size_t i = size_t((dot(p, u) - u0) / bin);
-        const size_t j = size_t((dot(p, v) - vLow) / bin);
-        shadow.insert(j * columns + i);
-    }
-    return shadow.size() * bin * bin;
-}
-
-/// The container's surface area by Cauchy's theorem, four times its mean projected area, here the mean over
-/// thirteen directions of the area its inside probe points shadow. A sphere gives its exact area from any
-/// direction; the raster of each shadow keeps a share of a bin, which two directions at each scale remove.
-static double ContainerSurfaceArea(const vector<Vector3d>& points, double bin)
-{
-    static const double kSqrt3 = 0.5773502691896258, kSqrt2 = 0.4082482904638630, kInvSqrt2 = 0.7071067811865476;
-    const Vector3d directions[13] = {
-        Vector3d(1.0, 0.0, 0.0), Vector3d(0.0, 1.0, 0.0), Vector3d(0.0, 0.0, 1.0),
-        Vector3d(kSqrt3, kSqrt3, kSqrt3), Vector3d(kSqrt3, kSqrt3, -kSqrt3), Vector3d(kSqrt3, -kSqrt3, kSqrt3),
-        Vector3d(kSqrt3, -kSqrt3, -kSqrt3),
-        Vector3d(kInvSqrt2, kInvSqrt2, 0.0), Vector3d(kInvSqrt2, -kInvSqrt2, 0.0), Vector3d(kInvSqrt2, 0.0, kInvSqrt2),
-        Vector3d(kInvSqrt2, 0.0, -kInvSqrt2), Vector3d(0.0, kInvSqrt2, kInvSqrt2), Vector3d(0.0, kInvSqrt2, -kInvSqrt2)
-    };
-    double total = 0.0;
-    int counted = 0;
-    for (const Vector3d& d : directions)
-    {
-        const Vector3d u = ((fabs(d[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), d) : cross(Vector3d(1.0, 0.0, 0.0), d)).normalized();
-        const Vector3d v = cross(d, u);
-        const double area = ProjectedArea(points, d, u, v, bin);
-        if (area > 0.0)
-        {
-            total += area;
-            counted++;
-        }
-    }
-    return (counted > 0) ? 4.0 * total / counted : 0.0;
-}
 
 }
 
@@ -1183,218 +1175,157 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
         failure = "its container is infinite";
         return nullptr;
     }
-    Vector3d low, size;
-    Make_min_max_from_BBox(low, size, container->BBox);
-    size -= low;
-    DBL step = 0.0;
-    for (const Media& medium : interior.media)
-    {
-        const DBL resolution = (medium.FastResolution > 0.0) ? medium.FastResolution : AutomaticResolution(container);
-        step = std::max(step, resolution);
-    }
-    if (interior.media.empty())
-        step = AutomaticResolution(container);
-    if (!(step > 0.0))
-    {
-        failure = "its container is unbounded";
-        return nullptr;
-    }
-    while (ceil(size[X] / step) * ceil(size[Y] / step) * ceil(size[Z] / step) > td->GetSceneData()->EffectivePreparedMediaCells())
-        step *= 1.05;
     std::shared_ptr<VolumeEmitter> emitter(new VolumeEmitter());
+    Vector3d high;
+    Make_min_max_from_BBox(emitter->low, high, container->BBox);
+    emitter->size = high - emitter->low;
+    emitter->boxVolume = emitter->size[X] * emitter->size[Y] * emitter->size[Z];
+    if (!(emitter->boxVolume > 0.0) || !std::isfinite(emitter->boxVolume))
+    {
+        failure = "its container has no finite volume bounds";
+        return nullptr;
+    }
     emitter->container = container;
-    bool hasExtinction = false;
-    const int n[3] = { int(ceil(size[X] / step)), int(ceil(size[Y] / step)), int(ceil(size[Z] / step)) };
-    emitter->low = low;
-    emitter->nx = n[X];
-    emitter->ny = n[Y];
-    emitter->cell = Vector3d(size[X] / n[X], size[Y] / n[Y], size[Z] / n[Z]);
-    const Vector3d& cellSize = emitter->cell;
-    const DBL share = cellSize[X] * cellSize[Y] * cellSize[Z] / 8.0;
-    for (const Media& medium : interior.media)
-    {
-        EmitterMedium part;
-        part.density = const_cast<vector<PIGMENT*>*>(&medium.Density);
-        part.extinction = medium.Extinction;
-        emitter->media.push_back(part);
-        hasExtinction = hasExtinction || medium.use_extinction;
-    }
-    emitter->thin = !hasExtinction;   // the law draws on extinction; without any, the container's mean chord stands in
     emitter->lightPigment = settings.pigment;
-    for (const EmitterMedium& medium : emitter->media)
-        emitter->flatDensity = emitter->flatDensity && medium.density->empty();
-    const bool flatDensity = emitter->flatDensity;
-    vector<double> power;
+    emitter->centre = emitter->low + emitter->size * 0.5;
+    emitter->radius = emitter->size.length() * 0.5;
+    emitter->geometry = Copy_Object(container);
+    emitter->CloseOccupancyBoundaries(emitter->geometry);
+    TRANSFORM translation, scaling;
+    const Vector3d displacement = -emitter->centre, scale(1.0 / emitter->radius);
+    Compute_Translation_Transform(&translation, displacement);
+    Translate_Object(emitter->geometry, displacement, &translation);
+    Compute_Scaling_Transform(&scaling, scale);
+    Scale_Object(emitter->geometry, scale, &scaling);
+    emitter->coefficient = MathColour(1.0);
+    if (settings.lumens < 0.0)
+    {
+        double meanChord = 0.0, discrepancy = HUGE_VAL;
+        vector<std::pair<double, double>> pieces;
+        for (int lines : {1024, 4096, 16384})
+        {
+            double replicate[4], sumLength = 0.0;
+            size_t sumPieces = 0;
+            for (int r = 0; r < 4; r++)
+            {
+                double length = 0.0;
+                size_t crossings = 0;
+                const std::uint64_t scramble = DeriveKey(0x63686f726473ull, kDrawEmitter, r);
+                const double a = Draw(scramble, kDrawEmitter, 0), b = Draw(scramble, kDrawEmitter, 1);
+                const double c = Draw(scramble, kDrawEmitter, 2);
+                for (int k = 0; k < lines; k++)
+                {
+                    const std::uint64_t key = DeriveKey(scramble, kDrawEmitter, k);
+                    const double su = a + k * 0.7548776662466927, sv = b + k * 0.5698402909980532;
+                    const double z = 1.0 - 2.0 * (su - floor(su)), azimuth = 2.0 * M_PI * (sv - floor(sv));
+                    const double radial = std::sqrt(max(0.0, 1.0 - z * z));
+                    const Vector3d w(radial * std::cos(azimuth), radial * std::sin(azimuth), z);
+                    const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
+                    const double t = c + k * 0.4142135623730950, phi = 2.0 * M_PI * (t - floor(t));
+                    const double rho = emitter->radius * std::sqrt((k + Draw(key, kDrawEmitter, 3)) / lines);
+                    const Vector3d origin = emitter->centre + (u * std::cos(phi) + cross(w, u) * std::sin(phi)) * rho - w * emitter->radius;
+                    length += emitter->Chord(origin, w, 2.0 * emitter->radius, td, pieces);
+                    crossings += pieces.size();
+                }
+                replicate[r] = crossings ? length / crossings : 0.0;
+                sumLength += length;
+                sumPieces += crossings;
+            }
+            meanChord = sumPieces ? sumLength / sumPieces : 0.0;
+            discrepancy = 0.0;
+            for (double estimate : replicate)
+                discrepancy = max(discrepancy, fabs(estimate - meanChord) / max(meanChord, 1.0e-300));
+            if ((meanChord > 0.0) && (discrepancy <= 0.005))
+                break;
+        }
+        if (!(meanChord > 0.0))
+        {
+            failure = "its geometric mean-chord normalization is unresolved or empty";
+            return nullptr;
+        }
+        if ((discrepancy > 0.005) && td->mediaMessages)
+            td->mediaMessages->Warning(kWarningGeneral, "Interior light's geometric mean-chord normalization has %.3g relative sampling discrepancy.", discrepancy);
+        emitter->coefficient = MathColour(settings.brightness / meanChord);
+    }
+    const double longest = max(emitter->size[X], max(emitter->size[Y], emitter->size[Z]));
+    emitter->nx = max(1, int(std::ceil(16.0 * emitter->size[X] / longest)));
+    emitter->ny = max(1, int(std::ceil(16.0 * emitter->size[Y] / longest)));
+    emitter->nz = max(1, int(std::ceil(16.0 * emitter->size[Z] / longest)));
+    const size_t count = size_t(emitter->nx) * emitter->ny * emitter->nz;
+    emitter->probability.resize(count);
     double total = 0.0;
-    Vector3d points[8];
-    vector<Vector3d> probes;
-    size_t insideProbes = 0;
-    MathColour densitySum;
-    double densityWeight = 0.0;
-    // first pass: the container's shape, volume and density mean, which the thin fallback shapes itself by
-    for (int z = 0; z < n[Z]; z++)
-        for (int y = 0; y < n[Y]; y++)
-            for (int x = 0; x < n[X]; x++)
-            {
-                size_t inside = 0;
-                for (int k = 0; k < 8; k++)
-                {
-                    const Vector3d point = low + Vector3d((x + 0.25 + 0.5 * (k & 1)) * cellSize[X], (y + 0.25 + 0.5 * ((k >> 1) & 1)) * cellSize[Y],
-                                                          (z + 0.25 + 0.5 * (k >> 2)) * cellSize[Z]);
-                    if (Inside_Object(point, container, td))
-                    {
-                        points[inside++] = point;
-                        insideProbes++;
-                    }
-                }
-                if (inside == 0)
-                    continue;
-                for (size_t k = 0; k < inside; k++)
-                    probes.push_back(points[k]);
-                if (emitter->thin)
-                {
-                    MathColour density[8];
-                    for (size_t k = 0; k < inside; k++)
-                        density[k].Set(flatDensity ? 1.0 : 0.0);
-                    for (const EmitterMedium& medium : emitter->media)
-                    {
-                        MathColour local[8];
-                        Evaluate_Density_Pigment(*medium.density, points, local, inside, td);
-                        for (size_t k = 0; k < inside; k++)
-                            density[k] += local[k];
-                    }
-                    for (size_t k = 0; k < inside; k++)
-                        densitySum += density[k];
-                    densityWeight += inside;
-                }
-            }
-    const double volume = insideProbes * share;
-    if (!(volume > 0.0))
+    for (size_t i = 0; i < count; i++)
     {
-        failure = "its container is empty";
-        return nullptr;
+        const Vector3d q((i % emitter->nx + 0.5) / emitter->nx, ((i / emitter->nx) % emitter->ny + 0.5) / emitter->ny,
+                         (i / (size_t(emitter->nx) * emitter->ny) + 0.5) / emitter->nz);
+        const MathColour j = emitter->EmissionAt(emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]), td);
+        if (!std::isfinite(j.Weight()) || (j.Min() < 0.0))
+        {
+            failure = "its brightness or pigment is negative or not finite";
+            return nullptr;
+        }
+        emitter->intensity += j * (emitter->boxVolume / count);
+        emitter->probability[i] = j.Weight();
+        total += j.Weight();
     }
-    const double bin = 0.5 * (cellSize[X] + cellSize[Y] + cellSize[Z]);
-    const double areaCoarse = ContainerSurfaceArea(probes, bin);
-    const double areaFine = ContainerSurfaceArea(probes, bin * 0.5);
-    const double area = std::max(0.0, 2.0 * areaFine - areaCoarse);
-    emitter->meanChord = (area > 0.0) ? 4.0 * volume / area : 4.0 * volume;
-    if (emitter->thin && (densityWeight > 0.0))
-    {
-        const MathColour densityMean = densitySum * (1.0 / densityWeight);
-        const double mean = densityMean.Weight();
-        emitter->inverseMeanDensity = (mean > 0.0) ? 1.0 / mean : 0.0;
-    }
-    emitter->baseRadiance = MathColour(settings.brightness);
     if (settings.lumens >= 0.0)
-        emitter->baseRadiance = MathColour(settings.lumens / (M_PI * std::max(area, EPSILON)));
-    // second pass: each cell's power under the law
-    for (int z = 0; z < n[Z]; z++)
-        for (int y = 0; y < n[Y]; y++)
-            for (int x = 0; x < n[X]; x++)
-            {
-                size_t inside = 0;
-                unsigned mask = 0;
-                for (int k = 0; k < 8; k++)
+    {
+        MathColour integral;
+        double relativeDiscrepancy = HUGE_VAL;
+        for (int bins : {16, 24, 32})
+        {
+            MathColour replicate[4];
+            const size_t draws = size_t(bins) * bins * bins;
+            for (int r = 0; r < 4; r++)
+                for (size_t k = 0; k < draws; k++)
                 {
-                    const Vector3d point = low + Vector3d((x + 0.25 + 0.5 * (k & 1)) * cellSize[X], (y + 0.25 + 0.5 * ((k >> 1) & 1)) * cellSize[Y],
-                                                          (z + 0.25 + 0.5 * (k >> 2)) * cellSize[Z]);
-                    if (Inside_Object(point, container, td))
+                    const std::uint64_t key = DeriveKey(0x766f6c756d65ull, kDrawEmitter, size_t(r) * draws + k);
+                    const Vector3d q((k % bins + Draw(key, kDrawEmitter, 0)) / bins,
+                                     ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
+                                     (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
+                    const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
+                    const MathColour j = emitter->EmissionAt(p, td);
+                    if (!std::isfinite(j.Weight()) || (j.Min() < 0.0))
                     {
-                        points[inside++] = point;
-                        mask |= 1u << k;
+                        failure = "its pigment is negative or not finite";
+                        return nullptr;
                     }
+                    replicate[r] += j * (emitter->boxVolume / draws);
                 }
-                if (inside == 0)
-                    continue;
-                MathColour cellPower, density[8];
-                for (size_t k = 0; k < inside; k++)
-                    density[k].Set((emitter->thin && flatDensity) ? 1.0 : 0.0);   // the start EmissionAt itself uses
-                for (const EmitterMedium& medium : emitter->media)
-                {
-                    MathColour local[8];
-                    Evaluate_Density_Pigment(*medium.density, points, local, inside, td);
-                    for (size_t k = 0; k < inside; k++)
-                        density[k] += local[k] * (emitter->thin ? MathColour(1.0) : medium.extinction);
-                }
-                if (emitter->thin)
-                    for (size_t k = 0; k < inside; k++)
-                        density[k] *= emitter->inverseMeanDensity / emitter->meanChord;
-                for (size_t k = 0; k < inside; k++)
-                {
-                    const MathColour radiance = emitter->RadianceAt(points[k], td);
-                    cellPower += radiance * density[k] * share;
-                    for (int ch = 0; ch < MathColour::channels; ch++)
-                        emitter->radianceBound = std::max(emitter->radianceBound, double(radiance[ch]));
-                }
-                const double weight = cellPower.Weight();
-                if (!std::isfinite(weight) || (cellPower.Min() < 0.0))
-                {
-                    failure = "its density or the light's pigment is negative or not finite";
-                    return nullptr;
-                }
-                if (weight <= 0.0)
-                    continue;
-                emitter->cells.push_back(std::uint32_t((size_t(z) * n[Y] + y) * n[X] + x));
-                emitter->inside.push_back((unsigned char)mask);
-                emitter->weights.push_back(cellPower);
-                power.push_back(weight);
-                emitter->intensity += cellPower;
-                emitter->centre += (low + Vector3d((x + 0.5) * cellSize[X], (y + 0.5) * cellSize[Y], (z + 0.5) * cellSize[Z])) * weight;
-                total += weight;
-            }
-    if (!(total > 0.0) || !std::isfinite(total))
-    {
-        failure = (emitter->inverseMeanDensity == 0.0) ? "its density is zero throughout its container" :
-                  hasExtinction ? "its media have no extinction for the light to draw on" : "its brightness or pigment is zero";
-        return nullptr;
+            integral.Clear();
+            for (const MathColour& estimate : replicate)
+                integral += estimate * 0.25;
+            const double mean = integral.Greyscale();
+            relativeDiscrepancy = 0.0;
+            for (const MathColour& estimate : replicate)
+                relativeDiscrepancy = max(relativeDiscrepancy, fabs(estimate.Greyscale() - mean) / max(mean, 1.0e-300));
+            if ((mean > 0.0) && (relativeDiscrepancy <= 0.0025))
+                break;
+        }
+        if (!(integral.Greyscale() > 0.0))
+        {
+            failure = "its generated-lumens integral is unresolved or zero";
+            return nullptr;
+        }
+        if ((relativeDiscrepancy > 0.0025) && td->mediaMessages)
+            td->mediaMessages->Warning(kWarningGeneral, "Interior light's generated-lumens normalization has %.3g relative sampling discrepancy.", relativeDiscrepancy);
+        const double scale = settings.lumens / (4.0 * M_PI * integral.Greyscale());
+        emitter->coefficient *= scale;
+        emitter->intensity = integral * scale;
     }
-    emitter->centre /= total;
-    const double cellDiagonal = 0.5 * cellSize.length();
-    for (std::uint32_t index : emitter->cells)
+    if (total > 0.0)
     {
-        const Vector3d middle = low + Vector3d((index % n[X] + 0.5) * cellSize[X], ((index / n[X]) % n[Y] + 0.5) * cellSize[Y],
-                                               (index / (std::uint32_t(n[X]) * n[Y]) + 0.5) * cellSize[Z]);
-        emitter->radius = std::max(emitter->radius, (middle - emitter->centre).length() + cellDiagonal);
+        double sum = 0.0;
+        for (double& p : emitter->probability)
+        {
+            p /= total;
+            sum += p;
+            emitter->cdf.push_back(sum);
+        }
+        emitter->cdf.back() = 1.0;
     }
-    // Z-order keeps an equal-power stratum of the table compact in space, so stratified draws spread in 3D.
-    vector<std::pair<std::uint64_t, size_t>> order(power.size());
-    for (size_t i = 0; i < order.size(); i++)
-    {
-        const std::uint32_t index = emitter->cells[i];
-        const std::uint64_t at[3] = { index % std::uint32_t(n[X]), (index / n[X]) % std::uint32_t(n[Y]), index / (std::uint32_t(n[X]) * n[Y]) };
-        std::uint64_t code = 0;
-        for (int bit = 0; bit < 21; bit++)
-            for (int axis = 0; axis < 3; axis++)
-                code |= ((at[axis] >> bit) & 1) << (3 * bit + axis);
-        order[i] = std::make_pair(code, i);
-    }
-    std::sort(order.begin(), order.end());
-    vector<std::uint32_t> cells(order.size());
-    vector<unsigned char> inside(order.size());
-    vector<MathColour> weights(order.size());
-    vector<double> sorted(order.size());
-    for (size_t i = 0; i < order.size(); i++)
-    {
-        cells[i] = emitter->cells[order[i].second];
-        inside[i] = emitter->inside[order[i].second];
-        weights[i] = emitter->weights[order[i].second];
-        sorted[i] = power[order[i].second];
-    }
-    emitter->cells.swap(cells);
-    emitter->inside.swap(inside);
-    emitter->weights.swap(weights);
-    power.swap(sorted);
-    emitter->cdf.resize(power.size());
-    double sum = 0.0;
-    for (size_t i = 0; i < power.size(); i++)
-    {
-        sum += power[i];
-        emitter->cdf[i] = sum / total;
-        for (int ch = 0; ch < MathColour::channels; ch++)
-            emitter->weights[i][ch] = (emitter->intensity[ch] > 0.0) ? emitter->weights[i][ch] * (total / power[i]) / emitter->intensity[ch] : 0.0;
-    }
-    emitter->cdf.back() = 1.0;
+    else
+        emitter->probability.clear();
     return emitter;
 }
 
@@ -3253,16 +3184,23 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
         {
             if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
-            const int points = (lights[i].light->Area_Light && (lights[i].light->emitter == nullptr)) ? kMediaAreaLightPoints : 1;
+            const int points = lights[i].light->emitter ? max(1, lights[i].light->Area_Size1) :
+                               (lights[i].light->Area_Light ? kMediaAreaLightPoints : 1);
             MathColour Lit_Colour;
             for(int j = 0; j < points; j++)
             {
                 const double kj = k * points + j;
                 const double su = lightSampleShift[U] + kj * 0.7548776662466927 + i * 0.6180339887498949;
                 const double sv = lightSampleShift[V] + kj * 0.5698402909980532 + i * 0.4142135623730950;
-                const Vector2d areaSample(su - floor(su), sv - floor(sv));
-                if(!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
-                    Lit_Colour += Light_Colour;
+                const Vector2d areaSample(lights[i].light->emitter ? (j + su - floor(su)) / points : su - floor(su), sv - floor(sv));
+                Light_Ray.SetKey(DeriveKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex - 1), kDrawEmitter, i * points + j));
+                if (!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
+                {
+                    if (lights[i].light->emitter)
+                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Light_Colour / (4.0 * M_PI * points), ray, Light_Ray);
+                    else
+                        Lit_Colour += Light_Colour;
+                }
             }
             if(!Lit_Colour.IsZero())
                 ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
@@ -3411,7 +3349,8 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                     MathColour integral = photon.Integral(H, radius, &middle);
                     if (photon.light != nullptr && photon.depth >= 0.0)
                         integral *= Light_Photon_Path_Weight(photon.light, middle);
-                    ComputeMediaScatteringAttenuation(medias, sum, Sc, integral, ray, light);
+                    ComputeMediaScatteringAttenuation(medias, sum, Sc,
+                        (photon.light && photon.light->emitter) ? integral / (4.0 * M_PI) : integral, ray, light);
                     threadData->progressiveContributions++;
                 });
                 Te += sum / ProgressivePhotonBudget::KernelVolume(radius);

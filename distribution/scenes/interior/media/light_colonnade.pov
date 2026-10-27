@@ -201,8 +201,11 @@ sphere {
                  + 0.25 * pow(max(0, Swirl(x, y, z) - 0.5) * 2, 2) * max(0, 1 - sqrt(x * x + y * y + z * z) / 1.7))
         }
       }
-      light_source { samples Samples }
     }
+    light { pigment { pigment_pattern { function {
+          min(1, 0.75 * exp(-(x * x + y * y + z * z) / 0.1)
+                 + 0.25 * pow(max(0, Swirl(x, y, z) - 0.5) * 2, 2) * max(0, 1 - sqrt(x * x + y * y + z * z) / 1.7))
+        } } color_map { [0 rgb 0] [1 rgb <1, 0.6, 0.28> * 140] } } samples Samples }
   }
   translate Core
 }

@@ -20,6 +20,28 @@ Both languages have Tree-sitter grammars:
 
 Generated C sources are committed; renderer builds do not run the generator.
 
+## Independent volume lights
+
+The projected-area normalization below is exploratory, not a settled source
+contract. Transparent emission, scattering diffusers and surface emission must
+be distinguished; the effect of unused container padding remains unresolved.
+
+Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
+attenuation 2, 1 samples 16 } }`. The source depends on its object's geometry
+and its own pigment, independently of media coefficients and density. Nits use
+the directional geometry reference `j(x,w) = L * pigment(x) * projected_area(w) / V`; this normalizes source strength,
+not every nearby receiver reading. Lumens normalize generated flux before media
+attenuation, using the renderer's greyscale convention. `scale_lumens(phi,c)`
+takes explicit metres per scene unit; no light unit reads `mm_per_unit`.
+
+The two attenuation values are power then scale; a single value is the scale
+shorthand with power two. The default `2,1` leaves physical transport unchanged.
+Sampling integrates the finite source at every distance. The classic-to-4.0
+codemod keeps legacy appearance emission and copies its source pattern into a
+new independent light; several legacy sources sharing an interior require
+explicit composition before conversion. See the volume-light manual chapter
+for reference probe readings, scaling and numerical preparation limits.
+
 ## Bounds framing
 
 `camera { location <4, 3, -8> look_at Subject }` frames the transformed bounds of

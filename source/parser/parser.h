@@ -611,7 +611,7 @@ class Parser final
         void Parse_Finish (FINISH **);
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
-        void Parse_Interior_Light(Interior& interior);
+        void Parse_Interior_Light(Interior& interior, bool defaultsOnly = false);
         double Parse_Fade_Cutoff();
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
@@ -841,6 +841,7 @@ class Parser final
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
         double defaultFadeCutoff;           ///< `fade_cutoff` of `#default { interior { light { } } }`, or kFadeCutoffAuto.
+        bool warnedLightCutoff = false, warnedFarRadii = false, warnedClusterRadii = false;
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
         bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.

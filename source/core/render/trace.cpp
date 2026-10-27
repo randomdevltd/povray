@@ -2296,11 +2296,9 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
     const PreparedSet& view = sceneData->GetPreparedSet(eye.GetPreparedSetId());
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
-        if(BuildLightClusters(view, eye.GetPreparedSetId()))
-            ComputeClusteredDiffuseLight(finish, ipoint, eye, reye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
-        else
-            for(unsigned int i : view.globalLights)
-                ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
+        for (unsigned int i : view.globalLights)
+            ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour,
+                                   colour, attenuation, object, relativeIor, i);
     }
 
     // local light sources from a light group, if any; a selected object's group is selected with it
@@ -2318,153 +2316,6 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
             for(const LightSource *image : view.groupPortalImages[light->index])
                 ComputePortalDiffuseLight(*image, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
     }
-}
-
-/// The global lights of a set with light clusters: unclustered ones one by one, then each tree down to nodes far enough away.
-void Trace::ComputeClusteredDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& reye, const Vector3d& layer_normal,
-                                         const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor)
-{
-    for(unsigned int i : unclusteredLights)
-        ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
-    const bool behindCulls = !Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (finish->DiffuseBack == 0.0);
-    for(const LightClusterTree& tree : lightClusterTrees)
-    {
-        const double reach2 = Sqr(tree.reach);
-        int pending[128];
-        int depth = 0;
-        pending[depth++] = tree.root;
-        while(depth > 0)
-        {
-            const LightCluster& node = lightClusters[pending[--depth]];
-            if(node.member >= 0)
-            {
-                ComputeOneDiffuseLight(*threadData->lightSources[node.member], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour,
-                                       attenuation, object, relativeIor, node.member);
-                continue;
-            }
-            const Vector3d toCentre = node.centre - ipoint;
-            // a group wholly behind a surface lit on one side gives it nothing
-            if(behindCulls && (dot(layer_normal, toCentre) < -node.radius))
-                continue;
-            if((toCentre.lengthSqr() > reach2 * Sqr(node.radius)) || (depth >= 126))
-                ComputeOneDiffuseLight(*node.light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, -1);
-            else
-            {
-                pending[depth++] = node.right;
-                pending[depth++] = node.left;
-            }
-        }
-    }
-}
-
-/// Builds the cluster trees of a prepared set's global lights once per set; false if it has none.
-bool Trace::BuildLightClusters(const PreparedSet& view, long long setId)
-{
-    if(lightClusterSet == setId)
-        return !lightClusterTrees.empty();
-    lightClusterSet = setId;
-    lightClusters.clear();
-    lightClusterTrees.clear();
-    unclusteredLights.clear();
-    std::vector<std::vector<unsigned int>> groups;
-    if(sceneData->portalLights.empty())
-        for(unsigned int i : view.globalLights)
-        {
-            const LightSource *light = threadData->lightSources[i];
-            if((light->emitter == nullptr) || !(light->emitterClusterRadii > 0.0) || (light->Light_Type != FILL_LIGHT_SOURCE) ||
-               (light->Projected_Through_Object != nullptr))
-                continue;
-            // one tree per equal cluster radii and equal falloff law, so a node stands for its members exactly
-            auto group = std::find_if(groups.begin(), groups.end(), [&](const std::vector<unsigned int>& members)
-            {
-                const LightSource *first = threadData->lightSources[members.front()];
-                return (light->emitterClusterRadii == first->emitterClusterRadii) &&
-                       (light->attenuationScale == first->attenuationScale) && (light->attenuationPower == first->attenuationPower) &&
-                       (light->Media_Interaction == first->Media_Interaction) && (light->Media_Attenuation == first->Media_Attenuation);
-            });
-            if(group == groups.end())
-                groups.emplace_back(1, i);
-            else
-                group->push_back(i);
-        }
-    std::vector<bool> clustered(threadData->lightSources.size(), false);
-    for(std::vector<unsigned int>& members : groups)
-    {
-        if(members.size() < 4)
-            continue;
-        for(unsigned int i : members)
-            clustered[i] = true;
-        const double reach = threadData->lightSources[members.front()]->emitterClusterRadii;
-        lightClusters.reserve(lightClusters.size() + 2 * members.size());
-        lightClusterTrees.push_back({ BuildLightCluster(members, 0, members.size()), reach });
-    }
-    for(unsigned int i : view.globalLights)
-        if(!clustered[i])
-            unclusteredLights.push_back(i);
-    return !lightClusterTrees.empty();
-}
-
-int Trace::BuildLightCluster(std::vector<unsigned int>& members, size_t from, size_t to)
-{
-    const int id = int(lightClusters.size());
-    lightClusters.emplace_back();
-    if(to - from == 1)
-    {
-        const LightSource *light = threadData->lightSources[members[from]];
-        lightClusters[id].member = int(members[from]);
-        lightClusters[id].centre = light->Center;
-        lightClusters[id].radius = light->emitter->Radius();
-        return id;
-    }
-    Vector3d low(HUGE_VAL), high(-HUGE_VAL), centre(0.0);
-    MathColour sum;
-    double weight = 0.0;
-    for(size_t k = from; k < to; k++)
-    {
-        const LightSource *light = threadData->lightSources[members[k]];
-        const double w = std::max(double(light->colour.Weight()), 1e-30);
-        centre += light->Center * w;
-        weight += w;
-        sum += light->colour;
-        for(int a = 0; a < 3; a++)
-        {
-            low[a] = std::min(low[a], light->Center[a]);
-            high[a] = std::max(high[a], light->Center[a]);
-        }
-    }
-    centre /= weight;
-    double radius = 0.0;
-    for(size_t k = from; k < to; k++)
-    {
-        const LightSource *light = threadData->lightSources[members[k]];
-        radius = std::max(radius, (light->Center - centre).length() + light->emitter->Radius());
-    }
-    const Vector3d extent = high - low;
-    const int axis = (extent[X] >= extent[Y]) ? ((extent[X] >= extent[Z]) ? X : Z) : ((extent[Y] >= extent[Z]) ? Y : Z);
-    const size_t middle = (from + to) / 2;
-    std::nth_element(members.begin() + from, members.begin() + middle, members.begin() + to, [&](unsigned int a, unsigned int b)
-                     { return threadData->lightSources[a]->Center[axis] < threadData->lightSources[b]->Center[axis]; });
-    const LightSource *model = threadData->lightSources[members[from]];
-    std::shared_ptr<LightSource> light(new LightSource());
-    light->Center = centre;
-    light->colour = sum;
-    light->Light_Type = FILL_LIGHT_SOURCE;
-    light->Media_Interaction = model->Media_Interaction;
-    light->Media_Attenuation = model->Media_Attenuation;
-    light->attenuationScale = model->attenuationScale;
-    light->attenuationPower = model->attenuationPower;
-    light->volumeLaw = true;
-    light->lawRadius = radius;
-    light->index = 1000000 + id;
-    light->lightGroupLight = false;
-    lightClusters[id].centre = centre;
-    lightClusters[id].radius = radius;
-    lightClusters[id].light = light;
-    const int left = BuildLightCluster(members, from, middle);
-    const int right = BuildLightCluster(members, middle, to);
-    lightClusters[id].left = left;
-    lightClusters[id].right = right;
-    return id;
 }
 
 // A uniform number in [0,1) from the bits of a point, a direction and a salt, the same whatever thread draws it.
@@ -2526,7 +2377,7 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
 
     auto consider = [&](const LightSource& light, int index)
     {
-        if (!qualityFlags.shadows || (light.Light_Type == FILL_LIGHT_SOURCE) || (light.Projected_Through_Object != nullptr))
+        if (light.emitter || !qualityFlags.shadows || (light.Light_Type == FILL_LIGHT_SOURCE) || (light.Projected_Through_Object != nullptr))
         {
             ComputeOneDiffuseLight(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, index);
             return;
@@ -2679,7 +2530,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
             const auto& photon = map.photons[neighbour.index];
             const Vector3d direction = photon.Direction();
             const bool backside = !doubleIlluminate && dot(Layer_Normal, direction) < EPSILON;
-            const MathColour incident = photon.flux * (weight / std::abs(dot(Raw_Normal, direction)));
+            const double responseScale = photon.physicalFlux ? 1.0 / M_PI : 1.0;
+            const MathColour incident = photon.flux * (responseScale * weight / std::abs(dot(Raw_Normal, direction)));
             MathColour contribution;
             if (!(sceneData->useSubsurface && Finish->UseSubsurface))
                 ComputeDiffuseColour(Finish, direction, Eye.Direction, Layer_Normal, contribution, incident,
@@ -2826,6 +2678,14 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
                                    const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index)
 {
+    if (lightsource.emitter != nullptr)
+    {
+        Ray sampleRay(eye);
+        ComputeFullAreaDiffuseLight(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour,
+                                    attenuation, 0.0, sampleRay, MathColour(), object, relativeIor);
+        return;
+    }
+
     double lightsourcedepth;
     Ray lightsourceray(eye);
     lightsourceray.hasDifferentials = false;
@@ -2906,6 +2766,9 @@ void Trace::ComputePortalDiffuseLight(const LightSource& image, const Vector3d& 
                                       const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
                                       ConstObjectPtr object, double relativeIor)
 {
+    if (image.emitter != nullptr)
+        throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
+
     double depth;
     Ray lightsourceray(eye);
     ComputeOneWhiteLightRay(image, depth, lightsourceray, ipoint);
@@ -3127,7 +2990,7 @@ void Trace::TestOneLightShadow(const LightSource &lightsource, double lightsourc
     if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
     {
         // a near-field emitter's draws each carry their own shadow in the full area lighting loop
-        if ((lightsource.emitter != nullptr) && !EmitterFar(lightsource, ipoint))
+        if (lightsource.emitter != nullptr)
             return;
         if (lightColorCacheIndex != -1 && light_index != -1)
         {
@@ -3202,6 +3065,46 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                                         const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
                                         double lightsourcedepth, Ray& lightsourceray, const MathColour& lightcolour, ConstObjectPtr object, double relativeIor)
 {
+    if (lightsource.emitter != nullptr)
+    {
+        const int count = max(1, lightsource.Area_Size1);
+        const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
+        MarkGrain();
+        for (int k = 0; k < count; k++)
+        {
+            Ray sampleRay(lightsourceray);
+            sampleRay.SetKey(DeriveKey(key, kDrawEmitter, k));
+            const Vector2d uv((k + Draw(key, kDrawFullAreaLight, 2 * k)) / count,
+                              Draw(key, kDrawFullAreaLight, 2 * k + 1));
+            MathColour incoming, tmp;
+            double distance;
+            SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, uv, true, object->interior != nullptr);
+            incoming /= M_PI * count;
+            bool backside = false;
+            if (!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (dot(layer_normal, sampleRay.Direction) < EPSILON))
+            {
+                if (finish->DiffuseBack == 0.0)
+                    continue;
+                backside = true;
+            }
+            if (!(sceneData->useSubsurface && finish->UseSubsurface))
+                ComputeDiffuseColour(finish, sampleRay.Direction, eye.Direction, layer_normal, tmp, incoming,
+                                     layer_pigment_colour, relativeIor, attenuation, backside, eye.GetKey(),
+                                     (LightSlot(lightsource) << 32) + 1 + k);
+            if ((lightsource.Light_Type != FILL_LIGHT_SOURCE) && !eye.IsRadiosityRay() && !backside)
+            {
+                if (finish->Phong > 0.0)
+                    ComputePhongColour(finish, sampleRay.Direction, eye.Direction, layer_normal, tmp, incoming, layer_pigment_colour, relativeIor);
+                if (finish->Specular > 0.0)
+                    ComputeSpecularColour(finish, sampleRay.Direction, -eye.Direction, layer_normal, tmp, incoming, layer_pigment_colour, relativeIor);
+            }
+            if (finish->Irid > 0.0)
+                ComputeIridColour(finish, sampleRay.Direction, eye.Direction, layer_normal, ipoint, tmp);
+            colour += tmp;
+        }
+        return;
+    }
+
     Vector3d temp;
     Vector3d axis1Temp, axis2Temp;
     double axis1_Length, cos_shadow_angle;
@@ -3236,53 +3139,39 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         axis2Temp *= axis1_Length;
     }
 
-    const bool emitterFar = (lightsource.emitter != nullptr) && EmitterFar(lightsource, ipoint);
-    const bool emitterShadow = (lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE);
-    const int sizeU = (lightsource.emitter == nullptr) ? lightsource.Area_Size1 : (emitterFar ? 1 : lightsource.Area_Size1);
-    // A near-field emitter's shadow rides its own draws below, so its colour starts unfolded; far, the
-    // centre's shadow, folded into lightcolour by the caller, stands for the whole emitter.
-    const MathColour& unfolded = ((lightsource.emitter != nullptr) && !emitterFar) ? lightsource.colour : lightcolour;
-    const MathColour sampleLightcolour = unfolded / (sizeU * lightsource.Area_Size2);
+    MathColour sampleLightcolour = lightcolour / (lightsource.Area_Size1 * lightsource.Area_Size2);
     MathColour attenuatedLightcolour;
     const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
-    if(lightsource.Jitter && !emitterFar)
+    if(lightsource.Jitter)
         MarkGrain();
 
     for(int v = 0; v < lightsource.Area_Size2; ++v)
     {
-        for(int u = 0; u < sizeU; ++u)
+        for(int u = 0; u < lightsource.Area_Size1; ++u)
         {
             Vector3d jitterAxis1, jitterAxis2;
             Ray lsr(lightsourceray);
             double jitter_u = (double)u;
             double jitter_v = (double)v;
             bool backside = false;
-            bool geometryCarried = false;
-            MathColour weight(1.0);
             MathColour tmpCol;
 
             const std::uint64_t cell = std::uint64_t(v) * lightsource.Area_Size1 + u;
-            if(lightsource.Jitter && !emitterFar)
+            if(lightsource.Jitter)
             {
                 jitter_u += Draw(key, kDrawFullAreaLight, 2 * cell) - 0.5;
                 jitter_v += Draw(key, kDrawFullAreaLight, 2 * cell + 1) - 0.5;
             }
 
-            if(lightsource.emitter != nullptr)
-            {
-                jitterAxis1 = emitterFar ? Vector3d(0.0) :
-                              EmitterNearOffset(lightsource, ipoint, (jitter_u + 0.5) / sizeU,
-                                                Draw(key, kDrawFullAreaLight, 2 * lightsource.Area_Size1 * lightsource.Area_Size2 + 2 * cell + 1),
-                                                DeriveKey(key, kDrawEmitter, cell), weight, geometryCarried);
-                jitterAxis2 = Vector3d(0.0, 0.0, 0.0);
-            }
+            MathColour weight;
+
             // Create circular are lights [ENB 9/97]
             // First, make jitter_u and jitter_v be numbers from -1 to 1
             // Second, set scaleFactor to the abs max (jitter_u,jitter_v) (for shells)
             // Third, divide scaleFactor by the length of <jitter_u,jitter_v>
             // Fourth, scale jitter_u & jitter_v by scaleFactor
             // Finally scale Axis1 by jitter_u & Axis2 by jitter_v
-            else if(lightsource.Circular == true)
+            if(lightsource.Circular == true)
             {
                 jitter_u = jitter_u / (lightsource.Area_Size1 - 1) - 0.5 + 0.001;
                 jitter_v = jitter_v / (lightsource.Area_Size2 - 1) - 0.5 + 0.001;
@@ -3315,25 +3204,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             // Recalculate the light source ray but not the colour
             ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lsr, ipoint, jitterAxis1 + jitterAxis2);
             // Calculate distance- and angle-based light attenuation
-            if (geometryCarried)
-            {
-                // the chord draw's weight already carries its own 1/r^2, exact at any distance
-                attenuatedLightcolour = sampleLightcolour * weight;
-                // and its shadow is its own too: the light this draw delivers crosses the media along its own ray,
-                // as a shadow ray: a lighting ray's march would add the media's own glow once per draw
-                if (qualityFlags.shadows && emitterShadow)
-                {
-                    lsr.SetFlags(Ray::OtherRay, true, false);
-                    lsr.SetMediaLight(&lightsource);
-                    TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lsr, attenuatedLightcolour, jitterAxis1);
-                }
-            }
-            else
-            {
-                attenuatedLightcolour = sampleLightcolour * Attenuate_Light(&lightsource, lsr, lightsourcedepth);
-                if(lightsource.emitter != nullptr)
-                    attenuatedLightcolour *= weight;
-            }
+            attenuatedLightcolour = sampleLightcolour * Attenuate_Light(&lightsource, lsr, lightsourcedepth);
 
             // If not double-illuminated, check if the normal is pointing away:
             if(!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG))
@@ -3380,6 +3251,14 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
 // see do_light in v3.6's lighting.cpp
 void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, bool forceAttenuate)
 {
+    if (lightsource.emitter != nullptr)
+    {
+        const Vector2d uv(Draw(lightsourceray.GetKey(), kDrawEmitter, 0), Draw(lightsourceray.GetKey(), kDrawEmitter, 1));
+        SampleEmitterConnection(lightsource, ipoint, lightsourceray, lightsourcedepth, lightcolour, uv, false, true);
+        lightcolour /= M_PI;
+        return;
+    }
+
     double attenuation;
     ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint);
 
@@ -3406,6 +3285,15 @@ void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsour
 // see block_light_source in the v3.6 source
 void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& lightsourceray, const Vector3d& point, MathColour& colour, const Vector2d* areaSample)
 {
+    if (lightsource.emitter != nullptr)
+    {
+        const Vector2d uv = areaSample ? *areaSample : Vector2d(Draw(lightsourceray.GetKey(), kDrawEmitter, 0),
+                                                               Draw(lightsourceray.GetKey(), kDrawEmitter, 1));
+        SampleEmitterConnection(lightsource, point, lightsourceray, depth, colour, uv, true, true);
+        colour /= M_PI;
+        return;
+    }
+
     // test and set highest level traced. We do it differently than TraceRay() does,
     // for compatibility with the way max_trace_level is tested and reported in v3.6
     // and earlier.
@@ -3461,7 +3349,11 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
 struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
 {
     ConstObjectPtr missed = nullptr; // already found not to cross the ray within its reach
-    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override { return (object != missed) && !Test_Flag(object, NO_SHADOW_FLAG); }
+    bool includeMedia = false;
+    virtual bool operator()(const Ray&, ConstObjectPtr object, double) const override
+    {
+        return (object != missed) && ((!Test_Flag(object, NO_SHADOW_FLAG)) || (includeMedia && object->interior));
+    }
 };
 
 struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
@@ -3535,15 +3427,16 @@ struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
 struct OpaqueShadowStopCondition final : public IntersectionStopCondition
 {
     double farthest;
+    bool blocking;
 
-    explicit OpaqueShadowStopCondition(double limit) : farthest(limit) {}
+    explicit OpaqueShadowStopCondition(double limit, bool blocking = true) : farthest(limit), blocking(blocking) {}
 
     virtual bool operator()(const Intersection& isect) const override
     {
         if (isect.Depth >= farthest)
             return false;
         ConstObjectPtr testObject = (isect.Csg != nullptr ? isect.Csg : isect.Object);
-        return Test_Flag(isect.Object, OPAQUE_FLAG) && Test_Flag(testObject, OPAQUE_FLAG);
+        return blocking && !Test_Flag(isect.Object, NO_SHADOW_FLAG) && Test_Flag(isect.Object, OPAQUE_FLAG) && Test_Flag(testObject, OPAQUE_FLAG);
     }
 };
 
@@ -3588,12 +3481,14 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     }
 
     NoShadowFlagRayObjectCondition precond;
+    precond.includeMedia = lightsource.emitter != nullptr;
     SmallToleranceRayObjectCondition postcond;
 
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
 
     const size_t cacheSlot = lightsourceray.GetPreparedSetId() * shadowCacheLights + lightsource.index;
-    if(lightsource.lightGroupLight == false && !lightsource.shadowCacheOff) // we don't cache for light groups, or for a light that opted out
+    if(lightsource.lightGroupLight == false && !lightsource.shadowCacheOff &&
+       (!lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)))) // only cache geometric blockers
     {
         if ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot] != nullptr))
             cacheObject = lightSourceLevel1ShadowCache[cacheSlot];
@@ -3658,7 +3553,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
         {
             OpaqueShadowStopCondition stop(std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth) +
-                                           shift);
+                                           shift, !lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)));
             const IsoShadowWindow window(threadData, (shift > 0.0) ? MIN_ISECT_DEPTH : SHADOW_TOLERANCE, stop.farthest);
             foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
         }
@@ -3706,7 +3601,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             if (!sceneData->legacyIorStack)
             {
                 // A backstop: crossings that fail to advance must not hold the ray forever.
-                if ((++crossings > kMaxShadowCrossings) || (postcond.accepted == nullptr))
+                if (((++crossings > kMaxShadowCrossings) && !lightsource.emitter) || (postcond.accepted == nullptr))
                     break;
                 travelled += depth;
                 postcond.Cross(postcond.accepted, travelled, 4.0 * MIN_ISECT_DEPTH);
@@ -3731,62 +3626,7 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
 {
     Vector3d axis1Temp, axis2Temp;
 
-    if(lightsource.emitter != nullptr)
-    {
-        // One draw in each of the emitter's equal-power strata; the result is the fraction of its light that arrives.
-        MathColour arrived, sent;
-        double low = HUGE_VAL, high = -HUGE_VAL;
-        const bool far = EmitterFar(lightsource, ipoint);
-        const int rays = far ? 1 : lightsource.Area_Size1;
-        if (far)
-        {
-            // The far field's magnitude is the centre's; its shadow still samples the emitter's angular
-            // cone, one round of four corner rays while they agree and a subdivision of each disagreeing
-            // quadrant, so a penumbra appears exactly where a receiver approaches a shadow boundary.
-            const Emitter& emitter = *lightsource.emitter;
-            const Vector3d toCentre = lightsource.Center - ipoint;
-            const double d = toCentre.length();
-            if (d > emitter.Radius())
-            {
-                const Vector3d w = toCentre / d;
-                const Vector3d e1 = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
-                const Vector3d e2 = cross(w, e1);
-                const double half = emitter.Radius();
-                arrived = TraceEmitterConeShadow(lightsource, ipoint, lightsourceray, lightcolour, e1, e2, half);
-                sent = lightcolour;
-                const double seen = (sent.Weight() > 0.0) ? arrived.Weight() / sent.Weight() : 0.0;
-                low = high = seen;
-            }
-            else
-                arrived = sent = lightcolour;
-        }
-        else
-        for(int k = 0; k < rays; k++)
-        {
-            MathColour weight(1.0);
-            bool geometryCarried = false;
-            const Vector3d offset = EmitterNearOffset(lightsource, ipoint, (k + Draw(lightsourceray.GetKey(), kDrawAreaLight, k)) / rays,
-                                                      Draw(lightsourceray.GetKey(), kDrawAreaLight, 2 * k + 1),
-                                                      DeriveKey(lightsourceray.GetKey(), kDrawEmitter, k), weight, geometryCarried);
-            Ray lsr(lightsourceray);
-            double depth;
-            ComputeOneWhiteLightRay(lightsource, depth, lsr, ipoint, offset);
-            MathColour sample = lightcolour * weight;
-            const double unshadowed = sample.Weight();
-            sent += sample;
-            TraceEmitterSampleShadowRay(lightsource, depth, lsr, sample, offset);
-            lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
-            arrived += sample;
-            const double seen = (unshadowed > 0.0) ? sample.Weight() / unshadowed : 0.0;
-            low = min(low, seen);
-            high = max(high, seen);
-        }
-        if(high - low > EPSILON)
-            MarkGrain();
-        for(int ch = 0; ch < MathColour::channels; ch++)
-            lightcolour[ch] = (sent[ch] > 0.0) ? lightcolour[ch] * arrived[ch] / sent[ch] : 0.0;
-        return;
-    }
+
 
     lightGrid.resize(lightsource.Area_Size1 * lightsource.Area_Size2);
 
@@ -3987,20 +3827,7 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
     Vector3d axis1, axis2;
     double u, v;
 
-    if(lightsource.emitter != nullptr)
-    {
-        // The caller attenuated the light to the emitter's centre; this sample moves it to its own distance,
-        // or to the centre alone where the emitter is far enough to stand for itself.
-        MathColour weight(1.0);
-        const Vector3d offset = EmitterFar(lightsource, ipoint) ? Vector3d(0.0) :
-                                EmitterOffset(lightsource, sample[U], DeriveKey(lightsourceray.GetKey(), sample[V]), weight);
-        const double centre = Attenuate_Light(&lightsource, lightsourceray, lightsourcedepth);
-        ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, ipoint, offset);
-        if(centre > 0.0)
-            lightcolour *= weight * (Attenuate_Light(&lightsource, lightsourceray, lightsourcedepth) / centre);
-        TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
-        return;
-    }
+
 
     ComputeAreaLightAxes(lightsource, lightsourcedepth, lightsourceray, ipoint, axis1, axis2);
 
@@ -4012,108 +3839,63 @@ void Trace::TraceAreaLightSampleShadowRay(const LightSource &lightsource, double
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
 }
 
-Vector3d Trace::EmitterOffset(const LightSource &lightsource, double s, std::uint64_t key, MathColour& weight)
+bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
+                                    MathColour& colour, const Vector2d& uv, bool shadows, bool receiverBoundary)
 {
-    const EmitterSample sample = lightsource.emitter->Sample(std::min(std::max(s, 0.0), 1.0), key);
-    weight = sample.weight;
-    return sample.position - lightsource.Center;
-}
-
-/// The far field's cone shadow: the emitter's silhouette disk on the basis e1, e2, as a 4x4 grid of
-/// jittered samples refined where neighbouring samples disagree, after the area-light refinement it
-/// mirrors. The result is the average of what arrives, a fraction of the centre's magnitude the caller
-/// folds into the light.
-MathColour Trace::TraceEmitterConeShadow(const LightSource &lightsource, const Vector3d &ipoint, Ray &lightsourceray,
-                                         const MathColour &lightcolour, const Vector3d &e1, const Vector3d &e2,
-                                         double radius)
-{
-    for (auto& row : coneGrid)
-        for (MathColour& cell : row)
-            cell.Invalidate();
-    const std::uint64_t key = lightsourceray.GetKey();
-    auto sampleAt = [&](int u, int v, MathColour& out)
+    if (light.portal != nullptr)
+        throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
+    MarkGrain();
+    EmitterSample sample;
+    colour.Clear();
+    if (!light.emitter->SampleToward(point, uv[U], uv[V], ray.GetKey(), threadData, sample))
+        return false;
+    const Vector3d delta = sample.position - point;
+    depth = delta.length();
+    ray.Origin = point;
+    ray.Direction = (depth > 0.0) ? delta / depth : Vector3d(0.0, 0.0, 1.0);
+    if (receiverBoundary)
     {
-        if (coneGrid[u][v].IsValid()) { out = coneGrid[u][v]; return; }
-        const double ju = (lightsource.Jitter ? Draw(key, kDrawAreaLight, 2 * (5 * v + u)) - 0.5 : 0.0) / 3.0;
-        const double jv = (lightsource.Jitter ? Draw(key, kDrawAreaLight, 2 * (5 * v + u) + 1) - 0.5 : 0.0) / 3.0;
-        Vector3d offset = (e1 * (radius * 2.0 * ((u + ju) / 3.0 - 0.5))) + (e2 * (radius * 2.0 * ((v + jv) / 3.0 - 0.5)));
-        const double span = offset.length();
-        if (span > radius)
-            offset *= radius / span;
-        Ray lsr(lightsourceray);
-        double depth;
-        ComputeOneWhiteLightRay(lightsource, depth, lsr, ipoint, offset);
-        out = lightcolour;
-        lsr.SetFlags(Ray::OtherRay, true, false);
-        lsr.SetMediaLight(&lightsource);
-        TraceEmitterSampleShadowRay(lightsource, depth, lsr, out, offset);
-        lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
-        coneGrid[u][v] = out;
-    };
-    return TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, 0, 0, 3, 3);
-}
-
-/// One region of the far cone's grid: its four corners, and where they disagree and the region still
-/// divides, its four quadrants in turn.
-MathColour Trace::TraceEmitterConeSubset(const LightSource &lightsource, Ray &lightsourceray, const MathColour &lightcolour,
-                                         const std::function<void(int, int, MathColour&)>& sampleAt,
-                                         int u1, int v1, int u2, int v2)
-{
-    MathColour corner[4];
-    sampleAt(u1, v1, corner[0]);
-    sampleAt(u2, v1, corner[1]);
-    sampleAt(u1, v2, corner[2]);
-    sampleAt(u2, v2, corner[3]);
-    if (((u2 - u1 > 1) || (v2 - v1 > 1)) &&
-        ((ColourDistance(corner[0], corner[1]) > 0.1) || (ColourDistance(corner[1], corner[3]) > 0.1) ||
-         (ColourDistance(corner[3], corner[2]) > 0.1) || (ColourDistance(corner[2], corner[0]) > 0.1)))
-    {
-        const int mu = (u1 + u2) / 2, mv = (v1 + v2) / 2;
-        return (TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, u1, v1, mu, mv) +
-                TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, mu + 1, v1, u2, mv) +
-                TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, u1, mv + 1, mu, v2) +
-                TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, mu + 1, mv + 1, u2, v2)) * 0.25;
+        Vector3d probe(point);
+        for (int axis = 0; axis < 3; axis++)
+            if (ray.Direction[axis] != 0.0)
+                probe[axis] = std::nextafter(point[axis], std::copysign(std::numeric_limits<double>::infinity(), ray.Direction[axis]));
+        RayInteriorVector containing;
+        FindContainingInteriors(probe, containing, ray.GetPreparedSetId());
+        ray.ResetInteriors();
+        ray.AppendInteriors(containing);
     }
-    return (corner[0] + corner[1] + corner[2] + corner[3]) * 0.25;
-}
-
-bool Trace::EmitterFar(const LightSource &lightsource, const Vector3d& point) const
-{
-    return (lightsource.emitterFarRadii > 0.0) &&
-           ((point - lightsource.Center).lengthSqr() > Sqr(lightsource.emitterFarRadii) * Sqr(lightsource.emitter->Radius()));
-}
-
-/// One near-field emitter draw seen from ipoint: by direction and chord where the emitter offers it — the weight
-/// then carries the whole geometry of that draw — or from the emitter's power table, whose weight the caller's
-/// distance law multiplies. Returns the offset from the emitter's centre and sets weight.
-Vector3d Trace::EmitterNearOffset(const LightSource &lightsource, const Vector3d& ipoint, double s, double t, std::uint64_t key,
-                                  MathColour& weight, bool& geometryCarried)
-{
-    EmitterSample toward;
-    if (lightsource.emitter->SampleToward(ipoint, std::min(std::max(s, 0.0), 1.0), t, key, threadData, toward))
+    ray.SetFlags(Ray::OtherRay, true, false);
+    ray.SetMediaLight(&light);
+    colour = sample.weight * (light.emitter->DirectionalWeight(-ray.Direction) * Light_Emitter_Path_Factor(&light, depth));
+    const bool blocking = qualityFlags.shadows && (light.Light_Type != FILL_LIGHT_SOURCE);
+    const bool attenuation = qualityFlags.media && light.Media_Interaction && light.Media_Attenuation;
+    if (shadows && (blocking || attenuation) && !colour.IsZero())
     {
-        weight = toward.weight * Light_Emitter_Falloff_Factor(&lightsource, ipoint);
-        geometryCarried = true;
-        return toward.position - lightsource.Center;
+        const Vector3d offset = sample.position - light.Center;
+        Ray shadowRay(ray);
+        double remaining = depth;
+        TraceEmitterSampleShadowRay(light, remaining, shadowRay, colour, offset);
+        ray.SetMediaErrorBudget(min(ray.GetMediaErrorBudget(), shadowRay.GetMediaErrorBudget()));
     }
-    const Vector3d offset = EmitterOffset(lightsource, s, key, weight);
-    weight *= Light_Emitter_Falloff_Factor(&lightsource, ipoint);
-    geometryCarried = false;
-    return offset;
+    return !colour.IsZero();
 }
 
 void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                         MathColour& lightcolour, const Vector3d& offset)
 {
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
-    if(lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && (lightsourcedepth > SHADOW_TOLERANCE) &&
-       !lightcolour.IsNearZero(EPSILON) && !lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
+    if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media &&
+        (lightsourcedepth > 0.0) && !lightcolour.IsZero())
     {
         Intersection end;
         end.Depth = lightsourcedepth;
         end.Object = nullptr;
-        ColourChannel transm = 0.0;
-        media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, end, lightcolour, transm);
+        if (!lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
+        {
+            ColourChannel unused = 0.0;
+            media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, end, lightcolour, unused);
+        }
+        ComputeShadowMedia(lightsourceray, end, lightcolour, true);
     }
 }
 
@@ -4159,6 +3941,20 @@ Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u,
 // see filter_shadow_ray in v3.6's lighting.cpp
 void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& isect, Ray& lightsourceray, MathColour& colour)
 {
+    if (lightsource.emitter && (!qualityFlags.shadows || (lightsource.Light_Type == FILL_LIGHT_SOURCE) || Test_Flag(isect.Object, NO_SHADOW_FLAG)))
+    {
+        const bool attenuate = lightsource.Media_Interaction && lightsource.Media_Attenuation;
+        if (attenuate && qualityFlags.media && !lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
+        {
+            ColourChannel unused = 0.0;
+            media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, isect, colour, unused);
+        }
+        Intersection boundary(isect);
+        if (!boundary.Object->interior)
+            boundary.Object = nullptr;
+        ComputeShadowMedia(lightsourceray, boundary, colour, attenuate);
+        return;
+    }
     WeightedTextureVector wtextures;
     Vector3d ipoint;
     Vector3d raw_Normal;
@@ -4315,7 +4111,8 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     // TODO - For photon rays we're still potentially doing double work on media.
     // TODO - For shadow rays we're still potentially doing double work on distance-based attenuation.
     // Calculate participating media effects.
-    if(qualityFlags.media && (!lightsourceray.GetInteriors().empty()) && InteriorMediaReach(lightsourceray))
+    if(qualityFlags.media && (!lightsource.emitter || (lightsource.Media_Interaction && lightsource.Media_Attenuation)) &&
+       (!lightsourceray.GetInteriors().empty()) && InteriorMediaReach(lightsourceray))
     {
         ColourChannel dummyTransm;
         media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, isect, temp_Colour, dummyTransm);
@@ -5580,6 +5377,13 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
 
 bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour, const Vector2d* areaSample)
 {
+    if (lightsource.emitter != nullptr)
+    {
+        const Vector2d uv = areaSample ? *areaSample : Vector2d(Draw(light_source_ray.GetKey(), kDrawEmitter, 0),
+                                                               Draw(light_source_ray.GetKey(), kDrawEmitter, 1));
+        return !SampleEmitterConnection(lightsource, p, light_source_ray, depth, colour, uv);
+    }
+
     ComputeOneLightRay(lightsource, depth, light_source_ray, p, colour, lightsource.emitter != nullptr);
 
     // There's no need to test for shadows if no light

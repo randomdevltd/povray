@@ -630,6 +630,21 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
     return(Attenuation);
 }
 
+// An explicit artistic path modifier; physical transport is exactly one at the defaults.
+DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length)
+{
+    if ((Light->attenuationScale == 1.0) && (Light->attenuationPower == 2.0))
+        return 1.0;
+    const DBL R = Light->lawRadius;
+    if (!(R > 0.0))
+        return 1.0;
+    if (!(Light->attenuationScale > 0.0))
+        return std::max(1.0, Sqr(Length / R));
+    const DBL q = R / std::max(Length, R);
+    const DBL A = pow(q, Light->attenuationPower);
+    return pow(q, Light->attenuationPower - 2.0) * pow(Light->attenuationScale, A - 1.0);
+}
+
 /// A volume light's law at distance r from its centre: A'(r) = A·(1/scale)^(1−A) over its radius squared, with
 /// A = (R/max(r,R))^power. Continuous at the pivot r = R, exactly 1/scale times fainter in the far field, and
 /// never more singular than 1/R^2, so no receiver is lit beyond what its radiance says.
@@ -665,24 +680,15 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 
 bool Light_Below_Fade_Cutoff(const LightSource *Light, const Vector3d& Point)
 {
-    if ((Light->emitter == nullptr) || !(Light->fadeCutoff > 0.0))
-        return false;
-    if (!(Light->attenuationScale > 0.0))
-        return false;   // no falloff: every lit point keeps the light
-    const Emitter& emitter = *Light->emitter;
-    const DBL d = (Point - emitter.Centre()).length() - emitter.Radius();
-    if (d <= 0.0)
-        return false;   // at or inside its reach: leave the light in
-    // what it can deliver is bounded by its radiance times the solid angle of its reach, over the falloff scale
-    const DBL sinHalf = std::min(1.0, emitter.Radius() / d);
-    const DBL solid = 2.0 * M_PI * (1.0 - std::sqrt(std::max(0.0, 1.0 - Sqr(sinHalf))));
-    return (emitter.RadianceBound() * solid / Light->attenuationScale) < Light->fadeCutoff;
+    (void)Light;
+    (void)Point;
+    return false;
 }
 
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)
 {
     if (Light->volumeLaw)
-        return EmitterLawAttenuation(Light, Length) * Sqr(std::max(Length, EPSILON));
+        return Light_Emitter_Path_Factor(Light, Length);
     if (Light->Fade_Power <= 0.0)
         return Light->Parallel ? 1.0 : Sqr(std::max(Length, EPSILON));
     if (Light->Parallel)

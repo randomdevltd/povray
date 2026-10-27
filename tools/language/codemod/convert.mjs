@@ -654,10 +654,7 @@ function convertUnit(unit, context) {
     insert(message.endIndex, nextIsSemicolon(node) ? ')' : ');');
   }
 
-  // A media light_source of the classic scene moves out of its media block as the interior's light block,
-  // taking the emission's value as its pigment: interior { media { ... } light { pigment { ... } ... } }.
-  // fade_power and fade_distance go: a volume's falloff is attenuation. The emission is dropped from the
-  // media, whose glow then needs a new look, since the light, not the emission, lights the scene.
+  // Legacy media lights become independent interior lights with their emission colour as pigment.
   function mediaLight(node) {
     if (node.childForFieldName('name')?.text !== 'media') return;
     const entries = items(node.children.slice(1, -1)).filter((c) => c.type !== '{' && c.type !== '}');
@@ -668,40 +665,53 @@ function convertUnit(unit, context) {
     const stopWord = (c) => (word(c) && mediaItem.has(c.text)) || c.type === 'block';
     const lamp = entries.find((c) => c.type === 'block' && c.childForFieldName('name')?.text === 'light_source');
     if (!lamp) return;
+    let owner = node.parent;
+    while (owner && !(owner.type === 'block' && owner.childForFieldName('name')?.text === 'interior')) owner = owner.parent;
+    if (owner && owner.descendantsOfType('block').filter((c) => c.childForFieldName('name')?.text === 'light_source' &&
+        c.parent?.childForFieldName('name')?.text === 'media').length > 1) {
+      refuse(node, 'multiple-media-lights', 'combine these source patterns into one interior light before conversion');
+      return;
+    }
     const lampEntries = items(lamp.children.slice(2, -1));
+    const lightWords = new Set(['fade_power', 'fade_distance', 'samples', 'brightness', 'shadowless',
+      'media_interaction', 'media_attenuation', 'fade_cutoff', 'far_radii', 'cluster_radii', 'shadows']);
     let dropped = '';
     for (let i = 0; i < lampEntries.length; i++) {
       const entry = lampEntries[i];
       if (word(entry) && ['fade_power', 'fade_distance'].includes(entry.text)) {
         let j = i + 1;
-        while (j < lampEntries.length && !stopWord(lampEntries[j]) && !word(lampEntries[j])) j++;
+        while (j < lampEntries.length && lampEntries[j].type !== 'block' && !(word(lampEntries[j]) && lightWords.has(lampEntries[j].text))) j++;
         dropped += ` ${text.slice(entry.startIndex, (j < lampEntries.length ? lampEntries[j] : lamp.children[lamp.children.length - 1]).startIndex).trim()}`;
         lampEntries.splice(i, j - i);
         i--;
       } else if (word(entry) && ['samples', 'brightness'].includes(entry.text))
         remark(entry, 'media-light', `${entry.text} carries over; the light states radiance now`);
     }
-    const at = entries.indexOf(lamp);
-    const emission = entries.slice(0, at).find((c) => word(c) && c.text === 'emission');
+    const emission = entries.find((c) => word(c) && c.text === 'emission');
     let pigment = '';
     let valueEntries = [];
     if (emission) {
       let j = entries.indexOf(emission) + 1;
-      while (j < at && !stopWord(entries[j])) j++;
+      while (j < entries.length && !stopWord(entries[j])) j++;
       valueEntries = entries.slice(entries.indexOf(emission) + 1, j);
       if (valueEntries.length > 0) {
-        const valueEnd = j < at ? entries[j].startIndex : spaceBefore(lamp.startIndex);   // the lamp's own removal eats that space
+        const valueEnd = j < entries.length ? (entries[j] === lamp ? spaceBefore(lamp.startIndex) : entries[j].startIndex) : node.children[node.children.length - 1].startIndex;
         let value = text.slice(valueEntries[0].startIndex, valueEnd).trim();
-        if (/^[-+.(0-9]/.test(value)) value = `rgb ${value}`;   // a bare number is a grey to the emission, not yet to a pigment
-        pigment = ` pigment { ${value} }`;
-        edit(emission.startIndex, valueEnd, '');
+        if (/^[-+.(0-9]/.test(value)) value = `rgb ${value}`;
+        else if (/^[A-Za-z_]\w*(?:\s|$)/.test(value) && !/^(?:color|colour|rgb|rgbf|rgbt|rgbft|srgb|srgbf|srgbt|srgbft)\b/.test(value))
+          value = `color ${value}`;
+        const density = entries.find((c) => c.type === 'block' && c.childForFieldName('name')?.text === 'density');
+        const shape = density ? text.slice(density.children.find((c) => c.type === '{').endIndex,
+          density.children[density.children.length - 1].startIndex).trim() : null;
+        pigment = shape ? ` pigment { pigment_pattern { ${shape} } color_map { [0 rgb 0] [1 ${value}] } }` :
+          ` pigment { ${value} }`;
       }
     }
     const inner = lampEntries.map((entry) => entry.text).join(' ');
     const note = dropped ? ` /* dropped${dropped}: a volume falls off by attenuation */` : '';
     remove(lamp);
     // the media keeps its other items; without any, only the light block remains
-    const rest = entries.filter((c) => c !== lamp && c !== emission && !valueEntries.includes(c) && !COMMENTS.includes(c.type));
+    const rest = entries.filter((c) => c !== lamp && !COMMENTS.includes(c.type));
     const lamp2 = `light {${pigment} ${inner}${note} }`;
     if (hasAncestor(node, 'default_directive'))
     {

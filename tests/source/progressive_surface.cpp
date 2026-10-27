@@ -15,6 +15,7 @@ struct Deposit final
 {
     pov::Vector3d point, direction, normal;
     pov::MathColour flux;
+    bool physicalFlux = false;
 };
 
 double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point, const pov::Vector3d& normal,
@@ -66,6 +67,14 @@ double MeanRatio(unsigned int photons, unsigned int k, double area, Place&& plac
 
 int main()
 {
+    static_assert(sizeof(pov::MathColour) != 12 || sizeof(pov::MappedPhoton) == 64, "Photon flags must fit the receiver word");
+    {
+        pov::ProgressivePhotonMap map;
+        Deposit deposit;
+        deposit.physicalFlux = true;
+        map.Add(deposit, nullptr, 1.0);
+        assert(map.photons.front().physicalFlux);
+    }
     std::mt19937_64 random(3);
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     const double pi = std::acos(-1.0);

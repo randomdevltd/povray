@@ -70,3 +70,26 @@ test('names includes uniquely within one output folder', () => {
   const names = ['a', 'b'].map((s) => program.convertScene(join(base, 'scenes', `${s}.pov`), { folder: 'out' })[0].name);
   assert.deepEqual(names, ['u.inc4', 'u-2.inc4']);
 });
+
+test('migrates media light colour and fade expressions independent of item order', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-light-'));
+  const path = join(base, 'lamp.pov');
+  writeFileSync(path, '#declare Glow = rgb <1,0.5,0.2>;\n#declare Falloff = 2;\n' +
+    'sphere { 0,1 interior { media { light_source { fade_power Falloff fade_distance Falloff samples 16 } emission Glow } } }\n');
+  const [result] = new Program().convertScene(path);
+  assert.deepEqual(result.refusals, []);
+  assert.match(result.text, /light \{ pigment \{ color Glow \} samples 16/);
+  assert.match(result.text, /media \{ emission Glow/);
+  assert.match(result.text, /dropped fade_power Falloff fade_distance Falloff/);
+});
+
+test('refuses multiple legacy sources sharing one interior', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-lights-'));
+  const path = join(base, 'lamps.pov');
+  writeFileSync(path, 'sphere { 0,1 interior { media { emission rgb 1 light_source {} } ' +
+    'media { emission rgb 2 light_source {} } } }');
+  const [result] = new Program().convertScene(path);
+  assert.equal(result.text, null);
+  assert.ok(result.refusals.every((r) => r.reason === 'multiple-media-lights'));
+  assert.ok(result.refusals.length > 0);
+});

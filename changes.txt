@@ -400,39 +400,30 @@ New Features
     scene's request without editing it. Long marches are coarsened to fit a
     step budget; splitting long containers or a coarser resolution avoids
     that.
-  - A volume of medium can be a light: `interior { media { ... } light { } }`
-    lights surfaces and media with soft shadows. The light states radiance in
-    its own block, apart from the media's look: `pigment` for its colour or
-    pattern, `brightness` for the radiance (`nits` names the unit, `lumens`
-    states the total power under 1 unit = 1 m, and `scale_lumens(Phi, c)` is a
-    standard function for carrying lumens between unit conventions), and each
-    point of the volume emits the radiance times the media's density-weighted
-    extinction, or the radiance over the container's mean chord when none has
-    any. `samples` (16) draws per lit point in the near field, `far_radii` (8)
-    beyond which the emitter's centre stands for it with one shadow ray,
-    `attenuation Scale[, Power]` (1, 2: physical) shapes the falloff (0 turns
-    it off), `cluster_radii` groups shadowless lights of equal attenuation,
-    and `shadows method 1` opts a light out of the shadow cache. The words
-    `light`, `nits`, `lumens`, `attenuation`, `far_radii`, `cluster_radii`,
-    `fade_cutoff` and `shadows` are matched by their text and stay free as
-    identifiers. `fade_power`, `fade_distance` and a `light_source` block
-    inside `media` are errors naming the new form; `fade_cutoff` moves to
-    `#default { interior { light { fade_cutoff Value } } }`.
-  - Beyond `far_radii` a volume light's magnitude is its centre's and its
-    shadow keeps its angular extent: the emitter's silhouette disk is sampled
-    as a small jittered grid refined where samples disagree, after the
-    refinement area-light shadows use, so far shadows have penumbras as wide
-    as the emitter's angular diameter times the occluding edge's offset
-    instead of a binary edge. A scattering medium is lit by the emitter's
-    escaped power as a point at its centre; in smoke it reads some ten to
-    fifteen per cent below a bare classic point light of that power, whose
-    shadow rays cross no surface and so march no media.
-  - A volume light takes `fade_cutoff Value`: where the light's radiance over
-    the solid angle of its nearest reach, scaled by its `attenuation` scale,
-    is fainter than the value (on the 0 to 1 scale of `adc_bailout`) at a lit
-    point, it is left out there, with no shadow ray. 0.000004 by default under
-    #version 4.0 and later, 0 (off) before. Volume lights are still not seen
-    through portals.
+  - A finite object can be an independent volume light: `interior { light { } }`.
+    The projected-area normalization below is exploratory, not a settled
+    source contract; unused container padding remains an unresolved case.
+    Its pigment and topology define its proposed source; media density, extinction and
+    prepared grids affect transport separately. Nits use j(x,w)=L*pigment(x)*projected_area(w)/V, with the true
+    self-occluded projected silhouette counted once in each direction.
+    This is a reference calibration, not equal brightness at every receiver.
+    Lumens normalize total generated flux with the renderer's greyscale
+    convention, before absorption. `scale_lumens(Phi,c)` explicitly converts
+    author-stated metres per scene unit. Uniform dilation preserves nits
+    illumination and changes fixed-lumen illumination inversely with area.
+    Geometry, angular shape and flux normalization use convergence checks and warn
+    when their numerical discrepancy remains above the preparation target.
+  - Direct surface lighting, scattering media and progressive photons use the
+    same finite source at every distance. Sampling never collapses it to a
+    centre light or replaces its visibility with a silhouette disk. There is
+    no cell-distance clamp; near illumination and distant inverse-square
+    divergence follow the same integral. `samples` controls variance and cost.
+    `attenuation Power, Scale` defaults to physical `2,1`; a single value is
+    the scale shorthand. Artistic attenuation applies consistently to direct
+    and photon paths. `light`, `nits`, `lumens` and `attenuation` are contextual.
+    Legacy media light_source blocks must be migrated; the codemod preserves
+    appearance emission and copies source patterns into the independent light.
+    Multiple old sources in one interior require explicit pattern composition.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction
     between overlapping and shared surfaces.

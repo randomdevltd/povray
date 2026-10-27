@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 #include <unordered_map>
 
@@ -22,6 +23,7 @@ struct ProgressivePhoton final
     MathColour flux;
     ConstObjectPtr object = nullptr;
     PreparedSetId set = 0;
+    bool physicalFlux = false;
 };
 
 /// One light's target in a prepared set: the samples aimed at it and the deposits they made, summed over batches.
@@ -49,7 +51,7 @@ struct MappedPhoton final
     Vector3d point;
     float direction[3], normal[3];
     MathColour flux;
-    std::uint32_t receiver : 30, axis : 2;
+    std::uint32_t receiver : 29, axis : 2, physicalFlux : 1; // At most 536870911 receivers; the final id is the sentinel.
 
     Vector3d Direction() const { return Vector3d(direction[0], direction[1], direction[2]); }
     Vector3d Normal() const { return Vector3d(normal[0], normal[1], normal[2]); }
@@ -81,7 +83,7 @@ struct PhotonNeighbour final
 class ProgressivePhotonMap final
 {
     public:
-        static constexpr std::uint32_t noReceiver = (1u << 30) - 1;
+        static constexpr std::uint32_t noReceiver = (1u << 29) - 1;
         std::vector<MappedPhoton> photons;
         unsigned int neighbours = ProgressivePhotonBudget::baseNeighbours;
 
@@ -96,6 +98,9 @@ class ProgressivePhotonMap final
                 stored.normal[a] = float(photon.normal[a]);
             }
             stored.flux = photon.flux * scale;
+            stored.physicalFlux = photon.physicalFlux;
+            if (receivers.size() >= noReceiver && receiverIds.find(object) == receiverIds.end())
+                throw std::overflow_error("Too many photon receiver objects.");
             auto found = receiverIds.emplace(object, std::uint32_t(receivers.size()));
             if (found.second)
                 receivers.push_back(object);
@@ -201,6 +206,8 @@ class ProgressivePhotonMap final
         /// Replaces an unbuilt map with stored photons whose receiver fields index objects.
         void Restore(std::vector<ConstObjectPtr> objects, std::vector<MappedPhoton> stored)
         {
+            if (objects.size() > noReceiver)
+                throw std::overflow_error("Too many photon receiver objects.");
             receivers = std::move(objects);
             receiverIds.clear();
             for (std::uint32_t id = 0; id < receivers.size(); ++id)

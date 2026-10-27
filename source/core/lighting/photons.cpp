@@ -457,6 +457,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
             else if (dot(photon.normal, ray.Direction) > 0.0)
                 photon.normal.invert();
             photon.flux = LightCol * PhotonPathWeight(threadData->photonSourceLight, threadData->photonDepth);
+            photon.physicalFlux = threadData->photonSourceLight->emitter != nullptr;
             photon.object = isect.Object;
             photon.set = ray.GetPreparedSetId();
             threadData->progressiveSurface.push_back(photon);

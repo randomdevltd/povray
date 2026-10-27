@@ -54,7 +54,7 @@ class TraceThreadData;
 struct EmitterSample final
 {
     Vector3d position;
-    MathColour weight;  ///< the radiant intensity it stands for, per channel as a multiple of Emitter::Intensity()
+    MathColour weight;  ///< absolute j/pV for a position, j/(r² pV) for a receiver connection
     double pdf;         ///< probability density of the position: per unit volume for a volume, 1 for a point
 };
 
@@ -63,20 +63,19 @@ class Emitter
 {
     public:
         virtual ~Emitter() {}
-        virtual const MathColour& Intensity() const = 0;   ///< total radiant intensity: power over 4 pi
+        virtual const MathColour& Intensity() const = 0;   ///< prepared estimate of ∫j dV; never a connection normalization
         virtual const Vector3d& Centre() const = 0;        ///< power-weighted centre
         virtual double Radius() const = 0;                 ///< about Centre(), holding every sample
-        /// A position drawn in proportion to emitted power: s in [0,1) picks the stratum, key the detail within it.
-        virtual EmitterSample Sample(double s, std::uint64_t key) const = 0;
+        /// A position from a full-support proposal; its weight evaluates the continuous source, not its table.
+        virtual EmitterSample Sample(double s, std::uint64_t key, TraceThreadData *td = nullptr) const = 0;
         /// As Sample(), with t a second stratified dimension for emitters that use one.
-        virtual EmitterSample SampleSquare(double s, double, std::uint64_t key) const { return Sample(s, key); }
+        virtual EmitterSample SampleSquare(double s, double, std::uint64_t key, TraceThreadData *td = nullptr) const { return Sample(s, key, td); }
         /// A position seen from `from`, drawn by direction over the emitter's cone and then along the chord inside it,
-        /// exact for a receiver in its near field: weight carries the whole ∫ε dV / r² of that chord, so nothing clamps.
+        /// at any distance: weight carries the absolute ∫j dV / r² estimate, without receiver response.
         /// s and t are the direction draws, key the detail within the chord. False where unsupported.
         virtual bool SampleToward(const Vector3d& from, double s, double t, std::uint64_t key, TraceThreadData *td,
                                   EmitterSample& sample) const { (void)from; (void)s; (void)t; (void)key; (void)td; (void)sample; return false; }
-        /// The brightest channel of the radiance the emitter was authored as; a bound fade_cutoff culls by.
-        virtual double RadianceBound() const { return HUGE_VAL; }
+        virtual double DirectionalWeight(const Vector3d& outgoing) const { (void)outgoing; return 1.0; }
         virtual Vector3d Direction(const EmitterSample&, double u, double v, double& pdf) const ///< isotropic, pdf per steradian
         {
             const double z = 1.0 - 2.0 * u, r = std::sqrt(std::max(0.0, 1.0 - z * z)), phi = 2.0 * M_PI * v;
@@ -94,9 +93,9 @@ struct MediaLight final
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double fadeCutoff = 0.0;        ///< radiance-solid-angle below which a lit point leaves the light out; set by the scene version
-    int samples = 16;               ///< emitter draws per lit point in the near field
-    double farRadii = 8.0;          ///< beyond this many emitter radii its centre stands for it (0: never)
-    double clusterRadii = 0.0;      ///< shadowless: lit as part of a cluster farther than this many cluster radii (0: never)
+    int samples = 16;               ///< emitter draws per receiver point
+    double farRadii = 8.0;          ///< obsolete compatibility setting; transport never substitutes a centre
+    double clusterRadii = 0.0;      ///< obsolete compatibility setting; transport never substitutes a cluster
     int shadowsMethod = 2;          ///< 2 the shadows cache, 1 this light's own shadow rays
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
