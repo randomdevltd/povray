@@ -3224,7 +3224,8 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 const PhotonSobol sequence(key);
                 for (int j = 0; j < count; j++)
                 {
-                    const EmitterDraw draw(sequence(j, 0), sequence(j, 1), sequence(j, 2), sequence(j, 3));
+                    const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(key, kDrawEmitter, j)),
+                                           sequence(j, 1), sequence(j, 2), sequence(j, 3));
                     Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
                     if (trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
                         ComputeMediaScatteringAttenuation(medias, Emission, Scattering,

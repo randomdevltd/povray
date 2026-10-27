@@ -3076,7 +3076,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         {
             Ray sampleRay(lightsourceray);
             sampleRay.SetKey(DeriveKey(key, kDrawEmitter, k));
-            const EmitterDraw draw(sequence(k, 0), sequence(k, 1), sequence(k, 2), sequence(k, 3));
+            const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(k, 0), count, Draw(key, kDrawEmitter, k)),
+                                   sequence(k, 1), sequence(k, 2), sequence(k, 3));
             MathColour incoming, tmp;
             double distance;
             SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, draw, true, geometricNormal, object->interior.get());

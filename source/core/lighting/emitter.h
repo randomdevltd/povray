@@ -55,6 +55,16 @@ struct EmitterDraw final
 {
     double choose, x, y, z;
     EmitterDraw(double choose, double x, double y, double z) : choose(choose), x(x), y(y), z(z) {}
+    static double JitterSelection(double value, unsigned int count, double tail)
+    {
+        unsigned int strata = 1;
+        while (strata <= count / 2)
+            strata *= 2;
+        const double bin = std::floor(value * strata);
+        const double result = (bin + tail) / strata;
+        return std::min(result, std::nextafter((bin + 1.0) / strata, bin / strata));
+    }
+
 };
 
 struct EmitterSample final
