@@ -7819,26 +7819,48 @@ void Parser::Parse_Default ()
         END_CASE
 
         CASE (INTERIOR_TOKEN)
-            Parse_Begin ();
-            EXPECT
-                OTHERWISE
-                    if (CurrentTokenText() != "light")
-                    {
-                        UNGET
-                        EXIT
-                    }
-                    Parse_Begin ();
-                    while (!Peek_Token(RIGHT_CURLY_TOKEN))
-                    {
-                        Get_Token ();
-                        if (CurrentTokenText() != "fade_cutoff")
-                            Error("A #default interior light accepts only fade_cutoff, not '%s'.", CurrentTokenText().c_str());
-                        defaultFadeCutoff = Parse_Fade_Cutoff ();
-                    }
-                    Parse_End ();
-                END_CASE
-            END_EXPECT
-            Parse_End ();
+        {
+            // the light block's own parser reads it, then #default keeps only fade_cutoff: it gives
+            // starting values, not a template
+            InteriorPtr probe(new Interior());
+            Parse_Begin();
+            Get_Token();
+            if (CurrentTokenText() != "light")
+                Error("A #default interior accepts only a light block, not '%s'.", CurrentTokenText().c_str());
+            Parse_Interior_Light(*probe);
+            const MediaLight& light = *probe->light;
+            const char *given = nullptr;
+            if (light.pigment != nullptr)
+                given = "pigment";
+            else if (light.brightness != 1.0)
+                given = "brightness";
+            else if (light.lumens >= 0.0)
+                given = "lumens";
+            else if (light.attenuationScale != 1.0)
+                given = "attenuation";
+            else if (light.attenuationPower != 2.0)
+                given = "attenuation's power";
+            else if (light.samples != 16)
+                given = "samples";
+            else if (light.farRadii != 8.0)
+                given = "far_radii";
+            else if (light.clusterRadii != 0.0)
+                given = "cluster_radii";
+            else if (light.shadowsMethod != 2)
+                given = "shadows";
+            else if (light.shadowless)
+                given = "shadowless";
+            else if (!light.mediaInteraction)
+                given = "media_interaction";
+            else if (!light.mediaAttenuation)
+                given = "media_attenuation";
+            else if (light.photonOptions)
+                given = "photons";
+            if (given != nullptr)
+                Error("A #default interior light accepts only fade_cutoff, not '%s'.", given);
+            defaultFadeCutoff = light.fadeCutoff;
+            Parse_End();
+        }
         END_CASE
 
         OTHERWISE

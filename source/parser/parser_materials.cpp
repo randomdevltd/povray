@@ -4035,7 +4035,7 @@ double Parser::Parse_Fade_Cutoff()
 {
     const double cutoff = Parse_Float();
     if (!std::isfinite(cutoff) || (cutoff < 0.0))
-        Error("A media light_source's fade_cutoff must be finite and not negative.");
+        Error("A light block's fade_cutoff must be finite and not negative.");
     return cutoff;
 }
 
