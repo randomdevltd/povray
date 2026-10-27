@@ -3861,10 +3861,6 @@ void Parser::Parse_Media(vector<Media>& medialist)
             IMedia->mix = Parse_Mix();
         END_CASE
 
-        CASE (LIGHT_SOURCE_TOKEN)
-            Parse_Media_Light(*IMedia);
-        END_CASE
-
         CASE (PRIORITY_TOKEN)
         {
             const DBL priority = Parse_Float();
@@ -3875,6 +3871,8 @@ void Parser::Parse_Media(vector<Media>& medialist)
         END_CASE
 
         OTHERWISE
+            if (CurrentTrueTokenId() == LIGHT_SOURCE_TOKEN)
+                Error("A medium's light_source block moved out of media to its interior: interior { media { ... } light { ... } }.");
             if (CurrentTokenText() == "refraction_detail")
             {
                 Get_Token();
@@ -3900,13 +3898,11 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
     if (resolutionSpecified && IMedia->Sample_Method != 4)
         Error("media resolution requires method 4.");
-    if (IMedia->light && ((IMedia->mix == kMediaBlendSubtract) || (IMedia->mix == kMediaBlendMultiply)))
-        Error("A media light_source needs a medium that adds or replaces, not one that subtracts or multiplies.");
 
     medialist.push_back(IMediaObj);
 }
 
-void Parser::Parse_Media_Light(Media& medium)
+void Parser::Parse_Interior_Light(Interior& interior)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
     light->fadeCutoff = (defaultFadeCutoff >= 0.0) ? defaultFadeCutoff :
@@ -3915,6 +3911,15 @@ void Parser::Parse_Media_Light(Media& medium)
     Parse_Begin();
 
     EXPECT
+        CASE (PIGMENT_TOKEN)
+            if (light->pigment != nullptr)
+                Error("Only one pigment allowed in a light block.");
+            light->pigment = Copy_Pigment(Default_Texture->Pigment);
+            Parse_Begin();
+            Parse_Pigment(&light->pigment);
+            Parse_End();
+        END_CASE
+
         CASE (SAMPLES_TOKEN)
             light->samples = Parse_Int_With_Minimum(1, "samples");
         END_CASE
@@ -3922,11 +3927,18 @@ void Parser::Parse_Media_Light(Media& medium)
         CASE (BRIGHTNESS_TOKEN)
             light->brightness = Parse_Float();
             if (!std::isfinite(light->brightness) || (light->brightness < 0.0))
-                Error("A media light_source's brightness must be finite and not negative.");
+                Error("A light block's brightness must be finite and not negative.");
+            if (CurrentTokenText() == "lumens")
+            {
+                Get_Token();
+                light->lumens = light->brightness;
+            }
+            else if (CurrentTokenText() == "nits")
+                Get_Token(); // the number is the radiance itself; nothing converts it
         END_CASE
 
         CASE (SHADOWLESS_TOKEN)
-            light->shadowless = true;
+            light->shadowless = Allow_Float(1.0) > 0.0;
         END_CASE
 
         CASE (MEDIA_INTERACTION_TOKEN)
@@ -3935,14 +3947,6 @@ void Parser::Parse_Media_Light(Media& medium)
 
         CASE (MEDIA_ATTENUATION_TOKEN)
             light->mediaAttenuation = Allow_Float(1.0) > 0.0;
-        END_CASE
-
-        CASE (FADE_DISTANCE_TOKEN)
-            light->fadeDistance = Parse_Float();
-        END_CASE
-
-        CASE (FADE_POWER_TOKEN)
-            light->fadePower = Parse_Float();
         END_CASE
 
         CASE (PHOTONS_TOKEN)
@@ -3974,8 +3978,43 @@ void Parser::Parse_Media_Light(Media& medium)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "fade_cutoff")
+            if (CurrentTrueTokenId() == FADE_POWER_TOKEN)
+                Error("A light block has no fade_power; its falloff is attenuation <scale>[, <power>].");
+            else if (CurrentTrueTokenId() == FADE_DISTANCE_TOKEN)
+                Error("A light block has no fade_distance; its falloff is attenuation <scale>[, <power>].");
+            else if (CurrentTokenText() == "fade_cutoff")
                 light->fadeCutoff = Parse_Fade_Cutoff();
+            else if (CurrentTokenText() == "attenuation")
+            {
+                Get_Token();
+                UNGET
+                light->attenuationScale = Parse_Float();
+                light->attenuationPower = Parse_Comma() ? Parse_Float() : 2.0;
+                if (!std::isfinite(light->attenuationScale) || (light->attenuationScale < 0.0) ||
+                    !std::isfinite(light->attenuationPower) || (light->attenuationPower <= 0.0))
+                    Error("A light block's attenuation takes a scale of 0 or more, then a power greater than 0.");
+            }
+            else if (CurrentTokenText() == "far_radii")
+            {
+                light->farRadii = Parse_Float();
+                if (!std::isfinite(light->farRadii) || (light->farRadii < 0.0) || ((light->farRadii > 0.0) && (light->farRadii < 1.0)))
+                    Error("A light block's far_radii must be 0 or at least 1.");
+            }
+            else if (CurrentTokenText() == "cluster_radii")
+            {
+                light->clusterRadii = Parse_Float();
+                if (!std::isfinite(light->clusterRadii) || (light->clusterRadii < 0.0) || ((light->clusterRadii > 0.0) && (light->clusterRadii < 1.0)))
+                    Error("A light block's cluster_radii must be 0 or at least 1.");
+            }
+            else if (CurrentTokenText() == "shadows")
+            {
+                Get_Token();
+                if (CurrentTokenText() != "method")
+                    Error("A light block's shadows takes a method: 1 its own shadow rays, 2 the shadows cache.");
+                light->shadowsMethod = Parse_Int_With_Minimum(1, "shadows method");
+                if (light->shadowsMethod != 1 && light->shadowsMethod != 2)
+                    Error("A light block's shadows method must be 1 or 2.");
+            }
             else
             {
                 UNGET
@@ -3986,7 +4025,10 @@ void Parser::Parse_Media_Light(Media& medium)
 
     Parse_End();
 
-    medium.light = light;
+    if ((light->clusterRadii > 0.0) && !light->shadowless)
+        Error("A light block's cluster_radii needs shadowless: a cluster lights a surface without shadow rays.");
+
+    interior.light = light;
 }
 
 double Parser::Parse_Fade_Cutoff()
@@ -4099,7 +4141,14 @@ void Parser::Parse_Interior(InteriorPtr& interior)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "ior_mix")
+            // contextual: a light block belongs to the interior, not to any one medium
+            if (CurrentTokenText() == "light")
+            {
+                if (interior->light != nullptr)
+                    Error("Only one light block allowed in an interior.");
+                Parse_Interior_Light(*interior);
+            }
+            else if (CurrentTokenText() == "ior_mix")
             {
                 Get_Token();
                 const char *names[] = { "surface", "mean", "replace" };
@@ -4119,6 +4168,11 @@ void Parser::Parse_Interior(InteriorPtr& interior)
     END_EXPECT
 
     Parse_End();
+
+    if (interior->light)
+        for (const Media& medium : interior->media)
+            if ((medium.mix == kMediaBlendSubtract) || (medium.mix == kMediaBlendMultiply))
+                Error("An interior light needs media that add or replace, not ones that subtract or multiply.");
 }
 
 int Parser::Parse_Mix()

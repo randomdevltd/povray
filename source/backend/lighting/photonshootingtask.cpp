@@ -172,7 +172,6 @@ class SurfaceLightEmitter final : public Emitter
         const MathColour& Intensity() const override { return light.colour; }
         const Vector3d& Centre() const override { return light.Center; }
         double Radius() const override { return light.Area_Light ? (light.Axis1.length() + light.Axis2.length()) * 0.5 : 0.0; }
-        double NearDistance() const override { return EPSILON; }
         EmitterSample Sample(double s, std::uint64_t key) const override
         {
             return SampleSquare(s, Draw(key, kDrawPhoton, 7), key);

@@ -74,6 +74,7 @@ namespace pov
 class PhotonGatherer;
 struct Photon;
 class Portal;
+struct PreparedSet;
 struct ScreenPattern;
 class RefractionField;
 
@@ -411,6 +412,26 @@ class Trace
         BSPTree::Mailbox mailbox;
         /// Area light grid buffer.
         std::vector<MathColour> lightGrid;
+
+        /// A tree of shadowless emitter lights with equal cluster radii and falloff law, each inner node also a
+        /// point light in its own law for hits far from it.
+        struct LightCluster final
+        {
+            Vector3d centre;
+            double radius = 0.0;
+            int left = -1, right = -1, member = -1;
+            std::shared_ptr<LightSource> light;
+        };
+        /// A tree's root node and the cluster radii beyond which its nodes stand for their lights.
+        struct LightClusterTree final
+        {
+            int root;
+            double reach;
+        };
+        std::vector<LightCluster> lightClusters;
+        std::vector<LightClusterTree> lightClusterTrees;
+        std::vector<unsigned int> unclusteredLights;
+        long long lightClusterSet = -1;
         /// Fast stack pool.
         IStackPool stackPool;
         /// Fast texture list pool.
@@ -720,6 +741,12 @@ class Trace
         bool LightsAddNothing(const FINISH *finish, double attenuation) const;
         void ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const  Ray& eye, const Vector3d& layer_normal, const MathColour& layer_pigment_colour,
                                  MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
+        /// The global lights of a set with light clusters: unclustered ones one by one, then each tree down to nodes far enough away.
+        void ComputeClusteredDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& reye, const Vector3d& layer_normal,
+                                          const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
+        /// Builds the cluster trees of a prepared set's global lights once per set; false if it has none.
+        bool BuildLightClusters(const PreparedSet& view, long long setId);
+        int BuildLightCluster(std::vector<unsigned int>& members, size_t from, size_t to);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
                                     const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1);
@@ -793,6 +820,11 @@ class Trace
         Vector3d AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2);
         /// A light's sample point drawn from its emitter as an offset from its centre, s in [0,1) picking the stratum.
         Vector3d EmitterOffset(const LightSource &lightsource, double s, std::uint64_t key, MathColour& weight);
+        /// Whether a point is far enough from an emitter, in its radii, for its centre to stand for it.
+        bool EmitterFar(const LightSource &lightsource, const Vector3d& point) const;
+        /// A near-field draw seen from ipoint: by chord where offered (weight carries its own geometry), else the table.
+        Vector3d EmitterNearOffset(const LightSource &lightsource, const Vector3d& ipoint, double s, double t, std::uint64_t key,
+                                   MathColour& weight, bool& geometryCarried);
         /// One emitter sample's shadow: the walk to it, then the media of the interiors it ends inside.
         void TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                          MathColour& lightcolour, const Vector3d& offset);

@@ -80,8 +80,9 @@ void Transform_Density(std::vector<PIGMENT*>& Density, const TRANSFORM *Trans);
 
 class Emitter;
 
-/// The light an emitting medium gives from its container: a table of its power over the prepared grid; nullptr and why if none.
-std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr container, TraceThreadData *td, std::string& failure);
+/// The light an interior's `light { }` block gives from its container: a table of each cell's power, its radiance
+/// times the media's density-weighted extinction, or their mean chord when none has any; nullptr and why if none.
+std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData *td, std::string& failure);
 
 /// A `subtract` or `multiply` medium on a ray; it changes the media collected before it, which rank below it.
 struct MediaModifier final
@@ -175,9 +176,8 @@ class MediaFunction : public Trace::MediaFunctor
         /// A modifier medium's density at a point, from its prepared grid where the source allows and the grid holds it.
         void ModifierDensity(Media& medium, const Vector3d& point, ModifierSource source, MathColour& local);
         /// Adds the media's coefficients at a point, density[i] being medias[i]'s density there, after the modifiers;
-        /// the emission of media that are lights only with lightEmission.
         void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
-                                     MathColour& extinction, MathColour *emission, MathColour *scattering, bool lightEmission = true);
+                                     MathColour& extinction, MathColour *emission, MathColour *scattering);
 
         /// The key the current ray's media draws are hashed from.
         std::uint64_t drawKey;

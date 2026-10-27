@@ -353,7 +353,13 @@ class LightSource final : public CompoundObject
         Vector3d Direction, Center, Points_At, Axis1, Axis2;
         DBL Coeff, Radius, Falloff;
         DBL Fade_Distance, Fade_Power;
-        DBL fadeCutoff = 0.0; ///< media light: a point it would light less than this, at its nearest, is left out
+        DBL fadeCutoff = 0.0; ///< volume light: a point its radiance-solid-angle would reach less than this is left out
+        /// a volume light's distance law: factor A'(r) = A·(1/scale)^(1−A) over Radius², A = (Radius/max(r,Radius))^power
+        DBL attenuationScale = 1.0, attenuationPower = 2.0, lawRadius = 0.0;
+        bool volumeLaw : 1;          ///< a light of an emitting volume, or a cluster of them: distance law over lawRadius
+        DBL emitterFarRadii = 8.0;  ///< volume light: beyond this many of its radii the centre stands for it (0: never)
+        DBL emitterClusterRadii = 0.0; ///< shadowless volume light: lit as a cluster beyond this many cluster radii (0: never)
+        bool shadowCacheOff = false;  ///< true: this light's shadow tests skip the per-light shadow cache
         int Area_Size1, Area_Size2;
         int Adaptive_Level;
         ObjectPtr Projected_Through_Object;
