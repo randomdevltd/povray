@@ -646,7 +646,7 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 
 bool Light_Below_Fade_Cutoff(const LightSource *Light, const Vector3d& Point)
 {
-    if ((Light->emitter == nullptr) || !(Light->fadeCutoff > 0.0))
+    if (!Light_Has_Fade_Cutoff(Light))
         return false;
     const Emitter& emitter = *Light->emitter;
     const DBL nearest = std::max((Point - emitter.Centre()).length() - emitter.Radius(), emitter.NearDistance());

@@ -3206,7 +3206,7 @@ void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsour
 
     // Get the light source colour.
     lightcolour = lightsource.colour;
-    if (Light_Below_Fade_Cutoff(&lightsource, ipoint))
+    if (Light_Has_Fade_Cutoff(&lightsource) && Light_Below_Fade_Cutoff(&lightsource, ipoint))
     {
         lightcolour.Clear();
         threadData->Stats()[Fade_Cutoff_Drops]++;

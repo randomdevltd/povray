@@ -394,6 +394,12 @@ class LightSource final : public CompoundObject
         virtual void Compute_BBox() override {}
 };
 
+/// Whether a fade_cutoff can ever drop this light's contribution: only a light emitting from a medium, with a positive cutoff, can.
+inline bool Light_Has_Fade_Cutoff(const LightSource *light)
+{
+    return (light->emitter != nullptr) && (light->fadeCutoff > 0.0);
+}
+
 
 /// Generic abstract class used for containing inherently infinite objects (isosurface, parametric).
 struct ContainedByShape
