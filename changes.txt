@@ -40,6 +40,12 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Prepared method 4 scattering samples camera distance and volume-light
+    position jointly, sharing each light's sample budget across a geometric
+    ray segment and its numerical refraction chords. Optical-depth and glow
+    integration remain separate; finer optical steps no longer multiply the
+    volume-light shadow-ray count. Surface continuations start new segments.
+
   - Media `emission` is appearance only again: it paints the glow the camera
     sees and lights nothing, whether or not the interior has a `light` block,
     and radiosity gathers with `media on` exclude that appearance term.

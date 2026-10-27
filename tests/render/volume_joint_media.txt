@@ -1,0 +1,46 @@
+Joint camera/source integration measurement contract
+
+The scene separates the emitting field from its scattering receiver. The source
+is a colored uniform box of fixed generated flux100lm. The receiver is a narrow
+unit-depth slab with RGB absorption and scattering. Case0 is homogeneous;
+Case1 has two constant-density voxels in one container; Case2 adds an overlapping multiply
+modifier; Case3 adds an asymmetric opaque plate. Case4 preserves the original adjacent-container diagnostic outside the accepting
+runner until its existing boundary discrepancy is resolved. Every accepting
+slab has an explicit density field to activate prepared fixed-method4.
+Phase0 is normalized isotropic;
+Phase±0.4 selects normalized Henyey–Greenstein scattering.
+
+The reference integrates camera depth and the actual three-dimensional source
+volume by independent Cartesian quadrature. Every source connection and camera
+segment uses exact axis-box intersections through the piecewise-constant optical
+field. RGB extinction includes scattering. There is no surface cosine, source
+bounding-sphere substitution, or normalization to a rendered image. Source and
+camera quadrature must converge within0.5% before comparisons are accepted.
+The reference phase integral is independently checked to unity.
+
+First compare immutable old and collector-evaluate-all builds with identical
+scene/argv/seed and decoded RGB pixels. Require exact equality for the stride1
+fixed-quadrature path. Record separately any legacy stride>1 path retained by
+the collector; do not claim exactness for a path whose quadrature changed.
+
+Then compare the joint-budget build against the independent integral. Start
+with8x8 linear16bitRGB frames, AAoff, explicit sourceSamples256. For these new
+single-scattering fixtures predeclare channel mean relative error<=3%, with a
+floor of two16bit quantum steps; compare actual pixel coordinates when computing
+image means. Report pixel RMS separately, without conflating smoothness and
+correct mean. Repeat homogeneous and voxel fixtures at resolution0.05/0.025:
+require both means pass the independent reference and their difference<=3%.
+This tests finite optical-field quadrature convergence honestly; it does not
+assert arbitrary coarse grids encode an identical heterogeneous field.
+Use fixed scene/seed settings across immutable builds. No per-cell minimum
+source draw is allowed in the joint estimator. SourceSamples is a budget for a
+geometric TraceRay leg, including its numerical curved chords; recursive paths
+start separate budgets. Atmosphere and containing-media calls share the leg
+budget while retaining their existing ordered composition; their physical
+coefficients are not merged by this sampling change.
+
+These focused tests do not establish the cost of integrated scenes containing
+variable scattering, refractive media, geometry and several light sources.
+Such scenes require matched camera framing, no anti-aliasing, and measurements
+of total instructions, preparation, media samples, shadow tests and bending.
+Full-frame output is needed to assess overall lighting, noise and shadow detail.

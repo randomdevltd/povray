@@ -136,6 +136,9 @@ class MediaFunction : public Trace::MediaFunctor
 {
     public:
         MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg);
+        virtual std::unique_ptr<Trace::MediaFunctor::Path> BeginPath(const Ray& ray) override;
+        virtual void ScalePathRadiance(const MathColour& factor) override;
+        virtual void SetPathOffset(DBL offset) override;
 
         virtual void ComputeMedia(std::vector<Media>& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         virtual void ComputeMedia(const RayInteriorVector& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
@@ -144,6 +147,8 @@ class MediaFunction : public Trace::MediaFunctor
         virtual ConstObjectPtr SetPathReceiver(ConstObjectPtr receiver) override
             { const ConstObjectPtr previous = pathReceiver; pathReceiver = receiver; return previous; }
     protected:
+        struct FixedLightPath;
+        FixedLightPath *currentPath;
         /// The current segment's subtract and multiply interiors, or nullptr.
         const MediaModifierVector *modifiers;
         std::vector<MathColour> modifierScratch, densityScratch;
@@ -231,13 +236,14 @@ class MediaFunction : public Trace::MediaFunctor
                                       MathColour& emission, MathColour& extinction, MathColour& scattering);
         void ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
                                         const MediaInterval& interval, const Ray& ray, DBL depth, const Vector3d& point,
-                                        const MathColour& scattering, MathColour& emission, bool prepared, bool use_scattering);
+                                        const MathColour& scattering, MathColour& emission, bool prepared, bool use_scattering,
+                                        bool volumeLighting = true);
         void ComputeOneMediaSample(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray &ray, DBL d0, MathColour& SampCol,
                                    MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared = false,
                                    MathColour *scattering = nullptr);
         /// Adds to Emission the light the media's scattering coefficients Scattering send along the ray at depth d1 (point P).
         void ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission);
+                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true);
         /// The step the scattering media would sample an interval at alone: a uniform one by its samples, a prepared one by its grid.
         DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval) const;
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,

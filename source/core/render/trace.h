@@ -232,7 +232,16 @@ class Trace
         class MediaFunctor
         {
             public:
+                class Path
+                {
+                    public:
+                        virtual ~Path() {}
+                        virtual void Finish(MathColour&) = 0;
+                };
                 virtual ~MediaFunctor() {}
+                virtual std::unique_ptr<Path> BeginPath(const Ray&) { return nullptr; }
+                virtual void ScalePathRadiance(const MathColour&) {}
+                virtual void SetPathOffset(DBL) {}
                 virtual void ComputeMedia(std::vector<Media>&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(const RayInteriorVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(MediaVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }

@@ -584,6 +584,12 @@ enum
 
     kPOVAttrib_MediaSamples          = 'MeSa',
     kPOVAttrib_MediaIntervals        = 'MeIn',
+    kPOVAttrib_MediaScatterLegs      = 'MsLg',
+    kPOVAttrib_MediaScatterDomains   = 'MsDm',
+    kPOVAttrib_MediaScatterCells     = 'MsCl',
+    kPOVAttrib_MediaScatterPairs     = 'MsPr',
+    kPOVAttrib_MediaScatterMaxCells  = 'MsMx',
+    kPOVAttrib_MediaScatterPeakBytes = 'MsBy',
     kPOVAttrib_CurvedRays            = 'CuRa',
     kPOVAttrib_RefractionSteps       = 'RfSt',
 

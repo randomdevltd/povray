@@ -1681,7 +1681,223 @@ static const int kMediaAreaLightPoints = 4;
 // Where the draws picking the step a stride of prepared steps takes its light at start.
 static const std::uint64_t kMediaLightDraw = std::uint64_t(1) << 40;
 
+struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
+{
+    struct Domain final
+    {
+        MediaVector medias;
+        LightSourceEntryVector lights;
+        Ray ray;
+        TraceTicket ticket;
+        DBL offset;
+        Domain(const MediaVector& m, const LightSourceEntryVector& l, const Ray& r, DBL at) :
+            medias(m), lights(l), ray(r), ticket(r.GetTicket()), offset(at) {}
+    };
+    struct Cell final
+    {
+        size_t domain, firstLight, lastLight;
+        DBL at, width;
+        MathColour scattering, transfer;
+        size_t mark = 0;
+    };
+
+    MediaFunction& owner;
+    FixedLightPath *previous;
+    std::uint64_t key;
+    DBL offset = 0.0;
+    vector<MathColour> transfers;
+    vector<Domain> domains;
+    vector<Cell> cells;
+    size_t temporaryBytes = 0;
+    bool collecting = true;
+
+    FixedLightPath(MediaFunction& f, const Ray& ray) : owner(f), previous(f.currentPath),
+        key(DeriveKey(ray.GetKey(), kDrawMedia, kMediaLightDraw)) { owner.currentPath = this; }
+    ~FixedLightPath() override { owner.currentPath = previous; }
+
+    void Transfer(const MathColour& depth, size_t first)
+    {
+        // New cells own this call's transmission; only earlier contributions cross it in full.
+        if (first > 0)
+            transfers.push_back(Exp(-depth));
+        for (size_t i = first; i < cells.size(); i++)
+            cells[i].mark = transfers.size();
+    }
+
+    void Scale(const MathColour& factor)
+    {
+        if (!cells.empty())
+            transfers.push_back(factor);
+    }
+
+    bool Affected(const Cell& cell, const LightSource *light) const
+    {
+        const auto& lights = domains[cell.domain].lights;
+        for (size_t i = cell.firstLight; i <= cell.lastLight && i < lights.size(); i++)
+            if ((lights[i].light == light) && (cell.at >= lights[i].s0) && (cell.at <= lights[i].s1))
+                return true;
+        return false;
+    }
+
+    size_t Bytes() const
+    {
+        size_t bytes = sizeof(*this) + cells.capacity() * sizeof(Cell) + domains.capacity() * sizeof(Domain) +
+                       transfers.capacity() * sizeof(MathColour) + temporaryBytes;
+        for (const Domain& domain : domains)
+            bytes += sizeof(MediaVector::VectorType) + domain.medias.capacity() * sizeof(Media *) +
+                     sizeof(LightSourceEntryVector::VectorType) + domain.lights.capacity() * sizeof(LightSourceEntry) +
+                     sizeof(RayInteriorVector::VectorType) + domain.ray.GetInteriors().capacity() * sizeof(Interior *);
+        return bytes;
+    }
+
+    void Finish(MathColour& colour) override
+    {
+        collecting = false;
+        if (cells.empty())
+            return;
+        struct PhotonState final
+        {
+            bool& flag;
+            bool saved;
+            explicit PhotonState(bool& value) : flag(value), saved(value) {}
+            ~PhotonState() { flag = saved; }
+        } photonState(owner.threadData->litObjectIgnoresPhotons);
+        owner.threadData->Stats()[Media_Scatter_Legs]++;
+        owner.threadData->Stats()[Media_Scatter_Domains] += domains.size();
+        owner.threadData->Stats()[Media_Scatter_Cells] += cells.size();
+        auto& maximum = owner.threadData->Stats()[Media_Scatter_Max_Cells];
+        maximum = std::max(static_cast<POV_ULONG>(maximum), static_cast<POV_ULONG>(cells.size()));
+        size_t liveBytes = 0;
+        for (FixedLightPath *path = this; path != nullptr; path = path->previous)
+            liveBytes += path->Bytes();
+        vector<MathColour> suffix(transfers.size() + 1, MathColour(1.0));
+        for (size_t i = transfers.size(); i-- > 0;)
+            suffix[i] = transfers[i] * suffix[i + 1];
+        vector<size_t> order(cells.size());
+        for (size_t i = 0; i < order.size(); i++)
+            order[i] = i;
+        std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+            return domains[cells[a].domain].offset + cells[a].at < domains[cells[b].domain].offset + cells[b].at;
+        });
+        vector<LightSource *> sources;
+        for (const Domain& domain : domains)
+            for (const LightSourceEntry& entry : domain.lights)
+                if (entry.light->emitter && std::find(sources.begin(), sources.end(), entry.light) == sources.end())
+                    sources.push_back(entry.light);
+        vector<size_t> selected;
+        vector<DBL> cdf, mass;
+        for (size_t source = 0; source < sources.size(); source++)
+        {
+            LightSource& light = *sources[source];
+            selected.clear();
+            cdf.clear();
+            mass.clear();
+            DBL total = 0.0, totalMass = 0.0;
+            bool resolved = true;
+            for (size_t i : order)
+                if (Affected(cells[i], &light))
+                {
+                    total += cells[i].width;
+                    selected.push_back(i);
+                    DBL weight = 0.0;
+                    for (int ch = 0; ch < MathColour::channels; ch++)
+                    {
+                        const DBL value = std::abs(DBL(cells[i].scattering[ch]) *
+                            cells[i].transfer[ch] * suffix[cells[i].mark][ch]);
+                        resolved = resolved && std::isfinite(value);
+                        weight = std::max(weight, value);
+                    }
+                    mass.push_back(weight);
+                    totalMass += weight;
+                }
+            if (!std::isfinite(total))
+                throw POV_EXCEPTION_STRING("Prepared-media scattering path length is not finite.");
+            if (!(total > 0.0))
+                continue;
+            resolved = resolved && (totalMass > 0.0) && std::isfinite(totalMass);
+            DBL cumulative = 0.0;
+            for (size_t i = 0; i < selected.size(); i++)
+            {
+                const DBL uniform = cells[selected[i]].width / total;
+                cumulative += resolved ? 0.5 * uniform + 0.5 * mass[i] / totalMass : uniform;
+                cdf.push_back(cumulative);
+            }
+            if (!(cumulative > 0.0) || !std::isfinite(cumulative))
+                throw POV_EXCEPTION_STRING("Prepared-media scattering proposal cannot be normalized.");
+            for (DBL& value : cdf)
+                value /= cumulative;
+            cdf.back() = 1.0;
+            const int count = std::max(1, light.Area_Size1);
+            const std::uint64_t sourceKey = DeriveKey(key, kDrawAreaLight, light.index);
+            const PhotonSobol sequence(sourceKey);
+            const size_t scratch = suffix.capacity() * sizeof(MathColour) + sources.capacity() * sizeof(LightSource *) +
+                (order.capacity() + selected.capacity()) * sizeof(size_t) + (cdf.capacity() + mass.capacity()) * sizeof(DBL);
+            auto& peak = owner.threadData->Stats()[Media_Scatter_Peak_Bytes];
+            peak = std::max(static_cast<POV_ULONG>(peak), static_cast<POV_ULONG>(liveBytes + scratch));
+            for (int j = 0; j < count; j++)
+            {
+                owner.threadData->Stats()[Media_Scatter_Pairs]++;
+                const DBL distance = EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(sourceKey, kDrawMediaSample, j));
+                const size_t picked = std::min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), distance) - cdf.begin()));
+                const DBL probability = cdf[picked] - (picked ? cdf[picked - 1] : 0.0);
+                const Cell& cell = cells[selected[picked]];
+                Domain& domain = domains[cell.domain];
+                struct TicketScope final
+                {
+                    TraceTicket& ticket;
+                    TraceTicket saved;
+                    TicketScope(TraceTicket& t, const TraceTicket& state) : ticket(t), saved(t) { ticket = state; }
+                    ~TicketScope()
+                    {
+                        const unsigned int found = ticket.maxFoundTraceLevel;
+                        ticket = saved;
+                        ticket.maxFoundTraceLevel = std::max(ticket.maxFoundTraceLevel, found);
+                    }
+                } ticketScope(domain.ray.GetTicket(), domain.ticket);
+                Ray shadow(domain.ray);
+                shadow.hasDifferentials = false;
+                shadow.SetKey(DeriveKey(sourceKey, kDrawShadow, j));
+                owner.threadData->litObjectIgnoresPhotons = true;
+                for (const Media *medium : domain.medias)
+                    owner.threadData->litObjectIgnoresPhotons = owner.threadData->litObjectIgnoresPhotons && medium->ignore_photons;
+                const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 1), count, Draw(sourceKey, kDrawEmitter, j)),
+                                       sequence(j, 2), sequence(j, 3), sequence(j, 4));
+                MathColour incoming;
+                DBL depth;
+                if (!owner.trace->SampleEmitterConnection(light, shadow.Evaluate(cell.at), shadow, depth, incoming, draw))
+                    continue;
+                MathColour local;
+                // Source weights already contain j/(r² p); compensate the complete independent cell proposal.
+                owner.ComputeMediaScatteringAttenuation(domain.medias, local, cell.scattering,
+                    incoming / (4.0 * M_PI * count * probability), domain.ray, shadow);
+                colour += local * cell.transfer * suffix[cell.mark];
+            }
+        }
+    }
+};
+
+std::unique_ptr<Trace::MediaFunctor::Path> MediaFunction::BeginPath(const Ray& ray)
+{
+    // Numerical curved chords share the scope; a recursive surface continuation starts another one.
+    if (ray.IsShadowTestRay() || ray.IsPhotonRay())
+        return nullptr;
+    return std::unique_ptr<Trace::MediaFunctor::Path>(new FixedLightPath(*this, ray));
+}
+
+void MediaFunction::ScalePathRadiance(const MathColour& factor)
+{
+    if (currentPath && currentPath->collecting)
+        currentPath->Scale(factor);
+}
+
+void MediaFunction::SetPathOffset(DBL offset)
+{
+    if (currentPath && currentPath->collecting)
+        currentPath->offset = offset;
+}
+
 MediaFunction::MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg) :
+    currentPath(nullptr),
     modifiers(nullptr),
     drawKey(0),
     threadData(td),
@@ -1746,6 +1962,8 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
 {
     ModifierScope scope(*this, mods);
     ReceiverScope receiverScope(*this, isect.Object != nullptr ? isect.Object : pathReceiver);
+    FixedLightPath *path = (!ray.IsShadowTestRay() && !ray.IsPhotonRay() && currentPath && currentPath->collecting) ? currentPath : nullptr;
+    const size_t firstPathCell = path ? path->cells.size() : 0;
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -1906,6 +2124,13 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
         ComputeMediaRegularSampling(medias, lights, mediaintervals, ray, IMedia, minSamples, ignore_photons, use_scattering, all_constant_and_light_ray);
 
     ComputeMediaColour(mediaintervals, colour, transm);
+    if (path)
+    {
+        MathColour depth;
+        for (const MediaInterval& interval : mediaintervals)
+            depth += interval.od * (1.0 / DBL(interval.samples));
+        path->Transfer(depth, firstPathCell);
+    }
 
     lightSampleIndex = savedIndex;
     lightSampleShift = savedShift;
@@ -2537,6 +2762,16 @@ DBL MediaFunction::ScatteringStep(MediaVector& medias, const MediaInterval& inte
 void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                               const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening)
 {
+    FixedLightPath *path = (currentPath && currentPath->collecting && use_scattering && !ray.IsPhotonRay()) ? currentPath : nullptr;
+    bool volume = false;
+    for (const LightSourceEntry& entry : lights)
+        volume = volume || (entry.light->emitter != nullptr);
+    if (!volume)
+        path = nullptr;
+    const size_t domain = path ? path->domains.size() : 0;
+    if (path)
+        path->domains.emplace_back(medias, lights, ray, path->offset);
+    MathColour previousDepth;
     for (MediaInterval& interval : mediaintervals)
     {
         if (interval.ds <= 0.0)
@@ -2568,6 +2803,8 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             MathColour emission, extinction, scattering;
         };
         vector<Cell> cells(count);
+        if (path)
+            path->temporaryBytes = std::max(path->temporaryBytes, cells.capacity() * sizeof(Cell));
         for (int j = 0; j < count; j++)
         {
             Cell& cell = cells[j];
@@ -2586,8 +2823,20 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             const MathColour depth = coefficients.extinction * step;
             const MathColour& scattering = coefficients.scattering;
             ComputeMediaSampleLighting(medias, lights, cell, ray, coefficients.at, ray.Evaluate(coefficients.at),
-                                      scattering, emission, true, use_scattering && (stride == 1));
+                                      scattering, emission, true, use_scattering && (stride == 1), path == nullptr);
             emission *= step;
+            if (path && cell.lit && !scattering.IsZero())
+            {
+                FixedLightPath::Cell sample;
+                sample.domain = domain;
+                sample.firstLight = cell.l0;
+                sample.lastLight = cell.l1;
+                sample.at = coefficients.at;
+                sample.width = step;
+                sample.scattering = scattering;
+                sample.transfer = step * Exp(-(transmitted + depth * 0.5)) * Exp(-previousDepth);
+                path->cells.push_back(sample);
+            }
             if (stride > 1)
             {
                 const int group = j / stride, first = group * stride, size = std::min(stride, count - first);
@@ -2596,7 +2845,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                     const int at = first + std::min(size - 1, int(Draw(drawKey, kDrawMediaSample, kMediaLightDraw + group) * size));
                     const DBL d = interval.s0 + (at + 0.5) * step;
                     light.Clear();
-                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), light);
+                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), light, path == nullptr);
                     lit = group;
                 }
                 emission += scattering * light * step;
@@ -2614,6 +2863,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
         }
         interval.te = accumulated;
         interval.od = transmitted;
+        previousDepth += transmitted;
         interval.samples = 1;
         threadData->Stats()[Media_Intervals]++;
     }
@@ -3149,7 +3399,7 @@ void MediaFunction::ComputeMediaCoefficients(MediaVector& medias, const Ray& ray
 void MediaFunction::ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
                                                 const MediaInterval& mediainterval, const Ray& ray, DBL d1,
                                                 const Vector3d& H, const MathColour& Scattering, MathColour& Emission,
-                                                bool prepared, bool use_scattering)
+                                                bool prepared, bool use_scattering, bool volumeLighting)
 {
     const bool emptyScattering = prepared && Scattering.IsZero();
     if (emptyScattering && !ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && mediainterval.lit)
@@ -3157,7 +3407,7 @@ void MediaFunction::ComputeMediaSampleLighting(MediaVector& medias, LightSourceE
     if(!ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && !emptyScattering)
     {
         if(mediainterval.lit)
-            ComputeMediaLight(medias, lights, mediainterval, ray, d1, H, Scattering, Emission);
+            ComputeMediaLight(medias, lights, mediainterval, ray, d1, H, Scattering, Emission, volumeLighting);
 
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
@@ -3216,7 +3466,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 }
 
 void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission)
+                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting)
 {
     DBL len;
     MathColour Light_Colour;
@@ -3248,6 +3498,8 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
             if (lights[i].light->emitter)
             {
+                if (!volumeLighting)
+                    continue;
                 const int count = max(1, lights[i].light->Area_Size1);
                 const std::uint64_t key = DeriveKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex - 1), kDrawAreaLight, i);
                 const PhotonSobol sequence(key);

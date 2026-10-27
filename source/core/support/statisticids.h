@@ -247,6 +247,12 @@ typedef enum INTSTATS
     /* Media */
     Media_Samples,
     Media_Intervals,
+    Media_Scatter_Legs,
+    Media_Scatter_Domains,
+    Media_Scatter_Cells,
+    Media_Scatter_Pairs,
+    Media_Scatter_Max_Cells,
+    Media_Scatter_Peak_Bytes,
     Curved_Rays,
     Refraction_Steps,
 

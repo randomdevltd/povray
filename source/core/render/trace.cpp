@@ -388,11 +388,17 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
         return HUGE_VAL;
     }
 
+    std::unique_ptr<MediaFunctor::Path> mediaPath = media.BeginPath(ray);
     if (sceneData->mediaRefraction && (maxDepth < EPSILON) && !missOpen && !ray.IsShadowTestRay() && RefractingRay(ray))
     {
         RefractionField field(ray.GetInteriors(), threadData);
         if (field.Varies())
-            return TraceCurvedRay(ray, field, colour, transm, weight, continuedRay);
+        {
+            const double depth = TraceCurvedRay(ray, field, colour, transm, weight, continuedRay);
+            if (mediaPath)
+                mediaPath->Finish(colour);
+            return depth;
+        }
     }
 
     if (maxDepth >= EPSILON)
@@ -401,7 +407,10 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     found = FindIntersection(bestisect, ray, precond, postcond);
     if (!found && missOpen)
         return HUGE_VAL;
-    return ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay);
+    const double depth = ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay);
+    if (mediaPath)
+        mediaPath->Finish(colour);
+    return depth;
 }
 
 double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
@@ -625,6 +634,10 @@ double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colou
         transm = 0.0;
         return HUGE_VAL;
     }
+    double offset = 0.0;
+    for (size_t i = 0; i + 1 < path.size(); i++)
+        offset += path[i].length;
+    media.SetPathOffset(offset);
     const double depth = ShadeRay(chord, bestisect, march > 0, colour, transm, weight, continuedRay);
 
     // Radiance over n squared holds along the path; media of the earlier chords apply at their own index.
@@ -634,8 +647,12 @@ double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colou
     for (size_t k = path.size() - 1; k-- > 0;)
     {
         const CurvedStep& piece = path[k];
+        offset -= piece.length;
+        media.SetPathOffset(offset);
         length += piece.length;
-        colour *= Sqr(piece.index / current);
+        const double transfer = Sqr(piece.index / current);
+        colour *= transfer;
+        media.ScalePathRadiance(MathColour(transfer));
         current = piece.index;
         if (!qualityFlags.media)
             continue;
@@ -654,7 +671,9 @@ double Trace::TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colou
         }
     }
     media.SetPathReceiver(outerReceiver);
-    colour *= Sqr(path.front().index / current);
+    const double transfer = Sqr(path.front().index / current);
+    colour *= transfer;
+    media.ScalePathRadiance(MathColour(transfer));
     return (depth < HUGE_VAL) ? depth + length : HUGE_VAL;
 }
 
@@ -5152,6 +5171,8 @@ void Trace::ComputeFog(const Ray& ray, const Intersection& isect, MathColour& co
 
     // Add light coming from background.
     colour = sum_col + sum_att * colour;
+    if (!ray.IsShadowTestRay() && !ray.IsPhotonRay())
+        media.ScalePathRadiance(sum_att);
     transm *= sum_att.Greyscale();
 }
 
@@ -5288,7 +5309,7 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
     Vector3d Temp;
     TransColour Cr;
     ColourChannel CrFilter, CrTransm;
-    MathColour CtColour;
+    MathColour CtColour, CtAttenuation;
     ColourChannel CtFilter, CtTransm;
 
     // Why are we here.
@@ -5367,7 +5388,9 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
                         // Attenuate filter value.
                         f = CrFilter * ki;
 
+                        const MathColour attenuation = k * ((1.0 - f) + f * Cr.colour());
                         CtColour += k * colour * ((1.0 - f) + f * Cr.colour()) + ki * Cr.colour();
+                        CtAttenuation += attenuation;
                         CtFilter *= k * CrFilter;
                         CtTransm *= k * CrTransm;
 
@@ -5381,6 +5404,7 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
     if(n > 0)
     {
         colour =  CtColour / n;
+        media.ScalePathRadiance(CtAttenuation / n);
         transm *= CtTransm;
     }
 }

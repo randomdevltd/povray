@@ -2015,6 +2015,19 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
                       POVMSLongToCDouble(l), POVMSLongToCDouble(l2), POVMSLongToCDouble(l2) / POVMSLongToCDouble(l));
     }
 
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaScatterLegs, &l);
+    if(POVMSLongToCDouble(l) > 0.5)
+    {
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaScatterPairs, &l2);
+        tsb->printf("Media Scatter Legs: %15.0f   Source Pairs:    %15.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaScatterDomains, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaScatterCells, &l2);
+        tsb->printf("Media Domains:      %15.0f   Scatter Cells:   %15.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaScatterMaxCells, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaScatterPeakBytes, &l2);
+        tsb->printf("Media Max Cells:    %15.0f   Scratch Est B:   %15.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+    }
+
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_CurvedRays, &l);
     if(POVMSLongToCDouble(l) > 0.5)
     {

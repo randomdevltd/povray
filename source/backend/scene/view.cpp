@@ -1697,6 +1697,12 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_ShadowCacheHits, stats[Shadow_Cache_Hits]);
     renderStats.SetLong(kPOVAttrib_MediaSamples, stats[Media_Samples]);
     renderStats.SetLong(kPOVAttrib_MediaIntervals, stats[Media_Intervals]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterLegs, stats[Media_Scatter_Legs]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterDomains, stats[Media_Scatter_Domains]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterCells, stats[Media_Scatter_Cells]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterPairs, stats[Media_Scatter_Pairs]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterMaxCells, stats[Media_Scatter_Max_Cells]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterPeakBytes, stats[Media_Scatter_Peak_Bytes]);
     renderStats.SetLong(kPOVAttrib_CurvedRays, stats[Curved_Rays]);
     renderStats.SetLong(kPOVAttrib_RefractionSteps, stats[Refraction_Steps]);
     renderStats.SetLong(kPOVAttrib_ReflectedRays, stats[Reflected_Rays_Traced]);
