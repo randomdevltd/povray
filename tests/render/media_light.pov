@@ -2,6 +2,7 @@
 #version 3.8;
 #ifndef (Case) #declare Case = 1; #end
 #ifndef (N) #declare N = 16; #end
+#ifndef (SmokeHeight) #declare SmokeHeight = 1.2; #end
 #declare Height = 2;
 #declare Radius = 0.25;
 #declare Lum = 16;
@@ -130,6 +131,16 @@ background { rgb 0 }
       object { sphere { 0, Radius pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } } translate y * 8 }
     #else
       light_source { y * 8, rgb Lum * Radius * Radius fade_distance 0 fade_power 2 }
+    #end
+  #break
+  #case (23) #case (24)
+    // A scattering medium is lit by the volume light as by a light of its escaped power: equal to that
+    // point in the far field, gentler near, where the law that bounds a surface applies. Smoke holds it.
+    box { <-2, 0.98, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { scattering { 1, rgb 0.35 } } } }
+    #if (Case = 23)
+      object { sphere { 0, Radius pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } } translate y * SmokeHeight }
+    #else
+      light_source { y * SmokeHeight, rgb Lum * Radius * Radius fade_distance 0 fade_power 2 }
     #end
   #break
 #end

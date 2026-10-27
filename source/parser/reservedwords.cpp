@@ -502,8 +502,8 @@ const RESERVED_WORD Reserved_Words[] = {
     { SCATTERING_TOKEN,             "scattering" },
     { SCREEN_TOKEN,                 "screen" },
     { SEED_TOKEN,                   "seed" },
-    { SCALE_LUMENS_TOKEN,            "scale_lumens" },
-    { SELECT_TOKEN,                  "select" },
+    { SCALE_LUMENS_TOKEN,           "scale_lumens" },
+    { SELECT_TOKEN,                 "select" },
 #if 0 // sred, sgreen and sblue tokens not enabled at present
     { SGREEN_TOKEN,                 "sgreen" },
 #endif

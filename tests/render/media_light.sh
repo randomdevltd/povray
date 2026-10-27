@@ -120,3 +120,16 @@ render farpoint Declare=Case=22
 # beyond its far radius the ball is its centre with the same escaped power
 near "the far field against an equal-power point light" "$(mean far 28 35 28 35)" "$(mean farpoint 28 35 28 35)" 0.02
 near "the far field against the analytic point" "$(mean far 30 33 30 33)" 0.015625 0.04
+
+# a scattering medium is lit by the volume light as by a light of its escaped power: near the
+# emitter gentler than that point, the same bounded law a surface receives, and far from it,
+# beyond its far radius, the point's equal; the pair would move if the magnitude changed
+render smokenear Declare=Case=23 Declare=SmokeHeight=1.2
+render smokenearpoint Declare=Case=24 Declare=SmokeHeight=1.2
+near "smoke near the ball, against the point of its power" "$(mean smokenear 20 43 20 43)" \
+    "$(awk -v a="$(mean smokenearpoint 20 43 20 43)" 'BEGIN { printf "%.5f", a * 0.829 }')" 0.08
+render smokefar Declare=Case=23 Declare=SmokeHeight=8
+render smokefarpoint Declare=Case=24 Declare=SmokeHeight=8
+near "smoke far from the ball, against the point of its power" "$(mean smokefar 20 43 20 43)" \
+    "$(awk -v a="$(mean smokefarpoint 20 43 20 43)" 'BEGIN { printf "%.5f", a * 0.866 }')" 0.08
+echo "media_light: ok"

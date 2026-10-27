@@ -404,7 +404,7 @@ New Features
     lights surfaces and media with soft shadows. The light states radiance in
     its own block, apart from the media's look: `pigment` for its colour or
     pattern, `brightness` for the radiance (`nits` names the unit, `lumens`
-    states the total power under 1 unit = 1 m, and `ScaleLumens(Phi, c)` is a
+    states the total power under 1 unit = 1 m, and `scale_lumens(Phi, c)` is a
     standard function for carrying lumens between unit conventions), and each
     point of the volume emits the radiance times the media's density-weighted
     extinction, or the radiance over the container's mean chord when none has

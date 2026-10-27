@@ -1055,13 +1055,27 @@ class VolumeEmitter final : public Emitter
             TraceTicket ticket(1, 0.0);
             Ray ray(ticket, from, dir);
             IStack stack(td->stackPool);
-            double cuts[256];
+            // the middle crossings of a pathologically divided container may not fit; the first 254 and the
+            // last are kept, so the chord's final piece still ends at its true exit, never at the reach cap
+            double cuts[257];
             int count = 0;
+            bool overflowed = false;
+            double last = 0.0;
             cuts[count++] = 0.0;
             if (container->All_Intersections(ray, stack, td))
                 for (; (stack->size() > 0); stack->pop())
-                    if ((stack->top().Depth > 0.0) && (count < 255))
-                        cuts[count++] = stack->top().Depth;
+                {
+                    const double depth = stack->top().Depth;
+                    if (depth <= 0.0)
+                        continue;
+                    if (count < 255)
+                        cuts[count++] = depth;
+                    else
+                        overflowed = true;
+                    last = std::max(last, depth);
+                }
+            if (overflowed && (last > 0.0))
+                cuts[count++] = last;
             std::sort(cuts, cuts + count);
             const double reach = d + radius;
             cuts[count++] = reach;
