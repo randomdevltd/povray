@@ -1025,7 +1025,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on, or if the medium is declared a light with a <a href="r3_12.html#r3_12">light_source</a> block.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
+<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
@@ -1121,15 +1121,14 @@ box {
 <a name="r3_7_2_2_5"></a>
 <div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
 <h5>3.7.2.2.5 Media Lights</h5>
-<p>A <code>light_source</code> block inside an emitting medium makes the medium a light source: it lights surfaces, casting shadows, and lights scattering media, with its brightness and colour taken from its own <code>emission</code> and density, so the light always matches the glow the camera sees.</p>
+<p>An independent <code>light</code> block inside an object's <code>interior</code> supplies volume illumination. Its pigment and brightness define the source independently of any media in that interior; media control the visible glow, extinction and scattering separately.</p>
 <pre>
-media {
-  emission rgb &lt;14, 6, 1.6&gt; * 200
-  density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-  light_source { samples 16 }
+interior {
+  light { brightness 200 pigment { rgb &lt;1, 0.4, 0.1&gt; } samples 16 }
+  media { emission rgb &lt;1, 0.4, 0.1&gt; }
 }
 </pre>
-<p>The items of the block (<code>samples</code>, <code>brightness</code>, <code>shadowless</code>, <code>media_interaction</code>, <code>media_attenuation</code>, <code>fade_distance</code>, <code>fade_power</code> and <code>fade_cutoff</code>), their defaults, the power and falloff of the light, its sampling, and its limits are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
+<p>The source law, units, sampling, shadows and transport settings are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
 </div>
 
 <a name="r3_7_2_3"></a>

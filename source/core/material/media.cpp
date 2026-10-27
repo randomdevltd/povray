@@ -1786,6 +1786,9 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
 
     all_constant_and_light_ray = all_constant_and_light_ray && (modifiers == nullptr);
 
+    if ((ray.IsRadiosityRay() || ray.IsPhotonRay()) && !use_extinction && !use_scattering)
+        return;
+
     // If this is a light ray and no extinction is used we can return.
     if((ray.IsShadowTestRay()) && (!use_extinction))
         return;
@@ -3098,6 +3101,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     Vector3d P, H;
     MathColour C0;
     MathColour Emission, Extinction, Scattering;
+    const bool appearance = !ray.IsShadowTestRay() && !ray.IsRadiosityRay() && !ray.IsPhotonRay();
 
     threadData->Stats()[Media_Samples]++;
 
@@ -3126,13 +3130,14 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 
         if(!ray.IsShadowTestRay())
         {
-            Emission += C0 * (*i)->Emission;
+            if (appearance)
+                Emission += C0 * (*i)->Emission;
             Scattering += C0 * (*i)->Scattering;
         }
     }
     if (modifiers != nullptr)
         AddModifiedCoefficients(medias, &densityScratch[0], H, prepared ? ModifierSource::kCamera : ModifierSource::kPattern,
-                                Extinction, ray.IsShadowTestRay() ? nullptr : &Emission,
+                                Extinction, appearance ? &Emission : nullptr,
                                 ray.IsShadowTestRay() ? nullptr : &Scattering);
 
     // Get estimate for the total optical depth of the current interval.

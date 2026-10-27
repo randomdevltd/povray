@@ -42,7 +42,8 @@ Changed Behaviour
 
   - Media `emission` is appearance only again: it paints the glow the camera
     sees and lights nothing, whether or not the interior has a `light` block,
-    and radiosity gathers with `media on` see it as any other medium's glow.
+    and radiosity gathers with `media on` exclude that appearance term.
+    Scattered light remains available to indirect transport.
     A volume light's power is stated as radiance in its `light` block and is
     not read from the `emission`; scenes that lit with `emission` state their
     luminance in the light block instead. The light's colour is the radiant
