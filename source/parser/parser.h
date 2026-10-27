@@ -468,7 +468,7 @@ class Parser final
         bool SelfContained(const std::vector<FUNCTION>& roots) const;
         /// Queues the prepared density grids of the media in a completed top-level object on the eager threads.
         void RecordMediaFields(ObjectPtr object, ObjectPtr parent);
-        void RecordMediaField(Media& medium);
+        void RecordMediaField(Media& medium, bool allowEager);
         void LeaveMediaField(const Media& medium);
         bool Resolve_Mesh_Geometry(ObjectPtr object);
         void QueueMeshBuild(const std::shared_ptr<DeferredMeshState>& state);

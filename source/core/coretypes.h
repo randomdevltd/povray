@@ -45,6 +45,7 @@
 
 // C++ standard header files
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <stack>
 #include <string>
@@ -140,6 +141,8 @@ typedef TEXTURE* TexturePtr;
 /// @{
 
 struct MediaLight;
+class TraceThreadData;
+class Ray;
 
 class Media final
 {
@@ -179,7 +182,11 @@ class Media final
 
         std::vector<PIGMENT*> Density;
         DBL FastResolution;
+        DBL requestedFastResolution = -1.0;
+        bool fastResolutionRecorded = false;
         std::shared_ptr<FastCache> fastCache;
+        std::vector<std::shared_ptr<FastCache>> preparedBindings;
+        bool preparedParallelSafe = false;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
 
@@ -194,7 +201,16 @@ class Media final
         void PostProcess();
         /// object: the container; refractionDetail: the effective refraction_detail in scene units, 0 when auto has none to derive;
         /// cellLimit: the effective prepared media cell limit, 0 for none.
-        void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0);
+        void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0, bool requiredAxis = false);
+        void FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate, bool requiredAxis = false);
+        void SetPreparedParallelSafe(bool safe) { preparedParallelSafe = safe; }
+        void SetRequestedFastResolution(DBL value) { FastResolution = requestedFastResolution = value; fastResolutionRecorded = true; }
+        void RequirePreparedField() const;
+        void PreparedDensityAt(const Vector3d& point, MathColour& result) const;
+        DBL PreparedStep(const Ray& ray, DBL from, DBL to) const;
+        bool PreparedRange(const Ray& ray, DBL& from, DBL& to) const;
+        void PreparedCuts(const Ray& ray, DBL from, DBL to, std::vector<DBL>& cuts) const;
+        FastCache *SinglePreparedBinding() const;
         /// Plans building its prepared density grid ahead of the render from `copy`, a copy whose functions other threads
         /// may run; null when it has no prepared grid or the grid cannot be sized now.
         std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const;

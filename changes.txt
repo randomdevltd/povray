@@ -40,6 +40,11 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Prepared density fields are published after final geometry resolution.
+    Safe functions can finish in parallel; geometry-dependent functions are
+    prepared against the finalized scene. Ray-dependent fields fail before
+    rendering, and prepared density queries never rebuild their data.
+
   - Requested method 4 constant media own prepared layout metadata without
     allocating constant density cells. Prepared modifier fields also select
     fixed integration when the underlying media are constant.

@@ -83,6 +83,8 @@ class Emitter;
 /// The light an interior's `light { }` block gives from its container: a table of each cell's power, its radiance
 /// times the media's density-weighted extinction, or their mean chord when none has any; nullptr and why if none.
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData *td, std::string& failure);
+void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
+void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
 
 /// A `subtract` or `multiply` medium on a ray; it changes the media collected before it, which rank below it.
 struct MediaModifier final
@@ -175,7 +177,7 @@ class MediaFunction : public Trace::MediaFunctor
         };
 
         /// The finest prepared step of the modifiers' varying densities, or HUGE_VAL.
-        DBL ModifierResolution(const Ray& ray) const;
+        DBL ModifierResolution(const Ray& ray, DBL from, DBL to) const;
         /// Where a modifier's density comes from: its prepared grid for camera samples or field marching, else its pattern.
         enum class ModifierSource { kPattern, kCamera, kField };
         /// A modifier medium's density at a point, from its prepared grid where the source allows and the grid holds it.
@@ -209,7 +211,7 @@ class MediaFunction : public Trace::MediaFunctor
         /// ComputeMediaTransmittance at every point.
         void ComputeMediaPointTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
                                             const ExtinctionPlan *plan, bool method3, int points);
-        DBL PreparedResolution(MediaVector& medias, const Ray& ray);
+        DBL PreparedResolution(MediaVector& medias, const Ray& ray, DBL end);
         bool PrepareFields(MediaVector& medias, const Ray& ray);
         DBL PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL coarsening = 1.0);
         /// Coarsens the prepared resolution uniformly until the march fits the step budget; coarsening 1 when it already fits.
@@ -245,7 +247,7 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
                                DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false);
         /// The step the scattering media would sample an interval at alone: a uniform one by its samples, a prepared one by its grid.
-        DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval) const;
+        DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval, const Ray& ray) const;
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
                                             DBL d1, DBL d3, MathColour& Result, const MathColour& C1, const MathColour& C3, MathColour& ODResult, const MathColour& od1, const MathColour& od3,
                                             int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass, std::uint64_t key);

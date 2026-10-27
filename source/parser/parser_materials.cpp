@@ -3738,7 +3738,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (RESOLUTION_TOKEN)
             resolutionSpecified = true;
-            IMedia->FastResolution = Parse_Float();
+            IMedia->SetRequestedFastResolution(Parse_Float());
             if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
                 Error("media resolution needs a finite positive scene-unit width.");
         END_CASE

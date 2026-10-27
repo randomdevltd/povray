@@ -254,27 +254,37 @@ static bool HasPendingMesh(ObjectPtr object)
 
 void Parser::RecordMediaFields(ObjectPtr object, ObjectPtr parent)
 {
-    if ((object == nullptr) || (sceneData->meshPool == nullptr))
+    if (object == nullptr)
         return;
     // a container's box is final once its top-level object completes, unless a pending mesh still sets it
-    if ((object->interior != nullptr) && ((parent == nullptr) || (object->interior != parent->interior)) && !HasPendingMesh(object))
+    if ((object->interior != nullptr) && ((parent == nullptr) || (object->interior != parent->interior)))
+    {
+        const bool allowEager = sceneData->meshPool && !HasPendingMesh(object);
         for (Media& medium : object->interior->media)
-            RecordMediaField(medium);
+            RecordMediaField(medium, allowEager);
+    }
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
             RecordMediaFields(child, object);
 }
 
-// A grid whose density a snapshot cannot take is left to the render, which the log counts.
+// A density a snapshot cannot take is prepared from the finalized scene before tracing.
 void Parser::LeaveMediaField(const Media& medium)
 {
-    sceneData->eagerMediaUnsafe.push_back(medium.fastCache);
+    if (medium.fastCache)
+        sceneData->eagerMediaUnsafe.push_back(medium.fastCache);
 }
 
-void Parser::RecordMediaField(Media& medium)
+void Parser::RecordMediaField(Media& medium, bool allowEager)
 {
-    if (!medium.fastCache || (medium.Sample_Method != 4) || medium.Density.empty())
+    if ((medium.Sample_Method != 4) && (medium.Refraction == 0.0) && (medium.mix != kMediaBlendMultiply))
         return;
+    medium.SetPreparedParallelSafe(false);
+    if (medium.Density.empty())
+    {
+        medium.SetPreparedParallelSafe(true);
+        return;
+    }
     std::shared_ptr<Media> copy(new Media(medium));
     std::vector<std::pair<GenericScalarFunctionPtr *, FUNCTION>> slots;
     for (PIGMENT *pigment : copy->Density)
@@ -292,13 +302,16 @@ void Parser::RecordMediaField(Media& medium)
         if (!known)
             return LeaveMediaField(medium);
     }
+    std::vector<FUNCTION> roots;
+    for (const auto& slot : slots)
+        roots.push_back(slot.second);
+    if (!SelfContained(roots))
+        return LeaveMediaField(medium);
+    medium.SetPreparedParallelSafe(true);
+    if (!allowEager || !sceneData->meshPool || !medium.fastCache)
+        return;
     if (!slots.empty())
     {
-        std::vector<FUNCTION> roots;
-        for (const auto& slot : slots)
-            roots.push_back(slot.second);
-        if (!SelfContained(roots))
-            return LeaveMediaField(medium);
         boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(roots);
         for (const auto& slot : slots)
         {
