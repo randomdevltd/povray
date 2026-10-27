@@ -25,8 +25,8 @@ plane { y, 0 pigment { rgb 0.6 } }
       absorption 0.6
       emission 0.4
       #if (!Constant) density { bozo scale 0.4 } #end
-      #if (Lit) light_source { samples 4 } #end
     }
+    #if (Lit) light { brightness 1.5 samples 4 } #end
   }
 }
 
