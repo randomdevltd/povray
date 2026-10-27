@@ -1099,6 +1099,17 @@ class VolumeEmitter final : public Emitter
         {
             const Vector3d toCentre = centre - from;
             const double d = toCentre.length();
+            const double chordShare = 0.5 * min(1.0, max(0.0, 2.0 - 0.5 * d / radius));
+            if (chordShare == 0.0)
+            {
+                sample = Sample(s, key, td);
+                const double r2 = (sample.position - from).lengthSqr();
+                if (r2 > 0.0)
+                    sample.weight /= r2;
+                else
+                    sample.weight.Clear();
+                return true;
+            }
             double cap = 2.0;
             if (d > radius)
             {
@@ -1108,9 +1119,9 @@ class VolumeEmitter final : public Emitter
             const double solid = 2.0 * M_PI * cap;
             vector<std::pair<double, double>> pieces;
             double length, depth;
-            if (s < 0.5)
+            if (s < chordShare)
             {
-                const double h = (2.0 * s) * cap, cosTheta = 1.0 - h;
+                const double h = (s / chordShare) * cap, cosTheta = 1.0 - h;
                 const double sinTheta = std::sqrt(max(0.0, h * (2.0 - h))), phi = 2.0 * M_PI * t;
                 const Vector3d w = (d > 0.0) ? toCentre / d : Vector3d(0.0, 0.0, 1.0);
                 const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
@@ -1137,7 +1148,7 @@ class VolumeEmitter final : public Emitter
             }
             else
             {
-                sample = Sample(2.0 * s - 1.0, key, td);
+                sample = Sample((s - chordShare) / (1.0 - chordShare), key, td);
                 const Vector3d delta = sample.position - from;
                 depth = delta.length();
                 if (!(depth > 0.0))
@@ -1158,7 +1169,7 @@ class VolumeEmitter final : public Emitter
                 inChord = inChord || ((depth >= piece.first) && (depth <= piece.second));
             const double r2 = depth * depth;
             const double chordPdf = (inChord && (length > 0.0)) ? 1.0 / (solid * length * r2) : 0.0;
-            sample.pdf = 0.5 * chordPdf + 0.5 * PositionPdf(sample.position);
+            sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * PositionPdf(sample.position);
             sample.weight = EmissionAt(sample.position, td) / (r2 * sample.pdf);
             return true;
         }
