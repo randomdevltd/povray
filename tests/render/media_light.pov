@@ -136,6 +136,8 @@ background { rgb 0 }
   #case (23) #case (24)
     // A scattering medium is lit by the volume light as by a light of its escaped power: equal to that
     // point in the far field, gentler near, where the law that bounds a surface applies. Smoke holds it.
+    // At SmokeHeight 1.2 the ball sits inside the smoke, its media-free interior displacing the hottest
+    // haze, so the near pin reads the field around the flame, not through it.
     box { <-2, 0.98, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { scattering { 1, rgb 0.35 } } } }
     #if (Case = 23)
       object { sphere { 0, Radius pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } } translate y * SmokeHeight }

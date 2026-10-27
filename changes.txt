@@ -418,6 +418,15 @@ New Features
     identifiers. `fade_power`, `fade_distance` and a `light_source` block
     inside `media` are errors naming the new form; `fade_cutoff` moves to
     `#default { interior { light { fade_cutoff Value } } }`.
+  - Beyond `far_radii` a volume light's magnitude is its centre's and its
+    shadow keeps its angular extent: the emitter's silhouette disk is sampled
+    as a small jittered grid refined where samples disagree, after the
+    refinement area-light shadows use, so far shadows have penumbras as wide
+    as the emitter's angular diameter times the occluding edge's offset
+    instead of a binary edge. A scattering medium is lit by the emitter's
+    escaped power as a point at its centre; in smoke it reads some ten to
+    fifteen per cent below a bare classic point light of that power, whose
+    shadow rays cross no surface and so march no media.
   - A volume light takes `fade_cutoff Value`: where the light's radiance over
     the solid angle of its nearest reach, scaled by its `attenuation` scale,
     is fainter than the value (on the 0 to 1 scale of `adc_bailout`) at a lit
