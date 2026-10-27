@@ -3738,12 +3738,34 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
         double low = HUGE_VAL, high = -HUGE_VAL;
         const bool far = EmitterFar(lightsource, ipoint);
         const int rays = far ? 1 : lightsource.Area_Size1;
+        if (far)
+        {
+            // The far field's magnitude is the centre's; its shadow still samples the emitter's angular
+            // cone, one round of four corner rays while they agree and a subdivision of each disagreeing
+            // quadrant, so a penumbra appears exactly where a receiver approaches a shadow boundary.
+            const Emitter& emitter = *lightsource.emitter;
+            const Vector3d toCentre = lightsource.Center - ipoint;
+            const double d = toCentre.length();
+            if (d > emitter.Radius())
+            {
+                const Vector3d w = toCentre / d;
+                const Vector3d e1 = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
+                const Vector3d e2 = cross(w, e1);
+                const double half = emitter.Radius();
+                arrived = TraceEmitterConeShadow(lightsource, ipoint, lightsourceray, lightcolour, e1, e2, half);
+                sent = lightcolour;
+                const double seen = (sent.Weight() > 0.0) ? arrived.Weight() / sent.Weight() : 0.0;
+                low = high = seen;
+            }
+            else
+                arrived = sent = lightcolour;
+        }
+        else
         for(int k = 0; k < rays; k++)
         {
             MathColour weight(1.0);
             bool geometryCarried = false;
-            const Vector3d offset = far ? Vector3d(0.0) :
-                                    EmitterNearOffset(lightsource, ipoint, (k + Draw(lightsourceray.GetKey(), kDrawAreaLight, k)) / rays,
+            const Vector3d offset = EmitterNearOffset(lightsource, ipoint, (k + Draw(lightsourceray.GetKey(), kDrawAreaLight, k)) / rays,
                                                       Draw(lightsourceray.GetKey(), kDrawAreaLight, 2 * k + 1),
                                                       DeriveKey(lightsourceray.GetKey(), kDrawEmitter, k), weight, geometryCarried);
             Ray lsr(lightsourceray);
@@ -3995,6 +4017,64 @@ Vector3d Trace::EmitterOffset(const LightSource &lightsource, double s, std::uin
     const EmitterSample sample = lightsource.emitter->Sample(std::min(std::max(s, 0.0), 1.0), key);
     weight = sample.weight;
     return sample.position - lightsource.Center;
+}
+
+/// The far field's cone shadow: the emitter's silhouette disk on the basis e1, e2, as a 4x4 grid of
+/// jittered samples refined where neighbouring samples disagree, after the area-light refinement it
+/// mirrors. The result is the average of what arrives, a fraction of the centre's magnitude the caller
+/// folds into the light.
+MathColour Trace::TraceEmitterConeShadow(const LightSource &lightsource, const Vector3d &ipoint, Ray &lightsourceray,
+                                         const MathColour &lightcolour, const Vector3d &e1, const Vector3d &e2,
+                                         double radius)
+{
+    for (auto& row : coneGrid)
+        for (MathColour& cell : row)
+            cell.Invalidate();
+    const std::uint64_t key = lightsourceray.GetKey();
+    auto sampleAt = [&](int u, int v, MathColour& out)
+    {
+        if (coneGrid[u][v].IsValid()) { out = coneGrid[u][v]; return; }
+        const double ju = (lightsource.Jitter ? Draw(key, kDrawAreaLight, 2 * (5 * v + u)) - 0.5 : 0.0) / 3.0;
+        const double jv = (lightsource.Jitter ? Draw(key, kDrawAreaLight, 2 * (5 * v + u) + 1) - 0.5 : 0.0) / 3.0;
+        Vector3d offset = (e1 * (radius * 2.0 * ((u + ju) / 3.0 - 0.5))) + (e2 * (radius * 2.0 * ((v + jv) / 3.0 - 0.5)));
+        const double span = offset.length();
+        if (span > radius)
+            offset *= radius / span;
+        Ray lsr(lightsourceray);
+        double depth;
+        ComputeOneWhiteLightRay(lightsource, depth, lsr, ipoint, offset);
+        out = lightcolour;
+        lsr.SetFlags(Ray::OtherRay, true, false);
+        lsr.SetMediaLight(&lightsource);
+        TraceEmitterSampleShadowRay(lightsource, depth, lsr, out, offset);
+        lightsourceray.SetMediaErrorBudget(min(lightsourceray.GetMediaErrorBudget(), lsr.GetMediaErrorBudget()));
+        coneGrid[u][v] = out;
+    };
+    return TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, 0, 0, 3, 3);
+}
+
+/// One region of the far cone's grid: its four corners, and where they disagree and the region still
+/// divides, its four quadrants in turn.
+MathColour Trace::TraceEmitterConeSubset(const LightSource &lightsource, Ray &lightsourceray, const MathColour &lightcolour,
+                                         const std::function<void(int, int, MathColour&)>& sampleAt,
+                                         int u1, int v1, int u2, int v2)
+{
+    MathColour corner[4];
+    sampleAt(u1, v1, corner[0]);
+    sampleAt(u2, v1, corner[1]);
+    sampleAt(u1, v2, corner[2]);
+    sampleAt(u2, v2, corner[3]);
+    if (((u2 - u1 > 1) || (v2 - v1 > 1)) &&
+        ((ColourDistance(corner[0], corner[1]) > 0.1) || (ColourDistance(corner[1], corner[3]) > 0.1) ||
+         (ColourDistance(corner[3], corner[2]) > 0.1) || (ColourDistance(corner[2], corner[0]) > 0.1)))
+    {
+        const int mu = (u1 + u2) / 2, mv = (v1 + v2) / 2;
+        return (TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, u1, v1, mu, mv) +
+                TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, mu + 1, v1, u2, mv) +
+                TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, u1, mv + 1, mu, v2) +
+                TraceEmitterConeSubset(lightsource, lightsourceray, lightcolour, sampleAt, mu + 1, mv + 1, u2, v2)) * 0.25;
+    }
+    return (corner[0] + corner[1] + corner[2] + corner[3]) * 0.25;
 }
 
 bool Trace::EmitterFar(const LightSource &lightsource, const Vector3d& point) const

@@ -825,6 +825,13 @@ class Trace
         /// A near-field draw seen from ipoint: by chord where offered (weight carries its own geometry), else the table.
         Vector3d EmitterNearOffset(const LightSource &lightsource, const Vector3d& ipoint, double s, double t, std::uint64_t key,
                                    MathColour& weight, bool& geometryCarried);
+        /// The far field's cone shadow: the emitter's silhouette disk, a jittered grid refined adaptively.
+        MathColour TraceEmitterConeShadow(const LightSource &lightsource, const Vector3d &ipoint, Ray &lightsourceray,
+                                          const MathColour &lightcolour, const Vector3d &e1, const Vector3d &e2, double radius);
+        MathColour TraceEmitterConeSubset(const LightSource &lightsource, Ray &lightsourceray, const MathColour &lightcolour,
+                                          const std::function<void(int, int, MathColour&)>& sampleAt,
+                                          int u1, int v1, int u2, int v2);
+        MathColour coneGrid[5][5];
         /// One emitter sample's shadow: the walk to it, then the media of the interiors it ends inside.
         void TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                          MathColour& lightcolour, const Vector3d& offset);

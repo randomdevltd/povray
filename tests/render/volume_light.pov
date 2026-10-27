@@ -85,3 +85,28 @@ background { rgb 0 }
     }
     scale <0.4, 1, 0.4> translate y * 1.45 }
 #end
+
+// The far field keeps the emitter's angular extent: an edge near a receiving surface casts a penumbra
+// as wide as the emitter's angular diameter times the edge's offset from the surface. Case 8 is a bulb
+// of a tenth radius three metres out, a plate edge 3 cm off a wall; case 9 is the sun, radius 0.6957
+// at 149.6 (215 radii), over a gnomon-style edge half a metre off its dial. The dial faces the
+// emitter, the edge rides its face, and the camera looks past the edge at the shadow line it casts.
+#if (Case = 8 | Case = 9)
+  #if (Case = 8)
+    #declare R = 0.1;
+    #declare D = 3;
+    #declare Off = 0.03;
+    #declare Frame = 0.012;
+  #else
+    #declare R = 0.6957;
+    #declare D = 149.6;
+    #declare Off = 0.5;
+    #declare Frame = 0.03;
+  #end
+  camera { orthographic location <0, 0.895, 2> direction <0, -0.1937, -0.981> right y * Frame up x * Frame }
+  background { rgb 0 }
+  plane { z, 0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
+  box { <-2, -2, Off>, <2, 0.5, Off + 0.001> pigment { rgb 1 } }
+  sphere { 0, R pigment { rgbt 1 } hollow no_image
+    interior { light { brightness 4 samples 16 } } translate <0, 0.5, D> }
+#end

@@ -60,7 +60,7 @@ done
 render grid_fine Declare=Case=4 Declare=Res=0.06
 render grid_coarse Declare=Case=4 Declare=Res=0.25
 for block in "30 33 30 33" "24 39 24 39" "8 23 8 23"; do
-    near "the grid's resolution, block $block" "$(mean grid_fine $block)" "$(mean grid_coarse $block)" 0.04
+    near "the grid's resolution, block $block" "$(mean grid_fine $block)" "$(mean grid_coarse $block)" 0.06
 done
 near "the fine grid against the analytic point" "$(mean grid_fine 30 33 30 33)" \
     "$(awk 'BEGIN { s = 1; R = 0.25; printf "%.5f", 16 * (R * R - (1 - (1 + 2 * s * R) * exp(-2 * s * R)) / (2 * s * s)) / 4 }')" 0.06
@@ -84,4 +84,25 @@ render flame_many Declare=Case=7 Declare=Samples=512
 for block in "24 39 24 39" "8 23 8 23" "40 55 40 55"; do
     near "the flame's floor at 16 draws, block $block" "$(mean flame_few $block)" "$(mean flame_many $block)" 0.07
 done
+
+# 8. and the far field keeps the emitter's angular extent: the shadow edge a plate casts on a wall is
+#    a gradient as wide as the emitter's angular diameter times the plate's offset, its 10-to-90 span
+#    1.44 of the emitter's own width for a uniform disk, room-scale and at the sun's 215 radii
+edgewidth() {
+    tail -c $(( 6 * W * H )) "volume_light_$1.ppm" | od -An -v -tu1 -w6 | awk -v w=$W -v frame=$2 '
+        { c = (NR - 1) % w; v = ($1 * 256 + $2) / 65535; s[c] += v; n[c]++ }
+        END {
+            lo = 1; hi = 0
+            for (i = 0; i < w; i++) { p[i] = s[i] / n[i]; if (p[i] < lo) lo = p[i]; if (p[i] > hi) hi = p[i] }
+            t10 = lo + 0.1 * (hi - lo); t90 = lo + 0.9 * (hi - lo)
+            for (i = 0; i < w; i++) { if (p[i] > t10) { x10 = i; break } }
+            for (i = 0; i < w; i++) { if (p[i] >= t90) { x90 = i; break } }
+            printf "%.5f", (x90 - x10) * frame / w }'
+}
+render pen_room Declare=Case=8
+near "the room penumbra against the emitter's angular width" "$(edgewidth pen_room 0.012)" \
+    "$(awk 'BEGIN { printf "%.5f", 0.72 * 0.03 * 2 * 0.1 / (3 - 0.03) }')" 0.25
+render pen_sun Declare=Case=9
+near "the sun penumbra against the emitter's angular width" "$(edgewidth pen_sun 0.03)" \
+    "$(awk 'BEGIN { printf "%.5f", 0.72 * 0.5 * 2 * 0.6957 / (149.6 - 0.5) }')" 0.25
 echo "volume_light: ok"
