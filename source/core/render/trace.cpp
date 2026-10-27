@@ -2270,8 +2270,8 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
 bool Trace::LightsAddNothing(const FINISH *finish, double attenuation) const
 {
     const bool noDiffuse = ((attenuation == 0.0) && (finish->Crand <= 0.0)) ||
-                           ((finish->Diffuse * finish->BrillianceAdjust <= 0.0) && (finish->DiffuseBack * finish->BrillianceAdjust <= 0.0)) ||
-                           (sceneData->useSubsurface && finish->UseSubsurface);
+                           (sceneData->useSubsurface && finish->UseSubsurface) ||
+                           ((finish->Diffuse * finish->BrillianceAdjust <= 0.0) && (finish->DiffuseBack * finish->BrillianceAdjust <= 0.0));
     return noDiffuse && (finish->Phong <= 0.0) && (finish->Specular <= 0.0);
 }
 
