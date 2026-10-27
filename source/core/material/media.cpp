@@ -964,6 +964,7 @@ class VolumeEmitter final : public Emitter
         Vector3d low, size, centre;
         int nx = 1, ny = 1, nz = 1;
         vector<double> cdf, probability;
+        vector<size_t> cdfCells;
         MathColour coefficient, intensity;
         double radius = 0.0, boxVolume = 0.0;
 
@@ -1019,7 +1020,7 @@ class VolumeEmitter final : public Emitter
             }
             else
             {
-                index = min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), pick) - cdf.begin()));
+                index = cdfCells[min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), pick) - cdf.begin()))];
                 q = Vector3d((index % nx + draw.x) / nx,
                              ((index / nx) % ny + draw.y) / ny,
                              (index / (size_t(nx) * ny) + draw.z) / nz);
@@ -1334,11 +1335,24 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
     }
     if (total > 0.0)
     {
-        double sum = 0.0;
-        for (double& p : emitter->probability)
+        vector<std::pair<std::uint64_t, size_t>> order;
+        order.reserve(count);
+        for (size_t i = 0; i < count; i++)
         {
-            p /= total;
-            sum += p;
+            const size_t coordinates[3] = {i % emitter->nx, (i / emitter->nx) % emitter->ny, i / (size_t(emitter->nx) * emitter->ny)};
+            std::uint64_t code = 0;
+            for (int bit = 0; bit < 21; bit++)
+                for (int axis = 0; axis < 3; axis++)
+                    code |= std::uint64_t((coordinates[axis] >> bit) & 1) << (3 * bit + axis);
+            order.emplace_back(code, i);
+            emitter->probability[i] /= total;
+        }
+        std::sort(order.begin(), order.end());
+        double sum = 0.0;
+        for (const auto& entry : order)
+        {
+            sum += emitter->probability[entry.second];
+            emitter->cdfCells.push_back(entry.second);
             emitter->cdf.push_back(sum);
         }
         emitter->cdf.back() = 1.0;
