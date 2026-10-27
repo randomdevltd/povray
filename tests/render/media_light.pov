@@ -115,9 +115,10 @@ background { rgb 0 }
       0, 0.5 pigment { rgbt 1 } hollow
       interior {
         // Case 17 holds the ball's glow over a little extinction, so its shadow rays march media too: calibrated
-        // brightness, 0.43 against 0.125, because a thin ball radiates more at its face than its thick limit.
+        // brightness, 9.5 against 0.125, because a thin ball radiates L*pi*R^2 while this one radiates L*sigma*V,
+        // 75 times less per brightness at sigma 0.02 and R 0.5, corrected for its own absorption.
         media { #if (Case = 17) absorption 0.02 #else density { spherical } #end }
-        light { brightness #if (Case = 17) 0.43 #else 0.125 #end samples N }
+        light { brightness #if (Case = 17) 9.5 #else 0.125 #end samples N }
       }
       translate y * 1.2
     }

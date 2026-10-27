@@ -3126,6 +3126,9 @@ void Trace::TestOneLightShadow(const LightSource &lightsource, double lightsourc
     // calculate it's contribution to the object's overall illumination.
     if (qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE)))
     {
+        // a near-field emitter's draws each carry their own shadow in the full area lighting loop
+        if ((lightsource.emitter != nullptr) && !EmitterFar(lightsource, ipoint))
+            return;
         if (lightColorCacheIndex != -1 && light_index != -1)
         {
             if (lightColorCache[lightColorCacheIndex][light_index].tested == false)
@@ -3234,8 +3237,12 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
     }
 
     const bool emitterFar = (lightsource.emitter != nullptr) && EmitterFar(lightsource, ipoint);
+    const bool emitterShadow = (lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE);
     const int sizeU = (lightsource.emitter == nullptr) ? lightsource.Area_Size1 : (emitterFar ? 1 : lightsource.Area_Size1);
-    MathColour sampleLightcolour = lightcolour / (sizeU * lightsource.Area_Size2);
+    // A near-field emitter's shadow rides its own draws below, so its colour starts unfolded; far, the
+    // centre's shadow, folded into lightcolour by the caller, stands for the whole emitter.
+    const MathColour& unfolded = ((lightsource.emitter != nullptr) && !emitterFar) ? lightsource.colour : lightcolour;
+    const MathColour sampleLightcolour = unfolded / (sizeU * lightsource.Area_Size2);
     MathColour attenuatedLightcolour;
     const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
     if(lightsource.Jitter && !emitterFar)
@@ -3312,6 +3319,9 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             {
                 // the chord draw's weight already carries its own 1/r^2, exact at any distance
                 attenuatedLightcolour = sampleLightcolour * weight;
+                // and its shadow is its own too: the light this draw delivers crosses the media along its own ray
+                if (qualityFlags.shadows && emitterShadow)
+                    TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lsr, attenuatedLightcolour, jitterAxis1);
             }
             else
             {

@@ -1295,7 +1295,7 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
                     continue;
                 MathColour cellPower, density[8];
                 for (size_t k = 0; k < inside; k++)
-                    density[k].Set(flatDensity ? 1.0 : 0.0);
+                    density[k].Set((emitter->thin && flatDensity) ? 1.0 : 0.0);   // the start EmissionAt itself uses
                 for (const EmitterMedium& medium : emitter->media)
                 {
                     MathColour local[8];
