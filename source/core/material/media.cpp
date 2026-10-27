@@ -2032,6 +2032,15 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
         return;
     const bool fastCamera = fieldsPrepared && !ray.IsShadowTestRay() && !ray.IsPhotonRay();
     const bool fastShadow = fieldsPrepared && ray.IsShadowTestRay();
+    if (!ray.IsShadowTestRay() && !ray.IsPhotonRay())
+    {
+        threadData->Stats()[fastCamera ? Media_Fixed_Calls : Media_Classic_Calls]++;
+        bool varying = false;
+        for (const Media *medium : medias)
+            varying = varying || !medium->Density.empty();
+        if (!fastCamera && !varying && modifiers != nullptr && !modifiers->empty())
+            threadData->Stats()[Media_Modifier_Fallback_Calls]++;
+    }
 
     // Set up sampling intervals (makes sure we will always have enough intervals)
     ComputeMediaSampleInterval(litintervals, mediaintervals, IMedia, fastCamera || fastShadow);
@@ -2222,6 +2231,7 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Extinction
     MathColour density[kDensityBatch];
 
     threadData->Stats()[Media_Samples] += n;
+    threadData->Stats()[Media_Shadow_Coefficients] += n;
     for(size_t j = 0; j < n; j++)
         points[j] = ray.Evaluate(depths[j]);
     if(plan != nullptr)
@@ -2515,6 +2525,7 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
                     AddModifiedCoefficients(medias, &densities[0], point, ModifierSource::kField, extinction, nullptr, nullptr);
                 depth += extinction * step;
                 threadData->Stats()[Media_Samples]++;
+                threadData->Stats()[Media_Shadow_Coefficients]++;
                 if ((total + depth).Min() > opaque)
                 {
                     dark = true;
@@ -2845,7 +2856,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                     const int at = first + std::min(size - 1, int(Draw(drawKey, kDrawMediaSample, kMediaLightDraw + group) * size));
                     const DBL d = interval.s0 + (at + 0.5) * step;
                     light.Clear();
-                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), light, path == nullptr);
+                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), light, path == nullptr, true);
                     lit = group;
                 }
                 emission += scattering * light * step;
@@ -3365,6 +3376,8 @@ void MediaFunction::ComputeMediaCoefficients(MediaVector& medias, const Ray& ray
     const bool appearance = !ray.IsShadowTestRay() && !ray.IsRadiosityRay() && !ray.IsPhotonRay();
     MathColour C0;
     threadData->Stats()[Media_Samples]++;
+    threadData->Stats()[ray.IsShadowTestRay() ? Media_Shadow_Coefficients : ray.IsPhotonRay() ? Media_Photon_Coefficients :
+                        prepared ? Media_Fixed_Coefficients : Media_Classic_Coefficients]++;
     // Get coefficients in current sample location.
     if (modifiers != nullptr)
         densityScratch.clear();
@@ -3407,7 +3420,7 @@ void MediaFunction::ComputeMediaSampleLighting(MediaVector& medias, LightSourceE
     if(!ray.IsShadowTestRay() && use_scattering && !ray.IsPhotonRay() && !emptyScattering)
     {
         if(mediainterval.lit)
-            ComputeMediaLight(medias, lights, mediainterval, ray, d1, H, Scattering, Emission, volumeLighting);
+            ComputeMediaLight(medias, lights, mediainterval, ray, d1, H, Scattering, Emission, volumeLighting, prepared);
 
         // process media photons whether or not the interval is directly lit
         if (photonGatherer != nullptr)
@@ -3466,8 +3479,10 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 }
 
 void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting)
+                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting, bool preparedSampling)
 {
+    if (ray.IsShadowTestRay())
+        threadData->Stats()[Media_Shadow_Lighting_Calls]++;
     DBL len;
     MathColour Light_Colour;
     Ray Light_Ray(ray);
@@ -3501,6 +3516,9 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 if (!volumeLighting)
                     continue;
                 const int count = max(1, lights[i].light->Area_Size1);
+                threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;
+                if (Scattering.IsZero())
+                    threadData->Stats()[Media_Zero_Scatter_Emitter_Draws] += count;
                 const std::uint64_t key = DeriveKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex - 1), kDrawAreaLight, i);
                 const PhotonSobol sequence(key);
                 for (int j = 0; j < count; j++)
@@ -3515,6 +3533,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 continue;
             }
             const int points = lights[i].light->Area_Light ? kMediaAreaLightPoints : 1;
+            threadData->Stats()[Media_Ordinary_Light_Draws] += points;
             MathColour Lit_Colour;
             for(int j = 0; j < points; j++)
             {

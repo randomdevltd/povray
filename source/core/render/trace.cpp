@@ -3088,6 +3088,7 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
     if (lightsource.emitter != nullptr)
     {
         const int count = max(1, lightsource.Area_Size1);
+        threadData->Stats()[Emitter_Surface_Draws] += count;
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
         const PhotonSobol sequence(DeriveKey(key, kDrawAreaLight, 0));
         MarkGrain();
@@ -3873,6 +3874,11 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
                                     MathColour& colour, const EmitterDraw& draw, bool shadows,
                                     const Vector3d* receiverNormal, Interior* receiverInterior)
 {
+    threadData->Stats()[Emitter_Connections]++;
+    if (ray.IsShadowTestRay())
+        threadData->Stats()[Emitter_Shadow_Input]++;
+    if (ray.IsPhotonRay())
+        threadData->Stats()[Emitter_Photon_Input]++;
     if (light.portal != nullptr)
         throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
     MarkGrain();
@@ -3912,6 +3918,7 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
 void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
                                         MathColour& lightcolour, const Vector3d& offset)
 {
+    threadData->Stats()[Emitter_Shadow_Calls]++;
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
     if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media &&
         (lightsourcedepth > 0.0) && !lightcolour.IsZero())

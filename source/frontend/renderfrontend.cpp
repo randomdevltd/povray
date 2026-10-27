@@ -2028,6 +2028,39 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
         tsb->printf("Media Max Cells:    %15.0f   Scratch Est B:   %15.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
     }
 
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterConnections, &l);
+    if(POVMSLongToCDouble(l) > 0.5)
+    {
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterConnections, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterSurfaceDraws, &l2);
+        tsb->printf("Emitter Connections:   %13.0f   Surface Draws:      %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterMediaFixedDraws, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterMediaClassicDraws, &l2);
+        tsb->printf("Media Fixed Draws:     %13.0f   Classic Draws:      %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterShadowCalls, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaOrdinaryLightDraws, &l2);
+        tsb->printf("Emitter Shadow Calls:  %13.0f   Other Light Draws:  %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterShadowInput, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_EmitterPhotonInput, &l2);
+        tsb->printf("Emitter Shadow Input:  %13.0f   Photon Input:       %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaFixedCalls, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaClassicCalls, &l2);
+        tsb->printf("Media Fixed Calls:     %13.0f   Classic Calls:      %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaModifierFallbackCalls, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaShadowLightingCalls, &l2);
+        tsb->printf("Modifier Fallbacks:    %13.0f   Shadow Lighting:    %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaFixedCoefficients, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaClassicCoefficients, &l2);
+        tsb->printf("Fixed Coefficients:    %13.0f   Classic Coeffs:     %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaShadowCoefficients, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaPhotonCoefficients, &l2);
+        tsb->printf("Shadow Coefficients:   %13.0f   Photon Coeffs:      %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+    }
+
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaZeroScatterEmitterDraws, &l);
+    if(POVMSLongToCDouble(l) > 0.5)
+        tsb->printf("Zero Scatter Draws:    %13.0f\n", POVMSLongToCDouble(l));
+
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_CurvedRays, &l);
     if(POVMSLongToCDouble(l) > 0.5)
     {

@@ -243,7 +243,7 @@ class MediaFunction : public Trace::MediaFunctor
                                    MathColour *scattering = nullptr);
         /// Adds to Emission the light the media's scattering coefficients Scattering send along the ray at depth d1 (point P).
         void ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true);
+                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false);
         /// The step the scattering media would sample an interval at alone: a uniform one by its samples, a prepared one by its grid.
         DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval) const;
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
