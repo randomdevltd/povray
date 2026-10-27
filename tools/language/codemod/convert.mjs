@@ -654,6 +654,51 @@ function convertUnit(unit, context) {
     insert(message.endIndex, nextIsSemicolon(node) ? ')' : ');');
   }
 
+  // A media light_source of the classic scene moves out of its media block as the interior's light block,
+  // taking the emission's value as its pigment: interior { media { ... } light { pigment { ... } ... } }.
+  // fade_power and fade_distance go: a volume's falloff is attenuation. The emission is dropped from the
+  // media, whose glow then needs a new look, since the light, not the emission, lights the scene.
+  function mediaLight(node) {
+    if (node.childForFieldName('name')?.text !== 'media') return;
+    const entries = items(node.children.slice(1, -1));
+    const word = (c) => (c.type === 'identifier' || c.type === 'keyword') && !COMMENTS.includes(c.type);
+    const mediaItem = new Set(['method', 'intervals', 'samples', 'confidence', 'variance', 'ratio', 'jitter',
+      'eccentricity', 'extinction', 'absorption', 'emission', 'scattering', 'refraction', 'refraction_detail',
+      'mix', 'priority', 'matrix', 'transform', 'translate', 'rotate', 'scale']);
+    const stopWord = (c) => (word(c) && mediaItem.has(c.text)) || c.type === 'block';
+    const lamp = entries.find((c) => c.type === 'block' && c.childForFieldName('name')?.text === 'light_source');
+    if (!lamp) return;
+    const lampEntries = items(lamp.children.slice(2, -1));
+    let dropped = '';
+    for (let i = 0; i < lampEntries.length; i++) {
+      const entry = lampEntries[i];
+      if (word(entry) && ['fade_power', 'fade_distance'].includes(entry.text)) {
+        let j = i + 1;
+        while (j < lampEntries.length && !stopWord(lampEntries[j]) && !word(lampEntries[j])) j++;
+        dropped += ` ${text.slice(entry.startIndex, (j < lampEntries.length ? lampEntries[j] : lamp.children[lamp.children.length - 1]).startIndex).trim()}`;
+        lampEntries.splice(i, j - i);
+        i--;
+      } else if (word(entry) && ['samples', 'brightness'].includes(entry.text))
+        remark(entry, 'media-light', `${entry.text} carries over; the light states radiance now`);
+    }
+    const at = entries.indexOf(lamp);
+    const emission = entries.slice(0, at).find((c) => word(c) && c.text === 'emission');
+    let pigment = '';
+    if (emission) {
+      let j = entries.indexOf(emission) + 1;
+      while (j < at && !stopWord(entries[j])) j++;
+      if (j > entries.indexOf(emission) + 1) {
+        pigment = ` pigment { ${text.slice(entries[entries.indexOf(emission) + 1].startIndex, (j < at ? entries[j] : lamp).startIndex).trim()} }`;
+        edit(emission.startIndex, (j < at ? entries[j] : lamp).startIndex, '');
+      }
+    }
+    const inner = lampEntries.map((entry) => entry.text).join(' ');
+    const note = dropped ? ` /* dropped${dropped}: a volume falls off by attenuation */` : '';
+    remove(lamp);
+    insert(node.endIndex, ` light {${pigment} ${inner}${note} }`);
+    remark(node, 'media-light', 'the light block moved out of media to its interior');
+  }
+
   function callExpression(node) {
     const fn = node.childForFieldName('function');
     if (separate(node.childForFieldName('arguments').children.slice(1, -1)))
@@ -770,7 +815,8 @@ function convertUnit(unit, context) {
       case 'message_directive': messageDirective(node); return;
       case 'array_expression': arrayExpression(node); return;
       case 'dictionary_expression': dictionaryExpression(node); return;
-      case 'block': case 'bracket_group': inList(node.children); return;
+      case 'block': mediaLight(node); inList(node.children); return;
+      case 'bracket_group': inList(node.children); return;
       default: visitChildren(node);
     }
   }

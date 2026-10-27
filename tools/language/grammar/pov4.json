@@ -524,6 +524,7 @@
    "radians",
    "rand",
    "range",
+   "scale_lumens",
    "seed",
    "select",
    "sin",

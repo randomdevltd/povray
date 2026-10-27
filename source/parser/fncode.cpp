@@ -955,6 +955,10 @@ void FNCode::compile_call(ExprNode *expr, FUNCTION fn, int token, char *name)
             k = TRAP_SYS2_ATAN2;
             op_state = 2;
             break;
+        case SCALE_LUMENS_TOKEN:
+            k = TRAP_SYS2_SCALE_LUMENS;
+            op_state = 2;
+            break;
         case POW_TOKEN:
             k = TRAP_SYS2_POW;
             op_state = 11;

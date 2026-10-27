@@ -615,6 +615,11 @@ void Parser::Parse_Num_Factor (EXPRESS& Express,int *Terms)
                         Error("Domain error in atan2!");
                     break;
 
+                case SCALE_LUMENS_TOKEN:
+                    Parse_Float_Param2(&Val,&Val2);
+                    Val = Val / (Val2 * Val2);
+                    break;
+
                 case COSH_TOKEN:
                     Val = cosh(Parse_Float_Param());
                     break;
