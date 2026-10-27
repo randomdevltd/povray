@@ -76,4 +76,12 @@ same pivot_one pivot_bright
 render tangent_one Declare=Case=6 Declare=Att=1
 render tangent_faint Declare=Case=6 Declare=Att=8
 near "the tangent point at the pivot radius" "$(mean tangent_one 29 34 29 34)" "$(mean tangent_faint 29 34 29 34)" 0.005
+
+# 7. samples are draws, never light: the same flame at sixteen draws and at five hundred renders the
+#    same floor, its glow medium riding every shadow ray, in the near field under it and farther out
+render flame_few Declare=Case=7 Declare=Samples=16
+render flame_many Declare=Case=7 Declare=Samples=512
+for block in "24 39 24 39" "8 23 8 23" "40 55 40 55"; do
+    near "the flame's floor at 16 draws, block $block" "$(mean flame_few $block)" "$(mean flame_many $block)" 0.07
+done
 echo "volume_light: ok"

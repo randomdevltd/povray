@@ -3319,9 +3319,14 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
             {
                 // the chord draw's weight already carries its own 1/r^2, exact at any distance
                 attenuatedLightcolour = sampleLightcolour * weight;
-                // and its shadow is its own too: the light this draw delivers crosses the media along its own ray
+                // and its shadow is its own too: the light this draw delivers crosses the media along its own ray,
+                // as a shadow ray: a lighting ray's march would add the media's own glow once per draw
                 if (qualityFlags.shadows && emitterShadow)
+                {
+                    lsr.SetFlags(Ray::OtherRay, true, false);
+                    lsr.SetMediaLight(&lightsource);
                     TraceEmitterSampleShadowRay(lightsource, lightsourcedepth, lsr, attenuatedLightcolour, jitterAxis1);
+                }
             }
             else
             {

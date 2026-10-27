@@ -5,6 +5,7 @@
 #version 3.8;
 #ifndef (Case) #declare Case = 1; #end
 #ifndef (Att) #declare Att = 1; #end
+#ifndef (Samples) #declare Samples = 32; #end
 global_settings { assumed_gamma 1 }
 #if (Case != 2)
   camera { orthographic location <0, 10, 0> sky z look_at 0 right x * 4 up z * 4 }
@@ -68,4 +69,19 @@ background { rgb 0 }
   sphere { 0, R pigment { rgbt 1 } hollow no_image
     interior { light { brightness Lum samples 16 attenuation Att } } translate y * R }
   plane { y, 0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
+#end
+
+// Samples are draws per lit point, never light: the same flame at a handful of draws and at
+// hundreds renders the same floor, though its glow medium rides every shadow ray. The ball carries
+// an emission medium, the shape whose glow a lighting-ray march would add once per draw.
+#if (Case = 7)
+  #declare Lum = 3;
+  #declare R = 0.16;
+  box { <-2, -1, -2>, <2, 0, 2> pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } }
+  sphere { 0, 1 pigment { rgbt 1 } hollow
+    interior {
+      media { mix add emission rgb <1, 0.45, 0.12> * 6 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
+      light { brightness Lum samples Samples }
+    }
+    scale <0.4, 1, 0.4> translate y * 1.45 }
 #end
