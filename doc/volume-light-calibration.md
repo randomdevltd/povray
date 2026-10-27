@@ -71,12 +71,21 @@ white to isolate photometric calibration; the quoted product colour temperatures
 are not a claim of spectral or colour matching. The A60 envelope reuses the
 sphere-derived luminance and therefore does not claim to emit exactly 806 lm.
 
-Render unclipped linear HDR with AA off; apply the same -1-stop preview exposure
-(multiplier 1/2) and the same display conversion to every arm. The scene does
+Render unclipped linear HDR with AA off; apply the same -3-stop preview exposure
+(multiplier 1/8) and the same display conversion to every arm. The scene does
 not scale source brightness to make previews fit an LDR output range. Source
-appearance is authored independently at its nominal luminance; `no_radiosity`
-keeps that appearance from becoming an additional gathered emission source.
+containers are transparent and hollow. Their visible glow is authored with
+appearance-only media emission: coefficient L/0.06 for the sphere and bulb
+envelope, and L/0.001 for the 1 mm panel and strip. These are visual reference
+chord choices, not transport normalization or energy claims. `no_radiosity`
+keeps appearance from becoming an additional gathered emission source.
 The radiosity arm compares indirect surface illumination separately. No source
 uses absorption to manufacture its angular distribution. Monitor and strip have
 explicit opaque backing and 1 mm source thickness; side emission and the finite
 thickness are part of the approximation and must be measured, not hidden.
+
+An opaque container surface traps an interior volume source unless that surface
+transmits light. Give the source a transparent hollow container and represent
+real opaque backing as a separate object. Do not disable shadows or ignore the
+source container to bypass material occlusion. Appearance-only emission can make
+the transparent region visible without adding absorption or scattering.

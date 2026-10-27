@@ -3446,6 +3446,7 @@ static const int kMaxShadowCrossings = 256;
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
     lightsourceray.ResetMediaErrorBudget();
+    const double endpointTolerance = lightsource.emitter ? 0.0 : SHADOW_TOLERANCE;
     Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
     bool foundTransparentObjects = false;
@@ -3499,7 +3500,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (cacheObject != nullptr)
         {
             // Same window as the walk below, so a thread's earlier rays cannot change what shadows this one.
-            const double limit = std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth);
+            const double limit = std::min(lightsourcedepth - endpointTolerance, lightsourcedepth - projectedDepth);
             const IsoShadowWindow window(threadData, SHADOW_TOLERANCE, limit);
             if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(lightsourceray, &boundedIntersection, threadData) &&
                  (boundedIntersection.Depth > SHADOW_TOLERANCE) && (boundedIntersection.Depth < limit)) ||
@@ -3552,7 +3553,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         const PreparedSet& shadowView = sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId());
         if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
         {
-            OpaqueShadowStopCondition stop(std::min(lightsourcedepth - SHADOW_TOLERANCE, lightsourcedepth - projectedDepth) +
+            OpaqueShadowStopCondition stop(std::min(lightsourcedepth - endpointTolerance, lightsourcedepth - projectedDepth) +
                                            shift, !lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)));
             const IsoShadowWindow window(threadData, (shift > 0.0) ? MIN_ISECT_DEPTH : SHADOW_TOLERANCE, stop.farthest);
             foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
@@ -3566,7 +3567,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         }
 
         if((foundIntersection == true) &&
-           (boundedIntersection.Depth < lightsourcedepth - SHADOW_TOLERANCE) &&
+           (boundedIntersection.Depth < lightsourcedepth - endpointTolerance) &&
            (lightsourcedepth - boundedIntersection.Depth > projectedDepth) &&
            (boundedIntersection.Depth > nearest))
         {
