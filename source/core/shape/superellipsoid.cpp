@@ -211,7 +211,7 @@ bool Superellipsoid::All_Intersections(const Ray& ray, IStack& Depth_Stack, Trac
 *
 ******************************************************************************/
 
-bool Superellipsoid::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread)
+bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     int i, cnt, Found = false;
     DBL dists[PLANECOUNT+2];
@@ -1170,11 +1170,11 @@ DBL Superellipsoid::power(DBL x, DBL  e)
 *
 ******************************************************************************/
 
-bool Superellipsoid::insert_hit(const BasicRay &ray, DBL Depth, IStack& Depth_Stack, TraceThreadData *Thread)
+bool Superellipsoid::insert_hit(const Ray &ray, DBL Depth, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     Vector3d IPoint;
 
-    if ((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth))
+    if ((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth) && ray.AdmitRoot(this, Depth))
     {
         IPoint = ray.Evaluate(Depth);
 

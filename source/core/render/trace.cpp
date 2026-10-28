@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/render/trace.h"
+#include "core/render/shadowsegment.h"
 
 // C++ variants of C standard header files
 #include <cfloat>
@@ -824,6 +825,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
         IStack depthstack(stackPool);
         POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
 
+        const RayRootOwnerScope rootOwner(ray, object);
         if(object->All_Intersections(ray, depthstack, threadData))
         {
             bool found = false;
@@ -877,6 +879,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
         IStack depthstack(stackPool);
         POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
 
+        const RayRootOwnerScope rootOwner(ray, object);
         if(object->All_Intersections(ray, depthstack, threadData))
         {
             bool found = false;
@@ -3378,73 +3381,6 @@ struct NoShadowFlagRayObjectCondition final : public RayObjectCondition
     }
 };
 
-struct SmallToleranceRayObjectCondition final  : public RayObjectCondition
-{
-    double tolerance = SMALL_TOLERANCE;
-    /// Clear surfaces already crossed near the search origin, by object and distance along the shadow ray, which it skips;
-    /// `more` holds those past the first kCrossed, so every surface of a coincident interface is kept.
-    static const int kCrossed = 8;
-    ConstObjectPtr crossed[kCrossed];
-    double at[kCrossed];
-    int count = 0;
-    std::vector<std::pair<ConstObjectPtr, double>> more;
-    double base = 0.0;   ///< distance along the shadow ray of the search origin
-    /// The object, as the search sees it, of the nearest surface accepted since Reset.
-    mutable ConstObjectPtr accepted = nullptr;
-    mutable double acceptedAt = HUGE_VAL;
-    void Reset() { accepted = nullptr; acceptedAt = HUGE_VAL; }
-    bool Crossed(ConstObjectPtr object, double position) const
-    {
-        for (int k = 0; k < count; k++)
-            if ((crossed[k] == object) && (fabs(position - at[k]) < 0.5 * MIN_ISECT_DEPTH))
-                return true;
-        for (const auto& entry : more)
-            if ((entry.first == object) && (fabs(position - entry.second) < 0.5 * MIN_ISECT_DEPTH))
-                return true;
-        return false;
-    }
-    virtual bool operator()(const Ray&, ConstObjectPtr object, double dist) const override
-    {
-        if ((dist <= tolerance) || Crossed(object, base + dist))
-            return false;
-        if (dist < acceptedAt)
-        {
-            accepted = object;
-            acceptedAt = dist;
-        }
-        return true;
-    }
-    void Cross(ConstObjectPtr object, double position, double keep)
-    {
-        int kept = 0;
-        size_t extra = 0;
-        auto retain = [&](ConstObjectPtr o, double d) {
-            if (d < position - keep)
-                return;
-            if (kept < kCrossed)
-            {
-                crossed[kept] = o;
-                at[kept++] = d;
-            }
-            else
-                more[extra++] = std::make_pair(o, d);
-        };
-        for (int k = 0; k < count; k++)
-            retain(crossed[k], at[k]);
-        for (size_t k = 0; k < more.size(); k++)
-            retain(more[k].first, more[k].second);
-        more.resize(extra);
-        if (kept < kCrossed)
-        {
-            crossed[kept] = object;
-            at[kept++] = position;
-        }
-        else
-            more.push_back(std::make_pair(object, position));
-        count = kept;
-    }
-};
-
 // Any opaque hit in the shadow window blacks the light out, whether or not it is the nearest.
 struct OpaqueShadowStopCondition final : public IntersectionStopCondition
 {
@@ -3461,9 +3397,6 @@ struct OpaqueShadowStopCondition final : public IntersectionStopCondition
         return blocking && !Test_Flag(isect.Object, NO_SHADOW_FLAG) && Test_Flag(isect.Object, OPAQUE_FLAG) && Test_Flag(testObject, OPAQUE_FLAG);
     }
 };
-
-// Clear surfaces one shadow ray may cross before it is given up as stuck.
-static const int kMaxShadowCrossings = 256;
 
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
@@ -3505,7 +3438,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
 
     NoShadowFlagRayObjectCondition precond;
     precond.includeMedia = lightsource.emitter != nullptr;
-    SmallToleranceRayObjectCondition postcond;
+    const double connectionDepth = lightsourcedepth;
+    const Vector3d connectionOrigin = lightsourceray.Origin;
+    ShadowSegmentWalker postcond(connectionDepth, SHADOW_TOLERANCE,
+        std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth));
 
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
 
@@ -3532,8 +3468,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                 {
                     // A part that lets light through is left to the walk below, which filters it once.
                     const MathColour unfiltered = lightcolour;
-                    const DBL mediaBudget = lightsourceray.GetMediaErrorBudget();
-                    ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
+                    Ray cachedSegment(lightsourceray);
+                    ComputeShadowColour(lightsource, boundedIntersection, cachedSegment, lightcolour);
 
                     if(lightcolour.IsNearZero(EPSILON) &&
                        (Test_Flag(boundedIntersection.Object, OPAQUE_FLAG)))
@@ -3544,7 +3480,6 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                         return;
                     }
                     lightcolour = unfiltered;
-                    lightsourceray.SetMediaErrorBudget(mediaBudget);
                 }
                 cacheObject = nullptr;
             }
@@ -3557,46 +3492,34 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     }
 
     foundTransparentObjects = false;
-    // From 4.0 each search after a clear hit starts `shift` behind it, so a surface meeting the hit is crossed in turn.
-    double nearest = SHADOW_TOLERANCE, shift = 0.0, travelled = 0.0;
-    int crossings = 0;
-
     while(true)
     {
+        cooperate();
+        Ray query(lightsourceray);
+        query.Origin = connectionOrigin;
+        query.SetRootQuery(&postcond);
         boundedIntersection.Object = boundedIntersection.Csg = nullptr;
-        boundedIntersection.Depth = lightsourcedepth - projectedDepth + shift;
-
+        boundedIntersection.Depth = postcond.End();
         threadData->Stats()[Shadow_Ray_Tests]++;
-
-        if (shift > 0.0)
-            lightsourceray.Origin -= shift * lightsourceray.Direction;
-        postcond.base = travelled - shift;
         postcond.Reset();
-        const PreparedSet& shadowView = sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId());
+        const PreparedSet& shadowView = sceneData->GetPreparedSet(query.GetPreparedSetId());
         if (qualityFlags.shadows && (shadowView.boundingMethod == 1) && (shadowView.flatSlabs != nullptr))
         {
-            OpaqueShadowStopCondition stop(std::min(lightsourcedepth - endpointTolerance, lightsourcedepth - projectedDepth) +
-                                           shift, !lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)));
-            const IsoShadowWindow window(threadData, (shift > 0.0) ? MIN_ISECT_DEPTH : SHADOW_TOLERANCE, stop.farthest);
-            foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, lightsourceray, &boundedIntersection, precond, postcond, stop, threadData);
+            OpaqueShadowStopCondition stop(postcond.End(), !lightsource.emitter ||
+                (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)));
+            const IsoShadowWindow window(threadData, std::max(SHADOW_TOLERANCE, postcond.Cursor()), stop.farthest);
+            foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, query, &boundedIntersection, precond, postcond, stop, threadData);
         }
         else
-            foundIntersection = FindIntersection(boundedIntersection, lightsourceray, precond, postcond);
-        if (shift > 0.0)
-        {
-            lightsourceray.Origin += shift * lightsourceray.Direction;
-            boundedIntersection.Depth -= shift;
-        }
+            foundIntersection = FindIntersection(boundedIntersection, query, precond, postcond);
 
-        if((foundIntersection == true) &&
-           (boundedIntersection.Depth < lightsourcedepth - endpointTolerance) &&
-           (lightsourcedepth - boundedIntersection.Depth > projectedDepth) &&
-           (boundedIntersection.Depth > nearest))
+        if (foundIntersection)
         {
             threadData->Stats()[Shadow_Rays_Succeeded]++;
-
             const double depth = boundedIntersection.Depth;
-            boundedIntersection.Depth = std::max(depth, 0.0);
+            boundedIntersection.Depth = depth - postcond.Cursor();
+            if (boundedIntersection.Depth < 0.0 || !IsFiniteIntersectionDepth(boundedIntersection.Depth))
+                throw POV_EXCEPTION_STRING("Shadow traversal produced an invalid segment.");
             ComputeShadowColour(lightsource, boundedIntersection, lightsourceray, lightcolour);
 
             ObjectPtr testObject(boundedIntersection.Csg != nullptr ? boundedIntersection.Csg : boundedIntersection.Object);
@@ -3620,22 +3543,9 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             }
 
             foundTransparentObjects = true;
-            boundedIntersection.Depth = depth;
-            if (!sceneData->legacyIorStack)
-            {
-                // A backstop: crossings that fail to advance must not hold the ray forever.
-                if (((++crossings > kMaxShadowCrossings) && !lightsource.emitter) || (postcond.accepted == nullptr))
-                    break;
-                travelled += depth;
-                postcond.Cross(postcond.accepted, travelled, 4.0 * MIN_ISECT_DEPTH);
-                shift = std::max(0.0, std::min(2.0 * MIN_ISECT_DEPTH, travelled - SHADOW_TOLERANCE));
-                postcond.tolerance = 0.0;
-                nearest = -shift;
-            }
-
-            // Move the ray to the point of intersection, plus some
-            lightsourcedepth -= boundedIntersection.Depth;
-
+            if (!postcond.Commit(depth))
+                throw POV_EXCEPTION_STRING("Shadow traversal failed to advance to a new boundary.");
+            lightsourcedepth = postcond.Remaining();
             lightsourceray.Origin = boundedIntersection.IPoint;
         }
         else

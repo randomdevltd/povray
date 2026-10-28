@@ -344,7 +344,8 @@ bool Parametric::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
             Len = TLen;
         if (Len < accuracy)
         {
-            if ((TResult > TPotRes) && (TPotRes > Depth1))
+            if ((TResult > TPotRes) && (TPotRes > Depth1) && ray.AdmitRoot(this, TPotRes) &&
+                (!ray.GetRootQuery() || Clip.empty() || Point_In_Clip(ray.Evaluate(TPotRes), Clip, Thread)))
             {
                 TResult = TPotRes;
                 uv = low_vect;

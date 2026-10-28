@@ -541,7 +541,7 @@ bool Blob::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 
                 dist = (dist * max_bound + start_dist) / len;
 
-                if ((dist > depthTolerance) && IsFiniteIntersectionDepth(dist))
+                if ((dist > depthTolerance) && IsFiniteIntersectionDepth(dist) && ray.AdmitRoot(this, dist))
                 {
                     IPoint = ray.Evaluate(dist);
 

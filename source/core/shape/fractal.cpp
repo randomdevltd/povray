@@ -301,7 +301,7 @@ bool Fractal::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThread
             Normal_Calc(this, Real_Normal, Thread->Fractal_IStack);
         }
 
-        if (Clip.empty() || Point_In_Clip(Real_Pt, Clip, Thread))
+        if (ray.AdmitRoot(this, Depth * LenInv) && (Clip.empty() || Point_In_Clip(Real_Pt, Clip, Thread)))
         {
             Real_Normal.normalize();
             Depth_Stack->push(Intersection(Depth * LenInv, Real_Pt, Real_Normal, this));

@@ -237,7 +237,7 @@ bool Sor::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData
 *
 ******************************************************************************/
 
-bool Sor::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread)
+bool Sor::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     int cnt;
     int found, j, n;
@@ -1189,11 +1189,11 @@ void Sor::Compute_Sor(Vector2d *P, RenderStatistics& stats)
 *
 ******************************************************************************/
 
-bool Sor::test_hit(const BasicRay &ray, IStack& Depth_Stack, DBL d, DBL k, int t, int n, TraceThreadData *Thread)
+bool Sor::test_hit(const Ray &ray, IStack& Depth_Stack, DBL d, DBL k, int t, int n, TraceThreadData *Thread)
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d))
+    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
     {
         IPoint = ray.Evaluate(d);
 

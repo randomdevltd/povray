@@ -247,7 +247,7 @@ bool Lathe::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 *
 ******************************************************************************/
 
-bool Lathe::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread)
+bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread)
 {
     int cnt;
     int found, j, n1, n2;
@@ -1289,11 +1289,11 @@ void Lathe::Compute_Lathe(Vector2d *P, RenderStatistics& stats)
 *
 ******************************************************************************/
 
-bool Lathe::test_hit(const BasicRay &ray, IStack& Depth_Stack, DBL d, DBL w, int n, TraceThreadData *Thread)
+bool Lathe::test_hit(const Ray &ray, IStack& Depth_Stack, DBL d, DBL w, int n, TraceThreadData *Thread)
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d))
+    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d) && ray.AdmitRoot(this, d))
     {
         IPoint = ray.Evaluate(d);
 
