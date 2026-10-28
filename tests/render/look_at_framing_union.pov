@@ -12,21 +12,23 @@ global_settings { assumed_gamma 1 }
     #declare Remote = object { Remote rotate <12,23,7> translate <1,2,3> }
     #declare Target = union { object { Near } object { Remote } }
 #end
+// Scaling the far component along camera rays preserves its complete projected silhouette.
+#declare ReferenceTarget = union {
+    object { Near }
+    #if(Case=1)
+        object { Remote translate -<1,2,3> scale 1/Far translate <1,2,3> }
+    #else
+        object { Remote scale 1/Far }
+    #end
+}
 camera {
+    #if(Case=2) spherical #end
     location 0
     right x*image_width/image_height
-    #if(Case=2) spherical angle 160 80 #else angle 80 #end
+    #if(Case=2) angle 160 80 #else angle 80 #end
     #if(Case=1) location <1,2,3> sky vrotate(y,<12,23,7>) #end
     #if(Reference)
-        // Scaling the far component along camera rays preserves its complete projected silhouette.
-        look_at union {
-            object { Near }
-            #if(Case=1)
-                object { Remote translate -<1,2,3> scale 1/Far translate <1,2,3> }
-            #else
-                object { Remote scale 1/Far }
-            #end
-        }, .90
+        look_at ReferenceTarget, .90
     #else
         look_at Target, .90
     #end
