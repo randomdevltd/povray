@@ -68,7 +68,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `julia_fractal` | 60 | 3-D slice of a 4-D quaternion Julia set. |
 | `lathe` | 41 | Solid of revolution: a 2-D profile curve spun about y. |
 | `lemon` | 38 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
-| `light` | 12 | An interior's volume light: radiance with pigment and brightness, its own attenuation, sampling and shadows. |
+| `light` | 13 | An interior's volume light: pigment or its own media emission, brightness, attenuation, sampling and shadows. |
 | `light_group` | 80 | Objects lit only by the lights named inside it. |
 | `light_source` | 61 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |

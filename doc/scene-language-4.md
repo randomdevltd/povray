@@ -23,7 +23,7 @@ Generated C sources are committed; renderer builds do not run the generator.
 ## Independent volume lights
 
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
-attenuation 2, 1 samples 16 } }`. The source depends on its object's geometry
+attenuation 2, 1 samples 16 } }`. By default the source depends on its object's geometry
 and its own pigment, independently of media coefficients and density. Nits use
 the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
 source strength, not every nearby receiver reading. The declared emitting region affects this
@@ -31,6 +31,15 @@ calibration; unused container padding is not guaranteed to be neutral. Surface
 emission is an author-chosen approximation, not exact angular identity. Lumens
 normalize generated flux before media attenuation, using the renderer's greyscale convention. `scale_lumens(phi,c)`
 takes explicit metres per scene unit; no light unit reads `mm_per_unit`.
+
+Both syntaxes also accept `interior { media { emission rgb <100,40,10> }
+light { emission brightness 12 lumens } }` at every scene version. Bare
+`emission` selects the full combined RGB emission of the interior's own media,
+including density patterns and mixing, and is mutually exclusive with `pigment`.
+Absorption, scattering and overlapping objects do not contribute to this source
+field. Brightness keeps its existing calibration: omitted brightness is 1 nit,
+so selecting emission does not make `j(x)` equal to the media emission coefficient.
+Without the flag, the default pigment remains solid white.
 
 The two attenuation values are power then scale; a single value is the scale
 shorthand with power two. The default `2,1` leaves physical transport unchanged.

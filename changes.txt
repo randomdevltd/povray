@@ -73,12 +73,20 @@ Changed Behaviour
     integration remain separate; finer optical steps no longer multiply the
     volume-light shadow-ray count. Surface continuations start new segments.
 
+  - Interior lights accept a bare `emission` flag, mutually exclusive with
+    `pigment`, to use the full combined RGB emission of their own media,
+    including density and mixing. Brightness units and the default 1 nit
+    calibration are unchanged. Available in classic scenes of every version
+    and .pov4; `emission` was already reserved, while `light`, `nits` and
+    `lumens` remain matched by text and free as identifiers elsewhere.
+
   - Media `emission` is appearance only again: it paints the glow the camera
     sees and lights nothing, whether or not the interior has a `light` block,
     and radiosity gathers with `media on` exclude that appearance term.
     Scattered light remains available to indirect transport.
     A volume light's power is stated as radiance in its `light` block and is
-    not read from the `emission`; scenes that lit with `emission` state their
+    read from media `emission` only when the bare `light { emission }` flag
+    selects it; scenes that lit with `emission` state their
     luminance in the light block instead. The light's colour is the radiant
     intensity over pi, the scale at which a white diffuse probe facing the
     emitter renders the radiance itself.

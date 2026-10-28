@@ -55,7 +55,7 @@
   "global_settings": "Renderer-wide scene options: radiosity, photons, gamma, tracing depth.",
   "object": "Copies or wraps an already-declared object with new modifiers.",
   "light_source": "A light: position, colour, area, shadowing and photon options.",
-  "light": "An interior's volume light: radiance with pigment and brightness, its own attenuation, sampling and shadows.",
+  "light": "An interior's volume light: pigment or its own media emission, brightness, attenuation, sampling and shadows.",
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
   "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off."
