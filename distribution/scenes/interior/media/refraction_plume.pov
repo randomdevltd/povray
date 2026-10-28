@@ -46,8 +46,7 @@ cylinder {
     }
     #if (Bend)
       refraction {
-        strength -0.08
-        field { function { PlumeIndexWarp(x, y, z).red * PlumeIndexEnvelope(x, y, z).red } }
+        function { -0.08 * PlumeIndexWarp(x, y, z).red * PlumeIndexEnvelope(x, y, z).red }
       }
     #end
   }

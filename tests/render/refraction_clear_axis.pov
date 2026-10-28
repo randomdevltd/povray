@@ -10,7 +10,14 @@ plane { z,2 hollow
 box { <-0.5,-0.5,0>,<0.5,0.5,1> pigment { rgbt 1 } hollow
  finish { ambient 0 emission 0 diffuse 0 }
  interior { ior 1
-  refraction { strength 0.2 field { function { 0.5+0.5*x } } detail 0.06 }
+  refraction { function { 0.1+0.1*x } detail 0.06 }
   #if (Clear) media { method 3 mix replace absorption 0 } #end
  }
 }
+
+#if (Clear=2)
+ box { <-0.6,-0.6,-0.1>,<0.6,0.6,1.1> pigment { rgbt 1 } hollow
+  finish { ambient 0 emission 0 diffuse 0 }
+  interior { ior off refraction off }
+ }
+#end

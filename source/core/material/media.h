@@ -62,10 +62,8 @@ class PreparedRefractionDefinition;
 
 struct RefractionSpec final
 {
-    DBL strength = 1.0;
     DBL detail = 0.0;
-    PIGMENT *field = nullptr;
-    GenericScalarFunctionPtr rawFunction = nullptr;
+    std::vector<GenericScalarFunctionPtr> functions;
     TRANSFORM *transform = nullptr;
     bool preparedParallelSafe = false;
     RefractionSpec() = default;

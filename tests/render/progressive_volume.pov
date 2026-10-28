@@ -22,10 +22,11 @@ sphere {
 }
 #declare DecoyTarget = box { <-2.5, -0.5, -1.5>, <2.5, 4.5, 1.5> hollow pigment { rgbf 1 } interior { ior 1 } photons { target } no_shadow no_image }
 #if (Decoy = 1) object { DecoyTarget } #end
+#declare HeatShape = function { pigment { spherical scale 0.65 translate 3.5*y } }
 sphere {
     <0, 3.5, 0>, 0.65 hollow pigment { rgbt 1 } finish { ambient 0 diffuse 0 }
     interior { ior 1.4
-        #if (Heat) refraction { strength Heat field { pigment { spherical scale 0.65 translate 3.5*y } } detail 0.01 } #end
+        #if (Heat) refraction { function { Heat * HeatShape(x,y,z).red } detail 0.01 } #end
     }
     photons { target refraction on reflection off collect off }
 }

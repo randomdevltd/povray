@@ -39,10 +39,12 @@ v3.7.1 release proper.
 
 Changed Behaviour
 
-- Add independent interior refraction { strength K field { ... } detail D }
-  in classic SDL and .pov4 at every scene version. Direct field functions use
-  raw signed scalars without pigment wrapping; detail uses scene units.
-  field and detail are contextual words and remain free as identifiers.
+- Add independent interior refraction { function { DeltaN } detail D },
+  or refraction off, in classic SDL and .pov4 at every scene version.
+  Blocks require one or more raw signed scalar functions; their sum adds to
+  the active IOR. Detail uses scene units and defaults to auto. Off disables
+  only its own interior contribution, without clearing overlapping fields.
+  detail and auto are matched by text and remain free as identifiers.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow

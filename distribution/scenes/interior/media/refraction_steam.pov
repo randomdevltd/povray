@@ -20,16 +20,18 @@ difference {
 torus { 0.16, 0.035 rotate x * 90 translate <MugOut + 0.1, 1.15, 0> pigment { rgb <0.85, 0.85, 0.82> } }
 cylinder { <0, 0.86, 0>, <0, 1.4, 0>, MugOut - 0.04 pigment { rgb <0.2, 0.1, 0.05> } finish { specular 0.6 } }
 
-#declare Steam = density {
+#macro SteamPattern()
   function { max(0, 1 - (x * x + z * z) / (0.08 + 0.05 * y * y)) * max(0, min(1, y * 6)) * max(0, 1 - y / 1.4) }
   warp { turbulence <0.5, 0.25, 0.5> octaves 4 lambda 2.4 }
   translate <0, 1.42, 0>
-}
+#end
+#declare Steam = density { SteamPattern() }
+#declare SteamIndex = function { pigment { SteamPattern() } }
 cylinder {
   <0, 1.42, 0>, <0, 3, 0>, 0.85
   pigment { rgbt 1 }
   interior {
     media { mix add method 3 intervals 1 samples 12 scattering { 4, rgb 3 } absorption 0.2 density { Steam } }
-    #if (Bend) refraction { strength -0.03 field { pigment { Steam } } detail 0.1 } #end
+    #if (Bend) refraction { function { -0.03 * SteamIndex(x, y, z).red } detail 0.1 } #end
   }
 }

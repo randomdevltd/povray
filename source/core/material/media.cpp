@@ -733,29 +733,26 @@ bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, cons
     return true;
 }
 
-RefractionSpec::RefractionSpec(const RefractionSpec& source) : strength(source.strength), detail(source.detail),
-    field(source.field ? Copy_Pigment(source.field) : nullptr),
-    rawFunction(source.rawFunction ? source.rawFunction->Clone() : nullptr),
-    transform(Copy_Transform(source.transform)), preparedParallelSafe(source.preparedParallelSafe) {}
+RefractionSpec::RefractionSpec(const RefractionSpec& source) : detail(source.detail),
+    transform(Copy_Transform(source.transform)), preparedParallelSafe(source.preparedParallelSafe)
+{
+    for (const auto function : source.functions)
+        functions.push_back(function->Clone());
+}
 
 RefractionSpec::~RefractionSpec()
 {
-    Destroy_Pigment(field);
-    delete rawFunction;
+    for (auto function : functions)
+        delete function;
     Destroy_Transform(transform);
 }
 
 void RefractionSpec::Transform(const TRANSFORM *mapping)
 {
-    if (field)
-        Transform_Tpattern(field, mapping);
-    if (rawFunction || !field)
-    {
-        if (!transform)
-            transform = Copy_Transform(mapping);
-        else
-            Compose_Transforms(transform, mapping);
-    }
+    if (!transform)
+        transform = Copy_Transform(mapping);
+    else
+        Compose_Transforms(transform, mapping);
 }
 
 Media::Media()
@@ -915,7 +912,7 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
     bool needed = owner->interior->light != nullptr;
     if (needed)
         requested = AutomaticResolution(owner);
-    if (owner->interior->refraction)
+    if (owner->interior->refraction && !owner->interior->refraction->functions.empty())
     {
         needed = true;
         const DBL detail = owner->interior->refraction->detail;
@@ -1232,30 +1229,27 @@ class PreparedPlacedScalarField final : public PreparedScalarField
 static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const RefractionSpec& spec,
     const Interior& interior, TraceThreadData *td, const std::function<void()>& cooperate)
 {
-    if (!IsFiniteNumber(spec.strength) || !IsFiniteNumber(spec.detail) || spec.detail < 0.0)
-        throw POV_EXCEPTION_STRING("Refraction strength and detail must be finite.");
-    if (spec.strength == 0.0 || (!spec.rawFunction && !spec.field))
-        return std::make_shared<const PreparedConstantScalarField>(1.0);
-    if ((spec.rawFunction && spec.rawFunction->RequiresRayContext()) ||
-        (spec.field && PigmentRequiresRayContext(spec.field)))
-        throw POV_EXCEPTION_STRING("Refraction field requires ray context and cannot be prepared.");
+    if (!IsFiniteNumber(spec.detail) || spec.detail < 0.0)
+        throw POV_EXCEPTION_STRING("Refraction detail must be finite and nonnegative.");
+    if (spec.functions.empty())
+        return std::make_shared<const PreparedConstantScalarField>(0.0);
+    for (const auto function : spec.functions)
+        if (!function || function->RequiresRayContext())
+            throw POV_EXCEPTION_STRING("Refraction function requires ray context and cannot be prepared.");
     auto valueAt = [&](const Vector3d& world, TraceThreadData *thread) {
-        DBL value;
-        if (spec.rawFunction)
+        Vector3d point = world;
+        if (spec.transform)
+            MInvTransPoint(point, world, spec.transform);
+        DBL value = 0.0;
+        for (const auto function : spec.functions)
         {
-            Vector3d point = world;
-            if (spec.transform)
-                MInvTransPoint(point, world, spec.transform);
-            value = GenericScalarFunctionInstance(spec.rawFunction, thread).Evaluate(point);
-        }
-        else
-        {
-            TransColour colour;
-            Compute_Pigment(colour, spec.field, world, nullptr, nullptr, thread);
-            value = ChannelMean(colour.colour());
+            const DBL contribution = GenericScalarFunctionInstance(function, thread).Evaluate(point);
+            if (!IsFiniteNumber(contribution))
+                throw POV_EXCEPTION_STRING("Refraction function produced a non-finite scalar value.");
+            value += contribution;
         }
         if (!IsFiniteNumber(value))
-            throw POV_EXCEPTION_STRING("Refraction field produced a non-finite scalar value.");
+            throw POV_EXCEPTION_STRING("Refraction functions produced a non-finite sum.");
         return value;
     };
     std::vector<PreparedPlacedScalarField::Entry> entries;
@@ -1321,9 +1315,8 @@ static void PrepareRefractionDefinitions(TraceThreadData *td, const std::functio
         }
         auto definition = std::make_shared<PreparedRefractionDefinition>();
         const RefractionSpec& spec = *interior->refraction;
-        definition->component.field = PrepareRefraction(spec, *interior, td, cooperate);
-        definition->component.coefficient = spec.strength;
-        definition->varying = spec.strength != 0.0 && (spec.rawFunction || spec.field);
+        definition->field = PrepareRefraction(spec, *interior, td, cooperate);
+        definition->varying = !spec.functions.empty();
         definition->detail = spec.detail > 0.0 ? 0.5 * spec.detail : HUGE_VAL;
         for (const auto& field : interior->fields)
             if (field->layout)
@@ -2018,7 +2011,7 @@ static DBL ChannelMean(const MathColour& colour)
 RefractionField::RefractionField(const RayInteriorVector& interiors) :
     maxStep(HUGE_VAL), varies(false), bounded(true)
 {
-    std::vector<PreparedRefractionComponent> components;
+    std::vector<std::shared_ptr<const PreparedScalarField>> payloads;
     for (const Interior *interior : interiors)
     {
         if (!interior->preparedRefraction)
@@ -2028,7 +2021,7 @@ RefractionField::RefractionField(const RayInteriorVector& interiors) :
             continue;
         }
         const PreparedRefractionDefinition& field = *interior->preparedRefraction;
-        components.push_back(field.component);
+        payloads.push_back(field.field);
         fields.push_back(&field);
         if (!field.varying)
             continue;
@@ -2043,7 +2036,7 @@ RefractionField::RefractionField(const RayInteriorVector& interiors) :
             maxStep = std::min(maxStep, std::min(field.detail < HUGE_VAL ? field.detail : extent / 64.0, 2.0 * cell));
         }
     }
-    axis.reset(new PreparedRefractionAxis(std::move(components)));
+    axis.reset(new PreparedRefractionAxis(std::move(payloads)));
     if (!(maxStep < HUGE_VAL))
         maxStep = 1.0;
 }

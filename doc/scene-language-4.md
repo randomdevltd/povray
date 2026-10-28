@@ -37,21 +37,22 @@ shorthand with power two. The default `2,1` leaves physical transport unchanged.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 
-## Independent refraction fields
+## Independent refraction functions
 
-Both syntaxes accept `interior { refraction { strength -0.03 field {
-function { 2 + x } } detail 0.06 } }` at every scene version. The field
-adds `strength * field(x,y,z)` to the local refractive index independently
-of coefficient media and volume lights. Overlapping independent fields add.
-A direct `function` supplies its raw scalar value, including negative values
-and values above one; it is not wrapped through a pigment pattern or colour map.
-Other field patterns use the arithmetic mean of their RGB channels. `strength` is finite
-and signed. `detail` is a finite positive length in scene units and does not
-read `mm_per_unit`; `detail auto` or omitting it selects automatic detail.
-Omitted strength and field are both one. Raw function fields take no pattern
-modifiers; transform the enclosing object instead. An explicit
-`field { pigment { ... } }` keeps pigment-pattern wrapping and colour maps. `field` and `detail`
-are contextual words and remain available as variable names.
+Both syntaxes accept `interior { refraction { function { -0.03*(2+x) }
+function { 0.005*sin(y) } detail 0.06 } }` at every scene version. Each raw
+signed scalar function supplies an index contribution. Functions in a block
+are summed before preparation; contributions from overlapping interiors add.
+The index is the active optical IOR plus that sum, independently of media and
+light. Functions preserve negative values and values above one.
+
+A block requires at least one function. `refraction off` disables only that
+interior's contribution; it does not clear other interiors' functions. Each
+block requires an explicit contribution.
+`detail` is auto by default or a finite positive length in scene units and does
+not read `mm_per_unit`. Transform the containing object to transform functions.
+Ordinary declared pigment functions can be sampled explicitly inside a scalar
+function, including an explicitly authored RGB average when desired.
 
 ## Bounds framing
 

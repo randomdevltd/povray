@@ -41,14 +41,15 @@ int main()
     auto linear = std::make_shared<const AffineField>(1.5, Vector3d(0.2, -0.3, 0.4));
     const Vector3d point(0.25, -0.5, 0.75);
     Near(PreparedRefractionAxis({}).Evaluate(point).value, 0.0);
-    Near(PreparedRefractionAxis({{constant(-0.5), 1.0}}).Evaluate(point).value, -0.5);
-    Near(PreparedRefractionAxis({{constant(1.5), 1.0}}).Evaluate(point).value, 1.5);
+    Near(PreparedRefractionAxis({constant(-0.5)}).Evaluate(point).value, -0.5);
+    Near(PreparedRefractionAxis({constant(1.5)}).Evaluate(point).value, 1.5);
     auto other = std::make_shared<const AffineField>(0.25, Vector3d(-0.4, 0.1, 0.2));
-    PreparedRefractionAxis combined({{linear, -2.0}, {other, 0.5}});
-    Near(combined.Evaluate(point).value, -2.0 * linear->Sample(point).value + 0.5 * other->Sample(point).value);
+    PreparedRefractionAxis combined({linear, other});
+    Near(combined.Evaluate(point).value, linear->Sample(point).value + other->Sample(point).value);
     CheckGradient(combined, point);
     CheckGradient(combined, Vector3d(-0.5, 0.2, 0.1));
-    PreparedRefractionAxis zero({{linear, 1.0}, {linear, -1.0}});
+    auto inverse = std::make_shared<const AffineField>(-1.5, Vector3d(-0.2, 0.3, -0.4));
+    PreparedRefractionAxis zero({linear, inverse});
     Near(zero.Evaluate(point).value, 0.0);
     CheckGradient(zero, point);
     PreparedConstantScalarField rawConstant(-0.5);
@@ -68,7 +69,7 @@ int main()
     Near(grid->Sample(point).gradient[X], 0.2);
     Near(grid->Sample(point).gradient[Y], -0.3);
     Near(grid->Sample(point).gradient[Z], 0.4);
-    CheckGradient(PreparedRefractionAxis({{grid, 1.0}}), point);
+    CheckGradient(PreparedRefractionAxis({grid}), point);
     Near(grid->Sample(Vector3d(-1.9, 0.0, 0.0)).gradient[X], 0.0);
     Near(grid->Sample(Vector3d(2.01, 0.0, 0.0)).value, 0.0);
     Near(grid->Sample(Vector3d(2.01, 0.0, 0.0)).gradient[Y], 0.0);
@@ -88,7 +89,7 @@ int main()
     Near(transformedSample.gradient[X], 0.1);
     Near(transformedSample.gradient[Y], 0.04 - 0.6);
     Near(transformedSample.gradient[Z], -0.03 + 0.1);
-    CheckGradient(PreparedRefractionAxis({{transformed, 1.0}}), point);
+    CheckGradient(PreparedRefractionAxis({transformed}), point);
     bool layoutRejected = false;
     try { PreparedGridLayout invalid(Vector3d(0.0), Vector3d(1.0), {{0, 1, 1}}); }
     catch (const std::invalid_argument&) { layoutRejected = true; }
@@ -127,7 +128,7 @@ int main()
     catch (const std::invalid_argument&) { colourSizeRejected = true; }
     assert(colourSizeRejected);
     bool rejected = false;
-    try { PreparedRefractionAxis invalid({{nullptr, 1.0}}); }
+    try { PreparedRefractionAxis invalid({nullptr}); }
     catch (const std::invalid_argument&) { rejected = true; }
     assert(rejected);
     std::cout << "prepared refraction axis checks passed\n";

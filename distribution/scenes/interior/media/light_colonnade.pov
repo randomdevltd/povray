@@ -112,6 +112,10 @@ union {
   texture { Bronze }
 }
 
+#declare ColonnadeIndex = function { pigment {
+  function { 1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z)) }
+} }
+
 #if (Refract)
   intersection {
     sphere { 0, Lens }
@@ -119,12 +123,8 @@ union {
     pigment { rgbt 1 }
     interior {
       refraction {
-        strength 0.25 detail 0.3
-        field { pigment {
-          function {
-            1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z))
-          }
-        } }
+        function { 0.25 * ColonnadeIndex(x, y, z).red }
+        detail 0.3
       }
     }
     translate Core

@@ -33,7 +33,7 @@ plane { y, 0
 }
 light_source { <0, H, -20> rgb Power parallel point_at <0, H, 0> photon_only 1 photons { refraction on reflection off } }
 
-#macro IndexField(C)
+#macro PrismIndexField(C)
   #switch (C)
     #case (1) pigment { function { 0.5 + 0.5 * sin(Arms * atan2(y, x) + Pitch * z) * min(1, 4 * sqrt(x * x + y * y)) } } #break
     #case (2) pigment { crackle solid scale CellScale } #break
@@ -44,13 +44,14 @@ light_source { <0, H, -20> rgb Power parallel point_at <0, H, 0> photon_only 1 p
 #macro Strength(C) #switch (C) #case (1) (0.5) #break #case (2) (0.6) #break #case (3) (0.5) #break #case (4) (0.5) #end #end
 
 #macro GradientPrism(C, X)
+  #local PrismIndex = function { PrismIndexField(C) }
   prism { linear_sweep linear_spline -0.9, 0.9, 4
     <-0.693, 0>, <0.346, 0.6>, <0.346, -0.6>, <-0.693, 0>
     pigment { rgbt 1 }
     finish { ambient 0 diffuse 0 specular 0.3 roughness 0.005 reflection { 0, 1 fresnel on } conserve_energy }
     interior {
       ior 1.5 dispersion Dispersion dispersion_samples Bands
-      #if (!Plain) refraction { strength Strength(C) * KScale field { IndexField(C) } detail Detail } #end
+      #if (!Plain) refraction { function { Strength(C) * KScale * PrismIndex(x, y, z).red } detail Detail } #end
     }
     rotate z * -90
     translate <(Case = 0 ? X : 0), H, 0>

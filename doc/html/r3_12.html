@@ -180,7 +180,7 @@ sphere {
 <a name="r3_12_4"></a>
 <div class="content-level-h3" contains="Media, Light Groups and Radiosity" id="r3_12_4">
 <h3>3.12.4 Media, Light Groups and Radiosity</h3>
-<p>An interior can also contain an independent <a href="r3_11.html#r3_11_3"><code>refraction { strength K field { ... } detail D }</code></a> block beside its light and coefficient media. The refraction field changes the local index without changing source generation or the media density; its <code>detail</code> is in scene units. A direct field function is a raw signed scalar, while the light's pigment remains a colour source.</p>
+<p>An interior can also contain an independent <a href="r3_11.html#r3_11_3"><code>refraction { function { DeltaN } detail D }</code></a> block beside its light and coefficient media. The refraction field changes the local index without changing source generation or the media density; its <code>detail</code> is in scene units. A direct field function is a raw signed scalar, while the light's pigment remains a colour source.</p>
 <ul>
   <li><strong>The glow.</strong> The camera, reflections and refractions see authored media emission. Radiosity and photon transport exclude that appearance term while retaining light genuinely scattered by the medium; the independent light block supplies generated energy.</li>
   <li><strong>Light groups.</strong> An object with a light interior inside a <code>light_group</code> lights the objects of that group only, as the group's light sources do. See <a href="r3_4.html#r3_4_3_2">Light Groups</a>.</li>

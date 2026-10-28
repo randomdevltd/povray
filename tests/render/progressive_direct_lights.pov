@@ -60,7 +60,7 @@ light_source {
 #if (Lens & Bend)
     #declare Across = vnormalize(vcross(x, Toward));
     cylinder { -z, z, 0.5 pigment { rgbf 1 } finish { ambient 0 diffuse 0 }
-               interior { ior 1 #if (Bend = 1) refraction { strength 0.1 field { function { max(0, 1 - z*z) * (1 + x) / 2 } } detail auto } #end }
+               interior { ior 1 #if (Bend = 1) refraction { function { 0.1 * (max(0, 1 - z*z) * (1 + x) / 2) } detail auto } #end }
                photons { target refraction on reflection off }
                matrix <1, 0, 0, Across.x, Across.y, Across.z, Toward.x, Toward.y, Toward.z, 0, 0, 0> translate Toward * (Gap + 0.5) }
 #elseif (Lens)

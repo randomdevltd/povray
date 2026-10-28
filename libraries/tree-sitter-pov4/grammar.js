@@ -38,7 +38,7 @@ function expressionFamily(top, suffix, comparisons) {
 module.exports = grammar({
   name: 'pov4',
   word: ($) => $.identifier,
-  externals: ($) => [$.keyword, $.builtin, $.colour_operator, $.color_operator, $.colour_channel, $.tag_keyword, $.field_keyword],
+  externals: ($) => [$.keyword, $.builtin, $.colour_operator, $.color_operator, $.colour_channel, $.tag_keyword],
   extras: ($) => [/\s/, $.comment],
   conflicts: ($) => [[$.parameter, $._primary], [$.body, $.dictionary], [$._item, $.dictionary], [$.channel],
     [$._expression, $._item_expression], [$.lambda, $._lambda_item]],
@@ -103,7 +103,7 @@ module.exports = grammar({
       ':', field('value', $._expression)),
     spread: ($) => seq('...', $._component),
     parenthesized_expression: ($) => seq('(', $._expression, ')'),
-    block: ($) => prec(PREC.block, seq(field('name', choice($.keyword, alias('to', $.keyword), alias($.field_keyword, $.keyword))),
+    block: ($) => prec(PREC.block, seq(field('name', choice($.keyword, alias('to', $.keyword))),
       '{', repeat($._item), '}')),
     function_block: ($) => seq('function', optional(choice(field('parameters', $.function_parameters),
       seq(field('width', $._size), ',', field('height', $._size)))),

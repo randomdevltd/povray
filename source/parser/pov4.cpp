@@ -145,7 +145,7 @@ const char* const kWrapKeywords[] = {
     "transform",
 };
 const char* const kUndeclarable[] = {
-    "background", "default", "field", "global_settings", "interior_texture", "photons", "radiosity", "refraction",
+    "background", "default", "global_settings", "interior_texture", "photons", "radiosity", "refraction",
 };
 
 bool InList(const char* const* list, size_t n, const std::string& word)
@@ -3450,6 +3450,13 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
             }
             break;
         case NK::Builtin:
+            if (out.IsBlock() && n->op == B_off &&
+                static_cast<TextOutput&>(out).context == "interior" &&
+                static_cast<TextOutput&>(out).lastKeyword == "refraction")
+            {
+                out.Put(Item(Item::Keyword, "off", "off", n), false);
+                return;
+            }
             if (out.IsBlock() && (n->op >= B_abs))
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);

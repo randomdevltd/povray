@@ -72,7 +72,7 @@ expect ramp 48 36 0.4948
 expect rise 48 36 0.5918 0.006
 expect inline_field 48 36 0.5918 0.006
 
-# Two coincident half-strength fields give the same index and gradient as one full-strength field.
+# Two coincident half-amplitude fields give the same index and gradient as one full-amplitude field.
 render additive Declare=Case=7 Declare=Ramp=1
 region additive rise 0 95 0 71
 # Opposite signed fields cancel; reversing their declaration order changes neither index nor surfaces.

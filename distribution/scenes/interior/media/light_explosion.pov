@@ -171,14 +171,13 @@ union {
   sphere {
     0, 1 pigment { rgbt 1 }
     interior { refraction {
-      strength -0.008
-      field { function {
-        ExplosionIndexBase(x, y, z).red
+      function {
+        -0.008 * ExplosionIndexBase(x, y, z).red
         #if (Smoke)
           * select(min(15*x+12, 13-15*x, 20*y+10, 24-20*y, 13*z+11, 12-13*z),
                    1, ExplosionIndexSmoke(15*x, 20*y+8, 13*z).red)
         #end
-      } }
+      }
     } }
     scale <15, 20, 13> translate F + y * 8
   }

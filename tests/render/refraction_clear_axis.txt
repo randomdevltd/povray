@@ -1,9 +1,12 @@
 Independent refraction survives optical replacement
 
-Both arms have the same interior-owned field n(x)=1.1+.1x. Clear1 adds an
+All arms have the same interior-owned field n(x)=1.1+.1x. Clear1 adds an
 optical-only zero-coefficient mix-replace medium; this must not replace the
-independent index field. Both screen coordinates must follow the independent
+independent index field. All screen coordinates must follow the independent
 Fermat/Snell formula in refraction_prepared_ray_reference.py within .001 scene
 unit. One interior and one slab boundary pair avoid coincident-container effects.
-The coordinate screen decodes x from R/G. Both frames use8x8 linear16bitRGB,
+The coordinate screen decodes x from R/G. All frames use8x8 linear16bitRGB,
 AAoff and two threads. No rendered reference or power adjustment is used.
+
+Clear2 adds a separate overlapping interior with refraction off. It must not
+clear the other interior's index contribution; the same Fermat ray remains.

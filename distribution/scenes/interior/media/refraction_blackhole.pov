@@ -24,16 +24,18 @@ sky_sphere {
   }
 }
 
+#declare BlackHoleIndex = function { pigment {
+  function { select(sqrt(x * x + y * y + z * z) - RS * 0.26, 1,
+                    min(1, max(0, (Index(sqrt(x * x + y * y + z * z)) - Edge) / Most))) }
+} }
+
 sphere {
   0, Reach
   pigment { rgbt 1 }
   interior {
     refraction {
-      strength Most detail 0.5
-      field { pigment {
-        function { select(sqrt(x * x + y * y + z * z) - RS * 0.26, 1,
-                          min(1, max(0, (Index(sqrt(x * x + y * y + z * z)) - Edge) / Most))) }
-      } }
+      function { Most * BlackHoleIndex(x, y, z).red }
+      detail 0.5
     }
   }
 }

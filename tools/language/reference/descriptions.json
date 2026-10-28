@@ -1033,7 +1033,7 @@
   "absorption": {
    "rank": 1020,
    "code": "absorption rgb 0.005",
-   "from": "tests/pov4/interior_all_options.pov4:32"
+   "from": "tests/pov4/interior_all_options.pov4:31"
   },
   "accuracy": {
    "rank": 1015,
@@ -1171,9 +1171,9 @@
    "from": "tests/pov4/interior_all_options.pov4:17"
   },
   "auto": {
-   "rank": 62,
-   "code": "let Bend = refraction { strength -0.01 ...Field detail auto };",
-   "from": "tests/pov4/ok_refraction_components.pov4:5"
+   "rank": 87,
+   "code": "let Bend = refraction { function { -0.01*(x+detail) } function { 0.005 } detail auto };",
+   "from": "tests/pov4/ok_refraction_components.pov4:4"
   },
   "autostop": {
    "rank": 1010,
@@ -1486,9 +1486,9 @@
    "from": "doc/html/r3_6.html"
   },
   "detail": {
-   "rank": 62,
-   "code": "let Bend = refraction { strength -0.01 ...Field detail auto };",
-   "from": "tests/pov4/ok_refraction_components.pov4:5"
+   "rank": 72,
+   "code": "interior { ior 1 refraction { function { -0.03*(2+x/4) } detail 0.06 } }",
+   "from": "tests/pov4/refraction.pov4:7"
   },
   "df3": {
    "rank": 1031,
@@ -1638,10 +1638,6 @@
    "code": "far { pigment { rgb <0.45, 0.7, 1> } }",
    "from": "doc/html/r3_10.html"
   },
-  "field": {
-   "code": "field { function { max(0, 1-x*x-y*y-z*z) } }",
-   "from": "tests/pov4/interior_all_options.pov4:25"
-  },
   "file": {
    "rank": 73,
    "code": "output { [size <Width, Height>] [window <SC, SR, EC, ER>] [file \"NAME\"] }",
@@ -1707,9 +1703,9 @@
    "from": "doc/html/r3_10.html"
   },
   "function": {
-   "rank": 44,
-   "code": "field { function { max(0, 1-x*x-y*y-z*z) } }",
-   "from": "tests/pov4/interior_all_options.pov4:25"
+   "rank": 42,
+   "code": "function { -0.0003*max(0, 1-x*x-y*y-z*z) }",
+   "from": "tests/pov4/interior_all_options.pov4:24"
   },
   "gamma": {
    "rank": 1027,
@@ -1872,9 +1868,9 @@
    "from": "doc/html/r3_5.html"
   },
   "ior": {
-   "rank": 61,
-   "code": "sphere { 0, 1 pigment { rgbt 1 } interior { ior 1 ...Bend } }",
-   "from": "tests/pov4/ok_refraction_components.pov4:6"
+   "rank": 33,
+   "code": "interior { ior 1 refraction off }",
+   "from": "tests/pov4/refraction_off.pov4:7"
   },
   "ior_mix": {
    "rank": 80,
@@ -2140,9 +2136,9 @@
    "from": "tests/pov4/default_media.pov4:2"
   },
   "mm_per_unit": {
-   "rank": 1015,
-   "code": "mm_per_unit INT",
-   "from": "doc/html/r3_6.html"
+   "rank": 69,
+   "code": "global_settings { assumed_gamma 1 atmospheric_ior 1 mm_per_unit 100 }",
+   "from": "tests/pov4/refraction_off.pov4:1"
   },
   "mortar": {
    "rank": 1029,
@@ -2253,9 +2249,9 @@
    "from": "doc/html/r3_6.html"
   },
   "off": {
-   "rank": 1014,
-   "code": "shadowless off",
-   "from": "tests/pov4/interior_all_options.pov4:18"
+   "rank": 33,
+   "code": "interior { ior 1 refraction off }",
+   "from": "tests/pov4/refraction_off.pov4:7"
   },
   "offset": {
    "rank": 31,
@@ -2539,7 +2535,7 @@
    "from": "doc/html/r3_6.html"
   },
   "refraction": {
-   "code": "refraction { strength -0.0003 field { function { max(0, 1-x*x-y*y-z*z) } } detail 0.02 }",
+   "code": "refraction { function { -0.0003*max(0, 1-x*x-y*y-z*z) } detail 0.02 }",
    "from": "tests/pov4/interior_all_options.pov4:23"
   },
   "refraction_angle": {
@@ -2555,7 +2551,7 @@
   "resolution": {
    "rank": 1016,
    "code": "resolution 0.025",
-   "from": "tests/pov4/interior_all_options.pov4:30"
+   "from": "tests/pov4/interior_all_options.pov4:29"
   },
   "return": {
    "rank": 26,
@@ -2625,7 +2621,7 @@
   "scattering": {
    "rank": 26,
    "code": "scattering { 1, rgb 0.02 }",
-   "from": "tests/pov4/interior_all_options.pov4:31"
+   "from": "tests/pov4/interior_all_options.pov4:30"
   },
   "screen": {
    "rank": 38,
@@ -2775,9 +2771,9 @@
    "from": "tests/pov4/loop.pov4:4"
   },
   "strength": {
-   "rank": 62,
-   "code": "let Bend = refraction { strength -0.01 ...Field detail auto };",
-   "from": "tests/pov4/ok_refraction_components.pov4:5"
+   "rank": 1010,
+   "code": "strength 2",
+   "from": "doc/html/r3_6.html"
   },
   "strlwr": {
    "rank": 1056,
@@ -3077,9 +3073,9 @@
    "from": "tests/pov4/stills.pov4:6"
   },
   "z": {
-   "rank": 43,
-   "code": "union { Count() Count() pigment { rgb z } }",
-   "from": "tests/pov4/review.pov4:26"
+   "rank": 42,
+   "code": "function { -0.0003*max(0, 1-x*x-y*y-z*z) }",
+   "from": "tests/pov4/interior_all_options.pov4:24"
   }
  }
 }

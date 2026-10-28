@@ -26,7 +26,7 @@ light_source { <-1, 4, -3> rgb 1 #if (Case = 12 | Case = 13) parallel media_atte
 #declare Sine = function(x, y, z) { (0.5 + 0.5 * sin(x / 0.00015 * pi / 2 + (Case = 16 ? pi/2 : 0))) * Fade(x, y, z) }
 #declare Resolved = function(x, y, z) { (0.5 + 0.5 * sin(2*pi*x/0.48)) * Fade(x, y, z) }
 #declare Mean = function(x, y, z) { 0.5 * Fade(x, y, z) }
-#declare Coefficient = (Case = 5 | Case = 6 ? 0.07 : Case = 7 | Case = 8 | Case = 9 | Case = 16 ? 1e-5 : 0.00025);
+#declare Amplitude = (Case = 5 | Case = 6 ? 0.07 : Case = 7 | Case = 8 | Case = 9 | Case = 16 ? 1e-5 : 0.00025);
 
 box {
   <-2, -1.5, (Case = 14 ? -2000 : -1)>, <2, 1.5, (Case = 14 ? 2000 : 1)>
@@ -35,16 +35,15 @@ box {
     ior 1
     #if (Case < 12 | Case = 15 | Case = 16)
       refraction {
-        strength Coefficient
         #if (Detail > 0) detail Detail #elseif (Auto) detail auto #end
-        field { function {
+        function { Amplitude *
           #if (Case = 5 | Case = 6) Ramp(x, y, z)
           #elseif (Case = 7 | Case = 9 | Case = 16) Sine(x, y, z)
           #elseif (Case = 8) Mean(x, y, z)
           #elseif (Case = 15) Resolved(x, y, z)
           #else Seams(x, y, z)
           #end
-        } }
+        }
       }
     #end
     #if (Case >= 12 & Case <= 14)

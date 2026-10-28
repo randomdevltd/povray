@@ -130,7 +130,7 @@ void Interior::Transform(const TRANSFORM *trans)
 
 void Interior::PostProcess()
 {
-    refracting = refraction && refraction->strength != 0.0;
+    refracting = refraction && !refraction->functions.empty();
     for(std::vector<Media>::iterator i(media.begin());i != media.end(); i++)
     {
         i->PostProcess();

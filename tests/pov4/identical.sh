@@ -50,7 +50,7 @@ accepts() {
     echo "pov4 $1: accepted"
 }
 accepts ok_refraction_components
-fails err_refraction_prop "'refraction' has no item 'strenght'; did you mean 'strength'?"
+fails err_refraction_prop "'refraction' has no item 'detial'; did you mean 'detail'?"
 accepts ok_vector_builtins
 accepts ok_negate
 accepts ok_string_compare

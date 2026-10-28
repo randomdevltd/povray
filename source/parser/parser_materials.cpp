@@ -3999,16 +3999,22 @@ void Parser::Parse_Interior_Light(Interior& interior)
 void Parser::Parse_Interior_Refraction(Interior& interior)
 {
     auto refraction = std::make_shared<RefractionSpec>();
+    Get_Token();
+    if (CurrentTrueTokenId() == OFF_TOKEN)
+    {
+        refraction->preparedParallelSafe = true;
+        interior.refraction = refraction;
+        return;
+    }
+    UNGET
     Parse_Begin();
     EXPECT
+        CASE (FUNCTION_TOKEN)
+            refraction->functions.push_back(new FunctionVM::CustomFunction(mpFunctionVM.get(), Parse_Function()));
+        END_CASE
+
         OTHERWISE
-            if (CurrentTokenText() == "strength")
-            {
-                refraction->strength = Parse_Float();
-                if (!std::isfinite(refraction->strength))
-                    Error("Refraction strength must be finite.");
-            }
-            else if (CurrentTokenText() == "detail")
+            if (CurrentTokenText() == "detail")
             {
                 Get_Token();
                 if (CurrentTokenText() == "auto")
@@ -4021,35 +4027,6 @@ void Parser::Parse_Interior_Refraction(Interior& interior)
                         Error("Refraction detail must be auto or finite and greater than zero, in scene units.");
                 }
             }
-            else if (CurrentTokenText() == "field")
-            {
-                if (refraction->field || refraction->rawFunction)
-                    Error("Only one field allowed in a refraction block.");
-                Parse_Begin();
-                Get_Token();
-                if (CurrentTrueTokenId() == FUNCTION_TOKEN)
-                {
-                    refraction->rawFunction = new FunctionVM::CustomFunction(mpFunctionVM.get(), Parse_Function());
-                    Get_Token();
-                    if (CurrentTrueTokenId() != RIGHT_CURLY_TOKEN)
-                        Error("A refraction function field accepts no pattern modifiers; transform its enclosing object instead.");
-                    UNGET
-                }
-                else
-                {
-                    const bool wrapped = CurrentTrueTokenId() == PIGMENT_TOKEN;
-                    if (wrapped)
-                        Parse_Begin();
-                    else
-                        UNGET
-                    refraction->field = Create_Pigment();
-                    Parse_Pigment(&refraction->field);
-                    Post_Pigment(refraction->field);
-                    if (wrapped)
-                        Parse_End();
-                }
-                Parse_End();
-            }
             else
             {
                 UNGET
@@ -4058,27 +4035,19 @@ void Parser::Parse_Interior_Refraction(Interior& interior)
         END_CASE
     END_EXPECT
     Parse_End();
-    if (refraction->rawFunction)
+    if (refraction->functions.empty())
+        Error("A refraction block requires at least one function.");
+    bool known = true;
+    std::vector<FUNCTION> roots;
+    for (const auto *function : refraction->functions)
     {
-        const auto *custom = dynamic_cast<const FunctionVM::CustomFunction *>(refraction->rawFunction);
-        refraction->preparedParallelSafe = custom && !custom->RequiresRayContext() &&
-            SelfContained(std::vector<FUNCTION>(1, custom->Id()));
+        const auto *custom = dynamic_cast<const FunctionVM::CustomFunction *>(function);
+        if (!custom || custom->RequiresRayContext())
+            known = false;
+        else
+            roots.push_back(custom->Id());
     }
-    else if (!refraction->field)
-        refraction->preparedParallelSafe = true;
-    else if (!PigmentTestsObjects(refraction->field) && !PigmentRequiresRayContext(refraction->field))
-    {
-        bool known = true;
-        std::vector<FUNCTION> roots;
-        ForEachPigmentFunction(refraction->field, false, [&](GenericScalarFunctionPtr& slot)
-        {
-            if (const auto *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
-                roots.push_back(custom->Id());
-            else
-                known = false;
-        });
-        refraction->preparedParallelSafe = known && SelfContained(roots);
-    }
+    refraction->preparedParallelSafe = known && SelfContained(roots);
     interior.refraction = refraction;
 }
 
@@ -4151,7 +4120,7 @@ void Parser::Parse_Interior(InteriorPtr& interior)
 
         CASE (REFRACTION_TOKEN)
             Get_Token();
-            if (CurrentTrueTokenId() == LEFT_CURLY_TOKEN)
+            if (CurrentTrueTokenId() == LEFT_CURLY_TOKEN || CurrentTrueTokenId() == OFF_TOKEN)
             {
                 UNGET
                 if (interior->refraction)

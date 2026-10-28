@@ -129,14 +129,13 @@ box {
   pigment { rgbt 1 } hollow
   interior {
     refraction {
-      strength -0.03
-      field { function { max(0, 1-x*x-z*z) } }
+      function { -0.03*max(0, 1-x*x-z*z) }
       detail 0.06
     }
   }
 }
 </pre>
-<p>The field adds <code>strength * field(x,y,z)</code> to the local base index. Contributions from overlapping interiors add. Strength is finite and signed. A raw function preserves signed values and values above one. An explicit <code>field { pigment { ... } }</code> uses pigment-pattern semantics and the arithmetic mean of its RGB channels. Raw functions take no pattern modifiers; transform the enclosing object. Omitted strength and field are both one. This block is available in every scene version and in both scene-language syntaxes.</p></div>
+<p>Each <code>function { ... }</code> returns a raw signed contribution to refractive index. All functions in a block are summed before preparation, and contributions from overlapping interiors add to the active optical <code>ior</code>. Values must be finite; negative values and values above one are preserved. A block requires at least one function. <code>refraction off</code> disables only its own interior's contribution and never clears another interior's contribution. An empty block is an error; no contribution is supplied implicitly. Transform the enclosing object to transform the functions. This syntax is available in every scene version and in both scene languages.</p></div>
 <a name="r3_11_3_1"></a><div class="content-level-h4" contains="The Container" id="r3_11_3_1">
 <h4>3.11.3.1 The Container</h4>
 <p>The container bounds the spatial field. Surface refraction uses the complete index on either side: the active optical <code>ior</code> plus interior field contributions. A field that jumps at its boundary can refract there as well as bend rays within it. Fade its contribution to zero at the boundary when no abrupt interface is intended. Refraction fields belong to objects, independently of coefficient media.</p></div>
@@ -156,7 +155,7 @@ box {
 <h3>3.11.5 Worked Examples</h3>
 <p>Examples are in <code>scenes/interior/media</code>. Their comments document their scene parameters.</p></div>
 <a name="r3_11_5_1"></a><div class="content-level-h4" contains="Heat Shimmer" id="r3_11_5_1"><h4>3.11.5.1 Heat Shimmer</h4>
-<p><code>refraction_shimmer.pov</code> and <code>refraction_plume.pov</code> use independent negative-strength fields for warm air. The field can vary or fade without changing smoke extinction or source strength.</p></div>
+<p><code>refraction_shimmer.pov</code> and <code>refraction_plume.pov</code> use independent negative index contributions for warm air. The field can vary or fade without changing smoke extinction or source strength.</p></div>
 <a name="r3_11_5_2"></a><div class="content-level-h4" contains="Steam: Independent Optical and Index Fields" id="r3_11_5_2"><h4>3.11.5.2 Steam: Independent Optical and Index Fields</h4>
 <pre>
 #declare Steam = function { max(0, 1-x*x-z*z) }
@@ -164,7 +163,7 @@ cylinder {
   0, y*2, 0.5 pigment { rgbt 1 } hollow
   interior {
     media { scattering { 1, rgb 0.6 } density { function { Steam(x,y,z) } } }
-    refraction { strength -0.03 field { function { Steam(x,y,z) } } detail 0.06 }
+    refraction { function { -0.03*Steam(x,y,z) } detail 0.06 }
   }
 }
 </pre>
@@ -176,7 +175,7 @@ cylinder {
 <a name="r3_11_5_5"></a><div class="content-level-h4" contains="Resolved Detail" id="r3_11_5_5"><h4>3.11.5.5 Resolved Detail</h4>
 <p><code>refraction_detail_bands.pov</code> and <code>refraction_detail_crackle.pov</code> expose detail controls. Compare resolved grids; a finer integration step cannot recover information absent from a coarse field grid.</p></div>
 <a name="r3_11_6"></a><div class="content-level-h3" contains="Defaults and Messages" id="r3_11_6"><h3>3.11.6 Defaults and Messages</h3>
-<p>Refraction defaults are <code>strength 1</code>, <code>field { function { 1 } }</code>, and <code>detail auto</code>. Strength and all sampled field values must be finite. Detail must be auto or positive. Preparation diagnostics identify coarsened layouts, invalid spatial contexts and unsupported bounds. An explicitly requested prepared representation is never silently replaced with a procedural or classic path.</p></div>
+<p>Refraction requires one or more scalar functions, or <code>refraction off</code>. Detail defaults to <code>auto</code>; all sampled function values must be finite. Detail must be auto or positive. Preparation diagnostics identify coarsened layouts, invalid spatial contexts and unsupported bounds. An explicitly requested prepared representation is never silently replaced with a procedural or classic path.</p></div>
 
 </div>
 </div>

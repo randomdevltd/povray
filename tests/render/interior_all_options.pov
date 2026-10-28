@@ -22,8 +22,7 @@ sphere {
       photons { reflection on refraction on } // Requires separate global photon configuration.
     }
     refraction {
-      strength -0.0003
-      field { function { max(0, 1-x*x-y*y-z*z) } }
+      function { -0.0003*max(0, 1-x*x-y*y-z*z) }
       detail 0.02
     }
     media {

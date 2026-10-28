@@ -24,16 +24,16 @@ box {
 #end
 
 #if (Hot)
+  #declare MirageIndex = function { pigment {
+    function { exp(-max(y, 0) / 0.18) * max(0, min(min(1, (z + 10) / 8), min((420 - z) / 30, (80 - abs(x)) / 20))) }
+  } }
   box {
     <-80, -0.5, -10>, <80, 3, 420>
     pigment { rgbt 1 }
     interior {
       refraction {
-        strength -0.0007
+        function { -0.0007 * MirageIndex(x, y, z).red }
         detail auto
-        field { pigment {
-          function { exp(-max(y, 0) / 0.18) * max(0, min(min(1, (z + 10) / 8), min((420 - z) / 30, (80 - abs(x)) / 20))) }
-        } }
       }
     }
   }

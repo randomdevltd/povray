@@ -21,6 +21,7 @@
 #ifndef (PhotonFile) #declare PhotonFile = 0; #end
 #ifndef (CameraTurn) #declare CameraTurn = 0; #end
 #ifndef (TargetWeight) #declare TargetWeight = 1; #end
+#declare CurvedIndex = function { pigment { spherical scale 1.2 translate 1.1*y } }
 global_settings {
     assumed_gamma 1
     max_trace_level 8
@@ -89,7 +90,7 @@ sphere {
     pigment { color rgbt 1 }
     finish { ambient 0 diffuse 0 reflection { 0, 1 fresnel } conserve_energy }
     interior { ior 1.5 dispersion Dispersion
-        #if (Curved) refraction { strength 0.1 field { pigment { spherical scale 1.2 translate 1.1*y } } } #end
+        #if (Curved) refraction { function { 0.1 * CurvedIndex(x,y,z).red } detail auto } #end
     }
     photons { target TargetWeight reflection on refraction on }
 }

@@ -40,8 +40,7 @@ object { Board translate z * 60 }
     pigment { rgbt 1 }
     interior {
       refraction {
-        strength -0.00006
-        field { function { ShimmerEnvelope(x,y,z).red * ShimmerTurbulence(x,y,z).red } }
+        function { -0.00006 * ShimmerEnvelope(x,y,z).red * ShimmerTurbulence(x,y,z).red }
         detail 0.1
       }
     }

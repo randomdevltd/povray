@@ -58,8 +58,7 @@
   "light": "An interior's volume light: radiance with pigment and brightness, its own attenuation, sampling and shadows.",
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
-  "refraction": "An independent interior index field: signed strength, scalar field and scene-unit detail.",
-  "field": "The scalar or pigment field of an interior refraction axis."
+  "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off."
  },
  "words": {
   "quality": {

@@ -20,14 +20,15 @@ plane {
 #declare Fade = function(x, y, z) { S((2.5 - abs(x)) / 0.25) * S((1.75 - abs(y)) / 0.25) * S((0.3 - abs(z)) / 0.06) }
 #declare Fine = function { pattern { crackle solid scale 0.002 } }
 
+#declare CrackleIndex = function { pigment { function { Fine(x, y, z) * Fade(x, y, z) } } }
+
 box {
   <-2.5, -1.75, -0.3>, <2.5, 1.75, 0.3>
   pigment { rgbt 1 }
   interior {
     ior 1
     refraction {
-      strength 0.01
-      field { pigment { function { Fine(x, y, z) * Fade(x, y, z) } } }
+      function { 0.01 * CrackleIndex(x, y, z).red }
       #if (Detail > 0) detail Detail #else detail auto #end
     }
   }

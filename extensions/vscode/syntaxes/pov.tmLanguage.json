@@ -89,7 +89,7 @@
     },
     "block": {
       "name": "keyword.other.block.pov",
-      "match": "\\b(?:global_settings|isosurface_mesh|smooth_triangle|superellipsoid|bicubic_patch|julia_fractal|height_field|intersection|light_source|sphere_sweep|light_group|background|difference|isosurface|parametric|polynomial|refraction|sky_sphere|composite|image_map|radiosity|bump_map|cylinder|interior|material|triangle|default|density|photons|pigment|polygon|quadric|quartic|rainbow|texture|camera|finish|normal|object|output|portal|sphere|cubic|field|lathe|lemon|light|media|merge|mesh2|plane|prism|torus|union|blob|cone|disc|mesh|ovus|poly|tags|text|box|fog|sor)\\b"
+      "match": "\\b(?:global_settings|isosurface_mesh|smooth_triangle|superellipsoid|bicubic_patch|julia_fractal|height_field|intersection|light_source|sphere_sweep|light_group|background|difference|isosurface|parametric|polynomial|refraction|sky_sphere|composite|image_map|radiosity|bump_map|cylinder|interior|material|triangle|default|density|photons|pigment|polygon|quadric|quartic|rainbow|texture|camera|finish|normal|object|output|portal|sphere|cubic|lathe|lemon|light|media|merge|mesh2|plane|prism|torus|union|blob|cone|disc|mesh|ovus|poly|tags|text|box|fog|sor)\\b"
     },
     "selector": {
       "name": "keyword.other.block.pov",

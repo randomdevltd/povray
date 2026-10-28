@@ -17,7 +17,7 @@ box { <-0.1,-0.1,0>,<0.1,0.1,1> pigment { rgbt 1 } hollow
 box { <-0.1,-0.1,0.25>,<0.1,0.1,0.75> pigment { rgbt 1 } hollow
  interior {
  #if (Case = 3)
-  refraction { strength 0.01 detail auto }
+  refraction { function { 0.01 } detail auto }
  #else
  media { method 4 resolution Resolution
  #switch(Case)

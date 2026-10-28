@@ -37,11 +37,12 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #if ((Case != 16) & ((Case < 42) | (Case > 49) | (Case = 44)) & ((Case < 62) | (Case > 65))) object { Backdrop } #end
 
 #declare Clear = texture { pigment { rgbt 1 } finish { diffuse 0 } };
-#declare Lens = pigment { spherical scale 2.5 }
-#declare Rise = pigment { gradient y scale 4 translate -2 * y }
-#declare Riser = box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 refraction { strength 0.2 field { pigment { Rise } } detail 0.05 } } }
+#declare Lens = function { pigment { spherical scale 2.5 } }
+#declare Rise = function { pigment { gradient y scale 4 translate -2 * y } }
+#declare WaterLens = function { pigment { spherical scale 2 } }
+#declare Riser = box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 refraction { function { 0.2 * Rise(x,y,z).red } detail 0.05 } } }
 #declare HalfRiser = box { <-5, -2, -2>, <5, 2, 2> texture { Clear }
-  interior { ior 1 refraction { strength 0.1 field { pigment { Rise } } detail 0.05 } } };
+  interior { ior 1 refraction { function { 0.1 * Rise(x,y,z).red } detail 0.05 } } };
 #declare Ball = sphere { 0, 1.5 texture { Clear } interior { ior BallIor IorMix(MixAll) } };
 #declare Water = box { -3, 3 texture { Clear } interior { ior 1.33 IorMix(MixAll) } };
 #declare A = sphere { -0.7 * x, 1.6 };
@@ -52,40 +53,40 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 
 #switch (Case)
 #case (1)
-  sphere { 0, 2 texture { Clear } interior { ior 1 refraction { strength 0.5 detail 0.05 } media { absorption 0.2 emission 0.1 } } }
+  sphere { 0, 2 texture { Clear } interior { ior 1 refraction { function { 0.5 } detail 0.05 } media { absorption 0.2 emission 0.1 } } }
 #break
 #case (2)
   sphere { 0, 2 texture { Clear } interior { ior 1.5 media { absorption 0.2 emission 0.1 / 2.25 } } }
 #break
 #case (3) // the lens's field fades to zero inside its box, which has a Fresnel mirror finish
-  box { -3, 3 texture { pigment { rgbt 1 } finish { diffuse 0 reflection { 0, 1 fresnel } } } interior { ior 1 refraction { strength 0.6 field { pigment { Lens } } detail 0.05 } } }
+  box { -3, 3 texture { pigment { rgbt 1 } finish { diffuse 0 reflection { 0, 1 fresnel } } } interior { ior 1 refraction { function { 0.6 * Lens(x,y,z).red } detail 0.05 } } }
 #break
 #case (5)
   object { Riser }
 #break
 #case (6)
   box { <-5, -2, -2>, <5, 2, 2> texture { Clear }
-        interior { ior 1 refraction { strength 0.2 field { pigment { gradient y scale 4 translate -2 * y } } detail 0.05 } } }
+        interior { ior 1 refraction { function { 0.2 * Rise(x,y,z).red } detail 0.05 } } }
 #break
-#case (7) // coincident half-strength fields sum to the full ramp
+#case (7) // coincident half-amplitude fields sum to the full ramp
   object { HalfRiser }
   object { HalfRiser }
 #break
 #case (8) // equal signed fields cancel independently of their container surfaces
   object { Riser }
   box { <-5, -2, -2>, <5, 2, 2> texture { Clear }
-        interior { ior 1 refraction { strength -0.2 field { pigment { Rise } } detail 0.05 } } }
+        interior { ior 1 refraction { function { -0.2 * Rise(x,y,z).red } detail 0.05 } } }
 #break
 #case (9) // field addition is independent of object declaration order
   box { <-5, -2, -2>, <5, 2, 2> texture { Clear }
-        interior { ior 1 refraction { strength -0.2 field { pigment { Rise } } detail 0.05 } } }
+        interior { ior 1 refraction { function { -0.2 * Rise(x,y,z).red } detail 0.05 } } }
   object { Riser }
 #break
 #case (11) object { Ball } object { Water } #break
 #case (12) object { Water } object { Ball } #break
 #case (13) object { Ball } #break
 #case (14)
-  box { <-3, -2, -1>, <3, 2, 1> texture { Clear } interior { refraction { strength 0.3 detail 0.05 } } }
+  box { <-3, -2, -1>, <3, 2, 1> texture { Clear } interior { refraction { function { 0.3 } detail 0.05 } } }
 #break
 #case (15) object { Water } #break
 #case (16) object { Ball } object { Backdrop } #break
@@ -116,7 +117,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
   box { <-3, -2, -1>, <3, 2, (Case = 24 ? 2 : 1.99)> texture { Clear } interior { media { absorption 0.05 } } }
 #break
 #case (26) // pixel 48, 36 clips this box's top edge 5e-7 deep at 0.002 ahead, then bends over it
-  box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 refraction { strength 10 field { pigment { gradient y scale 4 translate -2 * y } } detail 0.05 } } }
+  box { <-5, -2, -2>, <5, 2, 2> texture { Clear } interior { ior 1 refraction { function { 10 * Rise(x,y,z).red } detail 0.05 } } }
   box { <-3, -3, -1.998>, <3, 3 - 36.5 * 6 / 72 + 5e-7, 1> texture { Clear } interior { ior 1 } }
 #break
 #case (27) box { <-3, -3, -0.75e-4>, <3, 3, 0.75e-4> rotate y * 30 texture { Clear } interior { ior 1.5 } } #break
@@ -137,13 +138,13 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
 #break
 #case (34) // a smooth field bends rays onto an opaque block whose front face alone is white
   box { <-4, -3, -3>, <4, 3, 3> texture { Clear }
-        interior { refraction { strength 0.05 field { function { pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } } detail 0.05 } } }
+        interior { refraction { function { 0.05 * pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } detail 0.05 } } }
   box { <-1.5, -1.5, 0.5>, <1.5, 1.5, 1.5> pigment { function { z < 0.51 } color_map { [0 rgb 0] [1 rgb 1] } }
         finish { ambient 0 emission 1 diffuse 0 } }
 #break
 #case (35) // the same field around a clear box of glowing media
   box { <-4, -3, -3>, <4, 3, 3> texture { Clear }
-        interior { refraction { strength 0.05 field { function { pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } } detail 0.05 } } }
+        interior { refraction { function { 0.05 * pow(max(0, 1 - (x * x + y * y + z * z) / 9), 2) } detail 0.05 } } }
   box { <-1.5, -1.5, 0.5>, <1.5, 1.5, 1.5> texture { Clear } interior { media { emission 1.5 } } }
 #break
 #case (18)
@@ -175,7 +176,7 @@ camera { orthographic location <Far, 0, -10> look_at <Far, 0, 0> right x * 8 up 
   #if (Case != 67) box { -3, <3, 3, 5> texture { Clear } interior { ior 1.33 } } #end
   #if (Case != 68)
     box { -2, 2 texture { pigment { rgbt 1 } finish { diffuse 0 reflection { 0, 1 fresnel } } }
-          interior { ior off refraction { strength 0.6 field { pigment { spherical scale 2 } } detail 0.05 } } }
+          interior { ior off refraction { function { 0.6 * WaterLens(x,y,z).red } detail 0.05 } } }
   #end
 #break
 #case (62) // red and blue filter boxes of one ior sharing the face z = 0, seen along z from View -1 or 1

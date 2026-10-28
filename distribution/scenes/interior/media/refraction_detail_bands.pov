@@ -24,14 +24,15 @@ plane {
 // The field rises from zero to one across each 0.02-unit seam, every 0.1 units.
 #declare Seam = function(x) { S(U(x) / 0.02) }
 
+#declare BandIndex = function { pigment { function { Seam(x) * Fade(x, y, z) } } }
+
 box {
   <-2.5, -1.75, -0.3>, <2.5, 1.75, 0.3>
   pigment { rgbt 1 }
   interior {
     ior 1
     refraction {
-      strength 0.0004
-      field { pigment { function { Seam(x) * Fade(x, y, z) } } }
+      function { 0.0004 * BandIndex(x, y, z).red }
       #if (Detail > 0) detail Detail #else detail auto #end
     }
   }

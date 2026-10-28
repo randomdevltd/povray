@@ -9,8 +9,7 @@
   "colour_operator",
   "color_operator",
   "colour_channel",
-  "tag_keyword",
-  "field_keyword"
+  "tag_keyword"
  ],
  "extras": [
   {
@@ -3622,14 +3621,6 @@
            "of": {
             "t": "str",
             "v": "to"
-           },
-           "name": "keyword"
-          },
-          {
-           "t": "alias",
-           "of": {
-            "t": "sym",
-            "name": "field_keyword"
            },
            "name": "keyword"
           }

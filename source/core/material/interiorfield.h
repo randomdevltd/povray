@@ -13,7 +13,7 @@ namespace pov
 class PreparedRefractionDefinition final
 {
     public:
-        PreparedRefractionComponent component;
+        std::shared_ptr<const PreparedScalarField> field;
         DBL detail = HUGE_VAL;
         bool varying = false;
         std::vector<std::shared_ptr<const PreparedGridLayout>> layouts;

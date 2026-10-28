@@ -23,16 +23,17 @@ plane { y, 0.002 pigment { checker rgb <0.75, 0.35, 0.2> rgb <0.55, 0.25, 0.15> 
 torus { Rim, 0.06 rotate x * 90 translate y * 1.7 pigment { rgb <0.25, 0.25, 0.3> } finish { specular 0.6 metallic } }
 portal { disc { y * 1.7, -z, Rim - 0.02 } to { translate z * 40 } }
 
+#declare PortalIndex = function { pigment {
+  function { pow(max(0, 1 - sqrt(pow(sqrt(x * x + z * z) - Rim, 2) + y * y) / 0.9), 2) }
+} }
+
 #if (Ring)
   torus {
     Rim, 0.9
     pigment { rgbt 1 }
     interior {
       refraction {
-        strength 0.15
-        field { pigment {
-          function { pow(max(0, 1 - sqrt(pow(sqrt(x * x + z * z) - Rim, 2) + y * y) / 0.9), 2) }
-        } }
+        function { 0.15 * PortalIndex(x, y, z).red }
       }
     }
     rotate x * 90 translate y * 1.7

@@ -10,6 +10,7 @@
 #ifndef (Absorption) #declare Absorption = 0; #end
 #ifndef (Heat) #declare Heat = 0; #end
 #declare Power = <3, 2, 1>;
+#declare HeatShape = function { pigment { spherical scale LampRadius } }
 global_settings {
     assumed_gamma 1 atmospheric_ior 1 max_trace_level 12
     #if (Photons) photons { method 2 quality PhotonQuality } #end
@@ -34,7 +35,7 @@ sphere {
                 light { pigment { rgb Power/(Emitters*pi*pow(LampRadius, 2)) } brightness Brightness samples 64
                         photons { refraction SourceRefraction reflection off } }
                 #if (Heat)
-                    refraction { strength Heat field { pigment { spherical scale LampRadius } } }
+                    refraction { function { Heat * HeatShape(x,y,z).red } detail auto }
                 #end
             }
             translate Lamp

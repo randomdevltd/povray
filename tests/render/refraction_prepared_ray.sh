@@ -13,7 +13,7 @@ render() {
 render constant Declare=Bend=0
 render linear
 render absorbed Declare=Sigma=0.7
-render native Declare=Wrapped=1
+render native Declare=Split=1
 for name in linear absorbed native; do
     grep -Eq 'Curved Rays:[[:space:]]+[1-9][0-9]*' "$name.log" || { cat "$name.log"; exit 1; }
     grep -Eq 'Bending Steps:[[:space:]]+[1-9][0-9]*' "$name.log" || { cat "$name.log"; exit 1; }

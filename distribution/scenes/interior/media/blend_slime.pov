@@ -48,21 +48,21 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
 
 #declare GelParts = array[64];
 #declare GelPartCount = 0;
-#declare GelVoids = function { 0 };
-#declare GelBands = function { 1 };
-#declare GelNodules = function { 1 };
+#declare GelKinds = array[64];
+#declare GelSupports = array[64];
+#declare GelGlows = array[64];
 #declare GelLumps = function { pigment { bozo turbulence 0.5 octaves 3 scale <0.9, 0.6, 0.9> } };
 #declare MarbleBand = function { pigment { marble turbulence 0.8 scale 0.7 color_map { [0 rgb 0.05] [1 rgb 0.6] } scale <1.5, 0.2, 0.75> translate <0.1, 2.05, 1.0> } };
 #macro KeepGelPart(Shape, Kind)
   #declare GelParts[GelPartCount] = object { Shape };
-  #declare GelPartCount = GelPartCount + 1;
-  #local Support = function { pattern { object { Shape } } };
-  #if (Kind = 1) #declare GelVoids = function { max(GelVoids(x,y,z), Support(x,y,z)) }; #end
-  #if (Kind = 2) #declare GelBands = function { GelBands(x,y,z) * (1-Support(x,y,z) + Support(x,y,z)*MarbleBand(x,y,z).red) }; #end
-  #if (Kind = 3)
-    #local Glow = function { pigment { spherical turbulence 0.3 color_map { [0 rgb 1] [0.5 rgb <2, 6, 1.5>] [1 rgb <4, 16, 3>] } scale NoduleSize translate NoduleCentre } };
-    #declare GelNodules = function { GelNodules(x,y,z) * (1-Support(x,y,z) + Support(x,y,z)*(Glow(x,y,z).red+Glow(x,y,z).green+Glow(x,y,z).blue)/3) };
+  #declare GelKinds[GelPartCount] = Kind;
+  #if (Kind > 0)
+    #declare GelSupports[GelPartCount] = function { pattern { object { Shape } } };
   #end
+  #if (Kind = 3)
+    #declare GelGlows[GelPartCount] = function { pigment { spherical turbulence 0.3 color_map { [0 rgb 1] [0.5 rgb <2, 6, 1.5>] [1 rgb <4, 16, 3>] } scale NoduleSize translate NoduleCentre } };
+  #end
+  #declare GelPartCount = GelPartCount + 1;
 #end
 #declare GelBodyInterior = interior {
     ior Ior Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb <0.004, 0.025, 0.003>, density { bozo turbulence 0.3 Ramp(0.6, 1.1) scale 0.8 }, -1)
@@ -190,14 +190,33 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
   #end
 #end
 
+#declare GelVoids = function { max(0, 0
+  #if (GelPartCount > 0) #for (Part, 0, GelPartCount-1)
+    #if (GelKinds[Part] = 1) , GelSupports[Part](x,y,z) #end
+  #end #end
+) };
+#declare GelBands = function { 1
+  #if (GelPartCount > 0) #for (Part, 0, GelPartCount-1)
+    #if (GelKinds[Part] = 2)
+      * (1-GelSupports[Part](x,y,z) + GelSupports[Part](x,y,z)*MarbleBand(x,y,z).red)
+    #end
+  #end #end
+};
+#declare GelNodules = function { 1
+  #if (GelPartCount > 0) #for (Part, 0, GelPartCount-1)
+    #if (GelKinds[Part] = 3)
+      * (1-GelSupports[Part](x,y,z) + GelSupports[Part](x,y,z)*(GelGlows[Part](x,y,z).red+GelGlows[Part](x,y,z).green+GelGlows[Part](x,y,z).blue)/3)
+    #end
+  #end #end
+};
+
 object {
   GelBody
   interior {
     GelBodyInterior
     #if (Warp)
       refraction {
-        strength 0.12
-        field { function { GelLumps(x,y,z).red * (1-GelVoids(x,y,z)) * GelBands(x,y,z) * GelNodules(x,y,z) } }
+        function { 0.12 * GelLumps(x,y,z).red * (1-GelVoids(x,y,z)) * GelBands(x,y,z) * GelNodules(x,y,z) }
         detail auto
       }
     #end

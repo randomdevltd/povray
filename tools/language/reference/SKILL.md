@@ -56,7 +56,6 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `density` | 105 | Pattern block scaling media density across its container. |
 | `difference` | 80 | CSG: first child minus every following child. |
 | `disc` | 37 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
-| `field` | 105 | The scalar or pigment field of an interior refraction axis. |
 | `finish` | 35 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
 | `global_settings` | 55 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
@@ -92,7 +91,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `quadric` | 37 | Second-degree polynomial surface from ten coefficients. |
 | `quartic` | 37 | Fourth-degree polynomial surface from thirty-five coefficients. |
 | `rainbow` | — | An arc of colour bands across the sky: direction, angle, width, distance. |
-| `refraction` | 4 | An independent interior index field: signed strength, scalar field and scene-unit detail. |
+| `refraction` | 3 | Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off. |
 | `sky_sphere` | — | A pigment wrapped on a huge sphere around the scene to suggest a sky. |
 | `smooth_triangle` | 38 | Triangle carrying per-vertex normals for smooth shading. |
 | `sor` | 38 | Surface of revolution: a curve of points spun about the y axis. |
