@@ -118,5 +118,16 @@ for twin in framing framing_tagged; do
     render "${twin}_ref" "$SRCDIR/tests/pov4/$twin.pov" 96 Declare=Reference=1
     equal "${twin}_new" "${twin}_ref"
 done
+UNION=$SRCDIR/tests/render/look_at_framing_union.pov
+for c in 0 1 2; do
+    render "union$c" "$UNION" 128 Declare=Case=$c
+    render "union_ref$c" "$UNION" 128 Declare=Case=$c Declare=Reference=1
+    equal "union$c" "union_ref$c"
+    quiet "union$c"
+    od -An -v -tu1 -w6 "look_at_union$c.px" | awk '
+        $1 > 128 && $3 < 80 { red++ }
+        $3 > 128 && $1 < 80 { green++ }
+        END { if (red < 100 || green < 100) { print "union components missing" > "/dev/stderr"; exit 1 } }'
+done
 rm -f look_at_*.ppm look_at_*.px look_at_*.log
 echo "look_at framing: projections, transforms, tagged selections, focus and fallbacks match explicit cameras"

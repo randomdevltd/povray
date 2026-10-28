@@ -511,6 +511,26 @@ bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, uns
     return found && FiniteBounds(low, high);
 }
 
+std::vector<FrameBounds> FrameTargetParts(ConstObjectPtr object)
+{
+    std::vector<FrameBounds> parts;
+    std::function<void(ConstObjectPtr)> collect = [&](ConstObjectPtr target) {
+        if (const CSGUnion *group = dynamic_cast<const CSGUnion *>(target))
+        {
+            if (!Test_Flag(target, INVERTED_FLAG))
+            {
+                for (ConstObjectPtr child : group->children) collect(child);
+                return;
+            }
+        }
+        FrameBounds bounds;
+        unsigned int unbounded = 0;
+        if (FrameTargetBounds(target, bounds.low, bounds.high, unbounded)) parts.push_back(bounds);
+    };
+    collect(object);
+    return parts;
+}
+
 // Bounds too small beside their distance to define a fit: a light's point, or a single point.
 static bool PointBounds(const Vector3d& low, const Vector3d& high, const Vector3d& from)
 {
@@ -606,15 +626,16 @@ static bool ProjectBounds(const Camera& camera, const Vector3d& low, const Vecto
         return false;
     projection = { HUGE_VAL, -HUGE_VAL, HUGE_VAL, -HUGE_VAL, 0.0 };
     const DBL rightLength = camera.Right.length(), upLength = camera.Up.length();
-    // Sweep the transformed AABB's surface; curved projections may have extrema between corners.
-    for (unsigned int i = 0; i <= 4; ++i)
-        for (unsigned int j = 0; j <= 4; ++j)
-            for (unsigned int k = 0; k <= 4; ++k)
+    // Perspective and affine extrema occur at vertices; curved projections also inspect the surface.
+    const unsigned int steps = ((camera.Type == PERSPECTIVE_CAMERA) || (camera.Type == ORTHOGRAPHIC_CAMERA)) ? 1 : 4;
+    for (unsigned int i = 0; i <= steps; ++i)
+        for (unsigned int j = 0; j <= steps; ++j)
+            for (unsigned int k = 0; k <= steps; ++k)
             {
-                if ((i != 0) && (i != 4) && (j != 0) && (j != 4) && (k != 0) && (k != 4)) continue;
-                const Vector3d point(low[X] + (high[X] - low[X]) * i / 4.0,
-                                     low[Y] + (high[Y] - low[Y]) * j / 4.0,
-                                     low[Z] + (high[Z] - low[Z]) * k / 4.0);
+                if ((i != 0) && (i != steps) && (j != 0) && (j != steps) && (k != 0) && (k != steps)) continue;
+                const Vector3d point(low[X] + (high[X] - low[X]) * i / steps,
+                                     low[Y] + (high[Y] - low[Y]) * j / steps,
+                                     low[Z] + (high[Z] - low[Z]) * k / steps);
                 DBL x, y;
                 if (!ProjectPoint(camera, point, x, y)) return false;
                 projection.left = std::min(projection.left, x);
@@ -723,10 +744,16 @@ private:
 }
 
 FrameResult Camera::FrameWindow(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData,
-                                const std::function<void()>& cooperate)
+                                const std::function<void()>& cooperate, const std::vector<FrameBounds>& parts)
 {
     if (!FiniteBounds(low, high) || (threadData == nullptr)) return FrameResult::Failed;
     UserRays rays(*this, threadData);
+    auto hits = [&](DBL u, DBL v) {
+        if (parts.empty()) return rays.Hits(u, v, low, high);
+        for (const FrameBounds& part : parts)
+            if (rays.Hits(u, v, part.low, part.high)) return true;
+        return false;
+    };
     const DBL u0 = windowLow[0], v0 = windowLow[1], spanU = windowHigh[0] - u0, spanV = windowHigh[1] - v0;
     // Azimuth wraps when the rays at both side edges coincide, as in a 360 degree cylindrical projection.
     bool circular = true;
@@ -754,7 +781,7 @@ FrameResult Camera::FrameWindow(const Vector3d& low, const Vector3d& high, Trace
             if (!rays.Ray(u, v, origin, direction)) continue;
             const DBL cosine = dot(direction.normalized(), (centre - origin).normalized());
             if (cosine > bestCos) { bestCos = cosine; bestU = u; bestV = v; }
-            if (rays.Hits(u, v, low, high)) { columnHit[i] = rowHit[j] = any = true; }
+            if (hits(u, v)) { columnHit[i] = rowHit[j] = any = true; }
         }
     }
     auto place = [&](DBL scale, DBL centreU, DBL centreV) {
@@ -852,7 +879,7 @@ FrameResult Camera::FrameWindow(const Vector3d& low, const Vector3d& high, Trace
         for (unsigned int k = 0; k < samples; ++k)
         {
             const DBL across = from + (to - from) * k / (samples - 1.0);
-            if (alongU ? rays.Hits(at, across, low, high) : rays.Hits(across, at, low, high)) return true;
+            if (alongU ? hits(at, across) : hits(across, at)) return true;
         }
         return false;
     };
@@ -910,9 +937,9 @@ FrameResult Camera::FrameWindow(const Vector3d& low, const Vector3d& high, Trace
     return result;
 }
 
-FrameResult Camera::Frame(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData, const std::function<void()>& cooperate)
+FrameResult Camera::Frame(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData, const std::function<void()>& cooperate, const std::vector<FrameBounds>& parts)
 {
-    const FrameResult result = (Type == USER_DEFINED_CAMERA) ? FrameWindow(low, high, threadData, cooperate) : FrameField(low, high);
+    const FrameResult result = (Type == USER_DEFINED_CAMERA) ? FrameWindow(low, high, threadData, cooperate, parts) : FrameField(low, high, parts);
     if (Focal_Distance < 0.0)
     {
         Vector3d direction = Direction;
@@ -924,7 +951,7 @@ FrameResult Camera::Frame(const Vector3d& low, const Vector3d& high, TraceThread
     return result;
 }
 
-FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high)
+FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high, const std::vector<FrameBounds>& parts)
 {
     if (!FiniteBounds(low, high) || (Direction.lengthSqr() <= 0.0) || (Type == MESH_CAMERA) || (Type == USER_DEFINED_CAMERA))
         return FrameResult::Failed;
@@ -938,8 +965,58 @@ FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high)
         MInvTransDirection(up, Up, framePlacement.get());
         MInvTransDirection(rightVector, Right, framePlacement.get());
     }
+    if (parts.size() > 1 && Type != ORTHOGRAPHIC_CAMERA)
+    {
+        Vector3d angularLow(HUGE_VAL), angularHigh(-HUGE_VAL);
+        for (const FrameBounds& part : parts)
+            for (unsigned int corner = 0; corner < 8; ++corner)
+            {
+                Vector3d point((corner & 1) ? part.high[X] : part.low[X],
+                               (corner & 2) ? part.high[Y] : part.low[Y],
+                               (corner & 4) ? part.high[Z] : part.low[Z]);
+                if (framePlacement) MInvTransPoint(point, point, framePlacement.get());
+                const Vector3d ray = point - location;
+                if (ray.lengthSqr() == 0.0) continue;
+                angularLow = min(angularLow, ray.normalized());
+                angularHigh = max(angularHigh, ray.normalized());
+            }
+        const Vector3d aim = (angularLow + angularHigh) * 0.5;
+        if (aim.lengthSqr() > 1e-20) center = location + aim.normalized() * direction.length();
+    }
     const Vector3d toCenter = center - location;
-    const Vector3d forward = (toCenter.length() > 1e-9 * extent) ? toCenter.normalized() : direction.normalized();
+    Vector3d forward = (toCenter.length() > ((parts.size() > 1 && Type != ORTHOGRAPHIC_CAMERA) ? 0.0 : 1e-9 * extent))
+        ? toCenter.normalized() : direction.normalized();
+    if (parts.size() > 1 && Type != ORTHOGRAPHIC_CAMERA)
+    {
+        for (unsigned int pass = 0; pass < 32; ++pass)
+        {
+            Vector3d horizontal = cross(Sky, forward);
+            if (horizontal.lengthSqr() <= 1e-20) break;
+            horizontal.normalize();
+            const Vector3d vertical = cross(forward, horizontal).normalized();
+            DBL left = HUGE_VAL, right = -HUGE_VAL, bottom = HUGE_VAL, top = -HUGE_VAL;
+            bool front = true;
+            for (const FrameBounds& part : parts)
+                for (unsigned int corner = 0; corner < 8; ++corner)
+                {
+                    Vector3d point((corner & 1) ? part.high[X] : part.low[X],
+                                   (corner & 2) ? part.high[Y] : part.low[Y],
+                                   (corner & 4) ? part.high[Z] : part.low[Z]);
+                    if (framePlacement) MInvTransPoint(point, point, framePlacement.get());
+                    const Vector3d ray = point - location;
+                    const DBL depth = dot(ray, forward);
+                    if (depth <= 0.0) { front = false; continue; }
+                    const DBL x = atan2(dot(ray, horizontal), depth), y = atan2(dot(ray, vertical), depth);
+                    left = std::min(left, x); right = std::max(right, x);
+                    bottom = std::min(bottom, y); top = std::max(top, y);
+                }
+            if (!front) break;
+            const DBL yaw = (left + right) * 0.5, pitch = (bottom + top) * 0.5;
+            if (std::max(fabs(yaw), fabs(pitch)) < 1e-12) break;
+            forward = (forward + horizontal * tan(yaw) + vertical * tan(pitch)).normalized();
+        }
+        center = location + forward * direction.length();
+    }
     const DBL directionLength = direction.length(), rightLength = rightVector.length(), upLength = up.length();
     const DBL handedness = dot(cross(up, direction), rightVector);
     Vector3d right = cross(Sky, forward);
@@ -949,7 +1026,8 @@ FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high)
     up = cross(forward, right).normalized() * upLength;
     rightVector = right * ((handedness > 0.0) ? rightLength : -rightLength);
     direction = forward * directionLength;
-    Look_At = (low + high) * 0.5;
+    Look_At = center;
+    if (framePlacement) MTransPoint(Look_At, center, framePlacement.get());
     Direction = direction;
     Up = up;
     Right = rightVector;
@@ -961,11 +1039,24 @@ FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high)
     }
     if (PointBounds(low, high, Location))
         return FrameResult::Pointed;
+    auto fits = [&]() {
+        if (parts.empty()) return FitsFrame(low, high);
+        for (const FrameBounds& part : parts)
+            if (!FitsFrame(part.low, part.high)) return false;
+        return true;
+    };
     const Camera base(*this);
+    if (!ApplyZoom(*this, base, 1.0)) return FrameResult::Aimed;
     BoundsProjection projected;
-    if (!ApplyZoom(*this, base, 1.0) || !ProjectBounds(*this, low, high, projected)) return FrameResult::Aimed;
+    if (parts.empty())
+    {
+        if (!ProjectBounds(*this, low, high, projected)) return FrameResult::Aimed;
+    }
+    else
+        for (const FrameBounds& part : parts)
+            if (!ProjectBounds(*this, part.low, part.high, projected)) return FrameResult::Aimed;
     DBL upper = 1.0;
-    if (!FitsFrame(low, high))
+    if (!fits())
     {
         if (Type != ORTHOGRAPHIC_CAMERA) return FrameResult::Aimed;
         unsigned int doublings = 0;
@@ -975,14 +1066,14 @@ FrameResult Camera::FrameField(const Vector3d& low, const Vector3d& high)
             upper *= 2.0;
             ApplyZoom(*this, base, upper);
         }
-        while (!FitsFrame(low, high));
+        while (!fits());
     }
     DBL lower = upper * 1e-15;
     for (unsigned int i = 0; i < 80; ++i)
     {
         const DBL zoom = sqrt(lower * upper);
         ApplyZoom(*this, base, zoom);
-        if (FitsFrame(low, high)) upper = zoom;
+        if (fits()) upper = zoom;
         else lower = zoom;
     }
     ApplyZoom(*this, base, upper);

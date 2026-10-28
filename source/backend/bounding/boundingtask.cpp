@@ -653,6 +653,7 @@ void CameraFramingTask::Frame(Camera& camera)
     ResolveTarget(camera.frameTarget.get());
     unsigned int unbounded = 0;
     const bool found = FrameTargetBounds(camera.frameTarget.get(), camera.frameLow, camera.frameHigh, unbounded);
+    const std::vector<FrameBounds> parts = FrameTargetParts(camera.frameTarget.get());
     camera.frameTarget.reset();
     const SourceInfo& source = camera.frameSource;
     Exception failed = POV_EXCEPTION_CODE(kParseErr);
@@ -663,7 +664,7 @@ void CameraFramingTask::Frame(Camera& camera)
         mpMessageFactory->WarningAt(kWarningGeneral, source, camera.frameSelection
             ? "look_at tagged skipped %u unbounded object(s), such as planes, and frames the rest."
             : "look_at skipped %u unbounded part(s) of this object, such as planes, and frames the rest.", unbounded);
-    switch (camera.Frame(camera.frameLow, camera.frameHigh, static_cast<TraceThreadData *>(GetDataPtr()), [this]() { Cooperate(); }))
+    switch (camera.Frame(camera.frameLow, camera.frameHigh, static_cast<TraceThreadData *>(GetDataPtr()), [this]() { Cooperate(); }, parts))
     {
         case FrameResult::Failed:
             if (camera.Type == MESH_CAMERA)
