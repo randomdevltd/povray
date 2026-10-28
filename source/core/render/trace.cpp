@@ -8821,7 +8821,6 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         MathColour tempColour;
         ColourChannel tempTransm;
 
-        // TODO FIXME - account for fresnel attenuation at interfaces
         PreciseMathColour att = Exp(-sigma_prime_t * dist); // TODO should be sigma_t
         double weight = att.WeightMax() * rayWeight;
         if (weight > Eye.GetTicket().adcBailout)
@@ -8838,6 +8837,15 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                 Vector3d doubleRefractedEye;
                 if (SSLTComputeRefractedDirection(refractedEye, unscatteredIn.INormal, eta, doubleRefractedEye))
                 {
+                    if (pointCloud)
+                    {
+                        const double entryCosine = clip(fabs(dot(Eye.Direction.normalized(), out.INormal.normalized())), 0.0, 1.0);
+                        const double exitCosine = clip(fabs(dot(doubleRefractedEye, unscatteredIn.INormal.normalized())), 0.0, 1.0);
+                        // Reciprocity uses the far exterior angle; the paired interfaces' radiance index factors cancel.
+                        const double transmission = ComputeFt(entryCosine, eta) * ComputeFt(exitCosine, eta);
+                        att *= transmission;
+                        weight *= transmission;
+                    }
                     Ray doubleRefractedEyeRay(refractedEyeRay);
                     doubleRefractedEyeRay.SetKey(DeriveKey(key, kDrawRefraction, 1));
                     doubleRefractedEyeRay.SetFlags(Ray::RefractionRay, refractedEyeRay);

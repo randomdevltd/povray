@@ -1,0 +1,25 @@
+The unlit 1 mm slab isolates the unscattered contribution. Its unit diffuse
+reflectance selects the exact reduced-albedo endpoint 1 in both inversion
+tables, making extinction 1/translucency. No incident light, radiosity or
+single-scattering samples contribute. The finite white emission patch is
+visible through the slab but missed by the reflected camera ray.
+
+Method 2 should return T01*T10*exp(-path/translucency), using unpolarised Fresnel
+power transmission at each interface. Both exterior regions have the same
+index, so the two radiance index-squared factors cancel. The expected values
+are computed from the incident and transmitted cosines independently of the
+renderer's Fresnel implementation. Linear 16-bit PPM limits quantization error.
+
+The method 1 arms retain the released unattenuated-interface behavior. The
+conserve_energy arms check that generic reflection does not apply the entry
+transmission again. Equal-index arms check that adding the boundary factors
+leaves index-matched transmission unchanged.
+
+This test does not validate nested dielectrics or different exterior media at
+the two interfaces. The existing SSLT ballistic ray construction refracts by
+reciprocal relative indices and does not propagate the actual interior stack
+through the slab; those cases require separate path-context handling.
+
+The opaque arm makes ballistic extinction negligible. The central ray in the
+wedge enters normally and reaches a far face tilted by 30 degrees, so the two
+interface cosines differ; it detects reuse of the entry transmission at exit.
