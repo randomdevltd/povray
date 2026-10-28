@@ -65,6 +65,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/superellipsoid.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 #include <cstdlib>
@@ -863,8 +864,8 @@ bool Superellipsoid::intersect_box(const Vector3d& P, const Vector3d& D, DBL *dm
             return(false);
         }
 
-        *dmin = -BOUND_HUGE;
-        *dmax =  BOUND_HUGE;
+        *dmin = -std::numeric_limits<double>::max();
+        *dmax = std::numeric_limits<double>::max();
     }
 
     /* Top/bottom. */
@@ -1173,7 +1174,7 @@ bool Superellipsoid::insert_hit(const BasicRay &ray, DBL Depth, IStack& Depth_St
 {
     Vector3d IPoint;
 
-    if ((Depth > DEPTH_TOLERANCE) && (Depth < MAX_DISTANCE))
+    if ((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth))
     {
         IPoint = ray.Evaluate(Depth);
 

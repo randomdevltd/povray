@@ -97,6 +97,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/sor.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -291,7 +292,7 @@ bool Sor::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *T
 
     found = false;
 
-    best = BOUND_HUGE;
+    best = std::numeric_limits<double>::max();
 
     if (Test_Flag(this, CLOSED_FLAG) && (fabs(D[Y]) > EPSILON))
     {
@@ -1192,7 +1193,7 @@ bool Sor::test_hit(const BasicRay &ray, IStack& Depth_Stack, DBL d, DBL k, int t
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && (d < MAX_DISTANCE))
+    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d))
     {
         IPoint = ray.Evaluate(d);
 

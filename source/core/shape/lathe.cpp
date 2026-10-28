@@ -120,6 +120,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/lathe.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -308,7 +309,7 @@ bool Lathe::Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData 
 
     // Step through the list of intersections.
     found = false;
-    best = BOUND_HUGE;
+    best = std::numeric_limits<double>::max();
 
     for(j = 0; j < cnt; j++)
     {
@@ -1292,7 +1293,7 @@ bool Lathe::test_hit(const BasicRay &ray, IStack& Depth_Stack, DBL d, DBL w, int
 {
     Vector3d IPoint;
 
-    if ((d > DEPTH_TOLERANCE) && (d < MAX_DISTANCE))
+    if ((d > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(d))
     {
         IPoint = ray.Evaluate(d);
 

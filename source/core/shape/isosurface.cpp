@@ -39,6 +39,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/isosurface.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -175,6 +176,8 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
 
     if(container->Intersect(ray, Trans, Depth1, Depth2, Side1, Side2)) /* IsoSurface_Bound_Tests */
     {
+        if (!IsFiniteIntersectionDepth(Depth1) || !IsFiniteIntersectionDepth(Depth2))
+            return false;
         Thread->Stats()[Ray_IsoSurface_Bound_Tests_Succeeded]++;
 
         GenericScalarFunctionInstance fn(Function, Thread);
@@ -239,7 +242,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         }
 
         /*  METHOD 2   by R. Suzuki */
-        tmax = Depth2 = min(Depth2, BOUND_HUGE);
+        tmax = Depth2;
         tmin = Depth1 = min(Depth2, Depth1);
         if((tmax - tmin) < accuracy)
         {

@@ -42,6 +42,7 @@
 
 // C++ variants of C standard header files
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <cstring>
 
@@ -284,9 +285,10 @@ void Build_BBox_Tree(BBOX_TREE **Root, size_t numOfFiniteObjects, BBOX_TREE **&F
 void Build_Bounding_Slabs(BBOX_TREE **Root, std::vector<ObjectPtr>& objects, unsigned int& numberOfFiniteObjects, unsigned int& numberOfInfiniteObjects, unsigned int& numberOfLightSources);
 
 void Recompute_BBox(BoundingBox *bbox, const TRANSFORM *trans);
+void Recompute_Inverse_BBox(BoundingBox *bbox, const TRANSFORM *trans);
 bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
 bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
-void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth = BOUND_HUGE);
+void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth = HUGE_VAL);
 void Destroy_BBox_Tree(BBOX_TREE *Node);
 
 
@@ -357,10 +359,14 @@ class FlatBBoxWalker final
         {
             for (int d = 0; d < 3; ++d)
             {
+                exactOrigin[d] = ray.Origin[d];
+                direction[d] = ray.Direction[d];
                 origin[d] = float(ray.Origin[d]);
-                const DBL r = 1.0 / ray.Direction[d];
+                const DBL r = direction[d] == 0.0 ? 0.0 : 1.0 / direction[d];
                 inv[d] = (fabs(r) < FLAT_BBOX_FAR) ? float(r) : std::copysign(FLAT_BBOX_FAR, float(ray.Direction[d]));
                 originInv[d] = origin[d] * inv[d];
+                safeBound[d] = (direction[d] == 0.0 || fabs(r) >= FLAT_BBOX_FAR) ? 0.0 :
+                    std::numeric_limits<float>::max() / (4.0 * fabs(r));
             }
         }
 
@@ -398,15 +404,62 @@ class FlatBBoxWalker final
     private:
         static const int LOCAL = 256;
         float origin[3], inv[3], originInv[3];
+        double exactOrigin[3], direction[3], safeBound[3];
         float minExit;
 
         typedef simd::Vec<float, FLAT_BBOX_WIDTH> Lanes;
+
+        static void Bounds(const FlatBBoxBlock& b, int d, int k, double& lo, double& hi)
+        {
+            lo = b.lo[d][k];
+            hi = b.hi[d][k];
+        }
+
+        static void Bounds(const FlatQBBoxBlock& b, int d, int k, double& lo, double& hi)
+        {
+            lo = std::nextafter(float(double(b.origin[d]) + double(b.lo[d][k]) * b.scale[d]), -std::numeric_limits<float>::infinity());
+            hi = std::nextafter(float(double(b.origin[d]) + double(b.hi[d][k]) * b.scale[d]), std::numeric_limits<float>::infinity());
+        }
+
+        template<typename Block>
+        void ScalarSlab(const Block& b, int d, Lanes& near, Lanes& far) const
+        {
+            float n[FLAT_BBOX_WIDTH], f[FLAT_BBOX_WIDTH];
+            const float infinity = std::numeric_limits<float>::infinity();
+            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+            {
+                double lo, hi;
+                Bounds(b, d, k, lo, hi);
+                if (direction[d] == 0.0)
+                {
+                    const bool inside = lo <= exactOrigin[d] && exactOrigin[d] <= hi;
+                    n[k] = inside ? -infinity : infinity;
+                    f[k] = inside ? infinity : -infinity;
+                }
+                else
+                {
+                    const double a = (lo - exactOrigin[d]) / direction[d], z = (hi - exactOrigin[d]) / direction[d];
+                    n[k] = std::nextafter(float(std::min(a, z)), -infinity);
+                    f[k] = std::nextafter(float(std::max(a, z)), infinity);
+                }
+            }
+            near = Lanes::load(n);
+            far = Lanes::load(f);
+        }
 
         void Slabs(const FlatBBoxBlock& b, Lanes& tn, Lanes& tf) const
         {
             Lanes n[3], f[3];
             for (int d = 0; d < 3; ++d)
             {
+                const Lanes safe{float(safeBound[d])};
+                const bool scalar = fabs(exactOrigin[d]) >= safeBound[d] ||
+                    simd::bits((simd::abs(Lanes::load(b.lo[d])) >= safe) | (simd::abs(Lanes::load(b.hi[d])) >= safe)) != 0;
+                if (scalar)
+                {
+                    ScalarSlab(b, d, n[d], f[d]);
+                    continue;
+                }
                 const Lanes o(origin[d]), r(inv[d]);
                 const Lanes t1 = (Lanes::load(b.lo[d]) - o) * r, t2 = (Lanes::load(b.hi[d]) - o) * r;
                 n[d] = simd::min(t1, t2);
@@ -421,6 +474,12 @@ class FlatBBoxWalker final
             Lanes n[3], f[3];
             for (int d = 0; d < 3; ++d)
             {
+                if (fabs(exactOrigin[d]) >= safeBound[d] || fabs(b.origin[d]) >= safeBound[d] ||
+                    fabs(double(b.scale[d]) * 65535.0) >= safeBound[d])
+                {
+                    ScalarSlab(b, d, n[d], f[d]);
+                    continue;
+                }
                 const Lanes at(b.origin[d] * inv[d] - originInv[d]), step(b.scale[d] * inv[d]);
                 const Lanes l = simd::fma(simd::load_widened<FLAT_BBOX_WIDTH>(b.lo[d]), step, at);
                 const Lanes h = simd::fma(simd::load_widened<FLAT_BBOX_WIDTH>(b.hi[d]), step, at);

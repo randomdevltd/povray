@@ -59,6 +59,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/mesh.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -1516,7 +1517,7 @@ static inline bool intersect_decoded_triangle(const BasicRay &ray, const Vector3
 
     *Depth = dot(S_Normal, P1 - ray.Origin) / NormalDotDirection;
 
-    if ((*Depth < depthTolerance) || (*Depth > MAX_DISTANCE))
+    if ((*Depth < depthTolerance) || (!IsFiniteIntersectionDepth(*Depth)))
     {
         return(false);
     }
@@ -1908,7 +1909,7 @@ static MeshShadowHint& shadow_hint(TraceThreadData *Thread, const void *mesh, in
 bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly)
 {
     bool found = false;
-    DBL Best = BOUND_HUGE;
+    DBL Best = std::numeric_limits<double>::max();
     std::int32_t nearest = -1;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, nearestOnly || !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
@@ -2798,7 +2799,7 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
 bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats, DBL depthTolerance) const
 {
     MeshIndex found = 0;
-    DBL Best = BOUND_HUGE, Depth;
+    DBL Best = std::numeric_limits<double>::max(), Depth;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, false, stats, [&](std::int32_t leaf) {
         if (intersect_mesh_triangle(ray, &Data->Triangles[leaf], &Depth, depthTolerance))

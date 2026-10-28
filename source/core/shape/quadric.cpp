@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/quadric.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -132,7 +133,7 @@ bool Quadric::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThread
     if (Intersect(ray, &Depth1, &Depth2))
     {
         Thread->Stats()[Ray_Quadric_Tests_Succeeded]++;
-        if ((Depth1 > DEPTH_TOLERANCE) && (Depth1 < MAX_DISTANCE))
+        if ((Depth1 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth1))
         {
             IPoint = ray.Evaluate(Depth1);
             if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -143,7 +144,7 @@ bool Quadric::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThread
             }
         }
 
-        if ((Depth2 > DEPTH_TOLERANCE) && (Depth2 < MAX_DISTANCE))
+        if ((Depth2 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth2))
         {
             IPoint = ray.Evaluate(Depth2);
 
@@ -230,7 +231,7 @@ bool Quadric::Intersect(const BasicRay& ray, DBL *Depth1, DBL *Depth2) const
         }
 
         *Depth1 = - 0.5 * c / b;
-        *Depth2 = MAX_DISTANCE;
+        *Depth2 = std::numeric_limits<double>::infinity();
     }
 
     return(true);
@@ -642,6 +643,11 @@ Quadric::Quadric() : ObjectBase(QUADRIC_OBJECT)
     Terms            = Vector3d(0.0, 0.0, 0.0);
     Constant         = 1.0;
     Automatic_Bounds = false;
+}
+
+bool Quadric::Intersect_BBox(BBoxDirection variant, const BBoxVector3d& origin, const BBoxVector3d& invdir, BBoxScalar maxd) const
+{
+    return !Automatic_Bounds || ObjectBase::Intersect_BBox(variant, origin, invdir, maxd);
 }
 
 
@@ -1359,6 +1365,12 @@ void Quadric::Compute_BBox(Vector3d& ClipMin, Vector3d& ClipMax)
     NewMin = max(NewMin, ClipMin);
     NewMax = min(NewMax, ClipMax);
 
+    if (NewMax[X] < NewMin[X] || NewMax[Y] < NewMin[Y] || NewMax[Z] < NewMin[Z])
+    {
+        Automatic_Bounds = false;
+        return;
+    }
+
     /* Use old or new bounding box? */
 
     New_Volume = (NewMax[X] - NewMin[X]) * (NewMax[Y] - NewMin[Y]) * (NewMax[Z] - NewMin[Z]);
@@ -1381,6 +1393,7 @@ void Quadric::Compute_BBox(Vector3d& ClipMin, Vector3d& ClipMax)
             (BBox.size[Y] > CRITICAL_LENGTH) ||
             (BBox.size[Z] > CRITICAL_LENGTH))
         {
+            Automatic_Bounds = false;
             Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2,
               BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
         }

@@ -47,6 +47,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/torus.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 // C++ standard header files
@@ -142,7 +143,7 @@ bool Torus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
     {
         for (i = 0; i < max_i; i++)
         {
-            if ((Depth[i] > DEPTH_TOLERANCE) && (Depth[i] < MAX_DISTANCE))
+            if ((Depth[i] > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth[i]))
             {
                 IPoint = ray.Evaluate(Depth[i]);
 
@@ -171,7 +172,7 @@ bool SpindleTorus::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceT
     {
         for (i = 0; i < max_i; i++)
         {
-            if ((Depth[i] > DEPTH_TOLERANCE) && (Depth[i] < MAX_DISTANCE))
+            if ((Depth[i] > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth[i]))
             {
                 IPoint = ray.Evaluate(Depth[i]);
 
@@ -950,7 +951,7 @@ bool Torus::Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DB
         u = P[X] + k * D[X];
         v = P[Z] + k * D[Z];
 
-        if ((k > EPSILON) && (k < MAX_DISTANCE))
+        if ((k > EPSILON) && IsFiniteIntersectionDepth(k))
         {
             r = u * u + v * v;
 
@@ -967,7 +968,7 @@ bool Torus::Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DB
         u = P[X] + k * D[X];
         v = P[Z] + k * D[Z];
 
-        if ((k > EPSILON) && (k < MAX_DISTANCE))
+        if ((k > EPSILON) && IsFiniteIntersectionDepth(k))
         {
             r = u * u + v * v;
 
@@ -996,7 +997,7 @@ bool Torus::Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DB
 
             k = (-b + d) / a;
 
-            if ((k > EPSILON) && (k < MAX_DISTANCE))
+            if ((k > EPSILON) && IsFiniteIntersectionDepth(k))
             {
                 h = P[Y] + k * D[Y];
 
@@ -1008,7 +1009,7 @@ bool Torus::Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DB
 
             k = (-b - d) / a;
 
-            if ((k > EPSILON) && (k < MAX_DISTANCE))
+            if ((k > EPSILON) && IsFiniteIntersectionDepth(k))
             {
                 h = P[Y] + k * D[Y];
 
@@ -1031,7 +1032,7 @@ bool Torus::Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DB
 
             k = (-b + d) / a;
 
-            if ((k > EPSILON) && (k < MAX_DISTANCE))
+            if ((k > EPSILON) && IsFiniteIntersectionDepth(k))
             {
                 h = P[Y] + k * D[Y];
 
@@ -1043,7 +1044,7 @@ bool Torus::Test_Thick_Cylinder(const Vector3d& P, const Vector3d& D, DBL h1, DB
 
             k = (-b - d) / a;
 
-            if ((k > EPSILON) && (k < MAX_DISTANCE))
+            if ((k > EPSILON) && IsFiniteIntersectionDepth(k))
             {
                 h = P[Y] + k * D[Y];
 

@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/skein.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 #include <cmath>
@@ -164,7 +165,7 @@ DBL OnAxis(const SkeinAxis& a, DBL t) { return (!a.path || a.path->closed) ? t :
 bool HitBox(const Vector3d& lo, const Vector3d& hi, const Vector3d& P, const Vector3d& D, DBL tMin, DBL& t0, DBL& t1)
 {
     t0 = tMin;
-    t1 = BOUND_HUGE;
+    t1 = std::numeric_limits<double>::max();
     for (int k = 0; k < 3; ++k)
     {
         if (D[k] == 0.0)
@@ -4264,7 +4265,7 @@ bool Skein::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
         const bool boundary = !closed || ((winding != 0) != (after != 0));
         winding = after;
         const DBL depth = crossings[i].t / len;
-        if (!boundary || (depth >= MAX_DISTANCE))
+        if (!boundary || !IsFiniteIntersectionDepth(depth))
             continue;
         const Vector3d IPoint = ray.Evaluate(depth);
         if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))

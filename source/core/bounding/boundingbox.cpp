@@ -184,8 +184,8 @@ void Recompute_BBox(BoundingBox *bbox, const TRANSFORM *trans)
     lower_left = Vector3d(bbox->lowerLeft);
     lengths    = Vector3d(bbox->size);
 
-    mins = Vector3d(BOUND_HUGE);
-    maxs = Vector3d(-BOUND_HUGE);
+    mins = Vector3d(std::numeric_limits<double>::max());
+    maxs = Vector3d(-std::numeric_limits<double>::max());
 
     for(i = 1; i <= 8; i++)
     {
@@ -205,14 +205,6 @@ void Recompute_BBox(BoundingBox *bbox, const TRANSFORM *trans)
         if(corner[Z] > maxs[Z]) { maxs[Z] = corner[Z]; }
     }
 
-    // Clip bounding box at the largest allowed bounding box.
-    if(mins[X] < -BOUND_HUGE / 2) { mins[X] = -BOUND_HUGE / 2; }
-    if(mins[Y] < -BOUND_HUGE / 2) { mins[Y] = -BOUND_HUGE / 2; }
-    if(mins[Z] < -BOUND_HUGE / 2) { mins[Z] = -BOUND_HUGE / 2; }
-    if(maxs[X] >  BOUND_HUGE / 2) { maxs[X] =  BOUND_HUGE / 2; }
-    if(maxs[Y] >  BOUND_HUGE / 2) { maxs[Y] =  BOUND_HUGE / 2; }
-    if(maxs[Z] >  BOUND_HUGE / 2) { maxs[Z] =  BOUND_HUGE / 2; }
-
     Make_BBox_from_min_max(*bbox, mins, maxs);
 }
 
@@ -228,8 +220,8 @@ void Recompute_Inverse_BBox(BoundingBox *bbox, const TRANSFORM *trans)
     lower_left = Vector3d(bbox->lowerLeft);
     lengths    = Vector3d(bbox->size);
 
-    mins = Vector3d(BOUND_HUGE);
-    maxs = Vector3d(-BOUND_HUGE);
+    mins = Vector3d(std::numeric_limits<double>::max());
+    maxs = Vector3d(-std::numeric_limits<double>::max());
 
     for(i = 1; i <= 8; i++)
     {
@@ -248,14 +240,6 @@ void Recompute_Inverse_BBox(BoundingBox *bbox, const TRANSFORM *trans)
         if(corner[Z] < mins[Z]) { mins[Z] = corner[Z]; }
         if(corner[Z] > maxs[Z]) { maxs[Z] = corner[Z]; }
     }
-
-    // Clip bounding box at the largest allowed bounding box.
-    if(mins[X] < -BOUND_HUGE / 2) { mins[X] = -BOUND_HUGE / 2; }
-    if(mins[Y] < -BOUND_HUGE / 2) { mins[Y] = -BOUND_HUGE / 2; }
-    if(mins[Z] < -BOUND_HUGE / 2) { mins[Z] = -BOUND_HUGE / 2; }
-    if(maxs[X] >  BOUND_HUGE / 2) { maxs[X] =  BOUND_HUGE / 2; }
-    if(maxs[Y] >  BOUND_HUGE / 2) { maxs[Y] =  BOUND_HUGE / 2; }
-    if(maxs[Z] >  BOUND_HUGE / 2) { maxs[Z] =  BOUND_HUGE / 2; }
 
     Make_BBox_from_min_max(*bbox, mins, maxs);
 }
@@ -448,7 +432,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     found = false;
 
     // Check top node.
-    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
+    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats(), Best_Intersection->Depth);
 
     // Check elements in the priority queue.
     while(!pqueue.IsEmpty())
@@ -501,7 +485,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     found = false;
 
     // Check top node.
-    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
+    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats(), Best_Intersection->Depth);
 
     // Check elements in the priority queue.
     while(!pqueue.IsEmpty())
@@ -908,8 +892,8 @@ void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const Bo
         // We proceed one dimension at a time.
 
         // These will keep track of the overlap between the intervals.
-        dmin = -BOUND_HUGE;
-        dmax =  BOUND_HUGE;
+        dmin = -std::numeric_limits<double>::max();
+        dmax = std::numeric_limits<double>::max();
 
         for (int dim = X; dim <= Z; ++dim)
         {
