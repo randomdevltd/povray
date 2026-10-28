@@ -551,6 +551,7 @@ static int CylinderForward(const std::map<std::string, std::string>& args)
         return 2;
     }
     const double sigmaS[3] = { .125, .2, 1.0 / 3.0 }, sigmaA[3] = { .000437339, .001065426, .003168666 };
+    const double coneMu[] = { .9, .95, .99 };
     const char *category[] = { "miss", "entry_reflected", "absorbed", "ballistic", "single", "multiple", "unresolved" };
     double fraction = .5 * (1 - above / std::hypot(above, radius));
     std::printf("{\"mode\":\"cylinder_point\",\"units\":\"mm\",\"provenance\":\"independent analog random walk; supplied isotropic wax coefficients; point source only\","
@@ -562,11 +563,12 @@ static int CylinderForward(const std::map<std::string, std::string>& args)
         double sa = sigmaA[j] / scale, ss = sigmaS[j] / scale, st = sa + ss;
         size_t profileSize = size_t(3 * 3 * bins);
         std::vector<std::vector<uint64_t>> ledgers(threads, std::vector<uint64_t>(7)), profiles(threads, std::vector<uint64_t>(profileSize));
+        std::vector<std::vector<uint64_t>> coneProfiles(threads, std::vector<uint64_t>(3 * profileSize));
         std::vector<std::thread> workers;
         for (int worker = 0; worker < threads; worker++)
             workers.emplace_back([&, worker]()
             {
-                auto& ledger = ledgers[worker]; auto& profile = profiles[worker];
+                auto& ledger = ledgers[worker]; auto& profile = profiles[worker]; auto& cones = coneProfiles[worker];
                 for (long i = worker; i < photons; i += threads)
                 {
                     Rng rng{ Mix(seed ^ Mix(uint64_t(i)) ^ Mix(uint64_t(j) + 100)) };
@@ -598,7 +600,11 @@ static int CylinderForward(const std::map<std::string, std::string>& args)
                             else
                             {
                                 int bucket = std::min(order, 2), bin = std::min(bins - 1, std::max(0, int(p.y / height * bins)));
-                                ledger[3 + bucket]++; profile[(hit.surface * 3 + bucket) * bins + bin]++;
+                                size_t index = (hit.surface * 3 + bucket) * bins + bin;
+                                ledger[3 + bucket]++; profile[index]++;
+                                double muOut = std::sqrt(std::max(0.0, 1 - relativeIor * relativeIor * (1 - c * c)));
+                                for (int cone = 0; cone < 3; cone++)
+                                    if (muOut >= coneMu[cone]) cones[cone * profileSize + index]++;
                                 complete = true; break;
                             }
                         }
@@ -607,11 +613,12 @@ static int CylinderForward(const std::map<std::string, std::string>& args)
                 }
             });
         for (auto& worker : workers) worker.join();
-        std::vector<uint64_t> ledger(7), profile(profileSize);
+        std::vector<uint64_t> ledger(7), profile(profileSize), cones(3 * profileSize);
         for (int worker = 0; worker < threads; worker++)
         {
             for (int k = 0; k < 7; k++) ledger[k] += ledgers[worker][k];
             for (size_t k = 0; k < profileSize; k++) profile[k] += profiles[worker][k];
+            for (size_t k = 0; k < cones.size(); k++) cones[k] += coneProfiles[worker][k];
         }
         uint64_t closure = 0; for (auto n : ledger) closure += n;
         double intercepted = double(photons - ledger[0]) / photons;
@@ -626,6 +633,24 @@ static int CylinderForward(const std::map<std::string, std::string>& args)
         }
         std::printf("},\"profile_order\":\"surface(top,side,bottom),order(0,1,2+),height_bin(bottom_to_top)\",\"height_bins\":%d,\"exit_counts\":[", bins);
         for (size_t k = 0; k < profileSize; k++) std::printf("%s%llu", k ? "," : "", (unsigned long long)profile[k]);
+        std::printf("],\"normal_cones\":[");
+        for (int cone = 0; cone < 3; cone++)
+        {
+            double zeroUpper = flux * -std::expm1(std::log(.05) / photons);
+            std::printf("%s{\"mu_min\":%.12g,\"zero_count_flux_upper95_lm\":%.12g,\"counts\":[", cone ? "," : "", coneMu[cone], zeroUpper);
+            for (size_t k = 0; k < profileSize; k++)
+                std::printf("%s%llu", k ? "," : "", (unsigned long long)cones[cone * profileSize + k]);
+            std::printf("],\"flux_lm\":[");
+            for (size_t k = 0; k < profileSize; k++)
+                std::printf("%s%.12g", k ? "," : "", flux * double(cones[cone * profileSize + k]) / photons);
+            std::printf("],\"flux_se_lm\":[");
+            for (size_t k = 0; k < profileSize; k++)
+            {
+                double f = double(cones[cone * profileSize + k]) / photons;
+                std::printf("%s%.12g", k ? "," : "", flux * std::sqrt(f * (1 - f) / photons));
+            }
+            std::printf("]}");
+        }
         std::printf("]}");
     }
     std::printf("]}\n");

@@ -135,3 +135,41 @@ A renderer comparison must match geometry, incident illumination, coefficients,
 interface indices and scattering-order selection. The older backward image
 reference assumes nonfalling point-light intensity; those image results must not
 be treated as an absolute-flux point-source comparison.
+
+## Near-normal angular flux
+
+`normal_cones` adds nested angular tallies for external outgoing cosine
+`mu_min` = 0.9, 0.95 and 0.99 relative to the local outward normal. The cosine is
+computed after refraction, not from the internal direction. Each cone's
+`counts`, `flux_lm` and `flux_se_lm` arrays use the same surface/order/height
+indexing as `exit_counts`. Angular tallies do not change the energy ledger. Nested cones share photons, so
+their estimates are correlated; they are not independent uncertainty checks.
+`zero_count_flux_upper95_lm` is the common individual one-sided 95% upper bound
+for any zero-count bin in that cone; it is not a simultaneous bound across bins.
+
+For the axisymmetric point-lit cylinder, a side ring's area is
+`A = 2*pi*Radius*(Height/Bins)`. Convert mm² to m² when comparing with scene
+radiance in metre units. The cosine-weighted mean external radiance in a normal
+cone is
+
+```text
+L_cone = Phi_cone / [A * pi * (1 - mu_min^2)].
+```
+
+This is averaged over the ring, its height interval and all azimuths in the
+cone. It tends toward the normal radiance as the cone narrows, but is not an
+exact normal-direction measurement. Source position and finite geometry can
+make the outgoing field anisotropic in elevation. Compare multiple cone widths
+with their Monte Carlo uncertainties before treating their values as normal
+radiance. Narrower cones have fewer samples and weaker tail constraints. Sum
+counts before computing the uncertainty of a combined scattering-order category.
+
+A single orthographic front view can supply a near-normal side radiance profile
+along its central column, after matching height intervals and absolute source
+units. It cannot supply the cylinder's total escaping energy. For method 2's
+multiple-scattering term, the explicit outgoing factor is `Ft(mu)*exitScale`;
+its weighted cone mean relative to the normal is
+`2*integral(mu*Ft(mu), mu_min, 1)/[(1-mu_min^2)*Ft(1)]`. At the default index,
+these ratios are approximately 0.9997719033, 0.9999464411 and 0.9999979610.
+This bounds that renderer angular-factor difference, not the random walk's
+physical angular anisotropy or single scattering's angular behavior.
