@@ -36,6 +36,7 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/render/trace.h"
 #include "core/render/shadowsegment.h"
+#include "core/render/curvedraystep.h"
 
 // C++ variants of C standard header files
 #include <cfloat>
@@ -569,13 +570,16 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
         step = std::max(std::min(step, maxStep), entry);
         Vector3d next, turned, nextCurve;
         double nextIndex;
+        auto stageBend = [&](const Vector3d& stagePoint, const Vector3d& stageDirection) {
+            double stageIndex;
+            return bend(stagePoint, stageDirection, stageIndex);
+        };
         for (;;)
         {
-            const Vector3d half = (direction + (0.5 * step) * curve).normalized();
-            double midIndex;
-            const Vector3d midCurve = bend(point + (0.5 * step) * direction, half, midIndex);
-            next = point + step * half;
-            turned = (direction + step * midCurve).normalized();
+            const CurvedRayTrial trial = MidpointCurvedRayStep(point, direction, curve, step, stageBend);
+            const Vector3d& midCurve = trial.middleCurve;
+            next = trial.next;
+            turned = trial.turned;
             nextCurve = bend(next, turned, nextIndex);
             if ((std::max((midCurve - curve).length(), (nextCurve - midCurve).length()) * step <= angle) || (step <= minStep))
                 break;
@@ -599,8 +603,35 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
             if (isect.Depth > back)
             {
                 isect.Depth -= back;
-                const double along = isect.Depth / length;
-                chord.Direction = ((1.0 - along) * direction + along * turned).normalized();
+                const Intersection originalHit = isect;
+                CurvedRayTrial terminal;
+                auto terminalIntersection = [&](const CurvedRayTrial& trial, double& depth) {
+                    cooperate();
+                    chord.Direction = (trial.next - point).normalized();
+                    chord.Origin = point - (back + lead) * chord.Direction;
+                    isect = Intersection();
+                    isect.Depth = back + lead + length;
+                    if (!FindIntersection(isect, chord, precond, window) ||
+                        isect.Object != originalHit.Object || isect.Csg != originalHit.Csg)
+                        return false;
+                    isect.Depth -= back + lead;
+                    depth = isect.Depth;
+                    return true;
+                };
+                if (!RefineCurvedRayBoundary(point, direction, curve, step, isect.Depth,
+                                            stageBend, terminalIntersection, terminal))
+                {
+                    if (step > minStep)
+                    {
+                        step = std::max(minStep, 0.5 * step);
+                        continue;
+                    }
+                    isect = originalHit;
+                    const double along = isect.Depth / length;
+                    // At the minimum step, the local curvature bounds the unresolved event's direction error.
+                    terminal.turned = (direction + (along * step) * curve).normalized();
+                }
+                chord.Direction = terminal.turned;
                 chord.Origin = isect.IPoint - isect.Depth * chord.Direction;
             }
             path.push_back(CurvedStep{ chord.Origin, chord.Direction, isect.Depth, index });

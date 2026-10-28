@@ -1,0 +1,28 @@
+The midpoint integrator must stop its differential equation at a surface before
+applying the surface's index transition. A full trial may evaluate its midpoint
+beyond a prepared field's support. Its zero gradient then omits bending that
+belongs to the part of the trial still inside the field. Interpolating the full
+trial's direction to the intersection cannot recover that missing bend.
+
+The CPU test retains an independent numerical reproduction for n(x)=1.1+0.1x,
+normal incidence at z=0, exit at z=1, and a screen one unit beyond the exit.
+For x=-0.00625 and step 0.03, the original 34-step construction gives screen
+x=0.13876988889827008 against the exact Fermat-invariant solution
+x=0.13990558814819273. The last step starts at z=0.9886671330030111;
+its boundary fraction is 0.3793374038500097, putting the full midpoint outside.
+The resulting error is -0.001135699249922656, although the midpoint method is
+second order on a smooth field. This boundary defect is first order: the
+remaining inside arc length is O(step), and its entire direction change is lost.
+
+MidpointCurvedRayStep is the production stage evaluator. At an existing detected
+hit, RefineCurvedRayBoundary reintegrates shortened stages and queries their
+corrected chords until the intersection and integrated endpoint agree to a
+floating-point tolerance. Field support remains unchanged. Ordinary steps make
+no additional intersection queries. Refinement permits twelve queries; failure
+retries a halved marching step. At the minimum marching step, a local curvature
+update supplies the terminal direction without extending the field.
+
+The tests exercise both midpoint phases, several step widths, the exact planar
+index invariant, a curved surface with second-order directional convergence,
+missing intersections, and bounded nonconvergence. The screen formula checks
+the planar exterior Snell transition independently of rendering and brightness.
