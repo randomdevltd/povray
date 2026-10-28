@@ -1097,7 +1097,7 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
 {
     ModifierScope scope(*this, mods);
     if (ray.IsPhotonRay() && !sceneData->photonSettings.Progressive())
-        PreparedResolution(medias, ray);
+        PreparedResolution(medias, ray, isect.Depth);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -1177,9 +1177,11 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
 void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                               const Ray& ray, int minsamples, bool ignore_photons, bool use_scattering, bool all_constant_and_light_ray)
 {
+    if (mediaintervals.empty())
+        return;
     if (sceneData->photonSettings.Progressive())
     {
-        const double resolution = PreparedResolution(medias, ray);
+        const double resolution = PreparedResolution(medias, ray, mediaintervals.back().s1);
         const bool prepared = resolution > 0.0 && PrepareFields(medias, ray);
         const auto domain = VolumeDomain(medias);
         const size_t firstBeam = threadData->progressiveMedia.size();
