@@ -9,7 +9,7 @@
 #ifndef (Distance) #declare Distance = sqrt(3.25); #end  // from the light to the lens centre
 #ifndef (Media) #declare Media = 0; #end                 // a scattering cube round the viewed point, no floor
 #ifndef (Glass) #declare Glass = 0; #end                 // the lens is glass, viewed from above over its whole caustic
-#ifndef (Bend) #declare Bend = 0; #end                   // the lens is a rod whose refracting medium bends the beam (2: no medium)
+#ifndef (Bend) #declare Bend = 0; #end                   // the lens is a rod whose index field bends the beam (2: no field)
 #ifndef (PhotonQuality) #declare PhotonQuality = (Lens ? 4 : 0.25); #end
 #declare Toward = vnormalize(<0, 2, -3>);
 #declare Gap = sqrt(3.25);
@@ -60,7 +60,7 @@ light_source {
 #if (Lens & Bend)
     #declare Across = vnormalize(vcross(x, Toward));
     cylinder { -z, z, 0.5 pigment { rgbf 1 } finish { ambient 0 diffuse 0 }
-               interior { ior 1 #if (Bend = 1) media { refraction 0.1 density { function { max(0, 1 - z*z) * (1 + x) / 2 } } } #end }
+               interior { ior 1 #if (Bend = 1) refraction { strength 0.1 field { function { max(0, 1 - z*z) * (1 + x) / 2 } } detail auto } #end }
                photons { target refraction on reflection off }
                matrix <1, 0, 0, Across.x, Across.y, Across.z, Toward.x, Toward.y, Toward.z, 0, 0, 0> translate Toward * (Gap + 0.5) }
 #elseif (Lens)

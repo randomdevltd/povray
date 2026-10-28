@@ -688,6 +688,7 @@ check: all
 	sh \$(top_srcdir)/tests/render/refraction_frontend.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/refraction_prepared_ray.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/refraction_clear_axis.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/interior_axis_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_transport.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -702,7 +703,6 @@ check: all
 	sh \$(top_srcdir)/tests/render/media_prepared_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_scattering.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/split_union_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/fade_cutoff.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/token_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/parser_token_count.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 

@@ -66,8 +66,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:1067 Parse_Bicubic_Patch",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:1060 Parse_Bicubic_Patch",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "box": {
@@ -128,7 +128,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "cone": {
@@ -190,8 +190,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:3076 Parse_Cone",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:3069 Parse_Cone",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "cubic": {
@@ -252,7 +252,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "cylinder": {
@@ -314,8 +314,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:3109 Parse_Cylinder",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:3102 Parse_Cylinder",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "disc": {
@@ -376,7 +376,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "height_field": {
@@ -463,9 +463,9 @@
     ]
    },
    "sources": [
-    "parser.cpp:3507 Parse_HField",
+    "parser.cpp:3500 Parse_HField",
     "parser_materials.cpp:217 Parse_Image",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "isosurface_mesh": {
@@ -538,8 +538,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:3703 Parse_Isosurface_Body",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:3696 Parse_Isosurface_Body",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "lemon": {
@@ -601,8 +601,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:4268 Parse_Lemon",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:4261 Parse_Lemon",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "mesh": {
@@ -666,8 +666,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:4919 Parse_Mesh1",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:4912 Parse_Mesh1",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "ovus": {
@@ -731,8 +731,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:5992 Parse_Ovus",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:5985 Parse_Ovus",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "parametric": {
@@ -800,8 +800,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:6145 Parse_Parametric",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:6138 Parse_Parametric",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "plane": {
@@ -862,7 +862,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "poly": {
@@ -923,7 +923,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "polygon": {
@@ -984,7 +984,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "polynomial": {
@@ -1045,7 +1045,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "prism": {
@@ -1113,8 +1113,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:6491 Parse_Prism",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:6484 Parse_Prism",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "quadric": {
@@ -1175,7 +1175,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "quartic": {
@@ -1236,7 +1236,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "smooth_triangle": {
@@ -1298,9 +1298,9 @@
     ]
    },
    "sources": [
-    "parser.cpp:6795 Parse_Smooth_Triangle",
-    "parser.cpp:9417 Parse_Three_UVCoords",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:6788 Parse_Smooth_Triangle",
+    "parser.cpp:9379 Parse_Three_UVCoords",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "sor": {
@@ -1362,8 +1362,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:6884 Parse_Sor",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:6877 Parse_Sor",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "sphere": {
@@ -1424,7 +1424,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "superellipsoid": {
@@ -1485,7 +1485,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "text": {
@@ -1550,8 +1550,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7309 Parse_TrueType",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7302 Parse_TrueType",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "torus": {
@@ -1612,7 +1612,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "triangle": {
@@ -1673,7 +1673,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "composite": {
@@ -1777,8 +1777,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "difference": {
@@ -1882,8 +1882,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "intersection": {
@@ -1987,8 +1987,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "light_group": {
@@ -2092,8 +2092,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "merge": {
@@ -2197,8 +2197,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "union": {
@@ -2302,8 +2302,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "sphere_sweep": {
@@ -2368,8 +2368,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7028 Parse_Sphere_Sweep",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7021 Parse_Sphere_Sweep",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "lathe": {
@@ -2434,8 +2434,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:4080 Parse_Lathe",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:4073 Parse_Lathe",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "blob": {
@@ -2501,8 +2501,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:1194 Parse_Blob",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:1187 Parse_Blob",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "mesh2": {
@@ -2571,8 +2571,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:5360 Parse_Mesh2",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:5353 Parse_Mesh2",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "julia_fractal": {
@@ -2656,8 +2656,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:3897 Parse_Julia_Fractal",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:3890 Parse_Julia_Fractal",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "isosurface": {
@@ -2730,8 +2730,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:3703 Parse_Isosurface_Body",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:3696 Parse_Isosurface_Body",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "portal": {
@@ -2805,8 +2805,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:3185 Parse_Portal",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:3178 Parse_Portal",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "finish": {
@@ -3013,7 +3013,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:5174 Parse_Material"
+    "parser_materials.cpp:5065 Parse_Material"
    ]
   },
   "pigment": {
@@ -3402,7 +3402,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4194 Parse_Interior"
+    "parser_materials.cpp:4085 Parse_Interior"
    ]
   },
   "refraction": {
@@ -3414,7 +3414,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4108 Parse_Interior_Refraction"
+    "parser_materials.cpp:3999 Parse_Interior_Refraction"
    ]
   },
   "field": {
@@ -3544,7 +3544,6 @@
     "aa_level",
     "aa_threshold",
     "absorption",
-    "auto",
     "collect",
     "confidence",
     "density",
@@ -3558,8 +3557,6 @@
     "mix",
     "priority",
     "ratio",
-    "refraction",
-    "refraction_detail",
     "resolution",
     "rotate",
     "samples",
@@ -3581,41 +3578,27 @@
   },
   "light": {
    "items": [
-    "area_light",
     "attenuation",
     "brightness",
-    "cluster_radii",
-    "collect",
-    "fade_cutoff",
-    "far_radii",
     "lumens",
     "media_attenuation",
     "media_interaction",
     "nits",
-    "pass_through",
     "photons",
     "pigment",
     "reflection",
     "refraction",
     "samples",
-    "shadowless",
-    "shadows",
-    "split_union",
-    "target"
+    "shadowless"
    ],
    "nested": {
     "photons": [
-     "area_light",
-     "collect",
-     "pass_through",
      "reflection",
-     "refraction",
-     "split_union",
-     "target"
+     "refraction"
     ]
    },
    "sources": [
-    "parser_materials.cpp:3906 Parse_Interior_Light"
+    "parser_materials.cpp:3881 Parse_Interior_Light"
    ]
   },
   "camera": {
@@ -3708,9 +3691,9 @@
     ]
    },
    "sources": [
-    "parser.cpp:1680 Parse_Camera",
-    "parser.cpp:2619 Parse_Camera_Mods",
-    "parser.cpp:2490 Parse_Camera_Look_At"
+    "parser.cpp:1673 Parse_Camera",
+    "parser.cpp:2612 Parse_Camera_Mods",
+    "parser.cpp:2483 Parse_Camera_Look_At"
    ]
   },
   "output": {
@@ -3721,7 +3704,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser.cpp:2778 Parse_Camera_Output"
+    "parser.cpp:2771 Parse_Camera_Output"
    ]
   },
   "tags": {
@@ -3731,7 +3714,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser.cpp:2875 Parse_Tags"
+    "parser.cpp:2868 Parse_Tags"
    ]
   },
   "global_settings": {
@@ -3743,7 +3726,6 @@
     "assumed_gamma",
     "atmospheric_dispersion",
     "atmospheric_ior",
-    "auto",
     "autostop",
     "brightness",
     "brilliance",
@@ -3786,7 +3768,6 @@
     "radius",
     "recursion_limit",
     "refraction_angle",
-    "refraction_detail",
     "samples",
     "save_file",
     "spacing",
@@ -3851,7 +3832,7 @@
     ]
    },
    "sources": [
-    "parser.cpp:8065 Parse_Global_Settings"
+    "parser.cpp:8040 Parse_Global_Settings"
    ]
   },
   "object": {
@@ -3955,8 +3936,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:7524 Parse_Object",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:7517 Parse_Object",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "light_source": {
@@ -4043,8 +4024,8 @@
     ]
    },
    "sources": [
-    "parser.cpp:4503 Parse_Light_Source",
-    "parser.cpp:8712 Parse_Object_Mods"
+    "parser.cpp:4496 Parse_Light_Source",
+    "parser.cpp:8674 Parse_Object_Mods"
    ]
   },
   "image_map": {

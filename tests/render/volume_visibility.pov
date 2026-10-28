@@ -4,7 +4,6 @@
 #ifndef (Opaque) #declare Opaque = 0; #end
 #ifndef (Blocker) #declare Blocker = 0; #end
 #ifndef (SceneScale) #declare SceneScale = 1; #end
-#ifndef (Cache) #declare Cache = 2; #end
 global_settings { assumed_gamma 1 }
 camera {
   orthographic location <0, 1, 0> sky z look_at 0
@@ -19,7 +18,7 @@ union {
   #end
   pigment { rgbt <1, 1, 1, 1 - Opaque> } finish { ambient 0 emission 0 diffuse 0 }
   hollow no_image
-  interior { light { brightness 0.05 lumens samples 1024 fade_cutoff 0 shadows method Cache } }
+  interior { light { brightness 0.05 lumens samples 1024 } }
   scale SceneScale
 }
 #if (Blocker)

@@ -9,7 +9,6 @@
 #ifndef (Sigma) #declare Sigma = 0; #end
 #ifndef (Gain) #declare Gain = 1; #end
 #ifndef (Flux) #declare Flux = 10; #end
-#ifndef (Far) #declare Far = 8; #end
 #ifndef (Height) #declare Height = 0; #end
 #ifndef (Gap) #declare Gap = 0; #end
 #ifndef (Probe) #declare Probe = 0; #end
@@ -25,7 +24,9 @@ camera {
   orthographic location <0, CameraHeight, 0> * SceneScale sky z look_at 0
   right x * Frame * SceneScale up z * Frame * SceneScale
 }
-plane { y, Probe * SceneScale pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } no_shadow }
+plane { y, Probe * SceneScale pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } no_shadow
+  #if (PhotonGate) photons { pass_through off } #end
+}
 #if (Case = 6) fog { distance 1 / Sigma color rgb 0 } #end
 #if (Case = 7)
   box { <-100, -0.1, -100>, <100, 100, 100> pigment { rgbt 1 } hollow
@@ -65,8 +66,7 @@ plane { y, Probe * SceneScale pigment { rgb 1 } finish { ambient 0 emission 0 di
         #end
       #end
       #if (Case = 5 | Case = 8 | Case = 9) brightness 0.1 nits #else brightness Flux * Gain lumens #end
-      samples Draws fade_cutoff 0 far_radii Far
-      shadows method 1
+      samples Draws
       #if (PhotonGate & PhotonRun) photons { refraction on } #end
     }
   }

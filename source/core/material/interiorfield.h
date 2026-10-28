@@ -10,21 +10,13 @@
 namespace pov
 {
 
-struct PreparedRefractionLayer final
-{
-    PreparedRefractionComponent component;
-    int priority = 0;
-    size_t order = 0;
-    DBL detail = HUGE_VAL;
-    bool varying = false;
-    bool native = false;
-    std::vector<std::shared_ptr<const PreparedGridLayout>> layouts;
-};
-
 class PreparedRefractionDefinition final
 {
     public:
-        std::vector<PreparedRefractionLayer> layers;
+        PreparedRefractionComponent component;
+        DBL detail = HUGE_VAL;
+        bool varying = false;
+        std::vector<std::shared_ptr<const PreparedGridLayout>> layouts;
 };
 
 struct PreparedLightComponent final

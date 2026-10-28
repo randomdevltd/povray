@@ -1,9 +1,9 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Steam over a mug: one density drives a scattering medium (the visible vapour) and a refraction-only medium (the hot, thin air carrying it), so the tiles behind waver where the steam rises. Declare=Bend=0 drops the refraction. +w480 +h480
+// Steam over a mug: the same authored pattern is supplied independently to scattering (the visible vapour) and the index field (the hot, thin air carrying it), so the tiles behind waver where the steam rises. Declare=Bend=0 drops the refraction. +w480 +h480
 #version 4.0;
 #ifndef (Bend) #declare Bend = 1; #end
 
-global_settings { assumed_gamma 1 refraction_detail 1 } // the steam's wisps are a few millimetres wide
+global_settings { assumed_gamma 1 } // the steam's wisps are a few millimetres wide
 camera { location <0, 1.6, -3.2> look_at <0, 1.45, 0> angle 34 }
 light_source { <-3, 5, -4> rgb 1.1 }
 light_source { <4, 3, -2> rgb 0.3 shadowless }
@@ -30,6 +30,6 @@ cylinder {
   pigment { rgbt 1 }
   interior {
     media { mix add method 3 intervals 1 samples 12 scattering { 4, rgb 3 } absorption 0.2 density { Steam } }
-    #if (Bend) media { method 3 refraction -0.03 density { Steam } } #end
+    #if (Bend) refraction { strength -0.03 field { pigment { Steam } } detail 0.1 } #end
   }
 }

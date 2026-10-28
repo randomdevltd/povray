@@ -160,10 +160,26 @@ union {
   ))
 }
 
+#declare ExplosionIndexBase = function { pigment {
+  function { pow(max(0, 1 - x * x - y * y - z * z), 2) * (0.3 + 0.7 * Rise(x, y, z)) }
+} }
+#declare ExplosionIndexSmoke = function { pigment {
+  function { 0.5 + 0.5 * min(1, max(0, (sqrt(x * x + y * y + z * z) - 5.6) / 1.5)) * (2 * Billow(x * 0.5, y * 0.25, z * 0.5) - 1) }
+  color_map { [0 rgb 0] [1 rgb 2] }
+} }
 #if (Refract)
   sphere {
     0, 1 pigment { rgbt 1 }
-    interior { media { refraction -0.008 density { function { pow(max(0, 1 - x * x - y * y - z * z), 2) * (0.3 + 0.7 * Rise(x, y, z)) } } } }
+    interior { refraction {
+      strength -0.008
+      field { function {
+        ExplosionIndexBase(x, y, z).red
+        #if (Smoke)
+          * select(min(15*x+12, 13-15*x, 20*y+10, 24-20*y, 13*z+11, 12-13*z),
+                   1, ExplosionIndexSmoke(15*x, 20*y+8, 13*z).red)
+        #end
+      } }
+    } }
     scale <15, 20, 13> translate F + y * 8
   }
 #end

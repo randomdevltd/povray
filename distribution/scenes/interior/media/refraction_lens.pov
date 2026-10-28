@@ -27,7 +27,7 @@ object {
   texture { Glass }
   interior {
     ior 1.5
-    media { method 3 refraction 0.4 density { function { max(0, 1 - (x * x + z * z)) } } }
+    refraction { strength 0.4 field { pigment { function { max(0, 1 - (x * x + z * z)) } } } detail auto }
   }
   photons { target refraction on reflection off collect off }
   translate <-1.2, 2.5, 0>

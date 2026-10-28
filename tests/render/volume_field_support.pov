@@ -21,6 +21,5 @@ union {
     #if (Case = 1 | Case = 2)
       pigment { function { Support(x, y, z) } color_map { [0 rgb 0] [1 rgb 1] } }
     #end
-    brightness 10 lumens samples 1024 fade_cutoff 0 shadows method 1
-  } }
+    brightness 10 lumens samples 1024 } }
 }

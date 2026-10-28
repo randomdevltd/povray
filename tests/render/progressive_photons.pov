@@ -89,7 +89,7 @@ sphere {
     pigment { color rgbt 1 }
     finish { ambient 0 diffuse 0 reflection { 0, 1 fresnel } conserve_energy }
     interior { ior 1.5 dispersion Dispersion
-        #if (Curved) media { method 3 refraction 0.1 density { spherical scale 1.2 translate 1.1*y } } #end
+        #if (Curved) refraction { strength 0.1 field { pigment { spherical scale 1.2 translate 1.1*y } } } #end
     }
     photons { target TargetWeight reflection on refraction on }
 }

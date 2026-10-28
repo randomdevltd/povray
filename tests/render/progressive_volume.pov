@@ -10,7 +10,7 @@
 #ifndef (LampPower) #declare LampPower = 1; #end
 #ifndef (Decoy) #declare Decoy = 0; #end  // 1 or 2: a clear target round the media, before or after the lens
 global_settings {
-    assumed_gamma 1 atmospheric_ior 1 max_trace_level 8 refraction_detail 0.1
+    assumed_gamma 1 atmospheric_ior 1 max_trace_level 8
     photons { method 2 quality PhotonQuality media MediaSteps, MediaSpacing }
 }
 camera { orthographic location <0, 2, -8> look_at <0, 2, 0> right 4*x up 4*y }
@@ -25,7 +25,7 @@ sphere {
 sphere {
     <0, 3.5, 0>, 0.65 hollow pigment { rgbt 1 } finish { ambient 0 diffuse 0 }
     interior { ior 1.4
-        #if (Heat) media { method 3 refraction Heat density { spherical scale 0.65 translate 3.5*y } } #end
+        #if (Heat) refraction { strength Heat field { pigment { spherical scale 0.65 translate 3.5*y } } detail 0.01 } #end
     }
     photons { target refraction on reflection off collect off }
 }

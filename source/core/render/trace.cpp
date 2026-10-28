@@ -391,9 +391,9 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     }
 
     std::unique_ptr<MediaFunctor::Path> mediaPath = media.BeginPath(ray);
-    if (sceneData->mediaRefraction && (maxDepth < EPSILON) && !missOpen && !ray.IsShadowTestRay() && RefractingRay(ray))
+    if (sceneData->fieldRefraction && (maxDepth < EPSILON) && !missOpen && !ray.IsShadowTestRay() && RefractingRay(ray))
     {
-        RefractionField field(ray.GetInteriors(), threadData);
+        RefractionField field(ray.GetInteriors());
         if (field.Varies())
         {
             const double depth = TraceCurvedRay(ray, field, colour, transm, weight, continuedRay);
@@ -651,7 +651,7 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
         }
         step = std::min(maxStep, step * 2.0);
     }
-    WarnRefraction(kMediaRefractionTrapped, "A ray bending through media refraction was stopped after %d steps at <%g, %g, %g> "
+    WarnRefraction(kRefractionTrapped, "A ray bending through refraction field was stopped after %d steps at <%g, %g, %g> "
                    "and renders black. Rays orbiting a strong field do this; a larger refraction_angle takes fewer steps.",
                    kMaxRefractionSteps, point[X], point[Y], point[Z]);
     return -1;
@@ -3326,13 +3326,6 @@ void Trace::ComputeOneLightRay(const LightSource &lightsource, double& lightsour
 
     // Get the light source colour.
     lightcolour = lightsource.colour;
-    if (Light_Below_Fade_Cutoff(&lightsource, ipoint))
-    {
-        lightcolour.Clear();
-        threadData->Stats()[Fade_Cutoff_Drops]++;
-        return;
-    }
-
     // Attenuate light source color.
     if (lightsource.Area_Light && lightsource.Use_Full_Area_Lighting && qualityFlags.areaLights && !forceAttenuate)
         // for full area lighting we apply distance- and angle-based attenuation to each "lightlet" individually later
@@ -3483,7 +3476,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
 
     const size_t cacheSlot = lightsourceray.GetPreparedSetId() * shadowCacheLights + lightsource.index;
-    if(lightsource.lightGroupLight == false && !lightsource.shadowCacheOff &&
+    if(lightsource.lightGroupLight == false &&
        (!lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)))) // only cache geometric blockers
     {
         if ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot] != nullptr))
@@ -3567,7 +3560,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                 // Hit a fully opaque object; cache that object, so that next time we can test for it first;
                 // don't cache for light groups though (why not??)
 
-                if((lightsource.lightGroupLight == false) && !lightsource.shadowCacheOff && (foundTransparentObjects == false))
+                if((lightsource.lightGroupLight == false) && (foundTransparentObjects == false))
                 {
                     cacheObject = testObject;
 
@@ -4268,7 +4261,7 @@ double Trace::ClampIndex(double index, const Vector3d& point)
 {
     if (index >= kMinRefractionIndex)
         return index;
-    WarnRefraction(kMediaRefractionIndex, "Media refraction takes the index to %g at <%g, %g, %g>; it is held at %g. "
+    WarnRefraction(kRefractionIndex, "Refraction field takes the index to %g at <%g, %g, %g>; it is held at %g. "
                    "Use a smaller negative refraction or a higher ior.", index, point[X], point[Y], point[Z], kMinRefractionIndex);
     return kMinRefractionIndex;
 }
@@ -4366,9 +4359,9 @@ double Trace::StackIndex(const RayInteriorVector& interiors, const Vector3d& poi
     if (base != nullptr)
         *base = ior;
     offset = 0.0;
-    if (sceneData->mediaRefraction && std::any_of(interiors.begin(), interiors.end(), [](const Interior *i) { return i->refracting; }))
+    if (sceneData->fieldRefraction && std::any_of(interiors.begin(), interiors.end(), [](const Interior *i) { return i->refracting; }))
     {
-        RefractionField field(interiors, threadData);
+        RefractionField field(interiors);
         offset = field.Offset(point);
     }
     if ((interiors.size() > 1) && !(sceneData->mediaWarningFlags.load(std::memory_order_relaxed) & kThinOverlap))
@@ -4719,8 +4712,8 @@ void Trace::ComputeInterfaceIor(Ray& ray, Interior *interior, const Vector3d& po
         for (Interior *i : sides.after)
             ray.AppendInterior(i);
         if ((fabs(fromOffset - toOffset) > 1.0e-3) && (fromIor == toIor))
-            WarnRefraction(kMediaRefractionJump,
-                "Media refraction changes by %g across a surface at <%g, %g, %g>: a refracting density is cut off there, so the surface "
+            WarnRefraction(kRefractionJump,
+                "Refraction field changes by %g across a surface at <%g, %g, %g>: a refracting density is cut off there, so the surface "
                 "refracts. Fade the density to zero at its container to make the container invisible.",
                 fabs(fromOffset - toOffset), point[X], point[Y], point[Z]);
         return;
@@ -5379,7 +5372,7 @@ bool Trace::TestShadow(const LightSource &lightsource, double& depth, Ray& light
     //
     // Test for PURE zero, because we only want to skip this if we're out
     // of the range of a spot light or cylinder light.  Very dim lights
-    // should not be ignored, unless a media light's fade_cutoff drops them.
+    // should not be ignored.
 
     if(colour.IsNearZero(EPSILON))
     {

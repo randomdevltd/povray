@@ -10,6 +10,18 @@ render() {
     "$POVRAY" +i"$SRCDIR/tests/render/volume_transport.pov" +w12 +h12 +pr -a -d -p -v -gp \
         +fp16 File_Gamma=1 +o"$name.ppm" "$@" > "$name.log" 2>&1 || { cat "$name.log"; exit 1; }
 }
+check_photons() {
+    render photon_gathered Declare=PhotonGate=1 Declare=PhotonQuality=16 Declare=Draws=512 Stochastic_Seed=0
+    for pattern in 'samples/set), [1-9][0-9]* deposits' ' [1-9][0-9]* contributions;'; do
+        tr '\n' ' ' < photon_gathered.log | tr -s ' ' | grep -q "$pattern" ||
+            { cat photon_gathered.log; exit 1; }
+    done
+    python3 "$SRCDIR/tests/render/volume_transport_reference.py" "$WORK" --subset photons
+}
+if [ "${VOLUME_TEST_SUBSET:-all}" = photons ]; then
+    check_photons
+    exit 0
+fi
 render white
 render red Declare=Case=4
 render absorbed Declare=Sigma=0.7
@@ -17,7 +29,6 @@ render shaped Declare=Case=2
 render shadow Declare=Case=3 Declare=Draws=1024
 render sparse Declare=Draws=64
 render scaled Declare=SceneScale=2
-render unsplit Declare=Far=0
 render distant Declare=Height=20 Declare=Gain=100
 render remote Declare=Height=100000 Declare=Gain=100000000
 render fog Declare=Case=6 Declare=Sigma=0.7
@@ -34,30 +45,18 @@ for gap in 0 0.02 0.1 0.5 1 2 4 8 16; do
     render "cube_$gap" Declare=Case=5 Declare=Gap="$gap" Declare=Draws=1024
 done
 python3 "$SRCDIR/tests/render/volume_transport_reference.py" "$WORK"
+check_photons
 syntax() {
     "$POVRAY" +i"$SRCDIR/tests/render/volume_transport_syntax.pov" +w4 +h4 +pr -a -d -p -v -gp \
         +fp16 File_Gamma=1 Declare=Case="$1" +o"syntax_$1.ppm" > "syntax_$1.log" 2>&1
 }
-for value in 1 2 3 4 5 6; do
+for value in 1 2 3 4 5 6 7 20 21 22 23 24; do
     if syntax "$value"; then
-        echo "volume_transport: forbidden default setting $value accepted" >&2
-        exit 1
-    fi
-    grep -q 'accepts only fade_cutoff' "syntax_$value.log"
-done
-for value in 20 21; do
-    if syntax "$value"; then
-        echo "volume_transport: removed syntax $value accepted" >&2
-        exit 1
+        echo "volume_transport: invalid context $value accepted" >&2; exit 1
     fi
 done
-for value in 7 11 12 13 14 15 16 22 23 24 25 26; do
+for value in 11 12 13 14 15 16 25 26; do
     syntax "$value" || { cat "syntax_$value.log"; exit 1; }
-done
-for pair in '22 cluster_radii' '23 far_radii' '24 fade_cutoff'; do
-    set -- $pair
-    count=$(tr -s ' \n' '  ' < "syntax_$1.log" | grep -o "$2 is" | wc -l)
-    [ "$count" -eq 1 ] || { echo "volume_transport: expected one $2 warning, got $count" >&2; exit 1; }
 done
 for pair in '11 12' '13 14' '15 16'; do
     set -- $pair

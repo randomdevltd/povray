@@ -173,6 +173,13 @@ def half_box_reference(width, height):
 
 
 def check(folder, subset="all"):
+    if subset == "photons":
+        width, height, pixels = read_ppm(folder / "photon_gathered.ppm")
+        coarse = reference(width, height, divisions=20, gain=coefficient(1))
+        fine = reference(width, height, divisions=32, gain=coefficient(1))
+        compare("photon reference convergence", coarse, fine, 0.025)
+        compare("physical source photon irradiance", pixels, fine)
+        return
     w, h, white = read_ppm(folder / "white.ppm")
     white_j = coefficient(1)
     for name, options in [("white", {"gain": white_j}), ("red", {"case": 4, "gain": coefficient(4)}),
@@ -189,7 +196,7 @@ def check(folder, subset="all"):
         fine = reference(w, h, divisions=24, **options)
         compare(name + " reference convergence", coarse, fine, 0.025)
         compare(name, pixels, fine)
-    for name in ["sparse", "scaled", "unsplit"]:
+    for name in ["sparse", "scaled"]:
         _, _, pixels = read_ppm(folder / f"{name}.ppm")
         target = [value / 4 for value in white] if name == "scaled" else white
         compare(name + " transport scaling", pixels, target, 0.10 if name == "sparse" else 0.06)
@@ -217,6 +224,6 @@ def check(folder, subset="all"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("folder", type=Path)
-    parser.add_argument("--subset", choices=["all", "lumens"], default="all")
+    parser.add_argument("--subset", choices=["all", "lumens", "photons"], default="all")
     args = parser.parse_args()
     check(args.folder, args.subset)

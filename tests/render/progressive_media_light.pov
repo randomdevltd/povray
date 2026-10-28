@@ -34,7 +34,7 @@ sphere {
                 light { pigment { rgb Power/(Emitters*pi*pow(LampRadius, 2)) } brightness Brightness samples 64
                         photons { refraction SourceRefraction reflection off } }
                 #if (Heat)
-                    media { method 3 refraction Heat density { spherical scale LampRadius } }
+                    refraction { strength Heat field { pigment { spherical scale LampRadius } } }
                 #end
             }
             translate Lamp

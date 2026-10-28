@@ -1,7 +1,7 @@
 // framing_tagged: classic twin of framing_tagged.pov4; Reference=1 is the explicit camera it frames to
 #version 4.0;
 #ifndef (Reference) #declare Reference = 0; #end
-global_settings { assumed_gamma 1.0 refraction_detail 1 }
+global_settings { assumed_gamma 1.0 prepared_media_cells 4096 }
 light_source { <4, 6, -3> rgb 1 }
 plane { y, -1 pigment { checker color rgb 0.8 color rgb <0.25, 0.3, 0.4> } }
 #for (I, -1, 1)

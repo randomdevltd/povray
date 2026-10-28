@@ -46,7 +46,28 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
 #end
 #macro Ramp(Lo, Hi) color_map { [0 rgb Lo] [1 rgb Hi] } #end
 
-difference {
+#declare GelParts = array[64];
+#declare GelPartCount = 0;
+#declare GelVoids = function { 0 };
+#declare GelBands = function { 1 };
+#declare GelNodules = function { 1 };
+#declare GelLumps = function { pigment { bozo turbulence 0.5 octaves 3 scale <0.9, 0.6, 0.9> } };
+#declare MarbleBand = function { pigment { marble turbulence 0.8 scale 0.7 color_map { [0 rgb 0.05] [1 rgb 0.6] } scale <1.5, 0.2, 0.75> translate <0.1, 2.05, 1.0> } };
+#macro KeepGelPart(Shape, Kind)
+  #declare GelParts[GelPartCount] = object { Shape };
+  #declare GelPartCount = GelPartCount + 1;
+  #local Support = function { pattern { object { Shape } } };
+  #if (Kind = 1) #declare GelVoids = function { max(GelVoids(x,y,z), Support(x,y,z)) }; #end
+  #if (Kind = 2) #declare GelBands = function { GelBands(x,y,z) * (1-Support(x,y,z) + Support(x,y,z)*MarbleBand(x,y,z).red) }; #end
+  #if (Kind = 3)
+    #local Glow = function { pigment { spherical turbulence 0.3 color_map { [0 rgb 1] [0.5 rgb <2, 6, 1.5>] [1 rgb <4, 16, 3>] } scale NoduleSize translate NoduleCentre } };
+    #declare GelNodules = function { GelNodules(x,y,z) * (1-Support(x,y,z) + Support(x,y,z)*(Glow(x,y,z).red+Glow(x,y,z).green+Glow(x,y,z).blue)/3) };
+  #end
+#end
+#declare GelBodyInterior = interior {
+    ior Ior Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb <0.004, 0.025, 0.003>, density { bozo turbulence 0.3 Ramp(0.6, 1.1) scale 0.8 }, -1)
+  };
+#declare GelBody = difference {
   blob {
     threshold 0.55
     #for (I, -1, 1) #for (J, -1, 1) #for (K, -1, 1)
@@ -67,16 +88,13 @@ difference {
     normal { bumps 0.12 scale 0.4 }
     finish { specular 0.7 roughness 0.004 reflection { 0.03, 0.8 fresnel } conserve_energy }
   }
-  interior {
-    ior Ior Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb <0.004, 0.025, 0.003>, density { bozo turbulence 0.3 Ramp(0.6, 1.1) scale 0.8 }, -1)
-    #if (Warp) media { refraction 0.12 density { bozo turbulence 0.5 octaves 3 scale <0.9, 0.6, 0.9> } } #end
-  }
-}
+  interior { GelBodyInterior }
+};
 
 #if (Layers > 2)
   #declare Gas = Gel(rgb 0.1, rgb <0.6, 0.15, 0.8>, rgb <0.7, 0.1, 0.9>, density { granite turbulence 0.6 Ramp(0, 1.5) scale 0.6 }, -1)
   #macro Pocket(Centre, Size)
-    sphere { 0, 1 scale Size translate Centre texture { Clear } interior { ior Ior media { Gas mix replace } } }
+    KeepGelPart(sphere { 0, 1 scale Size translate Centre texture { Clear } interior { ior Ior media { Gas mix replace } } }, 1)
   #end
   Pocket(<-0.75, 2.45, -1.25>, <0.5, 0.42, 0.38>)
   Pocket(<0.65, 2.5, -1.2>, <0.46, 0.4, 0.36>)
@@ -86,41 +104,41 @@ difference {
 #if (Layers > 3)
   #for (I, 0, 1)
     #declare Eye = <-0.75 + I * 1.4, 2.47, -1.3>;
-    sphere {
+    KeepGelPart(sphere {
       Eye, 0.24 texture { Clear }
       interior { ior Ior Gel(rgb 0.2, rgb <0.8, 0.7, 0.1>, rgb <1.2, 0.8, 0.05>, density { onion turbulence 0.2 Ramp(0.2, 1) scale 0.06 translate Eye }, 0) }
-    }
-    sphere {
+    }, 0)
+    KeepGelPart(sphere {
       Eye - z * 0.12, 0.1 texture { Clear }
       interior { ior Ior media { mix replace absorption 30 } }
-    }
+    }, 1)
   #end
 #end
 
 #if (Layers > 4)
-  blob {
+  KeepGelPart(blob {
     threshold 0.5
     #for (I, 0, 5) sphere { <-1.0 + rand(R) * 1.0 - 0.5, 0.55 + rand(R) * 0.25, 0.9 + rand(R) * 0.9 - 0.45>, 0.4 + rand(R) * 0.15, 1 } #end
     texture { Clear }
     interior { ior Ior Gel(rgb <0.7, 0.25, 0.8>, rgb <0.1, 0.25, 0.04>, rgb 0, density { wrinkles Ramp(0, 2.2) scale 0.3 }, 0) }
-  }
+  }, 0)
 #end
 
 #if (Layers > 5)
-  sphere {
+  KeepGelPart(sphere {
     0, 1 scale <1.5, 0.2, 0.75> translate <0.1, 2.05, 1.0> texture { Clear }
     interior { ior Ior media { mix multiply density { marble turbulence 0.8 scale 0.7 color_map { [0 rgb 0.05] [1 rgb 0.6] } } } }
-  }
+  }, 2)
 #end
 
 #if (Layers > 6)
-  sphere {
+  KeepGelPart(sphere {
     <-1.5, 0.95, -0.9>, 0.6 texture { Clear }
     interior {
       ior Ior
       Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb 0, density { spherical turbulence 0.6 octaves 5 Ramp(0, 2.5) scale 0.6 translate <-1.5, 0.95, -0.9> }, 2)
     }
-  }
+  }, 0)
 #end
 
 #if (Layers > 7)
@@ -129,7 +147,7 @@ difference {
   #for (I, 0, 13)
     #declare P = Centre + <rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5> * Reach * 1.6;
     #declare D = vnormalize(<rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5>);
-    sphere_sweep {
+    KeepGelPart(sphere_sweep {
       b_spline 7
       #for (J, 0, 6)
         P, 0.04 - J * 0.004
@@ -140,7 +158,7 @@ difference {
       #end
       texture { Clear }
       interior { ior Ior media { mix add absorption rgb <1, 10, 10> emission rgb <5, 0.4, 0.1> } }
-    }
+    }, 0)
   #end
 #end
 
@@ -148,24 +166,41 @@ difference {
   #for (I, 0, 4)
     #declare C = <0.9 + rand(R) * 0.8, 0.75 + rand(R) * 0.7, -1.4 + rand(R) * 0.9>;
     #declare S = 0.2 + rand(R) * 0.12;
-    difference {
+    KeepGelPart(difference {
       sphere { C, S } sphere { C, S - 0.025 }
       texture { Clear }
       interior { ior Ior media { mix add scattering { 1, rgb <5, 6, 3> } absorption rgb <1, 0.3, 2> } }
-    }
-    sphere { C + <rand(R), rand(R), rand(R)> * S * 0.3, S * 0.3 texture { Clear } interior { ior Ior media { mix add absorption rgb <1.5, 0.4, 3> } } }
+    }, 0)
+    KeepGelPart(sphere { C + <rand(R), rand(R), rand(R)> * S * 0.3, S * 0.3 texture { Clear } interior { ior Ior media { mix add absorption rgb <1.5, 0.4, 3> } } }, 0)
   #end
 #end
 
 #if (Layers > 9)
   #for (I, 0, 5)
-    sphere {
+    #local NoduleSize = 0.22 + rand(R) * 0.15;
+    #local NoduleCentre = <rand(R) * 2.4 - 1.2, 0.7 + rand(R) * 1.8, rand(R) * 2 - 1>;
+    KeepGelPart(sphere {
       0, 1 pigment { rgbt 1 }
       interior {
         ior Ior media {
           mix multiply density { spherical turbulence 0.3 color_map { [0 rgb 1] [0.5 rgb <2, 6, 1.5>] [1 rgb <4, 16, 3>] } } }
       }
-      scale 0.22 + rand(R) * 0.15 translate <rand(R) * 2.4 - 1.2, 0.7 + rand(R) * 1.8, rand(R) * 2 - 1>
-    }
+      scale NoduleSize translate NoduleCentre
+    }, 3)
   #end
 #end
+
+object {
+  GelBody
+  interior {
+    GelBodyInterior
+    #if (Warp)
+      refraction {
+        strength 0.12
+        field { function { GelLumps(x,y,z).red * (1-GelVoids(x,y,z)) * GelBands(x,y,z) * GelNodules(x,y,z) } }
+        detail auto
+      }
+    #end
+  }
+}
+#if (GelPartCount > 0) #for (Part, 0, GelPartCount-1) object { GelParts[Part] } #end #end

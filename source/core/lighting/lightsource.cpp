@@ -397,7 +397,6 @@ LightSource::LightSource() : CompoundObject(LIGHT_OBJECT)
     Media_Interaction = true;
     lightGroupLight = false;
     volumeLaw = false;
-    shadowCacheOff = false;
 }
 
 
@@ -657,16 +656,6 @@ static DBL EmitterLawAttenuation(const LightSource *Light, DBL Distance)
     return (A * pow(1.0 / Light->attenuationScale, 1.0 - A)) / (R * R);
 }
 
-/// The part of the law a near-field estimator multiplies in: 1 at the emitter's reach, 1/scale far away.
-DBL Light_Emitter_Falloff_Factor(const LightSource *Light, const Vector3d& Point)
-{
-    const DBL R = Light->lawRadius;
-    const DBL A = pow(R / std::max((Point - Light->Center).length(), R), Light->attenuationPower);
-    if (!(Light->attenuationScale > 0.0))
-        return 1.0;
-    return pow(1.0 / Light->attenuationScale, 1.0 - A);
-}
-
 DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 {
     if (Light->volumeLaw)
@@ -676,13 +665,6 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
     if (fabs(Light->Fade_Distance) >= EPSILON)
         return 2.0 / (1.0 + pow(Distance / Light->Fade_Distance, Light->Fade_Power));
     return pow(Distance, -Light->Fade_Power);
-}
-
-bool Light_Below_Fade_Cutoff(const LightSource *Light, const Vector3d& Point)
-{
-    (void)Light;
-    (void)Point;
-    return false;
 }
 
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)

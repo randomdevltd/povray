@@ -1,13 +1,9 @@
-Refraction clear compatibility and independent native axis
+Independent refraction survives optical replacement
 
-Both arms contain the same ordered legacy gradient medium followed by a
-zero-refraction optical mix-replace medium. That replacement clears the legacy
-refraction contribution, so Native0 must trace straight to x0. Native1 adds an
-independent native field defining n(x)=1.1+.1x; the same media-only replacement
-must not clear it. Its screen point must follow the independent Fermat/Snell
-formula in refraction_prepared_ray_reference.py, not an old rendered image.
-
-This uses one interior and one pair of slab boundaries. Coincident containers
-would confound this semantic check with the separate legacy boundary issue.
-The coordinate screen decodes x from R/G; both arms use the existing .001
-scene-unit geometric tolerance,8x8linear16bit,AAoff,twothreads.
+Both arms have the same interior-owned field n(x)=1.1+.1x. Clear1 adds an
+optical-only zero-coefficient mix-replace medium; this must not replace the
+independent index field. Both screen coordinates must follow the independent
+Fermat/Snell formula in refraction_prepared_ray_reference.py within .001 scene
+unit. One interior and one slab boundary pair avoid coincident-container effects.
+The coordinate screen decodes x from R/G. Both frames use8x8 linear16bitRGB,
+AAoff and two threads. No rendered reference or power adjustment is used.

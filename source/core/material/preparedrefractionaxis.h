@@ -13,13 +13,10 @@
 namespace pov
 {
 
-enum class PreparedRefractionOperation { Add, Replace, Multiply, Subtract };
-
 struct PreparedRefractionComponent
 {
-    std::shared_ptr<const PreparedScalarField> density;
+    std::shared_ptr<const PreparedScalarField> field;
     DBL coefficient;
-    PreparedRefractionOperation operation;
 };
 
 class PreparedRefractionAxis final
@@ -29,7 +26,7 @@ class PreparedRefractionAxis final
             components(std::move(components))
         {
             for (const auto& component : this->components)
-                if (!component.density || !IsFiniteNumber(component.coefficient))
+                if (!component.field || !IsFiniteNumber(component.coefficient))
                     throw std::invalid_argument("Prepared refraction requires a published scalar field");
         }
 
@@ -38,36 +35,9 @@ class PreparedRefractionAxis final
             PreparedScalarSample result;
             for (const auto& component : components)
             {
-                const PreparedScalarSample density = component.density->Sample(point);
-                switch (component.operation)
-                {
-                    case PreparedRefractionOperation::Add:
-                        result.value += component.coefficient * density.value;
-                        result.gradient += component.coefficient * density.gradient;
-                        break;
-                    case PreparedRefractionOperation::Replace:
-                        result.value = component.coefficient * density.value;
-                        result.gradient = component.coefficient * density.gradient;
-                        break;
-                    case PreparedRefractionOperation::Multiply:
-                        result.gradient = density.value * result.gradient + result.value * density.gradient;
-                        result.value *= density.value;
-                        break;
-                    case PreparedRefractionOperation::Subtract:
-                    {
-                        const DBL magnitude = std::fabs(component.coefficient);
-                        const DBL direction = result.value > 0.0 ? 1.0 : -1.0;
-                        const DBL reduced = result.value - direction * magnitude * density.value;
-                        if (result.value == 0.0 || direction * reduced <= 0.0)
-                            result = PreparedScalarSample();
-                        else
-                        {
-                            result.value = reduced;
-                            result.gradient -= direction * magnitude * density.gradient;
-                        }
-                        break;
-                    }
-                }
+                const PreparedScalarSample sample = component.field->Sample(point);
+                result.value += component.coefficient * sample.value;
+                result.gradient += component.coefficient * sample.gradient;
             }
             return result;
         }

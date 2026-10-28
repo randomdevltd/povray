@@ -1829,7 +1829,7 @@ of each medium and the per-light optical-depth tables, 1000000 by default. A gri
 it is built coarser, at the widest cell width that fits, with a warning naming what was asked for and what to set to have
 it in full. The limit is a memory bound &mdash; each cell holds a density colour and each table entry an optical-depth
 colour, so a few million cells run to a few hundred megabytes.</p>
-<p>A scene can ask for its own limit with <a href="r3_4.html#r3_4_1_18">prepared_media_cells</a> in
+<p>A scene can ask for its own limit with <a href="r3_4.html#r3_4_1_17">prepared_media_cells</a> in
 <code>global_settings</code>; the larger of the scene's and the machine's value applies. That keeps the division of
 labour simple: drafts render on the machine default, where a coarser grid costs almost nothing, and a final render
 raises the limit here, on the machine that renders it, without editing the scene. A value below 1 or above 1000000000

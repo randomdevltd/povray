@@ -23,7 +23,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.case == 3:
         if not args.image or not args.control:
-            raise ValueError('Refraction-only role requires matched explicit-density control, including identical refraction boundary physics')
+            raise ValueError('Independent index field requires matched explicit-density control with identical index boundaries')
         w,h,pixels=read_ppm(args.image)
         cw,ch,target=read_ppm(args.control)
         if (w,h)!=(cw,ch):raise ValueError('Control dimensions differ')

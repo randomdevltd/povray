@@ -3359,7 +3359,6 @@
         "aa_level",
         "aa_threshold",
         "absorption",
-        "auto",
         "collect",
         "confidence",
         "density",
@@ -3373,8 +3372,6 @@
         "mix",
         "priority",
         "ratio",
-        "refraction",
-        "refraction_detail",
         "resolution",
         "rotate",
         "samples",
@@ -3393,37 +3390,23 @@
     },
     "light": {
       "items": [
-        "area_light",
         "attenuation",
         "brightness",
-        "cluster_radii",
-        "collect",
-        "fade_cutoff",
-        "far_radii",
         "lumens",
         "media_attenuation",
         "media_interaction",
         "nits",
-        "pass_through",
         "photons",
         "pigment",
         "reflection",
         "refraction",
         "samples",
-        "shadowless",
-        "shadows",
-        "split_union",
-        "target"
+        "shadowless"
       ],
       "nested": {
         "photons": [
-          "area_light",
-          "collect",
-          "pass_through",
           "reflection",
-          "refraction",
-          "split_union",
-          "target"
+          "refraction"
         ]
       }
     },
@@ -3541,7 +3524,6 @@
         "assumed_gamma",
         "atmospheric_dispersion",
         "atmospheric_ior",
-        "auto",
         "autostop",
         "brightness",
         "brilliance",
@@ -3584,7 +3566,6 @@
         "radius",
         "recursion_limit",
         "refraction_angle",
-        "refraction_detail",
         "samples",
         "save_file",
         "spacing",

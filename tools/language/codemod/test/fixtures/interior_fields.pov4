@@ -1,0 +1,1 @@
+sphere { 0, 1 interior { refraction { strength -0.04 field { function { 2+x/4 } } detail 0.06 } light { brightness 10 lumens pigment { rgb <1,0.5,0.2> } } media { method 3 absorption rgb 0.1 } } }

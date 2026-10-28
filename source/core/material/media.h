@@ -58,7 +58,7 @@
 
 namespace pov
 {
-struct PreparedRefractionLayer;
+class PreparedRefractionDefinition;
 
 struct RefractionSpec final
 {
@@ -113,24 +113,20 @@ struct MediaModifier final
 };
 typedef std::vector<MediaModifier> MediaModifierVector;
 
-/// SceneData::mediaWarningFlags bits for media refraction warnings, each given once per render.
-const unsigned kMediaRefractionJump = 64, kThinOverlap = 128, kMediaRefractionTrapped = 256, kMediaRefractionIndex = 512,
-              kRefractionDetailUnset = 1024;
+/// SceneData::mediaWarningFlags bits for refraction field warnings, each given once per render.
+const unsigned kRefractionJump = 64, kThinOverlap = 128, kRefractionTrapped = 256, kRefractionIndex = 512;
 
 /// The media a ray's interiors show, in precedence order; without modifiers every interior adds its media.
-/// Transport leaves out media that only refract; refraction keeps only media that refract.
-enum class MediaRole { kTransport, kRefraction };
-void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers,
-                          MediaRole role = MediaRole::kTransport);
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers);
 
-/// The media refraction on a stack of interiors: the refractive index there is the base ior plus Offset().
+/// The refraction on a stack of interiors: the refractive index there is the base ior plus Offset().
 class RefractionField final
 {
     public:
-        RefractionField(const RayInteriorVector& interiors, TraceThreadData *td);
+        explicit RefractionField(const RayInteriorVector& interiors);
         /// Whether the index varies anywhere, so rays inside curve.
         bool Varies() const { return varies; }
-        /// Sum of refraction x density over the media at a point, after their blends.
+        /// Sum of the interiors' refraction fields at a point.
         DBL Offset(const Vector3d& point);
         DBL Offset(const Vector3d& point, Vector3d& gradient);
         /// The longest step a curved ray may take through it.
@@ -138,10 +134,8 @@ class RefractionField final
         /// Whether a straight line meets the bounds of its varying media, and from what distance.
         bool Ahead(const Vector3d& origin, const Vector3d& direction, DBL& entry) const;
     private:
-        std::unique_ptr<PreparedRefractionAxis> axis, nativeAxis;
-        std::vector<const PreparedRefractionLayer *> layers;
-        TraceThreadData *threadData;
-        Vector3d low, high;
+        std::unique_ptr<PreparedRefractionAxis> axis;
+        std::vector<const PreparedRefractionDefinition *> fields;
         DBL maxStep;
         bool varies, bounded;
 

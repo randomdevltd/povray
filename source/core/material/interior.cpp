@@ -134,7 +134,6 @@ void Interior::PostProcess()
     for(std::vector<Media>::iterator i(media.begin());i != media.end(); i++)
     {
         i->PostProcess();
-        refracting = refracting || (i->Refraction != 0.0);
     }
 }
 

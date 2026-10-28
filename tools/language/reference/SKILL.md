@@ -56,9 +56,10 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `density` | 105 | Pattern block scaling media density across its container. |
 | `difference` | 80 | CSG: first child minus every following child. |
 | `disc` | 37 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
+| `field` | 105 | The scalar or pigment field of an interior refraction axis. |
 | `finish` | 35 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
-| `global_settings` | 57 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
+| `global_settings` | 55 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
 | `height_field` | 63 | Triangle mesh whose heights come from an image's brightness. |
 | `image_map` | 36 | Pigment pattern wrapping a 2-D image file around the object. |
 | `interior` | 15 | Inside-the-surface properties: ior, caustics, fading, media, and the volume light of a light block. |
@@ -68,11 +69,11 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `julia_fractal` | 60 | 3-D slice of a 4-D quaternion Julia set. |
 | `lathe` | 41 | Solid of revolution: a 2-D profile curve spun about y. |
 | `lemon` | 38 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
-| `light` | 21 | An interior's volume light: radiance with pigment and brightness, its own attenuation, sampling and shadows. |
+| `light` | 12 | An interior's volume light: radiance with pigment and brightness, its own attenuation, sampling and shadows. |
 | `light_group` | 80 | Objects lit only by the lights named inside it. |
 | `light_source` | 61 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
-| `media` | 27 | Participating medium: scattering, emission, absorption, intervals. |
+| `media` | 24 | Participating medium: scattering, emission, absorption, intervals. |
 | `merge` | 80 | CSG union that removes inner surfaces, for transparent children. |
 | `mesh` | 40 | One object collecting explicit triangle components. |
 | `mesh2` | 45 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |
@@ -91,6 +92,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `quadric` | 37 | Second-degree polynomial surface from ten coefficients. |
 | `quartic` | 37 | Fourth-degree polynomial surface from thirty-five coefficients. |
 | `rainbow` | — | An arc of colour bands across the sky: direction, angle, width, distance. |
+| `refraction` | 4 | An independent interior index field: signed strength, scalar field and scene-unit detail. |
 | `sky_sphere` | — | A pigment wrapped on a huge sphere around the scene to suggest a sky. |
 | `smooth_triangle` | 38 | Triangle carrying per-vertex normals for smooth shading. |
 | `sor` | 38 | Surface of revolution: a curve of points spun about the y axis. |

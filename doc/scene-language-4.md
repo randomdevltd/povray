@@ -34,11 +34,8 @@ takes explicit metres per scene unit; no light unit reads `mm_per_unit`.
 
 The two attenuation values are power then scale; a single value is the scale
 shorthand with power two. The default `2,1` leaves physical transport unchanged.
-Sampling integrates the finite source at every distance. The classic-to-4.0
-codemod keeps legacy appearance emission and copies its source pattern into a
-new independent light; several legacy sources sharing an interior require
-explicit composition before conversion. See the volume-light manual chapter
-for reference probe readings, scaling and numerical preparation limits.
+Sampling integrates the finite source at every distance. See the volume-light
+manual chapter for reference probe readings and numerical preparation limits.
 
 ## Independent refraction fields
 
@@ -55,19 +52,6 @@ Omitted strength and field are both one. Raw function fields take no pattern
 modifiers; transform the enclosing object instead. An explicit
 `field { pigment { ... } }` keeps pigment-pattern wrapping and colour maps. `field` and `detail`
 are contextual words and remain available as variable names.
-
-Legacy `media { refraction K density { ... } }` retains its compatibility
-behaviour, including pigment-pattern evaluation and media mixing. Its
-`refraction_detail` remains in millimetres. A bare scalar `refraction` in
-`interior` or `finish` remains accepted with its legacy warning. New scenes
-should use the independent block. The codemod migrates supported media forms
-with an explicit pigment wrapper and converts legacy detail to scene units.
-It reports `media-refraction-overlap`: independent fields add across interiors,
-so overlapping legacy media whose implicit ordering replaced refraction need
-manual review; conversion is not a promise of identical pixels. Explicit media
-mix/priority, multiple density products, multiple refractive layers in one
-interior, and unresolved detail-unit settings are refused. See the
-refracting-volumes manual section.
 
 ## Bounds framing
 

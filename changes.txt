@@ -43,8 +43,6 @@ Changed Behaviour
   in classic SDL and .pov4 at every scene version. Direct field functions use
   raw signed scalars without pigment wrapping; detail uses scene units.
   field and detail are contextual words and remain free as identifiers.
-  Legacy media refraction and bare scalar interior/finish forms retain their
-  compatibility behaviour and warnings.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow
@@ -173,7 +171,7 @@ Changed Behaviour
     `skein_mesh`, `tags`, `to` and `volume_sampling`. A scene that uses one of
     them as an identifier needs it renamed. (`depth` and `spread` inside
     `volume_sampling`, `mesh_cache`, `ior_mix`, `interface_texture`,
-    `atmospheric_ior`, `atmospheric_dispersion`, `refraction_detail`,
+    `atmospheric_ior`, `atmospheric_dispersion`,
     `prepared_media_cells` and the `off` and `atmosphere` of `ior` are matched
     by their text where they apply and stay free.)
   - Random effects (area light jitter, media, `crand`, rainbow jitter,
@@ -226,7 +224,7 @@ Changed Behaviour
     means `media { mix add }`. Earlier versions render as before and warn when
     a non-hollow object hides media.
   - Refraction no longer depends on file order under `#version 4.0` or with
-    media `refraction`: each interior says how its ior combines with what it
+    interior refraction fields: each interior says how its ior combines with what it
     overlaps (`ior_mix surface | mean | replace`, default `mean`, with
     `priority`), an object with no `ior` takes no part, and `atmospheric_ior`
     defaults to 1.00029 (air) instead of 1.0. Coincident clear surfaces merge
@@ -401,23 +399,6 @@ New Features
   - Media can mix: `media { mix add | replace | subtract | multiply priority N
     }` says how a medium combines with the media ranked beneath it, so media
     can carve, tint or replace each other.
-  - Media `refraction K` adds K times the density to the interior's ior, so
-    light curves where the density varies (heat shimmer, mirages, steam,
-    gradient-index lenses, black holes); `refraction_angle` bounds the bend of
-    each step. `refraction_detail`, a length in millimetres through
-    `mm_per_unit` (now the general scene scale it always wanted to be), sets
-    the smallest index structure that must refract faithfully: the march step
-    is derived from it (at most half of it) and the gradient becomes a central
-    difference over the same span, so finer structure is averaged the same way
-    on every ray instead of rendering as per-pixel speckle when the march step
-    was derived from the object's size. Set it in `global_settings` or per
-    `media`, in every language version. `refraction_detail auto`, the default,
-    derives the detail from the medium's bounds (a thirty-second of its
-    largest side), which keeps the old bounds-based step and widens the
-    gradient to average at that scale; a render whose auto medium spans more
-    than 100 mm is told so once. A method 4 grid derives its resolution from
-    the detail, or warns when an explicit `resolution` is coarser than half
-    of it.
   - A prepared method 4 grid never falls back to classic sampling at a size
     limit: a density grid, a per-light optical-depth table or a prepared
     march beyond its limit is coarsened to the widest fit and used, with a
@@ -451,9 +432,6 @@ New Features
     `attenuation Power, Scale` defaults to physical `2,1`; a single value is
     the scale shorthand. Artistic attenuation applies consistently to direct
     and photon paths. `light`, `nits`, `lumens` and `attenuation` are contextual.
-    Legacy media light_source blocks must be migrated; the codemod preserves
-    appearance emission and copies source patterns into the independent light.
-    Multiple old sources in one interior require explicit pattern composition.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction
     between overlapping and shared surfaces.
@@ -821,7 +799,7 @@ Miscellaneous:
     which gave AMD CPUs the portable noise code.
   - The `.pov4` static checker now accepts the contextual keywords — those
     matched by their text in the classic parser rather than reserved, such as
-    `refraction_detail`, `prepared_media_cells`, `atmospheric_ior`,
+    `prepared_media_cells`, `atmospheric_ior`,
     `atmospheric_dispersion`, `mesh_cache` and `interface_texture` — which the
     block schema had silently never learned. The schema miner derives them
     from the parser's text comparisons, so future contextual keywords need no

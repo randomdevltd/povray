@@ -37,42 +37,18 @@ static void CheckGradient(const PreparedRefractionAxis& axis, const Vector3d& po
 
 int main()
 {
-    using Op = PreparedRefractionOperation;
     auto constant = [](DBL value) { return std::make_shared<const AffineField>(value); };
     auto linear = std::make_shared<const AffineField>(1.5, Vector3d(0.2, -0.3, 0.4));
     const Vector3d point(0.25, -0.5, 0.75);
     Near(PreparedRefractionAxis({}).Evaluate(point).value, 0.0);
-    Near(PreparedRefractionAxis({{constant(-0.5), 1.0, Op::Add}}).Evaluate(point).value, -0.5);
-    Near(PreparedRefractionAxis({{constant(1.5), 1.0, Op::Add}}).Evaluate(point).value, 1.5);
-    PreparedRefractionAxis product({{linear, -2.0, Op::Add}, {linear, 999.0, Op::Multiply}});
-    Near(product.Evaluate(point).value, -2.0 * std::pow(linear->Sample(point).value, 2));
-    CheckGradient(product, point);
-    PreparedRefractionAxis replace({{linear, 9.0, Op::Add}, {constant(-0.5), 2.0, Op::Replace}, {linear, 0.25, Op::Add}});
-    Near(replace.Evaluate(point).value, -1.0 + 0.25 * linear->Sample(point).value);
-    CheckGradient(replace, point);
-    for (DBL sign : {-1.0, 1.0})
-    {
-        PreparedRefractionAxis subtract({{linear, sign * 3.0, Op::Add}, {linear, -0.5, Op::Subtract}});
-        Near(subtract.Evaluate(point).value, sign * 2.5 * linear->Sample(point).value);
-        CheckGradient(subtract, point);
-        PreparedRefractionAxis clamp({{constant(sign), 1.0, Op::Add}, {linear, 3.0, Op::Subtract}});
-        Near(clamp.Evaluate(point).value, 0.0);
-        CheckGradient(clamp, point);
-        PreparedRefractionAxis negativeAmount({{linear, sign, Op::Add}, {constant(-0.5), 2.0, Op::Subtract}});
-        Near(negativeAmount.Evaluate(point).value, sign * (linear->Sample(point).value + 1.0));
-        CheckGradient(negativeAmount, point);
-    }
+    Near(PreparedRefractionAxis({{constant(-0.5), 1.0}}).Evaluate(point).value, -0.5);
+    Near(PreparedRefractionAxis({{constant(1.5), 1.0}}).Evaluate(point).value, 1.5);
     auto other = std::make_shared<const AffineField>(0.25, Vector3d(-0.4, 0.1, 0.2));
-    for (DBL sign : {-1.0, 1.0})
-    {
-        PreparedRefractionAxis mixed({{linear, sign * 3.0, Op::Add}, {other, 0.5, Op::Subtract},
-                                     {other, 100.0, Op::Multiply}, {linear, 0.2, Op::Add}});
-        const DBL a = linear->Sample(point).value, b = other->Sample(point).value;
-        Near(mixed.Evaluate(point).value, sign * (3.0*a - 0.5*b)*b + 0.2*a);
-        CheckGradient(mixed, point);
-        CheckGradient(mixed, Vector3d(-0.5, 0.2, 0.1));
-    }
-    PreparedRefractionAxis zero({{linear, 1.0, Op::Add}, {linear, -1.0, Op::Add}, {linear, 0.5, Op::Subtract}});
+    PreparedRefractionAxis combined({{linear, -2.0}, {other, 0.5}});
+    Near(combined.Evaluate(point).value, -2.0 * linear->Sample(point).value + 0.5 * other->Sample(point).value);
+    CheckGradient(combined, point);
+    CheckGradient(combined, Vector3d(-0.5, 0.2, 0.1));
+    PreparedRefractionAxis zero({{linear, 1.0}, {linear, -1.0}});
     Near(zero.Evaluate(point).value, 0.0);
     CheckGradient(zero, point);
     PreparedConstantScalarField rawConstant(-0.5);
@@ -92,7 +68,7 @@ int main()
     Near(grid->Sample(point).gradient[X], 0.2);
     Near(grid->Sample(point).gradient[Y], -0.3);
     Near(grid->Sample(point).gradient[Z], 0.4);
-    CheckGradient(PreparedRefractionAxis({{grid, 1.0, Op::Add}}), point);
+    CheckGradient(PreparedRefractionAxis({{grid, 1.0}}), point);
     Near(grid->Sample(Vector3d(-1.9, 0.0, 0.0)).gradient[X], 0.0);
     Near(grid->Sample(Vector3d(2.01, 0.0, 0.0)).value, 0.0);
     Near(grid->Sample(Vector3d(2.01, 0.0, 0.0)).gradient[Y], 0.0);
@@ -112,7 +88,7 @@ int main()
     Near(transformedSample.gradient[X], 0.1);
     Near(transformedSample.gradient[Y], 0.04 - 0.6);
     Near(transformedSample.gradient[Z], -0.03 + 0.1);
-    CheckGradient(PreparedRefractionAxis({{transformed, 1.0, Op::Add}}), point);
+    CheckGradient(PreparedRefractionAxis({{transformed, 1.0}}), point);
     bool layoutRejected = false;
     try { PreparedGridLayout invalid(Vector3d(0.0), Vector3d(1.0), {{0, 1, 1}}); }
     catch (const std::invalid_argument&) { layoutRejected = true; }
@@ -151,7 +127,7 @@ int main()
     catch (const std::invalid_argument&) { colourSizeRejected = true; }
     assert(colourSizeRejected);
     bool rejected = false;
-    try { PreparedRefractionAxis invalid({{nullptr, 1.0, Op::Add}}); }
+    try { PreparedRefractionAxis invalid({{nullptr, 1.0}}); }
     catch (const std::invalid_argument&) { rejected = true; }
     assert(rejected);
     std::cout << "prepared refraction axis checks passed\n";

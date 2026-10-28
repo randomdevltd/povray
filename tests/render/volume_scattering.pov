@@ -31,7 +31,7 @@ sphere {
   0, #if (Native) Radius #else 1 #end
   #if (Surface = 2) clipped_by { plane { x, 0 } } #end
   pigment { rgbt 1 } hollow no_image
-  interior { light { brightness SourceL nits samples 256 fade_cutoff 0 shadows method 1 } }
+  interior { light { brightness SourceL nits samples 256 } }
   #if (!Native) scale Radius #end
   #if (Surface) translate y * 2 * Radius #end
 }
