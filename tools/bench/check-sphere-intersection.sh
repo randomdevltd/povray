@@ -13,9 +13,9 @@ export TMPDIR="$output_dir/tmp"
 cat > "$output_dir/sphere-test.mk" <<'MAKE'
 .PHONY: sphere-test
 sphere-test:
-	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(CXXFLAGS) -UNDEBUG -ffunction-sections -fdata-sections "$(SPHERE_SOURCE)" "$(SPHERE_TEST)" -Wl,--gc-sections -o "$(SPHERE_BINARY)"
+	$(CXX) -I$(SPHERE_ROOT)/source $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(CXXFLAGS) -UNDEBUG -ffunction-sections -fdata-sections "$(SPHERE_SOURCE)" "$(SPHERE_TEST)" -Wl,--gc-sections -o "$(SPHERE_BINARY)"
 MAKE
 make -C "$build_dir/source" -f Makefile -f "$output_dir/sphere-test.mk" sphere-test \
-    SPHERE_SOURCE="$source_root/source/core/shape/sphere.cpp" \
+    SPHERE_ROOT="$source_root" SPHERE_SOURCE="$source_root/source/core/shape/sphere.cpp" \
     SPHERE_TEST="$source_root/tests/source/sphere_intersection.cpp" SPHERE_BINARY="$output_dir/sphere-intersection-test"
 "$output_dir/sphere-intersection-test"

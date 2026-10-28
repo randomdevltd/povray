@@ -41,6 +41,11 @@ From a configured build of the matching source, run:
   sh tools/bench/check-geometry-distance.sh BUILD_DIRECTORY OUTPUT_DIRECTORY
   sh tools/bench/check-sphere-intersection.sh BUILD_DIRECTORY OUTPUT_DIRECTORY
 
+The second test additionally checks unit-radius spheres at the same distances,
+off-axis misses, shallow positive chords, tangency, and rays starting inside.
+Its discriminant uses the perpendicular distance from the sphere center to the
+normalized ray, avoiding subtraction of two squared astronomical distances.
+
 Remaining limitation: the Sturm polynomial solver still brackets positive roots
 with MAX_DISTANCE. Removing primitive acceptance limits does not expand that
 solver's search. A separate change must derive a finite coefficient or geometry

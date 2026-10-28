@@ -197,6 +197,10 @@ int main()
         sphere.Compute_BBox();
         check(sphere, ray, thread, entry, tolerance);
         checkSceneTrees(sphere, ray, thread, entry, tolerance);
+        Sphere small;
+        small.Center = Vector3d(0.0, 0.0, distance);
+        small.Compute_BBox();
+        check(small, ray, thread, distance - 1.0, 1e-4);
         Quadric linear;
         linear.Square_Terms = Vector3d(0.0);
         linear.Terms = Vector3d(0.0, 0.0, 1.0);

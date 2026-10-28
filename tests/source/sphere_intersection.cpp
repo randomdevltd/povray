@@ -40,5 +40,15 @@ int main()
     const BasicRay close(Vector3d(0.0, -2.0e-12, 0.0), Vector3d(0.0, 1.0, 0.0));
     assert(Sphere::Intersect(close, Vector3d(0.0), 1.0e-24, &entry, &exit));
     assert(entry > 0.0 && exit > entry);
+    for (double distance : {100.0, 3.844e8, 1.496e11})
+    {
+        const double radius = 1.0;
+        const BasicRay distant(Vector3d(0.0), Vector3d(0.0, 0.0, 1.0));
+        assert(Sphere::Intersect(distant, Vector3d(0.0, 0.0, distance), radius * radius, &entry, &exit));
+        assert(std::abs(entry - (distance - radius)) < 1e-6);
+        assert(std::abs(exit - (distance + radius)) < 1e-6);
+        const BasicRay offAxis(Vector3d(radius * 1.001, 0.0, 0.0), Vector3d(0.0, 0.0, 1.0));
+        assert(!Sphere::Intersect(offAxis, Vector3d(0.0, 0.0, distance), radius * radius, &entry, &exit));
+    }
     std::cout << "sphere_intersection: shallow chords, scale, misses, tangency and interior roots passed\n";
 }
