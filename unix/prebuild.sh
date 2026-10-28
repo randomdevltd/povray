@@ -628,6 +628,8 @@ CONFIG_CLEAN_FILES =
 check: all
 	+sh "\$(top_srcdir)/tools/bench/check-sphere-intersection.sh" "\$(top_builddir)" "\$(top_builddir)/tests/sphere-intersection"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-prepared-transfer.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-transfer"
+	+sh "\$(top_srcdir)/tools/bench/check-physical-phase.sh" "\$(top_builddir)" "\$(top_builddir)/tests/physical-phase"
+	sh "\$(top_srcdir)/tests/render/physical_media_phase.sh" "\$(top_builddir)/unix/povray" "\$(top_srcdir)"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-halfspace-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/halfspace-bounds"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-finite-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/finite-bounds"

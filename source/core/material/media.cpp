@@ -56,6 +56,7 @@
 
 #include "core/lighting/emitter.h"
 #include "core/material/preparedtransfer.h"
+#include "core/material/physicalphase.h"
 #include "core/material/interiorfield.h"
 #include "core/math/finite.h"
 #include "core/lighting/lightgroup.h"
@@ -2186,7 +2187,7 @@ void MediaFunction::ModifierDensity(Media& medium, const Vector3d& point, Modifi
 }
 
 void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
-                                            MathColour& extinction, MathColour *emission, MathColour *scattering)
+                                            MathColour& extinction, MathColour *emission, MathColour *scattering, const DBL *phaseCosine)
 {
     const size_t n = medias.size();
     modifierScratch.resize(3 * n);
@@ -2224,7 +2225,7 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
         if (emission != nullptr)
             *emission += emitted[i];
         if (scattering != nullptr)
-            *scattering += scattered[i];
+            *scattering += scattered[i] * (phaseCosine ? PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, *phaseCosine) : 1.0);
     }
 }
 
@@ -2244,7 +2245,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         TraceTicket ticket;
         DBL offset;
         MediaModifierVector modifiers;
-        bool allLights = false, infinite = false;
+        bool allLights = false, infinite = false, physicalOrdinary = false;
         int ordinarySamples = 1;
         Domain(const MediaVector& m, const LightSourceEntryVector& l, const Ray& r, DBL at) :
             medias(m), lights(l), ray(r), ticket(r.GetTicket()), offset(at) {}
@@ -2525,8 +2526,13 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 }
                 MathColour local;
                 // Source weights already contain j/(r² p); compensate the complete independent cell proposal.
-                owner.ComputeMediaScatteringAttenuation(domain.medias, local, scattering,
-                    incoming / ((light.emitter ? 4.0 * M_PI : 1.0) * count * probability), domain.ray, shadow);
+                ModifierScope modifierScope(owner, domain.modifiers.empty() ? nullptr : &domain.modifiers);
+                if (light.emitter || domain.physicalOrdinary)
+                    owner.ComputePhysicalMediaScattering(domain.medias, local,
+                        incoming / ((light.emitter ? 4.0 * M_PI : 4.0) * count * probability), point, domain.ray, shadow);
+                else
+                    owner.ComputeMediaScatteringAttenuation(domain.medias, local, scattering,
+                        incoming / (count * probability), domain.ray, shadow);
                 colour += local * transfer * suffix[cell.mark];
             }
         }
@@ -3549,6 +3555,7 @@ void MediaFunction::ComputeMediaConstantSampling(MediaVector& medias, LightSourc
         path->domains.emplace_back(medias, lights, ray, path->offset);
         auto& description = path->domains.back();
         description.allLights = true;
+        description.physicalOrdinary = prepared;
         description.infinite = !IsFiniteNumber(intervals.back().s1);
         if (modifiers)
             description.modifiers = *modifiers;
@@ -3691,7 +3698,11 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
         path = nullptr;
     const size_t domain = path ? path->domains.size() : 0;
     if (path)
+    {
         path->domains.emplace_back(medias, lights, ray, path->offset);
+        if (modifiers)
+            path->domains.back().modifiers = *modifiers;
+    }
     MathColour previousDepth;
     for (MediaInterval& interval : mediaintervals)
     {
@@ -4447,8 +4458,8 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                                            sequence(j, 1), sequence(j, 2), sequence(j, 3));
                     Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
                     if (trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
-                        ComputeMediaScatteringAttenuation(medias, Emission, Scattering,
-                                                         Light_Colour / (4.0 * M_PI * count), ray, Light_Ray);
+                        ComputePhysicalMediaScattering(medias, Emission,
+                                                      Light_Colour / (4.0 * M_PI * count), P, ray, Light_Ray);
                 }
                 continue;
             }
@@ -4468,7 +4479,12 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 }
             }
             if(!Lit_Colour.IsZero())
-                ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
+            {
+                if (preparedSampling)
+                    ComputePhysicalMediaScattering(medias, Emission, Lit_Colour / (4.0 * points), P, ray, Light_Ray);
+                else
+                    ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
+            }
         }
     }
 }
@@ -4614,8 +4630,8 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                     MathColour integral = photon.Integral(H, radius, &middle);
                     if (photon.light != nullptr && photon.depth >= 0.0)
                         integral *= Light_Photon_Path_Weight(photon.light, middle);
-                    ComputeMediaScatteringAttenuation(medias, sum, Sc,
-                        (photon.light && photon.light->emitter) ? integral / (4.0 * M_PI) : integral, ray, light);
+                    ComputePhysicalMediaScattering(medias, sum,
+                        integral / ((photon.light && photon.light->emitter) ? 4.0 * M_PI : 4.0), H, ray, light);
                     threadData->progressiveContributions++;
                 });
                 Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
@@ -4682,6 +4698,31 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
 
         Te += Colour2;
     }
+}
+
+void MediaFunction::ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
+                                                   const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay)
+{
+    const DBL cosine = dot(ray.Direction, lightRay.Direction);
+    MathColour kernel;
+    std::vector<MathColour> density(modifiers ? medias.size() : 0);
+    for (size_t i = 0; i < medias.size(); ++i)
+    {
+        if (!medias[i]->use_scattering)
+            continue;
+        MathColour local;
+        DensityForDeclaredMode(*medias[i], point, local);
+        if (modifiers)
+            density[i] = local;
+        else
+            kernel += local * medias[i]->Scattering * PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, cosine);
+    }
+    if (modifiers != nullptr)
+    {
+        MathColour unused;
+        AddModifiedCoefficients(medias, density.data(), point, ModifierSource::kPattern, unused, nullptr, &kernel, &cosine);
+    }
+    output += kernel * incoming;
 }
 
 void MediaFunction::ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay& ray, const BasicRay& Light_Ray)
