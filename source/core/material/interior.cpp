@@ -49,6 +49,7 @@
 // POV-Ray header files (core module)
 #include "core/lighting/emitter.h"
 #include "core/lighting/subsurface.h"
+#include "core/material/media.h"
 #include "core/material/pattern.h"
 #include "core/material/texture.h"
 
