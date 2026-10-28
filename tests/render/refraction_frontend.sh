@@ -6,8 +6,8 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 run() {
-    name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/refraction_frontend.pov" +w48 +h36 +WT1 -a -d -p -v -gp +fp16 File_Gamma=1 +o"$name.ppm" Declare=Version=3.7 "$@" > "$name.log" 2>&1 || { cat "$name.log"; exit 1; }
+    name=$1; version=$2; shift 2
+    "$POVRAY" +i"$SRCDIR/tests/render/refraction_frontend.pov" +w48 +h36 +WT1 -a -d -p -v -gp +fp16 File_Gamma=1 +o"$name.ppm" Declare=Version="$version" "$@" > "$name.log" 2>&1 || { cat "$name.log"; exit 1; }
 }
 same() {
     for name in "$1" "$2"; do tail -c 10368 "$name.ppm" > "$name.pixels"; done
@@ -20,21 +20,21 @@ refuse() {
     fi
     tr -s ' \n' '  ' < "$name.log" | grep -qF "$message"
 }
-run raw
-run signed Declare=Case=1
+run raw 3.7
+run signed 3.7 Declare=Case=1
 same raw signed
-run doubled Declare=Case=2
+run doubled 3.7 Declare=Case=2
 same raw doubled
-run units Declare=Units=1000
+run units 3.7 Declare=Units=1000
 same raw units
-run modern Declare=Version=4.0
+run modern 4.0
 same raw modern
-run auto Declare=Case=5
-run pigment Declare=Case=6
-run constant Declare=Case=9
-run legacy Declare=Case=8
+run auto 3.7 Declare=Case=5
+run pigment 3.7 Declare=Case=6
+run constant 3.7 Declare=Case=9
+run legacy 3.7 Declare=Case=8
 tr -s ' \n' '  ' < legacy.log | grep -qF 'Refraction value unnecessary'
-run atmosphere Declare=Case=10
+run atmosphere 3.7 Declare=Case=10
 tr -s ' \n' '  ' < atmosphere.log | grep -qF 'Atmospheric media do not refract'
 tr -s ' \n' '  ' < atmosphere.log | grep -qF 'Media refraction is a compatibility setting'
 refuse zero 'Refraction detail must be' Declare=Case=3

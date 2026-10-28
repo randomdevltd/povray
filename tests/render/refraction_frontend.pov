@@ -6,7 +6,7 @@
 global_settings { assumed_gamma 1 mm_per_unit Units atmospheric_ior 1 }
 #if (Case = 10) media { refraction 0.01 } #end
 camera { orthographic location <0, 0, -6> look_at 0 right x*4 up y*3 }
-plane { z, 3 pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 translate -2*x } finish { emission 1 diffuse 0 } }
+plane { z, 3 pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 translate -2*x } finish { ambient 0 emission 1 diffuse 0 } }
 box {
   <-2,-1.5,-1>, <2,1.5,1>
   pigment { rgbt 1 }
