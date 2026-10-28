@@ -592,6 +592,7 @@ void Disc::Compute_BBox()
     rad = sqrt(oradius2);
 
     Make_BBox(BBox, -rad, -rad, -SMALL_TOLERANCE, 2.0*rad, 2.0*rad, 2.0*SMALL_TOLERANCE);
+    BBox.finiteInterior = false;
 
     Recompute_BBox(&BBox, Trans);
 }

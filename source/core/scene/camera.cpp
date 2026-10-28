@@ -433,7 +433,7 @@ bool FiniteBounds(const Vector3d& low, const Vector3d& high)
 {
     for (unsigned int axis = 0; axis < 3; ++axis)
         if (!std::isfinite(low[axis]) || !std::isfinite(high[axis]) || (low[axis] > high[axis]) ||
-            (fabs(low[axis]) >= BOUND_HUGE * 0.5) || (fabs(high[axis]) >= BOUND_HUGE * 0.5))
+            !std::isfinite(high[axis] - low[axis]))
             return false;
     return true;
 }
@@ -478,7 +478,7 @@ bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, uns
         return FiniteBounds(low, high);
     }
     Make_min_max_from_BBox(low, high, object->BBox);
-    if (FiniteBounds(low, high))
+    if (object->BBox.finite && FiniteBounds(low, high))
         return true;
     if (compound == nullptr)
     {
@@ -493,8 +493,9 @@ bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, uns
     for (ConstObjectPtr child : compound->children)
     {
         Vector3d childLow, childHigh;
-        // as in CSG::Compute_BBox, an inverted operand does not bound an intersection
-        if ((intersection && Test_Flag(child, INVERTED_FLAG)) || !FrameTargetBounds(child, childLow, childHigh, childUnbounded))
+        // Only finite interior bounds constrain an intersection.
+        if ((intersection && (!child->BBox.finiteInterior || Test_Flag(child, INVERTED_FLAG))) ||
+            !FrameTargetBounds(child, childLow, childHigh, childUnbounded))
             continue;
         for (unsigned int axis = 0; axis < 3; ++axis)
         {

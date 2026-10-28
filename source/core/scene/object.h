@@ -213,7 +213,7 @@ class ObjectBase
             Texture(nullptr), Interior_Texture(nullptr), interior(), Trans(nullptr),
             Ph_Density(0), RadiosityImportance(0.0), RadiosityImportanceSet(false), Flags(0)
         {
-            Make_BBox(BBox, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            Make_BBox(BBox, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         }
 
         /// Construct object as copy of existing one.

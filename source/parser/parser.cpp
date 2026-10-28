@@ -442,7 +442,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
         // CSG bounds only shrink, so a box taken around a pending mesh must be reset before it can grow.
         if (changed && compound->Bound.empty())
         {
-            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
             compound->Compute_BBox();
             Update_Infinite_Flag(compound);
         }
@@ -2602,7 +2602,7 @@ ObjectPtr Parser::Copy_Tagged(ObjectPtr object, const TagFilter& filter, const s
         copy->lightGroupActive = Light_Group_Lights_Something(copy);
     if (copy->Bound.empty())
     {
-        Make_BBox(copy->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        Make_BBox(copy->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         copy->Compute_BBox();
         Update_Infinite_Flag(copy);
     }
@@ -3817,6 +3817,7 @@ void Parser::ParseContainedBy(shared_ptr<pov::ContainedByShape>& container, Obje
                 }
 
                 container = box;
+                box->ComputeBBox(obj->BBox);
 
                 // TODO REVIEW - where is the bounding box computed when obj->Trans is `nullptr`?
                 if (obj->Trans != nullptr)
@@ -9063,13 +9064,15 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
     {
         /* Get bounding objects bounding box. */
 
-        Min = Vector3d(-BOUND_HUGE);
-        Max = Vector3d(BOUND_HUGE);
+        Min = Vector3d(-std::numeric_limits<DBL>::infinity());
+        Max = Vector3d(std::numeric_limits<DBL>::infinity());
+        bool bounded = false;
 
         for(vector<ObjectPtr>::iterator Sib = Object->Bound.begin(); Sib != Object->Bound.end(); Sib++)
         {
-            if(!Test_Flag((*Sib), INVERTED_FLAG))
+            if(!Test_Flag((*Sib), INVERTED_FLAG) && (*Sib)->BBox.finiteInterior)
             {
+                bounded = true;
                 Min[X] = max(Min[X], (DBL)((*Sib)->BBox.lowerLeft[X]));
                 Min[Y] = max(Min[Y], (DBL)((*Sib)->BBox.lowerLeft[Y]));
                 Min[Z] = max(Min[Z], (DBL)((*Sib)->BBox.lowerLeft[Z]));
@@ -9079,7 +9082,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             }
         }
 
-        Make_BBox_from_min_max(BBox, Min, Max);
+        Make_BBox_from_min_max(BBox, Min, Max, bounded);
 
         /* Get bounding boxes' volumes. */
 
@@ -9088,8 +9091,9 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         BOUNDS_VOLUME(V1, BBox);
         BOUNDS_VOLUME(V2, Object->BBox);
 
-        if (V1 < V2)
+        if (bounded && !Object->BBox.finiteInterior && (!Object->BBox.finite || V1 < V2))
         {
+            BBox.finiteInterior = Object->BBox.finiteInterior;
             Object->BBox = BBox;
         }
     }
@@ -9103,13 +9107,15 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
     {
         /* Get clipping objects bounding box. */
 
-        Min = Vector3d(-BOUND_HUGE);
-        Max = Vector3d(BOUND_HUGE);
+        Min = Vector3d(-std::numeric_limits<DBL>::infinity());
+        Max = Vector3d(std::numeric_limits<DBL>::infinity());
+        bool bounded = false;
 
         for(vector<ObjectPtr>::iterator Sib = Object->Clip.begin(); Sib != Object->Clip.end(); Sib++)
         {
-            if(!Test_Flag((*Sib), INVERTED_FLAG))
+            if(!Test_Flag((*Sib), INVERTED_FLAG) && (*Sib)->BBox.finiteInterior)
             {
+                bounded = true;
                 Min[X] = max(Min[X], (DBL)((*Sib)->BBox.lowerLeft[X]));
                 Min[Y] = max(Min[Y], (DBL)((*Sib)->BBox.lowerLeft[Y]));
                 Min[Z] = max(Min[Z], (DBL)((*Sib)->BBox.lowerLeft[Z]));
@@ -9119,7 +9125,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             }
         }
 
-        Make_BBox_from_min_max(BBox, Min, Max);
+        Make_BBox_from_min_max(BBox, Min, Max, bounded);
 
         /* Get bounding boxes' volumes. */
 
@@ -9127,7 +9133,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         BOUNDS_VOLUME(V1, BBox);
         BOUNDS_VOLUME(V2, Object->BBox);
 
-        if (V1 < V2)
+        if (bounded && (!Object->BBox.finiteInterior || V1 < V2))
         {
             Object->BBox = BBox;
         }
@@ -10990,7 +10996,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         CompoundObject *compound = dynamic_cast<CompoundObject *>(Object);
         if (mMeshResolvedBelow && (compound != nullptr) && compound->Bound.empty())
         {
-            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
             compound->Compute_BBox();
             Update_Infinite_Flag(compound);
         }

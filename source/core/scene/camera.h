@@ -192,7 +192,7 @@ private:
                             const std::function<void()>& cooperate, const std::vector<FrameBounds>& parts);
 };
 
-/// Whether a box, a single point at least, is finite and well inside the bounding limits.
+/// Whether a box, a single point at least, has finite ordered coordinates and representable extents.
 bool FiniteBounds(const Vector3d& low, const Vector3d& high);
 /// The finite bounds a look_at target frames, with its genuinely unbounded parts counted and left out; false if none.
 bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, unsigned int& unbounded);

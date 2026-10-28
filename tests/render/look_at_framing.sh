@@ -119,7 +119,7 @@ for twin in framing framing_tagged; do
     equal "${twin}_new" "${twin}_ref"
 done
 UNION=$SRCDIR/tests/render/look_at_framing_union.pov
-for c in 0 1 2; do
+for c in 0 1 2 3; do
     render "union$c" "$UNION" 128 Declare=Case=$c
     render "union_ref$c" "$UNION" 128 Declare=Case=$c Declare=Reference=1
     equal "union$c" "union_ref$c"

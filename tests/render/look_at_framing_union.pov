@@ -2,7 +2,7 @@
 global_settings { assumed_gamma 1 }
 #ifndef(Case) #declare Case = 0; #end
 #ifndef(Reference) #declare Reference = 0; #end
-#declare Far = 384400000;
+#if(Case=3) #declare Far = 1.496e11; #else #declare Far = 384400000; #end
 #declare Near = box { <-.7,-.6,3.8>, <.7,.6,4.2> }
 #declare Remote = box { <-.7,-.6,3.8>*Far, <.7,.6,4.2>*Far }
 #declare Remote = object { Remote translate <1.8*Far,0,0> }

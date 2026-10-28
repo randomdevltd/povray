@@ -947,9 +947,7 @@ Box::~Box()
 
 void Box::Compute_BBox()
 {
-    BBox.lowerLeft = BBoxVector3d(bounds[0]);
-
-    BBox.size = BBoxVector3d(bounds[1] - bounds[0]);
+    Make_BBox_from_min_max(BBox, bounds[0], bounds[1]);
 
     if (Trans != nullptr)
     {

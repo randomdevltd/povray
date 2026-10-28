@@ -619,9 +619,9 @@ Plane::~Plane()
 void Plane::Compute_BBox()
 {
     Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2,
-        BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
 
-    if (!Clip.empty())
+    if (!Clip.empty() && !Test_Flag(Clip[0], INVERTED_FLAG) && Clip[0]->BBox.finiteInterior)
     {
         BBox = Clip[0]->BBox; // FIXME - only supports one clip object? [trf]
     }

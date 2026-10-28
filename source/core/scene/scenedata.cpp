@@ -138,7 +138,7 @@ void Rebound(CSG *csg)
 {
     if (!csg->Bound.empty())
         return;
-    Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+    Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
     csg->Compute_BBox();
     Update_Infinite_Flag(csg);
 }

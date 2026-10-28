@@ -477,7 +477,7 @@ TreeWrite Write_Tree(const PovmTreeKey& key, uint32_t triangles, const FlatMeshB
 }
 
 const char GENERATED_MAGIC[8] = { 'P', 'O', 'V', 'G', 'M', 'E', 'S', 'H' };
-const uint32_t GENERATED_VERSION = 1;
+const uint32_t GENERATED_VERSION = 2;
 
 /// Appends the generated mesh file's fields; Take reads them back in order, failing on a short or inconsistent file.
 struct Packer final
@@ -608,7 +608,7 @@ std::shared_ptr<Mesh> Read_Generated_Mesh(const GeneratedMeshKey& key, DeferredM
     uint64_t blocks;
     std::string debug, warning;
     uint32_t warnings;
-    bool ok = in.Take(inside) && in.Take(patch) && in.Take(mesh->BBox) && in.Take(data.Inside_Vect) &&
+    bool ok = in.Take(inside) && in.Take(patch) && in.Take(data.Inside_Vect) &&
               in.Take(data.Number_Of_Vertices) && in.Take(data.Number_Of_Normals) && in.Take(data.Number_Of_UVCoords) &&
               in.Take(data.Number_Of_Triangles) && (data.Number_Of_Vertices >= 0) && (data.Number_Of_Normals >= 0) &&
               (data.Number_Of_UVCoords >= 0) && (data.Number_Of_Triangles >= 0) &&
@@ -642,6 +642,7 @@ std::shared_ptr<Mesh> Read_Generated_Mesh(const GeneratedMeshKey& key, DeferredM
     }
     mesh->has_inside_vector = (inside != 0);
     mesh->Type = patch ? (mesh->Type | PATCH_OBJECT) : (mesh->Type & ~PATCH_OBJECT);
+    mesh->Compute_BBox();
     state.debug = debug.empty() ? debug : debug.substr(0, debug.find_last_not_of('\n') + 1) + " (cached)\n";
     return mesh;
 }
@@ -659,7 +660,6 @@ void Write_Generated_Mesh(const GeneratedMeshKey& key, const Mesh& mesh, Deferre
     out.Put(key.b);
     out.Put(uint8_t(mesh.has_inside_vector));
     out.Put(uint8_t((mesh.Type & PATCH_OBJECT) != 0));
-    out.Put(mesh.BBox);
     out.Put(data.Inside_Vect);
     out.Put(data.Number_Of_Vertices);
     out.Put(data.Number_Of_Normals);
