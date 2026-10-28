@@ -22,7 +22,7 @@ global_settings { assumed_gamma 1 ambient_light rgb 0 }
  light_source { <0,0,100*(1-2*Reverse)> rgb 1 parallel point_at 0 }
 #else
  #if (Source=1)
-  light_source { SourcePoint rgb 5000 fade_distance 0 fade_power 2 }
+  light_source { SourcePoint rgb 2500.25 fade_distance 1 fade_power 2 }
  #else
   sphere { SourcePoint,0.01 pigment { rgbt 1 } hollow no_image
    interior { light { brightness 50000000 samples Draws } }

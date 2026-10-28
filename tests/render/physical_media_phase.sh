@@ -14,7 +14,7 @@ render volume16 Declare=Source=2 Declare=Draws=16
 render volume64 Declare=Source=2 Declare=Draws=64
 render volume_legacy Declare=Source=2 Declare=Method=3
 render surface_point Declare=Source=1 Declare=Surface=1
-render surface_volume Declare=Source=2 Declare=Surface=1
+render surface_volume Declare=Source=2 Declare=Surface=1 Declare=Draws=1024
 render physical
 render zero Declare=Zero=1
 render density Declare=Density=2
@@ -30,7 +30,7 @@ import struct
 import math
 from pathlib import Path
 expected = {
-    "point": tuple(s*50/99 for s in (.0875,.1375,.15)),
+    "point": tuple(s*5000.5*(math.atan(100)-math.atan(99)) for s in (.0875,.1375,.15)),
     "volume16": tuple(s*50/99 for s in (.0875,.1375,.15)),
     "volume64": tuple(s*50/99 for s in (.0875,.1375,.15)),
     "volume_legacy": tuple(s*50/99 for s in (.0875,.1375,.15)),
