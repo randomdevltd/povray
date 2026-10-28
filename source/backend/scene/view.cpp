@@ -1298,9 +1298,6 @@ void View::StartRender(POVMS_Object& renderOptions)
     {
         photonScene.photonSettings = shot->settings;
         photonScene.shotPhotons->views++;
-        // building method 2 maps leaves a view the default subsurface cache; a view reusing them takes the same
-        if (photonScene.photonSettings.Progressive())
-            viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
         MessageFactory(photonScene.warningLevel, "Photons", photonScene.backendAddress, photonScene.frontendAddress,
                        photonScene.sceneId, viewData.viewId)
             .Info("Photon maps shot once for this scene's sets are reused by this camera (view %u of those sharing them).",
@@ -2129,7 +2126,6 @@ try
         set->progressiveMedia.Build();
         bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
     }
-    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
     viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
     return true;
 }
