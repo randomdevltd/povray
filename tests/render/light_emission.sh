@@ -60,7 +60,7 @@ fail() {
     if "$POVRAY" +i"$SRCDIR/tests/render/light_emission.pov" +w1 +h1 +wt1 +pr -a -d -p -v -gp +o"$name.png" "$@" >"$name.log" 2>&1; then
         echo "light_emission: expected $name to fail" >&2; exit 1
     fi
-    grep -F "$message" "$name.log" >/dev/null || { cat "$name.log"; exit 1; }
+    tr '\n' ' ' <"$name.log" | tr -s '[:space:]' ' ' | grep -F "$message" >/dev/null || { cat "$name.log"; exit 1; }
 }
 fail pigment_after 'one pigment or emission input' Declare=Conflict=1
 fail emission_after 'one pigment or emission input' Declare=Alias=0 Declare=Conflict=2
