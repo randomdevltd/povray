@@ -3,18 +3,19 @@
 #ifndef (Angle) #declare Angle = 0; #end
 #ifndef (Index) #declare Index = 1.44; #end
 #ifndef (Length) #declare Length = 1e9; #end
+#ifndef (Single) #declare Single = 0; #end
 #ifndef (Lit) #declare Lit = 0; #end
 #ifndef (Wedge) #declare Wedge = 0; #end
 #ifndef (Conserve) #declare Conserve = 0; #end
 global_settings {
   assumed_gamma 1.0
   mm_per_unit 1
-  subsurface { samples 0, 0 method Method radiosity 0 }
+  subsurface { samples 0, Single method Method radiosity 0 }
 }
 camera { orthographic location <0, 0, -10> direction z right x * 0.1 up y * 0.1 }
 background { rgb 0 }
 #if (Lit)
-  light_source { <0, 0, -5> rgb 1 }
+  light_source { <0, 0, -5> rgb 0.25 }
 #else
   box { <-4, -2, 10>, <4, 2, 10.1> pigment { rgb 1 } finish { ambient 0 diffuse 0 emission 1 } }
 #end

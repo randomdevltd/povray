@@ -27,3 +27,4 @@ interface cosines differ; it detects reuse of the entry transmission at exit.
 Lit=1 replaces the emission backing with a front light. With Length=.01 this
 provides a thick diffuse image for exact comparison with an earlier binary;
 ballistic attenuation is already below the tracing cutoff.
+Single=8 also exercises single scattering in that exact comparison.
