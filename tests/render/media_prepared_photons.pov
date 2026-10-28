@@ -18,8 +18,8 @@ background { rgb 0 }
 plane { y, 0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
 light_source {
     <0, (InsideSource ? 1.5 : 5), 0> rgb 0.5
-    #if (!NativePointInside) parallel #end
-    point_at 0 photon_only on
+    #if (!NativePointInside) parallel point_at 0 #end
+    photon_only on
     photons { refraction on reflection off }
 }
 sphere {
