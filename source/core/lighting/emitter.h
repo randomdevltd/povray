@@ -43,6 +43,8 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include <functional>
+#include <memory>
 
 #include "core/coretypes.h"
 
@@ -50,6 +52,8 @@ namespace pov
 {
 
 class TraceThreadData;
+struct PreparedGridLayout;
+class PreparedLightAxis;
 
 struct EmitterDraw final
 {
@@ -79,6 +83,8 @@ class Emitter
 {
     public:
         virtual ~Emitter() {}
+        virtual void PrepareAxis(std::shared_ptr<const PreparedGridLayout>, TraceThreadData*, const std::function<void()>&) const {}
+        virtual std::shared_ptr<const PreparedLightAxis> PreparedAxis() const { return nullptr; }
         virtual const MathColour& Intensity() const = 0;   ///< prepared estimate of ∫j dV; never a connection normalization
         virtual const Vector3d& Centre() const = 0;        ///< power-weighted centre
         virtual double Radius() const = 0;                 ///< about Centre(), holding every sample
@@ -115,6 +121,7 @@ struct MediaLight final
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false, photonLegacyOptions = false;
+    bool preparedParallelSafe = false;
 
     MediaLight() = default;
     MediaLight(const MediaLight& source);          ///< deep-copies the pigment

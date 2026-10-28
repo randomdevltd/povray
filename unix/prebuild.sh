@@ -661,6 +661,7 @@ check: all
 	./progressive_photon_test
 	rm -f progressive_photon_test
 	+sh "\$(top_srcdir)/tools/bench/check-progressive-surface.sh" "\$(top_builddir)" "\$(top_builddir)/tests/progressive-surface"
+	+sh "\$(top_srcdir)/tools/bench/check-prepared-light.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-light"
 	sh \$(top_srcdir)/tests/render/progressive_surface.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_receivers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
