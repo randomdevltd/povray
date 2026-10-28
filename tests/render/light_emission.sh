@@ -18,6 +18,8 @@ for method in 1 2 3 4; do
         same "alias${method}_$unit" "manual${method}_$unit"
     done
 done
+render alias_parallel +wt2
+same alias4_0 alias_parallel
 for version in 3.6 3.7 3.8 4.0; do
     render "version$version" Declare=SceneVersion="$version"
     same alias4_0 "version$version"
