@@ -140,6 +140,10 @@ static void CheckTentProposal()
         PreparedLightAxis legacy(layout, field, masked);
         PreparedLightAxis constant(layout, field, masked, std::vector<DBL>(n, 3.0));
         PreparedLightAxis zero(layout, field, masked, std::vector<DBL>(n, 0.0));
+        assert(legacy.NodalStorageBytes() == 0);
+        assert(constant.NodalStorageBytes() == 0);
+        assert(zero.NodalStorageBytes() == 0);
+        assert(axis.NodalStorageBytes() == (n > 1 ? 2*n*sizeof(DBL) : 0));
         for (DBL choose : {0.0, 0.125, 0.499, 0.5, 0.75})
         {
             const auto old = legacy.SamplePosition(choose, 0.1, 0.2, 0.3);

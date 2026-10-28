@@ -97,6 +97,7 @@ class PreparedLightAxis final
         }
 
         pov_base::MathColour ColourAt(const Vector3d& point) const { return colour->Sample(point); }
+        size_t NodalStorageBytes() const { return (nodalDistribution.capacity() + nodalProbabilities.capacity()) * sizeof(DBL); }
 
     private:
         static constexpr DBL BoxWeight = (1.0 / 1048576.0);

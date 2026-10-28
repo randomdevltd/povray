@@ -1911,6 +1911,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         emitter->coefficient *= scale;
         emitter->intensity = integral * scale;
     }
+    if (emitter->coefficient[0] == 0.0)
+        nodalMasses.clear();
     field = std::make_shared<ScaledColour>(field, emitter->coefficient[0]);
     vector<DBL> masses(count);
     for (size_t z = 0; z < layout->counts[Z]; z++)
