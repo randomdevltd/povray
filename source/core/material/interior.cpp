@@ -116,6 +116,7 @@ Interior::~Interior()
 
 void Interior::Transform(const TRANSFORM *trans)
 {
+    fields.clear();
     for(std::vector<Media>::iterator i(media.begin());i != media.end(); i++)
         i->Transform(trans);
     if ((light != nullptr) && (light->pigment != nullptr))

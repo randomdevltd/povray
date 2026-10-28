@@ -2071,6 +2071,10 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
         tsb->printf("Forbidden4 Procedure: %13.0f   Old Integrator:       %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
     }
 
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaAnalyticInfiniteIntervals, &l);
+    if (POVMSLongToCDouble(l) > 0.5)
+        tsb->printf("Analytic Infinite Intervals: %13.0f\n", POVMSLongToCDouble(l));
+
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_CurvedRays, &l);
     if(POVMSLongToCDouble(l) > 0.5)
     {

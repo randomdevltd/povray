@@ -141,6 +141,8 @@ typedef TEXTURE* TexturePtr;
 /// @{
 
 struct MediaLight;
+class InteriorField;
+struct PreparedGridLayout;
 class TraceThreadData;
 class Ray;
 
@@ -280,6 +282,7 @@ class Interior final
         std::vector<Media> media;
         /// its `light { }` block, making the interior's media a light, or empty
         std::shared_ptr<MediaLight> light;
+        std::vector<std::shared_ptr<InteriorField>> fields;
         std::shared_ptr<SubsurfaceInterior> subsurface;
 
         Interior();

@@ -516,6 +516,7 @@ void MeshBuildTask::Run()
         for (ObjectPtr object : set->objects)
             prepareFields(object, nullptr);
     PrepareAtmosphereFields(&finalFields, cooperateFields);
+    PrepareLightFields(&finalFields, cooperateFields);
     cooperateFields();
     parseData->Stats() += finalFields.Stats();
 

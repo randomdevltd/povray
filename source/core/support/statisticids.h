@@ -274,6 +274,7 @@ typedef enum INTSTATS
     Media_Legacy3_Queries,
     Media_Forbidden4_Procedural,
     Media_Forbidden4_Integration,
+    Media_Analytic_Infinite_Intervals,
     Curved_Rays,
     Refraction_Steps,
 

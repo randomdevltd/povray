@@ -85,6 +85,8 @@ class Emitter;
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData *td, std::string& failure);
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
 void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
+std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr owner, TraceThreadData *td);
+void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooperate);
 
 /// A `subtract` or `multiply` medium on a ray; it changes the media collected before it, which rank below it.
 struct MediaModifier final

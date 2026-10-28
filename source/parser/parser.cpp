@@ -10576,6 +10576,21 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
 
 void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
 {
+    MediaLight& settings = *interior.light;
+    settings.preparedParallelSafe = false;
+    if (!PigmentTestsObjects(settings.pigment) && !PigmentRequiresRayContext(settings.pigment))
+    {
+        bool known = true;
+        std::vector<FUNCTION> roots;
+        ForEachPigmentFunction(settings.pigment, false, [&](GenericScalarFunctionPtr& slot)
+        {
+            if (const FunctionVM::CustomFunction *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
+                roots.push_back(custom->Id());
+            else
+                known = false;
+        });
+        settings.preparedParallelSafe = known && SelfContained(roots);
+    }
     std::string failure;
     std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(interior, container, &mThreadData, failure);
     if (!emitter)
@@ -10583,7 +10598,6 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
         Warning("An interior light gives no light because %s.", failure.c_str());
         return;
     }
-    const MediaLight& settings = *interior.light;
     LightSource *light = new LightSource();
     light->emitter = emitter;
     light->emitterContainer = container;

@@ -611,6 +611,7 @@ enum
     kPOVAttrib_MediaLegacy3Queries             = 'M3Qr',
     kPOVAttrib_MediaForbidden4Procedural       = 'M4Pr',
     kPOVAttrib_MediaForbidden4Integration      = 'M4In',
+    kPOVAttrib_MediaAnalyticInfiniteIntervals  = 'MiAn',
     kPOVAttrib_CurvedRays            = 'CuRa',
     kPOVAttrib_RefractionSteps       = 'RfSt',
 
