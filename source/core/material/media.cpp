@@ -1480,7 +1480,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    brightness(source.brightness), lumens(source.lumens),
+    useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
@@ -1497,6 +1497,17 @@ MediaLight::~MediaLight()
 
 namespace
 {
+
+class OwningEmissionInput final
+{
+    public:
+        explicit OwningEmissionInput(Interior& interior);
+        MathColour Sample(const Vector3d& point, TraceThreadData *td) const;
+        bool Constant() const;
+    private:
+        MediaVector media;
+        MediaModifierVector modifiers;
+};
 
 // The uniform proposal component preserves support of the prepared interpolated light field.
 class VolumeEmitter final : public Emitter
@@ -1804,12 +1815,16 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         emitter->coefficient = MathColour(settings.brightness / meanChord);
     }
     const size_t count = layout->ValueCount();
-    const bool solid = !settings.pigment || settings.pigment->Type == PLAIN_PATTERN;
+    std::unique_ptr<OwningEmissionInput> emissionInput;
+    if (settings.useEmission)
+        emissionInput.reset(new OwningEmissionInput(*container->interior));
+    const bool solid = emissionInput ? emissionInput->Constant() :
+        (!settings.pigment || settings.pigment->Type == PLAIN_PATTERN);
     auto colourAt = [&](const Vector3d& p, TraceThreadData *worker) {
         TransColour colour(MathColour(1.0));
         if (settings.pigment)
             Compute_Pigment(colour, settings.pigment, p, nullptr, nullptr, worker);
-        const MathColour value = colour.colour();
+        const MathColour value = emissionInput ? emissionInput->Sample(p, worker) : colour.colour();
         for (int ch = 0; ch < MathColour::channels; ch++)
             if (!IsFiniteNumber(value[ch]) || value[ch] < 0.0)
                 throw POV_EXCEPTION_STRING("Interior light pigment is negative or not finite.");
@@ -1968,6 +1983,16 @@ void SubtractFromSum(MathColour *values, size_t count, const MathColour& amount)
         values[i] *= scale;
 }
 
+void ApplyCoefficientModifier(MathColour *values, size_t count, const MathColour& density,
+                              const MathColour& coefficient, int mix)
+{
+    if (mix == kMediaBlendMultiply)
+        for (size_t i = 0; i < count; i++)
+            values[i] *= density;
+    else
+        SubtractFromSum(values, count, density * coefficient);
+}
+
 }
 
 void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers)
@@ -2005,6 +2030,66 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
         else if (medium->use_absorption || medium->use_emission || medium->use_scattering)
             medias.push_back(medium);
     }
+}
+
+namespace
+{
+
+OwningEmissionInput::OwningEmissionInput(Interior& interior)
+{
+    RayInteriorVector interiors;
+    interiors.push_back(&interior);
+    CollectInteriorMedia(interiors, media, &modifiers);
+    auto validate = [](const Media& medium) {
+        for (const PIGMENT *density : medium.Density)
+            if (PigmentRequiresRayContext(density))
+                throw POV_EXCEPTION_STRING("Interior light emission density requires ray context and cannot be published.");
+    };
+    for (const Media *medium : media)
+        if (medium->use_emission)
+            validate(*medium);
+    for (const MediaModifier& modifier : modifiers)
+        if (modifier.medium->mix == kMediaBlendMultiply || modifier.medium->use_emission)
+            validate(*modifier.medium);
+}
+
+bool OwningEmissionInput::Constant() const
+{
+    for (const Media *medium : media)
+        if (medium->use_emission && !ConstantDensity(*medium))
+            return false;
+    for (const MediaModifier& modifier : modifiers)
+        if ((modifier.medium->mix == kMediaBlendMultiply || modifier.medium->use_emission) &&
+            !ConstantDensity(*modifier.medium))
+            return false;
+    return true;
+}
+
+MathColour OwningEmissionInput::Sample(const Vector3d& point, TraceThreadData *td) const
+{
+    std::vector<MathColour> emitted(media.size());
+    for (size_t i = 0; i < media.size(); i++)
+    {
+        if (!media[i]->use_emission)
+            continue;
+        MathColour density;
+        Evaluate_Density_Pigment(media[i]->Density, point, density, td);
+        emitted[i] = density * media[i]->Emission;
+    }
+    for (const MediaModifier& modifier : modifiers)
+    {
+        if (modifier.medium->mix != kMediaBlendMultiply && !modifier.medium->use_emission)
+            continue;
+        MathColour density;
+        Evaluate_Density_Pigment(modifier.medium->Density, point, density, td);
+        ApplyCoefficientModifier(emitted.data(), modifier.below, density, modifier.medium->Emission, modifier.medium->mix);
+    }
+    MathColour result;
+    for (const MathColour& value : emitted)
+        result += value;
+    return result;
+}
+
 }
 
 static bool ConstantDensity(const Media& medium)
@@ -2205,19 +2290,9 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
             continue;
         MathColour local;
         ModifierDensity(medium, point, source, local);
-        if (medium.mix == kMediaBlendMultiply)
-            for (size_t t = 0; t < modifier.below; t++)
-            {
-                absorbing[t] *= local;
-                scattered[t] *= local;
-                emitted[t] *= local;
-            }
-        else
-        {
-            SubtractFromSum(absorbing, modifier.below, local * medium.Absorption);
-            SubtractFromSum(scattered, modifier.below, local * medium.Scattering);
-            SubtractFromSum(emitted, modifier.below, local * medium.Emission);
-        }
+        ApplyCoefficientModifier(absorbing, modifier.below, local, medium.Absorption, medium.mix);
+        ApplyCoefficientModifier(scattered, modifier.below, local, medium.Scattering, medium.mix);
+        ApplyCoefficientModifier(emitted, modifier.below, local, medium.Emission, medium.mix);
     }
     for (size_t i = 0; i < n; i++)
     {

@@ -109,6 +109,7 @@ class Emitter
 struct MediaLight final
 {
     PIGMENT *pigment = nullptr;     ///< the light's own colour or pattern; null for solid white
+    bool useEmission = false;      ///< use the owning interior's combined emission as the input field
     double brightness = 1.0;        ///< the radiance the pigment gives, when no unit follows
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter

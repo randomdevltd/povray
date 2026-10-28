@@ -3885,12 +3885,18 @@ void Parser::Parse_Interior_Light(Interior& interior)
 
     EXPECT
         CASE (PIGMENT_TOKEN)
-            if (light->pigment != nullptr)
-                Error("Only one pigment allowed in a light block.");
+            if (light->pigment != nullptr || light->useEmission)
+                Error("A light block accepts exactly one pigment or emission input.");
             light->pigment = Copy_Pigment(Default_Texture->Pigment);
             Parse_Begin();
             Parse_Pigment(&light->pigment);
             Parse_End();
+        END_CASE
+
+        CASE (EMISSION_TOKEN)
+            if (light->pigment != nullptr || light->useEmission)
+                Error("A light block accepts exactly one pigment or emission input.");
+            light->useEmission = true;
         END_CASE
 
         CASE (SAMPLES_TOKEN)
