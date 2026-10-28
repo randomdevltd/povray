@@ -142,6 +142,9 @@ typedef TEXTURE* TexturePtr;
 
 struct MediaLight;
 class InteriorField;
+class PreparedRefractionDefinition;
+class PreparedScalarField;
+struct RefractionSpec;
 struct PreparedGridLayout;
 class TraceThreadData;
 class Ray;
@@ -213,6 +216,7 @@ class Media final
         bool PreparedRange(const Ray& ray, DBL& from, DBL& to) const;
         void PreparedCuts(const Ray& ray, DBL from, DBL to, std::vector<DBL>& cuts) const;
         FastCache *SinglePreparedBinding() const;
+        std::shared_ptr<const PreparedScalarField> PreparedScalarAxis() const;
         /// Plans building its prepared density grid ahead of the render from `copy`, a copy whose functions other threads
         /// may run; null when it has no prepared grid or the grid cannot be sized now.
         std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const;
@@ -283,6 +287,8 @@ class Interior final
         /// its `light { }` block, making the interior's media a light, or empty
         std::shared_ptr<MediaLight> light;
         std::vector<std::shared_ptr<InteriorField>> fields;
+        std::shared_ptr<const PreparedRefractionDefinition> preparedRefraction;
+        std::shared_ptr<RefractionSpec> refraction;
         std::shared_ptr<SubsurfaceInterior> subsurface;
 
         Interior();

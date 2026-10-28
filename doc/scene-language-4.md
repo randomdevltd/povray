@@ -40,6 +40,35 @@ new independent light; several legacy sources sharing an interior require
 explicit composition before conversion. See the volume-light manual chapter
 for reference probe readings, scaling and numerical preparation limits.
 
+## Independent refraction fields
+
+Both syntaxes accept `interior { refraction { strength -0.03 field {
+function { 2 + x } } detail 0.06 } }` at every scene version. The field
+adds `strength * field(x,y,z)` to the local refractive index independently
+of coefficient media and volume lights. Overlapping independent fields add.
+A direct `function` supplies its raw scalar value, including negative values
+and values above one; it is not wrapped through a pigment pattern or colour map.
+Other field patterns use the arithmetic mean of their RGB channels. `strength` is finite
+and signed. `detail` is a finite positive length in scene units and does not
+read `mm_per_unit`; `detail auto` or omitting it selects automatic detail.
+Omitted strength and field are both one. Raw function fields take no pattern
+modifiers; transform the enclosing object instead. An explicit
+`field { pigment { ... } }` keeps pigment-pattern wrapping and colour maps. `field` and `detail`
+are contextual words and remain available as variable names.
+
+Legacy `media { refraction K density { ... } }` retains its compatibility
+behaviour, including pigment-pattern evaluation and media mixing. Its
+`refraction_detail` remains in millimetres. A bare scalar `refraction` in
+`interior` or `finish` remains accepted with its legacy warning. New scenes
+should use the independent block. The codemod migrates supported media forms
+with an explicit pigment wrapper and converts legacy detail to scene units.
+It reports `media-refraction-overlap`: independent fields add across interiors,
+so overlapping legacy media whose implicit ordering replaced refraction need
+manual review; conversion is not a promise of identical pixels. Explicit media
+mix/priority, multiple density products, multiple refractive layers in one
+interior, and unresolved detail-unit settings are refused. See the
+refracting-volumes manual section.
+
 ## Bounds framing
 
 `camera { location <4, 3, -8> look_at Subject }` frames the transformed bounds of

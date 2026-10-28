@@ -1,0 +1,32 @@
+Independent prepared-refraction ray proof
+
+The legacy input uses a refraction-only medium explicitly selecting method3;
+its index field must nevertheless be prepared independently of media sampling.
+The constant control has n=1+.2*.5=1.1. The affine field has n(x)=1.1+.1x.
+A separate method3 medium adds gray absorption .7 in the third arm. This changes
+only optical coefficients, not the authored refraction field. The fourth arm
+uses the equivalent native raw-function refraction block. No source or light
+power is tuned; the coordinate screen is an emissive geometric measurement.
+
+For normal entry at x0 into the slab z0..1, K=n(x0) is the conserved z momentum.
+The exact Fermat solution gives n(z)=K*cosh(k*z/K), k=.1,
+x_exit=x0+K/k*(cosh(k/K)-1), sin(theta_air)=K*sinh(k/K).
+After Snell exit to air, the screen at z2 is at
+x_screen=x_exit+sin(theta_air)/sqrt(1-sin(theta_air)^2).
+Inside arclength is K/k*sinh(k/K). The constant control remains at x0.
+These formulae use n>=1.05, away from index clamps and total internal reflection.
+
+The screen encodes R/G=.5+.2*x. This ratio cancels gray attenuation and tests
+position directly, rather than matching old rendered pixels. Maximum coordinate
+error is predeclared .001 scene unit, including quantization and numerical
+ray integration. Adding absorption must preserve this position within .001.
+The green ratio absorbed/linear must match exp(-.7*inside_arclength) within3%.
+Both affine legacy and native arms must report nonzero curved rays and bending
+steps. No invented runtime-pigment counter is asserted; the backend publication
+and pure prepared-gradient access are separate source/unit invariants.
+
+All four frames are8x8 linear16bitRGB, AAoff, two threads, fixed camera/geometry.
+The native arm uses a raw-function refraction field. Legacy fields stay
+within0..1 to
+avoid the legacy function-pattern modulo convention; signed/out-of-range raw
+native fields have separate scalar/frontend checks.

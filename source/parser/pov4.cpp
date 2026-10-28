@@ -145,7 +145,7 @@ const char* const kWrapKeywords[] = {
     "transform",
 };
 const char* const kUndeclarable[] = {
-    "background", "default", "global_settings", "interior_texture", "photons", "radiosity",
+    "background", "default", "field", "global_settings", "interior_texture", "photons", "radiosity", "refraction",
 };
 
 bool InList(const char* const* list, size_t n, const std::string& word)

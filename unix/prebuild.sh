@@ -662,6 +662,7 @@ check: all
 	rm -f progressive_photon_test
 	+sh "\$(top_srcdir)/tools/bench/check-progressive-surface.sh" "\$(top_builddir)" "\$(top_builddir)/tests/progressive-surface"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-light.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-light"
+	+sh "\$(top_srcdir)/tools/bench/check-prepared-refraction.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-refraction"
 	sh \$(top_srcdir)/tests/render/progressive_surface.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_receivers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -683,6 +684,9 @@ check: all
 	sh \$(top_srcdir)/tests/render/media_solid.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_refraction.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/refraction_detail.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/refraction_frontend.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/refraction_prepared_ray.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/refraction_clear_axis.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_transport.sh \$(top_builddir)/unix/povray \$(top_srcdir)

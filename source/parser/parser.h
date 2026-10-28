@@ -613,6 +613,7 @@ class Parser final
         void Parse_Media (std::vector<Media>&);
         void Parse_Interior_Light(Interior& interior, bool defaultsOnly = false);
         double Parse_Fade_Cutoff();
+        void Parse_Interior_Refraction(Interior& interior);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
         /// Gives the atmosphere the ior of air from version 4.0, of vacuum before it.

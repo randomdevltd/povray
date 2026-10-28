@@ -50,6 +50,8 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['location', 'look_at', 'right', 'up', 'perspective']) assert.ok(blocks.camera.items.includes(w));
     for (const w of ['texture', 'pigment', 'interior', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
     assert.ok(blocks.union.items.includes('sphere'));
+    for (const w of ['strength', 'field', 'detail', 'auto']) assert.ok(blocks.refraction.items.includes(w), `refraction item '${w}'`);
+    for (const w of ['function', 'gradient', 'color_map']) assert.ok(blocks.field.items.includes(w), `field item '${w}'`);
     for (const w of ['agate', 'granite', 'marble', 'wrinkles', 'turbulence']) assert.ok(blocks.pigment.items.includes(w));
     // Contextual keywords, matched by text in the parser, are items too.
     for (const w of ['refraction_detail', 'prepared_media_cells', 'atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])

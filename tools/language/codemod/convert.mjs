@@ -250,7 +250,7 @@ export class Program {
       renames.set(word, name);
     }
     const bindings = (unit) => new Set([...unit.info.globals, ...(unit === sceneUnit ? unit.info.topLocals : [])]);
-    const context = { macros, callersOf, converted: new Set(), mode: this.mode, classicReads, classicCalls, taken, renames, names };
+    const context = { units, macros, callersOf, converted: new Set(), mode: this.mode, classicReads, classicCalls, taken, renames, names };
     const results = [];
     for (const unit of this.mode === 'convert' ? units : [sceneUnit]) {
       const others = new Set(units.filter((u) => u !== unit).flatMap((u) => [...bindings(u)]));
@@ -662,9 +662,101 @@ function convertUnit(unit, context) {
     const mediaItem = new Set(['method', 'intervals', 'samples', 'confidence', 'variance', 'ratio', 'jitter',
       'eccentricity', 'extinction', 'absorption', 'emission', 'scattering', 'refraction', 'refraction_detail',
       'mix', 'priority', 'matrix', 'transform', 'translate', 'rotate', 'scale']);
-    const stopWord = (c) => (word(c) && mediaItem.has(c.text)) || c.type === 'block';
+    const detailItem = (c) => /^refraction_detail\s*\(/.test(c.text);
+    const stopWord = (c) => (word(c) && mediaItem.has(c.text)) || detailItem(c) || c.type === 'block';
     const lamp = entries.find((c) => c.type === 'block' && c.childForFieldName('name')?.text === 'light_source');
-    if (!lamp) return;
+    const moved = new Set();
+    const legacy = entries.find((c) => word(c) && c.text === 'refraction');
+    let bending = '';
+    if (legacy) {
+      remark(legacy, 'media-refraction-overlap', 'independent refraction fields add across interiors; review overlapping legacy media ordering');
+      let interior = node.parent;
+      while (interior && !(interior.type === 'block' && interior.childForFieldName('name')?.text === 'interior')) interior = interior.parent;
+      if (interior && interior.descendantsOfType('block').filter((block) =>
+          block.childForFieldName('name')?.text === 'media' && block.namedChildren.some((child) =>
+            word(child) && child.text === 'refraction')).length > 1)
+        refuse(legacy, 'multiple-media-refraction', 'combine the media refraction fields before conversion');
+      if (entries.some((entry) => entry.type.endsWith('_directive')))
+        refuse(legacy, 'refraction-media-directive', 'resolve directives inside refractive media before conversion');
+      const take = (entry) => {
+        const start = entries.indexOf(entry);
+        let end = start + 1;
+        while (end < entries.length && !stopWord(entries[end])) end++;
+        const values = entries.slice(start + 1, end);
+        for (const item of entries.slice(start, end)) moved.add(item);
+        const value = detailItem(entry) ? render(entry).replace(/^refraction_detail\s*/, '') : values.map(render).join(' ');
+        remove(entry, values.at(-1)?.endIndex ?? entry.endIndex);
+        return value;
+      };
+      const strength = take(legacy);
+      const detail = entries.find((c) => (word(c) && c.text === 'refraction_detail') || detailItem(c));
+      const globalItems = context.units.flatMap((source) => source.tree.rootNode.descendantsOfType('block')
+        .filter((block) => block.childForFieldName('name')?.text === 'global_settings')
+        .map((block) => items(block.namedChildren)));
+      const settings = (name) => globalItems.flatMap((children) => children.flatMap((child, index) =>
+        child.text === name ? [children[index + 1]] : new RegExp(`^${name}\\s*\\(`).test(child.text) ? [child] : []));
+      const dynamicSetting = (value) => {
+        for (let owner = value?.parent; owner; owner = owner.parent)
+          if (owner.type.endsWith('_directive')) return true;
+        return false;
+      };
+      const inheritedDetails = settings('refraction_detail');
+      if (!detail && (inheritedDetails.length > 1 || inheritedDetails.some((value) =>
+          dynamicSetting(value) || !['number', 'identifier'].includes(value?.type) || (value.type === 'identifier' && value.text !== 'auto'))))
+        refuse(legacy, 'refraction-detail-default', 'resolve the global refraction_detail before conversion');
+      const detailValue = detail ? take(detail) : inheritedDetails[0]?.text ?? null;
+      const densities = entries.filter((c) => c.type === 'block' && c.childForFieldName('name')?.text === 'density');
+      if (entries.filter((c) => word(c) && c.text === 'refraction').length > 1)
+        refuse(legacy, 'refraction-repeated-strength', 'resolve repeated refraction strengths before conversion');
+      if (densities.length > 1) refuse(legacy, 'refraction-density-product', 'combine multiple density patterns before conversion');
+      if (entries[0]?.type === 'identifier' && !mediaItem.has(entries[0].text))
+        refuse(legacy, 'refraction-media-identity', 'expand the declared media before conversion');
+      const transforms = [];
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if ((word(entry) && ['matrix', 'transform', 'translate', 'rotate', 'scale'].includes(entry.text)) ||
+            (entry.type === 'block' && entry.childForFieldName('name')?.text === 'transform')) {
+          let end = i + 1;
+          if (entry.type !== 'block') while (end < entries.length && !stopWord(entries[end])) end++;
+          transforms.push({ entry, values: entries.slice(i, end) });
+        }
+        if (word(entry) && ['mix', 'priority'].includes(entry.text))
+          refuse(entry, 'refraction-mixing', 'resolve legacy refraction mixing and priority before conversion');
+      }
+      const fields = densities.map((density) => {
+        const suffix = transforms.filter(({ entry }) => entry.startIndex > density.endIndex)
+          .map(({ values }) => values.map(render).join(' ')).join(' ');
+        const pigment = render(density).replace(/^density\b/, 'pigment');
+        return `field { ${suffix ? pigment.slice(0, -1) + suffix + ' }' : pigment} }`;
+      }).join(' ');
+      let detailUnits = detailValue;
+      if (detailValue !== null && detailValue !== 'auto') {
+        const scales = settings('mm_per_unit');
+        if (scales.length > 1 || scales.some((scale) => scale?.type !== 'number' || dynamicSetting(scale)))
+          refuse(detail ?? legacy, 'refraction-detail-units', 'convert refraction_detail using the scene mm_per_unit value before conversion');
+        const scale = scales[0]?.text ?? '10';
+        detailUnits = `(${detailValue}) / ${scale}`;
+      }
+      if (!entries.some((c) => (word(c) && ['absorption', 'emission'].includes(c.text)) ||
+          (c.type === 'block' && c.childForFieldName('name')?.text === 'scattering'))) {
+        for (const density of densities) { moved.add(density); remove(density); }
+        for (const { entry, values } of transforms) {
+          for (const value of values) moved.add(value);
+          remove(entry, values.at(-1).endIndex);
+        }
+      }
+      bending = `refraction { strength ${strength}${fields ? ` ${fields}` : ''}${detailUnits !== null ? ` detail ${detailUnits}` : ''} }`;
+    }
+    if (!lamp) {
+      if (!bending) return;
+      const rest = entries.filter((c) => !moved.has(c));
+      if (hasAncestor(node, 'default_directive')) {
+        if (rest.length === 0) replace(node, `interior { ${bending} }`);
+        else insert(node.endIndex, ` interior { ${bending} }`);
+      } else if (rest.length === 0) replace(node, bending);
+      else insert(node.endIndex, ` ${bending}`);
+      return;
+    }
     let owner = node.parent;
     while (owner && !(owner.type === 'block' && owner.childForFieldName('name')?.text === 'interior')) owner = owner.parent;
     if (owner && owner.descendantsOfType('block').filter((c) => c.childForFieldName('name')?.text === 'light_source' &&
@@ -711,8 +803,8 @@ function convertUnit(unit, context) {
     const note = dropped ? ` /* dropped${dropped}: a volume falls off by attenuation */` : '';
     remove(lamp);
     // the media keeps its other items; without any, only the light block remains
-    const rest = entries.filter((c) => c !== lamp && !COMMENTS.includes(c.type));
-    const lamp2 = `light {${pigment} ${inner}${note} }`;
+    const rest = entries.filter((c) => c !== lamp && !moved.has(c) && !COMMENTS.includes(c.type));
+    const lamp2 = `light {${pigment} ${inner}${note} }${bending ? ` ${bending}` : ''}`;
     if (hasAncestor(node, 'default_directive'))
     {
       // #default's media keeps giving media values; its light is the interior's, its own block beside it
@@ -844,7 +936,7 @@ function convertUnit(unit, context) {
       case 'message_directive': messageDirective(node); return;
       case 'array_expression': arrayExpression(node); return;
       case 'dictionary_expression': dictionaryExpression(node); return;
-      case 'block': mediaLight(node); inList(node.children); return;
+      case 'block': inList(node.children); mediaLight(node); return;
       case 'bracket_group': inList(node.children); return;
       default: visitChildren(node);
     }

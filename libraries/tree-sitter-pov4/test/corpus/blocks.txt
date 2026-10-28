@@ -240,7 +240,6 @@ object { B scale A > 1 ? 2 : 3 }
       (number)
       (number))))
 
-
 ==================
 Tag expressions, and tagged as a keyword only before a block
 ==================
@@ -362,3 +361,34 @@ camera { location output }
     name: (keyword)
     (keyword)
     (identifier)))
+
+==================
+Independent interior refraction and contextual field names
+==================
+let field = 2;
+sphere { 0, 1 interior { refraction { strength -0.3 field { function { x + field } } detail 0.06 } } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (number))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (keyword)
+        (unary_expression
+          (number))
+        (block
+          (keyword)
+          (function_block
+            (binary_expression
+              (builtin)
+              (identifier))))
+        (identifier)
+        (number)))))

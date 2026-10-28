@@ -93,3 +93,111 @@ test('refuses multiple legacy sources sharing one interior', () => {
   assert.ok(result.refusals.every((r) => r.reason === 'multiple-media-lights'));
   assert.ok(result.refusals.length > 0);
 });
+
+test('moves signed and expression media refraction into independent interior blocks', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, '#version 3.7;\n#declare K = 2;\n' +
+    'sphere { 0,1 interior { media { refraction -K * (1 + 2) density { spherical scale K } refraction_detail (K + 3) } } }\n' +
+    'sphere { 0,1 interior { media { refraction +0.5 } } }\n');
+  const [result] = new Program().convertScene(path);
+  assert.deepEqual(result.refusals, []);
+  assert.match(result.text, /interior \{ refraction \{ strength -K \* \(1 \+ 2\) field \{ pigment \{ spherical scale K \} \} detail \(\(K \+ 3\)\) \/ 10 \} \}/);
+  assert.match(result.text, /refraction \{ strength \+0\.5 \}/);
+  assert.equal(result.notes.filter((note) => note.note === 'media-refraction-overlap').length, 2);
+  assert.doesNotMatch(result.text, /\bmedia\b|refraction_detail|\bdensity\b/);
+});
+
+test('retains coefficient media density and transport alongside refraction and a light', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-light-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, 'sphere { 0,1 interior { media { method 3 samples 12 absorption rgb 0.1 ' +
+    'scattering { 1, rgb 0.2 } emission rgb 0.3 density { spherical } ' +
+    'refraction -0.4 refraction_detail 7 light_source { samples 8 } } } }');
+  const [result] = new Program().convertScene(path);
+  assert.deepEqual(result.refusals, []);
+  assert.match(result.text, /media \{ method 3 samples 12 absorption rgb 0\.1 scattering \{ 1, rgb 0\.2 \} emission rgb 0\.3 density \{ spherical \}/);
+  assert.match(result.text, /light \{ pigment \{ pigment_pattern \{ spherical \}/);
+  assert.match(result.text, /refraction \{ strength -0\.4 field \{ pigment \{ spherical \} \} detail \(7\) \/ 10 \}/);
+  assert.doesNotMatch(result.text, /refraction_detail/);
+});
+
+test('migrates default media refraction and converts moved field expressions', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-default-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, '#declare let = 2;\n#default { media { refraction let density { function { x = y } } } }');
+  const [result] = new Program().convertScene(path);
+  assert.deepEqual(result.refusals, []);
+  assert.match(result.text, /default \{ interior \{ refraction \{ strength let_ field \{ pigment \{ function \{ x == y \} \} \} \} \} \}/);
+});
+
+test('converts legacy detail millimetres with a literal scene scale and preserves auto', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-units-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, 'global_settings { mm_per_unit 25 }\n' +
+    'sphere { 0,1 interior { media { refraction 0.1 refraction_detail 5 } } } ' +
+    'sphere { 0,1 interior { media { refraction 0.2 refraction_detail auto } } }');
+  const [result] = new Program().convertScene(path);
+  assert.deepEqual(result.refusals, []);
+  assert.match(result.text, /strength 0\.1 detail \(5\) \/ 25/);
+  assert.match(result.text, /strength 0\.2 detail auto/);
+});
+
+test('refuses ambiguous scene scaling for legacy refraction detail', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-units-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, '#declare Units = 25; global_settings { mm_per_unit Units }\n' +
+    'sphere { 0,1 interior { media { refraction 0.1 refraction_detail 5 } } }');
+  const [result] = new Program().convertScene(path);
+  assert.equal(result.text, null);
+  assert.deepEqual(result.refusals.map((r) => r.reason), ['refraction-detail-units']);
+});
+
+for (const coefficient of ['absorption rgb 0.1', 'emission rgb 0.2', 'scattering { 1, rgb 0.3 }']) {
+  test(`retains density and transport for ${coefficient.split(' ')[0]} media`, () => {
+    const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-coefficient-'));
+    const path = join(base, 'refraction.pov');
+    writeFileSync(path, `sphere { 0,1 interior { media { samples 16 ${coefficient} refraction 0.1 density { spherical } } } }`);
+    const [result] = new Program().convertScene(path);
+    assert.deepEqual(result.refusals, []);
+    assert.ok(result.text.includes(`media { samples 16 ${coefficient} density { spherical } }`));
+    assert.match(result.text, /refraction \{ strength 0\.1 field \{ pigment \{ spherical \} \} \}/);
+  });
+}
+
+test('inherits global detail and clones only transforms that affect the density', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-inherit-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, 'global_settings { mm_per_unit 20 refraction_detail 6 }\n' +
+    'sphere { 0,1 interior { media { absorption rgb 1 refraction 0.1 scale 2 density { spherical } translate x scale 3 } } }');
+  const [result] = new Program().convertScene(path);
+  assert.deepEqual(result.refusals, []);
+  assert.match(result.text, /media \{ absorption rgb 1 scale 2 density \{ spherical \} translate x scale 3 \}/);
+  assert.match(result.text, /field \{ pigment \{ spherical translate x scale 3 \} \} detail \(6\) \/ 20/);
+});
+
+for (const [contents, reason] of [
+  ['refraction 1 density { spherical } density { bozo }', 'refraction-density-product'],
+  ['KnownMedium refraction 1', 'refraction-media-identity'],
+  ['refraction 1 mix max', 'refraction-mixing'],
+  ['refraction 1 priority 2', 'refraction-mixing'],
+]) {
+  test(`refuses ambiguous legacy media: ${reason}`, () => {
+    const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-refuse-'));
+    const path = join(base, 'refraction.pov');
+    writeFileSync(path, `sphere { 0,1 interior { media { ${contents} } } }`);
+    const [result] = new Program().convertScene(path);
+    assert.equal(result.text, null);
+    assert.ok(result.refusals.some((r) => r.reason === reason));
+  });
+}
+
+test('refuses multiple refractive media sharing one interior', () => {
+  const base = mkdtempSync(join(tmpdir(), 'codemod-refraction-multiple-'));
+  const path = join(base, 'refraction.pov');
+  writeFileSync(path, 'sphere { 0,1 interior { media { refraction 1 } media { refraction 2 } } }');
+  const [result] = new Program().convertScene(path);
+  assert.equal(result.text, null);
+  assert.ok(result.refusals.every((r) => r.reason === 'multiple-media-refraction'));
+  assert.equal(result.refusals.length, 2);
+});

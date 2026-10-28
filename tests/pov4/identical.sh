@@ -3,7 +3,7 @@
 set -e
 POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
-NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media"}
+NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media refraction"}
 render() {
     "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"
@@ -49,6 +49,8 @@ accepts() {
     [ -z "$2" ] || tr -d "\n" < "pov4_$1.log" | grep -q "$2"
     echo "pov4 $1: accepted"
 }
+accepts ok_refraction_components
+fails err_refraction_prop "'refraction' has no item 'strenght'; did you mean 'strength'?"
 accepts ok_vector_builtins
 accepts ok_negate
 accepts ok_string_compare

@@ -5,9 +5,27 @@
 #include "core/coretypes.h"
 #include "core/material/preparedfield.h"
 #include "core/material/preparedlightaxis.h"
+#include "core/material/preparedrefractionaxis.h"
 
 namespace pov
 {
+
+struct PreparedRefractionLayer final
+{
+    PreparedRefractionComponent component;
+    int priority = 0;
+    size_t order = 0;
+    DBL detail = HUGE_VAL;
+    bool varying = false;
+    bool native = false;
+    std::vector<std::shared_ptr<const PreparedGridLayout>> layouts;
+};
+
+class PreparedRefractionDefinition final
+{
+    public:
+        std::vector<PreparedRefractionLayer> layers;
+};
 
 struct PreparedLightComponent final
 {

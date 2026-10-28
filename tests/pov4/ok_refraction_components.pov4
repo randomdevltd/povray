@@ -1,0 +1,6 @@
+global_settings { assumed_gamma 1 atmospheric_ior 1 }
+camera { location <0,0,-4> look_at 0 }
+let field = 2;
+let Field = field { function { x + field } };
+let Bend = refraction { strength -0.01 ...Field detail auto };
+sphere { 0, 1 pigment { rgbt 1 } interior { ior 1 ...Bend } }

@@ -54,9 +54,25 @@
 
 // POV-Ray header files (core module)
 #include "core/render/trace.h"
+#include "core/material/preparedrefractionaxis.h"
 
 namespace pov
 {
+struct PreparedRefractionLayer;
+
+struct RefractionSpec final
+{
+    DBL strength = 1.0;
+    DBL detail = 0.0;
+    PIGMENT *field = nullptr;
+    GenericScalarFunctionPtr rawFunction = nullptr;
+    TRANSFORM *transform = nullptr;
+    bool preparedParallelSafe = false;
+    RefractionSpec() = default;
+    RefractionSpec(const RefractionSpec&);
+    ~RefractionSpec();
+    void Transform(const TRANSFORM *mapping);
+};
 
 //##############################################################################
 ///
@@ -118,19 +134,17 @@ class RefractionField final
         DBL Offset(const Vector3d& point);
         DBL Offset(const Vector3d& point, Vector3d& gradient);
         /// The longest step a curved ray may take through it.
-        DBL MaxStep() const { return maxStep; }
+        DBL MaxStep(const Vector3d& point) const;
         /// Whether a straight line meets the bounds of its varying media, and from what distance.
         bool Ahead(const Vector3d& origin, const Vector3d& direction, DBL& entry) const;
     private:
-        MediaVector medias;
-        MediaModifierVector modifiers;
+        std::unique_ptr<PreparedRefractionAxis> axis, nativeAxis;
+        std::vector<const PreparedRefractionLayer *> layers;
         TraceThreadData *threadData;
-        std::vector<DBL> terms;
         Vector3d low, high;
-        DBL epsilon, maxStep;
+        DBL maxStep;
         bool varies, bounded;
 
-        DBL MeanDensity(Media& medium, const Vector3d& point);
 };
 
 class ExtinctionPlan;

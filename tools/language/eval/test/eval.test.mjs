@@ -48,3 +48,19 @@ test('plans classic and native evaluation of progressive photon controls', () =>
   assert.equal(readFileSync(entry.jobs.C.input, 'utf8'),
     readFileSync(join(import.meta.dirname, '../../codemod/test/fixtures/photons.pov4'), 'utf8'));
 });
+
+test('plans classic and native evaluation of independent refraction fields', () => {
+  const scenes = mkdtempSync(join(tmpdir(), 'lang-refraction-'));
+  writeFileSync(join(scenes, 'refraction.pov'), '#version 3.7;\n' +
+    'global_settings { assumed_gamma 1 mm_per_unit 100 }\n' +
+    'sphere { 0,1 interior { media { refraction -0.03 refraction_detail 6 density { function { 2 + x } } } } }\n');
+  const result = plan({ out: join(scenes, 'result'), scenes, 'run-id': 'refraction', size: '32x24',
+    'classic-id': 'fixture', 'bc-id': 'fixture', 'b-args': '+ML{version}' });
+  const entry = result.scenes[0];
+  assert.equal(entry.converted, true);
+  assert.deepEqual(entry.refusals, []);
+  assert.deepEqual(Object.keys(entry.jobs), ['A', 'B', 'C']);
+  assert.ok(entry.jobs.B.args.includes('+ML3.7'));
+  const output = readFileSync(entry.jobs.C.input, 'utf8');
+  assert.match(output, /refraction \{ strength -0\.03 field \{ pigment \{ function \{ 2 \+ x \} \} \} detail \(6\) \/ 100 \}/);
+});

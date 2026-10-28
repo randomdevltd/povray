@@ -8,7 +8,7 @@
 
 #include "words.h"
 
-enum TokenType { KEYWORD, BUILTIN, COLOUR_OPERATOR, COLOR_OPERATOR, COLOUR_CHANNEL, TAG_KEYWORD };
+enum TokenType { KEYWORD, BUILTIN, COLOUR_OPERATOR, COLOR_OPERATOR, COLOUR_CHANNEL, TAG_KEYWORD, FIELD_KEYWORD };
 
 static int compare(const void *key, const void *entry) { return strcmp((const char *)key, *(const char *const *)entry); }
 
@@ -68,7 +68,7 @@ bool tree_sitter_pov4_external_scanner_scan(void *payload, TSLexer *lexer, const
 {
     (void)payload;
     if (!valid[KEYWORD] && !valid[BUILTIN] && !valid[COLOUR_OPERATOR] && !valid[COLOR_OPERATOR] && !valid[COLOUR_CHANNEL] &&
-        !valid[TAG_KEYWORD])
+        !valid[TAG_KEYWORD] && !valid[FIELD_KEYWORD])
         return false;
     while ((lexer->lookahead == ' ') || (lexer->lookahead == '\t') || (lexer->lookahead == '\n') ||
            (lexer->lookahead == '\r') || (lexer->lookahead == '\f') || (lexer->lookahead == '\v'))
@@ -101,6 +101,13 @@ bool tree_sitter_pov4_external_scanner_scan(void *payload, TSLexer *lexer, const
         lexer->mark_end(lexer);
         skip_space_and_comments(lexer);
         lexer->result_symbol = KEYWORD;
+        return lexer->lookahead == '{';
+    }
+    if (valid[FIELD_KEYWORD] && !strcmp(word, "field"))
+    {
+        lexer->mark_end(lexer);
+        skip_space_and_comments(lexer);
+        lexer->result_symbol = FIELD_KEYWORD;
         return lexer->lookahead == '{';
     }
     if (valid[BUILTIN] && call && CONTAINS(word, BUILTINS))

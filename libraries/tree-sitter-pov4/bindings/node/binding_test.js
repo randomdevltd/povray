@@ -23,3 +23,12 @@ test("parses contextual photon quality expressions without reserving the name", 
   }
   assert.equal(parser.parse("fn quality(Q) { Q } let Q = quality(1);").rootNode.hasError, false);
 });
+
+
+test("parses independent refraction without reserving contextual field and detail names", () => {
+  const parser = new Parser();
+  parser.setLanguage(require("."));
+  const tree = parser.parse(`let field = 2; let detail = 0.06;
+    interior { refraction { strength -0.3 field /* pattern */ { function { x + field } } detail detail } }`);
+  assert.equal(tree.rootNode.hasError, false);
+});

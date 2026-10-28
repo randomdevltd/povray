@@ -2774,6 +2774,15 @@
                   },
                   "named": true,
                   "value": "keyword"
+                },
+                {
+                  "type": "ALIAS",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "field_keyword"
+                  },
+                  "named": true,
+                  "value": "keyword"
                 }
               ]
             }
@@ -3391,6 +3400,10 @@
     {
       "type": "SYMBOL",
       "name": "tag_keyword"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "field_keyword"
     }
   ],
   "inline": [],

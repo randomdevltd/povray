@@ -38,6 +38,13 @@ NOTE: This release cycle has been redesignated v3.8.0. There will not be a
 v3.7.1 release proper.
 
 Changed Behaviour
+
+- Add independent interior refraction { strength K field { ... } detail D }
+  in classic SDL and .pov4 at every scene version. Direct field functions use
+  raw signed scalars without pigment wrapping; detail uses scene units.
+  field and detail are contextual words and remain free as identifiers.
+  Legacy media refraction and bare scalar interior/finish forms retain their
+  compatibility behaviour and warnings.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow

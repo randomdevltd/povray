@@ -526,15 +526,16 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
     TrueRayObjectCondition postcond;
     const double angle = sceneData->refractionAngle * M_PI / 180.0;
     // The step cap follows the straight-line distance to the next surface, found again each time the ray passes it.
-    double maxStep, reprobe, travelled = 0.0;
+    double maxStep, surfaceCap, reprobe, travelled = 0.0;
     auto probe = [&]() {
         isect = Intersection();
         const bool hit = FindIntersection(isect, chord, precond, postcond);
-        maxStep = hit ? std::min(field.MaxStep(), std::max(isect.Depth, field.MaxStep() * 1.0e-3) / 16.0) : field.MaxStep();
+        const double fieldStep = field.MaxStep(chord.Origin);
+        surfaceCap = hit ? std::max(isect.Depth, fieldStep * 1.0e-3) / 16.0 : HUGE_VAL;
+        maxStep = std::min(fieldStep, surfaceCap);
         reprobe = travelled + (hit ? isect.Depth : HUGE_VAL);
     };
     probe();
-    const double minStep = field.MaxStep() * 1.0e-9;
     auto bend = [&](const Vector3d& point, const Vector3d& direction, double& index) -> Vector3d
     {
         Vector3d gradient;
@@ -560,6 +561,8 @@ int Trace::MarchCurvedRay(Ray& chord, RefractionField& field, double base, Inter
             path.push_back(CurvedStep{ point, direction, found ? isect.Depth : HUGE_VAL, index });
             return found ? 1 : 0;
         }
+        maxStep = std::min(surfaceCap, field.MaxStep(point));
+        const double minStep = maxStep * 1.0e-9;
         const double curvature = curve.length();
         if (curvature > 0.0)
             step = std::min(step, angle / curvature);
