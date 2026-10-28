@@ -55,6 +55,7 @@
 #include "base/timer.h"
 
 #include "core/lighting/emitter.h"
+#include "core/lighting/emitteraabb.h"
 #include "core/material/preparedtransfer.h"
 #include "core/material/physicalphase.h"
 #include "core/material/interiorfield.h"
@@ -1659,22 +1660,12 @@ class VolumeEmitter final : public Emitter
                     sample.weight.Clear();
                 return true;
             }
-            double cap = 2.0;
-            if (d > radius)
-            {
-                const double q = Sqr(radius / d);
-                cap = q / (1.0 + std::sqrt(max(0.0, 1.0 - q)));
-            }
-            const double solid = 2.0 * M_PI * cap;
+            const EmitterAabbProposal angular(from, low, size);
             vector<std::pair<double, double>> pieces;
             double length, depth;
             if (s < chordShare)
             {
-                const double h = (s / chordShare) * cap, cosTheta = 1.0 - h;
-                const double sinTheta = std::sqrt(max(0.0, h * (2.0 - h))), phi = 2.0 * M_PI * t;
-                const Vector3d w = (d > 0.0) ? toCentre / d : Vector3d(0.0, 0.0, 1.0);
-                const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
-                const Vector3d dir = (u * (sinTheta * std::cos(phi)) + cross(w, u) * (sinTheta * std::sin(phi)) + w * cosTheta).normalized();
+                const Vector3d dir = angular.Sample(s / chordShare, t);
                 length = Chord(from, dir, d + radius, td, pieces);
                 sample.position = centre;
                 sample.pdf = 0.0;
@@ -1717,7 +1708,8 @@ class VolumeEmitter final : public Emitter
             for (const auto& piece : pieces)
                 inChord = inChord || ((depth >= piece.first) && (depth <= piece.second));
             const double r2 = depth * depth;
-            const double chordPdf = (inChord && (length > 0.0)) ? 1.0 / (solid * length * r2) : 0.0;
+            const double angularPdf = angular.Pdf((sample.position - from) / depth);
+            const double chordPdf = (inChord && (length > 0.0)) ? angularPdf / (length * r2) : 0.0;
             sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * PositionPdf(sample.position);
             sample.weight = EmissionAt(sample.position, td) / (r2 * sample.pdf);
             return true;
