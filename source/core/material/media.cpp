@@ -1831,6 +1831,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         return value;
     };
     std::shared_ptr<const PreparedColourField> field;
+    vector<DBL> nodalMasses;
     std::atomic<bool> positiveField(false);
     if (solid)
     {
@@ -1841,6 +1842,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
     else
     {
         vector<MathColour> values(count);
+        nodalMasses.resize(count);
         const size_t workers = settings.preparedParallelSafe ?
             std::max<size_t>(1, std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads)) : 1;
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
@@ -1858,6 +1860,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
                                                             (z + 0.5) * layout->size[Z] / layout->counts[Z]);
                     const MathColour value = colourAt(p, sampleThread);
                     values[(z * layout->counts[Y] + y) * layout->counts[X] + x] = value;
+                    nodalMasses[(z * layout->counts[Y] + y) * layout->counts[X] + x] = value.Weight();
                     if (value.Weight() > 0.0)
                         positiveField.store(true, std::memory_order_relaxed);
                 }
@@ -1932,7 +1935,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
                     masses[(z * layout->counts[Y] + y) * layout->counts[X] + x] = field->Sample(p).Weight();
             }
     }
-    emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses));
+    emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses), std::move(nodalMasses));
 }
 
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData*, std::string&)
