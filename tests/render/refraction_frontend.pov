@@ -1,7 +1,6 @@
 #version Version;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Units) #declare Units = 1; #end
-#declare strength = 3;
 #declare field = 4;
 #declare detail = 5;
 global_settings { assumed_gamma 1 mm_per_unit Units atmospheric_ior 1 }
