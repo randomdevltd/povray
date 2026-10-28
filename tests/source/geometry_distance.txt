@@ -46,7 +46,7 @@ off-axis misses, shallow positive chords, tangency, and rays starting inside.
 Its discriminant uses the perpendicular distance from the sphere center to the
 normalized ray, avoiding subtraction of two squared astronomical distances.
 
-Remaining limitation: the Sturm polynomial solver still brackets positive roots
-with MAX_DISTANCE. Removing primitive acceptance limits does not expand that
-solver's search. A separate change must derive a finite coefficient or geometry
-bound; an infinite root-search endpoint is unsuitable for its evaluations.
+The Sturm solver uses a finite coefficient-derived search bound. Its production
+CPU controls and numerical-range limitations are documented in
+polynomial_distance.txt; finite geometry acceptance does not remove numerical
+conditioning limits in polynomial root construction.
