@@ -40,6 +40,12 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Declared method 4 transport uses prepared evaluation in camera, shadow
+    and photon paths. Mixed media retain each declared density representation
+    without switching prepared fields to a legacy integrator. Constant fields
+    use analytic transfer, including unbounded support; volume-light sampling
+    has a separate path budget even when the media evaluator is legacy.
+
   - Prepared density fields are published after final geometry resolution.
     Safe functions can finish in parallel; geometry-dependent functions are
     prepared against the finalized scene. Ray-dependent fields fail before

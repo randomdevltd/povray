@@ -203,6 +203,10 @@ class MediaFunction : public Trace::MediaFunctor
                                          bool all_constant_and_light_ray);
         void ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                        const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening = 1.0);
+        void ComputeMediaConstantSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& intervals,
+                                          const Ray& ray, bool use_scattering, bool prepared);
+        void CollectLegacyLightIntervals(MediaVector& medias, LightSourceEntryVector& lights, const MediaIntervalVector& intervals,
+                                          const Ray& ray);
         void ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                           const Ray& ray, const Media *IMedia, DBL aa_threshold, int minsamples, bool ignore_photons, bool use_scattering);
         void ComputeMediaColour(MediaIntervalVector& mediaintervals, MathColour& colour, ColourChannel& transm);
@@ -212,6 +216,8 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaPointTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
                                             const ExtinctionPlan *plan, bool method3, int points);
         DBL PreparedResolution(MediaVector& medias, const Ray& ray, DBL end);
+        bool PreparedRequired(const MediaVector& medias, const Ray& ray) const;
+        bool ConstantMediaCoefficients(const MediaVector& medias, const Ray& ray) const;
         bool PrepareFields(MediaVector& medias, const Ray& ray);
         DBL PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL coarsening = 1.0);
         /// Coarsens the prepared resolution uniformly until the march fits the step budget; coarsening 1 when it already fits.
@@ -236,6 +242,7 @@ class MediaFunction : public Trace::MediaFunctor
         bool ComputeCylinderLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
         void ComputeMediaCoefficients(MediaVector& medias, const Ray& ray, const Vector3d& point, bool prepared,
                                       MathColour& emission, MathColour& extinction, MathColour& scattering);
+        void DensityForDeclaredMode(Media& medium, const Vector3d& point, MathColour& density);
         void ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
                                         const MediaInterval& interval, const Ray& ray, DBL depth, const Vector3d& point,
                                         const MathColour& scattering, MathColour& emission, bool prepared, bool use_scattering,

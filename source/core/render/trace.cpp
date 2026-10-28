@@ -451,13 +451,16 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         ray.GetTicket().maxFoundTraceLevel = (unsigned int) max(ray.GetTicket().maxFoundTraceLevel, ray.GetTicket().traceLevel);
     }
 
+    Intersection atmosphereSegment(bestisect);
+    atmosphereSegment.unbounded = !found;
+
     if(qualityFlags.media && (ray.IsPhotonRay() == true) && (ray.IsHollowRay() == true))
     {
         // Note: this version of ComputeMedia does not deposit photons. This is
         // intentional.  Even though we're processing a photon ray, we don't want
         // to deposit photons in the infinite atmosphere, only in contained
         // media, which is processed later (in ComputeLightedTexture).  [nk]
-        media.ComputeMedia(sceneData->atmosphere, ray, bestisect, colour, transm);
+        media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
 
         if (sceneData->fog != nullptr)
             ComputeFog(ray, bestisect, colour, transm);
@@ -475,7 +478,7 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         if ((sceneData->rainbow != nullptr) && (ray.IsShadowTestRay() == false))
             ComputeRainbow(ray, bestisect, colour, transm);
 
-        media.ComputeMedia(sceneData->atmosphere, ray, bestisect, colour, transm);
+        media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
 
         if (sceneData->fog != nullptr)
             ComputeFog(ray, bestisect, colour, transm);

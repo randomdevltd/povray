@@ -624,6 +624,7 @@ CONFIG_CLEAN_FILES =
 # This is meant to run before 'make install'.
 check: all
 	+sh "\$(top_srcdir)/tools/bench/check-sphere-intersection.sh" "\$(top_builddir)" "\$(top_builddir)/tests/sphere-intersection"
+	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-prepared-transfer.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-transfer"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -690,6 +691,8 @@ check: all
 	sh \$(top_srcdir)/tests/render/volume_joint_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_joint_roles.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_prepared_publication.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_mixed_prepared.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_prepared_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_scattering.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/split_union_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/fade_cutoff.sh \$(top_builddir)/unix/povray \$(top_srcdir)

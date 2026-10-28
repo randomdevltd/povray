@@ -55,6 +55,8 @@
 #include "base/timer.h"
 
 #include "core/lighting/emitter.h"
+#include "core/material/preparedtransfer.h"
+#include "core/math/finite.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
@@ -119,6 +121,8 @@ static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reas
         container ? "" : " (unavailable)", tail);
 }
 
+static bool ConstantDensity(const Media& medium);
+
 class Media::FastCache final
 {
     public:
@@ -129,6 +133,7 @@ class Media::FastCache final
         DBL coarseStep = 0.0, coarseCells = 0.0;
         bool fieldReady = false;
         bool constantDensity = false;
+        MathColour constantValue = MathColour(1.0);
         bool published = false;
         bool signedValues = false;
         unsigned failureReason = kFastField;
@@ -153,13 +158,10 @@ class Media::FastCache final
         struct LightGrid final
         {
             size_t index = 0;
-            std::once_flag once;
             std::shared_ptr<const Optical> grid;
         };
         static constexpr int kLightGrids = 4;
-        /// taken only to claim a slot; readers find a published slot without it
-        std::mutex lightMutex;
-        std::atomic<int> lightCount{0};
+        int lightCount = 0;
         LightGrid lights[kLightGrids];
 
         /// a grid the eager threads finished before the render; the first EnsureField takes it instead of building one
@@ -177,11 +179,12 @@ class Media::FastCache final
         bool DensityAt(const Vector3d& point, MathColour& result) const;
         bool Contains(const Vector3d& point) const;
         bool CameraDensityAt(const Vector3d& point, MathColour& result) const;
+        void PrepareOptical(Media& media, const LightSource& light, TraceThreadData *td, const std::function<void()>& cooperate);
         bool OpticalDepth(Media& media, const LightSource& light, const Vector3d& a, const Vector3d& b,
                           MathColour& result, TraceThreadData *ttd);
     private:
         bool TakePrepared();
-        std::shared_ptr<const Optical> BuildOptical(const Media& media, const LightSource& light, TraceThreadData *ttd) const;
+        std::shared_ptr<const Optical> BuildOptical(const Media& media, const LightSource& light, TraceThreadData *ttd, const std::function<void()>& cooperate) const;
 };
 
 class Media::EagerField final
@@ -202,7 +205,7 @@ class Media::EagerField final
 
 std::shared_ptr<Media::EagerField> Media::PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const
 {
-    if (!fastCache || (Sample_Method != 4) || Density.empty() || fastCache->prepared || (fastCache->container == nullptr))
+    if (!fastCache || (Sample_Method != 4) || fastCache->constantDensity || fastCache->prepared || (fastCache->container == nullptr))
         return nullptr;
     std::shared_ptr<EagerField> field(new EagerField(fastCache, copy, cellLimit));
     field->grid.coarseStep = fastCache->coarseStep;
@@ -382,11 +385,15 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         cooperate();
     if (constantDensity)
     {
+        Evaluate_Density_Pigment(media.Density, Vector3d(0.0), constantValue, td);
         fieldReady = true;
+        for (int ch = 0; ch < MathColour::channels; ch++)
+            fieldReady = fieldReady && IsFiniteNumber(constantValue[ch]) &&
+                ((media.Sample_Method != 4 || media.OnlyRefracts()) || constantValue[ch] >= 0.0);
         if ((media.Sample_Method == 4) && !media.OnlyRefracts())
             for (int ch = 0; ch < MathColour::channels; ch++)
-                fieldReady = fieldReady && std::isfinite(media.Extinction[ch]) && (media.Extinction[ch] >= 0.0) &&
-                             std::isfinite(media.Emission[ch]) && std::isfinite(media.Scattering[ch]);
+                fieldReady = fieldReady && IsFiniteNumber(media.Extinction[ch]) && (media.Extinction[ch] >= 0.0) &&
+                             IsFiniteNumber(media.Emission[ch]) && IsFiniteNumber(media.Scattering[ch]);
         if (!fieldReady)
             throw POV_EXCEPTION_STRING("Requested method 4 has invalid constant coefficients.");
         if (cooperate)
@@ -403,7 +410,7 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     Make_min_max_from_BBox(lo, hi, container->BBox);
     const Vector3d extent = hi - lo;
     for (int axis = 0; axis < 3; axis++)
-        if (!std::isfinite(lo[axis]) || !std::isfinite(extent[axis]) || !(extent[axis] > 0.0) ||
+        if (!IsFiniteNumber(lo[axis]) || !IsFiniteNumber(extent[axis]) || !(extent[axis] > 0.0) ||
             !(extent[axis] < BOUND_HUGE * 0.5))
             throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
     if (prepared)
@@ -445,7 +452,7 @@ bool Media::FastCache::SizeGrid(const Media& media, const Vector3d& lo, const Ve
     signedValues = (media.Sample_Method != 4) || media.OnlyRefracts();
     if (!signedValues)
         for (int ch = 0; ch < MathColour::channels; ch++)
-            if (!std::isfinite(media.Extinction[ch]) || (media.Extinction[ch] < 0.0))
+            if (!IsFiniteNumber(media.Extinction[ch]) || (media.Extinction[ch] < 0.0))
                 return false;
     for (const PIGMENT *pigment : media.Density)
         if ((pigment->Type != PLAIN_PATTERN) &&
@@ -454,7 +461,7 @@ bool Media::FastCache::SizeGrid(const Media& media, const Vector3d& lo, const Ve
             return false;
     low = lo;
     size = hi - lo;
-    if (!std::isfinite(size[X]) || !std::isfinite(size[Y]) || !std::isfinite(size[Z]) ||
+    if (!IsFiniteNumber(size[X]) || !IsFiniteNumber(size[Y]) || !IsFiniteNumber(size[Z]) ||
         (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
         return false;
     // The grid is coarsened to the widest step that fits, never dropped to classic sampling; the parse-time fit
@@ -502,7 +509,7 @@ bool Media::FastCache::FillSlab(Media& media, int z, TraceThreadData *td, const 
                         MathColour sample;
                         Evaluate_Density_Pigment(media.Density, point, sample, td);
                         for (int ch = 0; ch < MathColour::channels; ch++)
-                            if (!std::isfinite(sample[ch]) || (!signedValues && (sample[ch] < 0.0)))
+                            if (!IsFiniteNumber(sample[ch]) || (!signedValues && (sample[ch] < 0.0)))
                                 return false;
                         value += sample;
 
@@ -521,7 +528,7 @@ bool Media::FastCache::DensityAt(const Vector3d& point, MathColour& result) cons
         return false;
     if (constantDensity)
     {
-        result = MathColour(1.0);
+        result = constantValue;
         return fieldReady;
     }
     int base[3];
@@ -561,7 +568,7 @@ bool Media::FastCache::CameraDensityAt(const Vector3d& point, MathColour& result
         throw POV_EXCEPTION_STRING("Prepared field was queried before successful publication.");
     if (constantDensity)
     {
-        result = MathColour(1.0);
+        result = constantValue;
         return true;
     }
     if (!DensityAt(point, result))
@@ -594,7 +601,7 @@ bool Media::FastCache::Optical::Depth(const Vector3d& point, MathColour& result)
 }
 
 std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(const Media& media,
-                                                     const LightSource& light, TraceThreadData *ttd) const
+                                                     const LightSource& light, TraceThreadData *ttd, const std::function<void()>& cooperate) const
 {
     if (!light.Parallel || light.Area_Light || (light.Light_Type == CYLINDER_SOURCE) ||
         !light.Media_Attenuation || !light.Media_Interaction || (light.portal != nullptr))
@@ -649,7 +656,7 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
     grid->prefix.resize(size_t(grid->n[0]) * grid->n[1] * (grid->n[2] + 1));
     // Columns along the light are independent, so rows of them are shared out like the density grid's slabs.
     const size_t cells = size_t(grid->n[0]) * grid->n[1] * grid->n[2];
-    const size_t workers = (cells >= 4096) ? std::min<size_t>(grid->n[1], ttd->GetSceneData()->workThreads) : 1;
+    const size_t workers = (cells >= 4096) ? std::max<size_t>(1, std::min<size_t>(grid->n[1], ttd->GetSceneData()->workThreads)) : 1;
     std::vector<std::unique_ptr<TraceThreadData>> helpers;
     for (size_t i = 1; i < workers; ++i)
         helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(ttd->GetSceneData()), i, false));
@@ -658,6 +665,9 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
         TraceThreadData *td = (worker == 0) ? ttd : helpers[worker - 1].get();
         const int y = int(row);
         for (int x = 0; x < grid->n[0]; x++)
+        {
+            if ((workers == 1) && cooperate)
+                cooperate();
             for (int z = 0; z < grid->n[2]; z++)
             {
                 const Vector3d point = grid->u * (grid->lo[0] + (x + 0.5) * grid->ds[0]) +
@@ -669,43 +679,37 @@ std::shared_ptr<const Media::FastCache::Optical> Media::FastCache::BuildOptical(
                 grid->prefix[grid->Index(x, y, z + 1)] = grid->prefix[grid->Index(x, y, z)] +
                                                           value * media.Extinction * grid->ds[2];
             }
-    });
+        }
+    }, cooperate);
+    for (const auto& helper : helpers)
+        ttd->Stats() += helper->Stats();
     return grid;
 }
 
-bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, const Vector3d& a,
-                                    const Vector3d& b, MathColour& result, TraceThreadData *ttd)
+void Media::FastCache::PrepareOptical(Media& media, const LightSource& light, TraceThreadData *td, const std::function<void()>& cooperate)
 {
-    if (!light.Parallel || light.Area_Light || (light.Light_Type == CYLINDER_SOURCE) ||
-        !light.Media_Attenuation || !light.Media_Interaction || (light.portal != nullptr) ||
-        !ttd->GetSceneData()->portalMouths.empty())
-        return false;
-    if (!EnsureField(media, ttd))
-        return false;
-    LightGrid *slot = nullptr;
-    const int known = lightCount.load(std::memory_order_acquire);
-    for (int i = 0; (i < known) && !slot; i++)
+    if (constantDensity || !light.Parallel || light.Area_Light || (light.Light_Type == CYLINDER_SOURCE) ||
+        !light.Media_Attenuation || !light.Media_Interaction || light.portal ||
+        !td->GetSceneData()->portalMouths.empty())
+        return;
+    for (int i = 0; i < lightCount; i++)
         if (lights[i].index == light.index)
-            slot = &lights[i];
-    if (!slot)
-    {
-        std::lock_guard<std::mutex> guard(lightMutex);
-        const int count = lightCount.load(std::memory_order_relaxed);
-        for (int i = known; (i < count) && !slot; i++)
-            if (lights[i].index == light.index)
-                slot = &lights[i];
-        if (!slot)
-        {
-            if (count >= kLightGrids)
-                return false;
-            slot = &lights[count];
-            slot->index = light.index;
-            lightCount.store(count + 1, std::memory_order_release);
-        }
-    }
-    // Each light is built once outside the claim lock, so other lights' readers and builders never wait on it.
-    std::call_once(slot->once, [&] { slot->grid = BuildOptical(media, light, ttd); });
-    const Optical *grid = slot->grid.get();
+            return;
+    if (lightCount >= kLightGrids)
+        return;
+    LightGrid& slot = lights[lightCount++];
+    slot.index = light.index;
+    slot.grid = BuildOptical(media, light, td, cooperate);
+}
+
+bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, const Vector3d& a,
+                                    const Vector3d& b, MathColour& result, TraceThreadData *td)
+{
+    EnsureField(media, td);
+    const Optical *grid = nullptr;
+    for (int i = 0; i < lightCount; i++)
+        if (lights[i].index == light.index)
+            grid = lights[i].grid.get();
     MathColour first, last;
     if (!grid || !grid->Depth(a, first) || !grid->Depth(b, last))
         return false;
@@ -852,7 +856,7 @@ static DBL AutomaticResolution(ObjectPtr object)
     Make_min_max_from_BBox(low, high, object->BBox);
     const Vector3d size = high - low;
     const DBL volume = size[X] * size[Y] * size[Z];
-    if (!std::isfinite(volume) || (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
+    if (!IsFiniteNumber(volume) || (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
         return 0.0;
     return std::max(std::max(size[X], std::max(size[Y], size[Z])) / 128.0, std::cbrt(volume / 500000.0));
 }
@@ -882,7 +886,7 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
         if ((refractionDetail > 0.0) && (Refraction != 0.0) && (FastResolution > 0.0))
             FastResolution = min(FastResolution, 0.5 * refractionDetail);
     }
-    if ((FastResolution <= 0.0) || !std::isfinite(FastResolution))
+    if ((FastResolution <= 0.0) || !IsFiniteNumber(FastResolution))
         return;
     for (const auto& binding : preparedBindings)
         if (binding->container == object)
@@ -898,10 +902,10 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
         // exceed the cell limit becomes the widest step that fits, reported when the field is first built.
         DBL needed = 0.0;
         const DBL requested = FastResolution;
-        if (!Density.empty() && (cellLimit > 0.0))
+        if (!ConstantDensity(*this) && (cellLimit > 0.0))
             FastResolution = FitGridStep(ContainerSize(object), FastResolution, cellLimit, needed);
         fastCache.reset(new FastCache(object, FastResolution));
-        if (Density.empty())
+        if (ConstantDensity(*this))
         {
             fastCache->constantDensity = true;
             Vector3d high;
@@ -909,11 +913,11 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
             fastCache->size = high - fastCache->low;
             bool ready = true;
             for (int axis = 0; axis < 3; axis++)
-                ready = ready && std::isfinite(fastCache->low[axis]) && std::isfinite(fastCache->size[axis]) &&
+                ready = ready && IsFiniteNumber(fastCache->low[axis]) && IsFiniteNumber(fastCache->size[axis]) &&
                         (fastCache->size[axis] > 0.0) && (fastCache->size[axis] < BOUND_HUGE * 0.5);
             for (int ch = 0; ch < MathColour::channels; ch++)
-                ready = ready && std::isfinite(Extinction[ch]) && (Extinction[ch] >= 0.0) &&
-                        std::isfinite(Emission[ch]) && std::isfinite(Scattering[ch]);
+                ready = ready && IsFiniteNumber(Extinction[ch]) && (Extinction[ch] >= 0.0) &&
+                        IsFiniteNumber(Emission[ch]) && IsFiniteNumber(Scattering[ch]);
             fastCache->fieldReady = ready;
             fastCache->failure = "The constant medium has no finite usable layout or has invalid coefficients.";
         }
@@ -949,12 +953,27 @@ void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const st
     else if (!fastCache)
     {
         fastCache.reset(new FastCache(nullptr, FastResolution));
-        fastCache->constantDensity = Density.empty();
+        fastCache->constantDensity = ConstantDensity(*this);
         preparedBindings.push_back(fastCache);
     }
     if (!fastCache || (fastCache->container != owner))
         throw POV_EXCEPTION_STRING("Prepared spatial field has no valid placement binding.");
     fastCache->Finalize(*this, td, cooperate);
+    if (Sample_Method == 4)
+    {
+        for (const LightSource *light : td->GetSceneData()->lightSources)
+        {
+            if (cooperate)
+                cooperate();
+            fastCache->PrepareOptical(*this, *light, td, cooperate);
+        }
+        for (const LightSource *light : td->GetSceneData()->lightGroupLightSources)
+        {
+            if (cooperate)
+                cooperate();
+            fastCache->PrepareOptical(*this, *light, td, cooperate);
+        }
+    }
 }
 
 void Media::RequirePreparedField() const
@@ -968,11 +987,12 @@ void Media::RequirePreparedField() const
 void Media::PreparedDensityAt(const Vector3d& point, MathColour& result) const
 {
     RequirePreparedField();
-    if (Density.empty())
-    {
-        result = MathColour(1.0);
-        return;
-    }
+    for (const auto& binding : preparedBindings)
+        if (binding->published && binding->fieldReady && binding->constantDensity)
+        {
+            result = binding->constantValue;
+            return;
+        }
     const FastCache *chosen = nullptr;
     for (const auto& binding : preparedBindings)
         if (binding->published && binding->fieldReady && binding->Contains(point) &&
@@ -1052,13 +1072,73 @@ Media::FastCache *Media::SinglePreparedBinding() const
     return result;
 }
 
+static void ValidateNativePreparedPhotonSources(ObjectPtr owner, TraceThreadData *td)
+{
+    const auto scene = td->GetSceneData();
+    if (!scene->photonSettings.photonsEnabled || scene->photonSettings.Progressive() || scene->photonSettings.maxMediaSteps <= 0)
+        return;
+    bool prepared = false, scattering = false;
+    for (const Media& medium : owner->interior->media)
+    {
+        prepared = prepared || (medium.Sample_Method == 4 &&
+            (medium.use_extinction || medium.use_scattering || medium.use_emission));
+        scattering = scattering || (medium.use_scattering && !medium.ignore_photons);
+    }
+    if (!scattering)
+        return;
+    Vector3d lo, hi;
+    Make_min_max_from_BBox(lo, hi, owner->BBox);
+    auto validate = [&](const LightSource *light) {
+        if (light->Parallel || !light->Media_Interaction || (!prepared && !light->emitter))
+            return;
+        if (Test_Flag(light, PH_RFL_OFF_FLAG) && Test_Flag(light, PH_RFR_OFF_FLAG))
+            return;
+        bool overlaps = false;
+        if (light->emitter)
+        {
+            const Vector3d centre = light->emitter->Centre();
+            DBL distance2 = 0.0;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                const DBL delta = std::max(lo[axis] - centre[axis], std::max(0.0, centre[axis] - hi[axis]));
+                distance2 += delta * delta;
+            }
+            overlaps = distance2 <= Sqr(light->emitter->Radius());
+        }
+        else
+            overlaps = Inside_Object(light->Center, owner, td);
+        if (overlaps)
+        {
+            if (light->emitter)
+                throw POV_EXCEPTION_STRING("Native photon method 1 requires certified source-origin bounds disjoint from prepared scattering media; use photon method 2.");
+            throw POV_EXCEPTION_STRING("Native photon method 1 requires source-origin support outside prepared scattering media; use photon method 2.");
+        }
+    };
+    for (const LightSource *light : scene->lightSources)
+        validate(light);
+    for (const LightSource *light : scene->lightGroupLightSources)
+        validate(light);
+}
+
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate)
 {
     if (owner == nullptr || owner->interior == nullptr)
         return;
+    ValidateNativePreparedPhotonSources(owner, td);
     for (Media& medium : owner->interior->media)
         medium.FinalizePreparedField(owner, td, cooperate, (medium.Refraction != 0.0) ||
             (td->GetSceneData()->mediaRefraction && (medium.mix == kMediaBlendMultiply)));
+    if (Test_Flag(owner, INFINITE_FLAG))
+    {
+        bool prepared = false, varyingLegacy = false;
+        for (const Media& medium : owner->interior->media)
+        {
+            prepared = prepared || medium.Sample_Method == 4;
+            varyingLegacy = varyingLegacy || (medium.Sample_Method != 4 && !ConstantDensity(medium));
+        }
+        if (prepared && varyingLegacy)
+            throw POV_EXCEPTION_STRING("Prepared mixtures with varying legacy coefficients require an explicit finite region.");
+    }
 }
 
 void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate)
@@ -1066,6 +1146,29 @@ void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& c
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
     for (Media& medium : scene->atmosphere)
         medium.FinalizePreparedField(nullptr, td, cooperate, medium.Refraction != 0.0);
+    bool prepared = false, varying = false;
+    MathColour extinction, emission;
+    for (Media& medium : scene->atmosphere)
+    {
+        prepared = prepared || medium.Sample_Method == 4;
+        varying = varying || !ConstantDensity(medium);
+        MathColour density;
+        if (ConstantDensity(medium))
+        {
+            if (medium.Sample_Method == 4)
+                medium.PreparedDensityAt(Vector3d(0.0), density);
+            else
+                Evaluate_Density_Pigment(medium.Density, Vector3d(0.0), density, td);
+            extinction += density * medium.Extinction;
+            emission += density * medium.Emission;
+        }
+    }
+    if (prepared && varying)
+        throw POV_EXCEPTION_STRING("Prepared atmospheric mixtures require constant coefficients or an explicit finite region.");
+    if (prepared)
+        for (int ch = 0; ch < MathColour::channels; ch++)
+            if (extinction[ch] == 0.0 && emission[ch] != 0.0)
+                throw POV_EXCEPTION_STRING("Unbounded prepared emission without extinction has a divergent integral.");
 }
 
 void Media::PostProcess()
@@ -1165,7 +1268,7 @@ class VolumeEmitter final : public Emitter
             TransColour colour;
             Compute_Pigment(colour, lightPigment, p, nullptr, nullptr, td);
             const MathColour j = coefficient * colour.colour();
-            if (!std::isfinite(j.Weight()) || (j.Min() < 0.0))
+            if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
                 throw POV_EXCEPTION_STRING("Interior light's pigment is negative or not finite.");
             return j;
         }
@@ -1382,7 +1485,7 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
     Make_min_max_from_BBox(emitter->low, high, container->BBox);
     emitter->size = high - emitter->low;
     emitter->boxVolume = emitter->size[X] * emitter->size[Y] * emitter->size[Z];
-    if (!(emitter->boxVolume > 0.0) || !std::isfinite(emitter->boxVolume))
+    if (!(emitter->boxVolume > 0.0) || !IsFiniteNumber(emitter->boxVolume))
     {
         failure = "its container has no finite volume bounds";
         return nullptr;
@@ -1461,7 +1564,7 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
         const Vector3d q((i % emitter->nx + 0.5) / emitter->nx, ((i / emitter->nx) % emitter->ny + 0.5) / emitter->ny,
                          (i / (size_t(emitter->nx) * emitter->ny) + 0.5) / emitter->nz);
         const MathColour j = emitter->EmissionAt(emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]), td);
-        if (!std::isfinite(j.Weight()) || (j.Min() < 0.0))
+        if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
         {
             failure = "its brightness or pigment is negative or not finite";
             return nullptr;
@@ -1487,7 +1590,7 @@ std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, Obj
                                      (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
                     const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
                     const MathColour j = emitter->EmissionAt(p, td);
-                    if (!std::isfinite(j.Weight()) || (j.Min() < 0.0))
+                    if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
                     {
                         failure = "its pigment is negative or not finite";
                         return nullptr;
@@ -1660,7 +1763,7 @@ RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThread
             varies = true;
             const Vector3d size = interior->boundsHigh - interior->boundsLow;
             const DBL extent = std::max(size[X], std::max(size[Y], size[Z]));
-            const bool finite = std::isfinite(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5);
+            const bool finite = IsFiniteNumber(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5);
             if (finite)
             {
                 low = min(low, interior->boundsLow);
@@ -1782,6 +1885,13 @@ bool RefractionField::Ahead(const Vector3d& origin, const Vector3d& direction, D
     return true;
 }
 
+static bool MediaAffectsTransport(const Media& medium, const Ray& ray)
+{
+    const bool appearance = !ray.IsShadowTestRay() && !ray.IsRadiosityRay() && !ray.IsPhotonRay();
+    return medium.use_extinction || (!ray.IsShadowTestRay() && medium.use_scattering) ||
+           (appearance && medium.use_emission);
+}
+
 static bool ModifierAffectsTransport(const Media& medium, bool emission, bool scattering)
 {
     return (medium.mix == kMediaBlendMultiply) || medium.use_extinction ||
@@ -1799,17 +1909,29 @@ DBL MediaFunction::ModifierResolution(const Ray& ray, DBL from, DBL to) const
     DBL resolution = HUGE_VAL;
     if (modifiers)
         for (const MediaModifier& modifier : *modifiers)
-            if (!modifier.medium->Density.empty() && ModifierAffectsTransport(*modifier.medium, ray))
+            if ((modifier.medium->Sample_Method == 4) && !modifier.medium->Density.empty() && ModifierAffectsTransport(*modifier.medium, ray))
                 resolution = std::min(resolution, modifier.medium->PreparedStep(ray, from, to));
     return resolution;
 }
 
-void MediaFunction::ModifierDensity(Media& medium, const Vector3d& point, ModifierSource, MathColour& local)
+void MediaFunction::DensityForDeclaredMode(Media& medium, const Vector3d& point, MathColour& density)
 {
     if (medium.Sample_Method == 4)
-        medium.PreparedDensityAt(point, local);
+    {
+        threadData->Stats()[Media_Prepared4_Queries]++;
+        medium.PreparedDensityAt(point, density);
+    }
     else
-        Evaluate_Density_Pigment(medium.Density, point, local, threadData);
+    {
+        if (medium.Sample_Method == 3)
+            threadData->Stats()[Media_Legacy3_Queries]++;
+        Evaluate_Density_Pigment(medium.Density, point, density, threadData);
+    }
+}
+
+void MediaFunction::ModifierDensity(Media& medium, const Vector3d& point, ModifierSource, MathColour& local)
+{
+    DensityForDeclaredMode(medium, point, local);
 }
 
 void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
@@ -1870,6 +1992,9 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         Ray ray;
         TraceTicket ticket;
         DBL offset;
+        MediaModifierVector modifiers;
+        bool allLights = false, infinite = false;
+        int ordinarySamples = 1;
         Domain(const MediaVector& m, const LightSourceEntryVector& l, const Ray& r, DBL at) :
             medias(m), lights(l), ray(r), ticket(r.GetTicket()), offset(at) {}
     };
@@ -1879,6 +2004,9 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         DBL at, width;
         MathColour scattering, transfer;
         size_t mark = 0;
+        bool continuous = false, dynamic = false;
+        DBL start = 0.0, end = 0.0;
+        MathColour extinction;
     };
 
     MediaFunction& owner;
@@ -1912,10 +2040,17 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
 
     bool Affected(const Cell& cell, const LightSource *light) const
     {
-        const auto& lights = domains[cell.domain].lights;
+        const Domain& domain = domains[cell.domain];
+        if (!light->emitter && !domain.allLights)
+            return false;
+        const auto& lights = domain.lights;
         for (size_t i = cell.firstLight; i <= cell.lastLight && i < lights.size(); i++)
-            if ((lights[i].light == light) && (cell.at >= lights[i].s0) && (cell.at <= lights[i].s1))
-                return true;
+            if (lights[i].light == light)
+            {
+                if (cell.continuous ? (cell.end > lights[i].s0 && cell.start < lights[i].s1) :
+                                      (cell.at >= lights[i].s0 && cell.at <= lights[i].s1))
+                    return true;
+            }
         return false;
     }
 
@@ -1926,7 +2061,8 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         for (const Domain& domain : domains)
             bytes += sizeof(MediaVector::VectorType) + domain.medias.capacity() * sizeof(Media *) +
                      sizeof(LightSourceEntryVector::VectorType) + domain.lights.capacity() * sizeof(LightSourceEntry) +
-                     sizeof(RayInteriorVector::VectorType) + domain.ray.GetInteriors().capacity() * sizeof(Interior *);
+                     sizeof(RayInteriorVector::VectorType) + domain.ray.GetInteriors().capacity() * sizeof(Interior *) +
+                     domain.modifiers.capacity() * sizeof(MediaModifier);
         return bytes;
     }
 
@@ -1962,56 +2098,67 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         vector<LightSource *> sources;
         for (const Domain& domain : domains)
             for (const LightSourceEntry& entry : domain.lights)
-                if (entry.light->emitter && std::find(sources.begin(), sources.end(), entry.light) == sources.end())
+                if ((entry.light->emitter || domain.allLights) && std::find(sources.begin(), sources.end(), entry.light) == sources.end())
                     sources.push_back(entry.light);
         vector<size_t> selected;
-        vector<DBL> cdf, mass;
+        vector<DBL> cdf, mass, base;
         for (size_t source = 0; source < sources.size(); source++)
         {
             LightSource& light = *sources[source];
             selected.clear();
             cdf.clear();
             mass.clear();
+            base.clear();
             DBL total = 0.0, totalMass = 0.0;
             bool resolved = true;
             for (size_t i : order)
                 if (Affected(cells[i], &light))
                 {
-                    total += cells[i].width;
+                    const Cell& cell = cells[i];
+                    const Domain& domain = domains[cell.domain];
+                    const DBL scale = std::max(1.0e-12, (light.Center - domain.ray.Origin).length());
+                    const DBL support = cell.continuous && domain.infinite ? PreparedDistanceMass(cell.start, cell.end, scale) : cell.width;
+                    total += support;
+                    base.push_back(support);
                     selected.push_back(i);
                     DBL weight = 0.0;
                     for (int ch = 0; ch < MathColour::channels; ch++)
                     {
-                        const DBL value = std::abs(DBL(cells[i].scattering[ch]) *
-                            cells[i].transfer[ch] * suffix[cells[i].mark][ch]);
-                        resolved = resolved && std::isfinite(value);
+                        const DBL value = (cells[i].scattering[ch] == 0.0 || suffix[cells[i].mark][ch] == 0.0) ? 0.0 :
+                            std::abs(DBL(cells[i].scattering[ch]) * cells[i].transfer[ch] * suffix[cells[i].mark][ch]);
+                        resolved = resolved && IsFiniteNumber(value);
                         weight = std::max(weight, value);
                     }
                     mass.push_back(weight);
                     totalMass += weight;
                 }
-            if (!std::isfinite(total))
+            if (!IsFiniteNumber(total))
                 throw POV_EXCEPTION_STRING("Prepared-media scattering path length is not finite.");
             if (!(total > 0.0))
                 continue;
-            resolved = resolved && (totalMass > 0.0) && std::isfinite(totalMass);
+            resolved = resolved && (totalMass > 0.0) && IsFiniteNumber(totalMass);
             DBL cumulative = 0.0;
             for (size_t i = 0; i < selected.size(); i++)
             {
-                const DBL uniform = cells[selected[i]].width / total;
+                const DBL uniform = base[i] / total;
                 cumulative += resolved ? 0.5 * uniform + 0.5 * mass[i] / totalMass : uniform;
                 cdf.push_back(cumulative);
             }
-            if (!(cumulative > 0.0) || !std::isfinite(cumulative))
+            if (!(cumulative > 0.0) || !IsFiniteNumber(cumulative))
                 throw POV_EXCEPTION_STRING("Prepared-media scattering proposal cannot be normalized.");
             for (DBL& value : cdf)
                 value /= cumulative;
             cdf.back() = 1.0;
-            const int count = std::max(1, light.Area_Size1);
+            int count = light.emitter ? std::max(1, light.Area_Size1) : 1;
+            if (!light.emitter)
+                for (size_t index : selected)
+                    count = std::max(count, domains[cells[index].domain].ordinarySamples);
+            if (!light.emitter && light.Area_Light)
+                count *= kMediaAreaLightPoints;
             const std::uint64_t sourceKey = DeriveKey(key, kDrawAreaLight, light.index);
             const PhotonSobol sequence(sourceKey);
             const size_t scratch = suffix.capacity() * sizeof(MathColour) + sources.capacity() * sizeof(LightSource *) +
-                (order.capacity() + selected.capacity()) * sizeof(size_t) + (cdf.capacity() + mass.capacity()) * sizeof(DBL);
+                (order.capacity() + selected.capacity()) * sizeof(size_t) + (cdf.capacity() + mass.capacity() + base.capacity()) * sizeof(DBL);
             auto& peak = owner.threadData->Stats()[Media_Scatter_Peak_Bytes];
             peak = std::max(static_cast<POV_ULONG>(peak), static_cast<POV_ULONG>(liveBytes + scratch));
             for (int j = 0; j < count; j++)
@@ -2022,6 +2169,55 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 const DBL probability = cdf[picked] - (picked ? cdf[picked - 1] : 0.0);
                 const Cell& cell = cells[selected[picked]];
                 Domain& domain = domains[cell.domain];
+                DBL at = cell.at;
+                DBL distancePdf = 1.0;
+                MathColour transfer = cell.transfer;
+                if (cell.continuous)
+                {
+                    const DBL within = std::min(std::nextafter(1.0, 0.0), std::max(0.0,
+                        (distance - (picked ? cdf[picked - 1] : 0.0)) / probability));
+                    const DBL scale = std::max(1.0e-12, (light.Center - domain.ray.Origin).length());
+                    DBL channelMass[MathColour::channels], channelTotal = 0.0;
+                    bool importance = true;
+                    for (int ch = 0; ch < MathColour::channels; ch++)
+                    {
+                        channelMass[ch] = cell.scattering[ch] == 0.0 || suffix[cell.mark][ch] == 0.0 ? 0.0 :
+                            std::abs(DBL(cell.scattering[ch]) * cell.transfer[ch] * suffix[cell.mark][ch]);
+                        importance = importance && IsFiniteNumber(channelMass[ch]);
+                        channelTotal += channelMass[ch];
+                    }
+                    importance = importance && IsFiniteNumber(channelTotal) && channelTotal > 0.0;
+                    PreparedDistanceSample position;
+                    if (!importance || within < 0.5)
+                        position = SamplePreparedDistance(cell.start, cell.end, importance ? 2.0 * within : within, scale);
+                    else
+                    {
+                        DBL choose = std::min(std::nextafter(channelTotal, 0.0), (2.0 * within - 1.0) * channelTotal);
+                        int channel = 0;
+                        while (channel + 1 < MathColour::channels && choose >= channelMass[channel])
+                        {
+                            choose -= channelMass[channel];
+                            channel++;
+                        }
+                        while (channelMass[channel] == 0.0 && channel > 0)
+                            channel--;
+                        const DBL u = std::min(std::nextafter(1.0, 0.0), choose / channelMass[channel]);
+                        position = SamplePreparedExponentialDistance(cell.start, cell.end, u, cell.extinction[channel]);
+                    }
+                    at = position.distance;
+                    distancePdf = IsFiniteNumber(cell.end) ? 1.0 / (cell.end - cell.start) :
+                        (scale + cell.start) / (scale + at) / (scale + at);
+                    if (importance)
+                    {
+                        distancePdf *= 0.5;
+                        for (int ch = 0; ch < MathColour::channels; ch++)
+                            if (channelMass[ch] > 0.0)
+                                distancePdf += 0.5 * channelMass[ch] / channelTotal *
+                                    PreparedExponentialDistancePdf(cell.start, cell.end, at, cell.extinction[ch]);
+                    }
+                    for (int ch = 0; ch < MathColour::channels; ch++)
+                        transfer[ch] = std::exp(-DBL(cell.extinction[ch]) * at) / distancePdf;
+                }
                 struct TicketScope final
                 {
                     TraceTicket& ticket;
@@ -2044,13 +2240,43 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                                        sequence(j, 2), sequence(j, 3), sequence(j, 4));
                 MathColour incoming;
                 DBL depth;
-                if (!owner.trace->SampleEmitterConnection(light, shadow.Evaluate(cell.at), shadow, depth, incoming, draw))
+                const Vector3d point = shadow.Evaluate(at);
+                MathColour scattering = cell.scattering;
+                if (cell.dynamic)
+                {
+                    ModifierScope modifierScope(owner, domain.modifiers.empty() ? nullptr : &domain.modifiers);
+                    MathColour emission, extinction;
+                    owner.ComputeMediaCoefficients(domain.medias, domain.ray, point, false, emission, extinction, scattering);
+                    Ray camera(domain.ray);
+                    camera.SetFlags(Ray::OtherRay, true, false);
+                    Intersection prefix;
+                    prefix.Depth = at;
+                    prefix.Object = nullptr;
+                    MathColour transmitted(1.0);
+                    ColourChannel unused = 0.0;
+                    owner.ComputeMedia(domain.medias, domain.modifiers.empty() ? nullptr : &domain.modifiers,
+                                       camera, prefix, transmitted, unused);
+                    transfer = transmitted / distancePdf;
+                }
+                if (scattering.IsZero())
                     continue;
+                if (light.emitter)
+                {
+                    if (!owner.trace->SampleEmitterConnection(light, point, shadow, depth, incoming, draw))
+                        continue;
+                }
+                else
+                {
+                    const Vector2d area(sequence(j, 1), sequence(j, 2));
+                    owner.threadData->Stats()[Media_Ordinary_Light_Draws]++;
+                    if (owner.trace->TestShadow(light, depth, shadow, point, incoming, &area))
+                        continue;
+                }
                 MathColour local;
                 // Source weights already contain j/(r² p); compensate the complete independent cell proposal.
-                owner.ComputeMediaScatteringAttenuation(domain.medias, local, cell.scattering,
-                    incoming / (4.0 * M_PI * count * probability), domain.ray, shadow);
-                colour += local * cell.transfer * suffix[cell.mark];
+                owner.ComputeMediaScatteringAttenuation(domain.medias, local, scattering,
+                    incoming / ((light.emitter ? 4.0 * M_PI : 1.0) * count * probability), domain.ray, shadow);
+                colour += local * transfer * suffix[cell.mark];
             }
         }
     }
@@ -2141,7 +2367,14 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const Ray& ray, Intersecti
 void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector *mods, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm)
 {
     ModifierScope scope(*this, mods);
-    ReceiverScope receiverScope(*this, isect.Object != nullptr ? isect.Object : pathReceiver);
+    Intersection endpoint(isect);
+    if (endpoint.unbounded && (PreparedRequired(medias, ray) ||
+        (ConstantMediaCoefficients(medias, ray) && !threadData->GetSceneData()->mediaLights.empty())))
+        endpoint.Depth = std::numeric_limits<DBL>::infinity();
+    ReceiverScope receiverScope(*this, endpoint.Object != nullptr ? endpoint.Object : pathReceiver);
+    std::unique_ptr<Trace::MediaFunctor::Path> localPath;
+    if (!currentPath && !ray.IsShadowTestRay() && !ray.IsPhotonRay())
+        localPath = BeginPath(ray);
     FixedLightPath *path = (!ray.IsShadowTestRay() && !ray.IsPhotonRay() && currentPath && currentPath->collecting) ? currentPath : nullptr;
     const size_t firstPathCell = path ? path->cells.size() : 0;
     LightSourceEntryVector lights;
@@ -2152,6 +2385,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     bool ignore_photons = true;
     bool use_extinction = false;
     bool use_scattering = false;
+    bool use_emission = false;
     int minSamples;
     DBL aa_threshold = HUGE_VAL;
 
@@ -2176,6 +2410,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
 
         // use scattering if at leeast one media wants scattering
         use_scattering = use_scattering || (*i)->use_scattering;
+        use_emission = use_emission || (*i)->use_emission;
 
         // NK fast light_ray media calculation for constant media
         for (vector<PIGMENT*>::iterator ii = (*i)->Density.begin(); ii != (*i)->Density.end(); ++ ii)
@@ -2183,6 +2418,8 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     }
 
     all_constant_and_light_ray = all_constant_and_light_ray && (modifiers == nullptr);
+    if (!use_extinction && !use_scattering && !use_emission)
+        return;
 
     if ((ray.IsRadiosityRay() || ray.IsPhotonRay()) && !use_extinction && !use_scattering)
         return;
@@ -2193,24 +2430,32 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
 
     // Prepare the Monte Carlo integration along the ray from P0 to P1.
     if(!ray.IsShadowTestRay())
-        ComputeMediaLightInterval(lights, litintervals, ray, isect);
+        ComputeMediaLightInterval(lights, litintervals, ray, endpoint);
 
     if(litintervals.empty())
-        litintervals.push_back(LitInterval(false, 0.0, isect.Depth, 0, 0));
+        litintervals.push_back(LitInterval(false, 0.0, endpoint.Depth, 0, 0));
 
-    const DBL requestedResolution = PreparedResolution(medias, ray, isect.Depth);
-    DBL preparedFrom = 0.0, preparedTo = isect.Depth;
+    const bool preparedPolicy = PreparedRequired(medias, ray);
+    const bool constantCoefficients = ConstantMediaCoefficients(medias, ray);
+    bool volumeLighting = false;
+    for (const LightSourceEntry& entry : lights)
+        volumeLighting = volumeLighting || (entry.light->emitter != nullptr);
+    const bool analytic = constantCoefficients && (preparedPolicy || (path && volumeLighting));
+    const DBL requestedResolution = PreparedResolution(medias, ray, endpoint.Depth);
+    DBL preparedFrom = 0.0, preparedTo = endpoint.Depth;
     DBL preparedCoarsening = 1.0;
-    if (requestedResolution > 0.0)
+    if ((requestedResolution > 0.0) && !analytic)
     {
         PreparedRange(medias, ray, preparedFrom, preparedTo);
         CoarsenPreparedResolution(medias, ray, preparedFrom, preparedTo, requestedResolution, preparedCoarsening);
     }
     const DBL preparedResolution = requestedResolution * preparedCoarsening;
-    const bool fieldsPrepared = preparedResolution > 0.0 && PrepareFields(medias, ray);
+    const bool fieldsPrepared = PreparedRequired(medias, ray);
+    if (fieldsPrepared)
+        PrepareFields(medias, ray);
     if (fieldsPrepared && preparedTo <= preparedFrom)
         return;
-    const bool fastCamera = fieldsPrepared && !ray.IsShadowTestRay() && !ray.IsPhotonRay();
+    const bool fastCamera = fieldsPrepared && !ray.IsShadowTestRay();
     const bool fastShadow = fieldsPrepared && ray.IsShadowTestRay();
     if (!ray.IsShadowTestRay() && !ray.IsPhotonRay())
     {
@@ -2223,7 +2468,17 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     }
 
     // Set up sampling intervals (makes sure we will always have enough intervals)
-    ComputeMediaSampleInterval(litintervals, mediaintervals, IMedia, fastCamera || fastShadow);
+    if (analytic)
+    {
+        for (const LitInterval& interval : litintervals)
+            if (interval.s1 > interval.s0)
+                mediaintervals.push_back(MediaInterval(interval.lit, 0, interval.s0, interval.s1,
+                                                       interval.ds, interval.l0, interval.l1));
+    }
+    else
+        ComputeMediaSampleInterval(litintervals, mediaintervals, IMedia, fastCamera || fastShadow);
+    if (mediaintervals.empty())
+        return;
 
     if(mediaintervals.front().s0 > 0.0)
         mediaintervals.insert(mediaintervals.begin(),
@@ -2232,11 +2487,11 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
                               mediaintervals.front().s0,
                               mediaintervals.front().s0,
                               0, 0));
-    if(mediaintervals.back().s1 < isect.Depth)
+    if(mediaintervals.back().s1 < endpoint.Depth)
         mediaintervals.push_back(MediaInterval(false, 0,
                                  mediaintervals.back().s1,
-                                 isect.Depth,
-                                 isect.Depth - mediaintervals.back().s1,
+                                 endpoint.Depth,
+                                 endpoint.Depth - mediaintervals.back().s1,
                                  0, 0));
 
     if (fieldsPrepared)
@@ -2264,7 +2519,9 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     }
 
     // Sample all intervals.
-    if(ray.IsShadowTestRay() && !all_constant_and_light_ray)
+    if (analytic)
+        ComputeMediaConstantSampling(medias, lights, mediaintervals, ray, use_scattering, fieldsPrepared);
+    else if(ray.IsShadowTestRay() && !all_constant_and_light_ray)
     {
         bool fast = fieldsPrepared && (ray.GetMediaLight() != nullptr) && (modifiers == nullptr);
         if (fast)
@@ -2284,7 +2541,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
                     else
                     {
                         DBL from = interval.s0, to = interval.s1;
-                        Media::FastCache *binding = medium->SinglePreparedBinding();
+                        Media::FastCache *binding = medium->Sample_Method == 4 ? medium->SinglePreparedBinding() : nullptr;
                         if (!binding)
                         {
                             fast = false;
@@ -2313,11 +2570,13 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     else if(fastCamera)
         ComputeMediaFixedSampling(medias, lights, mediaintervals, ray, preparedResolution / 3.0,
                                   ignore_photons, use_scattering, preparedCoarsening);
-    else if((IMedia->Sample_Method == 3 || IMedia->Sample_Method == 4) && !all_constant_and_light_ray) // adaptive sampling and method 4 fallback
+    else if((IMedia->Sample_Method == 3) && !all_constant_and_light_ray) // explicitly selected legacy adaptive sampling
         ComputeMediaAdaptiveSampling(medias, lights, mediaintervals, ray, IMedia, aa_threshold, minSamples, ignore_photons, use_scattering);
     else
         ComputeMediaRegularSampling(medias, lights, mediaintervals, ray, IMedia, minSamples, ignore_photons, use_scattering, all_constant_and_light_ray);
 
+    if (!fieldsPrepared && !analytic && path && use_scattering)
+        CollectLegacyLightIntervals(medias, lights, mediaintervals, ray);
     ComputeMediaColour(mediaintervals, colour, transm);
     if (path)
     {
@@ -2330,6 +2589,8 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     lightSampleIndex = savedIndex;
     lightSampleShift = savedShift;
     drawKey = savedKey;
+    if (localPath)
+        localPath->Finish(colour);
 }
 
 // Most density pigments, and media, a ray plans once; beyond them each batch of points classifies its own.
@@ -2347,6 +2608,7 @@ class ExtinctionPlan final
         size_t ends[kMaxDensityPlans];
         const MathColour *extinction[kMaxDensityPlans];
         size_t medias;
+        size_t legacyThree = 0;
 };
 
 bool ExtinctionPlan::Plan(MediaVector& list, TraceThreadData *threadData)
@@ -2355,6 +2617,14 @@ bool ExtinctionPlan::Plan(MediaVector& list, TraceThreadData *threadData)
     medias = 0;
     for(MediaVector::iterator i(list.begin()); i != list.end(); i++)
     {
+        if (!(*i)->use_extinction)
+            continue;
+        if ((*i)->Sample_Method == 4)
+        {
+            threadData->Stats()[Media_Forbidden4_Procedural]++;
+            throw POV_EXCEPTION_STRING("Prepared media cannot enter a legacy density plan.");
+        }
+        legacyThree += (*i)->Sample_Method == 3 ? 1 : 0;
         if((medias == kMaxDensityPlans) || (n + (*i)->Density.size() > kMaxDensityPlans))
             return false;
         for(vector<PIGMENT*>::iterator d = (*i)->Density.begin(); d != (*i)->Density.end(); ++d)
@@ -2367,6 +2637,7 @@ bool ExtinctionPlan::Plan(MediaVector& list, TraceThreadData *threadData)
 
 void ExtinctionPlan::Evaluate(const Vector3d *points, MathColour *result, size_t n, TraceThreadData *threadData) const
 {
+    threadData->Stats()[Media_Legacy3_Queries] += legacyThree * n;
     MathColour density[kDensityBatch];
 
     for(size_t j = 0; j < n; j++)
@@ -2432,7 +2703,20 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Extinction
         std::vector<MathColour> densities(medias.size() * n);
         for(size_t m = 0; m < medias.size(); m++)
         {
-            Evaluate_Density_Pigment(medias[m]->Density, points, density, n, threadData);
+            if (!medias[m]->use_extinction)
+                for (size_t j = 0; j < n; j++)
+                    density[j].Clear();
+            else
+            {
+                if (medias[m]->Sample_Method == 4)
+                {
+                    threadData->Stats()[Media_Forbidden4_Procedural]++;
+                    throw POV_EXCEPTION_STRING("Prepared media cannot use procedural extinction batching.");
+                }
+                if (medias[m]->Sample_Method == 3)
+                    threadData->Stats()[Media_Legacy3_Queries] += n;
+                Evaluate_Density_Pigment(medias[m]->Density, points, density, n, threadData);
+            }
             for(size_t j = 0; j < n; j++)
                 densities[j * medias.size() + m] = density[j];
         }
@@ -2442,6 +2726,15 @@ void MediaFunction::ComputeMediaExtinction(MediaVector& medias, const Extinction
     }
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
+        if (!(*i)->use_extinction)
+            continue;
+        if ((*i)->Sample_Method == 4)
+        {
+            threadData->Stats()[Media_Forbidden4_Procedural]++;
+            throw POV_EXCEPTION_STRING("Prepared media cannot use procedural extinction batching.");
+        }
+        if ((*i)->Sample_Method == 3)
+            threadData->Stats()[Media_Legacy3_Queries] += n;
         Evaluate_Density_Pigment((*i)->Density, points, density, n, threadData);
         for(size_t j = 0; j < n; j++)
             extinction[j] += density[j] * (*i)->Extinction;
@@ -2454,7 +2747,7 @@ static bool BelowMediaOpacity(const MediaIntervalVector& intervals, int points, 
     if(rounding >= 0.01)
         return false;
     for(int ch = 0; ch < MathColour::channels; ch++)
-        if(!(hi[ch] >= 0.0) || !std::isfinite(hi[ch]))
+        if(!(hi[ch] >= 0.0) || !IsFiniteNumber(hi[ch]))
             return false;
     const DBL sumUpper = DBL(hi.Max()) * (2.0 * points) / (1.0 - rounding);
     if(sumUpper >= std::numeric_limits<ColourChannel>::max())
@@ -2462,64 +2755,58 @@ static bool BelowMediaOpacity(const MediaIntervalVector& intervals, int points, 
     DBL length = 0.0;
     for(const auto& interval : intervals)
     {
-        if(!(interval.ds >= 0.0) || !std::isfinite(interval.ds))
+        if(!(interval.ds >= 0.0) || !IsFiniteNumber(interval.ds))
             return false;
         length += interval.ds;
     }
     const DBL upper = (DBL(hi.Min()) + 1e-6 * DBL(hi.Max())) * length / (1.0 - rounding);
     roundingError = rounding * DBL(hi.Max()) * length / (1.0 - rounding);
-    return std::isfinite(upper) && (upper < log(1024.0)) && (roundingError < budget);
+    return IsFiniteNumber(upper) && (upper < log(1024.0)) && (roundingError < budget);
+}
+
+bool MediaFunction::ConstantMediaCoefficients(const MediaVector& medias, const Ray& ray) const
+{
+    for (const Media *medium : medias)
+        if (MediaAffectsTransport(*medium, ray) && !ConstantDensity(*medium))
+            return false;
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if (ModifierAffectsTransport(*modifier.medium, ray) && !ConstantDensity(*modifier.medium))
+                return false;
+    return true;
+}
+
+bool MediaFunction::PreparedRequired(const MediaVector& medias, const Ray& ray) const
+{
+    for (const Media *medium : medias)
+        if ((medium->Sample_Method == 4) && MediaAffectsTransport(*medium, ray))
+            return true;
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if ((modifier.medium->Sample_Method == 4) && ModifierAffectsTransport(*modifier.medium, ray))
+                return true;
+    return false;
 }
 
 DBL MediaFunction::PreparedResolution(MediaVector& medias, const Ray& ray, DBL end)
 {
+    if (!PreparedRequired(medias, ray))
+        return 0.0;
     DBL resolution = HUGE_VAL;
-    Media *requested = nullptr;
-    bool mixed = false;
-    auto request = [&](Media& medium) {
-        if (medium.Sample_Method == 4)
-            requested = &medium;
-        else if (!medium.Density.empty())
-            mixed = true;
-    };
-    for (Media *medium : medias)
-        if (!ray.IsShadowTestRay() || medium->use_extinction)
-            request(*medium);
-    if (modifiers)
-        for (const MediaModifier& modifier : *modifiers)
-            if (ModifierAffectsTransport(*modifier.medium, ray))
-                request(*modifier.medium);
-    if (!requested)
-        return 0.0;
-    if (ray.IsPhotonRay() && !threadData->GetSceneData()->photonSettings.Progressive())
-    {
-        WarnFastMedia(threadData, *requested, kFastPhoton, "Photon propagation uses classic media sampling.");
-        return 0.0;
-    }
-    if (mixed)
-    {
-        WarnFastMedia(threadData, *requested, kFastMixed,
-                      "A varying classic medium overlaps method 4. Select method 4 on all overlapping varying media.",
-                      requested->fastCache ? requested->fastCache->container : nullptr);
-        return 0.0;
-    }
-    bool ready = true;
     auto layout = [&](Media& medium) {
-        if (medium.Density.empty() && (medium.Sample_Method != 4))
+        if (medium.Sample_Method != 4)
             return;
         medium.RequirePreparedField();
-        const DBL step = medium.PreparedStep(ray, 0.0, end);
-        if (step > 0.0)
-            resolution = std::min(resolution, step);
+        resolution = std::min(resolution, medium.PreparedStep(ray, 0.0, end));
     };
     for (Media *medium : medias)
-        if (!ray.IsShadowTestRay() || medium->use_extinction)
+        if (MediaAffectsTransport(*medium, ray))
             layout(*medium);
     if (modifiers)
         for (const MediaModifier& modifier : *modifiers)
             if (ModifierAffectsTransport(*modifier.medium, ray))
                 layout(*modifier.medium);
-    return ready && (resolution < HUGE_VAL) ? resolution : 0.0;
+    return resolution;
 }
 
 void MediaFunction::PreparedRange(MediaVector& medias, const Ray& ray, DBL& from, DBL& to)
@@ -2527,9 +2814,9 @@ void MediaFunction::PreparedRange(MediaVector& medias, const Ray& ray, DBL& from
     DBL first = to, last = from;
     for (Media* medium : medias)
     {
-        if (ray.IsShadowTestRay() && !medium->use_extinction)
+        if (!MediaAffectsTransport(*medium, ray))
             continue;
-        if (medium->Density.empty())
+        if (medium->Density.empty() || (medium->Sample_Method != 4))
             return;
         DBL entry = from, exit = to;
         if (medium->PreparedRange(ray, entry, exit))
@@ -2548,18 +2835,28 @@ DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, 
     DBL count = 2.0 * medias.size() + 1.0;
     for (Media* medium : medias)
     {
-        if (ray.IsShadowTestRay() && !medium->use_extinction)
+        if (!MediaAffectsTransport(*medium, ray))
             continue;
         if (medium->Density.empty())
         {
             if (!ray.IsShadowTestRay() && (medium->use_scattering || medium->use_emission))
-                return ceil((to - from) * divisor / resolution);
+                count += ceil((to - from) * divisor / resolution);
+            continue;
+        }
+        if (medium->Sample_Method != 4)
+        {
+            count += ceil(std::max(1, medium->Min_Samples) / coarsening);
             continue;
         }
         DBL entry = from, exit = to;
         if (medium->PreparedRange(ray, entry, exit))
             count += ceil((exit - entry) * divisor / (medium->PreparedStep(ray, entry, exit) * coarsening));
     }
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if ((modifier.medium->Sample_Method != 4) && !modifier.medium->Density.empty() &&
+                ModifierAffectsTransport(*modifier.medium, ray))
+                count += ceil(std::max(1, modifier.medium->Min_Samples) / coarsening);
     const DBL modifierResolution = ModifierResolution(ray, from, to);
     if (modifierResolution < HUGE_VAL)
         count += ceil((to - from) * divisor / (modifierResolution * coarsening));
@@ -2598,7 +2895,7 @@ void MediaFunction::SplitPreparedIntervals(MediaVector& medias, const Ray& ray, 
         vector<DBL> cuts{interval.s0, interval.s1};
         for (Media* medium : medias)
         {
-            if (medium->Density.empty() || (ray.IsShadowTestRay() && !medium->use_extinction))
+            if (medium->Density.empty() || (medium->Sample_Method != 4) || !MediaAffectsTransport(*medium, ray))
                 continue;
             medium->PreparedCuts(ray, interval.s0, interval.s1, cuts);
         }
@@ -2615,7 +2912,7 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
     DBL step = interval.ds;
     for (Media* medium : medias)
     {
-        if (ray.IsShadowTestRay() && !medium->use_extinction)
+        if (!MediaAffectsTransport(*medium, ray))
             continue;
         if (medium->Density.empty())
         {
@@ -2623,9 +2920,15 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
                 step = std::min(step, fallback);
             continue;
         }
-        const DBL fieldStep = medium->PreparedStep(ray, interval.s0, interval.s1);
+        const DBL fieldStep = medium->Sample_Method == 4 ? medium->PreparedStep(ray, interval.s0, interval.s1) :
+                             interval.ds / std::max(1, medium->Min_Samples);
         step = std::min(step, fieldStep * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
     }
+    if (modifiers)
+        for (const MediaModifier& modifier : *modifiers)
+            if ((modifier.medium->Sample_Method != 4) && !modifier.medium->Density.empty() &&
+                ModifierAffectsTransport(*modifier.medium, ray))
+                step = std::min(step, interval.ds * coarsening / std::max(1, modifier.medium->Min_Samples));
     const DBL modifierResolution = ModifierResolution(ray, interval.s0, interval.s1);
     if (modifierResolution < HUGE_VAL)
         step = std::min(step, modifierResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
@@ -2636,11 +2939,11 @@ bool MediaFunction::PrepareFields(MediaVector& medias, const Ray& ray)
 {
     bool ready = true;
     for (Media* medium : medias)
-        if (!medium->Density.empty() && (!ray.IsShadowTestRay() || medium->use_extinction))
+        if ((medium->Sample_Method == 4) && (!ray.IsShadowTestRay() || medium->use_extinction))
             medium->RequirePreparedField();
     if (modifiers)
         for (const MediaModifier& modifier : *modifiers)
-            if (!modifier.medium->Density.empty() && ModifierAffectsTransport(*modifier.medium, ray))
+            if ((modifier.medium->Sample_Method == 4) && ModifierAffectsTransport(*modifier.medium, ray))
                 modifier.medium->RequirePreparedField();
     return ready;
 }
@@ -2655,8 +2958,9 @@ void MediaFunction::ComputeMediaTransmittance(MediaVector& medias, MediaInterval
         CoarsenPreparedResolution(medias, ray, mediaintervals.front().s0, mediaintervals.back().s1,
                                   requestedResolution, coarsening);
     const DBL resolution = requestedResolution * coarsening;
-    if ((resolution > 0.0) && PrepareFields(medias, ray))
+    if (PreparedRequired(medias, ray))
     {
+        PrepareFields(medias, ray);
         threadData->Stats()[Media_Intervals] += mediaintervals.size();
         ComputeMediaFieldTransmittance(medias, mediaintervals, ray, resolution, coarsening);
         return;
@@ -2703,10 +3007,8 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
                     MathColour density;
                     if (!medium->use_extinction)
                         density.Clear();
-                    else if (medium->Density.empty())
-                        density = MathColour(1.0);
                     else
-                        medium->PreparedDensityAt(point, density);
+                        DensityForDeclaredMode(*medium, point, density);
                     if (modifiers != nullptr)
                         densities.push_back(density);
                     else
@@ -2884,6 +3186,12 @@ void MediaFunction::ComputeMediaBoundedTransmittance(MediaVector& medias, MediaI
 void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                                 const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering, bool all_constant_and_light_ray)
 {
+    if (PreparedRequired(medias, ray))
+    {
+        threadData->Stats()[Media_Forbidden4_Integration]++;
+        throw POV_EXCEPTION_STRING("Declared prepared media reached a legacy integration policy.");
+    }
+
     int j;
     DBL n;
     MathColour Va;
@@ -2956,9 +3264,167 @@ DBL MediaFunction::ScatteringStep(MediaVector& medias, const MediaInterval& inte
     DBL step = HUGE_VAL;
     for (const Media *medium : medias)
         if (medium->use_scattering)
-            step = std::min(step, medium->Density.empty() ? interval.ds / std::max(1, medium->Min_Samples)
+            step = std::min(step, medium->Density.empty() || medium->Sample_Method != 4 ? interval.ds / std::max(1, medium->Min_Samples)
                                                           : medium->PreparedStep(ray, interval.s0, interval.s1) / 3.0);
     return step;
+}
+
+static std::vector<DBL> ContinuousLightCuts(const MediaInterval& interval, const LightSourceEntryVector& lights)
+{
+    std::vector<DBL> cuts{interval.s0, interval.s1};
+    for (const LightSourceEntry& light : lights)
+    {
+        if (light.s0 > interval.s0 && light.s0 < interval.s1)
+            cuts.push_back(light.s0);
+        if (light.s1 > interval.s0 && light.s1 < interval.s1)
+            cuts.push_back(light.s1);
+    }
+    std::sort(cuts.begin(), cuts.end());
+    cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
+    return cuts;
+}
+
+void MediaFunction::ComputeMediaConstantSampling(MediaVector& medias, LightSourceEntryVector& lights,
+                                                  MediaIntervalVector& intervals, const Ray& ray,
+                                                  bool use_scattering, bool prepared)
+{
+    MathColour emission, extinction, scattering;
+    ComputeMediaCoefficients(medias, ray, ray.Origin, prepared, emission, extinction, scattering);
+    FixedLightPath *path = currentPath && currentPath->collecting && !ray.IsShadowTestRay() && !ray.IsPhotonRay() &&
+                          use_scattering && !scattering.IsZero() ? currentPath : nullptr;
+    const size_t domain = path ? path->domains.size() : 0;
+    if (path)
+    {
+        path->domains.emplace_back(medias, lights, ray, path->offset);
+        auto& description = path->domains.back();
+        description.allLights = true;
+        description.infinite = !IsFiniteNumber(intervals.back().s1);
+        if (modifiers)
+            description.modifiers = *modifiers;
+        for (const Media *medium : medias)
+            description.ordinarySamples = std::max(description.ordinarySamples, medium->Min_Samples);
+        description.ordinarySamples = std::max(description.ordinarySamples, kMediaAreaLightPoints);
+    }
+    for (MediaInterval& interval : intervals)
+    {
+        if (!(interval.ds > 0.0))
+        {
+            interval.samples = 1;
+            continue;
+        }
+        const PreparedConstantTransfer transfer = EvaluatePreparedConstantTransfer(extinction, emission, interval.ds);
+        interval.te = transfer.emitted;
+        for (int ch = 0; ch < MathColour::channels; ch++)
+            interval.od[ch] = extinction[ch] == 0.0 ? 0.0 : extinction[ch] * interval.ds;
+        interval.samples = 1;
+        threadData->Stats()[Media_Intervals]++;
+        if (!ray.IsShadowTestRay() && !ray.IsPhotonRay() && use_scattering && !scattering.IsZero() && photonGatherer)
+        {
+            photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
+            if (photonGatherer->map->numPhotons > 0 || threadData->GetSceneData()->photonSettings.Progressive())
+            {
+                int count = 1;
+                DBL rate = HUGE_VAL;
+                for (const Media *medium : medias)
+                    count = std::max(count, medium->Min_Samples);
+                for (int ch = 0; ch < MathColour::channels; ch++)
+                    if (scattering[ch] != 0.0)
+                        rate = std::min(rate, DBL(extinction[ch]));
+                const bool importance = IsFiniteNumber(rate) && rate > 0.0;
+                const DBL scale = importance ? 1.0 / rate : 1.0;
+                const std::uint64_t key = DeriveKey(drawKey, kDrawGather, &interval - &intervals[0]);
+                for (int sample = 0; sample < count; sample++)
+                {
+                    const DBL u = (sample + Draw(key, kDrawMediaSample, sample)) / count;
+                    PreparedDistanceSample position = importance && u >= 0.5 ?
+                        SamplePreparedExponentialDistance(interval.s0, interval.s1, 2.0 * u - 1.0, rate) :
+                        SamplePreparedDistance(interval.s0, interval.s1, importance ? 2.0 * u : u, scale);
+                    const DBL at = position.distance;
+                    DBL pdf = IsFiniteNumber(interval.s1) ? 1.0 / interval.ds :
+                        (scale + interval.s0) / (scale + at) / (scale + at);
+                    if (importance)
+                        pdf = 0.5 * pdf + 0.5 * PreparedExponentialDistancePdf(interval.s0, interval.s1, at, rate);
+                    MathColour indirect, attenuation;
+                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(at));
+                    for (int ch = 0; ch < MathColour::channels; ch++)
+                        attenuation[ch] = std::exp(-DBL(extinction[ch]) * (at - interval.s0));
+                    interval.te += indirect * attenuation / (count * pdf);
+                }
+            }
+        }
+        if (path && interval.lit)
+        {
+            const auto cuts = ContinuousLightCuts(interval, lights);
+            for (size_t piece = 1; piece < cuts.size(); piece++)
+            {
+            const DBL width = cuts[piece] - cuts[piece - 1];
+            if (!(width > 0.0))
+                continue;
+            FixedLightPath::Cell cell;
+            cell.domain = domain;
+            cell.firstLight = interval.l0;
+            cell.lastLight = interval.l1;
+            cell.start = cuts[piece - 1];
+            cell.end = cuts[piece];
+            cell.at = IsFiniteNumber(width) ? cell.start + width * 0.5 : std::nextafter(cell.start, cell.end);
+            cell.width = IsFiniteNumber(width) ? width : 1.0;
+            cell.scattering = scattering;
+            cell.extinction = extinction;
+            cell.continuous = true;
+            for (int ch = 0; ch < MathColour::channels; ch++)
+            {
+                const DBL integral = extinction[ch] > 0.0 ?
+                    -std::expm1(-DBL(extinction[ch]) * width) / extinction[ch] : width;
+                cell.transfer[ch] = std::exp(-DBL(extinction[ch]) * cell.start) * integral;
+            }
+            path->cells.push_back(cell);
+            }
+        }
+    }
+}
+
+void MediaFunction::CollectLegacyLightIntervals(MediaVector& medias, LightSourceEntryVector& lights,
+                                                 const MediaIntervalVector& intervals, const Ray& ray)
+{
+    if (!currentPath || !currentPath->collecting || ray.IsShadowTestRay() || ray.IsPhotonRay())
+        return;
+    bool volume = false;
+    for (const LightSourceEntry& entry : lights)
+        volume = volume || bool(entry.light->emitter);
+    if (!volume)
+        return;
+    const size_t domain = currentPath->domains.size();
+    currentPath->domains.emplace_back(medias, lights, ray, currentPath->offset);
+    auto& description = currentPath->domains.back();
+    description.infinite = !IsFiniteNumber(intervals.back().s1);
+    if (modifiers)
+        description.modifiers = *modifiers;
+    for (const MediaInterval& interval : intervals)
+    {
+        if (!(interval.ds > 0.0) || !interval.lit)
+            continue;
+        const auto cuts = ContinuousLightCuts(interval, lights);
+        for (size_t piece = 1; piece < cuts.size(); piece++)
+        {
+        const DBL width = cuts[piece] - cuts[piece - 1];
+        if (!(width > 0.0))
+            continue;
+        FixedLightPath::Cell cell;
+        cell.domain = domain;
+        cell.firstLight = interval.l0;
+        cell.lastLight = interval.l1;
+        cell.start = cuts[piece - 1];
+        cell.end = cuts[piece];
+        cell.at = IsFiniteNumber(width) ? cell.start + width * 0.5 : std::nextafter(cell.start, cell.end);
+        cell.width = IsFiniteNumber(width) ? width : 1.0;
+        cell.continuous = cell.dynamic = true;
+        MathColour emitted;
+        ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), false, emitted, cell.extinction, cell.scattering);
+        for (int ch = 0; ch < MathColour::channels; ch++)
+            cell.transfer[ch] = cell.width * std::exp(-DBL(cell.extinction[ch]) * cell.at);
+        currentPath->cells.push_back(cell);
+        }
+    }
 }
 
 void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
@@ -3074,6 +3540,12 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
 void MediaFunction::ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                                  const Ray& ray, const Media *IMedia, DBL aa_threshold, int minsamples, bool ignore_photons, bool use_scattering)
 {
+    if (PreparedRequired(medias, ray))
+    {
+        threadData->Stats()[Media_Forbidden4_Integration]++;
+        throw POV_EXCEPTION_STRING("Declared prepared media reached a legacy integration policy.");
+    }
+
     // adaptive sampling
     int subIntervalCount;
     int j;
@@ -3575,11 +4047,13 @@ void MediaFunction::ComputeMediaCoefficients(MediaVector& medias, const Ray& ray
     for(MediaVector::iterator i(medias.begin()); i != medias.end(); i++)
     {
         const Vector3d& P = H;
-
-        if ((*i)->Sample_Method == 4)
-            (*i)->PreparedDensityAt(P, C0);
-        else
-            Evaluate_Density_Pigment((*i)->Density, P, C0, threadData);
+        if (!MediaAffectsTransport(**i, ray))
+        {
+            if (modifiers)
+                densityScratch.push_back(MathColour());
+            continue;
+        }
+        DensityForDeclaredMode(**i, P, C0);
 
         if (modifiers != nullptr)
         {
@@ -3706,7 +4180,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
             if (lights[i].light->emitter)
             {
-                if (!volumeLighting)
+                if (!volumeLighting || (currentPath && currentPath->collecting))
                     continue;
                 const int count = max(1, lights[i].light->Area_Size1);
                 threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;

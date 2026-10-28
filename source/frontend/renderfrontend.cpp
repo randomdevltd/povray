@@ -2061,6 +2061,16 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
     if(POVMSLongToCDouble(l) > 0.5)
         tsb->printf("Zero Scatter Draws:    %13.0f\n", POVMSLongToCDouble(l));
 
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaPrepared4Queries, &l);
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaLegacy3Queries, &l2);
+    if (POVMSLongToCDouble(l) + POVMSLongToCDouble(l2) > 0.5)
+    {
+        tsb->printf("Prepared4 Queries:    %13.0f   Legacy3 Queries:      %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaForbidden4Procedural, &l);
+        (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaForbidden4Integration, &l2);
+        tsb->printf("Forbidden4 Procedure: %13.0f   Old Integrator:       %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
+    }
+
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_CurvedRays, &l);
     if(POVMSLongToCDouble(l) > 0.5)
     {

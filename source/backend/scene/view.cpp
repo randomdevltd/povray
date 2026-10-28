@@ -1717,6 +1717,10 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_MediaOrdinaryLightDraws, stats[Media_Ordinary_Light_Draws]);
     renderStats.SetLong(kPOVAttrib_MediaShadowLightingCalls, stats[Media_Shadow_Lighting_Calls]);
     renderStats.SetLong(kPOVAttrib_MediaZeroScatterEmitterDraws, stats[Media_Zero_Scatter_Emitter_Draws]);
+    renderStats.SetLong(kPOVAttrib_MediaPrepared4Queries, stats[Media_Prepared4_Queries]);
+    renderStats.SetLong(kPOVAttrib_MediaLegacy3Queries, stats[Media_Legacy3_Queries]);
+    renderStats.SetLong(kPOVAttrib_MediaForbidden4Procedural, stats[Media_Forbidden4_Procedural]);
+    renderStats.SetLong(kPOVAttrib_MediaForbidden4Integration, stats[Media_Forbidden4_Integration]);
     renderStats.SetLong(kPOVAttrib_CurvedRays, stats[Curved_Rays]);
     renderStats.SetLong(kPOVAttrib_RefractionSteps, stats[Refraction_Steps]);
     renderStats.SetLong(kPOVAttrib_ReflectedRays, stats[Reflected_Rays_Traced]);

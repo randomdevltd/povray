@@ -607,6 +607,10 @@ enum
     kPOVAttrib_MediaOrdinaryLightDraws         = 'MoLi',
     kPOVAttrib_MediaShadowLightingCalls        = 'MsLi',
     kPOVAttrib_MediaZeroScatterEmitterDraws    = 'MzSc',
+    kPOVAttrib_MediaPrepared4Queries           = 'M4Qr',
+    kPOVAttrib_MediaLegacy3Queries             = 'M3Qr',
+    kPOVAttrib_MediaForbidden4Procedural       = 'M4Pr',
+    kPOVAttrib_MediaForbidden4Integration      = 'M4In',
     kPOVAttrib_CurvedRays            = 'CuRa',
     kPOVAttrib_RefractionSteps       = 'RfSt',
 

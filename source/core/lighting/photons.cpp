@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/lighting/photons.h"
+#include "core/math/finite.h"
 
 // C++ variants of C standard header files
 #include <cstdlib>
@@ -1096,8 +1097,6 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
                                                         const Intersection& isect, MathColour& colour)
 {
     ModifierScope scope(*this, mods);
-    if (ray.IsPhotonRay() && !sceneData->photonSettings.Progressive())
-        PreparedResolution(medias, ray, isect.Depth);
     LightSourceEntryVector lights;
     LitIntervalVector litintervals;
     MediaIntervalVector mediaintervals;
@@ -1179,10 +1178,33 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
 {
     if (mediaintervals.empty())
         return;
+    const bool prepared = PreparedRequired(medias, ray);
+    const bool constant = prepared && ConstantMediaCoefficients(medias, ray);
+    double resolution = 0.0, coarsening = 1.0;
+    if (prepared)
+    {
+        PrepareFields(medias, ray);
+        for (const MediaInterval& interval : mediaintervals)
+            if (!IsFiniteNumber(interval.s0) || !IsFiniteNumber(interval.s1) || !IsFiniteNumber(interval.ds))
+                throw POV_EXCEPTION_STRING("Prepared photon deposition requires finite media intervals.");
+        resolution = PreparedResolution(medias, ray, mediaintervals.back().s1);
+        if (!constant)
+        {
+            CoarsenPreparedResolution(medias, ray, mediaintervals.front().s0, mediaintervals.back().s1, resolution, coarsening);
+            SplitPreparedIntervals(medias, ray, mediaintervals);
+        }
+    }
+    auto preparedCount = [&](const MediaInterval& interval, int count) {
+        if (!prepared || constant)
+            return count;
+        const double width = PreparedStep(medias, ray, interval, resolution * coarsening, coarsening);
+        const double steps = std::ceil(interval.ds / width);
+        if (!(width > 0.0) || !IsFiniteNumber(steps) || steps > std::numeric_limits<int>::max())
+            throw POV_EXCEPTION_STRING("The prepared photon march has no finite step count.");
+        return std::max(count, int(steps));
+    };
     if (sceneData->photonSettings.Progressive())
     {
-        const double resolution = PreparedResolution(medias, ray, mediaintervals.back().s1);
-        const bool prepared = resolution > 0.0 && PrepareFields(medias, ray);
         const auto domain = VolumeDomain(medias);
         const size_t firstBeam = threadData->progressiveMedia.size();
         double lastEnd = -1.0;
@@ -1190,16 +1212,27 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
         {
             if (interval.ds <= 0.0)
                 continue;
-            const int count = std::max(minsamples, int(std::min(double(sceneData->photonSettings.maxMediaSteps),
-                                                               std::ceil(interval.ds / (threadData->photonSpread * sceneData->photonSettings.mediaSpacingFactor)))));
+            const int count = preparedCount(interval, std::max(1, std::max(minsamples, int(std::min(double(sceneData->photonSettings.maxMediaSteps),
+                                                               std::ceil(interval.ds / (threadData->photonSpread * sceneData->photonSettings.mediaSpacingFactor)))))));
             const double step = interval.ds / count;
+            const MathColour intervalColour = colour;
+            MathColour constantEmission, constantExtinction, constantScattering;
+            if (constant)
+                ComputeMediaCoefficients(medias, ray, ray.Evaluate(interval.s0), true,
+                                         constantEmission, constantExtinction, constantScattering);
             for (int sample = 0; sample < count; ++sample)
             {
                 const double start = interval.s0 + sample * step;
                 MediaInterval cell(false, 0, start, start + step, step, 0, 0);
                 MathColour emission, opticalDepth;
-                ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, opticalDepth, 3,
-                                      ignore_photons, use_scattering, true, prepared);
+                if (constant)
+                {
+                    opticalDepth = constantExtinction * step;
+                    colour = intervalColour * Exp(-constantExtinction * (start - interval.s0));
+                }
+                else
+                    ComputeOneMediaSample(medias, lights, cell, ray, 0.5, emission, opticalDepth, 3,
+                                          ignore_photons, use_scattering, true, prepared);
                 if (use_scattering && !ignore_photons)
                 {
                     ProgressiveVolumePhoton photon;
@@ -1236,8 +1269,11 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                     }
                     lastEnd = start + step;
                 }
-                colour *= Exp(-opticalDepth);
+                if (!constant)
+                    colour *= Exp(-opticalDepth);
             }
+            if (constant)
+                colour = intervalColour * Exp(-constantExtinction * interval.ds);
         }
         return;
     }
@@ -1251,14 +1287,22 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
     Od = colour;
     const std::uint64_t key = ray.NextChildKey(kDrawMedia);
 
+    auto nativeCount = [&](double value) {
+        return prepared ? std::max(1, int(std::min(double(sceneData->photonSettings.maxMediaSteps), value))) : int(value);
+    };
     for(MediaIntervalVector::iterator i(mediaintervals.begin()); i != mediaintervals.end(); i++)
     {
         DBL mediaSpacingFactor;
+        const double beamScale = threadData->photonSpread * (threadData->photonSourceLight->Parallel ? 1.0 : threadData->photonDepth);
+        if (prepared && (!(beamScale > 0.0) || !IsFiniteNumber(beamScale)))
+            throw POV_EXCEPTION_STRING("Prepared native photon deposition requires a positive finite beam depth and spread.");
+        if (prepared && !(i->ds > 0.0))
+            continue;
         const std::uint64_t intervalKey = DeriveKey(key, kDrawMedia, i - mediaintervals.begin());
 
         if(!threadData->photonSourceLight->Parallel)
         {
-            minsamples=(int)
+            minsamples=nativeCount
                 ((*i).ds /
                 (threadData->photonSpread *
                 threadData->photonDepth *
@@ -1266,7 +1310,7 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
         }
         else
         {
-            minsamples=(int)
+            minsamples=nativeCount
                 ((*i).ds /
                 (threadData->photonSpread *
                 sceneData->photonSettings.mediaSpacingFactor));
@@ -1296,6 +1340,13 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
                 minsamples));
             }
         }
+        if (prepared)
+        {
+            minsamples = preparedCount(*i, std::max(1, minsamples));
+            mediaSpacingFactor = i->ds / (beamScale * minsamples);
+            if (constant)
+                ComputeOneMediaSample(medias, lights, *i, ray, 0.5, C0, od0, 2, ignore_photons, use_scattering, true, true);
+        }
         // Sample current interval.
 
         threadData->Stats()[Media_Intervals]++;
@@ -1303,7 +1354,8 @@ void PhotonMediaFunction::DepositMediaPhotons(MathColour& colour, MediaVector& m
         for(j = 0; j < minsamples; j++)
         {
             d0 = (j + 0.5 + Draw(intervalKey, kDrawMediaSample, j)*sceneData->photonSettings.jitter - 0.5*sceneData->photonSettings.jitter) / minsamples;
-            ComputeOneMediaSample(medias, lights, *i, ray, d0, C0, od0, 2 /* use method 2 */, ignore_photons, use_scattering, true);
+            if (!constant)
+                ComputeOneMediaSample(medias, lights, *i, ray, d0, C0, od0, 2, ignore_photons, use_scattering, true, prepared);
 
             if (use_scattering && !ignore_photons)
             {
@@ -1766,7 +1818,7 @@ void PhotonMap::buildTree()
             for (int axis = X; axis <= Z; ++axis)
             {
                 const double coordinate = photon.Loc[axis];
-                if (!std::isfinite(coordinate))
+                if (!IsFiniteNumber(coordinate))
                     hasBounds = false;
                 boundsMin[axis] = std::min(boundsMin[axis], coordinate);
                 boundsMax[axis] = std::max(boundsMax[axis], coordinate);

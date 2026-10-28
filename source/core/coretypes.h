@@ -416,6 +416,7 @@ typedef unsigned short HF_VAL;
 class Intersection final
 {
     public:
+        bool unbounded = false;
 
         /// Distance from the intersecting ray's origin.
         DBL Depth;
