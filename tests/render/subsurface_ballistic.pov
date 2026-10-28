@@ -3,6 +3,7 @@
 #ifndef (Angle) #declare Angle = 0; #end
 #ifndef (Index) #declare Index = 1.44; #end
 #ifndef (Length) #declare Length = 1e9; #end
+#ifndef (Lit) #declare Lit = 0; #end
 #ifndef (Wedge) #declare Wedge = 0; #end
 #ifndef (Conserve) #declare Conserve = 0; #end
 global_settings {
@@ -12,7 +13,11 @@ global_settings {
 }
 camera { orthographic location <0, 0, -10> direction z right x * 0.1 up y * 0.1 }
 background { rgb 0 }
-box { <-4, -2, 10>, <4, 2, 10.1> pigment { rgb 1 } finish { ambient 0 diffuse 0 emission 1 } }
+#if (Lit)
+  light_source { <0, 0, -5> rgb 1 }
+#else
+  box { <-4, -2, 10>, <4, 2, 10.1> pigment { rgb 1 } finish { ambient 0 diffuse 0 emission 1 } }
+#end
 intersection {
   box { <-100, -100, 0>, <100, 100, 1 + 99 * Wedge> }
   #if (Wedge) plane { z, 0 rotate y * 30 translate z } #end

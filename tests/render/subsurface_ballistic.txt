@@ -23,3 +23,7 @@ through the slab; those cases require separate path-context handling.
 The opaque arm makes ballistic extinction negligible. The central ray in the
 wedge enters normally and reaches a far face tilted by 30 degrees, so the two
 interface cosines differ; it detects reuse of the entry transmission at exit.
+
+Lit=1 replaces the emission backing with a front light. With Length=.01 this
+provides a thick diffuse image for exact comparison with an earlier binary;
+ballistic attenuation is already below the tracing cutoff.
