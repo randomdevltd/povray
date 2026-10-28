@@ -1,4 +1,5 @@
-#version 3.7;
+#version 3.8;
+// Zero fade_distance selects exact inverse-square attenuation from version 3.8.
 #ifndef (PointSource) #declare PointSource = 0; #end
 #ifndef (NearSource) #declare NearSource = 0; #end
 #ifndef (Photons) #declare Photons = 0; #end
