@@ -126,4 +126,12 @@ for language in pov pov4; do
     fi
     tr '\n' ' ' <"infinite.$language.log" | tr -s '[:space:]' ' ' | grep -F 'requires finite geometry with nonzero surface area' >/dev/null || { cat "infinite.$language.log"; exit 1; }
 done
+for language in pov pov4; do
+    { if [ "$language" = pov ]; then echo '#version 3.7;'; fi; echo 'light_source { <0,2,-3> rgb 1 light {} }'; } >"direct.$language"
+    if "$POVRAY" +i"direct.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"direct.$language.log" 2>&1; then
+        echo "surface_light: light block inside a light_source accepted in $language" >&2; exit 1
+    fi
+    if [ "$language" = pov ]; then message='a light_source cannot take one'; else message="'light_source' has no item 'light'"; fi
+    tr '\n' ' ' <"direct.$language.log" | tr -s '[:space:]' ' ' | grep -F "$message" >/dev/null || { cat "direct.$language.log"; exit 1; }
+done
 echo 'surface_light: ok'
