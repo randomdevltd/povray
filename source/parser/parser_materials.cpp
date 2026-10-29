@@ -4170,7 +4170,9 @@ void Parser::Parse_Interior(InteriorPtr& interior)
 
         CASE (REFRACTION_TOKEN)
             Get_Token();
-            if (CurrentTrueTokenId() == LEFT_CURLY_TOKEN || CurrentTrueTokenId() == OFF_TOKEN)
+            // In a 3.7 or older scene `refraction off` is the classic value 0, as those versions read it.
+            if (CurrentTrueTokenId() == LEFT_CURLY_TOKEN ||
+                (CurrentTrueTokenId() == OFF_TOKEN && sceneData->EffectiveLanguageVersion() >= 380))
             {
                 UNGET
                 if (interior->refraction)

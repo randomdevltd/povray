@@ -44,6 +44,8 @@ Changed Behaviour
   Blocks require one or more raw signed scalar functions; their sum adds to
   the active IOR. Detail uses scene units and defaults to auto. Off disables
   only its own interior contribution, without clearing overlapping fields.
+  In a scene of version 3.7 or older, refraction off keeps its classic
+  meaning, the refraction value 0.
   detail and auto are matched by text and remain free as identifiers.
 - Henyey-Greenstein eccentricity must lie strictly between -1 and 1; other
   values, whose phase is negative or undefined, are a parse error.
