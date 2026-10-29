@@ -230,6 +230,7 @@ class MediaFunction : public Trace::MediaFunctor
         unsigned int lightSampleIndex;
         Vector2d lightSampleShift;
         std::vector<MathColour> scatterDensity;
+        std::vector<MediaIncident> photonIncidents;
         /// Light reaching the current sample point, scattered once its draws are in; nested points stack above.
         std::vector<MediaIncident> pointIncident;
 
@@ -296,8 +297,9 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
                                             DBL d1, DBL d3, MathColour& Result, const MathColour& C1, const MathColour& C3, MathColour& ODResult, const MathColour& od1, const MathColour& od3,
                                             int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass, std::uint64_t key);
+        /// Gathers with the law that lights the same medium directly: physical for prepared media, else the classic one.
         void ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H,
-                                 bool prepared = true);
+                                 bool prepared);
         void ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
                                             const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay);
         /// Adds to output the light the media at point scatter along the ray from each incident sample.

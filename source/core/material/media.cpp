@@ -3917,7 +3917,7 @@ void MediaFunction::ComputeMediaConstantSampling(MediaVector& medias, LightSourc
                     if (importance)
                         pdf = 0.5 * pdf + 0.5 * PreparedExponentialDistancePdf(interval.s0, interval.s1, at, rate);
                     MathColour indirect, attenuation;
-                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(at));
+                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(at), prepared);
                     for (int ch = 0; ch < MathColour::channels; ch++)
                         attenuation[ch] = std::exp(-DBL(extinction[ch]) * (at - interval.s0));
                     interval.te += indirect * attenuation / (count * pdf);
@@ -4114,7 +4114,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                 {
                     photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
                     MathColour indirect;
-                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(cell.s0 + step * 0.5));
+                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(cell.s0 + step * 0.5), true);
                     emission += indirect * step;
                 }
             }
@@ -5044,8 +5044,15 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
 
             Light_Ray.Origin = Vector3d(photonGatherer->gatheredPhotons.photonGatherList[j]->Loc) - Light_Ray.Direction;
 
-            ComputeMediaScatteringAttenuation(medias, Colour2, Sc, Light_Colour, ray, Light_Ray);
+            // method 1 shoots only ordinary lights, whose physical scattering takes a quarter, as their direct light does
+            if (prepared)
+                photonIncidents.push_back({Light_Colour / 4.0, Light_Ray.Direction});
+            else
+                ComputeMediaScatteringAttenuation(medias, Colour2, Sc, Light_Colour, ray, Light_Ray);
         }
+        if (!photonIncidents.empty())
+            ScatterIncident(medias, Colour2, photonIncidents.data(), photonIncidents.size(), H, ray);
+        photonIncidents.clear();
 
         // finish the photons equation
         Colour2 *= ( 3.0 / (M_PI * r*r*r * 4.0) );
