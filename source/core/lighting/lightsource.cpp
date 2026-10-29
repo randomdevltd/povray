@@ -396,7 +396,6 @@ LightSource::LightSource() : CompoundObject(LIGHT_OBJECT)
     Media_Attenuation = false;
     Media_Interaction = true;
     lightGroupLight = false;
-    volumeLaw = false;
 }
 
 
@@ -620,7 +619,7 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
             break;
     }
 
-    if (Light->volumeLaw)
+    if (Light->emitter != nullptr)
         return Attenuation * Light_Distance_Attenuation(Light, Distance);
 
     if (Attenuation > 0.0)
@@ -658,7 +657,7 @@ static DBL EmitterLawAttenuation(const LightSource *Light, DBL Distance)
 
 DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 {
-    if (Light->volumeLaw)
+    if (Light->emitter != nullptr)
         return EmitterLawAttenuation(Light, Distance);
     if (Light->Fade_Power <= 0.0)
         return 1.0;
@@ -669,7 +668,7 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)
 {
-    if (Light->volumeLaw)
+    if (Light->emitter != nullptr)
         return Light_Emitter_Path_Factor(Light, Length);
     if (Light->Fade_Power <= 0.0)
         return Light->Parallel ? 1.0 : Sqr(std::max(Length, EPSILON));
