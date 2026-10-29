@@ -205,6 +205,8 @@ struct TraceTicket final
     /// eye whose distance spaces radiosity samples; null takes the radiosity functor's camera
     const Vector3d *radiosityEye;
     PreparedSetId preparedSetId;
+    /// Set when a ray watching it had its key read (Ray::WatchKey).
+    bool keyRead = false;
 
     TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
                 float riq = -1.0, float rq = 1.0):
