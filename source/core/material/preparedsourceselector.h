@@ -72,6 +72,25 @@ inline PreparedSourceGeometry SourceGeometry(ConstObjectPtr owner)
     return result;
 }
 
+/// Sorted breaks in [0, 1] with every shell too thin to resolve at the domain's coordinates folded into its neighbour.
+inline std::vector<DBL> MergeRadialBreaks(const std::vector<DBL>& sorted, const Vector3d& centre, DBL radius)
+{
+    constexpr DBL kResolvableSpacings = 64;
+    DBL magnitude = radius;
+    for (int a = X; a <= Z; ++a)
+        magnitude = std::max(magnitude, std::fabs(centre[a]) + radius);
+    const DBL spacing = std::nextafter(magnitude, std::numeric_limits<DBL>::infinity()) - magnitude;
+    std::vector<DBL> merged;
+    for (DBL r : sorted)
+    {
+        if (merged.empty() || (r - merged.back()) * radius > kResolvableSpacings * spacing)
+            merged.push_back(r);
+        else if (r == 1 && merged.size() > 1)
+            merged.back() = r;
+    }
+    return merged;
+}
+
 inline std::shared_ptr<const PreparedSourceDomain>
 SelectSourceDomain(const std::vector<PreparedSourceGeometry>& owners,
                    const std::vector<PreparedSourceGeometry>& additionalGeometry = {},
@@ -102,7 +121,7 @@ SelectSourceDomain(const std::vector<PreparedSourceGeometry>& owners,
                 geometry.radius > 0 && geometry.radius < radius)
                 radial.push_back(geometry.radius / radius);
         std::sort(radial.begin(), radial.end());
-        radial.erase(std::unique(radial.begin(), radial.end()), radial.end());
+        radial = MergeRadialBreaks(radial, owners.front().centre, radius);
         const size_t n = policy.angularCells;
         if (n > policy.maxNodes / 6 || n > policy.maxNodes / (6 * n) ||
             6 * n * n > policy.maxNodes - std::min(size_t(2), policy.maxNodes))

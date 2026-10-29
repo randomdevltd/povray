@@ -58,6 +58,11 @@ int main()
     for (DBL boundary : {.8, .9})
         assert(std::find(fine->RadialBreaks().begin(), fine->RadialBreaks().end(), boundary) !=
                fine->RadialBreaks().end());
+    const auto nearSame = SelectSourceDomain({SphereSupport(0.6957)}, {SphereSupport(std::nextafter(0.6957, 0.0))}, policy);
+    assert(nearSame->RadialBreaks().size() == policy.radialCells + 1 && nearSame->RadialBreaks().back() == 1);
+    const auto farCentre = SelectSourceDomain({SphereSupport(1, Vector3d(1e9, 0, 0))},
+                                              {SphereSupport(1 - 1e-12, Vector3d(1e9, 0, 0))}, policy);
+    assert(farCentre->RadialBreaks().size() == policy.radialCells + 1);
     bool budget = false;
     policy.maxNodes = 10;
     try
