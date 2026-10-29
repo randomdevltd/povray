@@ -457,8 +457,13 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         ray.GetTicket().maxFoundTraceLevel = (unsigned int) max(ray.GetTicket().maxFoundTraceLevel, ray.GetTicket().traceLevel);
     }
 
-    Intersection atmosphereSegment(bestisect);
-    atmosphereSegment.unbounded = !found;
+    const bool atmosphere = qualityFlags.media && ray.IsHollowRay() && !sceneData->atmosphere.empty();
+    Intersection atmosphereSegment;
+    if (atmosphere)
+    {
+        atmosphereSegment = bestisect;
+        atmosphereSegment.unbounded = !found;
+    }
 
     if(qualityFlags.media && (ray.IsPhotonRay() == true) && (ray.IsHollowRay() == true))
     {
@@ -466,7 +471,8 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         // intentional.  Even though we're processing a photon ray, we don't want
         // to deposit photons in the infinite atmosphere, only in contained
         // media, which is processed later (in ComputeLightedTexture).  [nk]
-        media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
+        if (atmosphere)
+            media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
 
         if (sceneData->fog != nullptr)
             ComputeFog(ray, bestisect, colour, transm);
@@ -484,7 +490,8 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         if ((sceneData->rainbow != nullptr) && (ray.IsShadowTestRay() == false))
             ComputeRainbow(ray, bestisect, colour, transm);
 
-        media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
+        if (atmosphere)
+            media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
 
         if (sceneData->fog != nullptr)
             ComputeFog(ray, bestisect, colour, transm);
@@ -3500,10 +3507,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     NoShadowFlagRayObjectCondition precond;
     precond.includeMedia = lightsource.emitter != nullptr;
     const double connectionDepth = lightsourcedepth;
-    const Vector3d connectionOrigin = lightsourceray.Origin;
-    const Ray connectionRay(lightsourceray);
+    // Every query starts at the connection's origin; intersection reads nothing the walk changes in the ray.
+    Ray query(lightsourceray);
     ShadowSegmentWalker postcond(connectionDepth, startTolerance,
-        std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth), &connectionRay);
+        std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth), &query);
 
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
 
@@ -3558,8 +3565,6 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     while(true)
     {
         cooperate();
-        Ray query(lightsourceray);
-        query.Origin = connectionOrigin;
         query.SetRootQuery(&postcond);
         boundedIntersection.Object = boundedIntersection.Csg = nullptr;
         boundedIntersection.Depth = postcond.End();
