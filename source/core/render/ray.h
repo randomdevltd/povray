@@ -132,7 +132,9 @@ class Ray final : public BasicRay
         void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal);
         void ClearSurfaceOrigin() { surfaceOrigin.object = nullptr; }
         bool HasSurfaceOrigin() const { return surfaceOrigin.object != nullptr; }
-        void SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point);
+        /// `surface` is the part of `object` the point lies on, whose stated accuracy the match allows; `object` if none.
+        void SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface = nullptr);
+        bool HasSurfaceEndpoint() const { return surfaceEndpoint.object != nullptr; }
         void ClearSurfaceEndpoint() { surfaceEndpoint.object = nullptr; }
         bool MatchesSurfaceEndpoint(ConstObjectPtr object, double depth) const
         { return MatchesSurfacePoint(surfaceEndpoint, object, depth); }
