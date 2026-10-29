@@ -10,6 +10,7 @@ for fog in 0 0.005 0.01; do
         Stochastic_Seed=0 Declare=Fog="$fog" +o"fog$fog.ppm" >"fog$fog.log" 2>&1 || { cat "fog$fog.log"; exit 1; }
     tail -c 1152 "fog$fog.ppm" >"fog$fog.rgb"
 done
+tr -d ' \r\n' <fog0.01.log | grep -q 'MediaStrideLights:[1-9]' || { cat fog0.01.log; exit 1; }
 python3 - <<'PY'
 import struct
 power = lambda name: sum(struct.unpack('>576H', open(name + '.rgb', 'rb').read()))

@@ -3950,6 +3950,8 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             path->domains.back().modifiers = *modifiers;
     }
     MathColour previousDepth;
+    // A stride's light is gathered once, unscattered; each step's own media scatter it.
+    std::vector<MediaIncident> incident;
     for (MediaInterval& interval : mediaintervals)
     {
         if (interval.ds <= 0.0)
@@ -3990,8 +3992,6 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), true,
                                      cell.emission, cell.extinction, cell.scattering);
         }
-        // A stride's light is gathered once, unscattered; each step's own media scatter it.
-        std::vector<MediaIncident> incident;
         int lit = -1;
         for (int j = 0; j < count; j++)
         {
@@ -4024,14 +4024,18 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                     const int at = first + std::min(size - 1, int(Draw(drawKey, kDrawMediaSample, kMediaLightDraw + group) * size));
                     const DBL d = interval.s0 + (at + 0.5) * step;
                     incident.clear();
+                    threadData->Stats()[Media_Stride_Lights]++;
                     MathColour unused;
                     ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), unused, path == nullptr, true,
                                       &incident);
                     lit = group;
                 }
-                MathColour scattered;
-                ScatterIncident(medias, scattered, incident.data(), incident.size(), ray.Evaluate(coefficients.at), ray);
-                emission += scattered * step;
+                if (!incident.empty() && !scattering.IsZero())
+                {
+                    MathColour scattered;
+                    ScatterIncident(medias, scattered, incident.data(), incident.size(), ray.Evaluate(coefficients.at), ray);
+                    emission += scattered * step;
+                }
                 if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
                     threadData->GetSceneData()->photonSettings.Progressive())
                 {
