@@ -3606,8 +3606,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             }
 
             foundTransparentObjects = true;
-            if (!postcond.Commit(depth))
-                throw POV_EXCEPTION_STRING("Shadow traversal failed to advance to a new boundary.");
+            postcond.Commit(depth);
             lightsourcedepth = postcond.Remaining();
             lightsourceray.Origin = boundedIntersection.IPoint;
         }

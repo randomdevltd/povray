@@ -4,6 +4,7 @@
 #include "core/render/ray.h"
 #include "core/math/intersectiondepth.h"
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace pov
@@ -30,10 +31,15 @@ public:
         return true;
     }
     void Reset() const { selected = nullptr; selectedDepth = HUGE_VAL; }
+    // False when no admitted candidate matches the returned boundary: it is stepped past, so every commit moves the walk on.
     bool Commit(double depth)
     {
         if (!selected || depth != selectedDepth || !Admit(selected, depth))
+        {
+            cursor = std::nextafter(std::max(depth, cursor), HUGE_VAL);
+            crossed.clear();
             return false;
+        }
         if (depth > cursor)
             crossed.clear();
         cursor = depth;

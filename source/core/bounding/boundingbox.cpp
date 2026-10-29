@@ -794,12 +794,14 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
         ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf]));
         if (!precondition(ray, object, 0.0))
             return false;
+        // An admitted hint is a hit like any other, so the nearest admitted root is always the one returned.
         if (object->Shadow_Hint_Intersection(ray, &New_Intersection, Thread) && postcondition(ray, object, New_Intersection.Depth) &&
-            (New_Intersection.Depth < Best_Intersection->Depth) && stop(New_Intersection))
+            (New_Intersection.Depth < Best_Intersection->Depth))
         {
             *Best_Intersection = New_Intersection;
             found = true;
-            return true;
+            if (stop(New_Intersection))
+                return true;
         }
         if (Find_Intersection_BBox_Passed(&New_Intersection, object, ray, postcondition, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))

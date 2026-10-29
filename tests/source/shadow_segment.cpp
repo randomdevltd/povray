@@ -101,7 +101,6 @@ Result walk(const std::vector<ObjectPtr>& objects, const Vector3d& from, const V
             return result;
         }
         assert(walker.Commit(best.Depth));
-        assert(!walker.Commit(best.Depth));
         const double remaining = walker.Remaining();
         assert(remaining <= result.remaining);
         result.remaining = remaining;
@@ -259,5 +258,14 @@ int main()
         assert(!escaped.GetRootQuery() && !escaped.GetRootOwner());
     }
     assert(!borrowed.GetRootOwner());
-    std::cout << "touching, close layers, 600 transparent events, opaque stop, endpoints, mesh, CSG and iso max_trace=1 passed\n";
+    ShadowSegmentWalker stepping(10.0, 0.001);
+    stepping.Reset();
+    assert(stepping(borrowed, &mesh, 2.0));
+    assert(stepping.Commit(2.0) && stepping.Cursor() == 2.0);
+    assert(!stepping.Commit(2.0) && stepping.Cursor() > 2.0);
+    stepping.Reset();
+    assert(stepping(borrowed, &mesh, 3.0));
+    assert(!stepping.Commit(std::nextafter(3.0, 4.0)) && stepping.Cursor() > std::nextafter(3.0, 4.0));
+    assert(!stepping.Admit(&mesh, 3.0) && stepping.Admit(&mesh, 4.0));
+    std::cout << "touching, close layers, 600 transparent events, opaque stop, endpoints, mesh, CSG, iso max_trace=1 and stepping past an unmatched boundary passed\n";
 }
