@@ -13,6 +13,7 @@
 #ifndef (White) #declare White=0; #end
 #ifndef (Empty) #declare Empty=0; #end
 #ifndef (Constant) #declare Constant=0; #end
+#ifndef (Samples) #declare Samples=16; #end
 #declare D = density { function { 0.25+0.25*x } color_map { [0 rgb 0] [1 rgb 1] } translate x*0.1 };
 #declare E = <5,2,1>*Strength*(1-Zero);
 global_settings { assumed_gamma 1 }
@@ -47,7 +48,7 @@ box { -1,1 pigment { rgbt 1 } hollow no_image
       #if (Conflict=2) emission #end
       #if (Conflict=3) emission #end
       brightness 0.08 #if (Lumens) lumens #else nits #end
-      samples 16
+      samples Samples
     }
   }
   scale <0.35,0.25,0.3> rotate y*15 translate y*1.5
