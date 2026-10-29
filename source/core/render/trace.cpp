@@ -3177,7 +3177,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
                                    DeriveKey(DeriveKey(key, kDrawEmitter, k), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
             MathColour incoming, tmp;
             double distance;
-            SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, draw, true, geometricNormal, object->interior.get());
+            if (!SampleEmitterConnection(lightsource, ipoint, sampleRay, distance, incoming, draw, true, geometricNormal, object->interior.get()))
+                continue;
             incoming /= M_PI * count;
             bool backside = false;
             if (!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (dot(layer_normal, sampleRay.Direction) < EPSILON))
