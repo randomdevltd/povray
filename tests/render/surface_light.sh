@@ -47,6 +47,9 @@ cmp passive.rgb native_passive.rgb
 render csg "$scene" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
 render native_csg "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
 cmp csg.rgb native_csg.rgb
+render portal "$scene" Declare=Case=9
+render native_portal "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=9
+cmp portal.rgb native_portal.rgb
 python3 - <<'PY'
 from pathlib import Path
 import struct
@@ -57,6 +60,7 @@ assert power('native7')>0
 assert abs(power('native7')/power('geometry7')-1)<0.05
 assert power('passive')==0
 assert power('csg')>0
+assert power('portal')>0
 reference=power('geometry0')
 assert abs(power('lumens')/reference-1)<0.12
 assert abs(power('few')/power('many')-1)<0.35

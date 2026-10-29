@@ -56,6 +56,12 @@ plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
       }
     };
     #break
+  #case (9)
+    #declare Shape = union {
+      sphere { <-0.3,1.5,0>,0.2 }
+      portal { sphere { <0.3,1.5,0>,0.2 } to { translate x*5 } far off }
+    };
+    #break
   #else
     #declare Shape = sphere { <0,1.5,0>,0.25 };
 #end
