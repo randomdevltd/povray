@@ -24,7 +24,7 @@ refuse() {
     tr '\n' ' ' < "progressive_photon_file_$name.log" | tr -s ' ' | grep -q "$expected" ||
         { cat "progressive_photon_file_$name.log"; exit 1; }
 }
-for feature in Mist=1 Subsurface=1 Dispersion=1.03; do
+for feature in Mist=1 Subsurface=1 VolumeSource=1 VolumeSource=2 VolumeSource=3 Dispersion=1.03; do
     feature_name=${feature%%=*}
     rm -f "$FILE"
     render "$feature_name-plain" Declare="$feature" +wt2
@@ -57,6 +57,25 @@ too_big option 'Photon_Memory option' Photon_Memory=0.00001
 (unset POV_PHOTON_MEMORY; render budget_option_up Declare=Dispersion=1.03 Declare=PhotonFile=2 Declare=PhotonMemory=0.00001 Photon_Memory=64 +wt2)
 cmp progressive_photon_file_Dispersion-loaded.px progressive_photon_file_budget_option_up.px
 cp "$FILE" progressive_photon_file.whole
+python3 - progressive_photon_file.whole "$FILE" <<'PYOLD'
+import struct, sys
+data = bytearray(open(sys.argv[1], 'rb').read())
+struct.pack_into('=I', data, 8, 2)
+open(sys.argv[2], 'wb').write(data)
+PYOLD
+refuse old_version 'format version 2; this build reads version 3' Declare=Dispersion=1.03
+python3 - progressive_photon_file.whole "$FILE" <<'PYRECEIVER'
+import struct, sys
+data = bytearray(open(sys.argv[1], 'rb').read())
+at = 12
+def skip_string():
+    global at
+    at += 4 + struct.unpack_from('=I', data, at)[0]
+skip_string(); at += 8; skip_string(); at += 4; skip_string()
+struct.pack_into('=I', data, at, (1 << 29) + 1)
+open(sys.argv[2], 'wb').write(data)
+PYRECEIVER
+refuse receiver_overflow 'truncated or damaged' Declare=Dispersion=1.03
 bytes=$(wc -c < progressive_photon_file.whole)
 head -c $((bytes - 20)) progressive_photon_file.whole > "$FILE"
 refuse truncated 'truncated or damaged' Declare=Dispersion=1.03

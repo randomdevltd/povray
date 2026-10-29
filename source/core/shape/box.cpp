@@ -37,6 +37,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/box.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 // C++ standard header files
@@ -189,7 +190,7 @@ bool Box::Intersect(const BasicRay& ray, const TRANSFORM *Trans, const Vector3d&
     }
 
     tmin = 0.0;
-    tmax = BOUND_HUGE;
+    tmax = std::numeric_limits<double>::max();
 
     /*
      * Sides first.
@@ -490,7 +491,7 @@ bool Box::Intersect(const BasicRay& ray, const TRANSFORM *Trans, const Vector3d&
         }
     }
 
-    if (tmax < DEPTH_TOLERANCE)
+    if (tmax < DEPTH_TOLERANCE || !IsFiniteIntersectionDepth(tmin) || !IsFiniteIntersectionDepth(tmax))
     {
         return (false);
     }
@@ -946,9 +947,7 @@ Box::~Box()
 
 void Box::Compute_BBox()
 {
-    BBox.lowerLeft = BBoxVector3d(bounds[0]);
-
-    BBox.size = BBoxVector3d(bounds[1] - bounds[0]);
+    Make_BBox_from_min_max(BBox, bounds[0], bounds[1]);
 
     if (Trans != nullptr)
     {

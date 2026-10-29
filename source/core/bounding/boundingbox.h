@@ -42,6 +42,7 @@
 
 // C++ variants of C standard header files
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <cstring>
 
@@ -56,6 +57,8 @@
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
 #include "core/math/matrix.h"
+#include "core/math/finite.h"
+#include "core/math/halfspacebounds.h"
 #include "core/math/simd.h"
 #include "core/render/ray_fwd.h"
 #include "core/support/statisticids.h"
@@ -101,6 +104,8 @@ struct BoundingBox final
 {
     BBoxVector3d lowerLeft;
     BBoxVector3d size;
+    bool finite = false; ///< Certified finite surface enclosure.
+    bool finiteInterior = false; ///< Certified base Inside-domain enclosure; consumers apply inversion.
 
     SNGL GetMinX() const { return lowerLeft.x(); }
     SNGL GetMinY() const { return lowerLeft.y(); }
@@ -113,25 +118,122 @@ struct BoundingBox final
     bool isEmpty() const { return (size.x() < 0) || (size.y() < 0) || (size.z() < 0); }
 };
 
-/// @relates BoundingBox
-inline void Make_BBox(BoundingBox& BBox, const BBoxScalar llx, const BBoxScalar lly, const BBoxScalar llz, const BBoxScalar lex, const BBoxScalar ley, const BBoxScalar lez)
+inline float NormalBBoxLower(float value)
 {
-    BBox.lowerLeft = BBoxVector3d(llx, lly, llz);
-    BBox.size      = BBoxVector3d(lex, ley, lez);
+    std::uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const std::uint32_t magnitude = bits & UINT32_C(0x7fffffff);
+    return magnitude != 0 && magnitude < UINT32_C(0x00800000) ? -std::numeric_limits<float>::min() : value;
+}
+inline float NormalBBoxUpper(float value)
+{
+    std::uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const std::uint32_t magnitude = bits & UINT32_C(0x7fffffff);
+    return magnitude != 0 && magnitude < UINT32_C(0x00800000) ? std::numeric_limits<float>::min() : value;
+}
+inline double NormalBBoxLower(double value) { return halfspace_bounds::WidenLow(value); }
+inline double NormalBBoxUpper(double value) { return halfspace_bounds::WidenHigh(value); }
+
+/// @relates BoundingBox
+inline void Make_BBox_from_min_max(BoundingBox& BBox, const Vector3d& mins, const Vector3d& maxs, bool finite = true)
+{
+    BBox.finite = finite;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const DBL low = halfspace_bounds::WidenLow(mins[axis]);
+        const DBL high = halfspace_bounds::WidenHigh(maxs[axis]);
+        BBoxScalar origin = BBoxScalar(low);
+        if (DBL(origin) > low)
+            origin = std::nextafter(origin, -std::numeric_limits<BBoxScalar>::infinity());
+        origin = NormalBBoxLower(origin);
+        BBoxScalar upper = BBoxScalar(high);
+        if (DBL(upper) < high)
+            upper = std::nextafter(upper, std::numeric_limits<BBoxScalar>::infinity());
+        upper = NormalBBoxUpper(upper);
+        volatile DBL extent = DBL(upper) - DBL(origin);
+        const DBL outwardExtent = (extent == 0.0 && low == high) ? 0.0 :
+                                   std::nextafter(DBL(extent), std::numeric_limits<DBL>::infinity());
+        BBoxScalar size = BBoxScalar(outwardExtent);
+        if (DBL(size) < outwardExtent)
+            size = std::nextafter(size, std::numeric_limits<BBoxScalar>::infinity());
+        size = NormalBBoxUpper(size);
+        BBox.lowerLeft[axis] = origin;
+        BBox.size[axis] = size;
+        BBox.finite = BBox.finite && IsFiniteNumber(mins[axis]) && IsFiniteNumber(maxs[axis]) &&
+                      IsFiniteNumber(DBL(origin)) && IsFiniteNumber(DBL(upper)) &&
+                      IsFiniteNumber(DBL(size)) && size >= 0.0 && high >= low;
+    }
+    BBox.finiteInterior = BBox.finite;
 }
 
 /// @relates BoundingBox
-inline void Make_BBox_from_min_max(BoundingBox& BBox, const BBoxVector3d& mins, const BBoxVector3d& maxs)
+inline void Make_BBox(BoundingBox& BBox, const DBL llx, const DBL lly, const DBL llz,
+                      const DBL lex, const DBL ley, const DBL lez, bool finite = true)
 {
-    BBox.lowerLeft = mins;
-    BBox.size      = maxs - mins;
+    if (!finite)
+    {
+        BBox.lowerLeft = BBoxVector3d(llx, lly, llz);
+        BBox.size = BBoxVector3d(lex, ley, lez);
+        BBox.finite = false;
+        BBox.finiteInterior = false;
+        return;
+    }
+    const Vector3d low(llx, lly, llz), size(lex, ley, lez);
+    Vector3d high;
+    bool representable = true;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        volatile DBL sum = low[axis] + size[axis];
+        representable = representable && (!(size[axis] > 0.0) || DBL(sum) > low[axis]);
+        high[axis] = size[axis] == 0.0 ? low[axis] : std::nextafter(DBL(sum), std::numeric_limits<DBL>::infinity());
+    }
+    Make_BBox_from_min_max(BBox, low, high, representable);
 }
 
 /// @relates BoundingBox
-inline void Make_BBox_from_min_max(BoundingBox& BBox, const Vector3d& mins, const Vector3d& maxs)
+inline void Make_BBox_from_min_max(BoundingBox& BBox, const BBoxVector3d& mins, const BBoxVector3d& maxs, bool finite = true)
 {
-    BBox.lowerLeft = BBoxVector3d(mins);
-    BBox.size      = BBoxVector3d(maxs - mins);
+    Make_BBox_from_min_max(BBox, Vector3d(mins), Vector3d(maxs), finite);
+}
+
+inline bool UsableFiniteBounds(const BoundingBox& box)
+{
+    if (!box.finite)
+        return false;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const DBL low = box.lowerLeft[axis], size = box.size[axis];
+        const DBL high = low + size;
+        const BBoxScalar storedHigh = box.lowerLeft[axis] + box.size[axis];
+        if (!IsFiniteNumber(low) || !IsFiniteNumber(size) || !(size > 0.0) ||
+            !IsFiniteNumber(high) || !(high > low) || !IsFiniteNumber(DBL(storedHigh)) || !(DBL(storedHigh) > low))
+            return false;
+    }
+    return true;
+}
+
+inline void Make_Transformed_BBox(BoundingBox& box, const MATRIX& matrix)
+{
+    using halfspace_bounds::Interval;
+    std::array<Interval, 3> coordinates;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const Interval upper = Interval(DBL(box.lowerLeft[axis])) + Interval(DBL(box.size[axis]));
+        coordinates[axis] = Interval(DBL(box.lowerLeft[axis]), upper.high);
+    }
+    Vector3d low, high;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        Interval result(matrix[3][axis]);
+        for (int input = 0; input < 3; ++input)
+            result = result + coordinates[input] * Interval(matrix[input][axis]);
+        low[axis] = result.low;
+        high[axis] = result.high;
+    }
+    const bool finiteInterior = box.finiteInterior;
+    Make_BBox_from_min_max(box, low, high, box.finite);
+    box.finiteInterior = box.finite && finiteInterior;
 }
 
 /// @relates BoundingBox
@@ -284,9 +386,10 @@ void Build_BBox_Tree(BBOX_TREE **Root, size_t numOfFiniteObjects, BBOX_TREE **&F
 void Build_Bounding_Slabs(BBOX_TREE **Root, std::vector<ObjectPtr>& objects, unsigned int& numberOfFiniteObjects, unsigned int& numberOfInfiniteObjects, unsigned int& numberOfLightSources);
 
 void Recompute_BBox(BoundingBox *bbox, const TRANSFORM *trans);
+void Recompute_Inverse_BBox(BoundingBox *bbox, const TRANSFORM *trans);
 bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
 bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
-void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth = BOUND_HUGE);
+void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const BoundingBox *BBox, const Rayinfo *rayinfo, RenderStatistics& Stats, DBL maxDepth = HUGE_VAL);
 void Destroy_BBox_Tree(BBOX_TREE *Node);
 
 
@@ -357,10 +460,14 @@ class FlatBBoxWalker final
         {
             for (int d = 0; d < 3; ++d)
             {
+                exactOrigin[d] = ray.Origin[d];
+                direction[d] = ray.Direction[d];
                 origin[d] = float(ray.Origin[d]);
-                const DBL r = 1.0 / ray.Direction[d];
+                const DBL r = direction[d] == 0.0 ? 0.0 : 1.0 / direction[d];
                 inv[d] = (fabs(r) < FLAT_BBOX_FAR) ? float(r) : std::copysign(FLAT_BBOX_FAR, float(ray.Direction[d]));
                 originInv[d] = origin[d] * inv[d];
+                safeBound[d] = (direction[d] == 0.0 || fabs(r) >= FLAT_BBOX_FAR) ? 0.0 :
+                    std::numeric_limits<float>::max() / (4.0 * fabs(r));
             }
         }
 
@@ -398,15 +505,62 @@ class FlatBBoxWalker final
     private:
         static const int LOCAL = 256;
         float origin[3], inv[3], originInv[3];
+        double exactOrigin[3], direction[3], safeBound[3];
         float minExit;
 
         typedef simd::Vec<float, FLAT_BBOX_WIDTH> Lanes;
+
+        static void Bounds(const FlatBBoxBlock& b, int d, int k, double& lo, double& hi)
+        {
+            lo = b.lo[d][k];
+            hi = b.hi[d][k];
+        }
+
+        static void Bounds(const FlatQBBoxBlock& b, int d, int k, double& lo, double& hi)
+        {
+            lo = std::nextafter(float(double(b.origin[d]) + double(b.lo[d][k]) * b.scale[d]), -std::numeric_limits<float>::infinity());
+            hi = std::nextafter(float(double(b.origin[d]) + double(b.hi[d][k]) * b.scale[d]), std::numeric_limits<float>::infinity());
+        }
+
+        template<typename Block>
+        void ScalarSlab(const Block& b, int d, Lanes& near, Lanes& far) const
+        {
+            float n[FLAT_BBOX_WIDTH], f[FLAT_BBOX_WIDTH];
+            const float infinity = std::numeric_limits<float>::infinity();
+            for (int k = 0; k < FLAT_BBOX_WIDTH; ++k)
+            {
+                double lo, hi;
+                Bounds(b, d, k, lo, hi);
+                if (direction[d] == 0.0)
+                {
+                    const bool inside = lo <= exactOrigin[d] && exactOrigin[d] <= hi;
+                    n[k] = inside ? -infinity : infinity;
+                    f[k] = inside ? infinity : -infinity;
+                }
+                else
+                {
+                    const double a = (lo - exactOrigin[d]) / direction[d], z = (hi - exactOrigin[d]) / direction[d];
+                    n[k] = std::nextafter(float(std::min(a, z)), -infinity);
+                    f[k] = std::nextafter(float(std::max(a, z)), infinity);
+                }
+            }
+            near = Lanes::load(n);
+            far = Lanes::load(f);
+        }
 
         void Slabs(const FlatBBoxBlock& b, Lanes& tn, Lanes& tf) const
         {
             Lanes n[3], f[3];
             for (int d = 0; d < 3; ++d)
             {
+                const Lanes safe{float(safeBound[d])};
+                const bool scalar = fabs(exactOrigin[d]) >= safeBound[d] ||
+                    simd::bits((simd::abs(Lanes::load(b.lo[d])) >= safe) | (simd::abs(Lanes::load(b.hi[d])) >= safe)) != 0;
+                if (scalar)
+                {
+                    ScalarSlab(b, d, n[d], f[d]);
+                    continue;
+                }
                 const Lanes o(origin[d]), r(inv[d]);
                 const Lanes t1 = (Lanes::load(b.lo[d]) - o) * r, t2 = (Lanes::load(b.hi[d]) - o) * r;
                 n[d] = simd::min(t1, t2);
@@ -421,6 +575,12 @@ class FlatBBoxWalker final
             Lanes n[3], f[3];
             for (int d = 0; d < 3; ++d)
             {
+                if (fabs(exactOrigin[d]) >= safeBound[d] || fabs(b.origin[d]) >= safeBound[d] ||
+                    fabs(double(b.scale[d]) * 65535.0) >= safeBound[d])
+                {
+                    ScalarSlab(b, d, n[d], f[d]);
+                    continue;
+                }
                 const Lanes at(b.origin[d] * inv[d] - originInv[d]), step(b.scale[d] * inv[d]);
                 const Lanes l = simd::fma(simd::load_widened<FLAT_BBOX_WIDTH>(b.lo[d]), step, at);
                 const Lanes h = simd::fma(simd::load_widened<FLAT_BBOX_WIDTH>(b.hi[d]), step, at);

@@ -160,10 +160,25 @@ union {
   ))
 }
 
+#declare ExplosionIndexBase = function { pigment {
+  function { pow(max(0, 1 - x * x - y * y - z * z), 2) * (0.3 + 0.7 * Rise(x, y, z)) }
+} }
+#declare ExplosionIndexSmoke = function { pigment {
+  function { 0.5 + 0.5 * min(1, max(0, (sqrt(x * x + y * y + z * z) - 5.6) / 1.5)) * (2 * Billow(x * 0.5, y * 0.25, z * 0.5) - 1) }
+  color_map { [0 rgb 0] [1 rgb 2] }
+} }
 #if (Refract)
   sphere {
     0, 1 pigment { rgbt 1 }
-    interior { media { refraction -0.008 density { function { pow(max(0, 1 - x * x - y * y - z * z), 2) * (0.3 + 0.7 * Rise(x, y, z)) } } } }
+    interior { refraction {
+      function {
+        -0.008 * ExplosionIndexBase(x, y, z).red
+        #if (Smoke)
+          * select(min(15*x+12, 13-15*x, 20*y+10, 24-20*y, 13*z+11, 12-13*z),
+                   1, ExplosionIndexSmoke(15*x, 20*y+8, 13*z).red)
+        #end
+      }
+    } }
     scale <15, 20, 13> translate F + y * 8
   }
 #end
@@ -175,17 +190,14 @@ sphere {
       mix add
       emission rgb <1, 0.08, 0.01> * 1.5
       density { function { Ball(x, y, z, 4.8, 1.1) * (0.12 + 0.88 * pow(Puff(x * 1.7, y * 1.7, z * 1.7), 2)) } }
-      light_source { samples Samples }
     }
     media {
       emission rgb <1, 0.36, 0.04> * 2
       density { function { Ball(x, y, z, 3.4, 0.9) * (0.3 + 0.7 * Puff(x * 1.4, y * 1.4, z * 1.4)) } }
-      light_source { samples Samples }
     }
     media {
       emission rgb <1, 0.78, 0.4> * 5
       density { function { Ball(x * 1.1, y, z * 1.1, 2, 0.6) } }
-      light_source { samples Samples }
     }
     media {
       absorption rgb <1.8, 1.85, 1.95> scattering { 1, rgb 0.6 }
@@ -195,6 +207,14 @@ sphere {
       mix subtract priority 1
       absorption rgb 6 scattering { 1, rgb 1.2 }
       density { function { Ball(x, y, z, 2.6, 0.5) } }
+    }
+    light {
+      pigment { average pigment_map {
+        [1 pigment_pattern { function { Ball(x, y, z, 4.8, 1.1) * (0.12 + 0.88 * pow(Puff(x * 1.7, y * 1.7, z * 1.7), 2)) } } color_map { [0 rgb 0] [1 rgb <1, 0.08, 0.01> * 1.5] }]
+        [1 pigment_pattern { function { Ball(x, y, z, 3.4, 0.9) * (0.3 + 0.7 * Puff(x * 1.4, y * 1.4, z * 1.4)) } } color_map { [0 rgb 0] [1 rgb <1, 0.36, 0.04> * 2] }]
+        [1 pigment_pattern { function { Ball(x * 1.1, y, z * 1.1, 2, 0.6) } } color_map { [0 rgb 0] [1 rgb <1, 0.78, 0.4> * 5] }]
+      } }
+      brightness 3 samples Samples
     }
   }
   translate F

@@ -250,7 +250,7 @@ export class Program {
       renames.set(word, name);
     }
     const bindings = (unit) => new Set([...unit.info.globals, ...(unit === sceneUnit ? unit.info.topLocals : [])]);
-    const context = { macros, callersOf, converted: new Set(), mode: this.mode, classicReads, classicCalls, taken, renames, names };
+    const context = { units, macros, callersOf, converted: new Set(), mode: this.mode, classicReads, classicCalls, taken, renames, names };
     const results = [];
     for (const unit of this.mode === 'convert' ? units : [sceneUnit]) {
       const others = new Set(units.filter((u) => u !== unit).flatMap((u) => [...bindings(u)]));
@@ -770,7 +770,8 @@ function convertUnit(unit, context) {
       case 'message_directive': messageDirective(node); return;
       case 'array_expression': arrayExpression(node); return;
       case 'dictionary_expression': dictionaryExpression(node); return;
-      case 'block': case 'bracket_group': inList(node.children); return;
+      case 'block': inList(node.children); return;
+      case 'bracket_group': inList(node.children); return;
       default: visitChildren(node);
     }
   }

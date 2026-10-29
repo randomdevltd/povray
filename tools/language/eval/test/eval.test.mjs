@@ -48,3 +48,47 @@ test('plans classic and native evaluation of progressive photon controls', () =>
   assert.equal(readFileSync(entry.jobs.C.input, 'utf8'),
     readFileSync(join(import.meta.dirname, '../../codemod/test/fixtures/photons.pov4'), 'utf8'));
 });
+
+test('plans classic and native evaluation of independent refraction fields', () => {
+  const scenes = mkdtempSync(join(tmpdir(), 'lang-refraction-'));
+  writeFileSync(join(scenes, 'refraction.pov'), '#version 3.7;\n' +
+    'global_settings { assumed_gamma 1 mm_per_unit 100 }\n' +
+    'sphere { 0,1 interior { refraction { function { -0.03*(2+x) } detail 0.06 } } }\n');
+  const result = plan({ out: join(scenes, 'result'), scenes, 'run-id': 'refraction', size: '32x24',
+    'classic-id': 'fixture', 'bc-id': 'fixture', 'b-args': '+ML{version}' });
+  const entry = result.scenes[0];
+  assert.equal(entry.converted, true);
+  assert.deepEqual(entry.refusals, []);
+  assert.deepEqual(Object.keys(entry.jobs), ['A', 'B', 'C']);
+  assert.ok(entry.jobs.B.args.includes('+ML3.7'));
+  const output = readFileSync(entry.jobs.C.input, 'utf8');
+  assert.match(output, /refraction \{ function \{ -0\.03\s*\*\s*\(2\s*\+\s*x\) \} detail 0\.06 \}/);
+});
+
+
+test('plans classic 3.7 and native evaluation of emission-selected volume lights', () => {
+  const scenes = mkdtempSync(join(tmpdir(), 'lang-emission-'));
+  const fixture = join(import.meta.dirname, '../../codemod/test/fixtures/interior_emission');
+  writeFileSync(join(scenes, 'emission.pov'), readFileSync(`${fixture}.pov`, 'utf8'));
+  const result = plan({ out: join(scenes, 'result'), scenes, 'run-id': 'emission', size: '32x24',
+    'classic-id': 'fixture', 'bc-id': 'fixture', 'b-args': '+ML{version}' });
+  const entry = result.scenes[0];
+  assert.equal(entry.converted, true);
+  assert.deepEqual(entry.refusals, []);
+  assert.deepEqual(Object.keys(entry.jobs), ['A', 'B', 'C']);
+  assert.ok(entry.jobs.B.args.includes('+ML3.7'));
+  assert.equal(readFileSync(entry.jobs.C.input, 'utf8'), readFileSync(`${fixture}.pov4`, 'utf8'));
+});
+
+
+test('plans classic and native evaluation of surface light blocks', () => {
+  const scenes = mkdtempSync(join(tmpdir(), 'lang-surface-light-'));
+  const fixture = join(import.meta.dirname, '../../codemod/test/fixtures/surface_light.pov');
+  writeFileSync(join(scenes, 'surface_light.pov'), readFileSync(fixture, 'utf8'));
+  const result = plan({ out: join(scenes, 'result'), scenes, 'run-id': 'surface-light', size: '32x24',
+    'classic-id': 'fixture', 'bc-id': 'fixture', 'b-args': '+ML{version}' });
+  const entry = result.scenes[0];
+  assert.equal(entry.converted, true);
+  assert.deepEqual(entry.refusals, []);
+  assert.equal(readFileSync(entry.jobs.C.input, 'utf8'), readFileSync(`${fixture}4`, 'utf8'));
+});

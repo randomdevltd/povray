@@ -174,90 +174,14 @@ void Destroy_BBox_Tree(BBOX_TREE *Node)
 
 void Recompute_BBox(BoundingBox *bbox, const TRANSFORM *trans)
 {
-    int i;
-    Vector3d lower_left, lengths, corner;
-    Vector3d mins, maxs;
-
-    if (trans == nullptr)
-        return;
-
-    lower_left = Vector3d(bbox->lowerLeft);
-    lengths    = Vector3d(bbox->size);
-
-    mins = Vector3d(BOUND_HUGE);
-    maxs = Vector3d(-BOUND_HUGE);
-
-    for(i = 1; i <= 8; i++)
-    {
-        corner = lower_left;
-
-        corner[X] += ((i & 1) ? lengths[X] : 0.0);
-        corner[Y] += ((i & 2) ? lengths[Y] : 0.0);
-        corner[Z] += ((i & 4) ? lengths[Z] : 0.0);
-
-        MTransPoint(corner, corner, trans);
-
-        if(corner[X] < mins[X]) { mins[X] = corner[X]; }
-        if(corner[X] > maxs[X]) { maxs[X] = corner[X]; }
-        if(corner[Y] < mins[Y]) { mins[Y] = corner[Y]; }
-        if(corner[Y] > maxs[Y]) { maxs[Y] = corner[Y]; }
-        if(corner[Z] < mins[Z]) { mins[Z] = corner[Z]; }
-        if(corner[Z] > maxs[Z]) { maxs[Z] = corner[Z]; }
-    }
-
-    // Clip bounding box at the largest allowed bounding box.
-    if(mins[X] < -BOUND_HUGE / 2) { mins[X] = -BOUND_HUGE / 2; }
-    if(mins[Y] < -BOUND_HUGE / 2) { mins[Y] = -BOUND_HUGE / 2; }
-    if(mins[Z] < -BOUND_HUGE / 2) { mins[Z] = -BOUND_HUGE / 2; }
-    if(maxs[X] >  BOUND_HUGE / 2) { maxs[X] =  BOUND_HUGE / 2; }
-    if(maxs[Y] >  BOUND_HUGE / 2) { maxs[Y] =  BOUND_HUGE / 2; }
-    if(maxs[Z] >  BOUND_HUGE / 2) { maxs[Z] =  BOUND_HUGE / 2; }
-
-    Make_BBox_from_min_max(*bbox, mins, maxs);
+    if (trans != nullptr)
+        Make_Transformed_BBox(*bbox, trans->matrix);
 }
 
 void Recompute_Inverse_BBox(BoundingBox *bbox, const TRANSFORM *trans)
 {
-    int i;
-    Vector3d lower_left, lengths, corner;
-    Vector3d mins, maxs;
-
-    if (trans == nullptr)
-        return;
-
-    lower_left = Vector3d(bbox->lowerLeft);
-    lengths    = Vector3d(bbox->size);
-
-    mins = Vector3d(BOUND_HUGE);
-    maxs = Vector3d(-BOUND_HUGE);
-
-    for(i = 1; i <= 8; i++)
-    {
-        corner = lower_left;
-
-        corner[X] += ((i & 1) ? lengths[X] : 0.0);
-        corner[Y] += ((i & 2) ? lengths[Y] : 0.0);
-        corner[Z] += ((i & 4) ? lengths[Z] : 0.0);
-
-        MInvTransPoint(corner, corner, trans);
-
-        if(corner[X] < mins[X]) { mins[X] = corner[X]; }
-        if(corner[X] > maxs[X]) { maxs[X] = corner[X]; }
-        if(corner[Y] < mins[Y]) { mins[Y] = corner[Y]; }
-        if(corner[Y] > maxs[Y]) { maxs[Y] = corner[Y]; }
-        if(corner[Z] < mins[Z]) { mins[Z] = corner[Z]; }
-        if(corner[Z] > maxs[Z]) { maxs[Z] = corner[Z]; }
-    }
-
-    // Clip bounding box at the largest allowed bounding box.
-    if(mins[X] < -BOUND_HUGE / 2) { mins[X] = -BOUND_HUGE / 2; }
-    if(mins[Y] < -BOUND_HUGE / 2) { mins[Y] = -BOUND_HUGE / 2; }
-    if(mins[Z] < -BOUND_HUGE / 2) { mins[Z] = -BOUND_HUGE / 2; }
-    if(maxs[X] >  BOUND_HUGE / 2) { maxs[X] =  BOUND_HUGE / 2; }
-    if(maxs[Y] >  BOUND_HUGE / 2) { maxs[Y] =  BOUND_HUGE / 2; }
-    if(maxs[Z] >  BOUND_HUGE / 2) { maxs[Z] =  BOUND_HUGE / 2; }
-
-    Make_BBox_from_min_max(*bbox, mins, maxs);
+    if (trans != nullptr)
+        Make_Transformed_BBox(*bbox, trans->inverse);
 }
 
 // Create a bounding box hierarchy from a given list of finite and
@@ -448,7 +372,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     found = false;
 
     // Check top node.
-    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
+    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats(), Best_Intersection->Depth);
 
     // Check elements in the priority queue.
     while(!pqueue.IsEmpty())
@@ -501,7 +425,7 @@ bool Intersect_BBox_Tree(BBoxPriorityQueue& pqueue, const BBOX_TREE *Root, const
     found = false;
 
     // Check top node.
-    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats());
+    Check_And_Enqueue(pqueue, Root, &Root->BBox, &rayinfo, Thread->Stats(), Best_Intersection->Depth);
 
     // Check elements in the priority queue.
     while(!pqueue.IsEmpty())
@@ -770,10 +694,12 @@ FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root)
 
 static void Calc_BBox(BoundingBox& box, const BoundingBox *boxes, const std::uint32_t *idx, size_t size)
 {
-    Vector3d bmin(BOUND_HUGE), bmax(-BOUND_HUGE);
+    Vector3d bmin(std::numeric_limits<DBL>::infinity()), bmax(-std::numeric_limits<DBL>::infinity());
+    bool finite = size != 0;
     for (size_t i = 0; i < size; ++i)
     {
         const BoundingBox& b = boxes[idx[i]];
+        finite = finite && b.finite;
         for (int d = X; d <= Z; ++d)
         {
             const DBL tmin = b.lowerLeft[d], tmax = tmin + b.size[d];
@@ -781,7 +707,8 @@ static void Calc_BBox(BoundingBox& box, const BoundingBox *boxes, const std::uin
             bmax[d] = std::max(bmax[d], tmax);
         }
     }
-    Make_BBox_from_min_max(box, bmin, bmax);
+    Make_BBox_from_min_max(box, bmin, bmax, finite);
+    box.finiteInterior = false;
 }
 
 FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox)
@@ -867,12 +794,14 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
         ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf]));
         if (!precondition(ray, object, 0.0))
             return false;
+        // An admitted hint is a hit like any other, so the nearest admitted root is always the one returned.
         if (object->Shadow_Hint_Intersection(ray, &New_Intersection, Thread) && postcondition(ray, object, New_Intersection.Depth) &&
-            (New_Intersection.Depth < Best_Intersection->Depth) && stop(New_Intersection))
+            (New_Intersection.Depth < Best_Intersection->Depth))
         {
             *Best_Intersection = New_Intersection;
             found = true;
-            return true;
+            if (stop(New_Intersection))
+                return true;
         }
         if (Find_Intersection_BBox_Passed(&New_Intersection, object, ray, postcondition, Thread) &&
             (New_Intersection.Depth < Best_Intersection->Depth))
@@ -908,8 +837,8 @@ void Check_And_Enqueue(BBoxPriorityQueue& Queue, const BBOX_TREE *Node, const Bo
         // We proceed one dimension at a time.
 
         // These will keep track of the overlap between the intervals.
-        dmin = -BOUND_HUGE;
-        dmax =  BOUND_HUGE;
+        dmin = -std::numeric_limits<double>::max();
+        dmax = std::numeric_limits<double>::max();
 
         for (int dim = X; dim <= Z; ++dim)
         {
@@ -1006,7 +935,7 @@ BBOX_TREE *create_bbox_node(int size)
     New->Infinite = false;
     New->Entries = size;
 
-    Make_BBox(New->BBox, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    Make_BBox(New->BBox, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false);
 
     if(size)
         New->Node = reinterpret_cast<BBOX_TREE **>(POV_MALLOC(size*sizeof(BBOX_TREE *), "bounding box node"));
@@ -1023,12 +952,14 @@ void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t
     Vector3d bmin, bmax;
     BoundingBox *bbox;
 
-    bmin = Vector3d(BOUND_HUGE);
-    bmax = Vector3d(-BOUND_HUGE);
+    bmin = Vector3d(std::numeric_limits<DBL>::infinity());
+    bmax = Vector3d(-std::numeric_limits<DBL>::infinity());
+    bool finite = first < last;
 
     for(i = first; i < last; i++)
     {
         bbox = &(Finite[i]->BBox);
+        finite = finite && bbox->finite;
 
         tmin = bbox->lowerLeft[X];
         tmax = tmin + bbox->size[X];
@@ -1049,7 +980,8 @@ void calc_bbox(BoundingBox *BBox, BBOX_TREE **Finite, ptrdiff_t first, ptrdiff_t
         if(tmax > bmax[Z]) { bmax[Z] = tmax; }
     }
 
-    Make_BBox_from_min_max(*BBox, bmin, bmax);
+    Make_BBox_from_min_max(*BBox, bmin, bmax, finite);
+    BBox->finiteInterior = false;
 }
 
 static inline BBoxScalar half_area(const BBoxVector3d& lo, const BBoxVector3d& hi)

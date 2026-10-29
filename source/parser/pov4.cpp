@@ -96,7 +96,7 @@ enum BI : unsigned char
 {
     B_x, B_y, B_z, B_t, B_u, B_v, B_pi, B_tau, B_clock, B_clock_on, B_yes, B_no, B_on, B_off, B_version, B_now,
     B_abs, B_acos, B_acosh, B_asin, B_asinh, B_atan, B_atan2, B_atanh, B_ceil, B_cos, B_cosh, B_degrees, B_div,
-    B_exp, B_floor, B_int, B_ln, B_log, B_max, B_min, B_mod, B_pow, B_radians, B_select, B_sin, B_sinh, B_sqrt,
+    B_exp, B_floor, B_int, B_ln, B_log, B_max, B_min, B_mod, B_pow, B_radians, B_scale_lumens, B_select, B_sin, B_sinh, B_sqrt,
     B_sqr, B_tan, B_tanh, B_vdot, B_vlength, B_vcross, B_vnormalize, B_vrotate, B_vaxis_rotate, B_strlen,
     B_strcmp, B_asc, B_val, B_concat, B_chr, B_bitwise_and, B_bitwise_or, B_bitwise_xor, B_dimensions,
     B_dimension_size, B_seed, B_rand, B_len, B_range, B_map, B_filter, B_push, B_keys, B_defined, B_debug,
@@ -112,7 +112,7 @@ const std::unordered_map<std::string, BI>& BuiltinNames()
         {"asin", B_asin}, {"asinh", B_asinh}, {"atan", B_atan}, {"atan2", B_atan2}, {"atanh", B_atanh},
         {"ceil", B_ceil}, {"cos", B_cos}, {"cosh", B_cosh}, {"degrees", B_degrees}, {"div", B_div},
         {"exp", B_exp}, {"floor", B_floor}, {"int", B_int}, {"ln", B_ln}, {"log", B_log}, {"max", B_max},
-        {"min", B_min}, {"mod", B_mod}, {"pow", B_pow}, {"radians", B_radians}, {"select", B_select},
+        {"min", B_min}, {"mod", B_mod}, {"pow", B_pow}, {"radians", B_radians}, {"scale_lumens", B_scale_lumens}, {"select", B_select},
         {"sin", B_sin}, {"sinh", B_sinh}, {"sqrt", B_sqrt}, {"sqr", B_sqr}, {"tan", B_tan}, {"tanh", B_tanh},
         {"vdot", B_vdot}, {"vlength", B_vlength}, {"vcross", B_vcross}, {"vnormalize", B_vnormalize},
         {"vrotate", B_vrotate}, {"vaxis_rotate", B_vaxis_rotate}, {"strlen", B_strlen}, {"strcmp", B_strcmp},
@@ -145,7 +145,7 @@ const char* const kWrapKeywords[] = {
     "transform",
 };
 const char* const kUndeclarable[] = {
-    "background", "default", "global_settings", "interior_texture", "photons", "radiosity",
+    "background", "default", "global_settings", "interior_texture", "photons", "radiosity", "refraction",
 };
 
 bool InList(const char* const* list, size_t n, const std::string& word)
@@ -260,7 +260,7 @@ const std::unordered_map<BI, BuiltinSig>& BuiltinSigs()
         { B_tan, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_tanh, { 1, 1, { TY_NUMERIC }, TY_NUM } },
         { B_atan2, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_div, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_mod, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_pow, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
-        { B_max, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_min, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
+        { B_max, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_scale_lumens, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_min, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_select, { 3, 4, { TY_NUMERIC, TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_vdot, { 2, 2, { TY_VECARG, TY_VECARG }, TY_NUM } },
         { B_vcross, { 2, 2, { TY_VECARG, TY_VECARG }, TY_VEC } },
@@ -728,6 +728,9 @@ private:
     void LowerItems(Program& p, TSNode n, Node& into, const char* skipField);
     int CheckedName(Program& p, TSNode n);
     void LowerPhotonItems(Program& p, Node& body);
+    const Node* ContextualOperand(const Node* n, const Node*& word);
+    std::deque<Node> mContextualNodes;
+    std::unordered_map<const Node*, std::pair<const Node*, const Node*>> mContextualSplits;
     const Node* PhotonOperand(Program& p, const Node* n, const Node*& word);
 
     void Snippet(const std::string& text, std::vector<POV_LONG> lines, unsigned file);
@@ -3364,6 +3367,42 @@ bool Pov4Evaluator::ContextualItem(const std::string& block, const std::string& 
     return false;
 }
 
+// `word -1` parses as the sum `word - 1`; split, it is the word and the signed rest, built once per sum.
+const Node* Pov4Evaluator::ContextualOperand(const Node* n, const Node*& word)
+{
+    auto known = mContextualSplits.find(n);
+    if (known != mContextualSplits.end())
+    {
+        word = known->second.first;
+        return known->second.second;
+    }
+    const Node* value = nullptr;
+    word = nullptr;
+    if ((n->a->kind == NK::Ident) && ((n->op == OpAdd) || (n->op == OpSub)))
+    {
+        word = n->a;
+        mContextualNodes.push_back(*n);
+        Node& unary = mContextualNodes.back();
+        unary.kind = NK::Unary;
+        unary.op = (n->op == OpAdd) ? OpPlus : OpNeg;
+        unary.a = n->b;
+        unary.b = nullptr;
+        value = &unary;
+    }
+    else if (n->a->kind == NK::Binary)
+    {
+        const Node* left = ContextualOperand(n->a, word);
+        if (left != nullptr)
+        {
+            mContextualNodes.push_back(*n);
+            mContextualNodes.back().a = left;
+            value = &mContextualNodes.back();
+        }
+    }
+    mContextualSplits[n] = {word, value};
+    return value;
+}
+
 // An empty spread takes the comma after it, so `tags { ...None, inherit }` stays a list.
 void Pov4Evaluator::Emit(const Node* n, Output& out)
 {
@@ -3395,6 +3434,22 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
                 return;
+            }
+            break;
+        case NK::Binary:
+            // An unbound contextual word of the block heads the item; a bound name of that spelling keeps the sum.
+            if (out.IsBlock())
+            {
+                const Node* word = nullptr;
+                const Node* value = ContextualOperand(n, word);
+                PValue classic;
+                if ((value != nullptr) && ContextualItem(static_cast<TextOutput&>(out).context, word->text) &&
+                    !FindBinding(word) && !ClassicLookup(word->text, classic))
+                {
+                    out.Put(Item(Item::Keyword, word->text, word->text, word), false);
+                    out.Put(Item(Eval(value), value), false);
+                    return;
+                }
             }
             break;
         case NK::Comma:
@@ -3450,6 +3505,13 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
             }
             break;
         case NK::Builtin:
+            if (out.IsBlock() && n->op == B_off &&
+                static_cast<TextOutput&>(out).context == "interior" &&
+                static_cast<TextOutput&>(out).lastKeyword == "refraction")
+            {
+                out.Put(Item(Item::Keyword, "off", "off", n), false);
+                return;
+            }
             if (out.IsBlock() && (n->op >= B_abs))
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
@@ -4292,6 +4354,11 @@ PValue Pov4Evaluator::CallBuiltin(BI id, const std::string& word, PValues& args,
         case B_cosh: argc(1, 1); return num(std::cosh(f(0)));
         case B_degrees: argc(1, 1); return num(f(0) / M_PI_180);
         case B_radians: argc(1, 1); return num(f(0) * M_PI_180);
+        case B_scale_lumens:
+            argc(2, 2);
+            if (!std::isfinite(f(0)) || !std::isfinite(f(1)) || !(f(1) > 0.0))
+                Fail(at, "scale_lumens takes finite lumens and a positive finite number of metres per unit.");
+            return num(f(0) / (f(1) * f(1)));
         case B_div:
             argc(2, 2);
             if (f(1) == 0.0)

@@ -88,10 +88,10 @@ namespace pov
 ******************************************************************************/
 
 DBL Attenuate_Light(const LightSource *Light_Source, const Ray &Light_Source_Ray, DBL Distance);
-/// The distance part of Attenuate_Light(): the authored fade, or 1/r^2 for an unfaded emitter.
+/// The distance part of Attenuate_Light(): the authored fade, or the volume-light law for an emitter.
 DBL Light_Distance_Attenuation(const LightSource *Light_Source, DBL Distance);
-/// Whether a media light's fade_cutoff leaves it out at Point: its brightest channel at the emitter's nearest reach is below the cutoff.
-bool Light_Below_Fade_Cutoff(const LightSource *Light_Source, const Vector3d& Point);
+/// A volume light's artistic falloff at a lit point: 1 within its reach, 1/attenuation scale far away.
+DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length);
 /// Photon method 2 deposit weight at path Length from the light, A(L) * L^2 so photons match the direct light; A(L) when parallel.
 DBL Light_Photon_Path_Weight(const LightSource *Light_Source, DBL Length);
 

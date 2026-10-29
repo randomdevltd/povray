@@ -1,5 +1,5 @@
 // sslt-reference Key=Value...: random-walk reference images of the diffuse subsurface light of tools/bench/sslt-reference.pov,
-// or (Mode=forward) a lit half-space measured by photons; the transport and its estimator are in doc/PERF.md.
+// Mode=forward measures a half-space; Mode=cylinder_point measures finite-body exits: tools/bench/sslt-cylinder-reference.md.
 
 #include <algorithm>
 #include <atomic>
@@ -441,7 +441,7 @@ static int Forward(const std::map<std::string, std::string>& args, const Materia
     for (int j = 0; j < 3; j++)
     {
         double albedo = MediumAlbedo(0, j, mat.pigment[j] * mat.diffuse, mat.ior), sigmaT = mm / mat.mfp[j] / albedo;
-        unsigned count = std::max(1u, std::thread::hardware_concurrency());
+        unsigned count = args.count("Threads") ? unsigned(std::max(1, std::atoi(args.at("Threads").c_str()))) : std::max(1u, std::thread::hardware_concurrency());
         std::vector<std::thread> threads;
         std::vector<double> tally(size_t(count) * 4, 0.0);
         for (unsigned t = 0; t < count; t++)
@@ -507,6 +507,156 @@ static int Forward(const std::map<std::string, std::string>& args, const Materia
     return 0;
 }
 
+
+struct CylinderHit { double t; V n; int surface; };
+static bool CylinderIntersection(V p, V d, double radius, double height, CylinderHit& hit)
+{
+    hit.t = 1e300;
+    auto candidate = [&](double t, V n, int surface)
+    {
+        if (t > 1e-9 && t < hit.t) hit = { t, n, surface };
+    };
+    if (std::fabs(d.y) > 1e-15)
+        for (int cap = 0; cap < 2; cap++)
+        {
+            double y = cap ? height : 0.0, t = (y - p.y) / d.y;
+            V q = p + d * t;
+            if (q.x * q.x + q.z * q.z <= radius * radius)
+                candidate(t, { 0, cap ? 1.0 : -1.0, 0 }, cap ? 0 : 2);
+        }
+    double a = d.x * d.x + d.z * d.z, b = p.x * d.x + p.z * d.z;
+    double disc = b * b - a * (p.x * p.x + p.z * p.z - radius * radius);
+    if (a > 1e-30 && disc >= 0)
+        for (double t : { (-b - std::sqrt(disc)) / a, (-b + std::sqrt(disc)) / a })
+        {
+            V q = p + d * t;
+            if (q.y >= 0 && q.y <= height)
+                candidate(t, Unit({ q.x, 0, q.z }), 1);
+        }
+    return hit.t < 1e299;
+}
+
+static int CylinderForward(const std::map<std::string, std::string>& args)
+{
+    auto number = [&](const char *key, double fallback) { auto it = args.find(key); return it == args.end() ? fallback : std::atof(it->second.c_str()); };
+    long photons = long(number("Photons", 1000000));
+    int threads = int(number("Threads", 2)), bins = int(number("Bins", 16)), maxSteps = int(number("MaxSteps", 1000000));
+    double radius = number("Radius", 10.5), height = number("Height", 160), above = number("Above", 21);
+    double flux = number("Flux", 12), scale = number("Scale", 1), relativeIor = number("Eta", 1.44 / 1.000277);
+    uint64_t seed = uint64_t(number("Seed", 24301));
+    if (photons < 1 || threads < 1 || threads > 256 || bins < 1 || bins > 10000 || maxSteps < 1 ||
+        radius <= 0 || height <= 0 || above <= 0 || flux <= 0 || scale <= 0 || relativeIor < 1)
+    {
+        std::fprintf(stderr, "invalid cylinder parameters\n");
+        return 2;
+    }
+    const double sigmaS[3] = { .125, .2, 1.0 / 3.0 }, sigmaA[3] = { .000437339, .001065426, .003168666 };
+    const double coneMu[] = { .9, .95, .99 };
+    const char *category[] = { "miss", "entry_reflected", "absorbed", "ballistic", "single", "multiple", "unresolved" };
+    double fraction = .5 * (1 - above / std::hypot(above, radius));
+    std::printf("{\"mode\":\"cylinder_point\",\"units\":\"mm\",\"provenance\":\"independent analog random walk; supplied isotropic wax coefficients; point source only\","
+                "\"photons_per_channel\":%ld,\"threads\":%d,\"seed\":%llu,\"max_steps\":%d,\"radius\":%.12g,\"height\":%.12g,\"source_above_top\":%.12g,"
+                "\"source_flux_lm_per_channel\":%.12g,\"scale\":%.12g,\"eta\":%.12g,\"analytic_intercept_fraction\":%.12g,\"channels\":[",
+                photons, threads, (unsigned long long)seed, maxSteps, radius, height, above, flux, scale, relativeIor, fraction);
+    for (int j = 0; j < 3; j++)
+    {
+        double sa = sigmaA[j] / scale, ss = sigmaS[j] / scale, st = sa + ss;
+        size_t profileSize = size_t(3 * 3 * bins);
+        std::vector<std::vector<uint64_t>> ledgers(threads, std::vector<uint64_t>(7)), profiles(threads, std::vector<uint64_t>(profileSize));
+        std::vector<std::vector<uint64_t>> coneProfiles(threads, std::vector<uint64_t>(3 * profileSize));
+        std::vector<std::thread> workers;
+        for (int worker = 0; worker < threads; worker++)
+            workers.emplace_back([&, worker]()
+            {
+                auto& ledger = ledgers[worker]; auto& profile = profiles[worker]; auto& cones = coneProfiles[worker];
+                for (long i = worker; i < photons; i += threads)
+                {
+                    Rng rng{ Mix(seed ^ Mix(uint64_t(i)) ^ Mix(uint64_t(j) + 100)) };
+                    V p = { 0, height + above, 0 }, d = Isotropic(rng);
+                    CylinderHit hit;
+                    if (!CylinderIntersection(p, d, radius, height, hit)) { ledger[0]++; continue; }
+                    p = p + d * hit.t;
+                    double c = -Dot(d, hit.n);
+                    if (rng() >= Ft(c, relativeIor)) { ledger[1]++; continue; }
+                    double ratio = 1 / relativeIor, ct = std::sqrt(1 - ratio * ratio * (1 - c * c));
+                    d = Unit(d * ratio + hit.n * (ratio * c - ct));
+                    int order = 0; bool complete = false;
+                    for (int step = 0; step < maxSteps; step++)
+                    {
+                        if (!CylinderIntersection(p, d, radius, height, hit)) break;
+                        double flight = -std::log1p(-rng()) / st;
+                        if (flight < hit.t)
+                        {
+                            p = p + d * flight;
+                            if (rng() < sa / st) { ledger[2]++; complete = true; break; }
+                            order++; d = Isotropic(rng);
+                        }
+                        else
+                        {
+                            p = p + d * hit.t;
+                            c = std::max(0.0, std::min(1.0, Dot(d, hit.n)));
+                            if (rng() < FresnelInside(c, relativeIor))
+                                d = Unit(d - hit.n * (2 * c));
+                            else
+                            {
+                                int bucket = std::min(order, 2), bin = std::min(bins - 1, std::max(0, int(p.y / height * bins)));
+                                size_t index = (hit.surface * 3 + bucket) * bins + bin;
+                                ledger[3 + bucket]++; profile[index]++;
+                                double muOut = std::sqrt(std::max(0.0, 1 - relativeIor * relativeIor * (1 - c * c)));
+                                for (int cone = 0; cone < 3; cone++)
+                                    if (muOut >= coneMu[cone]) cones[cone * profileSize + index]++;
+                                complete = true; break;
+                            }
+                        }
+                    }
+                    if (!complete) ledger[6]++;
+                }
+            });
+        for (auto& worker : workers) worker.join();
+        std::vector<uint64_t> ledger(7), profile(profileSize), cones(3 * profileSize);
+        for (int worker = 0; worker < threads; worker++)
+        {
+            for (int k = 0; k < 7; k++) ledger[k] += ledgers[worker][k];
+            for (size_t k = 0; k < profileSize; k++) profile[k] += profiles[worker][k];
+            for (size_t k = 0; k < cones.size(); k++) cones[k] += coneProfiles[worker][k];
+        }
+        uint64_t closure = 0; for (auto n : ledger) closure += n;
+        double intercepted = double(photons - ledger[0]) / photons;
+        std::printf("%s{\"channel\":%d,\"sigma_s_per_mm\":%.12g,\"sigma_a_per_mm\":%.12g,\"g\":0,\"intercepted_count\":%llu,\"intercepted_flux_lm\":%.12g,"
+                    "\"intercept_fraction_se\":%.12g,\"closure_count\":%llu,\"ledger\":{", j ? "," : "", j, ss, sa,
+                    (unsigned long long)(photons - ledger[0]), flux * intercepted, std::sqrt(intercepted * (1 - intercepted) / photons), (unsigned long long)closure);
+        for (int k = 0; k < 7; k++)
+        {
+            double f = double(ledger[k]) / photons;
+            std::printf("%s\"%s\":{\"count\":%llu,\"fraction_emitted\":%.12g,\"flux_lm\":%.12g,\"flux_se_lm\":%.12g}", k ? "," : "", category[k],
+                        (unsigned long long)ledger[k], f, flux * f, flux * std::sqrt(f * (1 - f) / photons));
+        }
+        std::printf("},\"profile_order\":\"surface(top,side,bottom),order(0,1,2+),height_bin(bottom_to_top)\",\"height_bins\":%d,\"exit_counts\":[", bins);
+        for (size_t k = 0; k < profileSize; k++) std::printf("%s%llu", k ? "," : "", (unsigned long long)profile[k]);
+        std::printf("],\"normal_cones\":[");
+        for (int cone = 0; cone < 3; cone++)
+        {
+            double zeroUpper = flux * -std::expm1(std::log(.05) / photons);
+            std::printf("%s{\"mu_min\":%.12g,\"zero_count_flux_upper95_lm\":%.12g,\"counts\":[", cone ? "," : "", coneMu[cone], zeroUpper);
+            for (size_t k = 0; k < profileSize; k++)
+                std::printf("%s%llu", k ? "," : "", (unsigned long long)cones[cone * profileSize + k]);
+            std::printf("],\"flux_lm\":[");
+            for (size_t k = 0; k < profileSize; k++)
+                std::printf("%s%.12g", k ? "," : "", flux * double(cones[cone * profileSize + k]) / photons);
+            std::printf("],\"flux_se_lm\":[");
+            for (size_t k = 0; k < profileSize; k++)
+            {
+                double f = double(cones[cone * profileSize + k]) / photons;
+                std::printf("%s%.12g", k ? "," : "", flux * std::sqrt(f * (1 - f) / photons));
+            }
+            std::printf("]}");
+        }
+        std::printf("]}");
+    }
+    std::printf("]}\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     std::map<std::string, std::string> args;
@@ -517,12 +667,15 @@ int main(int argc, char **argv)
         {
             std::fprintf(stderr, "usage: sslt-reference Shape=N Material=N [Entry=beam View= Zoom= Bare= Blocks= Depth= W= H= Walks= Threads= Out=x.pfm Err=x.pfm]"
                                  " [Albedo=r,g,b[:r,g,b...] with Out= and Err= a comma list, one per medium] (Err: standard errors, -1 off the object)\n"
-                                 "       sslt-reference Mode=forward Material=N [Albedo=r,g,b Photons= Angle= Thickness=mm Cone=cos]\n");
+                                 "       sslt-reference Mode=forward Material=N [Albedo=r,g,b Photons= Angle= Thickness=mm Cone=cos Threads=]\n"
+                                 "       sslt-reference Mode=cylinder_point [Photons= Threads=2 Scale=1 Flux=12 Seed=24301 Radius=10.5 Height=160 Above=21 Bins=16 MaxSteps=1000000]\n");
             return 2;
         }
         args[std::string(argv[i], size_t(eq - argv[i]))] = eq + 1;
     }
     auto number = [&](const char *key, double fallback) { return args.count(key) ? std::atof(args[key].c_str()) : fallback; };
+    if (args.count("Mode") && args["Mode"] == "cylinder_point")
+        return CylinderForward(args);
     int shape = std::min(4, std::max(0, int(number("Shape", 0)))), view = int(number("View", 0)), zoom = int(number("Zoom", 1));
     const Material& mat = kMaterials[std::min(4, std::max(0, int(number("Material", 0))))];
     eta = mat.ior;
@@ -676,7 +829,7 @@ int main(int argc, char **argv)
             }
     };
     std::vector<std::thread> threads;
-    unsigned count = args.count("Threads") ? unsigned(number("Threads", 1)) : std::max(1u, std::thread::hardware_concurrency());
+    unsigned count = args.count("Threads") ? unsigned(std::max(1.0, number("Threads", 1))) : std::max(1u, std::thread::hardware_concurrency());
     for (unsigned i = 0; i < count; i++)
         threads.emplace_back(work);
     for (std::thread& t : threads)

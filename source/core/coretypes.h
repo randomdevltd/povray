@@ -45,6 +45,7 @@
 
 // C++ standard header files
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <stack>
 #include <string>
@@ -140,6 +141,13 @@ typedef TEXTURE* TexturePtr;
 /// @{
 
 struct MediaLight;
+class InteriorField;
+class PreparedRefractionDefinition;
+class PreparedScalarField;
+struct RefractionSpec;
+struct PreparedGridLayout;
+class TraceThreadData;
+class Ray;
 
 class Media final
 {
@@ -164,10 +172,6 @@ class Media final
         MathColour Emission;
         MathColour Extinction;
         MathColour Scattering;
-        /// adds refraction x density (its channel mean) to the refractive index of the interior holding it
-        DBL Refraction;
-        /// the smallest index detail, in millimetres, that must refract faithfully; 0 for auto
-        DBL RefractionDetail;
 
         DBL Ratio;
         DBL Confidence;
@@ -179,9 +183,10 @@ class Media final
 
         std::vector<PIGMENT*> Density;
         DBL FastResolution;
+        DBL requestedFastResolution = -1.0;
+        bool fastResolutionRecorded = false;
         std::shared_ptr<FastCache> fastCache;
-        /// its `light_source` block, making it a light, or empty
-        std::shared_ptr<const MediaLight> light;
+        std::vector<std::shared_ptr<FastCache>> preparedBindings;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
 
@@ -194,14 +199,18 @@ class Media final
         void Transform(const TRANSFORM *trans);
 
         void PostProcess();
-        /// object: the container; refractionDetail: the effective refraction_detail in scene units, 0 when auto has none to derive;
-        /// cellLimit: the effective prepared media cell limit, 0 for none.
-        void SetFastContainer(ObjectPtr object, DBL refractionDetail = 0.0, DBL cellLimit = 0.0);
+        void SetFastContainer(ObjectPtr object, DBL cellLimit = 0.0);
+        void FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
+        void SetRequestedFastResolution(DBL value) { FastResolution = requestedFastResolution = value; fastResolutionRecorded = true; }
+        void RequirePreparedField() const;
+        void PreparedDensityAt(const Vector3d& point, MathColour& result) const;
+        DBL PreparedStep(const Ray& ray, DBL from, DBL to) const;
+        bool PreparedRange(const Ray& ray, DBL& from, DBL& to) const;
+        void PreparedCuts(const Ray& ray, DBL from, DBL to, std::vector<DBL>& cuts) const;
+        FastCache *SinglePreparedBinding() const;
         /// Plans building its prepared density grid ahead of the render from `copy`, a copy whose functions other threads
         /// may run; null when it has no prepared grid or the grid cannot be sized now.
         std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const;
-        /// Whether it only bends rays, with nothing to absorb, emit or scatter.
-        bool OnlyRefracts() const { return (Refraction != 0.0) && !use_absorption && !use_emission && !use_scattering; }
         /// Whether its prepared grid was fitted to this container.
         bool PreparedFor(ConstObjectPtr object) const;
 };
@@ -264,6 +273,11 @@ class Interior final
         SNGL Fade_Distance, Fade_Power;
         MathColour Fade_Colour;
         std::vector<Media> media;
+        /// its `light { }` block, making the interior's media a light, or empty
+        std::shared_ptr<MediaLight> light;
+        std::vector<std::shared_ptr<InteriorField>> fields;
+        std::shared_ptr<const PreparedRefractionDefinition> preparedRefraction;
+        std::shared_ptr<RefractionSpec> refraction;
         std::shared_ptr<SubsurfaceInterior> subsurface;
 
         Interior();
@@ -400,6 +414,7 @@ typedef unsigned short HF_VAL;
 class Intersection final
 {
     public:
+        bool unbounded = false;
 
         /// Distance from the intersecting ray's origin.
         DBL Depth;

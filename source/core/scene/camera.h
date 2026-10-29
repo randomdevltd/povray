@@ -94,6 +94,11 @@ namespace pov
 /// Pointed: aimed only, the bounds have no size to fit.
 enum class FrameResult { Fitted, Aimed, Pointed, Failed };
 
+struct FrameBounds final
+{
+    Vector3d low, high;
+};
+
 class Camera final
 {
 public:
@@ -173,23 +178,26 @@ public:
     void Translate(const Vector3d& Vector);
     /// Whether this camera takes the same picture as another, judged by content; perturbed or function-defined views never match a copy.
     bool SameView(const Camera& other, bool compareFilters = true) const;
-    /// Aims at the bounds' centre from Location, which framing never moves, and resizes the field until they fit with a margin.
+    /// Aims from the fixed Location and fits the target; disjoint parts are centred and measured in projection.
     FrameResult Frame(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData = nullptr,
-                      const std::function<void()>& cooperate = nullptr);
+                      const std::function<void()>& cooperate = nullptr,
+                      const std::vector<FrameBounds>& parts = {});
     bool FitsFrame(const Vector3d& low, const Vector3d& high) const;
     void PlaceFrame(const TRANSFORM *trans);
 
 private:
     void Init();
-    FrameResult FrameField(const Vector3d& low, const Vector3d& high);
+    FrameResult FrameField(const Vector3d& low, const Vector3d& high, const std::vector<FrameBounds>& parts);
     FrameResult FrameWindow(const Vector3d& low, const Vector3d& high, TraceThreadData *threadData,
-                            const std::function<void()>& cooperate);
+                            const std::function<void()>& cooperate, const std::vector<FrameBounds>& parts);
 };
 
-/// Whether a box, a single point at least, is finite and well inside the bounding limits.
+/// Whether a box, a single point at least, has finite ordered coordinates and representable extents.
 bool FiniteBounds(const Vector3d& low, const Vector3d& high);
 /// The finite bounds a look_at target frames, with its genuinely unbounded parts counted and left out; false if none.
 bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, unsigned int& unbounded);
+/// Keeps union operands separate in projection; intersections retain their conservative common bounds.
+std::vector<FrameBounds> FrameTargetParts(ConstObjectPtr object);
 
 /// @}
 ///

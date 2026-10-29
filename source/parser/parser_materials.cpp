@@ -36,6 +36,7 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
 
+#include <limits>
 #include <climits>
 #include <cmath>
 
@@ -3738,7 +3739,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (RESOLUTION_TOKEN)
             resolutionSpecified = true;
-            IMedia->FastResolution = Parse_Float();
+            IMedia->SetRequestedFastResolution(Parse_Float());
             if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
                 Error("media resolution needs a finite positive scene-unit width.");
         END_CASE
@@ -3769,12 +3770,6 @@ void Parser::Parse_Media(vector<Media>& medialist)
             Parse_Colour(IMedia->Emission);
         END_CASE
 
-        CASE (REFRACTION_TOKEN)
-            IMedia->Refraction = Parse_Float();
-            if (!std::isfinite(IMedia->Refraction))
-                Error("media refraction must be finite.");
-        END_CASE
-
         CASE (SCATTERING_TOKEN)
             Parse_Begin();
             IMedia->Type = (int)Parse_Float();
@@ -3792,6 +3787,11 @@ void Parser::Parse_Media(vector<Media>& medialist)
                         Error("Eccentricity cannot be used with this scattering type.");
                     }
                     IMedia->Eccentricity = Parse_Float();
+                    if (!std::isfinite(IMedia->Eccentricity) ||
+                        (!(std::fabs(IMedia->Eccentricity) < 1.0) && (sceneData->EffectiveLanguageVersion() >= 380)))
+                        Error("Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive.");
+                    else if (!(std::fabs(IMedia->Eccentricity) < 1.0))
+                        Warning("Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive; a scene of version 3.7 or older keeps it.");
                 END_CASE
 
                 CASE (EXTINCTION_TOKEN)
@@ -3861,10 +3861,6 @@ void Parser::Parse_Media(vector<Media>& medialist)
             IMedia->mix = Parse_Mix();
         END_CASE
 
-        CASE (LIGHT_SOURCE_TOKEN)
-            Parse_Media_Light(*IMedia);
-        END_CASE
-
         CASE (PRIORITY_TOKEN)
         {
             const DBL priority = Parse_Float();
@@ -3875,18 +3871,38 @@ void Parser::Parse_Media(vector<Media>& medialist)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "refraction_detail")
+            UNGET
+            EXIT
+        END_CASE
+    END_EXPECT
+
+    Parse_End();
+
+    if (resolutionSpecified && IMedia->Sample_Method != 4)
+        Error("media resolution requires method 4.");
+
+    medialist.push_back(IMediaObj);
+}
+
+unsigned Parser::Parse_Light_Bounce()
+{
+    unsigned passes = 1;
+    if (!Peek_Token(LEFT_CURLY_TOKEN))
+        return passes;
+    bool havePasses = false;
+    Parse_Begin();
+    EXPECT
+        OTHERWISE
+            if (CurrentTokenText() == "passes")
             {
-                Get_Token();
-                if (CurrentTokenText() == "auto")
-                    IMedia->RefractionDetail = 0.0;
-                else
-                {
-                    UNGET
-                    IMedia->RefractionDetail = Parse_Float();
-                    if (!std::isfinite(IMedia->RefractionDetail) || !(IMedia->RefractionDetail > 0.0))
-                        Error("media refraction_detail must be a length in millimetres greater than 0, or auto.");
-                }
+                if (havePasses)
+                    Error("A bounce block accepts only one passes setting.");
+                havePasses = true;
+                const double value = Parse_Float();
+                if (!std::isfinite(value) || value < 1.0 || std::floor(value) != value ||
+                    value > static_cast<double>(std::numeric_limits<unsigned>::max()))
+                    Error("Bounce passes must be a positive integer in the unsigned range.");
+                passes = static_cast<unsigned>(value);
             }
             else
             {
@@ -3895,38 +3911,51 @@ void Parser::Parse_Media(vector<Media>& medialist)
             }
         END_CASE
     END_EXPECT
-
     Parse_End();
-
-    if (resolutionSpecified && IMedia->Sample_Method != 4)
-        Error("media resolution requires method 4.");
-    if (IMedia->light && ((IMedia->mix == kMediaBlendSubtract) || (IMedia->mix == kMediaBlendMultiply)))
-        Error("A media light_source needs a medium that adds or replaces, not one that subtracts or multiplies.");
-
-    medialist.push_back(IMediaObj);
+    return passes;
 }
 
-void Parser::Parse_Media_Light(Media& medium)
+std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
-    light->fadeCutoff = (defaultFadeCutoff >= 0.0) ? defaultFadeCutoff :
-                        (sceneData->EffectiveLanguageVersion() >= 400) ? kDefaultFadeCutoff : 0.0;
-
     Parse_Begin();
 
     EXPECT
+        CASE (PIGMENT_TOKEN)
+            if (light->pigment != nullptr || light->useEmission)
+                Error("A light block accepts exactly one pigment or emission input.");
+            light->pigment = Copy_Pigment(Default_Texture->Pigment);
+            Parse_Begin();
+            Parse_Pigment(&light->pigment);
+            Parse_End();
+        END_CASE
+
+        CASE (EMISSION_TOKEN)
+            if (light->pigment != nullptr || light->useEmission)
+                Error("A light block accepts exactly one pigment or emission input.");
+            light->useEmission = true;
+        END_CASE
+
         CASE (SAMPLES_TOKEN)
             light->samples = Parse_Int_With_Minimum(1, "samples");
         END_CASE
 
         CASE (BRIGHTNESS_TOKEN)
+            light->lumens = -1.0;
             light->brightness = Parse_Float();
             if (!std::isfinite(light->brightness) || (light->brightness < 0.0))
-                Error("A media light_source's brightness must be finite and not negative.");
+                Error("A light block's brightness must be finite and not negative.");
+            if (CurrentTokenText() == "lumens")
+            {
+                Get_Token();
+                light->lumens = light->brightness;
+            }
+            else if (CurrentTokenText() == "nits")
+                Get_Token(); // the number is the radiance itself; nothing converts it
         END_CASE
 
         CASE (SHADOWLESS_TOKEN)
-            light->shadowless = true;
+            light->shadowless = Allow_Float(1.0) > 0.0;
         END_CASE
 
         CASE (MEDIA_INTERACTION_TOKEN)
@@ -3935,14 +3964,6 @@ void Parser::Parse_Media_Light(Media& medium)
 
         CASE (MEDIA_ATTENUATION_TOKEN)
             light->mediaAttenuation = Allow_Float(1.0) > 0.0;
-        END_CASE
-
-        CASE (FADE_DISTANCE_TOKEN)
-            light->fadeDistance = Parse_Float();
-        END_CASE
-
-        CASE (FADE_POWER_TOKEN)
-            light->fadePower = Parse_Float();
         END_CASE
 
         CASE (PHOTONS_TOKEN)
@@ -3957,14 +3978,6 @@ void Parser::Parse_Media_Light(Media& medium)
                     light->photonReflection = Parse_Float() > 0.0;
                 END_CASE
 
-                CASE (AREA_LIGHT_TOKEN)
-                END_CASE
-
-                CASE4 (TARGET_TOKEN, COLLECT_TOKEN, PASS_THROUGH_TOKEN, SPLIT_UNION_TOKEN)
-                    light->photonLegacyOptions = true;
-                    Allow_Float(1.0);
-                END_CASE
-
                 OTHERWISE
                     UNGET
                     EXIT
@@ -3974,8 +3987,26 @@ void Parser::Parse_Media_Light(Media& medium)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "fade_cutoff")
-                light->fadeCutoff = Parse_Fade_Cutoff();
+            if (CurrentTokenText() == "bounce")
+            {
+                if (light->bouncePasses != 0)
+                    Error("A light block accepts only one bounce setting.");
+                light->bouncePasses = Parse_Light_Bounce();
+            }
+            else if (CurrentTokenText() == "attenuation")
+            {
+                if (surface)
+                    Error("Surface light blocks do not accept attenuation.");
+                Get_Token();
+                UNGET
+                const double first = Parse_Float();
+                const bool paired = Parse_Comma();
+                light->attenuationPower = paired ? first : 2.0;
+                light->attenuationScale = paired ? Parse_Float() : first;
+                if (!std::isfinite(light->attenuationScale) || (light->attenuationScale < 0.0) ||
+                    !std::isfinite(light->attenuationPower) || (light->attenuationPower <= 0.0))
+                    Error("A light block's attenuation takes a power greater than 0 and a scale of 0 or more; one value sets the scale.");
+            }
             else
             {
                 UNGET
@@ -3986,18 +4017,10 @@ void Parser::Parse_Media_Light(Media& medium)
 
     Parse_End();
 
-    medium.light = light;
+    if (light->bouncePasses > 0 && light->pigment == nullptr && !light->useEmission)
+        light->useEmission = true;
+    return light;
 }
-
-double Parser::Parse_Fade_Cutoff()
-{
-    const double cutoff = Parse_Float();
-    if (!std::isfinite(cutoff) || (cutoff < 0.0))
-        Error("A media light_source's fade_cutoff must be finite and not negative.");
-    return cutoff;
-}
-
-
 
 /*****************************************************************************
 *
@@ -4025,6 +4048,49 @@ double Parser::Parse_Fade_Cutoff()
 *   Sep 1999 : Fade_Colour added - Edward Coffey
 *
 ******************************************************************************/
+
+void Parser::Parse_Interior_Refraction(Interior& interior)
+{
+    auto refraction = std::make_shared<RefractionSpec>();
+    Get_Token();
+    if (CurrentTrueTokenId() == OFF_TOKEN)
+    {
+        interior.refraction = refraction;
+        return;
+    }
+    UNGET
+    Parse_Begin();
+    EXPECT
+        CASE (FUNCTION_TOKEN)
+            refraction->functions.push_back(new FunctionVM::CustomFunction(mpFunctionVM.get(), Parse_Function()));
+        END_CASE
+
+        OTHERWISE
+            if (CurrentTokenText() == "detail")
+            {
+                Get_Token();
+                if (CurrentTokenText() == "auto")
+                    refraction->detail = 0.0;
+                else
+                {
+                    UNGET
+                    refraction->detail = Parse_Float();
+                    if (!std::isfinite(refraction->detail) || refraction->detail <= 0.0)
+                        Error("Refraction detail must be auto or finite and greater than zero, in scene units.");
+                }
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
+        END_CASE
+    END_EXPECT
+    Parse_End();
+    if (refraction->functions.empty())
+        Error("A refraction block requires at least one function.");
+    interior.refraction = refraction;
+}
 
 void Parser::Parse_Interior(InteriorPtr& interior)
 {
@@ -4094,12 +4160,33 @@ void Parser::Parse_Interior(InteriorPtr& interior)
         END_CASE
 
         CASE (REFRACTION_TOKEN)
-            interior->Old_Refract = Parse_Float();
-            Warn_Compat(false, "Refraction value unnecessary to turn on refraction.\nTo attenuate, the fade_power and fade_distance keywords should be specified in 'interior{...}' statement.");
+            Get_Token();
+            // In a 3.7 or older scene `refraction off` is the classic value 0, as those versions read it.
+            if (CurrentTrueTokenId() == LEFT_CURLY_TOKEN ||
+                (CurrentTrueTokenId() == OFF_TOKEN && sceneData->EffectiveLanguageVersion() >= 380))
+            {
+                UNGET
+                if (interior->refraction)
+                    Error("Only one refraction block allowed in an interior.");
+                Parse_Interior_Refraction(*interior);
+            }
+            else
+            {
+                UNGET
+                interior->Old_Refract = Parse_Float();
+                Warn_Compat(false, "Refraction value unnecessary to turn on refraction.\nTo attenuate, the fade_power and fade_distance keywords should be specified in 'interior{...}' statement.");
+            }
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "ior_mix")
+            // contextual: a light block belongs to the interior, not to any one medium
+            if (CurrentTokenText() == "light")
+            {
+                if (interior->light != nullptr)
+                    Error("Only one light block allowed in an interior.");
+                interior->light = Parse_Light();
+            }
+            else if (CurrentTokenText() == "ior_mix")
             {
                 Get_Token();
                 const char *names[] = { "surface", "mean", "replace" };
@@ -4119,6 +4206,7 @@ void Parser::Parse_Interior(InteriorPtr& interior)
     END_EXPECT
 
     Parse_End();
+
 }
 
 int Parser::Parse_Mix()

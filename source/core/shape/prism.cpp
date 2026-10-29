@@ -114,6 +114,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/prism.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -255,7 +256,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 
                     k = (Height2 - P[Y]) / D[Y];
 
-                    if ((k > DEPTH_TOLERANCE) && (k < MAX_DISTANCE))
+                    if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
                     {
                         u = P[X] + k * D[X];
                         v = P[Z] + k * D[Z];
@@ -263,7 +264,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                         if (in_curve(u, v, Thread->Stats()))
                         {
                             distance = k / len;
-                            if ((distance > DEPTH_TOLERANCE) && (distance < MAX_DISTANCE))
+                            if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
                             {
                                 IPoint = ray.Evaluate(distance);
                                 if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -279,7 +280,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
 
                     k = (Height1 - P[Y]) / D[Y];
 
-                    if ((k > DEPTH_TOLERANCE) && (k < MAX_DISTANCE))
+                    if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
                     {
                         u = P[X] + k * D[X];
                         v = P[Z] + k * D[Z];
@@ -287,7 +288,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                         if (in_curve(u, v, Thread->Stats()))
                         {
                             distance = k / len;
-                            if ((distance > DEPTH_TOLERANCE) && (distance < MAX_DISTANCE))
+                            if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
                             {
                                 IPoint = ray.Evaluate(distance);
                                 if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -395,7 +396,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                             if ((h >= Height1) && (h <= Height2))
                             {
                                 distance = k / len;
-                                if ((distance > DEPTH_TOLERANCE) && (distance < MAX_DISTANCE))
+                                if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
                                 {
                                     IPoint = ray.Evaluate(distance);
                                     if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -432,7 +433,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                     {
                         k = (Height2 - P[Y]) / D[Y];
 
-                        if ((k > DEPTH_TOLERANCE) && (k < MAX_DISTANCE))
+                        if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
                         {
                             u = (P[X] + k * D[X]) / Height2;
                             v = (P[Z] + k * D[Z]) / Height2;
@@ -440,7 +441,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                             if (in_curve(u, v, Thread->Stats()))
                             {
                                 distance = k / len;
-                                if ((distance > DEPTH_TOLERANCE) && (distance < MAX_DISTANCE))
+                                if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
                                 {
                                     IPoint = ray.Evaluate(distance);
                                     if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -459,7 +460,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                     {
                         k = (Height1 - P[Y]) / D[Y];
 
-                        if ((k > DEPTH_TOLERANCE) && (k < MAX_DISTANCE))
+                        if ((k > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(k))
                         {
                             u = (P[X] + k * D[X]) / Height1;
                             v = (P[Z] + k * D[Z]) / Height1;
@@ -467,7 +468,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                             if (in_curve(u, v, Thread->Stats()))
                             {
                                 distance = k / len;
-                                if ((distance > DEPTH_TOLERANCE) && (distance < MAX_DISTANCE))
+                                if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
                                 {
                                     IPoint = ray.Evaluate(distance);
                                     if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -582,7 +583,7 @@ bool Prism::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDa
                         if ((h >= Height1) && (h <= Height2))
                         {
                             distance = k / len;
-                            if ((distance > DEPTH_TOLERANCE) && (distance < MAX_DISTANCE))
+                            if ((distance > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(distance))
                             {
                                 IPoint = ray.Evaluate(distance);
                                 if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
@@ -1271,8 +1272,8 @@ bool Prism::test_rectangle(const Vector3d& P, const Vector3d& D, DBL x1, DBL z1,
         }
         else
         {
-            dmin = -BOUND_HUGE;
-            dmax =  BOUND_HUGE;
+            dmin = -std::numeric_limits<double>::max();
+            dmax = std::numeric_limits<double>::max();
         }
     }
 

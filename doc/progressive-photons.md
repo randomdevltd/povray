@@ -361,20 +361,14 @@ dispersion scenes, turns the camera, and checks each error, including a load ref
 under a tiny ceiling from the option, the environment and the scene, and accepted when the
 option raises a tiny scene ceiling.
 
-## Media lights
+## Interior volume lights
 
-Media lights use method 2 through the same `Emitter` interface. Their
-`light_source { photons { refraction on reflection off } }` block controls
-transport just as it does for ordinary lights. Omitting those switches leaves
-the target's settings in control. `brightness` scales emitted photon power and
-direct illumination together; it does not scale the glow seen by the camera.
-Classic method 1 continues to ignore media-light photon blocks with a warning.
-Media and conventional lights share the emitter sampling and flux normalization.
-The media light's default direct falloff is inverse-square, clamped within one
-source cell; photons acquire inverse-square falloff by spreading through space, so
-they take no weight. A media light's own `fade_distance` and `fade_power` keep their
-meaning for direct light, and its photon deposits are weighted by them like any light's
-(see Light power and authoring).
+An interior `light { photons { refraction on reflection off } }` block selects
+photon transport routes. Source pigment and brightness define generated energy
+independently of visible media emission. The same source field and normalization
+serve direct lighting and photon shooting. Both photon methods retain their
+supported transport paths; sources starting inside prepared scattering media
+require method2. Generated flux is normalized before physical path attenuation.
 
 The position sample's weight already includes its power-table probability;
 shooting applies the light-selection and directional probabilities once. The

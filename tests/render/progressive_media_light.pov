@@ -10,6 +10,7 @@
 #ifndef (Absorption) #declare Absorption = 0; #end
 #ifndef (Heat) #declare Heat = 0; #end
 #declare Power = <3, 2, 1>;
+#declare HeatShape = function { pigment { spherical scale LampRadius } }
 global_settings {
     assumed_gamma 1 atmospheric_ior 1 max_trace_level 12
     #if (Photons) photons { method 2 quality PhotonQuality } #end
@@ -21,7 +22,7 @@ sphere {
     interior { ior LensIor } photons { target refraction on reflection off collect off }
 }
 #if (PointLight)
-    light_source { <0, 5, 0> rgb Power*Brightness fade_power 2 fade_distance 0
+    light_source { <0, 5, 0> rgb Power*Brightness/pi fade_power 2 fade_distance 0
                    photons { refraction SourceRefraction reflection off } }
 #else
     #for (Index, 0, Emitters-1)
@@ -30,13 +31,11 @@ sphere {
         sphere {
             0, LampRadius hollow no_image pigment { rgbt 1 }
             interior { ior 1
-                media { method 4 emission Power/(Emitters*4*pi*pow(LampRadius, 3)/3)
-                    absorption Absorption
-                    light_source { samples 64 brightness Brightness
-                                   photons { refraction SourceRefraction reflection off } }
-                }
+                media { method 4 absorption Absorption }
+                light { pigment { rgb Power/(Emitters*pi*pow(LampRadius, 2)) } brightness Brightness samples 64
+                        photons { refraction SourceRefraction reflection off } }
                 #if (Heat)
-                    media { method 3 refraction Heat density { spherical scale LampRadius } }
+                    refraction { function { Heat * HeatShape(x,y,z).red } detail auto }
                 #end
             }
             translate Lamp

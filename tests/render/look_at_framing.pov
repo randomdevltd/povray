@@ -98,8 +98,11 @@ global_settings { assumed_gamma 1 }
   #break
   #case (15) // a light_group's light is framed with its group, as a point
     light_group { light_source { <0, 3, 4> rgb 1 } object { Subject } tags { "subject" } } object { Ground }
-    #declare Expected = box { <-1, -1, -1>, <1, 3, 4> };
-    #if (Reference) camera { location <0, 0, -10> right x up y look_at Expected }
+    #declare Lower = atan2(-1, 9);
+    #declare Upper = atan2(3, 14);
+    #declare Pitch = (Lower + Upper) / 2;
+    #if (Reference) camera { location <0, 0, -10> direction z * 0.45 / tan((Upper - Lower) / 2)
+                            right x up y look_at <0, sin(Pitch), -10 + cos(Pitch)> }
     #else camera { location <0, 0, -10> right x up y look_at tagged { "subject" } } #end
   #break
   #case (16) // part of a union: only the selected child
@@ -258,7 +261,11 @@ global_settings { assumed_gamma 1 }
     #macro Place(I) box { <I * 2, 0, 0>, <I * 2 + 1, 1, 1> pigment { rgb <1, 0.2, 0.1> } finish { Glow } tags { "subject" } } #end
     #for (I, -1, 1) Place(I) #end
     object { Ground }
-    #declare Expected = box { <-2, 0, 0>, <3, 1, 1> };
+    #declare Expected = union {
+      box { <-2, 0, 0>, <-1, 1, 1> }
+      box { <0, 0, 0>, <1, 1, 1> }
+      box { <2, 0, 0>, <3, 1, 1> }
+    };
     #if (Reference) camera { location <0, 0, -10> right x up y look_at Expected }
     #else camera { location <0, 0, -10> right x up y look_at tagged { "subject" } } #end
   #break
@@ -282,8 +289,11 @@ global_settings { assumed_gamma 1 }
   #case (46) // a tagged light is part of a selection, framed as its point
     light_source { <0, 3, 4> rgb 1 tags { "subject" } }
     object { Subject } object { Ground }
-    #declare Expected = box { <-1, -1, -1>, <1, 3, 4> };
-    #if (Reference) camera { location <0, 0, -10> right x up y look_at Expected }
+    #declare Lower = atan2(-1, 9);
+    #declare Upper = atan2(3, 14);
+    #declare Pitch = (Lower + Upper) / 2;
+    #if (Reference) camera { location <0, 0, -10> direction z * 0.45 / tan((Upper - Lower) / 2)
+                            right x up y look_at <0, sin(Pitch), -10 + cos(Pitch)> }
     #else camera { location <0, 0, -10> right x up y look_at tagged { "subject" } } #end
   #break
   #case (47) // a member of a light group is copied as the group holding it, so the global lights do not reach it

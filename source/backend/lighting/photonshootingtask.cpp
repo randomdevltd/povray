@@ -64,6 +64,7 @@
 #include "povms/povmsutil.h"
 
 // POV-Ray header files (backend module)
+#include "backend/control/messagefactory.h"
 #include "backend/lighting/photonshootingstrategy.h"
 #include "backend/scene/backendscenedata.h"
 #include "backend/scene/view.h"
@@ -71,6 +72,9 @@
 #include "core/lighting/emitter.h"
 #include "core/lighting/progressivephoton.h"
 #include "core/shape/csg.h"
+
+#include <atomic>
+#include <chrono>
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -114,6 +118,13 @@ void PhotonShootingTask::SendProgress(void)
         }
         obj.SetInt(kPOVAttrib_CurrentPhotonCount, count);
         RenderBackend::SendViewOutput(GetViewData()->GetViewId(), GetSceneData()->frontendAddress, kPOVMsgIdent_Progress, obj);
+        // One line every 2 s among all shooting threads; the total is not known ahead.
+        ViewData& view = *GetViewData();
+        const long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        long long last = view.photonPreparationLine.load(std::memory_order_relaxed);
+        if ((now - last >= 2000) && view.photonPreparationLine.compare_exchange_strong(last, now, std::memory_order_relaxed))
+            mpMessageFactory->Info("Preparation: photons %d/? %.1fs", count, std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - view.photonPreparationStart).count());
     }
 }
 
@@ -172,12 +183,11 @@ class SurfaceLightEmitter final : public Emitter
         const MathColour& Intensity() const override { return light.colour; }
         const Vector3d& Centre() const override { return light.Center; }
         double Radius() const override { return light.Area_Light ? (light.Axis1.length() + light.Axis2.length()) * 0.5 : 0.0; }
-        double NearDistance() const override { return EPSILON; }
-        EmitterSample Sample(double s, std::uint64_t key) const override
+        EmitterSample Sample(double s, std::uint64_t key, TraceThreadData* = nullptr) const override
         {
             return SampleSquare(s, Draw(key, kDrawPhoton, 7), key);
         }
-        EmitterSample SampleSquare(double s, double t, std::uint64_t) const override
+        EmitterSample SampleSquare(double s, double t, std::uint64_t, TraceThreadData* = nullptr) const override
         {
             Vector3d point = light.Center;
             if (light.Area_Light)
@@ -355,7 +365,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 const SurfaceLightEmitter surface(*light);
                 const Emitter& emitter = light->emitter ? *light->emitter : surface;
-                origin = emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key);
+                origin = emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key, data);
                 direction = domain.Direction(pick.x, pick.y);
             }
             TraceTicket ticket(maxTraceLevel, adcBailout);
@@ -365,6 +375,12 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ray.SetPreparedSetId(setId);
             ray.SetKey(key);
             ray.SetFlags(Ray::PrimaryRay, false, true);
+            if (light->emitter && light->emitter->IsSurface())
+            {
+                ray.SetFlags(Ray::SubsurfaceRay, false, true);
+                ray.SetSurfaceOrigin(light->emitterContainer ? light->emitterContainer : origin.surfaceObject,
+                                     origin.position, origin.normal, origin.surfaceObject);
+            }
             const size_t aimed = std::min<size_t>(targets[li].size() - 1, pick.target);
             auto& feedback = data->progressiveFeedback[feedbackOffset[li] + aimed];
             feedback.aimed++;
@@ -390,8 +406,11 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 originInteriors.clear();
                 trace.FindContainingInteriors(ray.Origin, originInteriors, setId);
+                const Interior* emittedInterior = light->emitter && light->emitter->IsSurface() && light->emitterContainer ?
+                    light->emitterContainer->interior.get() : nullptr;
                 for (Interior* interior : originInteriors)
-                    ray.AppendInterior(interior);
+                    if (interior != emittedInterior)
+                        ray.AppendInterior(interior);
             }
             const ProgressiveTarget& aim = targets[li][aimed];
             data->photonSourceLight = light;
@@ -401,8 +420,14 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->passThruThis = false;
             data->photonDepth = projectionDepth;
             data->photonSpread = std::max(1.0e-8, aim.Radius() * 0.05) * spreadScale;
-            MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
-            flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
+            MathColour flux = origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
+            if (light->emitter)
+                flux = light->emitter->PhotonEmissionWeight(origin, ray.Direction) * ProgressivePhotonBudget::EmissionWeight(count, pdf);
+            else
+            {
+                flux *= light->colour;
+                flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
+            }
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
             if (!flux.IsZero())
@@ -678,6 +703,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
                     //disp_nelems = 0; /* for dispersion */
 
                     ray.SetFlags(Ray::PrimaryRay, false, true);
+
                     trace.TraceRay(ray, photonColour, dummyTransm, 1.0, false);
 
                     /* display here */

@@ -1,8 +1,12 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Emitting media meeting things: red, green and blue lights overlapping, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone; a pool sunk in the floor, pierced by rods. +w640 +h480; Declare=Samples=N sets each light's samples, Smoke=0 drops the smoke.
+// Emitting media meeting things: red, green and blue lights overlapping, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone; a pool sunk in the floor, pierced by rods. +w640 +h480.
+// Declare=Samples=N sets each light's samples, LampGain scales the lamps' light over their glow, GeodeLumens and PoolLumens set the other two lights' flux, Smoke=0 drops the smoke.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 24; #end
 #ifndef (Smoke) #declare Smoke = 1; #end
+#ifndef (LampGain) #declare LampGain = 2.5; #end
+#ifndef (GeodeLumens) #declare GeodeLumens = 400; #end
+#ifndef (PoolLumens) #declare PoolLumens = 150; #end
 #declare R = seed(42);
 #declare Mid = <0, 2.9, 0.3>;
 #declare Geode = <3.5, 0.92, 0.9>;
@@ -25,8 +29,8 @@ plane { x, -7 texture { pigment { rgb 0.7 } finish { diffuse 0.85 } } }
         mix add
         emission Colour * 14
         density { spherical turbulence 0.12 octaves 3 color_map { [0 rgb 0] [1 rgb 1] } }
-        light_source { samples Samples }
       }
+      light { emission brightness LampGain samples Samples }
     }
     translate Centre
   }
@@ -87,8 +91,8 @@ sphere {
       mix add
       emission rgb <1, 0.72, 0.38> * 60
       density { spherical turbulence 0.3 octaves 4 color_map { [0 rgb 0.1] [1 rgb 1] } }
-      light_source { samples Samples }
     }
+    light { emission brightness GeodeLumens lumens samples Samples }
   }
   translate Geode
 }
@@ -100,8 +104,8 @@ sphere {
       mix add
       emission rgb <1, 0.38, 0.06> * 12
       density { spherical turbulence 0.35 octaves 5 lambda 2.4 color_map { [0 rgb 0] [0.3 rgb 0.2] [1 rgb 1] } }
-      light_source { samples Samples }
     }
+    light { emission brightness PoolLumens lumens samples Samples }
   }
   scale <1.6, 0.7, 1.2> translate Pool
 }

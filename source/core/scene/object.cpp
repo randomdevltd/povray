@@ -47,7 +47,9 @@
 
 // POV-Ray header files (core module)
 #include "core/material/interior.h"
+#include "core/lighting/emitter.h"
 #include "core/material/texture.h"
+#include "core/material/pattern.h"
 #include "core/math/matrix.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
@@ -136,6 +138,7 @@ static bool Nearest_Intersection(Intersection *isect, ObjectPtr object, const Ra
     IStack depthstack(threadData->stackPool);
     POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
 
+    const RayRootOwnerScope rootOwner(ray, object);
     if (object->All_Intersections(ray, depthstack, threadData) == false)
         return false;
 
@@ -254,6 +257,7 @@ bool Inside_Object (const Vector3d& IPoint, ObjectPtr Object, TraceThreadData *T
 
 bool Ray_In_Bound (const Ray& ray, const vector<ObjectPtr>& Bounding_Object, TraceThreadData *Thread)
 {
+    const RayRootQueryDisabled rootQuery(ray);
     Intersection Local;
 
     for(vector<ObjectPtr>::const_iterator Bound = Bounding_Object.begin(); Bound != Bounding_Object.end(); Bound++)
@@ -365,6 +369,8 @@ void Translate_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Translate(Vector, Trans);
 }
@@ -424,6 +430,8 @@ void Rotate_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM *T
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Rotate(Vector, Trans);
 }
@@ -481,6 +489,8 @@ void Scale_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM *Tr
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Scale(Vector, Trans);
 }
@@ -540,6 +550,8 @@ void Transform_Object (ObjectPtr Object, const TRANSFORM *Trans)
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Transform(Trans);
 }
@@ -596,6 +608,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->tags = Old->tags;
     New->inheritTags = Old->inheritTags;
     New->photonTargetGroup = Old->photonTargetGroup;
+    New->surfaceLight = Old->surfaceLight ? std::make_shared<MediaLight>(*Old->surfaceLight) : nullptr;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;
@@ -835,8 +848,7 @@ bool ObjectBase::IsOpaque() const
 
 void ContainedByBox::ComputeBBox(BoundingBox& rBbox) const
 {
-    rBbox.lowerLeft = BBoxVector3d(corner1);
-    rBbox.size      = BBoxVector3d(corner2 - corner1);
+    Make_BBox_from_min_max(rBbox, corner1, corner2);
 }
 
 void ContainedBySphere::ComputeBBox(BoundingBox& rBbox) const

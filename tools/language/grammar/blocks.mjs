@@ -37,21 +37,28 @@ const CURATION = {
     normal: ['Parse_Tnormal', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
     density: ['Parse_Pigment', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
     interior: ['Parse_Interior'],
+    refraction: ['Parse_Interior_Refraction'],
     media: ['Parse_Media'],
+    light: ['Parse_Light'],
+    bounce: ['Parse_Light_Bounce'],
     camera: ['Parse_Camera', 'Parse_Camera_Mods', 'Parse_Camera_Look_At'],
     output: ['Parse_Camera_Output'],
     tags: ['Parse_Tags'],
     global_settings: ['Parse_Global_Settings'],
     object: ['Parse_Object', 'Parse_Object_Mods'],
-    light_source: ['Parse_Light_Source', 'Parse_Media_Light', 'Parse_Object_Mods'],
+    light_source: ['Parse_Light_Source', 'Parse_Object_Mods'],
     height_field: ['Parse_HField', 'Parse_Image', 'Parse_Object_Mods'],
     smooth_triangle: ['Parse_Smooth_Triangle', 'Parse_Three_UVCoords', 'Parse_Object_Mods'],
     image_map: ['Parse_Image_Map', 'Parse_Image'],
     bump_map: ['Parse_Bump_Map', 'Parse_Image'],
 };
 
+// Items the shared object-modifier loop mines for a block whose own parser refuses them: a light_source
+// takes the modifier loop, but a surface `light { }` there is an error in the classic parser.
+const EXCLUDED = { light_source: ['light'] };
+
 // Nested rows emitted into pov4schema.h: only genuine sub-blocks, not value positions.
-const NESTED_IN_HEADER = new Set(['reflection', 'scattering', 'photons', 'radiosity', 'subsurface']);
+const NESTED_IN_HEADER = new Set(['reflection', 'scattering', 'photons', 'radiosity', 'subsurface', 'light']);
 
 const pad = (s) => s.replace(/[^\n]/g, ' ');
 // Single-pass context scanner: blanks comments and literals without letting their
@@ -210,6 +217,7 @@ for (const [word, fns] of Object.entries(CURATION)) {
     }
     for (const set of Object.values(nested))
         for (const w of set) items.add(w);
+    for (const w of EXCLUDED[word] ?? []) items.delete(w);
     blocks[word] = {
         items: [...items].sort(),
         nested: Object.fromEntries(Object.entries(nested).map(([p, s]) => [p, [...s].sort()])),

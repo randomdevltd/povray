@@ -38,6 +38,9 @@
 
 // Module config header file must be the first file included within POV-Ray unit header files
 #include "core/configcore.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include "core/render/ray_fwd.h"
 
 // C++ variants of C standard header files
@@ -65,6 +68,13 @@ namespace pov
 /// @{
 
 typedef PooledSimpleVector<Interior *, RAYINTERIOR_VECTOR_SIZE> RayInteriorVector;
+
+struct RayRootQuery
+{
+    virtual ~RayRootQuery() = default;
+    virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
+    virtual bool AllRoots() const { return false; }
+};
 
 class Ray final : public BasicRay
 {
@@ -112,6 +122,28 @@ class Ray final : public BasicRay
         bool IsHollowRay() const { return hollowRay; }
         bool IsPretraceRay() const { return pretraceRay; }
 
+        bool AdmitRoot(ConstObjectPtr object, double depth) const
+        { return !rootQuery.query || rootQuery.query->Admit(rootQuery.owner ? rootQuery.owner : object, depth); }
+        const RayRootQuery* GetRootQuery() const { return rootQuery.query; }
+        ConstObjectPtr GetRootOwner() const { return rootQuery.owner; }
+        void SetRootQuery(const RayRootQuery* query) const { rootQuery.query = query; rootQuery.owner = nullptr; }
+        void SetRootOwner(ConstObjectPtr owner) const { rootQuery.owner = owner; }
+
+        void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface = nullptr);
+        void ClearSurfaceOrigin() { surfaceOrigin.object = nullptr; }
+        bool HasSurfaceOrigin() const { return surfaceOrigin.object != nullptr; }
+        /// `surface` is the part of `object` the point lies on, whose stated accuracy the match allows; `object` if none.
+        void SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface = nullptr);
+        bool HasSurfaceEndpoint() const { return surfaceEndpoint.object != nullptr; }
+        void ClearSurfaceEndpoint() { surfaceEndpoint.object = nullptr; }
+        bool MatchesSurfaceEndpoint(ConstObjectPtr object, double depth) const
+        { return MatchesSurfacePoint(surfaceEndpoint, object, depth); }
+        bool MatchesSurfaceOrigin(ConstObjectPtr object, double depth) const
+        {
+            return surfaceOrigin.object && dot(Direction, surfaceOrigin.normal) > 0.0 &&
+                MatchesSurfacePoint(surfaceOrigin, object, 0.0) && MatchesSurfacePoint(surfaceOrigin, object, depth);
+        }
+
         bool Inside(const BoundingBox& bbox) const { return Inside_BBox(Origin, bbox); }
 
         inline TraceTicket& GetTicket() { return ticket; }
@@ -127,12 +159,22 @@ class Ray final : public BasicRay
         void SetPreparedSetId(PreparedSetId view) { preparedSetId = view; }
 
         /// The path key this ray's random draws are hashed from.
-        std::uint64_t GetKey() const { return key; }
+        std::uint64_t GetKey() const { MarkKeyRead(); return key; }
         void SetKey(std::uint64_t k) { key = k; children = 0; }
         /// Makes this ray the index-th child of its kind below the parent.
-        void Derive(const Ray& parent, std::uint64_t kind, std::uint64_t index) { SetKey(DeriveKey(parent.key, kind, index)); }
+        void Derive(const Ray& parent, std::uint64_t kind, std::uint64_t index)
+        {
+            // A flag lives in a ticket, and so only as long as the rays on it.
+            if (&ticket == &parent.ticket)
+                keyRead = parent.keyRead;
+            else
+                parent.MarkKeyRead();
+            SetKey(DeriveKey(parent.key, kind, index));
+        }
         /// A key for the next child of a kind whose place among its siblings is its only index.
-        std::uint64_t NextChildKey(std::uint64_t kind) const { return DeriveKey(key, kind, children++); }
+        std::uint64_t NextChildKey(std::uint64_t kind) const { MarkKeyRead(); return DeriveKey(key, kind, children++); }
+        /// Sets `*flag`, which must belong to this ray's ticket, once anything reads the key of this ray, a copy or a derived ray.
+        void WatchKey(bool *flag) { keyRead = flag; }
 
         /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
         Vector3d dOdx, dOdy, dDdx, dDdy;
@@ -141,10 +183,13 @@ class Ray final : public BasicRay
 
     private:
 
+        void MarkKeyRead() const { if (keyRead != nullptr) *keyRead = true; }
+
         RayInteriorVector interiors;
         SpectralBand spectralBand;
         TraceTicket& ticket;
         std::uint64_t key = 0;
+        bool *keyRead = nullptr;
         mutable std::uint32_t children = 0;
         mutable DBL mediaErrorBudget = 0.0;
         const LightSource *mediaLight = nullptr;
@@ -160,6 +205,58 @@ class Ray final : public BasicRay
         bool monochromaticRay : 1;
         bool hollowRay : 1;
         bool pretraceRay : 1;
+
+        struct SurfacePoint
+        {
+            ConstObjectPtr object = nullptr;
+            Vector3d point, normal;
+            double errorScale = 0.0;
+            double rootTolerance = 0.0;
+        };
+        SurfacePoint surfaceOrigin, surfaceEndpoint;
+        bool MatchesSurfacePoint(const SurfacePoint& surface, ConstObjectPtr object, double depth) const
+        {
+            if (!surface.object || surface.object != object)
+                return false;
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const double travel = depth * Direction[axis];
+                const double scale = std::max(surface.errorScale, std::max(std::abs(surface.point[axis]), std::max(std::abs(Origin[axis]), std::abs(travel))));
+                const double tolerance = std::max(16.0 * std::numeric_limits<double>::epsilon() * scale, surface.rootTolerance);
+                if (std::abs((Origin[axis] + travel) - surface.point[axis]) > tolerance)
+                    return false;
+            }
+            return true;
+        }
+
+        struct RootQueryState
+        {
+            const RayRootQuery* query = nullptr;
+            ConstObjectPtr owner = nullptr;
+            RootQueryState() = default;
+            RootQueryState(const RootQueryState&) {}
+            RootQueryState& operator=(const RootQueryState&) { query = nullptr; owner = nullptr; return *this; }
+        };
+        mutable RootQueryState rootQuery;
+};
+
+struct RayRootOwnerScope final
+{
+    const Ray& ray;
+    ConstObjectPtr previous;
+    RayRootOwnerScope(const Ray& r, ConstObjectPtr owner) : ray(r), previous(r.GetRootOwner())
+    { if (r.GetRootQuery() && !previous) r.SetRootOwner(owner); }
+    ~RayRootOwnerScope() { ray.SetRootOwner(previous); }
+};
+
+struct RayRootQueryDisabled final
+{
+    const Ray& ray;
+    const RayRootQuery* query;
+    ConstObjectPtr owner;
+    explicit RayRootQueryDisabled(const Ray& r) : ray(r), query(r.GetRootQuery()), owner(r.GetRootOwner())
+    { ray.SetRootQuery(nullptr); }
+    ~RayRootQueryDisabled() { ray.SetRootQuery(query); ray.SetRootOwner(owner); }
 };
 
 /// @}

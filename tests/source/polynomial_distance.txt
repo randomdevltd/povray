@@ -1,0 +1,47 @@
+Finite Sturm search bounds
+
+For descending coefficients a[0] through a[n], Fujiwara's bound is
+2*max(abs(a[i]/a[0])**(1/i)), for i=1..n. With frexp(a[i])=m[i]*2**e[i]
+and abs(m[i]) in [0.5,1), abs(a[i]/a[0]) is strictly less than
+2**(e[i]-e[0]+1). The solver therefore brackets roots below the finite power
+of two 2**K, where K=1+max(ceil((e[i]-e[0]+1)/i)). No coefficient ratio is
+formed to compute this bound. Unsupported bound exponents produce an error.
+
+Ordinary monic normalization retains the original variable. A nonzero term
+that underflows to zero during that normalization produces an error. If a
+division would overflow, the solver instead uses x=2**K*y
+and constructs normalized coefficients using frexp/scalbn. This fallback checks
+that nonzero terms remain representable and above the existing SMALL_ENOUGH
+coefficient threshold. It rejects incompatible coefficient ranges explicitly.
+It must not silently remove a small-world root from a mixed-scale polynomial.
+
+The Sturm chain is checked for nonfinite coefficients during construction and
+normalization. Sign evaluation falls back to mantissa/exponent Horner arithmetic
+if ordinary evaluation overflows or returns zero. Zero values use the first
+nonzero derivative to obtain the left-limit sign. This gives consistent root
+counts on half-open intervals [a,b), including repeated roots at bisection
+points. The bracket [0,2**K) retains the public solver's historical zero-root
+result. A zero upper endpoint cannot replace the different root inside that
+interval during false-position refinement.
+
+False-position interpolation stays inside the bracket and falls back to Sturm
+bisection when its values are unsupported. Bisection uses an overflow-safe
+midpoint and a budget derived from the binary64 exponent span.
+
+Run actual Solve_Polynomial CPU controls with a configured matching build:
+
+  sh tools/bench/check-polynomial-distance.sh BUILD_DIRECTORY OUTPUT_DIRECTORY
+
+Controls cover all Sturm orders 3..35, distinct/repeated/zero roots, no positive
+roots, uniform coefficient scaling, mixed near and distant roots, lunar and
+solar distances, monic normalization overflow, overflowing polynomial values,
+and explicit rejection of unsupported coefficient/chain/bound ranges. Repeated
+roots use a multiplicity-aware 8*sqrt(machine epsilon) relative error gate;
+the other known-root controls use 2e-9 relative error.
+
+This does not promise arbitrary conditioning or every representable root range.
+The public solver still discards leading coefficients below 1e-10 and retains
+its existing coefficient-zero and convergence tolerances. Incompatible scaled
+coefficients, overflowing Sturm chains and unrepresentable strict bounds report
+errors. Finite inputs alone do not guarantee that the binary64 Sturm chain is
+numerically supported.

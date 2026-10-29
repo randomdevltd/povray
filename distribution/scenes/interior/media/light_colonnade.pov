@@ -1,12 +1,15 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480; Declare=Samples=N sets the core light's samples, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
+// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480.
+// Declare=Samples=N sets the core light's samples, CoreLumens its flux, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 32; #end
 #ifndef (Refract) #declare Refract = 1; #end
 #ifndef (Haze) #declare Haze = 1; #end
 #ifndef (Chains) #declare Chains = 1; #end
+#ifndef (CoreLumens) #declare CoreLumens = 1000; #end
 #declare R = seed(1729);
 #declare Core = <0, 3.6, 0>;
+#declare Cut = Core.y - 0.05;
 #declare Inner = 3.9;
 #declare Outer = 8.4;
 #declare WallR = 12.6;
@@ -112,19 +115,19 @@ union {
   texture { Bronze }
 }
 
+#declare ColonnadeIndex = function { pigment {
+  function { 1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z)) }
+} }
+
 #if (Refract)
   intersection {
     sphere { 0, Lens }
-    plane { -y, Core.y - 0.05 }
+    plane { -y, Cut }
     pigment { rgbt 1 }
     interior {
-      media {
-        method 4 resolution 0.14 refraction 0.25 refraction_detail 3 // half the detail is 0.15 units, so the grid's 0.14 cells hold what it promises
-        density {
-          function {
-            1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z))
-          }
-        }
+      refraction {
+        function { 0.25 * ColonnadeIndex(x, y, z).red * min(1, (y + Cut) / 1.5) }
+        detail 0.3
       }
     }
     translate Core
@@ -201,8 +204,8 @@ sphere {
                  + 0.25 * pow(max(0, Swirl(x, y, z) - 0.5) * 2, 2) * max(0, 1 - sqrt(x * x + y * y + z * z) / 1.7))
         }
       }
-      light_source { samples Samples }
     }
+    light { emission brightness CoreLumens lumens samples Samples }
   }
   translate Core
 }

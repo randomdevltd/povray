@@ -395,6 +395,7 @@ LightSource::LightSource() : CompoundObject(LIGHT_OBJECT)
 
     Media_Attenuation = false;
     Media_Interaction = true;
+    lightGroupLight = false;
 }
 
 
@@ -618,11 +619,8 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
             break;
     }
 
-    if ((Light->emitter != nullptr) && (Light->Fade_Power <= 0.0))
-    {
-        const DBL clamped = std::max(Distance, Light->emitter->NearDistance());
-        return Attenuation / (clamped * clamped);
-    }
+    if (Light->emitter != nullptr)
+        return Attenuation * Light_Distance_Attenuation(Light, Distance);
 
     if (Attenuation > 0.0)
         Attenuation *= Light_Distance_Attenuation(Light, Distance);
@@ -630,13 +628,40 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
     return(Attenuation);
 }
 
+// An explicit artistic path modifier; physical transport is exactly one at the defaults.
+DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length)
+{
+    if ((Light->attenuationScale == 1.0) && (Light->attenuationPower == 2.0))
+        return 1.0;
+    const DBL R = Light->lawRadius;
+    if (!(R > 0.0))
+        return 1.0;
+    if (!(Light->attenuationScale > 0.0))
+        return std::max(1.0, Sqr(Length / R));
+    const DBL q = R / std::max(Length, R);
+    const DBL A = pow(q, Light->attenuationPower);
+    return pow(q, Light->attenuationPower - 2.0) * pow(Light->attenuationScale, A - 1.0);
+}
+
+/// A volume light's law at distance r from its centre: A'(r) = A·(1/scale)^(1−A) over its radius squared, with
+/// A = (R/max(r,R))^power. Continuous at the pivot r = R, exactly 1/scale times fainter in the far field, and
+/// never more singular than 1/R^2, so no receiver is lit beyond what its radiance says.
+static DBL EmitterLawAttenuation(const LightSource *Light, DBL Distance)
+{
+    const DBL R = Light->lawRadius;
+    // A point emitter is the law's limit at no radius, where the path factor is one: the inverse square.
+    if (!(R > 0.0))
+        return 1.0 / (Distance * Distance);
+    const DBL A = pow(R / std::max(Distance, R), Light->attenuationPower);
+    if (!(Light->attenuationScale > 0.0))
+        return 1.0 / (R * R);
+    return (A * pow(1.0 / Light->attenuationScale, 1.0 - A)) / (R * R);
+}
+
 DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 {
-    if ((Light->emitter != nullptr) && (Light->Fade_Power <= 0.0))
-    {
-        const DBL clamped = std::max(Distance, Light->emitter->NearDistance());
-        return 1.0 / (clamped * clamped);
-    }
+    if (Light->emitter != nullptr)
+        return EmitterLawAttenuation(Light, Distance);
     if (Light->Fade_Power <= 0.0)
         return 1.0;
     if (fabs(Light->Fade_Distance) >= EPSILON)
@@ -644,23 +669,12 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
     return pow(Distance, -Light->Fade_Power);
 }
 
-bool Light_Below_Fade_Cutoff(const LightSource *Light, const Vector3d& Point)
-{
-    if ((Light->emitter == nullptr) || !(Light->fadeCutoff > 0.0))
-        return false;
-    const Emitter& emitter = *Light->emitter;
-    const DBL nearest = std::max((Point - emitter.Centre()).length() - emitter.Radius(), emitter.NearDistance());
-    const DBL attenuation = Light_Distance_Attenuation(Light, nearest);
-    DBL brightest = 0.0;
-    for (int i = 0; i < MathColour::channels; i++)
-        brightest = std::max(brightest, fabs(double(Light->colour[i])) * attenuation); // magnitude: negative lights count too
-    return brightest < Light->fadeCutoff;
-}
-
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)
 {
+    if (Light->emitter != nullptr)
+        return Light_Emitter_Path_Factor(Light, Length);
     if (Light->Fade_Power <= 0.0)
-        return (Light->Parallel || (Light->emitter != nullptr)) ? 1.0 : Sqr(std::max(Length, EPSILON));
+        return Light->Parallel ? 1.0 : Sqr(std::max(Length, EPSILON));
     if (Light->Parallel)
         return Light_Distance_Attenuation(Light, Length);
     const DBL clamped = std::max(Length, EPSILON);

@@ -454,7 +454,7 @@ bool PhotonSortingTask::load()
 namespace
 {
 const unsigned char kProgressiveMagic[8] = {'P','O','V','P','H','M','Q',0}, kProgressiveEnd[8] = {'P','H','M','Q','E','N','D',0};
-const std::uint32_t kProgressiveVersion = 2, kAtmosphere = 0xFFFFFFFFu;
+const std::uint32_t kProgressiveVersion = 3, kAtmosphere = 0xFFFFFFFFu;
 
 /// Every object, interior and light a photon can name, numbered in a traversal fixed by the scene's structure.
 struct ProgressiveSceneIndex final
@@ -570,7 +570,7 @@ class PhotonFileReader final
         bool ok = false;
 };
 
-constexpr std::uint64_t kSurfaceRecord = 3 * 8 + 6 * 4 + 4, kSegmentRecord = 8 * 8 + 4 + 4;
+constexpr std::uint64_t kSurfaceRecord = 3 * 8 + 6 * 4 + 4 + 1, kSegmentRecord = 8 * 8 + 4 + 4;
 
 template<class T> bool Finite(const T& values, int count)
 {
@@ -641,6 +641,7 @@ std::string SaveProgressivePhotons(const SceneData& scene, std::uint64_t seed)
             out.Bytes(photon.normal, sizeof(photon.normal));
             out.Colour(photon.flux);
             out.Put(std::uint32_t(photon.receiver));
+            out.Put(std::uint8_t(photon.physicalFlux));
         }
         std::unordered_map<const ProgressiveVolumeDomain*, std::uint32_t> domainIds;
         std::vector<const ProgressiveVolumeDomain*> domains;
@@ -780,6 +781,8 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
             return damaged;
         loaded.push_back(set);
         const std::uint32_t receiverCount = in.Get<std::uint32_t>();
+        if (receiverCount > ProgressivePhotonMap::noReceiver)
+            return damaged;
         bytes += double(receiverCount) * sizeof(ConstObjectPtr);
         if (bytes > budget)
             break;
@@ -806,6 +809,10 @@ std::string LoadProgressivePhotons(SceneData& scene, const ProgressivePhotonCeil
             in.Bytes(photon.normal, sizeof(photon.normal));
             photon.flux = in.Colour();
             const std::uint32_t receiver = in.Get<std::uint32_t>();
+            const std::uint8_t physicalFlux = in.Get<std::uint8_t>();
+            if (physicalFlux > 1)
+                return damaged;
+            photon.physicalFlux = physicalFlux != 0;
             if (receiver >= receivers.size())
                 return damaged;
             if (!Finite(photon.point, 3))

@@ -48,16 +48,24 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['ambient', 'diffuse', 'phong', 'reflection', 'specular']) assert.ok(blocks.finish.items.includes(w));
     assert.ok(blocks.finish.nested.reflection.includes('fresnel'));
     for (const w of ['location', 'look_at', 'right', 'up', 'perspective']) assert.ok(blocks.camera.items.includes(w));
-    for (const w of ['texture', 'pigment', 'interior', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
+    for (const w of ['texture', 'pigment', 'interior', 'light', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
     assert.ok(blocks.union.items.includes('sphere'));
+    for (const w of ['photons', 'attenuation', 'emission', 'bounce']) assert.ok(blocks.light.items.includes(w), `light item '${w}'`);
+    assert.deepEqual(blocks.bounce.items, ['passes']);
+    for (const w of ['shadows', 'method']) assert.ok(!blocks.light.items.includes(w), `invalid light item '${w}'`);
+    for (const w of ['function', 'detail', 'auto']) assert.ok(blocks.refraction.items.includes(w), `refraction item '${w}'`);
+    for (const w of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(w), `invalid refraction item '${w}'`);
     for (const w of ['agate', 'granite', 'marble', 'wrinkles', 'turbulence']) assert.ok(blocks.pigment.items.includes(w));
     // Contextual keywords, matched by text in the parser, are items too.
-    for (const w of ['refraction_detail', 'prepared_media_cells', 'atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])
+    for (const w of ['prepared_media_cells', 'atmospheric_ior', 'atmospheric_dispersion', 'mesh_cache', 'interface_texture'])
         assert.ok(blocks.global_settings.items.includes(w), `global_settings item '${w}'`);
     for (const w of ['method', 'quality'])
         assert.ok(blocks.global_settings.nested.photons.includes(w), `photon item '${w}'`);
     assert.ok(!JSON.parse(read('tools/language/keywords.json')).some((k) => k.word === 'quality'));
-    for (const w of ['refraction_detail', 'auto']) assert.ok(blocks.media.items.includes(w), `media item '${w}'`);
+    for (const w of ['refraction', 'refraction_detail']) assert.ok(!blocks.media.items.includes(w), `invalid media item '${w}'`);
+    assert.ok(!blocks.global_settings.items.includes('refraction_detail'));
+    assert.ok(!blocks.light_source.items.includes('light'), 'a light_source cannot take a light block');
+    assert.ok(blocks.light_source.items.includes('shadowless'));
 });
 
 test('generators are stable: regenerating changes nothing', () => {

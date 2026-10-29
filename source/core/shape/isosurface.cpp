@@ -39,6 +39,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/isosurface.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -175,6 +176,8 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
 
     if(container->Intersect(ray, Trans, Depth1, Depth2, Side1, Side2)) /* IsoSurface_Bound_Tests */
     {
+        if (!IsFiniteIntersectionDepth(Depth1) || !IsFiniteIntersectionDepth(Depth2))
+            return false;
         Thread->Stats()[Ray_IsoSurface_Bound_Tests_Succeeded]++;
 
         GenericScalarFunctionInstance fn(Function, Thread);
@@ -196,6 +199,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         }
 
         isoData.Inv3 = 1;
+        const bool startsOutside = Depth1 > accuracy;
 
         if(closed != false)
         {
@@ -205,14 +209,18 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
             {
                 if(tmp < 0.0)                   /* The ray hits the bounding shape */
                 {
+                    const bool admitted = ray.AdmitRoot(this, Depth1);
                     IPoint = ray.Evaluate(Depth1);
-                    if(Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
+                    if(admitted && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
                     {
                         Depth_Stack->push(Intersection(Depth1, IPoint, this, 1, Side1));
                         IFound = true;
                         itrace++;
-                        isoData.Inv3 *= -1;
+                        if (!ray.GetRootQuery())
+                            isoData.Inv3 *= -1;
                     }
+                    if (ray.GetRootQuery())
+                        isoData.Inv3 *= -1;
                 }
             }
             else
@@ -229,7 +237,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
                 if (IsInside (fn, VTmp))
                 {
                     IPoint = ray.Evaluate(Depth2);
-                    if(Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
+                    if(ray.AdmitRoot(this, Depth2) && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread)))
                     {
                         Depth_Stack->push(Intersection(Depth2, IPoint, this, 1, Side2));
                         IFound = true;
@@ -239,7 +247,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         }
 
         /*  METHOD 2   by R. Suzuki */
-        tmax = Depth2 = min(Depth2, BOUND_HUGE);
+        tmax = Depth2;
         tmin = Depth1 = min(Depth2, Depth1);
         if((tmax - tmin) < accuracy)
         {
@@ -248,6 +256,19 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
             return (false);
         }
         Thread->Stats()[Ray_IsoSurface_Tests]++;
+        if (closed && ray.GetRootQuery() && startsOutside && ray.AdmitRoot(this, Depth2))
+        {
+            VTmp = Plocal + Depth2 * Dlocal;
+            if (IsInside(fn, VTmp))
+            {
+                IPoint = ray.Evaluate(Depth2);
+                if (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
+                {
+                    Depth_Stack->push(Intersection(Depth2, IPoint, this, 1, Side2));
+                    IFound = true;
+                }
+            }
+        }
         if((Depth1 < accuracy) && (isoData.Inv3 == 1))
         {
             /* IPoint is on the isosurface */
@@ -267,22 +288,27 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         isoData.shadowFrom = Thread->isoShadowFrom;
         isoData.shadowTo = anyHit ? Thread->isoShadowTo : 0.0;
 
-        for (; itrace < max_trace; itrace++)
+        for (; (ray.GetRootQuery() && ray.GetRootQuery()->AllRoots()) || itrace < max_trace;)
         {
             if(Function_Find_Root(isoData, Plocal, Dlocal, &tmin, &tmax, maxg, in_shadow_test, Thread) == false)
                 break;
             else
             {
+                const bool admitted = ray.AdmitRoot(this, tmin);
                 IPoint = ray.Evaluate(tmin);
-                if(Clip.empty() || Point_In_Clip(IPoint, Clip, Thread))
+                const bool visible = admitted && (Clip.empty() || Point_In_Clip(IPoint, Clip, Thread));
+                if (visible || !ray.GetRootQuery())
+                    ++itrace;
+                if(visible)
                 {
                     Depth_Stack->push(Intersection(tmin, IPoint, this, 0, 0 /*Side1*/));
                     IFound = true;
                 }
-                if (anyHit && (tmin > isoData.shadowFrom) && (tmin < isoData.shadowTo))
+                if (anyHit && admitted && (tmin > isoData.shadowFrom) && (tmin < isoData.shadowTo))
                     break;
             }
-            tmin += accuracy * 5.0;
+            const double next = tmin + accuracy * 5.0;
+            tmin = next > tmin ? next : std::nextafter(tmin, HUGE_VAL);
             if((tmax - tmin) < accuracy)
                 break;
             isoData.Inv3 *= -1;

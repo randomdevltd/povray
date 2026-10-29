@@ -126,8 +126,8 @@ class Lathe final : public ObjectBase
 
         void Compute_Lathe(Vector2d *P, RenderStatistics& stats);
     protected:
-        bool Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread);
-        bool test_hit(const BasicRay&, IStack&, DBL, DBL, int, TraceThreadData *Thread);
+        bool Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread);
+        bool test_hit(const Ray&, IStack&, DBL, DBL, int, TraceThreadData *Thread);
 };
 
 /// @}

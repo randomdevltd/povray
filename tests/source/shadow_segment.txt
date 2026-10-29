@@ -1,0 +1,39 @@
+Shadow boundary progress
+
+A shadow connection keeps its original geometry-query origin, direction and
+finite endpoint. ShadowSegmentWalker admits roots in nondecreasing parameter
+order. Distinct candidate objects at exactly the current parameter are each
+processed once; only the selected final intersection commits the cursor/event.
+Media and texture callbacks receive a separate ray for the segment since the
+previous boundary. Remaining distance is endpoint minus cursor.
+
+Root admission is pure. Primitives that stop at their first intersection must
+apply admission before declaring success or tightening their nearest distance.
+For isosurfaces, consumed roots do not spend max_trace; rejected roots retain
+the root finder's existing accuracy step and geometric sign changes. Closed
+container exit faces remain available when an entry face has been consumed.
+The root query is optional and ordinary rays retain their previous behavior.
+
+CSG children use the top-level candidate owner for event identity. Bounding
+occupancy queries temporarily disable root admission. Every Ray copy clears
+the borrowed query and owner, so media, deferred and independently traced rays
+do not retain stack state. The shadow loop cooperates with cancellation on each
+iteration and reports invalid progress as an error.
+
+Run the actual geometry/helper CPU regression with a matching configured build:
+
+  sh tools/bench/check-shadow-segment.sh BUILD_DIRECTORY OUTPUT_DIRECTORY
+
+The test includes two coincident spheres of radius 695700000 centered at
+normalize(<0.3835,0.5751,-0.7225>)*149600000000, with connection endpoints
+<-38857654.22050982,229052769.13303345,-321390513.48943233> and
+<57830566835.73434,85711787512.22798,-108335489459.76096>.
+Both object orders must complete with exactly two entry events and a positive
+remaining segment. The former shifted-origin loop could repeatedly accept
+negative segments for this connection.
+
+Other controls cover touching boxes, gaps below MIN_ISECT_DEPTH, 600 transparent
+crossings, an opaque stop, exact finite endpoints, accelerated open meshes with
+multiple layers, nonuniform transforms, CSG owner propagation, bounding meshes,
+and transparent isosurfaces with max_trace 1. Isosurface functions include a
+sphere, a constant negative value, and z, covering function and container faces.

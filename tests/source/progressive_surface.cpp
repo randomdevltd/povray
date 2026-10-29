@@ -1,5 +1,6 @@
 #include "core/lighting/emitter.h"
 #include "core/lighting/photonaim.h"
+#include "core/math/randomsequence.h"
 #include "core/lighting/progressivephotonmap.h"
 
 #include <algorithm>
@@ -15,6 +16,7 @@ struct Deposit final
 {
     pov::Vector3d point, direction, normal;
     pov::MathColour flux;
+    bool physicalFlux = false;
 };
 
 double Estimate(const pov::ProgressivePhotonMap& map, const pov::Vector3d& point, const pov::Vector3d& normal,
@@ -66,6 +68,57 @@ double MeanRatio(unsigned int photons, unsigned int k, double area, Place&& plac
 
 int main()
 {
+    static_assert(sizeof(pov::MathColour) != 12 || sizeof(pov::MappedPhoton) == 64, "Photon flags must fit the receiver word");
+    {
+        pov::ProgressivePhotonMap map;
+        Deposit deposit;
+        deposit.physicalFlux = true;
+        map.Add(deposit, nullptr, 1.0);
+        assert(map.photons.front().physicalFlux);
+    }
+    for (unsigned int count : {1u, 16u, 64u, 96u, 1000u})
+    {
+        unsigned int strata = 1;
+        while (strata * 2 <= count)
+            strata *= 2;
+        for (unsigned int bin = 0; bin < strata; ++bin)
+            for (double tail : {0.0, std::nextafter(1.0, 0.0)})
+            {
+                const double value = (bin + 0.5) / strata;
+                const double selected = pov::EmitterDraw::JitterSelection(value, count, tail);
+                assert(selected >= 0.0 && selected < 1.0);
+                assert(std::floor(selected * strata) == bin);
+            }
+        double mean = 0.0, square = 0.0, cross = 0.0, residual = 0.0, residualSquare = 0.0;
+        const unsigned int keys = 8192;
+        for (unsigned int key = 0; key < keys; ++key)
+        {
+            const auto seed = pov::DeriveKey(key, pov::kDrawEmitter, count);
+            const pov::PhotonSobol sequence(seed);
+            for (unsigned int index = 0; index < count; ++index)
+            {
+                const double original = sequence(index, pov::PhotonSobol::kLight);
+                const double selected = pov::EmitterDraw::JitterSelection(original, count, pov::Draw(seed, pov::kDrawEmitter, index));
+                assert(selected >= 0.0 && selected < 1.0);
+                for (unsigned int bins = 1; bins <= strata; bins *= 2)
+                    assert(std::floor(selected * bins) == std::floor(original * bins));
+                const double fraction = selected * strata - std::floor(original * strata);
+                mean += selected;
+                square += selected * selected;
+                cross += selected * sequence(index, pov::PhotonSobol::kPositionS);
+                residual += fraction;
+                residualSquare += fraction * fraction;
+            }
+        }
+        const double samples = double(keys) * count;
+        assert(std::abs(mean / samples - 0.5) < 0.015);
+        assert(std::abs(square / samples - 1.0 / 3.0) < 0.015);
+        assert(std::abs(cross / samples - 0.25) < 0.015);
+        assert(std::abs(residual / samples - 0.5) < 0.015);
+        assert(std::abs(residualSquare / samples - 1.0 / 3.0) < 0.015);
+        std::cout << "emitter selection, " << count << " draws: mean " << mean / samples
+                  << ", second moment " << square / samples << ", cross moment " << cross / samples << "\n";
+    }
     std::mt19937_64 random(3);
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     const double pi = std::acos(-1.0);

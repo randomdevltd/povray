@@ -37,13 +37,16 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/math/polynomialsolver.h"
+#include "core/math/intersectiondepth.h"
+#include <algorithm>
+#include <limits>
 
 // C++ variants of C standard header files
 // C++ standard header files
 //  (none at the moment)
 
 // POV-Ray header files (base module)
-//  (none at the moment)
+#include "base/pov_err.h"
 
 // POV-Ray header files (core module)
 #include "core/support/statistics.h"
@@ -102,6 +105,8 @@ const DBL FOUR_M_PI_3 = 4.1887902047863909846168;
 
 /* Max number of iterations. */
 const int MAX_ITERATIONS = 50;
+const int MAX_BISECTIONS = std::numeric_limits<double>::max_exponent -
+    std::numeric_limits<double>::min_exponent + std::numeric_limits<double>::digits;
 
 /* A coefficient smaller than SMALL_ENOUGH is considered to be zero (0.0). */
 const DBL SMALL_ENOUGH = 1.0e-10;
@@ -137,6 +142,103 @@ static DBL polyeval (DBL x, int n, const DBL *Coeffs);
 static int buildsturm (int ord, polynomial *sseq);
 static int visible_roots (int np, const polynomial *sseq, int *atneg, int *atpos);
 static int difficult_coeffs (int n, const DBL *x);
+
+/// A polynomial whose coefficients or roots the Sturm solver cannot represent in floating point.
+struct SturmRangeError final {};
+
+static bool opposite_signs(DBL a, DBL b)
+{
+    return (a < 0.0 && b > 0.0) || (a > 0.0 && b < 0.0);
+}
+
+static void check_sturm_coefficients(const polynomial& p)
+{
+    for (int i = 0; i <= p.ord; ++i)
+        if (!IsFiniteIntersectionDepth(p.coef[i]))
+            throw SturmRangeError();
+}
+
+static int positive_bound_exponent(int order, const DBL* coefficients)
+{
+    int leading;
+    std::frexp(coefficients[0], &leading);
+    int power = std::numeric_limits<int>::min();
+    for (int i = 1; i <= order; ++i)
+    {
+        if (coefficients[i] == 0.0)
+            continue;
+        int exponent;
+        std::frexp(coefficients[i], &exponent);
+        const int numerator = exponent - leading + 1;
+        const int ceiling = numerator >= 0 ? (numerator + i - 1) / i : numerator / i;
+        power = std::max(power, 1 + ceiling);
+    }
+    if (power == std::numeric_limits<int>::min())
+        return 0;
+    if (power >= std::numeric_limits<double>::max_exponent || power <
+        std::numeric_limits<double>::min_exponent - std::numeric_limits<double>::digits)
+        throw SturmRangeError();
+    return power;
+}
+
+static DBL polynomial_sign(DBL x, int order, const DBL* coefficients)
+{
+    const DBL ordinary = polyeval(x, order, coefficients);
+    if (IsFiniteIntersectionDepth(ordinary) && ordinary != 0.0)
+        return ordinary;
+    if (x == 0.0)
+        return coefficients[0];
+    int xExponent, exponent;
+    const DBL xMantissa = std::frexp(x, &xExponent);
+    DBL mantissa = std::frexp(coefficients[order], &exponent);
+    for (int i = order - 1; i >= 0; --i)
+    {
+        mantissa *= xMantissa;
+        exponent += xExponent;
+        int coefficientExponent;
+        const DBL coefficient = std::frexp(coefficients[i], &coefficientExponent);
+        const int common = mantissa == 0.0 ? coefficientExponent :
+            coefficient == 0.0 ? exponent : std::max(exponent, coefficientExponent);
+        mantissa = std::scalbn(mantissa, exponent - common) + std::scalbn(coefficient, coefficientExponent - common);
+        int shift;
+        mantissa = std::frexp(mantissa, &shift);
+        exponent = common + shift;
+    }
+    return mantissa < 0.0 ? -1.0 : mantissa > 0.0 ? 1.0 : 0.0;
+}
+
+static DBL polynomial_left_sign(DBL x, int order, const DBL* coefficients)
+{
+    DBL sign = polynomial_sign(x, order, coefficients);
+    if (sign != 0.0)
+        return sign;
+    DBL derivative[MAX_ORDER+1];
+    std::copy(coefficients, coefficients + order + 1, derivative);
+    bool odd = false;
+    for (int degree = order; degree > 0; --degree)
+    {
+        int largest = std::numeric_limits<int>::min();
+        for (int i = 1; i <= degree; ++i)
+            if (derivative[i] != 0.0)
+            {
+                int exponent;
+                std::frexp(derivative[i], &exponent);
+                largest = std::max(largest, exponent);
+            }
+        for (int i = 1; i <= degree; ++i)
+        {
+            const DBL value = std::scalbn(derivative[i], -largest) * i;
+            if (derivative[i] != 0.0 && value == 0.0)
+                throw SturmRangeError();
+            derivative[i-1] = value;
+        }
+        odd = !odd;
+        sign = polynomial_sign(x, degree - 1, derivative);
+        if (sign != 0.0)
+            return odd ? -sign : sign;
+    }
+    return 0.0;
+}
 
 
 /*****************************************************************************
@@ -211,6 +313,7 @@ static int modp(const polynomial *u, const polynomial *v, polynomial *r)
 
     r->ord = (k < 0) ? 0 : k;
 
+    check_sturm_coefficients(*r);
     return(r->ord);
 }
 
@@ -261,8 +364,11 @@ static int buildsturm(int ord, polynomial *sseq)
 
     for (i = 1; i <= ord; i++)
     {
-        *fp++ = *fc++ * i / f;
+        *fp++ = *fc++ * (i / f);
     }
+
+    check_sturm_coefficients(sseq[0]);
+    check_sturm_coefficients(sseq[1]);
 
     /* construct the rest of the Sturm sequence */
 
@@ -276,11 +382,13 @@ static int buildsturm(int ord, polynomial *sseq)
         {
             *fp /= f;
         }
+        check_sturm_coefficients(*sp);
     }
 
     /* reverse the sign */
 
     sp->coef[0] = -sp->coef[0];
+    check_sturm_coefficients(*sp);
 
     return(sp - sseq);
 }
@@ -313,50 +421,22 @@ static int buildsturm(int ord, polynomial *sseq)
 *
 ******************************************************************************/
 
-static int visible_roots(int np, const polynomial *sseq, int *atzer, int  *atpos)
+static int visible_roots(int np, const polynomial *sseq, int *atzer, int *atpos)
 {
-    int atposinf, atzero;
-    const polynomial *s;
-    DBL f, lf;
-
-    atposinf = atzero = 0;
-
-    /* changes at positve infinity */
-
-    lf = sseq[0].coef[sseq[0].ord];
-
-    for (s = sseq + 1; s <= sseq + np; s++)
+    int changes = 0;
+    DBL previous = 0.0;
+    for (int i = 0; i <= np; ++i)
     {
-        f = s->coef[s->ord];
-
-        if (lf == 0.0 || lf * f < 0)
-        {
-            atposinf++;
-        }
-
-        lf = f;
+        const DBL sign = sseq[i].coef[sseq[i].ord];
+        if (sign == 0.0)
+            continue;
+        if (opposite_signs(previous, sign))
+            ++changes;
+        previous = sign;
     }
-
-    /* Changes at zero */
-
-    lf = sseq[0].coef[0];
-
-    for (s = sseq+1; s <= sseq + np; s++)
-    {
-        f = s->coef[0];
-
-        if (lf == 0.0 || lf * f < 0)
-        {
-            atzero++;
-        }
-
-        lf = f;
-    }
-
-    *atzer = atzero;
-    *atpos = atposinf;
-
-    return(atzero - atposinf);
+    *atzer = numchanges(np, sseq, 0.0);
+    *atpos = changes;
+    return *atzer - *atpos;
 }
 
 
@@ -390,26 +470,18 @@ static int visible_roots(int np, const polynomial *sseq, int *atzer, int  *atpos
 
 static int numchanges(int np, const polynomial *sseq, DBL a)
 {
-    int changes;
-    DBL f, lf;
-    const polynomial *s;
-    changes = 0;
-
-    lf = polyeval(a, sseq[0].ord, sseq[0].coef);
-
-    for (s = sseq + 1; s <= sseq + np; s++)
+    int changes = 0;
+    DBL previous = 0.0;
+    for (int i = 0; i <= np; ++i)
     {
-        f = polyeval(a, s->ord, s->coef);
-
-        if (lf == 0.0 || lf * f < 0)
-        {
-            changes++;
-        }
-
-        lf = f;
+        const DBL sign = polynomial_left_sign(a, sseq[i].ord, sseq[i].coef);
+        if (sign == 0.0)
+            continue;
+        if (opposite_signs(previous, sign))
+            ++changes;
+        previous = sign;
     }
-
-    return(changes);
+    return changes;
 }
 
 
@@ -436,10 +508,8 @@ static int numchanges(int np, const polynomial *sseq, DBL a)
 *   described in sseq to isolate intervals in which roots occur,
 *   the roots are returned in the roots array in order of magnitude.
 *
-*   NOTE: This routine has one severe bug: When the interval containing the
-*         root [min, max] has a root at one of its endpoints, as well as one
-*         within the interval, the root at the endpoint will be returned
-*         rather than the one inside.
+*   The variation counts use left limits, so intervals include their lower
+*   endpoint and exclude their upper endpoint.
 *
 * CHANGES
 *
@@ -464,9 +534,9 @@ static int sbisect(int np, const polynomial *sseq, DBL min_value, DBL  max_value
         {
             /* That failed, so now find it by bisection */
 
-            for (its = 0; its < MAX_ITERATIONS; its++)
+            for (its = 0; its < MAX_BISECTIONS; its++)
             {
-                mid = (min_value + max_value) / 2;
+                mid = min_value + (max_value - min_value) * 0.5;
 
                 atmid = numchanges(np, sseq, mid);
 
@@ -518,9 +588,9 @@ static int sbisect(int np, const polynomial *sseq, DBL min_value, DBL  max_value
     /* There is more than one root in the interval.
        Bisect to find new intervals. */
 
-    for (its = 0; its < MAX_ITERATIONS; its++)
+    for (its = 0; its < MAX_BISECTIONS; its++)
     {
-        mid = (min_value + max_value) / 2;
+        mid = min_value + (max_value - min_value) * 0.5;
 
         atmid = numchanges(np, sseq, mid);
 
@@ -662,7 +732,10 @@ static int regula_falsa(int order, const DBL *coef, DBL a, DBL b, DBL *val)
     fa = polyeval(a, order, coef);
     fb = polyeval(b, order, coef);
 
-    if (fa * fb > 0.0)
+    if (!IsFiniteIntersectionDepth(fa) || !IsFiniteIntersectionDepth(fb))
+        return 0;
+
+    if ((fa < 0.0 && fb < 0.0) || (fa > 0.0 && fb > 0.0))
     {
         return 0;
     }
@@ -676,18 +749,22 @@ static int regula_falsa(int order, const DBL *coef, DBL a, DBL b, DBL *val)
 
     if (fabs(fb) < SMALL_ENOUGH)
     {
-        *val = b;
-
-        return(1);
+        return 0;
     }
 
     lfx = fa;
 
     for (its = 0; its < MAX_ITERATIONS; its++)
     {
-        x = (fb * a - fa * b) / (fb - fa);
+        const DBL scale = std::max(fabs(fa), fabs(fb));
+        const DBL weight = (fabs(fa) / scale) / (fabs(fa) / scale + fabs(fb) / scale);
+        x = a + (b - a) * weight;
+        if (!(x > a && x < b))
+            return 0;
 
         fx = polyeval(x, order, coef);
+        if (!IsFiniteIntersectionDepth(fx))
+            return 0;
 
         if (fabs(x) > RELERROR)
         {
@@ -716,7 +793,7 @@ static int regula_falsa(int order, const DBL *coef, DBL a, DBL b, DBL *val)
 
                 fa = fx;
 
-                if ((lfx * fx) > 0)
+                if (lfx != 0.0 && fx != 0.0 && !opposite_signs(lfx, fx))
                 {
                     fb /= 2;
                 }
@@ -727,7 +804,7 @@ static int regula_falsa(int order, const DBL *coef, DBL a, DBL b, DBL *val)
 
                 fb = fx;
 
-                if ((lfx * fx) > 0)
+                if (lfx != 0.0 && fx != 0.0 && !opposite_signs(lfx, fx))
                 {
                     fa /= 2;
                 }
@@ -741,7 +818,7 @@ static int regula_falsa(int order, const DBL *coef, DBL a, DBL b, DBL *val)
 
                 fb = fx;
 
-                if ((lfx * fx) > 0)
+                if (lfx != 0.0 && fx != 0.0 && !opposite_signs(lfx, fx))
                 {
                     fa /= 2;
                 }
@@ -752,7 +829,7 @@ static int regula_falsa(int order, const DBL *coef, DBL a, DBL b, DBL *val)
 
                 fa = fx;
 
-                if ((lfx * fx) > 0)
+                if (lfx != 0.0 && fx != 0.0 && !opposite_signs(lfx, fx))
                 {
                     fb /= 2;
                 }
@@ -1478,7 +1555,22 @@ static int solve_quartic(const DBL *x, DBL *results)
 *
 ******************************************************************************/
 
+static int polysolve_in_range(int order, const DBL *Coeffs, DBL *roots);
+
+// A polynomial outside the solver's floating-point range yields no roots rather than ending the render.
 static int polysolve(int order, const DBL *Coeffs, DBL *roots)
+{
+    try
+    {
+        return polysolve_in_range(order, Coeffs, roots);
+    }
+    catch (const SturmRangeError&)
+    {
+        return 0;
+    }
+}
+
+static int polysolve_in_range(int order, const DBL *Coeffs, DBL *roots)
 {
     polynomial sseq[MAX_ORDER+1];
     DBL min_value, max_value;
@@ -1486,9 +1578,36 @@ static int polysolve(int order, const DBL *Coeffs, DBL *roots)
 
     /* Put the coefficients into the top of the stack. */
 
-    for (i = 0; i <= order; i++)
+    bool scaled = false;
+    for (i = 0; i <= order; ++i)
     {
-        sseq[0].coef[order-i] = Coeffs[i] / Coeffs[0];
+        if (!IsFiniteIntersectionDepth(Coeffs[i]))
+            throw POV_EXCEPTION_STRING("Polynomial coefficients must be finite.");
+        if (fabs(Coeffs[0]) < 1.0 && fabs(Coeffs[i]) > std::numeric_limits<double>::max() * fabs(Coeffs[0]))
+            scaled = true;
+    }
+    const int boundExponent = positive_bound_exponent(order, Coeffs);
+    const DBL bound = std::scalbn(1.0, boundExponent);
+    if (!(bound > 0.0) || !IsFiniteIntersectionDepth(bound))
+        throw SturmRangeError();
+    int leadingExponent;
+    const DBL leading = std::frexp(Coeffs[0], &leadingExponent);
+    for (i = 0; i <= order; ++i)
+    {
+        DBL value;
+        if (scaled && Coeffs[i] != 0.0)
+        {
+            int exponent;
+            const DBL mantissa = std::frexp(Coeffs[i], &exponent);
+            value = std::scalbn(mantissa / leading, exponent - leadingExponent - boundExponent * i);
+            if (value == 0.0 || fabs(value) < SMALL_ENOUGH)
+                throw SturmRangeError();
+        }
+        else
+            value = Coeffs[i] / Coeffs[0];
+        if (Coeffs[i] != 0.0 && value == 0.0)
+            throw SturmRangeError();
+        sseq[0].coef[order-i] = value;
     }
 
     /* Build the Sturm sequence */
@@ -1505,7 +1624,7 @@ static int polysolve(int order, const DBL *Coeffs, DBL *roots)
     /* Bracket the roots */
 
     min_value = 0.0;
-    max_value = MAX_DISTANCE;
+    max_value = scaled ? 1.0 : bound;
 
     atmin = numchanges(np, sseq, min_value);
     atmax = numchanges(np, sseq, max_value);
@@ -1519,7 +1638,11 @@ static int polysolve(int order, const DBL *Coeffs, DBL *roots)
 
     /* perform the bisection. */
 
-    return(sbisect(np, sseq, min_value, max_value, atmin, atmax, roots));
+    const int count = sbisect(np, sseq, min_value, max_value, atmin, atmax, roots);
+    if (scaled)
+        for (i = 0; i < count; ++i)
+            roots[i] *= bound;
+    return count;
 }
 
 

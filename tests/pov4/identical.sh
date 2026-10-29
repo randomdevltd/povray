@@ -3,7 +3,7 @@
 set -e
 POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
-NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media"}
+NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media refraction"}
 render() {
     "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"
@@ -32,6 +32,7 @@ fails err_reserved "err_reserved.pov4:1:5: Names starting with '__pov4_' are res
 fails err_include "err_items.inc4' line 2"
 fails err_loop "err_loop.pov4' line 2"
 fails err_depth "err_depth.pov4:1:11: Function calls nested deeper than 10000 levels"
+fails err_light_source_light "'light_source' has no item 'light'"
 fails err_prop "'finish' has no item 'phon'; did you mean 'phong'?"
 fails err_subsurface "'subsurface' has no item 'memroy'; did you mean 'memory'?"
 fails err_member "has no member 'size'."
@@ -49,6 +50,8 @@ accepts() {
     [ -z "$2" ] || tr -d "\n" < "pov4_$1.log" | grep -q "$2"
     echo "pov4 $1: accepted"
 }
+accepts ok_refraction_components
+fails err_refraction_prop "'refraction' has no item 'detial'; did you mean 'detail'?"
 accepts ok_vector_builtins
 accepts ok_negate
 accepts ok_string_compare

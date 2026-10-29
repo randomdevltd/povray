@@ -965,6 +965,7 @@ bool FunctionVM::RequiresRayContext(FUNCTION fn) const
 
 SYS_MATH_RETURN math_int(SYS_MATH_PARAM i);
 SYS_MATH_RETURN math_div(SYS_MATH_PARAM i1, SYS_MATH_PARAM i2);
+SYS_MATH_RETURN math_scale_lumens(SYS_MATH_PARAM lumens, SYS_MATH_PARAM metres);
 
 
 /*****************************************************************************
@@ -1057,12 +1058,13 @@ const Sys2 POVFPU_Sys2Table[] =
     atan2,          // 1
     fmod,           // 2
     math_div,       // 3
+    math_scale_lumens, // 4
     nullptr
 };
 
 
 const unsigned int POVFPU_Sys1TableSize = 19;
-const unsigned int POVFPU_Sys2TableSize = 4;
+const unsigned int POVFPU_Sys2TableSize = 5;
 
 /*****************************************************************************
 *
@@ -1125,6 +1127,12 @@ SYS_MATH_RETURN math_int(SYS_MATH_PARAM i)
 SYS_MATH_RETURN math_div(SYS_MATH_PARAM i1, SYS_MATH_PARAM i2)
 {
     return (SYS_MATH_RETURN)((int)(i1/i2));
+}
+
+// a lumens figure over the square of the scene's metres per unit, for lights stated in lumens
+SYS_MATH_RETURN math_scale_lumens(SYS_MATH_PARAM lumens, SYS_MATH_PARAM metres)
+{
+    return (SYS_MATH_RETURN)(lumens / (metres * metres));
 }
 
 

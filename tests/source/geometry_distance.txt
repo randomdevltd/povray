@@ -1,0 +1,52 @@
+Geometry intersection distance policy
+
+Primitive intersection tests accept finite roots above their existing lower
+depth tolerance. They do not impose an additional maximum viewing distance.
+The caller chooses the segment endpoint: an ordinary nearest-hit query is open,
+while a finite tracing segment or shadow connection excludes hits past its end.
+Local transformations must not change that policy.
+
+Box slab intervals start at the largest representable depth and are narrowed
+by the actual slabs. Isosurface root searches retain the finite interval of
+their container, rather than clipping it to an unrelated world distance.
+Nearest-hit sentinels in mesh, lathe and surface-of-revolution traversal follow
+the same policy. MAX_DISTANCE and BOUND_HUGE retain their other meanings.
+
+The CPU regression calls actual All_Intersections and Find_Intersection paths
+at distances 100, 384400000 and 149600000000. The radius is 0.004 times distance.
+It checks a direct sphere, a nonuniformly scaled sphere, box, direct and scaled
+meshes with bounding hierarchies, and a contained isosurface. The isosurface
+function is x*x+y*y+z*z-0.25, with max_gradient 4 and accuracy 1e-7.
+Finite endpoints on either side of each entry are checked for both image and
+shadow rays. A linear quadric must emit exactly one finite root, so its absent
+second root cannot become an artificial surface. Explicit quadric bounding and
+clipping objects still reject excluded intersections; an automatically bounded
+quadric retains its finite bounds. NaN and infinities are rejected
+even when the compiler enables fast floating-point optimizations.
+
+The sphere, box, mesh and isosurface also run through actual legacy and flat
+scene trees, with both open queries and finite endpoints on either side of the
+entry. The legacy queue starts from the caller's current closest depth and uses
+the actual slab interval, preserving the infinite-node queue ordering sentinel.
+Forward and inverse bounding-box transformations retain translated coordinates
+in both directions, with no clipping to a fixed world-coordinate cube.
+
+Flat and quantized bounding slabs also check zero direction components and
+nonzero components of magnitude 1e-32, with hit and miss directions. Parallel
+axes test containment directly; risky nonzero axes use double-precision slab
+division instead of an overflowing or clamped float reciprocal.
+
+From a configured build of the matching source, run:
+
+  sh tools/bench/check-geometry-distance.sh BUILD_DIRECTORY OUTPUT_DIRECTORY
+  sh tools/bench/check-sphere-intersection.sh BUILD_DIRECTORY OUTPUT_DIRECTORY
+
+The second test additionally checks unit-radius spheres at the same distances,
+off-axis misses, shallow positive chords, tangency, and rays starting inside.
+Its discriminant uses the perpendicular distance from the sphere center to the
+normalized ray, avoiding subtraction of two squared astronomical distances.
+
+The Sturm solver uses a finite coefficient-derived search bound. Its production
+CPU controls and numerical-range limitations are documented in
+polynomial_distance.txt; finite geometry acceptance does not remove numerical
+conditioning limits in polynomial root construction.

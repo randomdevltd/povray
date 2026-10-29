@@ -20,6 +20,172 @@ Both languages have Tree-sitter grammars:
 
 Generated C sources are committed; renderer builds do not run the generator.
 
+## Independent volume lights
+
+Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
+attenuation 2, 1 samples 16 } }`. By default the source depends on its object's geometry
+and its own pigment, independently of media coefficients and density. Nits use
+the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
+source strength, not every nearby receiver reading. The declared emitting region affects this
+calibration; unused container padding is not guaranteed to be neutral. Surface
+emission is an author-chosen approximation, not exact angular identity. Lumens
+normalize generated flux before media attenuation, using the renderer's greyscale convention. `scale_lumens(phi,c)`
+takes explicit metres per scene unit; no light unit reads `mm_per_unit`.
+
+Both syntaxes also accept `interior { media { emission rgb <100,40,10> }
+light { emission brightness 12 lumens } }` at every scene version. Bare
+`emission` selects the full combined RGB emission of the interior's own media,
+including density patterns and mixing, and is mutually exclusive with `pigment`.
+Absorption, scattering and overlapping objects do not contribute to this source
+field. Brightness keeps its existing calibration: omitted brightness is 1 nit,
+so selecting emission does not make `j(x)` equal to the media emission coefficient.
+Without the flag, the default pigment remains solid white.
+
+The two attenuation values are power then scale; a single value is the scale
+shorthand with power two. The default `2,1` leaves physical transport unchanged.
+Sampling integrates the finite source at every distance. See the volume-light
+manual chapter for reference probe readings and numerical preparation limits.
+
+## Surface light blocks
+
+Both syntaxes accept `light { ... }` directly on an object. This selects its
+surface as a light source; `interior { light { ... } }` continues to select its
+volume. No new word is reserved: `light`, `nits` and `lumens` remain contextual.
+
+```
+box { <-1,2,-1>, <1,2.1,1>
+  light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 16 }
+}
+```
+
+The shared settings are `pigment`, bare `emission`, `brightness`, `samples`,
+`shadowless`, `media_interaction`, `media_attenuation`, and photon reflection
+and refraction flags. The surface is an outward, one-sided Lambert emitter.
+Omitted input is white and omitted brightness is 1 nit. Unitless brightness and
+`nits` set radiance to brightness times the source RGB. `lumens` normalizes total
+generated flux with the renderer's greyscale convention, before media transport.
+Bare `emission` selects the material's pigment times finish emission rather than
+an independent light pigment. It does not change the material's appearance.
+A light block never adds visible camera emission by itself.
+Emission alias preparation supports layered textures, recursive texture maps,
+weighted averages, UV mapping and material maps, including pigment opacity and
+transmission between layers. Source
+pigments cannot depend on ray or camera context, and finish Fresnel or
+reflection energy conservation that changes emission by direction is rejected.
+Emitted RGB must be finite and nonnegative.
+
+Surface sources require a finite, nonzero surface area. Their light blocks do
+not accept the volume light's artistic `attenuation` setting. A `light_source`
+does not take a `light` block: the 4.0 checker reports it as an unknown item.
+`brightness` is followed by an optional unit written after the number, as in
+`brightness 12 lumens`; `nits` and `lumens` are read only there. Surface and
+volume lights are not imaged by portals, which divert the light of ordinary
+light sources only.
+
+Errors of the block itself carry the file and line (`A light block accepts exactly
+one pigment or emission input.`, `Only one surface light block allowed on an
+object.`, `Surface light blocks do not accept attenuation.`); errors found while
+the light is prepared (`Surface light input cannot depend on ray or camera
+context`, `Surface light emission cannot bake direction-dependent finish
+attenuation`) stop the render before tracing and carry no line. The manual's
+surface light chapter lists them all.
+
+## Light bounce orders
+
+Surface and interior light blocks accept contextual `bounce` or
+`bounce { passes 3 }`. Bare `bounce` requests one bounce order. `passes` must
+be a finite positive integer in the unsigned range; zero, negative, fractional
+and out-of-range values are errors. A light accepts only one bounce setting,
+and a bounce block accepts only one `passes` setting.
+
+Without an explicit `pigment` or `emission` input, a bounce-enabled light selects
+its own emission field: material pigment times finish emission for a surface,
+or the interior's combined media emission for a volume. Zero emission remains
+zero. An explicit input can precede or follow `bounce`.
+`bounce` and `passes` remain free identifiers outside their light-block contexts.
+
+Each pass produces the next scattering order from the preceding order across
+sources. A source past its own cutoff produces zero new output; older orders
+are not reissued. Authored emission and ordinary lights enter generation zero
+once. Brightness and lumen normalization affect primary emission only, while
+received indirect energy keeps its transported magnitude. The final source is
+primary emission plus the completed bounce orders. Surface bounce rejects
+stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
+reflection attenuation.
+
+A passive source is a bounce light whose own emission is zero (for a surface,
+`finish { emission 0 }`): it shines only the light it receives from other
+sources and is dark when nothing lights it. A bounced surface whose finish uses
+subsurface scattering also sends its subsurface light on, which needs subsurface
+method 2 (the default from version 4.0); under method 1 the render stops before
+tracing with `Surface subsurface bounce requires subsurface method 2.` The same
+stop, without a line number, reports `Surface bounce cannot prepare stochastic
+crand diffuse finishes` and `Surface bounce cannot prepare Fresnel or
+energy-conserving reflection attenuation`.
+
+## Lumens
+
+`scale_lumens(Lumens, Metres)` is a built-in function in both languages, typed as a
+number, and returns `Lumens / Metres^2`: the value for `brightness V lumens` in
+a scene whose unit is `Metres` metres long. It needs finite lumens and a
+positive finite length (`scale_lumens takes finite lumens and a positive finite
+number of metres per unit.`). It works at every scene version. In classic scenes
+the name is a reserved word, not a contextual one, so it cannot also be an
+identifier; in `.pov4` it is a built-in name.
+
+## Scene preparation progress
+
+The renderer prints `Preparation plan:` and `Preparation: <phase> ...` information
+lines while it prepares a scene, for the phases `parse meshes media atmosphere
+lights bounce photons`, ending each with `finished`, and a `stalled` line when a
+count stops moving for a minute. They are renderer output, not syntax; the
+manual's text output section (3.2.7.6) describes them.
+
+## Legacy behaviour at 3.7 and older
+
+Henyey-Greenstein eccentricity outside the open interval (-1, 1) is a parse error
+from version 3.8 and a warning in a scene of version 3.7 or older. In such a
+scene `refraction off` inside an `interior` is the classic refraction value 0,
+not the field block's "off"; `refraction { ... }` blocks work at every version.
+
+## Static checker notes
+
+These are properties of the `.pov4` evaluator and checker, checked against the
+renderer:
+
+- An unpinned `fn` parameter that the body uses in arithmetic types as a number,
+  vector or colour. `seed()` needs a number, so `fn F(S) { rand(seed(S + 3)) }`
+  fails with `Argument 1 of 'seed' must be a number, not a vector or a colour.`
+  Convert first: `seed(int(S) + 3)`. `seed()` itself returns a value with no
+  static type, so `rand(S)` takes it without a conversion.
+- Computed colours in classic map entries need their `rgb`/`rgbf` keyword:
+  `color_map { [0 rgb Warm(0.3)] }` for a function returning a vector. A
+  vector-typed call there fails with `Expected 'color', < found instead`; a
+  variable bound to a colour value (`let C = rgb <1, 0.5, 0.2>;`) is accepted
+  as it stands.
+- A vector literal takes numbers, not vectors: `<A, 3>` with a two-component
+  `A` fails with `A vector component must be a float, not a 2-vector.` Index or
+  add instead: `<A.x, A.y, 3>`, `A + <0, 0, 3>`.
+- `include` runs wherever a statement can stand, including inside `if`, `for` and
+  function bodies, with the included bindings visible afterwards.
+
+## Independent refraction functions
+
+Both syntaxes accept `interior { refraction { function { -0.03*(2+x) }
+function { 0.005*sin(y) } detail 0.06 } }` at every scene version. Each raw
+signed scalar function supplies an index contribution. Functions in a block
+are summed before preparation; contributions from overlapping interiors add.
+The index is the active optical IOR plus that sum, independently of media and
+light. Functions preserve negative values and values above one.
+
+A block requires at least one function. `refraction off` disables only that
+interior's contribution; it does not clear other interiors' functions. Each
+block requires an explicit contribution.
+`detail` is auto by default or a finite positive length in scene units and does
+not read `mm_per_unit`. Transform the containing object to transform functions.
+Ordinary declared pigment functions can be sampled explicitly inside a scalar
+function, including an explicitly authored RGB average when desired.
+
 ## Bounds framing
 
 `camera { location <4, 3, -8> look_at Subject }` frames the transformed bounds of

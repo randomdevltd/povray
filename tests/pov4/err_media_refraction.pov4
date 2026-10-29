@@ -1,0 +1,2 @@
+input Method = 4;
+media { method Method refraction 0.1 }

@@ -54,9 +54,22 @@
 
 // POV-Ray header files (core module)
 #include "core/render/trace.h"
+#include "core/material/preparedrefractionaxis.h"
 
 namespace pov
 {
+class PreparedRefractionDefinition;
+
+struct RefractionSpec final
+{
+    DBL detail = 0.0;
+    std::vector<GenericScalarFunctionPtr> functions;
+    TRANSFORM *transform = nullptr;
+    RefractionSpec() = default;
+    RefractionSpec(const RefractionSpec&);
+    ~RefractionSpec();
+    void Transform(const TRANSFORM *mapping);
+};
 
 //##############################################################################
 ///
@@ -79,9 +92,20 @@ enum
 void Transform_Density(std::vector<PIGMENT*>& Density, const TRANSFORM *Trans);
 
 class Emitter;
+class PreparedDirectionalSourceField;
+class PreparedSourceDistribution;
 
-/// The light an emitting medium gives from its container: a table of its power over the prepared grid; nullptr and why if none.
-std::shared_ptr<const Emitter> MakeVolumeEmitter(Media& medium, ObjectPtr container, TraceThreadData *td, std::string& failure);
+/// The light an interior's `light { }` block gives from its container: a table of each cell's power, its radiance
+/// times the media's density-weighted extinction, or their mean chord when none has any; nullptr and why if none.
+std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData *td, std::string& failure);
+std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary, std::shared_ptr<const PreparedDirectionalSourceField> field, TraceThreadData *td, bool includePrimary = false,
+    std::shared_ptr<const PreparedSourceDistribution> proposal = nullptr);
+void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
+void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
+std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr owner, TraceThreadData *td);
+/// The work units PrepareLightFields reports: interiors that may refract, then lights.
+std::size_t PreparedLightUnits(const SceneData& scene);
+void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooperate);
 
 /// A `subtract` or `multiply` medium on a ray; it changes the media collected before it, which rank below it.
 struct MediaModifier final
@@ -92,49 +116,61 @@ struct MediaModifier final
 };
 typedef std::vector<MediaModifier> MediaModifierVector;
 
-/// SceneData::mediaWarningFlags bits for media refraction warnings, each given once per render.
-const unsigned kMediaRefractionJump = 64, kThinOverlap = 128, kMediaRefractionTrapped = 256, kMediaRefractionIndex = 512,
-              kRefractionDetailUnset = 1024;
+/// SceneData::mediaWarningFlags bits for refraction field warnings, each given once per render.
+const unsigned kRefractionJump = 64, kThinOverlap = 128, kRefractionTrapped = 256, kRefractionIndex = 512;
 
 /// The media a ray's interiors show, in precedence order; without modifiers every interior adds its media.
-/// Transport leaves out media that only refract; refraction keeps only media that refract.
-enum class MediaRole { kTransport, kRefraction };
-void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers,
-                          MediaRole role = MediaRole::kTransport);
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers);
 
-/// The media refraction on a stack of interiors: the refractive index there is the base ior plus Offset().
+struct BounceScatteringComponent final
+{
+    int type;
+    double eccentricity;
+    MathColour coefficient;
+};
+
+std::vector<BounceScatteringComponent> EvaluateOwnerBounceScattering(
+    const RayInteriorVector& interiors, const Interior& owner, const Vector3d& point, TraceThreadData *td);
+
+/// The refraction on a stack of interiors: the refractive index there is the base ior plus Offset().
 class RefractionField final
 {
     public:
-        RefractionField(const RayInteriorVector& interiors, TraceThreadData *td);
+        explicit RefractionField(const RayInteriorVector& interiors);
         /// Whether the index varies anywhere, so rays inside curve.
         bool Varies() const { return varies; }
-        /// Sum of refraction x density over the media at a point, after their blends.
+        /// Sum of the interiors' refraction fields at a point.
         DBL Offset(const Vector3d& point);
         DBL Offset(const Vector3d& point, Vector3d& gradient);
         /// The longest step a curved ray may take through it.
-        DBL MaxStep() const { return maxStep; }
+        DBL MaxStep(const Vector3d& point) const;
         /// Whether a straight line meets the bounds of its varying media, and from what distance.
         bool Ahead(const Vector3d& origin, const Vector3d& direction, DBL& entry) const;
     private:
-        MediaVector medias;
-        MediaModifierVector modifiers;
-        TraceThreadData *threadData;
-        std::vector<DBL> terms;
-        Vector3d low, high;
-        DBL epsilon, maxStep;
+        std::unique_ptr<PreparedRefractionAxis> axis;
+        std::vector<const PreparedRefractionDefinition *> fields;
+        DBL maxStep;
         bool varies, bounded;
 
-        DBL MeanDensity(Media& medium, const Vector3d& point);
 };
 
 class ExtinctionPlan;
 struct ProgressiveVolumeDomain;
 
+/// Light arriving at a point of the media from one direction, before any medium scatters it.
+struct MediaIncident final
+{
+    MathColour incoming;
+    Vector3d direction;
+};
+
 class MediaFunction : public Trace::MediaFunctor
 {
     public:
         MediaFunction(TraceThreadData *td, Trace *t, PhotonGatherer *pg);
+        virtual std::unique_ptr<Trace::MediaFunctor::Path> BeginPath(const Ray& ray) override;
+        virtual void ScalePathRadiance(const MathColour& factor) override;
+        virtual void SetPathOffset(DBL offset) override;
 
         virtual void ComputeMedia(std::vector<Media>& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
         virtual void ComputeMedia(const RayInteriorVector& mediasource, const Ray& ray, Intersection& isect, MathColour& colour, ColourChannel& transm) override;
@@ -143,6 +179,10 @@ class MediaFunction : public Trace::MediaFunctor
         virtual ConstObjectPtr SetPathReceiver(ConstObjectPtr receiver) override
             { const ConstObjectPtr previous = pathReceiver; pathReceiver = receiver; return previous; }
     protected:
+        struct FixedLightPath;
+        FixedLightPath *currentPath;
+        /// Each nesting depth's path vectors, kept with their capacity from one path to the next.
+        std::vector<std::shared_ptr<void>> pathStorage;
         /// The current segment's subtract and multiply interiors, or nullptr.
         const MediaModifierVector *modifiers;
         std::vector<MathColour> modifierScratch, densityScratch;
@@ -169,15 +209,14 @@ class MediaFunction : public Trace::MediaFunctor
         };
 
         /// The finest prepared step of the modifiers' varying densities, or HUGE_VAL.
-        DBL ModifierResolution() const;
+        DBL ModifierResolution(const Ray& ray, DBL from, DBL to) const;
         /// Where a modifier's density comes from: its prepared grid for camera samples or field marching, else its pattern.
         enum class ModifierSource { kPattern, kCamera, kField };
         /// A modifier medium's density at a point, from its prepared grid where the source allows and the grid holds it.
         void ModifierDensity(Media& medium, const Vector3d& point, ModifierSource source, MathColour& local);
         /// Adds the media's coefficients at a point, density[i] being medias[i]'s density there, after the modifiers;
-        /// the emission of media that are lights only with lightEmission.
         void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
-                                     MathColour& extinction, MathColour *emission, MathColour *scattering, bool lightEmission = true);
+                                     MathColour& extinction, MathColour *emission, MathColour *scattering, const DBL *phaseCosine = nullptr);
 
         /// The key the current ray's media draws are hashed from.
         std::uint64_t drawKey;
@@ -190,12 +229,19 @@ class MediaFunction : public Trace::MediaFunctor
         /// media samples taken so far on the current ray, and its random shift of the area light sequence (negative until drawn)
         unsigned int lightSampleIndex;
         Vector2d lightSampleShift;
+        std::vector<MathColour> scatterDensity;
+        /// Light reaching the current sample point, scattered once its draws are in; nested points stack above.
+        std::vector<MediaIncident> pointIncident;
 
         void ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                          const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering,
                                          bool all_constant_and_light_ray);
         void ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                        const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening = 1.0);
+        void ComputeMediaConstantSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& intervals,
+                                          const Ray& ray, bool use_scattering, bool prepared);
+        void CollectLegacyLightIntervals(MediaVector& medias, LightSourceEntryVector& lights, const MediaIntervalVector& intervals,
+                                          const Ray& ray);
         void ComputeMediaAdaptiveSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                           const Ray& ray, const Media *IMedia, DBL aa_threshold, int minsamples, bool ignore_photons, bool use_scattering);
         void ComputeMediaColour(MediaIntervalVector& mediaintervals, MathColour& colour, ColourChannel& transm);
@@ -204,7 +250,9 @@ class MediaFunction : public Trace::MediaFunctor
         /// ComputeMediaTransmittance at every point.
         void ComputeMediaPointTransmittance(MediaVector& medias, MediaIntervalVector& mediaintervals, const Ray& ray,
                                             const ExtinctionPlan *plan, bool method3, int points);
-        DBL PreparedResolution(MediaVector& medias, const Ray& ray);
+        DBL PreparedResolution(MediaVector& medias, const Ray& ray, DBL end);
+        bool PreparedRequired(const MediaVector& medias, const Ray& ray) const;
+        bool ConstantMediaCoefficients(const MediaVector& medias, const Ray& ray) const;
         bool PrepareFields(MediaVector& medias, const Ray& ray);
         DBL PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL coarsening = 1.0);
         /// Coarsens the prepared resolution uniformly until the march fits the step budget; coarsening 1 when it already fits.
@@ -227,18 +275,33 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect);
         bool ComputeSpotLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
         bool ComputeCylinderLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
+        /// densities, when given, receives each medium's density at the point (zero where the ray skips it).
+        void ComputeMediaCoefficients(MediaVector& medias, const Ray& ray, const Vector3d& point, bool prepared,
+                                      MathColour& emission, MathColour& extinction, MathColour& scattering,
+                                      MathColour *densities = nullptr);
+        void DensityForDeclaredMode(Media& medium, const Vector3d& point, MathColour& density);
+        void ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
+                                        const MediaInterval& interval, const Ray& ray, DBL depth, const Vector3d& point,
+                                        const MathColour& scattering, MathColour& emission, bool prepared, bool use_scattering,
+                                        bool volumeLighting = true);
         void ComputeOneMediaSample(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray &ray, DBL d0, MathColour& SampCol,
                                    MathColour& SampOptDepth, int sample_method, bool ignore_photons, bool use_scattering, bool photonPass, bool prepared = false,
                                    MathColour *scattering = nullptr);
         /// Adds to Emission the light the media's scattering coefficients Scattering send along the ray at depth d1 (point P).
         void ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission);
+                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false,
+                               std::vector<MediaIncident>* incident = nullptr);
         /// The step the scattering media would sample an interval at alone: a uniform one by its samples, a prepared one by its grid.
-        DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval) const;
+        DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval, const Ray& ray) const;
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
                                             DBL d1, DBL d3, MathColour& Result, const MathColour& C1, const MathColour& C3, MathColour& ODResult, const MathColour& od1, const MathColour& od3,
                                             int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass, std::uint64_t key);
         void ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H);
+        void ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
+                                            const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay);
+        /// Adds to output the light the media at point scatter along the ray from each incident sample.
+        void ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
+                             const Vector3d& point, const BasicRay& ray, const MathColour *densities = nullptr);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };
 

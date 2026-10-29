@@ -89,7 +89,7 @@ class Superellipsoid final : public ObjectBase
         virtual void Transform(const TRANSFORM *) override;
         virtual void Compute_BBox() override;
     protected:
-        bool Intersect(const BasicRay& ray, IStack& Depth_Stack, TraceThreadData *Thread);
+        bool Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thread);
         static bool intersect_box(const Vector3d& P, const Vector3d& D, DBL *dmin, DBL *dmax);
         static DBL power(DBL x, DBL e);
         static DBL evaluate_g(DBL x, DBL y, DBL e);
@@ -98,7 +98,7 @@ class Superellipsoid final : public ObjectBase
         int find_ray_plane_points(const Vector3d& P, const Vector3d& D, int cnt, DBL *dists, DBL mindist, DBL maxdist) const;
         void solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P) const;
         bool check_hit2(const Vector3d& P, const Vector3d& D, DBL t0, Vector3d& P0, DBL v0, DBL t1, DBL *t, Vector3d& Q) const;
-        bool insert_hit(const BasicRay& ray, DBL Depth, IStack& Depth_Stack, TraceThreadData *Thread);
+        bool insert_hit(const Ray& ray, DBL Depth, IStack& Depth_Stack, TraceThreadData *Thread);
 };
 
 /// @}

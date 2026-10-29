@@ -1,8 +1,10 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Glowing fish and jellyfish at night over a seabed of rocks, kelp, sea grass, urchins, a coral fan and a lost anchor, the fish the only light, dimmed and tinted by the water they shine through. +w640 +h480; Declare=Samples=N sets each fish's samples, Murk=0 clears the water of particles.
+// Glowing fish and jellyfish at night over a seabed of rocks, kelp, sea grass, urchins, a coral fan and a lost anchor, the fish the only light, dimmed and tinted by the water they shine through. +w640 +h480.
+// Declare=Samples=N sets each fish's samples, Gain scales their light over their glow, Murk=0 clears the water of particles.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Murk) #declare Murk = 1; #end
+#ifndef (Gain) #declare Gain = 2; #end
 #declare R = seed(2024);
 
 global_settings { assumed_gamma 1 max_trace_level 8 }
@@ -151,8 +153,8 @@ union {
           mix add method 4 resolution 0.012
           emission Colour * 120
           density { function { max(0, min(1, FishShape(x, y, z))) } }
-          light_source { samples Samples }
         }
+        light { emission brightness Gain samples Samples }
       }
     }
     sphere { <0.42, 0.04, 0.055>, 0.022 } sphere { <0.42, 0.04, -0.055>, 0.022 }
@@ -180,8 +182,8 @@ Fish(<-3.8, 1.3, 3.7>, 14, -3, 0.75, rgb <0.05, 1, 0.4>)
           density {
             function { max(0, min(1, (1 - sqrt(x * x + y * y + z * z)) * 4)) * max(0, min(1, (sqrt(x * x + y * y + z * z) - 0.55) * 4 + 0.4)) * max(0, min(1, y * 6 + 0.2)) }
           }
-          light_source { samples Samples }
         }
+        light { emission brightness Gain samples Samples }
       }
       scale <0.5, 0.42, 0.5>
     }

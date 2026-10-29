@@ -59,17 +59,21 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/mesh.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
 
 // C++ standard header files
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <map>
+#include <type_traits>
 #include <stdexcept>
 
 // POV-Ray header files (base module)
@@ -150,7 +154,7 @@ bool Mesh::Nearest_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThrea
 {
     Resolve();
     Thread->Stats()[Ray_Mesh_Tests]++;
-    if (!Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread, true))
+    if (!Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread, true, &ray))
         return false;
     Thread->Stats()[Ray_Mesh_Tests_Succeeded]++;
     return true;
@@ -161,7 +165,7 @@ bool Mesh::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
     Resolve();
     Thread->Stats()[Ray_Mesh_Tests]++;
 
-    if (Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread))
+    if (Intersect(ray, ray.IsShadowTestRay(), Depth_Stack, Thread, false, &ray))
     {
         Thread->Stats()[Ray_Mesh_Tests_Succeeded]++;
         return(true);
@@ -211,7 +215,7 @@ DBL Mesh::mesh_ray(const BasicRay& ray, BasicRay& New_Ray) const
     return len;
 }
 
-bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly)
+bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly, const Ray* query)
 {
     MeshIndex i;
     bool found;
@@ -232,7 +236,7 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
         {
             if (intersect_mesh_triangle(New_Ray, &Data->Triangles[i], &t))
             {
-                if (test_hit(&Data->Triangles[i], ray, t, len, Depth_Stack, Thread))
+                if ((!query || query->AdmitRoot(this, t / len)) && test_hit(&Data->Triangles[i], ray, t, len, Depth_Stack, Thread))
                 {
                     found = true;
                 }
@@ -243,7 +247,7 @@ bool Mesh::Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, Trac
     {
         /* Use the mesh's bounding hierarchy. */
 
-        return(intersect_bbox_tree(New_Ray, ray, len, shadow, Depth_Stack, Thread, nearestOnly));
+        return(intersect_bbox_tree(New_Ray, ray, len, shadow, Depth_Stack, Thread, nearestOnly, query));
     }
 
     return(found);
@@ -299,6 +303,8 @@ bool Mesh::InsideAlong(const Vector3d& IPoint, const Vector3d& direction, TraceT
 
     if (has_inside_vector==false)
         return false;
+    if ((Data->ClosedTopology == 1) && BBox.finite && !Inside_BBox(IPoint, BBox))
+        return Test_Flag(this, INVERTED_FLAG);
 
     ray.Direction = direction;
     ray.Origin = IPoint;
@@ -1173,6 +1179,56 @@ bool Mesh::Resolve() const
 *
 ******************************************************************************/
 
+static bool Closed_Mesh_Topology(const MESH_DATA& data)
+{
+    using Word = std::conditional<sizeof(SNGL) == sizeof(std::uint32_t), std::uint32_t, std::uint64_t>::type;
+    static_assert((sizeof(SNGL) == 4 || sizeof(SNGL) == 8) && std::numeric_limits<SNGL>::is_iec559, "Mesh position keys require IEEE coordinates");
+    const Word magnitudeMask = sizeof(SNGL) == 4 ? Word(UINT32_C(0x7fffffff)) : Word(UINT64_C(0x7fffffffffffffff));
+    const Word exponentMask = sizeof(SNGL) == 4 ? Word(UINT32_C(0x7f800000)) : Word(UINT64_C(0x7ff0000000000000));
+    std::map<std::array<Word, 3>, MeshIndex> positions;
+    std::vector<MeshIndex> welded(size_t(data.Number_Of_Vertices));
+    for (MeshIndex i = 0; i < data.Number_Of_Vertices; ++i)
+    {
+        std::array<Word, 3> position;
+        for (int d = X; d <= Z; ++d)
+        {
+            const SNGL value = data.Vertices[i][d];
+            Word bits;
+            std::memcpy(&bits, &value, sizeof(bits));
+            if ((bits & exponentMask) == exponentMask)
+                return false;
+            position[d] = (bits & magnitudeMask) == 0 ? 0 : bits;
+        }
+        welded[size_t(i)] = positions.emplace(position, i).first->second;
+    }
+    std::vector<std::pair<MeshIndex, MeshIndex>> edges;
+    edges.reserve(size_t(data.Number_Of_Triangles) * 3);
+    for (MeshIndex i = 0; i < data.Number_Of_Triangles; ++i)
+    {
+        const MESH_TRIANGLE& t = data.Triangles[i];
+        MeshIndex a = t.P(0), b = t.P(1), c = t.P(2);
+        if ((a < 0) || (b < 0) || (c < 0) ||
+            (a >= data.Number_Of_Vertices) || (b >= data.Number_Of_Vertices) || (c >= data.Number_Of_Vertices) ||
+            (a == b) || (b == c) || (c == a))
+            return false;
+        a = welded[size_t(a)];
+        b = welded[size_t(b)];
+        c = welded[size_t(c)];
+        const Vector3d p(data.Vertices[a]), q(data.Vertices[b]), r(data.Vertices[c]);
+        if (cross(q - p, r - p).lengthSqr() == 0.0)
+            return false;
+        edges.emplace_back(std::min(a, b), std::max(a, b));
+        edges.emplace_back(std::min(b, c), std::max(b, c));
+        edges.emplace_back(std::min(c, a), std::max(c, a));
+    }
+    std::sort(edges.begin(), edges.end());
+    for (size_t i = 0; i < edges.size(); i += 2)
+        if ((i + 1 == edges.size()) || (edges[i] != edges[i + 1]) ||
+            ((i + 2 < edges.size()) && (edges[i] == edges[i + 2])))
+            return false;
+    return true;
+}
+
 void Mesh::Compute_BBox()
 {
     if (Pending() && !deferred->Built())
@@ -1182,8 +1238,8 @@ void Mesh::Compute_BBox()
     Vector3d P1, P2, P3;
     Vector3d mins, maxs;
 
-    mins = Vector3d(BOUND_HUGE);
-    maxs = Vector3d(-BOUND_HUGE);
+    mins = Vector3d(std::numeric_limits<DBL>::infinity());
+    maxs = Vector3d(-std::numeric_limits<DBL>::infinity());
 
     for (i = 0; i < Data->Number_Of_Triangles; i++)
     {
@@ -1194,6 +1250,14 @@ void Mesh::Compute_BBox()
     }
 
     Make_BBox_from_min_max(BBox, mins, maxs);
+    if (has_inside_vector)
+        std::call_once(Data->ClosedTopologyOnce, [this]() {
+            if (Data->ClosedTopology < 0)
+                Data->ClosedTopology = Closed_Mesh_Topology(*Data) ? 1 : 0;
+        });
+    BBox.finiteInterior = !has_inside_vector || (BBox.finite && (Data->ClosedTopology == 1));
+    if (Trans != nullptr)
+        Recompute_BBox(&BBox, Trans);
 }
 
 
@@ -1516,7 +1580,7 @@ static inline bool intersect_decoded_triangle(const BasicRay &ray, const Vector3
 
     *Depth = dot(S_Normal, P1 - ray.Origin) / NormalDotDirection;
 
-    if ((*Depth < depthTolerance) || (*Depth > MAX_DISTANCE))
+    if ((*Depth < depthTolerance) || (!IsFiniteIntersectionDepth(*Depth)))
     {
         return(false);
     }
@@ -1905,16 +1969,17 @@ static MeshShadowHint& shadow_hint(TraceThreadData *Thread, const void *mesh, in
     return Thread->meshShadowHints[(int(h >> 58) + o) & (TraceThreadData::MESH_SHADOW_HINTS - 1)];
 }
 
-bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly)
+bool Mesh::intersect_bbox_tree(const BasicRay &ray, const BasicRay &Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly, const Ray* query)
 {
     bool found = false;
-    DBL Best = BOUND_HUGE;
+    DBL Best = std::numeric_limits<double>::max();
     std::int32_t nearest = -1;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, nearestOnly || !has_inside_vector, Thread->Stats(), [&](std::int32_t leaf) {
         const MESH_TRIANGLE *triangle = &Data->Triangles[leaf];
         DBL hit;
-        if (intersect_mesh_triangle(ray, leaf, Thread, &hit) && test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
+        if (intersect_mesh_triangle(ray, leaf, Thread, &hit) && (!query || query->AdmitRoot(this, hit / len)) &&
+            test_hit(triangle, Orig_Ray, hit, len, Depth_Stack, Thread))
         {
             found = true;
             // Callers drop hits nearer than MIN_ISECT_DEPTH, shadow rays up to SMALL_TOLERANCE: those must not hide the rest.
@@ -2798,7 +2863,7 @@ void Mesh::UVCoord(Vector2d& Result, const Intersection *Inter) const
 bool Mesh::inside_bbox_tree(const BasicRay &ray, RenderStatistics& stats, DBL depthTolerance) const
 {
     MeshIndex found = 0;
-    DBL Best = BOUND_HUGE, Depth;
+    DBL Best = std::numeric_limits<double>::max(), Depth;
 
     Traverse_Flat_BBox_Tree(*Data->FlatTree, ray, Best, false, stats, [&](std::int32_t leaf) {
         if (intersect_mesh_triangle(ray, &Data->Triangles[leaf], &Depth, depthTolerance))
