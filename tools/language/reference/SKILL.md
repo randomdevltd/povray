@@ -71,7 +71,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `lemon` | 39 | Cone-like shape whose side is an arc of Inner_Radius; end radii may be zero. |
 | `light` | 14 | A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling. |
 | `light_group` | 81 | Objects lit only by the lights named inside it. |
-| `light_source` | 62 | A light: position, colour, area, shadowing and photon options. |
+| `light_source` | 61 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
 | `media` | 24 | Participating medium: scattering, emission, absorption, intervals. |
 | `merge` | 81 | CSG union that removes inner surfaces, for transparent children. |

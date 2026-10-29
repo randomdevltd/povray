@@ -63,3 +63,13 @@ test('surface lights and bounce orders expose contextual items to completion', (
     assert.ok(blocks.light.items.includes('bounce'));
     assert.deepEqual(blocks.bounce.items, ['passes']);
 });
+
+test('lumens helpers and light units are highlighted and a light_source takes no light block', () => {
+    const grammar = JSON.parse(readFileSync(join(root, targets[0]), 'utf8'));
+    const blocks = JSON.parse(readFileSync(join(root, targets[1]), 'utf8')).blocks;
+    assert.match(grammar.repository.builtin.match, /\bscale_lumens\b/);
+    for (const word of ['nits', 'lumens', 'brightness', 'samples', 'emission', 'attenuation'])
+        assert.ok(blocks.light.items.includes(word), `light item '${word}'`);
+    assert.ok(blocks.interior.items.includes('light'));
+    assert.ok(!blocks.light_source.items.includes('light'));
+});

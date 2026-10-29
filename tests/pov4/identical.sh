@@ -32,6 +32,7 @@ fails err_reserved "err_reserved.pov4:1:5: Names starting with '__pov4_' are res
 fails err_include "err_items.inc4' line 2"
 fails err_loop "err_loop.pov4' line 2"
 fails err_depth "err_depth.pov4:1:11: Function calls nested deeper than 10000 levels"
+fails err_light_source_light "'light_source' has no item 'light'"
 fails err_prop "'finish' has no item 'phon'; did you mean 'phong'?"
 fails err_subsurface "'subsurface' has no item 'memroy'; did you mean 'memory'?"
 fails err_member "has no member 'size'."

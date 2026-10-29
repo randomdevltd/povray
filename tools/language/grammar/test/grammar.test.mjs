@@ -64,6 +64,8 @@ test('mined keyword sets match known parser content', () => {
     assert.ok(!JSON.parse(read('tools/language/keywords.json')).some((k) => k.word === 'quality'));
     for (const w of ['refraction', 'refraction_detail']) assert.ok(!blocks.media.items.includes(w), `invalid media item '${w}'`);
     assert.ok(!blocks.global_settings.items.includes('refraction_detail'));
+    assert.ok(!blocks.light_source.items.includes('light'), 'a light_source cannot take a light block');
+    assert.ok(blocks.light_source.items.includes('shadowless'));
 });
 
 test('generators are stable: regenerating changes nothing', () => {

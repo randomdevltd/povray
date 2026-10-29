@@ -135,8 +135,8 @@
    "doc": "r3_6.html#r3_6_2_1_4"
   },
   "brightness": {
-   "text": "The brightness keyword specifies a float value that is the degree to which objects are brightened before being returned upwards to the rest of the system.",
-   "doc": "r3_4.html#r3_4_3_3_3_3"
+   "text": "A brightness value is followed by an optional unit, written after the number; the unit words nits and lumens are read only there and stay free as identifiers.",
+   "doc": "r3_12.html#r3_12_9"
   },
   "brilliance": {
    "text": "The brilliance keyword can be used in a finish statement to vary the way light falls off depending upon the angle of incidence.",
@@ -1214,6 +1214,10 @@
    "code": "variance Blur_Variance | [bokeh { pigment { BOKEH } }] |",
    "from": "doc/html/r3_4.html"
   },
+  "bounce": {
+   "code": "bounce { passes Integer }",
+   "from": "doc/html/r3_12.html:3"
+  },
   "bounded_by": {
    "rank": 24,
    "code": "bounded_by{ clipped_by }",
@@ -2152,8 +2156,8 @@
    "from": "doc/html/r3_4.html"
   },
   "nits": {
-   "rank": 66,
-   "code": "light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 16 }",
+   "rank": 48,
+   "code": "light { emission brightness 10 nits samples 32 }",
    "from": "doc/html/r3_12.html"
   },
   "no_bump_scale": {
@@ -2292,6 +2296,11 @@
    "rank": 1014,
    "code": "[pass_through]",
    "from": "doc/html/r3_4.html"
+  },
+  "passes": {
+   "rank": 27,
+   "code": "bounce [{ passes Integer }]",
+   "from": "doc/html/r3_12.html"
   },
   "pattern": {
    "rank": 25,
@@ -2608,6 +2617,11 @@
    "rank": 45,
    "code": "object { Row translate y * 0.8 scale tagged }",
    "from": "tests/pov4/framing_tagged.pov4:14"
+  },
+  "scale_lumens": {
+   "rank": 1066,
+   "code": "radians( FLOAT ) | rand( FLOAT ) | scale_lumens( FLOAT , FLOAT ) |",
+   "from": "doc/html/r3_3.html"
   },
   "scallop_wave": {
    "rank": 1060,
