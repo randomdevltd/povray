@@ -156,6 +156,9 @@
   <td><div class="divh3"><a title="3.2.7.5" href="#r3_2_7_5">Help Screen Switches</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.2.7.6" href="#r3_2_7_6">Preparation Progress</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.2.8" href="#r3_2_8">Tracing Options</a></strong></div></td>
 </tr>
 <tr>
@@ -2851,6 +2854,28 @@ you may also use the <code>+H</code> switch.</p>
 +H</code> switch is only interpreted as a help switch if it is the only switch on the command line.</p>
 <p> Graphical interface versions of POV-Ray
 such as Mac or Windows have extensive online help.</p></div>
+
+<a name="r3_2_7_6"></a>
+<div class="content-level-h4" contains="Preparation Progress" id="r3_2_7_6">
+<h4>3.2.7.6 Preparation Progress</h4>
+<p>Before the first pixel is traced the renderer prepares the scene: it builds meshes, prepared media, lights and bounce fields, and shoots photons. On a large scene this takes a while, so each stage reports itself with information lines in the console, in the same stream as warnings. <code>Warning_Level=0</code> turns them off.</p>
+<pre>
+Preparation plan: media:2 lights:3 bounce:8195
+Preparation: media 0/2 0.0s
+Preparation: media 2/2 0.0s
+Preparation: media finished 0.0s
+Preparation: lights 3/3 0.0s; l1/1 surface
+Preparation: bounce 4096/8195 1.0s; o1/2 t1/1 surface
+Preparation: bounce finished 2.2s
+</pre>
+<p>A <code>Preparation plan:</code> line lists the phases about to run, in order, with their work units where those are known then. The phases are, in this order, <code>parse meshes media atmosphere lights bounce photons</code>; only the phases a scene needs are listed. The first line of every phase shows <code>0/total</code>, after that a progress line appears at most every two seconds, and the phase ends with <code>finished</code> and its time in seconds. <code>parse</code> gives only its <code>finished</code> line.</p>
+<ul>
+  <li><code>done/total</code> counts the phase's meshes, interiors, media, lights, bounce nodes and cells, or photons. The total is <code>?</code> where it is not known ahead.</li>
+  <li>The text after the semicolon says where in the phase the work is, shortened to fit the line: for <code>lights</code>, the light (<code>l1/3 surface</code>); for <code>bounce</code>, the order (<code>o1/2</code>), the bounce source (<code>t1/3</code>) and the part being prepared: <code>surface</code>, <code>volume</code>, <code>subsurface</code> (the subsurface light of bounce surfaces) or <code>proposal</code>.</li>
+  <li>A count that has not moved for 60 seconds produces <code>Preparation: bounce stalled 60s at 4096/8195 61.0s</code>, and again every 60 seconds while it stays flat. The phase is still running; the line tells you where it waits.</li>
+</ul>
+<p>Each line stays below 80 columns together with the console prefix, and the numbers do not depend on the number of render threads.</p>
+</div>
 
 <a name="r3_2_8"></a>
 <div class="content-level-h3" contains="Tracing Options" id="r3_2_8">

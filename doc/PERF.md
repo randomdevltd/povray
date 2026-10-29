@@ -2256,6 +2256,8 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 
 ## Scene preparation progress
 
+The user-facing description is in the manual, section 3.2.7.6 (`doc/html/r3_2.html`); this section keeps the format and its rules.
+
 Preparation reports itself as information lines, one event per line, each short enough with the console's
 `<Task> Info: ` prefix to stay under 80 columns:
 

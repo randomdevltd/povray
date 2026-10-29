@@ -75,7 +75,20 @@ reflection energy conservation that changes emission by direction is rejected.
 Emitted RGB must be finite and nonnegative.
 
 Surface sources require a finite, nonzero surface area. Their light blocks do
-not accept the volume light's artistic `attenuation` setting.
+not accept the volume light's artistic `attenuation` setting. A `light_source`
+does not take a `light` block: the 4.0 checker reports it as an unknown item.
+`brightness` is followed by an optional unit written after the number, as in
+`brightness 12 lumens`; `nits` and `lumens` are read only there. Surface and
+volume lights are not imaged by portals, which divert the light of ordinary
+light sources only.
+
+Errors of the block itself carry the file and line (`A light block accepts exactly
+one pigment or emission input.`, `Only one surface light block allowed on an
+object.`, `Surface light blocks do not accept attenuation.`); errors found while
+the light is prepared (`Surface light input cannot depend on ray or camera
+context`, `Surface light emission cannot bake direction-dependent finish
+attenuation`) stop the render before tracing and carry no line. The manual's
+surface light chapter lists them all.
 
 ## Light bounce orders
 
@@ -100,6 +113,60 @@ primary emission plus the completed bounce orders. Surface bounce rejects
 stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
 reflection attenuation.
 
+A passive source is a bounce light whose own emission is zero (for a surface,
+`finish { emission 0 }`): it shines only the light it receives from other
+sources and is dark when nothing lights it. A bounced surface whose finish uses
+subsurface scattering also sends its subsurface light on, which needs subsurface
+method 2 (the default from version 4.0); under method 1 the render stops before
+tracing with `Surface subsurface bounce requires subsurface method 2.` The same
+stop, without a line number, reports `Surface bounce cannot prepare stochastic
+crand diffuse finishes` and `Surface bounce cannot prepare Fresnel or
+energy-conserving reflection attenuation`.
+
+## Lumens
+
+`scale_lumens(Lumens, Metres)` is a built-in in both languages, typed as a
+number, and returns `Lumens / Metres^2`: the value for `brightness V lumens` in
+a scene whose unit is `Metres` metres long. It needs finite lumens and a
+positive finite length (`scale_lumens takes finite lumens and a positive finite
+number of metres per unit.`). It is not a version-gated word and stays a plain
+built-in name in every scene.
+
+## Scene preparation progress
+
+The renderer prints `Preparation plan:` and `Preparation: <phase> ...` information
+lines while it prepares a scene, for the phases `parse meshes media atmosphere
+lights bounce photons`, ending each with `finished`, and a `stalled` line when a
+count stops moving for a minute. They are renderer output, not syntax; the
+manual's text output section (3.2.7.6) describes them.
+
+## Legacy behaviour at 3.7 and older
+
+Henyey-Greenstein eccentricity outside the open interval (-1, 1) is a parse error
+from version 3.8 and a warning in a scene of version 3.7 or older. In such a
+scene `refraction off` inside an `interior` is the classic refraction value 0,
+not the field block's "off"; `refraction { ... }` blocks work at every version.
+
+## Static checker notes
+
+These are properties of the `.pov4` evaluator and checker, checked against the
+renderer:
+
+- An unpinned `fn` parameter that the body uses in arithmetic types as a number,
+  vector or colour. `seed()` needs a number, so `fn F(S) { rand(seed(S + 3)) }`
+  fails with `Argument 1 of 'seed' must be a number, not a vector or a colour.`
+  Convert first: `seed(int(S) + 3)`. `seed()` itself returns a value with no
+  static type, so `rand(S)` takes it without a conversion.
+- Computed colours in classic map entries need their `rgb`/`rgbf` keyword:
+  `color_map { [0 rgb Warm(0.3)] }` for a function returning a vector. A
+  vector-typed call there fails with `Expected 'color', < found instead`; a
+  variable bound to a colour value (`let C = rgb <1, 0.5, 0.2>;`) is accepted
+  as it stands.
+- A vector literal takes numbers, not vectors: `<A, 3>` with a two-component
+  `A` fails with `A vector component must be a float, not a 2-vector.` Index or
+  add instead: `<A.x, A.y, 3>`, `A + <0, 0, 3>`.
+- `include` runs wherever a statement can stand, including inside `if`, `for` and
+  function bodies, with the included bindings visible afterwards.
 
 ## Independent refraction functions
 
