@@ -54,6 +54,12 @@ struct Context final
     PhotonGatherer photons;
 };
 
+// Thrown by a worker that sees the preparation stopped; the caller's own cooperation then reports the stop.
+struct Stopped final : std::runtime_error
+{
+    Stopped() : std::runtime_error("Bounce preparation was stopped") {}
+};
+
 // One Context and thread data per worker; worker 0 borrows the caller's thread data, which the caller leaves alone meanwhile.
 struct Workers final
 {
@@ -63,13 +69,16 @@ struct Workers final
         stop = [cancelled]()
         {
             if (cancelled->load(std::memory_order_relaxed))
-                throw std::runtime_error("Bounce preparation was stopped");
+                throw Stopped();
         };
         const std::size_t count = std::max(1u, scene->workThreads);
         for (std::size_t worker = 0; worker < count; ++worker)
         {
             if (worker > 0)
+            {
                 helpers.emplace_back(new TraceThreadData(scene, worker, false));
+                helpers.back()->stochasticRandomSeedBase = td->stochasticRandomSeedBase;
+            }
             contexts.emplace_back(new Context(scene, Thread(worker), stop));
         }
     }
@@ -82,16 +91,32 @@ struct Workers final
     std::size_t Count() const { return contexts.size(); }
     TraceThreadData* Thread(std::size_t worker) const { return worker == 0 ? td : helpers[worker - 1].get(); }
     Context& operator[](std::size_t worker) { return *contexts[worker]; }
-    // Each index must write only its own results, so that they do not depend on which worker computed them.
+    // Each index must write only its own results, so that they do not depend on which worker computed them; the
+    // count advances the progress by `units` over all indices.
+    template<typename Function>
+    void For(std::size_t count, const std::function<void()>& cooperate, const Function& function, std::size_t units)
+    {
+        const auto advance = [count, units](std::size_t index) { return (index + 1) * units / count - index * units / count; };
+        try
+        {
+            ParallelFor(count, contexts.size(), [&](std::size_t index, std::size_t worker)
+            {
+                stop();
+                function(index, worker);
+                AdvancePreparation(td->preparationProgress, advance(index));
+            }, [&]() { if (cooperate) cooperate(); }, true);
+        }
+        catch (const Stopped&)
+        {
+            if (cooperate)
+                cooperate();
+            throw;
+        }
+    }
     template<typename Function>
     void For(std::size_t count, const std::function<void()>& cooperate, const Function& function)
     {
-        ParallelFor(count, contexts.size(), [&](std::size_t index, std::size_t worker)
-        {
-            stop();
-            function(index, worker);
-            AdvancePreparation(td->preparationProgress);
-        }, [&]() { if (cooperate) cooperate(); }, true);
+        For(count, cooperate, function, count);
     }
     void Step(const std::string& text) const { StepPreparation(td->preparationProgress, text); }
 
@@ -114,6 +139,9 @@ struct Target final
     std::shared_ptr<const PreparedSurfaceBounceResponse> surfaceResponse;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
 };
+
+// Progress units of a surface target's pass over its nodes, however many nodes its response finds.
+constexpr std::size_t kSurfaceUnits = 4096;
 
 inline std::string Of(const char* name, std::size_t index, std::size_t count)
 {
@@ -208,7 +236,7 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
             if (found != target.phases.end())
                 values[found - target.phases.begin()][node] += component.coefficient;
         }
-    });
+    }, target.domain->NodeCount());
     for (auto& phase : values)
         if (constant)
             target.coefficients.push_back(std::make_shared<const PreparedConstantColourField>(phase.front()));
@@ -251,9 +279,38 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     workers.For(nodes.size(), cooperate, [&](size_t node, size_t worker)
     {
         radiance[node] = traces[worker]->SurfaceSubsurfaceNode(nodes[node], node, 0, etas[node]);
-    });
+    }, kSurfaceUnits);
     traces.clear();
     return Trace::SurfaceSubsurfaceRadiance(nodes, radiance, etas, 4096, collapsedOwners);
+}
+
+// Bounce progress units, as the passes below count them; zero while a volume target's domain is unprepared.
+inline std::size_t BounceUnits(const SceneData& scene)
+{
+    std::size_t units = 0;
+    std::vector<std::shared_ptr<const PreparedSourceDomain>> domains;
+    for (const LightSource* light : scene.mediaLights)
+    {
+        const MediaLight* const settings = BounceSettings(*light);
+        if (!settings)
+            continue;
+        if (light->emitter->IsSurface())
+        {
+            units += 1 + settings->bouncePasses * (kSurfaceUnits * (scene.useSubsurface ? 2 : 1) + 1);
+            continue;
+        }
+        const auto axis = light->emitter->PreparedAxis();
+        const auto domain = axis ? axis->Domain() : nullptr;
+        if (!domain)
+            return 0;
+        units += domain->NodeCount() + settings->bouncePasses * (domain->NodeCount() + domain->CellCount());
+        if (std::find(domains.begin(), domains.end(), domain) == domains.end())
+        {
+            domains.push_back(domain);
+            units += domain->CellCount();
+        }
+    }
+    return units;
 }
 
 inline bool EmitsPreparedSource(const LightSource& light)
@@ -276,6 +333,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     if (std::none_of(scene->mediaLights.begin(), scene->mediaLights.end(),
                      [](const LightSource* light) { return BounceSettings(*light) != nullptr; }))
         return;
+    if (td->preparationProgress)
+        td->preparationProgress->Begin("bounce", BounceUnits(*scene));
     Workers workers(scene, td);
     std::vector<ConstObjectPtr> objects;
     std::unordered_set<ConstObjectPtr> seen;
@@ -299,7 +358,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         if (surface)
         {
             target.surfaceResponse =
-                PreparedSurfaceBounceResponse::Prepare(const_cast<ObjectPtr>(owner), td, 4096, cooperate);
+                PreparedSurfaceBounceResponse::Prepare(const_cast<ObjectPtr>(owner), td, kSurfaceUnits, cooperate);
+            AdvancePreparation(td->preparationProgress);
             targets.push_back(std::move(target));
             continue;
         }
@@ -315,24 +375,11 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         targets.push_back(std::move(target));
     }
     if (targets.empty())
-        return;
-    // Work units: each order's nodes (twice on surfaces with subsurface light) and cells, then the final proposals.
-    std::size_t units = 0;
-    std::vector<std::shared_ptr<const PreparedSourceDomain>> domains;
-    for (const Target& target : targets)
     {
-        const std::size_t perOrder = target.surfaceResponse ?
-            target.surfaceResponse->Nodes().size() * (scene->useSubsurface ? 2 : 1) :
-            target.domain->NodeCount() + target.domain->CellCount();
-        units += perOrder * target.passes;
-        if (!target.surfaceResponse && std::find(domains.begin(), domains.end(), target.domain) == domains.end())
-        {
-            domains.push_back(target.domain);
-            units += target.domain->CellCount();
-        }
+        if (td->preparationProgress)
+            td->preparationProgress->End();
+        return;
     }
-    if (td->preparationProgress)
-        td->preparationProgress->Begin("bounce", units);
     std::vector<std::shared_ptr<LightSource>> previous;
     std::vector<const LightSource*> previousOriginal;
     for (LightSource* light : scene->lightSources)
@@ -390,7 +437,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                               std::max(1, owner->surfaceLight->samples),
                                               BounceOrderSeed(0, order, targetIndex, node),
                                               nodes[node].intersection.Object, nodes[node].normal);
-                });
+                }, kSurfaceUnits);
                 if (scene->useSubsurface)
                     workers.Step(step + " subsurface");
                 const auto diffuse = target.surfaceResponse->Scatter(incident);
@@ -398,6 +445,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                                                 target.surfaceResponse->CollapsedChartOwners(), cooperate);
                 const auto field = std::make_shared<const SumSurfaceBounceRadiance>(
                     std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{diffuse, subsurface});
+                AdvancePreparation(td->preparationProgress);
                 target.surfaceOrders.push_back(field);
                 auto light = Clone(target.light);
                 light->emitter =
