@@ -3990,7 +3990,8 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), true,
                                      cell.emission, cell.extinction, cell.scattering);
         }
-        MathColour light;
+        // A stride's light is gathered once, unscattered; each step's own media scatter it.
+        std::vector<MediaIncident> incident;
         int lit = -1;
         for (int j = 0; j < count; j++)
         {
@@ -4022,11 +4023,15 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                 {
                     const int at = first + std::min(size - 1, int(Draw(drawKey, kDrawMediaSample, kMediaLightDraw + group) * size));
                     const DBL d = interval.s0 + (at + 0.5) * step;
-                    light.Clear();
-                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), light, path == nullptr, true);
+                    incident.clear();
+                    MathColour unused;
+                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), unused, path == nullptr, true,
+                                      &incident);
                     lit = group;
                 }
-                emission += scattering * light * step;
+                MathColour scattered;
+                ScatterIncident(medias, scattered, incident.data(), incident.size(), ray.Evaluate(coefficients.at), ray);
+                emission += scattered * step;
                 if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
                     threadData->GetSceneData()->photonSettings.Progressive())
                 {
@@ -4656,7 +4661,8 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 }
 
 void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting, bool preparedSampling)
+                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting, bool preparedSampling,
+                                      std::vector<MediaIncident>* incident)
 {
     if (ray.IsShadowTestRay())
         threadData->Stats()[Media_Shadow_Lighting_Calls]++;
@@ -4704,9 +4710,12 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                                            sequence(j, 1), sequence(j, 2), sequence(j, 3),
                                            DeriveKey(DeriveKey(key, kDrawEmitter, j), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
                     Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
-                    if (trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
-                        ComputePhysicalMediaScattering(medias, Emission,
-                                                      Light_Colour / (4.0 * M_PI * count), P, ray, Light_Ray);
+                    if (!trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
+                        continue;
+                    if (incident != nullptr)
+                        incident->push_back({Light_Colour / (4.0 * M_PI * count), Light_Ray.Direction});
+                    else
+                        ComputePhysicalMediaScattering(medias, Emission, Light_Colour / (4.0 * M_PI * count), P, ray, Light_Ray);
                 }
                 continue;
             }
@@ -4727,7 +4736,9 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
             }
             if(!Lit_Colour.IsZero())
             {
-                if (preparedSampling)
+                if (preparedSampling && (incident != nullptr))
+                    incident->push_back({Lit_Colour / (4.0 * points), Light_Ray.Direction});
+                else if (preparedSampling)
                     ComputePhysicalMediaScattering(medias, Emission, Lit_Colour / (4.0 * points), P, ray, Light_Ray);
                 else
                     ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
@@ -4950,26 +4961,33 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
 void MediaFunction::ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
                                                    const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay)
 {
-    const DBL cosine = dot(ray.Direction, lightRay.Direction);
-    MathColour kernel;
-    std::vector<MathColour> density(modifiers ? medias.size() : 0);
+    const MediaIncident sample{incoming, lightRay.Direction};
+    ScatterIncident(medias, output, &sample, 1, point, ray);
+}
+
+void MediaFunction::ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
+                                    const Vector3d& point, const BasicRay& ray)
+{
+    scatterDensity.assign(medias.size(), MathColour());
     for (size_t i = 0; i < medias.size(); ++i)
+        if (medias[i]->use_scattering)
+            DensityForDeclaredMode(*medias[i], point, scatterDensity[i]);
+    for (size_t s = 0; s < count; ++s)
     {
-        if (!medias[i]->use_scattering)
-            continue;
-        MathColour local;
-        DensityForDeclaredMode(*medias[i], point, local);
-        if (modifiers)
-            density[i] = local;
+        const DBL cosine = dot(ray.Direction, incident[s].direction);
+        MathColour kernel;
+        if (modifiers != nullptr)
+        {
+            MathColour unused;
+            AddModifiedCoefficients(medias, scatterDensity.data(), point, ModifierSource::kPattern, unused, nullptr, &kernel, &cosine);
+        }
         else
-            kernel += local * medias[i]->Scattering * PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, cosine);
+            for (size_t i = 0; i < medias.size(); ++i)
+                if (medias[i]->use_scattering)
+                    kernel += scatterDensity[i] * medias[i]->Scattering *
+                              PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, cosine);
+        output += kernel * incident[s].incoming;
     }
-    if (modifiers != nullptr)
-    {
-        MathColour unused;
-        AddModifiedCoefficients(medias, density.data(), point, ModifierSource::kPattern, unused, nullptr, &kernel, &cosine);
-    }
-    output += kernel * incoming;
 }
 
 void MediaFunction::ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay& ray, const BasicRay& Light_Ray)

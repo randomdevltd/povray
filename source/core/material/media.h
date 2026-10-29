@@ -158,6 +158,13 @@ class RefractionField final
 class ExtinctionPlan;
 struct ProgressiveVolumeDomain;
 
+/// Light arriving at a point of the media from one direction, before any medium scatters it.
+struct MediaIncident final
+{
+    MathColour incoming;
+    Vector3d direction;
+};
+
 class MediaFunction : public Trace::MediaFunctor
 {
     public:
@@ -221,6 +228,7 @@ class MediaFunction : public Trace::MediaFunctor
         /// media samples taken so far on the current ray, and its random shift of the area light sequence (negative until drawn)
         unsigned int lightSampleIndex;
         Vector2d lightSampleShift;
+        std::vector<MathColour> scatterDensity;
 
         void ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                          const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering,
@@ -276,7 +284,8 @@ class MediaFunction : public Trace::MediaFunctor
                                    MathColour *scattering = nullptr);
         /// Adds to Emission the light the media's scattering coefficients Scattering send along the ray at depth d1 (point P).
         void ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false);
+                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false,
+                               std::vector<MediaIncident>* incident = nullptr);
         /// The step the scattering media would sample an interval at alone: a uniform one by its samples, a prepared one by its grid.
         DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval, const Ray& ray) const;
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
@@ -285,6 +294,9 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H);
         void ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
                                             const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay);
+        /// Adds to output the light the media at point scatter along the ray from each incident sample.
+        void ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
+                             const Vector3d& point, const BasicRay& ray);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };
 
