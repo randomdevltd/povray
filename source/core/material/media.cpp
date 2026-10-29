@@ -4676,7 +4676,7 @@ void MediaFunction::ComputeMediaSampleLighting(MediaVector& medias, LightSourceE
         if((photonGatherer != nullptr) && (photonGatherer->map->numPhotons > 0 ||
            threadData->GetSceneData()->photonSettings.Progressive()))
         {
-            ComputeMediaPhotons(medias, Emission, Scattering, ray, H);
+            ComputeMediaPhotons(medias, Emission, Scattering, ray, H, prepared);
         }
     }
 }
@@ -4931,7 +4931,8 @@ std::shared_ptr<const ProgressiveVolumeDomain> MediaFunction::VolumeDomain(const
     return volumeDomain;
 }
 
-void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H)
+void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H,
+                                        bool prepared)
 {
     if (threadData->GetSceneData()->photonSettings.Progressive() && photonGatherer)
     {
@@ -4962,8 +4963,13 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                     MathColour integral = photon.Integral(H, radius, &middle);
                     if (photon.light != nullptr && photon.depth >= 0.0)
                         integral *= Light_Photon_Path_Weight(photon.light, middle);
-                    ComputePhysicalMediaScattering(medias, sum,
-                        integral / ((photon.light && photon.light->emitter) ? 4.0 * M_PI : 4.0), H, ray, light);
+                    // the same scattering law as the direct light on this medium
+                    if (photon.light && photon.light->emitter)
+                        ComputePhysicalMediaScattering(medias, sum, integral / (4.0 * M_PI), H, ray, light);
+                    else if (prepared)
+                        ComputePhysicalMediaScattering(medias, sum, integral / 4.0, H, ray, light);
+                    else
+                        ComputeMediaScatteringAttenuation(medias, sum, Sc, integral, ray, light);
                     threadData->progressiveContributions++;
                 });
                 Te += sum / ProgressivePhotonBudget::KernelVolume(radius);
