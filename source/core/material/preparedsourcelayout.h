@@ -209,12 +209,16 @@ public:
             const DBL loV = 2.0 * y / counts[Y] - 1, hiV = 2.0 * (y + 1) / counts[Y] - 1;
             const DBL minU = std::max(loU, std::min(0.0, hiU)), minV = std::max(loV, std::min(0.0, hiV));
             const DBL bound = std::pow(1 + minU * minU + minV * minV, -1.5);
-            DBL u, v;
+            // Below the cell's least density, less a margin over rounding, a draw is kept without evaluating it.
+            const DBL maxU = std::max(std::fabs(loU), std::fabs(hiU)), maxV = std::max(std::fabs(loV), std::fabs(hiV));
+            const DBL kept = std::pow(1 + maxU * maxU + maxV * maxV, -1.5) * (1 - 1e-9);
+            DBL u, v, test;
             do
             {
                 u = loU + (hiU - loU) * Draw(key);
                 v = loV + (hiV - loV) * Draw(key);
-            } while (Draw(key) * bound > std::pow(1 + u * u + v * v, -1.5));
+                test = Draw(key) * bound;
+            } while ((test >= kept) && (test > std::pow(1 + u * u + v * v, -1.5)));
             const DBL a = radii[z], b = radii[z + 1];
             const DBL r = std::cbrt(a * a * a + (b - a) * (b * b + a * b + a * a) * Draw(key));
             q = Direction(face, u, v) * r;
