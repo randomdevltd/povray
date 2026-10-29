@@ -20,6 +20,7 @@ struct BounceIncidentBeam final
 {
     Vector3d direction; // Unit propagation direction, from the light to the receiving point.
     MathColour angularWeight; // Physical incoming radiance integrated over this sample's solid angle.
+    double distance = HUGE_VAL; // From the receiving point to where the light was drawn.
 };
 
 // Source emitters and the supplied Trace's shadow-media evaluator must read the immutable previous order.
@@ -94,7 +95,7 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             if (positive && (!std::isfinite(length) || length <= 0.0))
                 throw std::domain_error("bounce incident direction must be finite and nonzero");
             if (positive)
-                beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * share});
+                beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * share, depth > 0.0 ? depth : HUGE_VAL});
             if (repeated)
                 break;
         }

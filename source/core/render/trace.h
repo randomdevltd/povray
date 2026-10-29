@@ -65,6 +65,7 @@
 namespace pov
 {
 class SurfaceBounceRadiance;
+class SurfaceNodeIndex;
 struct SurfaceBounceNode;
 struct BounceIncidentBeam;
 
@@ -295,10 +296,10 @@ class Trace
             PreparedSetId preparedSetId, double& eta);
         /// The subsurface radiance leaving a node of the field, drawn by its index.
         MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId);
-        /// One field per quantised relative index of refraction, from the radiance of every node.
-        static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(const std::vector<SurfaceBounceNode>& nodes,
-            const std::vector<MathColour>& radiance, const std::vector<double>& etas, std::size_t trials,
-            const std::set<ObjectPtr>& collapsedOwners = {});
+        /// One field per quantised relative index of refraction over the indexed nodes, from each node's radiance and area,
+        /// given in the nodes' own order.
+        static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
+            const std::vector<MathColour>& radiance, const std::vector<double>& etas, const std::vector<double>& areas);
 
         /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }

@@ -94,6 +94,8 @@ class Emitter
         virtual void AccumulateSurfaceGuide(SurfaceAngularGuide&) const {}
         virtual MathColour SurfaceRadianceAt(const Intersection&, const Vector3d&, const Vector3d&) const { return MathColour(); }
         virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const { return sample.weight * PhotonDirectionWeight(sample, outgoing); }
+        /// As above, for emitters that evaluate materials on the shooting thread.
+        virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing, TraceThreadData*) const { return PhotonEmissionWeight(sample, outgoing); }
         virtual double PhotonDirectionWeight(const EmitterSample&, const Vector3d& outgoing) const { return DirectionalWeight(outgoing); }
         virtual void PrepareAxis(std::shared_ptr<const PreparedSourceDomain>, TraceThreadData*, const std::function<void()>&) const {}
         /// Builds the deferred meshes of the emitter's own geometry copy; called on one thread before any parallel use.

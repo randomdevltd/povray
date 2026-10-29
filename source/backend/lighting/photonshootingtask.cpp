@@ -422,7 +422,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->photonSpread = std::max(1.0e-8, aim.Radius() * 0.05) * spreadScale;
             MathColour flux = origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
             if (light->emitter)
-                flux = light->emitter->PhotonEmissionWeight(origin, ray.Direction) * ProgressivePhotonBudget::EmissionWeight(count, pdf);
+                flux = light->emitter->PhotonEmissionWeight(origin, ray.Direction, data) * ProgressivePhotonBudget::EmissionWeight(count, pdf);
             else
             {
                 flux *= light->colour;

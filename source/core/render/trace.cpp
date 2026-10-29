@@ -5481,7 +5481,7 @@ namespace
 class SubsurfaceBounceRadiance final : public SurfaceBounceRadiance
 {
 public:
-    struct Component { double eta; std::shared_ptr<const PreparedSurfaceBounceField> field; };
+    struct Component { double eta; std::shared_ptr<const SurfaceBounceRadiance> field; };
     explicit SubsurfaceBounceRadiance(std::vector<Component> components) : components(std::move(components))
     {
         for (const auto& component : this->components)
@@ -5509,14 +5509,14 @@ public:
             result += components[i].field->IntegratedRadiance() * fluxFactors[i];
         return result;
     }
-    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing) const override
+    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
     {
         const double cosine = clip(dot(normal, outgoing), 0.0, 1.0);
         if (!(cosine > 0.0)) return MathColour();
         MathColour result;
         for (const auto& component : components)
         {
-            result += component.field->Sample(hit, normal, outgoing) * ExitRatio(cosine, component.eta);
+            result += component.field->Sample(hit, normal, outgoing, td) * ExitRatio(cosine, component.eta);
         }
         return result;
     }
@@ -5583,20 +5583,29 @@ MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size
     return radiance;
 }
 
-std::shared_ptr<const SurfaceBounceRadiance> Trace::SurfaceSubsurfaceRadiance(const std::vector<SurfaceBounceNode>& nodes,
-    const std::vector<MathColour>& radiance, const std::vector<double>& etas, std::size_t trials,
-    const std::set<ObjectPtr>& collapsedOwners)
+std::shared_ptr<const SurfaceBounceRadiance> Trace::SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
+    const std::vector<MathColour>& radiance, const std::vector<double>& etas, const std::vector<double>& areas)
 {
+    const std::vector<std::uint32_t>& source = index->Source();
     std::map<double, std::vector<MathColour>> values;
-    for (std::size_t i = 0; i < nodes.size(); ++i)
+    for (std::size_t i = 0; i < source.size(); ++i)
     {
-        auto& component = values[etas[i]];
-        if (component.empty()) component.resize(nodes.size());
-        component[i] = radiance[i];
+        auto& component = values[etas[source[i]]];
+        if (component.empty()) component.resize(source.size());
+        component[i] = radiance[source[i]];
     }
     std::vector<SubsurfaceBounceRadiance::Component> components;
     for (auto& entry : values)
-        components.push_back({entry.first, std::make_shared<const PreparedSurfaceBounceField>(nodes, std::move(entry.second), trials, collapsedOwners)});
+    {
+        std::vector<float> power(source.size());
+        MathColour integral;
+        for (std::size_t i = 0; i < source.size(); ++i)
+        {
+            power[i] = float(entry.second[i].Greyscale() * areas[source[i]]);
+            integral += entry.second[i] * areas[source[i]];
+        }
+        components.push_back({entry.first, std::make_shared<const SurfaceRadianceNodeField>(index, std::move(entry.second), std::move(power), integral)});
+    }
     return std::make_shared<const SubsurfaceBounceRadiance>(std::move(components));
 }
 

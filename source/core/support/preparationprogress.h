@@ -53,6 +53,12 @@ public:
     /// Names where in the phase the work is, shown on the next line, shortened to fit.
     void Step(const std::string& text) { step = text; }
     void Advance(std::size_t count = 1) { done.fetch_add(count, std::memory_order_relaxed); }
+    /// A line of its own, not a progress line, shortened to fit.
+    void Note(const std::string& text) const
+    {
+        if (messages != nullptr)
+            messages->Info("%s", text.substr(0, width).c_str());
+    }
 
     void Poll()
     {
