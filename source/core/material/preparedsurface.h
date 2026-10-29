@@ -27,13 +27,14 @@ namespace pov
 class PreparedSurfaceInput final
 {
 public:
-    static std::shared_ptr<PreparedSurfaceInput> Prepare(ObjectPtr object,
-        const SurfaceGeometrySampler& geometry, PIGMENT* pigment, bool useEmission,
-        Ray& scratchRay, TraceThreadData* thread, std::size_t trials = 4096)
+    static std::shared_ptr<PreparedSurfaceInput> Prepare(ObjectPtr object, PIGMENT* pigment, bool useEmission,
+        TraceThreadData* thread)
     {
-        if (!object || !geometry.IsValid() || !thread || trials == 0)
+        if (!object || !thread)
             throw std::invalid_argument("Surface light requires finite surface geometry and preparation samples");
         std::shared_ptr<PreparedSurfaceInput> result(new PreparedSurfaceInput());
+        result->pigment = pigment;
+        result->useEmission = useEmission;
         if (!useEmission && (!pigment || pigment->Type == PLAIN_PATTERN))
         {
             result->constant = true;
@@ -71,80 +72,27 @@ public:
             return result;
         }
         ValidatePigment(pigment);
-        std::set<const TEXTURE*> validatedTextures;
-        auto add = [&](SurfaceGeometrySample& sample)
-        {
-            sample.intersection.INormal = sample.normal;
-            sample.intersection.PNormal = sample.normal;
-            sample.intersection.haveNormal = true;
-            MathColour colour;
-            if (useEmission) colour = MaterialEmission(sample.intersection, thread, &validatedTextures);
-            else
-            {
-                TransColour evaluated;
-                if (Compute_Pigment(evaluated, pigment, EvaluationPoint(sample.intersection),
-                                    &sample.intersection, nullptr, thread))
-                    colour = evaluated.colour();
-            }
-            ValidateColour(colour);
-            result->charts[Chart(sample.intersection)].push_back(result->nodes.size());
-            result->nodes.push_back(Node{sample.intersection.IPoint, sample.normal, colour});
-        };
-        std::vector<ObjectPtr> leaves;
-        CollectLeaves(object, leaves);
-        for (ObjectPtr leaf : leaves)
-        {
-            if (Mesh* mesh = dynamic_cast<Mesh*>(leaf))
-            {
-                mesh->Resolve();
-                for (MeshIndex face = 0; face < mesh->Data->Number_Of_Triangles; ++face)
-                {
-                    const MESH_TRIANGLE* triangle = &mesh->Data->Triangles[face];
-                    const Vector3d a(mesh->Data->Vertices[triangle->P1()]);
-                    const Vector3d b(mesh->Data->Vertices[triangle->P2()]);
-                    const Vector3d c(mesh->Data->Vertices[triangle->P3()]);
-                    for (unsigned i = 0; i < 16; ++i)
-                    {
-                        const DBL root = std::sqrt(Radical(i + 1, 2));
-                        const DBL v = Radical(i + 1, 3);
-                        Vector3d point = (1.0 - root) * a + root * (1.0 - v) * b + root * v * c;
-                        if (mesh->Trans) MTransPoint(point, point, mesh->Trans);
-                        SurfaceGeometrySample sample;
-                        sample.intersection = Intersection(0.0, point, leaf);
-                        if (leaf != object) sample.intersection.Csg = object;
-                        sample.intersection.Pointer = triangle;
-                        mesh->Normal(sample.normal, &sample.intersection, thread);
-                        sample.intersection.INormal = sample.normal;
-                        sample.intersection.haveNormal = true;
-                        sample.areaWeight = 1.0;
-                        add(sample);
-                    }
-                }
-            }
-            else
-            {
-                const SurfaceGeometrySampler leafGeometry(leaf, leaf->BBox.finite ? nullptr : &object->BBox);
-                const SurfaceGeometrySampler& sampler = leaf == object ? geometry : leafGeometry;
-                if (!sampler.IsValid())
-                    throw std::invalid_argument("Surface light input requires finite preparation coordinates");
-                const std::size_t before = result->nodes.size();
-                for (std::size_t i = 0; i < trials; ++i)
-                {
-                    SurfaceGeometrySample sample;
-                    if (sampler.SampleArea(scratchRay, thread, Radical(i + 1, 2), Radical(i + 1, 3),
-                                            Radical(i + 1, 5), Radical(i + 1, 7), sample))
-                    {
-                        if (leaf != object) sample.intersection.Csg = object;
-                        add(sample);
-                    }
-                }
-                if (leaf == object && result->nodes.size() == before)
-                    throw std::invalid_argument("Surface light preparation could not cover a geometry leaf");
-            }
-        }
-        if (result->nodes.empty())
-            throw std::invalid_argument("Surface light preparation found no surface samples");
         return result;
+    }
+
+    // The emitted colour at a surface point, as the material shows it there; `validated` checks materials on first use.
+    MathColour Emission(Intersection hit, const Vector3d& normal, TraceThreadData* thread,
+                        std::set<const TEXTURE*>* validated = nullptr) const
+    {
+        if (constant) return constantColour;
+        if (!thread) throw std::logic_error("Surface light emission needs its thread's data");
+        hit.INormal = hit.PNormal = normal;
+        hit.haveNormal = true;
+        MathColour colour;
+        if (useEmission) colour = validated ? MaterialEmission(hit, thread, validated) : UncheckedMaterialEmission(hit, thread);
+        else
+        {
+            TransColour evaluated;
+            if (Compute_Pigment(evaluated, pigment, EvaluationPoint(hit), &hit, nullptr, thread))
+                colour = evaluated.colour();
+        }
+        if (validated) ValidateColour(colour);
+        return colour;
     }
 
     struct DiffuseLayer final
@@ -217,72 +165,11 @@ public:
     bool IsConstant() const { return constant; }
     const MathColour& ConstantColour() const { return constantColour; }
 
-    MathColour Sample(const Intersection& intersection, const Vector3d& normal) const
-    {
-        if (constant) return constantColour;
-        const auto chart = charts.find(Chart(intersection));
-        if (chart == charts.end())
-            throw std::runtime_error("Surface light preparation did not cover this primitive chart");
-        MathColour numerator;
-        DBL denominator = 0.0;
-        DBL nearest = HUGE_VAL;
-        const Node* closest = nullptr;
-        for (std::size_t index : chart->second)
-        {
-            const Node& node = nodes[index];
-            const Vector3d delta = node.point - intersection.IPoint;
-            const DBL distance2 = dot(delta, delta);
-            if (distance2 == 0.0) return node.colour;
-            if (distance2 < nearest) { nearest = distance2; closest = &node; }
-        }
-        for (std::size_t index : chart->second)
-        {
-            // Keep interpolation on the same primitive chart, including individual mesh faces.
-            const Node& node = nodes[index];
-            const Vector3d delta = node.point - intersection.IPoint;
-            const DBL distance2 = dot(delta, delta);
-            const DBL ratio = nearest / distance2;
-            const DBL alignment = std::max(DBL(0.0), dot(normal, node.normal));
-            const DBL weight = ratio * ratio * (1.0e-6 + alignment * alignment);
-            numerator += node.colour * weight;
-            denominator += weight;
-        }
-        if (denominator > 0.0) return numerator / denominator;
-        if (closest) return closest->colour;
-        throw std::runtime_error("Surface light preparation did not cover this primitive chart; increase preparation samples");
-    }
-
 private:
-    struct Node
-    {
-        Vector3d point;
-        Vector3d normal;
-        MathColour colour;
-    };
     bool constant = false;
+    bool useEmission = false;
     MathColour constantColour;
-    std::vector<Node> nodes;
-
-    using ChartKey = std::tuple<ObjectPtr, const void*>;
-    std::map<ChartKey, std::vector<std::size_t>> charts;
-    static ChartKey Chart(const Intersection& hit)
-    {
-        return ChartKey(hit.Object, hit.Pointer);
-    }
-
-    static void CollectLeaves(ObjectPtr object, std::vector<ObjectPtr>& leaves)
-    {
-        if (CSG* csg = dynamic_cast<CSG*>(object))
-            for (ObjectPtr child : csg->children) CollectLeaves(child, leaves);
-        else leaves.push_back(object);
-    }
-
-    static DBL Radical(std::size_t n, unsigned base)
-    {
-        DBL result = 0.0, place = 1.0 / base;
-        while (n) { result += (n % base) * place; n /= base; place /= base; }
-        return result;
-    }
+    const PIGMENT* pigment = nullptr;
 
     static void ValidateColour(const MathColour& colour)
     {
@@ -471,6 +358,21 @@ private:
         if (previous == current) return currentColour;
         return currentColour * currentWeight +
             TextureEmission(previous->Vals, warped, intersection, thread, depth + 1, diffuse, selected) * previousWeight;
+    }
+
+    static MathColour UncheckedMaterialEmission(Intersection& intersection, TraceThreadData* thread)
+    {
+        WeightedTextureVector textures;
+        intersection.Object->Determine_Textures(&intersection, false, textures, thread);
+        if (textures.empty())
+            throw std::invalid_argument("Surface light emission requires a surface material");
+        MathColour result;
+        for (const WeightedTexture& weighted : textures)
+        {
+            const Vector3d point = ConstantMaterial(weighted.texture) ? intersection.IPoint : EvaluationPoint(intersection);
+            result += TextureEmission(weighted.texture, point, intersection, thread) * weighted.weight;
+        }
+        return result;
     }
 
     static MathColour MaterialEmission(Intersection& intersection, TraceThreadData* thread,

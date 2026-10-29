@@ -8,6 +8,7 @@
 #include "core/math/randomsequence.h"
 #include "core/render/trace.h"
 #include <mutex>
+#include <set>
 
 namespace pov
 {
@@ -24,11 +25,12 @@ public:
     }
     bool IsSurface() const override { return true; }
     void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { target.AddScaled(guide, scale); }
-    MathColour SurfaceRadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing) const override
+    MathColour SurfaceRadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing,
+                                 TraceThreadData* td) const override
     {
         if (!field)
             throw POV_EXCEPTION_STRING("Surface light field was not prepared before tracing.");
-        return dot(normal, outgoing) > 0.0 ? field->Sample(hit, normal) * scale : MathColour();
+        return dot(normal, outgoing) > 0.0 ? field->Emission(hit, normal, td) * scale : MathColour();
     }
     const MathColour& Intensity() const override { return intensity; }
     const Vector3d& Centre() const override { return centre; }
@@ -44,7 +46,8 @@ public:
         TraceTicket ticket(1, 0.0);
         Ray ray(ticket);
         const std::shared_ptr<const PreparedSurfaceInput> prepared =
-            PreparedSurfaceInput::Prepare(owner, geometry, settings->pigment, settings->useEmission, ray, td);
+            PreparedSurfaceInput::Prepare(owner, settings->pigment, settings->useEmission, td);
+        std::set<const TEXTURE*> validated;
         SurfaceAngularGuide preparedGuide(Vector3d(owner->BBox.lowerLeft), Vector3d(owner->BBox.size));
         MathColour integral;
         constexpr unsigned count = 16384;
@@ -59,7 +62,7 @@ public:
             if (geometry.SampleArea(ray, td, (i + 0.5) / count, Draw(key, kDrawEmitter, 0),
                                     Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), sample))
             {
-                const MathColour power = prepared->Sample(sample.intersection, sample.normal) * sample.areaWeight;
+                const MathColour power = prepared->Emission(sample.intersection, sample.normal, td, &validated) * sample.areaWeight;
                 integral += power;
                 preparedGuide.Add(sample.intersection.IPoint, power.Greyscale() / double(count), sample.normal);
             }
@@ -95,7 +98,7 @@ public:
         sample.normal = surface.normal;
         sample.surfaceObject = surface.intersection.Object;
         sample.pdf = 1.0 / surface.areaWeight;
-        sample.weight = field->Sample(surface.intersection, surface.normal) * (scale * surface.areaWeight);
+        sample.weight = field->Emission(surface.intersection, surface.normal, td) * (scale * surface.areaWeight);
         return sample;
     }
 
@@ -115,7 +118,7 @@ public:
         sample.normal = surface.normal;
         sample.surfaceObject = surface.intersection.Object;
         sample.pdf = 1.0 / surface.areaWeight;
-        sample.weight = field->Sample(surface.intersection, surface.normal) * (scale * surface.solidAngleWeight);
+        sample.weight = field->Emission(surface.intersection, surface.normal, td) * (scale * surface.solidAngleWeight);
         return !sample.weight.IsZero();
     }
 
