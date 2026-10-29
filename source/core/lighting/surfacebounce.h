@@ -6,7 +6,6 @@
 #include "core/lighting/surfaceemitter.h"
 #include "core/lighting/surfacenodes.h"
 #include "core/shape/blob.h"
-#include <array>
 #include <set>
 
 namespace pov
@@ -89,32 +88,50 @@ public:
     MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
     {
         const double cosine = dot(normal, outgoing);
-        if (!(cosine > 0.0)) return MathColour();
+        if (!(cosine != 0.0)) return MathColour();
         SurfaceNodeIndex::Weights weights;
         index->Interpolate(hit.IPoint, normal, weights);
         const std::size_t stride = 2 * classes.size();
-        std::array<MathColour, 2 * kMaxClasses> sums;
-        for (std::size_t j = 0; j < stride; ++j)
-            sums[j] = Blend(weights, [&](std::uint32_t node) -> const MathColour& { return irradiance[node * stride + j]; });
-        return Radiance(hit, normal, cosine, sums.data(), td);
+        return Radiance(hit, normal, cosine, [&](std::size_t j)
+        {
+            return Blend(weights, [&](std::uint32_t node) -> const MathColour& { return irradiance[node * stride + j]; });
+        }, td);
     }
-    /// The radiance leaving a point lit by front and back sums laid out as the nodes' are.
-    MathColour Radiance(const Intersection& hit, const Vector3d& normal, double cosine, const MathColour* sums, TraceThreadData* td) const
+    /// The radiance leaving a point toward the side of `cosine`, lit by `sum(j)`, the front then back sums of class j / 2;
+    /// as in POV's shading, the side it leaves is the front, so either side of a sheet reflects.
+    template<class Sum>
+    MathColour Radiance(const Intersection& hit, const Vector3d& normal, double cosine, const Sum& sum, TraceThreadData* td) const
     {
+        const std::size_t side = cosine < 0.0 ? 1 : 0;
         MathColour result;
         for (const auto& layer : PreparedSurfaceInput::DiffuseLayersAt(hit, normal, td, false))
         {
-            const std::size_t c = Class(layer.brilliance);
-            const MathColour incoming = sums[2 * c] * std::max(0.0, layer.front * layer.adjust) +
-                                        sums[2 * c + 1] * std::max(0.0, layer.back * layer.adjust);
+            const std::size_t c = Class(classes, layer.brilliance);
+            const MathColour incoming = sum(2 * c + side) * std::max(0.0, layer.front * layer.adjust) +
+                                        sum(2 * c + 1 - side) * std::max(0.0, layer.back * layer.adjust);
             const double adjustment = layer.outgoing == 1.0 ? 1.0 : (layer.outgoing + 7.0) / 8.0;
-            result += incoming * layer.colour * (adjustment * (layer.outgoing == 1.0 ? 1.0 : std::pow(cosine, layer.outgoing - 1.0)));
+            result += incoming * layer.colour *
+                      (adjustment * (layer.outgoing == 1.0 ? 1.0 : std::pow(std::fabs(cosine), layer.outgoing - 1.0)));
         }
         return result;
     }
-    static constexpr std::size_t kMaxClasses = 8;
+    /// The light leaving both sides of a point per unit area, lit by `sums` laid out as the nodes' are.
+    static MathColour Exitance(const Intersection& hit, const Vector3d& normal, const std::vector<double>& classes,
+                               const MathColour* sums, TraceThreadData* td)
+    {
+        MathColour result;
+        for (const auto& layer : PreparedSurfaceInput::DiffuseLayersAt(hit, normal, td))
+        {
+            const std::size_t c = Class(classes, layer.brilliance);
+            const MathColour incoming = (sums[2 * c] + sums[2 * c + 1]) *
+                                        (std::max(0.0, layer.front * layer.adjust) + std::max(0.0, layer.back * layer.adjust));
+            const double adjustment = layer.outgoing == 1.0 ? 1.0 : (layer.outgoing + 7.0) / 8.0;
+            result += incoming * layer.colour * (adjustment * 2.0 / (layer.outgoing + 1.0));
+        }
+        return result;
+    }
 private:
-    std::size_t Class(double brilliance) const
+    static std::size_t Class(const std::vector<double>& classes, double brilliance)
     {
         for (std::size_t c = 0; c < classes.size(); ++c)
             if (classes[c] == brilliance) return c;
@@ -175,8 +192,6 @@ inline std::vector<double> SurfaceDiffuseClasses(ConstObjectPtr object)
     };
     walk(object);
     if (classes.empty()) classes.insert(1.0);
-    if (classes.size() > SurfaceIrradianceField::kMaxClasses)
-        throw std::invalid_argument("Surface bounce supports at most 8 distinct diffuse brilliance values per object");
     return std::vector<double>(classes.begin(), classes.end());
 }
 
@@ -215,12 +230,14 @@ public:
     {
         if (!this->primary || !this->primary->IsSurface() || !this->field || !geometry.IsValid())
             throw std::invalid_argument("Surface bounce emitter requires a prepared surface source and field");
+        geometry.ResolveDeferred();
         this->field->AccumulateGuide(guide);
         if (includePrimary) this->primary->AccumulateSurfaceGuide(guide);
         guide.Prepare();
         intensity = this->field->IntegratedRadiance() + (includePrimary ? this->primary->Intensity() : MathColour());
     }
     bool IsSurface() const override { return true; }
+    void ResolveGeometry() const override { geometry.ResolveDeferred(); }
     void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { target.AddScaled(guide, 1.0); }
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
@@ -269,7 +286,7 @@ public:
     {
         if (!(sample.pdf > 0.0)) return MathColour();
         if (!sample.surfaceIntersection) throw std::runtime_error("Surface photon sample is missing its surface point");
-        return RadianceAt(*sample.surfaceIntersection, sample.normal, outgoing, td) * (std::max(0.0, dot(sample.normal, outgoing)) / sample.pdf);
+        return RadianceAt(*sample.surfaceIntersection, sample.normal, outgoing, td) * (std::fabs(dot(sample.normal, outgoing)) / sample.pdf);
     }
     Vector3d Direction(const EmitterSample& sample, double u, double v, double& pdf) const override
     {

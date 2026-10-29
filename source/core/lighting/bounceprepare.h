@@ -377,8 +377,12 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             part.sampler = std::make_shared<const SurfaceGeometrySampler>(part.owner);
             if (!part.sampler->IsValid())
                 throw std::invalid_argument("Surface bounce requires finite surface geometry");
+            part.sampler->ResolveDeferred();
             part.classes = SurfaceDiffuseClasses(owner);
-            part.samples = unsigned(std::max(1, owner->surfaceLight->samples));
+            for (const auto object : scene->objects)
+                if (object->IsOpaque() && !Test_Flag(object, NO_SHADOW_FLAG))
+                    part.cover.solids.push_back(object);
+            part.cover.step = surface_refine::kCoverStep * part.sampler->Radius();
             target.surface = true;
             target.part = parts.size();
             parts.push_back(std::move(part));

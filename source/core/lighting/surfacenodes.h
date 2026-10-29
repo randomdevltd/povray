@@ -111,6 +111,7 @@ public:
         Found found;
         found.limit = 1;
         Search(point, normal, 0, nodes.size(), SIZE_MAX, found);
+        if (!found.count) throw std::domain_error("Surface node lookup requires a finite point and normal");
         return found.node[0];
     }
 

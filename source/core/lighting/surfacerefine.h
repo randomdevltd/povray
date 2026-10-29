@@ -35,8 +35,13 @@ namespace surface_refine
 constexpr std::size_t kBaseline = 4096;      // level 0 nodes over the whole scene's bounce area
 constexpr unsigned kLevels = 6;              // the finest spacing is the baseline's over 2^kLevels
 constexpr double kTolerance = 0.1;           // relative error of local irradiance that splits a node
-constexpr unsigned kResample = 4;            // most draws per node, over its light's samples
-constexpr unsigned kChildDraws = 16;         // surface draws about a split node
+constexpr unsigned kFirstDraws = 4;          // draws a node starts with, the node itself first
+constexpr unsigned kTrusted = 8;             // fewest draws whose spread is trusted as the node's error
+constexpr unsigned kMostNodeDraws = 64;      // draws a node may grow to while its verdict or value is uncertain
+constexpr double kNeededDraws = 4.0;         // most draws over those its own variance needs to resolve the tolerance
+constexpr unsigned kChildDraws = 16;         // surface draws about a split node that may become its children
+constexpr unsigned kAreaDraws = 64;          // surface draws about a split node that share its area among it and them
+constexpr double kCoverStep = 1.0e-6;        // offset off a surface, over its part's radius, at which cover is tested
 constexpr double kPacking = 0.68;            // nodes per squared spacing of a maximal Poisson disc set
 constexpr double kFacing = 0.5;              // least cosine between normals of one sheet
 constexpr std::size_t kProbe = 256;          // first area draws of a part
@@ -44,13 +49,31 @@ constexpr std::size_t kDrawsPerSeed = 8;     // area draws per expected level 0 
 constexpr std::size_t kMostDraws = std::size_t(1) << 22;
 constexpr std::size_t kChunk = 65536;
 
+/// The opaque solids that may cover a part's surface, its owner among them when opaque: a point covered on both sides
+/// lies buried between solids, where no light reaches.
+struct Cover final
+{
+    std::vector<ObjectPtr> solids;
+    double step = 0.0;
+    bool Buried(const Vector3d& point, const Vector3d& normal, TraceThreadData* td) const
+    {
+        return Inside(point + normal * step, td) && Inside(point - normal * step, td);
+    }
+    bool Inside(const Vector3d& point, TraceThreadData* td) const
+    {
+        for (ObjectPtr solid : solids)
+            if (Inside_BBox(point, solid->BBox) && Inside_Object(point, solid, td)) return true;
+        return false;
+    }
+};
+
 /// One bounce target's surface, over every order: its area draws, level 0 nodes and their areas.
 struct Part final
 {
     ObjectPtr owner = nullptr;
     std::shared_ptr<const SurfaceGeometrySampler> sampler;
     std::vector<double> classes;
-    unsigned samples = 1;
+    Cover cover;
     double area = 0.0;
     std::size_t draws = 0;
     std::vector<SurfaceGeometrySample> pool;
@@ -71,12 +94,21 @@ struct Node final
     unsigned level = 0;
     std::uint32_t part = 0;
     std::uint64_t key = 0;
-    unsigned samples = 0;
+    unsigned draws = 0, samples = 0;
     std::vector<MathColour> sums;
     MathColour entry;
     double eta = 1.0;
     double sum = 0.0, square = 0.0, near = 0.0, nearWeight = 0.0;
     double half[2][2][3] = {};
+    void Reset()
+    {
+        draws = samples = 0;
+        sums.assign(sums.size(), MathColour());
+        entry = MathColour();
+        eta = 1.0;
+        sum = square = near = nearWeight = 0.0;
+        std::fill(&half[0][0][0], &half[0][0][0] + 12, 0.0);
+    }
     double Mean() const { return samples ? sum / samples : 0.0; }
     double Error() const
     {
@@ -187,8 +219,10 @@ double Seed(std::vector<Part>& parts, Workers& workers, std::size_t baseline, co
             TraceTicket ticket(1, 0.0);
             Ray ray(ticket);
             const std::uint64_t key = DeriveKey(partKey, kDrawEmitter, first + i);
-            hit[i] = part.sampler->SampleArea(ray, workers.Thread(worker), Radical(first + i + 1, 2), Draw(key, kDrawEmitter, 0),
-                                              Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), chunk[i]);
+            TraceThreadData* const td = workers.Thread(worker);
+            hit[i] = part.sampler->SampleArea(ray, td, Radical(first + i + 1, 2), Draw(key, kDrawEmitter, 0),
+                                              Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), chunk[i]) &&
+                     !part.cover.Buried(chunk[i].intersection.IPoint, chunk[i].normal, td);
         }, 0);
         for (std::size_t i = 0; i < chunk.size(); ++i)
             if (hit[i])
@@ -198,29 +232,38 @@ double Seed(std::vector<Part>& parts, Workers& workers, std::size_t baseline, co
             }
         part.draws = last;
     };
-    double total = 0.0;
-    std::vector<double> sums(parts.size());
+    auto partKey = [](std::size_t p) { return BounceOrderSeed(UINT64_C(0x7365656473757266), p, 0, 0); };
     for (std::size_t p = 0; p < parts.size(); ++p)
     {
         Part& part = parts[p];
-        const std::uint64_t partKey = BounceOrderSeed(UINT64_C(0x7365656473757266), p, 0, 0);
-        drawChunk(part, 0, kProbe, partKey);
+        drawChunk(part, 0, kProbe, partKey(p));
         for (std::size_t last = kChunk; part.pool.empty() && last <= kChunk * 4; last += kChunk)
-            drawChunk(part, part.draws, last, partKey);
+            drawChunk(part, part.draws, last, partKey(p));
         if (part.pool.empty())
             throw std::runtime_error("Surface bounce preparation found no surface samples");
-        total += part.area / part.draws;
     }
-    const double spacing = std::sqrt(kPacking * total / double(baseline));
+    // The spacing follows the scene's area as every draw so far estimates it; parts draw on until each has enough per node.
+    double spacing = 0.0;
+    for (bool more = true; more;)
+    {
+        double total = 0.0;
+        for (const Part& part : parts) total += part.area / part.draws;
+        spacing = std::sqrt(kPacking * total / double(baseline));
+        more = false;
+        for (std::size_t p = 0; p < parts.size(); ++p)
+        {
+            Part& part = parts[p];
+            const double expected = std::max(1.0, kPacking * part.area / part.draws / (spacing * spacing));
+            const double rate = double(part.pool.size()) / part.draws;
+            const std::size_t wanted = std::min<std::size_t>(kMostDraws, std::size_t(std::ceil(kDrawsPerSeed * expected / rate)));
+            more = more || part.draws < wanted;
+            while (part.draws < wanted)
+                drawChunk(part, part.draws, std::min(wanted, part.draws + kChunk), partKey(p));
+        }
+    }
     for (std::size_t p = 0; p < parts.size(); ++p)
     {
         Part& part = parts[p];
-        const std::uint64_t partKey = BounceOrderSeed(UINT64_C(0x7365656473757266), p, 0, 0);
-        const double expected = std::max(1.0, kPacking * part.area / part.draws / (spacing * spacing));
-        const double rate = double(part.pool.size()) / part.draws;
-        const std::size_t wanted = std::min<std::size_t>(kMostDraws, std::size_t(std::ceil(kDrawsPerSeed * expected / rate)));
-        while (part.draws < wanted)
-            drawChunk(part, part.draws, std::min(wanted, part.draws + kChunk), partKey);
         Grid grid(spacing);
         auto at = [&](std::size_t i, Vector3d& point, Vector3d& normal)
         {
@@ -349,28 +392,34 @@ private:
         workers.For(which.size(), cooperate, [&](std::size_t i, std::size_t worker)
         {
             Node& node = nodes[which[i]];
-            const unsigned base = parts[active[node.part]].samples;
-            const unsigned last = more ? std::min(2 * node.samples, base * kResample) : base;
-            Sample(node, node.samples, last, worker);
+            Sample(node, more ? std::min(2 * node.draws, kMostNodeDraws) : kFirstDraws, worker);
         }, progress);
     }
 
-    void Sample(Node& node, unsigned first, unsigned last, std::size_t worker)
+    // Draw 0 is the node itself, the others points of its disc on its surface; a draw that finds none, or a buried one,
+    // is left out.
+    void Sample(Node& node, unsigned last, std::size_t worker)
     {
         const Part& part = parts[active[node.part]];
         TraceThreadData* const td = workers.Thread(worker);
         const double radius = 0.5 * Spacing(node.level);
+        const unsigned first = node.draws;
         std::vector<BounceIncidentBeam> batch;
         for (unsigned j = first; j < last; ++j)
         {
-            double x, y;
-            DiscPoint(node.key, j, x, y);
-            TraceTicket ticket(1, 0.0);
-            Ray ray(ticket);
+            double x = 0.0, y = 0.0;
             SurfaceGeometrySample origin;
-            const bool moved = part.sampler->SampleNear(node.hit.IPoint, node.normal, radius, x, y, ray, td, origin);
-            const Intersection& at = moved ? origin.intersection : node.hit;
-            const Vector3d& normal = moved ? origin.normal : node.normal;
+            if (j > 0)
+            {
+                DiscPoint(node.key, j - 1, x, y);
+                TraceTicket ticket(1, 0.0);
+                Ray ray(ticket);
+                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, radius, x, y, ray, td, origin) ||
+                    part.cover.Buried(origin.intersection.IPoint, origin.normal, td))
+                    continue;
+            }
+            const Intersection& at = j > 0 ? origin.intersection : node.hit;
+            const Vector3d& normal = j > 0 ? origin.normal : node.normal;
             auto beams = CollectBounceIncident(workers[worker].trace, at.IPoint, sources[node.part], 1,
                                                BounceOrderSeed(node.key, order, j, 0), &at, &normal);
             double scalar = 0.0;
@@ -388,8 +437,9 @@ private:
             }
             node.sum += scalar;
             node.square += scalar * scalar;
+            ++node.samples;
             const double coordinate[2] = {x, y};
-            for (int a = 0; a < 2; ++a)
+            for (int a = 0; j > 0 && a < 2; ++a)
             {
                 double* h = node.half[a][coordinate[a] < 0.0 ? 0 : 1];
                 h[0] += 1.0;
@@ -397,7 +447,7 @@ private:
                 h[2] += scalar * scalar;
             }
         }
-        node.samples = last;
+        node.draws = last;
         if (subsurface && first < last)
         {
             node.entry += entries[worker]->SurfaceSubsurfaceEntry(SurfaceBounceNode{node.hit, node.normal, 0.0}, batch, 0, node.eta);
@@ -440,6 +490,7 @@ private:
         Vector3d t1, t2;
         SurfaceGeometrySampler::TangentFrame(node.normal, t1, t2);
         bool unknown = !std::isfinite(error);
+        double freedom = node.samples - 1.0;
         double low = HUGE_VAL, high = -HUGE_VAL;
         double xx = 0.0, xy = 0.0, yy = 0.0, xd = 0.0, yd = 0.0, sx = 0.0, sy = 0.0, mxx = 0.0, mxy = 0.0, myy = 0.0;
         for (unsigned k = 0; k < weights.count; ++k)
@@ -447,7 +498,11 @@ private:
             const Node& other = nodes[At(node.part, weights.node[k])];
             const double w = weights.kernel[k], value = other.Mean(), e = other.Error(), linear = weights.weight[k];
             predicted += linear * value;
-            if (linear != 0.0) predictedError2 += linear * linear * e * e;
+            if (linear != 0.0)
+            {
+                predictedError2 += linear * linear * e * e;
+                freedom = std::min(freedom, other.samples - 1.0);
+            }
             if (w > 0.0)
             {
                 low = std::min(low, value);
@@ -466,9 +521,11 @@ private:
         if (!(reference > 0.0) && !POV_SURFACE_BOUNCE_UNIFORM) return verdict;
         const double between = std::fabs(mean - predicted), betweenError = std::sqrt(error * error + predictedError2);
         const double determinant = xx * yy - xy * xy;
-        // The neighbours' least squares gradient and its variance, from their errors and the node's own.
+        // The neighbours' least squares gradient and its variance, from their errors and the node's own; neighbours along
+        // one line leave it unknown, and the within test then has nothing to compare against.
         double gradient[2] = {0.0, 0.0}, gradientError2[2] = {0.0, 0.0};
-        if (determinant > 1.0e-9 * (xx + yy) * (xx + yy))
+        const bool spanned = determinant > 1.0e-9 * (xx + yy) * (xx + yy);
+        if (spanned)
         {
             gradient[0] = (yy * xd - xy * yd) / determinant;
             gradient[1] = (xx * yd - xy * xd) / determinant;
@@ -484,7 +541,7 @@ private:
         // Half discs of radius spacing / 2 have centroids 4r / 3pi either side.
         const double separation = 4.0 * spacing / (3.0 * M_PI);
         double within = 0.0, withinError = HUGE_VAL, withinFreedom = 0.0;
-        for (int a = 0; a < 2; ++a)
+        for (int a = 0; spanned && a < 2; ++a)
         {
             const double* lo = node.half[a][0];
             const double* hi = node.half[a][1];
@@ -499,19 +556,25 @@ private:
                 withinFreedom = freedom;
             }
         }
-        const bool betweenLarge = between > kTolerance * reference, betweenSure = between > Confidence(node.samples - 1.0) * betweenError;
+        const bool betweenLarge = between > kTolerance * reference, betweenSure = between > Confidence(freedom) * betweenError;
         const bool withinLarge = within > kTolerance * reference, withinSure = within > Confidence(withinFreedom) * withinError;
         const bool close = node.near > 0.0 && 2.0 * node.nearWeight / node.near < spacing;
         verdict.split = (betweenLarge && betweenSure) || (withinLarge && withinSure) || close;
         verdict.why = (betweenLarge && betweenSure ? 1 : 0) | (withinLarge && withinSure ? 2 : 0) | (close ? 4 : 0);
+        const bool known = node.samples >= kTrusted && error <= kTolerance * reference;
+        // The draws that resolve a difference of the tolerance, at the variance seen so far, bound how far a node grows.
+        const double resolve = Confidence(HUGE_VAL) * error / (kTolerance * reference);
+        const double needed = resolve * resolve * node.samples;
+        const bool grow = node.draws < kMostNodeDraws && !(node.draws >= kNeededDraws * needed && node.samples >= kTrusted);
 #if POV_SURFACE_BOUNCE_UNIFORM
         verdict.split = node.level < POV_SURFACE_BOUNCE_UNIFORM;
-        verdict.resample = false;
+        verdict.resample = !verdict.split && grow && !known;
         verdict.priority = 1.0;
         return verdict;
 #endif
-        verdict.resample = !verdict.split && ((betweenLarge && !betweenSure) || (withinLarge && !withinSure)) &&
-                           node.samples < parts[active[node.part]].samples * kResample;
+        // Draws grow while a verdict is in doubt or the node's own value is not yet known to the tolerance.
+        verdict.resample = !verdict.split && grow &&
+                           ((betweenLarge && !betweenSure) || (withinLarge && !withinSure) || !known);
         verdict.priority = std::max({betweenLarge && betweenSure ? between : 0.0, withinLarge && withinSure ? within : 0.0,
                                      close ? mean : 0.0}) * node.area;
         return verdict;
@@ -535,19 +598,23 @@ private:
             return pa > pb || (pa == pb && a < b);
         });
         std::vector<std::vector<SurfaceGeometrySample>> draws(split.size());
+        std::vector<std::size_t> candidates(split.size(), 0);
         workers.For(split.size(), cooperate, [&](std::size_t k, std::size_t worker)
         {
             const Node& node = nodes[split[k]];
             const Part& part = parts[active[node.part]];
+            TraceThreadData* const td = workers.Thread(worker);
             const std::uint64_t key = DeriveKey(node.key, kDrawEmitter, UINT64_C(0x6368696c64));
-            for (unsigned j = 0; j < kChildDraws; ++j)
+            for (unsigned j = 0; j < kAreaDraws; ++j)
             {
+                if (j == kChildDraws) candidates[k] = draws[k].size();
                 double x, y;
                 DiscPoint(key, j, x, y);
                 TraceTicket ticket(1, 0.0);
                 Ray ray(ticket);
                 SurfaceGeometrySample draw;
-                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, Spacing(node.level), x, y, ray, workers.Thread(worker), draw))
+                if (!part.sampler->SampleNear(node.hit.IPoint, node.normal, Spacing(node.level), x, y, ray, td, draw) ||
+                    part.cover.Buried(draw.intersection.IPoint, draw.normal, td))
                     continue;
                 if (indices[node.part]->Nearest(draw.intersection.IPoint, draw.normal) == position[split[k]])
                     draws[k].push_back(std::move(draw));
@@ -568,7 +635,7 @@ private:
             const std::uint32_t partIndex = nodes[parent].part;
             const Part& part = parts[active[partIndex]];
             const std::size_t first = nodes.size();
-            for (std::size_t j = 0; j < draws[k].size(); ++j)
+            for (std::size_t j = 0; j < candidates[k]; ++j)
             {
                 const SurfaceGeometrySample& draw = draws[k][j];
                 if (grids[partIndex].Near(draw.intersection.IPoint, draw.normal, radius, at)) continue;
@@ -607,6 +674,12 @@ private:
                 nodes[parent].area = area * counts[0] / total;
                 for (std::size_t c = first; c < nodes.size(); ++c) nodes[c].area = area * counts[c - first + 1] / total;
             }
+            // The parent stays as a node of the finer level, measured afresh over its smaller disc.
+            Node& kept = nodes[parent];
+            kept.level = level + 1;
+            kept.key = BounceOrderMix(kept.key ^ UINT64_C(0x706172656e74));
+            kept.Reset();
+            children.push_back(parent);
             if (bound) break;
         }
         return children;
@@ -614,7 +687,6 @@ private:
 
     std::vector<Result> Finish()
     {
-        Index();
         std::vector<Result> results(active.size());
         for (std::size_t p = 0; p < active.size(); ++p)
         {
@@ -631,16 +703,8 @@ private:
                 const Node& node = nodes[members[p][source[t]]];
                 const double scale = 1.0 / node.samples;
                 for (std::size_t j = 0; j < stride; ++j) irradiance[t * stride + j] = node.sums[j] * scale;
-                for (const auto& layer : PreparedSurfaceInput::DiffuseLayersAt(node.hit, node.normal, workers.Thread(worker)))
-                {
-                    std::size_t c = 0;
-                    while (c < part.classes.size() && part.classes[c] != layer.brilliance) ++c;
-                    if (c == part.classes.size()) throw std::logic_error("Surface bounce found a finish outside its object");
-                    const MathColour incoming = irradiance[t * stride + 2 * c] * std::max(0.0, layer.front * layer.adjust) +
-                                                irradiance[t * stride + 2 * c + 1] * std::max(0.0, layer.back * layer.adjust);
-                    const double adjustment = layer.outgoing == 1.0 ? 1.0 : (layer.outgoing + 7.0) / 8.0;
-                    exitance[t] += incoming * layer.colour * (adjustment * 2.0 / (layer.outgoing + 1.0));
-                }
+                exitance[t] = SurfaceIrradianceField::Exitance(node.hit, node.normal, part.classes, &irradiance[t * stride],
+                                                               workers.Thread(worker));
                 power[t] = float(exitance[t].Greyscale() * node.area);
             }, 0);
             MathColour integral;
