@@ -254,7 +254,7 @@ interior {
 <a name="r3_12_6_1"></a>
 <div class="content-level-h4" contains="A Candle in a Misty Room" id="r3_12_6_1">
 <h4>3.12.6.1 A Candle in a Misty Room</h4>
-<p><code>blend_candle.pov</code> is the flame of 3.12.1 in a room filled with mist. The flame and its smoke add to the mist, so they use <code>mix add</code>; the mist and smoke dim the flame's light on its way to the surfaces, because <code>media_attenuation</code> is on. <code>Declare=FlameLight=0</code> swaps the media light for a point light at the wick, to compare, and <code>FlameSamples</code> sets the samples.</p></div>
+<p><code>blend_candle.pov</code> is the flame of 3.12.1 in a room filled with mist. The flame and its smoke add to the mist, so they use <code>mix add</code>; the mist and smoke dim the flame's light on its way to the surfaces, because <code>media_attenuation</code> is on. <code>Declare=FlameLight=0</code> swaps the media light for a point light at the wick, to compare, <code>FlameSamples</code> sets the samples and <code>FlameLumens</code> the flame's flux in lumens, spread over its own emission.</p></div>
 
 <a name="r3_12_6_2"></a>
 <div class="content-level-h4" contains="Tubes and Neon" id="r3_12_6_2">
@@ -264,7 +264,7 @@ interior {
 cylinder {
   &lt;0, 0, -Length / 2&gt;, &lt;0, 0, Length / 2&gt;, 0.028
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.009 } light { pigment { rgb Colour * 180 * Strength } samples Samples } }
+  interior { media { mix add method 4 resolution 0.009 } light { pigment { Colour * Strength } brightness 180 nits samples Samples } }
   translate P
 }
 </pre></div>
@@ -272,12 +272,12 @@ cylinder {
 <a name="r3_12_6_3"></a>
 <div class="content-level-h4" contains="Glow Inside Other Media" id="r3_12_6_3">
 <h4>3.12.6.3 Glow Inside Other Media</h4>
-<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water). In each, the light is stated as radiance in the interior's light block, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
+<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. Each lantern is stated in lumens (<code>Declare=LanternLumens=N</code>, 2000 by default, well above a real lantern's flux so the cloud reads from a distance), the storm lights in nits. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water); each fish uses <code>light { emission brightness Gain }</code>, an emission gain over its own glow (<code>Declare=Gain=N</code>). In each, the light is stated in its interior's light block, in nits, as a gain over the media's own emission, or in lumens, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
 
 <a name="r3_12_6_4"></a>
 <div class="content-level-h4" contains="Overlapping and Contained Lights" id="r3_12_6_4">
 <h4>3.12.6.4 Overlapping and Contained Lights</h4>
-<p><code>light_intersections.pov</code> overlaps red, green and blue lights, threads them with a bronze knot, holds a glass ball in one and crosses them with smoke; it also seals a glow in a cracked stone and sinks a pool into the floor. <code>light_colonnade.pov</code> lights a rotunda only by a glowing core at its centre, with a lens of space around it made by <a href="r3_11.html#r3_11_3">refraction fields</a> (<code>Declare=Refract=0</code> drops it).</p></div>
+<p><code>light_intersections.pov</code> overlaps red, green and blue lights, threads them with a bronze knot, holds a glass ball in one and crosses them with smoke; it also seals a glow in a cracked stone and sinks a pool into the floor. The lamps take a gain over their glow (<code>Declare=LampGain=N</code>), the stone and the pool are stated in lumens (<code>GeodeLumens</code>, <code>PoolLumens</code>). <code>light_colonnade.pov</code> lights a rotunda only by a glowing core at its centre, stated in lumens (<code>Declare=CoreLumens=N</code>), with a lens of space around it made by <a href="r3_11.html#r3_11_3">refraction fields</a> (<code>Declare=Refract=0</code> drops it).</p></div>
 
 <a name="r3_12_7"></a>
 <div class="content-level-h3" contains="Surface Lights" id="r3_12_7">
@@ -335,6 +335,7 @@ box { &lt;-0.6, 1, -0.05&gt;, &lt;0.6, 2, 0.05&gt;
 <tr><td><code>A light block's brightness must be finite and not negative.</code></td><td>Error.</td></tr>
 <tr><td><code>Only one surface light block allowed on an object.</code></td><td>Error. An object has one surface light and, separately, one interior light.</td></tr>
 <tr><td><code>Surface light blocks do not accept attenuation.</code></td><td>Error.</td></tr>
+<tr><td><code>A light block makes a shape's surface a light; a light_source cannot take one.</code></td><td>Error: a <code>light</code> block inside a <code>light_source</code>, or in an <code>object</code> that wraps one. In <code>.pov4</code> the checker reports <code>'light_source' has no item 'light'</code> for the first form.</td></tr>
 <tr><td><code>A surface light requires finite geometry with nonzero surface area.</code></td><td>Error: a <code>plane</code>, an infinite object or a shape without surface carries a surface light.</td></tr>
 <tr><td><code>Surface light input cannot depend on ray or camera context</code></td><td>Error before tracing: the pigment, or the material's pigment under <code>emission</code>, uses <code>aoi</code> or another ray-dependent pattern.</td></tr>
 <tr><td><code>Surface light emission cannot bake direction-dependent finish attenuation</code></td><td>Error before tracing: under <code>emission</code>, a finish uses <code>fresnel</code>, or <code>conserve_energy</code> with reflection, which would change the emitted light with direction.</td></tr>
@@ -401,8 +402,8 @@ sphere { 0, 1 pigment { rgbt 1 } hollow
 <h3>3.12.9 Brightness Units and scale_lumens</h3>
 <p>A <code>brightness</code> value is followed by an optional unit, written after the number; the unit words <code>nits</code> and <code>lumens</code> are read only there and stay free as identifiers.</p>
 <table width="100%" class="option-list">
-<tr><td><code>brightness Value</code> or <code>brightness Value nits</code></td><td>Radiance in nits (candelas per square metre): the surface or volume emits Value times its source colour. The source colour is the only factor, so scaling an object uniformly leaves the illumination it gives unchanged.</td></tr>
-<tr><td><code>brightness Value lumens</code></td><td>Total generated luminous flux in lumens, before any absorption on the way out. The colour or pattern only shapes how that total is distributed. For a surface source the radiance is Value divided by &pi; times the surface area times the grey level of the source colour (weights 0.297, 0.589 and 0.114 for red, green and blue). Making the object larger at fixed lumens dims its illumination in proportion to its area.</td></tr>
+<tr><td><code>brightness Value</code> or <code>brightness Value nits</code></td><td>Radiance in nits (candelas per square metre): the surface or volume emits Value times its source colour. Radiance is fixed, so scaling an object up by <em>s</em> multiplies its emitting area, and the flux it delivers, by <em>s</em><sup>2</sup>, and it lights more.</td></tr>
+<tr><td><code>brightness Value lumens</code></td><td>Total generated luminous flux in lumens, before any absorption on the way out. The colour or pattern only shapes how that total is distributed. For a surface source the radiance is Value divided by &pi; times the surface area times the grey level of the source colour (weights 0.297, 0.589 and 0.114 for red, green and blue). The flux is fixed, so scaling the object up by <em>s</em> divides its radiance by <em>s</em><sup>2</sup> while the illumination far from it stays the same.</td></tr>
 </table>
 <p>Lumens assume that one scene unit is one metre. For a scene authored in another length, <code>scale_lumens(Lumens, Metres)</code> converts lumens stated for the real object: <code>Metres</code> is the number of metres in one scene unit, and the result is <code>Lumens / Metres<sup>2</sup></code>, the value to write in the light block so that the object has the radiance of the real lamp at the scene's size. <code>scale_lumens</code> is a built-in float function with two arguments, available in classic scenes and in <code>.pov4</code> scenes at every version. It needs a finite value and a positive finite number of metres; otherwise the parser reports <code>scale_lumens takes finite lumens and a positive finite number of metres per unit.</code> No light unit reads <code>mm_per_unit</code>.</p>
 <pre>

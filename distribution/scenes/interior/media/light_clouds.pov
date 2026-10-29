@@ -1,5 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Single scattering only. +w640 +h480; Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux, Storm=0 drops the lightning tower.
+// Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Single scattering only. +w640 +h480.
+// Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux (2000, far above a real lantern's 50, so the cloud reads from this far), Storm=0 drops the lightning tower.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Storm) #declare Storm = 1; #end

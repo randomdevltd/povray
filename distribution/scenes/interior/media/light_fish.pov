@@ -1,5 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Glowing fish and jellyfish at night over a seabed of rocks, kelp, sea grass, urchins, a coral fan and a lost anchor, the fish the only light, dimmed and tinted by the water they shine through. +w640 +h480; Declare=Samples=N sets each fish's samples, Gain scales their light over their glow, Murk=0 clears the water of particles.
+// Glowing fish and jellyfish at night over a seabed of rocks, kelp, sea grass, urchins, a coral fan and a lost anchor, the fish the only light, dimmed and tinted by the water they shine through. +w640 +h480.
+// Declare=Samples=N sets each fish's samples, Gain scales their light over their glow, Murk=0 clears the water of particles.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Murk) #declare Murk = 1; #end
