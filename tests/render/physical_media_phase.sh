@@ -10,10 +10,12 @@ render() {
     "$POVRAY" +i"$SRCDIR/tests/render/physical_media_phase.pov" +w4 +h4 +wt1 +pr -a -d -p -v -gp +fp16 File_Gamma=1.0 +o"$name.ppm" "$@" >"$name.log" 2>&1 || { cat "$name.log"; exit 1; }
 }
 for eccentricity in 1 -1 1.5; do
-    if "$POVRAY" +i"$SRCDIR/tests/render/physical_media_phase.pov" +w1 +h1 +wt1 -f -d -p -v -gp Declare=HG=1 Declare=Eccentricity="$eccentricity" >eccentricity.log 2>&1; then
+    if "$POVRAY" +i"$SRCDIR/tests/render/physical_media_phase.pov" +w1 +h1 +wt1 -f -d -p -v -gp Declare=HG=1 Declare=Eccentricity="$eccentricity" Declare=SceneVersion=3.8 >eccentricity.log 2>&1; then
         echo "physical_media_phase: eccentricity $eccentricity accepted" >&2; exit 1
     fi
     tr '\n' ' ' <eccentricity.log | tr -s '[:space:]' ' ' | grep -qF 'eccentricity must lie between -1 and 1' || { cat eccentricity.log; exit 1; }
+    "$POVRAY" +i"$SRCDIR/tests/render/physical_media_phase.pov" +w1 +h1 +wt1 -f -d -p -v -gp Declare=HG=1 Declare=Eccentricity="$eccentricity" >eccentricity.log 2>&1 || { cat eccentricity.log; exit 1; }
+    tr '\n' ' ' <eccentricity.log | tr -s '[:space:]' ' ' | grep -qF 'a scene of version 3.7 or older keeps it' || { cat eccentricity.log; exit 1; }
 done
 render point Declare=Source=1
 render volume16 Declare=Source=2 Declare=Draws=16
