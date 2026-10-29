@@ -9051,6 +9051,8 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         OTHERWISE
             if (CurrentTokenText() == "light")
             {
+                if (Object->Type & LIGHT_SOURCE_OBJECT)
+                    Error("A light block makes a shape's surface a light; a light_source cannot take one.");
                 if (Object->surfaceLight != nullptr)
                     Error("Only one surface light block allowed on an object.");
                 Object->surfaceLight = Parse_Light(true);
