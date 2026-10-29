@@ -58,7 +58,7 @@ background { rgb 0 }
     sphere {
       0, 0.5 pigment { rgbt 1 } hollow no_image
       interior {
-        media { density { spherical color_map { [0 rgb 0] [0.7 rgb 0.2] [1 rgb 3] } } }
+        media { method 4 density { spherical color_map { [0 rgb 0] [0.7 rgb 0.2] [1 rgb 3] } } }
         light { brightness Lum / 4 samples N }
       }
       translate <0.4, Height, 0.2>
@@ -69,7 +69,7 @@ background { rgb 0 }
     sphere {
       0, 0.5 pigment { rgbt 1 } hollow no_image
       interior {
-        media { density { spherical color_map { [0 rgb 0] [0.7 rgb 0.2] [1 rgb 3] } } }
+        media { method 4 density { spherical color_map { [0 rgb 0] [0.7 rgb 0.2] [1 rgb 3] } } }
         light { pigment { gradient x color_map { [0 rgb <0, 0.2, 1>] [1 rgb <1, 0.4, 0>] } translate -x * 0.5 } brightness Lum / 2 samples N }
       }
       translate y * Height
@@ -111,13 +111,13 @@ background { rgb 0 }
   #break
   #case (16) #case (17)
     object { Floor }
-    box { <-2, 0.01, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { scattering { 1, 0.08 } } } }
+    box { <-2, 0.01, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { method 4 scattering { 1, 0.08 } } } }
     sphere {
       0, 0.5 pigment { rgbt 1 } hollow
       interior {
         // Case 17 holds the ball's glow over a little extinction, so its shadow rays march media too; its brightness
         // restores the flux absorption 0.02 keeps inside the 0.5 ball (escape fraction 0.99254), so both escape alike.
-        media { #if (Case = 17) absorption 0.02 #else density { spherical } #end }
+        media { method 4 #if (Case = 17) absorption 0.02 #else density { spherical } #end }
         light { brightness #if (Case = 17) 0.12594 #else 0.125 #end samples N }
       }
       translate y * 1.2
