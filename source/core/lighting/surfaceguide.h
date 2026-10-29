@@ -7,7 +7,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <cmath>
 #include "core/math/vector.h"
 
@@ -47,7 +46,7 @@ public:
 
     void Prepare()
     {
-        generation = nextGeneration.fetch_add(1, std::memory_order_relaxed);
+        generation = NextGeneration();
         count = 0;
         double largest = 0.0;
         for (double mass : masses) largest = std::max(largest, mass);
@@ -72,7 +71,7 @@ public:
         SphereKernel() = default;
         SphereKernel(const Vector3d& offset, double radius)
         {
-            distance = std::hypot(offset[0], offset[1], offset[2]);
+            distance = std::hypot(std::hypot(offset[0], offset[1]), offset[2]);
             axis = distance > 0.0 ? offset / distance : Vector3d(0, 0, 1);
             const double scale = std::max(distance, radius);
             const double a = radius / scale, b = distance / scale;
@@ -108,7 +107,7 @@ public:
 
     Vector3d Sample(const Vector3d& from, double choose, double azimuth, double& pdf) const
     {
-        if (!count) return SampleSphere(lower + size * 0.5 - from, std::hypot(size[0], size[1], size[2]) * 0.5, choose, azimuth, pdf);
+        if (!count) return SampleSphere(lower + size * 0.5 - from, std::hypot(std::hypot(size[0], size[1]), size[2]) * 0.5, choose, azimuth, pdf);
         const Conditioned conditioned(*this, from);
         return conditioned.Sample(Unit(choose), Unit(azimuth), pdf);
     }
@@ -118,7 +117,7 @@ public:
 
     double Pdf(const Vector3d& from, const Vector3d& direction) const
     {
-        if (!count) return SphereKernel(lower + size * 0.5 - from, std::hypot(size[0], size[1], size[2]) * 0.5).Pdf(direction);
+        if (!count) return SphereKernel(lower + size * 0.5 - from, std::hypot(std::hypot(size[0], size[1]), size[2]) * 0.5).Pdf(direction);
         return Conditioned(*this, from).Pdf(direction);
     }
 
@@ -129,9 +128,9 @@ public:
     struct Conditioned
     {
         Conditioned(const SurfaceAngularGuide& guide, const Vector3d& from) :
-            whole(guide.lower + guide.size * 0.5 - from, std::hypot(guide.size[0], guide.size[1], guide.size[2]) * 0.5)
+            whole(guide.lower + guide.size * 0.5 - from, std::hypot(std::hypot(guide.size[0], guide.size[1]), guide.size[2]) * 0.5)
         {
-            const double radius = std::hypot(guide.size[0], guide.size[1], guide.size[2]) * 0.125;
+            const double radius = std::hypot(std::hypot(guide.size[0], guide.size[1]), guide.size[2]) * 0.125;
             double total = 0.0;
             count = 0;
             for (unsigned i = 0; i < guide.count; ++i)
@@ -188,8 +187,8 @@ public:
     };
 private:
     friend class SurfaceAngularGuideCache;
-    inline static std::atomic<std::uint64_t> nextGeneration{1};
-    std::uint64_t generation = nextGeneration.fetch_add(1, std::memory_order_relaxed);
+    static std::uint64_t NextGeneration() { static std::atomic<std::uint64_t> next{1}; return next.fetch_add(1, std::memory_order_relaxed); }
+    std::uint64_t generation = NextGeneration();
     Vector3d lower, size;
     std::array<double, 64> masses{};
     std::array<Vector3d, 64> moments{};
@@ -204,7 +203,8 @@ public:
     {
         if (!conditioned || generation != guide.generation || origin[0] != from[0] || origin[1] != from[1] || origin[2] != from[2])
         {
-            conditioned.emplace(guide, from);
+            if (conditioned) *conditioned = SurfaceAngularGuide::Conditioned(guide, from);
+            else conditioned.reset(new SurfaceAngularGuide::Conditioned(guide, from));
             origin = from;
             generation = guide.generation;
         }
@@ -217,7 +217,7 @@ public:
 private:
     std::uint64_t generation = 0;
     Vector3d origin;
-    std::optional<SurfaceAngularGuide::Conditioned> conditioned;
+    std::unique_ptr<SurfaceAngularGuide::Conditioned> conditioned;
 };
 
 inline Vector3d SurfaceAngularGuide::Sample(const Vector3d& from, double choose, double azimuth, double& pdf,
