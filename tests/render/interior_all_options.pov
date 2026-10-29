@@ -15,7 +15,7 @@ sphere {
       pigment { rgb <1, 0.8, 0.5> }
       brightness 806 lumens // Alternatives: brightness 100 nits; brightness 100 (also nits).
       samples 256
-      attenuation 2, 1
+      attenuation { power 2 scale 1 }
       shadowless off
       media_interaction on
       media_attenuation on

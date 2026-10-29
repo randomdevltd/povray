@@ -95,7 +95,8 @@ bool tree_sitter_pov4_external_scanner_scan(void *payload, TSLexer *lexer, const
         lexer->result_symbol = TAG_KEYWORD;
         return strcmp(word, "tagged") || (lexer->lookahead == '{');
     }
-    if (valid[KEYWORD] && (!strcmp(word, "output") || !strcmp(word, "light") || !strcmp(word, "bounce")))
+    if (valid[KEYWORD] && (!strcmp(word, "output") || !strcmp(word, "light") || !strcmp(word, "bounce") ||
+                           !strcmp(word, "attenuation")))
     {
         // These contextual words are block names only when a block follows.
         lexer->mark_end(lexer);

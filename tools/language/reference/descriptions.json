@@ -1162,8 +1162,7 @@
    "from": "tests/pov4/ok_refraction_components.pov4:1"
   },
   "attenuation": {
-   "rank": 1016,
-   "code": "attenuation 2, 1",
+   "code": "attenuation { power 2 scale 1 }",
    "from": "tests/pov4/interior_all_options.pov4:17"
   },
   "auto": {
@@ -2416,6 +2415,11 @@
    "code": "potential { BLOB | ISOSURFACE }",
    "from": "doc/html/r3_6.html"
   },
+  "power": {
+   "rank": 31,
+   "code": "attenuation { power 2 scale 1 }",
+   "from": "tests/pov4/interior_all_options.pov4:17"
+  },
   "ppm": {
    "rank": 1048,
    "code": "povray +Igarden.pov +W160 +H120 -A +FP16 +Oa.ppm",
@@ -2614,9 +2618,9 @@
    "from": "doc/html/r3_4.html"
   },
   "scale": {
-   "rank": 45,
-   "code": "object { Row translate y * 0.8 scale tagged }",
-   "from": "tests/pov4/framing_tagged.pov4:14"
+   "rank": 31,
+   "code": "attenuation { power 2 scale 1 }",
+   "from": "tests/pov4/interior_all_options.pov4:17"
   },
   "scale_lumens": {
    "rank": 1066,

@@ -59,7 +59,8 @@
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
   "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off.",
-  "bounce": "Scattering orders of a light's own emission field: bare `bounce` is one pass, `bounce { passes N }` runs N."
+  "bounce": "Scattering orders of a light's own emission field: bare `bounce` is one pass, `bounce { passes N }` runs N.",
+  "attenuation": "Artistic falloff of an interior light: `attenuation { power P scale S }`, power 2 and scale 1 by default (physical); far away the light falls as 1/d^P and the scale divides it."
  },
  "words": {
   "quality": {

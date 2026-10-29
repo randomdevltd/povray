@@ -424,6 +424,33 @@ sphere { 0,1 light { bounce } }
       (identifier))))
 
 ==================
+Contextual attenuation block and free attenuation name
+==================
+let attenuation = 2;
+sphere { 0,1 hollow interior { light { attenuation { power 1.5 scale attenuation } } } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (number))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (keyword)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (block
+          (keyword)
+          (identifier)
+          (number)
+          (keyword)
+          (identifier))))))
+
+==================
 Light units, scale_lumens and free unit names
 ==================
 let nits = 2;

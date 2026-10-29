@@ -41,6 +41,7 @@ const CURATION = {
     media: ['Parse_Media'],
     light: ['Parse_Light'],
     bounce: ['Parse_Light_Bounce'],
+    attenuation: ['Parse_Light_Attenuation'],
     camera: ['Parse_Camera', 'Parse_Camera_Mods', 'Parse_Camera_Look_At'],
     output: ['Parse_Camera_Output'],
     tags: ['Parse_Tags'],

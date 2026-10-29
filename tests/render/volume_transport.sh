@@ -59,10 +59,10 @@ for value in 1 2 3 4 5 6 7 20 21 22 23 24; do
         echo "volume_transport: invalid context $value accepted" >&2; exit 1
     fi
 done
-for value in 11 12 13 14 15 16 25 26; do
+for value in 11 12 13 14 15 16 17 25 26; do
     syntax "$value" || { cat "syntax_$value.log"; exit 1; }
 done
-for pair in '11 12' '13 14' '15 16'; do
+for pair in '11 12' '13 14' '15 16' '15 17'; do
     set -- $pair
     tail -c 96 "syntax_$1.ppm" > syntax_first.pixels
     tail -c 96 "syntax_$2.ppm" > syntax_second.pixels

@@ -6,6 +6,7 @@
 
 namespace pov_parser {
 
+static const char* const kPov4BlockItems_attenuation[] = { "power", "scale" };
 static const char* const kPov4BlockItems_bicubic_patch[] = { "accuracy", "bounded_by", "clipped_by", "cutaway_textures", "double_illuminate", "dtag", "finish", "flatness", "hierarchy", "hollow", "interior", "interior_texture", "inverse", "light", "light_source", "material", "matrix", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "photons", "pigment", "radiosity", "rotate", "scale", "split_union", "sturm", "tags", "texture", "transform", "translate", "type", "u_steps", "uv_mapping", "uv_vectors", "v_steps" };
 static const char* const kPov4BlockItems_blob[] = { "bounded_by", "clipped_by", "component", "cutaway_textures", "cylinder", "double_illuminate", "dtag", "finish", "hierarchy", "hollow", "interior", "interior_texture", "inverse", "light", "light_source", "material", "matrix", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "photons", "pigment", "radiosity", "rotate", "scale", "sphere", "split_union", "strength", "sturm", "tags", "texture", "threshold", "transform", "translate", "uv_mapping" };
 static const char* const kPov4BlockItems_bounce[] = { "passes" };
@@ -88,6 +89,7 @@ static const char* const kPov4NestedItems_12[] = { "eccentricity", "extinction" 
 struct Pov4BlockSchema { const char* word; const char* const* items; size_t count; };
 
 static const Pov4BlockSchema kPov4BlockSchemas[] = {
+    { "attenuation", kPov4BlockItems_attenuation, sizeof(kPov4BlockItems_attenuation) / sizeof(kPov4BlockItems_attenuation[0]) },
     { "bicubic_patch", kPov4BlockItems_bicubic_patch, sizeof(kPov4BlockItems_bicubic_patch) / sizeof(kPov4BlockItems_bicubic_patch[0]) },
     { "blob", kPov4BlockItems_blob, sizeof(kPov4BlockItems_blob) / sizeof(kPov4BlockItems_blob[0]) },
     { "bounce", kPov4BlockItems_bounce, sizeof(kPov4BlockItems_bounce) / sizeof(kPov4BlockItems_bounce[0]) },

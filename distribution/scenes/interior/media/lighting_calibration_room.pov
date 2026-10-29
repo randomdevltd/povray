@@ -58,7 +58,7 @@ box { <-0.7, 0.72, 0.65>, <0.7, 0.76, 1.25> Matte(0.35) }
   sphere {
     0, 0.03 TransparentEmitter()
     interior { media { method 4 emission rgb (SphereL / 0.06) }
-      light { pigment { rgb 1 } brightness SphereL nits samples Samples attenuation 2, 1 } }
+      light { pigment { rgb 1 } brightness SphereL nits samples Samples attenuation { power 2 scale 1 } } }
     translate <0, 1.7, 0>
   }
 #end
@@ -72,7 +72,7 @@ box { <-0.7, 0.72, 0.65>, <0.7, 0.76, 1.25> Matte(0.35) }
     <0.029, 0.072>, <0.03, 0.084>, <0.025, 0.099>, <0.015, 0.108>, <0, 0.11>
     TransparentEmitter()
     interior { media { method 4 emission rgb (SphereL / 0.06) }
-      light { pigment { rgb 1 } brightness SphereL nits samples Samples attenuation 2, 1 } }
+      light { pigment { rgb 1 } brightness SphereL nits samples Samples attenuation { power 2 scale 1 } } }
     translate <0, 1.645, 0>
   }
   cylinder { <0, 1.645, 0>, <0, 1.67, 0>, 0.013 Matte(0.25) }
@@ -86,7 +86,7 @@ box { <-0.7, 0.72, 0.65>, <0.7, 0.76, 1.25> Matte(0.35) }
     <-ScreenW / 2, -ScreenH / 2, -0.0005>, <ScreenW / 2, ScreenH / 2, 0.0005>
     TransparentEmitter()
     interior { media { method 4 emission rgb (ScreenL / 0.001) }
-      light { pigment { rgb 1 } brightness ScreenL nits samples Samples attenuation 2, 1 } }
+      light { pigment { rgb 1 } brightness ScreenL nits samples Samples attenuation { power 2 scale 1 } } }
     translate <0, 1.15, 0.62>
   }
   // Opaque backing blocks rear emission; no absorbing source medium is used.
@@ -102,7 +102,7 @@ box { <-0.7, 0.72, 0.65>, <0.7, 0.76, 1.25> Matte(0.35) }
     <-1, -0.0005, -0.0075>, <1, 0.0005, 0.0075>
     TransparentEmitter()
     interior { media { method 4 emission rgb (StripL / 0.001) }
-      light { pigment { rgb 1 } brightness StripL nits samples Samples attenuation 2, 1 } }
+      light { pigment { rgb 1 } brightness StripL nits samples Samples attenuation { power 2 scale 1 } } }
     translate <0, 2.35, 0>
   }
   box { <-1.002, 2.3506, -0.0095>, <1.002, 2.3561, 0.0095> Matte(0.05) }

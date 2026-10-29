@@ -42,6 +42,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 <!-- generated:begin block table -->
 | block | items | one-liner |
 |---|---|---|
+| `attenuation` | 2 | Artistic falloff of an interior light: `attenuation { power P scale S }`, power 2 and scale 1 by default (physical); far away the light falls as 1/d^P and the scale divides it. |
 | `background` | — | The colour or pigment shown behind every object. |
 | `bicubic_patch` | 38 | Bezier patch surface from a 4x4 control-point grid. |
 | `blob` | 37 | Metaball surface from sphere and cylinder strength components. |

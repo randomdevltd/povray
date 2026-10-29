@@ -2606,7 +2606,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:5081 Parse_Material"
+    "parser_materials.cpp:5113 Parse_Material"
    ]
   },
   "pigment": {
@@ -2986,7 +2986,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4099 Parse_Interior"
+    "parser_materials.cpp:4131 Parse_Interior"
    ]
   },
   "refraction": {
@@ -2997,7 +2997,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4056 Parse_Interior_Refraction"
+    "parser_materials.cpp:4088 Parse_Interior_Refraction"
    ]
   },
   "media": {
@@ -3057,7 +3057,7 @@
     ]
    },
    "sources": [
-    "parser_materials.cpp:3921 Parse_Light"
+    "parser_materials.cpp:3957 Parse_Light"
    ]
   },
   "bounce": {
@@ -3066,7 +3066,17 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:3890 Parse_Light_Bounce"
+    "parser_materials.cpp:3926 Parse_Light_Bounce"
+   ]
+  },
+  "attenuation": {
+   "items": [
+    "power",
+    "scale"
+   ],
+   "nested": {},
+   "sources": [
+    "parser_materials.cpp:3890 Parse_Light_Attenuation"
    ]
   },
   "camera": {

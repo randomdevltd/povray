@@ -23,7 +23,7 @@ Generated C sources are committed; renderer builds do not run the generator.
 ## Independent volume lights
 
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
-attenuation 2, 1 samples 16 } }`. By default the source depends on its object's geometry
+attenuation { power 2 scale 1 } samples 16 } }`. By default the source depends on its object's geometry
 and its own pigment, independently of media coefficients and density. Nits use
 the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
 source strength, not every nearby receiver reading. The declared emitting region affects this
@@ -41,8 +41,9 @@ field. Brightness keeps its existing calibration: omitted brightness is 1 nit,
 so selecting emission does not make `j(x)` equal to the media emission coefficient.
 Without the flag, the default pigment remains solid white.
 
-The two attenuation values are power then scale; a single value is the scale
-shorthand with power two. The default `2,1` leaves physical transport unchanged.
+`attenuation { power P scale S }` names both values; either may be left out
+(power 2, scale 1) and each may appear once, as may the block. Bare numbers after
+`attenuation` are a parse error. The default leaves physical transport unchanged.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 

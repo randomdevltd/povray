@@ -21,7 +21,7 @@ background { rgb 0 }
   #declare Half = 64;
   box { <-Half, 0, -Half>, <Half, Depth, Half> pigment { rgbt 1 } hollow
     interior { media { method 4 resolution 0.5 absorption rgb Sigma }
-      light { brightness Lum samples 512 attenuation Att } } }
+      light { brightness Lum samples 512 attenuation { scale Att } } } }
   plane { y, Depth + 0.002 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow hollow }
 #end
 
@@ -64,7 +64,7 @@ background { rgb 0 }
   #declare Lum = 4;
   #declare R = 1;
   sphere { 0, R pigment { rgbt 1 } hollow no_image
-    interior { light { brightness Lum samples 16 attenuation Att } } translate y * R }
+    interior { light { brightness Lum samples 16 attenuation { scale Att } } } translate y * R }
   plane { y, 0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
 #end
 
