@@ -363,10 +363,11 @@ camera { location output }
     (identifier)))
 
 ==================
-Independent interior refraction and contextual field names
+Independent interior refraction and contextual names
 ==================
-let field = 2;
-sphere { 0, 1 interior { refraction { strength -0.3 field { function { x + field } } detail 0.06 } } }
+let detail = 2;
+sphere { 0, 1 interior { refraction { function { x + detail } detail 0.06 } } }
+sphere { 0, 1 interior { refraction off } }
 ---
 
 (source_file
@@ -381,17 +382,20 @@ sphere { 0, 1 interior { refraction { strength -0.3 field { function { x + field
       (keyword)
       (block
         (keyword)
-        (keyword)
-        (unary_expression
-          (number))
-        (block
-          (keyword)
-          (function_block
-            (binary_expression
-              (builtin)
-              (identifier))))
+        (function_block
+          (binary_expression
+            (builtin)
+            (identifier)))
         (identifier)
-        (number)))))
+        (number))))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (keyword)
+      (builtin))))
 
 ==================
 Contextual surface bounce block and bare source selector
@@ -418,3 +422,49 @@ sphere { 0,1 light { bounce } }
     (block
       (keyword)
       (identifier))))
+
+==================
+Light units, scale_lumens and free unit names
+==================
+let nits = 2;
+sphere { 0,1 light { brightness 8 nits samples 4 } }
+sphere { 0,1 light { pigment { rgb 1 } brightness scale_lumens(800, 0.5) lumens bounce { passes 2 } } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (number))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (keyword)
+      (number)
+      (identifier)
+      (keyword)
+      (number)))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (colour_expression
+          (colour_operator)
+          (number)))
+      (keyword)
+      (call_expression
+        (builtin)
+        (arguments
+          (number)
+          (number)))
+      (identifier)
+      (block
+        (keyword)
+        (identifier)
+        (number)))))

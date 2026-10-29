@@ -25,11 +25,21 @@ test("parses contextual photon quality expressions without reserving the name", 
 });
 
 
-test("parses independent refraction without reserving contextual field and detail names", () => {
+test("parses independent refraction without reserving the name detail", () => {
   const parser = new Parser();
   parser.setLanguage(require("."));
-  const tree = parser.parse(`let field = 2; let detail = 0.06;
-    interior { refraction { strength -0.3 field /* pattern */ { function { x + field } } detail detail } }`);
+  const tree = parser.parse(`let detail = 0.06;
+    interior { refraction { function { x + detail } /* spacing */ detail detail } refraction off }`);
+  assert.equal(tree.rootNode.hasError, false);
+});
+
+
+test("parses light units after brightness while nits and lumens stay free names", () => {
+  const parser = new Parser();
+  parser.setLanguage(require("."));
+  const tree = parser.parse(`let nits = 2; let lumens = scale_lumens(800, 0.5);
+    sphere { 0,1 light { brightness 8 nits samples 4 } }
+    sphere { 0,1 light { brightness lumens lumens bounce { passes 2 } } }`);
   assert.equal(tree.rootNode.hasError, false);
 });
 

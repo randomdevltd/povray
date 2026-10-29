@@ -53,6 +53,10 @@ const CURATION = {
     bump_map: ['Parse_Bump_Map', 'Parse_Image'],
 };
 
+// Items the shared object-modifier loop mines for a block whose own parser refuses them: a light_source
+// takes the modifier loop, but a surface `light { }` there is an error in the classic parser.
+const EXCLUDED = { light_source: ['light'] };
+
 // Nested rows emitted into pov4schema.h: only genuine sub-blocks, not value positions.
 const NESTED_IN_HEADER = new Set(['reflection', 'scattering', 'photons', 'radiosity', 'subsurface', 'light']);
 
@@ -213,6 +217,7 @@ for (const [word, fns] of Object.entries(CURATION)) {
     }
     for (const set of Object.values(nested))
         for (const w of set) items.add(w);
+    for (const w of EXCLUDED[word] ?? []) items.delete(w);
     blocks[word] = {
         items: [...items].sort(),
         nested: Object.fromEntries(Object.entries(nested).map(([p, s]) => [p, [...s].sort()])),

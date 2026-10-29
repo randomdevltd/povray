@@ -274,8 +274,21 @@
    "kind": "item",
    "text": "In camera output, the image's <Width, Height> in whole pixels, 1 to 65535; a camera without one takes the command line's Width and Height, the values of image_width and image_height, and a camera leaving right at its default takes the aspect its own size gives it. In a facets pattern, size switches facet creation to curved surfaces only."
   },
-  "nits": "Unit for a light's brightness: radiance of the emitting surface (or j inside a volume).",
-  "lumens": "Unit for a light's brightness: total emitted flux, normalized over the emission field.",
-  "emission": "Light input selector: the light copies the object's own material or media emission field."
+  "nits": {
+   "kind": "item",
+   "text": "Unit after a light's brightness: brightness 8 nits is the radiance itself, the default, and the same as brightness 8. Contextual: remains available as an identifier."
+  },
+  "lumens": {
+   "kind": "item",
+   "text": "Unit after a light's brightness: brightness 800 lumens states the total generated flux, before absorption, with one scene unit taken as one metre. Contextual: remains available as an identifier."
+  },
+  "emission": {
+   "kind": "item",
+   "text": "Light colour source in a light block: bare `emission` copies the object's own emission (surface: pigment times finish emission; interior: its media emission) instead of a pigment. Also finish emission (surface glow) and media emission (appearance only)."
+  },
+  "scale_lumens": {
+   "kind": "function",
+   "text": "scale_lumens(Lumens, Metres) returns Lumens / Metres^2, the value for brightness V lumens in a scene whose unit is Metres metres long; both arguments must be finite and Metres positive."
+  }
  }
 }
