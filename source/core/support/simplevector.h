@@ -314,7 +314,7 @@ public:
             for (size_type i = 0 ; i < Index ; i++)
                 p [i] = m_First [i];
             for (size_type i = Index + 1 ; i < c ; i++)
-                p [i] = m_First [i];
+                p [i] = m_First [i - 1];
             if (m_First != nullptr)
                 alloc.deallocate (m_First, n);
             m_First = p;
@@ -588,8 +588,8 @@ public:
     {
         if (m_Last == m_End)
             throw POV_EXCEPTION(pov_base::kInternalLimitErr, "Internal limit exceeded in FixedSimpleVector");
-        for (pointer p1 = Where, p2 = Where + 1 ; p1 < m_Last ; )
-            *p2++ = *p1++;
+        for (pointer p = m_Last ; p > Where ; p--)
+            *p = *(p - 1);
         m_Last++;
         *Where = NewVal;
         return (Where);
