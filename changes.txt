@@ -52,8 +52,10 @@ Changed Behaviour
   version 3.8 and a warning in a scene of version 3.7 or older.
 - A Sturm-solved polynomial outside the solver's floating-point range has no
   roots, rather than ending the render with an error.
-- scale_lumens(phi, metres) requires finite lumens and positive finite metres
-  and is a .pov4 built-in as well.
+- scale_lumens(phi, metres) returns phi / metres^2, the lumens to state for a
+  scene whose unit is that many metres long. It requires finite lumens and
+  positive finite metres, is a built-in of .pov4 as well, and is a new
+  reserved word: a scene that uses the name as an identifier needs it renamed.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow
@@ -83,7 +85,8 @@ Changed Behaviour
     volume-light shadow-ray count. Surface continuations start new segments.
 
   - Scene preparation reports its progress as `Preparation:` lines, with a
-    warning when a phase stops moving; doc/PERF.md gives the format. Bounce
+    warning when a phase stops moving, in the manual's text output section
+    and doc/PERF.md. Warning_Level=0 hides them. Bounce
     orders, their scattering coefficients and the subsurface light of bounce
     surfaces are prepared on the scene's work threads, with results that do
     not depend on their number.
@@ -93,6 +96,10 @@ Changed Behaviour
     order; passes must be a positive unsigned integer. With no explicit source
     input, bounce selects the source's own emission field rather than white.
     `bounce` and `passes` are contextual and remain free identifiers elsewhere.
+    A bounced surface may not use crand, fresnel or energy-conserving
+    reflection, and one with subsurface scattering needs subsurface method 2;
+    these stop the render before tracing with a message that names the cause.
+    Light blocks of any kind are not imaged by portals.
 
   - Objects accept a surface `light { ... }` modifier alongside the existing
     interior volume-light block. Surface lights share pigment/emission inputs,
@@ -100,6 +107,8 @@ Changed Behaviour
     with a Lambert distribution. The emission selector reuses material pigment
     times finish emission; source appearance remains independent. `light`,
     `nits` and `lumens` are matched by text and remain free identifiers elsewhere.
+    A surface light needs finite geometry of nonzero area, takes no
+    `attenuation`, and a `light_source` cannot hold a `light` block.
 
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
@@ -210,7 +219,8 @@ Changed Behaviour
     `back_filter_tags`, `exit`, `fallback`, `far`, `filter_tags`, `front`,
     `front_filter_tags`, `isosurface_mesh`, `mix`, `near`, `no_lights`,
     `none`, `perturb`, `photon_only`, `portal`, `povm`, `priority`,
-    `radiosity_size`, `refraction_angle`, `resolution`, `screen`, `skein`,
+    `radiosity_size`, `refraction_angle`, `resolution`, `scale_lumens`,
+    `screen`, `skein`,
     `skein_mesh`, `tags`, `to` and `volume_sampling`. A scene that uses one of
     them as an identifier needs it renamed. (`depth` and `spread` inside
     `volume_sampling`, `mesh_cache`, `ior_mix`, `interface_texture`,

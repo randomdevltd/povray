@@ -175,7 +175,7 @@ cylinder {
 <a name="r3_11_5_5"></a><div class="content-level-h4" contains="Resolved Detail" id="r3_11_5_5"><h4>3.11.5.5 Resolved Detail</h4>
 <p><code>refraction_detail_bands.pov</code> and <code>refraction_detail_crackle.pov</code> expose detail controls. Compare resolved grids; a finer integration step cannot recover information absent from a coarse field grid.</p></div>
 <a name="r3_11_6"></a><div class="content-level-h3" contains="Defaults and Messages" id="r3_11_6"><h3>3.11.6 Defaults and Messages</h3>
-<p>Refraction requires one or more scalar functions, or <code>refraction off</code>. Detail defaults to <code>auto</code>; all sampled function values must be finite. Detail must be auto or positive. Preparation diagnostics identify coarsened layouts, invalid spatial contexts and unsupported bounds. An explicitly requested prepared representation is never silently replaced with a procedural or classic path.</p></div>
+<p>Refraction requires one or more scalar functions, or <code>refraction off</code>, which disables only this interior's field contribution. In a scene of version 3.7 or older <code>refraction off</code> keeps its classic meaning, the old <code>refraction</code> value 0 (with the warning that value gives), so a 3.7 scene renders as it did; the block form <code>refraction { function { ... } }</code> works at every version. Detail defaults to <code>auto</code>; all sampled function values must be finite. Detail must be auto or positive. Preparation diagnostics identify coarsened layouts, invalid spatial contexts and unsupported bounds. An explicitly requested prepared representation is never silently replaced with a procedural or classic path.</p></div>
 
 </div>
 </div>

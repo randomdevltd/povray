@@ -450,7 +450,6 @@ MEDIA_ITEMS:
   absorption COLOR | emission COLOR | aa_threshold Value |
   aa_level Value | resolution Value |
   mix add | replace | subtract | multiply | priority Integer |
-  light_source { [MEDIA_LIGHT_ITEM...] } |
   scattering { 
     Type, COLOR [ eccentricity Value ] [ extinction Value ]
     }  | 
@@ -487,7 +486,7 @@ eccentricity : 0.0
 extinction   : 1.0
 </pre>
 
-<p>Media whose density varies are described further in <a href="r3_11.html#r3_11">Volume Density</a>, and media that light their surroundings in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
+<p>Media whose density varies are described further in <a href="r3_11.html#r3_11">Volume Density</a>, and media that light their surroundings in <a href="r3_12.html#r3_12">Surface and Volume Lights</a>.</p>
 
 <p>If a media identifier is specified, it must be the first item. All other media items may be specified in any order. All are optional. You may have multiple <code>density</code> statements in a single <code>media</code> statement. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a> for details. Transformations apply only to the <code>density</code> statements which have been already specified. Any <code>density</code> after a transformation is not affected. If the <code>media</code> has no <code>density</code> statements and none was specified in any media identifier, then the transformation has no effect. All other media items except for <code>density</code> and transformations override default values or any previously set values for this <code>media</code> statement.</p>
 
@@ -1082,6 +1081,7 @@ SCATTERING:
 </table>
 
 <p>Type 5 is the <em>Henyey-Greenstein scattering</em> model. It is based on an analytical function and can be used to model a large variety of different scattering types. The function models an ellipse with a given eccentricity e. This eccentricity is specified by the optional keyword <code>eccentricity</code> which is only used for scattering type five. The default eccentricity value of zero defines isotropic scattering while positive values lead to scattering in the direction of the light and negative values lead to scattering in the opposite direction of the light. Larger values of e (or smaller values in the negative case) increase the directional property of the scattering.</p>
+<p>The eccentricity of a Henyey-Greenstein medium must lie strictly between -1 and 1. At 1 or -1 the phase function is undefined in the forward direction and negative beyond, which would give scattering negative or infinite weights. From <code>#version 3.8</code> any other value is a parse error, <code>Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive.</code> In a scene of version 3.7 or older the same text is a warning and the value is kept, as in POV-Ray 3.7.</p>
 
 <table class="centered" width="660px" cellpadding="0" cellspacing="10">
 <tr>
@@ -1106,7 +1106,7 @@ interior {
   media { emission rgb &lt;1, 0.4, 0.1&gt; }
 }
 </pre>
-<p>The source law, units, sampling, shadows and transport settings are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
+<p>The source law, units, sampling, shadows and transport settings are described in <a href="r3_12.html#r3_12">Surface and Volume Lights</a>.</p>
 </div>
 
 <a name="r3_7_2_3"></a>
