@@ -269,9 +269,14 @@ class Trace
         virtual ~Trace();
         /// Adds this thread's counts of shading points the subsurface cloud left unserved to the shared ones.
         void FlushSubsurfaceCounts();
-        std::shared_ptr<const SurfaceBounceRadiance> PrepareSurfaceSubsurfaceRadiance(
-            const std::vector<SurfaceBounceNode>& nodes, const std::vector<std::shared_ptr<LightSource>>& sources,
-            PreparedSetId preparedSetId, std::size_t trials, const std::set<ObjectPtr>& collapsedOwners = {});
+        /// Readies this trace to shade surface bounce nodes for the subsurface light leaving them, lit by `sources`.
+        void BeginSurfaceSubsurface(const std::vector<std::shared_ptr<LightSource>>& sources);
+        /// The subsurface radiance leaving a node, drawn by its index, and the relative index of refraction it leaves through.
+        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& eta);
+        /// One field per quantised relative index of refraction, from the radiance of every node.
+        static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(const std::vector<SurfaceBounceNode>& nodes,
+            const std::vector<MathColour>& radiance, const std::vector<double>& etas, std::size_t trials,
+            const std::set<ObjectPtr>& collapsedOwners = {});
 
         /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }

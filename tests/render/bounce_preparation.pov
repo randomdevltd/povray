@@ -1,5 +1,5 @@
 // bounce_preparation.pov: Case 0 a room of passive bounce walls lit by a point light and a glowing panel,
-// 1 a scattering volume light bouncing with an area light and a passive floor, 2 a passive subsurface block.
+// 1 a scattering volume light bouncing with an area light and a passive floor, 2 a passive subsurface block, 3 a mesh.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Sources) #declare Sources = 6; #end
@@ -68,6 +68,24 @@ background { rgb 0 }
   box { <-0.5, 0, -0.5>, <0.5, 0.8, 0.5>
     pigment { rgb <0.9, 0.6, 0.5> } finish { ambient 0 emission 0 diffuse 0.8 subsurface { translucency 0.4 } }
     interior { ior 1.3 }
+    light { bounce { passes Passes } samples Samples }
+  }
+#end
+
+#if (Case = 3)
+  light_source { <0.5, 2.5, -1>, rgb 4 fade_distance 1 fade_power 2 }
+  #declare N = 40;
+  #declare Warm = texture { pigment { rgb <0.8, 0.5, 0.3> } finish { ambient 0 emission 0 diffuse 0.8 } };
+  #declare Cool = texture { pigment { rgb <0.3, 0.5, 0.8> } finish { ambient 0 emission 0 diffuse 0.8 } };
+  mesh {
+    #for (I, 0, N - 1) #for (J, 0, N - 1)
+      #local A = <I / N * 2 - 1, 0.1 * sin(I + J), J / N * 2 - 1>;
+      #local B = <(I + 1) / N * 2 - 1, 0.1 * sin(I + J + 1), J / N * 2 - 1>;
+      #local C = <I / N * 2 - 1, 0.1 * sin(I + J + 1), (J + 1) / N * 2 - 1>;
+      #local D = <(I + 1) / N * 2 - 1, 0.1 * sin(I + J + 2), (J + 1) / N * 2 - 1>;
+      triangle { A, B, C texture { Warm } }
+      triangle { B, D, C texture { Cool } }
+    #end #end
     light { bounce { passes Passes } samples Samples }
   }
 #end
