@@ -416,7 +416,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             baseline = std::max<std::size_t>(1, first);
             if (td->preparationProgress)
-                td->preparationProgress->Note("Surface bounce baseline cut to " + std::to_string(baseline) + " nodes by the budget");
+                td->preparationProgress->Note("Bounce baseline cut to " + std::to_string(baseline) + " nodes by the budget");
         }
         workers.Step("surface seeds");
         spacing = surface_refine::Seed(parts, workers, baseline, cooperate);
@@ -523,17 +523,17 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             {
                 char line[128];
                 const auto now = std::chrono::steady_clock::now();
-                std::snprintf(line, sizeof(line), "Surface bounce o%u: %lu nodes, %u levels, %.2f MiB, %.1fs+%.1fs%s", order,
+                std::snprintf(line, sizeof(line), "Bounce o%u: %lu nodes, %u levels, %.2f MiB, %.1f+%.1fs%s", order,
                               static_cast<unsigned long>(nodeCount), levels, double(bytes) / (1024 * 1024),
                               std::chrono::duration<double>(bridged - start).count(),
                               std::chrono::duration<double>(now - bridged).count(),
-                              bound ? ", budget bound" : "");
+                              bound ? ", bound" : "");
                 td->preparationProgress->Note(line);
-                std::string text = "Surface bounce o" + std::to_string(order) + " levels:";
+                std::string text = "Bounce o" + std::to_string(order) + " levels:";
                 for (std::size_t count : levelCounts)
                     text += " " + std::to_string(count);
                 td->preparationProgress->Note(text);
-                td->preparationProgress->Note("Surface bounce o" + std::to_string(order) + " splits: between " +
+                td->preparationProgress->Note("Bounce o" + std::to_string(order) + " splits: between " +
                                               std::to_string(reasons[0]) + ", within " + std::to_string(reasons[1]) +
                                               ", near " + std::to_string(reasons[2]));
             }

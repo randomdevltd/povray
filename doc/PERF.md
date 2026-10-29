@@ -1477,7 +1477,8 @@ order, so the field is the same on any thread count; all lengths are ratios of r
 
 Surface bounce fields draw on the prepared media cell budget: as many bytes as that many colours, over every order,
 each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
-byte, most first. Each order reports its nodes, levels, MiB and time on a line of its own, `Surface bounce oN: ...`.
+byte, most first. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
+`Bounce oN: ...`, with its nodes per level and how many splits each criterion asked for.
 
 Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
 16·((n + nᵢ)·Δ)², so another sheet or a stacked parallel face is far; the kernel (1 − d²/d₉²)² times nᵢ·n² is corrected
