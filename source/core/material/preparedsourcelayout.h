@@ -209,9 +209,11 @@ public:
             const DBL loV = 2.0 * y / counts[Y] - 1, hiV = 2.0 * (y + 1) / counts[Y] - 1;
             const DBL minU = std::max(loU, std::min(0.0, hiU)), minV = std::max(loV, std::min(0.0, hiV));
             const DBL bound = std::pow(1 + minU * minU + minV * minV, -1.5);
-            // Below the cell's least density, less a margin over rounding, a draw is kept without evaluating it.
+            // Below the cell's least density, less some ulps for rounding, a draw is kept without evaluating it.
             const DBL maxU = std::max(std::fabs(loU), std::fabs(hiU)), maxV = std::max(std::fabs(loV), std::fabs(hiV));
-            const DBL kept = std::pow(1 + maxU * maxU + maxV * maxV, -1.5) * (1 - 1e-9);
+            DBL kept = std::pow(1 + maxU * maxU + maxV * maxV, -1.5);
+            for (int ulp = 0; ulp < 16; ulp++)
+                kept = std::nextafter(kept, DBL(0));
             DBL u, v, test;
             do
             {
