@@ -63,6 +63,7 @@
 #include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
 #include "core/lighting/subsurfaceboundary.h"
+#include "core/lighting/surfaceguide.h"
 #include "core/lighting/surfacebounce.h"
 #include "core/material/interior.h"
 #include "core/material/media.h"
@@ -5803,24 +5804,16 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
     Ray lightsourceray(ticket, Ray::SubsurfaceRay);
     lightsourceray.SetKey(key);
     double lightsourcedepth;
-    EmitterSample emitterSample;
     if (lightsource.emitter)
     {
-        if (lightsource.portal != nullptr)
-            throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
-        threadData->Stats()[Emitter_Connections]++;
+        // Only a direction toward the emitter is needed to find where its light enters: one in its bounding cone.
         MarkGrain();
-        const EmitterDraw draw(Draw(key, kDrawEmitter, 0), Draw(key, kDrawEmitter, 1),
-                               Draw(key, kDrawEmitter, 2), Draw(key, kDrawEmitter, 3),
-                               DeriveKey(key, kDrawEmitter, UINT64_C(0x706f736974696f6e)));
-        if (!lightsource.emitter->SampleToward(bend_point, draw, threadData, emitterSample) || emitterSample.weight.IsZero())
-            return;
-        const Vector3d delta = emitterSample.position - bend_point;
-        lightsourcedepth = delta.length();
-        if (!(lightsourcedepth > 0.0))
-            return;
+        double pdf;
         lightsourceray.Origin = bend_point;
-        lightsourceray.Direction = delta / lightsourcedepth;
+        lightsourceray.Direction = SurfaceAngularGuide::SampleSphere(lightsource.emitter->Centre() - bend_point,
+            lightsource.emitter->Radius(), Draw(key, kDrawEmitter, 0), Draw(key, kDrawEmitter, 1), pdf);
+        if (!(pdf > 0.0) || !std::isfinite(pdf))
+            return;
     }
     else
         ComputeOneWhiteLightRay(lightsource, lightsourcedepth, lightsourceray, bend_point);
@@ -5833,15 +5826,17 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
     if (!IsSameSSLTObject(xi.Object, out.Object))
         return; // TODO - what if the other object is transparent?
 
-    if (lightsource.emitter && !(xi.Depth < lightsourcedepth))
-        return;
     ComputeSSLTNormal(xi);
 
     // Get a colour and a ray (also recomputes all the lightsourceray stuff); an emitter draws afresh toward xi.
     MathColour lightcolour;
+    const Vector3d exitDirection = lightsourceray.Direction;
     if (lightsource.emitter)
         lightsourceray.SetKey(DeriveKey(key, kDrawEmitter, UINT64_C(0x656e747279)));
     ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, xi.IPoint, lightcolour, true);
+    // The light must reach xi from outside, on the side the search left the object by.
+    if (lightsource.emitter && !(dot(xi.INormal, lightsourceray.Direction) * dot(xi.INormal, exitDirection) > 0.0))
+        return;
 
     // Don't calculate spotlights when outside of the light's cone.
     if(lightcolour.IsNearZero(EPSILON))

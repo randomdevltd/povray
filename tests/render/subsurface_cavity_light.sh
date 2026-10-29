@@ -5,11 +5,18 @@ SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
+render() {
+    name=$1; shift
+    "$POVRAY" +i"$SRCDIR/tests/render/subsurface_cavity_light.pov" +w48 +h36 +wt2 -a -d -p -v -gp +fh +o"$name.hdr" "$@" \
+        >"$name.log" 2>&1 || { cat "$name.log"; exit 1; }
+}
 for seed in 2 5 6; do
-    "$POVRAY" +i"$SRCDIR/tests/render/subsurface_cavity_light.pov" +w48 +h36 +wt2 -a -d -p -v -gp +fh \
-        Stochastic_Seed="$seed" Declare=SingleSamples=256 +o"cavity$seed.hdr" >"cavity$seed.log" 2>&1 ||
-        { cat "cavity$seed.log"; exit 1; }
+    render "cavity$seed" Stochastic_Seed="$seed" Declare=SingleSamples=256
 done
+render touch_few Declare=SingleSamples=16
+render touch_many Declare=SingleSamples=512
+render far_few Declare=SingleSamples=16 Declare=Far=1
+render far_many Declare=SingleSamples=512 Declare=Far=1
 python3 - <<'PY'
 import glob
 def pixels(path):
@@ -32,6 +39,11 @@ def pixels(path):
         for r, g, b, e in zip(*channels):
             out.append(0.0 if e == 0 else max(r, g, b) * 2.0 ** (e - 136))
     return out
+mean = lambda path: sum(pixels(path)) / len(pixels(path))
+# Few and many single-scattering samples estimate the same light, touching the membrane or well clear of it.
+for case in ('touch', 'far'):
+    few, many = mean(case + '_few.hdr'), mean(case + '_many.hdr')
+    assert abs(few / many - 1) < 0.03, (case, few, many)
 for path in sorted(glob.glob('cavity*.hdr')):
     values = sorted(pixels(path))
     median, peak = values[len(values) // 2], values[-1]
