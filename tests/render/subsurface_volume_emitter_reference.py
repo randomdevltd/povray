@@ -15,6 +15,11 @@ def check(folder):
 
     # J = Phi/(4*pi); the classic inverse-square colour is J/pi.
     compare("SSLT far physical intensity", pixels("far_volume"), pixels("far_point"), 0.03)
+    mean = lambda name: sum(pixels(name)) / 144.0
+    # A small distant emitter's single scattering, alone, converges to an equal-power point light's.
+    single = {source: mean(f"far_{source}") - mean(f"far_{source}_diffuse") for source in ("volume", "point")}
+    print(f"SSLT far single scattering: volume {single['volume']:.6f}, point {single['point']:.6f}")
+    assert single["point"] > 0 and abs(single["volume"] / single["point"] - 1) < 0.05, single
     compare("SSLT near physical photon irradiance", pixels("near_photons"), pixels("near_direct"))
 
 
