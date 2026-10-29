@@ -185,6 +185,7 @@ class TraceThreadData : public ThreadData
         LightSource *photonSourceLight;
         ObjectPtr photonTargetObject;
         bool litObjectIgnoresPhotons;
+        bool subsurfacePhotonBoundaryProbe = false;
         std::vector<ProgressivePhoton> progressiveSurface;
         std::vector<ProgressiveVolumePhoton> progressiveMedia;
         std::vector<ProgressivePhotonFeedback> progressiveFeedback;

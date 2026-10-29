@@ -88,26 +88,26 @@ int main()
     const Vector3d down(0.0, 0.0, -1.0), up(0.0, 0.0, 1.0);
     const double waterIor = water.interior->IOR, bodyIor = body.interior->IOR;
     for (const Vector3d& source : {down, up, Vector3d(0.8, 0.0, -0.6)})
-        Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, source, ticket), bodyIor / waterIor);
-    Near(trace.ComputeSubsurfaceEntryIOR(up, up, &body, up, ticket), bodyIor);
-    Near(trace.ComputeSubsurfaceEntryIOR(down, up, &body, down, ticket), bodyIor / waterIor);
+        Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, &body, source, ticket), bodyIor / waterIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(up, up, &body, &body, up, ticket), bodyIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, up, &body, &body, down, ticket), bodyIor / waterIor);
     Ray eye(ticket, Vector3d(0.0, 0.0, 2.0), down);
     double exitEta;
     trace.ComputeRelativeIOR(eye, body.interior.get(), up, up, exitEta);
     Near(exitEta, bodyIor);
-    assert(std::abs(exitEta - trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket)) > 0.1);
+    assert(std::abs(exitEta - trace.ComputeSubsurfaceEntryIOR(down, down, &body, &body, down, ticket)) > 0.1);
 
     body.interior->iorMix = kIorMixMean;
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), (bodyIor + waterIor) / (2.0 * waterIor));
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, &body, down, ticket), (bodyIor + waterIor) / (2.0 * waterIor));
     body.interior->iorMix = kIorMixSurface;
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), bodyIor / waterIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, &body, down, ticket), bodyIor / waterIor);
     body.interior->iorMix = kIorMixReplace;
     objects = {&body, &water};
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), bodyIor / waterIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, &body, down, ticket), bodyIor / waterIor);
     objects = {&water, &body};
 
     body.interior->IOR = water.interior->IOR;
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), 1.0);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, &body, down, ticket), 1.0);
     for (double cosine : {0.0, 1e-8, 0.1, 0.5, 1.0})
         Near(trace.ComputeFt(cosine, 1.0), 1.0);
     body.interior->IOR = bodyIor;
@@ -116,7 +116,7 @@ int main()
     {
         scene->legacyIorStack = legacy;
         for (const Vector3d& source : {up, down})
-            Near(trace.ComputeSubsurfaceEntryIOR(up, up, &body, source, ticket), bodyIor);
+            Near(trace.ComputeSubsurfaceEntryIOR(up, up, &body, &body, source, ticket), bodyIor);
         for (double cosine : {0.01, 0.1, 0.5, 1.0})
         {
             const double g = std::sqrt(bodyIor * bodyIor + cosine * cosine - 1.0);
@@ -141,7 +141,7 @@ int main()
         Material(shell, 1.36, 2);
         outside->interior = cavity->interior = shell.interior;
         objects = {&water, &shell};
-        Near(trace.ComputeSubsurfaceEntryIOR(down, up, &shell, up, ticket), double(shell.interior->IOR) / waterIor);
+        Near(trace.ComputeSubsurfaceEntryIOR(down, up, &shell, &shell, up, ticket), double(shell.interior->IOR) / waterIor);
     }
     const Vector3d offset(3.0, 3.0, 3.0);
     Mesh cubes;
@@ -159,8 +159,8 @@ int main()
                 p[axis] = at[axis] + sign;
                 for (const Vector3d& facing : {n, -n})
                 {
-                    Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cubes, n, ticket), double(cubes.interior->IOR));
-                    Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cubes, Vector3d(0.6, 0.0, 0.8) + n, ticket), double(cubes.interior->IOR));
+                    Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cubes, &cubes, n, ticket), double(cubes.interior->IOR));
+                    Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cubes, &cubes, Vector3d(0.6, 0.0, 0.8) + n, ticket), double(cubes.interior->IOR));
                 }
             }
     Near(trace.ComputeFt(0.1, 0.8), 0.0);
