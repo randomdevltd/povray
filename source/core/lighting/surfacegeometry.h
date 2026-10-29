@@ -136,12 +136,62 @@ public:
         return IsFiniteIntersectionDepth(sample.areaWeight);
     }
 
+    static void TangentFrame(const Vector3d& normal, Vector3d& t1, Vector3d& t2)
+    {
+        const Vector3d helper = std::fabs(normal[Z]) < 0.9 ? Vector3d(0, 0, 1) : Vector3d(0, 1, 0);
+        t1 = cross(helper, normal).normalized();
+        t2 = cross(normal, t1);
+    }
+
+    // The point of this surface seen along -normal from (x, y) on the unit disc scaled by `radius` about `centre` and
+    // lifted by `radius`: of the roots within twice `radius`, the one nearest the tangent plane facing within 60 degrees.
+    bool SampleNear(const Vector3d& centre, const Vector3d& normal, DBL radius, DBL x, DBL y, Ray& ray,
+                    TraceThreadData* thread, SurfaceGeometrySample& sample) const
+    {
+        sample = SurfaceGeometrySample();
+        if (!valid || !(radius > 0.0)) return false;
+        Vector3d t1, t2;
+        TangentFrame(normal, t1, t2);
+        const Vector3d start = centre + (t1 * x + t2 * y + normal) * radius;
+        ray.Origin = (start - center) / scale;
+        ray.Direction = -normal;
+        std::vector<Intersection> roots;
+        CollectRoots(ray, thread, 0.0, 2.0 * radius / scale, roots);
+        ray.Origin = start;
+        std::stable_sort(roots.begin(), roots.end(), [&](const Intersection& a, const Intersection& b)
+        {
+            return std::fabs(a.Depth * scale - radius) < std::fabs(b.Depth * scale - radius);
+        });
+        for (const Intersection& root : roots)
+        {
+            sample.intersection = root;
+            if (Resolve(thread, 0.0, sample) && dot(sample.normal, normal) > 0.5)
+            {
+                sample.rootCount = roots.size();
+                return true;
+            }
+        }
+        sample = SurfaceGeometrySample();
+        return false;
+    }
+
 private:
     static DBL Unit(DBL u) { return std::max(DBL(0.0), std::min(std::nextafter(DBL(1.0), DBL(0.0)), u)); }
     static DBL MaxAbs(const Vector3d& v) { return std::max(std::fabs(v[X]), std::max(std::fabs(v[Y]), std::fabs(v[Z]))); }
 
     bool SelectRoot(Ray& ray, TraceThreadData* thread, DBL rootU, DBL minDepth, DBL maxDepth, SurfaceGeometrySample& sample,
                     DBL skip = 0.0) const
+    {
+        std::vector<Intersection> roots;
+        CollectRoots(ray, thread, minDepth, maxDepth, roots, skip);
+        if (roots.empty()) return false;
+        sample.rootCount = roots.size();
+        sample.intersection = roots[std::min(roots.size() - 1, static_cast<std::size_t>(Unit(rootU) * roots.size()))];
+        return Resolve(thread, minDepth, sample);
+    }
+
+    void CollectRoots(Ray& ray, TraceThreadData* thread, DBL minDepth, DBL maxDepth, std::vector<Intersection>& roots,
+                      DBL skip = 0.0) const
     {
         IStack stack(thread->stackPool);
         struct CompleteSurfaceQuery final : RayRootQuery
@@ -154,7 +204,6 @@ private:
         const IsoShadowWindow exactHits(thread, 0.0, 0.0);
         ray.SetFlags(Ray::OtherRay);
         geometry->All_Intersections(ray, stack, thread);
-        std::vector<Intersection> roots;
         while (!stack->empty())
         {
             const Intersection& hit = stack->top();
@@ -164,9 +213,11 @@ private:
                 roots.push_back(hit);
             stack->pop();
         }
-        if (roots.empty()) return false;
-        sample.rootCount = roots.size();
-        sample.intersection = roots[std::min(roots.size() - 1, static_cast<std::size_t>(Unit(rootU) * roots.size()))];
+    }
+
+    // Turns sample.intersection, a root of the normalized copy, into the original's point with its unit normal.
+    bool Resolve(TraceThreadData* thread, DBL minDepth, SurfaceGeometrySample& sample) const
+    {
         Intersection& hit = sample.intersection;
         hit.Object->Normal(sample.normal, &hit, thread);
         Vector3d face;
