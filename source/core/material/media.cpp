@@ -429,6 +429,8 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
     if (prepared)
         fieldReady = TakePrepared();
+    if (fieldReady && layout)
+        step = cellWidth;
     bool sameBounds = fieldReady;
     for (int axis = 0; axis < 3; axis++)
         sameBounds = sameBounds && (low[axis] == lo[axis]) && (size[axis] == extent[axis]);
