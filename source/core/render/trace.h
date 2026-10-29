@@ -66,6 +66,7 @@ namespace pov
 {
 class SurfaceBounceRadiance;
 struct SurfaceBounceNode;
+struct BounceIncidentBeam;
 
 //##############################################################################
 ///
@@ -271,10 +272,29 @@ class Trace
         virtual ~Trace();
         /// Adds this thread's counts of shading points the subsurface cloud left unserved to the shared ones.
         void FlushSubsurfaceCounts();
-        /// Readies this trace to shade surface bounce nodes for the subsurface light leaving them, lit by `sources`.
-        void BeginSurfaceSubsurface(const std::vector<std::shared_ptr<LightSource>>& sources);
-        /// The subsurface radiance leaving a node, drawn by its index, and the relative index of refraction it leaves through.
-        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& eta);
+        /// Surface bounce nodes as patches of the surface, each with the light entering it, in a tree depth first: a patch's
+        /// first child follows it, and `next` is the index past its subtree.
+        struct SurfaceSubsurfaceField
+        {
+            struct Patch
+            {
+                Vector3d lo, hi, centre, normal; ///< bounds, area-weighted centre and unit mean normal
+                double area = 0.0, cone = 1.0; ///< area in scene units squared; least cosine of a member's normal to the mean
+                MathColour light; ///< the entering irradiance times the area
+                std::size_t node = 0, next = 0; ///< a leaf's node; a leaf's next is its own index plus one
+            };
+            std::vector<Patch> patches;
+            std::vector<std::size_t> leaf; ///< each node's patch
+            /// Fills the tree from nodes whose patches are their area weights over `trials`, with the irradiance entering each.
+            void Build(const std::vector<SurfaceBounceNode>& nodes, const std::vector<MathColour>& irradiance, std::size_t trials);
+        };
+        /// Readies this trace to work on surface bounce nodes for the subsurface light leaving them, diffused through `field`.
+        void BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field);
+        /// The light entering a node through its surface from the light arriving at it, and the relative index it leaves through.
+        MathColour SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
+            PreparedSetId preparedSetId, double& eta);
+        /// The subsurface radiance leaving a node of the field, drawn by its index.
+        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId);
         /// One field per quantised relative index of refraction, from the radiance of every node.
         static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(const std::vector<SurfaceBounceNode>& nodes,
             const std::vector<MathColour>& radiance, const std::vector<double>& etas, std::size_t trials,
@@ -1152,7 +1172,8 @@ class Trace
             void Apply(PreciseMathColour& rd, double distSqr, int part) const;
         };
         SubsurfaceThin ssltThin;
-        const std::vector<std::shared_ptr<LightSource>>* ssltBounceSources = nullptr;
+        const SurfaceSubsurfaceField* ssltBridge = nullptr;
+        std::size_t ssltBridgeNode = 0;
         /// Rd tables per subsurface recursion depth, one per channel.
         SubsurfaceRdTable ssltRdTables[2][MathColour::channels];
         void AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket);
@@ -1247,6 +1268,9 @@ class Trace
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
         void SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket);
+        /// The light reaching a bounce node of the bridge's field by diffusion, before it leaves through the surface.
+        bool SurfaceSubsurfaceDiffusion(const Intersection& out, const SubsurfaceProfile& profile, const SubsurfaceFlesh& flesh, double ftOut,
+                                        MathColour& diffuse, TraceTicket& ticket);
         std::unique_ptr<PhotonGatherer> ssltPhotonGatherers[2];
         std::vector<std::unique_ptr<PhotonGatherer>> surfacePhotonGatherers;
         size_t surfacePhotonGatherDepth = 0;

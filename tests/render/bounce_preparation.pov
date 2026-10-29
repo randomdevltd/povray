@@ -1,12 +1,13 @@
 // bounce_preparation.pov: Case 0 passive walls, a point light and a panel; 1 a scattering volume light, an area light;
-// 2 a subsurface block; 3 a mesh; 4 object-testing density, subsurface, jittered area light, screen-pigment blocker.
+// 2 a subsurface block; 3 a mesh; 4 object-testing density, subsurface, jittered area light, screen-pigment blocker;
+// 5 a thin subsurface shell lit from inside and out.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Sources) #declare Sources = 6; #end
 #ifndef (Samples) #declare Samples = 8; #end
 #ifndef (Passes) #declare Passes = 2; #end
 global_settings { assumed_gamma 1
-  #if (Case = 2 | Case = 4) subsurface { method 2 samples 16, 4 spacing 0.5 } #end
+  #if (Case = 2 | Case = 4 | Case = 5) subsurface { method 2 samples 16, 4 spacing 0.5 } #end
 }
 camera { location <0, 1.5, -3.2> look_at <0, 1, 0> angle 70 }
 background { rgb 0 }
@@ -111,4 +112,18 @@ background { rgb 0 }
     pigment { screen { camera { Peek } fallback { rgb 0.5 } } } finish { ambient 0 diffuse 0.8 }
   }
   Wall(<-1.5, -0.1, -1.5>, <1.5, 0, 1.5>, <0.8, 0.6, 0.4>)
+#end
+
+#if (Case = 5)
+  light_source { <0.8, 2.4, -1>, rgb 2 fade_distance 1 fade_power 2 }
+  light_source { <0, 0.6, 0>, rgb 0.5 }
+  plane { y, 0 pigment { rgb 0.7 } finish { ambient 0 diffuse 0.8 } }
+  difference {
+    sphere { <0, 0.6, 0>, 0.6 }
+    sphere { <0, 0.6, 0>, 0.55 }
+    plane { -y, -0.3 }
+    pigment { rgb <0.8, 0.6, 0.9> } finish { ambient 0 emission 0 diffuse 0.6 subsurface { translucency 0.4 } }
+    interior { ior 1.36 }
+    light { bounce { passes 1 } samples Samples }
+  }
 #end
