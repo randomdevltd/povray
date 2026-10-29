@@ -3948,6 +3948,7 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
     MathColour previousDepth;
     // A stride's light is gathered once, unscattered; each step's own media scatter it.
     std::vector<MediaIncident> incident;
+    std::vector<MathColour> stepDensities;
     for (MediaInterval& interval : mediaintervals)
     {
         if (interval.ds <= 0.0)
@@ -3981,12 +3982,17 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
         vector<Cell> cells(count);
         if (path)
             path->temporaryBytes = std::max(path->temporaryBytes, cells.capacity() * sizeof(Cell));
+        // A stride's steps scatter with the densities their coefficients read; a shadow ray reads only extinction.
+        const size_t mediaCount = medias.size();
+        const bool keepDensities = (stride > 1) && !ray.IsShadowTestRay();
+        stepDensities.resize(keepDensities ? size_t(count) * mediaCount : 0);
         for (int j = 0; j < count; j++)
         {
             Cell& cell = cells[j];
             cell.at = interval.s0 + j * step + 0.5 * step;
             ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), true,
-                                     cell.emission, cell.extinction, cell.scattering);
+                                     cell.emission, cell.extinction, cell.scattering,
+                                     keepDensities ? &stepDensities[size_t(j) * mediaCount] : nullptr);
         }
         int lit = -1;
         for (int j = 0; j < count; j++)
@@ -4029,7 +4035,8 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
                 if (!incident.empty() && !scattering.IsZero())
                 {
                     MathColour scattered;
-                    ScatterIncident(medias, scattered, incident.data(), incident.size(), ray.Evaluate(coefficients.at), ray);
+                    ScatterIncident(medias, scattered, incident.data(), incident.size(), ray.Evaluate(coefficients.at), ray,
+                                    keepDensities ? &stepDensities[size_t(j) * mediaCount] : nullptr);
                     emission += scattered * step;
                 }
                 if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
@@ -4549,7 +4556,8 @@ bool MediaFunction::ComputeCylinderLightInterval(const Ray &ray, const LightSour
 ******************************************************************************/
 
 void MediaFunction::ComputeMediaCoefficients(MediaVector& medias, const Ray& ray, const Vector3d& H, bool prepared,
-                                              MathColour& Emission, MathColour& Extinction, MathColour& Scattering)
+                                              MathColour& Emission, MathColour& Extinction, MathColour& Scattering,
+                                              MathColour *densities)
 {
     const bool appearance = !ray.IsShadowTestRay() && !ray.IsRadiosityRay() && !ray.IsPhotonRay();
     MathColour C0;
@@ -4566,9 +4574,13 @@ void MediaFunction::ComputeMediaCoefficients(MediaVector& medias, const Ray& ray
         {
             if (modifiers)
                 densityScratch.push_back(MathColour());
+            if (densities != nullptr)
+                densities[i - medias.begin()] = MathColour();
             continue;
         }
         DensityForDeclaredMode(**i, P, C0);
+        if (densities != nullptr)
+            densities[i - medias.begin()] = C0;
 
         if (modifiers != nullptr)
         {
@@ -4682,6 +4694,15 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
         }
     }
 
+    // Draws are scattered together, so the media's densities at P are evaluated once, in the same order of sums.
+    const size_t base = pointIncident.size();
+    std::vector<MediaIncident>& gathered = incident ? *incident : pointIncident;
+    const auto scatter = [&]() {
+        if (pointIncident.size() > base)
+            ScatterIncident(medias, Emission, pointIncident.data() + base, pointIncident.size() - base, P, ray);
+        pointIncident.resize(base);
+    };
+
     // Area lights: a few points per sample, spread over the light along the ray (an R2 sequence).
     const double k = lightSampleIndex;
     Light_Ray.SetKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex++));
@@ -4712,10 +4733,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                     Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
                     if (!trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
                         continue;
-                    if (incident != nullptr)
-                        incident->push_back({Light_Colour / (4.0 * M_PI * count), Light_Ray.Direction});
-                    else
-                        ComputePhysicalMediaScattering(medias, Emission, Light_Colour / (4.0 * M_PI * count), P, ray, Light_Ray);
+                    gathered.push_back({Light_Colour / (4.0 * M_PI * count), Light_Ray.Direction});
                 }
                 continue;
             }
@@ -4736,15 +4754,17 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
             }
             if(!Lit_Colour.IsZero())
             {
-                if (preparedSampling && (incident != nullptr))
-                    incident->push_back({Lit_Colour / (4.0 * points), Light_Ray.Direction});
-                else if (preparedSampling)
-                    ComputePhysicalMediaScattering(medias, Emission, Lit_Colour / (4.0 * points), P, ray, Light_Ray);
+                if (preparedSampling)
+                    gathered.push_back({Lit_Colour / (4.0 * points), Light_Ray.Direction});
                 else
+                {
+                    scatter();
                     ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
+                }
             }
         }
     }
+    scatter();
 }
 
 void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
@@ -4966,12 +4986,17 @@ void MediaFunction::ComputePhysicalMediaScattering(MediaVector& medias, MathColo
 }
 
 void MediaFunction::ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
-                                    const Vector3d& point, const BasicRay& ray)
+                                    const Vector3d& point, const BasicRay& ray, const MathColour *densities)
 {
     scatterDensity.assign(medias.size(), MathColour());
     for (size_t i = 0; i < medias.size(); ++i)
         if (medias[i]->use_scattering)
-            DensityForDeclaredMode(*medias[i], point, scatterDensity[i]);
+        {
+            if (densities != nullptr)
+                scatterDensity[i] = densities[i];
+            else
+                DensityForDeclaredMode(*medias[i], point, scatterDensity[i]);
+        }
     for (size_t s = 0; s < count; ++s)
     {
         const DBL cosine = dot(ray.Direction, incident[s].direction);
