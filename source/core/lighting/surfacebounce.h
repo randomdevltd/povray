@@ -41,6 +41,8 @@ public:
         for (std::size_t i = 0; i < samples.size(); ++i)
         {
             charts[Chart(samples[i].intersection)].push_back(i);
+            if (samples[i].intersection.Csg) compounds.insert(samples[i].intersection.Csg);
+            everywhere.push_back(i);
             integral += this->radiance[i] * samples[i].areaWeight / double(trials);
         }
     }
@@ -71,10 +73,12 @@ public:
     {
         if (!(dot(normal, outgoing) > 0.0)) return MathColour();
         const auto chart = charts.find(Chart(hit));
-        if (chart == charts.end())
-            throw std::runtime_error("Surface bounce preparation did not cover this primitive chart");
+        if (chart == charts.end() && !compounds.count(hit.Csg))
+            throw std::logic_error("Surface bounce lookup is outside its prepared surface");
+        // A CSG component with no exposed area of its own can still be hit where surfaces coincide.
+        const std::vector<std::size_t>& support = chart != charts.end() ? chart->second : everywhere;
         double nearest = HUGE_VAL;
-        for (std::size_t i : chart->second)
+        for (std::size_t i : support)
         {
             const double distance2 = (samples[i].intersection.IPoint - hit.IPoint).lengthSqr();
             if (distance2 == 0.0) return NodeRadiance(i, dot(normal, outgoing));
@@ -82,7 +86,7 @@ public:
         }
         MathColour result;
         double total = 0.0;
-        for (std::size_t i : chart->second)
+        for (std::size_t i : support)
         {
             const double ratio = nearest / (samples[i].intersection.IPoint - hit.IPoint).lengthSqr();
             const double alignment = std::max(0.0, dot(normal, samples[i].normal));
@@ -104,6 +108,8 @@ private:
     std::vector<MathColour> radiance;
     std::vector<std::vector<AngularTerm>> angular;
     CollapsedOwners collapsedOwners;
+    std::set<ObjectPtr> compounds;
+    std::vector<std::size_t> everywhere;
     MathColour NodeRadiance(std::size_t i, double cosine) const
     {
         if (angular.empty()) return radiance[i];
