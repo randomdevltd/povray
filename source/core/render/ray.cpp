@@ -90,9 +90,10 @@ void Ray::SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const V
     surfaceOrigin = {object, point, normal, SurfaceErrorScale(object), object ? object->SurfaceTolerance() : 0.0};
 }
 
-void Ray::SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point)
+void Ray::SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface)
 {
-    surfaceEndpoint = {object, point, Vector3d(0.0), SurfaceErrorScale(object), object ? object->SurfaceTolerance() : 0.0};
+    const ConstObjectPtr part = surface ? surface : object;
+    surfaceEndpoint = {object, point, Vector3d(0.0), SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
 }
 
 Ray::~Ray()

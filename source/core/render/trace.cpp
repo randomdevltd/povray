@@ -3873,7 +3873,8 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
     ray.Direction = direction;
     ray.SetFlags(light.emitter->IsSurface() ? Ray::SubsurfaceRay : Ray::OtherRay, true, false);
     ray.SetMediaLight(&light);
-    ray.SetSurfaceEndpoint(sample.surfaceObject ? (light.emitterContainer ? light.emitterContainer : sample.surfaceObject) : nullptr, sample.position);
+    ray.SetSurfaceEndpoint(sample.surfaceObject ? (light.emitterContainer ? light.emitterContainer : sample.surfaceObject) : nullptr, sample.position,
+                           sample.surfaceObject);
     colour = sample.weight * (light.emitter->DirectionalWeight(-ray.Direction) * Light_Emitter_Path_Factor(&light, depth));
     const bool blocking = qualityFlags.shadows && (light.Light_Type != FILL_LIGHT_SOURCE);
     const bool attenuation = qualityFlags.media && light.Media_Interaction && light.Media_Attenuation;
@@ -3892,7 +3893,7 @@ void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& 
                                         MathColour& lightcolour, const Vector3d& offset)
 {
     threadData->Stats()[Emitter_Shadow_Calls]++;
-    if (lightsource.emitter && lightsource.emitter->IsSurface())
+    if (lightsource.emitter && lightsource.emitter->IsSurface() && !lightsourceray.HasSurfaceEndpoint())
         lightsourceray.SetSurfaceEndpoint(lightsource.emitterContainer, lightsource.Center + offset);
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
     if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media &&

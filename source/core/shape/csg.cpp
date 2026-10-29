@@ -499,14 +499,6 @@ bool CSGIntersection::Inside(const Vector3d& IPoint, TraceThreadData *Thread) co
 ******************************************************************************/
 
 
-double CSG::SurfaceTolerance() const
-{
-    double tolerance = 0.0;
-    for (ConstObjectPtr child : children)
-        tolerance = std::max(tolerance, child->SurfaceTolerance());
-    return tolerance;
-}
-
 void CSG::Translate(const Vector3d& Vector, const TRANSFORM *tr)
 {
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)

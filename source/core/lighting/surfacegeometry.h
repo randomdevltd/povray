@@ -124,9 +124,8 @@ public:
         const Vector3d normalizedOrigin = (origin - center) / scale;
         const DBL back = dot(normalizedOrigin, ray.Direction) + 2.0;
         ray.Origin = normalizedOrigin - ray.Direction * back;
-        // A receiver on this surface must not draw its own root, found anywhere within the surface's error.
-        const DBL own = std::max(geometry->SurfaceTolerance(),
-                                 64.0 * std::numeric_limits<DBL>::epsilon() * (back + MaxAbs(origin) / scale));
+        // A receiver on this surface must not draw its own root, found within that part's error of the receiver.
+        const DBL own = 64.0 * std::numeric_limits<DBL>::epsilon() * (back + MaxAbs(origin) / scale);
         const bool found = SelectRoot(ray, thread, rootU, back, HUGE_VAL, sample, own);
         ray.Origin = origin;
         if (!found) return false;
@@ -160,7 +159,8 @@ private:
         {
             const Intersection& hit = stack->top();
             if (hit.Object != nullptr && !windows.count(hit.Object) && IsFiniteIntersectionDepth(hit.Depth) &&
-                hit.Depth > minDepth + skip && hit.Depth <= maxDepth)
+                hit.Depth > minDepth + (skip > 0.0 ? std::max(skip, hit.Object->SurfaceTolerance()) : 0.0) &&
+                hit.Depth <= maxDepth)
                 roots.push_back(hit);
             stack->pop();
         }
