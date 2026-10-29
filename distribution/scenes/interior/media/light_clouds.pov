@@ -1,10 +1,11 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Single scattering only. +w640 +h480.
-// Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux (2000, far above a real lantern's 50, so the cloud reads from this far), Storm=0 drops the lightning tower.
+// Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux (500, a large paper lantern), Storm=0 drops the lightning tower.
+// attenuation { power P scale S } scales the physical light by q^(P-2) * S^(q^P-1), q = R/max(d,R) for the light's radius R, so far away it falls as 1/d^P: power 1.5 lets the lanterns reach the cloud around them.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Storm) #declare Storm = 1; #end
-#ifndef (LanternLumens) #declare LanternLumens = 2000; #end
+#ifndef (LanternLumens) #declare LanternLumens = 500; #end
 #declare R = seed(1907);
 
 global_settings { assumed_gamma 1 max_trace_level 6 }
@@ -70,7 +71,7 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
         mix add method 4 resolution 0.008
         density { spherical color_map { [0 rgb 0] [0.5 rgb 0.3] [1 rgb 1] } }
       }
-      light { pigment { rgb <1, 0.6, 0.25> } brightness LanternLumens lumens samples Samples }
+      light { pigment { rgb <1, 0.6, 0.25> } brightness LanternLumens lumens attenuation { power 1.5 } samples Samples }
     }
     scale <0.05, 0.11, 0.05> translate y * 0.2 rotate <Tilt, 0, Tilt * 0.6> translate P
   }
