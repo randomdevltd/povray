@@ -8,10 +8,12 @@
 #include <memory>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 #include "core/math/matrix.h"
 #include "core/lighting/emittergeometry.h"
 #include "core/lighting/surfaceguide.h"
 #include "core/shape/isosurface.h"
+#include "core/shape/portal.h"
 #include "core/math/intersectiondepth.h"
 #include "core/render/ray.h"
 #include "core/scene/object.h"
@@ -145,7 +147,7 @@ private:
         while (!stack->empty())
         {
             const Intersection& hit = stack->top();
-            if (hit.Object != nullptr && IsFiniteIntersectionDepth(hit.Depth) &&
+            if (hit.Object != nullptr && !windows.count(hit.Object) && IsFiniteIntersectionDepth(hit.Depth) &&
                 hit.Depth > minDepth && hit.Depth <= maxDepth)
                 roots.push_back(hit);
             stack->pop();
@@ -172,16 +174,20 @@ private:
         return true;
     }
 
-    void MapGeometry(ObjectPtr clone, ObjectPtr original)
+    void MapGeometry(ObjectPtr clone, ObjectPtr original, bool window = false)
     {
         originals[clone] = original;
+        if (window) windows.insert(clone);
         if (IsoSurface* iso = dynamic_cast<IsoSurface*>(clone))
             iso->max_trace = std::numeric_limits<IsosurfaceMaxTrace>::max();
+        // A portal body is a window, not a surface: it neither emits nor counts as a root.
+        if (Portal* portal = dynamic_cast<Portal*>(clone))
+            MapGeometry(portal->body, static_cast<Portal*>(original)->body, true);
         if (CompoundObject* compound = dynamic_cast<CompoundObject*>(clone))
         {
             CompoundObject* source = dynamic_cast<CompoundObject*>(original);
             for (std::size_t i = 0; i < compound->children.size(); ++i)
-                MapGeometry(compound->children[i], source->children[i]);
+                MapGeometry(compound->children[i], source->children[i], window);
         }
         for (std::size_t i = 0; i < clone->Bound.size(); ++i) MapGeometry(clone->Bound[i], original->Bound[i]);
         for (std::size_t i = 0; i < clone->Clip.size(); ++i) MapGeometry(clone->Clip[i], original->Clip[i]);
@@ -190,6 +196,7 @@ private:
     ObjectPtr object;
     std::shared_ptr<ObjectBase> geometry;
     std::unordered_map<ObjectPtr, ObjectPtr> originals;
+    std::unordered_set<ObjectPtr> windows;
     Vector3d center, normalizedSize;
     DBL scale = 1.0;
     bool valid;

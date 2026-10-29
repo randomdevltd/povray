@@ -46,6 +46,12 @@ if (Case == 8) {
     }
   };
 }
+if (Case == 9) {
+  Shape = union {
+    sphere { <-0.3,1.5,0>,0.2 }
+    portal { sphere { <0.3,1.5,0>,0.2 } to { translate x*5 } far off }
+  };
+}
 object { Shape no_image
   pigment { rgb <0.4,0.2,0.1> }
   finish { ambient 0 if (Passive) { emission 0 } else { emission 2 } diffuse 0 }
