@@ -464,6 +464,16 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
             throw POV_EXCEPTION_STRING("Prepared density publication produced an invalid value.");
         fieldReady = true;
     }
+    if (coarseCells > 0.0)
+    {
+        char detail[512];
+        DBL needed;
+        const DBL limit = td->GetSceneData()->EffectivePreparedMediaCells();
+        // the resolution to write to get this grid, not the layout's cell width it was built on
+        CoarseGridDetail(detail, sizeof(detail), "density grid", coarseStep, coarseCells, limit,
+                         FitGridStep(size, coarseStep, limit, needed));
+        WarnFastMedia(td, media, kFastCoarse, detail, container);
+    }
     if (cooperate)
         cooperate();
     published = true;

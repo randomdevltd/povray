@@ -544,6 +544,7 @@ void MeshBuildTask::Run()
 
     TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
     finalFields.preparationProgress = &progress;
+    finalFields.mediaMessages = mpMessageFactory;
     const auto cooperateFields = [&]()
     {
         try
