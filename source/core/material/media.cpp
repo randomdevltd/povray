@@ -1307,9 +1307,8 @@ static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const Refrac
     return std::make_shared<const PreparedPlacedScalarField>(std::move(entries));
 }
 
-static void PrepareRefractionDefinitions(TraceThreadData *td, const std::function<void()>& cooperate)
+static std::vector<Interior *> RefractionInteriors(const SceneData& scene)
 {
-    const auto scene = td->GetSceneData();
     std::unordered_set<ConstObjectPtr> seen;
     std::unordered_set<Interior *> interiors;
     std::function<void(ObjectPtr)> visit = [&](ObjectPtr object) {
@@ -1321,16 +1320,29 @@ static void PrepareRefractionDefinitions(TraceThreadData *td, const std::functio
             for (ObjectPtr child : compound->children)
                 visit(child);
     };
-    for (const auto& set : scene->preparedSets)
+    for (const auto& set : scene.preparedSets)
         for (ObjectPtr object : set->objects)
             visit(object);
+    return std::vector<Interior *>(interiors.begin(), interiors.end());
+}
+
+std::size_t PreparedLightUnits(const SceneData& scene)
+{
+    return RefractionInteriors(scene).size() + scene.mediaLights.size();
+}
+
+static void PrepareRefractionDefinitions(const std::vector<Interior *>& interiors, TraceThreadData *td,
+                                         const std::function<void()>& cooperate)
+{
     for (Interior *interior : interiors)
     {
         if (cooperate)
             cooperate();
+        StepPreparation(td->preparationProgress, "refraction");
         if (!interior->refraction)
         {
             interior->preparedRefraction.reset();
+            AdvancePreparation(td->preparationProgress);
             continue;
         }
         auto definition = std::make_shared<PreparedRefractionDefinition>();
@@ -1342,6 +1354,7 @@ static void PrepareRefractionDefinitions(TraceThreadData *td, const std::functio
             if (field->layout)
                 definition->layouts.push_back(field->layout);
         interior->preparedRefraction = definition;
+        AdvancePreparation(td->preparationProgress);
     }
 }
 
@@ -1404,8 +1417,12 @@ void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& c
 
 void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooperate)
 {
-    PrepareRefractionDefinitions(td, cooperate);
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
+    const std::vector<Interior *> refracting = RefractionInteriors(*scene);
+    PreparationProgress *const progress = (refracting.size() + scene->mediaLights.size() > 0) ? td->preparationProgress : nullptr;
+    if (progress != nullptr)
+        progress->Begin("lights", refracting.size() + scene->mediaLights.size());
+    PrepareRefractionDefinitions(refracting, td, cooperate);
     std::vector<ConstObjectPtr> sourceOwners;
     for (const LightSource* light : scene->mediaLights)
         if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
@@ -1459,6 +1476,8 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
                     field->lights.push_back(PreparedLightComponent{light, light->emitter->PreparedAxis()});
                     field->lightReady = true;
                 }
+    if (progress != nullptr)
+        progress->End();
 }
 
 void Media::PostProcess()
