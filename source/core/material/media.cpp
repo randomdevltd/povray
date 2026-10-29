@@ -4818,18 +4818,16 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 Light_Ray.SetKey(DeriveKey(DeriveKey(drawKey, kDrawMediaSample, lightSampleIndex - 1), kDrawEmitter, i * points + j));
                 if (!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
                 {
-                    Lit_Colour += Light_Colour;
+                    if (preparedSampling)
+                        gathered.push_back({Light_Colour / (4.0 * points), Light_Ray.Direction});
+                    else
+                        Lit_Colour += Light_Colour;
                 }
             }
             if(!Lit_Colour.IsZero())
             {
-                if (preparedSampling)
-                    gathered.push_back({Lit_Colour / (4.0 * points), Light_Ray.Direction});
-                else
-                {
-                    scatter();
-                    ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
-                }
+                scatter();
+                ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
             }
         }
     }
