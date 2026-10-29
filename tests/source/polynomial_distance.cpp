@@ -45,18 +45,11 @@ void check(const std::vector<double>& c, std::vector<double> expected, double to
     }
 }
 
-void reject(const std::vector<double>& c, const char* reason)
+void unsolvable(const std::vector<double>& c)
 {
     RenderStatistics stats;
     double roots[MAX_ORDER];
-    bool rejected = false;
-    try { Solve_Polynomial(int(c.size())-1,c.data(),roots,true,0.0,stats); }
-    catch (const std::exception& error)
-    {
-        rejected = std::string(error.what()).find(reason) != std::string::npos;
-        if (!rejected) std::cerr << "unexpected rejection: " << error.what() << "\n";
-    }
-    assert(rejected);
+    assert(Solve_Polynomial(int(c.size())-1,c.data(),roots,true,0.0,stats) == 0);
 }
 
 int main()
@@ -93,10 +86,10 @@ int main()
     std::vector<double> high(MAX_ORDER+1,0.0);
     high.front()=1.0; high.back()=-1e308;
     check(high,{std::pow(1e308,1.0/MAX_ORDER)});
-    reject({1e-9,-1e-9,-1e307,1e307},"coefficient range");
-    reject({1e100,0,0,-1e-300},"coefficient range");
-    reject({1,1e200,-1e200,1},"coefficients exceed");
-    reject({1,-1e308,1,1},"root bound");
-    reject({1,0,0,std::numeric_limits<double>::infinity()},"must be finite");
+    unsolvable({1e-9,-1e-9,-1e307,1e307});
+    unsolvable({1e100,0,0,-1e-300});
+    unsolvable({1,1e200,-1e200,1});
+    unsolvable({1,-1e308,1,1});
+    unsolvable({1,0,0,std::numeric_limits<double>::infinity()});
     std::cout << "Sturm near, repeated, absent, scaled, distant and overflow controls passed\n";
 }

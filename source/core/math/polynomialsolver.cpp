@@ -1552,7 +1552,22 @@ static int solve_quartic(const DBL *x, DBL *results)
 *
 ******************************************************************************/
 
+static int polysolve_in_range(int order, const DBL *Coeffs, DBL *roots);
+
+// A polynomial outside the solver's floating-point range yields no roots rather than ending the render.
 static int polysolve(int order, const DBL *Coeffs, DBL *roots)
+{
+    try
+    {
+        return polysolve_in_range(order, Coeffs, roots);
+    }
+    catch (const pov_base::Exception&)
+    {
+        return 0;
+    }
+}
+
+static int polysolve_in_range(int order, const DBL *Coeffs, DBL *roots)
 {
     polynomial sseq[MAX_ORDER+1];
     DBL min_value, max_value;
