@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "core/math/matrix.h"
-#include "core/lighting/emittergeometry.h"
 #include "core/lighting/surfaceguide.h"
 #include "core/shape/isosurface.h"
 #include "core/shape/mesh.h"
@@ -36,7 +35,7 @@ class SurfaceGeometrySampler final
 {
 public:
     explicit SurfaceGeometrySampler(ObjectPtr object, const BoundingBox* proposalBounds = nullptr) :
-        object(object), valid(object != nullptr), boundedProposal(proposalBounds != nullptr)
+        object(object), valid(object != nullptr)
     {
         if (!valid) return;
         const BoundingBox& bounds = proposalBounds != nullptr ? *proposalBounds : object->BBox;
@@ -72,13 +71,6 @@ public:
     {
         for (const auto& entry : originals)
             if (const Mesh* mesh = dynamic_cast<const Mesh*>(entry.first)) mesh->Resolve();
-    }
-    DBL ExactArea() const
-    {
-        PrimitiveEmitterGeometry primitive;
-        if (!valid || boundedProposal || !primitive.Initialize(object)) return 0.0;
-        const DBL area = 4.0 * primitive.MeanProjectedArea();
-        return IsFiniteIntersectionDepth(area) && area > 0.0 ? area : 0.0;
     }
     Vector3d Centre() const { return lower + size * 0.5; }
     DBL Radius() const { return std::sqrt(size.lengthSqr()) * 0.5; }
@@ -279,7 +271,6 @@ private:
     Vector3d center, normalizedSize;
     DBL scale = 1.0;
     bool valid;
-    bool boundedProposal;
     Vector3d lower, size;
     DBL projected[3] = {0.0, 0.0, 0.0};
     DBL totalProjection = 0.0;

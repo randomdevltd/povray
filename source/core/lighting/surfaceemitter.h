@@ -51,10 +51,8 @@ public:
         SurfaceAngularGuide preparedGuide(Vector3d(owner->BBox.lowerLeft), Vector3d(owner->BBox.size));
         MathColour integral;
         constexpr unsigned count = 16384;
-        const double exactArea = geometry.ExactArea();
         const bool zero = prepared->IsConstant() && prepared->ConstantColour().IsZero();
-        const bool exact = prepared->IsConstant() && exactArea > 0.0;
-        for (unsigned i = 0; !exact && !zero && i < count; ++i)
+        for (unsigned i = 0; !zero && i < count; ++i)
         {
             if (cooperate && (i % 256 == 0)) cooperate();
             SurfaceGeometrySample sample;
@@ -67,7 +65,7 @@ public:
                 preparedGuide.Add(sample.intersection.IPoint, power.Greyscale() / double(count), sample.normal);
             }
         }
-        integral = exact ? prepared->ConstantColour() * exactArea : integral / double(count);
+        integral /= double(count);
         double preparedScale = settings->brightness;
         if (settings->lumens >= 0.0)
         {
