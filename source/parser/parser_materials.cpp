@@ -3686,6 +3686,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     Vector3d Local_Vector;
     MATRIX Local_Matrix;
     bool resolutionSpecified = false;
+    const POV_LONG line = std::max<POV_LONG>(1, CurrentFilePosition().line);
 
     Parse_Begin();
 
@@ -3881,6 +3882,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     if (resolutionSpecified && IMedia->Sample_Method != 4)
         Error("media resolution requires method 4.");
 
+    IMediaObj.line = line;
     medialist.push_back(IMediaObj);
 }
 
@@ -3918,6 +3920,7 @@ unsigned Parser::Parse_Light_Bounce()
 std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
+    light->line = std::max<POV_LONG>(1, CurrentFilePosition().line);
     Parse_Begin();
 
     EXPECT

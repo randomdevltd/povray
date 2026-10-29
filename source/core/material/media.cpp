@@ -864,6 +864,7 @@ Media& Media::operator=(const Media& source)
         fastResolutionRecorded = source.fastResolutionRecorded;
         mix = source.mix;
         priority = source.priority;
+        line = source.line;
         fastCache.reset();
         preparedBindings.clear();
 
@@ -1550,7 +1551,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
-    photonOptions(source.photonOptions)
+    photonOptions(source.photonOptions), line(source.line)
 {
 }
 

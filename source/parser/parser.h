@@ -936,6 +936,7 @@ class Parser final
         void Split_Unions();
         void Split_Union(ObjectPtr Object);
         void Assign_Scene_Lights();
+        void Check_Legacy_Transport();
         /// Media lights made inside light groups, with their group, given out after the groups' own lights.
         std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);

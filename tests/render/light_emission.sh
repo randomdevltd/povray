@@ -28,7 +28,7 @@ pair() {
     render "fine_manual$pair_name" Declare=Samples=1024 Declare=Alias=0 "$@"
     close "fine_alias$pair_name" "fine_manual$pair_name"
 }
-for method in 1 2 3 4; do
+for method in 4; do
     for unit in 0 1; do
         pair "${method}_$unit" Declare=Method="$method" Declare=Lumens="$unit"
     done

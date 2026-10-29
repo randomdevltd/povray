@@ -518,6 +518,7 @@ void Parser::Run()
             for (ObjectPtr object : sceneData->objects)
                 ResolveInheritedTags(object);
             Assign_Scene_Lights();
+            Check_Legacy_Transport();
             Split_Unions();
 
             // post process atmospheric media
@@ -10648,6 +10649,87 @@ void Parser::Assign_Scene_Lights()
     for (const std::pair<ObjectPtr, LightSource *>& added : mGroupMediaLights)
         Add_Local_Light(added.first, added.second);
     mGroupMediaLights.clear();
+}
+
+// Whether any finish in these textures uses subsurface method 1.
+static bool Uses_Legacy_Subsurface(const TEXTURE *textures, int sceneMethod)
+{
+    for (const TEXTURE *layer = textures; layer != nullptr; layer = layer->Next)
+    {
+        if ((layer->Finish != nullptr) && layer->Finish->UseSubsurface &&
+            ((layer->Finish->SubsurfaceMethod ? layer->Finish->SubsurfaceMethod : sceneMethod) == kSubsurfaceMethodSampled))
+            return true;
+        for (const TEXTURE *material : layer->Materials)
+            if (Uses_Legacy_Subsurface(material, sceneMethod))
+                return true;
+        if (layer->Blend_Map != nullptr)
+            for (const TextureBlendMapEntry& entry : layer->Blend_Map->Blend_Map_Entries)
+                if (Uses_Legacy_Subsurface(entry.Vals, sceneMethod))
+                    return true;
+    }
+    return false;
+}
+
+static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
+{
+    objects.push_back(object);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            Collect_Scene_Objects(child, objects);
+}
+
+// Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter or bounce
+// the light of a light block. See "Light Blocks and Classic Transport" in the manual.
+void Parser::Check_Legacy_Transport()
+{
+    std::vector<ObjectPtr> objects;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, objects);
+    for (ObjectPtr object : objects)
+    {
+        const Interior *interior = object->interior.get();
+        const MediaLight *block = (interior != nullptr) ? interior->light.get() : nullptr;
+        if (block != nullptr)
+            for (const Media& medium : interior->media)
+                if (medium.Sample_Method != 4)
+                    Error("The %s light block at line %lld holds the method %d medium at line %lld; a light block needs "
+                          "method 4 media.", ShapeName(object), block->line, int(medium.Sample_Method), medium.line);
+        for (const MediaLight *light : { static_cast<const MediaLight *>(object->surfaceLight.get()), block })
+        {
+            if ((light == nullptr) || !sceneData->useSubsurface)
+                continue;
+            std::vector<ObjectPtr> parts;
+            Collect_Scene_Objects(object, parts);
+            for (ObjectPtr part : parts)
+                if (Uses_Legacy_Subsurface(part->Texture, sceneData->subsurfaceMethod) ||
+                    Uses_Legacy_Subsurface(part->Interior_Texture, sceneData->subsurfaceMethod))
+                    Error("The %s light block at line %lld is on a subsurface method 1 finish; a light block needs "
+                          "subsurface method 2.", ShapeName(object), light->line);
+        }
+    }
+    const LightSource *lighting = nullptr;
+    for (const LightSource *light : sceneData->mediaLights)
+        if (light->Media_Interaction)
+        {
+            lighting = light;
+            break;
+        }
+    if (lighting == nullptr)
+        return;
+    const ConstObjectPtr owner = lighting->emitterContainer;
+    const MediaLight *block = lighting->emitter->IsSurface() ? owner->surfaceLight.get() : owner->interior->light.get();
+    auto reject = [&](const Media& medium, const std::string& where) {
+        if ((medium.Sample_Method != 4) && !medium.Scattering.IsZero())
+            Error("The method %d medium at line %lld %s scatters, and the %s light block at line %lld lights media; "
+                  "only method 4 media scatter a light block's light.", int(medium.Sample_Method), medium.line, where.c_str(),
+                  ShapeName(owner), block->line);
+    };
+    for (const Media& medium : sceneData->atmosphere)
+        reject(medium, "in the atmosphere");
+    for (ObjectPtr object : objects)
+        if (object->interior != nullptr)
+            for (const Media& medium : object->interior->media)
+                reject(medium, std::string("in the ") + ShapeName(object));
 }
 
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)

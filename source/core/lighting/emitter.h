@@ -133,6 +133,7 @@ struct MediaLight final
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;
+    long long line = 0;             ///< where the block was written, for messages
 
     MediaLight() = default;
     MediaLight(const MediaLight& source);          ///< deep-copies the pigment

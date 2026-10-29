@@ -189,6 +189,8 @@ class Media final
         std::vector<std::shared_ptr<FastCache>> preparedBindings;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
+        /// where it was written, for messages
+        long long line = 0;
 
         Media();
         Media(const Media&);

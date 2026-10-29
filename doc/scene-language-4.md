@@ -117,11 +117,18 @@ A passive source is a bounce light whose own emission is zero (for a surface,
 `finish { emission 0 }`): it shines only the light it receives from other
 sources and is dark when nothing lights it. A bounced surface whose finish uses
 subsurface scattering also sends its subsurface light on, which needs subsurface
-method 2 (the default from version 4.0); under method 1 the render stops before
-tracing with `Surface subsurface bounce requires subsurface method 2.` The same
-stop, without a line number, reports `Surface bounce cannot prepare stochastic
-crand diffuse finishes` and `Surface bounce cannot prepare Fresnel or
-energy-conserving reflection attenuation`.
+method 2 (the default from version 4.0). The render stops before tracing, without
+a line number, with `Surface bounce cannot prepare stochastic crand diffuse
+finishes` and `Surface bounce cannot prepare Fresnel or energy-conserving
+reflection attenuation`.
+
+Media methods 1 to 3 and subsurface method 1 stay exactly as they were and take
+no part in a light block's light. Parsing stops, naming the lines, when an object
+with a light block holds a method 1 to 3 medium or uses a subsurface method 1
+finish (`... a light block needs method 4 media.`, `... a light block needs
+subsurface method 2.`), and when a method 1 to 3 medium scatters while a light
+block lights media (`... only method 4 media scatter a light block's light.`).
+Classic media that only absorb or glow stay legal beside light blocks.
 
 ## Lumens
 
