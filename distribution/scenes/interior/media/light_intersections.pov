@@ -1,5 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Emitting media meeting things: red, green and blue lights overlapping, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone; a pool sunk in the floor, pierced by rods. +w640 +h480; Declare=Samples=N sets each light's samples, LampGain scales the lamps' light over their glow, GeodeLumens and PoolLumens set the other two lights' flux, Smoke=0 drops the smoke.
+// Emitting media meeting things: red, green and blue lights overlapping, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone; a pool sunk in the floor, pierced by rods. +w640 +h480.
+// Declare=Samples=N sets each light's samples, LampGain scales the lamps' light over their glow, GeodeLumens and PoolLumens set the other two lights' flux, Smoke=0 drops the smoke.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 24; #end
 #ifndef (Smoke) #declare Smoke = 1; #end

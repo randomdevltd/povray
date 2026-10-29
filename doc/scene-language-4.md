@@ -125,12 +125,13 @@ energy-conserving reflection attenuation`.
 
 ## Lumens
 
-`scale_lumens(Lumens, Metres)` is a built-in in both languages, typed as a
+`scale_lumens(Lumens, Metres)` is a built-in function in both languages, typed as a
 number, and returns `Lumens / Metres^2`: the value for `brightness V lumens` in
 a scene whose unit is `Metres` metres long. It needs finite lumens and a
 positive finite length (`scale_lumens takes finite lumens and a positive finite
-number of metres per unit.`). It is not a version-gated word and stays a plain
-built-in name in every scene.
+number of metres per unit.`). It works at every scene version. In classic scenes
+the name is a reserved word, not a contextual one, so it cannot also be an
+identifier; in `.pov4` it is a built-in name.
 
 ## Scene preparation progress
 

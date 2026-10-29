@@ -1,5 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480; Declare=Samples=N sets the core light's samples, CoreLumens its flux, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
+// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480.
+// Declare=Samples=N sets the core light's samples, CoreLumens its flux, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
 #version 4.0;
 #ifndef (Samples) #declare Samples = 32; #end
 #ifndef (Refract) #declare Refract = 1; #end
