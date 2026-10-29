@@ -6037,10 +6037,12 @@ MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const Su
         if (hits == 0)
             continue;
 
-        // A point light's ray is the same each time; an area light gets a new point of the light per draw.
+        // A point light's ray is the same each time; an area light gets a new point of the light per draw. An emitter's
+        // segment and key are the candidate's own, so it is traced once and counted for each of its draws.
         int rays = (lightsource.Area_Light && qualityFlags.areaLights) ? hits : 1;
+        const int traced = lightsource.emitter ? 1 : rays;
         MathColour lit;
-        for (int r = 0; r < rays; r++)
+        for (int r = 0; r < traced; r++)
         {
             Ray lightsourceray(ticket);
             lightsourceray.SetKey(DeriveKey(lightKey, kDrawSubsurface, 3 + drawn + r));
@@ -6067,7 +6069,8 @@ MathColour Trace::DrawSubsurfaceShadows(const LightSource& lightsource, const Su
                 Vector2d areaSample = SubsurfaceAreaSample(shift, drawn + r);
                 TraceShadowRay(lightsource, lightsourcedepth, lightsourceray, c.point, lightcolour, &areaSample);
             }
-            lit += lightcolour;
+            for (int repeat = (traced < rays) ? rays : 1; repeat > 0; repeat--)
+                lit += lightcolour;
         }
         drawn += hits;
         estimate += lit * c.factor * float((hits / double(rays)) * step / c.bound);
