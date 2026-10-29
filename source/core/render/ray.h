@@ -162,12 +162,16 @@ class Ray final : public BasicRay
         /// Makes this ray the index-th child of its kind below the parent.
         void Derive(const Ray& parent, std::uint64_t kind, std::uint64_t index)
         {
-            keyRead = parent.keyRead;
+            // A flag lives in a ticket, and so only as long as the rays on it.
+            if (&ticket == &parent.ticket)
+                keyRead = parent.keyRead;
+            else
+                parent.MarkKeyRead();
             SetKey(DeriveKey(parent.key, kind, index));
         }
         /// A key for the next child of a kind whose place among its siblings is its only index.
         std::uint64_t NextChildKey(std::uint64_t kind) const { MarkKeyRead(); return DeriveKey(key, kind, children++); }
-        /// Sets `*flag` once anything reads the key of this ray, a copy or a derived ray; `*flag` must outlive them.
+        /// Sets `*flag`, which must belong to this ray's ticket, once anything reads the key of this ray, a copy or a derived ray.
         void WatchKey(bool *flag) { keyRead = flag; }
 
         /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
