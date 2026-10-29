@@ -103,6 +103,20 @@ reject attenuation 'Surface light blocks do not accept attenuation' 'light { att
 reject zero_lumens 'requires positive surface emission' 'light { pigment { rgb 0 } brightness 1 lumens }'
 reject negative_colour 'requires finite nonnegative emitted colour' 'light { pigment { rgb <-1,0,0> } }'
 reject ray_context 'cannot depend on ray or camera context' 'light { pigment { aoi } }'
+reject scale_lumens_metres 'scale_lumens takes finite lumens and a positive finite number of metres per unit' 'light { brightness scale_lumens(8, 0) lumens }'
+for language in pov pov4; do
+    echo 'sphere { 0,1 light { brightness scale_lumens(8, 2) lumens } }' >"scaled.$language"
+    "$POVRAY" +i"scaled.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"scaled.$language.log" 2>&1 || { cat "scaled.$language.log"; exit 1; }
+    if [ "$language" = pov ]; then
+        { echo '#version 3.7;'; echo '#declare L = light_source { <0,2,-3> rgb 1 }'; echo 'object { L light {} }'; } >"lamp.$language"
+    else
+        { echo 'let L = light_source { <0,2,-3> rgb 1 };'; echo 'object { L light {} }'; } >"lamp.$language"
+    fi
+    if "$POVRAY" +i"lamp.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"lamp.$language.log" 2>&1; then
+        echo "surface_light: light block on a light_source accepted in $language" >&2; exit 1
+    fi
+    tr '\n' ' ' <"lamp.$language.log" | tr -s '[:space:]' ' ' | grep -F 'a light_source cannot take one' >/dev/null || { cat "lamp.$language.log"; exit 1; }
+done
 for language in pov pov4; do
     echo 'plane { y,0 light {} }' >"infinite.$language"
     if "$POVRAY" +i"infinite.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"infinite.$language.log" 2>&1; then

@@ -96,7 +96,7 @@ enum BI : unsigned char
 {
     B_x, B_y, B_z, B_t, B_u, B_v, B_pi, B_tau, B_clock, B_clock_on, B_yes, B_no, B_on, B_off, B_version, B_now,
     B_abs, B_acos, B_acosh, B_asin, B_asinh, B_atan, B_atan2, B_atanh, B_ceil, B_cos, B_cosh, B_degrees, B_div,
-    B_exp, B_floor, B_int, B_ln, B_log, B_max, B_min, B_mod, B_pow, B_radians, B_select, B_sin, B_sinh, B_sqrt,
+    B_exp, B_floor, B_int, B_ln, B_log, B_max, B_min, B_mod, B_pow, B_radians, B_scale_lumens, B_select, B_sin, B_sinh, B_sqrt,
     B_sqr, B_tan, B_tanh, B_vdot, B_vlength, B_vcross, B_vnormalize, B_vrotate, B_vaxis_rotate, B_strlen,
     B_strcmp, B_asc, B_val, B_concat, B_chr, B_bitwise_and, B_bitwise_or, B_bitwise_xor, B_dimensions,
     B_dimension_size, B_seed, B_rand, B_len, B_range, B_map, B_filter, B_push, B_keys, B_defined, B_debug,
@@ -112,7 +112,7 @@ const std::unordered_map<std::string, BI>& BuiltinNames()
         {"asin", B_asin}, {"asinh", B_asinh}, {"atan", B_atan}, {"atan2", B_atan2}, {"atanh", B_atanh},
         {"ceil", B_ceil}, {"cos", B_cos}, {"cosh", B_cosh}, {"degrees", B_degrees}, {"div", B_div},
         {"exp", B_exp}, {"floor", B_floor}, {"int", B_int}, {"ln", B_ln}, {"log", B_log}, {"max", B_max},
-        {"min", B_min}, {"mod", B_mod}, {"pow", B_pow}, {"radians", B_radians}, {"select", B_select},
+        {"min", B_min}, {"mod", B_mod}, {"pow", B_pow}, {"radians", B_radians}, {"scale_lumens", B_scale_lumens}, {"select", B_select},
         {"sin", B_sin}, {"sinh", B_sinh}, {"sqrt", B_sqrt}, {"sqr", B_sqr}, {"tan", B_tan}, {"tanh", B_tanh},
         {"vdot", B_vdot}, {"vlength", B_vlength}, {"vcross", B_vcross}, {"vnormalize", B_vnormalize},
         {"vrotate", B_vrotate}, {"vaxis_rotate", B_vaxis_rotate}, {"strlen", B_strlen}, {"strcmp", B_strcmp},
@@ -260,7 +260,7 @@ const std::unordered_map<BI, BuiltinSig>& BuiltinSigs()
         { B_tan, { 1, 1, { TY_NUMERIC }, TY_NUM } }, { B_tanh, { 1, 1, { TY_NUMERIC }, TY_NUM } },
         { B_atan2, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_div, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_mod, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_pow, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
-        { B_max, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_min, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
+        { B_max, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_scale_lumens, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } }, { B_min, { 2, 2, { TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_select, { 3, 4, { TY_NUMERIC, TY_NUMERIC, TY_NUMERIC }, TY_NUM } },
         { B_vdot, { 2, 2, { TY_VECARG, TY_VECARG }, TY_NUM } },
         { B_vcross, { 2, 2, { TY_VECARG, TY_VECARG }, TY_VEC } },
@@ -4299,6 +4299,11 @@ PValue Pov4Evaluator::CallBuiltin(BI id, const std::string& word, PValues& args,
         case B_cosh: argc(1, 1); return num(std::cosh(f(0)));
         case B_degrees: argc(1, 1); return num(f(0) / M_PI_180);
         case B_radians: argc(1, 1); return num(f(0) * M_PI_180);
+        case B_scale_lumens:
+            argc(2, 2);
+            if (!std::isfinite(f(0)) || !std::isfinite(f(1)) || !(f(1) > 0.0))
+                Fail(at, "scale_lumens takes finite lumens and a positive finite number of metres per unit.");
+            return num(f(0) / (f(1) * f(1)));
         case B_div:
             argc(2, 2);
             if (f(1) == 0.0)
