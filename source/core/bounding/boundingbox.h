@@ -190,7 +190,13 @@ inline void Make_BBox(BoundingBox& BBox, const DBL llx, const DBL lly, const DBL
     {
         volatile DBL sum = low[axis] + size[axis];
         representable = representable && (!(size[axis] > 0.0) || DBL(sum) > low[axis]);
-        high[axis] = size[axis] == 0.0 ? low[axis] : std::nextafter(DBL(sum), std::numeric_limits<DBL>::infinity());
+        // the sum's rounding error by two-sum: only a sum that rounded down needs the step up
+        volatile DBL sizePart = sum - low[axis];
+        volatile DBL lowPart = sum - sizePart;
+        volatile DBL lowError = low[axis] - lowPart;
+        volatile DBL sizeError = size[axis] - sizePart;
+        high[axis] = size[axis] == 0.0 ? low[axis] :
+                     (lowError + sizeError <= 0.0) ? DBL(sum) : std::nextafter(DBL(sum), std::numeric_limits<DBL>::infinity());
     }
     Make_BBox_from_min_max(BBox, low, high, representable);
 }
