@@ -705,6 +705,11 @@ check: all
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_entry_ior.cpp" \\
 	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior.o" \\
 	  PREPARED_BINARY="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior_test"
+	mkdir -p \$(top_builddir)/tests/emitter-light-law
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
+	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/emitter_light_law.cpp" \\
+	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/emitter-light-law/emitter_light_law.o" \\
+	  PREPARED_BINARY="\$(abs_top_builddir)/tests/emitter-light-law/emitter_light_law_test"
 	sh \$(top_srcdir)/tests/render/progressive_volume.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_volume_groups.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_solid.sh \$(top_builddir)/unix/povray \$(top_srcdir)
