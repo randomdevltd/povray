@@ -1146,7 +1146,6 @@ class Trace
         };
         SubsurfaceThin ssltThin;
         const std::vector<std::shared_ptr<LightSource>>* ssltBounceSources = nullptr;
-        bool ssltInternalOnly = false;
         /// Rd tables per subsurface recursion depth, one per channel.
         SubsurfaceRdTable ssltRdTables[2][MathColour::channels];
         void AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket);
@@ -1335,10 +1334,6 @@ class Trace
         bool ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile, double ftOut, SubsurfaceCloud& cloud,
                                     MathColour& diffuse, TraceTicket& ticket, std::uint64_t key);
         void CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId);
-        bool ContainsSubsurfaceMaterial(const Vector3d& point, const Interior* interior, PreparedSetId preparedSetId);
-        MathColour ComputeSubsurfaceInternalSource(const Intersection& out, Ray& eye, double eta,
-            const PreciseMathColour& absorption, const PreciseMathColour& scattering,
-            const std::vector<const LightSource*>& lights, int samples, std::uint64_t key);
         void ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const Intersection& isect, Ray& Eye, double rayWeight, MathColour& colour);
         void SetUpSubsurfaceFlesh(SubsurfaceFlesh& flesh, const SubsurfaceLayers& layers, const Intersection& out, const Vector3d& inward,
                                   std::uint64_t key);

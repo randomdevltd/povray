@@ -71,38 +71,6 @@ const DBL DEPTH_TOLERANCE = 1.0e-6;
 
 const DBL CLOSE_TOLERANCE = 1.0e-6;
 
-static bool IntersectPreciseBox(const Ray& ray, const TRANSFORM* transform, const Vector3d& low,
-    const Vector3d& high, double* nearDepth, double* farDepth, int* nearSide, int* farSide)
-{
-    Vector3d position = ray.Origin, direction = ray.Direction;
-    if (transform)
-    {
-        MInvTransPoint(position, ray.Origin, transform);
-        MInvTransDirection(direction, ray.Direction, transform);
-    }
-    double near = 0.0, far = std::numeric_limits<double>::max();
-    int first = 0, last = 0;
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        if (direction[axis] == 0.0)
-        {
-            if (position[axis] < low[axis] || position[axis] > high[axis]) return false;
-            continue;
-        }
-        double a = (low[axis] - position[axis]) / direction[axis];
-        double b = (high[axis] - position[axis]) / direction[axis];
-        int sideA = axis * 2 + 1, sideB = axis * 2 + 2;
-        if (a > b) { std::swap(a, b); std::swap(sideA, sideB); }
-        if (a > near) { near = a; first = sideA; }
-        if (b < far) { far = b; last = sideB; }
-        if (near > far) return false;
-    }
-    if (!(far > 0.0) || !IsFiniteIntersectionDepth(near) || !IsFiniteIntersectionDepth(far)) return false;
-    *nearDepth = near; *farDepth = far;
-    *nearSide = first; *farSide = last;
-    return true;
-}
-
 
 /*****************************************************************************
 *
@@ -141,9 +109,7 @@ bool Box::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadData
 
     Intersection_Found = false;
 
-    const bool precise = ray.GetRootQuery() && ray.GetRootQuery()->PreciseBoundary();
-    if (precise ? IntersectPreciseBox(ray, Trans, bounds[0], bounds[1], &Depth1, &Depth2, &Side1, &Side2) :
-        Intersect(ray, Trans, bounds[0], bounds[1], &Depth1, &Depth2, &Side1, &Side2))
+    if (Intersect(ray, Trans, bounds[0], bounds[1], &Depth1, &Depth2, &Side1, &Side2))
     {
         if (Depth1 > DEPTH_TOLERANCE)
         {
