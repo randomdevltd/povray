@@ -478,7 +478,9 @@ bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, uns
         return FiniteBounds(low, high);
     }
     Make_min_max_from_BBox(low, high, object->BBox);
-    if (object->BBox.finite && FiniteBounds(low, high))
+    // a plain union's own box rounds its parts' boxes outward again, so it frames by the parts themselves
+    const bool plainUnion = (dynamic_cast<const CSGUnion *>(object) != nullptr) && object->Bound.empty() && object->Clip.empty();
+    if (object->BBox.finite && FiniteBounds(low, high) && !plainUnion)
         return true;
     if (compound == nullptr)
     {
