@@ -48,7 +48,8 @@ Changed Behaviour
   meaning, the refraction value 0.
   detail and auto are matched by text and remain free as identifiers.
 - Henyey-Greenstein eccentricity must lie strictly between -1 and 1; other
-  values, whose phase is negative or undefined, are a parse error.
+  values, whose phase is negative or undefined, are a parse error from
+  version 3.8 and a warning in a scene of version 3.7 or older.
 - A Sturm-solved polynomial outside the solver's floating-point range has no
   roots, rather than ending the render with an error.
 - scale_lumens(phi, metres) requires finite lumens and positive finite metres
