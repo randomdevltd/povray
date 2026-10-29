@@ -18,4 +18,5 @@ render surface Declare=Surface=1 Declare=SourceL=1
 render tiny_native Declare=Surface=1 Declare=SourceL=1 Declare=Radius=0.00000001
 render tiny_transformed Declare=Surface=1 Declare=SourceL=1 Declare=Radius=0.00000001 Declare=Native=0
 render hemisphere Declare=Surface=2 Declare=SourceL=1
-python3 "$SRCDIR/tests/render/volume_scattering_reference.py" "$WORK"
+. "$SRCDIR/tests/render/image.sh"
+image_awk -l volume_scattering_reference 'BEGIN { volume_scattering_check(ARGV[1]) }' "$WORK"

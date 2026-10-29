@@ -57,22 +57,22 @@ cmp portal.rgb native_portal.rgb
   echo '  light { pigment { rgb 1 } brightness 4 samples 64 } }'
 } >self.pov
 render self self.pov
-python3 - <<'PY'
-from pathlib import Path
-import struct
-power=lambda n:sum(struct.unpack('>192H',Path(n+'.rgb').read_bytes()))
-for case in range(8):
-    assert power('geometry'+str(case))>0,case
-assert power('native7')>0
-assert abs(power('native7')/power('geometry7')-1)<0.05
-assert power('passive')==0
-assert power('csg')>0
-assert power('portal')>0
-assert power('self')==0
-reference=power('geometry0')
-assert abs(power('lumens')/reference-1)<0.12
-assert abs(power('few')/power('many')-1)<0.35
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function power(name,    v) { return sum_of(v, read_words(name ".rgb", v, 192)) }
+function check(ok, message) { if (!ok) fail("surface_light: " message) }
+BEGIN {
+    for (c = 0; c < 8; c++) check(power("geometry" c) > 0, "geometry" c " is black")
+    check(power("native7") > 0, "native7 is black")
+    check(abs(power("native7") / power("geometry7") - 1) < 0.05, "native7 power " power("native7") ", geometry7 " power("geometry7") ", limit 5%")
+    check(power("passive") == 0, "passive emits " power("passive"))
+    check(power("csg") > 0, "csg is black")
+    check(power("portal") > 0, "portal is black")
+    check(power("self") == 0, "self emits " power("self"))
+    reference = power("geometry0")
+    check(abs(power("lumens") / reference - 1) < 0.12, "lumens power " power("lumens") ", geometry0 " reference ", limit 12%")
+    check(abs(power("few") / power("many") - 1) < 0.35, "few-sample power " power("few") ", many " power("many") ", limit 35%")
+}'
 reject() {
     name=$1; message=$2; body=$3
     for language in pov pov4; do

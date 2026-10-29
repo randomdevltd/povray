@@ -18,4 +18,5 @@ for name in linear absorbed native; do
     grep -Eq 'Curved Rays:[[:space:]]+[1-9][0-9]*' "$name.log" || { cat "$name.log"; exit 1; }
     grep -Eq 'Bending Steps:[[:space:]]+[1-9][0-9]*' "$name.log" || { cat "$name.log"; exit 1; }
 done
-python3 "$SRCDIR/tests/render/refraction_prepared_ray_reference.py" "$WORK"
+. "$SRCDIR/tests/render/image.sh"
+image_awk -l refraction_prepared_ray_reference 'BEGIN { refraction_prepared_ray_check(ARGV[1]) }' "$WORK"

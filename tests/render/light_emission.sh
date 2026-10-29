@@ -57,16 +57,17 @@ same omit white
 render zero Declare=Zero=1
 render empty Declare=Empty=1
 same zero empty
-python3 - <<'PY'
-from pathlib import Path
-import struct
-values=lambda n:struct.unpack('>48H',Path(n+'.rgb').read_bytes())
-assert any(values('alias4_0'))
-assert all(v==0 for v in values('zero'))
-assert sum(values('aliasOverlap'))<sum(values('alias4_0'))
-assert sum(values('aliasOwnAbsorb'))<sum(values('alias4_0'))
-assert any(values('omit'))
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function power(name,    v) { return sum_of(v, read_words(name ".rgb", v, 48)) }
+BEGIN {
+    lit = power("alias4_0")
+    if (!(lit > 0)) fail("alias4_0 is black")
+    if (power("zero") != 0) fail("zero emits " power("zero"))
+    if (!(power("aliasOverlap") < lit)) fail("aliasOverlap power " power("aliasOverlap") " is not below alias4_0 " lit)
+    if (!(power("aliasOwnAbsorb") < lit)) fail("aliasOwnAbsorb power " power("aliasOwnAbsorb") " is not below alias4_0 " lit)
+    if (!(power("omit") > 0)) fail("omit is black")
+}'
 fail() {
     name=$1; message=$2; shift 2
     if "$POVRAY" +i"$SRCDIR/tests/render/light_emission.pov" +w1 +h1 +wt1 +pr -a -d -p -v -gp +o"$name.png" "$@" >"$name.log" 2>&1; then

@@ -16,10 +16,10 @@ render() {
         fi
     done
 }
+. "$SRCDIR/tests/render/image.sh"
 check() {
-    name=$1; case=$2
-    python3 "$SRCDIR/tests/render/volume_joint_media_reference.py" --image "$name.ppm" --case "$case" \
-        --output "$name-reference.json"
+    image_awk -l joint_media -l volume_joint_media_reference \
+        'BEGIN { volume_joint_media_check(ARGV[2], 0, ARGV[1] ".ppm", "") }' "$1" "$2"
 }
 render constant 0
 check constant 0
@@ -29,12 +29,15 @@ render serial 2
 check serial 0
 render scalar_no_eager 1 -we
 render serial_no_eager 2 -we
-PYTHONPATH="$SRCDIR/tests/render" python3 - <<'PY'
-from pathlib import Path
-from volume_transport_reference import read_ppm
-for name in ['scalar', 'serial']:
-    assert read_ppm(Path(name + '.ppm')) == read_ppm(Path(name + '_no_eager.ppm'))
-PY
+image_awk '
+BEGIN {
+    split("scalar serial", names, " ")
+    for (i = 1; i <= 2; i++) {
+        n = read_ppm(names[i] ".ppm", eager); w = IMAGE_W; h = IMAGE_H
+        m = read_ppm(names[i] "_no_eager.ppm", lazy)
+        if (w != IMAGE_W || h != IMAGE_H || !same_values(eager, n, lazy, m)) fail(names[i] ": the image changes without eager preparation")
+    }
+}'
 if "$POVRAY" +i"$SRCDIR/tests/render/media_prepared_publication.pov" +w8 +h8 +pr -a -d -p -v -gp \
     +wt2 -f Declare=Case=3 > context.log 2>&1; then
     cat context.log; exit 1

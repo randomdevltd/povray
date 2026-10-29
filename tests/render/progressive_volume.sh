@@ -58,27 +58,18 @@ grouped_render() {
 grouped_render one Declare=LampPower=0.1 +wt1
 grouped_render four Declare=LampPower=0.1 +wt4
 grouped_render brighter Declare=LampPower=0.2 +wt4
-python3 - <<'PY_GROUPED'
-from array import array
-from pathlib import Path
-import re
-import sys
-
-def pixels(name):
-    raw = Path('progressive_volume_grouped_' + name + '.ppm').read_bytes()
-    header = re.match(rb'P6\s+(?:#[^\n]*\n\s*)*(\d+)\s+(\d+)\s+65535\s', raw)
-    assert header is not None
-    values = array('H')
-    values.frombytes(raw[header.end():])
-    if sys.byteorder == 'little':
-        values.byteswap()
-    return values
-
-one, four, brighter = pixels('one'), pixels('four'), pixels('brighter')
-assert one == four
-assert sum(one) > 100 and max(brighter) < 65535
-assert 1.98 < sum(brighter) / sum(one) < 2.02
-PY_GROUPED
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+BEGIN {
+    n1 = read_samples("progressive_volume_grouped_one.ppm", one)
+    n4 = read_samples("progressive_volume_grouped_four.ppm", four)
+    nb = read_samples("progressive_volume_grouped_brighter.ppm", brighter)
+    if (!same_values(one, n1, four, n4)) fail("progressive_volume: grouped media differ between one and four threads")
+    total = sum_of(one, n1)
+    if (!(total > 100 && max_of(brighter, nb) < 65535)) fail("progressive_volume: grouped sum " total ", brighter peak " max_of(brighter, nb))
+    ratio = sum_of(brighter, nb) / total
+    if (!(1.98 < ratio && ratio < 2.02)) fail("progressive_volume: grouped power ratio " ratio ", expected between 1.98 and 2.02")
+}'
 printf 'progressive_volume means: prepared=%s classic=%s\n' "$(mean prepared)" "$(mean classic)"
 rm -f progressive_volume_*.ppm progressive_volume_*.px progressive_volume_*.log
 echo 'progressive_volume: prepared photon gathers, curved segments, extinction, media spacing, target steps, power, threads and grouped media passed'

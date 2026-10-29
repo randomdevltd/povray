@@ -33,33 +33,44 @@ render multiply Declare=Modifier=1
 render subtract Declare=Modifier=2
 render absorbed Declare=Absorb=1
 render absorber_zero Declare=Absorb=1 Declare=Zero=1
-python3 - <<'PYTHON'
-import struct
-import math
-from pathlib import Path
-expected = {
-    "point": tuple(s*5000.5*(math.atan(100)-math.atan(99)) for s in (.0875,.1375,.15)),
-    "volume16": tuple(s*50/99 for s in (.0875,.1375,.15)),
-    "volume64": tuple(s*50/99 for s in (.0875,.1375,.15)),
-    "volume_legacy": tuple(s*50/99 for s in (.0875,.1375,.15)),
-    "surface_point": (.5,.5,.5),
-    "surface_volume": (.5,.5,.5),
-    "physical": (.0875, .1375, .15),
-    "zero": (.0875, .1375, .15),
-    "multiply": tuple(s*(.5+.5*f) for s,f in zip((.0875,.1375,.15),(.5,.25,.75))),
-    "subtract": tuple(s*(1-.5*a/t) for s,a,t in zip((.0875,.1375,.15),(.05,.1,.1),(.3,.4,.4))),
-    "absorbed": tuple(s*math.exp(-a) for s,a in zip((.0875,.1375,.15),(.1,.2,.3))),
-    "absorber_zero": tuple(s*math.exp(-a) for s,a in zip((.0875,.1375,.15),(.1,.2,.3))),
-    "density": (.1375, .1625, .15),
-    "forward": (.2, .475, .6),
-    "backward": ((.2+.1*2/9)/4, (.1+.3*2/9)/4, .4*2/9/4),
-    "legacy": tuple(1.299372013 * s for s in (.3,.4,.4)),
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function expect(name, r, g, b) {
+    NAMES[++COUNT] = name
+    EXPECTED[name, 0] = r; EXPECTED[name, 1] = g; EXPECTED[name, 2] = b
 }
-for name, reference in expected.items():
-    data=Path(name+".ppm").read_bytes()[-4*4*6:]
-    samples=struct.unpack(">48H", data)
-    actual=[sum(samples[ch::3])/16/65535 for ch in range(3)]
-    for ch, (value, target) in enumerate(zip(actual, reference)):
-        assert abs(value-target)<(0.002 if name.startswith(("volume", "surface")) else 0.00015), (name,ch,value,target)
-    print(name, actual)
-PYTHON
+BEGIN {
+    split(".0875 .1375 .15", s, " ")
+    point = atan2(100, 1) - atan2(99, 1)
+    expect("point", s[1] * 5000.5 * point, s[2] * 5000.5 * point, s[3] * 5000.5 * point)
+    expect("volume16", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
+    expect("volume64", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
+    expect("volume_legacy", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
+    expect("surface_point", .5, .5, .5)
+    expect("surface_volume", .5, .5, .5)
+    expect("physical", .0875, .1375, .15)
+    expect("zero", .0875, .1375, .15)
+    expect("multiply", s[1] * (.5 + .5 * .5), s[2] * (.5 + .5 * .25), s[3] * (.5 + .5 * .75))
+    expect("subtract", s[1] * (1 - .5 * .05 / .3), s[2] * (1 - .5 * .1 / .4), s[3] * (1 - .5 * .1 / .4))
+    expect("absorbed", s[1] * exp(-.1), s[2] * exp(-.2), s[3] * exp(-.3))
+    expect("absorber_zero", s[1] * exp(-.1), s[2] * exp(-.2), s[3] * exp(-.3))
+    expect("density", .1375, .1625, .15)
+    expect("forward", .2, .475, .6)
+    expect("backward", (.2 + .1 * 2 / 9) / 4, (.1 + .3 * 2 / 9) / 4, .4 * 2 / 9 / 4)
+    expect("legacy", 1.299372013 * .3, 1.299372013 * .4, 1.299372013 * .4)
+    for (k = 1; k <= COUNT; k++) {
+        name = NAMES[k]
+        n = read_tail_words(name ".ppm", samples, 48)
+        tolerance = name ~ /^(volume|surface)/ ? 0.002 : 0.00015
+        line = name
+        for (ch = 0; ch < 3; ch++) {
+            total = 0
+            for (i = ch; i < n; i += 3) total += samples[i]
+            value = total / 16 / 65535
+            if (!(abs(value - EXPECTED[name, ch]) < tolerance))
+                fail(sprintf("%s channel %d: %.9g, expected %.9g within %g", name, ch, value, EXPECTED[name, ch], tolerance))
+            line = line sprintf(" %.9g", value)
+        }
+        print line
+    }
+}'

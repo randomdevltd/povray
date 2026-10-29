@@ -11,11 +11,12 @@ for fog in 0 0.005 0.01; do
     tail -c 1152 "fog$fog.ppm" >"fog$fog.rgb"
 done
 tr -d ' \r\n' <fog0.01.log | grep -q 'MediaStrideLights:[1-9]' || { cat fog0.01.log; exit 1; }
-python3 - <<'PY'
-import struct
-power = lambda name: sum(struct.unpack('>576H', open(name + '.rgb', 'rb').read()))
-base = power('fog0')
-ratio = (power('fog0.01') - base) / (power('fog0.005') - base)
-assert 1.8 < ratio < 2.2, ratio
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function power(name,    v) { return sum_of(v, read_words(name ".rgb", v, 576)) }
+BEGIN {
+    base = power("fog0")
+    ratio = (power("fog0.01") - base) / (power("fog0.005") - base)
+    if (!(1.8 < ratio && ratio < 2.2)) fail("media_stride_scattering: scattering ratio " ratio ", expected between 1.8 and 2.2")
+}'
 echo 'media_stride_scattering: strided single scattering is linear in the scattering coefficient'

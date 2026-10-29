@@ -5,6 +5,10 @@ SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
+. "$SRCDIR/tests/render/image.sh"
+reference() {
+    image_awk -l volume_transport_reference 'BEGIN { volume_transport_check(ARGV[1], ARGV[2]) }' "$WORK" "$1"
+}
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/volume_transport.pov" +w12 +h12 +pr -a -d -p -v -gp \
@@ -16,7 +20,7 @@ check_photons() {
         tr '\n' ' ' < photon_gathered.log | tr -s ' ' | grep -q "$pattern" ||
             { cat photon_gathered.log; exit 1; }
     done
-    python3 "$SRCDIR/tests/render/volume_transport_reference.py" "$WORK" --subset photons
+    reference photons
 }
 if [ "${VOLUME_TEST_SUBSET:-all}" = photons ]; then
     check_photons
@@ -34,7 +38,7 @@ render remote Declare=Height=100000 Declare=Gain=100000000
 render fog Declare=Case=6 Declare=Sigma=0.7
 render atmosphere_box Declare=Case=7 Declare=Sigma=0.7
 if [ "${VOLUME_TEST_SUBSET:-all}" = lumens ] || [ "${LUMENS_ONLY:-0}" = 1 ]; then
-    python3 "$SRCDIR/tests/render/volume_transport_reference.py" "$WORK" --subset lumens
+    reference lumens
     exit 0
 fi
 render cube_center Declare=Case=5 Declare=Probe=0.5 Declare=Draws=1024
@@ -44,7 +48,7 @@ render clipped_box Declare=Case=9 Declare=Draws=1024
 for gap in 0 0.02 0.1 0.5 1 2 4 8 16; do
     render "cube_$gap" Declare=Case=5 Declare=Gap="$gap" Declare=Draws=1024
 done
-python3 "$SRCDIR/tests/render/volume_transport_reference.py" "$WORK"
+reference all
 check_photons
 syntax() {
     "$POVRAY" +i"$SRCDIR/tests/render/volume_transport_syntax.pov" +w4 +h4 +pr -a -d -p -v -gp \
