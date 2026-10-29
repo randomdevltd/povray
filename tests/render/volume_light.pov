@@ -12,11 +12,8 @@ global_settings { assumed_gamma 1 }
 #end
 background { rgb 0 }
 
-// A white probe resting on an emitting slab of optical depth tau reads 2*integral of mu*(1-exp(-tau/mu)):
-// its radiance straight down, saturating to L at large tau whatever the density that makes it. The slab
-// is wide against its depth, so its central face behaves as infinite; the pinned resolution makes the
-// half-scale room of case 2 march the same grid, and the draws are many because the probe sits inside
-// the emitter's own reach, where each draw's shadow matters.
+// A white probe on an emitting slab of optical depth tau reads (j/sigma)*2*integral of mu*(1-exp(-tau/mu)), j = L/(4V/A);
+// the hollow probe plane leaves the slab's absorption visible, as a solid enclosing a medium hides it before 4.0.
 #if (Case = 1 | Case = 5)
   #ifndef (Sigma) #declare Sigma = 1; #end
   #ifndef (Depth) #declare Depth = 2; #end
@@ -25,7 +22,7 @@ background { rgb 0 }
   box { <-Half, 0, -Half>, <Half, Depth, Half> pigment { rgbt 1 } hollow
     interior { media { method 4 resolution 0.5 absorption rgb Sigma }
       light { brightness Lum samples 512 attenuation Att } } }
-  plane { y, Depth + 0.002 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow }
+  plane { y, Depth + 0.002 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow hollow }
 #end
 
 // The same scene at half scale: radiance anchored, so the render is bit-identical.
@@ -38,7 +35,7 @@ background { rgb 0 }
   box { <-64 * S, 0, -64 * S>, <64 * S, Depth * S, 64 * S> pigment { rgbt 1 } hollow
     interior { media { method 4 resolution 0.25 absorption rgb Sigma }
       light { brightness Lum samples 512 } } }
-  plane { y, Depth * S + 0.001 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow }
+  plane { y, Depth * S + 0.001 pigment { rgb 1 } finish { ambient 0 diffuse 1 } double_illuminate no_shadow hollow }
 #end
 
 // A glowing gas ball and an area light of the same radiance over the same silhouette: one lights
