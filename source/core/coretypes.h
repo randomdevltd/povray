@@ -187,7 +187,6 @@ class Media final
         bool fastResolutionRecorded = false;
         std::shared_ptr<FastCache> fastCache;
         std::vector<std::shared_ptr<FastCache>> preparedBindings;
-        bool preparedParallelSafe = false;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
 
@@ -202,7 +201,6 @@ class Media final
         void PostProcess();
         void SetFastContainer(ObjectPtr object, DBL cellLimit = 0.0);
         void FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
-        void SetPreparedParallelSafe(bool safe) { preparedParallelSafe = safe; }
         void SetRequestedFastResolution(DBL value) { FastResolution = requestedFastResolution = value; fastResolutionRecorded = true; }
         void RequirePreparedField() const;
         void PreparedDensityAt(const Vector3d& point, MathColour& result) const;

@@ -446,7 +446,7 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         if (!SizeGrid(media, container->BBox, td->GetSceneData()->EffectivePreparedMediaCells()))
             throw POV_EXCEPTION_STRING("Prepared density cannot be published for this configuration.");
         std::atomic<bool> unusable(false);
-        const size_t count = media.preparedParallelSafe ? std::max<size_t>(1, std::min<size_t>(nz, td->GetSceneData()->workThreads)) : 1;
+        const size_t count = std::max<size_t>(1, std::min<size_t>(nz, td->GetSceneData()->workThreads));
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
         for (size_t i = 1; i < count; i++)
             helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
@@ -744,7 +744,7 @@ bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, cons
 }
 
 RefractionSpec::RefractionSpec(const RefractionSpec& source) : detail(source.detail),
-    transform(Copy_Transform(source.transform)), preparedParallelSafe(source.preparedParallelSafe)
+    transform(Copy_Transform(source.transform))
 {
     for (const auto function : source.functions)
         functions.push_back(function->Clone());
@@ -854,7 +854,6 @@ Media& Media::operator=(const Media& source)
         priority = source.priority;
         fastCache.reset();
         preparedBindings.clear();
-        preparedParallelSafe = false;
 
         if (Sample_Threshold != nullptr)
             delete[] Sample_Threshold;
@@ -887,7 +886,6 @@ void Media::Transform(const TRANSFORM *Trans)
     Transform_Density(Density, Trans);
     fastCache.reset();
     preparedBindings.clear();
-    preparedParallelSafe = false;
 }
 
 // The prepared grid's width for a container when none is given: 0 for an unbounded one.
@@ -1279,8 +1277,7 @@ static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const Refrac
             throw POV_EXCEPTION_STRING("Varying refraction requires a finite prepared region.");
         const auto& layout = binding->layout;
         std::vector<DBL> values(layout->ValueCount());
-        const size_t workers = spec.preparedParallelSafe ? std::max<size_t>(1,
-            std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads)) : 1;
+        const size_t workers = std::max<size_t>(1, std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads));
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
         for (size_t worker = 1; worker < workers; worker++)
             helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), worker, false));
@@ -1536,7 +1533,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
-    photonOptions(source.photonOptions), preparedParallelSafe(source.preparedParallelSafe)
+    photonOptions(source.photonOptions)
 {
 }
 
@@ -1926,8 +1923,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     else
     {
         vector<MathColour> values(count);
-        const size_t workers = settings.preparedParallelSafe ?
-            std::max<size_t>(1, std::min<size_t>(count, td->GetSceneData()->workThreads)) : 1;
+        const size_t workers = std::max<size_t>(1, std::min<size_t>(count, td->GetSceneData()->workThreads));
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
         for (size_t i = 1; i < workers; i++)
             helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));

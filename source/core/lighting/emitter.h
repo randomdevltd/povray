@@ -133,7 +133,6 @@ struct MediaLight final
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;
-    bool preparedParallelSafe = false;
 
     MediaLight() = default;
     MediaLight(const MediaLight& source);          ///< deep-copies the pigment
