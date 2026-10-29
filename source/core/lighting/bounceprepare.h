@@ -288,12 +288,69 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     for (const auto& trace : traces)
         trace->BeginSurfaceSubsurface(field);
     const auto& nodes = result.nodes;
-    std::vector<MathColour> radiance(nodes.size());
+    const std::size_t count = nodes.size();
     field.Build(nodes, result.entry, 1);
-    workers.For(nodes.size(), cooperate, [&](size_t node, size_t worker)
+    std::vector<double> spacing(count), levels;
+    for (std::size_t t = 0; t < count; ++t)
+        spacing[result.index->Source()[t]] = result.index->Spacing(t);
+    levels = spacing;
+    std::sort(levels.begin(), levels.end(), std::greater<double>());
+    levels.erase(std::unique(levels.begin(), levels.end()), levels.end());
+    // Light diffuses within one object's material, as the field's trees are built.
+    std::vector<std::pair<const void*, const void*>> keys;
+    std::vector<std::size_t> group(count);
+    for (std::size_t i = 0; i < count; ++i)
     {
-        radiance[node] = traces[worker]->SurfaceSubsurfaceNode(nodes[node], node, 0);
-    }, units);
+        const Intersection& hit = nodes[i].intersection;
+        const std::pair<const void*, const void*> key(hit.Csg ? (const void*)hit.Csg : (const void*)hit.Object, hit.Object->interior.get());
+        group[i] = std::find(keys.begin(), keys.end(), key) - keys.begin();
+        if (group[i] == keys.size()) keys.push_back(key);
+    }
+    // Diffusion blurs the light leaving over its length, so it is found at nodes no finer than a quarter of that length,
+    // level by level, and interpolated between them at finer ones.
+    std::vector<MathColour> radiance(count);
+    std::vector<double> length(count, HUGE_VAL);
+    std::vector<std::vector<std::size_t>> found(keys.size());
+    std::vector<std::shared_ptr<const SurfaceNodeIndex>> foundIndex(keys.size());
+    std::vector<std::size_t> later;
+    for (double level : levels)
+    {
+        std::vector<std::size_t> now;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if (spacing[i] != level) continue;
+            const auto& index = foundIndex[group[i]];
+            const bool fine = index && level < 0.25 * length[found[group[i]][index->Source()[
+                index->Nearest(nodes[i].intersection.IPoint, nodes[i].normal)]]];
+            (fine ? later : now).push_back(i);
+        }
+        workers.For(now.size(), cooperate, [&](size_t k, size_t worker)
+        {
+            radiance[now[k]] = traces[worker]->SurfaceSubsurfaceNode(nodes[now[k]], now[k], 0, length[now[k]]);
+        }, 0);
+        for (std::size_t i : now) found[group[i]].push_back(i);
+        for (std::size_t g = 0; g < keys.size(); ++g)
+        {
+            if (found[g].empty() || (foundIndex[g] && foundIndex[g]->Size() == found[g].size())) continue;
+            std::vector<Vector3d> points, normals;
+            std::vector<double> spacings;
+            for (std::size_t i : found[g])
+            {
+                points.push_back(nodes[i].intersection.IPoint);
+                normals.push_back(nodes[i].normal);
+                spacings.push_back(spacing[i]);
+            }
+            foundIndex[g] = std::make_shared<const SurfaceNodeIndex>(points, normals, spacings);
+        }
+    }
+    workers.For(later.size(), cooperate, [&](size_t k, size_t)
+    {
+        const std::size_t i = later[k], g = group[i];
+        SurfaceNodeIndex::Weights weights;
+        foundIndex[g]->Interpolate(nodes[i].intersection.IPoint, nodes[i].normal, weights);
+        radiance[i] = Blend(weights, [&](std::uint32_t t) -> const MathColour& { return radiance[found[g][foundIndex[g]->Source()[t]]]; });
+    }, 0);
+    AdvancePreparation(workers.td->preparationProgress, units);
     traces.clear();
     return Trace::SurfaceSubsurfaceRadiance(result.index, radiance, result.etas, result.areas);
 }

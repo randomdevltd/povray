@@ -5538,6 +5538,7 @@ private:
 void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field)
 {
     ssltBridge = &field;
+    ssltBridgeEntryKnown.clear();
 }
 
 // Light from either side enters from the material's exterior, as at a cloud point.
@@ -5565,7 +5566,7 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const st
     return light / float(M_PI);
 }
 
-MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId)
+MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length)
 {
     Intersection hit(node.intersection);
     TraceTicket ticket(1, 0.0);
@@ -5577,9 +5578,11 @@ MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size
     eye.AppendInteriors(containing);
     eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, index));
     ssltBridgeNode = index;
+    ssltBridgeLength = HUGE_VAL;
     MathColour radiance;
     ColourChannel transmission = 0.0;
     ComputeTextureColour(hit, radiance, transmission, eye, 1.0, false);
+    length = ssltBridgeLength;
     return radiance;
 }
 
@@ -8648,7 +8651,29 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
         sigmaMax = max(sigmaMax, double(profile.sigma_tr[j]));
         depth = min(depth, double(profile.z_r[j]));
     }
-    const double reach = (sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL, decay = (sigmaMax > 0.0) ? 1.0 / sigmaMax : HUGE_VAL;
+    const double decay = (sigmaMax > 0.0) ? 1.0 / sigmaMax : HUGE_VAL;
+    ssltBridgeLength = min(ssltBridgeLength, decay / mm);
+    // The profile counts out to where all but the error bound's share of its mass lies within, at most kCloudReach lengths.
+    double reach = (sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL;
+    if (reach < HUGE_VAL)
+    {
+        const PreciseMathColour total = profile.RdTotal();
+        auto outside = [&](double s)
+        {
+            const PreciseMathColour inside = profile.RdDisc(s) * (M_PI * Sqr(s));
+            for (int j = 0; j < MathColour::channels; j++)
+                if (total[j] - inside[j] > errorBound * total[j])
+                    return true;
+            return false;
+        };
+        double low = 0.0, high = reach;
+        for (int step = outside(reach) ? 24 : 0; step < 24; step++)
+        {
+            const double middle = 0.5 * (low + high);
+            (outside(middle) ? low : high) = middle;
+        }
+        reach = high;
+    }
     const double core = sqrt(exit.area / M_PI) * mm;
     // The thin part's probe steps a thousandth of the spacing in, and at least as far as the entry probe would.
     const Interior *interior = out.Object->interior.get();
@@ -8671,14 +8696,28 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
             thin.Apply(rd, Sqr(radius), 1);
         return rd;
     };
+    // A patch's entry factor depends on it and the finish and skin alone, so each thread keeps the ones it has found.
+    if (flesh.PerEntry() && ((ssltBridgeEntryFinish != flesh.finish) || (ssltBridgeEntrySkin != flesh.skin) ||
+                             (ssltBridgeEntryKnown.size() != field.patches.size())))
+    {
+        ssltBridgeEntryFinish = flesh.finish;
+        ssltBridgeEntrySkin = flesh.skin;
+        ssltBridgeEntryKnown.assign(field.patches.size(), 0);
+        ssltBridgeEntry.resize(field.patches.size());
+    }
     auto entering = [&](const SurfaceSubsurfaceField::Patch& patch, std::size_t index)
     {
         PreciseMathColour light = patch.irradiance;
         if (flesh.PerEntry())
         {
-            SubsurfaceEntry entry;
-            ComputeSubsurfaceEntry(flesh, patch.centre, -patch.normal, Draw(DeriveKey(UINT64_C(0x73736c74656e7472), kDrawSubsurface, index), kDrawSubsurface, 0), entry);
-            light *= PreciseMathColour(entry.factor);
+            if (!ssltBridgeEntryKnown[index])
+            {
+                SubsurfaceEntry entry;
+                ComputeSubsurfaceEntry(flesh, patch.centre, -patch.normal, Draw(DeriveKey(UINT64_C(0x73736c74656e7472), kDrawSubsurface, index), kDrawSubsurface, 0), entry);
+                ssltBridgeEntry[index] = PreciseMathColour(entry.factor);
+                ssltBridgeEntryKnown[index] = 1;
+            }
+            light *= ssltBridgeEntry[index];
         }
         return light;
     };
@@ -8696,7 +8735,10 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
             c = patch.next;
             continue;
         }
-        if (!leaf && !((patch.cone >= kCloudCone) && (patch.area * Sqr(mm) < errorBound * boxSqr)))
+        // A group stands as one disc where it is small beside its distance, or beside a quarter of the diffusion length.
+        const double extent = ((patch.hi - patch.lo).length() + 2.0 * patch.radius) * mm;
+        const bool holdsExit = (c < exitPatch) && (exitPatch < patch.next);
+        if (!leaf && !((patch.cone >= kCloudCone) && !holdsExit && ((patch.area * Sqr(mm) < errorBound * boxSqr) || (extent < 0.25 * decay))))
         {
             c++;
             continue;

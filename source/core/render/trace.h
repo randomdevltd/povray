@@ -294,8 +294,9 @@ class Trace
         /// The light entering a node through its surface from the light arriving at it, and the relative index it leaves through.
         MathColour SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
             PreparedSetId preparedSetId, double& eta);
-        /// The subsurface radiance leaving a node of the field, drawn by its index.
-        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId);
+        /// The subsurface radiance leaving a node of the field, drawn by its index, and the shortest diffusion length (scene
+        /// units) of the material it leaves, infinite where none diffused.
+        MathColour SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length);
         /// One field per quantised relative index of refraction over the indexed nodes, from each node's radiance and area,
         /// given in the nodes' own order.
         static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
@@ -1175,6 +1176,10 @@ class Trace
         SubsurfaceThin ssltThin;
         const SurfaceSubsurfaceField* ssltBridge = nullptr;
         std::size_t ssltBridgeNode = 0;
+        double ssltBridgeLength = HUGE_VAL;
+        std::vector<PreciseMathColour> ssltBridgeEntry; ///< entry factors of the bridge's patches, for the finish and skin below
+        std::vector<char> ssltBridgeEntryKnown;
+        const void *ssltBridgeEntryFinish = nullptr, *ssltBridgeEntrySkin = nullptr;
         /// Rd tables per subsurface recursion depth, one per channel.
         SubsurfaceRdTable ssltRdTables[2][MathColour::channels];
         void AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket);
