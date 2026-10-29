@@ -5,6 +5,7 @@
 #ifndef (Method) #declare Method=4; #end
 #ifndef (Zero) #declare Zero=0; #end
 #ifndef (HG) #declare HG=0; #end
+#ifndef (Eccentricity) #declare Eccentricity=0.5; #end
 #ifndef (Reverse) #declare Reverse=0; #end
 #ifndef (Modifier) #declare Modifier=0; #end
 #ifndef (Absorb) #declare Absorb=0; #end
@@ -38,7 +39,7 @@ box { <-1,-1,0>,<1,1,1> pigment { rgbt 1 } hollow
    density { rgb Density }
   }
   media { method Method #if (Method=4) resolution 0.02 #end
-   scattering { #if (HG) 5 #else 4 #end, rgb <0.1,0.3,0.4> extinction 0 #if (HG) eccentricity 0.5 #end }
+   scattering { #if (HG) 5 #else 4 #end, rgb <0.1,0.3,0.4> extinction 0 #if (HG) eccentricity Eccentricity #end }
   }
   #if (Zero)
    media { method Method #if (Method=4) resolution 0.02 #end scattering { 3, rgb 0 } #if (Absorb) absorption rgb <0.1,0.2,0.3> #end }
