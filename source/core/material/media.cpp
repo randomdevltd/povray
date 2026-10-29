@@ -2836,8 +2836,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
 std::unique_ptr<Trace::MediaFunctor::Path> MediaFunction::BeginPath(const Ray& ray)
 {
     // Numerical curved chords share the scope; a recursive surface continuation starts another one.
-    // Only an emitter's light is gathered along a path, and every emitter is a media light.
-    if (ray.IsShadowTestRay() || ray.IsPhotonRay() || threadData->GetSceneData()->mediaLights.empty())
+    if (ray.IsShadowTestRay() || ray.IsPhotonRay())
         return nullptr;
     return std::unique_ptr<Trace::MediaFunctor::Path>(new FixedLightPath(*this, ray));
 }
