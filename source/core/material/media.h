@@ -228,6 +228,8 @@ class MediaFunction : public Trace::MediaFunctor
         unsigned int lightSampleIndex;
         Vector2d lightSampleShift;
         std::vector<MathColour> scatterDensity;
+        /// Light reaching the current sample point, scattered once its draws are in; nested points stack above.
+        std::vector<MediaIncident> pointIncident;
 
         void ComputeMediaRegularSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
                                          const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering,
@@ -271,8 +273,10 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect);
         bool ComputeSpotLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
         bool ComputeCylinderLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
+        /// densities, when given, receives each medium's density at the point (zero where the ray skips it).
         void ComputeMediaCoefficients(MediaVector& medias, const Ray& ray, const Vector3d& point, bool prepared,
-                                      MathColour& emission, MathColour& extinction, MathColour& scattering);
+                                      MathColour& emission, MathColour& extinction, MathColour& scattering,
+                                      MathColour *densities = nullptr);
         void DensityForDeclaredMode(Media& medium, const Vector3d& point, MathColour& density);
         void ComputeMediaSampleLighting(MediaVector& medias, LightSourceEntryVector& lights,
                                         const MediaInterval& interval, const Ray& ray, DBL depth, const Vector3d& point,
@@ -295,7 +299,7 @@ class MediaFunction : public Trace::MediaFunctor
                                             const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay);
         /// Adds to output the light the media at point scatter along the ray from each incident sample.
         void ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
-                             const Vector3d& point, const BasicRay& ray);
+                             const Vector3d& point, const BasicRay& ray, const MathColour *densities = nullptr);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };
 
