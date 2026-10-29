@@ -121,6 +121,9 @@ class Ray final : public BasicRay
         bool IsMonochromaticRay() const { return monochromaticRay; }
         bool IsHollowRay() const { return hollowRay; }
         bool IsPretraceRay() const { return pretraceRay; }
+        /// Shadow tests of this ray count every blocker between its ends, with no fixed margin at either.
+        void SetExactShadowWindow() { exactShadowWindow = true; }
+        bool HasExactShadowWindow() const { return exactShadowWindow; }
 
         bool AdmitRoot(ConstObjectPtr object, double depth) const
         { return !rootQuery.query || rootQuery.query->Admit(rootQuery.owner ? rootQuery.owner : object, depth); }
@@ -194,6 +197,7 @@ class Ray final : public BasicRay
         mutable DBL mediaErrorBudget = 0.0;
         const LightSource *mediaLight = nullptr;
         PreparedSetId preparedSetId = 0;
+        bool exactShadowWindow = false;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;

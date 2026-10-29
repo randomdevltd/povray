@@ -747,7 +747,7 @@ FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& le
 }
 
 // The object box pretest's cut, kept by the walk: boxes the ray leaves before MIN_ISECT_DEPTH are skipped.
-static const float SCENE_MIN_EXIT = float(MIN_ISECT_DEPTH);
+static float SceneMinExit(const Ray& ray) { return ray.HasExactShadowWindow() ? 0.0f : float(MIN_ISECT_DEPTH); }
 
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread)
 {
@@ -762,7 +762,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
             found = true;
         }
         return false;
-    }, SCENE_MIN_EXIT);
+    }, SceneMinExit(ray));
     return found;
 }
 
@@ -781,7 +781,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
             found = true;
         }
         return false;
-    }, SCENE_MIN_EXIT);
+    }, SceneMinExit(ray));
     return found;
 }
 
@@ -811,7 +811,7 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
             return stop(New_Intersection);
         }
         return false;
-    }, SCENE_MIN_EXIT);
+    }, SceneMinExit(ray));
     return found;
 }
 

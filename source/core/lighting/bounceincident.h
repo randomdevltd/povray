@@ -63,6 +63,7 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             ray.AppendInteriors(interiors);
             if (receiver && receiverNormal)
                 ray.SetSurfaceOrigin(receiver, point, *receiverNormal);
+            ray.SetExactShadowWindow();
             MathColour incoming;
             double depth = 0.0;
             if (light.emitter)

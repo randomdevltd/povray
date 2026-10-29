@@ -862,7 +862,8 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
         invdir = BBoxVector3d(tmp);
         variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
 
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
+        // The box pretest skips boxes left before MIN_ISECT_DEPTH, a floor an exact shadow window does not have.
+        if(!ray.HasExactShadowWindow() && (object->Intersect_BBox(variant, origin, invdir, closest) == false))
             return false;
 
         if(object->Bound.empty() == false)
@@ -884,7 +885,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
             {
                 tmpDepth = depthstack->top().Depth;
                 // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH))
+                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || tmpDepth >= MIN_ISECT_DEPTH))
                 {
                     isect = depthstack->top();
                     closest = tmpDepth;
@@ -916,7 +917,8 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
         invdir = BBoxVector3d(tmp);
         variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
 
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
+        // The box pretest skips boxes left before MIN_ISECT_DEPTH, a floor an exact shadow window does not have.
+        if(!ray.HasExactShadowWindow() && (object->Intersect_BBox(variant, origin, invdir, closest) == false))
             return false;
 
         if(object->Bound.empty() == false)
@@ -938,7 +940,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
             {
                 tmpDepth = depthstack->top().Depth;
                 // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
+                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
                 {
                     isect = depthstack->top();
                     closest = tmpDepth;
@@ -3423,7 +3425,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     // If there's some distance left for the ray to reach the light source
     // we have to apply atmospheric stuff to this part of the ray.
 
-    if((newdepth > SHADOW_TOLERANCE) && (lightsource.Media_Interaction) && (lightsource.Media_Attenuation))
+    if((newdepth > (newray.HasExactShadowWindow() ? 0.0 : SHADOW_TOLERANCE)) && (lightsource.Media_Interaction) && (lightsource.Media_Attenuation))
     {
         isect.Depth = newdepth;
         isect.Object = nullptr;
@@ -3469,8 +3471,9 @@ struct OpaqueShadowStopCondition final : public IntersectionStopCondition
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
     lightsourceray.ResetMediaErrorBudget();
-    const double endpointTolerance = lightsource.emitter ? 0.0 : SHADOW_TOLERANCE;
-    const double startTolerance = lightsource.emitter && lightsource.emitter->IsSurface() ? 0.0 : SHADOW_TOLERANCE;
+    const bool exact = lightsourceray.HasExactShadowWindow();
+    const double endpointTolerance = lightsource.emitter || exact ? 0.0 : SHADOW_TOLERANCE;
+    const double startTolerance = (lightsource.emitter && lightsource.emitter->IsSurface()) || exact ? 0.0 : SHADOW_TOLERANCE;
     Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
     bool foundTransparentObjects = false;
@@ -7976,7 +7979,7 @@ bool Trace::FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& r
         return false;
     double closest = HUGE_VAL;
     for (; depthstack->size() > 0; depthstack->pop())
-        if ((depthstack->top().Depth < closest) && (ray.IsSubsurfaceRay() || (depthstack->top().Depth >= MIN_ISECT_DEPTH)))
+        if ((depthstack->top().Depth < closest) && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || (depthstack->top().Depth >= MIN_ISECT_DEPTH)))
         {
             isect = depthstack->top();
             closest = isect.Depth;
