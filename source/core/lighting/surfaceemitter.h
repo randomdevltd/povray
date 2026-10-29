@@ -7,6 +7,7 @@
 #include "core/material/preparedsurface.h"
 #include "core/math/randomsequence.h"
 #include "core/render/trace.h"
+#include <mutex>
 
 namespace pov
 {
@@ -33,18 +34,23 @@ public:
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
 
+    void ResolveGeometry() const override { geometry.ResolveDeferred(); }
+
     void PrepareAxis(std::shared_ptr<const PreparedSourceDomain>, TraceThreadData* td,
                      const std::function<void()>& cooperate) const override
     {
+        std::lock_guard<std::mutex> lock(prepareMutex);
         if (field) return;
         TraceTicket ticket(1, 0.0);
         Ray ray(ticket);
-        field = PreparedSurfaceInput::Prepare(owner, geometry, settings->pigment, settings->useEmission, ray, td);
+        const std::shared_ptr<const PreparedSurfaceInput> prepared =
+            PreparedSurfaceInput::Prepare(owner, geometry, settings->pigment, settings->useEmission, ray, td);
+        SurfaceAngularGuide preparedGuide(Vector3d(owner->BBox.lowerLeft), Vector3d(owner->BBox.size));
         MathColour integral;
         constexpr unsigned count = 16384;
         const double exactArea = geometry.ExactArea();
-        const bool zero = field->IsConstant() && field->ConstantColour().IsZero();
-        const bool exact = field->IsConstant() && exactArea > 0.0;
+        const bool zero = prepared->IsConstant() && prepared->ConstantColour().IsZero();
+        const bool exact = prepared->IsConstant() && exactArea > 0.0;
         for (unsigned i = 0; !exact && !zero && i < count; ++i)
         {
             if (cooperate && (i % 256 == 0)) cooperate();
@@ -53,22 +59,25 @@ public:
             if (geometry.SampleArea(ray, td, (i + 0.5) / count, Draw(key, kDrawEmitter, 0),
                                     Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), sample))
             {
-                const MathColour power = field->Sample(sample.intersection, sample.normal) * sample.areaWeight;
+                const MathColour power = prepared->Sample(sample.intersection, sample.normal) * sample.areaWeight;
                 integral += power;
-                guide.Add(sample.intersection.IPoint, power.Greyscale() / double(count), sample.normal);
+                preparedGuide.Add(sample.intersection.IPoint, power.Greyscale() / double(count), sample.normal);
             }
         }
-        integral = exact ? field->ConstantColour() * exactArea : integral / double(count);
-        scale = settings->brightness;
+        integral = exact ? prepared->ConstantColour() * exactArea : integral / double(count);
+        double preparedScale = settings->brightness;
         if (settings->lumens >= 0.0)
         {
             const double power = M_PI * integral.Greyscale();
             if (settings->lumens > 0.0 && !(power > 0.0))
                 throw POV_EXCEPTION_STRING("A surface light stated in lumens requires positive surface emission.");
-            scale = settings->lumens == 0.0 ? 0.0 : settings->lumens / power;
+            preparedScale = settings->lumens == 0.0 ? 0.0 : settings->lumens / power;
         }
-        intensity = integral * scale;
-        guide.Prepare();
+        preparedGuide.Prepare();
+        guide = std::move(preparedGuide);
+        scale = preparedScale;
+        intensity = integral * preparedScale;
+        field = prepared;
     }
 
     EmitterSample Sample(double s, std::uint64_t key, TraceThreadData* td = nullptr) const override
@@ -133,6 +142,7 @@ private:
     mutable MathColour intensity;
     mutable double scale = 1.0;
     mutable SurfaceAngularGuide guide;
+    mutable std::mutex prepareMutex;
 };
 
 }

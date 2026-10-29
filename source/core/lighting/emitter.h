@@ -96,6 +96,8 @@ class Emitter
         virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const { return sample.weight * PhotonDirectionWeight(sample, outgoing); }
         virtual double PhotonDirectionWeight(const EmitterSample&, const Vector3d& outgoing) const { return DirectionalWeight(outgoing); }
         virtual void PrepareAxis(std::shared_ptr<const PreparedSourceDomain>, TraceThreadData*, const std::function<void()>&) const {}
+        /// Builds the deferred meshes of the emitter's own geometry copy; called on one thread before any parallel use.
+        virtual void ResolveGeometry() const {}
         virtual std::shared_ptr<const PreparedLightAxis> PreparedAxis() const { return nullptr; }
         virtual const MathColour& Intensity() const = 0;   ///< prepared estimate of ∫j dV; never a connection normalization
         virtual const Vector3d& Centre() const = 0;        ///< power-weighted centre

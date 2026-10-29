@@ -13,6 +13,7 @@
 #include "core/lighting/emittergeometry.h"
 #include "core/lighting/surfaceguide.h"
 #include "core/shape/isosurface.h"
+#include "core/shape/mesh.h"
 #include "core/shape/portal.h"
 #include "core/math/intersectiondepth.h"
 #include "core/render/ray.h"
@@ -66,6 +67,12 @@ public:
     }
 
     bool IsValid() const { return valid; }
+    // A copy of a deferred mesh builds itself on first use, which writes shared mesh data.
+    void ResolveDeferred() const
+    {
+        for (const auto& entry : originals)
+            if (const Mesh* mesh = dynamic_cast<const Mesh*>(entry.first)) mesh->Resolve();
+    }
     DBL ExactArea() const
     {
         PrimitiveEmitterGeometry primitive;
