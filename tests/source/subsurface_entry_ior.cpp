@@ -22,18 +22,21 @@ public:
     using Trace::ComputeFt;
 };
 
-// A closed cube of 12 triangles, so its Inside() casts a ray that a probe beside a face must see cross that face.
-static void Cube(Mesh& mesh)
+// Two closed cubes in one mesh, so faces between them lie inside its bounds and its inside test casts a ray across them.
+static void Cubes(Mesh& mesh, const Vector3d& offset)
 {
     MeshBuilder builder(mesh, false);
-    MeshIndex corner[8];
-    for (int i = 0; i < 8; ++i)
-        corner[i] = builder.Vertex(Vector3d((i & 1) ? 1.0 : -1.0, (i & 2) ? 1.0 : -1.0, (i & 4) ? 1.0 : -1.0), Vector3d(0, 0, 1));
     const int quads[6][4] = {{0, 2, 3, 1}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 6, 7, 3}, {0, 4, 6, 2}, {1, 3, 7, 5}};
-    for (const auto& q : quads)
+    for (const Vector3d& at : {Vector3d(0.0), offset})
     {
-        assert(builder.Triangle(corner[q[0]], corner[q[1]], corner[q[2]]));
-        assert(builder.Triangle(corner[q[0]], corner[q[2]], corner[q[3]]));
+        MeshIndex corner[8];
+        for (int i = 0; i < 8; ++i)
+            corner[i] = builder.Vertex(at + Vector3d((i & 1) ? 1.0 : -1.0, (i & 2) ? 1.0 : -1.0, (i & 4) ? 1.0 : -1.0), Vector3d(0, 0, 1));
+        for (const auto& q : quads)
+        {
+            assert(builder.Triangle(corner[q[0]], corner[q[1]], corner[q[2]]));
+            assert(builder.Triangle(corner[q[0]], corner[q[2]], corner[q[3]]));
+        }
     }
     builder.Finish(true);
     mesh.Compute_BBox();
@@ -140,22 +143,26 @@ int main()
         objects = {&water, &shell};
         Near(trace.ComputeSubsurfaceEntryIOR(down, up, &shell, up, ticket), double(shell.interior->IOR) / waterIor);
     }
-    Mesh cube;
-    Cube(cube);
-    Material(cube, 1.36, 2);
-    objects = {&cube};
-    for (int axis = 0; axis < 3; ++axis)
-        for (double sign : {-1.0, 1.0})
-        {
-            Vector3d n(0.0), p(0.13, -0.27, 0.31);
-            n[axis] = sign;
-            p[axis] = sign;
-            for (const Vector3d& facing : {n, -n})
+    const Vector3d offset(3.0, 3.0, 3.0);
+    Mesh cubes;
+    Cubes(cubes, offset);
+    Material(cubes, 1.36, 2);
+    cubes.interior->boundsLow = Vector3d(-3.0);
+    cubes.interior->boundsHigh = Vector3d(6.0);
+    objects = {&cubes};
+    for (const Vector3d& at : {Vector3d(0.0), offset})
+        for (int axis = 0; axis < 3; ++axis)
+            for (double sign : {-1.0, 1.0})
             {
-                Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cube, n, ticket), double(cube.interior->IOR));
-                Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cube, Vector3d(0.6, 0.0, 0.8) + n, ticket), double(cube.interior->IOR));
+                Vector3d n(0.0), p = at + Vector3d(0.13, -0.27, 0.31);
+                n[axis] = sign;
+                p[axis] = at[axis] + sign;
+                for (const Vector3d& facing : {n, -n})
+                {
+                    Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cubes, n, ticket), double(cubes.interior->IOR));
+                    Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cubes, Vector3d(0.6, 0.0, 0.8) + n, ticket), double(cubes.interior->IOR));
+                }
             }
-        }
     Near(trace.ComputeFt(0.1, 0.8), 0.0);
     assert(SubsurfaceFiniteBounds(Vector3d(-1.0), Vector3d(1.0)));
     assert(!SubsurfaceFiniteBounds(Vector3d(-BOUND_HUGE), Vector3d(BOUND_HUGE)));
