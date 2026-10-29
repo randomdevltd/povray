@@ -4785,6 +4785,8 @@ ObjectPtr Parser::Parse_Light_Source ()
         END_CASE
 
         OTHERWISE
+            if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+                Error("A light block makes a shape's surface a light; a light_source cannot take one.");
             UNGET
             EXIT
         END_CASE
