@@ -90,6 +90,7 @@ class CSG : public CompoundObject
         bool lightGroupCopy = false;
 
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override { }
+        virtual double SurfaceTolerance() const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;

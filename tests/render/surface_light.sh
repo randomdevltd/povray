@@ -50,6 +50,13 @@ cmp csg.rgb native_csg.rgb
 render portal "$scene" Declare=Case=9
 render native_portal "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=9
 cmp portal.rgb native_portal.rgb
+{ echo '#version 3.7;'
+  echo 'global_settings { assumed_gamma 1 }'
+  echo 'camera { orthographic location <0,0,-5> look_at 0 right x*2.4 up y*2.4 }'
+  echo 'sphere { 0,1 pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } double_illuminate'
+  echo '  light { pigment { rgb 1 } brightness 4 samples 64 } }'
+} >self.pov
+render self self.pov
 python3 - <<'PY'
 from pathlib import Path
 import struct
@@ -61,6 +68,7 @@ assert abs(power('native7')/power('geometry7')-1)<0.05
 assert power('passive')==0
 assert power('csg')>0
 assert power('portal')>0
+assert power('self')==0
 reference=power('geometry0')
 assert abs(power('lumens')/reference-1)<0.12
 assert abs(power('few')/power('many')-1)<0.35

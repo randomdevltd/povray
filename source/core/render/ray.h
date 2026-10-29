@@ -209,6 +209,7 @@ class Ray final : public BasicRay
             ConstObjectPtr object = nullptr;
             Vector3d point, normal;
             double errorScale = 0.0;
+            double rootTolerance = 0.0;
         };
         SurfacePoint surfaceOrigin, surfaceEndpoint;
         bool MatchesSurfacePoint(const SurfacePoint& surface, ConstObjectPtr object, double depth) const
@@ -219,7 +220,7 @@ class Ray final : public BasicRay
             {
                 const double travel = depth * Direction[axis];
                 const double scale = std::max(surface.errorScale, std::max(std::abs(surface.point[axis]), std::max(std::abs(Origin[axis]), std::abs(travel))));
-                const double tolerance = 16.0 * std::numeric_limits<double>::epsilon() * scale;
+                const double tolerance = std::max(16.0 * std::numeric_limits<double>::epsilon() * scale, surface.rootTolerance);
                 if (std::abs((Origin[axis] + travel) - surface.point[axis]) > tolerance)
                     return false;
             }

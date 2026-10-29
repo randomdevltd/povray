@@ -124,7 +124,10 @@ public:
         const Vector3d normalizedOrigin = (origin - center) / scale;
         const DBL back = dot(normalizedOrigin, ray.Direction) + 2.0;
         ray.Origin = normalizedOrigin - ray.Direction * back;
-        const bool found = SelectRoot(ray, thread, rootU, back, HUGE_VAL, sample);
+        // A receiver on this surface must not draw its own root, found anywhere within the surface's error.
+        const DBL own = std::max(geometry->SurfaceTolerance(),
+                                 64.0 * std::numeric_limits<DBL>::epsilon() * (back + MaxAbs(origin) / scale));
+        const bool found = SelectRoot(ray, thread, rootU, back, HUGE_VAL, sample, own);
         ray.Origin = origin;
         if (!found) return false;
         const DBL cosine = std::fabs(dot(sample.normal, ray.Direction));
@@ -136,8 +139,10 @@ public:
 
 private:
     static DBL Unit(DBL u) { return std::max(DBL(0.0), std::min(std::nextafter(DBL(1.0), DBL(0.0)), u)); }
+    static DBL MaxAbs(const Vector3d& v) { return std::max(std::fabs(v[X]), std::max(std::fabs(v[Y]), std::fabs(v[Z]))); }
 
-    bool SelectRoot(Ray& ray, TraceThreadData* thread, DBL rootU, DBL minDepth, DBL maxDepth, SurfaceGeometrySample& sample) const
+    bool SelectRoot(Ray& ray, TraceThreadData* thread, DBL rootU, DBL minDepth, DBL maxDepth, SurfaceGeometrySample& sample,
+                    DBL skip = 0.0) const
     {
         IStack stack(thread->stackPool);
         struct CompleteSurfaceQuery final : RayRootQuery
@@ -155,7 +160,7 @@ private:
         {
             const Intersection& hit = stack->top();
             if (hit.Object != nullptr && !windows.count(hit.Object) && IsFiniteIntersectionDepth(hit.Depth) &&
-                hit.Depth > minDepth && hit.Depth <= maxDepth)
+                hit.Depth > minDepth + skip && hit.Depth <= maxDepth)
                 roots.push_back(hit);
             stack->pop();
         }
