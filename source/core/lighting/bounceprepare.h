@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <unordered_set>
 #include <vector>
 
 namespace pov
@@ -117,14 +118,25 @@ inline bool Receives(ConstObjectPtr owner, const LightSource* light)
     return std::find(owner->LLights.begin(), owner->LLights.end(), light) != owner->LLights.end();
 }
 
-inline void CollectObjects(ConstObjectPtr object, std::vector<ConstObjectPtr>& objects)
+inline void CollectObjects(ConstObjectPtr object, std::vector<ConstObjectPtr>& objects,
+                           std::unordered_set<ConstObjectPtr>& seen)
 {
-    if (!object || std::find(objects.begin(), objects.end(), object) != objects.end())
+    if (!object || !seen.insert(object).second)
         return;
     objects.push_back(object);
     if (const auto compound = dynamic_cast<const CompoundObject*>(object))
         for (const auto child : compound->children)
-            CollectObjects(child, objects);
+            CollectObjects(child, objects, seen);
+}
+
+inline const MediaLight* BounceSettings(const LightSource& light)
+{
+    const auto owner = light.emitterContainer;
+    if (!owner || !light.emitter)
+        return nullptr;
+    const auto settings = light.emitter->IsSurface() ? owner->surfaceLight.get()
+                                                     : (owner->interior ? owner->interior->light.get() : nullptr);
+    return (settings && settings->bouncePasses > 0) ? settings : nullptr;
 }
 
 inline bool ConstantOwnerCoefficients(ConstObjectPtr owner, const std::vector<ConstObjectPtr>& objects)
@@ -174,14 +186,11 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
         TraceThreadData* const td = workers.Thread(worker);
         const auto& point = target.domain->Node(node);
         RayInteriorVector interiors;
-        if (constant)
-            interiors.push_back(owner->interior.get());
-        else
-        {
-            if (!Inside_Object(point, const_cast<ObjectPtr>(owner), td))
-                return;
+        if (!constant)
             workers[worker].trace.FindContainingInteriors(point, interiors);
-        }
+        // A node just outside the owner extends its media, as its primary field does, so cells across the boundary keep them.
+        if (std::find(interiors.begin(), interiors.end(), owner->interior.get()) == interiors.end())
+            interiors.push_back(owner->interior.get());
         for (const auto& component : EvaluateOwnerBounceScattering(interiors, *owner->interior, point, td))
         {
             const auto found = std::find(target.phases.begin(), target.phases.end(),
@@ -254,22 +263,23 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
 {
     using namespace bounce_prepare;
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
+    if (std::none_of(scene->mediaLights.begin(), scene->mediaLights.end(),
+                     [](const LightSource* light) { return BounceSettings(*light) != nullptr; }))
+        return;
     Workers workers(scene, td);
     std::vector<ConstObjectPtr> objects;
+    std::unordered_set<ConstObjectPtr> seen;
     for (const auto object : scene->objects)
-        CollectObjects(object, objects);
+        CollectObjects(object, objects, seen);
     std::vector<Target> targets;
     unsigned int maximum = 0;
     for (LightSource* light : scene->mediaLights)
     {
         const auto owner = light->emitterContainer;
-        if (!owner || !light->emitter)
+        const auto settings = BounceSettings(*light);
+        if (!settings)
             continue;
         const bool surface = light->emitter->IsSurface();
-        const auto settings =
-            surface ? owner->surfaceLight : (owner->interior ? owner->interior->light : nullptr);
-        if (!settings || settings->bouncePasses == 0)
-            continue;
         Target target;
         target.light = light;
         target.primary = light->emitter;

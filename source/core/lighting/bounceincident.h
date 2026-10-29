@@ -57,6 +57,8 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             ray.Origin = point;
             ray.Direction = receiver && receiverNormal ? -*receiverNormal : Vector3d(0.0, 0.0, 1.0);
             ray.SetKey(sampleKey);
+            bool keyRead = false;
+            ray.WatchKey(&keyRead);
             ray.AppendInteriors(interiors);
             if (receiver && receiverNormal)
                 ray.SetSurfaceOrigin(receiver, point, *receiverNormal);
@@ -74,9 +76,13 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             else
             {
                 if (trace.TestShadow(light, depth, ray, point, incoming))
-                    continue;
-                incoming *= M_PI;
+                    incoming.Clear();
+                else
+                    incoming *= M_PI;
             }
+            // An emitter draws from the sample key itself; any other draw that read no ray key stands for every sample.
+            const bool repeated = !light.emitter && !keyRead;
+            const double share = repeated ? 1.0 : 1.0 / samplesPerSource;
             bool positive = false;
             for (int channel = 0; channel < MathColour::channels; ++channel)
             {
@@ -88,7 +94,9 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             if (positive && (!std::isfinite(length) || length <= 0.0))
                 throw std::domain_error("bounce incident direction must be finite and nonzero");
             if (positive)
-                beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming / samplesPerSource});
+                beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * share});
+            if (repeated)
+                break;
         }
     }
     return beams;
