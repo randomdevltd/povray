@@ -44,6 +44,7 @@
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 // C++ standard header files
@@ -152,7 +153,10 @@ inline void Make_BBox_from_min_max(BoundingBox& BBox, const Vector3d& mins, cons
             upper = std::nextafter(upper, std::numeric_limits<BBoxScalar>::infinity());
         upper = NormalBBoxUpper(upper);
         volatile DBL extent = DBL(upper) - DBL(origin);
-        const DBL outwardExtent = (extent == 0.0 && low == high) ? 0.0 :
+        // the difference of two stored scalars is exact when their exponents are close enough for DBL to hold every bit
+        const int gap = (origin == 0 || upper == 0) ? 0 : std::abs(std::ilogb(origin) - std::ilogb(upper));
+        const bool exact = gap <= std::numeric_limits<DBL>::digits - 1 - std::numeric_limits<BBoxScalar>::digits;
+        const DBL outwardExtent = (exact || (extent == 0.0 && low == high)) ? DBL(extent) :
                                    std::nextafter(DBL(extent), std::numeric_limits<DBL>::infinity());
         BBoxScalar size = BBoxScalar(outwardExtent);
         if (DBL(size) < outwardExtent)
