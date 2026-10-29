@@ -2521,20 +2521,45 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         DBL start = 0.0, end = 0.0;
         MathColour extinction;
     };
+    struct Storage final
+    {
+        vector<MathColour> transfers, suffix;
+        vector<Domain> domains;
+        vector<Cell> cells;
+        vector<size_t> order, selected;
+        vector<LightSource *> sources;
+        vector<DBL> cdf, mass, base;
+    };
 
     MediaFunction& owner;
     FixedLightPath *previous;
+    size_t depth;
+    Storage& storage;
     std::uint64_t key;
     DBL offset = 0.0;
-    vector<MathColour> transfers;
-    vector<Domain> domains;
-    vector<Cell> cells;
+    vector<MathColour>& transfers;
+    vector<Domain>& domains;
+    vector<Cell>& cells;
     size_t temporaryBytes = 0;
     bool collecting = true;
 
+    static Storage& StorageAt(MediaFunction& f, size_t depth)
+    {
+        while (f.pathStorage.size() <= depth)
+            f.pathStorage.push_back(std::make_shared<Storage>());
+        return *static_cast<Storage *>(f.pathStorage[depth].get());
+    }
     FixedLightPath(MediaFunction& f, const Ray& ray) : owner(f), previous(f.currentPath),
-        key(DeriveKey(ray.GetKey(), kDrawMedia, kMediaLightDraw)) { owner.currentPath = this; }
-    ~FixedLightPath() override { owner.currentPath = previous; }
+        depth(f.currentPath ? f.currentPath->depth + 1 : 0), storage(StorageAt(f, depth)),
+        key(DeriveKey(ray.GetKey(), kDrawMedia, kMediaLightDraw)),
+        transfers(storage.transfers), domains(storage.domains), cells(storage.cells) { owner.currentPath = this; }
+    ~FixedLightPath() override
+    {
+        transfers.clear();
+        domains.clear();
+        cells.clear();
+        owner.currentPath = previous;
+    }
 
     void Transfer(const MathColour& depth, size_t first)
     {
@@ -2599,22 +2624,27 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         size_t liveBytes = 0;
         for (FixedLightPath *path = this; path != nullptr; path = path->previous)
             liveBytes += path->Bytes();
-        vector<MathColour> suffix(transfers.size() + 1, MathColour(1.0));
+        vector<MathColour>& suffix = storage.suffix;
+        suffix.assign(transfers.size() + 1, MathColour(1.0));
         for (size_t i = transfers.size(); i-- > 0;)
             suffix[i] = transfers[i] * suffix[i + 1];
-        vector<size_t> order(cells.size());
+        vector<size_t>& order = storage.order;
+        order.resize(cells.size());
         for (size_t i = 0; i < order.size(); i++)
             order[i] = i;
         std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
             return domains[cells[a].domain].offset + cells[a].at < domains[cells[b].domain].offset + cells[b].at;
         });
-        vector<LightSource *> sources;
+        vector<LightSource *>& sources = storage.sources;
+        sources.clear();
         for (const Domain& domain : domains)
             for (const LightSourceEntry& entry : domain.lights)
                 if ((entry.light->emitter || domain.allLights) && std::find(sources.begin(), sources.end(), entry.light) == sources.end())
                     sources.push_back(entry.light);
-        vector<size_t> selected;
-        vector<DBL> cdf, mass, base;
+        vector<size_t>& selected = storage.selected;
+        vector<DBL>& cdf = storage.cdf;
+        vector<DBL>& mass = storage.mass;
+        vector<DBL>& base = storage.base;
         for (size_t source = 0; source < sources.size(); source++)
         {
             LightSource& light = *sources[source];
@@ -2806,7 +2836,8 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
 std::unique_ptr<Trace::MediaFunctor::Path> MediaFunction::BeginPath(const Ray& ray)
 {
     // Numerical curved chords share the scope; a recursive surface continuation starts another one.
-    if (ray.IsShadowTestRay() || ray.IsPhotonRay())
+    // Only an emitter's light is gathered along a path, and every emitter is a media light.
+    if (ray.IsShadowTestRay() || ray.IsPhotonRay() || threadData->GetSceneData()->mediaLights.empty())
         return nullptr;
     return std::unique_ptr<Trace::MediaFunctor::Path>(new FixedLightPath(*this, ray));
 }
