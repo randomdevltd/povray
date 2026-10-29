@@ -649,6 +649,9 @@ DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length)
 static DBL EmitterLawAttenuation(const LightSource *Light, DBL Distance)
 {
     const DBL R = Light->lawRadius;
+    // A point emitter is the law's limit at no radius, where the path factor is one: the inverse square.
+    if (!(R > 0.0))
+        return 1.0 / (Distance * Distance);
     const DBL A = pow(R / std::max(Distance, R), Light->attenuationPower);
     if (!(Light->attenuationScale > 0.0))
         return 1.0 / (R * R);
