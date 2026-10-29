@@ -7486,7 +7486,7 @@ const Trace::SubsurfaceParts& Trace::FindSubsurfaceParts(ObjectPtr object, Prepa
             if (std::find(parts.lights.begin(), parts.lights.end(), light) == parts.lights.end())
                 parts.lights.push_back(light);
         parts.anyCollects = parts.anyCollects || !Test_Flag(leaves[i], PH_IGNORE_PHOTONS_FLAG);
-        if (SubsurfaceSheet(leaves[i], cutters[i]))
+        if (SubsurfaceSheet(leaves[i], cutters[i], threadData->subsurfaceCache.get()))
             parts.sheets.insert(leaves[i]);
     }
     for (size_t i = 0; i < leaves.size(); i++)
@@ -7516,8 +7516,8 @@ std::string Trace::DescribeSubsurfaceObject(ConstObjectPtr object)
 }
 
 // A part with no inside for light to diffuse through: a disc, unless it cuts an intersection or difference, or a mesh with
-// an inside_vector whose triangles leave a border open.
-bool Trace::SubsurfaceSheet(ConstObjectPtr part, bool cutter)
+// an inside_vector whose triangles leave a border open. `shared` keeps the answer across threads; without one it is worked out here.
+bool Trace::SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared)
 {
     if (dynamic_cast<const Disc*>(part) != nullptr)
         return !cutter;
@@ -7526,7 +7526,7 @@ bool Trace::SubsurfaceSheet(ConstObjectPtr part, bool cutter)
         return false;
     mesh->Resolve();
     const MESH_DATA *data = mesh->Data;
-    return !threadData->subsurfaceCache->ClosedMesh(data, [data]()
+    const auto closed = [data]()
     {
         // Vertices are welded by position, as exporters repeat them per face; touching shells share an edge four times.
         std::unordered_map<std::uint64_t, std::uint32_t> welded;
@@ -7570,7 +7570,8 @@ bool Trace::SubsurfaceSheet(ConstObjectPtr part, bool cutter)
             if (edge.second % 2 != 0)
                 return false;
         return !edges.empty();
-    });
+    };
+    return !(shared ? shared->ClosedMesh(data, closed) : closed());
 }
 
 // Fixes the object's cloud and collects the cells within reach of the exit point; see doc/PERF.md.
@@ -7985,7 +7986,7 @@ bool Trace::InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector
         {
             auto known = ssltClosedMeshes.find(mesh);
             if (known == ssltClosedMeshes.end())
-                known = ssltClosedMeshes.emplace(mesh, mesh->has_inside_vector && !SubsurfaceSheet(mesh, false)).first;
+                known = ssltClosedMeshes.emplace(mesh, mesh->has_inside_vector && !SubsurfaceSheet(mesh, false, threadData->subsurfaceCache.get())).first;
             if (known->second)
                 return mesh->InsideAlong(point, out->normalized(), threadData);
         }
