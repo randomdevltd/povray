@@ -64,6 +64,7 @@
 #include "povms/povmsutil.h"
 
 // POV-Ray header files (backend module)
+#include "backend/control/messagefactory.h"
 #include "backend/lighting/photonshootingstrategy.h"
 #include "backend/scene/backendscenedata.h"
 #include "backend/scene/view.h"
@@ -71,6 +72,9 @@
 #include "core/lighting/emitter.h"
 #include "core/lighting/progressivephoton.h"
 #include "core/shape/csg.h"
+
+#include <atomic>
+#include <chrono>
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -114,6 +118,13 @@ void PhotonShootingTask::SendProgress(void)
         }
         obj.SetInt(kPOVAttrib_CurrentPhotonCount, count);
         RenderBackend::SendViewOutput(GetViewData()->GetViewId(), GetSceneData()->frontendAddress, kPOVMsgIdent_Progress, obj);
+        // One line every 2 s among all shooting threads; the total is not known ahead.
+        ViewData& view = *GetViewData();
+        const long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        long long last = view.photonPreparationLine.load(std::memory_order_relaxed);
+        if ((now - last >= 2000) && view.photonPreparationLine.compare_exchange_strong(last, now, std::memory_order_relaxed))
+            mpMessageFactory->Info("Preparation: photons %d/? %.1fs", count, std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - view.photonPreparationStart).count());
     }
 }
 

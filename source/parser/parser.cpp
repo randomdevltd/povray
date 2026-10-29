@@ -47,6 +47,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <sstream>
 #include <unordered_set>
@@ -454,6 +455,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 /* Parse the file. */
 void Parser::Run()
 {
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     SourceInfo errorInfo(UCS2String(POV_FILENAME_BUFFER_CHARS, u'\0'), // Pre-claim some memory, so we can handle an out-of-memory error.
                          SourcePosition(-1,-1,-1));
 
@@ -560,6 +562,8 @@ void Parser::Run()
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
                       "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
             Make_Portal_Lights();
+            mMessageFactory.Info("Preparation: parse finished %.1fs",
+                                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
         // (both to the user interface and "upward" to the calling code)

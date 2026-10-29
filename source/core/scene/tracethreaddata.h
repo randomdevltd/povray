@@ -72,6 +72,7 @@ namespace pov
 
 class SubsurfaceCache;
 class SurfaceAngularGuideCache;
+class PreparationProgress;
 
 //##############################################################################
 ///
@@ -130,6 +131,8 @@ class TraceThreadData : public ThreadData
         /// Depths between which an opaque blocker ends a shadow ray, so an opaque isosurface may report any root
         /// there rather than the first; both zero where the first is needed.
         GenericMessenger* mediaMessages = nullptr;
+        /// The progress report of scene preparation; set only on the thread that prepares.
+        PreparationProgress* preparationProgress = nullptr;
 
         double isoShadowFrom;
         double isoShadowTo;

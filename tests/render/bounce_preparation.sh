@@ -15,4 +15,6 @@ for case in 0 1 2; do
     render four$case Declare=Case=$case +wt4
     cmp -s one$case.pixels four$case.pixels || { echo "bounce_preparation: case $case differs on four threads" >&2; exit 1; }
 done
+grep -q 'Info: Preparation: bounce finished [0-9]*\.[0-9]s$' one0.log ||
+    { cat one0.log; echo "bounce_preparation: no bounce progress line" >&2; exit 1; }
 echo "bounce_preparation: bounce preparation is the same on any thread count"

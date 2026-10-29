@@ -55,6 +55,8 @@
 #include <deque>
 #include <functional>
 #include <unordered_map>
+#include <atomic>
+#include <chrono>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -318,6 +320,10 @@ class ViewData final
          *  @return                 Subsurface cache.
          */
         std::shared_ptr<SubsurfaceCache> GetSubsurfaceCache() const { return subsurfaceCache; }
+        /// When photon shooting began, for its `Preparation: photons` lines.
+        std::chrono::steady_clock::time_point photonPreparationStart;
+        /// Steady-clock milliseconds of the last `Preparation: photons` line, shared by the shooting threads.
+        std::atomic<long long> photonPreparationLine{0};
 
         /**
          *  Get the view id for this view.
