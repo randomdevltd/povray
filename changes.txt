@@ -45,6 +45,8 @@ Changed Behaviour
   the active IOR. Detail uses scene units and defaults to auto. Off disables
   only its own interior contribution, without clearing overlapping fields.
   detail and auto are matched by text and remain free as identifiers.
+- A closed mesh's inside test counts every crossing ahead of the point, so a
+  point beside a face is classified by the side it lies on.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow

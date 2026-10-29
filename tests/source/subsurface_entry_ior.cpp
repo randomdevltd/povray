@@ -3,6 +3,7 @@
 #include "core/shape/box.h"
 #include "core/shape/sphere.h"
 #include "core/shape/csg.h"
+#include "core/shape/mesh.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/material/noise.h"
@@ -20,6 +21,23 @@ public:
     using Trace::ComputeRelativeIOR;
     using Trace::ComputeFt;
 };
+
+// A closed cube of 12 triangles, so its Inside() casts a ray that a probe beside a face must see cross that face.
+static void Cube(Mesh& mesh)
+{
+    MeshBuilder builder(mesh, false);
+    MeshIndex corner[8];
+    for (int i = 0; i < 8; ++i)
+        corner[i] = builder.Vertex(Vector3d((i & 1) ? 1.0 : -1.0, (i & 2) ? 1.0 : -1.0, (i & 4) ? 1.0 : -1.0), Vector3d(0, 0, 1));
+    const int quads[6][4] = {{0, 2, 3, 1}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 6, 7, 3}, {0, 4, 6, 2}, {1, 3, 7, 5}};
+    for (const auto& q : quads)
+    {
+        assert(builder.Triangle(corner[q[0]], corner[q[1]], corner[q[2]]));
+        assert(builder.Triangle(corner[q[0]], corner[q[2]], corner[q[3]]));
+    }
+    builder.Finish(true);
+    mesh.Compute_BBox();
+}
 
 static void Near(double actual, double expected)
 {
@@ -67,26 +85,26 @@ int main()
     const Vector3d down(0.0, 0.0, -1.0), up(0.0, 0.0, 1.0);
     const double waterIor = water.interior->IOR, bodyIor = body.interior->IOR;
     for (const Vector3d& source : {down, up, Vector3d(0.8, 0.0, -0.6)})
-        Near(trace.ComputeSubsurfaceEntryIOR(down, down, body.interior.get(), source, ticket), bodyIor / waterIor);
-    Near(trace.ComputeSubsurfaceEntryIOR(up, up, body.interior.get(), up, ticket), bodyIor);
-    Near(trace.ComputeSubsurfaceEntryIOR(down, up, body.interior.get(), down, ticket), bodyIor / waterIor);
+        Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, source, ticket), bodyIor / waterIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(up, up, &body, up, ticket), bodyIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, up, &body, down, ticket), bodyIor / waterIor);
     Ray eye(ticket, Vector3d(0.0, 0.0, 2.0), down);
     double exitEta;
     trace.ComputeRelativeIOR(eye, body.interior.get(), up, up, exitEta);
     Near(exitEta, bodyIor);
-    assert(std::abs(exitEta - trace.ComputeSubsurfaceEntryIOR(down, down, body.interior.get(), down, ticket)) > 0.1);
+    assert(std::abs(exitEta - trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket)) > 0.1);
 
     body.interior->iorMix = kIorMixMean;
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, body.interior.get(), down, ticket), (bodyIor + waterIor) / (2.0 * waterIor));
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), (bodyIor + waterIor) / (2.0 * waterIor));
     body.interior->iorMix = kIorMixSurface;
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, body.interior.get(), down, ticket), bodyIor / waterIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), bodyIor / waterIor);
     body.interior->iorMix = kIorMixReplace;
     objects = {&body, &water};
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, body.interior.get(), down, ticket), bodyIor / waterIor);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), bodyIor / waterIor);
     objects = {&water, &body};
 
     body.interior->IOR = water.interior->IOR;
-    Near(trace.ComputeSubsurfaceEntryIOR(down, down, body.interior.get(), down, ticket), 1.0);
+    Near(trace.ComputeSubsurfaceEntryIOR(down, down, &body, down, ticket), 1.0);
     for (double cosine : {0.0, 1e-8, 0.1, 0.5, 1.0})
         Near(trace.ComputeFt(cosine, 1.0), 1.0);
     body.interior->IOR = bodyIor;
@@ -95,7 +113,7 @@ int main()
     {
         scene->legacyIorStack = legacy;
         for (const Vector3d& source : {up, down})
-            Near(trace.ComputeSubsurfaceEntryIOR(up, up, body.interior.get(), source, ticket), bodyIor);
+            Near(trace.ComputeSubsurfaceEntryIOR(up, up, &body, source, ticket), bodyIor);
         for (double cosine : {0.01, 0.1, 0.5, 1.0})
         {
             const double g = std::sqrt(bodyIor * bodyIor + cosine * cosine - 1.0);
@@ -120,12 +138,28 @@ int main()
         Material(shell, 1.36, 2);
         outside->interior = cavity->interior = shell.interior;
         objects = {&water, &shell};
-        Near(trace.ComputeSubsurfaceEntryIOR(down, up, shell.interior.get(), up, ticket), double(shell.interior->IOR) / waterIor);
+        Near(trace.ComputeSubsurfaceEntryIOR(down, up, &shell, up, ticket), double(shell.interior->IOR) / waterIor);
     }
+    Mesh cube;
+    Cube(cube);
+    Material(cube, 1.36, 2);
+    objects = {&cube};
+    for (int axis = 0; axis < 3; ++axis)
+        for (double sign : {-1.0, 1.0})
+        {
+            Vector3d n(0.0), p(0.13, -0.27, 0.31);
+            n[axis] = sign;
+            p[axis] = sign;
+            for (const Vector3d& facing : {n, -n})
+            {
+                Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cube, n, ticket), double(cube.interior->IOR));
+                Near(trace.ComputeSubsurfaceEntryIOR(p, facing, &cube, Vector3d(0.6, 0.0, 0.8) + n, ticket), double(cube.interior->IOR));
+            }
+        }
     Near(trace.ComputeFt(0.1, 0.8), 0.0);
     assert(SubsurfaceFiniteBounds(Vector3d(-1.0), Vector3d(1.0)));
     assert(!SubsurfaceFiniteBounds(Vector3d(-BOUND_HUGE), Vector3d(BOUND_HUGE)));
     assert(!SubsurfaceFiniteBounds(Vector3d(0.0), Vector3d(0.0, 1.0, 1.0)));
     objects.clear();
-    std::cout << "Local entry IOR: nested water, mixed air/water, equal IOR, shallow CSG cavity and air regression pass\n";
+    std::cout << "Local entry IOR: nested water, mixed air/water, equal IOR, shallow CSG cavity, closed mesh and air regression pass\n";
 }

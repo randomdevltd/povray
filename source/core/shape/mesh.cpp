@@ -318,7 +318,8 @@ bool Mesh::InsideAlong(const Vector3d& IPoint, const Vector3d& direction, TraceT
     }
 
     found = 0;
-    DBL depthTolerance = Thread->subsurfacePhotonBoundaryProbe ? std::numeric_limits<DBL>::min() : DEPTH_TOLERANCE;
+    // Every crossing ahead counts toward parity, however near: a point beside a face is on its own side of it.
+    const DBL depthTolerance = std::numeric_limits<DBL>::min();
 
     if (Data->FlatTree == nullptr)
     {
