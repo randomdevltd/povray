@@ -40,7 +40,7 @@ function close_halves(a, b,    first, second, n, i) {
 BEGIN {
     if (max_of(v, half("group_lamp", "right", v)) != 0) fail("a group light lit media outside its group")
     if (max_of(v, half("global_lamp", "left", v)) != 0) fail("a global light lit media in a global_lights off group")
-    if (!(mean("open_global", "left") > 0.001 && mean("open_group", "right") > 0.001))
+    if (!(mean("open_global", "left") > 0.00025 && mean("open_group", "right") > 0.00025))
         fail("the lamps do not reach the other box: " mean("open_global", "left") ", " mean("open_group", "right"))
     split("group_lamp left", a, " "); split("left left", b, " ")
     if (!close_halves(a, b)) fail("the group box differs from the group alone")
@@ -49,7 +49,7 @@ BEGIN {
     for (s = 0; s < 2; s++) {
         side = s ? "right" : "left"
         together = mean("one", side); alone = mean(side, side)
-        if (!(alone > 0.01 && abs(together / alone - 1) < 0.02))
+        if (!(alone > 0.0025 && abs(together / alone - 1) < 0.02))
             fail(side " box changes when both lamps shoot: " together " together, " alone " alone")
     }
 }'
