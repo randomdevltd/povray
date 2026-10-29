@@ -1317,7 +1317,7 @@ class Trace
                                                double tolerance, const char* uses = nullptr);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
         std::string DescribeSubsurfaceObject(ConstObjectPtr object);
-        bool SubsurfaceSheet(ConstObjectPtr part, bool cutter);
+        bool SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared);
         bool StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector3d *out = nullptr);
