@@ -4055,7 +4055,6 @@ void Parser::Parse_Interior_Refraction(Interior& interior)
     Get_Token();
     if (CurrentTrueTokenId() == OFF_TOKEN)
     {
-        refraction->preparedParallelSafe = true;
         interior.refraction = refraction;
         return;
     }
@@ -4090,17 +4089,6 @@ void Parser::Parse_Interior_Refraction(Interior& interior)
     Parse_End();
     if (refraction->functions.empty())
         Error("A refraction block requires at least one function.");
-    bool known = true;
-    std::vector<FUNCTION> roots;
-    for (const auto *function : refraction->functions)
-    {
-        const auto *custom = dynamic_cast<const FunctionVM::CustomFunction *>(function);
-        if (!custom || custom->RequiresRayContext())
-            known = false;
-        else
-            roots.push_back(custom->Id());
-    }
-    refraction->preparedParallelSafe = known && SelfContained(roots);
     interior.refraction = refraction;
 }
 

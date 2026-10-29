@@ -65,7 +65,6 @@ struct RefractionSpec final
     DBL detail = 0.0;
     std::vector<GenericScalarFunctionPtr> functions;
     TRANSFORM *transform = nullptr;
-    bool preparedParallelSafe = false;
     RefractionSpec() = default;
     RefractionSpec(const RefractionSpec&);
     ~RefractionSpec();
