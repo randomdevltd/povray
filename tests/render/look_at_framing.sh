@@ -124,10 +124,11 @@ for c in 0 1 2 3; do
     render "union_ref$c" "$UNION" 128 Declare=Case=$c Declare=Reference=1
     equal "union$c" "union_ref$c"
     quiet "union$c"
-    od -An -v -tu1 -w6 "look_at_union$c.px" | awk '
+    # case 3's far part (1 AU) lies beyond the 2e10 trace distance, so only its near part is drawn
+    od -An -v -tu1 -w6 "look_at_union$c.px" | awk -v far=$((c != 3)) '
         $1 > 128 && $3 < 80 { red++ }
         $3 > 128 && $1 < 80 { green++ }
-        END { if (red < 100 || green < 100) { print "union components missing" > "/dev/stderr"; exit 1 } }'
+        END { if (red < 100 || (far && green < 100)) { print "union components missing" > "/dev/stderr"; exit 1 } }'
 done
 rm -f look_at_*.ppm look_at_*.px look_at_*.log
 echo "look_at framing: projections, transforms, tagged selections, focus and fallbacks match explicit cameras"
