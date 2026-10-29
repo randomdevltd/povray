@@ -6321,6 +6321,9 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
 {
     const Interior* interior = (object != nullptr) ? object->interior.get() : nullptr;
     MathColour irradiance;
+    // The entry IOR depends on the side of the surface the light comes from, not on the light: worked out once per side.
+    double sideEta[2];
+    bool sideKnown[2] = { false, false };
     for (int l = 0; l < lights.size(); l++)
     {
         if ((uses != nullptr) && !uses[l])
@@ -6366,8 +6369,13 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
             double cos_in = fabs(dot(normal, lightsourceray.Direction));
             if (cos_in >= EPSILON)
             {
-                const double eta = ComputeSubsurfaceEntryIOR(point, geometricNormal, object, whole, tolerance, lightsourceray.Direction, ticket);
-                lit += lightcolour * float(cos_in * ComputeFt(min(cos_in, 1.0), eta));
+                const int side = (dot(geometricNormal, lightsourceray.Direction) >= 0.0) ? 0 : 1;
+                if (!sideKnown[side])
+                {
+                    sideEta[side] = ComputeSubsurfaceEntryIOR(point, geometricNormal, object, whole, tolerance, lightsourceray.Direction, ticket);
+                    sideKnown[side] = true;
+                }
+                lit += lightcolour * float(cos_in * ComputeFt(min(cos_in, 1.0), sideEta[side]));
             }
         }
         irradiance += lit / float(points);
