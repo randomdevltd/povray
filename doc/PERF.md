@@ -1450,6 +1450,41 @@ does the same until σ·τ passes 15, so this is not a case of its own. Against 
 at 2896; its disc integral is within 10⁻⁴ out to 2896, and
 its ratio through to the far face 2.6% low. It is left as it is.
 
+## Adaptive surface bounce nodes
+
+A passive surface `light { bounce }` stores, per order, the light arriving at nodes on its surface, not the light
+leaving: front and back sums of L·|cos θ|^brilliance for each brilliance its materials use. Where the field is read,
+the surface's own diffuse layers are evaluated at that point, so a texture costs no nodes and is exact.
+
+Nodes are seeded once for the whole scene. Every bounce surface is drawn by area (`SurfaceGeometrySampler::SampleArea`,
+eight draws per expected node), the baseline spacing r₀ is set so 4096 nodes of a maximal Poisson disc set cover the
+scene's total bounce area, and each surface's draws are thinned to such a set, a draw kept only when no node of the same
+sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
+
+Each order refines level by level, to r₀/64. A node is measured from its light's `samples` draws per source, each from a
+point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
+projected along the normal), so its value is the mean over that disc and its draws give a standard error. A node splits
+when, relative to the local irradiance max(own, predicted):
+- between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
+- within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
+  (a shadow edge or a contact crossing it);
+- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths).
+The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
+gradient's included; a difference that is large but not yet certain doubles the node's draws instead, up to four times
+its light's samples. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
+spacing; the parent's area is shared by draws. Splits are decided per level from per-node results and applied in a fixed
+order, so the field is the same on any thread count; all lengths are ratios of r₀, so it is the same at any scale.
+
+Surface bounce fields draw on the prepared media cell budget: as many bytes as that many colours, over every order,
+each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
+byte, most first. Each order reports its nodes, levels, MiB and time on a line of its own, `Surface bounce oN: ...`.
+
+Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
+16·((n + nᵢ)·Δ)², so another sheet or a stacked parallel face is far; the kernel (1 − d²/d₉²)² times nᵢ·n² is corrected
+to reproduce planes in the tangent coordinates (moving least squares) and the result kept within the neighbours' range.
+The subsurface bridge takes these nodes and areas as its patches; a patch whose normals spread past the cloud cone
+splits by facing rather than position.
+
 ## Subsurface light leaving surface bounce nodes
 
 A surface `light { bounce }` on a method 2 object emits, each order, what its nodes send on: the diffuse reflection of
@@ -1463,7 +1498,7 @@ hour for two such shells.
 
 The nodes are now the cloud. A node's entering light comes from the beams the surface pass already holds:
 E = Σ L·|cos θ|·Ft(cos θ, η)/π, from either side, the material receiving from its exterior as a cloud point does; a
-node on a sheet takes none, and one there sends none. Its patch is a disc of its area weight over the trial count. Light
+node on a sheet takes none, and one there sends none. Its patch is a disc of its area. Light
 diffuses only between nodes of one object and interior, as a cloud is one object's: each such group has its own tree of
 median splits, and a group of patches inside the cloud tree's cone whose area is under `error_bound` times its squared
 distance is taken as one disc. A patch keeps its mean E in double precision; one of no area is skipped.

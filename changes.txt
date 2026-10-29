@@ -91,6 +91,11 @@ Changed Behaviour
     surfaces are prepared on the scene's work threads, with results that do
     not depend on their number.
 
+  - Surface bounce stores the light arriving at adaptive nodes, seeded over the
+    scene's total bounce area and refined where the light changes; the
+    surface's material is evaluated where the field is read. Reads use the
+    nearest nodes of the same surface, without per-primitive charts.
+
   - Surface and interior light blocks accept `bounce` and
     `bounce { passes N }` to request bounce orders. Bare bounce requests one
     order; passes must be a positive unsigned integer. With no explicit source
