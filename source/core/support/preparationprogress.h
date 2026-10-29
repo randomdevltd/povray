@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -35,12 +36,14 @@ public:
             bare += " " + phase.substr(0, phase.find(':'));
         }
         if ((messages != nullptr) && (phases.size() > 0))
-            messages->Info("%s", (line.size() <= width ? line : bare).c_str());
+            messages->Info("%s", (line.size() <= width ? line : bare).substr(0, width).c_str());
     }
-    void Begin(const char *name, std::size_t phaseTotal)
+    /// `counted`, if given, is work done that Advance does not count, read on the preparing thread when reporting.
+    void Begin(const char *name, std::size_t phaseTotal, const std::function<std::size_t()>& counted = {})
     {
         phase = name;
         total = phaseTotal;
+        extra = counted;
         step.clear();
         done.store(0, std::memory_order_relaxed);
         seen = 0;
@@ -56,7 +59,7 @@ public:
         if (phase.empty())
             return;
         const Clock::time_point now = Clock::now();
-        const std::size_t current = done.load(std::memory_order_relaxed);
+        const std::size_t current = Done();
         if (current != seen)
         {
             seen = current;
@@ -77,9 +80,11 @@ public:
         if (phase.empty())
             return;
         const Clock::time_point now = Clock::now();
-        Report(now);
+        if (Done() != lastReported)
+            Report(now);
         Emit(Format("finished %.1fs", Seconds(start, now)), false);
         phase.clear();
+        extra = nullptr;
     }
 
 private:
@@ -97,10 +102,12 @@ private:
         return buffer;
     }
 
+    std::size_t Done() const { return done.load(std::memory_order_relaxed) + (extra ? extra() : 0); }
     void Report(Clock::time_point now)
     {
         reported = now;
-        Emit(Format("%lu/%lu %.1fs", Count(done.load(std::memory_order_relaxed)), Count(total), Seconds(start, now)), true);
+        lastReported = Done();
+        Emit(Format("%lu/%lu %.1fs", Count(lastReported), Count(total), Seconds(start, now)), true);
     }
     void Emit(const std::string& state, bool withStep) const
     {
@@ -109,14 +116,15 @@ private:
         std::string line = "Preparation: " + phase + " " + state;
         if (withStep && !step.empty() && (line.size() + 2 < width))
             line += "; " + step.substr(0, width - line.size() - 2);
-        messages->Info("%s", line.c_str());
+        messages->Info("%s", line.substr(0, width).c_str());
     }
 
     pov_base::GenericMessenger *messages;
     std::size_t width;
     double interval, stall;
     std::string phase, step;
-    std::size_t total = 0, seen = 0;
+    std::size_t total = 0, seen = 0, lastReported = 0;
+    std::function<std::size_t()> extra;
     std::atomic<std::size_t> done{0};
     Clock::time_point start, reported, moved, warned;
 };

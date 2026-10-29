@@ -104,6 +104,8 @@ std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
 void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
 std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr owner, TraceThreadData *td);
+/// The work units PrepareLightFields reports: interiors that may refract, then lights.
+std::size_t PreparedLightUnits(const SceneData& scene);
 void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooperate);
 
 /// A `subtract` or `multiply` medium on a ray; it changes the media collected before it, which rank below it.
