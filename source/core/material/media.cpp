@@ -2676,7 +2676,9 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                     bool importance = true;
                     for (int ch = 0; ch < MathColour::channels; ch++)
                     {
-                        channelMass[ch] = cell.scattering[ch] == 0.0 || suffix[cell.mark][ch] == 0.0 ? 0.0 :
+                        // An exponential draw needs a rate of zero or more, and above zero on an unbounded cell.
+                        const bool drawable = cell.extinction[ch] > 0.0 || (cell.extinction[ch] == 0.0 && IsFiniteNumber(cell.end));
+                        channelMass[ch] = !drawable || cell.scattering[ch] == 0.0 || suffix[cell.mark][ch] == 0.0 ? 0.0 :
                             std::abs(DBL(cell.scattering[ch]) * cell.transfer[ch] * suffix[cell.mark][ch]);
                         importance = importance && IsFiniteNumber(channelMass[ch]);
                         channelTotal += channelMass[ch];
