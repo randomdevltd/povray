@@ -131,7 +131,6 @@ for language in pov pov4; do
     if "$POVRAY" +i"direct.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"direct.$language.log" 2>&1; then
         echo "surface_light: light block inside a light_source accepted in $language" >&2; exit 1
     fi
-    if [ "$language" = pov ]; then message='a light_source cannot take one'; else message="'light_source' has no item 'light'"; fi
-    tr '\n' ' ' <"direct.$language.log" | tr -s '[:space:]' ' ' | grep -F "$message" >/dev/null || { cat "direct.$language.log"; exit 1; }
+    tr '\n' ' ' <"direct.$language.log" | tr -s '[:space:]' ' ' | grep -F 'a light_source cannot take one' >/dev/null || { cat "direct.$language.log"; exit 1; }
 done
 echo 'surface_light: ok'
