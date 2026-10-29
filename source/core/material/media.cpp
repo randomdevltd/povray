@@ -1588,8 +1588,68 @@ class VolumeEmitter final : public Emitter
         MathColour coefficient, intensity;
         double radius = 0.0, boxVolume = 0.0;
         bool volumeEmission = true;
+        /// the share of each prepared cell inside the geometry, so position draws find thin parts
+        std::shared_ptr<const vector<DBL>> occupancy;
 
         ~VolumeEmitter() override { Destroy_Object(geometry); }
+
+        using Parallel = std::function<void(size_t, const std::function<void(size_t, TraceThreadData *, size_t)>&)>;
+        /// Occupied length along 2x2 lines per cell row on each axis, as a share of the cell, or its inside corners' share.
+        std::shared_ptr<const vector<DBL>> Occupancy(const PreparedSourceDomain& layout, size_t workers,
+                                                     const Parallel& parallel) const
+        {
+            const std::array<size_t, 3>& n = layout.Counts();
+            const Vector3d low = layout.Low(), size = layout.Size();
+            vector<DBL> axes[3];
+            std::vector<vector<std::pair<double, double>>> pieces(workers);
+            for (int a = X; a <= Z; a++)
+            {
+                const int b = (a + 1) % 3, c = (a + 2) % 3;
+                const double step = size[a] / n[a];
+                axes[a].assign(layout.CellCount(), 0.0);
+                Vector3d dir(0.0);
+                dir[a] = 1.0;
+                parallel(n[b] * n[c], [&](size_t row, TraceThreadData *worker, size_t slot) {
+                    const size_t jb = row % n[b], jc = row / n[b];
+                    for (int sub = 0; sub < 4; sub++)
+                    {
+                        Vector3d from = low;
+                        from[b] += (jb + 0.25 + 0.5 * (sub & 1)) * size[b] / n[b];
+                        from[c] += (jc + 0.25 + 0.5 * (sub >> 1)) * size[c] / n[c];
+                        Chord(from, dir, size[a], worker, pieces[slot]);
+                        for (const auto& piece : pieces[slot])
+                        {
+                            const size_t first = size_t(std::max(0.0, std::min(double(n[a] - 1), floor(piece.first / step))));
+                            for (size_t i = first; (i < n[a]) && (i * step < piece.second); i++)
+                            {
+                                const double overlap = std::min(piece.second, (i + 1) * step) - std::max(piece.first, i * step);
+                                if (!(overlap > 0.0))
+                                    continue;
+                                size_t index[3];
+                                index[a] = i;
+                                index[b] = jb;
+                                index[c] = jc;
+                                axes[a][(index[Z] * n[Y] + index[Y]) * n[X] + index[X]] += 0.25 * overlap / step;
+                            }
+                        }
+                    }
+                });
+            }
+            // a corner inside keeps cells whose occupied corner the lines pass by
+            vector<unsigned char> inside(layout.NodeCount());
+            parallel(layout.NodeCount(), [&](size_t node, TraceThreadData *worker, size_t) {
+                inside[node] = Inside_Object((layout.Node(node) - centre) / radius, geometry, worker);
+            });
+            auto result = std::make_shared<vector<DBL>>(layout.CellCount());
+            for (size_t cell = 0; cell < result->size(); cell++)
+            {
+                int corners = 0;
+                for (size_t node : layout.CellNodes(cell))
+                    corners += inside[node];
+                (*result)[cell] = std::min(1.0, std::max(corners / 8.0, (axes[X][cell] + axes[Y][cell] + axes[Z][cell]) / 3.0));
+            }
+            return result;
+        }
         void PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                          const std::function<void()>& cooperate) const override;
 
@@ -1848,6 +1908,16 @@ class VolumeEmitter final : public Emitter
 
 }
 
+// The corner rule's integral of f over a prepared cell.
+template<typename Function>
+static DBL CellIntegral(const PreparedSourceDomain& layout, size_t cell, const Function& f)
+{
+    DBL sum = 0.0;
+    for (const auto& q : layout.CornerQuadrature(cell))
+        sum += f(q.position) * q.weight;
+    return sum;
+}
+
 void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                                 const std::function<void()>& cooperate) const
 {
@@ -2055,11 +2125,11 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     vector<DBL> masses;
     if (emitter->volumeEmission)
     {
+        emitter->occupancy = emitter->Occupancy(*layout, workers, parallel);
         masses.resize(layout->CellCount());
-        parallel(layout->CellCount(), [&](size_t cell, TraceThreadData *worker, size_t) {
-            for (const auto& q : layout->CornerQuadrature(cell))
-                if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, worker))
-                    masses[cell] += field->Sample(q.position).Weight() * q.weight;
+        parallel(layout->CellCount(), [&](size_t cell, TraceThreadData *, size_t) {
+            masses[cell] = emitter->occupancy->at(cell) * CellIntegral(*layout, cell, [&](const Vector3d& p) {
+                return field->Sample(p).Weight(); });
         });
     }
     for (const auto& helper : helpers)
@@ -2101,14 +2171,21 @@ std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary
         masses.resize(layout->CellCount());
     for (size_t node = 0; node < layout->NodeCount(); ++node)
         emitter->volumeEmission = emitter->volumeEmission || proposal->Sample(layout->Node(node)).Weight() > 0.0;
+    emitter->occupancy = (original->occupancy && (original->axis->Domain() == layout)) ? original->occupancy :
+        emitter->Occupancy(*layout, 1, [&](size_t count, const std::function<void(size_t, TraceThreadData *, size_t)>& work) {
+            for (size_t i = 0; i < count; ++i)
+                work(i, td, 0);
+        });
     for (size_t cell = 0; cell < layout->CellCount(); ++cell)
+    {
+        const DBL occupied = emitter->occupancy->at(cell);
+        if (!(occupied > 0.0))
+            continue;
+        if (!sharedProposal)
+            masses[cell] = occupied * CellIntegral(*layout, cell, [&](const Vector3d& p) { return proposal->Sample(p).Weight(); });
         for (const auto& q : layout->CornerQuadrature(cell))
-            if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, td))
-            {
-                if (!sharedProposal)
-                    masses[cell] += proposal->Sample(q.position).Weight() * q.weight;
-                emitter->intensity += field->AngularAverage(q.position) * q.weight;
-            }
+            emitter->intensity += field->AngularAverage(q.position) * (q.weight * occupied);
+    }
     emitter->axis = sharedProposal ? std::make_shared<PreparedLightAxis>(layout, proposal, std::move(sharedProposal)) :
         std::make_shared<PreparedLightAxis>(layout, proposal, std::move(masses));
     return emitter;
