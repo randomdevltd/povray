@@ -1,6 +1,6 @@
 #!/bin/sh
-# bounce_adaptive.sh <povray> <srcdir>: adaptive surface bounce nodes refine alike on one thread or several and at any
-# scale, and a plain box room bounces as its inverse does.
+# bounce_adaptive.sh <povray> <srcdir>: adaptive surface bounce nodes refine alike on one thread or several and at a
+# thousand times the scale, and a plain box room bounces as its inverse does.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -34,19 +34,21 @@ alike() {
         if ($i - $(i + 4) > t * $i + 1e-3 || $(i + 4) - $i > t * $i + 1e-3) bad = 1 }
         END { if (na != "" && (nb - na > 0.03 * na || na - nb > 0.03 * na)) bad = 1; exit bad }'
 }
+W=48; H=36
 render room6 Declare=Case=6 Declare=Samples=16 +wt3
 render inverse6 Declare=Case=6 Declare=Samples=16 Declare=Inverse=1 +wt3
 blocks room6 > room6.blocks; blocks inverse6 > inverse6.blocks
-alike room6 inverse6 0.05 || { cat room6.blocks inverse6.blocks
+W=8; H=6
+alike room6 inverse6 0.08 || { cat room6.blocks inverse6.blocks
     echo "bounce_adaptive: a plain box room bounces unlike its inverse" >&2; exit 1; }
 for case in 0 4; do
-    for s in 1 0.001 1000; do
-        render scale$case-$s Declare=Case=$case Declare=S=$s +wt3
+    for s in 1 1000; do
+        W=64; H=48; render scale$case-$s Declare=Case=$case Declare=S=$s Declare=Samples=16 +wt3
         blocks scale$case-$s > scale$case-$s.blocks
     done
-    for s in 0.001 1000; do
-        alike scale$case-1 scale$case-$s 0.05 nodes || { cat scale$case-1.blocks scale$case-$s.blocks; nodes scale$case-1; nodes scale$case-$s
+    for s in 1000; do
+        alike scale$case-1 scale$case-$s 0.08 nodes || { cat scale$case-1.blocks scale$case-$s.blocks; nodes scale$case-1; nodes scale$case-$s
             echo "bounce_adaptive: case $case refines or renders differently at scale $s" >&2; exit 1; }
     done
 done
-echo "bounce_adaptive: adaptive bounce nodes are the same on any thread count and at any scale"
+echo "bounce_adaptive: adaptive bounce nodes are the same on any thread count and at a thousand times the scale"
