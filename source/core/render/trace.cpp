@@ -7015,7 +7015,8 @@ static uint64_t CloudSeed(const SubsurfaceCellKey& key, int stage, int job)
            (uint64_t(stage) << 62) ^ (uint64_t(uint32_t(job)) * 0xD1B54A32D192ED03ull);
 }
 
-static const int kCloudPointsPerJob = 256;
+// Points sharing one sequence of area-light shifts.
+static const int kCloudShiftRun = 256;
 // Times a cell's size may be quadrupled for a ring wider than it; reach, in z_r, of diffusion that never fades on an
 // unbounded object.
 static const int kCloudLifts = 4;
@@ -7131,7 +7132,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             {
                 std::lock_guard<std::mutex> lock(cell.mutex);
                 cell.stage = SubsurfaceCell::kLighting;
-                cell.jobs = int((count + kCloudPointsPerJob - 1) / kCloudPointsPerJob);
+                cell.jobs = int(count);
                 cell.next = cell.done = 0;
             }
             cell.changed.notify_all();
@@ -7352,8 +7353,9 @@ static double CloudDepthDraw(const SubsurfaceCellKey& key, const SubsurfaceCell&
 void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket)
 {
     int stride = cell.lights * MathColour::channels;
-    int first = job * kCloudPointsPerJob, last = min(int(cell.points.size()), first + kCloudPointsPerJob);
-    uint64_t state = CloudSeed(key, 1, job);
+    int first = job, last = min(int(cell.points.size()), first + 1);
+    // Each point is a job, any thread's; its area shift is drawn where its run's splitmix sequence puts it.
+    uint64_t state = CloudSeed(key, 1, job / kCloudShiftRun) + uint64_t(2 * (job % kCloudShiftRun)) * 0x9E3779B97F4A7C15ull;
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
     std::unique_ptr<PhotonGatherer> gatherer;
     if (key.photons)
