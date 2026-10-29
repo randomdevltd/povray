@@ -10,6 +10,8 @@ render() {
 }
 render far_point Declare=PointSource=1
 render far_volume
+render far_point_diffuse Declare=PointSource=1 Declare=SingleSamples=0
+render far_volume_diffuse Declare=SingleSamples=0
 render near_direct Declare=NearSource=1 Declare=SingleSamples=0
 render near_photons Declare=NearSource=1 Declare=SingleSamples=0 Declare=Photons=1 Declare=PhotonQuality=16
 for name in far_point far_volume near_direct near_photons; do
