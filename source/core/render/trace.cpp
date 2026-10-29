@@ -5785,7 +5785,7 @@ void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Inters
         return;
 
     // POV-Ray's light intensities already imply the 1/pi factor, so it is left out here.
-    const double eta = ComputeSubsurfaceEntryIOR(in.IPoint, in.INormal, in.Object, SubsurfaceObject(in), lightsourceray.Direction, ticket);
+    const double eta = ComputeSubsurfaceEntryIOR(in.IPoint, in.INormal, in.Object, SubsurfaceObject(in), in.Object->SurfaceTolerance(), lightsourceray.Direction, ticket);
     double ft = cos_in * ComputeFt(min(cos_in, 1.0), eta);
     for (int j = 0; j < MathColour::channels; j++)
         candidate.factor[j] = ft * rd[j];
@@ -5863,7 +5863,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
     if(cos_in < EPSILON)
         return;
 
-    const double eta = ComputeSubsurfaceEntryIOR(xi.IPoint, xi.INormal, xi.Object, SubsurfaceObject(xi), lightsourceray.Direction, ticket);
+    const double eta = ComputeSubsurfaceEntryIOR(xi.IPoint, xi.INormal, xi.Object, SubsurfaceObject(xi), xi.Object->SurfaceTolerance(), lightsourceray.Direction, ticket);
     double cos_in_prime_sqr = 1 - (1 - Sqr(cos_in)) / Sqr(eta);
     if (cos_in_prime_sqr < 0.0)
         return; // total reflection
@@ -5896,7 +5896,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
 }
 
 double Trace::ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, ConstObjectPtr object,
-                                          ConstObjectPtr whole, const Vector3d& towardSource, TraceTicket& ticket)
+                                          ConstObjectPtr whole, double surfaceTolerance, const Vector3d& towardSource, TraceTicket& ticket)
 {
     const Interior* interior = (object != nullptr) ? object->interior.get() : nullptr;
     if (interior == nullptr)
@@ -5906,17 +5906,27 @@ double Trace::ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& n
     if (SubsurfaceFiniteBounds(interior->boundsLow, interior->boundsHigh))
         extent = (interior->boundsHigh - interior->boundsLow).length();
     // Membership is local to the boundary, but a probe must clear the error of the surface's own roots.
-    const double tolerance = 2.0 * object->SurfaceTolerance();
-    // The probed object's own membership is read along the probe's way out, which its nearest crossing lies behind.
+    const double tolerance = 2.0 * surfaceTolerance;
+    // The probed object's membership is read on a way out its nearest crossing lies behind, tilted off any symmetry.
     const auto settle = [&](const Vector3d& probe, const Vector3d& away, RayInteriorVector& found) {
-        const bool along = InsideByBounds(probe, const_cast<ObjectPtr>(whole), &away);
+        const Vector3d skew(0.2718281828459045, 0.4142135623730950, 0.1732050807568877);
+        const Vector3d tilted = (away + (skew - away * dot(skew, away)) * 0.5).normalized();
+        const bool along = InsideByBounds(probe, const_cast<ObjectPtr>(whole), &tilted);
         if (along == Inside_Object(probe, const_cast<ObjectPtr>(whole), threadData))
             return;
-        const auto at = std::find(found.begin(), found.end(), interior);
-        if (along && (at == found.end()))
-            found.push_back(const_cast<Interior*>(interior));
-        else if (!along && (at != found.end()))
+        Interior* own = const_cast<Interior*>(interior);
+        const auto at = std::find(found.begin(), found.end(), own);
+        if (!along && (at != found.end()))
             found.erase(at);
+        if (!along || (at != found.end()))
+            return;
+        // Entered in precedence order among the others, which keep theirs.
+        std::vector<Interior*> ordered(found.begin(), found.end());
+        ordered.insert(std::find_if(ordered.begin(), ordered.end(), [own](const Interior* i) { return i->precedence > own->precedence; }),
+                       own);
+        found.clear();
+        for (Interior* i : ordered)
+            found.push_back(i);
     };
     Vector3d sourceSide = SubsurfaceBoundaryProbe(point, side, tolerance, extent);
     Vector3d incomingDirection = -towardSource, exterior = side;
@@ -6128,7 +6138,7 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
             sampled--;
             if (dark)
                 continue;
-            const double entryEta = ComputeSubsurfaceEntryIOR(out.IPoint, out.INormal, out.Object, SubsurfaceObject(out), cloud->exitDirection[l], ticket);
+            const double entryEta = ComputeSubsurfaceEntryIOR(out.IPoint, out.INormal, out.Object, SubsurfaceObject(out), out.Object->SurfaceTolerance(), cloud->exitDirection[l], ticket);
             double cos_in_prime_sqr = 1.0 - (1.0 - Sqr(cos_in)) / Sqr(entryEta);
             if (cos_in_prime_sqr <= Sqr(EPSILON))
                 continue;
@@ -6279,7 +6289,8 @@ bool Trace::SubsurfaceVisibility::Agrees(int light) const
 // Light entering the surface at point: each light's colour, shadow, cosine and Fresnel transmittance; see doc/PERF.md.
 MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                              int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
-                                             const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole, const char* uses)
+                                             const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole, double tolerance,
+                                             const char* uses)
 {
     const Interior* interior = (object != nullptr) ? object->interior.get() : nullptr;
     MathColour irradiance;
@@ -6328,7 +6339,7 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
             double cos_in = fabs(dot(normal, lightsourceray.Direction));
             if (cos_in >= EPSILON)
             {
-                const double eta = ComputeSubsurfaceEntryIOR(point, geometricNormal, object, whole, lightsourceray.Direction, ticket);
+                const double eta = ComputeSubsurfaceEntryIOR(point, geometricNormal, object, whole, tolerance, lightsourceray.Direction, ticket);
                 lit += lightcolour * float(cos_in * ComputeFt(min(cos_in, 1.0), eta));
             }
         }
@@ -6364,7 +6375,7 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
             continue;
         cloud.exitDirection[i] = lightsourceray.Direction;
         double cos_in = fabs(dot(out.INormal, lightsourceray.Direction));
-        const double eta = ComputeSubsurfaceEntryIOR(out.IPoint, out.INormal, out.Object, SubsurfaceObject(out), lightsourceray.Direction, ticket);
+        const double eta = ComputeSubsurfaceEntryIOR(out.IPoint, out.INormal, out.Object, SubsurfaceObject(out), out.Object->SurfaceTolerance(), lightsourceray.Direction, ticket);
         float lit = (cos_in >= EPSILON) ? float(cos_in * ComputeFt(min(cos_in, 1.0), eta)) : 0.0f;
         if ((qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE))) ||
             (lightsource.emitter && qualityFlags.media && lightsource.Media_Interaction && lightsource.Media_Attenuation))
@@ -6464,7 +6475,7 @@ PreciseMathColour Trace::ComputeCloudNearField(const Intersection& out, const Ve
         const std::vector<char>& uses = cloud.parts->sets[(set != cloud.parts->setOf.end()) ? set->second : 0];
         Vector2d shift(areaShift[U] + k * 0.7548776662466927, areaShift[V] + k * 0.5698402909980532);
         MathColour irradiance = ComputeSubsurfaceIrradiance(nearest->IPoint, nq, cloud.lights, 1, &shift, nullptr, ticket,
-                                                            DeriveKey(key, kDrawSubsurface, 16 + k), face, nearest->Object, SubsurfaceObject(*nearest), uses.data());
+                                                            DeriveKey(key, kDrawSubsurface, 16 + k), face, nearest->Object, SubsurfaceObject(*nearest), nearest->Object->SurfaceTolerance(), uses.data());
         threadData->Stats()[Subsurface_Cloud_Near_Rays] += std::count(uses.begin(), uses.end(), 1);
         double distSqr = (x - nearest->IPoint).lengthSqr() * Sqr(mm);
         PreciseMathColour rd = profile.Rd(distSqr);
@@ -6485,7 +6496,7 @@ MathColour Trace::ComputeCloudExitPhotons(const Intersection& out, const Vector3
     if (!gatherer)
         gatherer.reset(new PhotonGatherer(&sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap, sceneData->photonSettings));
     gatherer->map = &sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap;
-    return ComputeSubsurfacePhotonIrradiance(out.IPoint, n, cloud.object, *gatherer, ticket, true);
+    return ComputeSubsurfacePhotonIrradiance(out.IPoint, n, cloud.object, out.Object->SurfaceTolerance(), *gatherer, ticket, true);
 }
 
 // The radiosity cache's light entering at the exit point (normal n, pointing out) for a cloud that carries it.
@@ -6495,7 +6506,7 @@ MathColour Trace::ComputeCloudExitAmbient(const Intersection& out, const Vector3
     if (cloud.radiosity)
     {
         radiosity.ComputeAmbient(out.IPoint, n, n, 1.0, ambient, 1.0, ticket);
-        const double eta = ComputeSubsurfaceEntryIOR(out.IPoint, n, out.Object, SubsurfaceObject(out), n, ticket);
+        const double eta = ComputeSubsurfaceEntryIOR(out.IPoint, n, out.Object, SubsurfaceObject(out), out.Object->SurfaceTolerance(), n, ticket);
         ambient *= float(ComputeFt(1.0, eta));
     }
     return ambient;
@@ -6530,16 +6541,10 @@ struct SubsurfacePhotonBoundaryProbe final
     ~SubsurfacePhotonBoundaryProbe() { state = saved; }
 };
 
-// An isosurface's roots are only as exact as its accuracy, so a deposit and a later hit on it can differ by a few times that.
-static double SubsurfaceRootTolerance(ConstObjectPtr object)
+// A surface's roots are only as exact as its stated accuracy, so a deposit and a later hit on it can differ by a few times that.
+static double SubsurfaceRootTolerance(double surfaceTolerance)
 {
-    double tolerance = 0.0;
-    if (const IsoSurface* iso = dynamic_cast<const IsoSurface*>(object))
-        tolerance = 4.0 * iso->accuracy;
-    else if (object->Type & IS_COMPOUND_OBJECT)
-        for (ObjectPtr child : static_cast<const CSG*>(object)->children)
-            tolerance = max(tolerance, SubsurfaceRootTolerance(child));
-    return tolerance;
+    return 4.0 * surfaceTolerance;
 }
 
 static double SubsurfacePhotonTolerance(const Vector3d& location, double rootTolerance)
@@ -6555,9 +6560,9 @@ static double SubsurfacePhotonProbe(ConstObjectPtr receiver, double tolerance, d
 }
 
 bool Trace::RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& n, ObjectPtr receiver, double radius,
-                                             Vector3d& outward, TraceTicket& ticket)
+                                             double rootTolerance, Vector3d& outward, TraceTicket& ticket)
 {
-    double tolerance = SubsurfacePhotonTolerance(location, SubsurfaceRootTolerance(receiver));
+    double tolerance = SubsurfacePhotonTolerance(location, rootTolerance);
     if (!(tolerance < 0.01 * radius))
         return false;
     return ProbeSubsurfacePhotonBoundary(location, n, receiver, tolerance, SubsurfacePhotonProbe(receiver, tolerance, radius), outward, ticket);
@@ -6655,7 +6660,7 @@ bool Trace::SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incomi
     return SubsurfacePhotonBoundaries::Unfold(folded, outward);
 }
 
-MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, ObjectPtr receiver,
+MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, ObjectPtr receiver, double tolerance,
                                                   PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud)
 {
     MathColour irradiance;
@@ -6675,12 +6680,12 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
             cap = ProgressivePhotonBudget::capScale * cached.second;
         }
         Vector3d n = normal.normalized();
-        if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, map.BaseRadius(exact), n, ticket))
+        if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, map.BaseRadius(exact), SubsurfaceRootTolerance(tolerance), n, ticket))
             return irradiance;
-        const double eta = ComputeSubsurfaceEntryIOR(point, n, receiver, receiver, n, ticket);
+        const double eta = ComputeSubsurfaceEntryIOR(point, n, receiver, receiver, tolerance, n, ticket);
         std::uint32_t tested = ProgressivePhotonMap::noReceiver;
         bool inside = false;
-        const double slab = kPhotonSlab * map.BaseRadius(exact) + receiver->SurfaceTolerance();
+        const double slab = kPhotonSlab * map.BaseRadius(exact) + tolerance;
         auto& nearest = threadData->photonNeighbours;
         const double support = map.Nearest(point, n, exact, cap, nearest, [&](const MappedPhoton& photon) {
             if (photon.receiver != exact)
@@ -6721,9 +6726,9 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
     if (!(length > 0.0) || !std::isfinite(length))
         return irradiance;
     Vector3d n = normal / length;
-    if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, map.minGatherRad, n, ticket))
+    if (cloud && !RecoverSubsurfacePhotonBoundary(point, n, receiver, map.minGatherRad, SubsurfaceRootTolerance(tolerance), n, ticket))
         return irradiance;
-    const double eta = ComputeSubsurfaceEntryIOR(point, n, receiver, receiver, n, ticket);
+    const double eta = ComputeSubsurfaceEntryIOR(point, n, receiver, receiver, tolerance, n, ticket);
     threadData->Stats()[cloud ? Subsurface_Photon_Cloud_Gathers : Subsurface_Photon_Sample_Gathers]++;
     // Each entry needs a fresh gather; gathered is only a texture-layer reuse flag.
     double radius = gatherer.gatherPhotonsAdaptive(&point, &n, true);
@@ -6733,7 +6738,7 @@ MathColour Trace::ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const
     threadData->Stats()[Subsurface_Photon_Radius_Sum] += radius;
     threadData->Stats()[Subsurface_Photon_Radius_Squared_Sum] += Sqr(radius);
     threadData->Stats()[Subsurface_Photon_Candidates] += gatherer.gatheredPhotons.numFound;
-    double rootTolerance = SubsurfaceRootTolerance(receiver);
+    double rootTolerance = SubsurfaceRootTolerance(tolerance);
     for (int i = 0; i < gatherer.gatheredPhotons.numFound; i++)
     {
         const Photon& photon = *gatherer.gatheredPhotons.photonGatherList[i];
@@ -6937,7 +6942,7 @@ bool Trace::ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vec
                 ComputeSubsurfaceEntry(flesh, in.IPoint, -normal, Draw(DeriveKey(sampleKey, kDrawSubsurface, i), kDrawSubsurface, entryIndex++), entry);
                 rd *= PreciseMathColour(entry.factor);
             }
-            MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, normal, receiver, gatherer, ticket, false);
+            MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, normal, receiver, in.Object->SurfaceTolerance(), gatherer, ticket, false);
             sum += rd * PreciseMathColour(photonEntry);
         }
     }
@@ -7277,6 +7282,7 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             for (int b = 0; b < 3; b++)
                 density += fabs(n[b]) * Sqr(cell.steps[b] / size);
             point.area = float(Sqr(mm) / density);
+            point.tolerance = float(in.Object->SurfaceTolerance());
             auto set = cloud.parts->setOf.find(in.Object);
             point.id = unsigned(((set != cloud.parts->setOf.end()) ? set->second : 0) * 2 + (Test_Flag(in.Object, PH_IGNORE_PHOTONS_FLAG) ? 0 : 1));
             point.axis = a;
@@ -7326,11 +7332,11 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         const std::vector<char>& uses = cloud.parts->sets[min(size_t(point.id / 2), cloud.parts->sets.size() - 1)];
         bool collects = (point.id % 2 != 0);
         MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, shading, cloud.lights, kCloudAreaPoints, &areaShift,
-                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k), normal, cloud.object, cloud.object, uses.data());
+                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k), normal, cloud.object, cloud.object, point.tolerance, uses.data());
         MathColour photonEntry;
         if (gatherer && collects)
         {
-            photonEntry = ComputeSubsurfacePhotonIrradiance(point.position, normal, cloud.object, *gatherer, ticket, true);
+            photonEntry = ComputeSubsurfacePhotonIrradiance(point.position, normal, cloud.object, point.tolerance, *gatherer, ticket, true);
             irradiance += photonEntry;
         }
         if (key.medium != nullptr)
@@ -7379,7 +7385,7 @@ void Trace::AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& c
     for (SubsurfacePoint& point : cell.points)
     {
         const Vector3d normal(point.normal[0], point.normal[1], point.normal[2]);
-        const double eta = ComputeSubsurfaceEntryIOR(point.position, normal, cloud.object, cloud.object, normal, ticket);
+        const double eta = ComputeSubsurfaceEntryIOR(point.position, normal, cloud.object, cloud.object, point.tolerance, normal, ticket);
         const float ft = float(ComputeFt(1.0, eta));
         const float *ambient = &cell.ambient[point.id * channels];
         for (int j = 0; j < channels; j++)
@@ -8596,7 +8602,7 @@ void Trace::ComputeDiffuseAmbientContribution1(const Intersection& in, const Pre
     // TODO FIXME - should support pertubed normals
     radiosity.ComputeAmbient(in.IPoint, in.INormal, in.INormal, 1.0 /* TODO - brilliance */, ambientcolour, weight, ticket);
     // Radiosity data is already cosine-weighted, so the light is taken as arriving along the normal.
-    const double eta = ComputeSubsurfaceEntryIOR(in.IPoint, in.INormal, in.Object, SubsurfaceObject(in), in.INormal, ticket);
+    const double eta = ComputeSubsurfaceEntryIOR(in.IPoint, in.INormal, in.Object, SubsurfaceObject(in), in.Object->SurfaceTolerance(), in.INormal, ticket);
     double ft = ComputeFt(1.0, eta);
     for (int j = 0; j < MathColour::channels; j++)
     {
@@ -8899,7 +8905,8 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         Intersection surface(out);
         out.Object->Normal(geometricNormal, &surface, threadData);
         MathColour here = ComputeSubsurfaceIrradiance(out.IPoint, out.INormal.normalized(), lights,
-                                                      1, &shift, nullptr, Eye.GetTicket(), estimateKey, geometricNormal, out.Object, SubsurfaceObject(out));
+                                                      1, &shift, nullptr, Eye.GetTicket(), estimateKey, geometricNormal, out.Object, SubsurfaceObject(out),
+                                                      out.Object->SurfaceTolerance());
         if (flesh.PerEntry())
             here = here * flesh.nearby.factor + flesh.nearby.emission;
         cloudDiffuse = MathColour(profile.RdTotal() * PreciseMathColour(here) * ftDiffuse);
@@ -8972,7 +8979,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
                 Vector3d n = SubsurfacePhotonNormal(in, threadData).normalized();
                 if (dot(n, in.IPoint - sampleBase) < 0.0)
                     n.invert();
-                MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, n, SubsurfaceObject(out), *gatherer, Eye.GetTicket(), false);
+                MathColour photonEntry = ComputeSubsurfacePhotonIrradiance(in.IPoint, n, SubsurfaceObject(out), in.Object->SurfaceTolerance(), *gatherer, Eye.GetTicket(), false);
                 Total_Colour += MathColour(rd * PreciseMathColour(photonEntry));
             }
 
