@@ -36,6 +36,7 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
 #include "parser/pov4.h"
+#include "parser/pov4schema.h"
 
 // C++ variants of C standard header files
 #include <cctype>
@@ -1053,6 +1054,14 @@ void Parser::Parse_End(TokenId openTokenId, TokenId expectTokenId)
 
     ErrorInfo(maBraceStack.back(), "Unmatched %s", Get_Token_String(maBraceStack.back().openToken));
     Error("No matching %s, %s found instead", Get_Token_String(expectTokenId), Get_Token_String(CurrentTrueTokenId()));
+}
+
+// Stops on an item that only a sub-block of block takes, naming that sub-block.
+void Parser::Reject_Nested_Item(const char* block, const char* where)
+{
+    const std::string owners = Pov4NestedOwners(block, CurrentTokenText());
+    if (!owners.empty())
+        Error("'%s' belongs inside the %s block of %s.", CurrentTokenText().c_str(), owners.c_str(), where);
 }
 
 //******************************************************************************
@@ -2438,6 +2447,7 @@ void Parser::Parse_Camera (Camera& Cam)
                     Parse_Camera_Output(New);
                 else
                 {
+                    Reject_Nested_Item("camera", "a camera");
                     UNGET
                     EXIT
                 }
@@ -2757,6 +2767,7 @@ bool Parser::Parse_Camera_Mods(Camera& New)
         OTHERWISE
             if (CurrentTokenText() != "output")
             {
+                Reject_Nested_Item("camera", "a camera");
                 UNGET
                 return false;
             }
@@ -4788,6 +4799,7 @@ ObjectPtr Parser::Parse_Light_Source ()
         OTHERWISE
             if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
                 Error("A light block makes a shape's surface a light; a light_source cannot take one.");
+            Reject_Nested_Item("light_source", "a light_source");
             UNGET
             EXIT
         END_CASE
@@ -8643,6 +8655,7 @@ void Parser::Parse_Global_Settings()
             }
             else
             {
+                Reject_Nested_Item("global_settings", "global_settings");
                 UNGET
                 EXIT
             }
@@ -9055,6 +9068,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             }
             else
             {
+                Reject_Nested_Item("object", "an object");
                 UNGET
                 EXIT
             }

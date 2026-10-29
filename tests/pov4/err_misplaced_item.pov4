@@ -1,0 +1,2 @@
+include "scene.inc";
+global_settings { count 100 }

@@ -7,7 +7,6 @@
         "accuracy",
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
@@ -15,7 +14,6 @@
         "flatness",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -28,18 +26,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -57,11 +51,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -71,14 +60,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -91,18 +78,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -115,11 +98,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -130,14 +108,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -151,18 +127,14 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -175,11 +147,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -190,14 +157,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -210,18 +175,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -235,11 +196,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -249,14 +205,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -270,18 +224,14 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -295,11 +245,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -309,14 +254,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -329,18 +272,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -353,11 +292,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -370,7 +304,6 @@
         "bounded_by",
         "chr",
         "clipped_by",
-        "collect",
         "concat",
         "cutaway_textures",
         "datetime",
@@ -385,7 +318,6 @@
         "hierarchy",
         "hollow",
         "iff",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -399,7 +331,6 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "pgm",
         "photons",
         "pigment",
@@ -408,8 +339,6 @@
         "ppm",
         "premultiplied",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "smooth",
@@ -421,7 +350,6 @@
         "substr",
         "sys",
         "tags",
-        "target",
         "texture",
         "tga",
         "tiff",
@@ -439,11 +367,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -455,7 +378,6 @@
         "all_intersections",
         "bounded_by",
         "clipped_by",
-        "collect",
         "contained_by",
         "cutaway_textures",
         "double_illuminate",
@@ -465,7 +387,6 @@
         "function",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -483,19 +404,15 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "polarity",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "threshold",
         "transform",
@@ -510,11 +427,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -524,14 +436,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -545,18 +455,14 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -570,11 +476,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -584,14 +485,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "inside_vector",
         "interior",
         "interior_texture",
@@ -605,19 +504,15 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "smooth_triangle",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -632,11 +527,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -646,7 +536,6 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "distance",
         "double_illuminate",
@@ -654,7 +543,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -667,20 +555,16 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "precision",
         "radiosity",
         "radius",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -694,11 +578,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -709,7 +588,6 @@
         "accuracy",
         "bounded_by",
         "clipped_by",
-        "collect",
         "contained_by",
         "cutaway_textures",
         "double_illuminate",
@@ -717,7 +595,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -731,19 +608,15 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "precompute",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -760,11 +633,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -774,14 +642,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -794,18 +660,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -818,11 +680,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -833,14 +690,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -853,18 +708,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -877,11 +728,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -892,14 +738,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -912,18 +756,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -936,11 +776,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -951,14 +786,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -971,18 +804,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -995,11 +824,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1011,7 +835,6 @@
         "bezier_spline",
         "bounded_by",
         "clipped_by",
-        "collect",
         "conic_sweep",
         "cubic_spline",
         "cutaway_textures",
@@ -1020,7 +843,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1036,19 +858,15 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "quadratic_spline",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1061,11 +879,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1076,14 +889,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1096,18 +907,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1120,11 +927,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1135,14 +937,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1155,18 +955,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1180,11 +976,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -1194,14 +985,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1214,18 +1003,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1240,11 +1025,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -1254,14 +1034,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1275,18 +1053,14 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1299,11 +1073,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1314,14 +1083,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1334,18 +1101,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1358,11 +1121,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1373,14 +1131,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1393,18 +1149,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1417,11 +1169,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1434,14 +1181,12 @@
         "charset",
         "clipped_by",
         "cmap",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "internal",
@@ -1455,18 +1200,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1481,11 +1222,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -1495,14 +1231,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1515,18 +1249,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1539,11 +1269,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1554,14 +1279,12 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -1574,18 +1297,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -1598,11 +1317,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1616,7 +1330,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -1630,7 +1343,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -1656,7 +1368,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -1668,8 +1379,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -1683,7 +1392,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -1700,11 +1408,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1718,7 +1421,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -1732,7 +1434,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -1758,7 +1459,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -1770,8 +1470,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -1785,7 +1483,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -1802,11 +1499,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1820,7 +1512,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -1834,7 +1525,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -1860,7 +1550,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -1872,8 +1561,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -1887,7 +1574,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -1904,11 +1590,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -1922,7 +1603,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -1936,7 +1616,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -1962,7 +1641,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -1974,8 +1652,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -1989,7 +1665,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -2006,11 +1681,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -2024,7 +1694,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -2038,7 +1707,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -2064,7 +1732,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -2076,8 +1743,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -2091,7 +1756,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -2108,11 +1772,6 @@
           "reflection",
           "refraction",
           "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
         ],
         "radiosity": [
           "importance"
@@ -2126,7 +1785,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -2140,7 +1798,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -2166,7 +1823,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -2178,8 +1834,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -2193,7 +1847,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -2211,11 +1864,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2226,7 +1874,6 @@
         "b_spline",
         "bounded_by",
         "clipped_by",
-        "collect",
         "cubic_spline",
         "cutaway_textures",
         "double_illuminate",
@@ -2234,7 +1881,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -2248,18 +1894,14 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "tolerance",
         "transform",
@@ -2274,11 +1916,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2289,7 +1926,6 @@
         "bezier_spline",
         "bounded_by",
         "clipped_by",
-        "collect",
         "cubic_spline",
         "cutaway_textures",
         "double_illuminate",
@@ -2297,7 +1933,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -2311,19 +1946,15 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "quadratic_spline",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -2337,11 +1968,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2351,7 +1977,6 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "component",
         "cutaway_textures",
         "cylinder",
@@ -2360,7 +1985,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -2373,12 +1997,9 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "sphere",
@@ -2386,7 +2007,6 @@
         "strength",
         "sturm",
         "tags",
-        "target",
         "texture",
         "threshold",
         "transform",
@@ -2401,11 +2021,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2415,7 +2030,6 @@
       "items": [
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
@@ -2423,7 +2037,6 @@
         "finish",
         "hierarchy",
         "hollow",
-        "importance",
         "inside_vector",
         "interior",
         "interior_texture",
@@ -2439,18 +2052,14 @@
         "normal",
         "normal_indices",
         "normal_vectors",
-        "pass_through",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "texture_list",
         "transform",
@@ -2468,11 +2077,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2488,7 +2092,6 @@
         "atanh",
         "bounded_by",
         "clipped_by",
-        "collect",
         "cos",
         "cosh",
         "cube",
@@ -2500,7 +2103,6 @@
         "hierarchy",
         "hollow",
         "hypercomplex",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -2515,7 +2117,6 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "photons",
         "pigment",
         "precision",
@@ -2523,8 +2124,6 @@
         "quaternion",
         "radiosity",
         "reciprocal",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "sin",
@@ -2536,7 +2135,6 @@
         "tags",
         "tan",
         "tanh",
-        "target",
         "texture",
         "transform",
         "translate",
@@ -2550,11 +2148,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2566,7 +2159,6 @@
         "all_intersections",
         "bounded_by",
         "clipped_by",
-        "collect",
         "contained_by",
         "cutaway_textures",
         "double_illuminate",
@@ -2576,7 +2168,6 @@
         "function",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -2594,19 +2185,15 @@
         "no_shadow",
         "normal",
         "open",
-        "pass_through",
         "photons",
         "pigment",
         "polarity",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "threshold",
         "transform",
@@ -2621,11 +2208,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2637,7 +2219,6 @@
         "back_filter_tags",
         "bounded_by",
         "clipped_by",
-        "collect",
         "cutaway_textures",
         "double_illuminate",
         "dtag",
@@ -2650,7 +2231,6 @@
         "front_filter_tags",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -2666,19 +2246,15 @@
         "no_reflection",
         "no_shadow",
         "normal",
-        "pass_through",
         "perturb",
         "photons",
         "pigment",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "split_union",
         "sturm",
         "tags",
-        "target",
         "texture",
         "to",
         "transform",
@@ -2693,11 +2269,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -2707,39 +2278,25 @@
       "items": [
         "albedo",
         "ambient",
-        "anisotropy",
         "brilliance",
         "caustics",
-        "color",
-        "colour",
         "conserve_energy",
         "crand",
-        "depth",
         "diffuse",
         "emission",
-        "exponent",
-        "falloff",
         "fresnel",
         "ior",
         "irid",
         "metallic",
-        "method",
-        "minimum_influence",
         "phong",
         "phong_size",
-        "pigment",
         "reflection",
         "reflection_exponent",
         "refraction",
         "roughness",
         "specular",
-        "spread",
         "subsurface",
-        "thickness",
-        "translucency",
-        "turbulence",
-        "use_alpha",
-        "volume_sampling"
+        "use_alpha"
       ],
       "nested": {
         "reflection": [
@@ -2782,7 +2339,6 @@
         "bump_map",
         "bump_size",
         "bumps",
-        "camera",
         "cells",
         "checker",
         "color_map",
@@ -2800,7 +2356,6 @@
         "exponent",
         "exterior",
         "facets",
-        "fallback",
         "finish",
         "form",
         "frequency",
@@ -2820,7 +2375,6 @@
         "marble",
         "material_map",
         "matrix",
-        "max_trace_level",
         "metric",
         "mortar",
         "no_bump_scale",
@@ -2914,7 +2468,6 @@
         "bump_map",
         "bump_size",
         "bumps",
-        "camera",
         "cells",
         "checker",
         "color_map",
@@ -2933,7 +2486,6 @@
         "exponent",
         "exterior",
         "facets",
-        "fallback",
         "form",
         "frequency",
         "function",
@@ -2951,7 +2503,6 @@
         "mandel",
         "marble",
         "matrix",
-        "max_trace_level",
         "metric",
         "mortar",
         "no_bump_scale",
@@ -3030,7 +2581,6 @@
         "bump_map",
         "bump_size",
         "bumps",
-        "camera",
         "cells",
         "checker",
         "color_map",
@@ -3049,7 +2599,6 @@
         "exponent",
         "exterior",
         "facets",
-        "fallback",
         "form",
         "frequency",
         "function",
@@ -3067,7 +2616,6 @@
         "mandel",
         "marble",
         "matrix",
-        "max_trace_level",
         "metric",
         "mortar",
         "no_bump_scale",
@@ -3146,7 +2694,6 @@
         "bump_map",
         "bump_size",
         "bumps",
-        "camera",
         "cells",
         "checker",
         "color_map",
@@ -3165,7 +2712,6 @@
         "exponent",
         "exterior",
         "facets",
-        "fallback",
         "form",
         "frequency",
         "function",
@@ -3183,7 +2729,6 @@
         "mandel",
         "marble",
         "matrix",
-        "max_trace_level",
         "metric",
         "mortar",
         "no_bump_scale",
@@ -3284,9 +2829,7 @@
         "collect",
         "confidence",
         "density",
-        "eccentricity",
         "emission",
-        "extinction",
         "intervals",
         "jitter",
         "matrix",
@@ -3322,8 +2865,6 @@
         "nits",
         "photons",
         "pigment",
-        "reflection",
-        "refraction",
         "samples",
         "shadowless"
       ],
@@ -3363,7 +2904,6 @@
         "output",
         "panoramic",
         "perspective",
-        "pigment",
         "radiosity_size",
         "right",
         "rotate",
@@ -3380,51 +2920,6 @@
         "variance"
       ],
       "nested": {
-        "orthographic": [
-          "angle",
-          "cylinder",
-          "fisheye",
-          "mesh_camera",
-          "omnimax",
-          "panoramic",
-          "perspective",
-          "spherical",
-          "ultra_wide_angle",
-          "user_defined"
-        ],
-        "perspective": [
-          "angle",
-          "aperture",
-          "blur_samples",
-          "confidence",
-          "cylinder",
-          "direction",
-          "filter_tags",
-          "fisheye",
-          "focal_point",
-          "location",
-          "look_at",
-          "matrix",
-          "mesh_camera",
-          "normal",
-          "omnimax",
-          "orthographic",
-          "output",
-          "panoramic",
-          "perspective",
-          "right",
-          "rotate",
-          "scale",
-          "sky",
-          "spherical",
-          "tags",
-          "transform",
-          "translate",
-          "ultra_wide_angle",
-          "up",
-          "user_defined",
-          "variance"
-        ],
         "bokeh": [
           "pigment"
         ]
@@ -3448,67 +2943,32 @@
     "global_settings": {
       "items": [
         "adc_bailout",
-        "always_sample",
         "ambient_light",
         "ascii",
         "assumed_gamma",
         "atmospheric_dispersion",
         "atmospheric_ior",
-        "autostop",
-        "brightness",
-        "brilliance",
         "charset",
-        "count",
-        "error_bound",
-        "expand_thresholds",
         "filter_tags",
-        "gather",
-        "global",
-        "gray_threshold",
-        "grey_threshold",
         "hf_gray_16",
         "hf_grey_16",
         "interface_texture",
         "irid_wavelength",
-        "jitter",
-        "load_file",
-        "low_error_factor",
         "max_intersections",
-        "max_sample",
         "max_trace_level",
-        "maximum_reuse",
-        "media",
-        "memory",
         "mesh_cache",
-        "method",
-        "minimum_reuse",
         "mm_per_unit",
-        "nearest_count",
         "noise_generator",
-        "normal",
         "number_of_waves",
         "photons",
         "prepared_media_cells",
-        "pretrace_end",
-        "pretrace_start",
-        "quality",
         "radiosity",
-        "radius",
-        "recursion_limit",
         "refraction_angle",
-        "samples",
-        "save_file",
-        "spacing",
         "subsurface",
         "sys",
         "utf8"
       ],
       "nested": {
-        "charset": [
-          "ascii",
-          "sys",
-          "utf8"
-        ],
         "photons": [
           "adc_bailout",
           "autostop",
@@ -3567,7 +3027,6 @@
         "bounded_by",
         "box",
         "clipped_by",
-        "collect",
         "composite",
         "cone",
         "cubic",
@@ -3581,7 +3040,6 @@
         "height_field",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "intersection",
@@ -3607,7 +3065,6 @@
         "object",
         "ovus",
         "parametric",
-        "pass_through",
         "photons",
         "pigment",
         "plane",
@@ -3619,8 +3076,6 @@
         "quadric",
         "quartic",
         "radiosity",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "skein",
@@ -3634,7 +3089,6 @@
         "superellipsoid",
         "tagged",
         "tags",
-        "target",
         "text",
         "texture",
         "torus",
@@ -3652,11 +3106,6 @@
           "refraction",
           "target"
         ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
-        ],
         "radiosity": [
           "importance"
         ]
@@ -3670,7 +3119,6 @@
         "bounded_by",
         "circular",
         "clipped_by",
-        "collect",
         "color_map",
         "colour_map",
         "cutaway_textures",
@@ -3681,10 +3129,8 @@
         "fade_power",
         "falloff",
         "finish",
-        "global",
         "hierarchy",
         "hollow",
-        "importance",
         "interior",
         "interior_texture",
         "inverse",
@@ -3702,7 +3148,6 @@
         "normal",
         "orient",
         "parallel",
-        "pass_through",
         "photon_only",
         "photons",
         "pigment",
@@ -3710,8 +3155,6 @@
         "projected_through",
         "radiosity",
         "radius",
-        "reflection",
-        "refraction",
         "rotate",
         "scale",
         "shadowless",
@@ -3719,7 +3162,6 @@
         "spotlight",
         "sturm",
         "tags",
-        "target",
         "texture",
         "tightness",
         "transform",
@@ -3729,17 +3171,9 @@
       "nested": {
         "photons": [
           "area_light",
-          "collect",
           "global",
-          "pass_through",
           "reflection",
-          "refraction",
-          "target"
-        ],
-        "pigment": [
-          "finish",
-          "normal",
-          "pigment"
+          "refraction"
         ],
         "radiosity": [
           "importance"
@@ -3785,14 +3219,7 @@
         "use_index",
         "vstr"
       ],
-      "nested": {
-        "filter": [
-          "all"
-        ],
-        "transmit": [
-          "all"
-        ]
-      }
+      "nested": {}
     },
     "bump_map": {
       "items": [

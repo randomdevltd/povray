@@ -1453,7 +1453,7 @@
    "from": "tests/pov4/ok_debug_statement.pov4:2"
   },
   "default": {
-   "code": "default { media { mix replace } interior { light { } } }",
+   "code": "default { media { mix replace } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "defined": {
@@ -1835,8 +1835,8 @@
    "from": "doc/html/r3_4.html"
   },
   "interior": {
-   "code": "interior { light { } }",
-   "from": "tests/pov4/default_media.pov4:2"
+   "code": "interior { light { pigment { rgb 50 } samples 4 } }",
+   "from": "tests/pov4/default_media.pov4:6"
   },
   "interior_texture": {
    "rank": 35,
@@ -2131,8 +2131,8 @@
    "from": "doc/html/r3_4.html"
   },
   "mix": {
-   "rank": 56,
-   "code": "default { media { mix replace } interior { light { } } }",
+   "rank": 33,
+   "code": "default { media { mix replace } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "mm_per_unit": {

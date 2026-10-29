@@ -608,6 +608,7 @@ class Parser final
         void Parse_Media (std::vector<Media>&);
         unsigned Parse_Light_Bounce();
         std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
+        void Reject_Nested_Item(const char* block, const char* where);
         void Parse_Interior_Refraction(Interior& interior);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();

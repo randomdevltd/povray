@@ -35,6 +35,8 @@ fails err_depth "err_depth.pov4:1:11: Function calls nested deeper than 10000 le
 fails err_light_source_light "a light_source cannot take one"
 fails err_prop "'finish' has no item 'phon'; did you mean 'phong'?"
 fails err_subsurface "'subsurface' has no item 'memroy'; did you mean 'memory'?"
+fails err_misplaced_item "err_misplaced_item.pov4:2:19: 'count' belongs inside the photons or radiosity block of 'global_settings'."
+fails err_light_photons "err_light_photons.pov4:2:51: 'photons' has no item 'collect'"
 fails err_member "has no member 'size'."
 fails err_operand "The left operand of '+' must be a number, vector or colour, not a string."
 fails err_param "'Scale' uses parameter 'V' as"

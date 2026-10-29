@@ -239,6 +239,7 @@ interior {
 <table width="100%" class="option-list">
 <tr><td><code>Only one light block allowed in an interior.</code></td><td>Error.</td></tr>
 <tr><td><code>A light block's attenuation takes a power greater than 0 and a scale of 0 or more; one value sets the scale.</code></td><td>Error. The form is <code>attenuation Power, Scale</code>; a single value is the scale, with power 2.</td></tr>
+<tr><td><code>'reflection' belongs inside the photons block of a light.</code></td><td>Error: <code>reflection</code> or <code>refraction</code> written directly in the light block instead of in its <code>photons</code> block. Other blocks report their nested items the same way.</td></tr>
 <tr><td><code>A light block accepts exactly one pigment or emission input.</code></td><td>Error: <code>pigment</code> and <code>emission</code> together, or either twice.</td></tr>
 <tr><td><code>An interior light gives no light because ...</code></td><td>Warning: the container has no finite volume or the source cannot be built; the light is left out.</td></tr>
 <tr><td><code>fade_power</code> or <code>fade_distance</code> in a light block</td><td>Parse error (the word is not an item of the block); the falloff is <code>attenuation Power, Scale</code>.</td></tr>

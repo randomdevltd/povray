@@ -1914,7 +1914,8 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
         ctx.block = word;
         ctx.photonSettingsAllowed = parent.empty() || (parent == "global_settings");
     }
-    const Pov4BlockSchema* schema = FindPov4BlockSchema(word.data(), word.size());
+    const Pov4BlockSchema* nested = context.empty() ? FindPov4NestedSchema(parent, word) : nullptr;
+    const Pov4BlockSchema* schema = (nested != nullptr) ? nested : FindPov4BlockSchema(word.data(), word.size());
     for (const Node* k : n->kids)
     {
         if (word == "photons")
@@ -1959,6 +1960,9 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
                     legal = true;
                     break;
                 }
+            const std::string owners = legal ? std::string() : Pov4NestedOwners(word, k->text);
+            if (!owners.empty())
+                Fail(k, "'%s' belongs inside the %s block of '%s'.", k->text.c_str(), owners.c_str(), word.c_str());
             if (!legal)
             {
                 std::string note;
@@ -2002,6 +2006,9 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
                     }
                 if (contextual)
                     continue;
+                const std::string owners = Pov4NestedOwners(word, k->text);
+                if (!owners.empty())
+                    Fail(k, "'%s' belongs inside the %s block of '%s'.", k->text.c_str(), owners.c_str(), word.c_str());
                 int best = -1;
                 size_t limit = (k->text.size() >= 6) ? 2 : 1;
                 size_t bestDistance = limit + 1;

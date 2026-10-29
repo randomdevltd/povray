@@ -76,7 +76,8 @@ Emitted RGB must be finite and nonnegative.
 
 Surface sources require a finite, nonzero surface area. Their light blocks do
 not accept the volume light's artistic `attenuation` setting. A `light_source`
-does not take a `light` block: the 4.0 checker reports it as an unknown item.
+does not take a `light` block: both syntaxes stop with `A light block makes a
+shape's surface a light; a light_source cannot take one.`
 `brightness` is followed by an optional unit written after the number, as in
 `brightness 12 lumens`; `nits` and `lumens` are read only there. Surface and
 volume lights are not imaged by portals, which divert the light of ordinary
@@ -178,6 +179,10 @@ renderer:
   add instead: `<A.x, A.y, 3>`, `A + <0, 0, 3>`.
 - `include` runs wherever a statement can stand, including inside `if`, `for` and
   function bodies, with the included bindings visible afterwards.
+- An item of a nested block is accepted only inside that block, as the classic
+  parser reads it: `light { reflection on }` fails in both syntaxes with
+  `'reflection' belongs inside the photons block of` its light, and
+  `light { photons { collect on } }` with `'photons' has no item 'collect'`.
 
 ## Independent refraction functions
 
