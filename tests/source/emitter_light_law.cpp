@@ -53,6 +53,13 @@ int main()
         Near(Light_Photon_Path_Weight(&light, 1e9), 0.25);
         light.emitter.reset();
     }
+    LightSource bare;
+    bare.emitter = std::make_shared<FixedEmitter>(true);
+    TraceTicket ticket(1, 0.0);
+    Ray ray(ticket, Vector3d(0.0, 0.0, -4.0), Vector3d(0.0, 0.0, 1.0));
+    Near(Attenuate_Light(&bare, ray, 2.0), 0.25);
+    Near(Light_Photon_Path_Weight(&bare, 2.0), 1.0);
+    bare.emitter.reset();
     LightSource point;
     Near(Light_Photon_Path_Weight(&point, 3.0), 9.0);
     std::cout << "Emitter light law: surface and volume photon path weights and attenuation pass\n";
