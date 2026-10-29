@@ -67,6 +67,7 @@ if "$POVRAY" +i"$SRCDIR/tests/render/media_prepared_photons.pov" +w12 +h12 +pr -
     > media_prepared_photons_native_inside.log 2>&1; then
     cat media_prepared_photons_native_inside.log; exit 1
 fi
-grep -Fq 'Native photon method 1 requires source-origin support outside prepared scattering media; use photon method 2.' media_prepared_photons_native_inside.log
+tr '\n' ' ' < media_prepared_photons_native_inside.log | tr -s ' ' |
+    grep -Fq 'Native photon method 1 requires source-origin support outside prepared scattering media; use photon method 2.'
 rm -f media_prepared_photons_*.ppm media_prepared_photons_*.log
 echo 'media_prepared_photons: finite constant and varying photon-ray Beer attenuation passed'

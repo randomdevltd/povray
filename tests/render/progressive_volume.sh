@@ -2,6 +2,9 @@
 set -eu
 POVRAY=$1
 SRCDIR=$2
+# a fixed photon ceiling, so the budget never reads the host's free memory
+POV_PHOTON_MEMORY=4
+export POV_PHOTON_MEMORY
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_volume.pov" +w24 +h24 +pr -a -d -p -v -gp \
