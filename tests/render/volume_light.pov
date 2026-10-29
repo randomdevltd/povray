@@ -77,7 +77,7 @@ background { rgb 0 }
   box { <-2, -1, -2>, <2, 0, 2> pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } }
   sphere { 0, 1 pigment { rgbt 1 } hollow
     interior {
-      media { mix add emission rgb <1, 0.45, 0.12> * 6 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
+      media { method 4 mix add emission rgb <1, 0.45, 0.12> * 6 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
       light { brightness Lum samples Samples }
     }
     scale <0.4, 1, 0.4> translate y * 1.45 }

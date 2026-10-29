@@ -23,7 +23,7 @@ box {
   interior {
     #if (Case = 21) media { light_source { } } #end
     #if (Case = 25 | Case = 26)
-      media { method 3 absorption 0.1 }
+      media { method 4 absorption 0.1 }
       media { method 4 resolution 0.25
         #if (Case = 25) mix multiply density { rgb 1 }
         #else mix subtract density { rgb 0 } #end }
