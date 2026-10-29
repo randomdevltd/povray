@@ -45,6 +45,20 @@ void check(const std::vector<double>& c, std::vector<double> expected, double to
     }
 }
 
+void reject(const std::vector<double>& c, const char* reason)
+{
+    RenderStatistics stats;
+    double roots[MAX_ORDER];
+    bool rejected = false;
+    try { Solve_Polynomial(int(c.size())-1,c.data(),roots,true,0.0,stats); }
+    catch (const std::exception& error)
+    {
+        rejected = std::string(error.what()).find(reason) != std::string::npos;
+        if (!rejected) std::cerr << "unexpected rejection: " << error.what() << "\n";
+    }
+    assert(rejected);
+}
+
 void unsolvable(const std::vector<double>& c)
 {
     RenderStatistics stats;
@@ -90,6 +104,6 @@ int main()
     unsolvable({1e100,0,0,-1e-300});
     unsolvable({1,1e200,-1e200,1});
     unsolvable({1,-1e308,1,1});
-    unsolvable({1,0,0,std::numeric_limits<double>::infinity()});
+    reject({1,0,0,std::numeric_limits<double>::infinity()},"must be finite");
     std::cout << "Sturm near, repeated, absent, scaled, distant and overflow controls passed\n";
 }

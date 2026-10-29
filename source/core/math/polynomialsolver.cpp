@@ -143,6 +143,9 @@ static int buildsturm (int ord, polynomial *sseq);
 static int visible_roots (int np, const polynomial *sseq, int *atneg, int *atpos);
 static int difficult_coeffs (int n, const DBL *x);
 
+/// A polynomial whose coefficients or roots the Sturm solver cannot represent in floating point.
+struct SturmRangeError final {};
+
 static bool opposite_signs(DBL a, DBL b)
 {
     return (a < 0.0 && b > 0.0) || (a > 0.0 && b < 0.0);
@@ -152,7 +155,7 @@ static void check_sturm_coefficients(const polynomial& p)
 {
     for (int i = 0; i <= p.ord; ++i)
         if (!IsFiniteIntersectionDepth(p.coef[i]))
-            throw POV_EXCEPTION_STRING("Polynomial coefficients exceed the Sturm solver's numerical range.");
+            throw SturmRangeError();
 }
 
 static int positive_bound_exponent(int order, const DBL* coefficients)
@@ -174,7 +177,7 @@ static int positive_bound_exponent(int order, const DBL* coefficients)
         return 0;
     if (power >= std::numeric_limits<double>::max_exponent || power <
         std::numeric_limits<double>::min_exponent - std::numeric_limits<double>::digits)
-        throw POV_EXCEPTION_STRING("Polynomial root bound exceeds the supported floating-point range.");
+        throw SturmRangeError();
     return power;
 }
 
@@ -226,7 +229,7 @@ static DBL polynomial_left_sign(DBL x, int order, const DBL* coefficients)
         {
             const DBL value = std::scalbn(derivative[i], -largest) * i;
             if (derivative[i] != 0.0 && value == 0.0)
-                throw POV_EXCEPTION_STRING("Polynomial derivative range is unsupported by the Sturm solver.");
+                throw SturmRangeError();
             derivative[i-1] = value;
         }
         odd = !odd;
@@ -1561,7 +1564,7 @@ static int polysolve(int order, const DBL *Coeffs, DBL *roots)
     {
         return polysolve_in_range(order, Coeffs, roots);
     }
-    catch (const pov_base::Exception&)
+    catch (const SturmRangeError&)
     {
         return 0;
     }
@@ -1586,7 +1589,7 @@ static int polysolve_in_range(int order, const DBL *Coeffs, DBL *roots)
     const int boundExponent = positive_bound_exponent(order, Coeffs);
     const DBL bound = std::scalbn(1.0, boundExponent);
     if (!(bound > 0.0) || !IsFiniteIntersectionDepth(bound))
-        throw POV_EXCEPTION_STRING("Polynomial root bound exceeds the supported floating-point range.");
+        throw SturmRangeError();
     int leadingExponent;
     const DBL leading = std::frexp(Coeffs[0], &leadingExponent);
     for (i = 0; i <= order; ++i)
@@ -1598,12 +1601,12 @@ static int polysolve_in_range(int order, const DBL *Coeffs, DBL *roots)
             const DBL mantissa = std::frexp(Coeffs[i], &exponent);
             value = std::scalbn(mantissa / leading, exponent - leadingExponent - boundExponent * i);
             if (value == 0.0 || fabs(value) < SMALL_ENOUGH)
-                throw POV_EXCEPTION_STRING("Polynomial coefficient range is unsupported by the Sturm solver.");
+                throw SturmRangeError();
         }
         else
             value = Coeffs[i] / Coeffs[0];
         if (Coeffs[i] != 0.0 && value == 0.0)
-            throw POV_EXCEPTION_STRING("Polynomial coefficient range is unsupported by the Sturm solver.");
+            throw SturmRangeError();
         sseq[0].coef[order-i] = value;
     }
 
