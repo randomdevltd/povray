@@ -606,7 +606,8 @@ class Parser final
         void Parse_Finish (FINISH **);
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
-        void Parse_Interior_Light(Interior& interior);
+        unsigned Parse_Light_Bounce();
+        std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
         void Parse_Interior_Refraction(Interior& interior);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
@@ -939,6 +940,7 @@ class Parser final
         std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
+        void Make_Surface_Light(ObjectPtr container);
         void Make_Interior_Light(Interior& interior, ObjectPtr container);
         /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.
         bool mMeshResolvedBelow = false;

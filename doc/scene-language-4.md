@@ -46,6 +46,61 @@ shorthand with power two. The default `2,1` leaves physical transport unchanged.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 
+## Surface light blocks
+
+Both syntaxes accept `light { ... }` directly on an object. This selects its
+surface as a light source; `interior { light { ... } }` continues to select its
+volume. No new word is reserved: `light`, `nits` and `lumens` remain contextual.
+
+```
+box { <-1,2,-1>, <1,2.1,1>
+  light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 16 }
+}
+```
+
+The shared settings are `pigment`, bare `emission`, `brightness`, `samples`,
+`shadowless`, `media_interaction`, `media_attenuation`, and photon reflection
+and refraction flags. The surface is an outward, one-sided Lambert emitter.
+Omitted input is white and omitted brightness is 1 nit. Unitless brightness and
+`nits` set radiance to brightness times the source RGB. `lumens` normalizes total
+generated flux with the renderer's greyscale convention, before media transport.
+Bare `emission` selects the material's pigment times finish emission rather than
+an independent light pigment. It does not change the material's appearance.
+A light block never adds visible camera emission by itself.
+Emission alias preparation supports layered textures, recursive texture maps,
+weighted averages, UV mapping and material maps, including pigment opacity and
+transmission between layers. Source
+pigments cannot depend on ray or camera context, and finish Fresnel or
+reflection energy conservation that changes emission by direction is rejected.
+Emitted RGB must be finite and nonnegative.
+
+Surface sources require a finite, nonzero surface area. Their light blocks do
+not accept the volume light's artistic `attenuation` setting.
+
+## Light bounce orders
+
+Surface and interior light blocks accept contextual `bounce` or
+`bounce { passes 3 }`. Bare `bounce` requests one bounce order. `passes` must
+be a finite positive integer in the unsigned range; zero, negative, fractional
+and out-of-range values are errors. A light accepts only one bounce setting,
+and a bounce block accepts only one `passes` setting.
+
+Without an explicit `pigment` or `emission` input, a bounce-enabled light selects
+its own emission field: material pigment times finish emission for a surface,
+or the interior's combined media emission for a volume. Zero emission remains
+zero. An explicit input can precede or follow `bounce`.
+`bounce` and `passes` remain free identifiers outside their light-block contexts.
+
+Each pass produces the next scattering order from the preceding order across
+sources. A source past its own cutoff produces zero new output; older orders
+are not reissued. Authored emission and ordinary lights enter generation zero
+once. Brightness and lumen normalization affect primary emission only, while
+received indirect energy keeps its transported magnitude. The final source is
+primary emission plus the completed bounce orders. Surface bounce rejects
+stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
+reflection attenuation.
+
+
 ## Independent refraction functions
 
 Both syntaxes accept `interior { refraction { function { -0.03*(2+x) }

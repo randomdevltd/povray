@@ -1,0 +1,65 @@
+Continuous surface angular proposal
+===================================
+
+For a bounding sphere of radius R, receiver-to-centre distance d and axis a,
+let h=R/(2d+R), y=1-a.w. The spherical Cauchy density is
+
+    p(w) = h^2 / (pi * [y + h^2*(2-y)]^2).
+
+Its cumulative probability from the axis to y is
+
+    F(y) = y / [y + h^2*(2-y)],
+    F^-1(u) = 2*u*h^2 / [1-u+u*h^2].
+
+Therefore the density integrates to one over solid angle. It is positive on
+the entire sphere, uniform at d=0, and continuous through d=R. Computing y as
+|a-w|^2/2 avoids cancellation for small angles. Common scaling of d and R
+keeps h stable without changing the distribution.
+
+The whole-object component retains half of the mixture probability. Cell
+probabilities are proportional to
+
+    P / (d^2+r^2) * [1 + N.(receiver-centre)/sqrt(d^2+r^2)],
+
+where N is the power-weighted mean unit normal. A shared r^2 factor cancels
+from these probabilities. Since |N|<=1 and r>0, this heuristic is positive
+and continuous. It changes the proposal only; actual outgoing radiance and
+its one-sided cosine remain part of the target. Stable sum-of-squares
+identities retain the small positive factor for distant back-facing cells.
+
+For x=d/R<=1, the whole-sphere kernel density is at least 1/(36*pi), or
+1/9 of the old uniform full-sphere proposal. For x>=1, every direction
+intersecting the bound has 1-cos(theta)<=1/x^2. Writing t=1/(x+1) and
+g=x/(x+1), the equivalent density is
+
+    t^2*(2-t)^2 / [4*pi*(t^2+2*g*(1-cos(theta)))^2].
+
+Thus its ratio to the old uniform cone density is at least
+(2*x+1)^2/[4*(3*x+2)^2]>=9/100. Including the half-weight baseline gives
+a lower bound of 9/200 times the old proposal on every contributing
+direction. Uniform selection among K forward roots consequently uses K/q,
+where q is the complete mixture density, including all overlapping kernels.
+Misses contribute zero; they are never retried or conditioned on a hit.
+
+These bounds control proposal weights. They do not promise finite variance
+for every permitted grazing radiance singularity. Second-moment continuity
+requires a square-integrable target; the tests use bounded radiance.
+
+The source test checks normalization by logarithmic angular quadrature,
+inverse CDFs, scales from 1e-12 to 1e12, receiver distances through 1e12 radii,
+PDF and second-moment continuity at the whole bound and every occupied cell,
+and actual sphere roots with a bright patch. The former cone sampler is
+retained only inside the test for variance and cost comparisons. Reported
+variance times nanoseconds measures the cheap analytic test; expensive scene
+intersection and attenuation costs must be included in renderer comparisons.
+
+Compile surface_angular_guide.cpp with the configured renderer's include paths
+and configuration definitions. Run both ordinary optimized flags and its
+production floating-point flags. Assertions must remain enabled.
+
+Each tracing thread retains one conditioned distribution keyed by the exact
+receiver coordinates and a generation assigned when a guide is constructed
+or prepared. Reusing a distribution changes no probabilities. Re-preparation,
+a different guide, or any receiver-coordinate change invalidates the entry.
+The tests compare cached kernel parameters and probabilities bit for bit,
+and bound floating-point differences in sampled directions and densities.

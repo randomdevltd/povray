@@ -1,6 +1,6 @@
 {
  "format": "pov4-reference-overlay/1",
- "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss \u2014 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
+ "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss — 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
  "blocks": {
   "bicubic_patch": "Bezier patch surface from a 4x4 control-point grid.",
   "box": "Box from two opposite corner vectors.",
@@ -55,10 +55,11 @@
   "global_settings": "Renderer-wide scene options: radiosity, photons, gamma, tracing depth.",
   "object": "Copies or wraps an already-declared object with new modifiers.",
   "light_source": "A light: position, colour, area, shadowing and photon options.",
-  "light": "An interior's volume light: pigment or its own media emission, brightness, attenuation, sampling and shadows.",
+  "light": "A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling.",
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
-  "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off."
+  "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off.",
+  "bounce": "Scattering orders of a light's own emission field: bare `bounce` is one pass, `bounce { passes N }` runs N."
  },
  "words": {
   "quality": {
@@ -272,6 +273,9 @@
   "size": {
    "kind": "item",
    "text": "In camera output, the image's <Width, Height> in whole pixels, 1 to 65535; a camera without one takes the command line's Width and Height, the values of image_width and image_height, and a camera leaving right at its default takes the aspect its own size gives it. In a facets pattern, size switches facet creation to curved surfaces only."
-  }
+  },
+  "nits": "Unit for a light's brightness: radiance of the emitting surface (or j inside a volume).",
+  "lumens": "Unit for a light's brightness: total emitted flux, normalized over the emission field.",
+  "emission": "Light input selector: the light copies the object's own material or media emission field."
  }
 }

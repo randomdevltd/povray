@@ -12,10 +12,10 @@ namespace pov
 class ShadowSegmentWalker final : public RayRootQuery, public RayObjectCondition
 {
 public:
-    ShadowSegmentWalker(double endpoint, double start, double limit = HUGE_VAL) : endpoint(endpoint), end(std::min(endpoint, limit)), start(start) {}
+    ShadowSegmentWalker(double endpoint, double start, double limit = HUGE_VAL, const Ray* ray = nullptr) : endpoint(endpoint), end(std::min(endpoint, limit)), start(start), ray(ray) {}
     bool Admit(ConstObjectPtr object, double depth) const override
     {
-        return IsFiniteIntersectionDepth(depth) && depth > start && depth < end && depth >= cursor &&
+        return (!ray || (!ray->MatchesSurfaceEndpoint(object, depth) && !ray->MatchesSurfaceOrigin(object, depth))) && IsFiniteIntersectionDepth(depth) && depth > start && depth < end && depth >= cursor &&
             (depth != cursor || std::find(crossed.begin(), crossed.end(), object) == crossed.end());
     }
     bool operator()(const Ray&, ConstObjectPtr object, double depth) const override
@@ -45,6 +45,7 @@ public:
     double Remaining() const { return endpoint - cursor; }
 private:
     double endpoint, end, start, cursor = 0.0;
+    const Ray* ray;
     std::vector<ConstObjectPtr> crossed;
     mutable ConstObjectPtr selected = nullptr;
     mutable double selectedDepth = HUGE_VAL;

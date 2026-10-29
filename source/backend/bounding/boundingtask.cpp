@@ -63,6 +63,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/csg.h"
 #include "core/material/media.h"
+#include "core/lighting/bounceprepare.h"
 #include "core/shape/mesh.h"
 #include "core/support/parallel.h"
 
@@ -517,6 +518,7 @@ void MeshBuildTask::Run()
             prepareFields(object, nullptr);
     PrepareAtmosphereFields(&finalFields, cooperateFields);
     PrepareLightFields(&finalFields, cooperateFields);
+    PrepareVolumeBounceLightFields(&finalFields, cooperateFields);
     cooperateFields();
     parseData->Stats() += finalFields.Stats();
 

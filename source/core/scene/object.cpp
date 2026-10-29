@@ -47,7 +47,9 @@
 
 // POV-Ray header files (core module)
 #include "core/material/interior.h"
+#include "core/lighting/emitter.h"
 #include "core/material/texture.h"
+#include "core/material/pattern.h"
 #include "core/math/matrix.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
@@ -367,6 +369,8 @@ void Translate_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Translate(Vector, Trans);
 }
@@ -426,6 +430,8 @@ void Rotate_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM *T
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Rotate(Vector, Trans);
 }
@@ -483,6 +489,8 @@ void Scale_Object (ObjectPtr Object, const Vector3d& Vector, const TRANSFORM *Tr
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Scale(Vector, Trans);
 }
@@ -542,6 +550,8 @@ void Transform_Object (ObjectPtr Object, const TRANSFORM *Trans)
 
     if (Object->interior != nullptr)
         Object->interior->Transform(Trans);
+    if (Object->surfaceLight && Object->surfaceLight->pigment)
+        Transform_Tpattern(Object->surfaceLight->pigment, Trans);
 
     Object->Transform(Trans);
 }
@@ -598,6 +608,7 @@ ObjectPtr Copy_Object (ObjectPtr Old)
     New->tags = Old->tags;
     New->inheritTags = Old->inheritTags;
     New->photonTargetGroup = Old->photonTargetGroup;
+    New->surfaceLight = Old->surfaceLight ? std::make_shared<MediaLight>(*Old->surfaceLight) : nullptr;
 
     New->Ph_Density             = Old->Ph_Density;
     New->RadiosityImportance    = Old->RadiosityImportance;

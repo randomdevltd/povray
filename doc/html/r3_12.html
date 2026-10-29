@@ -60,6 +60,9 @@
   <td><div class="divh3"><a title="3.12.6.4" href="#r3_12_6_4">Overlapping and Contained Lights</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh2"><strong><a title="3.12.7" href="#r3_12_7">Surface Lights</a></strong></div></td>
+</tr>
+<tr>
   <td><div class="divh1">&nbsp;</div></td>
 </tr>
 <tr>
@@ -251,6 +254,21 @@ cylinder {
 <div class="content-level-h4" contains="Overlapping and Contained Lights" id="r3_12_6_4">
 <h4>3.12.6.4 Overlapping and Contained Lights</h4>
 <p><code>light_intersections.pov</code> overlaps red, green and blue lights, threads them with a bronze knot, holds a glass ball in one and crosses them with smoke; it also seals a glow in a cracked stone and sinks a pool into the floor. <code>light_colonnade.pov</code> lights a rotunda only by a glowing core at its centre, with a lens of space around it made by <a href="r3_11.html#r3_11_3">refraction fields</a> (<code>Declare=Refract=0</code> drops it).</p></div>
+
+<a name="r3_12_7"></a>
+<div class="content-level-h3" contains="Surface Lights" id="r3_12_7">
+<h3>3.12.7 Surface Lights</h3>
+<p>Place <code>light { ... }</code> directly on an object to illuminate from its surface. The existing <code>interior { light { ... } }</code> form illuminates from the volume. Surface light requires finite, nonzero area and emits outward with a one-sided Lambert distribution.</p>
+<pre>box { &lt;-1,2,-1&gt;, &lt;1,2.1,1&gt;
+  light { pigment { rgb &lt;1,0.5,0.2&gt; } brightness 8 nits samples 16 }
+}</pre>
+<p>A surface light accepts the shared <code>pigment</code> or bare <code>emission</code> input, <code>brightness</code>, <code>samples</code>, <code>shadowless</code>, <code>media_interaction</code>, <code>media_attenuation</code> and photon reflection/refraction options. It does not accept the volume light's artistic <code>attenuation</code> setting. With no input the source is white; brightness defaults to 1 nit. Unitless brightness and <code>nits</code> set the emitted radiance to brightness times the source RGB. <code>lumens</code> normalizes generated flux as &pi; times the surface integral of greyscale radiance, before media transport.</p>
+<p>On a surface, <code>light { emission }</code> selects the material's pigment times finish emission. This input is mutually exclusive with an independent light <code>pigment</code>. The light block changes illumination without adding visible camera emission; author the material appearance separately. <code>light</code>, <code>nits</code> and <code>lumens</code> stay contextual in classic and 4.0 scenes at every scene version.</p>
+<p>Preparation accepts finite nonnegative source RGB independent of ray and camera context. Material emission supports layered textures, recursive texture maps, weighted averages, UV mapping and material maps, including pigment opacity and transmission between layers. Fresnel finish attenuation and energy-conserving reflection that would alter emission by direction are rejected. See <code>scenes/lights/surface_light.pov</code> for a white bulb, a patterned screen, a strip and a mesh source.</p>
+<p>Both surface and interior lights accept <code>bounce</code> or <code>bounce { passes N }</code>. Bare <code>bounce</code> requests one bounce order. <code>passes</code> must be a finite positive integer in the unsigned range. Duplicate bounce or passes settings are errors. With no explicit pigment or emission input, a bounce-enabled light selects its own emission field; zero emission stays zero. An explicit input may appear before or after bounce. The words <code>bounce</code> and <code>passes</code> are contextual and remain available as identifiers elsewhere.</p>
+<p>Bounce preparation advances exact scattering orders rather than repeatedly feeding accumulated light back into the same pass. For source <em>l</em>, let <em>J</em><sub>0,l</sub> be authored emission and <em>D</em><sub>0,l</sub> = <em>J</em><sub>0,l</sub>. Order <em>k</em> is <em>D</em><sub>k,l</sub> = <em>K</em><sub>l</sub>[&Sigma;<sub>m</sub><em>D</em><sub>k&minus;1,m</sub>] while <em>k</em> is within that source's passes, and zero afterward. Final output is authored emission plus the sum of completed orders. A source that reaches its cutoff contributes no new order; its older orders are not emitted again. Authored sources and ordinary lights enter generation zero once. Brightness and lumen normalization apply only to authored primary emission, never to received indirect energy.</p>
+<p>Volume bounce preparation shares the medium's prepared spatial layout. Isotropic and Rayleigh scattering retain their angular form; HG and Mie scattering use positive, per-RGB weighted reservoirs bounded by the existing <code>samples</code> budget. Each cached realization preserves the RGB angular mean, and directional estimates remain conditionally unbiased Monte Carlo estimates with independent streams by pass, node and source. Spatial evaluation interpolates the cached field with convex weights. The diffuse source excludes glossy and ballistic transport. Surface bounce rejects stochastic <code>crand</code> diffuse finishes as well as the direction-dependent finish attenuation described above. Source-sample visibility and extinction on the final path to a receiver are still evaluated during rendering.</p>
+</div>
 
 </div>
 

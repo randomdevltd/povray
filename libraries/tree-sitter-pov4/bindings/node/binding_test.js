@@ -44,3 +44,16 @@ test("parses a bare media emission source selector beside brightness", () => {
   assert.equal(tree.rootNode.hasError, false);
   assert.equal(tree.rootNode.descendantsOfType("keyword").filter((n) => n.text === "emission").length, 2);
 });
+
+
+test("parses surface bounce blocks while leaving bounce and passes free", () => {
+  const parser = new Parser();
+  parser.setLanguage(require("."));
+  const tree = parser.parse(`let bounce = 2; let passes = 3;
+    sphere { 0,1 light { bounce /* order */ { passes passes } } }
+    sphere { 0,1 light { bounce } }`);
+  assert.equal(tree.rootNode.hasError, false);
+  assert.equal(tree.rootNode.namedChild(0).childForFieldName("name").type, "identifier");
+  assert.equal(tree.rootNode.namedChild(1).childForFieldName("name").type, "identifier");
+  assert.ok(tree.rootNode.descendantsOfType("block").some((n) => n.childForFieldName("name").text === "bounce"));
+});

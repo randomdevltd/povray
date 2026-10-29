@@ -392,3 +392,29 @@ sphere { 0, 1 interior { refraction { strength -0.3 field { function { x + field
               (identifier))))
         (identifier)
         (number)))))
+
+==================
+Contextual surface bounce block and bare source selector
+==================
+sphere { 0,1 light { bounce { passes 3 } } }
+sphere { 0,1 light { bounce } }
+---
+
+(source_file
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (identifier)
+        (number))))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (identifier))))

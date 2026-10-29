@@ -66,6 +66,7 @@
 #include "core/bounding/boundingcylinder.h"
 #include "core/bounding/boundingsphere.h"
 #include "core/lighting/emitter.h"
+#include "core/lighting/surfaceemitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
@@ -551,7 +552,8 @@ void Parser::Run()
                     Clear_Flag(light, PH_RFR_ON_FLAG);
                     Clear_Flag(light, PH_RFL_ON_FLAG);
                     if (light->mediaPhotonOptions)
-                        Warning("photons in an interior light are ignored by photon method 1.");
+                        Warning("photons in %s light are ignored by photon method 1.",
+                                light->emitter->IsSurface() ? "a surface" : "an interior");
                 }
             }
             if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
@@ -9043,8 +9045,17 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "light")
+            {
+                if (Object->surfaceLight != nullptr)
+                    Error("Only one surface light block allowed on an object.");
+                Object->surfaceLight = Parse_Light(true);
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -10542,6 +10553,46 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
             Add_Local_Light(child, light);
 }
 
+void Parser::Make_Surface_Light(ObjectPtr container)
+{
+    const MediaLight& settings = *container->surfaceLight;
+    LightSource *light = new LightSource();
+    try
+    {
+        light->emitter = std::make_shared<GeometrySurfaceEmitter>(container, container->surfaceLight);
+    }
+    catch (const std::exception& failure)
+    {
+        delete light;
+        Error("%s", failure.what());
+    }
+    light->emitterContainer = container;
+    light->Center = light->emitter->Centre();
+    light->Area_Light = true;
+    light->Use_Full_Area_Lighting = true;
+    light->Jitter = true;
+    light->Area_Size1 = settings.samples;
+    light->Area_Size2 = 1;
+    light->lawRadius = light->emitter->Radius();
+    light->Media_Interaction = settings.mediaInteraction;
+    light->Media_Attenuation = settings.mediaAttenuation;
+    if (settings.shadowless) light->Light_Type = FILL_LIGHT_SOURCE;
+    light->mediaPhotonOptions = settings.photonOptions;
+    if (settings.photonRefraction >= 0)
+        Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
+    if (settings.photonReflection >= 0)
+        Set_Flag(light, settings.photonReflection ? PH_RFL_ON_FLAG : PH_RFL_OFF_FLAG);
+    sceneData->mediaLights.push_back(light);
+    if (mLightGroups.empty()) sceneData->lightSources.push_back(light);
+    else
+    {
+        light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
+        light->photonGroupEnabled = mLightGroups.back()->photonGroupEnabled;
+        sceneData->lightGroupLightSources.push_back(light);
+        mGroupMediaLights.emplace_back(mLightGroups.back(), light);
+    }
+}
+
 void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
 {
     MediaLight& settings = *interior.light;
@@ -10832,6 +10883,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             Post_Textures(Object->Interior_Texture);
         }
+    }
+
+    if (Object->surfaceLight)
+    {
+        mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
+        Make_Surface_Light(Object);
     }
 
     if(Object->Type & LIGHT_SOURCE_OBJECT)
@@ -11303,10 +11360,10 @@ bool Parser::Splits_Union(ObjectPtr Object, bool warn)
         return false;
 
     // A medium prepared over the union, or a light made from it, keeps a pointer to the union, so the union stays whole.
-    if ((Object->interior != nullptr) &&
+    if (Object->surfaceLight || ((Object->interior != nullptr) &&
         (Object->interior->light ||
          std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
-                     [Object](const Media& medium) { return medium.PreparedFor(Object); })))
+                     [Object](const Media& medium) { return medium.PreparedFor(Object); }))))
         return false;
 
     /*
