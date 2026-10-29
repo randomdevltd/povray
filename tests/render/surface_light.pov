@@ -7,6 +7,7 @@
 #ifndef (Alias) #declare Alias = 0; #end
 #ifndef (Bounce) #declare Bounce = 0; #end
 #ifndef (Passive) #declare Passive = 0; #end
+#ifndef (Volume) #declare Volume = 0; #end
 global_settings { assumed_gamma 1 }
 camera { orthographic location <0,5,-1> look_at 0 right x*2 up z*2 }
 background { rgb 0 }
@@ -45,6 +46,16 @@ plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
       sphere { <0.2,1.5,0>,0.25 }
     };
     #break
+  #case (8)
+    #declare Shape = difference {
+      box { <-0.5,1,-0.5>, <0.5,2,0.5> }
+      box { <-0.35,1.1,-0.7>, <0.35,1.3,0.7> }
+      intersection {
+        cylinder { <0,1.3,-0.7>, <0,1.3,0.7>, 0.35 }
+        box { <-0.4,1.3,-0.9>, <0.4,1.7,0.9> }
+      }
+    };
+    #break
   #else
     #declare Shape = sphere { <0,1.5,0>,0.25 };
 #end
@@ -65,5 +76,11 @@ object { Shape no_image
     pigment { rgb <0.2,0.5,1> }
     finish { ambient 0 emission 1 diffuse 0.5 }
     light { bounce { passes 1 } samples Samples }
+  }
+#end
+
+#if (Volume)
+  sphere { <0,0.6,0>,0.08 pigment { rgbt 1 } hollow no_image
+    interior { light { brightness 8 samples Samples } }
   }
 #end
