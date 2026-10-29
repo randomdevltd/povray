@@ -1,12 +1,13 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // A candle in a misty room lit by its own flame: the flame and its smoke add to the mist, the rising warm air subtracts it and, being thinner, bends light so the brick wall and the print behind ripple. +w360 +h480; Declare=Plume=0 stops the warm air clearing the mist, Smoke=0 drops the smoke, Shimmer=0 the heat.
-// Declare=FlameLight=0 lights the room with a point light at the wick instead of the flame's interior light; FlameSamples sets its samples. The flame states its radiance in its light block, and its media emission only paints its glow.
+// Declare=FlameLight=0 lights the room with a point light at the wick instead of the flame's interior light; FlameSamples sets its samples and FlameLumens its flux, spread over the flame's own emission.
 #version 4.0;
 #ifndef (Plume) #declare Plume = 1; #end
 #ifndef (Smoke) #declare Smoke = 1; #end
 #ifndef (Shimmer) #declare Shimmer = 1; #end
 #ifndef (FlameLight) #declare FlameLight = 1; #end
 #ifndef (FlameSamples) #declare FlameSamples = 32; #end
+#ifndef (FlameLumens) #declare FlameLumens = 12; #end
 #ifndef (WaterGlass) #declare WaterGlass = 0; #end
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #declare Wick = <0, 1.32, 0>;
@@ -78,7 +79,7 @@ sphere {
   0, 1 pigment { rgbt 1 }
   interior {
     media { mix add emission rgb <14, 6, 1.6> * 9 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
-    #if (FlameLight) light { pigment { rgb <14, 6, 1.6> * 9 } samples FlameSamples
+    #if (FlameLight) light { emission brightness FlameLumens samples FlameSamples
       #if (WaterGlass) photons { reflection on refraction on } #end
     } #end
   }
