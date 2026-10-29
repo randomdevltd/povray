@@ -1413,12 +1413,16 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
             sourceDomains.emplace(owner, group.domain);
     for (LightSource *light : scene->mediaLights)
     {
-        if (cooperate)
-            cooperate();
         if (!light->emitter || !light->emitterContainer)
             throw POV_EXCEPTION_STRING("Interior light has no prepared geometry binding.");
         if (light->portal)
             throw POV_EXCEPTION_STRING("Prepared volume light paths through portals are not supported.");
+        light->emitter->ResolveGeometry();
+    }
+    for (LightSource *light : scene->mediaLights)
+    {
+        if (cooperate)
+            cooperate();
         if (light->emitter->IsSurface())
         {
             light->emitter->PrepareAxis(nullptr, td, cooperate);
@@ -1431,8 +1435,7 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         if (!layout)
             throw POV_EXCEPTION_STRING("A varying interior light requires finite prepared coordinates.");
         light->emitter->PrepareAxis(layout, td, cooperate);
-        const auto axis = light->emitter->PreparedAxis();
-        if (!axis)
+        if (!light->emitter->PreparedAxis())
             throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
         if (td->mediaMessages)
             td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
@@ -1441,13 +1444,16 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         light->colour = light->emitter->Intensity() / M_PI;
         light->Center = light->emitter->Centre();
         light->lawRadius = light->emitter->Radius();
-        for (const auto& field : light->emitterContainer->interior->fields)
-            if (field->owner == light->emitterContainer)
-            {
-                field->lights.push_back(PreparedLightComponent{light, axis});
-                field->lightReady = true;
-            }
     }
+    // Shared interior fields gain their lights on this thread, in scene order.
+    for (LightSource *light : scene->mediaLights)
+        if (!light->emitter->IsSurface())
+            for (const auto& field : light->emitterContainer->interior->fields)
+                if (field->owner == light->emitterContainer)
+                {
+                    field->lights.push_back(PreparedLightComponent{light, light->emitter->PreparedAxis()});
+                    field->lightReady = true;
+                }
 }
 
 void Media::PostProcess()
@@ -1506,7 +1512,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
-    photonOptions(source.photonOptions)
+    photonOptions(source.photonOptions), preparedParallelSafe(source.preparedParallelSafe)
 {
 }
 
