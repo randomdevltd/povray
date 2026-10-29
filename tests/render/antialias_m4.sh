@@ -4,7 +4,7 @@ set -e
 W=160; H=120
 render() {
     name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/antialias_m4.pov" +L"$SRCDIR/include" +w$W +h$H -d -p -v -gp +fp +o"am4_$name.ppm" "$@"
+    "$POVRAY" +i"$SRCDIR/tests/render/antialias_m4.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -d -p -v -gp +fp +o"am4_$name.ppm" "$@"
 }
 pixels() {
     tail -c $((W * H * 3)) "am4_$1.ppm" > "am4_$1.px"

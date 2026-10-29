@@ -5,7 +5,7 @@ POVRAY=$1; SRCDIR=$2; shift 2
 DIR="$SRCDIR/tests/pov4"
 NAMES=${*:-"basics components points control mixed loop layered review interop types stills subsurface framing framing_tagged tags_inherit default_media refraction"}
 render() {
-    "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
+    "$POVRAY" +i"$1" +L"$DIR" +L"$SRCDIR/distribution/include" +w160 +h120 -a -d -p -v -gp +fp16 +o"$2.ppm" $3
     tail -c 115200 "$2.ppm" > "$2.px"
 }
 for n in $NAMES; do
@@ -21,7 +21,7 @@ render "$DIR/basics.pov4" pov4_v37_new +ML3.7
 cmp pov4_v37_classic.px pov4_v37_new.px
 echo "pov4 +ML3.7: identical to the classic scene at #version 3.7"
 fails() {
-    if "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f $3 > "pov4_$1.log" 2>&1; then
+    if "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/distribution/include" +w16 +h12 -d -p -gp -f $3 > "pov4_$1.log" 2>&1; then
         echo "pov4 $1: expected a parse error"; exit 1
     fi
     tr -d "\n" < "pov4_$1.log" | grep -q "$2"
@@ -46,7 +46,7 @@ fails err_input_default "err_input_default.pov4:3:13: The left operand of '\*' m
 fails err_input_unknown "no input 'Qualty'; did you mean 'Quality'?" Declare=Qualty=5
 fails ok_input "ok_input.pov4:2:1: Input 'Radius' defaults to a number, but Declare=Radius supplies a string." "Declare=Radius=big Declare=Label=x"
 accepts() {
-    "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/include" +w16 +h12 -d -p -gp -f $3 > "pov4_$1.log" 2>&1 || { cat "pov4_$1.log"; exit 1; }
+    "$POVRAY" +i"$DIR/$1.pov4" +L"$DIR" +L"$SRCDIR/distribution/include" +w16 +h12 -d -p -gp -f $3 > "pov4_$1.log" 2>&1 || { cat "pov4_$1.log"; exit 1; }
     [ -z "$2" ] || tr -d "\n" < "pov4_$1.log" | grep -q "$2"
     echo "pov4 $1: accepted"
 }

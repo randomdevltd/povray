@@ -4,7 +4,7 @@ set -e
 W=160; H=120
 render() {
     name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/texture_filter.pov" +L"$SRCDIR/include" +w$W +h$H -d -p -v -gp +fp +o"tf_$name.ppm" "$@"
+    "$POVRAY" +i"$SRCDIR/tests/render/texture_filter.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -d -p -v -gp +fp +o"tf_$name.ppm" "$@"
     tail -c $((W * H * 3)) "tf_$name.ppm" > "tf_$name.px"
 }
 same() {
@@ -50,13 +50,13 @@ for run in laytf8 laytf3; do
         fi
     done
 done
-"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_uv.pov" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +fp +o"tf_uv_off.ppm"
-"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_uv.pov" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +fp +tf +wt1 +o"tf_uv_on.ppm"
+"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_uv.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -a -d -p -v -gp +fp +o"tf_uv_off.ppm"
+"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_uv.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -a -d -p -v -gp +fp +tf +wt1 +o"tf_uv_on.ppm"
 tail -c $((W * H * 3)) tf_uv_off.ppm > tf_uv_off.px
 tail -c $((W * H * 3)) tf_uv_on.ppm > tf_uv_on.px
 same uv_off uv_on && { echo "texture_filter: +TF left a UV-mapped texture unchanged"; exit 1; }
-"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_screen.pov" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +fp +o"tf_screen_off.ppm"
-"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_screen.pov" +L"$SRCDIR/include" +w$W +h$H -a -d -p -v -gp +fp +tf +wt1 +o"tf_screen_on.ppm"
+"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_screen.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -a -d -p -v -gp +fp +o"tf_screen_off.ppm"
+"$POVRAY" +i"$SRCDIR/tests/render/texture_filter_screen.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -a -d -p -v -gp +fp +tf +wt1 +o"tf_screen_on.ppm"
 tail -c $((W * H * 3)) tf_screen_off.ppm > tf_screen_off.px
 tail -c $((W * H * 3)) tf_screen_on.ppm > tf_screen_on.px
 same screen_off screen_on && { echo "texture_filter: a screen did not carry its footprint into its camera"; exit 1; }

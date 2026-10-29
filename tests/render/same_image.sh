@@ -3,7 +3,7 @@
 set -e
 render() {
     name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/include" +w96 +h72 -a -d -p -v -gp +fp16 +o"same_image_$name.ppm" "$@"
+    "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/distribution/include" +w96 +h72 -a -d -p -v -gp +fp16 +o"same_image_$name.ppm" "$@"
     # the header carries the render date, so only the 96x72 pixels of 6 bytes are compared
     tail -c 41472 "same_image_$name.ppm" > "same_image_$name.px"
 }

@@ -633,7 +633,7 @@ check: all
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-halfspace-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/halfspace-bounds"
 	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-finite-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/finite-bounds"
-	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
+	\$(top_builddir)/unix/povray +i\$(top_srcdir)/distribution/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/distribution/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/pov4/identical.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
