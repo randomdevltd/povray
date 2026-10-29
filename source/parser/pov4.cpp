@@ -728,6 +728,8 @@ private:
     void LowerItems(Program& p, TSNode n, Node& into, const char* skipField);
     int CheckedName(Program& p, TSNode n);
     void LowerPhotonItems(Program& p, Node& body);
+    void LowerContextualItems(Program& p, Node& body, const std::string& block);
+    const Node* ContextualOperand(Program& p, const Node* n, const std::string& block, const Node*& word);
     const Node* PhotonOperand(Program& p, const Node* n, const Node*& word);
 
     void Snippet(const std::string& text, std::vector<POV_LONG> lines, unsigned file);
@@ -1156,6 +1158,62 @@ void Pov4Evaluator::LowerPhotonItems(Program& p, Node& body)
     }
 }
 
+// A signed operand after a contextual word parses as arithmetic on it: `passes -1` is `passes` then `-1`.
+const Node* Pov4Evaluator::ContextualOperand(Program& p, const Node* n, const std::string& block, const Node*& word)
+{
+    DepthGuard depth(*this, n);
+    if (n->kind != NK::Binary)
+        return nullptr;
+    if ((n->a->kind == NK::Ident) && ((n->op == OpAdd) || (n->op == OpSub)) && ContextualItem(block, n->a->text))
+    {
+        word = n->a;
+        p.nodes.push_back(*n);
+        Node& unary = p.nodes.back();
+        unary.kind = NK::Unary;
+        unary.op = (n->op == OpAdd) ? OpPlus : OpNeg;
+        unary.a = n->b;
+        unary.b = nullptr;
+        return &unary;
+    }
+    const Node* value = ContextualOperand(p, n->a, block, word);
+    if (value == nullptr)
+        return nullptr;
+    p.nodes.push_back(*n);
+    p.nodes.back().a = value;
+    return &p.nodes.back();
+}
+
+void Pov4Evaluator::LowerContextualItems(Program& p, Node& body, const std::string& block)
+{
+    DepthGuard depth(*this, &body);
+    for (size_t i = 0; i < body.kids.size(); ++i)
+    {
+        const Node* item = body.kids[i];
+        const Node* word = nullptr;
+        if (const Node* value = ContextualOperand(p, item, block, word))
+        {
+            body.kids[i] = word;
+            body.kids.insert(body.kids.begin() + i + 1, value);
+            ++i;
+        }
+        else if (item->kind == NK::If)
+        {
+            const Node* branch = item;
+            while ((branch != nullptr) && (branch->kind == NK::If))
+            {
+                LowerContextualItems(p, *const_cast<Node*>(branch->b), block);
+                branch = branch->c;
+            }
+            if (branch != nullptr)
+                LowerContextualItems(p, *const_cast<Node*>(branch), block);
+        }
+        else if (item->kind == NK::While)
+            LowerContextualItems(p, *const_cast<Node*>(item->b), block);
+        else if ((item->kind == NK::For) || (item->kind == NK::ForIn))
+            LowerContextualItems(p, *const_cast<Node*>(item->d), block);
+    }
+}
+
 const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
 {
     if (mDepth >= kMaxDepth)
@@ -1191,6 +1249,7 @@ const Node* Pov4Evaluator::Lower(Program& p, TSNode n)
         LowerItems(p, n, node, "name");
         if (node.text == "photons")
             LowerPhotonItems(p, node);
+        LowerContextualItems(p, node, node.text);
         return &node;
     }
     if (type == "tag_filter")
