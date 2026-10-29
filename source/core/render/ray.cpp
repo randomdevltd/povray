@@ -85,9 +85,10 @@ static double SurfaceErrorScale(ConstObjectPtr object)
     return scale;
 }
 
-void Ray::SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal)
+void Ray::SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface)
 {
-    surfaceOrigin = {object, point, normal, SurfaceErrorScale(object), object ? object->SurfaceTolerance() : 0.0};
+    const ConstObjectPtr part = surface ? surface : object;
+    surfaceOrigin = {object, point, normal, SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
 }
 
 void Ray::SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface)
