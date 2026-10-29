@@ -48,6 +48,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -56,6 +57,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
+#include "core/lighting/bounceincident.h"
 #include "core/lighting/emitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
@@ -1095,7 +1097,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     // TODO - For photon rays we're still potentially doing double work on media.
     // TODO - For shadow rays we're still potentially doing double work on distance-based attenuation.
     // Calculate participating media effects.
-    if(ssltBounceSources == nullptr && !photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
+    if(ssltBridge == nullptr && !photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
     {
         media.ComputeMedia(ray.GetInteriors(), ray, isect, tmpCol, tmpTransm);
     }
@@ -1463,7 +1465,7 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, co
 void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resultTransm, const TEXTURE *texture, vector<const TEXTURE *>& warps, const Vector3d& ipoint,
                                   const Vector3d& rawnormal, Ray& ray, COLC weight, Intersection& isect)
 {
-    if (ssltBounceSources != nullptr)
+    if (ssltBridge != nullptr)
     {
         SubsurfaceLayers layers;
         MathColour transmitted(1.0);
@@ -5511,14 +5513,37 @@ private:
 };
 }
 
-void Trace::BeginSurfaceSubsurface(const std::vector<std::shared_ptr<LightSource>>& sources)
+void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field)
 {
-    ssltBounceSources = &sources;
-    ssltCameraKnown = true;
-    ssltPixelSize = ssltPixelAngle = 0.0;
+    ssltBridge = &field;
 }
 
-MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& eta)
+// Light from either side enters from the material's exterior, as at a cloud point.
+MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
+                                         PreparedSetId preparedSetId, double& eta)
+{
+    TraceTicket ticket(1, 0.0);
+    ticket.preparedSetId = preparedSetId;
+    const Intersection& hit = node.intersection;
+    const double tolerance = InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
+    Ray eye(ticket, hit.IPoint + node.normal * tolerance, -node.normal);
+    RayInteriorVector containing;
+    FindContainingInteriors(eye.Origin, containing, preparedSetId);
+    eye.AppendInteriors(containing);
+    ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
+    MathColour light;
+    if (FindSubsurfaceParts(SubsurfaceObject(hit), preparedSetId).sheets.count(hit.Object) != 0)
+        return light;
+    for (const BounceIncidentBeam& beam : incident)
+    {
+        const double cosine = fabs(dot(node.normal, beam.direction));
+        if (cosine >= EPSILON)
+            light += beam.angularWeight * float(cosine * ComputeFt(min(cosine, 1.0), eta));
+    }
+    return light / float(M_PI);
+}
+
+MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId)
 {
     Intersection hit(node.intersection);
     TraceTicket ticket(1, 0.0);
@@ -5528,9 +5553,8 @@ MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size
     RayInteriorVector containing;
     FindContainingInteriors(eye.Origin, containing, preparedSetId);
     eye.AppendInteriors(containing);
-    ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
-    eta = SubsurfaceBoundary::Quantise(eta);
     eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, index));
+    ssltBridgeNode = index;
     MathColour radiance;
     ColourChannel transmission = 0.0;
     ComputeTextureColour(hit, radiance, transmission, eye, 1.0, false);
@@ -6092,11 +6116,9 @@ ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
 void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId)
 {
     lights.clear();
-    if (ssltBounceSources != nullptr)
-    {
-        for (const auto& source : *ssltBounceSources) lights.push_back(source.get());
+    // The bridge's light is its field's, and preparation threads hold no scene lights.
+    if (ssltBridge != nullptr)
         return;
-    }
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
         for(unsigned int i : view.globalLights)
@@ -7574,7 +7596,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     if (std::find(cloud.exitSlot.begin(), cloud.exitSlot.end(), -1) != cloud.exitSlot.end())
         return false;
     const PreparedSet& photonSet = sceneData->GetPreparedSet(eye.GetPreparedSetId());
-    cloud.photons = (ssltBounceSources == nullptr) && cloud.parts->anyCollects && sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
+    cloud.photons = cloud.parts->anyCollects && sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
                     ((photonSet.surfacePhotonMap.numPhotons > 0) || !photonSet.progressiveSurface.photons.empty());
     double mm = sceneData->mmPerUnit;
     double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
@@ -8462,6 +8484,169 @@ PreciseMathColour Trace::SubsurfaceProfile::RdEdgeShare(double inner, double out
     return share;
 }
 
+void Trace::SurfaceSubsurfaceField::Build(const std::vector<SurfaceBounceNode>& nodes, const std::vector<MathColour>& irradiance, std::size_t trials)
+{
+    patches.clear();
+    leaf.assign(nodes.size(), 0);
+    std::vector<std::size_t> order(nodes.size());
+    for (std::size_t i = 0; i < order.size(); i++)
+        order[i] = i;
+    std::function<void(std::size_t, std::size_t)> build = [&](std::size_t first, std::size_t last)
+    {
+        SurfaceSubsurfaceField::Patch patch;
+        patch.lo = Vector3d(HUGE_VAL);
+        patch.hi = Vector3d(-HUGE_VAL);
+        patch.centre = patch.normal = Vector3d(0.0);
+        for (std::size_t k = first; k < last; k++)
+        {
+            const SurfaceBounceNode& node = nodes[order[k]];
+            const Vector3d& p = node.intersection.IPoint;
+            const double area = node.areaWeight / double(trials);
+            for (int a = 0; a < 3; a++)
+            {
+                patch.lo[a] = min(patch.lo[a], p[a]);
+                patch.hi[a] = max(patch.hi[a], p[a]);
+            }
+            patch.centre += p * area;
+            patch.normal += node.normal.normalized() * area;
+            patch.area += area;
+            patch.light += irradiance[order[k]] * float(area);
+        }
+        const double length = patch.normal.length();
+        patch.centre = (last - first == 1) ? nodes[order[first]].intersection.IPoint : patch.centre / patch.area;
+        patch.normal = (length > 0.0) ? patch.normal / length : Vector3d(0.0);
+        patch.cone = (length > 0.0) ? 1.0 : -1.0;
+        for (std::size_t k = first; k < last; k++)
+            patch.cone = min(patch.cone, dot(nodes[order[k]].normal.normalized(), patch.normal));
+        const std::size_t index = patches.size();
+        patch.node = order[first];
+        patch.next = index + 1;
+        patches.push_back(patch);
+        if (last - first == 1)
+        {
+            leaf[order[first]] = index;
+            return;
+        }
+        const Vector3d extent = patch.hi - patch.lo;
+        const int axis = (extent[X] >= extent[Y]) ? ((extent[X] >= extent[Z]) ? X : Z) : ((extent[Y] >= extent[Z]) ? Y : Z);
+        const std::size_t middle = (first + last) / 2;
+        std::nth_element(order.begin() + first, order.begin() + middle, order.begin() + last, [&](std::size_t i, std::size_t j)
+        {
+            const double a = nodes[i].intersection.IPoint[axis], b = nodes[j].intersection.IPoint[axis];
+            return (a < b) || ((a == b) && (i < j));
+        });
+        build(first, middle);
+        build(middle, last);
+        patches[index].next = patches.size();
+    };
+    if (!nodes.empty())
+        build(0, nodes.size());
+}
+
+// Annuli a patch's disc is cut into, each weighted by the share of its circle inside the disc.
+static const int kPatchBands = 8;
+
+// The exit node's own patch is a disc on its face lit as it is; every other patch in reach, or a far group of them, a disc
+// whose profile integral outside that one is summed by annuli about the exit point; see doc/PERF.md.
+bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const SubsurfaceProfile& profile, const SubsurfaceFlesh& flesh, double ftOut,
+                                       MathColour& diffuse, TraceTicket& ticket)
+{
+    const ObjectPtr object = SubsurfaceObject(out);
+    if (FindSubsurfaceParts(object, ticket.preparedSetId).sheets.count(out.Object) != 0)
+        return false;
+    const SurfaceSubsurfaceField& field = *ssltBridge;
+    const double mm = sceneData->mmPerUnit, errorBound = sceneData->subsurfaceErrorBound;
+    const std::size_t exitPatch = field.leaf[ssltBridgeNode];
+    const SurfaceSubsurfaceField::Patch& exit = field.patches[exitPatch];
+    const Vector3d x = exit.centre, n = exit.normal;
+    const double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
+    const double reach = (sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL;
+    const double core = sqrt(exit.area / M_PI) * mm;
+    SubsurfaceCloud cloud;
+    cloud.object = object;
+    cloud.spacing = core / mm;
+    cloud.reach = reach;
+    AttachRdTables(profile, ticket);
+    SetUpSubsurfaceThin(cloud, x, n, profile, ticket);
+    const SubsurfaceThin& thin = ssltThin;
+    auto disc = [&](double radius, bool face)
+    {
+        PreciseMathColour rd;
+        if (!(radius > 0.0))
+            return rd;
+        rd = profile.RdDisc(radius) * (M_PI * Sqr(radius));
+        if (face && thin.active)
+            thin.Apply(rd, Sqr(radius), 1);
+        return rd;
+    };
+    // A disc of radius r (mm) whose centre lies d along the exit face and h off it, less what lies within the exit disc's radius.
+    auto patchRd = [&](double d, double h, double r, bool through)
+    {
+        const double from = sqrt(max(0.0, Sqr(core) - Sqr(h)));
+        PreciseMathColour sum;
+        auto band = [&](double s0, double s1, double share)
+        {
+            if (!(s1 > s0) || !(share > 0.0))
+                return;
+            PreciseMathColour rd = disc(sqrt(Sqr(s1) + Sqr(h)), !through) - disc(sqrt(Sqr(s0) + Sqr(h)), !through);
+            if (through)
+                thin.Apply(rd, Sqr(0.5 * (s0 + s1)), 2);
+            sum += rd * share;
+        };
+        if (d < r)
+            band(from, r - d, 1.0);
+        const double inner = max(from, fabs(d - r)), outer = d + r;
+        for (int k = 0; k < kPatchBands; k++)
+        {
+            const double s0 = inner + (outer - inner) * k / kPatchBands, s1 = inner + (outer - inner) * (k + 1) / kPatchBands, s = 0.5 * (s0 + s1);
+            band(s0, s1, (d > 0.0) ? acos(clip((Sqr(s) + Sqr(d) - Sqr(r)) / (2.0 * s * d), -1.0, 1.0)) / M_PI : 0.0);
+        }
+        return sum;
+    };
+    auto entering = [&](const SurfaceSubsurfaceField::Patch& patch, std::size_t index)
+    {
+        PreciseMathColour light = PreciseMathColour(patch.light) / patch.area;
+        if (flesh.PerEntry())
+        {
+            SubsurfaceEntry entry;
+            ComputeSubsurfaceEntry(flesh, patch.centre, -patch.normal, Draw(DeriveKey(UINT64_C(0x73736c74656e7472), kDrawSubsurface, index), kDrawSubsurface, 0), entry);
+            light *= PreciseMathColour(entry.factor);
+        }
+        return light;
+    };
+    PreciseMathColour sum = disc(core, true) * entering(exit, exitPatch);
+    for (std::size_t c = 0; c < field.patches.size();)
+    {
+        const SurfaceSubsurfaceField::Patch& patch = field.patches[c];
+        const bool leaf = (patch.next == c + 1);
+        double boxSqr = 0.0;
+        for (int a = 0; a < 3; a++)
+            boxSqr += Sqr(max(0.0, max(patch.lo[a] - x[a], x[a] - patch.hi[a])));
+        boxSqr *= Sqr(mm);
+        if ((boxSqr > Sqr(reach)) || (c == exitPatch))
+        {
+            c = patch.next;
+            continue;
+        }
+        if (!leaf && !((patch.cone >= kCloudCone) && (patch.area * Sqr(mm) < errorBound * boxSqr)))
+        {
+            c++;
+            continue;
+        }
+        // Facing faces with air between them exchange no light through the material.
+        const Vector3d v = patch.centre - x;
+        if (!((dot(v, n) > 0.0) && (dot(v, patch.normal) < 0.0) && (dot(n, patch.normal) < 0.0)))
+        {
+            const double below = -dot(v, n) * mm;
+            const bool through = thin.active && (below > 0.5 * thin.depth);
+            sum += patchRd((v - n * dot(v, n)).length() * mm, fabs(below), sqrt(patch.area / M_PI) * mm, through) * entering(patch, c);
+        }
+        c = patch.next;
+    }
+    diffuse = MathColour(sum * ftOut);
+    return true;
+}
+
 // log Rd (in reduced mean free paths, with beam diffusion) at one channel's column; underflow is floored, so it interpolates.
 double Trace::SubsurfaceProfile::FillRd(int channel, int column) const
 {
@@ -8819,7 +9004,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         inward.invert();
     SubsurfaceFlesh flesh;
     SetUpSubsurfaceFlesh(flesh, layers, out, inward, DeriveKey(key, kDrawSubsurface, 5));
-    if (ssltBounceSources != nullptr)
+    if (ssltBridge != nullptr)
     {
         flesh.emissionAtDepth = false;
         flesh.emission.Clear();
@@ -8874,7 +9059,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double      sigma_prime_s_mean  = sigma_prime_s.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_t_mean  = sigma_a_mean + sigma_prime_s_mean;
 
-    bool radiosity_needed = (ssltBounceSources == nullptr) && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
+    bool radiosity_needed = (ssltBridge == nullptr) && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
                             (sceneData->subsurfaceUseRadiosity == true) &&
                             (radiosity.CheckRadiosityTraceLevel(Eye.GetTicket()) == true) &&
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);
@@ -8894,7 +9079,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
     MathColour cloudDiffuse;
     // Below the finish's minimum influence a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
-    const bool estimate = pointCloud && (rayWeight * layers.weight.WeightMax() < Finish->SubsurfaceMinimumInfluence) &&
+    const bool estimate = (ssltBridge == nullptr) && pointCloud && (rayWeight * layers.weight.WeightMax() < Finish->SubsurfaceMinimumInfluence) &&
                           (FindSubsurfaceParts(SubsurfaceObject(out), Eye.GetPreparedSetId()).sheets.count(out.Object) == 0);
     if (estimate)
     {
@@ -8914,8 +9099,9 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     const bool tryCloud = pointCloud && !estimate;
     if (tryCloud)
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
-    bool cloud = tryCloud && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
-                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftDiffuse, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+    bool cloud = tryCloud && ((ssltBridge != nullptr) ? SurfaceSubsurfaceDiffusion(out, profile, flesh, ftDiffuse, cloudDiffuse, Eye.GetTicket()) :
+                 OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
+                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftDiffuse, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1)));
     if (cloud && radiosity_needed && !cloudRadiosity)
         threadData->Stats()[Subsurface_Cloud_Pretrace]++;
     if (tryCloud && !cloud)
@@ -9008,7 +9194,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
         Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftDiffuse);
 
-    if (ssltBounceSources != nullptr)
+    if (ssltBridge != nullptr)
     {
         if (Finish->SubsurfaceHasColour) Total_Colour *= flesh.exitSkin;
         Final_Colour += Total_Colour * layers.weight;

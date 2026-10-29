@@ -245,10 +245,11 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
                 std::make_shared<const PreparedSourceColourField>(target.domain, std::move(phase)));
 }
 
-// The subsurface light leaving surface bounce nodes; the workers share one cloud cache, whose cells depend only on their keys.
+// The subsurface light leaving surface bounce nodes, diffused between them from the light the surface pass found entering
+// each; the workers share one cache of boundary and layer tables.
 inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
     Workers& workers, const std::shared_ptr<SceneData>& scene, const std::vector<SurfaceBounceNode>& nodes,
-    const std::vector<std::shared_ptr<LightSource>>& sources, const std::set<ObjectPtr>& collapsedOwners,
+    const std::vector<std::vector<BounceIncidentBeam>>& incident, std::size_t trials, const std::set<ObjectPtr>& collapsedOwners,
     const std::function<void()>& cooperate)
 {
     if (!scene->useSubsurface)
@@ -272,16 +273,24 @@ inline std::shared_ptr<const SurfaceBounceRadiance> PrepareSubsurfaceBounce(
         thread->subsurfaceCache = cache;
         Context& context = workers[worker];
         traces.emplace_back(new Trace(scene, thread, QualityFlags(9), context.cooperate, context.media, context.radiosity));
-        traces.back()->BeginSurfaceSubsurface(sources);
     }
-    std::vector<MathColour> radiance(nodes.size());
+    Trace::SurfaceSubsurfaceField field;
+    for (const auto& trace : traces)
+        trace->BeginSurfaceSubsurface(field);
+    std::vector<MathColour> light(nodes.size()), radiance(nodes.size());
     std::vector<double> etas(nodes.size());
     workers.For(nodes.size(), cooperate, [&](size_t node, size_t worker)
     {
-        radiance[node] = traces[worker]->SurfaceSubsurfaceNode(nodes[node], node, 0, etas[node]);
-    }, kSurfaceUnits);
+        light[node] = traces[worker]->SurfaceSubsurfaceEntry(nodes[node], incident[node], 0, etas[node]);
+        etas[node] = SubsurfaceBoundary::Quantise(etas[node]);
+    }, kSurfaceUnits / 2);
+    field.Build(nodes, light, trials);
+    workers.For(nodes.size(), cooperate, [&](size_t node, size_t worker)
+    {
+        radiance[node] = traces[worker]->SurfaceSubsurfaceNode(nodes[node], node, 0);
+    }, kSurfaceUnits - kSurfaceUnits / 2);
     traces.clear();
-    return Trace::SurfaceSubsurfaceRadiance(nodes, radiance, etas, 4096, collapsedOwners);
+    return Trace::SurfaceSubsurfaceRadiance(nodes, radiance, etas, trials, collapsedOwners);
 }
 
 // Bounce progress units, as the passes below count them; zero while a volume target's domain is unprepared.
@@ -415,15 +424,11 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 continue;
             const auto owner = target.light->emitterContainer;
             std::vector<LightSource*> sources;
-            std::vector<std::shared_ptr<LightSource>> sharedSources;
             for (size_t source = 0; source < previous.size(); ++source)
                 if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
                     (target.surfaceResponse || previous[source]->Media_Interaction) &&
                     Receives(owner, previousOriginal[source]))
-                {
                     sources.push_back(previous[source].get());
-                    sharedSources.push_back(previous[source]);
-                }
             if (target.surfaceResponse)
             {
                 const auto& nodes = target.surfaceResponse->Nodes();
@@ -441,7 +446,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 if (scene->useSubsurface)
                     workers.Step(step + " subsurface");
                 const auto diffuse = target.surfaceResponse->Scatter(incident);
-                const auto subsurface = PrepareSubsurfaceBounce(workers, scene, nodes, sharedSources,
+                const auto subsurface = PrepareSubsurfaceBounce(workers, scene, nodes, incident, kSurfaceUnits,
                                                                 target.surfaceResponse->CollapsedChartOwners(), cooperate);
                 const auto field = std::make_shared<const SumSurfaceBounceRadiance>(
                     std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{diffuse, subsurface});

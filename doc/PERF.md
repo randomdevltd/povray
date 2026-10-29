@@ -1450,6 +1450,50 @@ does the same until σ·τ passes 15, so this is not a case of its own. Against 
 at 2896; its disc integral is within 10⁻⁴ out to 2896, and
 its ratio through to the far face 2.6% low. It is left as it is.
 
+## Subsurface light leaving surface bounce nodes
+
+A surface `light { bounce }` on a method 2 object emits, each order, what its nodes send on: the diffuse reflection of
+the light the order's surface pass gathers at each node, and subsurface light. The subsurface part shaded every node
+through the ordinary method 2 path, so each node opened a point cloud over the object, lit afresh by every source of the
+previous order. Preparation has no camera, so the cloud took no pixel term and its spacing fell to the diffusion floor,
+a 128th of a cell. On a bowl of `tools/bench/sslt-bounce-shell.pov`'s material and size (0.2 mm wall, `mm_per_unit 10`)
+in a scene of 60 emitters and scattering media, that is 0.02 mm, about 200 points per bounce node, each lit by 4
+connections per source: 25 ms of thread time a point, 88% of it shadow rays through the media, and well over half an
+hour for two such shells.
+
+The nodes are now the cloud. A node's entering light comes from the beams the surface pass already holds:
+E = Σ L·|cos θ|·Ft(cos θ, η)/π, from either side, the material receiving from its exterior as a cloud point does. Its
+patch is a disc of its area weight over the trial count. The light reaching an exit node is the closed-form disc integral
+of the profile over its own patch (`RdDisc`, with the thin-part disc ratio), times its own E, plus, over every other
+patch in reach, that patch's E times the profile integrated over its disc. The disc lies d along the exit face and h off
+it; it is cut into 8 annuli about the exit point, each the difference of the closed-form cumulative integral at its two
+distances √(s² + h²), weighted by the share of its circle inside the disc. What lies within the exit disc's radius is
+left out, as the exit disc stands for it. A far patch's annuli sum to Rd times its area and an overlapping one's to its
+part outside the exit disc, so no rule switches between a near and a far form. A patch more than half a thin part's depth
+below the exit face takes the layer table's ratio through to the far face at each annulus, as a cloud point there does,
+and facing faces with air between them (each in front of the other, normals opposed) exchange nothing. The nodes form a
+tree of median splits; a group inside the hierarchy's cone whose area is under `error_bound` times its squared distance
+is taken as one disc, as the cloud's tree does. Flesh and skin, the layers' weight and the result's type are unchanged,
+and each node's light and radiance depend on its index alone, so the field is the same on any thread count.
+
+The bridge traces no shadow rays: per node one material run for the thin part's depth, and its texture. On
+`sslt-bounce-shell.pov` (2189 nodes, 16×12, 8 threads, surface pass included) the bounce phase takes 2.1 s against 13.9 s.
+
+Against the cloud bridge, node by node (luminance, new over old minus one):
+
+| | area-weighted total | median | 5th / 95th percentile |
+|---|---|---|---|
+| Case 0, 16 samples a source | +2.1% | +0.2% | −31% / +44% |
+| Case 0, 128 samples a source | +1.7% | +0.1% | −23% / +33% |
+| Case 1, point lights | +0.4% | −1.0% | −28% / +33% |
+
+The spread is at the node scale. The nodes' E carries the surface pass's sampling noise (its node-to-neighbourhood rms
+falls from 0.25 to 0.10 from 16 to 128 samples), and where the profile is narrower than the node spacing (here 1/σtr is
+0.05 to 0.16 mm against 0.28 mm between nodes) a node's light is mostly its own E, while the cloud averaged 200 points.
+What is left is detail finer than the node spacing, which the bounce field cannot hold either: the open rim, a strip
+0.2 mm wide, differs most (46 nodes, a median of +69% in Case 0 and −47% in Case 1). In Case 1 at 256 samples the floor,
+lit only by the bowl, receives 2.4% less in all, median pixel −0.7%.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
