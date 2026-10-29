@@ -688,6 +688,22 @@ check: all
 	\$(CXX) -std=c++14 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/photon_beam_map.cpp -o photon_beam_map_test
 	./photon_beam_map_test
 	rm -f photon_beam_test photon_beam_map_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/bounce_grid_test.cpp -o bounce_grid_test
+	./bounce_grid_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/prepared_source_domain.cpp -o prepared_source_domain_test
+	./prepared_source_domain_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/prepared_source_selector.cpp -o prepared_source_selector_test
+	./prepared_source_selector_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/shared_incident_field.cpp -o shared_incident_field_test
+	./shared_incident_field_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_angular_guide.cpp -o surface_angular_guide_test
+	./surface_angular_guide_test
+	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test
+	mkdir -p \$(top_builddir)/tests/subsurface-entry-ior
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
+	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_entry_ior.cpp" \\
+	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior.o" \\
+	  PREPARED_BINARY="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior_test"
 	sh \$(top_srcdir)/tests/render/progressive_volume.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_volume_groups.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_solid.sh \$(top_builddir)/unix/povray \$(top_srcdir)
