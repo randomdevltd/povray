@@ -73,6 +73,12 @@ Changed Behaviour
     integration remain separate; finer optical steps no longer multiply the
     volume-light shadow-ray count. Surface continuations start new segments.
 
+  - Scene preparation reports its progress as `Preparation:` lines, with a
+    warning when a phase stops moving; doc/PERF.md gives the format. Bounce
+    orders, their scattering coefficients and the subsurface light of bounce
+    surfaces are prepared on the scene's work threads, with results that do
+    not depend on their number.
+
   - Surface and interior light blocks accept `bounce` and
     `bounce { passes N }` to request bounce orders. Bare bounce requests one
     order; passes must be a positive unsigned integer. With no explicit source

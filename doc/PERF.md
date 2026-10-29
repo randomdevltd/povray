@@ -2192,3 +2192,24 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Height fields: their own block walk.
 - Mesh memory: the tree is now 55% of a mesh; 8-bit blocks are the next saving.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
+
+## Scene preparation progress
+
+Preparation reports itself as information lines, one event per line, each short enough with the console's
+`<Task> Info: ` prefix to stay under 80 columns:
+
+    Preparation plan: <phase>[:<units>] <phase>[:<units>] ...
+    Preparation: <phase> <done>/<total> <elapsed>s[; <step>]
+    Preparation: <phase> finished <elapsed>s
+    Preparation: <phase> stalled <idle>s at <done>/<total> <elapsed>s[; <step>]
+
+A phase is one of `parse meshes media atmosphere lights bounce photons`, in that order. A plan line lists the phases
+about to run, with their work units where they are known then: scene preparation gives one, and a render that
+shoots photons another for `photons`. `parse` gives only its `finished` line; every planned phase gives at least
+its `finished` line. `<done>/<total>` counts the phase's meshes, interiors, media, lights, bounce nodes and cells
+(the subsurface light of bounce surfaces included, its step ending in `subsurface`) or photons; the total is `?`
+where it is not known ahead. Times have one decimal. A phase reports `0/<total>` as it starts, then at most every
+2 seconds, then its count and `finished`. A count that has not moved for 60 seconds gives the `stalled` line, again
+every 60 seconds while it stays flat; the phase is still running. `<step>` is terse free text, cut to fit:
+
+    Preparation: bounce 18432/61440 4.0s; o2/2 t3/7 surface

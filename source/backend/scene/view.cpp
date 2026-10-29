@@ -1321,6 +1321,13 @@ void View::StartRender(POVMS_Object& renderOptions)
         {
             PhotonShootingStrategy* strategy = new PhotonShootingStrategy(maxRenderThreads,
                 viewData.GetSceneData()->photonSettings.autoStopPercent);
+            renderTasks.AppendFunction([this](TaskQueue&) {
+                MessageFactory messages(viewData.sceneData->warningLevel, "Photons", viewData.sceneData->backendAddress,
+                                        viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+                viewData.photonPreparationStart = std::chrono::steady_clock::now();
+                messages.Info("Preparation plan: photons");
+                messages.Info("Preparation: photons 0/? 0.0s");
+            });
 
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new PhotonEstimationTask(
                 &viewData, seed
@@ -1350,6 +1357,12 @@ void View::StartRender(POVMS_Object& renderOptions)
                 ))));
             // wait for photons to finish
             renderTasks.AppendSync();
+            renderTasks.AppendFunction([this](TaskQueue&) {
+                MessageFactory messages(viewData.sceneData->warningLevel, "Photons", viewData.sceneData->backendAddress,
+                                        viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+                messages.Info("Preparation: photons finished %.1fs", std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - viewData.photonPreparationStart).count());
+            });
 
         }
     }

@@ -15,6 +15,8 @@
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
+#include "core/support/preparationprogress.h"
+#include <string>
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -88,8 +90,10 @@ struct Workers final
         {
             stop();
             function(index, worker);
+            AdvancePreparation(td->preparationProgress);
         }, [&]() { if (cooperate) cooperate(); }, true);
     }
+    void Step(const std::string& text) const { StepPreparation(td->preparationProgress, text); }
 
     TraceThreadData* td;
     std::function<void()> stop;
@@ -110,6 +114,11 @@ struct Target final
     std::shared_ptr<const PreparedSurfaceBounceResponse> surfaceResponse;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
 };
+
+inline std::string Of(const char* name, std::size_t index, std::size_t count)
+{
+    return name + std::to_string(index + 1) + "/" + std::to_string(count);
+}
 
 inline bool Receives(ConstObjectPtr owner, const LightSource* light)
 {
@@ -181,7 +190,8 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
     std::vector<std::vector<MathColour>> values(target.phases.size());
     for (auto& phase : values)
         phase.resize(constant ? 1 : target.domain->NodeCount());
-    workers.For(constant ? 1 : target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
+    const std::size_t count = constant ? 1 : target.domain->NodeCount();
+    workers.For(count, cooperate, [&](size_t node, size_t worker)
     {
         TraceThreadData* const td = workers.Thread(worker);
         const auto& point = target.domain->Node(node);
@@ -273,8 +283,9 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         CollectObjects(object, objects, seen);
     std::vector<Target> targets;
     unsigned int maximum = 0;
-    for (LightSource* light : scene->mediaLights)
+    for (std::size_t lightIndex = 0; lightIndex < scene->mediaLights.size(); ++lightIndex)
     {
+        LightSource* const light = scene->mediaLights[lightIndex];
         const auto owner = light->emitterContainer;
         const auto settings = BounceSettings(*light);
         if (!settings)
@@ -289,11 +300,6 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         {
             target.surfaceResponse =
                 PreparedSurfaceBounceResponse::Prepare(const_cast<ObjectPtr>(owner), td, 4096, cooperate);
-            if (td->mediaMessages)
-                td->mediaMessages->Info(
-                    "Prepared surface bounce: %u nodes; %u orders; %u samples per source.",
-                    unsigned(target.surfaceResponse->Nodes().size()), target.passes,
-                    unsigned(std::max(1, settings->samples)));
             targets.push_back(std::move(target));
             continue;
         }
@@ -310,6 +316,23 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     }
     if (targets.empty())
         return;
+    // Work units: each order's nodes (twice on surfaces with subsurface light) and cells, then the final proposals.
+    std::size_t units = 0;
+    std::vector<std::shared_ptr<const PreparedSourceDomain>> domains;
+    for (const Target& target : targets)
+    {
+        const std::size_t perOrder = target.surfaceResponse ?
+            target.surfaceResponse->Nodes().size() * (scene->useSubsurface ? 2 : 1) :
+            target.domain->NodeCount() + target.domain->CellCount();
+        units += perOrder * target.passes;
+        if (!target.surfaceResponse && std::find(domains.begin(), domains.end(), target.domain) == domains.end())
+        {
+            domains.push_back(target.domain);
+            units += target.domain->CellCount();
+        }
+    }
+    if (td->preparationProgress)
+        td->preparationProgress->Begin("bounce", units);
     std::vector<std::shared_ptr<LightSource>> previous;
     std::vector<const LightSource*> previousOriginal;
     for (LightSource* light : scene->lightSources)
@@ -325,6 +348,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     for (unsigned int index = 0; index < maximum; ++index)
     {
         const unsigned int order = index + 1;
+        const std::string orderItem = Of("o", index, maximum);
         std::vector<std::shared_ptr<LightSource>> next;
         std::vector<const LightSource*> nextOriginal;
         struct SharedGroup
@@ -357,6 +381,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             {
                 const auto& nodes = target.surfaceResponse->Nodes();
                 std::vector<std::vector<BounceIncidentBeam>> incident(nodes.size());
+                const std::string step = orderItem + " " + Of("t", targetIndex, targets.size());
+                workers.Step(step + " surface");
                 workers.For(nodes.size(), cooperate, [&](size_t node, size_t worker)
                 {
                     incident[node] =
@@ -365,6 +391,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                               BounceOrderSeed(0, order, targetIndex, node),
                                               nodes[node].intersection.Object, nodes[node].normal);
                 });
+                if (scene->useSubsurface)
+                    workers.Step(step + " subsurface");
                 const auto diffuse = target.surfaceResponse->Scatter(incident);
                 const auto subsurface = PrepareSubsurfaceBounce(workers, scene, nodes, sharedSources,
                                                                 target.surfaceResponse->CollapsedChartOwners(), cooperate);
@@ -386,6 +414,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                           return candidate.domain == target.domain &&
                                                  candidate.samples == samples && candidate.sources == sources;
                                       });
+            if (group != groups.end())
+                AdvancePreparation(td->preparationProgress, target.domain->NodeCount() + target.domain->CellCount());
             if (group == groups.end())
             {
                 SharedGroup prepared{target.domain, sources, samples, {}, {}, nullptr};
@@ -404,6 +434,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                                        BounceOrderSeed(phase, order, groups.size(), node));
                 }
                 const size_t groupIndex = groups.size();
+                const std::string step = orderItem + " " + Of("t", targetIndex, targets.size());
+                workers.Step(step + " volume");
                 workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
                 {
                     const auto beams =
@@ -435,6 +467,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                             contributing.push_back(&candidate);
                     }
                 std::vector<DBL> proposalMasses(target.domain->CellCount());
+                workers.Step(step + " proposal");
                 workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
                 {
                     const auto point = target.domain->CellMidpoint(cell);
@@ -500,6 +533,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                          [&](const FinalProposal& candidate) { return candidate.domain == target.domain; }))
         {
             std::vector<DBL> masses(target.domain->CellCount());
+            workers.Step("final proposal");
             workers.For(masses.size(), cooperate, [&](size_t cell, size_t worker)
             {
                 const auto point = target.domain->CellMidpoint(cell);
@@ -549,6 +583,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     if (component.source == target.light)
                         component.payload = target.light->emitter->PreparedAxis();
     }
+    if (td->preparationProgress)
+        td->preparationProgress->End();
 }
 
 } // namespace pov

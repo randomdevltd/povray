@@ -66,6 +66,9 @@
 #include "core/lighting/bounceprepare.h"
 #include "core/shape/mesh.h"
 #include "core/support/parallel.h"
+#include "core/support/preparationprogress.h"
+
+#include <cstring>
 
 // POV-Ray header files (POVMS module)
 #include "povms/povmsid.h"
@@ -300,6 +303,41 @@ void MeshBuildTask::Run()
     for (Camera *camera : FramedCameras(*sceneData))
         collect(camera->frameTarget.get());
 
+    std::vector<ObjectPtr> interiors;
+    std::unordered_set<ConstObjectPtr> preparedFields;
+    std::function<void(ObjectPtr, ObjectPtr)> collectInteriors = [&](ObjectPtr object, ObjectPtr parent)
+    {
+        if ((object == nullptr) || !preparedFields.insert(object).second)
+            return;
+        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
+            interiors.push_back(object);
+        if (LightSource *light = dynamic_cast<LightSource *>(object))
+            collectInteriors(light->Projected_Through_Object, nullptr);
+        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+            for (ObjectPtr child : compound->children)
+                collectInteriors(child, object);
+    };
+    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+        for (ObjectPtr object : set->objects)
+            collectInteriors(object, nullptr);
+    // The console puts the task's name and " Info: " before each line.
+    PreparationProgress progress(mpMessageFactory, std::strlen("Mesh Info: "));
+    {
+        std::vector<std::string> plan;
+        if (!needed.empty())
+            plan.push_back("meshes:" + std::to_string(needed.size()));
+        if (!interiors.empty())
+            plan.push_back("media:" + std::to_string(interiors.size()));
+        if (!sceneData->atmosphere.empty())
+            plan.push_back("atmosphere:" + std::to_string(sceneData->atmosphere.size()));
+        if (!sceneData->mediaLights.empty())
+            plan.push_back("lights:" + std::to_string(sceneData->mediaLights.size()));
+        if (std::any_of(sceneData->mediaLights.begin(), sceneData->mediaLights.end(),
+                        [](const LightSource *light) { return bounce_prepare::BounceSettings(*light) != nullptr; }))
+            plan.push_back("bounce");
+        progress.Plan(plan);
+    }
+
     DeferredMeshPool *pool = sceneData->meshPool.get();
     unsigned int discarded = 0;
     POV_LONG wasted = 0;
@@ -313,6 +351,7 @@ void MeshBuildTask::Run()
         {
             try
             {
+                progress.Poll();
                 Cooperate();
             }
             catch (...)
@@ -321,6 +360,8 @@ void MeshBuildTask::Run()
                 throw;
             }
         };
+        if (!needed.empty())
+            progress.Begin("meshes", needed.size());
         if (pool != nullptr)
         {
             // what no set keeps is never built: queued builds are skipped and running ones stop
@@ -375,7 +416,12 @@ void MeshBuildTask::Run()
             needed[i]->Build(workers[worker].get(), -(int(worker) + 1));
             if (timer.HasValidThreadCPUTime())
                 cpu[worker] += timer.ElapsedThreadCPUTime();
+            progress.Advance();
         }, cooperate);
+        if (!needed.empty())
+            progress.End();
+        if (!interiors.empty())
+            progress.Begin("media", interiors.size());
         // A single build runs on this task's own thread, whose time is counted already.
         for (size_t worker = (count > 1) ? 0 : 1; worker < count; ++worker)
             buildCpuTime += cpu[worker];
@@ -487,11 +533,12 @@ void MeshBuildTask::Run()
             rebound(object);
 
     TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
-    std::unordered_set<ConstObjectPtr> preparedFields;
+    finalFields.preparationProgress = &progress;
     const auto cooperateFields = [&]()
     {
         try
         {
+            progress.Poll();
             Cooperate();
         }
         catch (...)
@@ -500,26 +547,24 @@ void MeshBuildTask::Run()
             throw;
         }
     };
-    std::function<void(ObjectPtr, ObjectPtr)> prepareFields = [&](ObjectPtr object, ObjectPtr parent)
+    for (ObjectPtr object : interiors)
     {
-        if ((object == nullptr) || !preparedFields.insert(object).second)
-            return;
         cooperateFields();
-        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
-            PrepareInteriorFields(object, &finalFields, cooperateFields);
-        if (LightSource *light = dynamic_cast<LightSource *>(object))
-            prepareFields(light->Projected_Through_Object, nullptr);
-        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
-            for (ObjectPtr child : compound->children)
-                prepareFields(child, object);
-    };
-    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
-        for (ObjectPtr object : set->objects)
-            prepareFields(object, nullptr);
+        PrepareInteriorFields(object, &finalFields, cooperateFields);
+        progress.Advance();
+    }
+    progress.End();
+    if (!sceneData->atmosphere.empty())
+        progress.Begin("atmosphere", sceneData->atmosphere.size());
     PrepareAtmosphereFields(&finalFields, cooperateFields);
+    progress.End();
+    if (!sceneData->mediaLights.empty())
+        progress.Begin("lights", sceneData->mediaLights.size());
     PrepareLightFields(&finalFields, cooperateFields);
+    progress.End();
     PrepareVolumeBounceLightFields(&finalFields, cooperateFields);
     cooperateFields();
+    finalFields.preparationProgress = nullptr;
     parseData->Stats() += finalFields.Stats();
 
     const size_t recorded = sceneData->deferredMeshes.size();

@@ -77,6 +77,7 @@
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/support/parallel.h"
+#include "core/support/preparationprogress.h"
 #include "core/support/statistics.h"
 
 // this must be the last file included
@@ -1372,7 +1373,10 @@ void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& c
 {
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
     for (Media& medium : scene->atmosphere)
+    {
         medium.FinalizePreparedField(nullptr, td, cooperate);
+        AdvancePreparation(td->preparationProgress);
+    }
     bool prepared = false, varying = false;
     MathColour extinction, emission;
     for (Media& medium : scene->atmosphere)
@@ -1419,31 +1423,32 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
             throw POV_EXCEPTION_STRING("Prepared volume light paths through portals are not supported.");
         light->emitter->ResolveGeometry();
     }
-    for (LightSource *light : scene->mediaLights)
+    for (size_t index = 0; index < scene->mediaLights.size(); ++index)
     {
+        LightSource *light = scene->mediaLights[index];
         if (cooperate)
             cooperate();
-        if (light->emitter->IsSurface())
         {
-            light->emitter->PrepareAxis(nullptr, td, cooperate);
+            const bool surface = light->emitter->IsSurface();
+            StepPreparation(td->preparationProgress, "l" + std::to_string(index + 1) + "/" +
+                            std::to_string(scene->mediaLights.size()) + (surface ? " surface" : " volume"));
+            std::shared_ptr<const PreparedSourceDomain> layout;
+            if (!surface)
+                layout = sourceDomains.at(light->emitterContainer);
+            if (!surface && !layout)
+                throw POV_EXCEPTION_STRING("A varying interior light requires finite prepared coordinates.");
+            light->emitter->PrepareAxis(layout, td, cooperate);
+            if (!surface && !light->emitter->PreparedAxis())
+                throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
+            if (!surface && td->mediaMessages)
+                td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
+                    unsigned(layout->Counts()[X]), unsigned(layout->Counts()[Y]), unsigned(layout->Counts()[Z]),
+                    unsigned(light->index), light->lightGroupLight ? " in light group" : "");
             light->colour = light->emitter->Intensity() / M_PI;
             light->Center = light->emitter->Centre();
             light->lawRadius = light->emitter->Radius();
-            continue;
         }
-        const auto layout = sourceDomains.at(light->emitterContainer);
-        if (!layout)
-            throw POV_EXCEPTION_STRING("A varying interior light requires finite prepared coordinates.");
-        light->emitter->PrepareAxis(layout, td, cooperate);
-        if (!light->emitter->PreparedAxis())
-            throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
-        if (td->mediaMessages)
-            td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
-                unsigned(layout->Counts()[X]), unsigned(layout->Counts()[Y]), unsigned(layout->Counts()[Z]),
-                unsigned(light->index), light->lightGroupLight ? " in light group" : "");
-        light->colour = light->emitter->Intensity() / M_PI;
-        light->Center = light->emitter->Centre();
-        light->lawRadius = light->emitter->Radius();
+        AdvancePreparation(td->preparationProgress);
     }
     // Shared interior fields gain their lights on this thread, in scene order.
     for (LightSource *light : scene->mediaLights)
