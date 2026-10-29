@@ -955,6 +955,8 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         const DBL detail = owner->interior->refraction->detail;
         requested = std::min(requested, detail > 0.0 ? detail * 0.5 : AutomaticResolution(owner));
     }
+    // a constant medium owns no grid, so its step sets the layout only when nothing that varies does
+    DBL constantStep = HUGE_VAL;
     for (const Media& medium : owner->interior->media)
     {
         if (medium.Sample_Method != 4)
@@ -962,9 +964,12 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         needed = true;
         const DBL authored = medium.fastResolutionRecorded ? medium.requestedFastResolution : medium.FastResolution;
         const DBL step = authored > 0.0 ? authored : AutomaticResolution(owner);
+        DBL& target = ConstantDensity(medium) ? constantStep : requested;
         if (step > 0.0)
-            requested = std::min(requested, step);
+            target = std::min(target, step);
     }
+    if (!(requested < HUGE_VAL))
+        requested = constantStep;
     if (!needed)
         return nullptr;
     std::shared_ptr<const PreparedGridLayout> layout;
