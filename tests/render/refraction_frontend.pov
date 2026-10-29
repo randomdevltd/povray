@@ -10,10 +10,14 @@ global_settings { assumed_gamma 1 mm_per_unit Units atmospheric_ior 1 }
 #if (Case=23) sphere { 0,1 interior { media { method Method refraction_detail 0.01 } } } #end
 camera { orthographic location <0,0,-6> look_at 0 right x*4 up y*3 }
 plane { z,3 pigment { gradient x color_map { [0 rgb 0] [1 rgb 1] } scale 4 translate -2*x } finish { ambient 0 emission 1 diffuse 0 } }
-box { <-2,-1.5,-1>,<2,1.5,1> pigment { rgbt 1 }
+// A patterned texture keeps an interior's own classic refraction value, which a plain finish would replace.
+box { <-2,-1.5,-1>,<2,1.5,1>
+ #if (Case=16 | Case=17) texture { checker texture { pigment { rgbf 1 } } texture { pigment { rgbf <1,0.5,1,1> } } }
+ #else pigment { rgbt 1 } #end
  interior { ior 1
   #if (Case=8) refraction 1
-  #elseif (Case=10) refraction off
+  #elseif (Case=10 | Case=17) refraction off
+  #elseif (Case=16) refraction 0
   #else
    refraction {
     #if (Case=3) detail 0

@@ -30,7 +30,12 @@ same raw units
 run modern 4.0
 same raw modern
 run auto 3.7 Declare=Case=5
-run off 3.7 Declare=Case=10
+run off 4.0 Declare=Case=10
+run off_legacy 3.7 Declare=Case=17
+run zero_legacy 3.7 Declare=Case=16
+same off_legacy zero_legacy
+run off_filtered 4.0 Declare=Case=17
+if same off_filtered off_legacy 2>/dev/null; then echo 'refraction_frontend: classic refraction off read as a block' >&2; exit 1; fi
 run signed_negative 3.7 Declare=Case=12
 run constant 3.7 Declare=Case=11
 run optical_scalar 3.7 Declare=Case=8
