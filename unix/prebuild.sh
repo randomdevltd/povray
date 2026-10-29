@@ -670,6 +670,9 @@ check: all
 	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/progressive_photon.cpp -o progressive_photon_test
 	./progressive_photon_test
 	rm -f progressive_photon_test
+	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/subsurface_patch.cpp -o subsurface_patch_test
+	./subsurface_patch_test
+	rm -f subsurface_patch_test
 	+sh "\$(top_srcdir)/tools/bench/check-progressive-surface.sh" "\$(top_builddir)" "\$(top_builddir)/tests/progressive-surface"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-light.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-light"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-refraction.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-refraction"

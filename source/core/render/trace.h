@@ -272,19 +272,19 @@ class Trace
         virtual ~Trace();
         /// Adds this thread's counts of shading points the subsurface cloud left unserved to the shared ones.
         void FlushSubsurfaceCounts();
-        /// Surface bounce nodes as patches of the surface, each with the light entering it, in a tree depth first: a patch's
-        /// first child follows it, and `next` is the index past its subtree.
+        /// Surface bounce nodes as patches of the surface, each with the light entering it, in one tree per object and interior,
+        /// depth first: a patch's first child follows it, and `next` is the index past its subtree.
         struct SurfaceSubsurfaceField
         {
             struct Patch
             {
-                Vector3d lo, hi, centre, normal; ///< bounds, area-weighted centre and unit mean normal
-                double area = 0.0, cone = 1.0; ///< area in scene units squared; least cosine of a member's normal to the mean
-                MathColour light; ///< the entering irradiance times the area
+                Vector3d lo, hi, centre, normal; ///< bounds of the centres, area-weighted centre and unit mean normal
+                double area = 0.0, cone = 1.0, radius = 0.0; ///< area; least cosine of a member's normal to the mean; widest disc
+                PreciseMathColour irradiance; ///< the mean entering irradiance
                 std::size_t node = 0, next = 0; ///< a leaf's node; a leaf's next is its own index plus one
             };
             std::vector<Patch> patches;
-            std::vector<std::size_t> leaf; ///< each node's patch
+            std::vector<std::size_t> leaf, tree; ///< each node's patch, and the root of its tree
             /// Fills the tree from nodes whose patches are their area weights over `trials`, with the irradiance entering each.
             void Build(const std::vector<SurfaceBounceNode>& nodes, const std::vector<MathColour>& irradiance, std::size_t trials);
         };
