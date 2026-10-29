@@ -10,7 +10,7 @@ render() {
         +o"$name.ppm" Declare=Sources=3 Declare=Samples=2 "$@" > "$name.log" 2>&1 || { cat "$name.log"; exit 1; }
     tail -c $(( 6 * W * H )) "$name.ppm" > "$name.pixels"
 }
-for case in 0 1 2 3 4 5; do
+for case in 0 1 2 3 4 5 6; do
     render one$case Declare=Case=$case +wt1
     render four$case Declare=Case=$case +wt4
     cmp -s one$case.pixels four$case.pixels || { echo "bounce_preparation: case $case differs on four threads" >&2; exit 1; }

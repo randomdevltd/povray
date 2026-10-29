@@ -1462,37 +1462,54 @@ connections per source: 25 ms of thread time a point, 88% of it shadow rays thro
 hour for two such shells.
 
 The nodes are now the cloud. A node's entering light comes from the beams the surface pass already holds:
-E = Σ L·|cos θ|·Ft(cos θ, η)/π, from either side, the material receiving from its exterior as a cloud point does. Its
-patch is a disc of its area weight over the trial count. The light reaching an exit node is the closed-form disc integral
-of the profile over its own patch (`RdDisc`, with the thin-part disc ratio), times its own E, plus, over every other
-patch in reach, that patch's E times the profile integrated over its disc. The disc lies d along the exit face and h off
-it; it is cut into 8 annuli about the exit point, each the difference of the closed-form cumulative integral at its two
-distances √(s² + h²), weighted by the share of its circle inside the disc. What lies within the exit disc's radius is
-left out, as the exit disc stands for it. A far patch's annuli sum to Rd times its area and an overlapping one's to its
-part outside the exit disc, so no rule switches between a near and a far form. A patch more than half a thin part's depth
-below the exit face takes the layer table's ratio through to the far face at each annulus, as a cloud point there does,
-and facing faces with air between them (each in front of the other, normals opposed) exchange nothing. The nodes form a
-tree of median splits; a group inside the hierarchy's cone whose area is under `error_bound` times its squared distance
-is taken as one disc, as the cloud's tree does. Flesh and skin, the layers' weight and the result's type are unchanged,
-and each node's light and radiance depend on its index alone, so the field is the same on any thread count.
+E = Σ L·|cos θ|·Ft(cos θ, η)/π, from either side, the material receiving from its exterior as a cloud point does; a
+node on a sheet takes none, and one there sends none. Its patch is a disc of its area weight over the trial count. Light
+diffuses only between nodes of one object and interior, as a cloud is one object's: each such group has its own tree of
+median splits, and a group of patches inside the cloud tree's cone whose area is under `error_bound` times its squared
+distance is taken as one disc. A patch keeps its mean E in double precision; one of no area is skipped.
 
-The bridge traces no shadow rays: per node one material run for the thin part's depth, and its texture. On
-`sslt-bounce-shell.pov` (2189 nodes, 16×12, 8 threads, surface pass included) the bounce phase takes 2.1 s against 13.9 s.
+The light reaching an exit node is its own disc's closed-form profile integral (`RdDisc`, with the thin-part disc
+ratio) times its own E, plus, over every other patch in reach, that patch's E times the profile integrated over its
+disc. The disc lies d along the exit face and h off it. It is cut into annuli about the exit point (`subsurfacepatch.h`):
+each takes the difference of the closed-form cumulative integral at its two distances √(s² + h²), times the exact share
+of its area inside the disc (from the area two circles share), and spans an eighth of the length the profile or the
+disc's edge changes over there: its distance from the exit point, at least the shallowest depth z_r, at most the fastest
+decay length 1/σtr, and at most the disc's radius. A far disc's annuli then sum to Rd times its area, a near one's to its
+part outside the exit disc, and a disc much wider than the profile is resolved at the profile's scale, so no rule switches
+between forms. What lies within the exit disc's radius in three dimensions is left out, the exit disc standing for its own
+face there; a patch more than half a thin part's depth below the exit face lies on the far face and keeps all of it, with
+the layer table's ratio through to that face at each annulus, as a cloud point there does. Facing faces with air between
+them (each in front of the other, normals opposed) exchange nothing. The thin part's depth is found by a material run
+from a step inside the exit point at least as long as the entry probe's, from the part's own surface accuracy and the
+coordinates' precision, so it does not start outside the material in a scene of small units. Flesh and skin, the layers'
+weight and the result's type are unchanged. The tree is built on one thread, and every node's light and radiance are
+computed from its own index and that tree alone, so the field is the same on any thread count.
 
-Against the cloud bridge, node by node (luminance, new over old minus one):
+`tests/source/subsurface_patch.cpp` checks the annuli against a fine quadrature of a dipole profile over 76 discs, from a
+twentieth of the decay length across to 13 times it, centred on the exit point to beyond its edge, in and off the exit
+plane and with and without the exit disc cut out: all are within 0.48%. Eight equal annuli, as at first, were off by up to
+9%, and by 3% on the widest discs.
+
+The bridge traces no shadow rays: per node one material run for the thin part's depth, and its texture. Against the cloud
+bridge on `sslt-bounce-shell.pov`, node by node (luminance, new over old minus one):
 
 | | area-weighted total | median | 5th / 95th percentile |
 |---|---|---|---|
-| Case 0, 16 samples a source | +2.1% | +0.2% | −31% / +44% |
-| Case 0, 128 samples a source | +1.7% | +0.1% | −23% / +33% |
-| Case 1, point lights | +0.4% | −1.0% | −28% / +33% |
+| Case 0, 16 samples a source | +2.1% | +0.1% | −31% / +44% |
+| Case 0, 128 samples a source | +1.6% | 0.0% | −23% / +33% |
+| Case 1, point lights | +0.6% | −1.3% | −28% / +32% |
+| Case 2, a light in the cavity | +0.7% | −0.7% | −32% / +35% |
+| Case 3, union of two materials | −0.8% | −1.2% | −19% / +22% |
+
+In Case 2 the outer face, lit only through the wall, totals +0.4%, and the inner +1.4%. In Case 3 the two spheres total
+−1.8% and +0.2%, and the diffuse part's nodes send no subsurface light in either.
 
 The spread is at the node scale. The nodes' E carries the surface pass's sampling noise (its node-to-neighbourhood rms
 falls from 0.25 to 0.10 from 16 to 128 samples), and where the profile is narrower than the node spacing (here 1/σtr is
 0.05 to 0.16 mm against 0.28 mm between nodes) a node's light is mostly its own E, while the cloud averaged 200 points.
 What is left is detail finer than the node spacing, which the bounce field cannot hold either: the open rim, a strip
-0.2 mm wide, differs most (46 nodes, a median of +69% in Case 0 and −47% in Case 1). In Case 1 at 256 samples the floor,
-lit only by the bowl, receives 2.4% less in all, median pixel −0.7%.
+0.2 mm wide, differs most (46 nodes, totals +63% in Case 0, −43% in Case 1, −25% in Case 2). In Case 1 at 256 samples the
+floor, lit only by the bowl, receives 1.6% less in all, median pixel −0.2%.
 
 ## Mesh memory
 

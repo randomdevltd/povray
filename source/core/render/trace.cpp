@@ -65,6 +65,7 @@
 #include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
 #include "core/lighting/subsurfaceboundary.h"
+#include "core/lighting/subsurfacepatch.h"
 #include "core/lighting/surfacebounce.h"
 #include "core/material/interior.h"
 #include "core/material/media.h"
@@ -8488,12 +8489,12 @@ void Trace::SurfaceSubsurfaceField::Build(const std::vector<SurfaceBounceNode>& 
 {
     patches.clear();
     leaf.assign(nodes.size(), 0);
-    std::vector<std::size_t> order(nodes.size());
-    for (std::size_t i = 0; i < order.size(); i++)
-        order[i] = i;
+    tree.assign(nodes.size(), 0);
+    auto area = [&](std::size_t i) { return nodes[i].areaWeight / double(trials); };
+    std::vector<std::size_t> order;
     std::function<void(std::size_t, std::size_t)> build = [&](std::size_t first, std::size_t last)
     {
-        SurfaceSubsurfaceField::Patch patch;
+        Patch patch;
         patch.lo = Vector3d(HUGE_VAL);
         patch.hi = Vector3d(-HUGE_VAL);
         patch.centre = patch.normal = Vector3d(0.0);
@@ -8501,21 +8502,26 @@ void Trace::SurfaceSubsurfaceField::Build(const std::vector<SurfaceBounceNode>& 
         {
             const SurfaceBounceNode& node = nodes[order[k]];
             const Vector3d& p = node.intersection.IPoint;
-            const double area = node.areaWeight / double(trials);
-            for (int a = 0; a < 3; a++)
+            const double a = area(order[k]);
+            for (int axis = 0; axis < 3; axis++)
             {
-                patch.lo[a] = min(patch.lo[a], p[a]);
-                patch.hi[a] = max(patch.hi[a], p[a]);
+                patch.lo[axis] = min(patch.lo[axis], p[axis]);
+                patch.hi[axis] = max(patch.hi[axis], p[axis]);
             }
-            patch.centre += p * area;
-            patch.normal += node.normal.normalized() * area;
-            patch.area += area;
-            patch.light += irradiance[order[k]] * float(area);
+            if (!(a > 0.0))
+                continue;
+            patch.centre += p * a;
+            patch.normal += node.normal.normalized() * a;
+            patch.area += a;
+            patch.radius = max(patch.radius, sqrt(a / M_PI));
+            patch.irradiance += PreciseMathColour(irradiance[order[k]]) * a;
         }
         const double length = patch.normal.length();
-        patch.centre = (last - first == 1) ? nodes[order[first]].intersection.IPoint : patch.centre / patch.area;
-        patch.normal = (length > 0.0) ? patch.normal / length : Vector3d(0.0);
-        patch.cone = (length > 0.0) ? 1.0 : -1.0;
+        const bool weighed = (patch.area > 0.0);
+        patch.centre = (last - first == 1) || !weighed ? nodes[order[first]].intersection.IPoint : patch.centre / patch.area;
+        patch.irradiance = weighed ? patch.irradiance / patch.area : PreciseMathColour();
+        patch.normal = (length > 0.0) ? patch.normal / length : nodes[order[first]].normal.normalized();
+        patch.cone = 1.0;
         for (std::size_t k = first; k < last; k++)
             patch.cone = min(patch.cone, dot(nodes[order[k]].normal.normalized(), patch.normal));
         const std::size_t index = patches.size();
@@ -8539,32 +8545,57 @@ void Trace::SurfaceSubsurfaceField::Build(const std::vector<SurfaceBounceNode>& 
         build(middle, last);
         patches[index].next = patches.size();
     };
-    if (!nodes.empty())
-        build(0, nodes.size());
+    // Light diffuses only within one object's material, as each cloud is one object's.
+    std::vector<std::pair<std::pair<const void*, const void*>, std::vector<std::size_t>>> groups;
+    for (std::size_t i = 0; i < nodes.size(); i++)
+    {
+        const Intersection& hit = nodes[i].intersection;
+        const std::pair<const void*, const void*> key((hit.Csg != nullptr) ? (const void*)hit.Csg : (const void*)hit.Object, hit.Object->interior.get());
+        auto group = std::find_if(groups.begin(), groups.end(), [&](const decltype(groups)::value_type& g) { return g.first == key; });
+        if (group == groups.end())
+            group = groups.insert(groups.end(), std::make_pair(key, std::vector<std::size_t>()));
+        group->second.push_back(i);
+    }
+    for (const auto& group : groups)
+    {
+        order = group.second;
+        const std::size_t root = patches.size();
+        build(0, order.size());
+        for (std::size_t i : group.second)
+            tree[i] = root;
+    }
 }
 
-// Annuli a patch's disc is cut into, each weighted by the share of its circle inside the disc.
-static const int kPatchBands = 8;
-
-// The exit node's own patch is a disc on its face lit as it is; every other patch in reach, or a far group of them, a disc
-// whose profile integral outside that one is summed by annuli about the exit point; see doc/PERF.md.
+// The exit node's own patch is a disc on its face lit as it is; every other patch of its tree in reach, or a far group of
+// them, a disc whose profile integral outside that one is summed by annuli about the exit point; see doc/PERF.md.
 bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const SubsurfaceProfile& profile, const SubsurfaceFlesh& flesh, double ftOut,
                                        MathColour& diffuse, TraceTicket& ticket)
 {
+    diffuse.Clear();
     const ObjectPtr object = SubsurfaceObject(out);
     if (FindSubsurfaceParts(object, ticket.preparedSetId).sheets.count(out.Object) != 0)
-        return false;
+        return true;
     const SurfaceSubsurfaceField& field = *ssltBridge;
     const double mm = sceneData->mmPerUnit, errorBound = sceneData->subsurfaceErrorBound;
-    const std::size_t exitPatch = field.leaf[ssltBridgeNode];
+    const std::size_t exitPatch = field.leaf[ssltBridgeNode], root = field.tree[ssltBridgeNode];
     const SurfaceSubsurfaceField::Patch& exit = field.patches[exitPatch];
     const Vector3d x = exit.centre, n = exit.normal;
-    const double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
-    const double reach = (sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL;
+    double sigmaMin = HUGE_VAL, sigmaMax = 0.0, depth = HUGE_VAL;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        sigmaMin = min(sigmaMin, double(profile.sigma_tr[j]));
+        sigmaMax = max(sigmaMax, double(profile.sigma_tr[j]));
+        depth = min(depth, double(profile.z_r[j]));
+    }
+    const double reach = (sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL, decay = (sigmaMax > 0.0) ? 1.0 / sigmaMax : HUGE_VAL;
     const double core = sqrt(exit.area / M_PI) * mm;
+    // The thin part's probe steps a thousandth of the spacing in, and at least as far as the entry probe would.
+    const Interior *interior = out.Object->interior.get();
+    const double extent = SubsurfaceFiniteBounds(interior->boundsLow, interior->boundsHigh) ? (interior->boundsHigh - interior->boundsLow).length() : 0.0;
+    const double probe = (SubsurfaceBoundaryProbe(x, -n, out.Object->SurfaceTolerance(), extent) - x).length();
     SubsurfaceCloud cloud;
     cloud.object = object;
-    cloud.spacing = core / mm;
+    cloud.spacing = max(core / mm, 1e3 * probe);
     cloud.reach = reach;
     AttachRdTables(profile, ticket);
     SetUpSubsurfaceThin(cloud, x, n, profile, ticket);
@@ -8579,33 +8610,9 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
             thin.Apply(rd, Sqr(radius), 1);
         return rd;
     };
-    // A disc of radius r (mm) whose centre lies d along the exit face and h off it, less what lies within the exit disc's radius.
-    auto patchRd = [&](double d, double h, double r, bool through)
-    {
-        const double from = sqrt(max(0.0, Sqr(core) - Sqr(h)));
-        PreciseMathColour sum;
-        auto band = [&](double s0, double s1, double share)
-        {
-            if (!(s1 > s0) || !(share > 0.0))
-                return;
-            PreciseMathColour rd = disc(sqrt(Sqr(s1) + Sqr(h)), !through) - disc(sqrt(Sqr(s0) + Sqr(h)), !through);
-            if (through)
-                thin.Apply(rd, Sqr(0.5 * (s0 + s1)), 2);
-            sum += rd * share;
-        };
-        if (d < r)
-            band(from, r - d, 1.0);
-        const double inner = max(from, fabs(d - r)), outer = d + r;
-        for (int k = 0; k < kPatchBands; k++)
-        {
-            const double s0 = inner + (outer - inner) * k / kPatchBands, s1 = inner + (outer - inner) * (k + 1) / kPatchBands, s = 0.5 * (s0 + s1);
-            band(s0, s1, (d > 0.0) ? acos(clip((Sqr(s) + Sqr(d) - Sqr(r)) / (2.0 * s * d), -1.0, 1.0)) / M_PI : 0.0);
-        }
-        return sum;
-    };
     auto entering = [&](const SurfaceSubsurfaceField::Patch& patch, std::size_t index)
     {
-        PreciseMathColour light = PreciseMathColour(patch.light) / patch.area;
+        PreciseMathColour light = patch.irradiance;
         if (flesh.PerEntry())
         {
             SubsurfaceEntry entry;
@@ -8615,7 +8622,7 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
         return light;
     };
     PreciseMathColour sum = disc(core, true) * entering(exit, exitPatch);
-    for (std::size_t c = 0; c < field.patches.size();)
+    for (std::size_t c = root; c < field.patches[root].next;)
     {
         const SurfaceSubsurfaceField::Patch& patch = field.patches[c];
         const bool leaf = (patch.next == c + 1);
@@ -8623,7 +8630,7 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
         for (int a = 0; a < 3; a++)
             boxSqr += Sqr(max(0.0, max(patch.lo[a] - x[a], x[a] - patch.hi[a])));
         boxSqr *= Sqr(mm);
-        if ((boxSqr > Sqr(reach)) || (c == exitPatch))
+        if (!(patch.area > 0.0) || (boxSqr > Sqr(reach + patch.radius * mm)) || (c == exitPatch))
         {
             c = patch.next;
             continue;
@@ -8637,9 +8644,24 @@ bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const Subsurface
         const Vector3d v = patch.centre - x;
         if (!((dot(v, n) > 0.0) && (dot(v, patch.normal) < 0.0) && (dot(n, patch.normal) < 0.0)))
         {
-            const double below = -dot(v, n) * mm;
+            const double below = -dot(v, n) * mm, h = fabs(below);
             const bool through = thin.active && (below > 0.5 * thin.depth);
-            sum += patchRd((v - n * dot(v, n)).length() * mm, fabs(below), sqrt(patch.area / M_PI) * mm, through) * entering(patch, c);
+            // The exit disc stands for its own face near the exit point, not for the far face of a thin part.
+            const double from = through ? 0.0 : sqrt(max(0.0, Sqr(core) - Sqr(h)));
+            double last = -1.0;
+            PreciseMathColour lastDisc;
+            auto annulus = [&](double s0, double s1)
+            {
+                PreciseMathColour inner = (s0 == last) ? lastDisc : disc(sqrt(Sqr(s0) + Sqr(h)), !through);
+                lastDisc = disc(sqrt(Sqr(s1) + Sqr(h)), !through);
+                last = s1;
+                PreciseMathColour rd = lastDisc - inner;
+                if (through)
+                    thin.Apply(rd, Sqr(0.5 * (s0 + s1)), 2);
+                return rd;
+            };
+            const double d = (v - n * dot(v, n)).length() * mm, r = sqrt(patch.area / M_PI) * mm;
+            sum += SubsurfaceDiscIntegral<PreciseMathColour>(annulus, d, r, from, reach, depth, decay) * entering(patch, c);
         }
         c = patch.next;
     }
@@ -9071,12 +9093,14 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
     bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();
     Vector3d sampleBase;
-    ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
-
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
-    cloudData.radiosity = cloudRadiosity;
-    cloudData.flesh = &flesh;
-    cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
+    if (ssltBridge == nullptr)
+    {
+        ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
+        cloudData.radiosity = cloudRadiosity;
+        cloudData.flesh = &flesh;
+        cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
+    }
     MathColour cloudDiffuse;
     // Below the finish's minimum influence a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
     const bool estimate = (ssltBridge == nullptr) && pointCloud && (rayWeight * layers.weight.WeightMax() < Finish->SubsurfaceMinimumInfluence) &&
