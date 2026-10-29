@@ -20,13 +20,16 @@ BEGIN {
     if (!(power("legal") > 0)) fail("volume_legacy_media: legal is black")
     if (!(power("quiet") > 0)) fail("volume_legacy_media: quiet is black")
 }'
+write() {
+    { if [ "$2" = pov ]; then echo '#version 3.8;'; else echo '// line 1'; fi
+      echo 'global_settings { assumed_gamma 1 }'
+      printf '%s\n' "$3"
+    } >"$1.$2"
+}
 reject() {
     name=$1; message=$2; body=$3
     for language in pov pov4; do
-        { if [ "$language" = pov ]; then echo '#version 3.8;'; else echo '// line 1'; fi
-          echo 'global_settings { assumed_gamma 1 }'
-          printf '%s\n' "$body"
-        } >"invalid.$language"
+        write invalid "$language" "$body"
         if "$POVRAY" +i"invalid.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"$name.$language.log" 2>&1; then
             echo "volume_legacy_media: expected $name in $language to fail" >&2; exit 1
         fi
@@ -53,4 +56,19 @@ sphere { 0, 1 pigment { rgb 1 } finish { emission 0 subsurface { translucency 0.
 reject volume_sslt 'sphere light block at line 4 is on a subsurface method 1 finish' \
     'global_settings { subsurface { method 1 } }
 sphere { 0, 1 hollow pigment { rgbt 1 } finish { subsurface { translucency 0.5 } } interior { light {} } }'
+sslt='box { -3, -2 pigment { rgb 1 }
+  finish { subsurface { translucency 0.5 } } }'
+reject lit_sslt 'The subsurface method 1 finish at line 5 on the box is lit by the sphere light block at line 6' \
+    "global_settings { subsurface { method 1 } }
+$sslt
+sphere { 0, 1 pigment { rgb 1 } light {} }"
+reject lit_own_method 'finish at line 4 on the box is lit by the sphere light block at line 3' \
+    "$light
+box { -3, -2 pigment { rgb 1 } finish { subsurface { method 1 translucency 0.5 } } }
+global_settings { subsurface { } }"
+for language in pov pov4; do
+    write unlit "$language" "global_settings { subsurface { method 1 } }
+$sslt"
+    "$POVRAY" +iunlit.$language +w1 +h1 +wt1 +pr -f -d -p -v -gp >unlit.$language.log 2>&1 || { cat unlit.$language.log; exit 1; }
+done
 echo 'volume_legacy_media: ok'

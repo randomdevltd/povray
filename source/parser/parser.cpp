@@ -10651,23 +10651,23 @@ void Parser::Assign_Scene_Lights()
     mGroupMediaLights.clear();
 }
 
-// Whether any finish in these textures uses subsurface method 1.
-static bool Uses_Legacy_Subsurface(const TEXTURE *textures, int sceneMethod)
+// The first finish in these textures that uses subsurface method 1, or null.
+static const FINISH *Legacy_Subsurface(const TEXTURE *textures, int sceneMethod)
 {
     for (const TEXTURE *layer = textures; layer != nullptr; layer = layer->Next)
     {
         if ((layer->Finish != nullptr) && layer->Finish->UseSubsurface &&
             ((layer->Finish->SubsurfaceMethod ? layer->Finish->SubsurfaceMethod : sceneMethod) == kSubsurfaceMethodSampled))
-            return true;
+            return layer->Finish;
         for (const TEXTURE *material : layer->Materials)
-            if (Uses_Legacy_Subsurface(material, sceneMethod))
-                return true;
+            if (const FINISH *finish = Legacy_Subsurface(material, sceneMethod))
+                return finish;
         if (layer->Blend_Map != nullptr)
             for (const TextureBlendMapEntry& entry : layer->Blend_Map->Blend_Map_Entries)
-                if (Uses_Legacy_Subsurface(entry.Vals, sceneMethod))
-                    return true;
+                if (const FINISH *finish = Legacy_Subsurface(entry.Vals, sceneMethod))
+                    return finish;
     }
-    return false;
+    return nullptr;
 }
 
 static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
@@ -10678,8 +10678,8 @@ static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& obje
             Collect_Scene_Objects(child, objects);
 }
 
-// Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter or bounce
-// the light of a light block. See "Light Blocks and Classic Transport" in the manual.
+// Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter, bounce
+// or receive the light of a light block. See "Light Blocks and Classic Transport" in the manual.
 void Parser::Check_Legacy_Transport()
 {
     std::vector<ObjectPtr> objects;
@@ -10701,10 +10701,28 @@ void Parser::Check_Legacy_Transport()
             std::vector<ObjectPtr> parts;
             Collect_Scene_Objects(object, parts);
             for (ObjectPtr part : parts)
-                if (Uses_Legacy_Subsurface(part->Texture, sceneData->subsurfaceMethod) ||
-                    Uses_Legacy_Subsurface(part->Interior_Texture, sceneData->subsurfaceMethod))
+                if (Legacy_Subsurface(part->Texture, sceneData->subsurfaceMethod) ||
+                    Legacy_Subsurface(part->Interior_Texture, sceneData->subsurfaceMethod))
                     Error("The %s light block at line %lld is on a subsurface method 1 finish; a light block needs "
                           "subsurface method 2.", ShapeName(object), light->line);
+        }
+    }
+    auto blockOf = [](const LightSource *light) {
+        const ConstObjectPtr owner = light->emitterContainer;
+        return light->emitter->IsSurface() ? owner->surfaceLight.get() : owner->interior->light.get();
+    };
+    if (!sceneData->mediaLights.empty() && sceneData->useSubsurface)
+    {
+        const LightSource *first = sceneData->mediaLights.front();
+        for (ObjectPtr object : objects)
+        {
+            const FINISH *finish = Legacy_Subsurface(object->Texture, sceneData->subsurfaceMethod);
+            if (finish == nullptr)
+                finish = Legacy_Subsurface(object->Interior_Texture, sceneData->subsurfaceMethod);
+            if (finish != nullptr)
+                Error("The subsurface method 1 finish at line %lld on the %s is lit by the %s light block at line %lld; "
+                      "only subsurface method 2 carries a light block's light.", finish->SubsurfaceLine, ShapeName(object),
+                      ShapeName(first->emitterContainer), blockOf(first)->line);
         }
     }
     const LightSource *lighting = nullptr;
@@ -10717,7 +10735,7 @@ void Parser::Check_Legacy_Transport()
     if (lighting == nullptr)
         return;
     const ConstObjectPtr owner = lighting->emitterContainer;
-    const MediaLight *block = lighting->emitter->IsSurface() ? owner->surfaceLight.get() : owner->interior->light.get();
+    const MediaLight *block = blockOf(lighting);
     auto reject = [&](const Media& medium, const std::string& where) {
         if ((medium.Sample_Method != 4) && !medium.Scattering.IsZero())
             Error("The method %d medium at line %lld %s scatters, and the %s light block at line %lld lights media; "

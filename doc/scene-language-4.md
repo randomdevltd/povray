@@ -126,8 +126,11 @@ Media methods 1 to 3 and subsurface method 1 stay exactly as they were and take
 no part in a light block's light. Parsing stops, naming the lines, when an object
 with a light block holds a method 1 to 3 medium or uses a subsurface method 1
 finish (`... a light block needs method 4 media.`, `... a light block needs
-subsurface method 2.`), and when a method 1 to 3 medium scatters while a light
-block lights media (`... only method 4 media scatter a light block's light.`).
+subsurface method 2.`), when a method 1 to 3 medium scatters while a light
+block lights media (`... only method 4 media scatter a light block's light.`),
+and when any object uses a subsurface method 1 finish in a scene with a light
+block, which lights surfaces (`... only subsurface method 2 carries a light
+block's light.`).
 Classic media that only absorb or glow stay legal beside light blocks.
 
 ## Lumens

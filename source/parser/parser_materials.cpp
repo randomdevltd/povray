@@ -2539,6 +2539,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         {
             // a block giving only minimum_influence leaves subsurface off, so #default can carry the scene's value
             bool otherItem = false, influence = false;
+            const POV_LONG subsurfaceLine = std::max<POV_LONG>(1, CurrentFilePosition().line);
             Parse_Begin();
             EXPECT
                 CASE (ANISOTROPY_TOKEN)
@@ -2634,6 +2635,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
             {
                 mExperimentalFlags.subsurface = true;
                 New->UseSubsurface = true;
+                New->SubsurfaceLine = subsurfaceLine;
             }
         }
         END_CASE

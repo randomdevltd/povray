@@ -291,6 +291,7 @@ FINISH *Create_Finish()
     New->SubsurfaceEmits = false;
     New->SubsurfaceThicknessSet = false;
     New->SubsurfaceVolume = false;
+    New->SubsurfaceLine = 0;
 
     New->AlphaKnockout = false;
 
