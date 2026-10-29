@@ -6,6 +6,8 @@
 #ifndef (Zero) #declare Zero=0; #end
 #ifndef (HG) #declare HG=0; #end
 #ifndef (Eccentricity) #declare Eccentricity=0.5; #end
+#ifndef (SceneVersion) #declare SceneVersion=3.7; #end
+#version SceneVersion;
 #ifndef (Reverse) #declare Reverse=0; #end
 #ifndef (Modifier) #declare Modifier=0; #end
 #ifndef (Absorb) #declare Absorb=0; #end

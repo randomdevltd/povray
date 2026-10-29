@@ -3787,8 +3787,11 @@ void Parser::Parse_Media(vector<Media>& medialist)
                         Error("Eccentricity cannot be used with this scattering type.");
                     }
                     IMedia->Eccentricity = Parse_Float();
-                    if (!(std::fabs(IMedia->Eccentricity) < 1.0))
+                    if (!std::isfinite(IMedia->Eccentricity) ||
+                        (!(std::fabs(IMedia->Eccentricity) < 1.0) && (sceneData->EffectiveLanguageVersion() >= 380)))
                         Error("Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive.");
+                    else if (!(std::fabs(IMedia->Eccentricity) < 1.0))
+                        Warning("Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive; a scene of version 3.7 or older keeps it.");
                 END_CASE
 
                 CASE (EXTINCTION_TOKEN)
