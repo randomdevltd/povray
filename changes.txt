@@ -51,8 +51,6 @@ Changed Behaviour
   values, whose phase is negative or undefined, are a parse error.
 - A Sturm-solved polynomial outside the solver's floating-point range has no
   roots, rather than ending the render with an error.
-- A closed mesh's inside test counts every crossing ahead of the point, so a
-  point beside a face is classified by the side it lies on.
 - scale_lumens(phi, metres) requires finite lumens and positive finite metres
   and is a .pov4 built-in as well.
 -----------------
