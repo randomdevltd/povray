@@ -36,8 +36,9 @@ fi
 stored() {
     tr '\n' ' ' < "progressive_volume_$1.log" | tr -s ' ' | grep -o 'Media photons stored: [0-9]*' | grep -o '[0-9]*$'
 }
-render spaced Declare=Variation=0.1 Declare=MediaSpacing=4 +wt2
-[ "$(stored spaced)" -lt "$(stored varying)" ] || { echo 'progressive_volume: the media spacing factor changes no step' >&2; exit 1; }
+# prepared detail is the floor of a method 4 march, so only a spacing finer than its cells adds steps
+render spaced Declare=Variation=0.1 Declare=MediaSpacing=0.25 Declare=MediaSteps=64 +wt2
+[ "$(stored spaced)" -gt "$(stored varying)" ] || { echo 'progressive_volume: the media spacing factor changes no step' >&2; exit 1; }
 awk -v a="$(mean spaced)" -v b="$(mean varying)" 'BEGIN {exit !(a>0.97*b && a<1.03*b)}'
 render decoy_first Declare=Variation=0.1 Declare=Decoy=1 +wt2
 render decoy_last Declare=Variation=0.1 Declare=Decoy=2 +wt2
