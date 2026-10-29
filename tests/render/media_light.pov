@@ -25,7 +25,7 @@ background { rgb 0 }
 #macro EmittingBall(R, L, Samples, Light)
   object {
     Ball scale R / Radius
-    interior { #if (Light) light { brightness L samples Samples #ifdef (Photons) photons { refraction on target } #end #ifdef (Shadowless) shadowless on #end } #end }
+    interior { #if (Light) light { brightness L samples Samples #ifdef (Photons) photons { refraction on } #end #ifdef (Shadowless) shadowless on #end } #end }
     translate y * Height
   }
 #end
@@ -115,11 +115,10 @@ background { rgb 0 }
     sphere {
       0, 0.5 pigment { rgbt 1 } hollow
       interior {
-        // Case 17 holds the ball's glow over a little extinction, so its shadow rays march media too: calibrated
-        // brightness, 9.5 against 0.125, because a thin ball radiates L*pi*R^2 while this one radiates L*sigma*V,
-        // 75 times less per brightness at sigma 0.02 and R 0.5, corrected for its own absorption.
+        // Case 17 holds the ball's glow over a little extinction, so its shadow rays march media too; its brightness
+        // restores the flux absorption 0.02 keeps inside the 0.5 ball (escape fraction 0.99254), so both escape alike.
         media { #if (Case = 17) absorption 0.02 #else density { spherical } #end }
-        light { brightness #if (Case = 17) 9.5 #else 0.125 #end samples N }
+        light { brightness #if (Case = 17) 0.12594 #else 0.125 #end samples N }
       }
       translate y * 1.2
     }
@@ -135,10 +134,10 @@ background { rgb 0 }
   #break
   #case (23) #case (24)
     // A scattering medium is lit by the volume light as by a light of its escaped power: equal to that
-    // point in the far field, gentler near, where the law that bounds a surface applies. Smoke holds it.
+    // point in the far field, gentler near, where the law that bounds a surface applies. Method 4 smoke scatters both alike.
     // At SmokeHeight 1.2 the ball sits inside the smoke, its media-free interior displacing the hottest
     // haze, so the near pin reads the field around the flame, not through it.
-    box { <-2, 0.98, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { scattering { 1, rgb 0.35 } } } }
+    box { <-2, 0.98, -2>, <2, 3, 2> pigment { rgbt 1 } hollow interior { media { method 4 scattering { 1, rgb 0.35 } } } }
     #if (Case = 23)
       object { sphere { 0, Radius pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } } translate y * SmokeHeight }
     #else

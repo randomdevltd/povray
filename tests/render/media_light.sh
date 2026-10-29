@@ -47,7 +47,9 @@ done
 render radiosity Declare=Case=3
 near "the floor under radiosity" "$(mean radiosity 24 39 24 39)" "$(mean ball 24 39 24 39)" 0.01
 render glow Declare=Case=4
-near "the glow of an emission-only medium" "$(mean glow 24 39 24 39)" 0.0196 0.2
+# a medium's emission is appearance alone: radiosity gathers none of it
+awk -v a="$(mean glow 0 63 0 63)" 'BEGIN { exit !(a == 0) }' ||
+    { echo "media_light: an emission-only medium lit the floor through radiosity" >&2; exit 1; }
 
 render group Declare=Case=5
 # The camera looks down with z up, so the group's floor, at negative x, is the right half of the image.
@@ -127,9 +129,9 @@ near "the far field against the analytic point" "$(mean far 30 33 30 33)" 0.0156
 render smokenear Declare=Case=23 Declare=SmokeHeight=1.2
 render smokenearpoint Declare=Case=24 Declare=SmokeHeight=1.2
 near "smoke near the ball, against the point of its power" "$(mean smokenear 20 43 20 43)" \
-    "$(awk -v a="$(mean smokenearpoint 20 43 20 43)" 'BEGIN { printf "%.5f", a * 0.829 }')" 0.08
+    "$(awk -v a="$(mean smokenearpoint 20 43 20 43)" 'BEGIN { printf "%.5f", a * 0.914 }')" 0.08
 render smokefar Declare=Case=23 Declare=SmokeHeight=8
 render smokefarpoint Declare=Case=24 Declare=SmokeHeight=8
 near "smoke far from the ball, against the point of its power" "$(mean smokefar 20 43 20 43)" \
-    "$(awk -v a="$(mean smokefarpoint 20 43 20 43)" 'BEGIN { printf "%.5f", a * 0.866 }')" 0.08
+    "$(awk -v a="$(mean smokefarpoint 20 43 20 43)" 'BEGIN { printf "%.5f", a * 1.0 }')" 0.08
 echo "media_light: ok"
