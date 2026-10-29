@@ -5837,23 +5837,11 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
         return;
     ComputeSSLTNormal(xi);
 
-    // Get a colour and a ray (also recomputes all the lightsourceray stuff).
+    // Get a colour and a ray (also recomputes all the lightsourceray stuff); an emitter draws afresh toward xi.
     MathColour lightcolour;
     if (lightsource.emitter)
-    {
-        const double originalDistance2 = Sqr(lightsourcedepth);
-        const Vector3d delta = emitterSample.position - xi.IPoint;
-        lightsourcedepth = delta.length();
-        if (!(lightsourcedepth > 0.0))
-            return;
-        lightsourceray.Origin = xi.IPoint;
-        lightsourceray.Direction = delta / lightsourcedepth;
-        lightcolour = emitterSample.weight * (originalDistance2 / Sqr(lightsourcedepth)) *
-                      (lightsource.emitter->DirectionalWeight(-lightsourceray.Direction) *
-                       Light_Emitter_Path_Factor(&lightsource, lightsourcedepth) / M_PI);
-    }
-    else
-        ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, xi.IPoint, lightcolour, true);
+        lightsourceray.SetKey(DeriveKey(key, kDrawEmitter, UINT64_C(0x656e747279)));
+    ComputeOneLightRay(lightsource, lightsourcedepth, lightsourceray, xi.IPoint, lightcolour, true);
 
     // Don't calculate spotlights when outside of the light's cone.
     if(lightcolour.IsNearZero(EPSILON))
