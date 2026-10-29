@@ -13,6 +13,7 @@
 #include "core/material/preparedsourcefield.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
+#include "core/support/parallel.h"
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -47,6 +48,50 @@ struct Context final
     Trace trace;
     MediaFunction media;
     PhotonGatherer photons;
+};
+
+// One Context and thread data per worker; worker 0 borrows the caller's thread data, which the caller leaves alone meanwhile.
+struct Workers final
+{
+    Workers(const std::shared_ptr<SceneData>& scene, TraceThreadData* td) : td(td)
+    {
+        const std::shared_ptr<std::atomic<bool>> cancelled = scene->meshBuildCancelled;
+        stop = [cancelled]()
+        {
+            if (cancelled->load(std::memory_order_relaxed))
+                throw std::runtime_error("Bounce preparation was stopped");
+        };
+        const std::size_t count = std::max(1u, scene->workThreads);
+        for (std::size_t worker = 0; worker < count; ++worker)
+        {
+            if (worker > 0)
+                helpers.emplace_back(new TraceThreadData(scene, worker, false));
+            contexts.emplace_back(new Context(scene, Thread(worker), stop));
+        }
+    }
+    ~Workers()
+    {
+        contexts.clear();
+        for (const auto& helper : helpers)
+            td->Stats() += helper->Stats();
+    }
+    TraceThreadData* Thread(std::size_t worker) const { return worker == 0 ? td : helpers[worker - 1].get(); }
+    Context& operator[](std::size_t worker) { return *contexts[worker]; }
+    // Each index must write only its own results, so that they do not depend on which worker computed them.
+    template<typename Function>
+    void For(std::size_t count, const std::function<void()>& cooperate, const Function& function)
+    {
+        ParallelFor(count, contexts.size(), [&](std::size_t index, std::size_t worker)
+        {
+            stop();
+            function(index, worker);
+        }, [&]() { if (cooperate) cooperate(); }, true);
+    }
+
+    TraceThreadData* td;
+    std::function<void()> stop;
+    std::vector<std::unique_ptr<TraceThreadData>> helpers;
+    std::vector<std::unique_ptr<Context>> contexts;
 };
 
 struct Target final
@@ -106,7 +151,7 @@ inline bool ConstantOwnerCoefficients(ConstObjectPtr owner, const std::vector<Co
     return true;
 }
 
-inline void PrepareCoefficients(Target& target, Context& context, TraceThreadData* td,
+inline void PrepareCoefficients(Target& target, Workers& workers,
                                 const std::vector<ConstObjectPtr>& objects,
                                 const std::function<void()>& cooperate)
 {
@@ -122,10 +167,9 @@ inline void PrepareCoefficients(Target& target, Context& context, TraceThreadDat
     std::vector<std::vector<MathColour>> values(target.phases.size());
     for (auto& phase : values)
         phase.resize(constant ? 1 : target.domain->NodeCount());
-    for (size_t node = 0; node < (constant ? 1 : target.domain->NodeCount()); ++node)
+    workers.For(constant ? 1 : target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
     {
-        if (cooperate)
-            cooperate();
+        TraceThreadData* const td = workers.Thread(worker);
         const auto& point = target.domain->Node(node);
         RayInteriorVector interiors;
         if (constant)
@@ -133,8 +177,8 @@ inline void PrepareCoefficients(Target& target, Context& context, TraceThreadDat
         else
         {
             if (!Inside_Object(point, const_cast<ObjectPtr>(owner), td))
-                continue;
-            context.trace.FindContainingInteriors(point, interiors);
+                return;
+            workers[worker].trace.FindContainingInteriors(point, interiors);
         }
         for (const auto& component : EvaluateOwnerBounceScattering(interiors, *owner->interior, point, td))
         {
@@ -143,7 +187,7 @@ inline void PrepareCoefficients(Target& target, Context& context, TraceThreadDat
             if (found != target.phases.end())
                 values[found - target.phases.begin()][node] += component.coefficient;
         }
-    }
+    });
     for (auto& phase : values)
         if (constant)
             target.coefficients.push_back(std::make_shared<const PreparedConstantColourField>(phase.front()));
@@ -170,6 +214,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
     using namespace bounce_prepare;
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
     Context context(scene, td, cooperate);
+    Workers workers(scene, td);
     std::vector<ConstObjectPtr> objects;
     for (const auto object : scene->objects)
         CollectObjects(object, objects);
@@ -209,7 +254,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         target.domain = light->emitter->PreparedAxis()->Domain();
         if (!target.domain)
             throw std::runtime_error("Bounce preparation requires source coordinates");
-        PrepareCoefficients(target, context, td, objects, cooperate);
+        PrepareCoefficients(target, workers, objects, cooperate);
         maximum = std::max(maximum, target.passes);
         targets.push_back(std::move(target));
     }
@@ -262,16 +307,14 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             {
                 const auto& nodes = target.surfaceResponse->Nodes();
                 std::vector<std::vector<BounceIncidentBeam>> incident(nodes.size());
-                for (size_t node = 0; node < nodes.size(); ++node)
+                workers.For(nodes.size(), cooperate, [&](size_t node, size_t worker)
                 {
-                    if (cooperate)
-                        cooperate();
                     incident[node] =
-                        CollectBounceIncident(context.trace, nodes[node].intersection.IPoint, sources,
+                        CollectBounceIncident(workers[worker].trace, nodes[node].intersection.IPoint, sources,
                                               std::max(1, owner->surfaceLight->samples),
                                               BounceOrderSeed(0, order, targetIndex, node),
                                               nodes[node].intersection.Object, nodes[node].normal);
-                }
+                });
                 const auto diffuse = target.surfaceResponse->Scatter(incident);
                 const auto subsurface = context.trace.PrepareSurfaceSubsurfaceRadiance(
                     nodes, sharedSources, 0, 4096, target.surfaceResponse->CollapsedChartOwners());
@@ -310,19 +353,18 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                         phaseNodes[phase].emplace_back(samples,
                                                        BounceOrderSeed(phase, order, groups.size(), node));
                 }
-                for (size_t node = 0; node < target.domain->NodeCount(); ++node)
+                const size_t groupIndex = groups.size();
+                workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
                 {
-                    if (cooperate)
-                        cooperate();
                     const auto beams =
-                        CollectBounceIncident(context.trace, target.domain->Node(node), sources, samples,
-                                              BounceOrderSeed(0, order, groups.size(), node));
+                        CollectBounceIncident(workers[worker].trace, target.domain->Node(node), sources, samples,
+                                              BounceOrderSeed(0, order, groupIndex, node));
                     for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
                         for (const auto& beam : beams)
                             phaseNodes[phase][node].AddScatteringBeam(
                                 prepared.phases[phase].type, prepared.phases[phase].eccentricity,
                                 MathColour(1.0), beam.direction, beam.angularWeight);
-                }
+                });
                 for (auto& nodes : phaseNodes)
                     prepared.fields.push_back(
                         std::make_shared<const BounceFieldGrid>(target.domain, std::move(nodes)));
@@ -343,13 +385,13 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                             contributing.push_back(&candidate);
                     }
                 std::vector<DBL> proposalMasses(target.domain->CellCount());
-                for (size_t cell = 0; cell < proposalMasses.size(); ++cell)
+                workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
                 {
                     const auto point = target.domain->CellMidpoint(cell);
                     MathColour value;
                     for (const auto candidate : contributing)
                         if (Inside_Object(point, const_cast<ObjectPtr>(candidate->light->emitterContainer),
-                                          td))
+                                          workers.Thread(worker)))
                             for (size_t phase = 0; phase < candidate->phases.size(); ++phase)
                             {
                                 const size_t index = std::find(prepared.phases.begin(), prepared.phases.end(),
@@ -359,7 +401,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                          prepared.fields[index]->AngularAverage(point);
                             }
                     proposalMasses[cell] = value.Weight() * target.domain->CellVolume(cell);
-                }
+                });
                 prepared.proposal =
                     std::make_shared<const PreparedSourceDistribution>(target.domain, proposalMasses);
                 if (td->mediaMessages)
@@ -408,20 +450,21 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                          [&](const FinalProposal& candidate) { return candidate.domain == target.domain; }))
         {
             std::vector<DBL> masses(target.domain->CellCount());
-            for (size_t cell = 0; cell < masses.size(); ++cell)
+            workers.For(masses.size(), cooperate, [&](size_t cell, size_t worker)
             {
                 const auto point = target.domain->CellMidpoint(cell);
                 MathColour value;
                 for (const auto& candidate : targets)
                     if (!candidate.surfaceResponse && candidate.domain == target.domain &&
-                        Inside_Object(point, const_cast<ObjectPtr>(candidate.light->emitterContainer), td))
+                        Inside_Object(point, const_cast<ObjectPtr>(candidate.light->emitterContainer),
+                                      workers.Thread(worker)))
                     {
                         value += candidate.primary->PreparedAxis()->ColourAt(point);
                         for (const auto& order : candidate.orders)
                             value += order->AngularAverage(point);
                     }
                 masses[cell] = value.Weight() * target.domain->CellVolume(cell);
-            }
+            });
             finalProposals.push_back(
                 {target.domain, std::make_shared<const PreparedSourceDistribution>(target.domain, masses)});
         }
