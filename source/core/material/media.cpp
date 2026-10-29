@@ -1695,7 +1695,8 @@ class VolumeEmitter final : public Emitter
             const double start = -offset, end = start + reach / radius;
             TraceTicket ticket(1, 0.0);
             Ray ray(ticket, origin, dir);
-            vector<double> cuts(1, start);
+            thread_local vector<double> cuts;
+            cuts.assign(1, start);
             Boundaries(geometry, ray, start, end, td, cuts);
             cuts.push_back(end);
             std::sort(cuts.begin(), cuts.end());
@@ -1733,25 +1734,43 @@ class VolumeEmitter final : public Emitter
             const double chordShare = 0.5 * min(1.0, max(0.0, 2.0 - 0.5 * d / radius));
             if (chordShare == 0.0)
             {
-                sample = SamplePosition(draw, td);
+                if (!bounceField)
+                {
+                    sample = SamplePosition(draw, td);
+                    const double r2 = (sample.position - from).lengthSqr();
+                    if (r2 > 0.0)
+                        sample.weight /= r2;
+                    else
+                        sample.weight.Clear();
+                    return true;
+                }
+                const auto position = axis->SamplePosition(draw.positionKey);
+                sample.position = position.position;
+                sample.pdf = position.pdf;
                 const double r2 = (sample.position - from).lengthSqr();
                 if (r2 > 0.0)
                 {
-                    if (bounceField)
-                    {
-                        const Vector3d outgoing = (from - sample.position) / std::sqrt(r2);
-                        sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
-                    }
-                    else
-                        sample.weight /= r2;
+                    const Vector3d outgoing = (from - sample.position) / std::sqrt(r2);
+                    sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
                 }
                 else
                     sample.weight.Clear();
                 return true;
             }
-            const EmitterAabbProposal angular(from, low, size);
-            vector<std::pair<double, double>> pieces;
-            double length, depth;
+            // A receiver's draws share their proposal over the emitter's box, built once per receiver point and box.
+            thread_local struct { Vector3d key[3]; EmitterAabbProposal proposal; } recent =
+                { { Vector3d(std::numeric_limits<double>::quiet_NaN()), Vector3d(), Vector3d() },
+                  EmitterAabbProposal(Vector3d(), Vector3d(-1.0), Vector3d(2.0)) };
+            const Vector3d key[3] = { from, low, size };
+            bool same = true;
+            for (int k = 0; k < 3; k++)
+                same = same && (recent.key[k][X] == key[k][X]) && (recent.key[k][Y] == key[k][Y]) && (recent.key[k][Z] == key[k][Z]);
+            if (!same)
+                recent = { { from, low, size }, EmitterAabbProposal(from, low, size) };
+            const EmitterAabbProposal& angular = recent.proposal;
+            thread_local vector<std::pair<double, double>> pieces;
+            double length, depth, positionPdf = 0.0;
+            bool positionKnown = false;
             if (s < chordShare)
             {
                 const Vector3d dir = angular.Sample(s / chordShare, t);
@@ -1777,7 +1796,10 @@ class VolumeEmitter final : public Emitter
             }
             else
             {
-                sample = SamplePosition(EmitterDraw((s - chordShare) / (1.0 - chordShare), draw.x, draw.y, draw.z, draw.positionKey), td);
+                const auto position = axis->SamplePosition(draw.positionKey);
+                sample.position = position.position;
+                sample.pdf = positionPdf = position.pdf;
+                positionKnown = true;
                 const Vector3d delta = sample.position - from;
                 depth = delta.length();
                 if (!(depth > 0.0))
@@ -1799,7 +1821,7 @@ class VolumeEmitter final : public Emitter
             const double r2 = depth * depth;
             const double angularPdf = angular.Pdf((sample.position - from) / depth);
             const double chordPdf = (inChord && (length > 0.0)) ? angularPdf / (length * r2) : 0.0;
-            sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * PositionPdf(sample.position);
+            sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * (positionKnown ? positionPdf : PositionPdf(sample.position));
             const Vector3d outgoing = (from - sample.position) / depth;
             sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
             return true;
