@@ -112,8 +112,7 @@ public:
         TraceTicket ticket(1, 0.0);
         Ray ray(ticket);
         SurfaceGeometrySample surface;
-        if (!geometry.SampleToward(from, ray, td, draw.choose, draw.x, draw.y, surface, &guide)) return false;
-        if (!(dot(surface.normal, -ray.Direction) > 0.0)) return false;
+        if (!geometry.SampleToward(from, ray, td, draw.choose, draw.x, draw.y, surface, &guide, true)) return false;
         sample.position = surface.intersection.IPoint;
         sample.normal = surface.normal;
         sample.surfaceObject = surface.intersection.Object;

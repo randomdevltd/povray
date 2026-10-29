@@ -113,7 +113,7 @@ public:
 
     bool SampleToward(const Vector3d& origin, Ray& ray, TraceThreadData* thread,
                       DBL u, DBL v, DBL rootU, SurfaceGeometrySample& sample,
-                      const SurfaceAngularGuide* guide = nullptr) const
+                      const SurfaceAngularGuide* guide = nullptr, bool facing = false) const
     {
         sample = SurfaceGeometrySample();
         if (!valid) return false;
@@ -126,7 +126,7 @@ public:
         ray.Origin = normalizedOrigin - ray.Direction * back;
         // A receiver on this surface must not draw its own root, found within that part's error of the receiver.
         const DBL own = 64.0 * std::numeric_limits<DBL>::epsilon() * (back + MaxAbs(origin) / scale);
-        const bool found = SelectRoot(ray, thread, rootU, back, HUGE_VAL, sample, own);
+        const bool found = SelectRoot(ray, thread, rootU, back, HUGE_VAL, sample, own, facing);
         ray.Origin = origin;
         if (!found) return false;
         const DBL cosine = std::fabs(dot(sample.normal, ray.Direction));
@@ -179,11 +179,21 @@ private:
     static DBL Unit(DBL u) { return std::max(DBL(0.0), std::min(std::nextafter(DBL(1.0), DBL(0.0)), u)); }
     static DBL MaxAbs(const Vector3d& v) { return std::max(std::fabs(v[X]), std::max(std::fabs(v[Y]), std::fabs(v[Z]))); }
 
+    // With `facing`, only roots whose surface faces back along the ray are candidates, so rootCount counts those.
     bool SelectRoot(Ray& ray, TraceThreadData* thread, DBL rootU, DBL minDepth, DBL maxDepth, SurfaceGeometrySample& sample,
-                    DBL skip = 0.0) const
+                    DBL skip = 0.0, bool facing = false) const
     {
         std::vector<Intersection> roots;
         CollectRoots(ray, thread, minDepth, maxDepth, roots, skip);
+        if (facing)
+            roots.erase(std::remove_if(roots.begin(), roots.end(), [&](Intersection& root)
+            {
+                Vector3d normal;
+                if (!OrientedNormal(thread, root, normal)) return true;
+                const DBL cosine = dot(normal, ray.Direction);
+                // A grazing root is solved less exactly, so the receiver's own point is skipped within skip / cos^2.
+                return !(cosine < 0.0) || (skip > 0.0 && (root.Depth - minDepth) * cosine * cosine <= skip);
+            }), roots.end());
         if (roots.empty()) return false;
         sample.rootCount = roots.size();
         sample.intersection = roots[std::min(roots.size() - 1, static_cast<std::size_t>(Unit(rootU) * roots.size()))];
@@ -215,21 +225,27 @@ private:
         }
     }
 
+    static bool OrientedNormal(TraceThreadData* thread, Intersection& hit, Vector3d& normal)
+    {
+        hit.Object->Normal(normal, &hit, thread);
+        Vector3d face;
+        if (hit.Object->FaceNormal(face, &hit))
+        {
+            if (dot(face, normal) < 0.0) face.invert();
+            normal = face;
+        }
+        if (Test_Flag(hit.Object, INVERTED_FLAG)) normal.invert();
+        const DBL length2 = normal.lengthSqr();
+        if (!IsFiniteIntersectionDepth(length2) || !(length2 > 0.0)) return false;
+        normal /= std::sqrt(length2);
+        return true;
+    }
+
     // Turns sample.intersection, a root of the normalized copy, into the original's point with its unit normal.
     bool Resolve(TraceThreadData* thread, DBL minDepth, SurfaceGeometrySample& sample) const
     {
         Intersection& hit = sample.intersection;
-        hit.Object->Normal(sample.normal, &hit, thread);
-        Vector3d face;
-        if (hit.Object->FaceNormal(face, &hit))
-        {
-            if (dot(face, sample.normal) < 0.0) face.invert();
-            sample.normal = face;
-        }
-        if (Test_Flag(hit.Object, INVERTED_FLAG)) sample.normal.invert();
-        const DBL length2 = sample.normal.lengthSqr();
-        if (!IsFiniteIntersectionDepth(length2) || !(length2 > 0.0)) return false;
-        sample.normal /= std::sqrt(length2);
+        if (!OrientedNormal(thread, hit, sample.normal)) return false;
         hit.Depth = (hit.Depth - minDepth) * scale;
         hit.IPoint = center + hit.IPoint * scale;
         hit.Object = originals.at(hit.Object);
