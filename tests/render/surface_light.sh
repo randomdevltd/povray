@@ -117,6 +117,8 @@ for language in pov pov4; do
     fi
     tr '\n' ' ' <"lamp.$language.log" | tr -s '[:space:]' ' ' | grep -F 'a light_source cannot take one' >/dev/null || { cat "lamp.$language.log"; exit 1; }
 done
+{ echo 'let passes = 3;'; echo 'sphere { 0,1 light { bounce { passes passes - 1 } } }'; } >bound.pov4
+"$POVRAY" +ibound.pov4 +w1 +h1 +wt1 +pr -f -d -p -v -gp >bound.log 2>&1 || { cat bound.log; exit 1; }
 for language in pov pov4; do
     echo 'plane { y,0 light {} }' >"infinite.$language"
     if "$POVRAY" +i"infinite.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"infinite.$language.log" 2>&1; then
