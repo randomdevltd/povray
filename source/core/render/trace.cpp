@@ -4455,9 +4455,11 @@ struct SurfaceCollector final : public RayObjectCondition
 };
 
 // How far behind a hit a probe starts: the tolerance, but never nearer the ray's origin than the shortest hit distance.
+// At least twice that distance, as a hit exactly the shortest distance down the probe can round below it and be dropped.
 double ProbeBack(const Ray& ray, const Vector3d& point, double tolerance)
 {
-    return std::min(tolerance, std::max(dot(point - ray.Origin, ray.Direction) - MIN_ISECT_DEPTH, 0.0)) + MIN_ISECT_DEPTH;
+    return std::max(std::min(tolerance, std::max(dot(point - ray.Origin, ray.Direction) - MIN_ISECT_DEPTH, 0.0)) + MIN_ISECT_DEPTH,
+                    2.0 * MIN_ISECT_DEPTH);
 }
 
 bool HasInside(ConstObjectPtr object)
