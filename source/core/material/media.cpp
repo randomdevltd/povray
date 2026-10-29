@@ -1885,25 +1885,38 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
     emitter->coefficient = MathColour(settings.lumens < 0.0 && settings.brightness == 0.0 ? 0.0 : 1.0);
+    // every serial estimate below is gathered per index on the workers, then summed in index order
+    const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
+    std::vector<std::unique_ptr<TraceThreadData>> helpers;
+    for (size_t i = 1; i < workers; i++)
+        helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
+    const auto poll = [&cooperate]() { if (cooperate) cooperate(); };
+    const auto thread = [&](size_t worker) { return worker ? helpers[worker - 1].get() : td; };
+    const auto parallel = [&](size_t count, const std::function<void(size_t, TraceThreadData *, size_t)>& work) {
+        ParallelFor(count, workers, [&](size_t i, size_t worker) {
+            if ((workers == 1) && (i % 1024 == 0))
+                poll();
+            work(i, thread(worker), worker);
+        }, poll);
+    };
     if (settings.lumens < 0.0 && settings.brightness != 0.0)
     {
         double meanChord = 0.0, discrepancy = HUGE_VAL;
-        vector<std::pair<double, double>> pieces;
+        std::vector<vector<std::pair<double, double>>> pieces(workers);
+        std::vector<double> lineLength;
+        std::vector<size_t> lineCrossings;
         for (int lines : {1024, 4096, 16384})
         {
             double replicate[4], sumLength = 0.0;
             size_t sumPieces = 0;
-            for (int r = 0; r < 4; r++)
-            {
-                double length = 0.0;
-                size_t crossings = 0;
+            lineLength.assign(size_t(4) * lines, 0.0);
+            lineCrossings.assign(size_t(4) * lines, 0);
+            parallel(size_t(4) * lines, [&](size_t index, TraceThreadData *worker, size_t slot) {
+                const int r = int(index / lines), k = int(index % lines);
                 const std::uint64_t scramble = DeriveKey(0x63686f726473ull, kDrawEmitter, r);
                 const double a = Draw(scramble, kDrawEmitter, 0), b = Draw(scramble, kDrawEmitter, 1);
                 const double c = Draw(scramble, kDrawEmitter, 2);
-                for (int k = 0; k < lines; k++)
                 {
-                    if ((k % 1024 == 0) && cooperate)
-                        cooperate();
                     const std::uint64_t key = DeriveKey(scramble, kDrawEmitter, k);
                     const double su = a + k * 0.7548776662466927, sv = b + k * 0.5698402909980532;
                     const double z = 1.0 - 2.0 * (su - floor(su)), azimuth = 2.0 * M_PI * (sv - floor(sv));
@@ -1913,8 +1926,18 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                     const double t = c + k * 0.4142135623730950, phi = 2.0 * M_PI * (t - floor(t));
                     const double rho = emitter->radius * std::sqrt((k + Draw(key, kDrawEmitter, 3)) / lines);
                     const Vector3d origin = emitter->centre + (u * std::cos(phi) + cross(w, u) * std::sin(phi)) * rho - w * emitter->radius;
-                    length += emitter->Chord(origin, w, 2.0 * emitter->radius, td, pieces);
-                    crossings += pieces.size();
+                    lineLength[index] = emitter->Chord(origin, w, 2.0 * emitter->radius, worker, pieces[slot]);
+                    lineCrossings[index] = pieces[slot].size();
+                }
+            });
+            for (int r = 0; r < 4; r++)
+            {
+                double length = 0.0;
+                size_t crossings = 0;
+                for (int k = 0; k < lines; k++)
+                {
+                    length += lineLength[size_t(r) * lines + k];
+                    crossings += lineCrossings[size_t(r) * lines + k];
                 }
                 replicate[r] = crossings ? length / crossings : 0.0;
                 sumLength += length;
@@ -1962,25 +1985,16 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     else
     {
         vector<MathColour> values(count);
-        const size_t workers = std::max<size_t>(1, std::min<size_t>(count, td->GetSceneData()->workThreads));
-        std::vector<std::unique_ptr<TraceThreadData>> helpers;
-        for (size_t i = 1; i < workers; i++)
-            helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
-        ParallelFor(count, workers, [&](size_t node, size_t worker) {
-            if ((workers == 1) && cooperate)
-                cooperate();
-            TraceThreadData *sampleThread = worker ? helpers[worker - 1].get() : td;
-            const MathColour value = colourAt(layout->Node(node), sampleThread);
+        parallel(count, [&](size_t node, TraceThreadData *worker, size_t) {
+            const MathColour value = colourAt(layout->Node(node), worker);
             values[node] = value;
             if (value.Weight() > 0.0)
                 positiveField.store(true, std::memory_order_relaxed);
-        }, cooperate);
-        for (const auto& helper : helpers)
-            td->Stats() += helper->Stats();
+        });
         field = std::make_shared<PreparedSourceColourField>(layout, std::move(values));
     }
-    auto preparedEmission = [&](const Vector3d& p) {
-        return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, td) ?
+    auto preparedEmission = [&](const Vector3d& p, TraceThreadData *worker) {
+        return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker) ?
             field->Sample(p) * emitter->coefficient : MathColour();
     };
     MathColour integral;
@@ -1992,17 +2006,22 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                 break;
             MathColour replicate[4];
             const size_t draws = size_t(bins) * bins * bins;
-            for (int r = 0; r < 4; r++)
-                for (size_t k = 0; k < draws; k++)
+            vector<MathColour> drawn(4 * draws);
+            parallel(4 * draws, [&](size_t index, TraceThreadData *worker, size_t) {
+                const size_t r = index / draws, k = index % draws;
                 {
-                    if ((k % 1024 == 0) && cooperate)
-                        cooperate();
                     const std::uint64_t key = DeriveKey(0x766f6c756d65ull, kDrawEmitter, size_t(r) * draws + k);
                     const Vector3d q((k % bins + Draw(key, kDrawEmitter, 0)) / bins,
                                      ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
                                      (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
                     const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
-                    const MathColour j = preparedEmission(p);
+                    drawn[index] = preparedEmission(p, worker);
+                }
+            });
+            for (int r = 0; r < 4; r++)
+                for (size_t k = 0; k < draws; k++)
+                {
+                    const MathColour& j = drawn[r * draws + k];
                     if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
                     {
                         throw POV_EXCEPTION_STRING("Interior light prepared pigment is negative or not finite.");
@@ -2037,15 +2056,14 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     if (emitter->volumeEmission)
     {
         masses.resize(layout->CellCount());
-        for (size_t cell = 0; cell < layout->CellCount(); ++cell)
-        {
-            if (cooperate)
-                cooperate();
+        parallel(layout->CellCount(), [&](size_t cell, TraceThreadData *worker, size_t) {
             for (const auto& q : layout->CornerQuadrature(cell))
-                if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, td))
+                if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, worker))
                     masses[cell] += field->Sample(q.position).Weight() * q.weight;
-        }
+        });
     }
+    for (const auto& helper : helpers)
+        td->Stats() += helper->Stats();
     emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses));
 }
 
