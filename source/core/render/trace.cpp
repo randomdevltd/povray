@@ -3585,7 +3585,23 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (foundIntersection)
         {
             threadData->Stats()[Shadow_Rays_Succeeded]++;
-            const double depth = boundedIntersection.Depth;
+            double depth = boundedIntersection.Depth;
+            // A nearer admitted root the query did not return is asked of its object alone, so no boundary is passed over.
+            if (!postcond.Coincides(depth) && (postcond.Selected() != nullptr) && (postcond.SelectedDepth() < depth))
+            {
+                const ObjectPtr nearer = const_cast<ObjectPtr>(postcond.Selected());
+                const double at = postcond.SelectedDepth();
+                const IsoShadowWindow window(threadData, std::max(startTolerance, postcond.Cursor()), postcond.End());
+                Intersection again;
+                postcond.Reset();
+                if (!FindIntersection(nearer, again, query, postcond, std::nextafter(at, HUGE_VAL)))
+                {
+                    postcond.Pass(nearer, at);
+                    continue;
+                }
+                boundedIntersection = again;
+                depth = again.Depth;
+            }
             boundedIntersection.Depth = depth - postcond.Cursor();
             if (boundedIntersection.Depth < 0.0 || !IsFiniteIntersectionDepth(boundedIntersection.Depth))
                 throw POV_EXCEPTION_STRING("Shadow traversal produced an invalid segment.");
