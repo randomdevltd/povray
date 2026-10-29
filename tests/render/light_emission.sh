@@ -20,12 +20,14 @@ close() {
                   if (d > 2 && d > 0.005 * m) bad++; if (m > 0 && d / m > worst) worst = d / m }
               printf "light_emission: %s differ by at most %.4f\n", pair, worst; exit bad > 0 }'
 }
-# pair <name> <args>: the alias and the manual field at many draws agree, and the alias keeps its 16-draw render
+# pair <name> <args>: the alias and the manual field at FINE draws agree, and the alias keeps its 16-draw render
+# 1024 draws left their worst moved-draw difference at 0.3-0.7%, on the 0.5% limit; 16384 keep it near 0.1%
+FINE=16384
 pair() {
     pair_name=$1; shift
     render "alias$pair_name" "$@"
-    render "fine_alias$pair_name" Declare=Samples=1024 "$@"
-    render "fine_manual$pair_name" Declare=Samples=1024 Declare=Alias=0 "$@"
+    render "fine_alias$pair_name" Declare=Samples=$FINE "$@"
+    render "fine_manual$pair_name" Declare=Samples=$FINE Declare=Alias=0 "$@"
     close "fine_alias$pair_name" "fine_manual$pair_name"
 }
 for method in 4; do
@@ -47,7 +49,7 @@ tail -c 96 pov4.ppm >pov4.rgb
 same aliasConstant pov4
 pair _scale_nits Declare=Strength=100
 # stated lumens hold whatever the field's strength; its last bits move draws, so the many-draw renders agree
-render fine_scale_lumens Declare=Strength=100 Declare=Lumens=1 Declare=Samples=1024
+render fine_scale_lumens Declare=Strength=100 Declare=Lumens=1 Declare=Samples=$FINE
 close fine_alias4_1 fine_scale_lumens
 render omit Declare=Omit=1
 render omit_strong Declare=Omit=1 Declare=Strength=100
