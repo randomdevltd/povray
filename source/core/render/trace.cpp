@@ -7035,8 +7035,9 @@ static uint64_t CloudSeed(const SubsurfaceCellKey& key, int stage, int job)
            (uint64_t(stage) << 62) ^ (uint64_t(uint32_t(job)) * 0xD1B54A32D192ED03ull);
 }
 
-// Points sharing one sequence of area-light shifts.
+// Points sharing one sequence of area-light shifts, and points lit as one job.
 static const int kCloudShiftRun = 256;
+static const int kCloudLightBatch = 8;
 // Times a cell's size may be quadrupled for a ring wider than it; reach, in z_r, of diffusion that never fades on an
 // unbounded object.
 static const int kCloudLifts = 4;
@@ -7152,7 +7153,7 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             {
                 std::lock_guard<std::mutex> lock(cell.mutex);
                 cell.stage = SubsurfaceCell::kLighting;
-                cell.jobs = int(count);
+                cell.jobs = int((count + kCloudLightBatch - 1) / kCloudLightBatch);
                 cell.next = cell.done = 0;
             }
             cell.changed.notify_all();
@@ -7373,15 +7374,20 @@ static double CloudDepthDraw(const SubsurfaceCellKey& key, const SubsurfaceCell&
 void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket)
 {
     int stride = cell.lights * MathColour::channels;
-    int first = job, last = min(int(cell.points.size()), first + 1);
-    // Each point is a job, any thread's; its area shift is drawn where its run's splitmix sequence puts it.
-    uint64_t state = CloudSeed(key, 1, job / kCloudShiftRun) + uint64_t(2 * (job % kCloudShiftRun)) * 0x9E3779B97F4A7C15ull;
+    int first = job * kCloudLightBatch, last = min(int(cell.points.size()), first + kCloudLightBatch);
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
-    std::unique_ptr<PhotonGatherer> gatherer;
+    PhotonGatherer *gatherer = nullptr;
     if (key.photons)
-        gatherer.reset(new PhotonGatherer(&sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap, sceneData->photonSettings));
+    {
+        PhotonMap *map = &sceneData->GetPreparedSet(ticket.preparedSetId).surfacePhotonMap;
+        if (!cloudGatherer || (cloudGatherer->map != map))
+            cloudGatherer.reset(new PhotonGatherer(map, sceneData->photonSettings));
+        gatherer = cloudGatherer.get();
+    }
     for (int k = first; k < last; k++)
     {
+        // A point's area shift is drawn where its run's splitmix sequence puts it, whichever job lights it.
+        uint64_t state = CloudSeed(key, 1, k / kCloudShiftRun) + uint64_t(2 * (k % kCloudShiftRun)) * 0x9E3779B97F4A7C15ull;
         SubsurfacePoint& point = cell.points[k];
         Vector3d normal(point.normal[0], point.normal[1], point.normal[2]);
         Vector3d shading(point.irradiance[0], point.irradiance[1], point.irradiance[2]);

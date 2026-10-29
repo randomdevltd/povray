@@ -1323,6 +1323,7 @@ class Trace
         bool InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector3d *out = nullptr);
         bool FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& ray);
         std::unordered_map<const void*, bool> ssltClosedMeshes; ///< whether a mesh met by InsideByBounds is closed
+        std::unique_ptr<PhotonGatherer> cloudGatherer; ///< this thread's gatherer for lighting cloud points
         /// How far the material runs from origin along dir before it leaves the object, up to reach; see doc/PERF.md.
         double MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket);
         /// How far the material runs from under the exit point x toward a direction in its tangent plane, from runs along a
