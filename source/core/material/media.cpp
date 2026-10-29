@@ -1573,10 +1573,6 @@ class VolumeEmitter final : public Emitter
         double Radius() const override { return radius; }
 
         bool HasVolumeEmission() const override { return volumeEmission; }
-        MathColour VolumeEmissionAt(const Vector3d& point, const Vector3d& outgoing, TraceThreadData* td) const override
-        {
-            return EmissionAt(point, td, &outgoing);
-        }
 
         MathColour EmissionAt(const Vector3d& p, TraceThreadData *td, const Vector3d *outgoing = nullptr) const
         {

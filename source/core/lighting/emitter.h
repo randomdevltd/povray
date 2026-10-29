@@ -91,7 +91,6 @@ class Emitter
         virtual ~Emitter() {}
         virtual bool IsSurface() const { return false; }
         virtual bool HasVolumeEmission() const { return false; }
-        virtual MathColour VolumeEmissionAt(const Vector3d&, const Vector3d&, TraceThreadData*) const { return MathColour(); }
         virtual void AccumulateSurfaceGuide(SurfaceAngularGuide&) const {}
         virtual MathColour SurfaceRadianceAt(const Intersection&, const Vector3d&, const Vector3d&) const { return MathColour(); }
         virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const { return sample.weight * PhotonDirectionWeight(sample, outgoing); }

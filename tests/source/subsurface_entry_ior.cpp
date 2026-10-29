@@ -1,3 +1,4 @@
+#include "core/lighting/subsurfaceboundary.h"
 #include "core/render/trace.h"
 #include "core/shape/box.h"
 #include "core/shape/sphere.h"
@@ -122,6 +123,9 @@ int main()
         Near(trace.ComputeSubsurfaceEntryIOR(down, up, shell.interior.get(), up, ticket), double(shell.interior->IOR) / waterIor);
     }
     Near(trace.ComputeFt(0.1, 0.8), 0.0);
+    assert(SubsurfaceFiniteBounds(Vector3d(-1.0), Vector3d(1.0)));
+    assert(!SubsurfaceFiniteBounds(Vector3d(-BOUND_HUGE), Vector3d(BOUND_HUGE)));
+    assert(!SubsurfaceFiniteBounds(Vector3d(0.0), Vector3d(0.0, 1.0, 1.0)));
     objects.clear();
     std::cout << "Local entry IOR: nested water, mixed air/water, equal IOR, shallow CSG cavity and air regression pass\n";
 }

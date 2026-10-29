@@ -74,7 +74,6 @@ struct RayRootQuery
     virtual ~RayRootQuery() = default;
     virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
     virtual bool AllRoots() const { return false; }
-    virtual bool PreciseBoundary() const { return false; }
 };
 
 class Ray final : public BasicRay
