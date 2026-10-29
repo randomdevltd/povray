@@ -8583,12 +8583,23 @@ void Trace::SurfaceSubsurfaceField::Build(const std::vector<SurfaceBounceNode>& 
             leaf[order[first]] = index;
             return;
         }
-        const Vector3d extent = patch.hi - patch.lo;
+        // A patch too wide in facing to stand for its members as one disc splits by facing, so its parts can.
+        const bool facing = (patch.cone < kCloudCone);
+        Vector3d low(HUGE_VAL), high(-HUGE_VAL);
+        for (std::size_t k = first; k < last; k++)
+            for (int a = 0; a < 3; a++)
+            {
+                const double v = facing ? nodes[order[k]].normal[a] : nodes[order[k]].intersection.IPoint[a];
+                low[a] = min(low[a], v);
+                high[a] = max(high[a], v);
+            }
+        const Vector3d extent = high - low;
         const int axis = (extent[X] >= extent[Y]) ? ((extent[X] >= extent[Z]) ? X : Z) : ((extent[Y] >= extent[Z]) ? Y : Z);
         const std::size_t middle = (first + last) / 2;
         std::nth_element(order.begin() + first, order.begin() + middle, order.begin() + last, [&](std::size_t i, std::size_t j)
         {
-            const double a = nodes[i].intersection.IPoint[axis], b = nodes[j].intersection.IPoint[axis];
+            const double a = facing ? nodes[i].normal[axis] : nodes[i].intersection.IPoint[axis];
+            const double b = facing ? nodes[j].normal[axis] : nodes[j].intersection.IPoint[axis];
             return (a < b) || ((a == b) && (i < j));
         });
         build(first, middle);
