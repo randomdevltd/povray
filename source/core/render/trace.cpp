@@ -5510,41 +5510,42 @@ private:
 };
 }
 
-std::shared_ptr<const SurfaceBounceRadiance> Trace::PrepareSurfaceSubsurfaceRadiance(
-    const std::vector<SurfaceBounceNode>& nodes, const std::vector<std::shared_ptr<LightSource>>& sources,
-    PreparedSetId preparedSetId, std::size_t trials, const std::set<ObjectPtr>& collapsedOwners)
+void Trace::BeginSurfaceSubsurface(const std::vector<std::shared_ptr<LightSource>>& sources)
 {
-    if (!sceneData->useSubsurface) return nullptr;
-    struct CacheScope
-    {
-        TraceThreadData* thread;
-        std::shared_ptr<SubsurfaceCache> saved;
-        ~CacheScope() { thread->subsurfaceCache = saved; }
-    } scope{threadData, threadData->subsurfaceCache};
-    threadData->subsurfaceCache = std::make_shared<SubsurfaceCache>(sceneData->subsurfaceMemory, sceneData->subsurfaceSpacing);
-    Trace preparation(sceneData, threadData, qualityFlags, cooperate, media, radiosity);
-    preparation.ssltBounceSources = &sources;
-    preparation.ssltCameraKnown = true;
-    preparation.ssltPixelSize = preparation.ssltPixelAngle = 0.0;
+    ssltBounceSources = &sources;
+    ssltCameraKnown = true;
+    ssltPixelSize = ssltPixelAngle = 0.0;
+}
+
+MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& eta)
+{
+    Intersection hit(node.intersection);
+    TraceTicket ticket(1, 0.0);
+    ticket.preparedSetId = preparedSetId;
+    const double tolerance = InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
+    Ray eye(ticket, hit.IPoint + node.normal * tolerance, -node.normal);
+    RayInteriorVector containing;
+    FindContainingInteriors(eye.Origin, containing, preparedSetId);
+    eye.AppendInteriors(containing);
+    ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
+    eta = SubsurfaceBoundary::Quantise(eta);
+    eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, index));
+    MathColour radiance;
+    ColourChannel transmission = 0.0;
+    ComputeTextureColour(hit, radiance, transmission, eye, 1.0, false);
+    return radiance;
+}
+
+std::shared_ptr<const SurfaceBounceRadiance> Trace::SurfaceSubsurfaceRadiance(const std::vector<SurfaceBounceNode>& nodes,
+    const std::vector<MathColour>& radiance, const std::vector<double>& etas, std::size_t trials,
+    const std::set<ObjectPtr>& collapsedOwners)
+{
     std::map<double, std::vector<MathColour>> values;
     for (std::size_t i = 0; i < nodes.size(); ++i)
     {
-        if (i % 64 == 0) cooperate();
-        Intersection hit(nodes[i].intersection);
-        TraceTicket ticket(1, 0.0);
-        ticket.preparedSetId = preparedSetId;
-        const double tolerance = preparation.InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
-        Ray eye(ticket, hit.IPoint + nodes[i].normal * tolerance, -nodes[i].normal);
-        RayInteriorVector containing;
-        preparation.FindContainingInteriors(eye.Origin, containing, preparedSetId);
-        eye.AppendInteriors(containing);
-        double eta;
-        preparation.ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, nodes[i].normal, eta);
-        auto& radiance = values[eta];
-        if (radiance.empty()) radiance.resize(nodes.size());
-        eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, i));
-        ColourChannel transmission = 0.0;
-        preparation.ComputeTextureColour(hit, radiance[i], transmission, eye, 1.0, false);
+        auto& component = values[etas[i]];
+        if (component.empty()) component.resize(nodes.size());
+        component[i] = radiance[i];
     }
     std::vector<SubsurfaceBounceRadiance::Component> components;
     for (auto& entry : values)
