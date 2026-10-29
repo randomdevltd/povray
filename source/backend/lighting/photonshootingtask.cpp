@@ -364,6 +364,12 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             ray.SetPreparedSetId(setId);
             ray.SetKey(key);
             ray.SetFlags(Ray::PrimaryRay, false, true);
+            if (light->emitter && light->emitter->IsSurface())
+            {
+                ray.SetFlags(Ray::SubsurfaceRay, false, true);
+                ray.SetSurfaceOrigin(light->emitterContainer ? light->emitterContainer : origin.surfaceObject,
+                                     origin.position, origin.normal);
+            }
             const size_t aimed = std::min<size_t>(targets[li].size() - 1, pick.target);
             auto& feedback = data->progressiveFeedback[feedbackOffset[li] + aimed];
             feedback.aimed++;
@@ -389,8 +395,11 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 originInteriors.clear();
                 trace.FindContainingInteriors(ray.Origin, originInteriors, setId);
+                const Interior* emittedInterior = light->emitter && light->emitter->IsSurface() && light->emitterContainer ?
+                    light->emitterContainer->interior.get() : nullptr;
                 for (Interior* interior : originInteriors)
-                    ray.AppendInterior(interior);
+                    if (interior != emittedInterior)
+                        ray.AppendInterior(interior);
             }
             const ProgressiveTarget& aim = targets[li][aimed];
             data->photonSourceLight = light;
@@ -402,7 +411,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->photonSpread = std::max(1.0e-8, aim.Radius() * 0.05) * spreadScale;
             MathColour flux = origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
             if (light->emitter)
-                flux *= light->emitter->DirectionalWeight(ray.Direction);
+                flux = light->emitter->PhotonEmissionWeight(origin, ray.Direction) * ProgressivePhotonBudget::EmissionWeight(count, pdf);
             else
             {
                 flux *= light->colour;
@@ -683,6 +692,7 @@ void PhotonShootingTask::ShootPhotonsAtObject(PhotonShootingUnit& unit)
                     //disp_nelems = 0; /* for dispersion */
 
                     ray.SetFlags(Ray::PrimaryRay, false, true);
+
                     trace.TraceRay(ray, photonColour, dummyTransm, 1.0, false);
 
                     /* display here */

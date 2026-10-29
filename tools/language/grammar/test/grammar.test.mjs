@@ -48,9 +48,10 @@ test('mined keyword sets match known parser content', () => {
     for (const w of ['ambient', 'diffuse', 'phong', 'reflection', 'specular']) assert.ok(blocks.finish.items.includes(w));
     assert.ok(blocks.finish.nested.reflection.includes('fresnel'));
     for (const w of ['location', 'look_at', 'right', 'up', 'perspective']) assert.ok(blocks.camera.items.includes(w));
-    for (const w of ['texture', 'pigment', 'interior', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
+    for (const w of ['texture', 'pigment', 'interior', 'light', 'translate', 'hollow']) assert.ok(blocks.sphere.items.includes(w));
     assert.ok(blocks.union.items.includes('sphere'));
-    for (const w of ['photons', 'attenuation', 'emission']) assert.ok(blocks.light.items.includes(w), `light item '${w}'`);
+    for (const w of ['photons', 'attenuation', 'emission', 'bounce']) assert.ok(blocks.light.items.includes(w), `light item '${w}'`);
+    assert.deepEqual(blocks.bounce.items, ['passes']);
     for (const w of ['shadows', 'method']) assert.ok(!blocks.light.items.includes(w), `invalid light item '${w}'`);
     for (const w of ['function', 'detail', 'auto']) assert.ok(blocks.refraction.items.includes(w), `refraction item '${w}'`);
     for (const w of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(w), `invalid refraction item '${w}'`);

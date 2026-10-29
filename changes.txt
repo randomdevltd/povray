@@ -73,6 +73,19 @@ Changed Behaviour
     integration remain separate; finer optical steps no longer multiply the
     volume-light shadow-ray count. Surface continuations start new segments.
 
+  - Surface and interior light blocks accept `bounce` and
+    `bounce { passes N }` to request bounce orders. Bare bounce requests one
+    order; passes must be a positive unsigned integer. With no explicit source
+    input, bounce selects the source's own emission field rather than white.
+    `bounce` and `passes` are contextual and remain free identifiers elsewhere.
+
+  - Objects accept a surface `light { ... }` modifier alongside the existing
+    interior volume-light block. Surface lights share pigment/emission inputs,
+    brightness in nits or lumens, samples and transport flags, and emit outward
+    with a Lambert distribution. The emission selector reuses material pigment
+    times finish emission; source appearance remains independent. `light`,
+    `nits` and `lumens` are matched by text and remain free identifiers elsewhere.
+
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
     including density and mixing. Brightness units and the default 1 nit

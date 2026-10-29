@@ -55,3 +55,11 @@ test('volume lights complete the bare emission source selector', () => {
     assert.ok(blocks.light.items.includes('pigment'));
     assert.ok(blocks.light.items.includes('brightness'));
 });
+
+
+test('surface lights and bounce orders expose contextual items to completion', () => {
+    const blocks = JSON.parse(readFileSync(join(root, targets[1]), 'utf8')).blocks;
+    assert.ok(blocks.sphere.items.includes('light'));
+    assert.ok(blocks.light.items.includes('bounce'));
+    assert.deepEqual(blocks.bounce.items, ['passes']);
+});

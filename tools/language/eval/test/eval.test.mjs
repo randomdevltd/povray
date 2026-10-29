@@ -79,3 +79,16 @@ test('plans classic 3.7 and native evaluation of emission-selected volume lights
   assert.ok(entry.jobs.B.args.includes('+ML3.7'));
   assert.equal(readFileSync(entry.jobs.C.input, 'utf8'), readFileSync(`${fixture}.pov4`, 'utf8'));
 });
+
+
+test('plans classic and native evaluation of surface light blocks', () => {
+  const scenes = mkdtempSync(join(tmpdir(), 'lang-surface-light-'));
+  const fixture = join(import.meta.dirname, '../../codemod/test/fixtures/surface_light.pov');
+  writeFileSync(join(scenes, 'surface_light.pov'), readFileSync(fixture, 'utf8'));
+  const result = plan({ out: join(scenes, 'result'), scenes, 'run-id': 'surface-light', size: '32x24',
+    'classic-id': 'fixture', 'bc-id': 'fixture', 'b-args': '+ML{version}' });
+  const entry = result.scenes[0];
+  assert.equal(entry.converted, true);
+  assert.deepEqual(entry.refusals, []);
+  assert.equal(readFileSync(entry.jobs.C.input, 'utf8'), readFileSync(`${fixture}4`, 'utf8'));
+});

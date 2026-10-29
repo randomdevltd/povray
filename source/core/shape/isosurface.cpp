@@ -288,7 +288,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         isoData.shadowFrom = Thread->isoShadowFrom;
         isoData.shadowTo = anyHit ? Thread->isoShadowTo : 0.0;
 
-        for (; itrace < max_trace;)
+        for (; (ray.GetRootQuery() && ray.GetRootQuery()->AllRoots()) || itrace < max_trace;)
         {
             if(Function_Find_Root(isoData, Plocal, Dlocal, &tmin, &tmax, maxg, in_shadow_test, Thread) == false)
                 break;
