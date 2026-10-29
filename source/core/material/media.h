@@ -181,6 +181,8 @@ class MediaFunction : public Trace::MediaFunctor
     protected:
         struct FixedLightPath;
         FixedLightPath *currentPath;
+        /// Each nesting depth's path vectors, kept with their capacity from one path to the next.
+        std::vector<std::shared_ptr<void>> pathStorage;
         /// The current segment's subtract and multiply interiors, or nullptr.
         const MediaModifierVector *modifiers;
         std::vector<MathColour> modifierScratch, densityScratch;
