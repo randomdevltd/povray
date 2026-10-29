@@ -264,8 +264,13 @@ int main()
     assert(stepping.Commit(2.0) && stepping.Cursor() == 2.0);
     assert(!stepping.Commit(2.0) && stepping.Cursor() > 2.0);
     stepping.Reset();
-    assert(stepping(borrowed, &mesh, 3.0));
-    assert(!stepping.Commit(std::nextafter(3.0, 4.0)) && stepping.Cursor() > std::nextafter(3.0, 4.0));
-    assert(!stepping.Admit(&mesh, 3.0) && stepping.Admit(&mesh, 4.0));
+    const double rounded = std::nextafter(3.0, 4.0);
+    assert(stepping(borrowed, &mesh, 3.0) && stepping.Coincides(rounded));
+    assert(stepping.Commit(rounded) && stepping.Cursor() == rounded);
+    assert(!stepping.Admit(&mesh, rounded) && stepping.Admit(&iso, rounded));
+    stepping.Reset();
+    assert(stepping(borrowed, &mesh, 3.5) && !stepping.Coincides(3.75));
+    stepping.Pass(&mesh, 3.5);
+    assert(stepping.Cursor() == 3.5 && !stepping.Admit(&mesh, 3.5) && stepping.Admit(&mesh, 3.75));
     std::cout << "touching, close layers, 600 transparent events, opaque stop, endpoints, mesh, CSG, iso max_trace=1 and stepping past an unmatched boundary passed\n";
 }
