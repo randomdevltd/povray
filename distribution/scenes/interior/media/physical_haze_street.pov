@@ -2,7 +2,7 @@
 // A street lamp in night fog, in real units: 1 scene unit = 1 m, light colours in cd/pi so a white diffuse surface reads in cd/m2. +w640 +h427
 // Fog: visibility V = 150 m, sigma_s = 3.9/V = 0.026 per m, non-absorbing (albedo 1), Henyey-Greenstein g = 0.7.
 // Lamp: 6 m mounting height, LED of about 3000 K, 900 cd straight down (about 25 lux on the road below), cut-off optic (spot 55/75 degrees).
-// Albedos: road 0.12, kerb and pavement 0.25, building 0.35. Declare=Look=0 physical method 4 (default), 1 classic method 3, 2 method 4 with 4x
+// Albedos: road 0.12, kerb and pavement 0.25, building 0.35. Only atmospheric media dim a light source, so the fog is the atmosphere. Declare=Look=0 physical method 4 (default), 1 classic method 3, 2 method 4 with 4x
 // scattering and extinction 0.25 (the classic look), 3 absorption only. Declare=Exposure=E scales every colour: 0.5 by default; 1 renders cd/m2 with +FH.
 #version 3.8;
 #ifndef (Look) #declare Look = 0; #end
@@ -50,4 +50,5 @@ box { <7.5, -1, -20>, <9, 11, 120> pigment { rgb 0.35 } finish { ambient 0 diffu
 Post(8) Post(38) Post(68) Post(98)
 // the lit lens of the lamp seen from below, 5000 cd/m2
 box { <2.1, 5.94, 7.8>, <3.1, 5.99, 8.2> no_shadow pigment { rgb Warm*Exposure } finish { ambient 0 diffuse 0 emission 5000 } }
-box { <-20, -0.5, -15>, <25, 25, 110> hollow pigment { rgbt 1 } finish { ambient 0 diffuse 0 } interior { Haze(SIG, G) } }
+// the fog is the atmosphere, so it dims the light of the lamp on its way as well as the view of it
+Haze(SIG, G)

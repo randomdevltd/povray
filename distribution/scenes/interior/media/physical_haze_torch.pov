@@ -2,7 +2,7 @@
 // A torch beam in a smoky room, in real units: 1 scene unit = 1 m, light colours in cd/pi so a white diffuse surface reads in cd/m2. +w640 +h427
 // Room 4 x 5 m and 2.6 m high. Smoke: sigma_s = 0.2 per m, non-absorbing (albedo 1), Henyey-Greenstein g = 0.5.
 // Torch: LED, 3000 cd peak, spot 4/9 degrees, 3.3 m to the wall (about 230 lux in the spot). Fill: a 15 cd point light in the ceiling (about 2.4 lux on the floor).
-// Albedos: walls 0.5, floor 0.3, ceiling 0.6, cabinet 0.25. Declare=Look=0 physical method 4 (default), 1 classic method 3, 2 method 4 with 4x
+// Albedos: walls 0.5, floor 0.3, ceiling 0.6, cabinet 0.25. Only atmospheric media dim a light source, so the smoke is the atmosphere. Declare=Look=0 physical method 4 (default), 1 classic method 3, 2 method 4 with 4x
 // scattering and extinction 0.25 (the classic look), 3 absorption only. Declare=Exposure=E scales every colour: 0.05 by default; 1 renders cd/m2 with +FH.
 #version 3.8;
 #ifndef (Look) #declare Look = 0; #end
@@ -47,5 +47,5 @@ union {
 }
 // the torch lens, 20000 cd/m2
 disc { TP - 0.004*TD, -TD, 0.026 no_shadow pigment { rgb Cool*Exposure } finish { ambient 0 diffuse 0 emission 20000 } }
-// the medium reaches into the walls, so every surface is inside it and light that reaches it is dimmed on the way
-box { <-0.1, -0.1, -0.1>, <4.1, 2.7, 5.1> hollow pigment { rgbt 1 } finish { ambient 0 diffuse 0 } interior { Haze(SIG, G) } }
+// the smoke is the atmosphere (the room is closed), so it dims the torch on its way as well as the view of it
+Haze(SIG, G)
