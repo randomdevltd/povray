@@ -13,8 +13,8 @@ mean() {
     tail -c $(( 6 * W * H )) "$1.ppm" | od -An -v -tu1 -w6 | awk '{ s += ($1 * 256 + $2) / 65535; n++ } END { printf "%.6f", s / n }'
 }
 # optical depths in units of 0.1 along the light's path and the camera's, per case
-light_depth() { echo 2 3 3 4 2.5 1 | cut -d' ' -f$1; }
-camera_depth() { echo 2 4 3 5 3 0 | cut -d' ' -f$1; }
+light_depth() { echo 2 3 3 4 2.5 1 0 2 2 1 2 2.15 | cut -d' ' -f$1; }
+camera_depth() { echo 2 4 3 5 3 0 0 0 0 0 0 0 | cut -d' ' -f$1; }
 check() {
     case=$1; method=$2; block=$3; shift 3
     name=c${case}_m${method}_b$block
@@ -45,4 +45,11 @@ unshadowed=0; check 4 4 0 Declare=NoShadow=1; check 4 3 0 Declare=NoShadow=1; un
 check 4 4 0 Declare=Scale=0.001
 check 4 4 0 Declare=Scale=1000
 check 6 4 0 Declare=Scale=0.001
+# a receiver lit from behind starts its shadow rays outside a no_shadow or (before 4.0) solid unbounded interior, which would hide or add media
+check 8 4 0; check 8 3 0; check 8 4 0 Declare=Lang=4
+check 9 4 0; check 9 3 0; check 9 4 0 Declare=Lang=4
+# the media bounds test skips no medium whose inside reaches past its object's bounds
+check 12 4 0 Declare=Lang=4; check 12 3 0 Declare=Lang=4
+# a bounded solid receiver is entered even with the light inside it, as the walk then leaves it through another wall
+check 10 4 0; check 10 3 0; check 11 4 0; check 11 3 0
 echo "media_shadow_end: shadow rays carry the media around both ends of the path"

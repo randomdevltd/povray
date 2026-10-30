@@ -801,8 +801,13 @@ class Trace
                                   double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour, bool& backside);
         /// Filters a light's colour by what lies between it and the point.
         void TestOneLightShadow(const LightSource &lightsource, double lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, int light_index);
-        /// Starts a shadow ray in the interiors on the light's side of the receiving surface.
-        void SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal);
+        /// Dims a shadow ray's colour by the media of the containers around its stretch past the last boundary.
+        void DimShadowLastStretch(const LightSource& lightsource, double lightsourcedepth, double projectedDepth, const Ray& lightsourceray,
+                                  MathColour& lightcolour);
+        /// Starts a shadow ray in the interiors on the light's side of the receiving surface, the light `reach` along it;
+        /// `shadowing` leaves out a no_shadow receiver's.
+        void SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal,
+                            double reach, bool shadowing);
         /// Adds the classic lighting of one light of the given (possibly shadowed) colour.
         void ComputeOneLightContribution(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,

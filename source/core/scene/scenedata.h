@@ -128,6 +128,9 @@ struct PreparedSet final
     unsigned int boundingMethod = 0;
     unsigned int numberOfFiniteObjects = 0;
     unsigned int numberOfInfiniteObjects = 0;
+    /// with `mediaBounded`, every point an interior with media can contain lies in `mediaBounds`
+    bool mediaBounded = false;
+    BoundingBox mediaBounds;
     BBOX_TREE *boundingSlabs = nullptr;
     FlatBBoxTree *flatSlabs = nullptr;
     BSPTree *tree = nullptr;

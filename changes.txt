@@ -82,6 +82,14 @@ Changed Behaviour
   its shadow ray on the wrong side. The stretch now takes the media of the
   shadow-casting containers around it, whatever their method. Scenes with
   media_attenuation on and a light inside a classic medium render darker.
+- A receiver lit from behind (double_illuminate or diffuse back) no longer
+  starts its shadow rays inside its own interior when the walk would never
+  leave it: a no_shadow receiver, and, before version 4.0, a solid receiver
+  whose inside is unbounded (a disc's or a plane's half-space) and holds the
+  light.
+  Before, such a solid receiver hid every medium between it and the light,
+  and a no_shadow receiver's own medium dimmed the light all the way to the
+  last crossing.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow
