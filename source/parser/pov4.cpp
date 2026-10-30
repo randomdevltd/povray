@@ -1920,7 +1920,8 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
     {
         if (word == "photons")
         {
-            if (ctx.checking && !ctx.photonSettingsAllowed &&
+            // reported in both passes, so it comes before the block's own item check
+            if (!ctx.photonSettingsAllowed &&
                 ((k->kind == NK::PhotonValue) ||
                  (((k->kind == NK::Keyword) || (k->kind == NK::Ident)) &&
                   ((k->text == "method") || PhotonValueWord(k->text)))))
