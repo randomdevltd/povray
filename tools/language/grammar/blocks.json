@@ -2606,7 +2606,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:5138 Parse_Material"
+    "parser_materials.cpp:5142 Parse_Material"
    ]
   },
   "pigment": {
@@ -2986,7 +2986,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4156 Parse_Interior"
+    "parser_materials.cpp:4160 Parse_Interior"
    ]
   },
   "refraction": {
@@ -2997,7 +2997,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4113 Parse_Interior_Refraction"
+    "parser_materials.cpp:4117 Parse_Interior_Refraction"
    ]
   },
   "media": {
