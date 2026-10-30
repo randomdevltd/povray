@@ -531,6 +531,7 @@ class Trace
         std::vector<int> ssltScratchStack;
         std::vector<char> ssltScratchClosed, ssltScratchSampled;
         std::vector<double> ssltScratchFacets;
+        std::vector<Vector3d> ssltScratchTaps;
         std::vector<Intersection> ssltScratchHits;
         SubsurfaceVisibility ssltScratchVisibility;
         /// Thread data.
@@ -1254,11 +1255,8 @@ class Trace
         {
             MathColour reflectance, tint, weight;
             const TEXTURE *top = nullptr;
-            bool bumped = false; ///< whether the top layer's normal is perturbed, then held in normal
-            Vector3d normal;
-            NormalSpread spread; ///< the top layer's footprint taps, where its normal is their mean
-            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility, const Vector3d *bumpedNormal = nullptr,
-                     const NormalSpread *bumpedSpread = nullptr);
+            bool bumped = false; ///< whether the top layer's normal is perturbed
+            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility, bool bumps = false);
             bool Finish();
         };
 
@@ -1315,8 +1313,9 @@ class Trace
             PreparedSetId preparedSetId = 0;
             ObjectPtr object = nullptr;
             const SubsurfaceFlesh *flesh = nullptr;
-            std::vector<Vector3d> bumped; ///< the exit point's perturbed normals over its footprint, on its INormal's side; none where it has none
-            std::vector<double> bumpedShare; ///< each one's share of the light leaving towards the eye
+            bool bumps = false; ///< whether the exit point's texture perturbs the normal light enters by
+            std::vector<Vector3d> bumped; ///< perturbed normals over the area the exit point's own light enters, on its INormal's side
+            std::vector<double> bumpedShare; ///< each one's share of that light, by the profile at its offset
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
             int sizeLevel = 0, depthLevel = kCloudNoDepthLevel;
             SubsurfaceUnserved unserved = kUnservedSheet; ///< why the cloud could not be opened
@@ -1361,6 +1360,8 @@ class Trace
         void ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v);
         void ComputeSSLTNormal (Intersection& Ray_Intersection);
         bool SubsurfaceEntryNormal(const Intersection& hit, const Vector3d& outward, TraceTicket& ticket, Vector3d& bumped);
+        bool SubsurfaceEntryTaps(const Intersection& hit, const Vector3d& outward, double side, TraceTicket& ticket, std::vector<Vector3d>& taps,
+                                 const SubsurfaceProfile *profile = nullptr, std::vector<double> *shares = nullptr);
         bool TextureEntryNormal(const TEXTURE *texture, std::vector<const TEXTURE *>& warps, const Vector3d& ipoint, const Vector3d& outward,
                                 const Ray& ray, Intersection& isect, Vector3d& normal);
         bool IsSameSSLTObject(ConstObjectPtr obj1, ConstObjectPtr obj2);

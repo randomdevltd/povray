@@ -877,6 +877,8 @@ void SubsurfaceCell::Release()
     std::vector<float>().swap(ambient);
     std::vector<float>().swap(photonEntry);
     std::vector<float>().swap(entry);
+    std::vector<float>().swap(taps);
+    std::vector<std::uint32_t>().swap(tapStart);
     read.reset();
 }
 

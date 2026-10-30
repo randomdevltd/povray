@@ -268,7 +268,7 @@ apart, which is exact only where their patterns are unrelated; metallic reflecti
 averaged colour; \fBtexture_map\fP and \fBmaterial_map\fP pick their texture at the hit point.
 Everything that reads a perturbed normal sees its taps: diffuse light is their mean, \fBspecular\fP
 and \fBphong\fP highlights widen by their spread, iridescence, angle\-dependent reflection, Fresnel
-losses, faked caustics and method 2 subsurface light where it is seen average over them, \fBaoi\fP
+losses and faked caustics average over them, \fBaoi\fP
 and \fBslope\fP pigments see each tap's normal,
 and reflected and refracted rays leave along their mean with a footprint widened by their spread.
 A ray that leaves the scene averages the \fBsky_sphere\fP over the directions its footprint spans,

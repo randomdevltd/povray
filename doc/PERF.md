@@ -1380,6 +1380,30 @@ renderer over the walks, per channel:
 Method 1 renders the same pixels, bit for bit (the list in the smooth-mesh section). The scale is one multiply per shading
 point; the cost is that of the thin parts' section.
 
+## Subsurface method 2 under a perturbed normal
+
+A material with a `normal` lets method 2's light in through the perturbed surface: the light's cosine and Fresnel
+transmission are those of the bumped facet, a facet turned away from the light taking none. Each estimate of the light
+entering stands for an area, and light enters an area by the mean over it, so each averages over taps of the normal
+spread over its own area (the pigment filter's taps: three where they agree, up to 23): a cloud point over the square its
+line spacing gives it, the exit point's core over its disc and the local cloud over its reach (both weighted by Rd at each
+tap), the minimum-influence estimate over the largest core a fine cloud has, a near-field draw over its share of the
+disc, and a bounce node over its area. Points kept one normal each before, which stood for a patch up to `spacing`
+across with one facet: on bumps finer than that, the light entering came out blotchy at the cloud's scale, and a
+point that caught a facet facing the light made a bright spot. Single-scattering draws and the unscattered path keep
+point samples, which differ from pixel to pixel and average out under antialiasing.
+
+The light leaves by the surface's own normal. A bump map shades whichever facet a ray meets as if it filled the pixel, so
+under a grazing view a facet nearly edge-on, whose Fresnel transmission is near zero, blackened a whole pixel where a
+real surface shows it as a sliver: the dark speckle near silhouettes. A pixel sees facets in proportion to their visible
+area, whose mean transmission is close to the flat surface's; the bumps' look where the light leaves is the finish's
+highlights and reflection.
+
+Facets do not shadow one another, so under grazing light the mean light entering exceeds a flat surface's, as diffuse
+shading of a bump map does. `wrinkles` has a mean tilt (lit from 60° on either side at amplitude 1.0, a flat plane
+returns 0.70 and 0.21 of the light against 0.50 flat; `bumps` 0.48 and 0.50), which tilts the whole surface: under a
+grazing backlight it darkened a sheet to 0.41 of its light without the normal.
+
 ## Subsurface method 2's tables
 
 Method 2's boundary (beam table, Fresnel moments, albedo inversion: 222 KB, about 0.07 CPU-s to build) was kept for every
@@ -2089,14 +2113,9 @@ bumpy caustic glass 28.4 → 4.4, mean within 0.1% where it was 2.4% dark; an `a
 not in the terms filtered here. Only iridescence costs more than the normals' own taps:
 on the iridescent plane the Gaussian takes 3% more CPU than the mean normal's single cosine.
 
-Method 2 subsurface light leaves towards the eye with the mean of each tap's Fresnel transmission, a tap facing away
-leaving as the surface does. The light entering at the exit point itself (its irradiance, the estimate below the minimum
-influence and the closed-form single scattering) averages each tap's cosine and transmission weighted by that tap's
-share of the transmission out, the product a supersampled pixel averages; points elsewhere keep their own normals. At
-320×240 against a 16-sample reference, on the 19% (bumped skin) and 27% (crackled alabaster) of pixels this changes,
-mean relative error falls from 1.26% to 0.92% and from 0.77% to 0.44%, its 99th percentile from 28.7% to 22.3% and
-from 11.2% to 3.4%, and their mean brightness from 0.3% high to within 0.07%; the whole frames' means are within
-0.03% of the reference. The cost is a Fresnel term per tap and light.
+Method 2 subsurface light does not read the footprint's taps: it leaves by the surface's own normal and enters through
+the perturbed normal averaged over the area each estimate stands for, with or without `+TF` (see **Subsurface method 2
+under a perturbed normal**).
 
 A ray with differentials that leaves the scene filters the `sky_sphere` pigments over its direction footprint, with the
 same taps as a surface pigment; a reflected ray's taps that dip below the surface it left are mirrored back above it, as
