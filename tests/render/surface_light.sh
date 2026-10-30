@@ -87,6 +87,15 @@ reject() {
     done
 }
 reject duplicate 'Only one surface light block' 'light {} light {}'
+for block in "normal { bumps 0.5 max_trace_level 2 }:a normal" "pigment { bozo fallback rgb 1 }:a pigment" \
+             "texture { checker texture { pigment { rgb 1 } } texture { pigment { rgb 0 } } camera {} }:a texture"; do
+    printf '%s\n' '#version 3.7;' "sphere { 0,1 ${block%%:*} }" >nested.pov
+    if "$POVRAY" +inested.pov +w1 +h1 +wt1 +pr -f -d -p -v -gp >nested.log 2>&1; then
+        echo "surface_light: expected the nested item in ${block%%:*} to fail" >&2; exit 1
+    fi
+    tr '\n' ' ' <nested.log | tr -s '[:space:]' ' ' | grep -F "belongs inside the screen block of ${block#*:}." >/dev/null ||
+        { cat nested.log; exit 1; }
+done
 reject input 'one pigment or emission input' 'light { pigment { rgb 1 } emission }'
 reject brightness 'brightness must be finite and not negative' 'light { brightness -1 }'
 reject samples 'Expected at least 1' 'light { samples 0 }'

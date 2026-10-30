@@ -2225,7 +2225,14 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
         END_CASE
 
         OTHERWISE
-            Reject_Nested_Item("pigment", "a pigment");
+            if (TPat_Type == kBlendMapType_Normal)
+                Reject_Nested_Item("normal", "a normal");
+            else if (TPat_Type == kBlendMapType_Texture)
+                Reject_Nested_Item("texture", "a texture");
+            else if (TPat_Type == kBlendMapType_Density)
+                Reject_Nested_Item("density", "a density");
+            else
+                Reject_Nested_Item("pigment", "a pigment");
             UNGET
             EXIT
         END_CASE
