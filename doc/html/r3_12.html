@@ -174,7 +174,7 @@ media_attenuation: on
 sphere {
   0, 1 pigment { rgbt 1 }
   interior {
-    media { emission rgb &lt;14, 6, 1.6&gt; * 9 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
+    media { method 4 emission rgb &lt;14, 6, 1.6&gt; * 9 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
     light { pigment { rgb &lt;14, 6, 1.6&gt; * 9 } samples 32 }
   }
   scale &lt;0.06, 0.16, 0.06&gt; translate &lt;0, 1.45, 0&gt;
@@ -187,7 +187,7 @@ sphere {
 <p>The bare <code>emission</code> flag reuses the media emission field without repeating its colour or density pattern. It is available at every scene version and in <code>.pov4</code>. Without it, the light still defaults to solid white. For example:</p>
 <pre>
 interior {
-  media { emission rgb &lt;100, 40, 10&gt; density { spherical } }
+  media { method 4 emission rgb &lt;100, 40, 10&gt; density { spherical } }
   light { emission brightness 12 lumens }
 }
 </pre>
