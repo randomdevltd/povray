@@ -1,5 +1,5 @@
 #!/bin/sh
-# texture_filter.sh <povray> <srcdir>: -TF changes nothing; +TF brings minified checkers, bumps and iridescent reflective bumps near a supersampled render, each opt-out leaves its kind unfiltered, and a half-filtering layer keeps its mean colour.
+# texture_filter.sh <povray> <srcdir>: -TF changes nothing; +TF brings minified checkers, bumps, iridescent reflective bumps and a sky seen in bumps near a supersampled render, each opt-out leaves its kind unfiltered, and a half-filtering layer keeps its mean colour.
 set -e
 W=160; H=120
 render() {
@@ -104,5 +104,27 @@ for c in 0 1 2; do
         echo "texture_filter: +TF moved the mean of channel $c of the iridescent bumps from $a to $b"; exit 1
     fi
 done
+srender() {
+    name=$1; shift
+    "$POVRAY" +i"$SRCDIR/tests/render/texture_filter_sky.pov" +w$W +h$H -d -p -v -gp +fp File_Gamma=1 +o"tf_$name.ppm" "$@"
+    tail -c $((W * H * 3)) "tf_$name.ppm" > "tf_$name.px"
+}
+srender splain -a
+srender sref +a0.0 +am1 +r4 -j
+srender stf -a +tf +wt1
+srender stfwt4 -a +tf +wt4
+srender snosky -a +tf +wt1 Texture_Filter_Pigments=off
+same stf stfwt4 || { echo "texture_filter: the sky seen in bumps depends on the thread count"; exit 1; }
+soff=$(mad splain sref); snosky=$(mad snosky sref); stf=$(mad stf sref)
+echo "texture_filter: sky in a bumpy mirror error against 16 samples per pixel: off $soff, normals only $snosky, filtered $stf"
+if [ $((stf * 3)) -ge $((snosky * 2)) ]; then
+    echo "texture_filter: filtering the sky did not cut the error of a bumpy mirror by a third"; exit 1
+fi
+for c in 0 1 2; do
+    a=$(chmean sref $c); b=$(chmean stf $c); d=$((a - b))
+    if [ $((${d#-} * 100)) -gt $((a * 8)) ]; then
+        echo "texture_filter: +TF moved the mean of channel $c of the sky in bumps from $a to $b"; exit 1
+    fi
+done
 rm -f tf_*.ppm tf_*.px tf_a.txt tf_b.txt
-echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and normals, iridescence and reflectivity over bumps, and carries through screens"
+echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and normals, iridescence and reflectivity over bumps, the sky, and carries through screens"

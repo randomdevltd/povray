@@ -1142,6 +1142,9 @@ class Trace
         ///
         void ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm);
 
+        /// A sky sphere pigment where a ray points; with +TF, averaged over the ray's direction footprint.
+        void ComputeSkyPigment(TransColour& colour, const PIGMENT *pigment, const Ray& ray);
+
         void ComputeFog(const Ray& ray, const Intersection& isect, MathColour& colour, ColourChannel& transm);
         double ComputeConstantFogDepth(const Ray &ray, double depth, double width, const FOG *fog);
         double ComputeGroundFogDepth(const Ray& ray, double depth, double width, const FOG *fog);

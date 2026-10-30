@@ -2097,6 +2097,18 @@ share of the transmission out, the product a supersampled pixel averages; points
 mean relative error falls from 1.26% to 0.92% and from 0.77% to 0.44%, its 99th percentile from 28.7% to 22.3% and
 from 11.2% to 3.4%, and their mean brightness from 0.3% high to within 0.07%; the whole frames' means are within
 0.03% of the reference. The cost is a Fresnel term per tap and light.
+
+A ray with differentials that leaves the scene filters the `sky_sphere` pigments over its direction footprint, with the
+same taps as a surface pigment; a reflected ray's taps that dip below the surface it left are mirrored back above it, as
+the ray is. Reflected rays off bumps carry the footprint widened by the bumps' spread, so a sky seen in them is averaged
+over the blur the bumps cause instead of point-sampled along the mean normal's mirror direction. ꟻLIP at 320×240
+against 16 samples per pixel: the bumpy chrome sea of `Sea_blue_sky.pov` falls from 0.0221 to 0.0149 mean (sea half
+0.0408 to 0.0264), its 90th percentile from 0.096 to 0.044 and its pixels over 0.1 from 9.6% to 3.8%; a bumpy chrome
+ball under a sky gradient from 0.0421 to 0.0401 and its pixels over 0.3 from 0.8% to 0.2%. Where part of a footprint
+would meet an object, the sky stands in for it: on that ball the band where the reflection turns from sky to floor
+reads brighter, 0.0755 to 0.0788 over the ball, and through a bumpy glass ball 0.1308 to 0.1353. No ray is added; the
+cost is the sky's taps, eight where the footprint agrees and up to 72 where it does not, +16%, +14% and +9% CPU on the
+three scenes (alternated pairs, one thread). A sky of plain colour, or a scene without one, renders as before.
 ## Function-density point batches
 
 Function densities reuse one function context for each density batch. Eligible functions with SIMD

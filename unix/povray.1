@@ -271,6 +271,8 @@ and \fBphong\fP highlights widen by their spread, iridescence, angle\-dependent 
 losses, faked caustics and method 2 subsurface light where it is seen average over them, \fBaoi\fP
 and \fBslope\fP pigments see each tap's normal,
 and reflected and refracted rays leave along their mean with a footprint widened by their spread.
+A ray that leaves the scene averages the \fBsky_sphere\fP over the directions its footprint spans,
+a reflected ray's folded back above the surface it left.
 .TP
 \fBUA\fP or \fBOutput_Alpha\fP=\fIbool\fP
 Use alpha channel for transparency mask.

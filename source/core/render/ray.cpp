@@ -179,6 +179,7 @@ void Ray::SetFlags(RayType rt, bool shadowTest, bool photon, bool radiosity, boo
     monochromaticRay = monochromatic;
     pretraceRay = pretrace;
     hasDifferentials = false;
+    foldNormal = Vector3d(0.0);
 }
 
 void Ray::SetFlags(RayType rt, const Ray& other)
@@ -194,6 +195,7 @@ void Ray::SetFlags(RayType rt, const Ray& other)
     monochromaticRay = other.IsMonochromaticRay();
     pretraceRay = other.IsPretraceRay();
     hasDifferentials = false;
+    foldNormal = Vector3d(0.0);
 }
 
 }
