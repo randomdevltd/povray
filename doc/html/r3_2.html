@@ -3097,7 +3097,7 @@ are used only at 5 or below.</td>
 <table width="100%" class="option-list">
 <tr>
 <td width="30%"><code>Texture_Filter=</code>bool</td>
-<td width="70%">Average pigments over each pixel's footprint (default off) <font class="New">New</font> in version 3.8</td>
+<td width="70%">Average pigments and normals over each pixel's footprint (default off) <font class="New">New</font> in version 3.8</td>
 </tr>
 
 <tr>
@@ -3117,7 +3117,8 @@ are used only at 5 or below.</td>
 </table>
 
 <p>With <code>+TF</code>, camera rays carry how their origin and direction change from one pixel to the next. Where such a ray hits a surface, each texture layer's pigment is averaged over the area the pixel covers there, so fine or distant patterns, such as a checker running to the horizon, are smoothed instead of aliasing. Reflected and refracted rays spawned by a filtered ray are filtered too.</p>
-<p>Plain pigments, uv-mapped textures and normals are not filtered, nor are shadow, photon, radiosity and subsurface rays. With focal blur, only perspective and orthographic cameras are filtered, and cameras with a normal block are not; nor is anything seen through a portal.</p>
+<p>Each layer's normal is filtered over the same footprint: the perturbed normal is evaluated at the pigment's taps, diffuse light is the mean of what each tap's normal receives, and <code>specular</code> and <code>phong</code> highlights are widened by how far the taps' normals spread, keeping their total brightness, so bumps finer than a pixel shade as their average instead of speckling. Reflected and refracted rays leave along the taps' mean normal.</p>
+<p>Plain pigments and uv-mapped textures are not filtered, nor are shadow, photon, radiosity and subsurface rays. With focal blur, only perspective and orthographic cameras are filtered, and cameras with a normal block are not; nor is anything seen through a portal.</p>
 <p><code>Texture_Filter_Taps=3</code> starts each filtered pigment with three taps and adds the rest only where they disagree, which can save time on expensive pigments; any value of 3 or less means 3, any other 8.</p>
 
 </div>

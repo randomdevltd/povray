@@ -1,5 +1,5 @@
 #!/bin/sh
-# texture_filter.sh <povray> <srcdir>: +TF off changes nothing; on, a minified checker nears a supersampled render and a half-filtering layer keeps its mean colour.
+# texture_filter.sh <povray> <srcdir>: +TF off changes nothing; on, a minified checker and minified bumps near a supersampled render and a half-filtering layer keeps its mean colour.
 set -e
 W=160; H=120
 render() {
@@ -60,5 +60,22 @@ same uv_off uv_on && { echo "texture_filter: +TF left a UV-mapped texture unchan
 tail -c $((W * H * 3)) tf_screen_off.ppm > tf_screen_off.px
 tail -c $((W * H * 3)) tf_screen_on.ppm > tf_screen_on.px
 same screen_off screen_on && { echo "texture_filter: a screen did not carry its footprint into its camera"; exit 1; }
+nrender() {
+    name=$1; shift
+    "$POVRAY" +i"$SRCDIR/tests/render/texture_filter_normal.pov" +w$W +h$H -d -p -v -gp +fp +o"tf_$name.ppm" "$@"
+    tail -c $((W * H * 3)) "tf_$name.ppm" > "tf_$name.px"
+}
+nrender nplain -a
+nrender noff -a -tf
+nrender nref +a0.0 +am1 +r4 -j
+nrender ntf -a +tf +wt1
+nrender ntfwt4 -a +tf +wt4
+same nplain noff || { echo "texture_filter: -TF changed the bumpy image"; exit 1; }
+same ntf ntfwt4 || { echo "texture_filter: the filtered normals depend on the thread count"; exit 1; }
+noff=$(mad nplain nref); ntf=$(mad ntf nref)
+echo "texture_filter: bumpy checker error against 16 samples per pixel: off $noff, filtered $ntf"
+if [ $((ntf * 2)) -ge "$noff" ]; then
+    echo "texture_filter: +TF did not halve the error of the minified bumps"; exit 1
+fi
 rm -f tf_*.ppm tf_*.px tf_a.txt tf_b.txt
-echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and carries through screens"
+echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and normals, and carries through screens"

@@ -461,6 +461,17 @@ class Trace
         DBL textureFilterScale = 0.0;
         int textureFilterTaps = 8;
 
+        /// The perturbed normals of the layer being lit over its pixel footprint: taps [first, end) of normalTaps.
+        struct NormalSpread final
+        {
+            size_t first = 0, end = 0;
+            DBL length = 1.0; ///< length of the taps' mean normal, 1 where they agree
+            bool twoSided = false;
+            bool Active() const { return end > first; }
+        };
+        std::vector<Vector3d> normalTaps;
+        NormalSpread normalSpread;
+
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;
         /// BSP tree mailbox.
@@ -660,6 +671,20 @@ class Trace
         /// Average a pigment over the pixel footprint with adaptively added, deterministic taps; `means` is set where a tap filters.
         bool ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, const PIGMENT *pigment, const std::vector<const TEXTURE *>& warps,
                                     const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray);
+
+        /// Texture-space point of the footprint tap at (u, v), with `tapIsect` moved there.
+        Vector3d FootprintTapPoint(DBL u, DBL v, const Vector3d& footX, const Vector3d& footY, const std::vector<const TEXTURE *>& warps,
+                                   const Intersection& isect, Intersection& tapIsect) const;
+
+        /// Perturb a layer's normal at footprint taps appended to normalTaps; returns their mean, whose length is the spread's.
+        Vector3d ComputeFilteredNormal(const TEXTURE *layer, const std::vector<const TEXTURE *>& warps, const Vector3d& rawnormal,
+                                       const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray);
+
+        /// Cosine a light's side test compares with EPSILON: the normal's, or below it with a normal spread, the most facing tap's.
+        double FacingCosine(const Vector3d& normal, const Vector3d& direction) const;
+
+        /// The taps of a normal spread facing a direction, which a highlight sees: their mean direction, the length of their mean and their share.
+        bool FacingSpread(const Vector3d& direction, Vector3d& normal, double& share, double& length) const;
 
         /// Compute the effective filtering effect of a simple or layered texture.
         ///
