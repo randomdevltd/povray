@@ -520,6 +520,7 @@ void Parser::Run()
                 ResolveInheritedTags(object);
             Assign_Scene_Lights();
             Check_Legacy_Transport();
+            Warn_Unused_Media_Resolution();
             Split_Unions();
 
             // post process atmospheric media
@@ -10699,6 +10700,14 @@ static const FINISH *Object_Legacy_Subsurface(ConstObjectPtr object, int sceneMe
     return finish;
 }
 
+static bool Media_Is_Constant(const Media& medium)
+{
+    for (const PIGMENT *pigment : medium.Density)
+        if (pigment->Type != PLAIN_PATTERN)
+            return false;
+    return true;
+}
+
 static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
 {
     objects.push_back(object);
@@ -10774,6 +10783,36 @@ void Parser::Check_Legacy_Transport()
         if (object->interior != nullptr)
             for (const Media& medium : object->interior->media)
                 reject(medium, std::string("in the ") + ShapeName(object));
+}
+
+// A constant method 4 medium's resolution sets its interior's grid only when nothing there varies.
+void Parser::Warn_Unused_Media_Resolution()
+{
+    std::vector<ObjectPtr> objects;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, objects);
+    std::unordered_set<std::string> warned;
+    for (ObjectPtr object : objects)
+    {
+        const Interior *interior = object->interior.get();
+        if (interior == nullptr)
+            continue;
+        std::string cause;
+        if (interior->light != nullptr)
+            cause = "the light block at " + interior->light->where;
+        else if (interior->refraction && !interior->refraction->functions.empty())
+            cause = "its refraction";
+        for (const Media& medium : interior->media)
+            if (cause.empty() && (medium.Sample_Method == 4) && !Media_Is_Constant(medium))
+                cause = "the varying medium at " + medium.where;
+        if (cause.empty())
+            continue;
+        for (const Media& medium : interior->media)
+            if ((medium.Sample_Method == 4) && (medium.FastResolution > 0.0) && Media_Is_Constant(medium) &&
+                warned.insert(medium.where).second)
+                Warning("The constant medium at %s in the %s gives a resolution, but the grid there follows %s, "
+                        "so the resolution is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());
+    }
 }
 
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)

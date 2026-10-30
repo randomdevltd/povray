@@ -90,4 +90,18 @@ for language in pov pov4; do
 $sslt"
     "$POVRAY" +iunlit.$language +w1 +h1 +wt1 +pr -f -d -p -v -gp >unlit.$language.log 2>&1 || { cat unlit.$language.log; exit 1; }
 done
+for language in pov pov4; do
+    for case in mixed alone; do
+        varying=; [ "$case" = mixed ] && varying='media { method 4 absorption 0.5 density { bozo } }'
+        write "$case" "$language" "box { -1, 1 hollow pigment { rgbt 1 }
+  interior { media { method 4 resolution 0.1 absorption 0.5 } $varying } }"
+        "$POVRAY" +i"$case.$language" +w1 +h1 +wt1 +pr -f -d -p -gp >"$case.$language.log" 2>&1 || { cat "$case.$language.log"; exit 1; }
+    done
+    tr '\n' ' ' <"mixed.$language.log" | tr -s '[:space:]' ' ' |
+        grep -F "The constant medium at line 4 of mixed.$language in the box gives a resolution, but the grid there follows the varying medium at line 4 of mixed.$language, so the resolution is ignored." >/dev/null ||
+        { cat "mixed.$language.log"; exit 1; }
+    if grep -F 'so the resolution is ignored' "alone.$language.log" >/dev/null; then
+        cat "alone.$language.log"; exit 1
+    fi
+done
 echo 'volume_legacy_media: ok'
