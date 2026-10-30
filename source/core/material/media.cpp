@@ -1580,6 +1580,17 @@ const size_t kEmitterLobes = size_t(1) << kEmitterLobeDepth;
 const std::uint8_t kNoLobe = 0xff;
 /// The share of a receiver's position draws that ignore its distance to each lobe.
 const double kPowerPositionShare = 0.25;
+/// The share of a receiver's chord directions over the emitter's whole box rather than its lobes.
+const double kBoxDirectionShare = 0.125;
+/// Finer lobes chord directions aim at: 2^8, so their cones stay close about thin parts.
+const int kConeLobeDepth = 8;
+const size_t kConeLobes = size_t(1) << kConeLobeDepth;
+
+std::uint64_t NextEmitterSerial()
+{
+    static std::atomic<std::uint64_t> next{1};
+    return next++;
+}
 
 // The uniform proposal component preserves support of the prepared interpolated light field.
 class VolumeEmitter final : public Emitter
@@ -1603,6 +1614,9 @@ class VolumeEmitter final : public Emitter
         vector<DBL> lobeCdf;                 ///< cumulative share of each of those cells within its lobe
         vector<std::uint8_t> cellLobe;       ///< each cell's lobe, or kNoLobe
         vector<DBL> cellShare;               ///< each cell's share of its lobe's power
+        vector<EmitterLobe> coneLobes;       ///< finer lobes for chord directions
+        vector<DBL> coneRadius2;             ///< squared radius about each of those lobes' centres that holds its cells
+        const std::uint64_t serial = NextEmitterSerial();
 
         ~VolumeEmitter() override { Destroy_Object(geometry); }
         const vector<EmitterLobe>& Lobes() const override { return lobes; }
@@ -1614,6 +1628,53 @@ class VolumeEmitter final : public Emitter
             for (size_t k = 0; k < lobes.size(); k++)
                 total += weights[k] = lobes[k].share / ((lobes[k].centre - from).lengthSqr() + lobes[k].spread2);
             return total;
+        }
+
+        /// Cones from a receiver around each finer lobe's cells, weighted by power over squared distance as LobeWeights() does.
+        struct LobeCones final
+        {
+            double weights[kConeLobes], sin2[kConeLobes], solid[kConeLobes], total;
+            Vector3d axes[kConeLobes];
+        };
+
+        void Cones(const Vector3d& from, LobeCones& cones) const
+        {
+            cones.total = 0.0;
+            for (size_t k = 0; k < coneLobes.size(); k++)
+            {
+                const Vector3d to = coneLobes[k].centre - from;
+                const double d2 = to.lengthSqr();
+                cones.total += cones.weights[k] = coneLobes[k].share / (d2 + coneLobes[k].spread2);
+                cones.axes[k] = d2 > 0.0 ? to / std::sqrt(d2) : Vector3d(0.0, 0.0, 1.0);
+                cones.sin2[k] = d2 > coneRadius2[k] ? coneRadius2[k] / d2 : 1.0;
+                cones.solid[k] = 2.0 * M_PI * (cones.sin2[k] < 1.0 ? cones.sin2[k] / (1.0 + std::sqrt(1.0 - cones.sin2[k])) : 2.0);
+            }
+        }
+
+        /// A direction in a lobe's cone, the lobe chosen by weight; u in [0,1) stratifies.
+        static Vector3d ConeDirection(const LobeCones& cones, size_t count, double u, double v)
+        {
+            double pick = u * cones.total;
+            size_t k = 0;
+            while (k + 1 < count && pick >= cones.weights[k])
+                pick -= cones.weights[k++];
+            const double w = min(max(pick / cones.weights[k], 0.0), 1.0);
+            const double fall = w * cones.solid[k] / (2.0 * M_PI), sine = std::sqrt(max(0.0, fall * (2.0 - fall)));
+            const double phi = 2.0 * M_PI * v;
+            const Vector3d& n = cones.axes[k];
+            const double sign = std::copysign(1.0, n[Z]), a = -1.0 / (sign + n[Z]), b = n[X] * n[Y] * a;
+            const Vector3d t1(1.0 + sign * n[X] * n[X] * a, sign * b, -sign * n[X]), t2(b, sign + n[Y] * n[Y] * a, -n[Y]);
+            return (t1 * (sine * std::cos(phi)) + t2 * (sine * std::sin(phi)) + n * (1.0 - fall)).normalized();
+        }
+
+        /// The solid-angle density of ConeDirection() at unit `dir`.
+        static double ConePdf(const LobeCones& cones, size_t count, const Vector3d& dir)
+        {
+            double sum = 0.0;
+            for (size_t k = 0; k < count; k++)
+                if ((cones.sin2[k] >= 1.0) || ((dot(dir, cones.axes[k]) > 0.0) && (cross(dir, cones.axes[k]).lengthSqr() <= cones.sin2[k])))
+                    sum += cones.weights[k] / cones.solid[k];
+            return sum / cones.total;
         }
 
         /// The density of Toward()'s draws from `from` at `point`.
@@ -1911,12 +1972,24 @@ class VolumeEmitter final : public Emitter
             if (!same)
                 recent = { { from, low, size }, EmitterAabbProposal(from, low, size) };
             const EmitterAabbProposal& angular = recent.proposal;
+            // A receiver's draws share their cones, built once per emitter and receiver point.
+            thread_local struct { std::uint64_t serial; Vector3d from; LobeCones cones; } aimed = { 0, Vector3d(), LobeCones() };
+            if ((aimed.serial != serial) || (aimed.from[X] != from[X]) || (aimed.from[Y] != from[Y]) || (aimed.from[Z] != from[Z]))
+            {
+                aimed.serial = serial;
+                aimed.from = from;
+                Cones(from, aimed.cones);
+            }
+            const LobeCones& cones = aimed.cones;
+            const double boxShare = coneLobes.empty() ? 1.0 : kBoxDirectionShare;
             thread_local vector<std::pair<double, double>> pieces;
             double length, depth, positionPdf = 0.0;
             bool positionKnown = false;
             if (s < chordShare)
             {
-                const Vector3d dir = angular.Sample(s / chordShare, t);
+                const double u = s / chordShare;
+                const Vector3d dir = u < boxShare ? angular.Sample(u / boxShare, t) :
+                                     ConeDirection(cones, coneLobes.size(), (u - boxShare) / (1.0 - boxShare), t);
                 length = Chord(from, dir, d + radius, td, pieces);
                 sample.position = centre;
                 sample.pdf = 0.0;
@@ -1962,7 +2035,9 @@ class VolumeEmitter final : public Emitter
             for (const auto& piece : pieces)
                 inChord = inChord || ((depth >= piece.first) && (depth <= piece.second));
             const double r2 = depth * depth;
-            const double angularPdf = angular.Pdf((sample.position - from) / depth);
+            const Vector3d toward = (sample.position - from) / depth;
+            const double angularPdf = boxShare * angular.Pdf(toward) +
+                                      (boxShare < 1.0 ? (1.0 - boxShare) * ConePdf(cones, coneLobes.size(), toward) : 0.0);
             const double chordPdf = (inChord && (length > 0.0)) ? angularPdf / (length * r2) : 0.0;
             sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * (positionKnown ? positionPdf : TowardPdf(from, sample.position));
             const Vector3d outgoing = (from - sample.position) / depth;
@@ -2064,6 +2139,17 @@ void VolumeEmitter::BuildLobes(const PreparedSourceDomain& layout, const vector<
         lobeCdf.back() = 1.0;
     }
     lobeBegin.push_back(lobeCells.size());
+    ranges.clear();
+    if (total > 0.0)
+        SplitLobes(points, 0, points.size(), kConeLobeDepth, total, coneLobes, ranges);
+    for (size_t k = 0; k < ranges.size(); k++)
+    {
+        DBL radius2 = 0.0;
+        for (size_t i = ranges[k].first; i < ranges[k].second; i++)
+            for (const auto& q : layout.CornerQuadrature(points[i].cell))
+                radius2 = max(radius2, (q.position - coneLobes[k].centre).lengthSqr());
+        coneRadius2.push_back(radius2);
+    }
 }
 
 // The corner rule's integral of f over a prepared cell.
