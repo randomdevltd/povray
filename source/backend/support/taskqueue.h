@@ -124,6 +124,14 @@ class TaskQueue final
 
         void Notify();
     private:
+        /// Counts Notify calls, so Process can wait for the next one without holding the queue.
+        unsigned int wakes;
+        std::mutex wakeMutex;
+        std::condition_variable wakeCondition;
+
+        unsigned int Wakes();
+        void WaitForWake(unsigned int seen);
+
         /// queued task list
         std::queue<TaskEntry> queuedTasks;
         /// active task list
@@ -132,8 +140,6 @@ class TaskQueue final
         std::recursive_mutex queueMutex;
         /// failed code
         int failed;
-        /// wait for data in queue or related operation to be processed
-        std::condition_variable_any processCondition;
 
         TaskQueue(const TaskQueue&) = delete;
         TaskQueue& operator=(const TaskQueue&) = delete;

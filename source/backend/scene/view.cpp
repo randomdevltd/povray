@@ -2411,12 +2411,6 @@ void View::RenderControlThread()
             RenderBackend::SendViewFailedResult(viewData.viewId, renderTasks.FailureCode(kUncategorizedError), viewData.sceneData->frontendAddress);
             sentFailedResult = true;
         }
-
-        if(stopRequsted == false)
-        {
-            std::this_thread::yield();
-            Delay(50);
-        }
     }
 }
 
