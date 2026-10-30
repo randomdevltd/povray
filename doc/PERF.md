@@ -2025,7 +2025,7 @@ The mirror sphere's noisy reflection takes most of the budget and stays worse th
 `+TF` evaluates each filtered pigment 8 times where the first eight taps agree and the footprint is near round, and at
 most 72 times (the eight, or only the first four when those already disagree, then a lattice of up to 64 along a stretched or disagreeing footprint); with
 `Texture_Filter_Taps=3`, 3 times where the first three agree and at most 75. No extra rays are traced, so scenes whose
-time goes to intersections and lighting barely notice it. With it off, no differentials are computed. On a checker
+time goes to intersections and lighting barely notice it. With it and `+TN` off, no differentials are computed. On a checker
 plane running to the horizon, 640×480, one ray a pixel, the mean OkLab error against a 64-sample reference falls from
 9.2 to 3.1 (×1000), and to 3.3 with three starting taps.
 
@@ -2040,7 +2040,7 @@ two patterns are unrelated; metallic reflection reads the averaged colour; `text
 texture at the hit point (aliased like an unfiltered ray, not biased). Scenes with `assumed_gamma` other than 1
 average, like antialiasing, in their working space.
 
-Normals are filtered over the same footprint and taps. Each layer's `normal` is perturbed at every tap, and lighting
+`+TN` (`Texture_Filter_Normals`) filters normals over the same footprint and taps, with or without `+TF`. Each layer's `normal` is perturbed at every tap, and lighting
 uses that spread of normals instead of the one at the pixel centre. Diffuse light is the mean of each tap's own
 response (cosine, brilliance, Fresnel, back-side diffuse), which is exactly what supersampling the footprint gives
 wherever the light is the same across it; a light is tested while any tap faces it. Averaging the normals first and
@@ -2055,7 +2055,7 @@ mean normal; their count is unchanged, so a mirror behind bumps is sharper than 
 
 On a checker of bumpy and flat tiles running to the horizon (`tests/render/texture_filter_normal.pov` at
 320×240, one ray a pixel), the mean OkLab error against a 64-sample reference falls from 22.1 to 5.4 (×1000) with
-`specular` and from 26.1 to 10.4 with `phong`; the mean brightness is within 1.5%. Pigment-only `+TF` changed
+`specular` and from 26.1 to 10.4 with `phong`; the mean brightness is within 1.5%. `+TF` alone changed
 nothing there. On a plane with `normal { granite .5 scale .16 }` lit by a grazing light, diffuse alone falls from
 198 to 17 with the mean within 0.5%, and specular alone from 62 to 17, with the highlight 14% dim: the facing
 taps' Gaussian stands in for a skewed distribution. The lobe widens for the whole footprint, so a pixel half
@@ -2064,7 +2064,7 @@ bumps, the static speckle (high-pass of the rock at 1024 light samples, % of its
 160×90, against 36 in a 4×4 supersampled reference, and from 83 to 33 in a window of a 640×360 frame; the
 rock's RMS difference from the reference, less light-sampling noise, falls from 412% to 148% and from 312% to
 61%. The cost is the normal's pattern evaluated at each tap, 8 to 72 times per bumped hit: on the checker, a
-scene that is nothing but a bumped plane under two point lights, 6 times the CPU of pigment-only `+TF` (three
+scene that is nothing but a bumped plane under two point lights, `+TF +TN` takes 6 times the CPU of `+TF` alone (three
 alternated pairs, one thread). The
 surface bounce field still looks light up by the unperturbed normal, and radiosity by the mean normal.
 ## Function-density point batches

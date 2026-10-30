@@ -605,10 +605,11 @@ New Features
     with `+AB` on fitted edges and noisy pixels.
   - Texture filtering (`+TF`, `Texture_Filter_Scale`, `Texture_Filter_Taps`)
     averages each pigment over the area a pixel covers on the surface, using
-    ray differentials, without extra rays. Normals are filtered over the same
-    footprint: diffuse light is averaged over the perturbed normals there, and
-    specular and phong highlights widen by their spread, so bumps finer than
-    a pixel no longer speckle.
+    ray differentials, without extra rays. Normal filtering (`+TN`,
+    `Texture_Filter_Normals`), with or without `+TF`, filters normals over the
+    same footprint: diffuse light is averaged over the perturbed normals
+    there, and specular and phong highlights widen by their spread, so bumps
+    finer than a pixel no longer speckle.
   - Progressive rendering (`+PR`) traces the whole frame at doubling
     resolution, each pixel once, so the image is always a complete best-so-far
     picture. It continues with `+C`.

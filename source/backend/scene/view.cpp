@@ -910,7 +910,9 @@ void View::StartRender(POVMS_Object& renderOptions)
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
     aaconfidence = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasConfidence, 0.9f), 0.0f, 1.0f);
     aaBudget = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasBudget, 0.0f), 0.0f, 1.0e9f);
-    viewData.textureFilterScale = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false) ?
+    viewData.textureFilterPigments = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false);
+    viewData.textureFilterNormals = renderOptions.TryGetBool(kPOVAttrib_TextureFilterNormals, false);
+    viewData.textureFilterScale = (viewData.textureFilterPigments || viewData.textureFilterNormals) ?
                                   clip(renderOptions.TryGetFloat(kPOVAttrib_TextureFilterScale, 1.0f), 0.0f, 64.0f) : 0.0f;
     viewData.textureFilterTaps = (renderOptions.TryGetInt(kPOVAttrib_TextureFilterTaps, 8) <= 3) ? 3 : 8;
     if(renderOptions.TryGetBool(kPOVAttrib_Jitter, true) == true)
@@ -2277,7 +2279,7 @@ void ViewData::StartAaState()
     aaWidth = renderArea.GetWidth();
     const size_t count = size_t(renderArea.GetWidth()) * size_t(renderArea.GetHeight());
     aaHit.assign(count, 0);
-    if ((textureFilterScale > 0.0) || std::getenv("POV_AA4_DUMP"))
+    if (((textureFilterScale > 0.0) && textureFilterPigments) || std::getenv("POV_AA4_DUMP"))
         aaPigment.assign(count * 3, 0.0f);
     else
         std::vector<float>().swap(aaPigment);

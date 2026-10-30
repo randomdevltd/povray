@@ -304,10 +304,12 @@ class Trace
         static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
             const std::vector<MathColour>& radiance, const std::vector<double>& etas, const std::vector<double>& areas);
 
-        /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
+        /// Make rays with differentials filter textures over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
-        /// Start each filtered pigment with 3 taps, or with 8 (the default).
+        /// Start each filtered pigment or normal with 3 taps, or with 8 (the default).
         void SetTextureFilterTaps(int taps) { textureFilterTaps = taps; }
+        /// Which textures a footprint filters: pigments, normals, or both.
+        void SetTextureFilterKinds(bool pigments, bool normals) { textureFilterPigments = pigments; textureFilterNormals = normals; }
 
         /// The object the last primary ray hit, and its top layer's pigment there.
         const void *primaryObject = nullptr;
@@ -457,9 +459,10 @@ class Trace
         unsigned int maxFoundTraceLevel;
         /// Various quality-related flags.
         QualityFlags qualityFlags;
-        /// Pixel footprint scale that hits of rays with differentials average their pigments over; zero turns filtering off.
+        /// Pixel footprint scale that hits of rays with differentials filter their textures over; zero turns filtering off.
         DBL textureFilterScale = 0.0;
         int textureFilterTaps = 8;
+        bool textureFilterPigments = false, textureFilterNormals = false;
 
         /// The perturbed normals of the layer being lit over its pixel footprint: taps [first, end) of normalTaps.
         struct NormalSpread final

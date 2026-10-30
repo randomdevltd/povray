@@ -1656,7 +1656,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     SurfaceDifferentials hitDiff;
     Vector3d footX, footY;
     const bool haveDiff = (textureFilterScale > 0.0) && TransferDifferentials(ray, isect, rawnormal, hitDiff);
-    const bool filterPigments = haveDiff && ComputePixelFootprint(isect, warps, ipoint, hitDiff, footX, footY);
+    const bool haveFootprint = haveDiff && ComputePixelFootprint(isect, warps, ipoint, hitDiff, footX, footY);
+    const bool filterPigments = haveFootprint && textureFilterPigments, filterNormals = haveFootprint && textureFilterNormals;
     FilteredLayer layMeans;
     auto secondaryDiff = [&]() -> const SurfaceDifferentials *
     {
@@ -1693,7 +1694,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
 
         // with a footprint the layer is lit by its normals over the pixel, from their mean direction
         laySpread = NormalSpread();
-        if (filterPigments && qualityFlags.normals && (layer->Tnormal != nullptr))
+        if (filterNormals && qualityFlags.normals && (layer->Tnormal != nullptr))
         {
             normalTaps.resize(tapBase);
             laySpread.first = tapBase;
