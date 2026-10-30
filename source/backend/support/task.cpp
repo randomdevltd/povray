@@ -50,6 +50,7 @@
 #include "base/timer.h"
 #include "base/types.h"
 #include "core/scene/tracethreaddata.h"
+#include "core/support/workerpool.h"
 
 // POV-Ray header files (core module)
 // POV-Ray header files (POVMS module)
@@ -77,7 +78,8 @@ Task::Task(ThreadData *td, const boost::function1<void, Exception&>& f) :
     timer(nullptr),
     realTime(-1),
     cpuTime(-1),
-    taskThread(nullptr),
+    started(false),
+    exited(false),
     povmsContext(nullptr)
 {
     if (td == nullptr)
@@ -110,8 +112,16 @@ POV_LONG Task::ConsumedCPUTime() const
 
 void Task::Start(const boost::function0<void>& completion)
 {
-    if ((done == false) && (taskThread == nullptr))
-        taskThread = new std::thread(boost::bind(&Task::TaskThread, this, completion));
+    if ((done == true) || started)
+        return;
+    started = true;
+    WorkerPool::Shared().Run([this, completion]() { TaskThread(completion); }, [this]()
+    {
+        // notified under the lock: once Stop sees exited, this thread no longer touches the task
+        std::lock_guard<std::mutex> lock(exitMutex);
+        exited = true;
+        exitCondition.notify_all();
+    });
 }
 
 void Task::RequestStop()
@@ -123,11 +133,10 @@ void Task::Stop()
 {
     stopRequested = true;
 
-    if (taskThread != nullptr)
+    if (started)
     {
-        taskThread->join();
-        delete taskThread;
-        taskThread = nullptr;
+        std::unique_lock<std::mutex> lock(exitMutex);
+        exitCondition.wait(lock, [this]() { return exited; });
     }
 }
 

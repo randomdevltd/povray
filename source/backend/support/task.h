@@ -44,9 +44,10 @@
 
 // C++ standard header files
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <queue>
-#include <thread>
 
 // Boost header files
 #include <boost/function.hpp>
@@ -73,7 +74,7 @@ class Task
         virtual ~Task();
 
         inline bool IsPaused() { return !done && paused; }
-        inline bool IsRunning() { return !done && !paused && !stopRequested && (taskThread != nullptr); }
+        inline bool IsRunning() { return !done && !paused && !stopRequested && started; }
         inline bool IsDone() { return done.load(std::memory_order_acquire); }
         inline bool Failed() { return IsDone() && (failed.load(std::memory_order_relaxed) != kNoError); }
 
@@ -124,8 +125,11 @@ class Task
         POV_LONG realTime;
         // CPU time spend in task
         POV_LONG cpuTime;
-        /// task thread
-        std::thread *taskThread;
+        /// whether the task was handed to a pooled thread, and whether that thread is finished with it
+        bool started;
+        bool exited;
+        std::mutex exitMutex;
+        std::condition_variable exitCondition;
         /// POVMS message receiving context
         POVMSContext povmsContext;
 

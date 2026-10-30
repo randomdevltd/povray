@@ -701,7 +701,9 @@ check-quick: all
 	./surface_angular_guide_test
 	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/simple_vector.cpp -o simple_vector_test
 	./simple_vector_test
-	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test
+	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/worker_pool.cpp -o worker_pool_test
+	./worker_pool_test
+	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test
 	mkdir -p \$(top_builddir)/tests/subsurface-entry-ior
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_entry_ior.cpp" \\
