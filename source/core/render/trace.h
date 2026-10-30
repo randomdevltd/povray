@@ -90,7 +90,9 @@ struct NoSomethingFlagRayObjectCondition final  : public RayObjectCondition
 
 struct HasInteriorPointObjectCondition final : public PointObjectCondition
 {
+    explicit HasInteriorPointObjectCondition(bool shadowing = false) : shadowing(shadowing) {}
     virtual bool operator()(const Vector3d& point, ConstObjectPtr object) const override;
+    bool shadowing; ///< only objects that cast shadows
 };
 
 struct ContainingInteriorsPointObjectCondition final : public PointObjectCondition
@@ -348,8 +350,8 @@ class Trace
         bool FindIntersection(Intersection& isect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, double closest = HUGE_VAL);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
-        /// Adds the interiors of the objects containing a point.
-        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId = 0);
+        /// Adds the interiors of the objects containing a point; with `shadowing`, of those that cast shadows only.
+        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId = 0, bool shadowing = false);
         /// Whether interior media on the ray's interiors are integrated: a non-hollow one hides them only before version 4.0.
         bool InteriorMediaReach(const Ray& ray) const;
 

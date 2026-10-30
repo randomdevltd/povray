@@ -199,19 +199,20 @@ struct SurfacePhotonGatherNesting final
     ~SurfacePhotonGatherNesting() { if (active) --depth; }
 };
 
-void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread)
+void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread,
+                                 const HasInteriorPointObjectCondition& holds)
 {
     if (!Inside_BBox(point, node->BBox))
         return;
     if (node->Entries == 0)
     {
         ObjectPtr object = ObjectPtr(node->Node);
-        if ((object->interior != nullptr) && object->Inside(point, thread))
+        if (holds(point, object) && object->Inside(point, thread))
             found.push_back(object->interior.get());
     }
     else
         for (int i = 0; i < node->Entries; i++)
-            FindContainingInteriorsTree(point, node->Node[i], found, thread);
+            FindContainingInteriorsTree(point, node->Node[i], found, thread, holds);
 }
 }
 
@@ -220,31 +221,31 @@ bool Trace::InteriorMediaReach(const Ray& ray) const
     return ray.IsHollowRay() || !sceneData->solidBlocksInteriorMedia;
 }
 
-void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId)
+void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId, bool shadowing)
 {
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    const HasInteriorPointObjectCondition holds(shadowing);
     if (view.boundingMethod == 2)
     {
-        HasInteriorPointObjectCondition precond;
         ContainingInteriorsPointObjectCondition postcond(found);
-        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, precond, postcond);
+        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, holds, postcond);
 
         mailbox.clear();
         (*view.tree)(point, ifn, mailbox);
 
         // test infinite objects
         for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin() + view.numberOfFiniteObjects; object != view.objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+            if (holds(point, *object) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else if ((view.boundingMethod == 0) || (view.boundingSlabs == nullptr))
     {
         for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin(); object != view.objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+            if (holds(point, *object) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else
-        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData);
+        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData, holds);
 }
 
 void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight)
@@ -3644,13 +3645,16 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             break;
     }
 
-    // The stretch past the last boundary lies in the media of every container the light itself is inside.
-    if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && (lightsourcedepth > 0.0) &&
-        !lightcolour.IsZero() && !lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
+    // The stretch past the last boundary lies in the media of the shadowing containers around it, whatever its ends skipped.
+    if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && sceneData->interiorMedia &&
+        (lightsourcedepth > 0.0) && !lightcolour.IsZero())
     {
-        RayInteriorVector reached;
-        for (Interior *interior : lightsourceray.GetInteriors())
-            if (lightsource.emitter || std::any_of(interior->media.begin(), interior->media.end(), [](const Media& m) { return m.Sample_Method == 4; }))
+        RayInteriorVector around, reached;
+        FindContainingInteriors(lightsourceray.Evaluate(0.5 * lightsourcedepth), around, lightsourceray.GetPreparedSetId(), !lightsource.emitter);
+        const bool hollow = std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
+        for (Interior *interior : around)
+            if ((hollow || !sceneData->solidBlocksInteriorMedia) && (lightsource.emitter ||
+                std::any_of(interior->media.begin(), interior->media.end(), [](const Media& m) { return m.Sample_Method == 4; })))
                 reached.push_back(interior);
         Intersection end;
         end.Depth = lightsourcedepth;
