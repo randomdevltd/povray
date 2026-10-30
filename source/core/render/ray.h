@@ -186,8 +186,6 @@ class Ray final : public BasicRay
         Vector3d dOdx, dOdy, dDdx, dDdy;
         /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
         bool hasDifferentials = false;
-        /// Geometric normal on the side a reflected ray left, about which its footprint's directions fold; zero for other rays.
-        Vector3d foldNormal;
 
     private:
 

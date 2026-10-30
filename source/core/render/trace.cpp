@@ -248,7 +248,8 @@ void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& fo
         FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData, holds);
 }
 
-void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight)
+void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight,
+                        const Vector3d *fold)
 {
     Vector3d rawnormal;
     isect.Object->Normal(rawnormal, &isect, threadData);
@@ -291,7 +292,7 @@ void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, Mat
         nray.Origin = isect.IPoint;
         MathColour past;
         ColourChannel pastTransm = 0.0;
-        TraceRay(nray, past, pastTransm, weight * (1.0 - open), true);
+        TraceRay(nray, past, pastTransm, weight * (1.0 - open), true, 0.0, false, fold);
         colour += past * (1.0 - open);
         transm += pastTransm * (1.0 - open);
     }
@@ -373,7 +374,8 @@ bool Trace::TracePortalView(const Portal& portal, Intersection& isect, const Ray
     return true;
 }
 
-double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth, bool missOpen)
+double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth, bool missOpen,
+                       const Vector3d *fold)
 {
     PreparedSetTicketScope preparedSetScope(ray.GetTicket(), ray.GetPreparedSetId());
     Intersection bestisect;
@@ -415,14 +417,14 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
     found = FindIntersection(bestisect, ray, precond, postcond);
     if (!found && missOpen)
         return HUGE_VAL;
-    const double depth = ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay);
+    const double depth = ShadeRay(ray, bestisect, found, colour, transm, weight, continuedRay, fold);
     if (mediaPath)
         mediaPath->Finish(colour);
     return depth;
 }
 
 double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
-                       bool continuedRay)
+                       bool continuedRay, const Vector3d *fold)
 {
     if (ray.IsPrimaryRay())
     {
@@ -480,11 +482,11 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
     }
 
     if (found && (bestisect.Csg != nullptr) && Test_Flag(bestisect.Csg, PORTAL_FLAG))
-        TracePortal(*static_cast<const Portal *>(bestisect.Csg), bestisect, ray, colour, transm, weight);
+        TracePortal(*static_cast<const Portal *>(bestisect.Csg), bestisect, ray, colour, transm, weight, fold);
     else if(found)
         ComputeTextureColour(bestisect, colour, transm, ray, weight, false);
     else
-        ComputeSky(ray, colour, transm);
+        ComputeSky(ray, colour, transm, fold);
 
     if(qualityFlags.media && (ray.IsPhotonRay() == false) && (ray.IsHollowRay() == true))
     {
@@ -1308,10 +1310,8 @@ static bool TiltAxes(const Vector3d& n, const Vector3d& dPdx, const Vector3d& dP
 }
 
 // Give a derived ray differentials, spreading at most one radian per pixel step so a focus or a grazing bend stays bounded.
-static void SetRayDifferentials(Ray& nray, const Vector3d& dOdx, const Vector3d& dOdy, const Vector3d& dDdx, const Vector3d& dDdy,
-                                const Vector3d& fold = Vector3d(0.0))
+static void SetRayDifferentials(Ray& nray, const Vector3d& dOdx, const Vector3d& dOdy, const Vector3d& dDdx, const Vector3d& dDdy)
 {
-    nray.foldNormal = fold;
     const DBL lenX = dDdx.length(), lenY = dDdy.length();
     nray.hasDifferentials = std::isfinite(lenX) && std::isfinite(lenY) && std::isfinite(dOdx.length()) && std::isfinite(dOdy.length());
     nray.dOdx = dOdx;
@@ -2414,6 +2414,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
     double n, n2;
     const Vector3d *mirror = &normal;
     bool mirrorAgain = false;
+    Vector3d fold;
 
     nray.SetFlags(Ray::ReflectionRay, ray);
     nray.SetKey(ray.NextChildKey(kDrawReflection));
@@ -2467,8 +2468,9 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
             dDdx = ReflectDifferential(once, dDdx, rawnormal, diff->dNdx);
             dDdy = ReflectDifferential(once, dDdy, rawnormal, diff->dNdy);
         }
+        SetRayDifferentials(nray, diff->dPdx, diff->dPdy, dDdx, dDdy);
         // a direction of its footprint below the surface is mirrored back above it, as the ray itself is
-        SetRayDifferentials(nray, diff->dPdx, diff->dPdy, dDdx, dDdy, (dot(nray.Direction, rawnormal) < 0.0) ? -rawnormal : rawnormal);
+        fold = (dot(nray.Direction, rawnormal) < 0.0) ? -rawnormal : rawnormal;
     }
 
     nray.Direction.normalize();
@@ -2482,7 +2484,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
     {
         MathColour tmpCol;
         ColourChannel dummyTransm;
-        TraceRay(nray, tmpCol, dummyTransm, weight, false);
+        TraceRay(nray, tmpCol, dummyTransm, weight, false, 0.0, false, (diff != nullptr) ? &fold : nullptr);
         const NormalSpread outerSpread = normalSpread;
         normalSpread = (diff != nullptr) ? diff->spread : NormalSpread();
         ComputeIridColour(finish, nray.Direction, ray.Direction, normal, ipoint, tmpCol);
@@ -2492,7 +2494,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
     else
     {
         ColourChannel dummyTransm;
-        TraceRay(nray, colour, dummyTransm, weight, false);
+        TraceRay(nray, colour, dummyTransm, weight, false, 0.0, false, (diff != nullptr) ? &fold : nullptr);
     }
     ray.GetTicket().alphaBackground = alphaBackground;
 }
@@ -5416,7 +5418,7 @@ void Trace::ComputeOneWhiteLightRay(const LightSource &lightsource, double& ligh
     }
 }
 
-void Trace::ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm)
+void Trace::ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm, const Vector3d *fold)
 {
     if (sceneData->EffectiveLanguageVersion() < 370)
     {
@@ -5459,7 +5461,7 @@ void Trace::ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm
         {
             // Compute sky colour from colour map.
 
-            ComputeSkyPigment(col_Temp, *i, ray);
+            ComputeSkyPigment(col_Temp, *i, ray, fold);
 
             att = trans * col_Temp.Opacity();
 
@@ -5498,7 +5500,7 @@ void Trace::ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm
             for(vector<PIGMENT*>::const_reverse_iterator i = sceneData->skysphere->Pigments.rbegin(); i != sceneData->skysphere->Pigments.rend(); ++ i)
             {
                 // Compute sky colour from colour map.
-                ComputeSkyPigment(col_Temp, *i, ray);
+                ComputeSkyPigment(col_Temp, *i, ray, fold);
 
                 att = col_Temp.Opacity();
 
@@ -5525,7 +5527,7 @@ void Trace::ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm
     }
 }
 
-void Trace::ComputeSkyPigment(TransColour& colour, const PIGMENT *pigment, const Ray& ray)
+void Trace::ComputeSkyPigment(TransColour& colour, const PIGMENT *pigment, const Ray& ray, const Vector3d *fold)
 {
     auto lookup = [&](TransColour& c, const Vector3d& direction)
     {
@@ -5556,9 +5558,9 @@ void Trace::ComputeSkyPigment(TransColour& colour, const PIGMENT *pigment, const
     {
         tap.Clear();
         Vector3d direction = (d + u * footX + v * footY).normalized();
-        const DBL below = dot(direction, ray.foldNormal);
+        const DBL below = (fold != nullptr) ? dot(direction, *fold) : 0.0;
         if (below < 0.0)
-            direction -= (2.0 * below) * ray.foldNormal;
+            direction -= (2.0 * below) * *fold;
         lookup(tap, direction);
         sum += tap;
         premultiplied += tap.colour() * DBL(tap.Opacity());
