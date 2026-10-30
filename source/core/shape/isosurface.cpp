@@ -72,22 +72,10 @@ namespace pov
 using std::min;
 using std::max;
 
-struct IsosurfaceCache final
-{
-    const IsoSurface *current;
-    Vector3d Pglobal;
-    Vector3d Dglobal;
-    DBL fmax;
-    IsosurfaceCache();
-};
-
-IsosurfaceCache::IsosurfaceCache() :
-    current(nullptr)
-{}
-
 struct ISO_ThreadData final
 {
-    IsosurfaceCache cache;
+    Vector3d origin;        // the ray being searched, in the isosurface's local space
+    Vector3d direction;
     GenericScalarFunctionInstance* pFn;
     DBL Vlength;
     DBL tl;
@@ -167,7 +155,6 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
     int i = 0 ; /* count of intervals in stack - 1      */
     int IFound = false;
     int begin = 0, end = 0;
-    bool in_shadow_test = false;
     Vector3d VTmp;
     thread_local ISO_ThreadData isoData;
 
@@ -178,8 +165,6 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
         Thread->Stats()[Ray_IsoSurface_Bound_Tests_Succeeded]++;
 
         GenericScalarFunctionInstance fn(Function, Thread);
-
-        in_shadow_test = ray.IsShadowTestRay();
 
         if(Depth1 < 0.0)
             Depth1 = 0.0;
@@ -269,7 +254,7 @@ bool IsoSurface::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThr
 
         for (; itrace < max_trace; itrace++)
         {
-            if(Function_Find_Root(isoData, Plocal, Dlocal, &tmin, &tmax, maxg, in_shadow_test, Thread) == false)
+            if(Function_Find_Root(isoData, Plocal, Dlocal, &tmin, &tmax, maxg, Thread) == false)
                 break;
             else
             {
@@ -878,41 +863,22 @@ void IsoSurface::Compute_BBox()
 *
 ******************************************************************************/
 
-bool IsoSurface::Function_Find_Root(ISO_ThreadData& itd, const Vector3d& PP, const Vector3d& DD, DBL* Depth1, DBL* Depth2, DBL& maxg, bool in_shadow_test, TraceThreadData* pThreadData)
+bool IsoSurface::Function_Find_Root(ISO_ThreadData& itd, const Vector3d& PP, const Vector3d& DD, DBL* Depth1, DBL* Depth2, DBL& maxg, TraceThreadData* pThreadData)
 {
-    DBL dt, t21, l_b, l_e, oldmg;
+    DBL dt, t21, oldmg;
     ISO_Pair EP1, EP2;
-    Vector3d VTmp;
 
     pThreadData->Stats()[Ray_IsoSurface_Find_Root]++;
 
     itd.Vlength = DD.length();
 
-    if(itd.cache.current == this)
-    {
-        pThreadData->Stats()[Ray_IsoSurface_Cache]++;
-        VTmp = PP + *Depth1 * DD;
-        VTmp -= itd.cache.Pglobal;
-        l_b = VTmp.length();
-        VTmp = PP + *Depth2 * DD;
-        VTmp -= itd.cache.Dglobal;
-        l_e = VTmp.length();
-        if((itd.cache.fmax - maxg * max(l_b, l_e)) > 0.0)
-        {
-            pThreadData->Stats()[Ray_IsoSurface_Cache_Succeeded]++;
-            return false;
-        }
-    }
+    itd.origin = PP;
+    itd.direction = DD;
 
-    itd.cache.Pglobal = PP;
-    itd.cache.Dglobal = DD;
-
-    itd.cache.current = nullptr;
     DBL p1, p2;
     Polarized_Pair(itd, *Depth1, *Depth2, p1, p2);
     EP1.t = *Depth1;
     EP1.f = (DBL)itd.Inv3 * p1;
-    itd.cache.fmax = EP1.f;
     if((closed == false) && (EP1.f < 0.0))
     {
         itd.Inv3 *= -1;
@@ -921,7 +887,6 @@ bool IsoSurface::Function_Find_Root(ISO_ThreadData& itd, const Vector3d& PP, con
 
     EP2.t = *Depth2;
     EP2.f = (DBL)itd.Inv3 * p2;
-    itd.cache.fmax = min(EP2.f, itd.cache.fmax);
 
     oldmg = maxg;
     t21 = (*Depth2 - *Depth1);
@@ -947,14 +912,6 @@ bool IsoSurface::Function_Find_Root(ISO_ThreadData& itd, const Vector3d& PP, con
         *Depth1 = itd.tl;
 
         return true;
-    }
-    else if(!in_shadow_test)
-    {
-        itd.cache.Pglobal = PP + EP1.t * DD;
-        itd.cache.Dglobal = PP + EP2.t * DD;
-        itd.cache.current = this;
-
-        return false;
     }
 
     return false;
@@ -1019,7 +976,6 @@ bool IsoSurface::Function_Find_Root_R(ISO_ThreadData& itd, const ISO_Pair* EP1, 
         EPa.t = EP1->t + t21;
         EPa.f = Float_Function(itd, EPa.t);
 
-        itd.cache.fmax = min(EPa.f, itd.cache.fmax);
         // Either half's search depends only on its ends, so a shadow ray may try the half ending inside first.
         if ((itd.shadowTo > 0.0) && (EP2->f < 0) && (EP1->t > itd.shadowFrom) && (EP2->t < itd.shadowTo))
             return Function_Find_Root_R(itd, &EPa, EP2, dt, t21, len * 2.0, maxg, pThreadData) ||
@@ -1064,7 +1020,7 @@ DBL IsoSurface::Float_Function(ISO_ThreadData& itd, DBL t) const
 {
     Vector3d VTmp;
 
-    VTmp = itd.cache.Pglobal + t * itd.cache.Dglobal;
+    VTmp = itd.origin + t * itd.direction;
 
     return ((DBL)itd.Inv3 * EvaluatePolarized (*itd.pFn, VTmp));
 }
@@ -1072,8 +1028,8 @@ DBL IsoSurface::Float_Function(ISO_ThreadData& itd, DBL t) const
 
 void IsoSurface::Polarized_Pair(ISO_ThreadData& itd, DBL t1, DBL t2, DBL& p1, DBL& p2) const
 {
-    const Vector3d a = itd.cache.Pglobal + t1 * itd.cache.Dglobal;
-    const Vector3d b = itd.cache.Pglobal + t2 * itd.cache.Dglobal;
+    const Vector3d a = itd.origin + t1 * itd.direction;
+    const Vector3d b = itd.origin + t2 * itd.direction;
     const DBL xs[2] = { a.x(), b.x() };
     const DBL ys[2] = { a.y(), b.y() };
     const DBL zs[2] = { a.z(), b.z() };

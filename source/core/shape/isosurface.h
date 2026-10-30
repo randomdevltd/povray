@@ -152,7 +152,7 @@ class IsoSurface final : public ObjectBase
                                const std::function<void()>& progress) const;
 
     protected:
-        bool Function_Find_Root(ISO_ThreadData& itd, const Vector3d&, const Vector3d&, DBL*, DBL*, DBL& max_gradient, bool in_shadow_test, TraceThreadData* pThreadData);
+        bool Function_Find_Root(ISO_ThreadData& itd, const Vector3d&, const Vector3d&, DBL*, DBL*, DBL& max_gradient, TraceThreadData* pThreadData);
         bool Function_Find_Root_R(ISO_ThreadData& itd, const ISO_Pair*, const ISO_Pair*, DBL, DBL, DBL, DBL& max_gradient, TraceThreadData* pThreadData);
 
         inline DBL Float_Function(ISO_ThreadData& itd, DBL t) const;
