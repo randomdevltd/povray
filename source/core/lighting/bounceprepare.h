@@ -664,10 +664,13 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                                               BounceOrderSeed(0, order, groupIndex, node), nullptr, nullptr,
                                               receiverRadius);
                     for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
+                    {
                         for (const auto& beam : beams)
                             phaseNodes[phase][node].AddScatteringBeam(
                                 prepared.phases[phase].type, prepared.phases[phase].eccentricity,
                                 MathColour(1.0), beam.direction, beam.angularWeight);
+                        phaseNodes[phase][node].Seal();
+                    }
                 });
                 for (auto& nodes : phaseNodes)
                     prepared.fields.push_back(

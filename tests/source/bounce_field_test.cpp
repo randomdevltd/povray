@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
 using namespace pov;
 
 static void Near(const MathColour& actual, const MathColour& expected, double tolerance = 1e-6)
@@ -96,9 +97,26 @@ int main()
         integrated += value / 40000;
     }
     Near(integrated, expectedAverage, 3e-4);
+    for (int i = 0; i < 10000; ++i) populate(reservoir);
     const size_t boundedBytes = reservoir.StorageBytes();
     for (int i = 0; i < 10000; ++i) populate(reservoir);
     assert(reservoir.StorageBytes() == boundedBytes);
+    const MathColour unsealed = reservoir.Evaluate(diagonal);
+    reservoir.Seal();
+    Near(reservoir.Evaluate(diagonal), unsealed, 1e-12);
+    assert(reservoir.StorageBytes() < boundedBytes);
+    bool refused = false;
+    try { populate(reservoir); } catch (const std::logic_error&) { refused = true; }
+    assert(refused);
+    // One beam held by every slot is stored once, however many slots there are.
+    BounceFieldNode few(8, 5), many(4096, 5);
+    for (BounceFieldNode* node : {&few, &many})
+    {
+        node->AddScatteringBeam(HENYEY_GREENSTEIN_SCATTERING, 0.65, sigma, forward, incident);
+        node->Seal();
+    }
+    assert(few.StorageBytes() == many.StorageBytes());
+    Near(few.Evaluate(diagonal), many.Evaluate(diagonal), 1e-12);
     MathColour ensemble, mergedEnsemble;
     const MathColour exact = (incident * PhysicalPhaseFactor(HENYEY_GREENSTEIN_SCATTERING, 0.65, 1.0) +
         blue * PhysicalPhaseFactor(MIE_HAZY_SCATTERING, 0.0, -1.0) +
