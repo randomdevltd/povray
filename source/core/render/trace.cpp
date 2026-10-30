@@ -1434,7 +1434,8 @@ static void VisitFootprintTaps(int startTaps, const Vector3d& footX, const Vecto
     if (!early && ((spread > kSpread) || (aniso > 2.0)))
     {
         // a sheared lattice: rows across the short side, columns along the long side growing with anisotropy
-        const int nLong = clip(int(ceil(4.0 * aniso)), 4, 32);
+        // an isotropic footprint's ratio is 1 only up to rounding, so it must not decide the first step at 1
+        const int nLong = clip(int(ceil(4.0 * aniso * (1.0 - 1.0e-9))), 4, 32);
         const int nShort = clip(64 / nLong, 2, 4);
         const int nu = (lenX >= lenY) ? nLong : nShort;
         const int nv = (lenX >= lenY) ? nShort : nLong;
