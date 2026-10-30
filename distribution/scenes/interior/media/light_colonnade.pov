@@ -126,7 +126,7 @@ union {
     pigment { rgbt 1 }
     interior {
       refraction {
-        function { 0.25 * ColonnadeIndex(x, y, z).red * min(1, (y + Cut) / 1.5) }
+        function { 0.25 * ColonnadeIndex(x, y, z).red }
         detail 0.3
       }
     }
