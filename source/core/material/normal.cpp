@@ -830,10 +830,12 @@ void Perturb_Normal(Vector3d& Layer_Normal, const TNORMAL *Tnormal, const Vector
 
             Warp_EPoint (TPoint, EPoint, Tnormal);
 
+            const Vector3d entryNormal = Intersection->PNormal;
             Perturb_Normal(Layer_Normal,Cur->Vals,TPoint,Intersection,ray,Thread);
 
             if (Prev != Cur)
             {
+                Intersection->PNormal = entryNormal;
                 Perturb_Normal(P1,Prev->Vals,TPoint,Intersection,ray,Thread);
 
                 Layer_Normal = prevWeight * P1 + curWeight * Layer_Normal;
@@ -1039,12 +1041,15 @@ void NormalBlendMap::ComputeAverage (const Vector3d& EPoint, Vector3d& normal, I
     POV_BLEND_MAP_ASSERT(Type == kBlendMapType_Normal);
 
     V1 = Vector3d(0.0, 0.0, 0.0);
+    const Vector3d entryNormal = (Inter != nullptr) ? Inter->PNormal : normal;
 
     for(Vector::const_iterator i = Blend_Map_Entries.begin(); i != Blend_Map_Entries.end(); i++)
     {
         Value = i->value;
 
         V2 = normal;
+        if (Inter != nullptr)
+            Inter->PNormal = entryNormal;
 
         Perturb_Normal(V2,i->Vals,EPoint,Inter,ray,Thread);
 

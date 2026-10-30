@@ -791,6 +791,13 @@ Miscellaneous:
   - Fix a race on function reference counts when render threads and grid or
     mesh build threads evaluated the same function at once, which could free
     a function still in use.
+  - Fix `slope` and `aoi` reading another layer's or another map entry's
+    perturbed normal: they read whichever normal was perturbed last at the
+    point, so a layer without a `normal`, or one entry of a `texture_map`,
+    `material_map`, `average` or `normal_map`, could pick up another's bumps
+    depending on evaluation order. Each layer now reads its own normal, or
+    the unperturbed one if it has none. Lighting is unchanged; a scene whose
+    slope-chosen texture was speckled by such bumps renders smoothly.
 
 Development Related
 -------------------

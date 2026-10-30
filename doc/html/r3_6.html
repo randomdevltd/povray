@@ -4293,7 +4293,8 @@ pigment {
     [1.0 MyPigment3]
     }
   }
-</pre></div>
+</pre>
+<p>The normal that <code>aoi</code> reads follows the same rule as for the <a href="r3_6.html#r3_6_2_3_2">slope pattern</a>: it is the normal of its own texture layer, or the unperturbed surface normal in a layer without a <code>normal</code>.</p></div>
 
 <a name="r3_6_2_3_2"></a>
 <div class="content-level-h5" contains="Slope Pattern" id="r3_6_2_3_2">
@@ -4360,7 +4361,9 @@ slope {
   }
 </pre>
 <p class="Note"><strong>Note:</strong> This variant currently does <em>not</em> allow for the <code>altitude</code> keyword to be used.</p>
-<p>The functionality is similar to MegaPOV's <code>aoi &lt;ReferencePoint&gt;</code> pattern, except that the values are reversed, i.e. range from 0.0 for surfaces facing away from the point in question, to 1.0 for surfaces facing towards that point; thus, <code>slope { &lt;Vector&gt; }</code> and <code>slope { point_at &lt;Vector&gt;*VeryLargeNumber }</code> have virtually the same effect.</p></div>
+<p>The functionality is similar to MegaPOV's <code>aoi &lt;ReferencePoint&gt;</code> pattern, except that the values are reversed, i.e. range from 0.0 for surfaces facing away from the point in question, to 1.0 for surfaces facing towards that point; thus, <code>slope { &lt;Vector&gt; }</code> and <code>slope { point_at &lt;Vector&gt;*VeryLargeNumber }</code> have virtually the same effect.</p>
+<p>The normal that <code>slope</code> reads is the normal of its own texture layer. In a layer with a <code>normal</code> statement that is the layer's perturbed normal; in a layer without one it is the unperturbed surface normal. Each entry of a <code>texture_map</code>, <code>material_map</code> or <code>average</code> texture is a texture of its own and follows the same rule, and each entry of a <code>normal_map</code> starts from the normal the map was given. A shadow ray passing through a surface reads the unperturbed normal.</p>
+<p class="Note"><strong>Note:</strong> Earlier versions let the pattern read whichever normal was perturbed last at the point, so a layer without a normal could read the bumps of the layer above it, and one entry of a map could read those of the entry blended with it, depending on evaluation order.</p></div>
 
 <a name="r3_6_2_4"></a>
 <div class="content-level-h4" contains="Special Patterns" id="r3_6_2_4">
