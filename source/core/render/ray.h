@@ -68,6 +68,8 @@ typedef PooledSimpleVector<Interior *, RAYINTERIOR_VECTOR_SIZE> RayInteriorVecto
 
 class Ray final : public BasicRay
 {
+    // Hot path, deep-copied: add no member without re-measuring every scene for regressions (counters).
+    // Why, and how to measure: doc/PERF.md, "Ray size".
     public:
 
         enum RayType
@@ -136,8 +138,6 @@ class Ray final : public BasicRay
 
         /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
         Vector3d dOdx, dOdy, dDdx, dDdy;
-        /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
-        bool hasDifferentials = false;
 
     private:
 
@@ -145,10 +145,10 @@ class Ray final : public BasicRay
         SpectralBand spectralBand;
         TraceTicket& ticket;
         std::uint64_t key = 0;
-        mutable std::uint32_t children = 0;
         mutable DBL mediaErrorBudget = 0.0;
         const LightSource *mediaLight = nullptr;
         PreparedSetId preparedSetId = 0;
+        mutable std::uint32_t children = 0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;
@@ -160,7 +160,15 @@ class Ray final : public BasicRay
         bool monochromaticRay : 1;
         bool hollowRay : 1;
         bool pretraceRay : 1;
+
+    public:
+        /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
+        bool hasDifferentials = false;
 };
+
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+static_assert(sizeof(Ray) <= 208, "Ray grew: see \"Ray size\" in doc/PERF.md before adding a member");
+#endif
 
 /// @}
 ///
