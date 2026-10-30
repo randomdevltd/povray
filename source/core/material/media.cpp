@@ -2884,7 +2884,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         vector<MathColour> transfers, suffix;
         vector<Domain> domains;
         vector<Cell> cells;
-        vector<size_t> order, selected;
+        vector<size_t> order, selected, ranked, cellStratum, emitterStratum;
         vector<LightSource *> sources;
         vector<DBL> cdf, mass, base, lit;
         vector<EmitterLobe> lobes;
@@ -3016,6 +3016,72 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         return SamplePreparedEquiangularDistance(cell.start, cell.end, within, foot, clearance2).distance;
     }
 
+    /// Each draw's stratum among `count` equal strata: its rank in the sequence's values for that dimension.
+    static void Rank(const PhotonSobol& sequence, unsigned int dimension, int count, vector<size_t>& ranked, vector<size_t>& stratum)
+    {
+        ranked.resize(count);
+        for (int j = 0; j < count; j++)
+            ranked[j] = j;
+        std::sort(ranked.begin(), ranked.end(), [&](size_t a, size_t b) { return sequence(a, dimension) < sequence(b, dimension); });
+        stratum.resize(count);
+        for (int r = 0; r < count; r++)
+            stratum[ranked[r]] = r;
+    }
+
+    static DBL Stratum(size_t stratum, int count, DBL tail)
+    {
+        const DBL result = (DBL(stratum) + tail) / count;
+        return std::min(result, std::nextafter((DBL(stratum) + 1.0) / count, DBL(stratum) / count));
+    }
+
+    /// A distance along a continuous cell from its uniform and exponential proposals together, by inverting their joint
+    /// distribution so that stratified variates stay stratified along the cell.
+    static DBL TransmittanceDraw(const Cell& cell, DBL scale, DBL uniformShare, DBL expShare, const DBL *channelMass,
+                                 DBL channelTotal, DBL u)
+    {
+        const bool finite = IsFiniteNumber(cell.end);
+        auto at = [&](DBL v) { return SamplePreparedDistance(cell.start, cell.end, v, scale).distance; };
+        if (!(expShare > 0.0))
+            return at(u);
+        const DBL total = uniformShare + expShare;
+        // Distribution and density over v, the uniform proposal's own variate.
+        auto evaluate = [&](DBL v, DBL& cumulative, DBL& density) {
+            const DBL t = at(v);
+            const DBL uniform = finite ? 1.0 / (cell.end - cell.start) : (scale + cell.start) / (scale + t) / (scale + t);
+            cumulative = uniformShare * v;
+            DBL pdf = uniformShare * uniform;
+            for (int ch = 0; ch < MathColour::channels; ch++)
+                if (channelMass[ch] > 0.0)
+                {
+                    const DBL rate = cell.extinction[ch], weight = expShare * channelMass[ch] / channelTotal;
+                    const DBL depth = rate * (cell.end - cell.start);
+                    cumulative += weight * ((rate == 0.0 || depth == 0.0) ? v :
+                        -std::expm1(-rate * (t - cell.start)) / (finite ? -std::expm1(-depth) : 1.0));
+                    pdf += weight * PreparedExponentialDistancePdf(cell.start, cell.end, t, rate);
+                }
+            cumulative /= total;
+            density = pdf / (total * uniform);
+        };
+        DBL lo = 0.0, hi = 1.0, v = u;
+        for (int step = 0; step < 100; step++)
+        {
+            DBL cumulative, density;
+            evaluate(v, cumulative, density);
+            const DBL error = cumulative - u;
+            if (error == 0.0)
+                break;
+            (error < 0.0 ? lo : hi) = v;
+            DBL next = (density > 0.0 && IsFiniteNumber(density)) ? v - error / density : 0.5 * (lo + hi);
+            if (!(next > lo && next < hi))
+                next = 0.5 * (lo + hi);
+            const bool settled = std::abs(next - v) <= 1.0e-15 || hi - lo <= 1.0e-15;
+            v = next;
+            if (settled)
+                break;
+        }
+        return at(std::min(v, std::nextafter(1.0, 0.0)));
+    }
+
     void Finish(MathColour& colour) override
     {
         collecting = false;
@@ -3138,10 +3204,12 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 (order.capacity() + selected.capacity()) * sizeof(size_t) + (cdf.capacity() + mass.capacity() + base.capacity()) * sizeof(DBL);
             auto& peak = owner.threadData->Stats()[Media_Scatter_Peak_Bytes];
             peak = std::max(static_cast<POV_ULONG>(peak), static_cast<POV_ULONG>(liveBytes + scratch));
+            Rank(sequence, 0, count, storage.ranked, storage.cellStratum);
+            Rank(sequence, 1, count, storage.ranked, storage.emitterStratum);
             for (int j = 0; j < count; j++)
             {
                 owner.threadData->Stats()[Media_Scatter_Pairs]++;
-                const DBL distance = EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(sourceKey, kDrawMediaSample, j));
+                const DBL distance = Stratum(storage.cellStratum[j], count, Draw(sourceKey, kDrawMediaSample, j));
                 const size_t picked = std::min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), distance) - cdf.begin()));
                 const DBL probability = cdf[picked] - (picked ? cdf[picked - 1] : 0.0);
                 const Cell& cell = cells[selected[picked]];
@@ -3170,27 +3238,12 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                     const bool aimed = cellReach > 0.0 && IsFiniteNumber(cellReach);
                     const DBL aimShare = aimed ? 0.5 : 0.0, expShare = importance ? 0.5 * (1.0 - aimShare) : 0.0;
                     const DBL uniformShare = 1.0 - aimShare - expShare;
-                    PreparedDistanceSample position;
-                    if (within < uniformShare)
-                        position = SamplePreparedDistance(cell.start, cell.end, within / uniformShare, scale);
-                    else if (within < uniformShare + expShare)
-                    {
-                        DBL choose = std::min(std::nextafter(channelTotal, 0.0), (within - uniformShare) / expShare * channelTotal);
-                        int channel = 0;
-                        while (channel + 1 < MathColour::channels && choose >= channelMass[channel])
-                        {
-                            choose -= channelMass[channel];
-                            channel++;
-                        }
-                        while (channelMass[channel] == 0.0 && channel > 0)
-                            channel--;
-                        const DBL u = std::min(std::nextafter(1.0, 0.0), choose / channelMass[channel]);
-                        position = SamplePreparedExponentialDistance(cell.start, cell.end, u, cell.extinction[channel]);
-                    }
+                    if (within < uniformShare + expShare)
+                        at = TransmittanceDraw(cell, scale, uniformShare, expShare, channelMass, channelTotal,
+                            std::min(std::nextafter(1.0, 0.0), within / (uniformShare + expShare)));
                     else
-                        position.distance = AimDraw(cell, lobes, cellReach,
+                        at = AimDraw(cell, lobes, cellReach,
                             std::min(std::nextafter(1.0, 0.0), (within - uniformShare - expShare) / aimShare));
-                    at = position.distance;
                     distancePdf = uniformShare * (IsFiniteNumber(cell.end) ? 1.0 / (cell.end - cell.start) :
                         (scale + cell.start) / (scale + at) / (scale + at));
                     if (importance)
@@ -3221,7 +3274,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 owner.threadData->litObjectIgnoresPhotons = true;
                 for (const Media *medium : domain.medias)
                     owner.threadData->litObjectIgnoresPhotons = owner.threadData->litObjectIgnoresPhotons && medium->ignore_photons;
-                const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 1), count, Draw(sourceKey, kDrawEmitter, j)),
+                const EmitterDraw draw(Stratum(storage.emitterStratum[j], count, Draw(sourceKey, kDrawEmitter, j)),
                                        sequence(j, 2), sequence(j, 3), sequence(j, 4),
                                        DeriveKey(DeriveKey(sourceKey, kDrawEmitter, j), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
                 MathColour incoming;
