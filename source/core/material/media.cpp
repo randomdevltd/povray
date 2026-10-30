@@ -963,7 +963,7 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         if (medium.Sample_Method != 4)
             continue;
         needed = true;
-        const DBL authored = medium.fastResolutionRecorded ? medium.requestedFastResolution : medium.FastResolution;
+        const DBL authored = medium.AuthoredFastResolution();
         const DBL step = authored > 0.0 ? authored : AutomaticResolution(owner);
         DBL& target = ConstantDensity(medium) ? constantStep : requested;
         if (step > 0.0)

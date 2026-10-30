@@ -10810,7 +10810,7 @@ void Parser::Warn_Unused_Media_Resolution()
         if (cause.empty())
             continue;
         for (const Media& medium : interior->media)
-            if ((medium.Sample_Method == 4) && (medium.FastResolution > 0.0) && Media_Is_Constant(medium) &&
+            if ((medium.Sample_Method == 4) && (medium.AuthoredFastResolution() > 0.0) && Media_Is_Constant(medium) &&
                 warned.insert(medium.where).second)
                 Warning("The constant medium at %s in the %s gives a resolution, but the grid there follows %s, "
                         "so the resolution is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());

@@ -103,5 +103,16 @@ for language in pov pov4; do
     if grep -F 'so the resolution is ignored' "alone.$language.log" >/dev/null; then
         cat "alone.$language.log"; exit 1
     fi
+    for case in written unwritten; do
+        resolution=; [ "$case" = written ] && resolution='resolution 0.1'
+        write "$case" "$language" "box { -1, 1 hollow pigment { rgbt 1 }
+  interior { media { method 4 $resolution scattering { 1, 0.5 } } light { samples 1 } } }"
+        "$POVRAY" +i"$case.$language" +w1 +h1 +wt1 +pr -f -d -p -gp >"$case.$language.log" 2>&1 || { cat "$case.$language.log"; exit 1; }
+    done
+    tr '\n' ' ' <"written.$language.log" | tr -s '[:space:]' ' ' | grep -F 'so the resolution is ignored' >/dev/null ||
+        { cat "written.$language.log"; exit 1; }
+    if tr '\n' ' ' <"unwritten.$language.log" | tr -s '[:space:]' ' ' | grep -F 'resolution is ignored' >/dev/null; then
+        cat "unwritten.$language.log"; exit 1
+    fi
 done
 echo 'volume_legacy_media: ok'
