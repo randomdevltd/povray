@@ -117,8 +117,10 @@ Changed Behaviour
 
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
-    including density and mixing. Brightness units and the default 1 nit
-    calibration are unchanged. Available in classic scenes of every version
+    including density and mixing. With it, a unitless or nits brightness is a
+    plain multiplier of that emission, with no geometric reference: at 1 the
+    light cast equals what the glow emits. Lumens still normalize total flux.
+    Available in classic scenes of every version
     and .pov4; `emission` was already reserved, while `light`, `nits` and
     `lumens` remain matched by text and free as identifiers elsewhere.
 

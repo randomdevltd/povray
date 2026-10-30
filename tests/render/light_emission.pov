@@ -16,6 +16,9 @@
 #ifndef (Samples) #declare Samples=16; #end
 #declare D = density { function { 0.25+0.25*x } color_map { [0 rgb 0] [1 rgb 1] } translate x*0.1 };
 #declare E = <5,2,1>*Strength*(1-Zero);
+// a pigment's nits divide by the box's mean chord 4V/A; the emission alias does not
+#declare Chord = 2*0.7*0.5*0.6/(0.7*0.5+0.5*0.6+0.6*0.7);
+#declare M = E*(Lumens ? 1 : Chord);
 global_settings { assumed_gamma 1 }
 camera { orthographic location <0,5,-1> look_at 0 right x*2 up z*2 }
 plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
@@ -39,15 +42,15 @@ box { -1,1 pigment { rgbt 1 } hollow no_image
       #if (!Omit)
         #if (Alias) emission
         #else
-          #if (Constant) pigment { rgb E*(1-Empty)*(1-White)+White }
-          #else pigment { function { 0.25+0.25*x } color_map { [0 rgb 0] [1 rgb E*(1-Empty)] } translate x*0.1 }
+          #if (Constant) pigment { rgb M*(1-Empty)*(1-White)+White }
+          #else pigment { function { 0.25+0.25*x } color_map { [0 rgb 0] [1 rgb M*(1-Empty)] } translate x*0.1 }
           #end
         #end
       #end
       #if (Conflict=1) pigment { rgb 1 } #end
       #if (Conflict=2) emission #end
       #if (Conflict=3) emission #end
-      brightness 0.08 #if (Lumens) lumens #else nits #end
+      brightness #if (Lumens) 0.08 lumens #else 0.2 nits #end
       samples Samples
     }
   }

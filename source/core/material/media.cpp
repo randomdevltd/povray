@@ -2198,7 +2198,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    emitter->coefficient = MathColour(settings.lumens < 0.0 && settings.brightness == 0.0 ? 0.0 : 1.0);
+    // the emission alias casts its own glow times brightness; a pigment's nits take the mean chord 4V/A
+    emitter->coefficient = MathColour(settings.lumens >= 0.0 ? 1.0 : settings.brightness);
     // every serial estimate below is gathered per index on the workers, then summed in index order
     const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
     std::vector<std::unique_ptr<TraceThreadData>> helpers;
@@ -2213,7 +2214,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             work(i, thread(worker), worker);
         }, poll);
     };
-    if (settings.lumens < 0.0 && settings.brightness != 0.0)
+    if (settings.lumens < 0.0 && settings.brightness != 0.0 && !settings.useEmission)
     {
         double meanChord = 0.0, discrepancy = HUGE_VAL;
         std::vector<vector<std::pair<double, double>>> pieces(workers);
