@@ -2000,16 +2000,21 @@ Four-threaded counts on the shared box spread by 20–30% between runs of one bu
 
 ### Anti-aliasing method 4
 
-`+AM4` (with `+PR`) spends a sample budget, `+AB` extra samples per pixel on average, on the image's boundaries. The
-first stage keeps an edge map of 12 bytes a pixel (primitive number, 1/distance, shadow signature), written with the
-samples to the render state file; planning adds 1 byte a pixel for the map's links, 16 for the OkLab colours and 20
-for each pixel's fit record, plus leaves and segments where boundaries are. Boundaries are where the primitive
-changes, where 1/distance steps or creases beyond four times the neighbouring curvature, or where the set of fully
-blocked lights (and their blockers) changes. Lines are fitted to the map's contours without tracing; probes refine
-them where they could still move, and boundary pixels no line holds are bisected. Each pass is planned up front:
-candidates go into priority buckets and whole buckets are taken best-first until the budget is reached, so the last
-bucket may overshoot, and the image does not depend on the thread count. Shadow tests of a centre sample skip the
-per-thread shadow cache, so the blocker they name does not depend on which thread traced it.
+`+AM4` (with `+PR`) spends a sample budget, `+AB` extra samples per pixel on average, on the image's boundaries
+first and then on its most varied colour. The first stage keeps an edge map of 12 bytes a pixel (the primitives at
+both ends of the eye path as one number, 1/distance to the first hit, shadow signature), written with the samples to
+the render state file; planning adds 1 byte a pixel for the map's links, 16 for the OkLab colours and 20 for each
+pixel's fit record, plus leaves and segments where boundaries are. The eye path follows the highest-weight reflected,
+refracted or transmitted ray from each hit, kept by the trace's own nesting with no state on the ray. Boundaries are
+where either primitive changes, where 1/distance steps or creases beyond four times the curvature on both sides, or
+where the set of fully blocked lights (and their blockers) changes. Lines are fitted to the map's contours without
+tracing; probes refine them where they could still move, and boundary pixels no line holds are bisected. Rounds with
+no boundary pixel left to split give half of the remaining budget each to pixels whose OkLab colour differs from
+their neighbours (root mean square) by more than `+A`, and then to their most differing quarters; the last round
+takes all of it. Each pass is planned up front: candidates go into priority buckets taken best-first, and the bucket
+that crosses the limit is drawn in an order fixed by pixel coordinates, so the budget is met exactly unless too few
+pixels differ, and the image does not depend on the thread count. Shadow tests of a centre sample skip the per-thread shadow cache, so the blocker
+they name does not depend on which thread traced it.
 
 ## Texture filtering
 

@@ -3604,19 +3604,19 @@ jittered area lights, subsurface light transport, or micro-normals based blurred
 <div class="content-level-h5" contains="Sampling Method 4" id="r3_2_8_8_6">
 <h5>3.2.8.8.6 Sampling Method 4</h5>
 <p><code>+AM4</code> spends a fixed budget of extra samples on the image's boundaries, instead of super-sampling every pixel that differs from a neighbour. It is used as <code>+PR +AM4 +A0.02 +AB1</code>. <code>Antialias_Budget=n.n</code> or <code>+ABn.n</code> is the average number of extra samples per pixel; it is a target, so the last pass may overshoot it. <code>+A</code> sets the least colour difference, in OKLab, across a boundary that is worth samples (about 0.02 is just noticeable), and <code>+R</code> limits how deeply a pixel is bisected. It requires <code>+PR</code> and is refused without it, because it is built from extra passes of the progressive rendering and needs its whole-frame first stage (see <a href="#r3_2_8_10">3.2.8.10</a>).</p>
-<p>Boundaries are found from geometry, not from colour. As the first stage traces one ray per pixel it records an <em>edge map</em>: the primitive the ray hit (a sphere, a box, a mesh; a CSG object's component, not the CSG object), one over the distance to the hit, and which lights were completely blocked there and by which primitive. Two neighbouring pixels are on either side of a boundary when</p>
+<p>Boundaries are found from geometry first. As the first stage traces one ray per pixel it records an <em>edge map</em>: the primitive the ray hit (a sphere, a box, a mesh; a CSG object's component, not the CSG object) together with the primitive at the end of its eye path, one over the distance to the first hit, and which lights were completely blocked there and by which primitive. The eye path follows, from each hit, the reflected, refracted or transmitted ray of the highest weight (the first traced of equals), so a mirror or a glass object shows the boundaries of what it reflects or lets through. Two neighbouring pixels are on either side of a boundary when</p>
 <ul>
-  <li>they show different primitives, or one shows none: silhouettes and the edges between objects;</li>
-  <li>on one primitive, one over the distance steps, or bends, by more than four times what the surface's own curvature on either side explains: self-occlusion, creases and crevices. Only ratios of distances are compared, so a scene scaled by any factor finds the same boundaries;</li>
+  <li>they show different primitives, or one shows none, at either end of the eye path: silhouettes, the edges between objects, and those edges seen in a mirror or through glass;</li>
+  <li>on one primitive, one over the distance steps, or bends, by more than four times what the surface's own curvature on both sides explains: self-occlusion, creases and crevices. Both sides must lie on the same surface, so a smooth surface curving away towards its own silhouette is not taken for a crease. Only ratios of distances are compared, so a scene scaled by any factor finds the same boundaries;</li>
   <li>on one primitive, a light is completely blocked at one and not at the other, or blocked by another primitive: hard shadow edges. Where an area light is partly blocked (a penumbra) it counts as unblocked, so soft shadows are not boundaries.</li>
 </ul>
-<p>Texture detail, grain from random sampling, and highlights are not boundaries. The edge map is kept with the samples in the render state file, so a continued render (<code>+C</code>) finds the same boundaries.</p>
+<p>Texture detail, grain from random sampling, and highlights are not boundaries; what the budget leaves after the boundaries goes to the pixels whose colour varies most (see Bisection below). The edge map is kept with the samples in the render state file, so a continued render (<code>+C</code>) finds the same boundaries.</p>
 <p>The render runs in these passes, each over the whole frame:</p>
 <ol>
   <li><em>Centre samples.</em> One ray per pixel over the whole frame, which is the last level of a <a href="#r3_2_8_10">progressive rendering</a>, with the edge map.</li>
   <li><em>Fit.</em> Without tracing a ray, the edge map's contours are followed through the pixels and fitted with straight runs, or with parabolas where no line fits. Boundary pixels that no run covers, such as junctions and features a pixel or two across, are left for bisection. This pass runs on one thread, so the image does not depend on the thread count.</li>
   <li><em>Probes.</em> Extra samples are traced only where a fitted line could still move, in rounds, best candidates first (colour contrast across the line times how far it could move times its length). A probe is put on a side by the primitive, shadows and distance it hits, not by its colour; one that hits neither side's primitive hands the line's pixels to bisection.</li>
-  <li><em>Bisection.</em> Boundary pixels that no line holds are split into quarters, and then each quarter that touches a sample on another surface (another primitive, shadow or depth) is split again, largest and most different in colour first, up to <code>+R</code> levels. The budget is shared between probes and bisection by how many boundary pixels each tier holds. Extra samples take the random draws of their pixel's centre, so grain looks the same along a boundary as away from it.</li>
+  <li><em>Bisection,</em> in two tiers. First the boundary pixels that no line holds: each is split into quarters, and then each quarter that touches a sample on another surface (another primitive, shadow or depth) is split again, largest and most different in colour first, up to <code>+R</code> levels. The budget is shared between probes and this tier by how many boundary pixels each holds. Then, in rounds where no boundary pixel needs a split, any pixel no line holds whose colour differs from its neighbours by more than <code>+A</code> (as a root mean square in OKLab) is split, largest difference first; its quarters are then split by how much they differ from each other. Each such round takes at most half of the budget left, and the last round all of it, so the budget is spent unless too few pixels differ. Extra samples take the random draws of their pixel's centre, so grain looks the same along a boundary as away from it.</li>
   <li><em>Resolve.</em> A pixel crossed by a fitted line keeps its own centre sample and gains the line's coverage correction, limited to the colours either side; a bisected pixel is the area-weighted mean of its quarters.</li>
 </ol>
 <p>Nothing in the picture changes during passes 2 to 4, so a snapshot of a running render shows the plain one-sample image until the resolve.</p>
@@ -3645,45 +3645,20 @@ jittered area lights, subsurface light transport, or micro-normals based blurred
   <tr><td>Method 4 (<code>+AB1</code>)</td><td>4.5</td></tr>
   <tr><td>Method 4 (<code>+AB1</code>) with <code>+TF</code></td><td>5.1</td></tr>
 </table>
-<p>This scene is so cheap to trace that method 4's planning, which is single-threaded and costs a few CPU seconds per 100,000 pixels, dominates. Method 4 pays off where rays are expensive. On three of the busiest stock scenes at 1280x720 it costs a fraction of method 2:</p>
+<p>This scene is so cheap to trace that method 4's planning, which is single-threaded, dominates its time. Method 4 traces one ray per pixel plus the budget, so where rays are expensive its cost follows <code>+AB</code>.</p>
+<p>The table gives the mean FLIP error (lower is better) of stock scenes at 320x240 with <code>+TF</code>, against a reference of 17 samples a pixel without texture filtering (<code>+AM1 +R4 -J -TF</code>). The second column is the edge finder that compared colours, which spent the same budget; the third is the edge map described in <a href="#r3_2_8_8_6">3.2.8.8.6</a>.</p>
 <table class="centered" cellpadding="4" cellspacing="0" border="1">
-  <tr><th>CPU seconds, 1280x720</th><th>No AA</th><th>Method 2 (<code>+A0.1 +AM2 +R3</code>)</th><th>Method 4 <code>+AB0.25</code></th><th>Method 4 <code>+AB1</code></th></tr>
-  <tr><td>chess2</td><td>120</td><td>735</td><td>207</td><td>338</td></tr>
-  <tr><td>benchmark</td><td>246</td><td>1933</td><td>310</td><td>520</td></tr>
-  <tr><td>balcony</td><td>39</td><td>240</td><td>64</td><td>84</td></tr>
+  <tr><th>Scene</th><th>No anti-aliasing</th><th>Method 4, colour edges <code>+AB1</code></th><th>Method 4, edge map <code>+AB1</code></th></tr>
+  <tr><td>benchmark</td><td>0.081</td><td>0.065</td><td>0.070</td></tr>
+  <tr><td>balcony</td><td>0.067</td><td>0.054</td><td>0.059</td></tr>
+  <tr><td>cliche</td><td>0.025</td><td>0.024</td><td>0.023</td></tr>
+  <tr><td>glasschess</td><td>0.058</td><td>0.043</td><td>0.046</td></tr>
+  <tr><td>chess2</td><td>0.029</td><td>0.023</td><td>0.027</td></tr>
+  <tr><td>woodbox</td><td>0.027</td><td>0.024</td><td>0.024</td></tr>
+  <tr><td>pawns</td><td>0.027</td><td>0.018</td><td>0.019</td></tr>
+  <tr><td>desk</td><td>0.043</td><td>0.036</td><td>0.037</td></tr>
 </table>
-<p>Method 4 needs 16 to 28 percent of method 2's time at <code>+AB0.25</code> and 27 to 46 percent at <code>+AB1</code> here, with silhouettes and curves as smooth. It is weaker on one-pixel lines that cross a changing background, and on noisy reflections, which stay partly speckled at small budgets.</p>
-<p>The three pictures below put the results side by side: an unscaled crop of the frame rendered with method 2 and with method 4 at <code>+AB1</code> (shown pixel for pixel, so the anti-aliasing is not blurred by resizing), and below it two details, enlarged three times without smoothing, from each. The CPU times are for the whole 1280x720 frame.</p>
-<table class="centered" width="978px" cellpadding="0" cellspacing="10">
-  <tr>
-    <td><img class="center" width="978px" src="images/aa_stock_chess2.png"></td>
-  </tr>
-  <tr>
-    <td>
-      <p class="caption">chess2: gold crown and pawn base. Both settings draw the edges alike; method 4 keeps the fine grain of the out-of-focus areas that method 2 smooths.</p>
-    </td>
-  </tr>
-</table>
-<table class="centered" width="978px" cellpadding="0" cellspacing="10">
-  <tr>
-    <td><img class="center" width="978px" src="images/aa_stock_benchmark.png"></td>
-  </tr>
-  <tr>
-    <td>
-      <p class="caption">benchmark: checker dome edge against the sky and a mountain peak. The edges are as smooth as method 2's, at a quarter of the time.</p>
-    </td>
-  </tr>
-</table>
-<table class="centered" width="978px" cellpadding="0" cellspacing="10">
-  <tr>
-    <td><img class="center" width="978px" src="images/aa_stock_balcony.png"></td>
-  </tr>
-  <tr>
-    <td>
-      <p class="caption">balcony: cliff edge and the tablecloth hem. Silhouettes match; method 4 keeps the cloth weave, but its sea comes out sparklier than method 2's.</p>
-    </td>
-  </tr>
-</table>
+<p>The edge map does best on mirrors, glass edges and textured planes. It is weaker where the map is dense: rough isosurfaces and height fields (benchmark), focal blur (chess2), whose jittered rays scatter the map, and refraction through detailed glass, which gives many boundaries to share the budget. Grain from area lights and media keeps its level, since extra samples reuse their pixel's random draws, while a colour edge finder averages it away.</p>
 </div>
 <a name="r3_2_8_9"></a>
 <div class="content-level-h4" contains="Radiosity Options" id="r3_2_8_9">
