@@ -1977,6 +1977,18 @@ start to the last one's end, with the threads of one pass.
 | `+C` state file | resumes from the highest level written and that level's blocks | needs a per-level ledger |
 | preview and snapshots | each level's cells replayed in arrival order | needs finest-level-wins |
 
+`distribution/scenes/advanced/benchmark/benchmark.pov` with `+PR`, user-space counters, against the build before:
+
+| Run | Instructions | Cycles | CPU-s (user + sys) | Peak memory |
+|---|---|---|---|---|
+| 1024×768 `-A +BS64 +WT8` | 1.9348 → 1.9340 T (−0.04%) | 826.7 → 824.1 G (−0.3%) | 247.7 → 240.3 | 202 → 75 MB |
+| 1024×768 `-A +BS256 +WT32` (12 blocks) | 2.0264 → 2.0176 T (−0.4%) | 862.7 → 862.5 G | 251.4 → 250.5 | 713 → 154 MB |
+| 512×384 `+A0.1 +AM4 +BS64 +WT32` (88 passes) | 591.7 → 509.1 G (−14.0%) | 260.0 → 218.0 G (−16.2%) | 78.9 → 63.9 | 5,242 → 136 MB |
+| the same at `+WT64` | 516.1 G | 222.3 G | 65.5 | 216 MB |
+
+The method 4 saving is the 2,816 workers the old build made, one per thread per pass. That scene's photons make its
+image differ slightly between runs of either build, so it is not a pixel check; the render tests are.
+
 ## Isosurfaces
 
 Functions ran on a switch over about a thousand opcodes, each with its registers baked in, behind one indirect
