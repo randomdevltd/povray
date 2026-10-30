@@ -2,9 +2,10 @@
 // Glowing fish and jellyfish at night over a seabed of rocks, kelp, sea grass, urchins, a coral fan and a lost anchor, the fish the only light, dimmed and tinted by the water they shine through. +w640 +h480.
 // Declare=Samples=N sets each fish's samples, Gain scales their light over their glow, Murk=0 clears the water of particles.
 #version 4.0;
+// Units: per metre, sea water absorbs <0.42, 0.075, 0.05> and scatters 0.024 (clear ocean, physical); each fish and jelly casts its own emission times Gain (3.5).
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Murk) #declare Murk = 1; #end
-#ifndef (Gain) #declare Gain = 2; #end
+#ifndef (Gain) #declare Gain = 3.5; #end
 #declare R = seed(2024);
 
 global_settings { assumed_gamma 1 max_trace_level 8 }
@@ -18,7 +19,7 @@ box {
     ior 1.33
     media {
       absorption rgb <0.42, 0.075, 0.05>
-      #if (Murk) scattering { 5, rgb 0.006 eccentricity 0.55 } #end
+      #if (Murk) scattering { 5, rgb 0.024 eccentricity 0.55 } #end
     }
   }
 }
