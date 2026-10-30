@@ -24,7 +24,7 @@ Generated C sources are committed; renderer builds do not run the generator.
 
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
 attenuation { power 2 scale 1 } samples 16 } }`. By default the source depends on its object's geometry
-and its own pigment, independently of media coefficients and density. Nits use
+and its own pigment, independently of media coefficients and density. A pigment's nits use
 the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
 source strength, not every nearby receiver reading. The declared emitting region affects this
 calibration; unused container padding is not guaranteed to be neutral. Surface
@@ -37,9 +37,11 @@ light { emission brightness 12 lumens } }` at every scene version. Bare
 `emission` selects the full combined RGB emission of the interior's own media,
 including density patterns and mixing, and is mutually exclusive with `pigment`.
 Absorption, scattering and overlapping objects do not contribute to this source
-field. Brightness keeps its existing calibration: omitted brightness is 1 nit,
-so selecting emission does not make `j(x)` equal to the media emission coefficient.
-Without the flag, the default pigment remains solid white.
+field. Brightness is then a plain multiplier with no geometric reference:
+`j(x)` is the media's combined emission coefficient times brightness, so at the
+default brightness 1 the light cast equals what the visible glow emits. A `nits`
+suffix reads the same as a unitless value here; `lumens` still normalizes total
+flux. Without the flag, the default pigment remains solid white.
 
 `attenuation { power P scale S cutoff C }` names all three values; any may be left out
 (power 2, scale 1, cutoff 0.000004) and each may appear once, as may the block. Bare numbers after
