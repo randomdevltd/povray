@@ -35,6 +35,9 @@ for method in 4; do
         pair "${method}_$unit" Declare=Method="$method" Declare=Lumens="$unit"
     done
 done
+# nits: the alias's mean boundary radiance is the stated nits, as a pigment normalized by the field's mean
+pair 4_nits Declare=Nits=1
+pair Constant_nits Declare=Constant=1 Declare=Nits=1
 render alias_parallel +wt2
 same alias4_0 alias_parallel
 for version in 3.6 3.7 3.8 4.0; do
@@ -46,8 +49,11 @@ for option in Constant OwnAbsorb Overlap; do
 done
 "$POVRAY" +i"$SRCDIR/tests/render/light_emission.pov4" +w4 +h4 +wt1 +pr -a -d -p -v -gp +fp16 File_Gamma=1 +opov4.ppm >pov4.log 2>&1 || { cat pov4.log; exit 1; }
 tail -c 96 pov4.ppm >pov4.rgb
-same aliasConstant pov4
-pair _scale_nits Declare=Strength=100
+same aliasConstant_nits pov4
+pair _scale Declare=Strength=100
+# stated nits hold whatever the field's strength
+render fine_scale_nits Declare=Strength=100 Declare=Nits=1 Declare=Samples=$FINE
+close fine_alias4_nits fine_scale_nits
 # stated lumens hold whatever the field's strength; its last bits move draws, so the many-draw renders agree
 render fine_scale_lumens Declare=Strength=100 Declare=Lumens=1 Declare=Samples=$FINE
 close fine_alias4_1 fine_scale_lumens
@@ -82,4 +88,8 @@ fail emission_after 'one pigment or emission input' Declare=Alias=0 Declare=Conf
 fail duplicate 'one pigment or emission input' Declare=Conflict=3
 fail zero_lumens 'generated-lumens integral is unresolved or zero' Declare=Zero=1 Declare=Lumens=1
 fail empty_lumens 'generated-lumens integral is unresolved or zero' Declare=Empty=1 Declare=Lumens=1
+fail zero_nits 'stated in nits requires positive media emission' Declare=Zero=1 Declare=Nits=1
+fail empty_nits 'stated in nits requires positive media emission' Declare=Empty=1 Declare=Nits=1
+fail bounce_nits 'A bounce-only light block takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Nits=1
+fail bounce_lumens 'A bounce-only light block takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Lumens=1
 echo 'light_emission: ok'

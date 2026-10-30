@@ -23,4 +23,12 @@ sums() { od -An -v -tu2 --endian=big -w6 "$1.pixels" | awk '{ r += $1; g += $2; 
 echo "$(sums one7) $(sums off7)" | awk '{ for (i = 1; i <= 3; i++) if (!($i > 0) || $i - $(i + 3) > 1e-3 * $i ||
     $(i + 3) - $i > 1e-3 * $i) bad = 1; exit bad }' ||
     { sums one7; sums off7; echo "bounce_preparation: a light on a node lights it unlike one beside it" >&2; exit 1; }
+# A bounce-only block's brightness multiplies its bounce: over the unclipped samples, what gain 2 adds over gain 0 is
+# twice what gain 1 adds, within 1%.
+for gain in 0 1 2; do render gain$gain Declare=Case=7 Declare=Gain=$gain +wt4; done
+values() { od -An -v -tu2 --endian=big -w2 "$1.pixels"; }
+values gain0 > gain0.values; values gain1 > gain1.values; values gain2 > gain2.values
+paste gain0.values gain1.values gain2.values | awk '$3 < 65535 { a += $2 - $1; b += $3 - $1 }
+    END { if (!(a > 0) || b - 2 * a > 0.02 * a || 2 * a - b > 0.02 * a) { print "gain 1 adds " a ", gain 2 adds " b; exit 1 } }' ||
+    { echo "bounce_preparation: bounce gain does not scale the bounce linearly" >&2; exit 1; }
 echo "bounce_preparation: bounce preparation is the same on any thread count"

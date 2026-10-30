@@ -37,11 +37,17 @@ light { emission brightness 12 lumens } }` at every scene version. Bare
 `emission` selects the full combined RGB emission of the interior's own media,
 including density patterns and mixing, and is mutually exclusive with `pigment`.
 Absorption, scattering and overlapping objects do not contribute to this source
-field. With omitted brightness, or `nits`, the light's emission coefficient is the
+field. With a unitless brightness the light's emission coefficient is the
 media emission times the brightness, `j(x) = B * emission(x)`: the container's size
 and shape do not enter, and brightness 1 casts the coefficient the camera integrates
-as glow. `lumens` distribute a stated flux over the emission pattern instead.
-Without the flag, the default pigment remains solid white, with the reference-length
+as glow. `nits` state the glow's measured mean radiance at its container boundary:
+a volume of total intensity `∫j dV` radiating through boundary area `A` has the
+Lambertian-equivalent mean radiance `4 ∫j dV / A`, so
+`j(x) = B * emission(x) / (4 ∫Y(emission) dV / A)`, integrated over the prepared field
+(density and mixing included) with `A/4 = V/(4V/A)` from the pigment reference; a
+uniform emission gives exactly the pigment's `j`. `lumens` distribute a stated flux over
+the emission pattern instead. Nonzero nits or lumens over media that emit nothing are an
+error. Without the flag, the default pigment remains solid white, with the reference-length
 calibration of the volume-light chapter.
 
 `attenuation { power P scale S cutoff C }` names all three values; any may be left out
@@ -71,9 +77,12 @@ box { <-1,2,-1>, <1,2.1,1>
 The shared settings are `pigment`, bare `emission`, `brightness`, `samples`,
 `shadowless`, `media_interaction`, `media_attenuation`, and photon reflection
 and refraction flags. The surface is an outward, one-sided Lambert emitter.
-Omitted input is white and omitted brightness is 1 nit. Unitless brightness and
-`nits` set radiance to brightness times the source RGB. `lumens` normalizes total
-generated flux with the renderer's greyscale convention, before media transport.
+Omitted input is white and omitted brightness is 1 nit. With a pigment, unitless
+brightness and `nits` set radiance to brightness times the source RGB. With bare
+`emission`, unitless brightness multiplies the material's emission and `nits` scale it
+so its mean radiance over the surface, `∫Y(emission) dA / A`, is the brightness.
+`lumens` normalizes total generated flux with the renderer's greyscale convention,
+before media transport.
 Bare `emission` selects the material's pigment times finish emission rather than
 an independent light pigment. It does not change the material's appearance.
 A light block never adds visible camera emission by itself.
@@ -111,17 +120,22 @@ be a finite positive integer in the unsigned range; zero, negative, fractional
 and out-of-range values are errors. A light accepts only one bounce setting,
 and a bounce block accepts only one `passes` setting.
 
-Without an explicit `pigment` or `emission` input, a bounce-enabled light selects
-its own emission field: material pigment times finish emission for a surface,
-or the interior's combined media emission for a volume. Zero emission remains
-zero. An explicit input can precede or follow `bounce`.
+A light block emits light of its own only from an explicit `pigment` or `emission`
+input. Without one, a block without `bounce` is a solid white pigment light, and a
+block with `bounce` is bounce-only: it emits nothing of its own, whatever its
+material's or media's emission, and its `brightness` (default 1, physical) multiplies
+every order it re-emits. `nits` or `lumens` in a bounce-only block are a parse error,
+`A bounce-only light block takes a plain brightness multiplier; nits and lumens need an
+emission input.` An explicit input can precede or follow `bounce`.
 `bounce` and `passes` remain free identifiers outside their light-block contexts.
 
 Each pass produces the next scattering order from the preceding order across
 sources. A source past its own cutoff produces zero new output; older orders
 are not reissued. Authored emission and ordinary lights enter generation zero
-once. Brightness and lumen normalization affect primary emission only, while
-received indirect energy keeps its transported magnitude. The final source is
+once. With an input, brightness and its unit affect primary emission only, while
+received indirect energy keeps its transported magnitude; a bounce-only block's
+brightness scales each order it re-emits, so light it receives back from itself in
+a later pass is scaled again. The final source is
 primary emission plus the completed bounce orders. Surface bounce rejects
 stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
 reflection attenuation.
@@ -200,7 +214,14 @@ sphere { 0, 0.3
 }
 ```
 
-Passive surface bounce and volume bounce, two orders each:
+Passive surface bounce and volume bounce, two orders each. A light block emits light of its
+own only from an explicit `pigment` or `emission`. With neither and no `bounce` it is a solid
+white pigment light; with neither and `bounce` it is bounce-only: it emits nothing of its own,
+`brightness` (default 1, physical) multiplies every order it re-emits, and `nits` or `lumens`
+stop the parse with `A bounce-only light block takes a plain brightness multiplier; nits and
+lumens need an emission input.` So adding `bounce` to a block with no input makes it
+bounce-only; a white emitter that also bounces writes `pigment { rgb 1 }`. With an input the
+units apply to its emission and the bounced orders keep their physical strength:
 
 ```
 box { <-1.5, -0.1, -1.5>, <1.5, 0, 1.5>

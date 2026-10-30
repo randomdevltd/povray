@@ -155,6 +155,7 @@ struct MediaLight final
     bool useEmission = false;      ///< use the owning interior's combined emission as the input field
     double brightness = 1.0;        ///< the radiance the pigment gives, when no unit follows
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
+    bool nits = false;              ///< brightness given as nits: an emission input's mean radiance at its boundary
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
@@ -168,6 +169,9 @@ struct MediaLight final
     MediaLight(const MediaLight& source);          ///< deep-copies the pigment
     ~MediaLight();                                 ///< destroys the pigment
     MediaLight& operator=(const MediaLight&) = delete;
+    /// No pigment or emission input: the block only re-emits bounced light, with brightness as its multiplier.
+    bool BounceOnly() const { return bouncePasses > 0 && pigment == nullptr && !useEmission; }
+    double BounceGain() const { return BounceOnly() ? brightness : 1.0; }
 };
 
 }

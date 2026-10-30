@@ -24,12 +24,17 @@ for version in 3.6 3.7 3.8 4.0; do
 done
 render pov4 "$SRCDIR/tests/render/surface_light.pov4"
 cmp geometry0.rgb pov4.rgb
-render alias "$scene" Declare=Case=5 Declare=Alias=1
+render alias "$scene" Declare=Case=5 Declare=Alias=1 Declare=Units=2
 cmp geometry5.rgb alias.rgb
 render unitless "$scene" Declare=Units=2
 cmp geometry0.rgb unitless.rgb
-render native_alias "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=5 Declare=Alias=1
+render native_alias "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=5 Declare=Alias=1 Declare=Units=2
 cmp alias.rgb native_alias.rgb
+# nits on the emission alias: its mean radiance over the surface is the stated nits, as a pigment divided by that mean
+render alias_nits "$scene" Declare=Case=10 Declare=Alias=1
+render native_alias_nits "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=10 Declare=Alias=1
+cmp alias_nits.rgb native_alias_nits.rgb
+render pattern_nits "$scene" Declare=Case=10
 render lumens "$scene" Declare=Units=1
 render native_lumens "$SRCDIR/tests/render/surface_light.pov4" Declare=Units=1
 cmp lumens.rgb native_lumens.rgb
@@ -47,6 +52,12 @@ cmp passive.rgb native_passive.rgb
 render csg "$scene" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
 render native_csg "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
 cmp csg.rgb native_csg.rgb
+# a bounce-only block's brightness multiplies the light it re-emits
+for gain in 0 1 2; do
+    render "gain$gain" "$scene" Declare=Case=8 Declare=Bounce=2 Declare=Passive=1 Declare=Volume=1 Declare=Gain="$gain"
+done
+render native_gain2 "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=8 Declare=Bounce=2 Declare=Passive=1 Declare=Volume=1 Declare=Gain=2
+cmp gain2.rgb native_gain2.rgb
 render portal "$scene" Declare=Case=9
 render native_portal "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=9
 cmp portal.rgb native_portal.rgb
@@ -71,6 +82,10 @@ BEGIN {
     check(power("self") == 0, "self emits " power("self"))
     reference = power("geometry0")
     check(abs(power("lumens") / reference - 1) < 0.12, "lumens power " power("lumens") ", geometry0 " reference ", limit 12%")
+    check(abs(power("alias_nits") / power("pattern_nits") - 1) < 0.005, "alias nits power " power("alias_nits") ", normalized pigment " power("pattern_nits") ", limit 0.5%")
+    bounce1 = power("gain1") - power("gain0"); bounce2 = power("gain2") - power("gain0")
+    check(bounce1 > 0, "a bounce gain of 1 adds no light over 0")
+    check(abs(bounce2 / (2 * bounce1) - 1) < 0.01, "bounce gain 2 adds " bounce2 ", twice gain 1 is " 2 * bounce1 ", limit 1%")
     check(abs(power("few") / power("many") - 1) < 0.35, "few-sample power " power("few") ", many " power("many") ", limit 35%")
 }'
 reject() {
@@ -128,6 +143,12 @@ reject object_photon_item "'target' belongs inside the photons block of" 'target
 reject finish_reflection_item "'falloff' belongs inside the reflection block of" 'finish { reflection 0.5 falloff 2 }'
 reject media_scattering_item "'eccentricity' belongs inside the scattering block of" 'hollow interior { media { scattering { 1, 0.1 } eccentricity 0.3 } }'
 reject zero_lumens 'requires positive surface emission' 'light { pigment { rgb 0 } brightness 1 lumens }'
+reject zero_nits "emission stated in nits requires positive surface emission" 'finish { emission 0 } light { emission brightness 1 nits }'
+bounce_only='A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.'
+reject bounce_nits "$bounce_only" 'light { brightness 2 nits bounce }'
+reject bounce_lumens "$bounce_only" 'light { bounce { passes 2 } brightness 10 lumens }'
+reject volume_bounce_nits "$bounce_only" 'hollow interior { light { bounce brightness 2 nits } }'
+reject volume_bounce_lumens "$bounce_only" 'hollow interior { light { brightness 10 lumens bounce { passes 1 } } }'
 reject negative_colour 'requires finite nonnegative emitted colour' 'light { pigment { rgb <-1,0,0> } }'
 reject ray_context 'cannot depend on ray or camera context' 'light { pigment { aoi } }'
 reject scale_lumens_metres 'scale_lumens takes finite lumens and a positive finite number of metres per unit' 'light { brightness scale_lumens(8, 0) lumens }'

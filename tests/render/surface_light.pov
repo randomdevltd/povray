@@ -8,11 +8,13 @@
 #ifndef (Bounce) #declare Bounce = 0; #end
 #ifndef (Passive) #declare Passive = 0; #end
 #ifndef (Volume) #declare Volume = 0; #end
+#ifndef (Gain) #declare Gain = 1; #end
 global_settings { assumed_gamma 1 }
 camera { orthographic location <0,5,-1> look_at 0 right x*2 up z*2 }
 background { rgb 0 }
 plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
 #declare Source = pigment { rgb 1 };
+#declare Material = pigment { rgb <0.4,0.2,0.1> };
 #switch (Case)
   #case (1)
     #declare Shape = box { <-0.7,1.4,-0.04>, <0.7,2.1,0.04> };
@@ -56,6 +58,12 @@ plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
       }
     };
     #break
+  #case (10)
+    // a pattern of mean grey 0.248 over the sphere: the emission alias's nits divide by it, so this pigment matches
+    #declare Material = pigment { function { 0.5+2*x } color_map { [0 rgb 0] [1 rgb <0.4,0.2,0.1>] } };
+    #declare Source = pigment { function { 0.5+2*x } color_map { [0 rgb 0] [1 rgb <0.8,0.4,0.2>/0.248] } };
+    #declare Shape = sphere { <0,1.5,0>,0.25 };
+    #break
   #case (9)
     #declare Shape = union {
       sphere { <-0.3,1.5,0>,0.2 }
@@ -66,12 +74,14 @@ plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
     #declare Shape = sphere { <0,1.5,0>,0.25 };
 #end
 object { Shape no_image
-  pigment { rgb <0.4,0.2,0.1> }
-  finish { ambient 0 emission #if (Passive) 0 #else 2 #end diffuse 0 }
+  pigment { Material }
+  finish { ambient 0 #if (Passive) emission 0 diffuse 0.8 #else emission 2 diffuse 0 #end }
   light {
-    #if (Alias) emission #else #if (Case = 5) pigment { Source } #end #end
-    brightness #if (Units = 1) (8*4*pi*pi*0.25*0.25) lumens
-    #else 8 #if (Units != 2) nits #end #end
+    #if (Alias | (Bounce > 0 & !Passive)) emission #else #if (Case = 5 | Case = 10) pigment { Source } #end #end
+    #if (Passive) brightness Gain
+    #else brightness #if (Units = 1) (8*4*pi*pi*0.25*0.25) lumens
+      #else 8 #if (Units != 2) nits #end #end
+    #end
     samples Samples
     #if (Bounce > 0) bounce #if (Bounce > 1) { passes #if (Bounce = 2) 1 #else 3 #end } #end #end
   }
@@ -81,7 +91,7 @@ object { Shape no_image
   sphere { <0.8,1.5,0>,0.2 no_image
     pigment { rgb <0.2,0.5,1> }
     finish { ambient 0 emission 1 diffuse 0.5 }
-    light { bounce { passes 1 } samples Samples }
+    light { emission bounce { passes 1 } samples Samples }
   }
 #end
 

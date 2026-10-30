@@ -1545,7 +1545,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
+    bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
@@ -2198,8 +2198,11 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    // the emission alias casts its own glow times brightness; a pigment's nits take the mean chord 4V/A
-    emitter->coefficient = MathColour(settings.lumens >= 0.0 ? 1.0 : settings.brightness);
+    // a bounce-only block casts no primary light; the emission alias casts its glow times brightness unless a unit
+    // normalizes it below; a pigment's nits take the mean chord 4V/A
+    const bool aliasNits = settings.useEmission && settings.nits;
+    const bool normalized = (settings.lumens >= 0.0) || (aliasNits && settings.brightness > 0.0);
+    emitter->coefficient = MathColour(settings.BounceOnly() ? 0.0 : normalized ? 1.0 : settings.brightness);
     // every serial estimate below is gathered per index on the workers, then summed in index order
     const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
     std::vector<std::unique_ptr<TraceThreadData>> helpers;
@@ -2214,9 +2217,10 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             work(i, thread(worker), worker);
         }, poll);
     };
-    if (settings.lumens < 0.0 && settings.brightness != 0.0 && !settings.useEmission)
+    double meanChord = 0.0;
+    if (!settings.BounceOnly() && settings.lumens < 0.0 && settings.brightness != 0.0 && (!settings.useEmission || aliasNits))
     {
-        double meanChord = 0.0, discrepancy = HUGE_VAL;
+        double discrepancy = HUGE_VAL;
         std::vector<vector<std::pair<double, double>>> pieces(workers);
         std::vector<double> lineLength;
         std::vector<size_t> lineCrossings;
@@ -2271,7 +2275,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
         }
         if ((discrepancy > 0.005) && td->mediaMessages)
             td->mediaMessages->Warning(kWarningGeneral, "Interior light's geometric mean-chord normalization has %.3g relative sampling discrepancy.", discrepancy);
-        emitter->coefficient = MathColour(settings.brightness / meanChord);
+        if (!settings.useEmission)
+            emitter->coefficient = MathColour(settings.brightness / meanChord);
     }
     const size_t count = layout->NodeCount();
     std::unique_ptr<OwningEmissionInput> emissionInput;
@@ -2308,12 +2313,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
         });
         field = std::make_shared<PreparedSourceColourField>(layout, std::move(values));
     }
-    auto preparedEmission = [&](const Vector3d& p, TraceThreadData *worker) {
-        return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker) ?
-            field->Sample(p) * emitter->coefficient : MathColour();
-    };
     MathColour integral;
-    double relativeDiscrepancy = 0.0;
+    double volume = 0.0, relativeDiscrepancy = 0.0;
     {
         for (int bins : {16, 24, 32})
         {
@@ -2322,6 +2323,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             MathColour replicate[4];
             const size_t draws = size_t(bins) * bins * bins;
             vector<MathColour> drawn(4 * draws);
+            vector<char> occupied(4 * draws);
             parallel(4 * draws, [&](size_t index, TraceThreadData *worker, size_t) {
                 const size_t r = index / draws, k = index % draws;
                 {
@@ -2330,7 +2332,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                                      ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
                                      (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
                     const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
-                    drawn[index] = preparedEmission(p, worker);
+                    occupied[index] = Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker);
+                    drawn[index] = occupied[index] ? field->Sample(p) * emitter->coefficient : MathColour();
                 }
             });
             for (int r = 0; r < 4; r++)
@@ -2343,6 +2346,10 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                     }
                     replicate[r] += j * (emitter->boxVolume / draws);
                 }
+            size_t inside = 0;
+            for (char drawnInside : occupied)
+                inside += drawnInside ? 1 : 0;
+            volume = emitter->boxVolume * double(inside) / double(4 * draws);
             integral.Clear();
             for (const MathColour& estimate : replicate)
                 integral += estimate * 0.25;
@@ -2360,8 +2367,13 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             throw POV_EXCEPTION_STRING("Interior light prepared power integral is unresolved; refine its field layout.");
         if ((relativeDiscrepancy > 0.0025) && td->mediaMessages)
             td->mediaMessages->Warning(kWarningGeneral, "Interior light's generated-lumens normalization has %.3g relative sampling discrepancy.", relativeDiscrepancy);
+        if (aliasNits && (emitter->coefficient.Weight() > 0.0) && !(integral.Greyscale() > 0.0 && meanChord > 0.0))
+            throw POV_EXCEPTION_STRING("Interior light emission stated in nits requires positive media emission.");
+        // nits: the mean boundary radiance 4 * integral / A is the brightness, with A / 4 = V / meanChord
         const double scale = settings.lumens >= 0.0 ?
-            (settings.lumens == 0.0 ? 0.0 : settings.lumens / (4.0 * M_PI * integral.Greyscale())) : 1.0;
+            (settings.lumens == 0.0 ? 0.0 : settings.lumens / (4.0 * M_PI * integral.Greyscale())) :
+            (aliasNits && (emitter->coefficient.Weight() > 0.0)) ?
+            settings.brightness * volume / (meanChord * integral.Greyscale()) : 1.0;
         emitter->coefficient *= scale;
         emitter->intensity = integral * scale;
     }

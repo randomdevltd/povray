@@ -124,8 +124,12 @@ Changed Behaviour
 
   - Surface and interior light blocks accept `bounce` and
     `bounce { passes N }` to request bounce orders. Bare bounce requests one
-    order; passes must be a positive unsigned integer. With no explicit source
-    input, bounce selects the source's own emission field rather than white.
+    order; passes must be a positive unsigned integer. A block emits light of
+    its own only from an explicit `pigment` or `emission`: with neither, a
+    block without bounce stays a white pigment light, and a block with bounce
+    is bounce-only, emitting nothing of its own whatever the material's or
+    media's emission. A bounce-only block's brightness multiplies every order
+    it re-emits (default 1, physical); nits or lumens there are a parse error.
     `bounce` and `passes` are contextual and remain free identifiers elsewhere.
     A bounced surface may not use crand, fresnel or energy-conserving
     reflection, and one with subsurface scattering needs subsurface method 2;
@@ -143,8 +147,12 @@ Changed Behaviour
 
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
-    including density and mixing. Unitless brightness and nits multiply that
-    emission; lumens distribute a stated flux over it. Available in classic
+    including density and mixing. Unitless brightness multiplies that
+    emission; nits scale it so the glow's mean radiance at the container's
+    boundary, 4 times its integrated emission over the boundary area, is the
+    stated value; lumens distribute a stated flux over it. A surface light's
+    `emission` takes nits as the material emission's mean radiance over the
+    surface. Nonzero nits over a zero emission are an error. Available in classic
     scenes of every version and .pov4; `emission` was already reserved, while
     `light`, `nits` and `lumens` remain matched by text and free as
     identifiers elsewhere.

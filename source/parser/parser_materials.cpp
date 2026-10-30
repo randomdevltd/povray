@@ -4009,6 +4009,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
         CASE (BRIGHTNESS_TOKEN)
             light->lumens = -1.0;
+            light->nits = false;
             light->brightness = Parse_Float();
             if (!std::isfinite(light->brightness) || (light->brightness < 0.0))
                 Error("A light block's brightness must be finite and not negative.");
@@ -4018,7 +4019,10 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
                 light->lumens = light->brightness;
             }
             else if (CurrentTokenText() == "nits")
-                Get_Token(); // the number is the radiance itself; nothing converts it
+            {
+                Get_Token();
+                light->nits = true;
+            }
         END_CASE
 
         CASE (SHADOWLESS_TOKEN)
@@ -4078,8 +4082,8 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
     Parse_End();
 
-    if (light->bouncePasses > 0 && light->pigment == nullptr && !light->useEmission)
-        light->useEmission = true;
+    if (light->BounceOnly() && (light->nits || light->lumens >= 0.0))
+        Error("A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.");
     return light;
 }
 

@@ -51,6 +51,7 @@ public:
         std::set<const TEXTURE*> validated;
         SurfaceAngularGuide preparedGuide(Vector3d(owner->BBox.lowerLeft), Vector3d(owner->BBox.size));
         MathColour integral;
+        double area = 0.0;
         std::vector<SurfaceAngularGuide::ConePoint> points;
         constexpr unsigned count = 16384;
         const bool zero = prepared->IsConstant() && prepared->ConstantColour().IsZero();
@@ -64,18 +65,27 @@ public:
             {
                 const MathColour power = prepared->Emission(sample.intersection, sample.normal, td, &validated) * sample.areaWeight;
                 integral += power;
+                area += sample.areaWeight;
                 preparedGuide.Add(sample.intersection.IPoint, power.Greyscale() / double(count), sample.normal);
                 if (power.Greyscale() > 0.0) points.push_back({sample.intersection.IPoint, sample.normal, power.Greyscale()});
             }
         }
         integral /= double(count);
-        double preparedScale = settings->brightness;
+        area /= double(count);
+        double preparedScale = settings->BounceOnly() ? 0.0 : settings->brightness;
         if (settings->lumens >= 0.0)
         {
             const double power = M_PI * integral.Greyscale();
             if (settings->lumens > 0.0 && !(power > 0.0))
                 throw POV_EXCEPTION_STRING("A surface light stated in lumens requires positive surface emission.");
             preparedScale = settings->lumens == 0.0 ? 0.0 : settings->lumens / power;
+        }
+        else if (settings->useEmission && settings->nits && settings->brightness > 0.0)
+        {
+            // the emission's mean radiance over the surface, integral / area, becomes the stated nits
+            if (!(integral.Greyscale() > 0.0) || !(area > 0.0))
+                throw POV_EXCEPTION_STRING("A surface light's emission stated in nits requires positive surface emission.");
+            preparedScale = settings->brightness * area / integral.Greyscale();
         }
         preparedGuide.PrepareCones(std::move(points));
         preparedGuide.Prepare();
