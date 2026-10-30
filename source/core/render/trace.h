@@ -529,6 +529,7 @@ class Trace
         /// Scratch space for subsurface cloud queries.
         std::vector<int> ssltScratchStack;
         std::vector<char> ssltScratchClosed, ssltScratchSampled;
+        std::vector<double> ssltScratchFacets;
         std::vector<Intersection> ssltScratchHits;
         SubsurfaceVisibility ssltScratchVisibility;
         /// Thread data.
@@ -1249,7 +1250,9 @@ class Trace
             const TEXTURE *top = nullptr;
             bool bumped = false; ///< whether the top layer's normal is perturbed, then held in normal
             Vector3d normal;
-            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility, const Vector3d *bumpedNormal = nullptr);
+            NormalSpread spread; ///< the top layer's footprint taps, where its normal is their mean
+            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility, const Vector3d *bumpedNormal = nullptr,
+                     const NormalSpread *bumpedSpread = nullptr);
             bool Finish();
         };
 
@@ -1306,7 +1309,8 @@ class Trace
             PreparedSetId preparedSetId = 0;
             ObjectPtr object = nullptr;
             const SubsurfaceFlesh *flesh = nullptr;
-            const Vector3d *bumped = nullptr; ///< the exit point's perturbed normal, on its INormal's side; null where it has none
+            std::vector<Vector3d> bumped; ///< the exit point's perturbed normals over its footprint, on its INormal's side; none where it has none
+            std::vector<double> bumpedShare; ///< each one's share of the light leaving towards the eye
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
             int sizeLevel = 0, depthLevel = kCloudNoDepthLevel;
             SubsurfaceUnserved unserved = kUnservedSheet; ///< why the cloud could not be opened
@@ -1379,7 +1383,9 @@ class Trace
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
                                                const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole,
-                                               double tolerance, const char* uses = nullptr, const Vector3d* bumped = nullptr);
+                                               double tolerance, const char* uses = nullptr, const Vector3d* bumped = nullptr,
+                                               const double* shares = nullptr, size_t facets = 1);
+        double ComputeFacetsEntry(const Vector3d& side, const Vector3d* facets, const double* shares, size_t count, const Vector3d& direction, double eta);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
         std::string DescribeSubsurfaceObject(ConstObjectPtr object);
         bool SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared);
