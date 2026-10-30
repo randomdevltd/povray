@@ -9722,7 +9722,9 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
     // Method 2's light enters and leaves through the perturbed surface; the paths inside keep the surface's own normal.
     const Vector3d *bumped = (pointCloud && layers.bumped) ? &layers.normal : nullptr;
-    const double cos_view = (bumped != nullptr) ? clip(dot(vOut, *bumped), 0.0, 1.0) : cos_out;
+    // A facet turned away from the eye is not the one it sees there, so it leaves as the surface does.
+    const double cos_bumped = (bumped != nullptr) ? dot(vOut, *bumped) : 0.0;
+    const double cos_view = (cos_bumped > 0.0) ? min(cos_bumped, 1.0) : cos_out;
     double ftOut   = ComputeFt(cos_view, eta);
     // Method 2's diffusion leaves with all the light its profile counts: Ft(out) / pi normalised by 1 - Fdr from outside.
     double ftDiffuse = pointCloud ? ftOut * ssltBoundary->exitScale : ftOut;
