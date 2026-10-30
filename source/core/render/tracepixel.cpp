@@ -323,7 +323,7 @@ void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& col
 
 void TracePixel::operator()(DBL x, DBL y, DBL width, DBL height, RGBTColour& colour)
 {
-    ClearGrain();
+    ClearPrimary();
     // Subsurface clouds space their points by the view's pixel footprint, set once for every thread that builds them.
     if (!subsurfaceCameraSet)
     {
@@ -422,7 +422,6 @@ void TracePixel::TraceView(DBL x, DBL y, TraceTicket& parent, COLC weight, RGBTC
                        -1.0, parent.radiosityQuality);
     ticket.radiosityShare = parent.radiosityShare;
     ticket.radiosityEye = &camera.Location;
-    ClearGrain();
     differentialProbe = true;
     TraceSamples(colour, x, y, 1.0, 1.0, ticket, weight, &parent.radiosityQuality);
     differentialProbe = false;
@@ -435,7 +434,6 @@ void TracePixel::TraceView(DBL x, DBL y, const Vector2d& footX, const Vector2d& 
                        -1.0, parent.radiosityQuality);
     ticket.radiosityShare = parent.radiosityShare;
     ticket.radiosityEye = &camera.Location;
-    ClearGrain();
     colour.Clear();
 
     Ray ray(ticket), topLeft(ticket), topRight(ticket), bottomLeft(ticket), bottomRight(ticket);
@@ -1526,9 +1524,6 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const I
         else
             view->TraceView(u, 1.0 - v, const_cast<TraceTicket&>(ticket), weight, colour);
     }
-
-    if (view->Grainy())
-        MarkGrain();
 
     result = ToTransColour(RGBFTColour(colour));
     return true;

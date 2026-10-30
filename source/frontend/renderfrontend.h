@@ -195,7 +195,7 @@ std::string GetProgressTime(POVMS_Object& obj, POVMSType key);
 // end of namespace Message2Console
 
 #define RENDER_STATE_SIG "POV-Ray Render State File\0\0"
-#define RENDER_STATE_VER "0002"
+#define RENDER_STATE_VER "0003"
 
 struct Backup_File_Header final
 {

@@ -461,10 +461,12 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
 double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
                        bool continuedRay, const Vector3d *fold)
 {
-    if (ray.IsPrimaryRay())
+    if (ray.IsPrimaryRay() && !primaryRecorded)
     {
+        primaryRecorded = true;
         primaryObject = found ? bestisect.Object : nullptr;
-        primaryPigment.Clear();
+        primaryDepth = found ? bestisect.Depth : HUGE_VAL;
+        primaryEye = &ray;
     }
 
     // Check if we're busy shooting too many radiosity sample rays at an unimportant object
@@ -1915,8 +1917,6 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             threadData->activePatternFootX = savedFootX;
             threadData->activePatternFootY = savedFootY;
         }
-        if ((layer_number == 0) && ray.IsPrimaryRay())
-            primaryPigment = layCol;
 
         // If a valid color was returned set one_colour_found to true.
         // An invalid color is returned if a surface point is outside
@@ -3159,6 +3159,31 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
                                    const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index, const Vector3d* geometricNormal)
 {
+    // the primary hit keeps the lights all of whose shadow tests were blocked
+    struct ShadowRecord final
+    {
+        Trace& t;
+        const LightSource& light;
+        const bool on, was;
+        const unsigned int tests, blocked;
+        ShadowRecord(Trace& tr, const LightSource& l, bool o) : t(tr), light(l), on(o), was(tr.shadowRecording), tests(tr.shadowTests), blocked(tr.shadowBlocked)
+        {
+            if (on)
+            {
+                t.shadowBlocker = nullptr;
+                t.shadowRecording = true;
+            }
+        }
+        ~ShadowRecord()
+        {
+            if (!on)
+                return;
+            t.shadowRecording = was;
+            if ((t.shadowTests > tests) && (t.shadowBlocked - blocked == t.shadowTests - tests))
+                t.primaryShadows.emplace_back(light.index, t.shadowBlocker);
+        }
+    } record(*this, lightsource, recordShadows && (&eye == primaryEye));
+
     if (lightsource.emitter != nullptr)
     {
         const LightSource* received = LightOnObject(lightsource, object);
@@ -3562,7 +3587,6 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
         threadData->Stats()[Emitter_Surface_Draws] += count;
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
         const PhotonSobol sequence(DeriveKey(key, kDrawAreaLight, 0));
-        MarkGrain();
         // a one-sided receiver drops samples behind it, so their shadow walks are not traced
         const Vector3d *frontNormal = (!Test_Flag(object, DOUBLE_ILLUMINATE_FLAG) && (finish->DiffuseBack == 0.0)) ? &layer_normal : nullptr;
         for (int k = 0; k < count; k++)
@@ -3642,8 +3666,6 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
     MathColour sampleLightcolour = lightcolour / (size1 * size2);
     MathColour attenuatedLightcolour;
     const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
-    if(lightsource.Jitter)
-        MarkGrain();
 
     for(int v = 0; v < size2; ++v)
     {
@@ -3870,11 +3892,28 @@ const std::vector<std::uint8_t>& Trace::RootByRootLeaves(PreparedSetId set, cons
 
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
+    Intersection boundedIntersection;
+    // count the test, and whether it left no light, for the primary hit's shadow record
+    struct Count final
+    {
+        Trace& t;
+        const MathColour& c;
+        const Intersection& hit;
+        ~Count()
+        {
+            t.shadowTests++;
+            if (c.IsNearZero(EPSILON))
+            {
+                t.shadowBlocked++;
+                if (t.shadowBlocker == nullptr)
+                    t.shadowBlocker = hit.Object;
+            }
+        }
+    } count { *this, lightcolour, boundedIntersection };
     lightsourceray.ResetMediaErrorBudget();
     const bool exact = lightsourceray.HasExactShadowWindow();
     const double endpointTolerance = lightsource.emitter || exact ? 0.0 : SHADOW_TOLERANCE;
     const double startTolerance = (lightsource.emitter && lightsource.emitter->IsSurface()) || exact ? 0.0 : SHADOW_TOLERANCE;
-    Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
     bool foundTransparentObjects = false;
     bool foundIntersection;
@@ -3919,7 +3958,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     const RayRootQueryDisabled restoreQuery(query);
 
     // Only geometric blockers are cached: an opaque surface then clears the light whatever lies around it.
-    const bool cacheable = (lightsource.lightGroupLight == false) && qualityFlags.shadows &&
+    // A recorded test names the blocker the walk finds, not one a thread's earlier rays left in the cache.
+    const bool cacheable = (lightsource.lightGroupLight == false) && !shadowRecording && qualityFlags.shadows &&
         (!lightsource.emitter || (lightsource.Light_Type != FILL_LIGHT_SOURCE));
     const PreparedSetId setId = lightsourceray.GetPreparedSetId();
     const size_t cacheSlot = setId * shadowCacheLights + lightsource.index;
@@ -4211,23 +4251,6 @@ void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& ligh
 
     TraceAreaLightSubsetShadowRay(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, 0, 0, areaSize1 - 1, areaSize2 - 1, 0, axis1Temp, axis2Temp);
 
-    // Jitter only shapes a shadow the light's points disagree on.
-    if(lightsource.Jitter && !grain)
-    {
-        const MathColour* first = nullptr;
-        for(const MathColour& sample : lightGrid)
-        {
-            if(!sample.IsValid())
-                continue;
-            if(first == nullptr)
-                first = &sample;
-            else if(!(sample - *first).IsZero())
-            {
-                MarkGrain();
-                break;
-            }
-        }
-    }
 }
 
 void Trace::ComputeAreaLightAxes(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
@@ -4431,7 +4454,6 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
         threadData->Stats()[Emitter_Photon_Input]++;
     if (light.portal != nullptr)
         throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
-    MarkGrain();
     EmitterSample sample;
     if (!light.emitter->SampleToward(point, draw, threadData, sample))
         return false;
@@ -4790,7 +4812,6 @@ void Trace::ComputeDiffuseColour(const FINISH *finish, const Vector3d& lightDire
         if (finish->Crand > 0.0)
         {
             intensity -= Draw(key, kDrawCrand, index) * finish->Crand;
-            MarkGrain();
         }
         colour += intensity * layer_pigment_colour * light_colour;
         return;
@@ -4812,7 +4833,6 @@ void Trace::ComputeDiffuseColour(const FINISH *finish, const Vector3d& lightDire
     if(finish->Crand > 0.0)
     {
         intensity -= Draw(key, kDrawCrand, index) * finish->Crand;
-        MarkGrain();
     }
 
     if (finish->Fresnel != 0.0)
@@ -6132,7 +6152,6 @@ void Trace::ComputeRainbow(const Ray& ray, const Intersection& isect, MathColour
                     if(Rainbow->Jitter > 0.0)
                     {
                         index += (2.0 * Draw(ray.GetKey(), kDrawRainbow, rainbowIndex) - 1.0) * Rainbow->Jitter;
-                        MarkGrain();
                     }
 
                     if((index >= 0.0) && (index <= 1.0 - EPSILON))
@@ -6895,7 +6914,6 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
         if (lightsource.portal != nullptr)
             throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
         // The emitter's own draw toward the bend point gives the direction its light enters by; only that is kept.
-        MarkGrain();
         const EmitterDraw draw(Draw(key, kDrawEmitter, 0), Draw(key, kDrawEmitter, 1),
                                Draw(key, kDrawEmitter, 2), Draw(key, kDrawEmitter, 3),
                                DeriveKey(key, kDrawEmitter, UINT64_C(0x706f736974696f6e)));
@@ -10622,7 +10640,6 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     Eye.GetTicket().subsurfaceRecursionDepth++;
     const std::uint64_t key = Eye.NextChildKey(kDrawSubsurface);
-    MarkGrain();
 
     Vector3d vOut = -Eye.Direction;
 

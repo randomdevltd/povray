@@ -3962,7 +3962,6 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
     const Vector2d savedShift = lightSampleShift;
     const std::uint64_t savedKey = drawKey;
     drawKey = ray.NextChildKey(kDrawMedia);
-    trace->MarkGrain();
     if(!ray.IsShadowTestRay())
     {
         lightSampleIndex = 0;

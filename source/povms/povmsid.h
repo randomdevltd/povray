@@ -677,11 +677,13 @@ enum
     kPOVAttrib_PixelSize             = 'PiSi',
     kPOVAttrib_PixelBlock            = 'PBlo',
     kPOVAttrib_PixelColors           = 'PCol',
+    kPOVAttrib_PixelMap              = 'PxMp',  ///< (IntVector) Anti-aliasing method 4: primitive, 1/distance bits and shadow signature per pixel position.
     kPOVAttrib_PixelPositions        = 'PPos',
     kPOVAttrib_PixelSkipList         = 'PSLi',
     kPOVAttrib_PixelFinal            = 'PFin',  ///< (Void) Set if pixel data is relevant for final image.
     kPOVAttrib_ProgressLevel         = 'PgLv',  ///< (Int) Progressive render pass of a block, or the pass a continued render resumes at.
     kPOVAttrib_ProgressSamples       = 'PgSa',  ///< (FloatVector) Lattice samples from the render state file, RGBT per point in row order.
+    kPOVAttrib_ProgressMap           = 'PgMp',  ///< (IntVector) Their anti-aliasing method 4 edge map, three values per point in row order.
 
     // scene/view error reporting and TBD
     kPOVAttrib_CurrentLine           = 'CurL',

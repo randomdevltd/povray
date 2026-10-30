@@ -714,6 +714,7 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
     unsigned int latticeWidth = ropts.TryGetInt(kPOVAttrib_Width, 160) + ((ProgressiveLattice(ropts) == 2) ? 1 : 0);
     unsigned int latticeHeight = ropts.TryGetInt(kPOVAttrib_Height, 120) + ((ProgressiveLattice(ropts) == 2) ? 1 : 0);
     std::vector<POVMSFloat> samples;
+    std::vector<POVMSInt> map;
     if (keepSamples)
         samples.assign(size_t(latticeWidth) * latticeHeight * 4, 0.0f);
 
@@ -787,6 +788,19 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
                                 sample[2] = colors[i * 5 + 2];
                                 sample[3] = colors[i * 5 + 4];
                             }
+                            if (msg.Exist(kPOVAttrib_PixelMap))
+                            {
+                                std::vector<POVMSInt> m(msg.GetIntVector(kPOVAttrib_PixelMap));
+                                if (map.empty())
+                                    map.assign(size_t(latticeWidth) * latticeHeight * 3, 0);
+                                for (size_t i = 0; (i * 2 + 1 < positions.size()) && (i * 3 + 2 < m.size()); i++)
+                                {
+                                    unsigned int x = positions[i * 2];
+                                    unsigned int y = positions[i * 2 + 1];
+                                    if ((x < latticeWidth) && (y < latticeHeight))
+                                        std::copy(&m[i * 3], &m[i * 3] + 3, &map[(size_t(y) * latticeWidth + x) * 3]);
+                                }
+                            }
                         }
                     }
                     // do not render complete blocks again
@@ -827,8 +841,11 @@ void RenderFrontendBase::ContinueBackup(POVMS_Object& ropts, ViewData& vd, ViewI
         skip = levelSkip;
         if (!samples.empty())
             ropts.SetFloatVector(kPOVAttrib_ProgressSamples, samples);
+        if (!map.empty())
+            ropts.SetIntVector(kPOVAttrib_ProgressMap, map);
     }
     std::vector<POVMSFloat>().swap(samples);
+    std::vector<POVMSInt>().swap(map);
 
     // make sure the input file is closed since we're about to write to it
     inbuffer.reset();
