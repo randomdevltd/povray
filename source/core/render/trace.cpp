@@ -3641,6 +3641,22 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             // No further intersections in the direction of the ray.
             break;
     }
+
+    // The stretch past the last boundary lies in the media of every container the light itself is inside.
+    if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && (lightsourcedepth > 0.0) &&
+        !lightcolour.IsZero() && !lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
+    {
+        RayInteriorVector reached;
+        for (Interior *interior : lightsourceray.GetInteriors())
+            if (lightsource.emitter || std::any_of(interior->media.begin(), interior->media.end(), [](const Media& m) { return m.Sample_Method == 4; }))
+                reached.push_back(interior);
+        Intersection end;
+        end.Depth = lightsourcedepth;
+        end.Object = nullptr;
+        ColourChannel unused = 0.0;
+        if (!reached.empty())
+            media.ComputeMedia(reached, lightsourceray, end, lightcolour, unused);
+    }
 }
 
 void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
@@ -3932,11 +3948,6 @@ void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& 
         Intersection end;
         end.Depth = lightsourcedepth;
         end.Object = nullptr;
-        if (!lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
-        {
-            ColourChannel unused = 0.0;
-            media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, end, lightcolour, unused);
-        }
         ComputeShadowMedia(lightsourceray, end, lightcolour, true);
     }
 }
