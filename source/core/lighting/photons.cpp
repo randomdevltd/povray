@@ -502,6 +502,7 @@ void PhotonTrace::ComputeLightedTexture(MathColour& LightCol, ColourChannel&, co
     {
         // Get perturbed surface normal.
         LayNormal = rawnormal;
+        isect.PNormal = rawnormal;
 
         if (qualityFlags.normals && (Layer->Tnormal != nullptr))
         {

@@ -1058,6 +1058,7 @@ void Trace::ComputeOneTextureColour(MathColour& resultColour, ColourChannel& res
     MathColour c2;
     ColourChannel t2;
 
+    isect.PNormal = rawnormal;
     switch(texture->Type)
     {
         case NO_PATTERN:
@@ -1498,6 +1499,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     {
         // Get perturbed surface normal.
         layNormal = rawnormal;
+        isect.PNormal = rawnormal;
 
         if (qualityFlags.normals && (layer->Tnormal != nullptr))
         {
@@ -1984,6 +1986,7 @@ void Trace::ComputeShadowTexture(MathColour& filtercolour, const TEXTURE *textur
 
     for (layer = texture; layer != nullptr; layer = layer->Next)
     {
+        isect.PNormal = rawnormal;
         colour_found = Compute_Pigment(layer_Pigment_Colour, layer->Pigment, ipoint, &isect, &ray, threadData);
 
         if(colour_found)

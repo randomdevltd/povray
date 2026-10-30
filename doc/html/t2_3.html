@@ -6179,10 +6179,11 @@ re-render (see file <code>layered3.pov</code>).</p>
 <p>
 Another touch we want to add to the cloth are some wrinkles as if the cloth
 had been rumpled. This is not another texture layer, but when working with
-layered textures, we must keep in mind that changes to the surface normal
-must be included in the uppermost layer of the texture. Changes to lower
-layers have no effect on the final product (no matter how transparent the
-upper layers are).</p>
+layered textures, we must keep in mind that each layer is lit with its own
+normal. A normal in a lower layer shades only that layer's colour where it
+shows through the layers above, and refraction uses the normal of the
+uppermost layer, so to rumple the whole cloth the normal goes in the
+uppermost layer.</p>
 <p>
 We add this final box to the script and re-render (see file <code>layered4.pov</code>)</p>
 <pre>
