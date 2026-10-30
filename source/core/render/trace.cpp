@@ -2520,6 +2520,7 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
         MathColour lightcolour = candidate.colour;
         lightsourceray.Origin = ipoint;
         lightsourceray.Direction = candidate.direction;
+        SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal);
         TestOneLightShadow(*candidate.light, candidate.depth, lightsourceray, ipoint, lightcolour, candidate.index);
         MathColour lit;
         if ((lightcolour - candidate.colour).IsZero())
@@ -2792,6 +2793,7 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
     if (!ComputeOneLightReach(lightsource, finish, ipoint, layer_normal, object, lightsourcedepth, lightsourceray, lightcolour, backside))
         return;
 
+    SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal);
     TestOneLightShadow(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, light_index);
 
     ComputeOneLightContribution(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor,
@@ -4496,6 +4498,32 @@ bool SurfaceBefore(const SurfaceHit& a, const SurfaceHit& b)
     return false;
 }
 
+}
+
+// A light behind the lit surface is reached from the receiver's far side, which is inside the receiver only where it has an inside.
+void Trace::SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal)
+{
+    const RayInteriorVector& from = eye.GetInteriors();
+    const RayInteriorVector& held = shadow.GetInteriors();
+    Interior *interior = object->interior.get();
+    const double toward = (geometricNormal != nullptr) ? dot(shadow.Direction, *geometricNormal) : 0.0;
+    int change = 0;
+    if ((toward != 0.0) && (interior != nullptr) && HasInside(object) && (dot(eye.Direction, *geometricNormal) * toward > 0.0))
+    {
+        const Vector3d beyond = point + ((toward > 0.0) ? 1.0 : -1.0) * InterfaceTolerance(point, interior) * geometricNormal->normalized();
+        const bool inside = object->Inside(beyond, threadData);
+        if (inside != (std::find(from.begin(), from.end(), interior) != from.end()))
+            change = inside ? 1 : -1;
+    }
+    if ((change == 0) && (held.size() == from.size()) && std::equal(from.begin(), from.end(), held.begin()))
+        return;
+    RayInteriorVector start(from);
+    if (change > 0)
+        start.push_back(interior);
+    else if (change < 0)
+        start.erase(std::find(start.begin(), start.end(), interior));
+    shadow.ResetInteriors();
+    shadow.AppendInteriors(start);
 }
 
 void Trace::StartProbe(Ray& probe, const Ray& ray)
