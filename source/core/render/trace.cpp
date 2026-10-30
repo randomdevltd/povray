@@ -424,6 +424,36 @@ double Trace::TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC
 double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
                        bool continuedRay)
 {
+    // the eye path: the primary hit, then at each level the child ray of the highest weight from the hit on the path
+    struct PathLevel final
+    {
+        size_t& nest;
+        explicit PathLevel(size_t& n) : nest(n) { nest++; }
+        ~PathLevel() { nest--; }
+    } pathLevel(pathNest);
+    if (recordShadows)
+    {
+        const size_t d = pathNest;
+        if (pathOn.size() <= d)
+        {
+            pathOn.resize(d + 1, 0);
+            pathObject.resize(d + 1, nullptr);
+            pathChildWeight.resize(d + 1, 0.0);
+        }
+        const bool child = (ray.IsReflectionRay() || ray.IsRefractionRay() || continuedRay) && !ray.IsRadiosityRay() &&
+                           !ray.IsPhotonRay() && !ray.IsSubsurfaceRay() && !ray.IsShadowTestRay() && !ray.IsPretraceRay();
+        const bool start = ray.IsPrimaryRay() && !primaryRecorded;
+        const bool on = start || ((d > 1) && child && pathOn[d - 1] && (pathEnd >= d - 1) && (weight > pathChildWeight[d - 1]));
+        pathOn[d] = on ? 1 : 0;
+        if (on)
+        {
+            if (!start)
+                pathChildWeight[d - 1] = weight;
+            pathObject[d] = found ? bestisect.Object : nullptr;
+            pathChildWeight[d] = 0.0;
+            pathEnd = d;
+        }
+    }
     if (ray.IsPrimaryRay() && !primaryRecorded)
     {
         primaryRecorded = true;

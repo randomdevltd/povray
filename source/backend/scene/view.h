@@ -87,7 +87,7 @@ struct AaCell final
 {
     std::int16_t x = 0, y = 0;      ///< Offset from the pixel centre in 1/1024 pixel; leaves are never smaller than 1/256.
     std::uint8_t depth = 0;         ///< The leaf's side is 2^-depth.
-    std::uint32_t id = 0;           ///< The primitive its ray hit, 0 for none.
+    std::uint32_t id = 0;           ///< The primitives its ray hit first and last, as one number; 0 for none.
     std::uint32_t light = 0;        ///< Its lights' shadow signature.
     float w = 0;                    ///< One over the distance to that hit, 0 for none.
     RGBTColour col;
@@ -106,7 +106,7 @@ struct AaFit final
     std::int16_t leaf = -1;         ///< Bisection: the leaf the planner chose to split.
     std::uint16_t nCells = 0;       ///< Bisection: how many leaves it has there.
     std::uint8_t kind = 0;          ///< 0 off the edge map, 1 holds a fitted line, 2 on the map with no line: bisected.
-    std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
+    std::uint8_t planned = 0;       ///< Chosen by the planner for the next pass: 1 by the edge map, 2 by colour variance.
     std::uint8_t probes = 0;        ///< Probes traced so far.
 };
 
@@ -400,7 +400,7 @@ class ViewData final
             }
             return aaGeom[size_t(f.geo)];
         }
-        /// Method 4: the primitive a pixel's centre ray hit, 0 for none.
+        /// Method 4: the primitives a pixel's centre ray hit first and at the end of its eye path, as one number; 0 for none.
         std::uint32_t& AaId(unsigned int x, unsigned int y) { return aaId[AaIndex(x, y)]; }
         /// Method 4: a hash of which lights were blocked at that hit, and by what; 0 when none were.
         std::uint32_t& AaLight(unsigned int x, unsigned int y) { return aaLight[AaIndex(x, y)]; }
@@ -541,7 +541,7 @@ class ViewData final
         std::vector<float> aaLab;
         std::vector<AaFit> aaFit;
         std::deque<AaGeom> aaGeom;     ///< Grown in blocks, so it never holds twice what it needs, and what it holds never moves.
-        std::vector<std::uint32_t> aaId;    ///< Method 4: the edge map's primitive per pixel.
+        std::vector<std::uint32_t> aaId;    ///< Method 4: the edge map's first and last primitive per pixel.
         std::vector<float> aaW;             ///< Method 4: the edge map's 1/distance per pixel.
         std::vector<std::uint32_t> aaLight; ///< Method 4: the edge map's shadow signature per pixel.
         std::unordered_map<const void*, std::uint32_t> aaObjectIds; ///< Method 4: every object of the scene tree, numbered from 1.

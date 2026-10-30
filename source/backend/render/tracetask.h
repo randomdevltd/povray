@@ -86,7 +86,7 @@ class TraceTask final : public RenderTask
         static void PlanM4(ViewData* vd, int pass, int round);
         /// Probe rounds queued for method 4; the planner may stop earlier.
         static constexpr int kM4Rounds = 12;
-        /// Rounds of bisection for map pixels no line holds, each splitting at most one leaf a pixel.
+        /// Rounds of bisection for pixels no line holds, each splitting at most one leaf a pixel.
         static constexpr int kM4NoiseRounds = 64;
 
         virtual void Run() override;

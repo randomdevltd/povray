@@ -925,7 +925,11 @@ void TraceTask::StochasticSupersamplingM3()
 void TraceTask::M4Record(std::uint32_t& id, float& w, std::uint32_t& light)
 {
     ViewData* vd = GetViewData();
-    id = vd->AaObjectId(trace.primaryObject);
+    // the primitives at both ends of the eye path, as one number: the first alone where the path ends where it starts
+    const std::uint32_t first = vd->AaObjectId(trace.primaryObject), last = vd->AaObjectId(trace.LastObject());
+    std::uint64_t k = (std::uint64_t(first) << 32 | last) * 0x9E3779B97F4A7C15ull;
+    k ^= k >> 29;
+    id = ((first == 0) || (last == first)) ? first : (std::uint32_t(k ^ (k >> 32)) | 0x80000000u);
     // one over the distance, so a scaled scene keeps every ratio of it
     w = ((trace.primaryDepth > 0.0) && (trace.primaryDepth < HUGE_VAL)) ? float(1.0 / trace.primaryDepth) : 0.0f;
     // the set of (light, first blocker) pairs, hashed in a fixed order; 0 for an empty set
@@ -1746,27 +1750,13 @@ void M4EdgeMap(ViewData* vd)
         }
         auto has = [&](int k) { return (k >= 0) && (k + 1 < n) && same[size_t(k)]; };
         auto floorAt = [&](int k) { return kM4Floor * std::max(iw[size_t(k)], iw[size_t(k + 1)]); };
-        // a step: the link's change against the slope beside it, beyond what the change of that slope explains
+        // a step: the link's change against the slope either side, beyond what the change of that slope explains; with only
+        // one side on the surface (beside a boundary), a smooth surface curving away to its silhouette would pass as one
         for(int k = 0; k + 1 < n; k++)
         {
-            if(!has(k) || (!has(k - 1) && !has(k + 1)))
+            if(!has(k) || !has(k - 1) || !has(k + 1))
                 continue;
-            double slope, curve = 0.0;
-            if(has(k - 1) && has(k + 1))
-            {
-                slope = 0.5 * (d[size_t(k - 1)] + d[size_t(k + 1)]);
-                curve = std::fabs(d[size_t(k + 1)] - d[size_t(k - 1)]);
-            }
-            else if(has(k - 1))
-            {
-                slope = d[size_t(k - 1)];
-                curve = has(k - 2) ? std::fabs(d[size_t(k - 1)] - d[size_t(k - 2)]) : 0.0;
-            }
-            else
-            {
-                slope = d[size_t(k + 1)];
-                curve = has(k + 2) ? std::fabs(d[size_t(k + 2)] - d[size_t(k + 1)]) : 0.0;
-            }
+            const double slope = 0.5 * (d[size_t(k - 1)] + d[size_t(k + 1)]), curve = std::fabs(d[size_t(k + 1)] - d[size_t(k - 1)]);
             step[size_t(k)] = (std::fabs(d[size_t(k)] - slope) > kM4Break * std::max(curve, floorAt(k))) ? 1 : 0;
         }
         // a crease: the change of slope across the link, against the change one pixel further out on either side
@@ -1785,13 +1775,11 @@ void M4EdgeMap(ViewData* vd)
             bool crease = false;
             if(bend[size_t(k)] > 0.0)
             {
-                double out = -1.0;
-                if(smooth(k - 2))
-                    out = std::fabs(d[size_t(k - 1)] - d[size_t(k - 2)]);
-                if(smooth(k + 2))
-                    out = std::max(out, std::fabs(d[size_t(k + 2)] - d[size_t(k + 1)]));
+                // both sides, for the same reason as a step
+                const bool both = smooth(k - 2) && smooth(k + 2);
+                const double out = both ? std::max(std::fabs(d[size_t(k - 1)] - d[size_t(k - 2)]), std::fabs(d[size_t(k + 2)] - d[size_t(k + 1)])) : 0.0;
                 // the largest bend of its neighbourhood, the first of equals, so a crease between two pixels marks one link
-                crease = (out >= 0.0) && (bend[size_t(k)] > kM4Break * std::max(out, floorAt(k))) &&
+                crease = both && (bend[size_t(k)] > kM4Break * std::max(out, floorAt(k))) &&
                          ((k == 0) || (bend[size_t(k)] >= bend[size_t(k - 1)])) && ((k + 2 >= n) || (bend[size_t(k)] > bend[size_t(k + 1)]));
             }
             if(step[size_t(k)] || crease)
@@ -2305,10 +2293,13 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         return;
     }
 
-    // bisection: every map pixel no line holds starts with one leaf, its centre sample, which is split first; after that,
-    // each round splits its largest leaf that touches a cell on another surface, by size times their difference in colour
+    // bisection, in two tiers. The map's: every map pixel no line holds starts with one leaf, its centre sample, which is
+    // split first; after that, its largest leaf that touches a cell on another surface, by size times their colour difference.
+    // Colour's, for any pixel no line holds and nothing in the map's tier: the leaf whose colour differs most, as a root mean
+    // square, from the cells it touches (the eight neighbours for a centre sample, else its own pixel's leaves), by size.
     const unsigned int w = area.GetWidth();
     std::vector<float> score(size_t(w) * area.GetHeight(), 0.0f);
+    std::vector<std::uint8_t> tier(score.size(), 0);
     const float thr2 = float(vd->aaThr * vd->aaThr);
     const float minSize = 1.0f / float(1 << std::max(1, std::min(8, vd->aaDepth)));
     for(unsigned int y = area.top; y <= area.bottom; y++)
@@ -2318,14 +2309,16 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
             AaFit& f = vd->Fit(x, y);
             f.leaf = -1;
             const bool broken = (f.kind == 1) && (f.seg >= 0) && (vd->aaSegs[size_t(f.seg)].state == 3);
-            if((f.kind != 2) && !broken)
+            if((f.kind == 1) && !broken)
                 continue;
+            const bool onMap = (f.kind == 2) || broken;
             const AaCell centre = vd->CentreLeaf(x, y);
             const AaCell* cells = (f.cells >= 0) ? vd->Leaves(f) : &centre;
             const size_t nCells = (f.cells >= 0) ? f.nCells : 1;
-            const double slope = M4Slope(vd, int(x), int(y));
+            const double slope = onMap ? M4Slope(vd, int(x), int(y)) : 0.0;
             const std::uint8_t here = vd->aaLink[(x - area.left) + (y - area.top) * size_t(w)];
-            float best = 0.0f;
+            float best[2] = { 0.0f, 0.0f };
+            int bestLeaf[2] = { -1, -1 };
             // a leaf index must fit the planner's 16 bits
             for(size_t i = 0; (i < nCells) && (nCells <= 32764); i++)
             {
@@ -2333,18 +2326,27 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
                 const float cx = c.X(), cy = c.Y(), cs = c.Size();
                 if(cs <= minSize * 1.01f)
                     continue;
-                float far2 = 0.0f;
-                auto touch = [&](float ox, float oy, float os, const float* lab, std::uint32_t id, std::uint32_t lo, float wo, bool across)
+                float far2 = 0.0f, sum2 = 0.0f;
+                int touched = 0;
+                auto touch = [&](float ox, float oy, float os, const float* lab, std::uint32_t id, std::uint32_t lo, float wo, bool across, bool own)
                 {
                     if((std::fabs(ox - cx) > 0.5f * (os + cs) + 1.0e-4f) || (std::fabs(oy - cy) > 0.5f * (os + cs) + 1.0e-4f))
                         return;
+                    const float d2 = Dist2(lab, c.lab);
+                    if(own == (nCells > 1))
+                    {
+                        sum2 += d2;
+                        touched++;
+                    }
+                    if(!onMap)
+                        return;
                     const double dist = std::sqrt(double(ox - cx) * double(ox - cx) + double(oy - cy) * double(oy - cy));
                     if(across || M4Apart(c.id, c.light, c.w, id, lo, wo, dist, slope))
-                        far2 = std::max(far2, Dist2(lab, c.lab));
+                        far2 = std::max(far2, d2);
                 };
                 for(size_t j = 0; j < nCells; j++)
                     if(j != i)
-                        touch(cells[j].X(), cells[j].Y(), cells[j].Size(), cells[j].lab, cells[j].id, cells[j].light, cells[j].w, false);
+                        touch(cells[j].X(), cells[j].Y(), cells[j].Size(), cells[j].lab, cells[j].id, cells[j].light, cells[j].w, false, true);
                 for(int dy = -1; dy <= 1; dy++)
                 {
                     for(int dx = -1; dx <= 1; dx++)
@@ -2361,87 +2363,94 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
                             across = (bits & ((dx != 0) ? 1 : 2)) != 0;
                         }
                         touch(float(dx), float(dy), 1.0f, vd->AaLabAt(unsigned(qx), unsigned(qy)), vd->AaId(unsigned(qx), unsigned(qy)),
-                              vd->AaLight(unsigned(qx), unsigned(qy)), vd->AaW(unsigned(qx), unsigned(qy)), across);
+                              vd->AaLight(unsigned(qx), unsigned(qy)), vd->AaW(unsigned(qx), unsigned(qy)), across, false);
                     }
                 }
-                if(far2 < thr2)
-                    continue;
-                const float sc = cs * std::sqrt(far2);
-                if(sc > best)
+                const float var = (touched > 0) ? sum2 / float(touched) : 0.0f;
+                const float sc[2] = { (far2 >= thr2) ? cs * std::sqrt(far2) : 0.0f, (var >= thr2) ? cs * std::sqrt(var) : 0.0f };
+                for(int t = 0; t < 2; t++)
                 {
-                    best = sc;
-                    f.leaf = std::int16_t(i);
+                    if(sc[t] > best[t])
+                    {
+                        best[t] = sc[t];
+                        bestLeaf[t] = int(i);
+                    }
                 }
             }
-            score[(x - area.left) + (y - area.top) * w] = best;
+            const int t = (bestLeaf[0] >= 0) ? 0 : 1;
+            f.leaf = std::int16_t(bestLeaf[t]);
+            score[(x - area.left) + (y - area.top) * w] = best[t];
+            tier[(x - area.left) + (y - area.top) * w] = std::uint8_t(t);
         }
     }
-    auto bucketOf = [&](const AaFit& f, unsigned int x, unsigned int y) -> int
+    // candidates in order of priority: the map's tier above colour's, then by bucket
+    auto keyOf = [&](const AaFit& f, unsigned int x, unsigned int y) -> int
     {
-        return (f.leaf >= 0) ? M4Bucket(score[(x - area.left) + (y - area.top) * w]) : -1;
+        const size_t at = (x - area.left) + (y - area.top) * w;
+        return (f.leaf >= 0) ? (256 * (1 - int(tier[at])) + M4Bucket(score[at])) : -1;
     };
 
-    std::int64_t hist[256] = {};
-    std::int64_t total = 0;
+    std::int64_t hist[512] = {};
+    std::int64_t total[2] = { 0, 0 };
     if(enabled)
     {
         for(unsigned int y = area.top; y <= area.bottom; y++)
         {
             for(unsigned int x = area.left; x <= area.right; x++)
             {
-                const int b = bucketOf(vd->Fit(x, y), x, y);
-                if(b >= 0)
+                const int k = keyOf(vd->Fit(x, y), x, y);
+                if(k >= 0)
                 {
-                    hist[b]++;
-                    total++;
+                    hist[k]++;
+                    total[k >> 8]++;
                 }
             }
         }
     }
 
-    // take whole buckets, best first, until the budget is reached; the bucket that crosses it is taken whole
-    // and the pass is the last, so the result never depends on which of equal candidates came first
+    // the map's tier may take the whole budget, and colour's waits for a round with none of the map's candidates; it then takes
+    // half of the budget left, so leaves split in one round compete with the next round's first splits, and all of it in the
+    // last round. Whole keys are taken best first; the key that crosses the limit is drawn in an order fixed by the coordinates
+    // until the limit is met, so the result never depends on which of equal candidates came first
     const int factor = 4;
-    int threshold = 0;
-    std::int64_t admitted = total;
-    bool cut = false;
+    std::int64_t limit = vd->aaBudgetLeft;
+    if(enabled && (total[0] > 0) && (factor * total[0] < limit))
+        limit = factor * total[0];
+    else if(enabled && (total[0] == 0))
+    {
+        const std::int64_t half = (limit + 1) / 2;
+        limit = ((round + 1 >= kM4NoiseRounds) || (limit - half < factor)) ? limit : half;
+    }
+    int threshold = -1;
+    std::int64_t admitted = total[0] + total[1];
     std::vector<std::uint8_t> drawn;
     std::vector<size_t> split;
     if(enabled)
     {
         std::int64_t cum = 0;
-        for(int b = 255; b >= 0; b--)
+        for(int k = 511; k >= 0; k--)
         {
-            cum += hist[b];
-            if(cum * factor >= vd->aaBudgetLeft)
+            if(factor * (cum + hist[k]) >= limit)
             {
-                threshold = b;
-                admitted = cum;
-                cut = true;
+                threshold = k;
+                const std::int64_t take = std::max<std::int64_t>(0, (limit - factor * cum + factor - 1) / factor);
+                std::vector<std::pair<std::uint32_t, std::uint32_t>> order;
+                for(unsigned int y = area.top; y <= area.bottom; y++)
+                    for(unsigned int x = area.left; x <= area.right; x++)
+                        if(keyOf(vd->Fit(x, y), x, y) == k)
+                        {
+                            std::uint32_t hh = (x * 73856093u) ^ (y * 19349663u);
+                            hh ^= hh >> 16; hh *= 0x7feb352du; hh ^= hh >> 15; hh *= 0x846ca68bu; hh ^= hh >> 16;
+                            order.emplace_back(hh, (x - area.left) + (y - area.top) * w);
+                        }
+                std::sort(order.begin(), order.end());
+                drawn.assign(size_t(w) * area.GetHeight(), 0);
+                for(size_t i = 0; i < size_t(take); i++)
+                    drawn[order[i].second] = 1;
+                admitted = cum + take;
                 break;
             }
-        }
-        // unless that bucket alone would overrun by more than a quarter of the whole budget: then its candidates
-        // are drawn in an order fixed by their coordinates until the budget is met
-        const double whole = std::ceil(double(area.GetWidth()) * double(area.GetHeight()) * vd->aaFraction);
-        if(cut && (double(admitted * factor - vd->aaBudgetLeft) > 0.25 * whole))
-        {
-            const std::int64_t before = admitted - hist[threshold];
-            const std::int64_t take = std::max<std::int64_t>(0, (vd->aaBudgetLeft - before * factor + factor - 1) / factor);
-            std::vector<std::pair<std::uint32_t, std::uint32_t>> order;
-            for(unsigned int y = area.top; y <= area.bottom; y++)
-                for(unsigned int x = area.left; x <= area.right; x++)
-                    if(bucketOf(vd->Fit(x, y), x, y) == threshold)
-                    {
-                        std::uint32_t hh = (x * 73856093u) ^ (y * 19349663u);
-                        hh ^= hh >> 16; hh *= 0x7feb352du; hh ^= hh >> 15; hh *= 0x846ca68bu; hh ^= hh >> 16;
-                        order.emplace_back(hh, (x - area.left) + (y - area.top) * area.GetWidth());
-                    }
-            std::sort(order.begin(), order.end());
-            drawn.assign(size_t(area.GetWidth()) * area.GetHeight(), 0);
-            for(size_t i = 0; i < size_t(take); i++)
-                drawn[order[i].second] = 1;
-            admitted = before + take;
+            cum += hist[k];
         }
     }
 
@@ -2450,10 +2459,11 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
         for(unsigned int x = area.left; x <= area.right; x++)
         {
             AaFit& f = vd->Fit(x, y);
-            const int b = enabled ? bucketOf(f, x, y) : -1;
-            const size_t at = (x - area.left) + (y - area.top) * area.GetWidth();
-            const bool taken = (b > threshold) || ((b == threshold) && (drawn.empty() || drawn[at]));
-            f.planned = ((b >= 0) && taken) ? 1 : 0;
+            const int k = enabled ? keyOf(f, x, y) : -1;
+            const size_t at = (x - area.left) + (y - area.top) * w;
+            const bool taken = (k >= 0) && ((k > threshold) || ((k == threshold) && drawn[at]));
+            // 1 for the map's tier, 2 for colour's
+            f.planned = taken ? std::uint8_t(1 + tier[at]) : 0;
             if(f.planned)
                 split.push_back(at);
         }
@@ -2461,7 +2471,7 @@ void TraceTask::PlanM4(ViewData* vd, int pass, int round)
     if(!split.empty())
         vd->ReserveAaSplits(split);
     vd->aaBudgetLeft -= factor * admitted;
-    if(cut)
+    if((threshold >= 0) && (limit >= vd->aaBudgetLeft + factor * admitted))
         vd->aaExhausted = true;
 }
 

@@ -319,7 +319,10 @@ class Trace
         bool recordShadows = false;
         /// The lights every shadow test of the primary hit found blocked, by index, with the first primitive that blocked each.
         std::vector<std::pair<int, const void*>> primaryShadows;
-        void ClearPrimary() { primaryObject = nullptr; primaryDepth = HUGE_VAL; primaryRecorded = false; primaryEye = nullptr; primaryShadows.clear(); }
+        void ClearPrimary() { primaryObject = nullptr; primaryDepth = HUGE_VAL; primaryRecorded = false; primaryEye = nullptr; primaryShadows.clear(); pathEnd = 0; }
+        /// The primitive at the end of the primary ray's eye path (null for none): from each hit on it, the reflected,
+        /// refracted or transmitted ray of the highest weight, the first traced of equals; recorded with the shadows.
+        const void* LastObject() const { return (pathEnd > 0) ? pathObject[pathEnd] : primaryObject; }
 
         /// Trace a ray.
         ///
@@ -511,6 +514,11 @@ class Trace
         IndexedVectorGeneratorPtr ssltUniformDirections;
         /// The ray whose hit @ref primaryObject is, while its lights are shaded; shadow tests and blocked ones, and the first blocker.
         const Ray* primaryEye = nullptr;
+        /// The eye path, by nesting of @ref ShadeRay(): each level's hit, whether it is on the path, and its best child's weight.
+        std::vector<const void*> pathObject;
+        std::vector<COLC> pathChildWeight;
+        std::vector<std::uint8_t> pathOn;
+        size_t pathNest = 0, pathEnd = 0;
         unsigned int shadowTests = 0, shadowBlocked = 0;
         const void* shadowBlocker = nullptr;
         bool shadowRecording = false;
