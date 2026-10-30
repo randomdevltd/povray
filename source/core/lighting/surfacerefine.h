@@ -41,7 +41,7 @@ constexpr unsigned kMostNodeDraws = 64;      // draws a node may grow to while i
 constexpr double kNeededDraws = 4.0;         // most draws over those its own variance needs to resolve the tolerance
 constexpr unsigned kChildDraws = 16;         // surface draws about a split node that may become its children
 constexpr unsigned kAreaDraws = 64;          // surface draws about a split node that share its area among it and them
-constexpr double kCoverStep = 1.0e-6;        // offset off a surface, over its part's radius, at which cover is tested
+constexpr double kCoverStep = 1.0e-6;        // distance, over its part's radius, within which another surface seals a point
 constexpr double kPacking = 0.68;            // nodes per squared spacing of a maximal Poisson disc set
 constexpr double kFacing = 0.5;              // least cosine between normals of one sheet
 constexpr std::size_t kProbe = 256;          // first area draws of a part
@@ -49,21 +49,49 @@ constexpr std::size_t kDrawsPerSeed = 8;     // area draws per expected level 0 
 constexpr std::size_t kMostDraws = std::size_t(1) << 22;
 constexpr std::size_t kChunk = 65536;
 
-/// The opaque solids that may cover a part's surface, its owner among them when opaque: a point covered on both sides
-/// lies buried between solids, where no light reaches.
+/// The opaque solids that may seal a part's surface, and the part: a point is buried where another surface passes within
+/// a vanishing distance along every probe line through it, sealed where no ray reaches, whatever either encloses.
 struct Cover final
 {
     std::vector<ObjectPtr> solids;
-    double step = 0.0;
+    ObjectPtr owner = nullptr;
+    double radius = 0.0;
     bool Buried(const Vector3d& point, const Vector3d& normal, TraceThreadData* td) const
     {
-        return Inside(point + normal * step, td) && Inside(point - normal * step, td);
+        Vector3d t1, t2;
+        SurfaceGeometrySampler::TangentFrame(normal, t1, t2);
+        const Vector3d probes[] = {normal, normal + t1, normal - t1, normal + t2, normal - t2};
+        for (const Vector3d& probe : probes)
+            if (Surfaces(point, probe.normalized(), td) < 2) return false;
+        return true;
     }
-    bool Inside(const Vector3d& point, TraceThreadData* td) const
+    // Distinct surfaces the line through `point` along unit `direction` crosses within the vanishing distance; each
+    // probe starts a part's radius back, clear of any absolute intersection tolerance.
+    std::size_t Surfaces(const Vector3d& point, const Vector3d& direction, TraceThreadData* td) const
     {
-        for (ObjectPtr solid : solids)
-            if (Inside_BBox(point, solid->BBox) && Inside_Object(point, solid, td)) return true;
-        return false;
+        const double step = kCoverStep * radius;
+        TraceTicket ticket(1, 0.0);
+        Ray ray(ticket, point - direction * radius, direction);
+        IStack stack(td->stackPool);
+        std::vector<std::pair<ConstObjectPtr, double>> hits;
+        auto cross = [&](ObjectPtr object)
+        {
+            for (int a = X; a <= Z; ++a)
+            {
+                const double low = object->BBox.lowerLeft[a], high = low + object->BBox.size[a];
+                // Single-precision boxes may round inward by a few units in the last place.
+                const double margin = step + std::ldexp(std::fabs(low) + std::fabs(high) + std::fabs(point[a]), -20);
+                if (point[a] < low - margin || point[a] > high + margin) return;
+            }
+            object->All_Intersections(ray, stack, td);
+            for (; !stack->empty(); stack->pop())
+                if (std::fabs(stack->top().Depth - radius) <= step)
+                    hits.emplace_back(stack->top().Object, stack->top().Depth);
+        };
+        cross(owner);
+        for (ObjectPtr solid : solids) cross(solid);
+        std::sort(hits.begin(), hits.end());
+        return std::unique(hits.begin(), hits.end()) - hits.begin();
     }
 };
 

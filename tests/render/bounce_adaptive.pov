@@ -1,12 +1,14 @@
 // bounce_adaptive.pov: passive surface bounce in a small room, each case a feature the bounce nodes must resolve.
 // Case 0 a hard shadow edge from a point light; 1 a thin floating occluder; 2 contact shadows; 3 a textured floor and
-// wall; 4 concave and convex creases; 5 a grazing lit wall; 6 a plain box room lit inside. S scales the scene.
+// wall; 4 concave and convex creases; 5 a grazing lit wall; 6 a plain box room lit inside; 7 case 0 shut in a closed
+// hollow sphere, 8 in a closed box, or with Shell in a thin shell of either. S scales the scene.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (S) #declare S = 1; #end
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Passes) #declare Passes = 1; #end
 #ifndef (Inverse) #declare Inverse = 0; #end
+#ifndef (Shell) #declare Shell = 0; #end
 global_settings { assumed_gamma 1 ambient_light 0 max_trace_level 8 }
 background { rgb 0 }
 #declare T = transform { scale S };
@@ -43,8 +45,20 @@ box { <-1.55, 0, -1.5>, <-1.5, 2, 1.5> Passive(<0.7, 0.15, 0.1>) transform { T }
 
 #switch (Case)
 #case (0)
+#case (7)
+#case (8)
   light_source { <1.2, 1.8, -0.6> * S, rgb 3 fade_distance S fade_power 2 }
   box { <-0.2, 0, -0.1>, <0.25, 1.3, 0.1> Passive(0.75) transform { T } }
+  #declare Room = texture { pigment { rgb 0.6 } finish { ambient 0 emission 0 diffuse 0.8 } };
+  #if (Case = 7)
+    #if (Shell) difference { sphere { <0, 1, 0>, 3.6 } sphere { <0, 1, 0>, 3.5 } #else sphere { <0, 1, 0>, 3.5 hollow #end
+      texture { Room } transform { T } }
+  #end
+  #if (Case = 8)
+    #if (Shell) difference { box { <-3.1, -1.1, -3.1>, <3.1, 3.1, 3.1> } box { <-3, -1, -3>, <3, 3, 3> }
+    #else box { <-3, -1, -3>, <3, 3, 3> #end
+      texture { Room } transform { T } }
+  #end
   #break
 #case (1)
   Panel(<-0.4, 1.98, -0.4>, <0.4, 2, 0.4>, 12)

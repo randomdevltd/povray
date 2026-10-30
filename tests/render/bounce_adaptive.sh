@@ -1,6 +1,7 @@
 #!/bin/sh
 # bounce_adaptive.sh <povray> <srcdir>: adaptive surface bounce nodes refine alike on one thread or several and at a
-# thousandth or a thousand times the scale, and a plain box room bounces as its inverse does.
+# thousandth or a thousand times the scale, a plain box room bounces as its inverse does, and a room shut in a closed
+# sphere or box bounces as it does in a thin shell of either.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -41,6 +42,13 @@ blocks room6 > room6.blocks; blocks inverse6 > inverse6.blocks
 W=8; H=6
 alike room6 inverse6 0.08 || { cat room6.blocks inverse6.blocks
     echo "bounce_adaptive: a plain box room bounces unlike its inverse" >&2; exit 1; }
+for case in 7 8; do
+    W=48; H=36; render closed$case Declare=Case=$case Declare=Samples=16 +wt3
+    render shell$case Declare=Case=$case Declare=Samples=16 Declare=Shell=1 +wt3
+    blocks closed$case > closed$case.blocks; blocks shell$case > shell$case.blocks
+    alike shell$case closed$case 0.02 nodes || { cat shell$case.blocks closed$case.blocks; nodes shell$case; nodes closed$case
+        echo "bounce_adaptive: case $case bounces unlike its thin shell" >&2; exit 1; }
+done
 for case in 0 4; do
     for s in 1 0.001 1000; do
         W=64; H=48; render scale$case-$s Declare=Case=$case Declare=S=$s Declare=Samples=16 +wt3

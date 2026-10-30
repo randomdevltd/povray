@@ -440,7 +440,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
             for (const auto object : scene->objects)
                 if (object->IsOpaque() && !Test_Flag(object, NO_SHADOW_FLAG))
                     part.cover.solids.push_back(object);
-            part.cover.step = surface_refine::kCoverStep * part.sampler->Radius();
+            part.cover.owner = part.owner;
+            part.cover.radius = part.sampler->Radius();
             target.surface = true;
             target.part = parts.size();
             parts.push_back(std::move(part));
