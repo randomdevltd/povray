@@ -829,6 +829,15 @@ const LexemePosition& Parser::CurrentFilePosition() const
     return mToken.raw.lexeme.position;
 }
 
+// "line N of file", for messages given after parsing has moved on
+std::string Parser::CurrentSourceLine() const
+{
+    std::string where = "line " + std::to_string(std::max<POV_LONG>(1, CurrentFilePosition().line));
+    if (HaveCurrentFile())
+        where += " of " + UCS2toSysString(CurrentFileName());
+    return where;
+}
+
 bool Parser::HaveCurrentMessageContext() const
 {
     return mToken.sourceFile != nullptr;

@@ -33,39 +33,58 @@ reject() {
         if "$POVRAY" +i"invalid.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"$name.$language.log" 2>&1; then
             echo "volume_legacy_media: expected $name in $language to fail" >&2; exit 1
         fi
-        tr '\n' ' ' <"$name.$language.log" | tr -s '[:space:]' ' ' | grep -F "$message" >/dev/null || { cat "$name.$language.log"; exit 1; }
+        expected=$(printf '%s' "$message" | sed "s/LANG/$language/g")
+        tr '\n' ' ' <"$name.$language.log" | tr -s '[:space:]' ' ' | grep -F "$expected" >/dev/null || { cat "$name.$language.log"; exit 1; }
     done
 }
 light='sphere { 0, 1 hollow pigment { rgbt 1 } interior { light {} } }'
-reject own_glow 'sphere light block at line 3 holds the method 3 medium at line 3' \
+reject own_glow 'sphere light block at line 3 of invalid.LANG holds the method 3 medium at line 3 of invalid.LANG' \
     'sphere { 0, 1 hollow pigment { rgbt 1 } interior { media { method 3 emission 1 } light {} } }'
 reject own_absorption 'holds the method 1 medium' \
     'sphere { 0, 1 hollow pigment { rgbt 1 } interior { light { emission } media { method 1 absorption 1 } } }'
-reject scatter 'The method 3 medium at line 4 in the box scatters, and the sphere light block at line 3 lights media' \
+reject scatter 'The method 3 medium at line 4 of invalid.LANG in the box scatters, and the sphere light block at line 3 of invalid.LANG lights media' \
     "$light
 box { -3, 3 hollow pigment { rgbt 1 } interior { media { method 3 scattering { 1, 0.1 } } } }"
-reject atmosphere 'medium at line 4 in the atmosphere scatters' \
+reject atmosphere 'medium at line 4 of invalid.LANG in the atmosphere scatters' \
     "sphere { 0, 1 pigment { rgb 1 } light {} }
 media { method 2 scattering { 1, 0.1 } }"
-reject surface_sslt 'sphere light block at line 3 is on a subsurface method 1 finish' \
+reject surface_sslt 'sphere light block at line 3 of invalid.LANG is on a subsurface method 1 finish' \
     'sphere { 0, 1 pigment { rgb 1 } finish { subsurface { translucency 0.5 method 1 } } light {} }
 global_settings { subsurface { } }'
 reject bounce_sslt 'is on a subsurface method 1 finish' \
     'global_settings { subsurface { method 1 } }
 sphere { 0, 1 pigment { rgb 1 } finish { emission 0 subsurface { translucency 0.5 } } light { bounce } }'
-reject volume_sslt 'sphere light block at line 4 is on a subsurface method 1 finish' \
+reject volume_sslt 'sphere light block at line 4 of invalid.LANG is on a subsurface method 1 finish' \
     'global_settings { subsurface { method 1 } }
 sphere { 0, 1 hollow pigment { rgbt 1 } finish { subsurface { translucency 0.5 } } interior { light {} } }'
 sslt='box { -3, -2 pigment { rgb 1 }
   finish { subsurface { translucency 0.5 } } }'
-reject lit_sslt 'The subsurface method 1 finish at line 5 on the box is lit by the sphere light block at line 6' \
+reject lit_sslt 'The subsurface method 1 finish at line 5 of invalid.LANG on the box is lit by the sphere light block at line 6 of invalid.LANG' \
     "global_settings { subsurface { method 1 } }
 $sslt
 sphere { 0, 1 pigment { rgb 1 } light {} }"
-reject lit_own_method 'finish at line 4 on the box is lit by the sphere light block at line 3' \
+reject lit_own_method 'finish at line 4 of invalid.LANG on the box is lit by the sphere light block at line 3 of invalid.LANG' \
     "$light
 box { -3, -2 pigment { rgb 1 } finish { subsurface { method 1 translucency 0.5 } } }
 global_settings { subsurface { } }"
+reject mesh_sslt 'The subsurface method 1 finish at line 5 of invalid.LANG on the mesh is lit by the sphere light block at line 3' \
+    "$light
+mesh2 { vertex_vectors { 3, <-3, -3, -3>, <-2, -3, -3>, <-3, -2, -3> } texture_list { 1,
+  texture { pigment { rgb 1 } finish { subsurface { method 1 translucency 0.5 } } } } face_indices { 1, <0, 1, 2>, 0 } inside_vector y }
+global_settings { subsurface { } }"
+inc_pov=glow.inc; inc_pov4=glow.inc4
+for language in pov pov4; do
+    eval inc=\$inc_$language
+    printf '%s\n' '// line 1' 'sphere { 0, 1 hollow pigment { rgbt 1 }' '  interior { media { method 3 emission 1 } light {} } }' >"$inc"
+    if [ "$language" = pov ]; then line="#include \"$inc\""; else line="include \"$inc\";"; fi
+    write included "$language" "$line"
+    if "$POVRAY" +i"included.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"included.$language.log" 2>&1; then
+        echo "volume_legacy_media: expected included in $language to fail" >&2; exit 1
+    fi
+    tr '\n' ' ' <"included.$language.log" | tr -s '[:space:]' ' ' |
+        grep -F "light block at line 3 of $inc holds the method 3 medium at line 3 of $inc;" >/dev/null ||
+        { cat "included.$language.log"; exit 1; }
+done
 for language in pov pov4; do
     write unlit "$language" "global_settings { subsurface { method 1 } }
 $sslt"

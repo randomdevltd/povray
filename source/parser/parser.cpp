@@ -10684,6 +10684,21 @@ static const FINISH *Legacy_Subsurface(const TEXTURE *textures, int sceneMethod)
     return nullptr;
 }
 
+// The first subsurface method 1 finish on this object's own textures, including per-face and per-component ones.
+static const FINISH *Object_Legacy_Subsurface(ConstObjectPtr object, int sceneMethod)
+{
+    const FINISH *finish = Legacy_Subsurface(object->Texture, sceneMethod);
+    if (finish == nullptr)
+        finish = Legacy_Subsurface(object->Interior_Texture, sceneMethod);
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        for (MeshIndex i = 0; (finish == nullptr) && (i < mesh->Number_Of_Textures); i++)
+            finish = Legacy_Subsurface(mesh->Textures[i], sceneMethod);
+    if (const Blob *blob = dynamic_cast<const Blob *>(object))
+        for (size_t i = 0; (finish == nullptr) && (i < blob->Element_Texture.size()); i++)
+            finish = Legacy_Subsurface(blob->Element_Texture[i], sceneMethod);
+    return finish;
+}
+
 static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
 {
     objects.push_back(object);
@@ -10706,8 +10721,9 @@ void Parser::Check_Legacy_Transport()
         if (block != nullptr)
             for (const Media& medium : interior->media)
                 if (medium.Sample_Method != 4)
-                    Error("The %s light block at line %lld holds the method %d medium at line %lld; a light block needs "
-                          "method 4 media.", ShapeName(object), block->line, int(medium.Sample_Method), medium.line);
+                    Error("The %s light block at %s holds the method %d medium at %s; a light block needs "
+                          "method 4 media.", ShapeName(object), block->where.c_str(), int(medium.Sample_Method),
+                          medium.where.c_str());
         for (const MediaLight *light : { static_cast<const MediaLight *>(object->surfaceLight.get()), block })
         {
             if ((light == nullptr) || !sceneData->useSubsurface)
@@ -10715,10 +10731,9 @@ void Parser::Check_Legacy_Transport()
             std::vector<ObjectPtr> parts;
             Collect_Scene_Objects(object, parts);
             for (ObjectPtr part : parts)
-                if (Legacy_Subsurface(part->Texture, sceneData->subsurfaceMethod) ||
-                    Legacy_Subsurface(part->Interior_Texture, sceneData->subsurfaceMethod))
-                    Error("The %s light block at line %lld is on a subsurface method 1 finish; a light block needs "
-                          "subsurface method 2.", ShapeName(object), light->line);
+                if (Object_Legacy_Subsurface(part, sceneData->subsurfaceMethod))
+                    Error("The %s light block at %s is on a subsurface method 1 finish; a light block needs "
+                          "subsurface method 2.", ShapeName(object), light->where.c_str());
         }
     }
     auto blockOf = [](const LightSource *light) {
@@ -10730,13 +10745,10 @@ void Parser::Check_Legacy_Transport()
         const LightSource *first = sceneData->mediaLights.front();
         for (ObjectPtr object : objects)
         {
-            const FINISH *finish = Legacy_Subsurface(object->Texture, sceneData->subsurfaceMethod);
-            if (finish == nullptr)
-                finish = Legacy_Subsurface(object->Interior_Texture, sceneData->subsurfaceMethod);
-            if (finish != nullptr)
-                Error("The subsurface method 1 finish at line %lld on the %s is lit by the %s light block at line %lld; "
-                      "only subsurface method 2 carries a light block's light.", finish->SubsurfaceLine, ShapeName(object),
-                      ShapeName(first->emitterContainer), blockOf(first)->line);
+            if (const FINISH *finish = Object_Legacy_Subsurface(object, sceneData->subsurfaceMethod))
+                Error("The subsurface method 1 finish at %s on the %s is lit by the %s light block at %s; "
+                      "only subsurface method 2 carries a light block's light.", finish->SubsurfaceWhere.c_str(),
+                      ShapeName(object), ShapeName(first->emitterContainer), blockOf(first)->where.c_str());
         }
     }
     const LightSource *lighting = nullptr;
@@ -10752,9 +10764,9 @@ void Parser::Check_Legacy_Transport()
     const MediaLight *block = blockOf(lighting);
     auto reject = [&](const Media& medium, const std::string& where) {
         if ((medium.Sample_Method != 4) && !medium.Scattering.IsZero())
-            Error("The method %d medium at line %lld %s scatters, and the %s light block at line %lld lights media; "
-                  "only method 4 media scatter a light block's light.", int(medium.Sample_Method), medium.line, where.c_str(),
-                  ShapeName(owner), block->line);
+            Error("The method %d medium at %s %s scatters, and the %s light block at %s lights media; "
+                  "only method 4 media scatter a light block's light.", int(medium.Sample_Method), medium.where.c_str(),
+                  where.c_str(), ShapeName(owner), block->where.c_str());
     };
     for (const Media& medium : sceneData->atmosphere)
         reject(medium, "in the atmosphere");

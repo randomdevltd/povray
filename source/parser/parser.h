@@ -575,6 +575,7 @@ class Parser final
         bool HaveCurrentFile() const;
         const UCS2* CurrentFileName() const;
         const LexemePosition& CurrentFilePosition() const;
+        std::string CurrentSourceLine() const;
         bool HaveCurrentMessageContext() const;
         const MessageContext& CurrentMessageContext() const;
         void SetInputStream(const std::shared_ptr<IStream>& stream, const UCS2String& path);

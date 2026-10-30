@@ -125,7 +125,7 @@ finishes` and `Surface bounce cannot prepare Fresnel or energy-conserving
 reflection attenuation`.
 
 Media methods 1 to 3 and subsurface method 1 stay exactly as they were and take
-no part in a light block's light. Parsing stops, naming the lines, when an object
+no part in a light block's light. Parsing stops, naming each line and its file, when an object
 with a light block holds a method 1 to 3 medium or uses a subsurface method 1
 finish (`... a light block needs method 4 media.`, `... a light block needs
 subsurface method 2.`), when a method 1 to 3 medium scatters while a light

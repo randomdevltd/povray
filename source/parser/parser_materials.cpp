@@ -2540,7 +2540,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         {
             // a block giving only minimum_influence leaves subsurface off, so #default can carry the scene's value
             bool otherItem = false, influence = false;
-            const POV_LONG subsurfaceLine = std::max<POV_LONG>(1, CurrentFilePosition().line);
+            const std::string subsurfaceWhere = CurrentSourceLine();
             Parse_Begin();
             EXPECT
                 CASE (ANISOTROPY_TOKEN)
@@ -2636,7 +2636,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
             {
                 mExperimentalFlags.subsurface = true;
                 New->UseSubsurface = true;
-                New->SubsurfaceLine = subsurfaceLine;
+                New->SubsurfaceWhere = subsurfaceWhere;
             }
         }
         END_CASE
@@ -3690,7 +3690,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     Vector3d Local_Vector;
     MATRIX Local_Matrix;
     bool resolutionSpecified = false;
-    const POV_LONG line = std::max<POV_LONG>(1, CurrentFilePosition().line);
+    const std::string where = CurrentSourceLine();
 
     Parse_Begin();
 
@@ -3887,7 +3887,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     if (resolutionSpecified && IMedia->Sample_Method != 4)
         Error("media resolution requires method 4.");
 
-    IMediaObj.line = line;
+    IMediaObj.where = where;
     medialist.push_back(IMediaObj);
 }
 
@@ -3961,7 +3961,7 @@ unsigned Parser::Parse_Light_Bounce()
 std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
-    light->line = std::max<POV_LONG>(1, CurrentFilePosition().line);
+    light->where = CurrentSourceLine();
     bool haveAttenuation = false;
     Parse_Begin();
 
