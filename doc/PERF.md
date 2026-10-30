@@ -1461,19 +1461,23 @@ eight draws per expected node), the baseline spacing r₀ is set so 4096 nodes o
 scene's total bounce area, and each surface's draws are thinned to such a set, a draw kept only when no node of the same
 sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
 
-Each order refines level by level, to r₀/64. A node is measured from its light's `samples` draws per source, each from a
-point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
-projected along the normal), so its value is the mean over that disc and its draws give a standard error. A node splits
+Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
+from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
+projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
+mean over the reachable disc and its draws give a standard error. A node splits
 when, relative to the local irradiance max(own, predicted):
 - between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
 - within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
   (a shadow edge or a contact crossing it);
 - its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths).
 The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
-gradient's included; a difference that is large but not yet certain doubles the node's draws instead, up to four times
-its light's samples. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
+gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours and a spread trusted
+only from eight draws. A difference that is large but not yet certain, or a value whose standard error exceeds 10%,
+doubles the node's draws instead, to at most four times what resolving the tolerance needs and never above 64, so the
+light's `samples` do not change refinement. A split parent becomes a node of the next level and is measured again. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
 spacing; the parent's area is shared by draws. Splits are decided per level from per-node results and applied in a fixed
-order, so the field is the same on any thread count; all lengths are ratios of r₀, so it is the same at any scale.
+order, so the field is the same on any thread count; all lengths are ratios of r₀, and the shadow rays of node draws use
+no absolute offsets, so it is the same at any scale.
 
 Surface bounce fields draw on the prepared media cell budget: as many bytes as that many colours, over every order,
 each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
@@ -1481,7 +1485,7 @@ byte, most first. Each order reports its nodes, levels, MiB and time (refinement
 `Bounce oN: ...`, with its nodes per level and how many splits each criterion asked for.
 
 Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
-16·((n + nᵢ)·Δ)², so another sheet or a stacked parallel face is far; the kernel (1 − d²/d₉²)² times nᵢ·n² is corrected
+16·((n + nᵢ)·Δ)², so another sheet or a stacked parallel face is far; the kernel (1 − d²/d₉²)² times (nᵢ·n)² is corrected
 to reproduce planes in the tangent coordinates (moving least squares) and the result kept within the neighbours' range.
 The subsurface bridge takes these nodes and areas as its patches; a patch whose normals spread past the cloud cone
 splits by facing rather than position.
