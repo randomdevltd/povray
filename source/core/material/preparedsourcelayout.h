@@ -138,7 +138,10 @@ public:
     PositionSample SampleUniformPosition(std::uint64_t key) const
     {
         const DBL u = Draw(key), v = Draw(key), w = Draw(key);
-        const Vector3d q(u, v, w);
+        return SampleUniformPosition(Vector3d(u, v, w));
+    }
+    PositionSample SampleUniformPosition(const Vector3d& q) const
+    {
         Vector3d point = origin;
         for (int a = X; a <= Z; ++a)
             point[a] += q[a] * extent[a];
@@ -146,12 +149,17 @@ public:
     }
     PositionSample SamplePosition(size_t cell, std::uint64_t key) const
     {
+        const DBL ux = Draw(key), uy = Draw(key), uz = Draw(key);
+        return SamplePosition(cell, Vector3d(ux, uy, uz));
+    }
+    /// The point at `offset`, each coordinate in [0,1), within a cell.
+    PositionSample SamplePosition(size_t cell, const Vector3d& offset) const
+    {
         if (cell >= CellCount())
             throw std::out_of_range("Prepared source cell");
         const size_t x = cell % counts[X], y = (cell / counts[X]) % counts[Y],
                      z = (cell / (counts[X] * counts[Y])) % counts[Z];
-        const DBL ux = Draw(key), uy = Draw(key), uz = Draw(key);
-        const Vector3d q((x + ux) / counts[X], (y + uy) / counts[Y], (z + uz) / counts[Z]);
+        const Vector3d q((x + offset[X]) / counts[X], (y + offset[Y]) / counts[Y], (z + offset[Z]) / counts[Z]);
         Vector3d p = origin;
         for (int a = X; a <= Z; ++a)
             p[a] += q[a] * extent[a];
@@ -313,6 +321,32 @@ public:
             node = selectedSmall ? small : large;
         }
         auto sample = domain->SamplePosition(node - leafCount, key);
+        sample.pdf = PositionPdf(sample.position);
+        return sample;
+    }
+    /// As SamplePosition(key), stratified: the cell by inverting the tree at u in [0,1), the point at `offset` within it.
+    PreparedSourceDomain::PositionSample SamplePosition(DBL u, const Vector3d& offset) const
+    {
+        if (tree.empty())
+            return domain->SampleUniformPosition(offset);
+        size_t node = 1;
+        long double v = u;
+        while (node < leafCount)
+        {
+            const long double left = tree[node * 2] / tree[node];
+            if (v < left)
+            {
+                node = node * 2;
+                v /= left;
+            }
+            else
+            {
+                node = node * 2 + 1;
+                v = (v - left) / (1 - left);
+            }
+            v = std::min(std::max(v, 0.0L), 1.0L - std::numeric_limits<long double>::epsilon());
+        }
+        auto sample = domain->SamplePosition(node - leafCount, offset);
         sample.pdf = PositionPdf(sample.position);
         return sample;
     }

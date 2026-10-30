@@ -74,6 +74,13 @@ struct EmitterDraw final
 
 };
 
+/// A lump of an emitter's power, for proposals that aim at it: its centre, squared spread and share of the power.
+struct EmitterLobe final
+{
+    Vector3d centre;
+    double spread2, share;
+};
+
 struct EmitterSample final
 {
     Vector3d position;
@@ -103,6 +110,8 @@ class Emitter
         virtual std::shared_ptr<const PreparedLightAxis> PreparedAxis() const { return nullptr; }
         virtual const MathColour& Intensity() const = 0;   ///< prepared estimate of ∫j dV; never a connection normalization
         virtual const Vector3d& Centre() const = 0;        ///< power-weighted centre
+        /// The power as a few lobes; empty for one at Centre() spread over the light's law radius.
+        virtual const std::vector<EmitterLobe>& Lobes() const { static const std::vector<EmitterLobe> none; return none; }
         virtual double Radius() const = 0;                 ///< about Centre(), holding every sample
         /// The least distance from `from` to any sample: to the bounding sphere unless an emitter knows tighter bounds.
         virtual double Reach(const Vector3d& from) const { return std::max(0.0, (from - Centre()).length() - Radius()); }

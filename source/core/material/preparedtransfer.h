@@ -4,6 +4,7 @@
 #include "core/configcore.h"
 #include "core/math/finite.h"
 #include "base/colour.h"
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -84,6 +85,32 @@ inline DBL PreparedDistanceMass(DBL start, DBL end, DBL scale)
     const DBL fraction = end > scale ? ((end - start) / end) / (1.0 + scale / end) :
                                       ((end - start) / scale) / (1.0 + end / scale);
     return tail * fraction;
+}
+
+/// The integral over [start, end) of 1 / ((t - foot)^2 + clearance2), clearance2 > 0: an inverse-square point's reach.
+inline DBL PreparedEquiangularMass(DBL start, DBL end, DBL foot, DBL clearance2)
+{
+    const DBL h = std::sqrt(clearance2);
+    return (std::atan((end - foot) / h) - std::atan((start - foot) / h)) / h;
+}
+
+inline DBL PreparedEquiangularDistancePdf(DBL start, DBL end, DBL distance, DBL foot, DBL clearance2)
+{
+    if (IsNaNNumber(distance) || distance < start || distance > end || IsInfiniteNumber(distance))
+        return 0.0;
+    const DBL mass = PreparedEquiangularMass(start, end, foot, clearance2);
+    const DBL offset = distance - foot;
+    return mass > 0.0 ? 1.0 / (mass * (offset * offset + clearance2)) : 0.0;
+}
+
+/// A distance in [start, end) drawn in proportion to 1 / ((t - foot)^2 + clearance2), uniform in the angle it subtends.
+inline PreparedDistanceSample SamplePreparedEquiangularDistance(DBL start, DBL end, DBL u, DBL foot, DBL clearance2)
+{
+    const DBL h = std::sqrt(clearance2);
+    const DBL a = std::atan((start - foot) / h), b = std::atan((end - foot) / h);
+    DBL distance = foot + h * std::tan(a + u * (b - a));
+    distance = std::max(start, std::min(distance, std::nextafter(end, start)));
+    return {distance, PreparedEquiangularDistancePdf(start, end, distance, foot, clearance2)};
 }
 
 inline DBL PreparedExponentialDistancePdf(DBL start, DBL end, DBL distance, DBL rate)

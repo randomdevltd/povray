@@ -28,6 +28,7 @@ public:
     }
 
     PreparedLightPositionSample SamplePosition(std::uint64_t key) const { return distribution->SamplePosition(key); }
+    PreparedLightPositionSample SamplePosition(DBL u, const Vector3d& offset) const { return distribution->SamplePosition(u, offset); }
     DBL PositionPdf(const Vector3d& point) const { return distribution->PositionPdf(point); }
     pov_base::MathColour ColourAt(const Vector3d& point) const { return colour->Sample(point); }
     const std::shared_ptr<const PreparedSourceDomain>& Domain() const { return domain; }
