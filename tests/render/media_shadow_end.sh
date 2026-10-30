@@ -28,9 +28,10 @@ check() {
 }
 for case in 1 2 3 4 5 6; do
     for block in 0 1; do check $case 4 $block; done
+    check $case 3 0
 done
 # a sample on a container's face starts its shadow ray outside: a parallel light lights the medium alike from near and far
-for method in 4; do
+for method in 3 4; do
     render near_m$method Declare=Case=7 Declare=Method=$method
     render far_m$method Declare=Case=7 Declare=Method=$method Declare=Far=2000
     awk -v n="$(mean near_m$method)" -v f="$(mean far_m$method)" -v m=$method 'BEGIN {
@@ -38,9 +39,9 @@ for method in 4; do
             printf "media_shadow_end: method %d medium lit from afar is %.5f of its near-lit value\n", m, f / n > "/dev/stderr"; exit 1 } }'
 done
 check 2 4 0 Declare=Area=1
-check 4 4 0 Declare=Area=1
+check 4 3 0 Declare=Area=1
 # a no_shadow container's medium dims only the camera's path
-unshadowed=0; check 4 4 0 Declare=NoShadow=1; unshadowed=
+unshadowed=0; check 4 4 0 Declare=NoShadow=1; check 4 3 0 Declare=NoShadow=1; unshadowed=
 check 4 4 0 Declare=Scale=0.001
 check 4 4 0 Declare=Scale=1000
 check 6 4 0 Declare=Scale=0.001

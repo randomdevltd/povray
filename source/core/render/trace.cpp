@@ -3649,19 +3649,15 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && sceneData->interiorMedia &&
         (lightsourcedepth > 0.0) && !lightcolour.IsZero())
     {
-        RayInteriorVector around, reached;
+        RayInteriorVector around;
         FindContainingInteriors(lightsourceray.Evaluate(0.5 * lightsourcedepth), around, lightsourceray.GetPreparedSetId(), !lightsource.emitter);
-        const bool hollow = std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
-        for (Interior *interior : around)
-            if ((hollow || !sceneData->solidBlocksInteriorMedia) && (lightsource.emitter ||
-                std::any_of(interior->media.begin(), interior->media.end(), [](const Media& m) { return m.Sample_Method == 4; })))
-                reached.push_back(interior);
+        const bool reach = !sceneData->solidBlocksInteriorMedia || std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
         Intersection end;
         end.Depth = lightsourcedepth;
         end.Object = nullptr;
         ColourChannel unused = 0.0;
-        if (!reached.empty())
-            media.ComputeMedia(reached, lightsourceray, end, lightcolour, unused);
+        if (!around.empty() && reach)
+            media.ComputeMedia(around, lightsourceray, end, lightcolour, unused);
     }
 }
 
