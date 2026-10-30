@@ -2039,6 +2039,34 @@ averaged apart, so light through an upper layer times the layer under it is a pr
 two patterns are unrelated; metallic reflection reads the averaged colour; `texture_map` and `material_map` pick their
 texture at the hit point (aliased like an unfiltered ray, not biased). Scenes with `assumed_gamma` other than 1
 average, like antialiasing, in their working space.
+
+Normals are filtered over the same footprint and taps. Each layer's `normal` is perturbed at every tap, and lighting
+uses that spread of normals instead of the one at the pixel centre. Diffuse light is the mean of each tap's own
+response (cosine, brilliance, Fresnel, back-side diffuse), which is exactly what supersampling the footprint gives
+wherever the light is the same across it; a light is tested while any tap faces it. Averaging the normals first and
+taking the mean's length as a dimming factor would cost one evaluation instead of one per tap, but is wrong at every
+terminator, where some taps face the light and some do not, and on grazing light those are most of the bumpy pixels;
+the per-tap loop is dot products, no rays. Highlights cannot be averaged from a few taps without glinting, so
+`specular` and `phong` come from the taps facing the light: their share scales the highlight, their mean is its
+normal, and their spread widens its lobe (Toksvig: angular variance (1 − |mean|) / |mean| added to the lobe's,
+keeping its integral). A tilt turns phong's mirror direction twice as far in the plane of incidence and by the
+eye's cosine across it, so phong widens by those two variances. Reflected and refracted rays leave along the taps'
+mean normal; their count is unchanged, so a mirror behind bumps is sharper than the supersampled blur.
+
+On a checker of bumpy and flat tiles running to the horizon (`tests/render/texture_filter_normal.pov` at
+320×240, one ray a pixel), the mean OkLab error against a 64-sample reference falls from 22.1 to 5.4 (×1000) with
+`specular` and from 26.1 to 10.4 with `phong`; the mean brightness is within 1.5%. Pigment-only `+TF` changed
+nothing there. On a plane with `normal { granite .5 scale .16 }` lit by a grazing light, diffuse alone falls from
+198 to 17 with the mean within 0.5%, and specular alone from 62 to 17, with the highlight 14% dim: the facing
+taps' Gaussian stands in for a skewed distribution. The lobe widens for the whole footprint, so a pixel half
+flat and half rough blurs its flat part's sharp highlight too. In a lava scene whose rock has sub-pixel granite
+bumps, the static speckle (high-pass of the rock at 1024 light samples, % of its mean) falls from 75 to 34 at
+160×90, against 36 in a 4×4 supersampled reference, and from 83 to 33 in a window of a 640×360 frame; the
+rock's RMS difference from the reference, less light-sampling noise, falls from 412% to 148% and from 312% to
+61%. The cost is the normal's pattern evaluated at each tap, 8 to 72 times per bumped hit: on the checker, a
+scene that is nothing but a bumped plane under two point lights, 6 times the CPU of pigment-only `+TF` (three
+alternated pairs, one thread). The
+surface bounce field still looks light up by the unperturbed normal, and radiosity by the mean normal.
 ## Function-density point batches
 
 Function densities reuse one function context for each density batch. Eligible functions with SIMD
