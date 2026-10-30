@@ -124,6 +124,20 @@ void Task::Start(const boost::function0<void>& completion)
     });
 }
 
+void Task::Rearm()
+{
+    if (!started || stopRequested)
+        return;
+    {
+        std::unique_lock<std::mutex> lock(exitMutex);
+        exitCondition.wait(lock, [this]() { return exited; });
+        exited = false;
+    }
+    started = false;
+    failed.store(kNoError, std::memory_order_relaxed);
+    done.store(false, std::memory_order_release);
+}
+
 void Task::RequestStop()
 {
     stopRequested = true;

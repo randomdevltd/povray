@@ -172,11 +172,16 @@ void TaskQueue::Fail(int code)
 
 ThreadData *TaskQueue::AppendTask(Task *task)
 {
+    return AppendTask(shared_ptr<Task>(task));
+}
+
+ThreadData *TaskQueue::AppendTask(const shared_ptr<Task>& task)
+{
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
 
     failed = false;
 
-    queuedTasks.push(TaskEntry(shared_ptr<Task>(task)));
+    queuedTasks.push(TaskEntry(task));
 
     Notify();
 

@@ -89,6 +89,9 @@ class TraceTask final : public RenderTask
         /// Rounds of extra samples for noisy pixels, each adding at most one a pixel.
         static constexpr int kM4NoiseRounds = 64;
 
+        /// Sets the pass a progressive worker runs next, between its runs.
+        void SetPass(int level, unsigned int step, bool first, int pass, int round);
+
         virtual void Run() override;
         virtual void Stopped() override;
         virtual void Finish() override;

@@ -112,6 +112,8 @@ class TaskQueue final
         void Fail(int code);
 
         ThreadData *AppendTask(Task *task);
+        /// Queues a task that may be queued again for later runs, rearmed before each.
+        ThreadData *AppendTask(const std::shared_ptr<Task>& task);
         void AppendDeferredTask(const boost::function0<Task*>& factory, const boost::function1<void, ThreadData*>& created);
         void AppendSync();
         void AppendMessage(POVMS_Message& msg);

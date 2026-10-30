@@ -400,6 +400,15 @@ void TraceTask::Run()
     GetViewData()->SetHighestTraceLevel(trace.GetHighestTraceLevel());
 }
 
+void TraceTask::SetPass(int level, unsigned int step, bool first, int pass, int round)
+{
+    progressLevel = level;
+    latticeStep = step;
+    latticeFirst = first;
+    aaPass = pass;
+    aaRound = round;
+}
+
 void TraceTask::Stopped()
 {
     // nothing to do for now [trf]
@@ -408,8 +417,10 @@ void TraceTask::Stopped()
 void TraceTask::Finish()
 {
     GetViewDataPtr()->timeType = TraceThreadData::kRenderTime;
-    GetViewDataPtr()->realTime = ConsumedRealTime();
-    GetViewDataPtr()->cpuTime = ConsumedCPUTime();
+    GetViewDataPtr()->passRealTime = ConsumedRealTime();
+    GetViewDataPtr()->passCpuTime = std::max<POV_LONG>(0, ConsumedCPUTime());
+    GetViewDataPtr()->realTime = std::max(GetViewDataPtr()->realTime, GetViewDataPtr()->passRealTime);
+    GetViewDataPtr()->cpuTime += GetViewDataPtr()->passCpuTime;
 
 #ifdef PROFILE_INTERSECTIONS
     if (gDoneBSP && gDoneBVH)

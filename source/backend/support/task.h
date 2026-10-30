@@ -84,6 +84,8 @@ class Task
         POV_LONG ConsumedCPUTime() const;
 
         void Start(const boost::function0<void>& completion);
+        /// Lets a finished task be started again, once its thread is done with it; not after a stop request.
+        void Rearm();
         void RequestStop();
         void Stop();
         void Pause();

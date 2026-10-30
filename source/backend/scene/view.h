@@ -733,8 +733,9 @@ class View final
             std::vector<ViewThreadData*> workers;
             std::chrono::steady_clock::time_point start;
         };
-        /// Queues a pass's trace tasks between the functions that time it.
-        void QueuePass(const std::string& name, int threads, const std::function<TraceTask*()>& task);
+        /// Queues a pass of the workers, `setup` choosing what each runs, between the functions that time it.
+        void QueuePass(const std::string& name, const std::vector<std::shared_ptr<TraceTask>>& workers,
+                       const std::function<void(TraceTask&)>& setup);
         void ReportPass(const PassTimes& pass);
         std::chrono::steady_clock::time_point firstPassStart, lastPassEnd;
         /// Passes timed, their wall and serial seconds between passes, worker seconds busy and seconds after the first ran dry.

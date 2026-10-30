@@ -89,6 +89,9 @@ class ViewThreadData final : public TraceThreadData
          *  @return                 Area rectangle.
          */
         const POVRect& GetRenderArea();
+
+        /// The last run's wall and CPU milliseconds, of a worker that runs once per progressive pass.
+        POV_LONG passRealTime = 0, passCpuTime = 0;
     protected:
         /// view data
         ViewData *viewData;
