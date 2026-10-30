@@ -1020,7 +1020,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Its bare <code>emission</code> flag selects this interior's combined media emission as the light's RGB input; brightness and its units still calibrate generated power. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
+<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Its bare <code>emission</code> flag selects this interior's combined media emission as the light's emission coefficient: unitless brightness and <code>nits</code> multiply it, and <code>lumens</code> distribute a stated flux over its pattern. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
