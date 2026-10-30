@@ -1074,6 +1074,14 @@ static bool PhotonValueWord(const std::string& text)
     return (text == "quality") || (text == "memory");
 }
 
+// names a block the way the classic parser does: global_settings bare, otherwise with its article
+static std::string NestedOwnerPhrase(const std::string& block)
+{
+    if (block == "global_settings")
+        return block;
+    return std::string(std::strchr("aeiou", block[0]) != nullptr ? "an " : "a ") + block;
+}
+
 const Node* Pov4Evaluator::PhotonOperand(Program& p, const Node* n, const Node*& word)
 {
     DepthGuard depth(*this, n);
@@ -1963,7 +1971,7 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
                 }
             const std::string owners = legal ? std::string() : Pov4NestedOwners(word, k->text);
             if (!owners.empty())
-                Fail(k, "'%s' belongs inside the %s block of '%s'.", k->text.c_str(), owners.c_str(), word.c_str());
+                Fail(k, "'%s' belongs inside the %s block of %s.", k->text.c_str(), owners.c_str(), NestedOwnerPhrase(word).c_str());
             if (!legal)
             {
                 std::string note;
@@ -2009,7 +2017,7 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
                     continue;
                 const std::string owners = Pov4NestedOwners(word, k->text);
                 if (!owners.empty())
-                    Fail(k, "'%s' belongs inside the %s block of '%s'.", k->text.c_str(), owners.c_str(), word.c_str());
+                    Fail(k, "'%s' belongs inside the %s block of %s.", k->text.c_str(), owners.c_str(), NestedOwnerPhrase(word).c_str());
                 int best = -1;
                 size_t limit = (k->text.size() >= 6) ? 2 : 1;
                 size_t bestDistance = limit + 1;
