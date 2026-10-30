@@ -314,7 +314,8 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     media(GetViewDataPtr(), &trace, &photonGatherer),
     radiosity(vd->GetSceneData(), GetViewDataPtr(),
               vd->GetSceneData()->radiositySettings, vd->GetRadiosityCaches(), cooperate, true, vd->GetCamera().Location),
-    photonGatherer(&vd->GetSceneData()->GetPreparedSet(0).mediaPhotonMap, vd->GetSceneData()->photonSettings)
+    photonGatherer(&vd->GetSceneData()->GetPreparedSet(0).mediaPhotonMap, vd->GetSceneData()->photonSettings),
+    shareBlocks(!vd->GetSceneData()->radiositySettings.radiosityEnabled)
 {
 #ifdef PROFILE_INTERSECTIONS
     Rectangle ra = vd->GetRenderArea();
@@ -931,80 +932,140 @@ void TraceTask::StochasticSupersamplingM3()
     }
 }
 
-void TraceTask::ProgressiveLevel()
+struct TraceTask::PassBlock final : ViewData::SharedBlock
 {
-    const POVRect& area = GetViewData()->GetRenderArea();
-    const bool corners = (tracingMethod == 2);
-    const bool keep = GetViewData()->KeepsLatticeSamples();
     POVRect rect;
-    vector<Vector2d> positions;
-    vector<RGBTColour> colors;
-    unsigned int serial;
+    unsigned int serial = 0;
+    std::vector<Vector2d> positions;
+    std::vector<RGBTColour> colors;
+    std::atomic<size_t> done{0};
+    std::atomic<POV_LONG> micros{0};
+};
 
-    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+void TraceTask::RunPass(PassStep open, PassItem item, PassStep close)
+{
+    std::atomic<int>& working = GetViewData()->passWorking;
+    bool idle = false;
+    working++;
+    while(true)
     {
-        BlockTimer blockTimer;
-        radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
-
-        positions.clear();
-        colors.clear();
-
-        // the last blocks of the area also own the pixel corners on its far edges
-        unsigned int right = rect.right + ((corners && (rect.right == area.right)) ? 1 : 0);
-        unsigned int bottom = rect.bottom + ((corners && (rect.bottom == area.bottom)) ? 1 : 0);
-        unsigned int left = ((rect.left + latticeStep - 1) / latticeStep) * latticeStep;
-        unsigned int top = ((rect.top + latticeStep - 1) / latticeStep) * latticeStep;
-
-        for(unsigned int y = top; y <= bottom; y += latticeStep)
+        std::shared_ptr<PassBlock> block;
+        POVRect rect;
+        unsigned int serial;
+        if(GetViewData()->GetNextRectangle(rect, serial))
         {
-            for(unsigned int x = left; x <= right; x += latticeStep)
-            {
-                if(!latticeFirst && (x % (2 * latticeStep) == 0) && (y % (2 * latticeStep) == 0))
-                    continue;
-
-                RGBTColour col;
-
-                if(corners)
-                    trace(DBL(x), DBL(y), GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
-                else
-                    trace(DBL(x)+0.5, DBL(y)+0.5, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
-                GetViewDataPtr()->Stats()[Number_Of_Pixels]++;
-
-                if(keep)
-                {
-                    GetViewData()->LatticeSample(x, y) = col;
-                    if(tracingMethod == 4)
-                    {
-                        GetViewData()->AaHit(x, y) = (trace.primaryObject ? ((std::uint32_t(reinterpret_cast<std::uintptr_t>(trace.primaryObject) >> 4) & 0x7fffffffu) | 1u) : 0u) |
-                                                     (trace.Grainy() ? 0x80000000u : 0u);
-                        if(GetViewData()->HasAaPigments())
-                        {
-                            float* pig = GetViewData()->AaPigmentAt(x, y);
-                            pig[0] = float(trace.primaryPigment.colour().Red());
-                            pig[1] = float(trace.primaryPigment.colour().Green());
-                            pig[2] = float(trace.primaryPigment.colour().Blue());
-                        }
-                    }
-                }
-                positions.push_back(Vector2d(x, y));
-                colors.push_back(col);
-
-                Cooperate();
-            }
+            block = std::make_shared<PassBlock>();
+            block->rect = rect;
+            block->serial = serial;
+            (this->*open)(*block);
+            if(shareBlocks && (block->count > 1))
+                GetViewData()->OfferBlock(block);
         }
-
-        radiosity.AfterTile();
-
-        GetViewDataPtr()->AfterTile();
-        if(positions.empty())
-            GetViewData()->CompletedRectangle(rect, serial, 0.0f);
-        else
-            GetViewData()->CompletedRectangle(rect, serial, positions, colors, latticeStep, true, true,
-                                              float(positions.size()) / float(rect.GetArea()), nullptr, progressLevel,
-                                              blockTimer.Elapsed());
-
+        else if(shareBlocks)
+            block = std::static_pointer_cast<PassBlock>(GetViewData()->BlockToHelp());
+        if(block)
+        {
+            if(idle)
+                working++;
+            idle = false;
+            WorkBlock(*block, item, close);
+            Cooperate();
+            continue;
+        }
+        if(!idle)
+            working--;
+        idle = true;
+        // out of pixels, a worker helps build the subsurface cells others wait on until every worker is out
+        if(!shareBlocks || (!trace.HelpSubsurfaceCells(std::chrono::milliseconds(0)) && (working.load() == 0)))
+            break;
+        trace.HelpSubsurfaceCells(std::chrono::milliseconds(20));
         Cooperate();
     }
+}
+
+void TraceTask::WorkBlock(PassBlock& block, PassItem item, PassStep close)
+{
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    if(!shareBlocks)
+        radiosity.BeforeTile(highReproducibility? block.serial : 0, RadiosityFunction::FINAL_TRACE);
+    size_t did = 0;
+    for(size_t i; (i = block.next.fetch_add(1, std::memory_order_relaxed)) < block.count; did++)
+    {
+        (this->*item)(block, i);
+        Cooperate();
+    }
+    if(!shareBlocks)
+        radiosity.AfterTile();
+    GetViewDataPtr()->AfterTile();
+    block.micros.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count(),
+                           std::memory_order_relaxed);
+    // the worker finishing the last item completes the block, after every other worker's items are in
+    if((block.count == 0) || ((did > 0) && (block.done.fetch_add(did, std::memory_order_acq_rel) + did == block.count)))
+        (this->*close)(block);
+}
+
+void TraceTask::ProgressiveLevel()
+{
+    RunPass(&TraceTask::OpenLevelBlock, &TraceTask::LevelItem, &TraceTask::CloseLevelBlock);
+}
+
+void TraceTask::OpenLevelBlock(PassBlock& block)
+{
+    const POVRect& area = GetViewData()->GetRenderArea();
+    const POVRect& rect = block.rect;
+    const bool corners = (tracingMethod == 2);
+    // the last blocks of the area also own the pixel corners on its far edges
+    unsigned int right = rect.right + ((corners && (rect.right == area.right)) ? 1 : 0);
+    unsigned int bottom = rect.bottom + ((corners && (rect.bottom == area.bottom)) ? 1 : 0);
+    unsigned int left = ((rect.left + latticeStep - 1) / latticeStep) * latticeStep;
+    unsigned int top = ((rect.top + latticeStep - 1) / latticeStep) * latticeStep;
+
+    for(unsigned int y = top; y <= bottom; y += latticeStep)
+        for(unsigned int x = left; x <= right; x += latticeStep)
+            if(latticeFirst || (x % (2 * latticeStep) != 0) || (y % (2 * latticeStep) != 0))
+                block.positions.push_back(Vector2d(x, y));
+    block.colors.resize(block.positions.size());
+    block.count = block.positions.size();
+}
+
+void TraceTask::LevelItem(PassBlock& block, size_t i)
+{
+    const unsigned int x = (unsigned int)block.positions[i].x();
+    const unsigned int y = (unsigned int)block.positions[i].y();
+    RGBTColour& col = block.colors[i];
+
+    if(tracingMethod == 2)
+        trace(DBL(x), DBL(y), GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+    else
+        trace(DBL(x)+0.5, DBL(y)+0.5, GetViewData()->GetWidth(), GetViewData()->GetHeight(), col);
+    GetViewDataPtr()->Stats()[Number_Of_Pixels]++;
+
+    if(GetViewData()->KeepsLatticeSamples())
+    {
+        GetViewData()->LatticeSample(x, y) = col;
+        if(tracingMethod == 4)
+        {
+            GetViewData()->AaHit(x, y) = (trace.primaryObject ? ((std::uint32_t(reinterpret_cast<std::uintptr_t>(trace.primaryObject) >> 4) & 0x7fffffffu) | 1u) : 0u) |
+                                         (trace.Grainy() ? 0x80000000u : 0u);
+            if(GetViewData()->HasAaPigments())
+            {
+                float* pig = GetViewData()->AaPigmentAt(x, y);
+                pig[0] = float(trace.primaryPigment.colour().Red());
+                pig[1] = float(trace.primaryPigment.colour().Green());
+                pig[2] = float(trace.primaryPigment.colour().Blue());
+            }
+        }
+    }
+}
+
+void TraceTask::CloseLevelBlock(PassBlock& block)
+{
+    if(block.positions.empty())
+        GetViewData()->CompletedRectangle(block.rect, block.serial, 0.0f);
+    else
+        GetViewData()->CompletedRectangle(block.rect, block.serial, block.positions, block.colors, latticeStep, true, true,
+                                          float(block.positions.size()) / float(block.rect.GetArea()), nullptr, progressLevel,
+                                          std::max<POV_LONG>(1, block.micros.load(std::memory_order_relaxed)));
 }
 
 bool TraceTask::DiffersFromSample(const RGBTColour& gcCur, unsigned int x, unsigned int y)
@@ -3996,328 +4057,315 @@ void TraceTask::ProgressiveM4()
     if((aaPass == 4) && M4Opts().stats && !GetViewData()->aaSpentPrinted.exchange(true))
         std::fprintf(stderr, "AA4 spent: edge probes %lld, noisy pixels %lld, exploring %lld, spikes %lld\n", (long long)GetViewData()->aaSpent[0].load(),
                      (long long)GetViewData()->aaSpent[1].load(), (long long)GetViewData()->aaSpent[2].load(), (long long)GetViewData()->aaSpent[3].load());
+    RunPass(&TraceTask::OpenM4Block, &TraceTask::M4Item, &TraceTask::CloseM4Block);
+}
+
+void TraceTask::OpenM4Block(PassBlock& block)
+{
+    block.count = block.rect.GetArea();
+    if(aaPass == 4)
+        block.colors.resize(block.count);
+}
+
+void TraceTask::M4Item(PassBlock& block, size_t item)
+{
+    const unsigned int x = block.rect.left + unsigned(item % block.rect.GetWidth());
+    const unsigned int y = block.rect.top + unsigned(item / block.rect.GetWidth());
     const unsigned int on = ((aaPass == 1) && !GetViewData()->aaOracleReplay) ? GetViewData()->aaOracleN : 0;
-    const bool traces = (aaPass == 2) || (aaPass == 3) || (on > 0);
-    POVRect rect;
-    vector<RGBTColour> pixels;
-    unsigned int serial;
-
-    while(GetViewData()->GetNextRectangle(rect, serial) == true)
+    AaFit& fit = GetViewData()->Fit(x, y);
+    switch(aaPass)
     {
-        BlockTimer blockTimer;
-        if(traces)
-            radiosity.BeforeTile(highReproducibility? serial : 0, RadiosityFunction::FINAL_TRACE);
-        pixels.clear();
-        if(aaPass == 4)
-            pixels.reserve(rect.GetArea());
-
-        for(unsigned int y = rect.top; y <= rect.bottom; y++)
-        {
-            for(unsigned int x = rect.left; x <= rect.right; x++)
+        case 1:
+            if(!M4Opts().chain)
+                FitPixelM4(x, y, fit);
+            for(unsigned int k = 0; k < on * on; k++)
             {
-                AaFit& fit = GetViewData()->Fit(x, y);
-                switch(aaPass)
+                const POVRect& area = GetViewData()->GetRenderArea();
+                const unsigned int i = (x - area.left) * on + k % on, j = (y - area.top) * on + k / on;
+                RGBTColour c;
+                TraceSample(DBL(x) + (DBL(k % on) + 0.5) / on, DBL(y) + (DBL(k / on) + 0.5) / on, c, 1.0 / on, -1);
+                float* dst = &GetViewData()->aaOracle[4 * (size_t(j) * area.GetWidth() * on + i)];
+                dst[0] = c.red(); dst[1] = c.green(); dst[2] = c.blue(); dst[3] = c.transm();
+            }
+            break;
+        case 2:
+            if(fit.planned)
+                ProbePixelM4(x, y, fit);
+            break;
+        case 3:
+            if(fit.planned && M4Opts().bisect && (fit.kind == 0) && (fit.spike == 0) && ((fit.explore == 1) || (fit.explore == 2)))
+            {
+                const unsigned hsh = (x * 2654435761u) ^ (y * 40503u);
+                RGBTColour probe;
+                TraceSample(DBL(x) + 0.25 + 0.5 * double(hsh & 255u) / 255.0, DBL(y) + 0.25 + 0.5 * double((hsh >> 8) & 255u) / 255.0, probe, 0.25, 2);
+                const OkLab l = ToOkLab(probe);
+                const float pl[4] = { l.l, l.a, l.b, l.t };
+                fit.explore = (Dist2(pl, GetViewData()->AaLabAt(x, y)) > float(aaThreshold * aaThreshold)) ? 4 : 3;
+                fit.probes = std::uint8_t(std::min(250, int(fit.probes) + 1));
+            }
+            else if(fit.planned && M4Opts().bisect)
+            {
+                AaCell* cells = GetViewData()->Leaves(fit);
+                const AaCell parent = cells[size_t(fit.leaf)];
+                const int q = 256 >> parent.depth;
+                for(int k = 0; k < 4; k++)
                 {
-                    case 1:
-                        if(!M4Opts().chain)
-                            FitPixelM4(x, y, fit);
-                        for(unsigned int k = 0; k < on * on; k++)
-                        {
-                            const POVRect& area = GetViewData()->GetRenderArea();
-                            const unsigned int i = (x - area.left) * on + k % on, j = (y - area.top) * on + k / on;
-                            RGBTColour c;
-                            TraceSample(DBL(x) + (DBL(k % on) + 0.5) / on, DBL(y) + (DBL(k / on) + 0.5) / on, c, 1.0 / on, -1);
-                            float* dst = &GetViewData()->aaOracle[4 * (size_t(j) * area.GetWidth() * on + i)];
-                            dst[0] = c.red(); dst[1] = c.green(); dst[2] = c.blue(); dst[3] = c.transm();
-                        }
-                        break;
-                    case 2:
-                        if(fit.planned)
-                            ProbePixelM4(x, y, fit);
-                        break;
-                    case 3:
-                        if(fit.planned && M4Opts().bisect && (fit.kind == 0) && (fit.spike == 0) && ((fit.explore == 1) || (fit.explore == 2)))
-                        {
-                            const unsigned hsh = (x * 2654435761u) ^ (y * 40503u);
-                            RGBTColour probe;
-                            TraceSample(DBL(x) + 0.25 + 0.5 * double(hsh & 255u) / 255.0, DBL(y) + 0.25 + 0.5 * double((hsh >> 8) & 255u) / 255.0, probe, 0.25, 2);
-                            const OkLab l = ToOkLab(probe);
-                            const float pl[4] = { l.l, l.a, l.b, l.t };
-                            fit.explore = (Dist2(pl, GetViewData()->AaLabAt(x, y)) > float(aaThreshold * aaThreshold)) ? 4 : 3;
-                            fit.probes = std::uint8_t(std::min(250, int(fit.probes) + 1));
-                        }
-                        else if(fit.planned && M4Opts().bisect)
-                        {
-                            AaCell* cells = GetViewData()->Leaves(fit);
-                            const AaCell parent = cells[size_t(fit.leaf)];
-                            const int q = 256 >> parent.depth;
-                            for(int k = 0; k < 4; k++)
-                            {
-                                AaCell c;
-                                c.x = std::int16_t(parent.x + ((k & 1) ? q : -q));
-                                c.y = std::int16_t(parent.y + ((k & 2) ? q : -q));
-                                c.depth = std::uint8_t(parent.depth + 1);
-                                TraceSample(DBL(x) + 0.5 + c.X(), DBL(y) + 0.5 + c.Y(), c.col, double(c.Size()), ((fit.spike > 0) && (parent.depth == 0)) ? 3 : 1);
-                                const OkLab l = ToOkLab(c.col);
-                                c.lab[0] = l.l; c.lab[1] = l.a; c.lab[2] = l.b; c.lab[3] = l.t;
-                                cells[(k == 0) ? size_t(fit.leaf) : size_t(fit.nCells++)] = c;
-                            }
-                            fit.probes = std::uint8_t(std::min(250, int(fit.probes) + 4));
-                        }
-                        else if(fit.planned)
-                        {
-                            AaGeom& geom = GetViewData()->GeomFor(fit);
-                            // Halton 2,3 from this pixel's own count, shifted by a fixed amount per pixel so neighbours differ
-                            auto halton = [](unsigned index, unsigned base)
-                            {
-                                float r = 0.0f, f = 1.0f / float(base);
-                                for(unsigned i = index; i > 0; i /= base, f /= float(base))
-                                    r += f * float(i % base);
-                                return r;
-                            };
-                            const unsigned k = unsigned(fit.probes) + 1;
-                            const unsigned h = (x * 73856093u) ^ (y * 19349663u);
-                            const float jx = float(h & 1023u) / 1024.0f, jy = float((h >> 10) & 1023u) / 1024.0f;
-                            float ox = halton(k, 2) + jx, oy = halton(k, 3) + jy;
-                            ox -= std::floor(ox);
-                            oy -= std::floor(oy);
-                            RGBTColour extra;
-                            TraceSample(DBL(x) + ox, DBL(y) + oy, extra, 0.5, 1);
-                            GetViewData()->AaExtra(x, y) += extra;
-                            const float* centre = GetViewData()->AaLabAt(x, y);
-                            if(fit.probes == 0)
-                            {
-                                for(int c = 0; c < 4; c++)
-                                    geom.sumLab[c] = centre[c];
-                                geom.sumSq = centre[0] * centre[0] + centre[1] * centre[1] + centre[2] * centre[2] + centre[3] * centre[3];
-                            }
-                            const OkLab le = ToOkLab(extra);
-                            geom.sumLab[0] += le.l;
-                            geom.sumLab[1] += le.a;
-                            geom.sumLab[2] += le.b;
-                            geom.sumLab[3] += le.t;
-                            geom.sumSq += le.l * le.l + le.a * le.a + le.b * le.b + le.t * le.t;
-                            fit.probes++;
-                        }
-                        break;
-                    default:
+                    AaCell c;
+                    c.x = std::int16_t(parent.x + ((k & 1) ? q : -q));
+                    c.y = std::int16_t(parent.y + ((k & 2) ? q : -q));
+                    c.depth = std::uint8_t(parent.depth + 1);
+                    TraceSample(DBL(x) + 0.5 + c.X(), DBL(y) + 0.5 + c.Y(), c.col, double(c.Size()), ((fit.spike > 0) && (parent.depth == 0)) ? 3 : 1);
+                    const OkLab l = ToOkLab(c.col);
+                    c.lab[0] = l.l; c.lab[1] = l.a; c.lab[2] = l.b; c.lab[3] = l.t;
+                    cells[(k == 0) ? size_t(fit.leaf) : size_t(fit.nCells++)] = c;
+                }
+                fit.probes = std::uint8_t(std::min(250, int(fit.probes) + 4));
+            }
+            else if(fit.planned)
+            {
+                AaGeom& geom = GetViewData()->GeomFor(fit);
+                // Halton 2,3 from this pixel's own count, shifted by a fixed amount per pixel so neighbours differ
+                auto halton = [](unsigned index, unsigned base)
+                {
+                    float r = 0.0f, f = 1.0f / float(base);
+                    for(unsigned i = index; i > 0; i /= base, f /= float(base))
+                        r += f * float(i % base);
+                    return r;
+                };
+                const unsigned k = unsigned(fit.probes) + 1;
+                const unsigned h = (x * 73856093u) ^ (y * 19349663u);
+                const float jx = float(h & 1023u) / 1024.0f, jy = float((h >> 10) & 1023u) / 1024.0f;
+                float ox = halton(k, 2) + jx, oy = halton(k, 3) + jy;
+                ox -= std::floor(ox);
+                oy -= std::floor(oy);
+                RGBTColour extra;
+                TraceSample(DBL(x) + ox, DBL(y) + oy, extra, 0.5, 1);
+                GetViewData()->AaExtra(x, y) += extra;
+                const float* centre = GetViewData()->AaLabAt(x, y);
+                if(fit.probes == 0)
+                {
+                    for(int c = 0; c < 4; c++)
+                        geom.sumLab[c] = centre[c];
+                    geom.sumSq = centre[0] * centre[0] + centre[1] * centre[1] + centre[2] * centre[2] + centre[3] * centre[3];
+                }
+                const OkLab le = ToOkLab(extra);
+                geom.sumLab[0] += le.l;
+                geom.sumLab[1] += le.a;
+                geom.sumLab[2] += le.b;
+                geom.sumLab[3] += le.t;
+                geom.sumSq += le.l * le.l + le.a * le.a + le.b * le.b + le.t * le.t;
+                fit.probes++;
+            }
+            break;
+        default:
+        {
+            const AaGeom& geom = GetViewData()->Geom(fit);
+            const M4Options& o4 = M4Opts();
+            RGBTColour col = GetViewData()->LatticeSample(x, y);
+            float mapProbes = float(fit.probes);
+            float mapGreen = 0.25f;
+            const AaCell* bisected = o4.bisect ? GetViewData()->Leaves(fit) : nullptr;
+            if(bisected && (fit.nCells > 1))
+            {
+                col.Clear();
+                for(size_t i = 0; i < fit.nCells; i++)
+                    col += bisected[i].col * double(bisected[i].Size() * bisected[i].Size());
+                if((fit.spike > 0) && ((o4.spikeCentre == 1) || ((o4.spikeCentre == 2) && M4LeavesContradict(bisected, fit.nCells, GetViewData()->AaLabAt(x, y), float(aaThreshold * aaThreshold)))))
+                    col = col * 0.8 + GetViewData()->LatticeSample(x, y) * 0.2;
+                fit.kind = 2;
+                GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+            }
+            else if(fit.kind == 3)
+            {
+                // a line a pixel or two wide: the pixel keeps its sample and gains the strip coverage its centre sample did not show
+                const OkLab pa = ToOkLab(geom.a), pb = ToOkLab(geom.b), po = ToOkLab(col);
+                const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+                const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+                const bool centreOn = (vv > 0.0f) && (((po.l - pa.l) * v[0] + (po.a - pa.a) * v[1] + (po.b - pa.b) * v[2] + (po.t - pa.t) * v[3]) >= 0.5f * vv);
+                const double f = double(M4Coverage(geom.nx, geom.ny, geom.lo - 0.5f * geom.hi)) - double(M4Coverage(geom.nx, geom.ny, geom.lo + 0.5f * geom.hi));
+                const RGBTColour own = col;
+                // a centre sample on the line beyond the strip's edge means the strip is too narrow there: at least half is covered
+                const bool beyond = centreOn && (std::fabs(geom.lo) > 0.5f * geom.hi);
+                col += (geom.b - geom.a) * ((beyond ? std::max(f, 0.5) : f) - (centreOn ? 1.0 : 0.0));
+                const RGBTColour ends[2] = { geom.a, geom.b };
+                const double ew[2] = { 1.0, 1.0 };
+                col = M4Bounded(col, own, ends, ew, 2);
+                mapGreen = 0.5f;
+                GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+            }
+            else if(fit.kind == 1)
+            {
+                float nx = geom.nx, ny = geom.ny, s;
+                int probes = fit.probes;
+                if(fit.seg >= 0)
+                {
+                    // the segment's line now, after any probes, seen from this pixel's centre
+                    const AaSeg& sg = GetViewData()->aaSegs[size_t(fit.seg)];
+                    M4LineAt(sg, float(x) + 0.5f, float(y) + 0.5f, nx, ny, s);
+                    s -= nx * (float(x) + 0.5f) + ny * (float(y) + 0.5f);
+                    probes = sg.probes;
+                    mapProbes = float(sg.probes);
+                }
+                else
+                    s = 0.5f * (geom.lo + geom.hi);
+
+                // a line must put this pixel's own 3x3 samples on the sides their colours say; where the
+                // run's line has turned away from the curve, try the second line, else keep the sample
+                bool trusted = true, secondTaken = false;
+                if(fit.seg >= 0)
+                {
+                    const POVRect& area = GetViewData()->GetRenderArea();
+                    const OkLab pa = ToOkLab(geom.a), pb = ToOkLab(geom.b);
+                    const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+                    const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+                    auto fits = [&](float lx, float ly, float ls)
                     {
-                        const AaGeom& geom = GetViewData()->Geom(fit);
-                        const M4Options& o4 = M4Opts();
-                        RGBTColour col = GetViewData()->LatticeSample(x, y);
-                        float mapProbes = float(fit.probes);
-                        float mapGreen = 0.25f;
-                        const AaCell* bisected = o4.bisect ? GetViewData()->Leaves(fit) : nullptr;
-                        if(bisected && (fit.nCells > 1))
+                        for(int dy = -1; dy <= 1; dy++)
                         {
-                            col.Clear();
-                            for(size_t i = 0; i < fit.nCells; i++)
-                                col += bisected[i].col * double(bisected[i].Size() * bisected[i].Size());
-                            if((fit.spike > 0) && ((o4.spikeCentre == 1) || ((o4.spikeCentre == 2) && M4LeavesContradict(bisected, fit.nCells, GetViewData()->AaLabAt(x, y), float(aaThreshold * aaThreshold)))))
-                                col = col * 0.8 + GetViewData()->LatticeSample(x, y) * 0.2;
-                            fit.kind = 2;
-                            GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                            for(int dx = -1; dx <= 1; dx++)
+                            {
+                                const int qx = int(x) + dx, qy = int(y) + dy;
+                                if((qx < int(area.left)) || (qx > int(area.right)) || (qy < int(area.top)) || (qy > int(area.bottom)) || (vv <= 0.0f))
+                                    continue;
+                                const float* l = GetViewData()->AaLabAt(unsigned(qx), unsigned(qy));
+                                const float t = ((l[0] - pa.l) * v[0] + (l[1] - pa.a) * v[1] + (l[2] - pa.b) * v[2] + (l[3] - pa.t) * v[3]) / vv;
+                                if(std::fabs(t - 0.5f) < 0.25f)
+                                    continue;
+                                const float side = lx * float(dx) + ly * float(dy) - ls;
+                                if((std::fabs(side) > 0.3f) && ((side > 0.0f) != (t > 0.5f)))
+                                    return false;
+                            }
                         }
-                        else if(fit.kind == 3)
+                        return true;
+                    };
+                    if(!fits(nx, ny, s))
+                    {
+                        trusted = false;
+                        if(geom.seg2 >= 0)
                         {
-                            // a line a pixel or two wide: the pixel keeps its sample and gains the strip coverage its centre sample did not show
-                            const OkLab pa = ToOkLab(geom.a), pb = ToOkLab(geom.b), po = ToOkLab(col);
-                            const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
-                            const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
-                            const bool centreOn = (vv > 0.0f) && (((po.l - pa.l) * v[0] + (po.a - pa.a) * v[1] + (po.b - pa.b) * v[2] + (po.t - pa.t) * v[3]) >= 0.5f * vv);
-                            const double f = double(M4Coverage(geom.nx, geom.ny, geom.lo - 0.5f * geom.hi)) - double(M4Coverage(geom.nx, geom.ny, geom.lo + 0.5f * geom.hi));
-                            const RGBTColour own = col;
-                            // a centre sample on the line beyond the strip's edge means the strip is too narrow there: at least half is covered
-                            const bool beyond = centreOn && (std::fabs(geom.lo) > 0.5f * geom.hi);
-                            col += (geom.b - geom.a) * ((beyond ? std::max(f, 0.5) : f) - (centreOn ? 1.0 : 0.0));
-                            const RGBTColour ends[2] = { geom.a, geom.b };
-                            const double ew[2] = { 1.0, 1.0 };
-                            col = M4Bounded(col, own, ends, ew, 2);
-                            mapGreen = 0.5f;
-                            GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+                            float n2x, n2y, s2;
+                            M4LineAt(GetViewData()->aaSegs[size_t(geom.seg2)], float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
+                            s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
+                            if(fits(n2x, n2y, s2))
+                            {
+                                nx = n2x; ny = n2y; s = s2;
+                                trusted = secondTaken = true;
+                            }
                         }
-                        else if(fit.kind == 1)
-                        {
-                            float nx = geom.nx, ny = geom.ny, s;
-                            int probes = fit.probes;
-                            if(fit.seg >= 0)
-                            {
-                                // the segment's line now, after any probes, seen from this pixel's centre
-                                const AaSeg& sg = GetViewData()->aaSegs[size_t(fit.seg)];
-                                M4LineAt(sg, float(x) + 0.5f, float(y) + 0.5f, nx, ny, s);
-                                s -= nx * (float(x) + 0.5f) + ny * (float(y) + 0.5f);
-                                probes = sg.probes;
-                                mapProbes = float(sg.probes);
-                            }
-                            else
-                                s = 0.5f * (geom.lo + geom.hi);
-
-                            // a line must put this pixel's own 3x3 samples on the sides their colours say; where the
-                            // run's line has turned away from the curve, try the second line, else keep the sample
-                            bool trusted = true, secondTaken = false;
-                            if(fit.seg >= 0)
-                            {
-                                const POVRect& area = GetViewData()->GetRenderArea();
-                                const OkLab pa = ToOkLab(geom.a), pb = ToOkLab(geom.b);
-                                const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
-                                const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
-                                auto fits = [&](float lx, float ly, float ls)
-                                {
-                                    for(int dy = -1; dy <= 1; dy++)
-                                    {
-                                        for(int dx = -1; dx <= 1; dx++)
-                                        {
-                                            const int qx = int(x) + dx, qy = int(y) + dy;
-                                            if((qx < int(area.left)) || (qx > int(area.right)) || (qy < int(area.top)) || (qy > int(area.bottom)) || (vv <= 0.0f))
-                                                continue;
-                                            const float* l = GetViewData()->AaLabAt(unsigned(qx), unsigned(qy));
-                                            const float t = ((l[0] - pa.l) * v[0] + (l[1] - pa.a) * v[1] + (l[2] - pa.b) * v[2] + (l[3] - pa.t) * v[3]) / vv;
-                                            if(std::fabs(t - 0.5f) < 0.25f)
-                                                continue;
-                                            const float side = lx * float(dx) + ly * float(dy) - ls;
-                                            if((std::fabs(side) > 0.3f) && ((side > 0.0f) != (t > 0.5f)))
-                                                return false;
-                                        }
-                                    }
-                                    return true;
-                                };
-                                if(!fits(nx, ny, s))
-                                {
-                                    trusted = false;
-                                    if(geom.seg2 >= 0)
-                                    {
-                                        float n2x, n2y, s2;
-                                        M4LineAt(GetViewData()->aaSegs[size_t(geom.seg2)], float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
-                                        s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
-                                        if(fits(n2x, n2y, s2))
-                                        {
-                                            nx = n2x; ny = n2y; s = s2;
-                                            trusted = secondTaken = true;
-                                        }
-                                    }
-                                }
-                            }
-                            const double f = M4Coverage(nx, ny, s);
-
-                            // two lines of different directions both crossing the pixel: a junction, up to four regions
-                            bool twoLines = false;
-                            float n2x = 0.0f, n2y = 0.0f, s2 = 0.0f;
-                            if(trusted && !secondTaken && (fit.seg >= 0) && (geom.seg2 >= 0))
-                            {
-                                const AaSeg& g2 = GetViewData()->aaSegs[size_t(geom.seg2)];
-                                M4LineAt(g2, float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
-                                s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
-                                const float c2 = M4Coverage(n2x, n2y, s2);
-                                twoLines = ((std::fabs(nx * n2x + ny * n2y) < 0.95f) || o4.strips) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
-                            }
-
-                            if(twoLines)
-                            {
-                                mapGreen = 0.9f;
-                                const POVRect& area = GetViewData()->GetRenderArea();
-                                RGBTColour qc[4];
-                                double qw[4] = { 0.0, 0.0, 0.0, 0.0 };
-                                for(int oy = -2; oy <= 2; oy++)
-                                {
-                                    for(int ox = -2; ox <= 2; ox++)
-                                    {
-                                        const int sx = int(x) + ox, sy = int(y) + oy;
-                                        if((sx < int(area.left)) || (sx > int(area.right)) || (sy < int(area.top)) || (sy > int(area.bottom)))
-                                            continue;
-                                        const int q = int(nx * float(ox) + ny * float(oy) > s) + 2 * int(n2x * float(ox) + n2y * float(oy) > s2);
-                                        const double wgt = 1.0 / double((1 + ox * ox + oy * oy) * (1 + ox * ox + oy * oy));
-                                        qc[q] += GetViewData()->LatticeSample(unsigned(sx), unsigned(sy)) * wgt;
-                                        qw[q] += wgt;
-                                    }
-                                }
-                                M4Poly sq;
-                                sq.n = 4;
-                                const float cxs[4] = { -0.5f, 0.5f, 0.5f, -0.5f }, cys[4] = { -0.5f, -0.5f, 0.5f, 0.5f };
-                                for(int k = 0; k < 4; k++)
-                                {
-                                    sq.x[k] = cxs[k];
-                                    sq.y[k] = cys[k];
-                                }
-                                RGBTColour own = col, centreModel = own;
-                                col.Clear();
-                                const int q0 = int(0.0f > s) + 2 * int(0.0f > s2);
-                                for(int q = 0; q < 4; q++)
-                                {
-                                    const double ar = double(M4PolyArea(M4Clip(M4Clip(sq, nx, ny, s, (q & 1) != 0), n2x, n2y, s2, (q & 2) != 0)));
-                                    int src = q;
-                                    if(qw[src] <= 0.0)
-                                        src = (qw[q ^ 1] > 0.0) ? (q ^ 1) : ((qw[q ^ 2] > 0.0) ? (q ^ 2) : -1);
-                                    const RGBTColour qcol = (src >= 0) ? (qc[src] * (1.0 / qw[src])) : own;
-                                    if(q == q0)
-                                        centreModel = qcol;
-                                    if(ar >= 1.0e-4)
-                                        col += qcol * ar;
-                                }
-                                if(o4.cv)
-                                    col = M4Bounded(own + col - centreModel, own, qc, qw);
-                            }
-                            // a pixel the final line does not cross stays as it was sampled
-                            else if(!trusted)
-                                mapGreen = 0.5f;
-                            else if(o4.cv && ((fit.seg < 0) || ((f > 0.0) && (f < 1.0))))
-                            {
-                                // the pixel keeps its own sample; the fit adds what the rest of its area, beyond the centre's side, contributes
-                                const OkLab pa = ToOkLab(geom.a), pb = ToOkLab(geom.b), po = ToOkLab(col);
-                                const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
-                                const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
-                                const bool centreB = (vv > 0.0f) && (((po.l - pa.l) * v[0] + (po.a - pa.a) * v[1] + (po.b - pa.b) * v[2] + (po.t - pa.t) * v[3]) >= 0.5f * vv);
-                                const double fb = centreB ? std::max(f, 0.5) : std::min(f, 0.5);
-                                const RGBTColour own = col;
-                                col += (geom.b - geom.a) * (fb - (centreB ? 1.0 : 0.0));
-                                const RGBTColour ends[2] = { geom.a, geom.b };
-                                const double ew[2] = { 1.0, 1.0 };
-                                col = M4Bounded(col, own, ends, ew, 2);
-                            }
-                            else if((fit.seg < 0) || ((f > 0.0) && (f < 1.0)))
-                            {
-                                col = geom.a * (1.0 - f);
-                                col += geom.b * f;
-                            }
-                            if(probes > 0)
-                                GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
-                        }
-                        else if((fit.kind == 2) && (fit.probes > 0))
-                        {
-                            if(GetViewData()->HasAaExtra())
-                                col += GetViewData()->AaExtra(x, y);
-                            col = col * (1.0 / double(fit.probes + 1));
-                            GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
-                        }
-                        if(M4Opts().map)
-                        {
-                            // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got, yellow: spike
-                            const float p = mapProbes;
-                            col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : ((fit.kind == 3) ? 1.0f : 0.0f), (fit.kind == 1) ? mapGreen : 0.0f,
-                                             (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : ((fit.kind == 3) ? 1.0f : 0.0f), 0.0f);
-                            if(fit.spike > 0)
-                                col = RGBTColour(1.0f, 1.0f, 0.0f, 0.0f);
-                        }
-                        pixels.push_back(col);
                     }
                 }
-                if(traces)
-                    Cooperate();
+                const double f = M4Coverage(nx, ny, s);
+
+                // two lines of different directions both crossing the pixel: a junction, up to four regions
+                bool twoLines = false;
+                float n2x = 0.0f, n2y = 0.0f, s2 = 0.0f;
+                if(trusted && !secondTaken && (fit.seg >= 0) && (geom.seg2 >= 0))
+                {
+                    const AaSeg& g2 = GetViewData()->aaSegs[size_t(geom.seg2)];
+                    M4LineAt(g2, float(x) + 0.5f, float(y) + 0.5f, n2x, n2y, s2);
+                    s2 -= n2x * (float(x) + 0.5f) + n2y * (float(y) + 0.5f);
+                    const float c2 = M4Coverage(n2x, n2y, s2);
+                    twoLines = ((std::fabs(nx * n2x + ny * n2y) < 0.95f) || o4.strips) && (f > 0.0) && (f < 1.0) && (c2 > 0.0f) && (c2 < 1.0f);
+                }
+
+                if(twoLines)
+                {
+                    mapGreen = 0.9f;
+                    const POVRect& area = GetViewData()->GetRenderArea();
+                    RGBTColour qc[4];
+                    double qw[4] = { 0.0, 0.0, 0.0, 0.0 };
+                    for(int oy = -2; oy <= 2; oy++)
+                    {
+                        for(int ox = -2; ox <= 2; ox++)
+                        {
+                            const int sx = int(x) + ox, sy = int(y) + oy;
+                            if((sx < int(area.left)) || (sx > int(area.right)) || (sy < int(area.top)) || (sy > int(area.bottom)))
+                                continue;
+                            const int q = int(nx * float(ox) + ny * float(oy) > s) + 2 * int(n2x * float(ox) + n2y * float(oy) > s2);
+                            const double wgt = 1.0 / double((1 + ox * ox + oy * oy) * (1 + ox * ox + oy * oy));
+                            qc[q] += GetViewData()->LatticeSample(unsigned(sx), unsigned(sy)) * wgt;
+                            qw[q] += wgt;
+                        }
+                    }
+                    M4Poly sq;
+                    sq.n = 4;
+                    const float cxs[4] = { -0.5f, 0.5f, 0.5f, -0.5f }, cys[4] = { -0.5f, -0.5f, 0.5f, 0.5f };
+                    for(int k = 0; k < 4; k++)
+                    {
+                        sq.x[k] = cxs[k];
+                        sq.y[k] = cys[k];
+                    }
+                    RGBTColour own = col, centreModel = own;
+                    col.Clear();
+                    const int q0 = int(0.0f > s) + 2 * int(0.0f > s2);
+                    for(int q = 0; q < 4; q++)
+                    {
+                        const double ar = double(M4PolyArea(M4Clip(M4Clip(sq, nx, ny, s, (q & 1) != 0), n2x, n2y, s2, (q & 2) != 0)));
+                        int src = q;
+                        if(qw[src] <= 0.0)
+                            src = (qw[q ^ 1] > 0.0) ? (q ^ 1) : ((qw[q ^ 2] > 0.0) ? (q ^ 2) : -1);
+                        const RGBTColour qcol = (src >= 0) ? (qc[src] * (1.0 / qw[src])) : own;
+                        if(q == q0)
+                            centreModel = qcol;
+                        if(ar >= 1.0e-4)
+                            col += qcol * ar;
+                    }
+                    if(o4.cv)
+                        col = M4Bounded(own + col - centreModel, own, qc, qw);
+                }
+                // a pixel the final line does not cross stays as it was sampled
+                else if(!trusted)
+                    mapGreen = 0.5f;
+                else if(o4.cv && ((fit.seg < 0) || ((f > 0.0) && (f < 1.0))))
+                {
+                    // the pixel keeps its own sample; the fit adds what the rest of its area, beyond the centre's side, contributes
+                    const OkLab pa = ToOkLab(geom.a), pb = ToOkLab(geom.b), po = ToOkLab(col);
+                    const float v[4] = { pb.l - pa.l, pb.a - pa.a, pb.b - pa.b, pb.t - pa.t };
+                    const float vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3];
+                    const bool centreB = (vv > 0.0f) && (((po.l - pa.l) * v[0] + (po.a - pa.a) * v[1] + (po.b - pa.b) * v[2] + (po.t - pa.t) * v[3]) >= 0.5f * vv);
+                    const double fb = centreB ? std::max(f, 0.5) : std::min(f, 0.5);
+                    const RGBTColour own = col;
+                    col += (geom.b - geom.a) * (fb - (centreB ? 1.0 : 0.0));
+                    const RGBTColour ends[2] = { geom.a, geom.b };
+                    const double ew[2] = { 1.0, 1.0 };
+                    col = M4Bounded(col, own, ends, ew, 2);
+                }
+                else if((fit.seg < 0) || ((f > 0.0) && (f < 1.0)))
+                {
+                    col = geom.a * (1.0 - f);
+                    col += geom.b * f;
+                }
+                if(probes > 0)
+                    GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
             }
-            Cooperate();
+            else if((fit.kind == 2) && (fit.probes > 0))
+            {
+                if(GetViewData()->HasAaExtra())
+                    col += GetViewData()->AaExtra(x, y);
+                col = col * (1.0 / double(fit.probes + 1));
+                GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
+            }
+            if(M4Opts().map)
+            {
+                // red: probes on a fitted edge, green: fitted, blue: noisy pixel and the samples it got, yellow: spike
+                const float p = mapProbes;
+                col = RGBTColour((fit.kind == 1) ? std::min(1.0f, p / 8.0f) : ((fit.kind == 3) ? 1.0f : 0.0f), (fit.kind == 1) ? mapGreen : 0.0f,
+                                 (fit.kind == 2) ? 0.15f + std::min(0.85f, p / 4.0f) : ((fit.kind == 3) ? 1.0f : 0.0f), 0.0f);
+                if(fit.spike > 0)
+                    col = RGBTColour(1.0f, 1.0f, 0.0f, 0.0f);
+            }
+            block.colors[item] = col;
         }
-
-        if(traces)
-            radiosity.AfterTile();
-
-        GetViewDataPtr()->AfterTile();
-        if(aaPass == 4)
-            GetViewData()->CompletedRectangle(rect, serial, pixels, 1, true, true, 1.0f, nullptr, progressLevel,
-                                              blockTimer.Elapsed());
-        else
-            GetViewData()->CompletedRectangle(rect, serial, 0.0f);
-
-        Cooperate();
     }
+}
+
+void TraceTask::CloseM4Block(PassBlock& block)
+{
+    if(aaPass == 4)
+        GetViewData()->CompletedRectangle(block.rect, block.serial, block.colors, 1, true, true, 1.0f, nullptr, progressLevel,
+                                          std::max<POV_LONG>(1, block.micros.load(std::memory_order_relaxed)));
+    else
+        GetViewData()->CompletedRectangle(block.rect, block.serial, 0.0f);
 }
 
 void TraceTask::NonAdaptiveSupersamplingForOnePixel(DBL x, DBL y, RGBTColour& leftcol, RGBTColour& topcol, RGBTColour& curcol, bool& sampleleft, bool& sampletop, bool& samplecurrent)

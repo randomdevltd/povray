@@ -7783,15 +7783,39 @@ struct CellQuality final
     ~CellQuality() { flags = saved; }
 };
 
+bool Trace::HelpSubsurfaceCells(std::chrono::milliseconds wait)
+{
+    return (threadData->subsurfaceCache != nullptr) && threadData->subsurfaceCache->Help(*this, wait);
+}
+
+bool Trace::HelpSubsurfaceCell(const SubsurfaceCloud& cloud, const std::vector<int>& slots, const SubsurfaceCellKey& key,
+                               SubsurfaceCell& cell)
+{
+    if ((ssltBridge != nullptr) || (slots.size() != cloud.lights.size()))
+        return false;
+    SubsurfaceCloud& own = ssltHelpCloud;
+    own = cloud;
+    for (size_t i = 0; i < slots.size(); i++)
+    {
+        if ((slots[i] >= 0) && (size_t(slots[i]) >= threadData->lightSources.size()))
+            return false;
+        if (slots[i] >= 0)
+            own.lights[i] = threadData->lightSources[slots[i]];
+    }
+    return WorkOnSubsurfaceCell(own, key, cell, false, true);
+}
+
 // Takes jobs of a cell being built until none are left; then the builder returns once its stage is done, a helper once
 // the cell is ready. A job that throws fails the cell.
-void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder)
+bool Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder, bool idle)
 {
+    bool ran = false;
     std::unique_lock<std::mutex> lock(cell.mutex);
     while (cell.stage != SubsurfaceCell::kReady)
     {
         if (cell.next < cell.jobs)
         {
+            ran = true;
             SubsurfaceCell::Stage stage = cell.stage;
             int job = cell.next++;
             lock.unlock();
@@ -7819,8 +7843,8 @@ void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
             if (++cell.done == cell.jobs)
                 cell.changed.notify_all();
         }
-        else if (builder && (cell.done == cell.jobs))
-            return;
+        else if ((builder && (cell.done == cell.jobs)) || idle)
+            return ran;
         else if (cell.changed.wait_for(lock, std::chrono::milliseconds(50)) == std::cv_status::timeout)
         {
             lock.unlock();
@@ -7828,6 +7852,7 @@ void Trace::WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceC
             lock.lock();
         }
     }
+    return ran;
 }
 
 // One row of lines along one axis through a jittered grid of step h_a: a patch with unit normal n meets those lines
@@ -8346,7 +8371,31 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
             bool build;
             std::shared_ptr<SubsurfaceCell> cell = threadData->subsurfaceCache->Acquire(key, build);
             if (build)
+            {
+                // a bridge's or radiosity cell's jobs read state of the builder's own, so only the others are offered
+                const bool offer = (ssltBridge == nullptr) && !key.radiosity;
+                if (offer)
+                {
+                    std::vector<int> slots;
+                    for (const LightSource *light : cloud.lights)
+                    {
+                        auto own = std::find(threadData->lightSources.begin(), threadData->lightSources.end(), light);
+                        slots.push_back((own != threadData->lightSources.end()) ? int(own - threadData->lightSources.begin()) : -1);
+                    }
+                    auto shared = std::make_shared<const SubsurfaceCloud>(cloud);
+                    threadData->subsurfaceCache->Offer(cell.get(), [shared, slots, key, cell](Trace& helper)
+                    {
+                        return helper.HelpSubsurfaceCell(*shared, slots, key, *cell);
+                    });
+                }
+                struct Withdrawal final
+                {
+                    SubsurfaceCache *cache;
+                    const SubsurfaceCell *cell;
+                    ~Withdrawal() { if (cache != nullptr) cache->Withdraw(cell); }
+                } withdrawal = { offer ? threadData->subsurfaceCache.get() : nullptr, cell.get() };
                 BuildSubsurfaceCell(cloud, key, *cell);
+            }
             else
                 WorkOnSubsurfaceCell(cloud, key, *cell, false);
             known = cell.get();

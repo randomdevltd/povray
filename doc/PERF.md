@@ -1945,6 +1945,38 @@ refined pixels twice; method 1 traces a line of pixels above and left of each bl
 neighbours that may already be anti-aliased. Renders stopped at several points, during a level and during the
 anti-aliasing pass, and continued with `+C` match an uninterrupted one bit for bit with one thread.
 
+### Threads within a pass
+
+One worker per thread, made once, runs every pass. Levels run one after another, each behind a fence, because the frontend fills every lattice sample's cell of the
+output image: a coarser level arriving after a finer one would overwrite finer pixels, and the state file resumes at
+the highest level it holds. Within a level, workers claim blocks; once none is left, a worker takes single samples of
+a block another worker is still tracing (method 4's passes likewise take single pixels), and whichever worker
+finishes a block's last sample sends the block. A block is still one message, so state files and continuing with
+`+C` are unchanged. Every sample is a function of its position, so pixels are the same for any `+WT` and `+BS`. With
+radiosity, blocks are not shared: its sampling restarts per block. A worker out of samples also takes jobs of a
+subsurface cell another worker is building, until every worker of the pass is out.
+
+Each pass of at least half a second reports a line, and the render a summary:
+
+    Pass <level> <kind>: <wall>s, <working> of <threads> working, <cpu> on CPU, tail <tail>s
+    Passes: <count>, <wall>s, <working> of <threads> working, tails <tails>s, gaps <serial>s
+
+`working` is the workers' time in the pass over its wall time, `on CPU` their CPU time over it, and the tail the time
+from the first worker running out of work to the pass's end; gaps are the time between passes, in method 4's planner
+and the fences. Progressive Trace Time is the span from the first pass's
+start to the last one's end, with the threads of one pass.
+
+| Setting | Data from one pass to the next | Levels may overlap |
+|---|---|---|
+| no anti-aliasing | none while tracing; the image cells a level fills | only with finest-level-wins image writes |
+| methods 1 and 2 | the refining pass reads every level's samples | no |
+| method 4 | its planner reads every level's samples and hits, each round the one before | no |
+| radiosity, any mode | samples stored in one level are found by later ones | no |
+| photons | shot and indexed before the first pass, then only read | yes |
+| subsurface cells | shared, the same whichever ray or pass builds them | yes |
+| `+C` state file | resumes from the highest level written and that level's blocks | needs a per-level ledger |
+| preview and snapshots | each level's cells replayed in arrival order | needs finest-level-wins |
+
 ## Isosurfaces
 
 Functions ran on a switch over about a thousand opcodes, each with its registers baked in, behind one indirect

@@ -616,8 +616,29 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, floa
     }
 }
 
+void ViewData::OfferBlock(const std::shared_ptr<SharedBlock>& block)
+{
+    std::lock_guard<std::mutex> lock(sharedBlockMutex);
+    sharedBlocks.push_back(block);
+}
+
+std::shared_ptr<ViewData::SharedBlock> ViewData::BlockToHelp()
+{
+    std::lock_guard<std::mutex> lock(sharedBlockMutex);
+    sharedBlocks.erase(std::remove_if(sharedBlocks.begin(), sharedBlocks.end(),
+                                      [](const std::shared_ptr<SharedBlock>& b) { return b->Left() == 0; }), sharedBlocks.end());
+    auto most = std::max_element(sharedBlocks.begin(), sharedBlocks.end(),
+                                 [](const std::shared_ptr<SharedBlock>& a, const std::shared_ptr<SharedBlock>& b) { return a->Left() < b->Left(); });
+    return (most == sharedBlocks.end()) ? nullptr : *most;
+}
+
 void ViewData::SetNextRectangle(const BlockIdSet& bsl, unsigned int fs, bool keepProgress)
 {
+    {
+        std::lock_guard<std::mutex> lock(sharedBlockMutex);
+        sharedBlocks.clear();
+    }
+    passWorking = 0;
     blockSkipList = bsl;
     blockBusyList.clear(); // safety catch; shouldn't be necessary
     blockPostponedList.clear(); // safety catch; shouldn't be necessary

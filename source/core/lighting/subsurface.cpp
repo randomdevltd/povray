@@ -607,6 +607,39 @@ std::shared_ptr<const float> SubsurfaceCache::Layer(const SubsurfaceBoundary& bo
     }));
 }
 
+void SubsurfaceCache::Offer(const SubsurfaceCell *cell, std::function<bool(Trace&)> work)
+{
+    {
+        std::lock_guard<std::mutex> lock(offersMutex);
+        offers.emplace_back(cell, std::make_shared<std::function<bool(Trace&)>>(std::move(work)));
+    }
+    offered.notify_all();
+}
+
+void SubsurfaceCache::Withdraw(const SubsurfaceCell *cell)
+{
+    std::lock_guard<std::mutex> lock(offersMutex);
+    offers.erase(std::remove_if(offers.begin(), offers.end(), [cell](const auto& offer) { return offer.first == cell; }), offers.end());
+}
+
+bool SubsurfaceCache::Help(Trace& trace, std::chrono::milliseconds wait)
+{
+    std::vector<std::shared_ptr<std::function<bool(Trace&)>>> works;
+    {
+        std::unique_lock<std::mutex> lock(offersMutex);
+        if (offers.empty() && (wait.count() > 0))
+            offered.wait_for(lock, wait);
+        // helpers start at different offers, so they spread over the cells being built
+        for (size_t k = 0; k < offers.size(); k++)
+            works.push_back(offers[(nextOffer + k) % offers.size()].second);
+        nextOffer++;
+    }
+    bool ran = false;
+    for (const auto& work : works)
+        ran = (*work)(trace) || ran;
+    return ran;
+}
+
 std::shared_ptr<const SubsurfaceBoundary> SubsurfaceCache::Boundary(double eta)
 {
     const size_t bytes = SubsurfaceBoundary::Bytes();

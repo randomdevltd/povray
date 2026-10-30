@@ -198,6 +198,24 @@ class ViewData final
                 virtual ~BlockInfo() {}
         };
 
+        /// A claimed block of a progressive pass whose items any worker of that pass may take once no block is left.
+        class SharedBlock
+        {
+            public:
+                virtual ~SharedBlock() {}
+                /// Next item to take, and how many there are.
+                std::atomic<size_t> next{0};
+                size_t count = 0;
+                size_t Left() const { const size_t n = next.load(std::memory_order_relaxed); return (n < count) ? (count - n) : 0; }
+        };
+
+        /// Lets workers of the pass take items of a block once they run out of blocks.
+        void OfferBlock(const std::shared_ptr<SharedBlock>& block);
+        /// The offered block with the most items left, or none.
+        std::shared_ptr<SharedBlock> BlockToHelp();
+        /// Workers of the running pass not yet out of blocks to work on.
+        std::atomic<int> passWorking{0};
+
         /**
          *  Get the next sub-rectangle of the view to render (if any).
          *  This method is called by the render threads when they have
@@ -524,6 +542,9 @@ class ViewData final
         BlockIdSet blockBusyList;
         /// list of blocks postponed for some reason
         BlockIdSet blockPostponedList;
+        /// blocks of the running pass that idle workers may help with
+        std::vector<std::shared_ptr<SharedBlock>> sharedBlocks;
+        std::mutex sharedBlockMutex;
         /// list of additional block information
         std::vector<BlockInfo*> blockInfoList;
         /// area of view to be rendered
