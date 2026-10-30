@@ -3,7 +3,7 @@
 // Room 5 x 6 m and 3 m high, window 1.6 x 1.5 m. Dust: sigma_s = 0.03 per m, non-absorbing (albedo 1), Henyey-Greenstein g = 0.6.
 // Sun: parallel light of 100,000 lux normal to the beam, 35 degrees above the horizon. The sky seen through the window is 4000 cd/m2.
 // Fill (stands in for sky and bounce light): a 1500 cd point light in the ceiling (about 180 lux on the floor). Albedos: floor 0.3, walls 0.6, ceiling 0.7.
-// The dust is an object medium that fills the room: it dims the view but not the sun, which across the 6 m room would lose e^-0.18 = 16%.
+// The dust is an object medium that fills the room and reaches into the walls: it dims the view and, with media_attenuation on, the sun and the fill on their way to every lit point.
 // Declare=Look=0 physical method 4 (default), 1 classic method 3, 2 method 4 with 4x scattering and extinction 0.25 (the classic look),
 // 3 absorption only. Declare=Exposure=E scales every colour: 0.0004 by default; 1 renders cd/m2 with +FH.
 #version 3.8;
