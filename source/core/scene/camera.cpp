@@ -478,15 +478,17 @@ bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, uns
         return FiniteBounds(low, high);
     }
     Make_min_max_from_BBox(low, high, object->BBox);
-    // a plain union's own box rounds its parts' boxes outward again, so it frames by the parts themselves
-    const bool plainUnion = (dynamic_cast<const CSGUnion *>(object) != nullptr) && object->Bound.empty() && object->Clip.empty();
-    if (object->BBox.finite && FiniteBounds(low, high) && !plainUnion)
+    const bool boxed = object->BBox.finite && FiniteBounds(low, high);
+    // a compound's box rounds its parts' boxes outward again, so one without its own bound frames by its parts
+    const bool byParts = (compound != nullptr) && object->Bound.empty() && object->Clip.empty();
+    if (boxed && !byParts)
         return true;
     if (compound == nullptr)
     {
         ++unbounded;
         return false;
     }
+    const Vector3d boxLow = low, boxHigh = high;
     const bool intersection = (dynamic_cast<const CSGIntersection *>(object) != nullptr);
     bool found = false;
     unsigned int childUnbounded = 0;
@@ -505,6 +507,15 @@ bool FrameTargetBounds(ConstObjectPtr object, Vector3d& low, Vector3d& high, uns
             high[axis] = intersection ? std::min(high[axis], childHigh[axis]) : std::max(high[axis], childHigh[axis]);
         }
         found = true;
+    }
+    if (boxed)
+    {
+        // the parts frame within the compound's own box, which may be the tighter of the two
+        const Vector3d partsLow = max(low, boxLow), partsHigh = min(high, boxHigh);
+        const bool parts = found && (intersection || (childUnbounded == 0)) && FiniteBounds(partsLow, partsHigh);
+        low = parts ? partsLow : boxLow;
+        high = parts ? partsHigh : boxHigh;
+        return true;
     }
     // An intersection's unbounded children only stop constraining it.
     if (!intersection)
