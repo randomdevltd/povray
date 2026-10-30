@@ -2088,6 +2088,15 @@ bumpy caustic glass 28.4 → 4.4, mean within 0.1% where it was 2.4% dark; an `a
 `benchmark.pov` at 160×120 the 15% of pixels these terms change keep their error, 47.5 against 47.6: its error is
 not in the terms filtered here. Only iridescence costs more than the normals' own taps:
 on the iridescent plane the Gaussian takes 3% more CPU than the mean normal's single cosine.
+
+Method 2 subsurface light leaves towards the eye with the mean of each tap's Fresnel transmission, a tap facing away
+leaving as the surface does. The light entering at the exit point itself (its irradiance, the estimate below the minimum
+influence and the closed-form single scattering) averages each tap's cosine and transmission weighted by that tap's
+share of the transmission out, the product a supersampled pixel averages; points elsewhere keep their own normals. At
+320×240 against a 16-sample reference, on the 19% (bumped skin) and 27% (crackled alabaster) of pixels this changes,
+mean relative error falls from 1.26% to 0.92% and from 0.77% to 0.44%, its 99th percentile from 28.7% to 22.3% and
+from 11.2% to 3.4%, and their mean brightness from 0.3% high to within 0.07%; the whole frames' means are within
+0.03% of the reference. The cost is a Fresnel term per tap and light.
 ## Function-density point batches
 
 Function densities reuse one function context for each density batch. Eligible functions with SIMD

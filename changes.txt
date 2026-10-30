@@ -609,8 +609,9 @@ New Features
     `Texture_Filter_Pigments=off` or `Texture_Filter_Normals=off` opts a kind
     out. Diffuse light is averaged over the perturbed normals there, specular
     and phong highlights widen by their spread, iridescence, angle-dependent
-    reflection, Fresnel losses and faked caustics average over them, aoi and
-    slope pigments see each tap's normal, and reflected and refracted rays
+    reflection, Fresnel losses, faked caustics and the light method 2
+    subsurface scattering lets in and out where it is seen average over them,
+    aoi and slope pigments see each tap's normal, and reflected and refracted rays
     widen their footprint by the spread, so bumps finer than a pixel no longer
     speckle.
   - Progressive rendering (`+PR`) traces the whole frame at doubling
