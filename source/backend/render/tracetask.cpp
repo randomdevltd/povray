@@ -2762,7 +2762,6 @@ void TraceTask::M4Item(PassBlock& block, size_t item)
                         if(probes > 0)
                             GetViewDataPtr()->Stats()[Number_Of_Pixels_Supersampled]++;
                     }
-        }
         block.colors[item] = col;
     }
 }
