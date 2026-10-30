@@ -159,6 +159,7 @@ struct SubsurfacePoint final
     float tolerance; ///< the stated accuracy of the surface part the point lies on, in world units
     unsigned id : 30; ///< index into the cell's visibility, which stays in build order; while casting, its part's light set and photons
     unsigned axis : 2; ///< that of the line that found it
+    bool bumped; ///< whether its texture perturbs its normal; its irradiance then holds that normal, facing out, until lit
 };
 
 /// A node of a cell's point hierarchy: its box, area-weighted centre, total area, area-weighted irradiance, and the
