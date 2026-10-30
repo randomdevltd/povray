@@ -3,6 +3,7 @@
 // Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux (250, a large paper lantern), Storm=0 drops the lightning tower.
 // attenuation { power P scale S } scales the physical light by q^(P-2) * S^(q^P-1), q = R/max(d,R) for the light's radius R, so far away it falls as 1/d^P: power 1.5 lets the lanterns reach the cloud around them.
 #version 4.0;
+// Units: lanterns 250 lm each, bolt 20 nits and flash 5 nits of radiance; the clouds keep their authored physical scattering of 0.3 per unit.
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Storm) #declare Storm = 1; #end
 #ifndef (LanternLumens) #declare LanternLumens = 250; #end
@@ -102,7 +103,7 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
       Jag(A, A + <rand(R) - 0.5, -0.5 - rand(R) * 0.5, rand(R) - 0.5> * 8, 5, 0.12, 0.07, 1.6)
     #end
     pigment { rgbt 1 }
-    interior { media { mix add emission rgb <0.72, 0.82, 1> * 5 } light { pigment { rgb <0.72, 0.82, 1> } brightness 15 nits samples Samples } }
+    interior { media { mix add emission rgb <0.72, 0.82, 1> * 5 } light { pigment { rgb <0.72, 0.82, 1> } brightness 20 nits samples Samples } }
   }
   sphere {
     0, 1 pigment { rgbt 1 }
@@ -112,7 +113,7 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
         emission rgb <0.8, 0.7, 1> * 0.35
         density { spherical turbulence 0.3 color_map { [0 rgb 0] [1 rgb 1] } }
       }
-      light { pigment { rgb <0.8, 0.7, 1> } brightness 1 nits samples Samples }
+      light { pigment { rgb <0.8, 0.7, 1> } brightness 5 nits samples Samples }
     }
     scale 4.5 translate <22, 38, 40>
   }
