@@ -75,6 +75,13 @@ Changed Behaviour
   with a light block or anywhere in a scene with one. Absorbing and glowing
   classic media elsewhere stay legal; media_interaction off on every light
   block allows classic scattering media.
+- An ordinary light's shadow rays are now dimmed by object media all the way to
+  the light. Before, the last stretch from the final surface crossing to the
+  light only met atmospheric media, so a light inside a medium was not dimmed
+  by it with media_attenuation on, and a light behind a closed receiver started
+  its shadow ray on the wrong side. The stretch now takes the media of the
+  shadow-casting containers around it, whatever their method. Scenes with
+  media_attenuation on and a light inside a classic medium render darker.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow
