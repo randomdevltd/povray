@@ -38,14 +38,15 @@ public:
 
     void AddIsotropic(const MathColour& source) { isotropic += source; }
 
-    // Directions are unit propagation vectors; incidentWeight includes the solid-angle quadrature weight.
+    // Directions are unit propagation vectors, or zero for light from every direction, which every phase scatters
+    // evenly; incidentWeight includes the solid-angle quadrature weight.
     void AddScatteringBeam(int type, double eccentricity, const MathColour& effectiveSigmaS,
                            const Vector3d& incoming, const MathColour& incidentWeight)
     {
         const MathColour weight = effectiveSigmaS * incidentWeight * InverseFourPi();
         if (!(weight.Weight() > 0.0))
             return;
-        if (type == ISOTROPIC_SCATTERING)
+        if (type == ISOTROPIC_SCATTERING || incoming.IsNull())
             isotropic += weight;
         else if (type == RAYLEIGH_SCATTERING)
         {

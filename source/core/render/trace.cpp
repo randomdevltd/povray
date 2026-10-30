@@ -4986,9 +4986,11 @@ void Trace::ComputeOneWhiteLightRay(const LightSource &lightsource, double& ligh
         // NK 1998 parallel beams for cylinder source - the stuff in this 'else'
         // block used to be all that there was... the first half of the if
         // statement (before the 'else') is new
-        lightsourceray.Direction = center - ipoint;
-        lightsourcedepth = lightsourceray.Direction.length();
-        lightsourceray.Direction /= lightsourcedepth;
+        const Vector3d toLight = center - ipoint;
+        lightsourcedepth = toLight.length();
+        // A light at the point itself has no direction; the ray keeps the one it was given.
+        if (lightsourcedepth > 0.0)
+            lightsourceray.Direction = toLight / lightsourcedepth;
     }
 
     // Attenuate light source color.

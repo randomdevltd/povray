@@ -18,16 +18,17 @@ namespace pov
 
 struct BounceIncidentBeam final
 {
-    Vector3d direction; // Unit propagation direction, from the light to the receiving point.
+    Vector3d direction; // Unit propagation direction, from the light to the receiving point; zero from every direction.
     MathColour angularWeight; // Physical incoming radiance integrated over this sample's solid angle.
     double distance = HUGE_VAL; // From the receiving point to where the light was drawn.
 };
 
-// Source emitters and the supplied Trace's shadow-media evaluator must read the immutable previous order.
+// Source emitters and the supplied Trace's shadow-media evaluator must read the immutable previous order. A receiver
+// with a radius stands for the region about it: a light nearer than that is seen from all of it (Ray::ReceiverRadius).
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     Trace& trace, const Vector3d& point, const std::vector<LightSource*>& sources,
     unsigned int samplesPerSource, std::uint64_t key, TraceTicket& ticket,
-    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr)
+    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0)
 {
     std::vector<BounceIncidentBeam> beams;
     if (samplesPerSource == 0)
@@ -64,6 +65,7 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             if (receiver && receiverNormal)
                 ray.SetSurfaceOrigin(receiver, point, *receiverNormal);
             ray.SetExactShadowWindow();
+            ray.SetReceiverRadius(receiverRadius);
             MathColour incoming;
             double depth = 0.0;
             if (light.emitter)
@@ -95,8 +97,14 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
             const double length = ray.Direction.length();
             if (positive && (!std::isfinite(length) || length <= 0.0))
                 throw std::domain_error("bounce incident direction must be finite and nonzero");
-            if (positive)
-                beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * share, depth > 0.0 ? depth : HUGE_VAL});
+            // A light drawn nearer than the receiver's radius lights its region from around it, that share from every
+            // side; an emitter's draws already spread over its own extent.
+            const double directed = !light.emitter && depth < receiverRadius ? depth / receiverRadius : 1.0;
+            const double distance = depth > 0.0 ? depth : HUGE_VAL;
+            if (positive && directed > 0.0)
+                beams.push_back(BounceIncidentBeam{-ray.Direction / length, incoming * (share * directed), distance});
+            if (positive && directed < 1.0)
+                beams.push_back(BounceIncidentBeam{Vector3d(0.0), incoming * (share * (1.0 - directed)), distance});
             if (repeated)
                 break;
         }
@@ -107,10 +115,11 @@ inline std::vector<BounceIncidentBeam> CollectBounceIncident(
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(
     Trace& trace, const Vector3d& point, const std::vector<LightSource*>& sources,
     unsigned int samplesPerSource, std::uint64_t key,
-    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr)
+    const Intersection* receiverHit = nullptr, const Vector3d* receiverNormal = nullptr, double receiverRadius = 0.0)
 {
     TraceTicket ticket(256, 0.0);
-    return CollectBounceIncident(trace, point, sources, samplesPerSource, key, ticket, receiverHit, receiverNormal);
+    return CollectBounceIncident(trace, point, sources, samplesPerSource, key, ticket, receiverHit, receiverNormal,
+                                 receiverRadius);
 }
 
 inline std::vector<BounceIncidentBeam> CollectBounceIncident(

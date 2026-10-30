@@ -124,6 +124,9 @@ class Ray final : public BasicRay
         /// Shadow tests of this ray count every blocker between its ends, with no fixed margin at either.
         void SetExactShadowWindow() { exactShadowWindow = true; }
         bool HasExactShadowWindow() const { return exactShadowWindow; }
+        /// A receiver standing for a region this wide takes a light's falloff no nearer than this to the light.
+        void SetReceiverRadius(DBL radius) { receiverRadius = radius; }
+        DBL ReceiverRadius() const { return receiverRadius; }
 
         bool AdmitRoot(ConstObjectPtr object, double depth) const
         { return !rootQuery.query || rootQuery.query->Admit(rootQuery.owner ? rootQuery.owner : object, depth); }
@@ -198,6 +201,7 @@ class Ray final : public BasicRay
         const LightSource *mediaLight = nullptr;
         PreparedSetId preparedSetId = 0;
         bool exactShadowWindow = false;
+        DBL receiverRadius = 0.0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;

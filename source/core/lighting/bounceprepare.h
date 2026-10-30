@@ -20,6 +20,7 @@
 #include <string>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -650,12 +651,17 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 }
                 const size_t groupIndex = groups.size();
                 const std::string step = orderItem + " " + Of("t", targetIndex, targets.size());
+                // A node stands for its cell: the inverse square from its centre has its mean over a ball of the cell's
+                // volume at this radius.
+                const double receiverRadius =
+                    std::cbrt(3.0 * target.domain->Volume() / target.domain->CellCount() / (4.0 * M_PI)) / std::sqrt(3.0);
                 workers.Step(step + " volume");
                 workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
                 {
                     const auto beams =
                         CollectBounceIncident(workers[worker].trace, target.domain->Node(node), sources, samples,
-                                              BounceOrderSeed(0, order, groupIndex, node));
+                                              BounceOrderSeed(0, order, groupIndex, node), nullptr, nullptr,
+                                              receiverRadius);
                     for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
                         for (const auto& beam : beams)
                             phaseNodes[phase][node].AddScatteringBeam(
