@@ -2,11 +2,12 @@
 // Emitting media meeting things: red, green and blue lights overlapping, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone; a pool sunk in the floor, pierced by rods. +w640 +h480.
 // Declare=Samples=N sets each light's samples, LampGain scales the lamps' light over their glow, GeodeLumens and PoolLumens set the other two lights' flux, Smoke=0 drops the smoke.
 #version 4.0;
+// Units: lamps cast their emission times LampGain (3.1), the geode 1600 lm through its cracks, the pool 190 lm; the smoke scatters 4x the classic colour with extinction 0.25.
 #ifndef (Samples) #declare Samples = 24; #end
 #ifndef (Smoke) #declare Smoke = 1; #end
-#ifndef (LampGain) #declare LampGain = 2.5; #end
-#ifndef (GeodeLumens) #declare GeodeLumens = 400; #end
-#ifndef (PoolLumens) #declare PoolLumens = 150; #end
+#ifndef (LampGain) #declare LampGain = 3.1; #end
+#ifndef (GeodeLumens) #declare GeodeLumens = 1600; #end
+#ifndef (PoolLumens) #declare PoolLumens = 190; #end
 #declare R = seed(42);
 #declare Mid = <0, 2.9, 0.3>;
 #declare Geode = <3.5, 0.92, 0.9>;
@@ -55,7 +56,7 @@ sphere_sweep {
     interior {
       media {
         mix add
-        scattering { 1, rgb 0.3 } absorption rgb 3
+        scattering { 1, rgb 1.2 extinction 0.25 } absorption rgb 3
         density {
           cylindrical turbulence <0.6, 0.1, 0.6> octaves 5 lambda 2.5 scale <0.5, 1, 0.5>
           color_map { [0 rgb 0] [0.45 rgb 0] [0.8 rgb 0.7] [1 rgb 1] }
