@@ -1546,7 +1546,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
     bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
-    attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower),
+    attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
@@ -1675,6 +1675,7 @@ class VolumeEmitter final : public Emitter
         const MathColour& Intensity() const override { return intensity; }
         const Vector3d& Centre() const override { return centre; }
         double Radius() const override { return radius; }
+        double Reach(const Vector3d& from) const override { return BoxReach(from, low, size); }
 
         bool HasVolumeEmission() const override { return volumeEmission; }
 
@@ -4881,7 +4882,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
             if (lights[i].light->emitter)
             {
-                if (!volumeLighting || (currentPath && currentPath->collecting))
+                if (!volumeLighting || (currentPath && currentPath->collecting) || Light_Below_Cutoff(lights[i].light, P))
                     continue;
                 const int count = max(1, lights[i].light->Area_Size1);
                 threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;

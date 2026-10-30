@@ -41,9 +41,15 @@ field. Brightness keeps its existing calibration: omitted brightness is 1 nit,
 so selecting emission does not make `j(x)` equal to the media emission coefficient.
 Without the flag, the default pigment remains solid white.
 
-`attenuation { power P scale S }` names both values; either may be left out
-(power 2, scale 1) and each may appear once, as may the block. Bare numbers after
+`attenuation { power P scale S cutoff C }` names all three values; any may be left out
+(power 2, scale 1, cutoff 0.000004) and each may appear once, as may the block. Bare numbers after
 `attenuation` are a parse error. The default leaves physical transport unchanged.
+`cutoff` leaves the light out at a lit point, with no emitter draws and no shadow
+rays, where the most it could add there is below C on the 0 to 1 output scale of
+`adc_bailout`. That bound is the light's prepared power, falling with the attenuation
+law from the nearest point of the emitter's bounds, so it never depends on the light's
+shape or kind. It applies to surface shading, media scattering, subsurface and bounce
+preparation alike; `cutoff 0` turns it off.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 
@@ -75,8 +81,9 @@ pigments cannot depend on ray or camera context, and finish Fresnel or
 reflection energy conservation that changes emission by direction is rejected.
 Emitted RGB must be finite and nonnegative.
 
-Surface sources require a finite, nonzero surface area. Their light blocks do
-not accept the volume light's artistic `attenuation` setting. A `light_source`
+Surface sources require a finite, nonzero surface area. Their light blocks take
+only `attenuation { cutoff C }`; the volume light's artistic `power` and `scale`
+are an error there. The default cutoff applies to surface and bounce lights too. A `light_source`
 does not take a `light` block: both syntaxes stop with `A light block makes a
 shape's surface a light; a light_source cannot take one.`
 `brightness` is followed by an optional unit written after the number, as in
@@ -86,7 +93,8 @@ light sources only.
 
 Errors of the block itself carry the file and line (`A light block accepts exactly
 one pigment or emission input.`, `Only one surface light block allowed on an
-object.`, `Surface light blocks do not accept attenuation.`); errors found while
+object.`, `A surface light's attenuation accepts only cutoff; power and scale are for
+interior lights.`); errors found while
 the light is prepared (`Surface light input cannot depend on ray or camera
 context`, `Surface light emission cannot bake direction-dependent finish
 attenuation`) stop the render before tracing and carry no line. The manual's

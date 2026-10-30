@@ -1432,6 +1432,11 @@
    "code": "sine_wave | scallop_wave | cubic_wave | poly_wave [Exponent]",
    "from": "doc/html/r3_6.html"
   },
+  "cutoff": {
+   "rank": 30,
+   "code": "attenuation { cutoff Value } |",
+   "from": "doc/html/r3_12.html"
+  },
   "cylinder": {
    "code": "cylinder { 0, y * H, 0.1 pigment { rgb <0.4, 0.3, 0.2> } }",
    "from": "tests/pov4/components.pov4:3"

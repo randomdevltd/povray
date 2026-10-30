@@ -108,7 +108,13 @@ reject duplicate_passes 'only one passes setting' 'light { bounce { passes 1 pas
 reject bounce_aoi 'cannot depend on ray or camera context' 'pigment { aoi } light { bounce }'
 reject angular_finish 'cannot bake direction-dependent finish attenuation' 'finish { emission 1 fresnel on } light { emission }'
 reject bounce_crand 'cannot prepare stochastic crand diffuse finishes' 'finish { crand 0.5 } light { bounce }'
-reject attenuation 'Surface light blocks do not accept attenuation' 'light { attenuation { power 2 scale 1 } }'
+reject surface_power 'attenuation accepts only cutoff; power and scale are for interior lights' 'light { attenuation { power 2 } }'
+reject surface_scale 'attenuation accepts only cutoff; power and scale are for interior lights' 'light { attenuation { cutoff 0 scale 1 } }'
+reject surface_attenuation_number 'attenuation is a block: attenuation { cutoff 0.000004 }' 'light { attenuation 1 }'
+reject negative_cutoff 'cutoff must be finite and not negative' 'light { attenuation { cutoff -1 } }'
+reject volume_negative_cutoff 'cutoff must be finite and not negative' 'hollow interior { light { attenuation { cutoff -0.5 } } }'
+reject duplicate_cutoff 'accepts only one cutoff' 'light { attenuation { cutoff 0 cutoff 1 } }'
+reject volume_duplicate_cutoff 'accepts only one cutoff' 'hollow interior { light { attenuation { cutoff 0 power 2 cutoff 0 } } }'
 reject attenuation_pair 'attenuation is a block: attenuation { power 2 scale 1 }' 'hollow interior { light { attenuation 2, 1 } }'
 reject attenuation_scale 'attenuation is a block: attenuation { power 2 scale 1 }' 'hollow interior { light { attenuation 1 } }'
 reject duplicate_power 'accepts only one power' 'hollow interior { light { attenuation { power 2 power 1 } } }'
@@ -154,4 +160,39 @@ for language in pov pov4; do
     fi
     tr '\n' ' ' <"direct.$language.log" | tr -s '[:space:]' ' ' | grep -F 'a light_source cannot take one' >/dev/null || { cat "direct.$language.log"; exit 1; }
 done
+for language in pov pov4; do
+    for kind in surface volume; do
+        for cutoff in implicit default zero huge; do
+            case $cutoff in
+                implicit) att= ;;
+                default) att='attenuation { cutoff 0.000004 }' ;;
+                zero) att='attenuation { cutoff 0 }' ;;
+                huge) att='attenuation { cutoff 1000 }' ;;
+            esac
+            if [ "$kind" = surface ]; then light="sphere { <0,1,0>, 0.2 no_image light { brightness 4 samples 4 $att } }"
+            else light="sphere { <0,1,0>, 0.2 no_image hollow pigment { rgbt 1 } interior { light { brightness 4 samples 4 $att } } }"; fi
+            { if [ "$language" = pov ]; then echo '#version 3.7;'; fi
+              echo 'global_settings { assumed_gamma 1 }'
+              echo 'camera { orthographic location <0,3,0> look_at 0 right x*4 up z*4 }'
+              echo 'plane { y, 0 pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } }'
+              echo "$light"
+            } >"cut_$kind$cutoff.$language"
+            render "cut_$kind${cutoff}_$language" "cut_$kind$cutoff.$language"
+        done
+        cmp "cut_${kind}implicit_$language.rgb" "cut_${kind}default_$language.rgb"
+        cmp "cut_${kind}implicit_$language.rgb" "cut_${kind}implicit_pov.rgb"
+    done
+done
+image_awk '
+function power(name,    v) { return sum_of(v, read_words(name ".rgb", v, 192)) }
+function check(ok, message) { if (!ok) fail("surface_light: " message) }
+BEGIN {
+    split("surface volume", kinds, " ")
+    for (k = 1; k <= 2; k++) {
+        kind = kinds[k]
+        check(power("cut_" kind "zero_pov") > 0, kind " light with cutoff 0 is black")
+        check(abs(power("cut_" kind "implicit_pov") / power("cut_" kind "zero_pov") - 1) < 0.001, kind " default cutoff changes the image")
+        check(power("cut_" kind "huge_pov") == 0, kind " light above its cutoff still lights " power("cut_" kind "huge_pov"))
+    }
+}'
 echo 'surface_light: ok'

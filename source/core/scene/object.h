@@ -357,6 +357,7 @@ class LightSource final : public CompoundObject
         DBL Fade_Distance, Fade_Power;
         /// an emitter light's distance law: factor A'(r) = A·(1/scale)^(1−A) over Radius², A = (Radius/max(r,Radius))^power
         DBL attenuationScale = 1.0, attenuationPower = 2.0, lawRadius = 0.0;
+        DBL cutoff = 0.0; ///< an emitter light leaves out points its bound lights less than this
         int Area_Size1, Area_Size2;
         int Adaptive_Level;
         ObjectPtr Projected_Through_Object;

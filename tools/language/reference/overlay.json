@@ -60,7 +60,7 @@
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
   "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off.",
   "bounce": "Scattering orders of a light's own emission field: bare `bounce` is one pass, `bounce { passes N }` runs N.",
-  "attenuation": "Artistic falloff of an interior light: `attenuation { power P scale S }`, power 2 and scale 1 by default (physical); far away the light falls as 1/d^P and the scale divides it."
+  "attenuation": "Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C."
  },
  "words": {
   "quality": {
@@ -286,6 +286,10 @@
   "emission": {
    "kind": "item",
    "text": "Light colour source in a light block: bare `emission` copies the object's own emission (surface: pigment times finish emission; interior: its media emission) instead of a pigment. Also finish emission (surface glow) and media emission (appearance only)."
+  },
+  "cutoff": {
+   "kind": "item",
+   "text": "In a light's attenuation block: where the most the light could add at a lit point, on the 0 to 1 scale of adc_bailout, is below this, the point draws nothing from it and traces no shadow rays. 0.000004 by default, 0 off; surface and interior lights. Contextual: remains available as an identifier."
   },
   "scale_lumens": {
    "kind": "function",

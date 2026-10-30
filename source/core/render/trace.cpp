@@ -3164,6 +3164,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
 {
     if (lightsource.emitter != nullptr)
     {
+        if (Light_Below_Cutoff(&lightsource, ipoint))
+            return;
         const int count = max(1, lightsource.Area_Size1);
         threadData->Stats()[Emitter_Surface_Draws] += count;
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
@@ -3872,6 +3874,9 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
                                     MathColour& colour, const EmitterDraw& draw, bool shadows,
                                     const Vector3d* receiverNormal, Interior* receiverInterior)
 {
+    colour.Clear();
+    if (Light_Below_Cutoff(&light, point))
+        return false;
     threadData->Stats()[Emitter_Connections]++;
     if (ray.IsShadowTestRay())
         threadData->Stats()[Emitter_Shadow_Input]++;
@@ -3881,7 +3886,6 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
         throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
     MarkGrain();
     EmitterSample sample;
-    colour.Clear();
     if (!light.emitter->SampleToward(point, draw, threadData, sample))
         return false;
     const Vector3d delta = sample.position - point;

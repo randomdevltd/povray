@@ -35,6 +35,7 @@ public:
     const MathColour& Intensity() const override { return intensity; }
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
+    double Reach(const Vector3d& from) const override { return BoxReach(from, geometry.Lower(), geometry.Size()); }
 
     void ResolveGeometry() const override { geometry.ResolveDeferred(); }
 

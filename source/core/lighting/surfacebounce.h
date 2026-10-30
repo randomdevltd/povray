@@ -241,6 +241,7 @@ public:
     void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { target.AddScaled(guide, 1.0); }
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
+    double Reach(const Vector3d& from) const override { return BoxReach(from, geometry.Lower(), geometry.Size()); }
     const MathColour& Intensity() const override { return intensity; }
     MathColour RadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const
     {

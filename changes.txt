@@ -112,8 +112,8 @@ Changed Behaviour
     with a Lambert distribution. The emission selector reuses material pigment
     times finish emission; source appearance remains independent. `light`,
     `nits` and `lumens` are matched by text and remain free identifiers elsewhere.
-    A surface light needs finite geometry of nonzero area, takes no
-    `attenuation`, and a `light_source` cannot hold a `light` block.
+    A surface light needs finite geometry of nonzero area, takes only
+    `attenuation { cutoff C }`, and a `light_source` cannot hold a `light` block.
 
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
@@ -489,7 +489,10 @@ New Features
     divergence follow the same integral. `samples` controls variance and cost.
     `attenuation { power P scale S }` defaults to physical power 2, scale 1;
     either may be left out. Artistic attenuation applies consistently to direct
-    and photon paths. `light`, `nits`, `lumens`, `attenuation` and `power` are
+    and photon paths. `attenuation { cutoff C }` (0.000004 by default, 0 off,
+    on surface and volume lights) leaves a light out at a lit point, with no
+    emitter draws or shadow rays, where its power falling from the nearest
+    point of its bounds is below C on the 0 to 1 scale of `adc_bailout`. `light`, `nits`, `lumens`, `attenuation` and `power` are
     contextual. An item of a nested block, such as a light's
     `photons { reflection on }`, is rejected outside it in both syntaxes.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,

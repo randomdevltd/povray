@@ -74,6 +74,8 @@ public:
     }
     Vector3d Centre() const { return lower + size * 0.5; }
     DBL Radius() const { return std::sqrt(size.lengthSqr()) * 0.5; }
+    const Vector3d& Lower() const { return lower; }
+    const Vector3d& Size() const { return size; }
 
     // Random variates are independent and uniform on [0,1).
     bool SampleArea(Ray& ray, TraceThreadData* thread, DBL axisU, DBL u, DBL v, DBL rootU,

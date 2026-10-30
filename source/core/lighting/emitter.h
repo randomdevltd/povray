@@ -104,6 +104,8 @@ class Emitter
         virtual const MathColour& Intensity() const = 0;   ///< prepared estimate of ∫j dV; never a connection normalization
         virtual const Vector3d& Centre() const = 0;        ///< power-weighted centre
         virtual double Radius() const = 0;                 ///< about Centre(), holding every sample
+        /// The least distance from `from` to any sample: to the bounding sphere unless an emitter knows tighter bounds.
+        virtual double Reach(const Vector3d& from) const { return std::max(0.0, (from - Centre()).length() - Radius()); }
         /// A position from a full-support proposal; its weight evaluates the continuous source, not its table.
         virtual EmitterSample Sample(double s, std::uint64_t key, TraceThreadData *td = nullptr) const = 0;
         /// As Sample(), with t a second stratified dimension for emitters that use one.
@@ -121,6 +123,21 @@ class Emitter
         }
 };
 
+/// The least distance from `from` to the box at `low` of extent `size`.
+inline double BoxReach(const Vector3d& from, const Vector3d& low, const Vector3d& size)
+{
+    double sum = 0.0;
+    for (int i = 0; i < 3; i++)
+    {
+        const double outside = std::max(std::max(low[i] - from[i], from[i] - (low[i] + size[i])), 0.0);
+        sum += outside * outside;
+    }
+    return std::sqrt(sum);
+}
+
+/// The light's default `attenuation { cutoff }`: about adc_bailout / 1000.
+const double kDefaultLightCutoff = 4.0e-6;
+
 /// The `light { }` block of an emitting interior: the light's own radiance, apart from the media's look.
 struct MediaLight final
 {
@@ -131,6 +148,7 @@ struct MediaLight final
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
+    double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
     int samples = 16;               ///< emitter draws per receiver point
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;

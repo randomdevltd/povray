@@ -3898,15 +3898,19 @@ void Parser::Parse_Media(vector<Media>& medialist)
     medialist.push_back(IMediaObj);
 }
 
-void Parser::Parse_Light_Attenuation(MediaLight& light)
+void Parser::Parse_Light_Attenuation(MediaLight& light, bool surface)
 {
     if (!Peek_Token(LEFT_CURLY_TOKEN))
-        Error("A light block's attenuation is a block: attenuation { power 2 scale 1 }.");
+        Error(surface ? "A light block's attenuation is a block: attenuation { cutoff 0.000004 }." :
+                        "A light block's attenuation is a block: attenuation { power 2 scale 1 }.");
     bool havePower = false;
     bool haveScale = false;
+    bool haveCutoff = false;
     Parse_Begin();
     EXPECT
         CASE (SCALE_TOKEN)
+            if (surface)
+                Error("A surface light's attenuation accepts only cutoff; power and scale are for interior lights.");
             if (haveScale)
                 Error("An attenuation block accepts only one scale.");
             haveScale = true;
@@ -3916,10 +3920,21 @@ void Parser::Parse_Light_Attenuation(MediaLight& light)
         OTHERWISE
             if (CurrentTokenText() == "power")
             {
+                if (surface)
+                    Error("A surface light's attenuation accepts only cutoff; power and scale are for interior lights.");
                 if (havePower)
                     Error("An attenuation block accepts only one power.");
                 havePower = true;
                 light.attenuationPower = Parse_Float();
+            }
+            else if (CurrentTokenText() == "cutoff")
+            {
+                if (haveCutoff)
+                    Error("An attenuation block accepts only one cutoff.");
+                haveCutoff = true;
+                light.cutoff = Parse_Float();
+                if (!std::isfinite(light.cutoff) || (light.cutoff < 0.0))
+                    Error("An attenuation block's cutoff must be finite and not negative.");
             }
             else
             {
@@ -4047,12 +4062,10 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             }
             else if (CurrentTokenText() == "attenuation")
             {
-                if (surface)
-                    Error("Surface light blocks do not accept attenuation.");
                 if (haveAttenuation)
                     Error("A light block accepts only one attenuation block.");
                 haveAttenuation = true;
-                Parse_Light_Attenuation(*light);
+                Parse_Light_Attenuation(*light, surface);
             }
             else
             {
