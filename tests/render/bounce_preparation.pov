@@ -97,7 +97,7 @@ background { rgb 0 }
   #declare CoreDensity = function { pigment { object { Core rgb 0.2 rgb 1 } } };
   sphere { <0.6, 1, 0>, 0.45 pigment { rgbt 1 } hollow
     interior {
-      media { method 3 scattering { 1, rgb 0.6 }
+      media { method 4 resolution 0.08 scattering { 1, rgb 0.6 }
         density { function { CoreDensity(x, y, z).red } } }
       light { brightness 1 samples Samples bounce { passes Passes } }
     }

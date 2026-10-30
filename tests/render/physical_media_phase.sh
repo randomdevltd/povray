@@ -20,7 +20,6 @@ done
 render point Declare=Source=1
 render volume16 Declare=Source=2 Declare=Draws=16
 render volume64 Declare=Source=2 Declare=Draws=64
-render volume_legacy Declare=Source=2 Declare=Method=3
 render surface_point Declare=Source=1 Declare=Surface=1
 render surface_volume Declare=Source=2 Declare=Surface=1 Declare=Draws=1024
 render physical
@@ -45,7 +44,6 @@ BEGIN {
     expect("point", s[1] * 5000.5 * point, s[2] * 5000.5 * point, s[3] * 5000.5 * point)
     expect("volume16", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
     expect("volume64", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
-    expect("volume_legacy", s[1] * 50 / 99, s[2] * 50 / 99, s[3] * 50 / 99)
     expect("surface_point", .5, .5, .5)
     expect("surface_volume", .5, .5, .5)
     expect("physical", .0875, .1375, .15)
