@@ -1,6 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // mix multiply: a density field scales the fog beneath it, thinning it in streaks and thickening it between. +w480 +h270; Declare=Blend=0 leaves the fog even.
 #version 4.0;
+// Method 4 scattering is physical: colours are 4x the classic values with extinction 0.25, keeping the classic haze glow and its extinction.
 #ifndef (Blend) #declare Blend = 1; #end
 
 global_settings { assumed_gamma 1 }
@@ -11,7 +12,7 @@ plane { y, 0 pigment { rgb <0.25, 0.22, 0.18> } }
 #for (I, 0, 7)
   cylinder { <-6 + I * 1.7, 0, 9>, <-6 + I * 1.7, 9, 9>, 0.35 pigment { rgb 0.4 } }
 #end
-box { <-12, 0, -10>, <12, 9, 14> pigment { rgbt 1 } interior { media { scattering { 1, rgb 0.07 } absorption 0.005 } } }
+box { <-12, 0, -10>, <12, 9, 14> pigment { rgbt 1 } interior { media { scattering { 1, rgb 0.28 extinction 0.25 } absorption 0.005 } } }
 
 #if (Blend)
   box {
