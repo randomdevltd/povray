@@ -84,7 +84,9 @@ struct NoSomethingFlagRayObjectCondition final  : public RayObjectCondition
 
 struct HasInteriorPointObjectCondition final : public PointObjectCondition
 {
+    explicit HasInteriorPointObjectCondition(bool shadowing = false) : shadowing(shadowing) {}
     virtual bool operator()(const Vector3d& point, ConstObjectPtr object) const override;
+    bool shadowing; ///< only objects that cast shadows
 };
 
 struct ContainingInteriorsPointObjectCondition final : public PointObjectCondition
@@ -301,8 +303,8 @@ class Trace
         bool FindIntersection(Intersection& isect, const Ray& ray, const RayObjectCondition& precondition, const RayObjectCondition& postcondition);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, double closest = HUGE_VAL);
         bool FindIntersection(ObjectPtr object, Intersection& isect, const Ray& ray, const RayObjectCondition& postcondition, double closest = HUGE_VAL);
-        /// Adds the interiors of the objects containing a point.
-        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId = 0);
+        /// Adds the interiors of the objects containing a point; with `shadowing`, of those that cast shadows only.
+        void FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId = 0, bool shadowing = false);
         /// Whether interior media on the ray's interiors are integrated: a non-hollow one hides them only before version 4.0.
         bool InteriorMediaReach(const Ray& ray) const;
 
@@ -719,15 +721,21 @@ class Trace
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         bool LightsAddNothing(const FINISH *finish, double attenuation) const;
         void ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const  Ray& eye, const Vector3d& layer_normal, const MathColour& layer_pigment_colour,
-                                 MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
+                                 MathColour& colour, double attenuation, ObjectPtr object, double relativeIor, const Vector3d& geometricNormal);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
-                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1);
+                                    const Vector3d& layer_normal, const MathColour& Layer_Pigment_Colour, MathColour& colour, double Attenuation, ConstObjectPtr Object, double relativeIor, int light_index = -1, const Vector3d* geometricNormal = nullptr);
         /// The ray, distance and unshadowed colour of a light; `false` if it cannot light this side of the surface.
         bool ComputeOneLightReach(const LightSource &lightsource, const FINISH *finish, const Vector3d& ipoint, const Vector3d& layer_normal, ConstObjectPtr object,
                                   double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour, bool& backside);
         /// Filters a light's colour by what lies between it and the point.
         void TestOneLightShadow(const LightSource &lightsource, double lightsourcedepth, Ray& lightsourceray, const Vector3d& ipoint, MathColour& lightcolour, int light_index);
+        /// Dims a shadow ray's colour by the media of the containers around its stretch past the last boundary.
+        void DimShadowLastStretch(const LightSource& lightsource, double lightsourcedepth, double projectedDepth, const Ray& lightsourceray,
+                                  MathColour& lightcolour);
+        /// Starts a shadow ray in the interiors on the light's side of the receiving surface; `shadowing` leaves out a no_shadow receiver's.
+        void SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal,
+                            bool shadowing);
         /// Adds the classic lighting of one light of the given (possibly shadowed) colour.
         void ComputeOneLightContribution(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,
@@ -743,7 +751,8 @@ class Trace
         /// Classic lighting for radiosity rays: shadow-tests lights brightest first until the untested ones carry at most a
         /// quarter of the unshadowed light; unless they carry 5% or less, one drawn by its light then stands for them all.
         void ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
-                                        const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor);
+                                        const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor,
+                                        const Vector3d* geometricNormal);
         /// @todo The name is misleading, as it computes all contributions of classic lighting, including highlights.
         void ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye,
                                          const Vector3d& layer_normal, const MathColour& layer_pigment_colour, MathColour& colour, double attenuation,

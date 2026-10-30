@@ -40,6 +40,15 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - An ordinary light's shadow rays are now dimmed by object media all the way
+    to the light. Before, the last stretch from the final surface crossing to
+    the light only met atmospheric media, so a light inside a medium was not
+    dimmed by it with media_attenuation on, and a light behind a closed
+    receiver started its shadow ray on the wrong side. The stretch now takes
+    the media of the shadow-casting containers around it, whatever their
+    method. Scenes with media_attenuation on and a light inside a medium
+    render darker.
+
   - Photon method 2 supports oriented area sources and projected-through apertures.
 
   - Photon method 2 shoots every batch into one map, with Sobol-stratified

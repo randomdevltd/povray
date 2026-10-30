@@ -178,9 +178,30 @@ void BoundingTask::AppendObject(ObjectPtr p)
     sceneData->objects.push_back(p);
 }
 
+// The bounds of the set's interiors that hold media, outside which the media of no interior reach.
+static void BoundMediaInteriors(PreparedSet& view)
+{
+    Vector3d low(HUGE_VAL), high(-HUGE_VAL);
+    for (ConstObjectPtr object : view.objects)
+    {
+        if ((object->interior == nullptr) || object->interior->media.empty())
+            continue;
+        Vector3d mins, maxs;
+        Make_min_max_from_BBox(mins, maxs, object->BBox);
+        low = min(low, mins);
+        high = max(high, maxs);
+    }
+    if (low.x() > high.x())
+        Make_BBox(view.mediaBounds, 0.0, 0.0, 0.0, -1.0, -1.0, -1.0);
+    else
+        Make_BBox_from_min_max(view.mediaBounds, low, high);
+    view.mediaBounded = true;
+}
+
 void BoundingTask::Run()
 {
     PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    BoundMediaInteriors(view);
     view.boundingMethod = sceneData->boundingMethod;
     if((view.objects.size() < boundingThreshold) || (view.boundingMethod == 0))
     {
