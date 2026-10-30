@@ -51,6 +51,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -86,6 +87,9 @@ struct AaCell final
 {
     std::int16_t x = 0, y = 0;      ///< Offset from the pixel centre in 1/1024 pixel; leaves are never smaller than 1/256.
     std::uint8_t depth = 0;         ///< The leaf's side is 2^-depth.
+    std::uint32_t id = 0;           ///< The primitive its ray hit, 0 for none.
+    std::uint32_t light = 0;        ///< Its lights' shadow signature.
+    float w = 0;                    ///< One over the distance to that hit, 0 for none.
     RGBTColour col;
     float lab[4] = { 0, 0, 0, 0 };
     float X() const { return float(x) * (1.0f / 1024.0f); }
@@ -101,22 +105,17 @@ struct AaFit final
     std::int32_t cells = -1;        ///< Bisection: where its leaves start in the leaf arena, or -1 while it has only its centre sample.
     std::int16_t leaf = -1;         ///< Bisection: the leaf the planner chose to split.
     std::uint16_t nCells = 0;       ///< Bisection: how many leaves it has there.
-    std::uint8_t kind = 0;          ///< 0 flat, 1 an edge, 2 noisy or too many colours, 3 a thin line.
+    std::uint8_t kind = 0;          ///< 0 off the edge map, 1 holds a fitted line, 2 on the map with no line: bisected.
     std::uint8_t planned = 0;       ///< 1 when the planner chose this pixel for the next pass.
-    std::uint8_t explore = 0;       ///< Exploration: 1 suspect, 2 next to a find, 3 probed and agreed, 4 probed and differed.
     std::uint8_t probes = 0;        ///< Probes traced so far.
-    std::uint8_t spike = 0;         ///< A lone outlier no fit explains: the bucket of how far it stands out, 0 when not resampled as one.
 };
 
-/// Method 4: the line a pixel holds (an edge or a thin line), and a noisy pixel's running sums when it is not bisected.
+/// Method 4: the line a pixel holds.
 struct AaGeom final
 {
     float nx = 0, ny = 0;           ///< Unit normal, pointing at colour B.
     float lo = 0, hi = 0;           ///< The edge lies between these offsets along the normal from the pixel centre.
     float contrast = 0;             ///< OkLab distance between the two colours.
-    float width = 0;                ///< Kind 3, a thin line: its width; lo is then the offset of its centre along the normal.
-    float sumLab[4] = { 0, 0, 0, 0 };   ///< Noisy pixel: OkLab sum over its samples, the centre one included.
-    float sumSq = 0;                ///< Noisy pixel: sum of the squares of those OkLab values.
     std::int32_t seg2 = -1;         ///< Chain mode: a second segment whose line may also cross it.
     RGBTColour a, b;                ///< Colours on the two sides.
 };
@@ -125,7 +124,9 @@ struct AaGeom final
 /// The frame has its origin on the line, u along it and v towards colour B; the line is v = a + b u.
 struct AaSeg final
 {
-    struct Pt final { float u, v; std::uint8_t b; };    ///< A sample or probe in the frame; b is 1 when it showed colour B.
+    struct Pt final { float u, v; std::uint8_t b; };    ///< A sample or probe in the frame; b is 1 when it lies on side B.
+    /// The geometry either side of one link the run crosses: each side's primitive, and its 1/distance as a line along the link.
+    struct Side final { std::uint32_t idA, idB, lightA, lightB; float ax, ay, ex, ey, wA, gA, wB, gB; };
     float cx = 0, cy = 0, tx = 1, ty = 0, nx = 0, ny = 1;
     float a = 0, b = 0, c = 0;      ///< The edge v = a + b u + c u^2 in the frame; c is 0 unless fitted as a curve.
     bool quad = false;              ///< Fitted as a curve: its bounds keep every point, since only a line's lie on hulls.
@@ -135,6 +136,7 @@ struct AaSeg final
     std::vector<Pt> fresh;          ///< Probe results not yet folded into the hulls.
     std::vector<float> bu;          ///< The samples either side of the line, by position along it: u, colour A, colour B.
     std::vector<RGBTColour> bA, bB;
+    std::vector<Side> bg;
     float w[3] = { 0, 0, 0 };       ///< How far the line could lie from its estimate at the low end, middle and high end.
     float probeU = 0, probeV = 0;   ///< Where the planner wants the next probe.
     std::uint8_t probes = 0;
@@ -262,7 +264,8 @@ class ViewData final
          */
         void CompletedRectangle(const POVRect& rect, unsigned int serial, const std::vector<Vector2d>& positions,
                                 const std::vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete,
-                                float completion = 1.0, BlockInfo* blockInfo = nullptr, int progressLevel = -1, POV_LONG blockTime = 0);
+                                float completion = 1.0, BlockInfo* blockInfo = nullptr, int progressLevel = -1, POV_LONG blockTime = 0,
+                                const std::vector<POVMSInt>* map = nullptr);
 
         /**
          *  Called to (fully or partially) complete rendering of a specific sub-rectangle of the view without updating pixel data.
@@ -397,29 +400,23 @@ class ViewData final
             }
             return aaGeom[size_t(f.geo)];
         }
-        /// Method 4: a contrast only the modes that give every pixel geometry read; elsewhere it is not kept for pixels without a line.
-        void SetContrast(AaFit& f, float contrast) { if(f.geo >= 0) aaGeom[size_t(f.geo)].contrast = contrast; }
-        /// Method 4: geometry for every pixel (modes that write it from the render threads), else only for the pixels given a line.
-        void StartAaGeometry(bool dense);
-        size_t AaGeomCount() const { return aaGeom.size(); }
-        /// Method 4: a noisy pixel's extra samples, summed; kept only when noisy pixels are sampled without bisection.
-        RGBTColour& AaExtra(unsigned int x, unsigned int y) { return aaExtra[AaIndex(x, y)]; }
-        std::uint32_t& AaHit(unsigned int x, unsigned int y) { return aaHit[AaIndex(x, y)]; }
-        bool HasAaHits() const { return !aaHit.empty(); }
-        float* AaPigmentAt(unsigned int x, unsigned int y) { return &aaPigment[3 * AaIndex(x, y)]; }
-        bool HasAaPigments() const { return !aaPigment.empty(); }
-        bool HasAaExtra() const { return !aaExtra.empty(); }
+        /// Method 4: the primitive a pixel's centre ray hit, 0 for none.
+        std::uint32_t& AaId(unsigned int x, unsigned int y) { return aaId[AaIndex(x, y)]; }
+        /// Method 4: a hash of which lights were blocked at that hit, and by what; 0 when none were.
+        std::uint32_t& AaLight(unsigned int x, unsigned int y) { return aaLight[AaIndex(x, y)]; }
+        /// Method 4: a primitive's number in the scene's object tree, the same in a continued render; an error for one outside it.
+        std::uint32_t AaObjectId(const void* object) const;
+        /// Method 4: one over the distance along the centre ray to that hit, 0 for none.
+        float& AaW(unsigned int x, unsigned int y) { return aaW[AaIndex(x, y)]; }
         /// Method 4: what is recorded as the centre samples are traced, over the render area.
         void StartAaState();
         /// Method 4: the planner's per-pixel state, made when the centre samples are all in.
-        void StartAaPlan(bool extra);
+        void StartAaPlan();
         /// Method 4: drop the planner's state once the image is resolved.
         void EndAaPlan();
-        /// Method 4: bytes held, for statistics: lattice, OkLab, fits, extra samples, hits, pigments, bisection leaves, geometry.
-        void AaStateBytes(double bytes[8]) const;
         /// Method 4: samples the planner may still commit; a pass that would go past it is the last.
         std::int64_t aaBudgetLeft = 0;
-        std::int64_t aaReserve = 0;     ///< Budget the edge probes leave for the noise tier.
+        std::int64_t aaReserve = 0;     ///< Budget the edge probes leave for bisecting the map's pixels no line holds.
         /// Method 4: bisection leaves, each bisected pixel's in one run within a chunk; runs are made and moved by the planner only.
         static constexpr unsigned int kAaChunkBits = 16;
         std::vector<std::unique_ptr<AaCell[]>> aaChunks;
@@ -434,6 +431,9 @@ class ViewData final
         {
             AaCell c;
             c.col = LatticeSample(x, y);
+            c.id = AaId(x, y);
+            c.light = AaLight(x, y);
+            c.w = AaW(x, y);
             for(int k = 0; k < 4; k++)
                 c.lab[k] = AaLabAt(x, y)[k];
             return c;
@@ -450,15 +450,11 @@ class ViewData final
         bool textureFilterPigments = false, textureFilterNormals = false;
         /// Taps a texture filter starts with: 8, or 3 (the centre and two corners); any value up to 3 means 3, any other 8.
         int textureFilterTaps = 8;
-        /// Method 4: extra samples spent on edge probes, on bisecting or averaging noisy pixels, on exploring, and on spikes.
-        std::atomic<std::int64_t> aaSpent[4] = { { 0 }, { 0 }, { 0 }, { 0 } };
-        std::atomic<bool> aaSpentPrinted { false };
-        /// Method 4: an NxN lattice of sub-samples per pixel, RGBT, rows of (width * N); traced to a file or replayed from one.
-        std::vector<float> aaOracle;
-        unsigned int aaOracleN = 0;
-        bool aaOracleReplay = false;
-        /// Method 4, chain mode: the fitted segments, and the ones the planner chose to probe this round.
+        /// Method 4: the fitted segments, and the ones the planner chose to probe this round.
         std::vector<AaSeg> aaSegs;
+        /// Method 4: the edge map, per pixel; bits 0 and 1 mark the east and south links as boundaries, 2 and 3 those that are
+        /// depth breaks, 4 and 5 those that are changes of shadow on one surface.
+        std::vector<std::uint8_t> aaLink;
         std::vector<std::uint32_t> aaProbeList;
         std::atomic<std::uint32_t> aaProbeNext {0};
 
@@ -545,9 +541,10 @@ class ViewData final
         std::vector<float> aaLab;
         std::vector<AaFit> aaFit;
         std::deque<AaGeom> aaGeom;     ///< Grown in blocks, so it never holds twice what it needs, and what it holds never moves.
-        std::vector<RGBTColour> aaExtra;
-        std::vector<std::uint32_t> aaHit;   ///< Method 4: the object a pixel's centre ray hit, 0 for none.
-        std::vector<float> aaPigment;       ///< Method 4: that hit's top layer pigment, RGB; kept only with texture filtering or a sample dump.
+        std::vector<std::uint32_t> aaId;    ///< Method 4: the edge map's primitive per pixel.
+        std::vector<float> aaW;             ///< Method 4: the edge map's 1/distance per pixel.
+        std::vector<std::uint32_t> aaLight; ///< Method 4: the edge map's shadow signature per pixel.
+        std::unordered_map<const void*, std::uint32_t> aaObjectIds; ///< Method 4: every object of the scene tree, numbered from 1.
         unsigned int aaLeft = 0, aaTop = 0, aaWidth = 0;    ///< Method 4: the render area the per-pixel state covers.
 
         /// functions to compute the X & Y block

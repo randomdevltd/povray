@@ -82,11 +82,11 @@ class TraceTask final : public RenderTask
                   DBL aab = 0.0, int aap = 0, int aar = 0);
         virtual ~TraceTask() override;
 
-        /// Method 4, between passes on one thread: pass 0 prepares, 2 chooses the probes of a round, 3 the noisy pixels to average.
+        /// Method 4, between passes on one thread: pass 0 maps and fits, 2 chooses the probes of a round, 3 the leaves to split.
         static void PlanM4(ViewData* vd, int pass, int round);
         /// Probe rounds queued for method 4; the planner may stop earlier.
         static constexpr int kM4Rounds = 12;
-        /// Rounds of extra samples for noisy pixels, each adding at most one a pixel.
+        /// Rounds of bisection for map pixels no line holds, each splitting at most one leaf a pixel.
         static constexpr int kM4NoiseRounds = 64;
 
         virtual void Run() override;
@@ -143,7 +143,7 @@ class TraceTask final : public RenderTask
         int progressLevel;              ///< Pass of a progressive render, or -1 for a render in block order.
         unsigned int latticeStep;       ///< Sample spacing of a progressive level; 0 for its anti-aliasing pass.
         bool latticeFirst;              ///< The first level, which also traces the points of the coarser lattice.
-        int aaPass;                     ///< Method 4's pass: 1 fit, 2 probe, 3 noise average, 4 resolve.
+        int aaPass;                     ///< Method 4's pass: 2 probe, 3 bisect, 4 resolve.
         int aaRound;                    ///< Method 4's probe round.
 
         /// A colour in OKLab, with its transmittance.
@@ -170,11 +170,12 @@ class TraceTask final : public RenderTask
 
         static OkLab OkLabOf(ViewData* vd, const RGBTColour& col);
         void ProgressiveM4();
-        void FitPixelM4(unsigned int x, unsigned int y, AaFit& fit);
-        void ProbePixelM4(unsigned int x, unsigned int y, AaFit& fit);
         void ProbeSegmentsM4();
         OkLab ToOkLab(const RGBTColour& col);
-        void TraceSample(DBL x, DBL y, RGBTColour& col, DBL footprint = 1.0, int category = -1);
+        /// Trace one anti-aliasing sample, and where asked, the primitive it hit and one over the distance to it.
+        void TraceSample(DBL x, DBL y, RGBTColour& col, DBL footprint, std::uint32_t* id = nullptr, float* w = nullptr, std::uint32_t* light = nullptr);
+        /// Method 4's edge map at the last primary hit: its primitive, one over its distance, and its shadow signature.
+        void M4Record(std::uint32_t& id, float& w, std::uint32_t& light);
 
         void NonAdaptiveSupersamplingForOnePixel(DBL x, DBL y, RGBTColour& leftcol, RGBTColour& topcol, RGBTColour& curcol, bool& sampleleft, bool& sampletop, bool& samplecurrent);
         void SupersampleOnePixel(DBL x, DBL y, RGBTColour& col);

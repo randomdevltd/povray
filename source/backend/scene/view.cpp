@@ -44,6 +44,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -499,7 +500,8 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
     CompletedRectangle(rect, serial, completion, blockInfo);
 }
 
-void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<Vector2d>& positions, const vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel, POV_LONG blockTime)
+void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, const vector<Vector2d>& positions, const vector<RGBTColour>& colors, unsigned int size, bool relevant, bool complete, float completion, BlockInfo* blockInfo, int progressLevel, POV_LONG blockTime,
+                                  const std::vector<POVMSInt>* map)
 {
     try
     {
@@ -533,6 +535,11 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, cons
 
         pixelblockmsg.Set(kPOVAttrib_PixelPositions, pixelposattr);
         pixelblockmsg.Set(kPOVAttrib_PixelColors, pixelcolattr);
+        if (map != nullptr)
+        {
+            std::vector<POVMSInt> copy(*map);
+            pixelblockmsg.SetIntVector(kPOVAttrib_PixelMap, copy);
+        }
         if (relevant)
             pixelblockmsg.SetVoid(kPOVAttrib_PixelFinal);
         if (complete)
@@ -2209,6 +2216,27 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         if (tracingMethod == 4)
         {
             viewData.StartAaState();
+            if (renderOptions.Exist(kPOVAttrib_ProgressSamples))
+            {
+                // the edge map of the centre samples comes back with them: primitive, 1/distance and shadow signature each
+                if (!renderOptions.Exist(kPOVAttrib_ProgressMap))
+                    throw POV_EXCEPTION(kInvalidDataSizeErr, "The render state file has no anti-aliasing method 4 edge map for its samples.");
+                const std::vector<POVMSInt> map(renderOptions.GetIntVector(kPOVAttrib_ProgressMap));
+                if (map.size() != size_t(latticeWidth) * latticeHeight * 3)
+                    throw POV_EXCEPTION(kInvalidDataSizeErr, "The anti-aliasing method 4 edge map in the render state file does not match the image size.");
+                const POVRect& area = viewData.GetRenderArea();
+                for (unsigned int y = area.top; y <= area.bottom; y++)
+                {
+                    for (unsigned int x = area.left; x <= area.right; x++)
+                    {
+                        const POVMSInt* m = &map[(size_t(y) * latticeWidth + x) * 3];
+                        viewData.AaId(x, y) = std::uint32_t(m[0]);
+                        std::uint32_t bits = std::uint32_t(m[1]);
+                        std::memcpy(&viewData.AaW(x, y), &bits, sizeof(bits));
+                        viewData.AaLight(x, y) = std::uint32_t(m[2]);
+                    }
+                }
+            }
             viewData.aaFraction = aaBudget;
             viewData.aaThr = aaThreshold;
             viewData.aaDepth = int(aaDepth);
@@ -2240,7 +2268,7 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
 
     if (tracingMethod == 4)
     {
-        // fit edges to the samples already traced, then rounds of probes the planner picks, then noise, then the image;
+        // fit edges to the map the centre samples drew, then rounds of probes the planner picks, then bisection, then the image;
         // none of it is saved, so a continued render repeats it and only the last pass skips the blocks already written
         int aaLevel = levels;
         auto addPass = [&](int pass, int round, bool plan, shared_ptr<ViewData::BlockIdSet> skip)
@@ -2262,7 +2290,6 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         };
         renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 0, 0));
         renderTasks.AppendSync();
-        addPass(1, 0, false, noSkip);
         for (int round = 0; round < TraceTask::kM4Rounds; round++)
             addPass(2, round, true, noSkip);
         for (int round = 0; round < TraceTask::kM4NoiseRounds; round++)
@@ -2279,23 +2306,48 @@ void ViewData::StartAaState()
     aaTop = renderArea.top;
     aaWidth = renderArea.GetWidth();
     const size_t count = size_t(renderArea.GetWidth()) * size_t(renderArea.GetHeight());
-    aaHit.assign(count, 0);
-    if (((textureFilterScale > 0.0) && textureFilterPigments) || std::getenv("POV_AA4_DUMP"))
-        aaPigment.assign(count * 3, 0.0f);
-    else
-        std::vector<float>().swap(aaPigment);
+    aaId.assign(count, 0);
+    aaW.assign(count, 0.0f);
+    aaLight.assign(count, 0);
+    // number the scene tree depth first, so a continued render, parsing the same scene, numbers it the same
+    aaObjectIds.clear();
+    std::vector<ConstObjectPtr> stack;
+    for (auto i = sceneData->objects.rbegin(); i != sceneData->objects.rend(); ++i)
+        stack.push_back(*i);
+    for (auto i = sceneData->lightSources.rbegin(); i != sceneData->lightSources.rend(); ++i)
+        stack.push_back(*i);
+    while (!stack.empty())
+    {
+        ConstObjectPtr o = stack.back();
+        stack.pop_back();
+        if ((o == nullptr) || !aaObjectIds.emplace(o, std::uint32_t(aaObjectIds.size() + 1)).second)
+            continue;
+        if (o->Type & IS_COMPOUND_OBJECT)
+        {
+            const std::vector<ObjectPtr>& children = static_cast<const CompoundObject*>(o)->children;
+            for (auto i = children.rbegin(); i != children.rend(); ++i)
+                stack.push_back(*i);
+        }
+    }
     EndAaPlan();
 }
 
-void ViewData::StartAaPlan(bool extra)
+std::uint32_t ViewData::AaObjectId(const void* object) const
 {
-    const size_t count = aaHit.size();
+    if (object == nullptr)
+        return 0;
+    const auto i = aaObjectIds.find(object);
+    if (i == aaObjectIds.end())
+        throw POV_EXCEPTION_STRING("Anti-aliasing method 4 hit a primitive outside the scene's object tree.");
+    return i->second;
+}
+
+void ViewData::StartAaPlan()
+{
+    const size_t count = aaId.size();
     aaLab.assign(count * 4, 0.0f);
     aaFit.assign(count, AaFit());
-    if (extra)
-        aaExtra.assign(count, RGBTColour());
-    else
-        std::vector<RGBTColour>().swap(aaExtra);
+    std::deque<AaGeom>().swap(aaGeom);
     std::vector<std::unique_ptr<AaCell[]>>().swap(aaChunks);
     aaLeafEnd = aaLeafLive = aaLeafDead = 0;
 }
@@ -2305,21 +2357,11 @@ void ViewData::EndAaPlan()
     std::vector<float>().swap(aaLab);
     std::vector<AaFit>().swap(aaFit);
     std::deque<AaGeom>().swap(aaGeom);
-    std::vector<RGBTColour>().swap(aaExtra);
     std::vector<std::unique_ptr<AaCell[]>>().swap(aaChunks);
     aaLeafEnd = aaLeafLive = aaLeafDead = 0;
     std::vector<AaSeg>().swap(aaSegs);
+    std::vector<std::uint8_t>().swap(aaLink);
     std::vector<std::uint32_t>().swap(aaProbeList);
-}
-
-void ViewData::StartAaGeometry(bool dense)
-{
-    std::deque<AaGeom>().swap(aaGeom);
-    if (!dense)
-        return;
-    aaGeom.assign(aaFit.size(), AaGeom());
-    for (size_t i = 0; i < aaFit.size(); i++)
-        aaFit[i].geo = std::int32_t(i);
 }
 
 void ViewData::ReserveAaSplits(const std::vector<size_t>& split)
@@ -2365,18 +2407,6 @@ void ViewData::ReserveAaSplits(const std::vector<size_t>& split)
         f.nCells = std::uint16_t(n);
         aaLeafEnd += n + 3;
     }
-}
-
-void ViewData::AaStateBytes(double bytes[8]) const
-{
-    bytes[0] = double(latticeSamples.size()) * sizeof(RGBTColour);
-    bytes[1] = double(aaLab.size()) * sizeof(float);
-    bytes[2] = double(aaFit.size()) * sizeof(AaFit);
-    bytes[3] = double(aaExtra.size()) * sizeof(RGBTColour);
-    bytes[4] = double(aaHit.size()) * sizeof(std::uint32_t);
-    bytes[5] = double(aaPigment.size()) * sizeof(float);
-    bytes[6] = double(aaChunks.size()) * double(size_t(1) << kAaChunkBits) * sizeof(AaCell);
-    bytes[7] = double(aaGeom.size()) * sizeof(AaGeom);
 }
 
 void View::PlanAntialias(TaskQueue&, int pass, int round)

@@ -311,9 +311,15 @@ class Trace
         /// Which textures a footprint filters: pigments, normals, or both.
         void SetTextureFilterKinds(bool pigments, bool normals) { textureFilterPigments = pigments; textureFilterNormals = normals; }
 
-        /// The object the last primary ray hit, and its top layer's pigment there.
+        /// The primitive the first primary ray since @ref ClearPrimary() hit (null for none), and the distance along it.
         const void *primaryObject = nullptr;
-        TransColour primaryPigment;
+        double primaryDepth = HUGE_VAL;
+        bool primaryRecorded = false;
+        /// Whether the primary hit's shadows are recorded (anti-aliasing method 4); their tests then skip the per-thread shadow cache.
+        bool recordShadows = false;
+        /// The lights every shadow test of the primary hit found blocked, by index, with the first primitive that blocked each.
+        std::vector<std::pair<int, const void*>> primaryShadows;
+        void ClearPrimary() { primaryObject = nullptr; primaryDepth = HUGE_VAL; primaryRecorded = false; primaryEye = nullptr; primaryShadows.clear(); }
 
         /// Trace a ray.
         ///
@@ -363,11 +369,6 @@ class Trace
         bool TraceScreen(const ScreenPattern& screen, double u, double v, const Intersection *isect, const Ray& ray,
                          COLC weight, TransColour& result);
 
-        /// Whether a random draw has shaped a trace's result since the last @ref ClearGrain(): partly shadowed
-        /// jittered area lights, media, `crand`, rainbow jitter and subsurface light.
-        bool Grainy() const { return grain; }
-        void ClearGrain() { grain = false; }
-        void MarkGrain() { grain = true; }
 
         bool TestShadow(const LightSource &light, double& depth, Ray& light_source_ray, const Vector3d& p, MathColour& colour,
                         const Vector2d* areaSample = nullptr); // TODO FIXME - this should not be exposed here
@@ -508,8 +509,11 @@ class Trace
         size_t shadowCacheLights;
         /// Sub-random uniform directions; each diffuse subsurface sample takes one at a keyed place.
         IndexedVectorGeneratorPtr ssltUniformDirections;
-        /// Whether a random draw has shaped the result since @ref ClearGrain().
-        bool grain = false;
+        /// The ray whose hit @ref primaryObject is, while its lights are shaded; shadow tests and blocked ones, and the first blocker.
+        const Ray* primaryEye = nullptr;
+        unsigned int shadowTests = 0, shadowBlocked = 0;
+        const void* shadowBlocker = nullptr;
+        bool shadowRecording = false;
         /// The subsurface cache's camera, once set: where it is, and a pixel's span as size plus angle times distance.
         Vector3d ssltCameraLocation;
         double ssltPixelSize = 0.0, ssltPixelAngle = 0.0;
