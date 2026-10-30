@@ -1,5 +1,5 @@
 #!/bin/sh
-# texture_filter.sh <povray> <srcdir>: +TF and +TN off change nothing; on, a minified checker (+TF) and minified bumps (+TN) near a supersampled render and a half-filtering layer keeps its mean colour.
+# texture_filter.sh <povray> <srcdir>: -TF changes nothing; +TF brings minified checkers, bumps and iridescent reflective bumps near a supersampled render, each opt-out leaves its kind unfiltered, and a half-filtering layer keeps its mean colour.
 set -e
 W=160; H=120
 render() {
@@ -65,21 +65,44 @@ nrender() {
     "$POVRAY" +i"$SRCDIR/tests/render/texture_filter_normal.pov" +w$W +h$H -d -p -v -gp +fp +o"tf_$name.ppm" "$@"
     tail -c $((W * H * 3)) "tf_$name.ppm" > "tf_$name.px"
 }
+render pigoff -a +tf Texture_Filter_Pigments=off
+same plain pigoff || { echo "texture_filter: Texture_Filter_Pigments=off still filtered the checker"; exit 1; }
 nrender nplain -a
-nrender noff -a -tn
-nrender ntf -a +tf
+nrender noff -a -tf
+nrender nnorm -a +tf Texture_Filter_Normals=off
 nrender nref +a0.0 +am1 +r4 -j
-nrender ntn -a +tn +wt1
-nrender ntnwt4 -a +tn +wt4
-nrender ntftn -a +tf +tn
-same nplain noff || { echo "texture_filter: -TN changed the bumpy image"; exit 1; }
-same nplain ntf || { echo "texture_filter: +TF alone filtered the normals"; exit 1; }
-same ntn ntftn || { echo "texture_filter: +TF changed the filtered normals of a plain pigment"; exit 1; }
-same ntn ntnwt4 || { echo "texture_filter: the filtered normals depend on the thread count"; exit 1; }
-noff=$(mad nplain nref); ntn=$(mad ntn nref)
-echo "texture_filter: bumpy checker error against 16 samples per pixel: off $noff, filtered $ntn"
-if [ $((ntn * 2)) -ge "$noff" ]; then
-    echo "texture_filter: +TN did not halve the error of the minified bumps"; exit 1
+nrender ntf -a +tf +wt1
+nrender ntfwt4 -a +tf +wt4
+nrender npig -a +tf Texture_Filter_Pigments=off
+same nplain noff || { echo "texture_filter: -TF changed the bumpy image"; exit 1; }
+same nplain nnorm || { echo "texture_filter: Texture_Filter_Normals=off still filtered the normals"; exit 1; }
+same ntf npig || { echo "texture_filter: pigment filtering changed the filtered normals of a plain pigment"; exit 1; }
+same ntf ntfwt4 || { echo "texture_filter: the filtered normals depend on the thread count"; exit 1; }
+noff=$(mad nplain nref); ntf=$(mad ntf nref)
+echo "texture_filter: bumpy checker error against 16 samples per pixel: off $noff, filtered $ntf"
+if [ $((ntf * 2)) -ge "$noff" ]; then
+    echo "texture_filter: +TF did not halve the error of the minified bumps"; exit 1
 fi
+irender() {
+    name=$1; shift
+    "$POVRAY" +i"$SRCDIR/tests/render/texture_filter_irid.pov" +w$W +h$H -d -p -v -gp +fp File_Gamma=1 +o"tf_$name.ppm" "$@"
+    tail -c $((W * H * 3)) "tf_$name.ppm" > "tf_$name.px"
+}
+irender iplain -a
+irender iref +a0.0 +am1 +r4 -j
+irender itf -a +tf +wt1
+irender itfwt4 -a +tf +wt4
+same itf itfwt4 || { echo "texture_filter: filtered iridescence and reflection depend on the thread count"; exit 1; }
+ioff=$(mad iplain iref); itf=$(mad itf iref)
+echo "texture_filter: iridescent reflective bumps error against 16 samples per pixel: off $ioff, filtered $itf"
+if [ $((itf * 4)) -ge $((ioff * 3)) ]; then
+    echo "texture_filter: +TF did not cut the error of iridescent reflective bumps by a quarter"; exit 1
+fi
+for c in 0 1 2; do
+    a=$(chmean iref $c); b=$(chmean itf $c); d=$((a - b))
+    if [ $((${d#-} * 100)) -gt $((a * 3)) ]; then
+        echo "texture_filter: +TF moved the mean of channel $c of the iridescent bumps from $a to $b"; exit 1
+    fi
+done
 rm -f tf_*.ppm tf_*.px tf_a.txt tf_b.txt
-echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and carries through screens; +TN filters normals"
+echo "texture_filter: +TF filters spatial, layered and UV-mapped pigments and normals, iridescence and reflectivity over bumps, and carries through screens"

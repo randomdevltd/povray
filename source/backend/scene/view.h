@@ -446,7 +446,7 @@ class ViewData final
         int aaDepth = 3;                ///< Method 4: +R, the deepest a bisection may split.
         /// Pixel footprint scale camera rays filter textures over; zero when pigment and normal filtering are both off.
         DBL textureFilterScale = 0.0;
-        /// Whether hits with a footprint filter their pigments (+TF) and their normals (+TN).
+        /// Whether hits with a footprint filter their pigments and their normals: both with +TF unless opted out.
         bool textureFilterPigments = false, textureFilterNormals = false;
         /// Taps a texture filter starts with: 8, or 3 (the centre and two corners); any value up to 3 means 3, any other 8.
         int textureFilterTaps = 8;

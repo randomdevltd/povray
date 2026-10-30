@@ -272,6 +272,7 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Texture_Filter_Taps", kPOVAttrib_TextureFilterTaps, kPOVMSType_Int },
     { "Texture_Filter",      kPOVAttrib_TextureFilter,      kPOVMSType_Bool },
     { "Texture_Filter_Normals",kPOVAttrib_TextureFilterNormals, kPOVMSType_Bool },
+    { "Texture_Filter_Pigments",kPOVAttrib_TextureFilterPigments, kPOVMSType_Bool },
 
     { "User_Abort_Command",  kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },
     { "User_Abort_Return",   kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },
@@ -391,7 +392,6 @@ struct ProcessOptions::Cmd_Parser_Table RenderOptions_Cmd_Table[] =
     { "SU",  kNoParameter,                  kNoParameter,           kPOVAttrib_SplitUnions },
 
     { "TF",  kNoParameter,                  kNoParameter,           kPOVAttrib_TextureFilter },
-    { "TN",  kNoParameter,                  kNoParameter,           kPOVAttrib_TextureFilterNormals },
     { "TH",  kPOVAttrib_DitherMethod,       kUseSpecialHandler,     kPOVAttrib_Dither,              kCmdOptFlag_Optional },
 
     { "UA",  kNoParameter,                  kNoParameter,           kPOVAttrib_OutputAlpha },
