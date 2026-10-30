@@ -1847,6 +1847,13 @@ void View::GetStatistics(POVMS_Object& renderStats)
     }
     if (viewData.GetSceneData()->photonSettings.Progressive())
         timeData[TraceThreadData::kPhotonTime].samples = viewData.photonThreads;
+    if (passCount > 0)
+    {
+        // progressive passes run one after another: their trace time is the span from the first to the last
+        timeData[TraceThreadData::kRenderTime].realTime =
+            std::chrono::duration_cast<std::chrono::milliseconds>(lastPassEnd - firstPassStart).count();
+        timeData[TraceThreadData::kRenderTime].samples = size_t(passThreads);
+    }
 
     for(size_t i = TraceThreadData::kUnknownTime; i < TraceThreadData::kMaxTimeType; i++)
     {
@@ -1911,6 +1918,12 @@ void View::DispatchShutdownMessages(TaskQueue&)
 
 void View::SendStatistics(TaskQueue&)
 {
+    if (passCount > 0)
+        MessageFactory(viewData.sceneData->warningLevel, "Render", viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                       viewData.sceneData->sceneId, viewData.viewId)
+            .Info("Passes: %lu in %.1fs, %.1f of %d working, tails %.1fs, between passes %.1fs", (unsigned long)passCount,
+                  passWall, (passWall > 0.0) ? passBusy / passWall : 0.0, passThreads, passTail, passSerial);
+
     POVMS_Message renderStats(kPOVObjectClass_RenderStatistics, kPOVMsgClass_ViewOutput, kPOVMsgIdent_RenderStatistics);
 
     GetStatistics(renderStats);
@@ -2229,12 +2242,9 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         renderTasks.AppendSync();
         firstPass = false;
 
-        for (int i = 0; i < maxRenderThreads; i++)
-            viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
-                &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, aaBudget
-                ))));
-        renderTasks.AppendSync();
+        QueuePass(refine ? std::to_string(level) + " refine" : std::to_string(level) + " step " + std::to_string(step), maxRenderThreads,
+                  [&]() { return new TraceTask(&viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
+                                                       0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, aaBudget); });
     }
 
     if (tracingMethod == 4)
@@ -2251,12 +2261,11 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
             }
             renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skip, false));
             renderTasks.AppendSync();
-            for (int i = 0; i < maxRenderThreads; i++)
-                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
-                    &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                    0, false, true, highReproducibility, seed, aaLevel, 0, false, aaBudget, pass, round
-                    ))));
-            renderTasks.AppendSync();
+            static const char* const names[] = { "", "AA fit", "AA probe", "AA noise", "AA resolve" };
+            QueuePass(std::to_string(aaLevel) + " " + names[pass] + ((pass == 2) || (pass == 3) ? " " + std::to_string(round) : std::string()),
+                      maxRenderThreads,
+                      [&]() { return new TraceTask(&viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
+                                                           0, false, true, highReproducibility, seed, aaLevel, 0, false, aaBudget, pass, round); });
             aaLevel++;
         };
         renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 0, 0));
@@ -2376,6 +2385,50 @@ void ViewData::AaStateBytes(double bytes[8]) const
     bytes[5] = double(aaPigment.size()) * sizeof(float);
     bytes[6] = double(aaChunks.size()) * double(size_t(1) << kAaChunkBits) * sizeof(AaCell);
     bytes[7] = double(aaGeom.size()) * sizeof(AaGeom);
+}
+
+void View::QueuePass(const std::string& name, int threads, const std::function<TraceTask*()>& task)
+{
+    auto pass = std::make_shared<PassTimes>();
+    pass->name = name;
+    renderTasks.AppendFunction([pass](TaskQueue&) { pass->start = std::chrono::steady_clock::now(); });
+    for (int i = 0; i < threads; i++)
+    {
+        ViewThreadData* data = dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(task()));
+        viewThreadData.push_back(data);
+        pass->workers.push_back(data);
+    }
+    renderTasks.AppendSync();
+    renderTasks.AppendFunction([this, pass](TaskQueue&) { ReportPass(*pass); });
+}
+
+void View::ReportPass(const PassTimes& pass)
+{
+    const std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    const double wall = std::chrono::duration<double>(end - pass.start).count();
+    double busy = 0.0, cpu = 0.0, first = wall;
+    for (const ViewThreadData* worker : pass.workers)
+    {
+        busy += double(worker->realTime) / 1000.0;
+        cpu += double(std::max<POV_LONG>(0, worker->cpuTime)) / 1000.0;
+        first = std::min(first, double(worker->realTime) / 1000.0);
+    }
+    if (passCount == 0)
+        firstPassStart = pass.start;
+    else
+        passSerial += std::chrono::duration<double>(pass.start - lastPassEnd).count();
+    lastPassEnd = end;
+    passCount++;
+    passWall += wall;
+    passBusy += busy;
+    passTail += std::max(0.0, wall - first);
+    passThreads = int(pass.workers.size());
+    if (wall < 0.5)
+        return;
+    MessageFactory(viewData.sceneData->warningLevel, "Render", viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                   viewData.sceneData->sceneId, viewData.viewId)
+        .Info("Pass %s: %.1fs, %.1f of %d working, %.1f on CPU, tail %.1fs", pass.name.c_str(), wall, busy / wall,
+              passThreads, cpu / wall, std::max(0.0, wall - first));
 }
 
 void View::PlanAntialias(TaskQueue&, int pass, int round)

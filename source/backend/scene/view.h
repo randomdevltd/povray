@@ -57,6 +57,7 @@
 #include <unordered_map>
 #include <atomic>
 #include <chrono>
+#include <string>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -78,6 +79,8 @@
 
 namespace pov
 {
+
+class TraceTask;
 
 using namespace pov_base;
 
@@ -722,6 +725,22 @@ class View final
 
         /// Method 4's planning step between two passes.
         void PlanAntialias(TaskQueue& taskq, int pass, int round);
+
+        /// One progressive pass's workers and when they started, for its line in the pass timeline.
+        struct PassTimes final
+        {
+            std::string name;
+            std::vector<ViewThreadData*> workers;
+            std::chrono::steady_clock::time_point start;
+        };
+        /// Queues a pass's trace tasks between the functions that time it.
+        void QueuePass(const std::string& name, int threads, const std::function<TraceTask*()>& task);
+        void ReportPass(const PassTimes& pass);
+        std::chrono::steady_clock::time_point firstPassStart, lastPassEnd;
+        /// Passes timed, their wall and serial seconds between passes, worker seconds busy and seconds after the first ran dry.
+        size_t passCount = 0;
+        double passWall = 0.0, passSerial = 0.0, passBusy = 0.0, passTail = 0.0;
+        int passThreads = 0;
 
         void EndRadiosityStateFile(TaskQueue& taskq, Path file);
 
