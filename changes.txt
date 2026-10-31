@@ -54,6 +54,13 @@ Changed Behaviour
   roots, rather than ending the render with an error.
 - scale_lumens(phi, metres) requires finite lumens and positive finite metres
   and is a .pov4 built-in as well.
+- An ordinary light's shadow rays are now dimmed by object media all the way to
+  the light. Before, the last stretch from the final surface crossing to the
+  light only met atmospheric media, so a light inside a medium was not dimmed
+  by it with media_attenuation on, and a light behind a closed receiver started
+  its shadow ray on the wrong side. The stretch now takes the media of the
+  shadow-casting containers around it, whatever their method. Scenes with
+  media_attenuation on and a light inside a classic medium render darker.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow

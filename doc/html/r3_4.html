@@ -2366,7 +2366,9 @@ and on with the <code>atmosphere</code> keyword.</p>
 <p>Normally light coming from light sources is not influenced by fog or
 atmospheric media. This can be changed by turning the <code>media_attenuation on</code>
 for a given light source on. All light coming from this light source will now
-be diminished as it travels through the fog or media. This results in an
+be diminished as it travels through the fog or media, including the media of
+objects, all the way from the lit point to the light, also when the light is
+inside a medium. This results in an
 distance-based, exponential intensity falloff ruled by the used fog or media.
 If there is no fog or media no change will be seen.</p>
 <p class="Note"><strong>Note:</strong> In POV-Ray 3.0 this

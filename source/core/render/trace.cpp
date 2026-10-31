@@ -196,19 +196,20 @@ struct SurfacePhotonGatherNesting final
     ~SurfacePhotonGatherNesting() { if (active) --depth; }
 };
 
-void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread)
+void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread,
+                                 const HasInteriorPointObjectCondition& holds)
 {
     if (!Inside_BBox(point, node->BBox))
         return;
     if (node->Entries == 0)
     {
         ObjectPtr object = ObjectPtr(node->Node);
-        if ((object->interior != nullptr) && object->Inside(point, thread))
+        if (holds(point, object) && object->Inside(point, thread))
             found.push_back(object->interior.get());
     }
     else
         for (int i = 0; i < node->Entries; i++)
-            FindContainingInteriorsTree(point, node->Node[i], found, thread);
+            FindContainingInteriorsTree(point, node->Node[i], found, thread, holds);
 }
 }
 
@@ -217,31 +218,31 @@ bool Trace::InteriorMediaReach(const Ray& ray) const
     return ray.IsHollowRay() || !sceneData->solidBlocksInteriorMedia;
 }
 
-void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId)
+void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId, bool shadowing)
 {
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    const HasInteriorPointObjectCondition holds(shadowing);
     if (view.boundingMethod == 2)
     {
-        HasInteriorPointObjectCondition precond;
         ContainingInteriorsPointObjectCondition postcond(found);
-        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, precond, postcond);
+        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, holds, postcond);
 
         mailbox.clear();
         (*view.tree)(point, ifn, mailbox);
 
         // test infinite objects
         for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin() + view.numberOfFiniteObjects; object != view.objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+            if (holds(point, *object) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else if ((view.boundingMethod == 0) || (view.boundingSlabs == nullptr))
     {
         for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin(); object != view.objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+            if (holds(point, *object) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else
-        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData);
+        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData, holds);
 }
 
 void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight)
@@ -454,8 +455,13 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         ray.GetTicket().maxFoundTraceLevel = (unsigned int) max(ray.GetTicket().maxFoundTraceLevel, ray.GetTicket().traceLevel);
     }
 
-    Intersection atmosphereSegment(bestisect);
-    atmosphereSegment.unbounded = !found;
+    const bool atmosphere = qualityFlags.media && ray.IsHollowRay() && !sceneData->atmosphere.empty();
+    Intersection atmosphereSegment;
+    if (atmosphere)
+    {
+        atmosphereSegment = bestisect;
+        atmosphereSegment.unbounded = !found;
+    }
 
     if(qualityFlags.media && (ray.IsPhotonRay() == true) && (ray.IsHollowRay() == true))
     {
@@ -463,7 +469,8 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         // intentional.  Even though we're processing a photon ray, we don't want
         // to deposit photons in the infinite atmosphere, only in contained
         // media, which is processed later (in ComputeLightedTexture).  [nk]
-        media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
+        if (atmosphere)
+            media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
 
         if (sceneData->fog != nullptr)
             ComputeFog(ray, bestisect, colour, transm);
@@ -481,7 +488,8 @@ double Trace::ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour
         if ((sceneData->rainbow != nullptr) && (ray.IsShadowTestRay() == false))
             ComputeRainbow(ray, bestisect, colour, transm);
 
-        media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
+        if (atmosphere)
+            media.ComputeMedia(sceneData->atmosphere, ray, atmosphereSegment, colour, transm);
 
         if (sceneData->fog != nullptr)
             ComputeFog(ray, bestisect, colour, transm);
@@ -2511,6 +2519,7 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
         MathColour lightcolour = candidate.colour;
         lightsourceray.Origin = ipoint;
         lightsourceray.Direction = candidate.direction;
+        SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal);
         TestOneLightShadow(*candidate.light, candidate.depth, lightsourceray, ipoint, lightcolour, candidate.index);
         MathColour lit;
         if ((lightcolour - candidate.colour).IsZero())
@@ -2783,6 +2792,7 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
     if (!ComputeOneLightReach(lightsource, finish, ipoint, layer_normal, object, lightsourcedepth, lightsourceray, lightcolour, backside))
         return;
 
+    SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal);
     TestOneLightShadow(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, light_index);
 
     ComputeOneLightContribution(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor,
@@ -3501,10 +3511,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     NoShadowFlagRayObjectCondition precond;
     precond.includeMedia = lightsource.emitter != nullptr;
     const double connectionDepth = lightsourcedepth;
-    const Vector3d connectionOrigin = lightsourceray.Origin;
-    const Ray connectionRay(lightsourceray);
+    // Every query starts at the connection's origin; intersection reads nothing the walk changes in the ray.
+    Ray query(lightsourceray);
     ShadowSegmentWalker postcond(connectionDepth, startTolerance,
-        std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth), &connectionRay);
+        std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth), &query);
 
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
 
@@ -3559,8 +3569,6 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     while(true)
     {
         cooperate();
-        Ray query(lightsourceray);
-        query.Origin = connectionOrigin;
         query.SetRootQuery(&postcond);
         boundedIntersection.Object = boundedIntersection.Csg = nullptr;
         boundedIntersection.Depth = postcond.End();
@@ -3580,7 +3588,23 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         if (foundIntersection)
         {
             threadData->Stats()[Shadow_Rays_Succeeded]++;
-            const double depth = boundedIntersection.Depth;
+            double depth = boundedIntersection.Depth;
+            // A nearer admitted root the query did not return is asked of its object alone, so no boundary is passed over.
+            if (!postcond.Coincides(depth) && (postcond.Selected() != nullptr) && (postcond.SelectedDepth() < depth))
+            {
+                const ObjectPtr nearer = const_cast<ObjectPtr>(postcond.Selected());
+                const double at = postcond.SelectedDepth();
+                const IsoShadowWindow window(threadData, std::max(startTolerance, postcond.Cursor()), postcond.End());
+                Intersection again;
+                postcond.Reset();
+                if (!FindIntersection(nearer, again, query, postcond, std::nextafter(at, HUGE_VAL)))
+                {
+                    postcond.Pass(nearer, at);
+                    continue;
+                }
+                boundedIntersection = again;
+                depth = again.Depth;
+            }
             boundedIntersection.Depth = depth - postcond.Cursor();
             if (boundedIntersection.Depth < 0.0 || !IsFiniteIntersectionDepth(boundedIntersection.Depth))
                 throw POV_EXCEPTION_STRING("Shadow traversal produced an invalid segment.");
@@ -3607,14 +3631,28 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             }
 
             foundTransparentObjects = true;
-            if (!postcond.Commit(depth))
-                throw POV_EXCEPTION_STRING("Shadow traversal failed to advance to a new boundary.");
+            postcond.Commit(depth);
             lightsourcedepth = postcond.Remaining();
             lightsourceray.Origin = boundedIntersection.IPoint;
         }
         else
             // No further intersections in the direction of the ray.
             break;
+    }
+
+    // The stretch past the last boundary lies in the media of the shadowing containers around it, whatever its ends skipped.
+    if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && sceneData->interiorMedia &&
+        (lightsourcedepth > 0.0) && !lightcolour.IsZero())
+    {
+        RayInteriorVector around;
+        FindContainingInteriors(lightsourceray.Evaluate(0.5 * lightsourcedepth), around, lightsourceray.GetPreparedSetId(), !lightsource.emitter);
+        const bool reach = !sceneData->solidBlocksInteriorMedia || std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
+        Intersection end;
+        end.Depth = lightsourcedepth;
+        end.Object = nullptr;
+        ColourChannel unused = 0.0;
+        if (!around.empty() && reach)
+            media.ComputeMedia(around, lightsourceray, end, lightcolour, unused);
     }
 }
 
@@ -3905,11 +3943,6 @@ void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& 
         Intersection end;
         end.Depth = lightsourcedepth;
         end.Object = nullptr;
-        if (!lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
-        {
-            ColourChannel unused = 0.0;
-            media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, end, lightcolour, unused);
-        }
         ComputeShadowMedia(lightsourceray, end, lightcolour, true);
     }
 }
@@ -4428,9 +4461,11 @@ struct SurfaceCollector final : public RayObjectCondition
 };
 
 // How far behind a hit a probe starts: the tolerance, but never nearer the ray's origin than the shortest hit distance.
+// At least twice that distance, as a hit exactly the shortest distance down the probe can round below it and be dropped.
 double ProbeBack(const Ray& ray, const Vector3d& point, double tolerance)
 {
-    return std::min(tolerance, std::max(dot(point - ray.Origin, ray.Direction) - MIN_ISECT_DEPTH, 0.0)) + MIN_ISECT_DEPTH;
+    return std::max(std::min(tolerance, std::max(dot(point - ray.Origin, ray.Direction) - MIN_ISECT_DEPTH, 0.0)) + MIN_ISECT_DEPTH,
+                    2.0 * MIN_ISECT_DEPTH);
 }
 
 bool HasInside(ConstObjectPtr object)
@@ -4456,6 +4491,32 @@ bool SurfaceBefore(const SurfaceHit& a, const SurfaceHit& b)
     return false;
 }
 
+}
+
+// A light behind the lit surface is reached from the receiver's far side, which is inside the receiver only where it has an inside.
+void Trace::SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal)
+{
+    const RayInteriorVector& from = eye.GetInteriors();
+    const RayInteriorVector& held = shadow.GetInteriors();
+    Interior *interior = object->interior.get();
+    const double toward = (geometricNormal != nullptr) ? dot(shadow.Direction, *geometricNormal) : 0.0;
+    int change = 0;
+    if ((toward != 0.0) && (interior != nullptr) && HasInside(object) && (dot(eye.Direction, *geometricNormal) * toward > 0.0))
+    {
+        const Vector3d beyond = point + ((toward > 0.0) ? 1.0 : -1.0) * InterfaceTolerance(point, interior) * geometricNormal->normalized();
+        const bool inside = object->Inside(beyond, threadData);
+        if (inside != (std::find(from.begin(), from.end(), interior) != from.end()))
+            change = inside ? 1 : -1;
+    }
+    if ((change == 0) && (held.size() == from.size()) && std::equal(from.begin(), from.end(), held.begin()))
+        return;
+    RayInteriorVector start(from);
+    if (change > 0)
+        start.push_back(interior);
+    else if (change < 0)
+        start.erase(std::find(start.begin(), start.end(), interior));
+    shadow.ResetInteriors();
+    shadow.AppendInteriors(start);
 }
 
 void Trace::StartProbe(Ray& probe, const Ray& ray)
