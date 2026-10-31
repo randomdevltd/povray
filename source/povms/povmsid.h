@@ -607,6 +607,7 @@ enum
     kPOVAttrib_MediaOrdinaryLightDraws         = 'MoLi',
     kPOVAttrib_MediaShadowLightingCalls        = 'MsLi',
     kPOVAttrib_MediaZeroScatterEmitterDraws    = 'MzSc',
+    kPOVAttrib_MediaStrideLights               = 'MsSt',
     kPOVAttrib_SubsurfaceSingleEmitterDraws    = 'SsEd',
     kPOVAttrib_SubsurfaceSingleSideRejects     = 'SsSr',
     kPOVAttrib_MediaPrepared4Queries           = 'M4Qr',

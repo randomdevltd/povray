@@ -2060,6 +2060,9 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaZeroScatterEmitterDraws, &l);
     if(POVMSLongToCDouble(l) > 0.5)
         tsb->printf("Zero Scatter Draws:    %13.0f\n", POVMSLongToCDouble(l));
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaStrideLights, &l);
+    if(POVMSLongToCDouble(l) > 0.5)
+        tsb->printf("Media Stride Lights:   %13.0f\n", POVMSLongToCDouble(l));
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_SubsurfaceSingleEmitterDraws, &l);
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_SubsurfaceSingleSideRejects, &l2);
     if(POVMSLongToCDouble(l) > 0.5)
