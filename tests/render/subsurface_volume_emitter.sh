@@ -1,7 +1,10 @@
 #!/bin/sh
 set -eu
-POVRAY=$1
-SRCDIR=$2
+POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+SRCDIR=$(cd "$2" && pwd)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+cd "$WORK"
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/subsurface_volume_emitter.pov" +w12 +h12 +wt2 +pr -a -d -p -v -gp \
