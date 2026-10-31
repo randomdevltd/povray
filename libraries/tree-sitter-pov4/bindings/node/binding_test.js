@@ -32,3 +32,15 @@ test("parses independent refraction without reserving contextual field and detai
     interior { refraction { strength -0.3 field /* pattern */ { function { x + field } } detail detail } }`);
   assert.equal(tree.rootNode.hasError, false);
 });
+
+
+test("parses a bare media emission source selector beside brightness", () => {
+  const parser = new Parser();
+  parser.setLanguage(require("."));
+  const tree = parser.parse(`sphere { 0, 1 interior {
+    media { emission rgb <100, 40, 10> density { spherical } }
+    light { emission brightness 12 lumens }
+  } }`);
+  assert.equal(tree.rootNode.hasError, false);
+  assert.equal(tree.rootNode.descendantsOfType("keyword").filter((n) => n.text === "emission").length, 2);
+});

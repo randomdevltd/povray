@@ -3275,6 +3275,7 @@
       "items": [
         "attenuation",
         "brightness",
+        "emission",
         "lumens",
         "media_attenuation",
         "media_interaction",

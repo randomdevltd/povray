@@ -47,3 +47,11 @@ test('independent refraction fields expose their block items to completion', () 
     assert.equal(blocks.field, undefined);
     for (const word of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(word));
 });
+
+
+test('volume lights complete the bare emission source selector', () => {
+    const blocks = JSON.parse(readFileSync(join(root, targets[1]), 'utf8')).blocks;
+    assert.ok(blocks.light.items.includes('emission'));
+    assert.ok(blocks.light.items.includes('pigment'));
+    assert.ok(blocks.light.items.includes('brightness'));
+});

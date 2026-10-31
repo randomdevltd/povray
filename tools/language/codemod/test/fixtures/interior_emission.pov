@@ -1,0 +1,3 @@
+#version 3.7;
+global_settings { assumed_gamma 1 }
+sphere { 0, 1 pigment { rgbt 1 } interior { media { emission rgb <100,40,10> density { spherical } } light { emission brightness 12 lumens } } }

@@ -10539,20 +10539,36 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
 void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
 {
     MediaLight& settings = *interior.light;
-    settings.preparedParallelSafe = false;
-    if (!PigmentTestsObjects(settings.pigment) && !PigmentRequiresRayContext(settings.pigment))
-    {
-        bool known = true;
-        std::vector<FUNCTION> roots;
-        ForEachPigmentFunction(settings.pigment, false, [&](GenericScalarFunctionPtr& slot)
-        {
+    bool known = true;
+    std::vector<FUNCTION> roots;
+    auto inspect = [&](PIGMENT *pigment) {
+        known = known && !PigmentTestsObjects(pigment) && !PigmentRequiresRayContext(pigment);
+        ForEachPigmentFunction(pigment, false, [&](GenericScalarFunctionPtr& slot) {
             if (const FunctionVM::CustomFunction *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
                 roots.push_back(custom->Id());
             else
                 known = false;
         });
-        settings.preparedParallelSafe = known && SelfContained(roots);
+    };
+    if (settings.useEmission)
+    {
+        RayInteriorVector interiors;
+        interiors.push_back(&interior);
+        MediaVector media;
+        MediaModifierVector modifiers;
+        CollectInteriorMedia(interiors, media, &modifiers);
+        for (const Media *medium : media)
+            if (medium->use_emission)
+                for (PIGMENT *density : medium->Density)
+                    inspect(density);
+        for (const MediaModifier& modifier : modifiers)
+            if (modifier.medium->mix == kMediaBlendMultiply || modifier.medium->use_emission)
+                for (PIGMENT *density : modifier.medium->Density)
+                    inspect(density);
     }
+    else
+        inspect(settings.pigment);
+    settings.preparedParallelSafe = known && SelfContained(roots);
     std::string failure;
     std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(interior, container, &mThreadData, failure);
     if (!emitter)

@@ -55,6 +55,7 @@
 #include "base/timer.h"
 
 #include "core/lighting/emitter.h"
+#include "core/lighting/emitteraabb.h"
 #include "core/material/preparedtransfer.h"
 #include "core/material/physicalphase.h"
 #include "core/material/interiorfield.h"
@@ -1483,7 +1484,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    brightness(source.brightness), lumens(source.lumens),
+    useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
@@ -1500,6 +1501,17 @@ MediaLight::~MediaLight()
 
 namespace
 {
+
+class OwningEmissionInput final
+{
+    public:
+        explicit OwningEmissionInput(Interior& interior);
+        MathColour Sample(const Vector3d& point, TraceThreadData *td) const;
+        bool Constant() const;
+    private:
+        MediaVector media;
+        MediaModifierVector modifiers;
+};
 
 // The uniform proposal component preserves support of the prepared interpolated light field.
 class VolumeEmitter final : public Emitter
@@ -1651,22 +1663,12 @@ class VolumeEmitter final : public Emitter
                     sample.weight.Clear();
                 return true;
             }
-            double cap = 2.0;
-            if (d > radius)
-            {
-                const double q = Sqr(radius / d);
-                cap = q / (1.0 + std::sqrt(max(0.0, 1.0 - q)));
-            }
-            const double solid = 2.0 * M_PI * cap;
+            const EmitterAabbProposal angular(from, low, size);
             vector<std::pair<double, double>> pieces;
             double length, depth;
             if (s < chordShare)
             {
-                const double h = (s / chordShare) * cap, cosTheta = 1.0 - h;
-                const double sinTheta = std::sqrt(max(0.0, h * (2.0 - h))), phi = 2.0 * M_PI * t;
-                const Vector3d w = (d > 0.0) ? toCentre / d : Vector3d(0.0, 0.0, 1.0);
-                const Vector3d u = ((fabs(w[X]) > 0.5) ? cross(Vector3d(0.0, 1.0, 0.0), w) : cross(Vector3d(1.0, 0.0, 0.0), w)).normalized();
-                const Vector3d dir = (u * (sinTheta * std::cos(phi)) + cross(w, u) * (sinTheta * std::sin(phi)) + w * cosTheta).normalized();
+                const Vector3d dir = angular.Sample(s / chordShare, t);
                 length = Chord(from, dir, d + radius, td, pieces);
                 sample.position = centre;
                 sample.pdf = 0.0;
@@ -1709,7 +1711,8 @@ class VolumeEmitter final : public Emitter
             for (const auto& piece : pieces)
                 inChord = inChord || ((depth >= piece.first) && (depth <= piece.second));
             const double r2 = depth * depth;
-            const double chordPdf = (inChord && (length > 0.0)) ? 1.0 / (solid * length * r2) : 0.0;
+            const double angularPdf = angular.Pdf((sample.position - from) / depth);
+            const double chordPdf = (inChord && (length > 0.0)) ? angularPdf / (length * r2) : 0.0;
             sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * PositionPdf(sample.position);
             sample.weight = EmissionAt(sample.position, td) / (r2 * sample.pdf);
             return true;
@@ -1807,18 +1810,23 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         emitter->coefficient = MathColour(settings.brightness / meanChord);
     }
     const size_t count = layout->ValueCount();
-    const bool solid = !settings.pigment || settings.pigment->Type == PLAIN_PATTERN;
+    std::unique_ptr<OwningEmissionInput> emissionInput;
+    if (settings.useEmission)
+        emissionInput.reset(new OwningEmissionInput(*container->interior));
+    const bool solid = emissionInput ? emissionInput->Constant() :
+        (!settings.pigment || settings.pigment->Type == PLAIN_PATTERN);
     auto colourAt = [&](const Vector3d& p, TraceThreadData *worker) {
         TransColour colour(MathColour(1.0));
         if (settings.pigment)
             Compute_Pigment(colour, settings.pigment, p, nullptr, nullptr, worker);
-        const MathColour value = colour.colour();
+        const MathColour value = emissionInput ? emissionInput->Sample(p, worker) : colour.colour();
         for (int ch = 0; ch < MathColour::channels; ch++)
             if (!IsFiniteNumber(value[ch]) || value[ch] < 0.0)
                 throw POV_EXCEPTION_STRING("Interior light pigment is negative or not finite.");
         return value;
     };
     std::shared_ptr<const PreparedColourField> field;
+    vector<DBL> nodalMasses;
     std::atomic<bool> positiveField(false);
     if (solid)
     {
@@ -1829,6 +1837,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
     else
     {
         vector<MathColour> values(count);
+        nodalMasses.resize(count);
         const size_t workers = settings.preparedParallelSafe ?
             std::max<size_t>(1, std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads)) : 1;
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
@@ -1846,6 +1855,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
                                                             (z + 0.5) * layout->size[Z] / layout->counts[Z]);
                     const MathColour value = colourAt(p, sampleThread);
                     values[(z * layout->counts[Y] + y) * layout->counts[X] + x] = value;
+                    nodalMasses[(z * layout->counts[Y] + y) * layout->counts[X] + x] = value.Weight();
                     if (value.Weight() > 0.0)
                         positiveField.store(true, std::memory_order_relaxed);
                 }
@@ -1904,6 +1914,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         emitter->coefficient *= scale;
         emitter->intensity = integral * scale;
     }
+    if (emitter->coefficient[0] == 0.0)
+        nodalMasses.clear();
     field = std::make_shared<ScaledColour>(field, emitter->coefficient[0]);
     vector<DBL> masses(count);
     for (size_t z = 0; z < layout->counts[Z]; z++)
@@ -1920,7 +1932,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
                     masses[(z * layout->counts[Y] + y) * layout->counts[X] + x] = field->Sample(p).Weight();
             }
     }
-    emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses));
+    emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses), std::move(nodalMasses));
 }
 
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData*, std::string&)
@@ -1971,6 +1983,16 @@ void SubtractFromSum(MathColour *values, size_t count, const MathColour& amount)
         values[i] *= scale;
 }
 
+void ApplyCoefficientModifier(MathColour *values, size_t count, const MathColour& density,
+                              const MathColour& coefficient, int mix)
+{
+    if (mix == kMediaBlendMultiply)
+        for (size_t i = 0; i < count; i++)
+            values[i] *= density;
+    else
+        SubtractFromSum(values, count, density * coefficient);
+}
+
 }
 
 void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers)
@@ -2008,6 +2030,66 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
         else if (medium->use_absorption || medium->use_emission || medium->use_scattering)
             medias.push_back(medium);
     }
+}
+
+namespace
+{
+
+OwningEmissionInput::OwningEmissionInput(Interior& interior)
+{
+    RayInteriorVector interiors;
+    interiors.push_back(&interior);
+    CollectInteriorMedia(interiors, media, &modifiers);
+    auto validate = [](const Media& medium) {
+        for (const PIGMENT *density : medium.Density)
+            if (PigmentRequiresRayContext(density))
+                throw POV_EXCEPTION_STRING("Interior light emission density requires ray context and cannot be published.");
+    };
+    for (const Media *medium : media)
+        if (medium->use_emission)
+            validate(*medium);
+    for (const MediaModifier& modifier : modifiers)
+        if (modifier.medium->mix == kMediaBlendMultiply || modifier.medium->use_emission)
+            validate(*modifier.medium);
+}
+
+bool OwningEmissionInput::Constant() const
+{
+    for (const Media *medium : media)
+        if (medium->use_emission && !ConstantDensity(*medium))
+            return false;
+    for (const MediaModifier& modifier : modifiers)
+        if ((modifier.medium->mix == kMediaBlendMultiply || modifier.medium->use_emission) &&
+            !ConstantDensity(*modifier.medium))
+            return false;
+    return true;
+}
+
+MathColour OwningEmissionInput::Sample(const Vector3d& point, TraceThreadData *td) const
+{
+    std::vector<MathColour> emitted(media.size());
+    for (size_t i = 0; i < media.size(); i++)
+    {
+        if (!media[i]->use_emission)
+            continue;
+        MathColour density;
+        Evaluate_Density_Pigment(media[i]->Density, point, density, td);
+        emitted[i] = density * media[i]->Emission;
+    }
+    for (const MediaModifier& modifier : modifiers)
+    {
+        if (modifier.medium->mix != kMediaBlendMultiply && !modifier.medium->use_emission)
+            continue;
+        MathColour density;
+        Evaluate_Density_Pigment(modifier.medium->Density, point, density, td);
+        ApplyCoefficientModifier(emitted.data(), modifier.below, density, modifier.medium->Emission, modifier.medium->mix);
+    }
+    MathColour result;
+    for (const MathColour& value : emitted)
+        result += value;
+    return result;
+}
+
 }
 
 static bool ConstantDensity(const Media& medium)
@@ -2208,19 +2290,9 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
             continue;
         MathColour local;
         ModifierDensity(medium, point, source, local);
-        if (medium.mix == kMediaBlendMultiply)
-            for (size_t t = 0; t < modifier.below; t++)
-            {
-                absorbing[t] *= local;
-                scattered[t] *= local;
-                emitted[t] *= local;
-            }
-        else
-        {
-            SubtractFromSum(absorbing, modifier.below, local * medium.Absorption);
-            SubtractFromSum(scattered, modifier.below, local * medium.Scattering);
-            SubtractFromSum(emitted, modifier.below, local * medium.Emission);
-        }
+        ApplyCoefficientModifier(absorbing, modifier.below, local, medium.Absorption, medium.mix);
+        ApplyCoefficientModifier(scattered, modifier.below, local, medium.Scattering, medium.mix);
+        ApplyCoefficientModifier(emitted, modifier.below, local, medium.Emission, medium.mix);
     }
     for (size_t i = 0; i < n; i++)
     {

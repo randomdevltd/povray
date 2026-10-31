@@ -64,3 +64,18 @@ test('plans classic and native evaluation of independent refraction fields', () 
   const output = readFileSync(entry.jobs.C.input, 'utf8');
   assert.match(output, /refraction \{ function \{ -0\.03\s*\*\s*\(2\s*\+\s*x\) \} detail 0\.06 \}/);
 });
+
+
+test('plans classic 3.7 and native evaluation of emission-selected volume lights', () => {
+  const scenes = mkdtempSync(join(tmpdir(), 'lang-emission-'));
+  const fixture = join(import.meta.dirname, '../../codemod/test/fixtures/interior_emission');
+  writeFileSync(join(scenes, 'emission.pov'), readFileSync(`${fixture}.pov`, 'utf8'));
+  const result = plan({ out: join(scenes, 'result'), scenes, 'run-id': 'emission', size: '32x24',
+    'classic-id': 'fixture', 'bc-id': 'fixture', 'b-args': '+ML{version}' });
+  const entry = result.scenes[0];
+  assert.equal(entry.converted, true);
+  assert.deepEqual(entry.refusals, []);
+  assert.deepEqual(Object.keys(entry.jobs), ['A', 'B', 'C']);
+  assert.ok(entry.jobs.B.args.includes('+ML3.7'));
+  assert.equal(readFileSync(entry.jobs.C.input, 'utf8'), readFileSync(`${fixture}.pov4`, 'utf8'));
+});

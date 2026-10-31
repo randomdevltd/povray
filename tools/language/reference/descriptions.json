@@ -1248,8 +1248,8 @@
    "from": "doc/html/r3_6.html"
   },
   "brightness": {
-   "rank": 56,
-   "code": "pigment { PIGMENT } | brightness Value [nits | lumens] |",
+   "rank": 39,
+   "code": "light { emission brightness 12 lumens }",
    "from": "doc/html/r3_12.html"
   },
   "brilliance": {
@@ -1991,8 +1991,8 @@
    "from": "doc/html/r3_4.html"
   },
   "lumens": {
-   "rank": 56,
-   "code": "pigment { PIGMENT } | brightness Value [nits | lumens] |",
+   "rank": 39,
+   "code": "light { emission brightness 12 lumens }",
    "from": "doc/html/r3_12.html"
   },
   "magnet": {
@@ -2156,8 +2156,8 @@
    "from": "doc/html/r3_4.html"
   },
   "nits": {
-   "rank": 56,
-   "code": "pigment { PIGMENT } | brightness Value [nits | lumens] |",
+   "rank": 67,
+   "code": "pigment { PIGMENT } | emission | brightness Value [nits | lumens] |",
    "from": "doc/html/r3_12.html"
   },
   "no_bump_scale": {
