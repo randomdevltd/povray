@@ -140,6 +140,7 @@ struct Target final
     std::vector<std::shared_ptr<const PreparedDirectionalSourceField>> orders;
     std::shared_ptr<const PreparedSourceDistribution> proposal;
     unsigned int passes;
+    double gain = 1.0;
     bool surface = false;
     std::size_t part = 0;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
@@ -239,7 +240,7 @@ inline void PrepareCoefficients(Target& target, Workers& workers,
             const auto found = std::find(target.phases.begin(), target.phases.end(),
                                          PreparedBouncePhase{component.type, component.eccentricity});
             if (found != target.phases.end())
-                values[found - target.phases.begin()][node] += component.coefficient;
+                values[found - target.phases.begin()][node] += component.coefficient * target.gain;
         }
     }, target.domain->NodeCount());
     for (auto& phase : values)
@@ -427,6 +428,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         target.light = light;
         target.primary = light->emitter;
         target.passes = settings->bouncePasses;
+        target.gain = settings->BounceGain();
         maximum = std::max(maximum, target.passes);
         if (surface)
         {
@@ -514,6 +516,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         };
         std::vector<SharedGroup> groups;
         std::vector<std::size_t> active, activeTarget(targets.size(), SIZE_MAX);
+        std::vector<double> activeGain;
         std::vector<std::vector<LightSource*>> activeSources;
         for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex)
         {
@@ -527,6 +530,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     sources.push_back(previous[source].get());
             activeTarget[targetIndex] = active.size();
             active.push_back(target.part);
+            activeGain.push_back(target.gain);
             activeSources.push_back(std::move(sources));
         }
         std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceFields(active.size());
@@ -579,7 +583,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     subsurface = PrepareSubsurfaceBounce(workers, scene, results[a], cooperate, kSurfaceUnits);
                 }
                 surfaceFields[a] = std::make_shared<const SumSurfaceBounceRadiance>(
-                    std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{results[a].diffuse, subsurface});
+                    std::vector<std::shared_ptr<const SurfaceBounceRadiance>>{results[a].diffuse, subsurface}, activeGain[a]);
                 AdvancePreparation(td->preparationProgress);
             }
             if (td->preparationProgress)

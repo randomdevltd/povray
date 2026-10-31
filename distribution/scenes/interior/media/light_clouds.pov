@@ -1,8 +1,12 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Single scattering only. +w640 +h480; Declare=Samples=N sets each light's samples, Storm=0 drops the lightning tower.
+// Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Single scattering only. +w640 +h480.
+// Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux (400, a large paper lantern), Storm=0 drops the lightning tower.
+// The lanterns fall off physically, as 1/d^2, so the cone of light out of each open bottom stands out from the light through the paper.
 #version 4.0;
+// Units: lanterns 400 lm each, bolt 20 and flash 5 times their colour, a radiance in nits where the colour is white; the clouds keep their authored physical scattering of 0.3 per unit.
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Storm) #declare Storm = 1; #end
+#ifndef (LanternLumens) #declare LanternLumens = 400; #end
 #declare R = seed(1907);
 
 global_settings { assumed_gamma 1 max_trace_level 6 }
@@ -66,9 +70,10 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
     interior {
       media {
         mix add method 4 resolution 0.008
+        emission rgb <1, 0.6, 0.25> * 20000
         density { spherical color_map { [0 rgb 0] [0.5 rgb 0.3] [1 rgb 1] } }
       }
-      light { pigment { rgb <1, 0.6, 0.25> * 3000 } samples Samples }
+      light { pigment { rgb <1, 0.6, 0.25> } brightness LanternLumens lumens samples Samples }
     }
     scale <0.05, 0.11, 0.05> translate y * 0.2 rotate <Tilt, 0, Tilt * 0.6> translate P
   }
@@ -98,16 +103,17 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
       Jag(A, A + <rand(R) - 0.5, -0.5 - rand(R) * 0.5, rand(R) - 0.5> * 8, 5, 0.12, 0.07, 1.6)
     #end
     pigment { rgbt 1 }
-    interior { media { mix add } light { pigment { rgb <0.72, 0.82, 1> * 5 } samples Samples } }
+    interior { media { mix add emission rgb <0.72, 0.82, 1> * 5 } light { pigment { rgb <0.72, 0.82, 1> } brightness 20 samples Samples } }
   }
   sphere {
     0, 1 pigment { rgbt 1 }
     interior {
       media {
         mix add method 4 resolution 0.25
+        emission rgb <0.8, 0.7, 1> * 0.35
         density { spherical turbulence 0.3 color_map { [0 rgb 0] [1 rgb 1] } }
       }
-      light { pigment { rgb <0.8, 0.7, 1> * 0.35 } samples Samples }
+      light { pigment { rgb <0.8, 0.7, 1> } brightness 5 samples Samples }
     }
     scale 4.5 translate <22, 38, 40>
   }

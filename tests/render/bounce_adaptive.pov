@@ -20,7 +20,7 @@ camera { location <0, 1.1, -2.6> * S look_at <0, 0.55, 0.4> * S angle 62 right x
 #end
 #macro Panel(Corner1, Corner2, Nits)
   box { Corner1, Corner2 pigment { rgb 1 } finish { ambient 0 emission Nits diffuse 0 }
-    light { emission brightness 1 nits samples 64 } transform { T } }
+    light { emission samples 64 } transform { T } }
 #end
 
 #if (Case != 6)

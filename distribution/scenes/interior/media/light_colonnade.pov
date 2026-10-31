@@ -1,12 +1,16 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480; Declare=Samples=N sets the core light's samples, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
+// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480.
+// Declare=Samples=N sets the core light's samples, CoreLumens its flux, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
 #version 4.0;
+// Units: the core casts CoreLumens (700 lm) from its own emission; the haze scatters 0.048 per metre (4x classic) with extinction 0.25, keeping the classic glow.
 #ifndef (Samples) #declare Samples = 32; #end
 #ifndef (Refract) #declare Refract = 1; #end
 #ifndef (Haze) #declare Haze = 1; #end
 #ifndef (Chains) #declare Chains = 1; #end
+#ifndef (CoreLumens) #declare CoreLumens = 700; #end
 #declare R = seed(1729);
 #declare Core = <0, 3.6, 0>;
+#declare Cut = Core.y - 0.05;
 #declare Inner = 3.9;
 #declare Outer = 8.4;
 #declare WallR = 12.6;
@@ -119,7 +123,7 @@ union {
 #if (Refract)
   intersection {
     sphere { 0, Lens }
-    plane { -y, Core.y - 0.05 }
+    plane { -y, Cut }
     pigment { rgbt 1 }
     interior {
       refraction {
@@ -202,10 +206,7 @@ sphere {
         }
       }
     }
-    light { pigment { pigment_pattern { function {
-          min(1, 0.75 * exp(-(x * x + y * y + z * z) / 0.1)
-                 + 0.25 * pow(max(0, Swirl(x, y, z) - 0.5) * 2, 2) * max(0, 1 - sqrt(x * x + y * y + z * z) / 1.7))
-        } } color_map { [0 rgb 0] [1 rgb <1, 0.6, 0.28> * 140] } } samples Samples }
+    light { emission brightness CoreLumens lumens samples Samples }
   }
   translate Core
 }
@@ -213,6 +214,6 @@ sphere {
 #if (Haze)
   cylinder {
     -y * 0.1, y * 13, WallR - 0.01 pigment { rgbt 1 }
-    interior { media { mix add scattering { 5, rgb 0.012 eccentricity 0.4 } } }
+    interior { media { mix add scattering { 5, rgb 0.048 eccentricity 0.4 extinction 0.25 } } }
   }
 #end

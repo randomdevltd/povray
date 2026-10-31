@@ -1843,8 +1843,8 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
-    attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower),
+    bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
+    attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
@@ -1889,6 +1889,13 @@ std::uint64_t NextEmitterSerial()
     static std::atomic<std::uint64_t> next{1};
     return next++;
 }
+
+/// Asks shapes that bound their root search, such as an isosurface's max_trace, for every crossing.
+struct AllCrossingsQuery final : RayRootQuery
+{
+    bool Admit(ConstObjectPtr, double) const override { return true; }
+    bool AllRoots() const override { return true; }
+};
 
 // The uniform proposal component preserves support of the prepared interpolated light field.
 class VolumeEmitter final : public Emitter
@@ -2098,6 +2105,7 @@ class VolumeEmitter final : public Emitter
         const MathColour& Intensity() const override { return intensity; }
         const Vector3d& Centre() const override { return centre; }
         double Radius() const override { return radius; }
+        double Reach(const Vector3d& from) const override { return BoxReach(from, low, size); }
 
         bool HasVolumeEmission() const override { return volumeEmission; }
 
@@ -2153,14 +2161,16 @@ class VolumeEmitter final : public Emitter
             return sample;
         }
 
-        void CloseOccupancyBoundaries(ObjectPtr object) const
+        /// Shapes that stop at their first hit unless inside a compound report every crossing of this private copy.
+        void PrepareOccupancyBoundaries(ObjectPtr object) const
         {
             Set_Flag(object, CLOSED_FLAG);
+            object->Type |= IS_CHILD_OBJECT;
             if (object->Type & IS_COMPOUND_OBJECT)
                 for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
-                    CloseOccupancyBoundaries(child);
+                    PrepareOccupancyBoundaries(child);
             for (ObjectPtr clip : object->Clip)
-                CloseOccupancyBoundaries(clip);
+                PrepareOccupancyBoundaries(clip);
         }
 
         void Boundaries(ObjectPtr object, const Ray& ray, double start, double end, TraceThreadData *td,
@@ -2195,6 +2205,8 @@ class VolumeEmitter final : public Emitter
             const double start = -offset, end = start + reach / radius;
             TraceTicket ticket(1, 0.0);
             Ray ray(ticket, origin, dir);
+            static const AllCrossingsQuery allCrossings;
+            ray.SetRootQuery(&allCrossings);
             thread_local vector<double> cuts;
             cuts.assign(1, start);
             Boundaries(geometry, ray, start, end, td, cuts);
@@ -2488,15 +2500,18 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Destroy_Object(emitter->geometry);
     emitter->geometry = nullptr;
     emitter->geometry = Copy_Object(container);
-    emitter->CloseOccupancyBoundaries(emitter->geometry);
+    emitter->PrepareOccupancyBoundaries(emitter->geometry);
     TRANSFORM translation, scaling;
     const Vector3d displacement = -emitter->centre, scale(1.0 / emitter->radius);
     Compute_Translation_Transform(&translation, displacement);
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    // the emission alias casts its own glow times brightness; a pigment's nits take the mean chord 4V/A
-    emitter->coefficient = MathColour(settings.lumens >= 0.0 ? 1.0 : settings.brightness);
+    // a bounce-only block casts no primary light; a unit normalizes the input below, else the emission alias casts its
+    // glow times brightness and a unitless pigment takes the mean chord 4V/A
+    const bool nits = settings.nits;
+    const bool normalized = (settings.lumens >= 0.0) || (nits && settings.brightness > 0.0);
+    emitter->coefficient = MathColour(settings.BounceOnly() ? 0.0 : normalized ? 1.0 : settings.brightness);
     // every serial estimate below is gathered per index on the workers, then summed in index order
     const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
     std::vector<std::unique_ptr<TraceThreadData>> helpers;
@@ -2511,9 +2526,10 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             work(i, thread(worker), worker);
         }, poll);
     };
-    if (settings.lumens < 0.0 && settings.brightness != 0.0 && !settings.useEmission)
+    double meanChord = 0.0;
+    if (!settings.BounceOnly() && settings.lumens < 0.0 && settings.brightness != 0.0 && (!settings.useEmission || nits))
     {
-        double meanChord = 0.0, discrepancy = HUGE_VAL;
+        double discrepancy = HUGE_VAL;
         std::vector<vector<std::pair<double, double>>> pieces(workers);
         std::vector<double> lineLength;
         std::vector<size_t> lineCrossings;
@@ -2568,7 +2584,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
         }
         if ((discrepancy > 0.005) && td->mediaMessages)
             td->mediaMessages->Warning(kWarningGeneral, "Interior light's geometric mean-chord normalization has %.3g relative sampling discrepancy.", discrepancy);
-        emitter->coefficient = MathColour(settings.brightness / meanChord);
+        if (!settings.useEmission && !nits)
+            emitter->coefficient = MathColour(settings.brightness / meanChord);
     }
     const size_t count = layout->NodeCount();
     std::unique_ptr<OwningEmissionInput> emissionInput;
@@ -2588,9 +2605,11 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     };
     std::shared_ptr<const PreparedColourField> field;
     std::atomic<bool> positiveField(false);
+    MathColour solidValue;
     if (solid)
     {
         const MathColour value = colourAt(emitter->centre, td);
+        solidValue = value;
         positiveField.store(value.Weight() > 0.0, std::memory_order_relaxed);
         field = std::make_shared<PreparedConstantColourField>(value);
     }
@@ -2605,12 +2624,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
         });
         field = std::make_shared<PreparedSourceColourField>(layout, std::move(values));
     }
-    auto preparedEmission = [&](const Vector3d& p, TraceThreadData *worker) {
-        return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker) ?
-            field->Sample(p) * emitter->coefficient : MathColour();
-    };
     MathColour integral;
-    double relativeDiscrepancy = 0.0;
+    double volume = 0.0, relativeDiscrepancy = 0.0;
     {
         for (int bins : {16, 24, 32})
         {
@@ -2619,6 +2634,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
             MathColour replicate[4];
             const size_t draws = size_t(bins) * bins * bins;
             vector<MathColour> drawn(4 * draws);
+            vector<char> occupied(4 * draws);
             parallel(4 * draws, [&](size_t index, TraceThreadData *worker, size_t) {
                 const size_t r = index / draws, k = index % draws;
                 {
@@ -2627,7 +2643,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                                      ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
                                      (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
                     const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
-                    drawn[index] = preparedEmission(p, worker);
+                    occupied[index] = Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker);
+                    drawn[index] = occupied[index] ? field->Sample(p) * emitter->coefficient : MathColour();
                 }
             });
             for (int r = 0; r < 4; r++)
@@ -2640,6 +2657,10 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                     }
                     replicate[r] += j * (emitter->boxVolume / draws);
                 }
+            size_t inside = 0;
+            for (char drawnInside : occupied)
+                inside += drawnInside ? 1 : 0;
+            volume = emitter->boxVolume * double(inside) / double(4 * draws);
             integral.Clear();
             for (const MathColour& estimate : replicate)
                 integral += estimate * 0.25;
@@ -2651,14 +2672,23 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                 break;
         }
         if ((settings.lumens > 0.0) && !(integral.Greyscale() > 0.0))
-            throw POV_EXCEPTION_STRING("Interior light generated-lumens integral is unresolved or zero.");
+            throw POV_EXCEPTION_STRING(positiveField.load(std::memory_order_relaxed) ?
+                "Interior light generated-lumens integral is unresolved; refine its field layout." :
+                "Interior light stated in lumens requires an input of positive luminance.");
         if ((settings.lumens < 0.0) && emitter->coefficient.Weight() > 0.0 &&
             positiveField.load(std::memory_order_relaxed) && !(integral.Greyscale() > 0.0))
             throw POV_EXCEPTION_STRING("Interior light prepared power integral is unresolved; refine its field layout.");
         if ((relativeDiscrepancy > 0.0025) && td->mediaMessages)
             td->mediaMessages->Warning(kWarningGeneral, "Interior light's generated-lumens normalization has %.3g relative sampling discrepancy.", relativeDiscrepancy);
+        // nits: the mean boundary radiance 4 * integral / A is the brightness, with A / 4 = V / meanChord
+        const double meanLuminance = solid ? double(solidValue.Greyscale()) :
+            (volume > 0.0) ? integral.Greyscale() / volume : 0.0;
+        if (nits && (emitter->coefficient.Weight() > 0.0) &&
+            !(integral.Greyscale() > 0.0 && meanChord > 0.0 && meanLuminance > 0.0))
+            throw POV_EXCEPTION_STRING("Interior light stated in nits requires an input of positive luminance.");
         const double scale = settings.lumens >= 0.0 ?
-            (settings.lumens == 0.0 ? 0.0 : settings.lumens / (4.0 * M_PI * integral.Greyscale())) : 1.0;
+            (settings.lumens == 0.0 ? 0.0 : settings.lumens / (4.0 * M_PI * integral.Greyscale())) :
+            (nits && (emitter->coefficient.Weight() > 0.0)) ? settings.brightness / (meanChord * meanLuminance) : 1.0;
         emitter->coefficient *= scale;
         emitter->intensity = integral * scale;
     }
@@ -5506,7 +5536,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
             if (lights[i].light->emitter)
             {
-                if (!volumeLighting || (currentPath && currentPath->collecting))
+                if (!volumeLighting || (currentPath && currentPath->collecting) || Light_Below_Cutoff(lights[i].light, P))
                     continue;
                 const int count = max(1, lights[i].light->Area_Size1);
                 threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;

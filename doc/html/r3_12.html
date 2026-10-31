@@ -33,7 +33,7 @@
   <td><div class="divh2"><strong><a title="3.12.1" href="#r3_12_1">Making a Volume a Light</a></strong></div></td>
 </tr>
 <tr>
-  <td><div class="divh2"><strong><a title="3.12.2" href="#r3_12_2">Radiance and Attenuation</a></strong></div></td>
+  <td><div class="divh2"><strong><a title="3.12.2" href="#r3_12_2">Radiance, Attenuation and Cutoff</a></strong></div></td>
 </tr>
 <tr>
   <td><div class="divh3"><a title="3.12.2.1" href="#r3_12_2_1">The Attenuation Block</a></div></td>
@@ -121,7 +121,7 @@
 <ul>
   <li><a href="r3_12.html#r3_12_1">Making a Volume a Light</a></li>
   <li><a href="r3_12.html#r3_12_1_1">Using Media Emission as the Source</a></li>
-  <li><a href="r3_12.html#r3_12_2">Radiance and Attenuation</a></li>
+  <li><a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a></li>
   <li><a href="r3_12.html#r3_12_2_1">The Attenuation Block</a></li>
   <li><a href="r3_12.html#r3_12_3">Sampling and Shadows</a></li>
   <li><a href="r3_12.html#r3_12_4">Media, Light Groups and Radiosity</a></li>
@@ -142,7 +142,7 @@ INTERIOR_LIGHT:
   light { [INTERIOR_LIGHT_ITEM...] }
 INTERIOR_LIGHT_ITEM:
   pigment { PIGMENT } | emission | brightness Value [nits | lumens] |
-  attenuation { [power Value] [scale Value] } | samples Integer |
+  attenuation { [power Value] [scale Value] [cutoff Value] } | samples Integer |
   shadowless [Bool] | media_interaction [Bool] | media_attenuation [Bool] |
   photons { [reflection Bool] [refraction Bool] } | bounce [{ passes Integer }]
 </pre>
@@ -151,7 +151,7 @@ INTERIOR_LIGHT_ITEM:
 pigment          : solid white
 emission         : absent (use pigment)
 brightness       : 1.0 nits
-attenuation      : power 2, scale 1 (physical)
+attenuation      : power 2, scale 1 (physical), cutoff 0.000004
 samples          : 16
 shadowless       : off
 media_interaction: on
@@ -159,9 +159,9 @@ media_attenuation: on
 </pre>
 <table width="100%" class="option-list">
 <tr><td><code>pigment</code></td><td>The light's own colour or pattern, evaluated in the container's coordinates. The pattern distributes emitted light independently of media density. Default solid white.</td></tr>
-<tr><td><code>emission</code></td><td>A bare flag selecting the full combined RGB emission of this interior's own media, including density patterns and media mixing. It takes no value and cannot be combined with <code>pigment</code>. Absorption, scattering and overlapping objects do not supply source colour. Brightness and its units retain their normal meaning.</td></tr>
-<tr><td><code>brightness</code></td><td>A non-negative source brightness. A unitless value and <code>nits</code> use the topology-normalized radiance convention below; <code>lumens</code> specifies total generated luminous flux under the convention 1 scene unit = 1 m. See <a href="r3_12.html#r3_12_2">Radiance and Attenuation</a>.</td></tr>
-<tr><td><code>attenuation</code></td><td>The falloff: a block of a <code>power</code> and a <code>scale</code>, each given at most once and 2 and 1 by default, which is physical. A scale of 0 turns the falloff off. See <a href="r3_12.html#r3_12_2">Radiance and Attenuation</a>.</td></tr>
+<tr><td><code>emission</code></td><td>A bare flag selecting the full combined RGB emission of this interior's own media, including density patterns and media mixing, as the light's emission coefficient. It takes no value and cannot be combined with <code>pigment</code>. Absorption, scattering and overlapping objects do not supply source colour. A unitless brightness multiplies the media's own emission, so <code>brightness 1</code> casts the same emission coefficient the camera integrates as glow; <code>nits</code> scale it to a stated mean radiance at the container's boundary and <code>lumens</code> to a stated flux.</td></tr>
+<tr><td><code>brightness</code></td><td>A non-negative source brightness. Unitless, it multiplies the input: a pigment through the topology-normalized radiance convention below, <code>emission</code> as a plain multiplier of the media's emission. <code>nits</code> state the input's measured mean radiance at the container's boundary, whatever its colour or pattern; <code>lumens</code> specifies total generated luminous flux under the convention 1 scene unit = 1 m. In a bounce-only block it multiplies the bounced light instead (see <a href="r3_12.html#r3_12_8">Bounced and Passive Lights</a>). See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
+<tr><td><code>attenuation</code></td><td>The falloff: a block of a <code>power</code>, a <code>scale</code> and a <code>cutoff</code>, each given at most once and 2, 1 and 0.000004 by default; power 2 and scale 1 are physical. A scale of 0 turns the falloff off; a cutoff of 0 turns the cutoff off. See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
 <tr><td><code>samples</code></td><td>An integer of at least 1: emitter draws per lit point, and so the shadow rays. More samples give smoother soft shadows and cost more. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
 <tr><td><code>shadowless</code></td><td>The light casts no shadows, as a <a href="r3_4.html#r3_4_3_1_6">shadowless</a> light does.</td></tr>
 <tr><td><code>media_interaction</code></td><td>With <code>off</code>, the light does not light scattering media, as for a normal <a href="r3_4.html#r3_4_3_1_10">light source</a>.</td></tr>
@@ -192,7 +192,7 @@ interior {
 }
 </pre>
 <p>This generates 12 lumens using the combined RGB emission field as its distribution. The media's visible glow is unchanged. A nonzero lumen setting requires a positive source integral; absent or zero emission cannot normalize it. See <code>scenes/interior/media/light_emission.pov</code>.</p>
-<p>Without a unit, or with <code>nits</code>, brightness is a gain on the media's emission: the light's emission coefficient is <em>j</em>(<em>x</em>) = <em>B</em> &epsilon;(<em>x</em>), where &epsilon;(<em>x</em>) is the combined emission of the interior's media at <em>x</em> and <em>B</em> the brightness. Nothing depends on the size or shape of the container. For example:</p>
+<p>Without a unit, brightness is a gain on the media's emission: the light's emission coefficient is <em>j</em>(<em>x</em>) = <em>B</em> &epsilon;(<em>x</em>), where &epsilon;(<em>x</em>) is the combined emission of the interior's media at <em>x</em> and <em>B</em> the brightness. Nothing depends on the size or shape of the container. For example:</p>
 <pre>
 // the light is the glow: each point emits its media emission times brightness
 sphere { 0, 0.3
@@ -204,18 +204,19 @@ sphere { 0, 0.3
   translate y*1.5
 }
 </pre>
-<p>casts the emission coefficient the camera integrates as the sphere's glow. <code>brightness 2</code> casts twice that, without changing the glow. A pigment source is calibrated differently, as described next.</p></div>
+<p>casts the emission coefficient the camera integrates as the sphere's glow. <code>brightness 2</code> casts twice that, without changing the glow. <code>brightness 2 nits</code> instead states what the glow measures: the emission field is scaled so that its mean outgoing radiance over the container's boundary is 2 nits. A volume of total intensity &int;<em>j</em> d<em>V</em> radiating through a boundary of area <em>A</em> has the Lambertian-equivalent mean radiance 4&int;<em>j</em> d<em>V</em>/<em>A</em>, so the light casts <em>j</em>(<em>x</em>) = <em>B</em> &epsilon;(<em>x</em>) <em>A</em>/(4&int;<em>Y</em>(&epsilon;) d<em>V</em>), integrated over the prepared field, density patterns and mixing included. Its strength no longer follows the media's emission: scaling every emission coefficient by the same factor leaves the light unchanged. A pigment in nits is normalized the same way, as described next.</p></div>
 
 <a name="r3_12_2"></a>
-<div class="content-level-h3" contains="Radiance and Attenuation" id="r3_12_2">
-<h3>3.12.2 Radiance and Attenuation</h3>
-<p>The light uses its declared emitting region and source field. By default that field is its own pigment, independent of media density. With <code>light { emission }</code>, it is instead the full combined emission RGB of the same interior's media, after density and media mixing. Absorption, scattering, refraction and other objects do not contribute to this source field. Let <em>V</em> be the region's geometric volume, <em>A</em> its true boundary area and <em>C</em>(x) the selected source field. For a pigment source, unitless brightness and <code>nits</code> use reference length &ell; = 4<em>V</em>/<em>A</em> and isotropic emission coefficient <em>j</em>(x) = <em>L C</em>(x)/&ell;. Exposed cavity walls contribute to <em>A</em>; internal union seams do not. This is not a convex hull or projected silhouette normalization. The declared emitting region affects this reference calibration: padding its container while keeping a smaller pigment field unchanged is not guaranteed to preserve source strength. For an <code>emission</code> source, unitless brightness and <code>nits</code> need no reference length: <em>j</em>(x) = <em>L C</em>(x), the media's own emission coefficient times the brightness, so the container's size and padding do not change the strength.</p>
+<div class="content-level-h3" contains="Radiance, Attenuation and Cutoff" id="r3_12_2">
+<h3>3.12.2 Radiance, Attenuation and Cutoff</h3>
+<p>The light uses its declared emitting region and source field. By default that field is its own pigment, independent of media density. With <code>light { emission }</code>, it is instead the full combined emission RGB of the same interior's media, after density and media mixing. Absorption, scattering, refraction and other objects do not contribute to this source field. Let <em>V</em> be the region's geometric volume, <em>A</em> its true boundary area and <em>C</em>(x) the selected source field. For a pigment source, a unitless brightness uses reference length &ell; = 4<em>V</em>/<em>A</em> and isotropic emission coefficient <em>j</em>(x) = <em>L C</em>(x)/&ell;, so a white pigment's boundary radiance is <em>L</em> and a coloured or patterned one's is <em>L</em> times its colour. Exposed cavity walls contribute to <em>A</em>; internal union seams do not. This is not a convex hull or projected silhouette normalization. The declared emitting region affects this reference calibration: padding its container while keeping a smaller pigment field unchanged is not guaranteed to preserve source strength. For an <code>emission</code> source, a unitless brightness needs no reference length: <em>j</em>(x) = <em>L C</em>(x), the media's own emission coefficient times the brightness, so the container's size and padding do not change the strength. With <code>nits</code>, either source field is normalized to the stated mean boundary radiance, <em>j</em>(x) = <em>L C</em>(x) &ell;<sup>&minus;1</sup> <em>V</em>/&int;<em>Y</em>(<em>C</em>) d<em>V</em> with the same &ell; = 4<em>V</em>/<em>A</em>, both integrals taken over the same prepared draws, and a constant field's mean luminance taken exactly: a uniform <em>C</em> casts exactly the unitless <em>j</em> of the colour <em>C</em>/<em>Y</em>(<em>C</em>), so a white pigment reads the same with or without the unit. Nonzero nits over a field whose luminance integrates to zero cannot be normalized and are an error.</p>
 <p>A uniform white pigment source generates flux &pi;<em>LA</em>. This is a predictable volume-source reference, not identical radiance along every chord or identical illumination at every nearby point. With no absorbing or scattering media and a white Lambertian probe of unit reflectance, a uniform unit cube gives about 0.9257<em>L</em> at its centre with an axis-aligned normal and 1.2399<em>L</em> immediately outside a face centre facing inward. A sphere gives 0.75<em>L</em> at its centre and <em>L</em> immediately outside facing inward. Geometry, receiver orientation and pigment determine actual illumination; there is no cell-sized near-distance clamp.</p>
-<p><code>lumens</code> specifies generated flux &Phi;, before absorption on the way out. It normalizes <em>j</em>(x) = &Phi;<em>C</em>(x)/(4&pi;&int;<em>Y</em>(<em>C</em>(x)) d<em>V</em>), where <em>Y</em> is the renderer's existing greyscale convention (RGB weights 0.297, 0.589 and 0.114, with white equal to one). A pattern redistributes the stated total; uniformly multiplying a nonzero pigment does not change that total. This is the renderer's established luminance convention, not a new spectral or colour-management model. A sampled zero integral cannot normalize nonzero stated lumens; a narrow source missed by preparation may also produce this diagnostic.</p>
+<p><code>lumens</code> specifies generated flux &Phi;, before absorption on the way out. It normalizes <em>j</em>(x) = &Phi;<em>C</em>(x)/(4&pi;&int;<em>Y</em>(<em>C</em>(x)) d<em>V</em>), where <em>Y</em> is the renderer's existing greyscale convention (RGB weights 0.297, 0.589 and 0.114, with white equal to one). A pattern redistributes the stated total; uniformly multiplying a nonzero pigment does not change that total. This is the renderer's established luminance convention, not a new spectral or colour-management model. Nonzero lumens over a field whose luminance integrates to zero are an error; a positive field whose sampled integral is still zero, a narrow source missed by preparation, reports an unresolved integral instead.</p>
 <p>The volume emitter is the reference model. An authored surface emitter can be an approximation with somewhat different angular and near-field illumination; exact surface/volume identity is not promised. A transparent emitting volume is also not automatically an opaque monitor or a frosted lamp envelope. Authors choose source geometry, backing and any separate scattering diffuser to represent those objects; no geometric angular multiplier silently turns a transparent source into a diffuse surface.</p>
-<p>For a pigment's nits, uniformly scaling geometry and receiver positions by <em>s</em> divides <em>j</em> by <em>s</em>, multiplies generated flux by <em>s</em><sup>2</sup>, and preserves illumination. At fixed lumens, <em>j</em> instead scales by 1/<em>s</em><sup>3</sup> and illumination by 1/<em>s</em><sup>2</sup>. To preserve the optical appearance of coexisting media, their inverse-length absorption and scattering coefficients must also scale by 1/<em>s</em>; resizing the same physical material is a different operation. With <code>emission</code> and a unitless or nits brightness, <em>j</em> follows the media's emission coefficient, which the author scales with the other coefficients. No light unit reads <code>mm_per_unit</code>. Lumens assume one scene unit is one metre; <code>scale_lumens(Phi, c)</code> returns <code>Phi / c<sup>2</sup></code> for author-stated metres per scene unit <em>c</em>.</p>
+<p>For nits, uniformly scaling geometry and receiver positions by <em>s</em> divides <em>j</em> by <em>s</em>, multiplies generated flux by <em>s</em><sup>2</sup>, and preserves illumination. At fixed lumens, <em>j</em> instead scales by 1/<em>s</em><sup>3</sup> and illumination by 1/<em>s</em><sup>2</sup>. To preserve the optical appearance of coexisting media, their inverse-length absorption and scattering coefficients must also scale by 1/<em>s</em>; resizing the same physical material is a different operation. With <code>emission</code> and a unitless brightness, <em>j</em> follows the media's emission coefficient, which the author scales with the other coefficients; with <code>nits</code> or <code>lumens</code> it is absolute, as for a pigment. No light unit reads <code>mm_per_unit</code>. Lumens assume one scene unit is one metre; <code>scale_lumens(Phi, c)</code> returns <code>Phi / c<sup>2</sup></code> for author-stated metres per scene unit <em>c</em>.</p>
 <p>Physical divergence follows the finite-source integral and approaches inverse-square behavior at large distance. <code>attenuation { power Power scale Scale }</code> adds an artistic, nonconservative path modifier. Write <em>p</em> for Power, <em>a</em> for Scale, <em>R</em> for the bounding radius, <em>d</em> for source-to-receiver path length and <em>q</em> = <em>R</em>/max(<em>d</em>,<em>R</em>). For positive <em>a</em> the modifier is <em>q</em><sup><em>p</em>&minus;2</sup><em>a</em><sup><em>q</em><sup><em>p</em></sup>&minus;1</sup>. The default, power 2 and scale 1, is exactly one. At distances within <em>R</em> it stays one; with power 2 its distant limit is 1/<em>a</em>. A zero scale compensates distant inverse-square divergence. Since physical divergence falls as 1/<em>d</em><sup>2</sup> far away, the far field falls as 1/<em>d</em><sup><em>p</em></sup>: a power below 2 makes the light reach further. The same modifier applies to direct and photon paths. Classic <code>fade_power</code> and <code>fade_distance</code> are not accepted in this block.</p>
-<p>The medium's authored <code>emission</code> is appearance alone: camera, reflection and refraction rays see it, but it creates no radiosity or photon energy. Light genuinely scattered by the medium remains eligible for indirect transport. A lantern's visible glow comes from its haze scattering the light, or from an authored <code>emission</code> look. Use <code>light { emission }</code> to reuse the glow's RGB field as the light input. With nits or no unit the cast emission coefficient is then the media's own times the brightness, so brightness 1 casts the coefficient the camera integrates as glow.</p></div>
+<p><code>cutoff</code> leaves a light out at a lit point where the most it could add there is fainter than the cutoff, on the 0 to 1 output scale of <code>adc_bailout</code>: that point draws no positions from the light and traces no shadow rays to it. The bound is the light's prepared power, falling by the law above, inverse-square within <em>R</em>, from the nearest point of the light's bounding box, so it holds for every light, pattern and shape, and does not change when the whole scene is scaled. The default, 0.000004, is about a thousandth of the default <code>adc_bailout</code>: many lights that are each faint over most of a scene cost only where they are bright, and the image does not visibly change. <code>cutoff 0</code> turns it off. Surface lights take the cutoff too, as <code>attenuation { cutoff Value }</code>, and the default applies to every surface, volume and bounced light. It applies to surface shading, media scattering, subsurface scattering and bounce preparation alike.</p>
+<p>The medium's authored <code>emission</code> is appearance alone: camera, reflection and refraction rays see it, but it creates no radiosity or photon energy. Light genuinely scattered by the medium remains eligible for indirect transport. A lantern's visible glow comes from its haze scattering the light, or from an authored <code>emission</code> look. Use <code>light { emission }</code> to reuse the glow's RGB field as the light input. With no unit the cast emission coefficient is then the media's own times the brightness, so brightness 1 casts the coefficient the camera integrates as glow.</p></div>
 
 <a name="r3_12_2_1"></a>
 <div class="content-level-h4" contains="The Attenuation Block" id="r3_12_2_1">
@@ -292,12 +293,16 @@ box { &lt;-1, 3, -1&gt;, &lt;1, 3.05, 1&gt; light { brightness 5 attenuation { c
 <tr><td><code>Only one light block allowed in an interior.</code></td><td>Error.</td></tr>
 <tr><td><code>A light block's attenuation is a block: attenuation { power 2 scale 1 }.</code></td><td>Error: numbers written directly after <code>attenuation</code>.</td></tr>
 <tr><td><code>An attenuation block takes a power greater than 0 and a scale of 0 or more.</code></td><td>Error.</td></tr>
-<tr><td><code>An attenuation block accepts only one power.</code>, <code>... only one scale.</code>, <code>A light block accepts only one attenuation block.</code></td><td>Error.</td></tr>
+<tr><td><code>An attenuation block accepts only one power.</code>, <code>... only one scale.</code>, <code>... only one cutoff.</code>, <code>A light block accepts only one attenuation block.</code></td><td>Error.</td></tr>
+<tr><td><code>An attenuation block's cutoff must be finite and not negative.</code></td><td>Error.</td></tr>
 <tr><td><code>'reflection' belongs inside the photons block of a light.</code></td><td>Error: <code>reflection</code> or <code>refraction</code> written directly in the light block instead of in its <code>photons</code> block. Other blocks report their nested items the same way.</td></tr>
 <tr><td><code>A light block accepts exactly one pigment or emission input.</code></td><td>Error: <code>pigment</code> and <code>emission</code> together, or either twice.</td></tr>
 <tr><td><code>An interior light gives no light because ...</code></td><td>Warning: the container has no finite volume or the source cannot be built; the light is left out.</td></tr>
 <tr><td><code>fade_power</code> or <code>fade_distance</code> in a light block</td><td>Parse error (the word is not an item of the block); the falloff is <code>attenuation { power Power scale Scale }</code>.</td></tr>
 <tr><td><code>A light block's brightness must be finite and not negative.</code></td><td>Error.</td></tr>
+<tr><td><code>A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.</code></td><td>Error: <code>nits</code> or <code>lumens</code> in a block with <code>bounce</code> and neither <code>pigment</code> nor <code>emission</code>. See <a href="r3_12.html#r3_12_8">Bounced and Passive Lights</a>.</td></tr>
+<tr><td><code>A light stated in nits or lumens requires an input of positive luminance.</code></td><td>Error: nonzero <code>nits</code> or <code>lumens</code> over a constant pigment whose luminance is zero.</td></tr>
+<tr><td><code>Interior light stated in nits requires an input of positive luminance.</code>, <code>Interior light stated in lumens requires an input of positive luminance.</code></td><td>Error before tracing: nonzero nits or lumens cannot be normalized over a pigment, or media emission, whose luminance integrates to zero.</td></tr>
 <tr><td><code>Interior light ...</code></td><td>Error before tracing: the source has unsupported bounds or ray context, invalid source-field values, or an unresolved positive power integral. Valid functions that require serial preparation are evaluated before tracing. Absorption and scattering remain independent of source generation.</td></tr>
 <tr><td><code>photons in an interior light are ignored by photon method 1.</code></td><td>Warning.</td></tr>
 <tr><td><code>The sphere light block at line L of F holds the method M medium at line N of F; a light block needs method 4 media.</code></td><td>Error: a light block's object holds a classic medium. See <em>Light blocks and classic transport</em> above.</td></tr>
@@ -357,7 +362,7 @@ box { &lt;-1, 3, -1&gt;, &lt;1, 3.05, 1&gt; light { brightness 5 photons { refle
 <a name="r3_12_6_1"></a>
 <div class="content-level-h4" contains="A Candle in a Misty Room" id="r3_12_6_1">
 <h4>3.12.6.1 A Candle in a Misty Room</h4>
-<p><code>blend_candle.pov</code> is the flame of 3.12.1 in a room filled with mist. The flame and its smoke add to the mist, so they use <code>mix add</code>; the mist and smoke dim the flame's light on its way to the surfaces, because <code>media_attenuation</code> is on. <code>Declare=FlameLight=0</code> swaps the media light for a point light at the wick, to compare, and <code>FlameSamples</code> sets the samples.</p></div>
+<p><code>blend_candle.pov</code> is the flame of 3.12.1 in a room filled with mist. The flame and its smoke add to the mist, so they use <code>mix add</code>; the mist and smoke dim the flame's light on its way to the surfaces, because <code>media_attenuation</code> is on. <code>Declare=FlameLight=0</code> swaps the media light for a point light at the wick, to compare, <code>FlameSamples</code> sets the samples and <code>FlameLumens</code> the flame's flux in lumens, spread over its own emission.</p></div>
 
 <a name="r3_12_6_2"></a>
 <div class="content-level-h4" contains="Tubes and Neon" id="r3_12_6_2">
@@ -367,7 +372,7 @@ box { &lt;-1, 3, -1&gt;, &lt;1, 3.05, 1&gt; light { brightness 5 photons { refle
 cylinder {
   &lt;0, 0, -Length / 2&gt;, &lt;0, 0, Length / 2&gt;, 0.028
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.009 } light { pigment { rgb Colour * 180 * Strength } samples Samples } }
+  interior { media { mix add method 4 resolution 0.009 } light { pigment { Colour * Strength } brightness 180 samples Samples } }
   translate P
 }
 </pre></div>
@@ -375,12 +380,12 @@ cylinder {
 <a name="r3_12_6_3"></a>
 <div class="content-level-h4" contains="Glow Inside Other Media" id="r3_12_6_3">
 <h4>3.12.6.3 Glow Inside Other Media</h4>
-<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water). In each, the light is stated as radiance in the interior's light block, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
+<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. Each lantern is stated in lumens (<code>Declare=LanternLumens=N</code>, 400 by default, a large paper lantern) and falls off physically, so the light out of each lantern's open bottom stands out as a cone from the light through its paper; the storm lights are a brightness over their colour. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water); each fish uses <code>light { emission brightness Gain }</code>, an emission gain over its own glow (<code>Declare=Gain=N</code>). In each, the light is stated in its interior's light block, in nits, as a gain over the media's own emission, or in lumens, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
 
 <a name="r3_12_6_4"></a>
 <div class="content-level-h4" contains="Overlapping and Contained Lights" id="r3_12_6_4">
 <h4>3.12.6.4 Overlapping and Contained Lights</h4>
-<p><code>light_intersections.pov</code> overlaps red, green and blue lights, threads them with a bronze knot, holds a glass ball in one and crosses them with smoke; it also seals a glow in a cracked stone and sinks a pool into the floor. <code>light_colonnade.pov</code> lights a rotunda only by a glowing core at its centre, with a lens of space around it made by <a href="r3_11.html#r3_11_3">refraction fields</a> (<code>Declare=Refract=0</code> drops it).</p></div>
+<p><code>light_intersections.pov</code> overlaps red, green and blue lights, threads them with a bronze knot, holds a glass ball in one and crosses them with smoke; it also seals a glow in a cracked stone and sinks a pool into the floor. The lamps take a gain over their glow (<code>Declare=LampGain=N</code>), the stone and the pool are stated in lumens (<code>GeodeLumens</code>, <code>PoolLumens</code>). <code>light_colonnade.pov</code> lights a rotunda only by a glowing core at its centre, stated in lumens (<code>Declare=CoreLumens=N</code>), with a lens of space around it made by <a href="r3_11.html#r3_11_3">refraction fields</a> (<code>Declare=Refract=0</code> drops it).</p></div>
 
 <a name="r3_12_7"></a>
 <div class="content-level-h3" contains="Surface Lights" id="r3_12_7">
@@ -391,6 +396,7 @@ SURFACE_LIGHT:
   light { [SURFACE_LIGHT_ITEM...] }
 SURFACE_LIGHT_ITEM:
   pigment { PIGMENT } | emission | brightness Value [nits | lumens] |
+  attenuation { cutoff Value } |
   samples Integer | shadowless [Bool] | media_interaction [Bool] |
   media_attenuation [Bool] | photons { [reflection Bool] [refraction Bool] } |
   bounce [{ passes Integer }]
@@ -400,6 +406,7 @@ SURFACE_LIGHT_ITEM:
 pigment          : solid white
 emission         : absent (use pigment)
 brightness       : 1.0 nits
+attenuation      : cutoff 0.000004
 samples          : 16
 shadowless       : off
 media_interaction: on
@@ -409,7 +416,8 @@ bounce           : absent
 <table width="100%" class="option-list">
 <tr><td><code>pigment</code></td><td>The colour or pattern the surface emits, evaluated at each point of the surface. It is the light's own colour and is independent of the object's texture. Default solid white. It cannot depend on the ray or the camera, so <code>aoi</code> and similar patterns are rejected.</td></tr>
 <tr><td><code>emission</code></td><td>A bare flag that copies the material's own emission: the object's texture pigment times its finish <code>emission</code>, evaluated at each point, including layered textures, <code>texture_map</code> and <code>material_map</code> patterns, UV mapping and pigment transparency between layers. It takes no value and cannot be combined with <code>pigment</code>. Where the material has no emission the surface emits nothing.</td></tr>
-<tr><td><code>brightness</code></td><td>A finite, non-negative number, optionally followed by a unit. <code>nits</code> (the default) is the emitted radiance itself, per unit of the source colour. <code>lumens</code> states the total luminous flux. See <a href="r3_12.html#r3_12_9">Brightness Units and scale_lumens</a>.</td></tr>
+<tr><td><code>brightness</code></td><td>A finite, non-negative number, optionally followed by a unit. Unitless, it multiplies the input: the radiance is the value times the pigment, or times the material's emission. <code>nits</code> state the input's mean radiance over the surface, <em>L</em>(x) = <em>B C</em>(x) <em>A</em>/&int;<em>Y</em>(<em>C</em>) d<em>A</em>, whatever its colour or pattern. <code>lumens</code> states the total luminous flux. In a bounce-only block it multiplies the bounced light instead. See <a href="r3_12.html#r3_12_9">Brightness Units and scale_lumens</a>.</td></tr>
+<tr><td><code>attenuation</code></td><td>Only <code>cutoff</code>: where the light could add less than this at a lit point it is left out there, as for a volume light; see <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>. 0.000004 by default, 0 off.</td></tr>
 <tr><td><code>samples</code></td><td>An integer of at least 1: surface points drawn per lit point, and so the shadow rays. More samples give smoother soft shadows and cost more; they do not change the expected brightness.</td></tr>
 <tr><td><code>shadowless</code></td><td>The light casts no shadows, as a <a href="r3_4.html#r3_4_3_1_6">shadowless</a> light does.</td></tr>
 <tr><td><code>media_interaction</code></td><td>With <code>off</code>, the light does not light scattering media.</td></tr>
@@ -425,7 +433,7 @@ box { &lt;-0.6, 1, -0.05&gt;, &lt;0.6, 2, 0.05&gt;
   light { emission brightness 10 nits samples 32 }
 }
 </pre>
-<p>Here the panel's checker pattern is both what the camera sees and what lights the room. A surface light stated in lumens spreads its total flux over its whole surface, so the radiance follows from the area; <code>scale_lumens</code> (see <a href="r3_12.html#r3_12_9">Brightness Units and scale_lumens</a>) states it for a scene drawn in another unit:</p>
+<p>Here the panel's checker pattern is both what the camera sees and what lights the room, at a mean radiance of 10 nits over the panel whatever the checker's colours. A surface light stated in lumens spreads its total flux over its whole surface, so the radiance follows from the area; <code>scale_lumens</code> (see <a href="r3_12.html#r3_12_9">Brightness Units and scale_lumens</a>) states it for a scene drawn in another unit:</p>
 <pre>
 // 800 lumens spread over the panel, whatever its size
 box { &lt;-0.6, 1, -0.05&gt;, &lt;0.6, 2, 0.05&gt;
@@ -439,7 +447,7 @@ box { &lt;-30, 100, -2&gt;, &lt;30, 160, 2&gt;
 }
 </pre>
 <p> <code>scenes/lights/surface_light.pov</code> shows a bulb, a patterned screen, a strip stated in lumens and a mesh.</p>
-<p>Not accepted in a surface light block: <code>attenuation</code> (a surface light always follows the physical law of its geometry, with no artistic falloff) and <code>fade_power</code> or <code>fade_distance</code>. A <code>light_source</code> cannot carry a <code>light</code> block. A surface light combines with ordinary lights, media lights and radiosity; it does not shine through <a href="r3_10.html#r3_10">portals</a>, see below.</p>
+<p>Not accepted in a surface light block: the attenuation <code>power</code> and <code>scale</code> (a surface light always follows the physical law of its geometry, with no artistic falloff) and <code>fade_power</code> or <code>fade_distance</code>. A <code>light_source</code> cannot carry a <code>light</code> block. A surface light combines with ordinary lights, media lights and radiosity; it does not shine through <a href="r3_10.html#r3_10">portals</a>, see below.</p>
 </div>
 
 <a name="r3_12_7_1"></a>
@@ -450,13 +458,16 @@ box { &lt;-30, 100, -2&gt;, &lt;30, 160, 2&gt;
 <tr><td><code>A light block accepts exactly one pigment or emission input.</code></td><td>Error: <code>pigment</code> and <code>emission</code> together, or either twice.</td></tr>
 <tr><td><code>A light block's brightness must be finite and not negative.</code></td><td>Error.</td></tr>
 <tr><td><code>Only one surface light block allowed on an object.</code></td><td>Error. An object has one surface light and, separately, one interior light.</td></tr>
-<tr><td><code>Surface light blocks do not accept attenuation.</code></td><td>Error.</td></tr>
+<tr><td><code>A surface light's attenuation accepts only cutoff; power and scale are for interior lights.</code></td><td>Error.</td></tr>
 <tr><td><code>A light block's attenuation is a block: attenuation { cutoff 0.000004 }.</code></td><td>Error: a number written directly after <code>attenuation</code>.</td></tr>
+<tr><td><code>A light block makes a shape's surface a light; a light_source cannot take one.</code></td><td>Error: a <code>light</code> block inside a <code>light_source</code>, or in an <code>object</code> that wraps one. A <code>.pov4</code> scene gets the same message.</td></tr>
 <tr><td><code>A surface light requires finite geometry with nonzero surface area.</code></td><td>Error: a <code>plane</code>, an infinite object or a shape without surface carries a surface light.</td></tr>
 <tr><td><code>Surface light input cannot depend on ray or camera context</code></td><td>Error before tracing: the pigment, or the material's pigment under <code>emission</code>, uses <code>aoi</code> or another ray-dependent pattern.</td></tr>
 <tr><td><code>Surface light emission cannot bake direction-dependent finish attenuation</code></td><td>Error before tracing: under <code>emission</code>, a finish uses <code>fresnel</code>, or <code>conserve_energy</code> with reflection, which would change the emitted light with direction.</td></tr>
 <tr><td><code>Surface light requires finite nonnegative emitted colour</code></td><td>Error before tracing.</td></tr>
-<tr><td><code>A surface light stated in lumens requires positive surface emission.</code></td><td>Error before tracing: nonzero lumens cannot be normalized over a source that emits nothing.</td></tr>
+<tr><td><code>A light stated in nits or lumens requires an input of positive luminance.</code></td><td>Error: nonzero <code>nits</code> or <code>lumens</code> over a constant pigment whose luminance is zero.</td></tr>
+<tr><td><code>A surface light stated in lumens requires an input of positive luminance.</code>, <code>A surface light stated in nits requires an input of positive luminance.</code></td><td>Error before tracing: nonzero lumens or nits cannot be normalized over a pigment, or material emission, whose luminance integrates to zero over the surface.</td></tr>
+<tr><td><code>A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.</code></td><td>Error: <code>nits</code> or <code>lumens</code> in a block with <code>bounce</code> and neither <code>pigment</code> nor <code>emission</code>.</td></tr>
 <tr><td><code>photons in a surface light are ignored by photon method 1.</code></td><td>Warning.</td></tr>
 </table>
 <p>Accepted: <code>crand</code>, <code>fresnel</code> and ray-dependent patterns in the material of an object whose light states its own <code>pigment</code>; they affect how the object looks, not what it emits. A surface light on a union that holds a <code>portal</code> is accepted; the portal body renders nothing and neither emits nor bounces light.</p>
@@ -481,8 +492,14 @@ box { &lt;-1.5, -0.1, -1.5&gt;, &lt;1.5, 0, 1.5&gt;
   light { bounce { passes 2 } samples 8 }
 }
 </pre>
-<p>A block that has <code>bounce</code> and no <code>pigment</code> or <code>emission</code> uses its own emission field, the surface material's emission or the interior's media emission, rather than white. An explicit input may stand before or after <code>bounce</code>. Zero emission stays zero. <code>bounce</code> and <code>passes</code> are matched by their text and remain free as identifiers elsewhere.</p>
-<p><strong>Passive sources.</strong> The wall above emits nothing of its own (its finish has <code>emission 0</code>): it is a <em>passive</em> source, which shines only the light it receives from other lights. Passive objects light a scene indirectly without an area light placed at each wall. A passive source with nothing lighting it is dark. Brightness and lumens apply to the object's authored emission only; received energy keeps its transported magnitude, so a passive source has no brightness setting to tune.</p>
+<p>A light block emits light of its own only from an explicit input, <code>pigment</code> or <code>emission</code>; the two rules sit side by side:</p>
+<ul>
+  <li><strong>No input, no <code>bounce</code>:</strong> a solid white pigment light, as everywhere in this chapter; <code>brightness</code> and its unit state that emission.</li>
+  <li><strong>No input, with <code>bounce</code>:</strong> a <em>bounce-only</em> block. It emits nothing of its own, whatever the material's or media's emission, and <code>brightness</code> is a plain multiplier of the light it re-emits, default 1, the physical amount. <code>nits</code> and <code>lumens</code> state an emission it does not have, so they are an error: <code>A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.</code></li>
+  <li><strong>An input, with <code>bounce</code>:</strong> the input emits as stated, <code>brightness</code> and its unit apply to it alone, and the bounced orders keep their physical strength.</li>
+</ul>
+<p>Adding <code>bounce</code> to a block with no input therefore makes it bounce-only: a white emitter that also bounces writes <code>pigment { rgb 1 }</code>, and an emitting material or medium that also bounces writes <code>emission</code>. An explicit input may stand before or after <code>bounce</code>. <code>bounce</code> and <code>passes</code> are matched by their text and remain free as identifiers elsewhere.</p>
+<p><strong>Passive sources.</strong> The wall above is bounce-only: it is a <em>passive</em> source, which shines only the light it receives from other lights. Passive objects light a scene indirectly without an area light placed at each wall. A passive source with nothing lighting it is dark. Its brightness scales every order it re-emits, so with <code>brightness 0.5</code> it sends on half of what it receives, and light that it receives back from itself in a later pass is halved again.</p>
 <p><strong>Surfaces.</strong> A surface scatters the light it receives diffusely according to its finish <code>diffuse</code>, <code>brilliance</code> and colour. Bounce does not attempt specular or mirror transport. A surface whose finish uses subsurface scattering with method 2 also sends its subsurface light on: the light that enters the object diffuses through it between the surface points and leaves from them, so a skin or wax object with a bounce block lights its neighbours with the glow that comes through it. Facing parts of one object with air between them exchange no subsurface light. This needs <code>subsurface { method 2 }</code> (the default from <code>#version 4.0</code>).</p>
 <p><strong>Volumes.</strong> In an <code>interior { light { bounce } }</code> the order is the light that the interior's scattering media scatter on, with their scattering coefficients and phase functions (isotropic, Rayleigh, Henyey-Greenstein, Mie).</p>
 <pre>
@@ -503,6 +520,7 @@ sphere { 0, 1 pigment { rgbt 1 }
 <h4>3.12.8.1 Bounce Limits and Messages</h4>
 <table width="100%" class="option-list">
 <tr><td><code>A light block accepts only one bounce setting.</code></td><td>Error: two <code>bounce</code> items in one block.</td></tr>
+<tr><td><code>A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.</code></td><td>Error: <code>nits</code> or <code>lumens</code> in a block with <code>bounce</code> and neither <code>pigment</code> nor <code>emission</code>.</td></tr>
 <tr><td><code>A bounce block accepts only one passes setting.</code></td><td>Error.</td></tr>
 <tr><td><code>Bounce passes must be a positive integer in the unsigned range.</code></td><td>Error: zero, negative, fractional, non-finite or very large passes.</td></tr>
 <tr><td><code>Surface bounce cannot prepare stochastic crand diffuse finishes</code></td><td>Error before tracing: a finish of a bounced surface uses <code>crand</code>. Its diffuse light is random, with nothing to scatter on.</td></tr>
@@ -510,7 +528,7 @@ sphere { 0, 1 pigment { rgbt 1 }
 <tr><td><code>Surface light input cannot depend on ray or camera context</code></td><td>Error before tracing: an <code>aoi</code> or other ray-dependent pigment on a bounced surface, in its light or in its material.</td></tr>
 <tr><td><code>Surface subsurface bounce requires subsurface method 2.</code></td><td>Error before tracing: a bounced surface whose finish uses subsurface scattering under method 1. Use <code>global_settings { subsurface { method 2 } }</code> or <code>subsurface { method 2 }</code> in the finish.</td></tr>
 </table>
-<p>Method 1 (the photon-based subsurface method) is not supported with bounce on the bounced surface itself; a scene may use method 1 elsewhere. <code>attenuation</code> is not allowed in a surface light at all, bounce or not.</p>
+<p>Method 1 (the photon-based subsurface method) is not supported with bounce on the bounced surface itself; a scene may use method 1 elsewhere. Of the attenuation block a surface light, bounced or not, takes only the cutoff, which applies to the bounced light too.</p>
 </div>
 
 <a name="r3_12_8_2"></a>
@@ -531,8 +549,9 @@ Bounce o1 splits: between 0, within 0, near 0
 <h3>3.12.9 Brightness Units and scale_lumens</h3>
 <p>A <code>brightness</code> value is followed by an optional unit, written after the number; the unit words <code>nits</code> and <code>lumens</code> are read only there and stay free as identifiers.</p>
 <table width="100%" class="option-list">
-<tr><td><code>brightness Value</code> or <code>brightness Value nits</code></td><td>Radiance in nits (candelas per square metre): the surface or volume emits Value times its source colour. The source colour is the only factor, so scaling an object uniformly leaves the illumination it gives unchanged.</td></tr>
-<tr><td><code>brightness Value lumens</code></td><td>Total generated luminous flux in lumens, before any absorption on the way out. The colour or pattern only shapes how that total is distributed. For a surface source the radiance is Value divided by &pi; times the surface area times the grey level of the source colour (weights 0.297, 0.589 and 0.114 for red, green and blue). Making the object larger at fixed lumens dims its illumination in proportion to its area.</td></tr>
+<tr><td><code>brightness Value</code></td><td>A plain multiplier of the input: a pigment emits Value times its colour as radiance in nits, so a white pigment emits Value nits; <code>emission</code> casts Value times the material's or media's emission. In a bounce-only block it multiplies the bounced light.</td></tr>
+<tr><td><code>brightness Value nits</code></td><td>Radiance in nits (candelas per square metre), measured: the input, pigment or <code>emission</code>, is scaled so its mean radiance is Value, over the surface for a surface light and at the container's boundary for a volume light, with luminance weighted by the grey level below. Its colour and pattern shape the light but not its mean. Radiance is fixed, so scaling an object up by <em>s</em> multiplies its emitting area, and the flux it delivers, by <em>s</em><sup>2</sup>, and it lights more. An input whose luminance integrates to zero cannot be normalized and is an error, and so is the unit in a bounce-only block.</td></tr>
+<tr><td><code>brightness Value lumens</code></td><td>Total generated luminous flux in lumens, before any absorption on the way out. The colour or pattern only shapes how that total is distributed. For a surface source the radiance is Value divided by &pi; times the surface area times the grey level of the source colour (weights 0.297, 0.589 and 0.114 for red, green and blue). The flux is fixed, so scaling the object up by <em>s</em> divides its radiance by <em>s</em><sup>2</sup> while the illumination far from it stays the same.</td></tr>
 </table>
 <p>Lumens assume that one scene unit is one metre. For a scene authored in another length, <code>scale_lumens(Lumens, Metres)</code> converts lumens stated for the real object: <code>Metres</code> is the number of metres in one scene unit, and the result is <code>Lumens / Metres<sup>2</sup></code>, the value to write in the light block so that the object has the radiance of the real lamp at the scene's size. <code>scale_lumens</code> is a built-in float function with two arguments, available in classic scenes and in <code>.pov4</code> scenes at every version. It needs a finite value and a positive finite number of metres; otherwise the parser reports <code>scale_lumens takes finite lumens and a positive finite number of metres per unit.</code> No light unit reads <code>mm_per_unit</code>.</p>
 <pre>

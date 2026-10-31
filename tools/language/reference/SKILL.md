@@ -42,11 +42,11 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 <!-- generated:begin block table -->
 | block | items | one-liner |
 |---|---|---|
-| `attenuation` | 2 | Artistic falloff of an interior light: `attenuation { power P scale S }`, power 2 and scale 1 by default (physical); far away the light falls as 1/d^P and the scale divides it. |
+| `attenuation` | 3 | Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C. |
 | `background` | — | The colour or pigment shown behind every object. |
 | `bicubic_patch` | 38 | Bezier patch surface from a 4x4 control-point grid. |
 | `blob` | 37 | Metaball surface from sphere and cylinder strength components. |
-| `bounce` | 1 | Scattering orders of a light's own emission field: bare `bounce` is one pass, `bounce { passes N }` runs N. |
+| `bounce` | 1 | Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits. |
 | `box` | 32 | Box from two opposite corner vectors. |
 | `bump_map` | 33 | Normal perturbation pattern wrapping a 2-D image file. |
 | `camera` | 35 | The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse. |

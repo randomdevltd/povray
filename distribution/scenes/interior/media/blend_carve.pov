@@ -1,6 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // mix subtract: a turbulent cloud carved out of turbulent fog, so the hollow frays instead of cutting clean. +w480 +h270; Declare=Blend=0 leaves the fog whole.
 #version 4.0;
+// Method 4 scattering is physical: colours are 4x the classic values with extinction 0.25, keeping the classic haze glow and its extinction.
 #ifndef (Blend) #declare Blend = 1; #end
 
 global_settings { assumed_gamma 1 }
@@ -11,7 +12,7 @@ light_source { <6, 4, 12> rgb <0.3, 0.45, 0.9> }
 plane { y, 0 pigment { checker rgb 0.12 rgb 0.2 scale 1.5 } finish { diffuse 0.8 } }
 
 #declare Fog = media {
-  scattering { 1, rgb 0.14 }
+  scattering { 1, rgb 0.56 extinction 0.25 }
   absorption rgb <0.01, 0.015, 0.02>
   density {
     bozo turbulence 0.8 octaves 6 lambda 2.6 omega 0.55 scale 1.4
@@ -27,7 +28,7 @@ box { <-7, 0, -1.5>, <7, 5, 3.5> pigment { rgbt 1 } interior { media { Fog } } }
     interior {
       media {
         mix subtract
-        scattering { 1, rgb 0.14 }
+        scattering { 1, rgb 0.56 extinction 0.25 }
         absorption rgb <0.01, 0.015, 0.02>
         density {
           spherical turbulence 0.55 octaves 5 lambda 2.4 omega 0.6

@@ -6,7 +6,7 @@
 
 namespace pov_parser {
 
-static const char* const kPov4BlockItems_attenuation[] = { "power", "scale" };
+static const char* const kPov4BlockItems_attenuation[] = { "cutoff", "power", "scale" };
 static const char* const kPov4BlockItems_bicubic_patch[] = { "accuracy", "bounded_by", "clipped_by", "cutaway_textures", "double_illuminate", "dtag", "finish", "flatness", "hierarchy", "hollow", "interior", "interior_texture", "inverse", "light", "light_source", "material", "matrix", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "photons", "pigment", "radiosity", "rotate", "scale", "split_union", "sturm", "tags", "texture", "transform", "translate", "type", "u_steps", "uv_mapping", "uv_vectors", "v_steps" };
 static const char* const kPov4BlockItems_blob[] = { "bounded_by", "clipped_by", "component", "cutaway_textures", "cylinder", "double_illuminate", "dtag", "finish", "hierarchy", "hollow", "interior", "interior_texture", "inverse", "light", "light_source", "material", "matrix", "no_image", "no_radiosity", "no_reflection", "no_shadow", "normal", "photons", "pigment", "radiosity", "rotate", "scale", "sphere", "split_union", "strength", "sturm", "tags", "texture", "threshold", "transform", "translate", "uv_mapping" };
 static const char* const kPov4BlockItems_bounce[] = { "passes" };

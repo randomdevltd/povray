@@ -5,11 +5,14 @@ input Alias = 0;
 input Bounce = 0;
 input Passive = 0;
 input Volume = 0;
+input Gain = 1;
+input Raw = 0;
 global_settings { assumed_gamma 1 }
 camera { orthographic location <0,5,-1> look_at 0 right x*2 up z*2 }
 background { rgb 0 }
 plane { y,0 pigment { rgb 1 } finish { ambient 0 diffuse 1 } }
 let Source = pigment { rgb 1 };
+let Material = pigment { rgb <0.4,0.2,0.1> };
 let Shape = sphere { <0,1.5,0>,0.25 };
 if (Case == 1) { Shape = box { <-0.7,1.4,-0.04>, <0.7,2.1,0.04> }; }
 if (Case == 2) { Shape = box { <-0.8,1.5,-0.03>, <0.8,1.55,0.03> }; }
@@ -27,6 +30,12 @@ if (Case == 4) {
   };
 }
 if (Case == 5) { Source = pigment { rgb <0.8,0.4,0.2> }; }
+if (Case == 10) {
+  Material = pigment { function { 0.5+2*x } color_map { [0 rgb 0] [1 rgb <0.4,0.2,0.1>] } };
+  let Mean = 0.248;
+  if (Raw) { Mean = 1; }
+  Source = pigment { function { 0.5+2*x } color_map { [0 rgb 0] [1 rgb <0.8,0.4,0.2>/Mean] } };
+}
 if (Case == 6) {
   Shape = sphere { 0,1 scale <0.15,0.35,0.25> rotate z*20 translate y*1.5 };
 }
@@ -53,12 +62,12 @@ if (Case == 9) {
   };
 }
 object { Shape no_image
-  pigment { rgb <0.4,0.2,0.1> }
-  finish { ambient 0 if (Passive) { emission 0 } else { emission 2 } diffuse 0 }
+  pigment { Material }
+  finish { ambient 0 if (Passive) { emission 0 diffuse 0.8 } else { emission 2 diffuse 0 } }
   light {
-    if (Alias) { emission } else { if (Case == 5) { pigment { Source } } }
-    if (Units == 1) { brightness (8*4*pi*pi*0.25*0.25) lumens }
-    else { brightness 8 if (Units != 2) { nits } }
+    if (Alias || (Bounce > 0 && !Passive)) { emission } else { if (Case == 5 || Case == 10) { pigment { Source } } }
+    if (Passive) { brightness Gain }
+    else { if (Units == 1) { brightness (8*4*pi*pi*0.25*0.25) lumens } else { brightness 8 if (Units != 2) { nits } } }
     samples Samples
     if (Bounce == 1) { bounce }
     if (Bounce == 2) { bounce { passes 1 } }
@@ -70,7 +79,7 @@ if (Bounce == 4) {
   sphere { <0.8,1.5,0>,0.2 no_image
     pigment { rgb <0.2,0.5,1> }
     finish { ambient 0 emission 1 diffuse 0.5 }
-    light { bounce { passes 1 } samples Samples }
+    light { emission bounce { passes 1 } samples Samples }
   }
 }
 

@@ -477,10 +477,12 @@ class Trace
         TextureVectorPool texturePool;
         /// Fast WNRX list pool.
         WNRXVectorPool wnrxPool;
+        /// A cached shadow blocker and the object its roots were admitted as, which may be a compound holding it.
+        struct ShadowCacheEntry final { ObjectPtr object = nullptr; ConstObjectPtr owner = nullptr; };
         /// Light source shadow cache for shadow tests of first trace level intersections.
-        std::vector<ObjectPtr> lightSourceLevel1ShadowCache;
+        std::vector<ShadowCacheEntry> lightSourceLevel1ShadowCache;
         /// Light source shadow cache for shadow tests of higher trace level intersections.
-        std::vector<ObjectPtr> lightSourceOtherShadowCache;
+        std::vector<ShadowCacheEntry> lightSourceOtherShadowCache;
         size_t shadowCacheLights;
         /// Sub-random uniform directions; each diffuse subsurface sample takes one at a keyed place.
         IndexedVectorGeneratorPtr ssltUniformDirections;

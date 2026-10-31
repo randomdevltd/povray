@@ -148,8 +148,8 @@ Trace::Trace(std::shared_ptr<SceneData> sd, TraceThreadData *td, const QualityFl
 {
     // One shadow cache per prepared set and light, so rays alternating between sets neither check nor evict.
     shadowCacheLights = max<size_t>(1, max(threadData->lightSources.size(), sceneData->lightSources.size()));
-    lightSourceLevel1ShadowCache.assign(shadowCacheLights * max<size_t>(1, sceneData->preparedSets.size()), nullptr);
-    lightSourceOtherShadowCache.assign(lightSourceLevel1ShadowCache.size(), nullptr);
+    lightSourceLevel1ShadowCache.assign(shadowCacheLights * max<size_t>(1, sceneData->preparedSets.size()), ShadowCacheEntry());
+    lightSourceOtherShadowCache.assign(lightSourceLevel1ShadowCache.size(), ShadowCacheEntry());
 
     lightColorCache.resize(max(20U, sd->parsedMaxTraceLevel + 1));
     for(LightColorCacheListList::iterator it = lightColorCache.begin(); it != lightColorCache.end(); it++)
@@ -3190,6 +3190,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
 {
     if (lightsource.emitter != nullptr)
     {
+        if (Light_Below_Cutoff(&lightsource, ipoint))
+            return;
         const int count = max(1, lightsource.Area_Size1);
         threadData->Stats()[Emitter_Surface_Draws] += count;
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
@@ -3502,6 +3504,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     const double startTolerance = (lightsource.emitter && lightsource.emitter->IsSurface()) || exact ? 0.0 : SHADOW_TOLERANCE;
     Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
+    ConstObjectPtr cacheOwner = nullptr;
     bool foundTransparentObjects = false;
     bool foundIntersection;
 
@@ -3548,10 +3551,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     if(lightsource.lightGroupLight == false &&
        (!lightsource.emitter || (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)))) // only cache geometric blockers
     {
-        if ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot] != nullptr))
-            cacheObject = lightSourceLevel1ShadowCache[cacheSlot];
-        else if (lightSourceOtherShadowCache[cacheSlot] != nullptr)
-            cacheObject = lightSourceOtherShadowCache[cacheSlot];
+        const ShadowCacheEntry& entry = ((lightsourceray.GetTicket().traceLevel == 2) && (lightSourceLevel1ShadowCache[cacheSlot].object != nullptr)) ?
+            lightSourceLevel1ShadowCache[cacheSlot] : lightSourceOtherShadowCache[cacheSlot];
+        cacheObject = entry.object;
+        cacheOwner = entry.owner;
 
         // if there was an object in the light source shadow cache, check that first
         if (cacheObject != nullptr)
@@ -3561,8 +3564,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             const IsoShadowWindow window(threadData, startTolerance, limit);
             if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(lightsourceray, &boundedIntersection, threadData) &&
                  (boundedIntersection.Depth > startTolerance) && (boundedIntersection.Depth < limit) &&
-                 postcond.Admit(cacheObject, boundedIntersection.Depth)) ||
-                FindIntersection(cacheObject, boundedIntersection, lightsourceray, postcond, limit))
+                 postcond.Admit(cacheOwner, boundedIntersection.Depth)) ||
+                FindIntersection(cacheObject, boundedIntersection, lightsourceray, HeldRootCondition(postcond, cacheOwner), limit))
             {
                 if(!Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG))
                 {
@@ -3647,11 +3650,13 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
                 if((lightsource.lightGroupLight == false) && (foundTransparentObjects == false))
                 {
                     cacheObject = testObject;
+                    // The walk admitted the roots as the object it was given, which an emitter's endpoint is matched against.
+                    const ShadowCacheEntry entry{cacheObject, postcond.Selected() != nullptr ? postcond.Selected() : cacheObject};
 
                     if(lightsourceray.GetTicket().traceLevel == 2)
-                        lightSourceLevel1ShadowCache[cacheSlot] = cacheObject;
+                        lightSourceLevel1ShadowCache[cacheSlot] = entry;
                     else
-                        lightSourceOtherShadowCache[cacheSlot] = cacheObject;
+                        lightSourceOtherShadowCache[cacheSlot] = entry;
                 }
                 break;
             }
@@ -3909,10 +3914,16 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
     return SampleEmitterConnection(light, point, ray, depth, colour, draw, shadows, receiverNormal, receiverInterior);
 }
 
+/// A surface light's sample moves to its part's root on the connecting ray when that root lies within this share of the way.
+static const double kSurfaceEndpointSnap = 1.0e-8;
+
 bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& point, Ray& ray, double& depth,
                                     MathColour& colour, const EmitterDraw& draw, bool shadows,
                                     const Vector3d* receiverNormal, Interior* receiverInterior)
 {
+    colour.Clear();
+    if (Light_Below_Cutoff(&light, point))
+        return false;
     threadData->Stats()[Emitter_Connections]++;
     if (ray.IsShadowTestRay())
         threadData->Stats()[Emitter_Shadow_Input]++;
@@ -3922,7 +3933,6 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
         throw POV_EXCEPTION_STRING("Volume lights through portals are not supported by the transport sampler.");
     MarkGrain();
     EmitterSample sample;
-    colour.Clear();
     if (!light.emitter->SampleToward(point, draw, threadData, sample))
         return false;
     const Vector3d delta = sample.position - point;
@@ -3940,6 +3950,22 @@ bool Trace::SampleEmitterConnection(const LightSource& light, const Vector3d& po
     ray.Direction = direction;
     ray.SetFlags(light.emitter->IsSurface() ? Ray::SubsurfaceRay : Ray::OtherRay, true, false);
     ray.SetMediaLight(&light);
+    if (sample.surfaceObject != nullptr)
+    {
+        // The part's own root on this ray is the endpoint, so the shadow walk meets that very root and matches it.
+        IStack roots(threadData->stackPool);
+        const Ray probe(ray);
+        double nearest = HUGE_VAL;
+        if (const_cast<ObjectPtr>(sample.surfaceObject)->All_Intersections(probe, roots, threadData))
+            for (; roots->size() > 0; roots->pop())
+                if (std::fabs(roots->top().Depth - depth) < std::fabs(nearest - depth))
+                    nearest = roots->top().Depth;
+        if (std::fabs(nearest - depth) <= kSurfaceEndpointSnap * depth)
+        {
+            depth = nearest;
+            sample.position = ray.Evaluate(depth);
+        }
+    }
     ray.SetSurfaceEndpoint(sample.surfaceObject ? (light.emitterContainer ? light.emitterContainer : sample.surfaceObject) : nullptr, sample.position,
                            sample.surfaceObject);
     colour = sample.weight * (light.emitter->DirectionalWeight(-ray.Direction) * Light_Emitter_Path_Factor(&light, depth));

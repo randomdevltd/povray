@@ -35,6 +35,14 @@ for method in 4; do
         pair "${method}_$unit" Declare=Method="$method" Declare=Lumens="$unit"
     done
 done
+# nits: the alias's and a raw pigment's mean boundary radiance is the stated nits, as a hand-normalized unitless pigment
+pair 4_nits Declare=Nits=1
+pair Constant_nits Declare=Constant=1 Declare=Nits=1
+pair 4_nits_pigment Declare=Nits=1 Declare=Hand=0
+close fine_manual4_nits fine_manual4_nits_pigment
+# lumens on a raw pigment emit the stated flux: the same flux stated as nits over the box's area matches
+render fine_flux_nits Declare=Samples=$FINE Declare=Alias=0 Declare=Hand=0 Declare=Flux=1
+close fine_manual4_1 fine_flux_nits
 render alias_parallel +wt2
 same alias4_0 alias_parallel
 for version in 3.6 3.7 3.8 4.0; do
@@ -46,8 +54,11 @@ for option in Constant OwnAbsorb Overlap; do
 done
 "$POVRAY" +i"$SRCDIR/tests/render/light_emission.pov4" +w4 +h4 +wt1 +pr -a -d -p -v -gp +fp16 File_Gamma=1 +opov4.ppm >pov4.log 2>&1 || { cat pov4.log; exit 1; }
 tail -c 96 pov4.ppm >pov4.rgb
-same aliasConstant pov4
-pair _scale_nits Declare=Strength=100
+same aliasConstant_nits pov4
+pair _scale Declare=Strength=100
+# stated nits hold whatever the field's strength
+render fine_scale_nits Declare=Strength=100 Declare=Nits=1 Declare=Samples=$FINE
+close fine_alias4_nits fine_scale_nits
 # stated lumens hold whatever the field's strength; its last bits move draws, so the many-draw renders agree
 render fine_scale_lumens Declare=Strength=100 Declare=Lumens=1 Declare=Samples=$FINE
 close fine_alias4_1 fine_scale_lumens
@@ -56,6 +67,9 @@ render omit_strong Declare=Omit=1 Declare=Strength=100
 same omit omit_strong
 render white Declare=Alias=0 Declare=Constant=1 Declare=White=1
 same omit white
+# a white pigment reads the same with or without nits
+render white_nits Declare=Alias=0 Declare=Constant=1 Declare=White=1 Declare=Nits=1 Declare=Hand=0
+same white white_nits
 render zero Declare=Zero=1
 render empty Declare=Empty=1
 same zero empty
@@ -79,6 +93,14 @@ fail() {
 fail pigment_after 'one pigment or emission input' Declare=Conflict=1
 fail emission_after 'one pigment or emission input' Declare=Alias=0 Declare=Conflict=2
 fail duplicate 'one pigment or emission input' Declare=Conflict=3
-fail zero_lumens 'generated-lumens integral is unresolved or zero' Declare=Zero=1 Declare=Lumens=1
-fail empty_lumens 'generated-lumens integral is unresolved or zero' Declare=Empty=1 Declare=Lumens=1
+fail zero_lumens 'Interior light stated in lumens requires an input of positive luminance' Declare=Zero=1 Declare=Lumens=1
+fail empty_lumens 'Interior light stated in lumens requires an input of positive luminance' Declare=Empty=1 Declare=Lumens=1
+fail zero_pigment_lumens 'Interior light stated in lumens requires an input of positive luminance' Declare=Alias=0 Declare=Zero=1 Declare=Lumens=1
+fail zero_nits 'Interior light stated in nits requires an input of positive luminance' Declare=Zero=1 Declare=Nits=1
+fail empty_nits 'Interior light stated in nits requires an input of positive luminance' Declare=Empty=1 Declare=Nits=1
+fail zero_pigment_nits 'Interior light stated in nits requires an input of positive luminance' Declare=Alias=0 Declare=Zero=1 Declare=Nits=1 Declare=Hand=0
+fail constant_zero_nits 'A light stated in nits or lumens requires an input of positive luminance' Declare=Alias=0 Declare=Constant=1 Declare=Zero=1 Declare=Nits=1 Declare=Hand=0
+fail constant_zero_lumens 'A light stated in nits or lumens requires an input of positive luminance' Declare=Alias=0 Declare=Constant=1 Declare=Zero=1 Declare=Lumens=1
+fail bounce_nits 'A bounce-only light block takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Nits=1
+fail bounce_lumens 'A bounce-only light block takes a plain brightness multiplier' Declare=Omit=1 Declare=Bounce=1 Declare=Lumens=1
 echo 'light_emission: ok'

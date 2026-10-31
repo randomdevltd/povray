@@ -2883,6 +2883,7 @@
     },
     "attenuation": {
       "items": [
+        "cutoff",
         "power",
         "scale"
       ],

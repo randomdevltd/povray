@@ -1,6 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // A gelatinous cube built from layered media: gel, clear bubbles, gas pockets that replace it, ooze that adds, a band that multiplies, a fizz that subtracts, veins, cell walls, eyes nested in the gas, and glowing nodules that multiply the gel's faint glow, in a torch-lit tunnel. The gel's index wanders with its lumps, warping the dungeon seen through it. +w480 +h360; Layers=N stops early, Warp=0 keeps the gel's index even.
 #version 4.0;
+// Method 4 scattering is physical: colours are 4x the classic values with extinction 0.25, keeping the classic haze glow and its extinction.
 #ifndef (Layers) #declare Layers = 10; #end
 #ifndef (Warp) #declare Warp = 1; #end
 #declare R = seed(5);
@@ -41,7 +42,7 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
 #macro Gel(Absorb, Scatter, Emit, Density, Mix)
   media {
     #switch (Mix) #case (0) mix add #break #case (1) mix replace #break #case (2) mix subtract #break #end
-    absorption Absorb scattering { 1, Scatter } emission Emit density { Density }
+    absorption Absorb scattering { 1, Scatter * 4 extinction 0.25 } emission Emit density { Density }
   }
 #end
 #macro Ramp(Lo, Hi) color_map { [0 rgb Lo] [1 rgb Hi] } #end
@@ -169,7 +170,7 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
     KeepGelPart(difference {
       sphere { C, S } sphere { C, S - 0.025 }
       texture { Clear }
-      interior { ior Ior media { mix add scattering { 1, rgb <5, 6, 3> } absorption rgb <1, 0.3, 2> } }
+      interior { ior Ior media { mix add scattering { 1, rgb <20, 24, 12> extinction 0.25 } absorption rgb <1, 0.3, 2> } }
     }, 0)
     KeepGelPart(sphere { C + <rand(R), rand(R), rand(R)> * S * 0.3, S * 0.3 texture { Clear } interior { ior Ior media { mix add absorption rgb <1.5, 0.4, 3> } } }, 0)
   #end

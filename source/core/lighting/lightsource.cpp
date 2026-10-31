@@ -396,7 +396,6 @@ LightSource::LightSource() : CompoundObject(LIGHT_OBJECT)
     Media_Attenuation = false;
     Media_Interaction = true;
     lightGroupLight = false;
-    volumeLaw = false;
 }
 
 
@@ -620,10 +619,10 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
             break;
     }
 
-    if (Light->volumeLaw)
     if (ray.ReceiverRadius() > 0.0)
         Distance = std::max(Distance, ray.ReceiverRadius());
 
+    if (Light->emitter != nullptr)
         return Attenuation * Light_Distance_Attenuation(Light, Distance);
 
     if (Attenuation > 0.0)
@@ -653,6 +652,9 @@ DBL Light_Emitter_Path_Factor(const LightSource *Light, DBL Length)
 static DBL EmitterLawAttenuation(const LightSource *Light, DBL Distance)
 {
     const DBL R = Light->lawRadius;
+    // A point emitter is the law's limit at no radius, where the path factor is one: the inverse square.
+    if (!(R > 0.0))
+        return 1.0 / (Distance * Distance);
     const DBL A = pow(R / std::max(Distance, R), Light->attenuationPower);
     if (!(Light->attenuationScale > 0.0))
         return 1.0 / (R * R);
@@ -661,7 +663,7 @@ static DBL EmitterLawAttenuation(const LightSource *Light, DBL Distance)
 
 DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
 {
-    if (Light->volumeLaw)
+    if (Light->emitter != nullptr)
         return EmitterLawAttenuation(Light, Distance);
     if (Light->Fade_Power <= 0.0)
         return 1.0;
@@ -670,9 +672,41 @@ DBL Light_Distance_Attenuation(const LightSource *Light, DBL Distance)
     return pow(Distance, -Light->Fade_Power);
 }
 
+// The most the law's factor A'(r), or 1/r^2 inside the pivot, reaches at any r of at least Distance.
+static DBL EmitterLawBound(const LightSource *Light, DBL Distance)
+{
+    if (!(Distance > 0.0))
+        return HUGE_VAL;
+    const DBL R = Light->lawRadius, inner = 1.0 / (Distance * Distance);
+    if (!(R > 0.0) || ((Light->attenuationScale == 1.0) && (Light->attenuationPower == 2.0)))
+        return inner;
+    DBL far = 1.0 / (R * R);
+    if (Light->attenuationScale > 0.0)
+    {
+        // A·scale^(A−1) peaks at A = −1/ln(scale) when the scale is below 1/e.
+        const DBL logScale = log(Light->attenuationScale);
+        DBL A = pow(R / std::max(Distance, R), Light->attenuationPower);
+        if (A * logScale < -1.0)
+            A = -1.0 / logScale;
+        far = A * exp((A - 1.0) * logScale) / (R * R);
+    }
+    return (Distance < R) ? std::max(inner, far) : far;
+}
+
+bool Light_Below_Cutoff(const LightSource *Light, const Vector3d& Point)
+{
+    if ((Light->emitter == nullptr) || !(Light->cutoff > 0.0))
+        return false;
+    const MathColour& power = Light->emitter->Intensity();
+    DBL brightest = 0.0;
+    for (int i = 0; i < MathColour::channels; i++)
+        brightest = std::max(brightest, fabs(double(power[i])));
+    return brightest * EmitterLawBound(Light, Light->emitter->Reach(Point)) < M_PI * Light->cutoff;
+}
+
 DBL Light_Photon_Path_Weight(const LightSource *Light, DBL Length)
 {
-    if (Light->volumeLaw)
+    if (Light->emitter != nullptr)
         return Light_Emitter_Path_Factor(Light, Length);
     if (Light->Fade_Power <= 0.0)
         return Light->Parallel ? 1.0 : Sqr(std::max(Length, EPSILON));

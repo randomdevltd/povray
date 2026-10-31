@@ -24,8 +24,9 @@ Generated C sources are committed; renderer builds do not run the generator.
 
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
 attenuation { power 2 scale 1 } samples 16 } }`. By default the source depends on its object's geometry
-and its own pigment, independently of media coefficients and density. A pigment's nits use
-the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
+and its own pigment, independently of media coefficients and density. A unitless pigment uses
+the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; `nits` normalize the
+pigment as they do the emission below, so its mean boundary radiance is `L`; this normalizes
 source strength, not every nearby receiver reading. The declared emitting region affects this
 calibration; unused container padding is not guaranteed to be neutral. Surface
 emission is an author-chosen approximation, not exact angular identity. Lumens
@@ -37,16 +38,28 @@ light { emission brightness 12 lumens } }` at every scene version. Bare
 `emission` selects the full combined RGB emission of the interior's own media,
 including density patterns and mixing, and is mutually exclusive with `pigment`.
 Absorption, scattering and overlapping objects do not contribute to this source
-field. With omitted brightness, or `nits`, the light's emission coefficient is the
+field. With a unitless brightness the light's emission coefficient is the
 media emission times the brightness, `j(x) = B * emission(x)`: the container's size
 and shape do not enter, and brightness 1 casts the coefficient the camera integrates
-as glow. `lumens` distribute a stated flux over the emission pattern instead.
-Without the flag, the default pigment remains solid white, with the reference-length
+as glow. `nits` state the glow's measured mean radiance at its container boundary:
+a volume of total intensity `∫j dV` radiating through boundary area `A` has the
+Lambertian-equivalent mean radiance `4 ∫j dV / A`, so
+`j(x) = B * emission(x) / (4 ∫Y(emission) dV / A)`, integrated over the prepared field
+(density and mixing included) with `A/4 = V/(4V/A)` from the pigment reference; a
+uniform white input gives exactly the unitless pigment's `j`. `lumens` distribute a stated flux over
+the emission pattern instead. Nonzero nits or lumens over an input whose luminance
+integrates to zero, media that emit nothing or a black pigment, are an error. Without the flag, the default pigment remains solid white, with the reference-length
 calibration of the volume-light chapter.
 
-`attenuation { power P scale S }` names both values; either may be left out
-(power 2, scale 1) and each may appear once, as may the block. Bare numbers after
+`attenuation { power P scale S cutoff C }` names all three values; any may be left out
+(power 2, scale 1, cutoff 0.000004) and each may appear once, as may the block. Bare numbers after
 `attenuation` are a parse error. The default leaves physical transport unchanged.
+`cutoff` leaves the light out at a lit point, with no emitter draws and no shadow
+rays, where the most it could add there is below C on the 0 to 1 output scale of
+`adc_bailout`. That bound is the light's prepared power, falling with the attenuation
+law from the nearest point of the emitter's bounds, so it never depends on the light's
+shape or kind. It applies to surface shading, media scattering, subsurface and bounce
+preparation alike; `cutoff 0` turns it off.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 
@@ -65,9 +78,14 @@ box { <-1,2,-1>, <1,2.1,1>
 The shared settings are `pigment`, bare `emission`, `brightness`, `samples`,
 `shadowless`, `media_interaction`, `media_attenuation`, and photon reflection
 and refraction flags. The surface is an outward, one-sided Lambert emitter.
-Omitted input is white and omitted brightness is 1 nit. Unitless brightness and
-`nits` set radiance to brightness times the source RGB. `lumens` normalizes total
-generated flux with the renderer's greyscale convention, before media transport.
+Omitted input is white and omitted brightness is 1 (1 nit for white). Unitless
+brightness multiplies the input: radiance is brightness times the pigment RGB, or
+times the material's emission under bare `emission`. `nits` scale either input so its
+mean radiance over the surface, `∫Y(input) dA / A`, is the brightness; a raw
+pigment's values are what a unitless brightness gives. Nonzero nits or lumens over an
+input whose luminance integrates to zero are an error.
+`lumens` normalizes total generated flux with the renderer's greyscale convention,
+before media transport.
 Bare `emission` selects the material's pigment times finish emission rather than
 an independent light pigment. It does not change the material's appearance.
 A light block never adds visible camera emission by itself.
@@ -78,8 +96,9 @@ pigments cannot depend on ray or camera context, and finish Fresnel or
 reflection energy conservation that changes emission by direction is rejected.
 Emitted RGB must be finite and nonnegative.
 
-Surface sources require a finite, nonzero surface area. Their light blocks do
-not accept the volume light's artistic `attenuation` setting. A `light_source`
+Surface sources require a finite, nonzero surface area. Their light blocks take
+only `attenuation { cutoff C }`; the volume light's artistic `power` and `scale`
+are an error there. The default cutoff applies to surface and bounce lights too. A `light_source`
 does not take a `light` block: both syntaxes stop with `A light block makes a
 shape's surface a light; a light_source cannot take one.`
 `brightness` is followed by an optional unit written after the number, as in
@@ -89,7 +108,9 @@ light sources only.
 
 Errors of the block itself carry the file and line (`A light block accepts exactly
 one pigment or emission input.`, `Only one surface light block allowed on an
-object.`, `Surface light blocks do not accept attenuation.`); errors found while
+object.`, `A surface light's attenuation accepts only cutoff; power and scale are for
+interior lights.`, and for a constant pigment of zero luminance under nits or lumens
+`A light stated in nits or lumens requires an input of positive luminance.`); errors found while
 the light is prepared (`Surface light input cannot depend on ray or camera
 context`, `Surface light emission cannot bake direction-dependent finish
 attenuation`) stop the render before tracing and carry no line. The manual's
@@ -103,17 +124,22 @@ be a finite positive integer in the unsigned range; zero, negative, fractional
 and out-of-range values are errors. A light accepts only one bounce setting,
 and a bounce block accepts only one `passes` setting.
 
-Without an explicit `pigment` or `emission` input, a bounce-enabled light selects
-its own emission field: material pigment times finish emission for a surface,
-or the interior's combined media emission for a volume. Zero emission remains
-zero. An explicit input can precede or follow `bounce`.
+A light block emits light of its own only from an explicit `pigment` or `emission`
+input. Without one, a block without `bounce` is a solid white pigment light, and a
+block with `bounce` is bounce-only: it emits nothing of its own, whatever its
+material's or media's emission, and its `brightness` (default 1, physical) multiplies
+every order it re-emits. `nits` or `lumens` in a bounce-only block are a parse error,
+`A bounce-only light block takes a plain brightness multiplier; nits and lumens need an
+emission input.` An explicit input can precede or follow `bounce`.
 `bounce` and `passes` remain free identifiers outside their light-block contexts.
 
 Each pass produces the next scattering order from the preceding order across
 sources. A source past its own cutoff produces zero new output; older orders
 are not reissued. Authored emission and ordinary lights enter generation zero
-once. Brightness and lumen normalization affect primary emission only, while
-received indirect energy keeps its transported magnitude. The final source is
+once. With an input, brightness and its unit affect primary emission only, while
+received indirect energy keeps its transported magnitude; a bounce-only block's
+brightness scales each order it re-emits, so light it receives back from itself in
+a later pass is scaled again. The final source is
 primary emission plus the completed bounce orders. Surface bounce rejects
 stochastic `crand` finishes and direction-dependent Fresnel or energy-conserving
 reflection attenuation.
@@ -192,7 +218,14 @@ sphere { 0, 0.3
 }
 ```
 
-Passive surface bounce and volume bounce, two orders each:
+Passive surface bounce and volume bounce, two orders each. A light block emits light of its
+own only from an explicit `pigment` or `emission`. With neither and no `bounce` it is a solid
+white pigment light; with neither and `bounce` it is bounce-only: it emits nothing of its own,
+`brightness` (default 1, physical) multiplies every order it re-emits, and `nits` or `lumens`
+stop the parse with `A bounce-only light block takes a plain brightness multiplier; nits and
+lumens need an emission input.` So adding `bounce` to a block with no input makes it
+bounce-only; a white emitter that also bounces writes `pigment { rgb 1 }`. With an input the
+units apply to its emission and the bounced orders keep their physical strength:
 
 ```
 box { <-1.5, -0.1, -1.5>, <1.5, 0, 1.5>
@@ -239,12 +272,13 @@ light block needs method 4 media.` The second stops with `'reflection' belongs i
 
 ## Lumens
 
-`scale_lumens(Lumens, Metres)` is a built-in in both languages, typed as a
+`scale_lumens(Lumens, Metres)` is a built-in function in both languages, typed as a
 number, and returns `Lumens / Metres^2`: the value for `brightness V lumens` in
 a scene whose unit is `Metres` metres long. It needs finite lumens and a
 positive finite length (`scale_lumens takes finite lumens and a positive finite
-number of metres per unit.`). It is not a version-gated word and stays a plain
-built-in name in every scene.
+number of metres per unit.`). It works at every scene version. In classic scenes
+the name is a reserved word, not a contextual one, so it cannot also be an
+identifier; in `.pov4` it is a built-in name.
 
 ## Scene preparation progress
 

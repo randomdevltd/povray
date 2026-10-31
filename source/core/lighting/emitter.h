@@ -113,6 +113,8 @@ class Emitter
         /// The power as a few lobes; empty for one at Centre() spread over the light's law radius.
         virtual const std::vector<EmitterLobe>& Lobes() const { static const std::vector<EmitterLobe> none; return none; }
         virtual double Radius() const = 0;                 ///< about Centre(), holding every sample
+        /// The least distance from `from` to any sample: to the bounding sphere unless an emitter knows tighter bounds.
+        virtual double Reach(const Vector3d& from) const { return std::max(0.0, (from - Centre()).length() - Radius()); }
         /// A position from a full-support proposal; its weight evaluates the continuous source, not its table.
         virtual EmitterSample Sample(double s, std::uint64_t key, TraceThreadData *td = nullptr) const = 0;
         /// As Sample(), with t a second stratified dimension for emitters that use one.
@@ -130,16 +132,33 @@ class Emitter
         }
 };
 
+/// The least distance from `from` to the box at `low` of extent `size`.
+inline double BoxReach(const Vector3d& from, const Vector3d& low, const Vector3d& size)
+{
+    double sum = 0.0;
+    for (int i = 0; i < 3; i++)
+    {
+        const double outside = std::max(std::max(low[i] - from[i], from[i] - (low[i] + size[i])), 0.0);
+        sum += outside * outside;
+    }
+    return std::sqrt(sum);
+}
+
+/// The light's default `attenuation { cutoff }`: about adc_bailout / 1000.
+const double kDefaultLightCutoff = 4.0e-6;
+
 /// The `light { }` block of an emitting interior: the light's own radiance, apart from the media's look.
 struct MediaLight final
 {
     PIGMENT *pigment = nullptr;     ///< the light's own colour or pattern; null for solid white
     unsigned bouncePasses = 0;
     bool useEmission = false;      ///< use the owning interior's combined emission as the input field
-    double brightness = 1.0;        ///< the radiance the pigment gives, when no unit follows
+    double brightness = 1.0;        ///< a plain multiplier of the input when no unit follows
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
+    bool nits = false;              ///< brightness given as nits: the input's mean radiance at its boundary
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
+    double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
     int samples = 16;               ///< emitter draws per receiver point
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
@@ -150,6 +169,9 @@ struct MediaLight final
     MediaLight(const MediaLight& source);          ///< deep-copies the pigment
     ~MediaLight();                                 ///< destroys the pigment
     MediaLight& operator=(const MediaLight&) = delete;
+    /// No pigment or emission input: the block only re-emits bounced light, with brightness as its multiplier.
+    bool BounceOnly() const { return bouncePasses > 0 && pigment == nullptr && !useEmission; }
+    double BounceGain() const { return BounceOnly() ? brightness : 1.0; }
 };
 
 }

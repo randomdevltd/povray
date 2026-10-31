@@ -1,13 +1,15 @@
 // bounce_preparation.pov: Case 0 passive walls, a point light and a panel; 1 a scattering volume light, an area light;
 // 2 a subsurface block; 3 a mesh; 4 object-testing density, subsurface, jittered area light, screen-pigment blocker;
 // 5 a thin subsurface shell lit from inside and out; 6 a union of two subsurface materials and a diffuse part; 7 a
-// point light with inverse-square falloff on the centre node of a scattering volume light, or Offset off it.
+// point light with inverse-square falloff on the centre node of a scattering volume light, or Offset off it, its
+// bounce scaled by Gain.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #ifndef (Sources) #declare Sources = 6; #end
 #ifndef (Samples) #declare Samples = 8; #end
 #ifndef (Passes) #declare Passes = 2; #end
 #ifndef (Offset) #declare Offset = 0; #end
+#ifndef (Gain) #declare Gain = 1; #end
 global_settings { assumed_gamma 1
   #if (Case = 2 | Case = 4 | Case = 5 | Case = 6) subsurface { method 2 samples 16, 4 spacing 0.5 } #end
 }
@@ -24,7 +26,7 @@ background { rgb 0 }
   light_source { <0.6, 2.2, -0.8>, rgb 3 fade_distance 1 fade_power 2 }
   box { <-0.4, 2.48, -0.4>, <0.4, 2.5, 0.4>
     pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0.5 }
-    light { brightness 4 nits samples Samples bounce { passes Passes } }
+    light { emission brightness 4 nits samples Samples bounce { passes Passes } }
   }
   #declare Walls = array[6] {
     <0.8, 0.8, 0.8>, <0.9, 0.2, 0.2>, <0.2, 0.9, 0.2>, <0.8, 0.8, 0.8>, <0.2, 0.3, 0.9>, <0.9, 0.9, 0.3>
@@ -152,7 +154,7 @@ background { rgb 0 }
   sphere { 0, 1 pigment { rgbt 1 } hollow
     interior {
       media { method 4 resolution 0.1 scattering { 5, rgb 0.5 eccentricity 0.6 } }
-      light { samples Samples bounce { passes 1 } }
+      light { brightness Gain samples Samples bounce { passes 1 } }
     }
   }
   camera { location <0, 0.5, -3> look_at 0 angle 50 }

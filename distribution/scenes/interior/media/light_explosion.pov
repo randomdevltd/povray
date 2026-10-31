@@ -1,9 +1,11 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A fireball in a night street, red outside through orange to a white core, lights the buildings, a wrecked car, lamp posts, wires and flying debris, which throw their shadows back across the road; its own smoke billows over it, shading its light, and its heat warps the street behind. +w640 +h480; Declare=Samples=N sets the fire's samples, Refract=0 stops the heat haze, Smoke=0 drops the smoke plume and dust.
+// A fireball in a night street, red outside through orange to a white core, lights the buildings, a wrecked car, lamp posts, wires and flying debris, which throw their shadows back across the road; its own smoke billows over it, shading its light, and its heat warps the street behind. +w640 +h480; Declare=Samples=N sets the fire's samples, FireLumens its flux, Refract=0 stops the heat haze, Smoke=0 drops the smoke plume and dust.
 #version 4.0;
+// Units: the fire casts FireLumens (8500 lm) shaped by its media emission; smoke and dust scatter 4x the classic colour with extinction 0.25, keeping the classic glow.
 #ifndef (Samples) #declare Samples = 24; #end
 #ifndef (Smoke) #declare Smoke = 1; #end
 #ifndef (Refract) #declare Refract = 1; #end
+#ifndef (FireLumens) #declare FireLumens = 8500; #end
 #declare R = seed(1883);
 #declare F = <0, 4.2, 18>;
 
@@ -200,22 +202,15 @@ sphere {
       density { function { Ball(x * 1.1, y, z * 1.1, 2, 0.6) } }
     }
     media {
-      absorption rgb <1.8, 1.85, 1.95> scattering { 1, rgb 0.6 }
+      absorption rgb <1.8, 1.85, 1.95> scattering { 1, rgb 2.4 extinction 0.25 }
       density { function { max(0, min(1, (sqrt(x * x + y * y + z * z) - 3.2 + 1.6 * Billow(x, y, z)) * 1.5)) * max(0, min(1, (5.6 - sqrt(x * x + y * y + z * z)) * 2)) * max(0, min(1, (y + 0.5) / 2.5)) * Puff(x * 0.7, y * 0.7, z * 0.7) } }
     }
     media {
       mix subtract priority 1
-      absorption rgb 6 scattering { 1, rgb 1.2 }
+      absorption rgb 6 scattering { 1, rgb 4.8 extinction 0.25 }
       density { function { Ball(x, y, z, 2.6, 0.5) } }
     }
-    light {
-      pigment { average pigment_map {
-        [1 pigment_pattern { function { Ball(x, y, z, 4.8, 1.1) * (0.12 + 0.88 * pow(Puff(x * 1.7, y * 1.7, z * 1.7), 2)) } } color_map { [0 rgb 0] [1 rgb <1, 0.08, 0.01> * 1.5] }]
-        [1 pigment_pattern { function { Ball(x, y, z, 3.4, 0.9) * (0.3 + 0.7 * Puff(x * 1.4, y * 1.4, z * 1.4)) } } color_map { [0 rgb 0] [1 rgb <1, 0.36, 0.04> * 2] }]
-        [1 pigment_pattern { function { Ball(x * 1.1, y, z * 1.1, 2, 0.6) } } color_map { [0 rgb 0] [1 rgb <1, 0.78, 0.4> * 5] }]
-      } }
-      brightness 3 samples Samples
-    }
+    light { emission brightness FireLumens lumens samples Samples }
   }
   translate F
 }
@@ -227,7 +222,7 @@ sphere {
     interior {
       media {
         mix add
-        absorption rgb <1.5, 1.55, 1.65> scattering { 1, rgb 0.55 }
+        absorption rgb <1.5, 1.55, 1.65> scattering { 1, rgb 2.2 extinction 0.25 }
         density { function { Plume(x, y, z) } translate F }
       }
       media {
@@ -242,7 +237,7 @@ sphere {
   }
   torus {
     7, 1.6 pigment { rgbt 1 }
-    interior { media { mix add scattering { 1, rgb 0.25 } absorption 0.15 density { function { max(0, min(1, (Puff(x * 0.6, y * 0.6, z * 0.6) - 0.35) * 2.2)) } } } }
+    interior { media { mix add scattering { 1, rgb 1 extinction 0.25 } absorption 0.15 density { function { max(0, min(1, (Puff(x * 0.6, y * 0.6, z * 0.6) - 0.35) * 2.2)) } } } }
     scale <1, 0.6, 1> translate F * <1, 0, 1> + y * 0.6
   }
 #end

@@ -198,25 +198,27 @@ inline std::vector<double> SurfaceDiffuseClasses(ConstObjectPtr object)
 class SumSurfaceBounceRadiance final : public SurfaceBounceRadiance
 {
 public:
-    explicit SumSurfaceBounceRadiance(std::vector<std::shared_ptr<const SurfaceBounceRadiance>> fields) : fields(std::move(fields)) {}
+    explicit SumSurfaceBounceRadiance(std::vector<std::shared_ptr<const SurfaceBounceRadiance>> fields, double gain = 1.0) :
+        fields(std::move(fields)), gain(gain) {}
     MathColour IntegratedRadiance() const override
     {
         MathColour result;
         for (const auto& field : fields) if (field) result += field->IntegratedRadiance();
-        return result;
+        return result * gain;
     }
     void AccumulateGuide(SurfaceAngularGuide& guide, double scale = 1.0) const override
     {
-        for (const auto& field : fields) if (field) field->AccumulateGuide(guide, scale);
+        for (const auto& field : fields) if (field) field->AccumulateGuide(guide, scale * gain);
     }
     MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
     {
         MathColour result;
         for (const auto& field : fields) if (field) result += field->Sample(hit, normal, outgoing, td);
-        return result;
+        return result * gain;
     }
 private:
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> fields;
+    double gain;
 };
 
 class BouncedSurfaceEmitter final : public Emitter
@@ -241,6 +243,7 @@ public:
     void AccumulateSurfaceGuide(SurfaceAngularGuide& target) const override { target.AddScaled(guide, 1.0); }
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
+    double Reach(const Vector3d& from) const override { return BoxReach(from, geometry.Lower(), geometry.Size()); }
     const MathColour& Intensity() const override { return intensity; }
     MathColour RadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const
     {

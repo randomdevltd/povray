@@ -515,8 +515,8 @@
    "doc": "r3_6.html#r3_6_1_3_4_3"
   },
   "method": {
-   "text": "Omitting method retains method 1 and its classic controls.",
-   "doc": "r3_4.html#r3_4_3_4_3"
+   "text": "A method 4 medium in-scatters light with energy-conserving normalisation.",
+   "doc": "r3_7.html#r3_7_2_2_5"
   },
   "minimum_influence": {
    "text": "The minimum_influence item gives the least share of the pixel a subsurface hit must carry for method 2 to read its cloud.",
@@ -1431,6 +1431,11 @@
    "rank": 1060,
    "code": "sine_wave | scallop_wave | cubic_wave | poly_wave [Exponent]",
    "from": "doc/html/r3_6.html"
+  },
+  "cutoff": {
+   "rank": 30,
+   "code": "attenuation { cutoff Value } |",
+   "from": "doc/html/r3_12.html"
   },
   "cylinder": {
    "code": "cylinder { 0, y * H, 0.1 pigment { rgb <0.4, 0.3, 0.2> } }",
@@ -2623,9 +2628,9 @@
    "from": "tests/pov4/interior_all_options.pov4:17"
   },
   "scale_lumens": {
-   "rank": 1066,
-   "code": "radians( FLOAT ) | rand( FLOAT ) | scale_lumens( FLOAT , FLOAT ) |",
-   "from": "doc/html/r3_3.html"
+   "rank": 51,
+   "code": "light { brightness scale_lumens(806, 0.01) lumens }",
+   "from": "doc/html/r3_12.html"
   },
   "scallop_wave": {
    "rank": 1060,

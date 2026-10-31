@@ -35,6 +35,7 @@ public:
     const MathColour& Intensity() const override { return intensity; }
     const Vector3d& Centre() const override { return centre; }
     double Radius() const override { return radius; }
+    double Reach(const Vector3d& from) const override { return BoxReach(from, geometry.Lower(), geometry.Size()); }
 
     void ResolveGeometry() const override { geometry.ResolveDeferred(); }
 
@@ -50,31 +51,54 @@ public:
         std::set<const TEXTURE*> validated;
         SurfaceAngularGuide preparedGuide(Vector3d(owner->BBox.lowerLeft), Vector3d(owner->BBox.size));
         MathColour integral;
+        double area = 0.0;
         std::vector<SurfaceAngularGuide::ConePoint> points;
         constexpr unsigned count = 16384;
         const bool zero = prepared->IsConstant() && prepared->ConstantColour().IsZero();
-        for (unsigned i = 0; !zero && i < count; ++i)
+        // Bounds the surface fills sparsely take more rounds of draws, as many as a quarter round of landed draws needs.
+        std::uint64_t rounds = 1, landed = 0;
+        for (std::uint64_t round = 0; !zero && round < rounds; ++round)
         {
-            if (cooperate && (i % 256 == 0)) cooperate();
-            SurfaceGeometrySample sample;
-            const auto key = DeriveKey(UINT64_C(0x736f757263656172), kDrawEmitter, i);
-            if (geometry.SampleArea(ray, td, (i + 0.5) / count, Draw(key, kDrawEmitter, 0),
-                                    Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), sample))
+            for (unsigned j = 0; j < count; ++j)
             {
-                const MathColour power = prepared->Emission(sample.intersection, sample.normal, td, &validated) * sample.areaWeight;
-                integral += power;
-                preparedGuide.Add(sample.intersection.IPoint, power.Greyscale() / double(count), sample.normal);
-                if (power.Greyscale() > 0.0) points.push_back({sample.intersection.IPoint, sample.normal, power.Greyscale()});
+                const std::uint64_t i = round * count + j;
+                if (cooperate && (i % 256 == 0)) cooperate();
+                SurfaceGeometrySample sample;
+                const auto key = DeriveKey(UINT64_C(0x736f757263656172), kDrawEmitter, i);
+                if (geometry.SampleArea(ray, td, (j + 0.5) / count, Draw(key, kDrawEmitter, 0),
+                                        Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), sample))
+                {
+                    ++landed;
+                    const MathColour power = prepared->Emission(sample.intersection, sample.normal, td, &validated) * sample.areaWeight;
+                    integral += power;
+                    area += sample.areaWeight;
+                    if (power.Greyscale() > 0.0) points.push_back({sample.intersection.IPoint, sample.normal, power.Greyscale()});
+                }
             }
+            if ((round == 0) && (landed > 0))
+                rounds = (count / 4 + landed - 1) / landed;
         }
-        integral /= double(count);
-        double preparedScale = settings->brightness;
+        const double draws = double(std::max<std::uint64_t>(rounds, 1)) * count;
+        for (const auto& point : points)
+            preparedGuide.Add(point.point, point.power / draws, point.normal);
+        integral /= draws;
+        area /= draws;
+        double preparedScale = settings->BounceOnly() ? 0.0 : settings->brightness;
         if (settings->lumens >= 0.0)
         {
             const double power = M_PI * integral.Greyscale();
             if (settings->lumens > 0.0 && !(power > 0.0))
-                throw POV_EXCEPTION_STRING("A surface light stated in lumens requires positive surface emission.");
+                throw POV_EXCEPTION_STRING("A surface light stated in lumens requires an input of positive luminance.");
             preparedScale = settings->lumens == 0.0 ? 0.0 : settings->lumens / power;
+        }
+        else if (settings->nits && settings->brightness > 0.0)
+        {
+            // the input's mean luminance over the surface, integral / area (exact when constant), becomes the stated nits
+            const double mean = !(area > 0.0) ? 0.0 :
+                prepared->IsConstant() ? double(prepared->ConstantColour().Greyscale()) : integral.Greyscale() / area;
+            if (!(mean > 0.0))
+                throw POV_EXCEPTION_STRING("A surface light stated in nits requires an input of positive luminance.");
+            preparedScale = settings->brightness / mean;
         }
         preparedGuide.PrepareCones(std::move(points));
         preparedGuide.Prepare();

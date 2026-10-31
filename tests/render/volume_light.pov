@@ -1,7 +1,7 @@
 // volume_light.pov: the radiance law of interior lights; volume_light.sh names the cases.
 // Case: 1 a probe on an emitting slab, 2 the same scene at half scale, 3 a gas ball against an
 // equal-silhouette area light, 4 the emitter's grid resolution, 5 the slab at another attenuation
-// scale, 6 a ball's tangent point at the pivot radius.
+// scale, 6 a ball's tangent point at the pivot radius. Shape in case 3: the same cylinder as a cylinder, lathe or sor.
 #version 3.8;
 #ifndef (Case) #declare Case = 1; #end
 #ifndef (Att) #declare Att = 1; #end
@@ -46,7 +46,13 @@ background { rgb 0 }
   #declare Height = 2;
   box { <-2, -1, -2>, <2, 0, 2> pigment { rgb 1 } finish { ambient 0 emission 0 diffuse 1 } }
   #if (Case = 3)
-    #ifndef (Area)
+    #ifdef (Shape)
+      #switch (Shape)
+        #case (1) cylinder { -y * R, y * R, R pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } translate y * Height } #break
+        #case (2) lathe { linear_spline 4, <0, -R>, <R, -R>, <R, R>, <0, R> pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } translate y * Height } #break
+        #case (3) sor { 4, <R, -2 * R>, <R, -R>, <R, R>, <R, 2 * R> pigment { rgbt 1 } hollow no_image interior { light { brightness Lum samples 16 } } translate y * Height } #break
+      #end
+    #elseif (!defined(Area))
       sphere { 0, R pigment { rgbt 1 } hollow no_image
         interior { light { brightness Lum samples 16 } } translate y * Height }
     #else

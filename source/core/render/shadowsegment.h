@@ -10,6 +10,15 @@
 namespace pov
 {
 
+/// Admits the roots of one part of an object as those of the object, as a walk over whole objects admits them.
+struct HeldRootCondition final : RayObjectCondition
+{
+    HeldRootCondition(const RayObjectCondition& condition, ConstObjectPtr owner) : condition(condition), owner(owner) {}
+    bool operator()(const Ray& ray, ConstObjectPtr, DBL depth) const override { return condition(ray, owner, depth); }
+    const RayObjectCondition& condition;
+    ConstObjectPtr owner;
+};
+
 class ShadowSegmentWalker final : public RayRootQuery, public RayObjectCondition
 {
 public:

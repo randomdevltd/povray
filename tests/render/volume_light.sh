@@ -55,6 +55,16 @@ for block in "8 23 8 23" "40 55 8 23" "24 39 24 39"; do
     near "the bulb against its area light, block $block" "$(mean bulb $block)" "$(mean bulb_area $block)" 0.05
 done
 
+# 3b. the container's shape: a lathe and a sor bounding the same cylinder light the floor as the cylinder does
+render shape_cylinder Declare=Case=3 Declare=Shape=1
+render shape_lathe Declare=Case=3 Declare=Shape=2
+render shape_sor Declare=Case=3 Declare=Shape=3
+for block in "8 23 8 23" "24 39 24 39"; do
+    for shape in lathe sor; do
+        near "the $shape against the cylinder, block $block" "$(mean shape_$shape $block)" "$(mean shape_cylinder $block)" 0.03
+    done
+done
+
 # 4. the grid: the emitter's resolution changes its cost, never its power; the absorption-1 ball with
 #    j = L/(4R/3) reads (j/sigma)*[R^2-(1-(1+2*sigma*R)*exp(-2*sigma*R))/(2*sigma^2)]/height^2
 render grid_fine Declare=Case=4 Declare=Res=0.06

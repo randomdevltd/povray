@@ -3898,15 +3898,19 @@ void Parser::Parse_Media(vector<Media>& medialist)
     medialist.push_back(IMediaObj);
 }
 
-void Parser::Parse_Light_Attenuation(MediaLight& light)
+void Parser::Parse_Light_Attenuation(MediaLight& light, bool surface)
 {
     if (!Peek_Token(LEFT_CURLY_TOKEN))
-        Error("A light block's attenuation is a block: attenuation { power 2 scale 1 }.");
+        Error(surface ? "A light block's attenuation is a block: attenuation { cutoff 0.000004 }." :
+                        "A light block's attenuation is a block: attenuation { power 2 scale 1 }.");
     bool havePower = false;
     bool haveScale = false;
+    bool haveCutoff = false;
     Parse_Begin();
     EXPECT
         CASE (SCALE_TOKEN)
+            if (surface)
+                Error("A surface light's attenuation accepts only cutoff; power and scale are for interior lights.");
             if (haveScale)
                 Error("An attenuation block accepts only one scale.");
             haveScale = true;
@@ -3916,10 +3920,21 @@ void Parser::Parse_Light_Attenuation(MediaLight& light)
         OTHERWISE
             if (CurrentTokenText() == "power")
             {
+                if (surface)
+                    Error("A surface light's attenuation accepts only cutoff; power and scale are for interior lights.");
                 if (havePower)
                     Error("An attenuation block accepts only one power.");
                 havePower = true;
                 light.attenuationPower = Parse_Float();
+            }
+            else if (CurrentTokenText() == "cutoff")
+            {
+                if (haveCutoff)
+                    Error("An attenuation block accepts only one cutoff.");
+                haveCutoff = true;
+                light.cutoff = Parse_Float();
+                if (!std::isfinite(light.cutoff) || (light.cutoff < 0.0))
+                    Error("An attenuation block's cutoff must be finite and not negative.");
             }
             else
             {
@@ -3994,6 +4009,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
         CASE (BRIGHTNESS_TOKEN)
             light->lumens = -1.0;
+            light->nits = false;
             light->brightness = Parse_Float();
             if (!std::isfinite(light->brightness) || (light->brightness < 0.0))
                 Error("A light block's brightness must be finite and not negative.");
@@ -4003,7 +4019,10 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
                 light->lumens = light->brightness;
             }
             else if (CurrentTokenText() == "nits")
-                Get_Token(); // the number is the radiance itself; nothing converts it
+            {
+                Get_Token();
+                light->nits = true;
+            }
         END_CASE
 
         CASE (SHADOWLESS_TOKEN)
@@ -4047,12 +4066,10 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             }
             else if (CurrentTokenText() == "attenuation")
             {
-                if (surface)
-                    Error("Surface light blocks do not accept attenuation.");
                 if (haveAttenuation)
                     Error("A light block accepts only one attenuation block.");
                 haveAttenuation = true;
-                Parse_Light_Attenuation(*light);
+                Parse_Light_Attenuation(*light, surface);
             }
             else
             {
@@ -4065,8 +4082,12 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
     Parse_End();
 
-    if (light->bouncePasses > 0 && light->pigment == nullptr && !light->useEmission)
-        light->useEmission = true;
+    if (light->BounceOnly() && (light->nits || light->lumens >= 0.0))
+        Error("A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.");
+    // a pattern's luminance integral is known only once prepared; a constant pigment's is known here
+    if (light->pigment && (light->pigment->Type == PLAIN_PATTERN) && !(light->pigment->colour.colour().Greyscale() > 0.0) &&
+        ((light->nits && light->brightness > 0.0) || (light->lumens > 0.0)))
+        Error("A light stated in nits or lumens requires an input of positive luminance.");
     return light;
 }
 
