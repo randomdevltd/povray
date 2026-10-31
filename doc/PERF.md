@@ -2102,6 +2102,22 @@ would meet an object, the sky stands in for it: on that ball the band where the 
 reads brighter, 0.0755 to 0.0788 over the ball, and through a bumpy glass ball 0.1308 to 0.1353. No ray is added; the
 cost is the sky's taps, eight where the footprint agrees and up to 72 where it does not, +16%, +14% and +9% CPU on the
 three scenes (alternated pairs, one thread). A sky of plain colour, or a scene without one, renders as before.
+
+With normals filtered, a refracting hit whose footprint's mean normal is past the critical angle, while some of its taps'
+normals are not, refracts and reflects as any refracting hit does: the reflection at the footprint's averaged Fresnel
+share and the refraction at the rest, bent about the mean of the taps that transmit. Total reflection about the mean
+normal dropped the transmitting taps' light, and inside a bumpy glass ball its path kept the smooth sphere's angle at
+every bounce, so it never escaped and returned black. The hit reflects totally only where no tap transmits; where the
+light left to transmit is under the ADC bailout the refraction is not traced at all, as without `+TF`. A totally
+reflected ray is added unfiltered, so under `+TF` it is traced at the hit's weight, not the transmitted share's, which
+cut it short at the bailout. On that ball at 320×240, ball pixels under 60/255 go from 25 with total reflection to 2 at
+one sample a pixel, and from 5 to 0 at four; mean absolute error over the ball against a sixteen-sample render without
+`+TF` goes from 50.1 to 43.5 at one sample and from 40.1 to 38.0 at four (×1000 of full scale), and the mean is 4 and 6
+above the reference's. The two pixels left are paths that reach `max_trace_level` 8 inside the ball; at 64 they are 68
+and 183. Tracing both rays at those hits adds 5.7% rays (shadow tests included) at one and four samples, 6.3% and 6.2%
+more than the same renders without `+TF`. Glass without Fresnel reflection refracts at its full filter there, as its
+reflection does not take the totally reflecting taps' share.
+
 Degenerate footprints fall back without error: a tap whose perturbed normal has zero length takes the raw normal, taps whose mean normal has zero length light the layer by the centre's normal, taps of no total opacity keep their plain mean colour, a ray within 1e-12 of grazing or a footprint under 1e-9 of the hit's distance from the origin plus the ray's length is not filtered, and a grazing footprint is capped at 64 pixel widths.
 
 ## Function-density point batches

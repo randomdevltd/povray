@@ -2210,8 +2210,9 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         {
             const double share = ray.GetTicket().radiosityShare;
             ray.GetTicket().radiosityShare = share * roulette;
+            // a total reflection's colour is added unfiltered, so under +TF it is traced at the hit's weight, not the transmitted share's
             tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight,
-                                            SpreadDiff(secondaryDiff(), topSpread, layDiff), fold);
+                                            (textureFilterScale > 0.0) ? weight : new_Weight, SpreadDiff(secondaryDiff(), topSpread, layDiff), fold);
             ray.GetTicket().radiosityShare = share;
             rfrCol *= roulette;
         }
@@ -2535,7 +2536,7 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
 }
 
 bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight,
-                              const SurfaceDifferentials *diff, const Vector3d *fold)
+                              COLC tirWeight, const SurfaceDifferentials *diff, const Vector3d *fold)
 {
     Ray nray(ray);
     Vector3d localnormal;
@@ -2591,9 +2592,9 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
 
         // TODO FIXME: also for first radiosity pass ? (see line 3272 of v3.6 lighting.cpp)
         if(!haveDispersion) // TODO FIXME - radiosity: || (!isFinalTrace)
-            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ior, n, normal, rawnormal, localnormal, colour, transm, weight, sides.leave, diff);
+            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ior, n, normal, rawnormal, localnormal, colour, transm, weight, tirWeight, sides.leave, diff);
         else if(ray.IsMonochromaticRay())
-            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ray.GetSpectralBand().GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, colour, transm, weight, sides.leave, diff);
+            totalReflection = TraceRefractionRay(finish, ipoint, ray, nray, ray.GetSpectralBand().GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, colour, transm, weight, tirWeight, sides.leave, diff);
         else
         {
             colour.Clear();
@@ -2609,7 +2610,7 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
                 nray.SetSpectralBand(spectralBand);
                 nray.SetKey(DeriveKey(refractionKey, kDrawRefraction, i));
 
-                (void)TraceRefractionRay(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, tempTransm, weight, sides.leave, diff);
+                (void)TraceRefractionRay(finish, ipoint, ray, nray, spectralBand.GetDispersionIOR(ior, dispersion), n, normal, rawnormal, localnormal, tempColour, tempTransm, weight, tirWeight, sides.leave, diff);
 
                 colour += tempColour * spectralBand.GetHue();
                 transm += tempTransm;
@@ -2626,10 +2627,32 @@ bool Trace::ComputeRefraction(const FINISH* finish, Interior *interior, const Ve
 }
 
 bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, double ior, double n, const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal, MathColour& colour, ColourChannel& transm, COLC weight,
-                               double leave, const SurfaceDifferentials *diff)
+                               COLC tirWeight, double leave, const SurfaceDifferentials *diff)
 {
     // Compute refrated ray direction using Heckbert's method.
     double t = 1.0 + Sqr(ior) * (Sqr(n) - 1.0);
+    Vector3d facing = localnormal;
+    if ((t < 0.0) && (diff != nullptr) && diff->spread.Active())
+    {
+        // the mean normal reflects totally but some taps transmit: refract about their mean, at its share, as any refracting hit does
+        const DBL side = (dot(localnormal, normal) < 0.0) ? -1.0 : 1.0;
+        Vector3d through(0.0);
+        for (size_t i = diff->spread.first; i < diff->spread.end; i++)
+        {
+            const Vector3d tapNormal = side * normalTaps[i];
+            const DBL c = -dot(ray.Direction, tapNormal);
+            if ((c > 0.0) && (1.0 + Sqr(ior) * (Sqr(c) - 1.0) >= 0.0))
+                through += tapNormal;
+        }
+        const DBL len = through.length();
+        const DBL c = (len > 0.0) ? -dot(ray.Direction, through) / len : 0.0;
+        if ((c > 0.0) && (1.0 + Sqr(ior) * (Sqr(c) - 1.0) >= 0.0))
+        {
+            facing = through / len;
+            n = c;
+            t = 1.0 + Sqr(ior) * (Sqr(n) - 1.0);
+        }
+    }
 
     if(t < 0.0)
     {
@@ -2637,7 +2660,7 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
 
         // Total internal reflection occures.
         threadData->Stats()[Internal_Reflected_Rays_Traced]++;
-        ComputeReflection(finish, ipoint, ray, normal, rawnormal, tempcolour, weight, diff);
+        ComputeReflection(finish, ipoint, ray, normal, rawnormal, tempcolour, tirWeight, diff);
         colour += tempcolour;
 
         return true;
@@ -2646,21 +2669,21 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
     const double root = sqrt(t);
     t = ior * n - root;
 
-    nray.Direction = ior * ray.Direction + t * localnormal;
+    nray.Direction = ior * ray.Direction + t * facing;
 
     // Igehy's refraction differential, with n = -D.N and t = ior n - root
     if ((diff != nullptr) && (root > 1.0e-6))
     {
-        const DBL s = (dot(localnormal, rawnormal) < 0.0) ? -1.0 : 1.0;
+        const DBL s = (dot(facing, rawnormal) < 0.0) ? -1.0 : 1.0;
         auto refract = [&](const Vector3d& dD, const Vector3d& dN) -> Vector3d
         {
-            const DBL dn = -(dot(dD, localnormal) + s * dot(ray.Direction, dN));
-            return ior * dD + ((ior - Sqr(ior) * n / root) * dn) * localnormal + (t * s) * dN;
+            const DBL dn = -(dot(dD, facing) + s * dot(ray.Direction, dN));
+            return ior * dD + ((ior - Sqr(ior) * n / root) * dn) * facing + (t * s) * dN;
         };
         Vector3d dDdx = refract(ray.dDdx, diff->dNdx), dDdy = refract(ray.dDdy, diff->dNdy);
         Vector3d tx, ty;
         const double width = SpreadWidth(*diff);
-        if ((width > 0.0) && TiltAxes(localnormal, diff->dPdx, diff->dPdy, tx, ty))
+        if ((width > 0.0) && TiltAxes(facing, diff->dPdx, diff->dPdy, tx, ty))
         {
             dDdx = QuadratureAdd(dDdx, width * refract(Vector3d(0.0), tx));
             dDdy = QuadratureAdd(dDdy, width * refract(Vector3d(0.0), ty));

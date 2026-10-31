@@ -739,13 +739,14 @@ class Trace
         /// @param[out]     colour          Computed colour.
         /// @param[out]     transm          Computed transmittance.
         /// @param[in]      weight          Importance of this computation.
+        /// @param[in]      tirWeight       Importance of the reflected ray if total internal reflection occurs.
         /// @param[in]      diff            Differentials at the hit for the refracted ray to carry, or `nullptr`.
         /// @param[in]      fold            Fold of the arriving ray, as @ref TraceRay takes it, for an unbent continuation.
         /// @return                         `true` if total internal reflection _did_ occur.
         ///
         bool ComputeRefraction(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray,
                                const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight,
-                               const SurfaceDifferentials *diff = nullptr, const Vector3d *fold = nullptr);
+                               COLC tirWeight, const SurfaceDifferentials *diff = nullptr, const Vector3d *fold = nullptr);
 
         /// Compute the contribution of a single refracted ray.
         ///
@@ -763,13 +764,14 @@ class Trace
         /// @param[out]     colour          Computed colour.
         /// @param[out]     transm          Computed transmittance.
         /// @param[in]      weight          Importance of this computation.
+        /// @param[in]      tirWeight       Importance of the reflected ray if total internal reflection occurs.
         /// @param[in]      leave           How far past the surface the refracted ray starts.
         /// @param[in]      diff            Differentials at the hit for the refracted ray to carry, or `nullptr`.
         /// @return                         `true` if total internal reflection _did_ occur.
         ///
         bool TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray& ray, Ray& nray, double ior, double n,
                                 const Vector3d& normal, const Vector3d& rawnormal, const Vector3d& localnormal,
-                                MathColour& colour, ColourChannel& transm, COLC weight, double leave,
+                                MathColour& colour, ColourChannel& transm, COLC weight, COLC tirWeight, double leave,
                                 const SurfaceDifferentials *diff = nullptr);
 
     ///
