@@ -1,8 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// mix multiply: a density field scales the fog beneath it, thinning it in streaks and thickening it between. +w480 +h270; Declare=Blend=0 leaves the fog even.
+// Media mix multiply: on the left a density field scales the fog beneath it, thinning it in streaks and thickening it between; on the right the same fog is left even. +w480 +h270
 #version 4.0;
 // Method 4 scattering is physical: colours are 4x the classic values with extinction 0.25, keeping the classic haze glow and its extinction.
-#ifndef (Blend) #declare Blend = 1; #end
 
 global_settings { assumed_gamma 1 }
 camera { location <0, 1.6, -10> look_at <0, 2.2, 6> angle 60 }
@@ -14,18 +13,16 @@ plane { y, 0 pigment { rgb <0.25, 0.22, 0.18> } }
 #end
 box { <-12, 0, -10>, <12, 9, 14> pigment { rgbt 1 } interior { media { scattering { 1, rgb 0.28 extinction 0.25 } absorption 0.005 } } }
 
-#if (Blend)
-  box {
-    <-12, 0, -10>, <12, 9, 14>
-    pigment { rgbt 1 }
-    interior {
-      media {
-        mix multiply
-        density {
-          wood turbulence 0.35 octaves 4 rotate x * 90 rotate z * 20 scale 2.5
-          color_map { [0 rgb 0.02] [0.4 rgb 0.15] [0.6 rgb 1.6] [1 rgb 3] }
-        }
+box {
+  <-12, 0, -10>, <-0.05, 9, 14>
+  pigment { rgbt 1 }
+  interior {
+    media {
+      mix multiply
+      density {
+        wood turbulence 0.35 octaves 4 rotate x * 90 rotate z * 20 scale 2.5
+        color_map { [0 rgb 0.02] [0.4 rgb 0.15] [0.6 rgb 1.6] [1 rgb 3] }
       }
     }
   }
-#end
+}

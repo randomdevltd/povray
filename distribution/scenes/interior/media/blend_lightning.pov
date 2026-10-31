@@ -1,10 +1,8 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Lightning in a storm cloud: the bolt and its glow add, and a multiply volume tints the grey cloud blue along crackles from the strike. +w480 +h360; Declare=Tint=0 drops the multiply, Declare=Seed=N picks another bolt.
+// Lightning in a storm cloud: the bolt and its glow are emitting media mixed with add, and a mix multiply volume tints the grey cloud blue along crackles spreading from the strike. +w480 +h360
 #version 4.0;
 // Method 4 scattering is physical: colours are 4x the classic values (4.4x for the Mie cloud) with extinction cutting back to the classic extinction.
-#ifndef (Seed) #declare Seed = 11; #end
-#ifndef (Tint) #declare Tint = 1; #end
-#declare R = seed(Seed);
+#declare R = seed(11);
 
 global_settings { assumed_gamma 1 }
 camera { location <0, 3.5, -24> look_at <0, 6, 0> angle 58 }
@@ -91,22 +89,20 @@ merge {
 light_source { J rgb <1.2, 1.3, 2> * 1.1 fade_distance 3 fade_power 2 }
 light_source { F rgb <0.8, 0.9, 1.5> fade_distance 3 fade_power 2 media_interaction off }
 
-#if (Tint)
-  #declare Crack = function { pattern { crackle turbulence 0.35 octaves 4 scale 0.22 } }
-  sphere {
-    0, 1 pigment { rgbt 1 }
-    interior {
-      media {
-        mix multiply
-        density {
-          function {
-            min(1, max(0, 1 - Crack(x, y, z) / 0.05) * max(0, 1 - 1.1 * sqrt(x * x + y * y + z * z)) * 1.6
-                   + 0.35 * max(0, 1 - sqrt(x * x + y * y + z * z)))
-          }
-          color_map { [0 rgb 1] [0.3 rgb <0.6, 1.0, 3>] [1 rgb <1.5, 3.5, 14>] }
+#declare Crack = function { pattern { crackle turbulence 0.35 octaves 4 scale 0.22 } }
+sphere {
+  0, 1 pigment { rgbt 1 }
+  interior {
+    media {
+      mix multiply
+      density {
+        function {
+          min(1, max(0, 1 - Crack(x, y, z) / 0.05) * max(0, 1 - 1.1 * sqrt(x * x + y * y + z * z)) * 1.6
+                 + 0.35 * max(0, 1 - sqrt(x * x + y * y + z * z)))
         }
+        color_map { [0 rgb 1] [0.3 rgb <0.6, 1.0, 3>] [1 rgb <1.5, 3.5, 14>] }
       }
     }
-    scale <6, 4, 4> translate J
   }
-#end
+  scale <6, 4, 4> translate J
+}

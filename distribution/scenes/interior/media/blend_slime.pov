@@ -1,9 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A gelatinous cube built from layered media: gel, clear bubbles, gas pockets that replace it, ooze that adds, a band that multiplies, a fizz that subtracts, veins, cell walls, eyes nested in the gas, and glowing nodules that multiply the gel's faint glow, in a torch-lit tunnel. The gel's index wanders with its lumps, warping the dungeon seen through it. +w480 +h360; Layers=N stops early, Warp=0 keeps the gel's index even.
+// A gelatinous cube built from layered media: gel, clear bubbles, gas pockets that replace it, ooze that adds, a band that multiplies, a fizz that subtracts, veins, cell walls, eyes nested in the gas, and glowing nodules that multiply the gel's faint glow, in a torch-lit tunnel. A refraction field makes the gel's index wander with its lumps, warping the dungeon seen through it. +w480 +h360
 #version 4.0;
 // Method 4 scattering is physical: colours are 4x the classic values with extinction 0.25, keeping the classic haze glow and its extinction.
-#ifndef (Layers) #declare Layers = 10; #end
-#ifndef (Warp) #declare Warp = 1; #end
 #declare R = seed(5);
 #declare Ior = 1.25;
 
@@ -76,13 +74,11 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
     #end #end #end
     scale <1.15, 1, 1.05> translate y * 1.55
   }
-  #if (Layers > 1)
-    #for (I, 0, 22)
-      sphere {
-        <rand(R) * 2.8 - 1.4, 0.6 + rand(R) * 2.0, rand(R) * 2.4 - 1.2>, 0.05 + pow(rand(R), 3) * 0.18
-        texture { pigment { rgbf <1, 1, 1, 0.98> } finish { specular 0.9 roughness 0.002 reflection { 0, 0.5 fresnel } } }
-      }
-    #end
+  #for (I, 0, 22)
+    sphere {
+      <rand(R) * 2.8 - 1.4, 0.6 + rand(R) * 2.0, rand(R) * 2.4 - 1.2>, 0.05 + pow(rand(R), 3) * 0.18
+      texture { pigment { rgbf <1, 1, 1, 0.98> } finish { specular 0.9 roughness 0.002 reflection { 0, 0.5 fresnel } } }
+    }
   #end
   texture {
     pigment { rgbf <0.8, 1, 0.75, 0.96> }
@@ -92,103 +88,87 @@ light_source { <-1.2, 3, -9> rgb <0.12, 0.14, 0.2> media_interaction off shadowl
   interior { GelBodyInterior }
 };
 
-#if (Layers > 2)
-  #declare Gas = Gel(rgb 0.1, rgb <0.6, 0.15, 0.8>, rgb <0.7, 0.1, 0.9>, density { granite turbulence 0.6 Ramp(0, 1.5) scale 0.6 }, -1)
-  #macro Pocket(Centre, Size)
-    KeepGelPart(sphere { 0, 1 scale Size translate Centre texture { Clear } interior { ior Ior media { Gas mix replace } } }, 1)
-  #end
-  Pocket(<-0.75, 2.45, -1.25>, <0.5, 0.42, 0.38>)
-  Pocket(<0.65, 2.5, -1.2>, <0.46, 0.4, 0.36>)
-  Pocket(<1.45, 1.05, 1.1>, <0.55, 0.42, 0.5>)
+#declare Gas = Gel(rgb 0.1, rgb <0.6, 0.15, 0.8>, rgb <0.7, 0.1, 0.9>, density { granite turbulence 0.6 Ramp(0, 1.5) scale 0.6 }, -1)
+#macro Pocket(Centre, Size)
+  KeepGelPart(sphere { 0, 1 scale Size translate Centre texture { Clear } interior { ior Ior media { Gas mix replace } } }, 1)
+#end
+Pocket(<-0.75, 2.45, -1.25>, <0.5, 0.42, 0.38>)
+Pocket(<0.65, 2.5, -1.2>, <0.46, 0.4, 0.36>)
+Pocket(<1.45, 1.05, 1.1>, <0.55, 0.42, 0.5>)
+
+#for (I, 0, 1)
+  #declare Eye = <-0.75 + I * 1.4, 2.47, -1.3>;
+  KeepGelPart(sphere {
+    Eye, 0.24 texture { Clear }
+    interior { ior Ior Gel(rgb 0.2, rgb <0.8, 0.7, 0.1>, rgb <1.2, 0.8, 0.05>, density { onion turbulence 0.2 Ramp(0.2, 1) scale 0.06 translate Eye }, 0) }
+  }, 0)
+  KeepGelPart(sphere {
+    Eye - z * 0.12, 0.1 texture { Clear }
+    interior { ior Ior media { mix replace absorption 30 } }
+  }, 1)
 #end
 
-#if (Layers > 3)
-  #for (I, 0, 1)
-    #declare Eye = <-0.75 + I * 1.4, 2.47, -1.3>;
-    KeepGelPart(sphere {
-      Eye, 0.24 texture { Clear }
-      interior { ior Ior Gel(rgb 0.2, rgb <0.8, 0.7, 0.1>, rgb <1.2, 0.8, 0.05>, density { onion turbulence 0.2 Ramp(0.2, 1) scale 0.06 translate Eye }, 0) }
-    }, 0)
-    KeepGelPart(sphere {
-      Eye - z * 0.12, 0.1 texture { Clear }
-      interior { ior Ior media { mix replace absorption 30 } }
-    }, 1)
-  #end
-#end
+KeepGelPart(blob {
+  threshold 0.5
+  #for (I, 0, 5) sphere { <-1.0 + rand(R) * 1.0 - 0.5, 0.55 + rand(R) * 0.25, 0.9 + rand(R) * 0.9 - 0.45>, 0.4 + rand(R) * 0.15, 1 } #end
+  texture { Clear }
+  interior { ior Ior Gel(rgb <0.7, 0.25, 0.8>, rgb <0.1, 0.25, 0.04>, rgb 0, density { wrinkles Ramp(0, 2.2) scale 0.3 }, 0) }
+}, 0)
 
-#if (Layers > 4)
-  KeepGelPart(blob {
-    threshold 0.5
-    #for (I, 0, 5) sphere { <-1.0 + rand(R) * 1.0 - 0.5, 0.55 + rand(R) * 0.25, 0.9 + rand(R) * 0.9 - 0.45>, 0.4 + rand(R) * 0.15, 1 } #end
+KeepGelPart(sphere {
+  0, 1 scale <1.5, 0.2, 0.75> translate <0.1, 2.05, 1.0> texture { Clear }
+  interior { ior Ior media { mix multiply density { marble turbulence 0.8 scale 0.7 color_map { [0 rgb 0.05] [1 rgb 0.6] } } } }
+}, 2)
+
+KeepGelPart(sphere {
+  <-1.5, 0.95, -0.9>, 0.6 texture { Clear }
+  interior {
+    ior Ior
+    Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb 0, density { spherical turbulence 0.6 octaves 5 Ramp(0, 2.5) scale 0.6 translate <-1.5, 0.95, -0.9> }, 2)
+  }
+}, 0)
+
+#declare Centre = <0, 1.55, 0>;
+#declare Reach = <1.9, 1.0, 1.7>;
+#for (I, 0, 13)
+  #declare P = Centre + <rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5> * Reach * 1.6;
+  #declare D = vnormalize(<rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5>);
+  KeepGelPart(sphere_sweep {
+    b_spline 7
+    #for (J, 0, 6)
+      P, 0.04 - J * 0.004
+      #declare D = vnormalize(D + <rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5> * 0.9);
+      #declare P = P + D * 0.4;
+      #declare Q = (P - Centre) / Reach;
+      #if (vlength(Q) > 0.85) #declare P = Centre + Q * 0.85 / vlength(Q) * Reach; #declare D = -D; #end
+    #end
     texture { Clear }
-    interior { ior Ior Gel(rgb <0.7, 0.25, 0.8>, rgb <0.1, 0.25, 0.04>, rgb 0, density { wrinkles Ramp(0, 2.2) scale 0.3 }, 0) }
+    interior { ior Ior media { mix add absorption rgb <1, 10, 10> emission rgb <5, 0.4, 0.1> } }
   }, 0)
 #end
 
-#if (Layers > 5)
-  KeepGelPart(sphere {
-    0, 1 scale <1.5, 0.2, 0.75> translate <0.1, 2.05, 1.0> texture { Clear }
-    interior { ior Ior media { mix multiply density { marble turbulence 0.8 scale 0.7 color_map { [0 rgb 0.05] [1 rgb 0.6] } } } }
-  }, 2)
+#for (I, 0, 4)
+  #declare C = <0.9 + rand(R) * 0.8, 0.75 + rand(R) * 0.7, -1.4 + rand(R) * 0.9>;
+  #declare S = 0.2 + rand(R) * 0.12;
+  KeepGelPart(difference {
+    sphere { C, S } sphere { C, S - 0.025 }
+    texture { Clear }
+    interior { ior Ior media { mix add scattering { 1, rgb <20, 24, 12> extinction 0.25 } absorption rgb <1, 0.3, 2> } }
+  }, 0)
+  KeepGelPart(sphere { C + <rand(R), rand(R), rand(R)> * S * 0.3, S * 0.3 texture { Clear } interior { ior Ior media { mix add absorption rgb <1.5, 0.4, 3> } } }, 0)
 #end
 
-#if (Layers > 6)
+#for (I, 0, 5)
+  #local NoduleSize = 0.22 + rand(R) * 0.15;
+  #local NoduleCentre = <rand(R) * 2.4 - 1.2, 0.7 + rand(R) * 1.8, rand(R) * 2 - 1>;
   KeepGelPart(sphere {
-    <-1.5, 0.95, -0.9>, 0.6 texture { Clear }
+    0, 1 pigment { rgbt 1 }
     interior {
-      ior Ior
-      Gel(rgb <0.35, 0.07, 0.3>, rgb <0.025, 0.06, 0.02>, rgb 0, density { spherical turbulence 0.6 octaves 5 Ramp(0, 2.5) scale 0.6 translate <-1.5, 0.95, -0.9> }, 2)
+      ior Ior media {
+        mix multiply density { spherical turbulence 0.3 color_map { [0 rgb 1] [0.5 rgb <2, 6, 1.5>] [1 rgb <4, 16, 3>] } } }
     }
-  }, 0)
-#end
-
-#if (Layers > 7)
-  #declare Centre = <0, 1.55, 0>;
-  #declare Reach = <1.9, 1.0, 1.7>;
-  #for (I, 0, 13)
-    #declare P = Centre + <rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5> * Reach * 1.6;
-    #declare D = vnormalize(<rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5>);
-    KeepGelPart(sphere_sweep {
-      b_spline 7
-      #for (J, 0, 6)
-        P, 0.04 - J * 0.004
-        #declare D = vnormalize(D + <rand(R) - 0.5, rand(R) - 0.5, rand(R) - 0.5> * 0.9);
-        #declare P = P + D * 0.4;
-        #declare Q = (P - Centre) / Reach;
-        #if (vlength(Q) > 0.85) #declare P = Centre + Q * 0.85 / vlength(Q) * Reach; #declare D = -D; #end
-      #end
-      texture { Clear }
-      interior { ior Ior media { mix add absorption rgb <1, 10, 10> emission rgb <5, 0.4, 0.1> } }
-    }, 0)
-  #end
-#end
-
-#if (Layers > 8)
-  #for (I, 0, 4)
-    #declare C = <0.9 + rand(R) * 0.8, 0.75 + rand(R) * 0.7, -1.4 + rand(R) * 0.9>;
-    #declare S = 0.2 + rand(R) * 0.12;
-    KeepGelPart(difference {
-      sphere { C, S } sphere { C, S - 0.025 }
-      texture { Clear }
-      interior { ior Ior media { mix add scattering { 1, rgb <20, 24, 12> extinction 0.25 } absorption rgb <1, 0.3, 2> } }
-    }, 0)
-    KeepGelPart(sphere { C + <rand(R), rand(R), rand(R)> * S * 0.3, S * 0.3 texture { Clear } interior { ior Ior media { mix add absorption rgb <1.5, 0.4, 3> } } }, 0)
-  #end
-#end
-
-#if (Layers > 9)
-  #for (I, 0, 5)
-    #local NoduleSize = 0.22 + rand(R) * 0.15;
-    #local NoduleCentre = <rand(R) * 2.4 - 1.2, 0.7 + rand(R) * 1.8, rand(R) * 2 - 1>;
-    KeepGelPart(sphere {
-      0, 1 pigment { rgbt 1 }
-      interior {
-        ior Ior media {
-          mix multiply density { spherical turbulence 0.3 color_map { [0 rgb 1] [0.5 rgb <2, 6, 1.5>] [1 rgb <4, 16, 3>] } } }
-      }
-      scale NoduleSize translate NoduleCentre
-    }, 3)
-  #end
+    scale NoduleSize translate NoduleCentre
+  }, 3)
 #end
 
 #declare GelVoids = function { max(0, 0
@@ -215,12 +195,10 @@ object {
   GelBody
   interior {
     GelBodyInterior
-    #if (Warp)
-      refraction {
-        function { 0.12 * GelLumps(x,y,z).red * (1-GelVoids(x,y,z)) * GelBands(x,y,z) * GelNodules(x,y,z) }
-        detail auto
-      }
-    #end
+    refraction {
+      function { 0.12 * GelLumps(x,y,z).red * (1-GelVoids(x,y,z)) * GelBands(x,y,z) * GelNodules(x,y,z) }
+      detail auto
+    }
   }
 }
 #if (GelPartCount > 0) #for (Part, 0, GelPartCount-1) object { GelParts[Part] } #end #end
