@@ -835,7 +835,7 @@ void Quadric::Compute_BBox(Vector3d& ClipMin, Vector3d& ClipMax)
         New_Volume = (ClipMax[X] - ClipMin[X]) * (ClipMax[Y] - ClipMin[Y]) * (ClipMax[Z] - ClipMin[Z]);
         BOUNDS_VOLUME(Old_Volume, Old);
         if (New_Volume < Old_Volume)
-            Make_BBox_from_min_max(BBox, ClipMin, ClipMax);
+            Make_BBox_from_min_max(BBox, ClipMin, ClipMax, false);
         return;
     }
 
@@ -1385,7 +1385,7 @@ void Quadric::Compute_BBox(Vector3d& ClipMin, Vector3d& ClipMax)
         NewMin += T1;
         NewMax += T1;
 
-        Make_BBox_from_min_max(BBox, NewMin, NewMax);
+        Make_BBox_from_min_max(BBox, NewMin, NewMax, false);
 
         /* Beware of bounding boxes to large. */
 
@@ -1395,7 +1395,7 @@ void Quadric::Compute_BBox(Vector3d& ClipMin, Vector3d& ClipMax)
         {
             Automatic_Bounds = false;
             Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2,
-              BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+              BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         }
     }
 }

@@ -837,8 +837,7 @@ bool ObjectBase::IsOpaque() const
 
 void ContainedByBox::ComputeBBox(BoundingBox& rBbox) const
 {
-    rBbox.lowerLeft = BBoxVector3d(corner1);
-    rBbox.size      = BBoxVector3d(corner2 - corner1);
+    Make_BBox_from_min_max(rBbox, corner1, corner2);
 }
 
 void ContainedBySphere::ComputeBBox(BoundingBox& rBbox) const

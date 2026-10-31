@@ -4340,7 +4340,7 @@ void Skein::Compute_BBox()
 {
     if (!data || data->nodes.empty())
     {
-        Make_BBox(BBox, -BOUND_HUGE / 2.0, -BOUND_HUGE / 2.0, -BOUND_HUGE / 2.0, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        Make_BBox(BBox, -BOUND_HUGE / 2.0, -BOUND_HUGE / 2.0, -BOUND_HUGE / 2.0, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         return;
     }
     const SkeinData::Node& root = data->nodes[0];

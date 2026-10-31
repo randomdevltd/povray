@@ -472,7 +472,7 @@ void MeshBuildTask::Run()
             CSG *csg = dynamic_cast<CSG *>(object);
             if ((csg != nullptr) && (changed || (views.count(object) != 0)) && csg->Bound.empty())
             {
-                Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+                Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
                 csg->Compute_BBox();
                 Update_Infinite_Flag(csg);
                 changed = true;
@@ -636,7 +636,7 @@ static bool ResolveTarget(ObjectPtr object)
     CSG *csg = dynamic_cast<CSG *>(object);
     if (changed && (csg != nullptr) && csg->Bound.empty())
     {
-        Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        Make_BBox(csg->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         csg->Compute_BBox();
         Update_Infinite_Flag(csg);
     }
@@ -654,6 +654,7 @@ void CameraFramingTask::Frame(Camera& camera)
     ResolveTarget(camera.frameTarget.get());
     unsigned int unbounded = 0;
     const bool found = FrameTargetBounds(camera.frameTarget.get(), camera.frameLow, camera.frameHigh, unbounded);
+    const std::vector<FrameBounds> parts = FrameTargetParts(camera.frameTarget.get());
     camera.frameTarget.reset();
     const SourceInfo& source = camera.frameSource;
     Exception failed = POV_EXCEPTION_CODE(kParseErr);
@@ -664,7 +665,7 @@ void CameraFramingTask::Frame(Camera& camera)
         mpMessageFactory->WarningAt(kWarningGeneral, source, camera.frameSelection
             ? "look_at tagged skipped %u unbounded object(s), such as planes, and frames the rest."
             : "look_at skipped %u unbounded part(s) of this object, such as planes, and frames the rest.", unbounded);
-    switch (camera.Frame(camera.frameLow, camera.frameHigh, static_cast<TraceThreadData *>(GetDataPtr()), [this]() { Cooperate(); }))
+    switch (camera.Frame(camera.frameLow, camera.frameHigh, static_cast<TraceThreadData *>(GetDataPtr()), [this]() { Cooperate(); }, parts))
     {
         case FrameResult::Failed:
             if (camera.Type == MESH_CAMERA)

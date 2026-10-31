@@ -125,6 +125,12 @@ static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reas
         container ? "" : " (unavailable)", tail);
 }
 
+static bool UsablePreparedContainer(ConstObjectPtr container)
+{
+    return container && !Test_Flag(container, INVERTED_FLAG) && container->BBox.finiteInterior &&
+           UsableFiniteBounds(container->BBox);
+}
+
 static bool ConstantDensity(const Media& medium);
 static DBL ChannelMean(const MathColour& colour);
 
@@ -178,7 +184,7 @@ class Media::FastCache final
         bool EnsureField(Media& media, TraceThreadData *ttd);
         void Finalize(Media& media, TraceThreadData *td, const std::function<void()>& cooperate);
         /// Checks the medium and fits the grid to the bounds and cell limit, sizing its arrays; false where BuildField fails first.
-        bool SizeGrid(const Media& media, const Vector3d& lo, const Vector3d& hi, DBL cellLimit);
+        bool SizeGrid(const Media& media, const BoundingBox& bounds, DBL cellLimit);
         /// Fills one z slab of cells; false if a sample is negative or not finite.
         bool FillSlab(Media& media, int z, TraceThreadData *td, const std::atomic<bool>& unusable);
         bool Segment(const Ray& ray, DBL& from, DBL& to) const;
@@ -211,14 +217,13 @@ class Media::EagerField final
 
 std::shared_ptr<Media::EagerField> Media::PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const
 {
-    if (!fastCache || (Sample_Method != 4) || fastCache->constantDensity || fastCache->prepared || (fastCache->container == nullptr))
+    if (!fastCache || (Sample_Method != 4) || fastCache->constantDensity || fastCache->prepared ||
+        !UsablePreparedContainer(fastCache->container))
         return nullptr;
     std::shared_ptr<EagerField> field(new EagerField(fastCache, copy, cellLimit));
     field->grid.coarseStep = fastCache->coarseStep;
     field->grid.coarseCells = fastCache->coarseCells;
-    Vector3d lo, hi;
-    Make_min_max_from_BBox(lo, hi, fastCache->container->BBox);
-    if (!field->grid.SizeGrid(*copy, lo, hi, cellLimit))
+    if (!field->grid.SizeGrid(*copy, fastCache->container->BBox, cellLimit))
         return nullptr;
     return field;
 }
@@ -286,7 +291,8 @@ bool FinishEagerField(const std::shared_ptr<Media::EagerField>& field, DBL cellL
                       const std::function<bool(unsigned char)>& changed, const std::function<void()>& cooperate)
 {
     const std::shared_ptr<Media::FastCache> target = field->target.lock();
-    if (!target || target->prepared || (target->container == nullptr) || (target->step != field->requestedStep) || (cellLimit != field->cellLimit))
+    if (!target || target->prepared || !UsablePreparedContainer(target->container) ||
+        (target->step != field->requestedStep) || (cellLimit != field->cellLimit))
         return false;
     Vector3d lo, hi;
     Make_min_max_from_BBox(lo, hi, target->container->BBox);
@@ -415,10 +421,8 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     Vector3d lo, hi;
     Make_min_max_from_BBox(lo, hi, container->BBox);
     const Vector3d extent = hi - lo;
-    for (int axis = 0; axis < 3; axis++)
-        if (!IsFiniteNumber(lo[axis]) || !IsFiniteNumber(extent[axis]) || !(extent[axis] > 0.0) ||
-            !(extent[axis] < BOUND_HUGE * 0.5))
-            throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
+    if (!UsablePreparedContainer(container))
+        throw POV_EXCEPTION_STRING("Prepared varying density requires finite usable bounds.");
     if (prepared)
         fieldReady = TakePrepared();
     if (fieldReady && layout)
@@ -437,7 +441,7 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         step = media.FastResolution;
         density.clear();
         rough.clear();
-        if (!SizeGrid(media, lo, hi, td->GetSceneData()->EffectivePreparedMediaCells()))
+        if (!SizeGrid(media, container->BBox, td->GetSceneData()->EffectivePreparedMediaCells()))
             throw POV_EXCEPTION_STRING("Prepared density cannot be published for this configuration.");
         std::atomic<bool> unusable(false);
         const size_t count = media.preparedParallelSafe ? std::max<size_t>(1, std::min<size_t>(nz, td->GetSceneData()->workThreads)) : 1;
@@ -471,8 +475,10 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     published = true;
 }
 
-bool Media::FastCache::SizeGrid(const Media& media, const Vector3d& lo, const Vector3d& hi, DBL cellLimit)
+bool Media::FastCache::SizeGrid(const Media& media, const BoundingBox& bounds, DBL cellLimit)
 {
+    if (!bounds.finiteInterior || !UsableFiniteBounds(bounds))
+        return false;
     for (int ch = 0; ch < MathColour::channels; ch++)
         if (!IsFiniteNumber(media.Extinction[ch]) || (media.Extinction[ch] < 0.0))
             return false;
@@ -481,11 +487,9 @@ bool Media::FastCache::SizeGrid(const Media& media, const Vector3d& lo, const Ve
             ((pigment->Type <= LAST_SPECIAL_PATTERN) ||
              (dynamic_cast<const ContinuousPattern*>(pigment->pattern.get()) == nullptr)))
             return false;
-    low = lo;
-    size = hi - lo;
-    if (!IsFiniteNumber(size[X]) || !IsFiniteNumber(size[Y]) || !IsFiniteNumber(size[Z]) ||
-        (size[X] <= 0.0) || (size[Y] <= 0.0) || (size[Z] <= 0.0))
-        return false;
+    Vector3d hi;
+    Make_min_max_from_BBox(low, hi, bounds);
+    size = hi - low;
     // The grid is coarsened to the widest step that fits, never dropped to classic sampling; the parse-time fit
     // normally leaves nothing to do here, so this covers bounds that grew after the medium was prepared.
     if (step > 0.0)
@@ -918,9 +922,26 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
 {
     if (!owner || !owner->interior)
         throw POV_EXCEPTION_STRING("A prepared interior field requires its geometry binding.");
+    Vector3d low, high;
+    Make_min_max_from_BBox(low, high, owner->BBox);
+    const Vector3d size = high - low;
+    const bool bounded = UsablePreparedContainer(owner);
+    std::shared_ptr<InteriorField> existing;
     for (const auto& field : owner->interior->fields)
         if (field->owner == owner)
-            return field->layout;
+        {
+            bool sameBounds = bounded && bool(field->layout);
+            for (int axis = 0; sameBounds && axis < 3; ++axis)
+                sameBounds = field->layout->low[axis] == low[axis] && field->layout->size[axis] == size[axis];
+            if (sameBounds || (!bounded && !field->layout))
+                return field->layout;
+            if (field->mediaReady || field->lightReady)
+                throw POV_EXCEPTION_STRING("Prepared geometry bounds changed after publication.");
+            existing = field;
+            field->layout.reset();
+            field->lights.clear();
+            break;
+        }
     const auto scene = td->GetSceneData();
     DBL requested = HUGE_VAL;
     bool needed = owner->interior->light != nullptr;
@@ -949,13 +970,6 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         requested = constantStep;
     if (!needed)
         return nullptr;
-    Vector3d low, high;
-    Make_min_max_from_BBox(low, high, owner->BBox);
-    const Vector3d size = high - low;
-    bool bounded = true;
-    for (int axis = 0; axis < 3; axis++)
-        bounded = bounded && IsFiniteNumber(low[axis]) && IsFiniteNumber(size[axis]) &&
-                  size[axis] > 0.0 && size[axis] < BOUND_HUGE * 0.5;
     std::shared_ptr<const PreparedGridLayout> layout;
     if (bounded)
     {
@@ -968,7 +982,10 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
             counts[axis] = size_t(std::max(1.0, std::ceil(size[axis] / step)));
         layout = std::make_shared<const PreparedGridLayout>(low, size, counts);
     }
-    owner->interior->fields.push_back(std::make_shared<InteriorField>(owner, layout));
+    if (existing)
+        existing->layout = layout;
+    else
+        owner->interior->fields.push_back(std::make_shared<InteriorField>(owner, layout));
     return layout;
 }
 
@@ -1009,10 +1026,7 @@ void Media::SetFastContainer(ObjectPtr object, DBL cellLimit)
             Vector3d high;
             Make_min_max_from_BBox(fastCache->low, high, object->BBox);
             fastCache->size = high - fastCache->low;
-            bool ready = true;
-            for (int axis = 0; axis < 3; axis++)
-                ready = ready && IsFiniteNumber(fastCache->low[axis]) && IsFiniteNumber(fastCache->size[axis]) &&
-                        (fastCache->size[axis] > 0.0) && (fastCache->size[axis] < BOUND_HUGE * 0.5);
+            bool ready = UsablePreparedContainer(object);
             for (int ch = 0; ch < MathColour::channels; ch++)
                 ready = ready && IsFiniteNumber(Extinction[ch]) && (Extinction[ch] >= 0.0) &&
                         IsFiniteNumber(Emission[ch]) && IsFiniteNumber(Scattering[ch]);
@@ -1355,7 +1369,7 @@ void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::func
     for (const auto& field : owner->interior->fields)
         if (field->owner == owner)
             field->mediaReady = true;
-    if (Test_Flag(owner, INFINITE_FLAG))
+    if (!UsablePreparedContainer(owner))
     {
         bool prepared = false, varyingLegacy = false;
         for (const Media& medium : owner->interior->media)
@@ -1734,7 +1748,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
     const MediaLight& settings = *sourceSettings;
     if (settings.pigment && PigmentRequiresRayContext(settings.pigment))
         throw POV_EXCEPTION_STRING("Interior light requires ray context and cannot be published.");
-    if (Test_Flag(container, INFINITE_FLAG))
+    if (!UsablePreparedContainer(container))
     {
         throw POV_EXCEPTION_STRING("Interior light requires a finite container.");
     }

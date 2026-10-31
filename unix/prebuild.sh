@@ -614,6 +614,9 @@ EXTRA_DIST = \\
   libraries/tree-sitter libraries/tree-sitter-pov-tags libraries/tree-sitter-pov4 \\
   tools/bench/check-prepared-sets.sh tools/bench/check-prepared-sets.mk \\
   tools/bench/check-prepared-sets.cpp \\
+  tools/bench/check-finite-bounds.sh tools/bench/check-halfspace-bounds.sh \\
+  tests/source/finite_bounds.cpp tests/source/finite_geometry_bounds.cpp \\
+  tests/source/halfspace_bounds.cpp \\
   povray.ini.in changes.txt revision.txt
 
 # Additional files to clean with 'make distclean'.
@@ -629,6 +632,8 @@ check-quick: all
 	+sh "\$(top_srcdir)/tools/bench/check-physical-phase.sh" "\$(top_builddir)" "\$(top_builddir)/tests/physical-phase"
 	sh "\$(top_srcdir)/tests/render/physical_media_phase.sh" "\$(top_builddir)/unix/povray" "\$(top_srcdir)"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
+	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-halfspace-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/halfspace-bounds"
+	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-finite-bounds.sh" "\$(top_builddir)" "\$(top_builddir)/tests/finite-bounds"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive.sh \$(top_builddir)/unix/povray \$(top_srcdir)

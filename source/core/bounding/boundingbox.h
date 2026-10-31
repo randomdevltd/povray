@@ -44,6 +44,7 @@
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 // C++ standard header files
@@ -57,6 +58,8 @@
 // POV-Ray header files (core module)
 #include "core/coretypes.h"
 #include "core/math/matrix.h"
+#include "core/math/finite.h"
+#include "core/math/halfspacebounds.h"
 #include "core/math/simd.h"
 #include "core/render/ray_fwd.h"
 #include "core/support/statisticids.h"
@@ -102,6 +105,8 @@ struct BoundingBox final
 {
     BBoxVector3d lowerLeft;
     BBoxVector3d size;
+    bool finite = false; ///< Certified finite surface enclosure.
+    bool finiteInterior = false; ///< Certified base Inside-domain enclosure; consumers apply inversion.
 
     SNGL GetMinX() const { return lowerLeft.x(); }
     SNGL GetMinY() const { return lowerLeft.y(); }
@@ -114,25 +119,131 @@ struct BoundingBox final
     bool isEmpty() const { return (size.x() < 0) || (size.y() < 0) || (size.z() < 0); }
 };
 
-/// @relates BoundingBox
-inline void Make_BBox(BoundingBox& BBox, const BBoxScalar llx, const BBoxScalar lly, const BBoxScalar llz, const BBoxScalar lex, const BBoxScalar ley, const BBoxScalar lez)
+inline float NormalBBoxLower(float value)
 {
-    BBox.lowerLeft = BBoxVector3d(llx, lly, llz);
-    BBox.size      = BBoxVector3d(lex, ley, lez);
+    std::uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const std::uint32_t magnitude = bits & UINT32_C(0x7fffffff);
+    return magnitude != 0 && magnitude < UINT32_C(0x00800000) ? -std::numeric_limits<float>::min() : value;
+}
+inline float NormalBBoxUpper(float value)
+{
+    std::uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    const std::uint32_t magnitude = bits & UINT32_C(0x7fffffff);
+    return magnitude != 0 && magnitude < UINT32_C(0x00800000) ? std::numeric_limits<float>::min() : value;
+}
+inline double NormalBBoxLower(double value) { return halfspace_bounds::WidenLow(value); }
+inline double NormalBBoxUpper(double value) { return halfspace_bounds::WidenHigh(value); }
+
+/// @relates BoundingBox
+inline void Make_BBox_from_min_max(BoundingBox& BBox, const Vector3d& mins, const Vector3d& maxs, bool finite = true)
+{
+    BBox.finite = finite;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const DBL low = halfspace_bounds::WidenLow(mins[axis]);
+        const DBL high = halfspace_bounds::WidenHigh(maxs[axis]);
+        BBoxScalar origin = BBoxScalar(low);
+        if (DBL(origin) > low)
+            origin = std::nextafter(origin, -std::numeric_limits<BBoxScalar>::infinity());
+        origin = NormalBBoxLower(origin);
+        BBoxScalar upper = BBoxScalar(high);
+        if (DBL(upper) < high)
+            upper = std::nextafter(upper, std::numeric_limits<BBoxScalar>::infinity());
+        upper = NormalBBoxUpper(upper);
+        volatile DBL extent = DBL(upper) - DBL(origin);
+        // the difference of two stored scalars is exact when their exponents are close enough for DBL to hold every bit
+        const int gap = (origin == 0 || upper == 0) ? 0 : std::abs(std::ilogb(origin) - std::ilogb(upper));
+        const bool exact = gap <= std::numeric_limits<DBL>::digits - 1 - std::numeric_limits<BBoxScalar>::digits;
+        const DBL outwardExtent = (exact || (extent == 0.0 && low == high)) ? DBL(extent) :
+                                   std::nextafter(DBL(extent), std::numeric_limits<DBL>::infinity());
+        BBoxScalar size = BBoxScalar(outwardExtent);
+        if (DBL(size) < outwardExtent)
+            size = std::nextafter(size, std::numeric_limits<BBoxScalar>::infinity());
+        size = NormalBBoxUpper(size);
+        BBox.lowerLeft[axis] = origin;
+        BBox.size[axis] = size;
+        BBox.finite = BBox.finite && IsFiniteNumber(mins[axis]) && IsFiniteNumber(maxs[axis]) &&
+                      IsFiniteNumber(DBL(origin)) && IsFiniteNumber(DBL(upper)) &&
+                      IsFiniteNumber(DBL(size)) && size >= 0.0 && high >= low;
+    }
+    BBox.finiteInterior = BBox.finite;
 }
 
 /// @relates BoundingBox
-inline void Make_BBox_from_min_max(BoundingBox& BBox, const BBoxVector3d& mins, const BBoxVector3d& maxs)
+inline void Make_BBox(BoundingBox& BBox, const DBL llx, const DBL lly, const DBL llz,
+                      const DBL lex, const DBL ley, const DBL lez, bool finite = true)
 {
-    BBox.lowerLeft = mins;
-    BBox.size      = maxs - mins;
+    if (!finite)
+    {
+        BBox.lowerLeft = BBoxVector3d(llx, lly, llz);
+        BBox.size = BBoxVector3d(lex, ley, lez);
+        BBox.finite = false;
+        BBox.finiteInterior = false;
+        return;
+    }
+    const Vector3d low(llx, lly, llz), size(lex, ley, lez);
+    Vector3d high;
+    bool representable = true;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        volatile DBL sum = low[axis] + size[axis];
+        representable = representable && (!(size[axis] > 0.0) || DBL(sum) > low[axis]);
+        // the sum's rounding error by two-sum: only a sum that rounded down needs the step up
+        volatile DBL sizePart = sum - low[axis];
+        volatile DBL lowPart = sum - sizePart;
+        volatile DBL lowError = low[axis] - lowPart;
+        volatile DBL sizeError = size[axis] - sizePart;
+        high[axis] = size[axis] == 0.0 ? low[axis] :
+                     (lowError + sizeError <= 0.0) ? DBL(sum) : std::nextafter(DBL(sum), std::numeric_limits<DBL>::infinity());
+    }
+    Make_BBox_from_min_max(BBox, low, high, representable);
 }
 
 /// @relates BoundingBox
-inline void Make_BBox_from_min_max(BoundingBox& BBox, const Vector3d& mins, const Vector3d& maxs)
+inline void Make_BBox_from_min_max(BoundingBox& BBox, const BBoxVector3d& mins, const BBoxVector3d& maxs, bool finite = true)
 {
-    BBox.lowerLeft = BBoxVector3d(mins);
-    BBox.size      = BBoxVector3d(maxs - mins);
+    Make_BBox_from_min_max(BBox, Vector3d(mins), Vector3d(maxs), finite);
+}
+
+inline bool UsableFiniteBounds(const BoundingBox& box)
+{
+    if (!box.finite)
+        return false;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const DBL low = box.lowerLeft[axis], size = box.size[axis];
+        const DBL high = low + size;
+        const BBoxScalar storedHigh = box.lowerLeft[axis] + box.size[axis];
+        if (!IsFiniteNumber(low) || !IsFiniteNumber(size) || !(size > 0.0) ||
+            !IsFiniteNumber(high) || !(high > low) || !IsFiniteNumber(DBL(storedHigh)) || !(DBL(storedHigh) > low))
+            return false;
+    }
+    return true;
+}
+
+inline void Make_Transformed_BBox(BoundingBox& box, const MATRIX& matrix)
+{
+    using halfspace_bounds::Interval;
+    std::array<Interval, 3> coordinates;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const Interval upper = Interval(DBL(box.lowerLeft[axis])) + Interval(DBL(box.size[axis]));
+        coordinates[axis] = Interval(DBL(box.lowerLeft[axis]), upper.high);
+    }
+    Vector3d low, high;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        Interval result(matrix[3][axis]);
+        for (int input = 0; input < 3; ++input)
+            result = result + coordinates[input] * Interval(matrix[input][axis]);
+        low[axis] = result.low;
+        high[axis] = result.high;
+    }
+    const bool finiteInterior = box.finiteInterior;
+    Make_BBox_from_min_max(box, low, high, box.finite);
+    box.finiteInterior = box.finite && finiteInterior;
 }
 
 /// @relates BoundingBox

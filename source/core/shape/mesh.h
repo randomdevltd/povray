@@ -258,6 +258,8 @@ struct Mesh_Data_Struct final
     MeshIndex Number_Of_Normals = 0;        ///< Number of normals in the mesh.
     MeshIndex Number_Of_Triangles = 0;      ///< Number of trinagles in the mesh.
     MeshIndex Number_Of_Vertices = 0;       ///< Number of vertices in the mesh.
+    std::once_flag ClosedTopologyOnce;
+    int ClosedTopology = -1;               ///< Unknown, open, or certified closed topology.
     MeshVector *Normals = nullptr;          ///< Smooth triangles' vertex normals.
     MeshVector *Vertices = nullptr;
     MeshUVVector *UVCoords = nullptr;       ///< Array of UV coordinates

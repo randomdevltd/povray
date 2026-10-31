@@ -65,6 +65,11 @@ Changed Behaviour
     prepared against the finalized scene. Ray-dependent fields fail before
     rendering, and prepared density queries never rebuild their data.
 
+  - Prepared interiors use certified finite geometry bounds independently
+    of acceleration size heuristics. Large translated emitters and rotated
+    plane intersections retain finite domains; open mesh interiors require
+    finite clipping. Framing uses finite surface bounds independently.
+
   - Requested method 4 constant media own prepared layout metadata without
     allocating constant density cells. Prepared modifier fields also select
     fixed integration when the underlying media are constant.

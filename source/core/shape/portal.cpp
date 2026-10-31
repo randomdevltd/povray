@@ -188,12 +188,14 @@ void Portal::Transform(const TRANSFORM *tr)
 ObjectPtr Portal::Invert()
 {
     body = body->Invert();
+    Compute_BBox();
     return this;
 }
 
 void Portal::Compute_BBox()
 {
     BBox = body->BBox;
+    BBox.finiteInterior = BBox.finiteInterior && !Test_Flag(body, INVERTED_FLAG);
 }
 
 Portal *Portal::MakeImage() const

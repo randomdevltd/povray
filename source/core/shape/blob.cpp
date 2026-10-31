@@ -2281,6 +2281,7 @@ void Blob::Compute_BBox()
     }
 
     Make_BBox_from_min_max(BBox, Min, Max);
+    BBox.finiteInterior = BBox.finite && IsFiniteNumber(Data->Threshold) && Data->Threshold >= INSIDE_TOLERANCE;
 
     if (Trans != nullptr)
     {

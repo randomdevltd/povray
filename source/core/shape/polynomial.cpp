@@ -1501,9 +1501,9 @@ Poly::~Poly()
 
 void Poly::Compute_BBox()
 {
-    Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+    Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
 
-    if(!Clip.empty())
+    if(!Clip.empty() && !Test_Flag(Clip[0], INVERTED_FLAG) && Clip[0]->BBox.finiteInterior)
         BBox = Clip[0]->BBox; // FIXME - does not seem to support more than one bounding object? [trf]
 }
 

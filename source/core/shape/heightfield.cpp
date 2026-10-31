@@ -1426,9 +1426,8 @@ HField::~HField()
 
 void HField::Compute_BBox()
 {
-    BBox.lowerLeft = BBoxVector3d(bounding_corner1);
-
-    BBox.size = BBoxVector3d(bounding_corner2 - bounding_corner1);
+    Make_BBox_from_min_max(BBox, bounding_corner1, bounding_corner2);
+    BBox.finiteInterior = false;
 
     if (Trans != nullptr)
     {
