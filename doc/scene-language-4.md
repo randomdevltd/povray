@@ -124,6 +124,12 @@ be a finite positive integer in the unsigned range; zero, negative, fractional
 and out-of-range values are errors. A light accepts only one bounce setting,
 and a bounce block accepts only one `passes` setting.
 
+`bounce { self off }` (default `on`, at most once) keeps an interior light's
+bounced light off its own container's media, at the camera and in its own next
+pass, while it still lights surfaces and other media; the medium's own emission
+lights it as before. A surface light refuses it: `bounce { self off } is for
+interior lights, not surface lights.`
+
 A light block emits light of its own only from an explicit `pigment` or `emission`
 input. Without one, a block without `bounce` is a solid white pigment light, and a
 block with `bounce` is bounce-only: it emits nothing of its own, whatever its
@@ -131,7 +137,7 @@ material's or media's emission, and its `brightness` (default 1, physical) multi
 every order it re-emits. `nits` or `lumens` in a bounce-only block are a parse error,
 `A bounce-only light block takes a plain brightness multiplier; nits and lumens need an
 emission input.` An explicit input can precede or follow `bounce`.
-`bounce` and `passes` remain free identifiers outside their light-block contexts.
+`bounce`, `passes` and `self` remain free identifiers outside their light-block contexts.
 
 Each pass produces the next scattering order from the preceding order across
 sources. A source past its own cutoff produces zero new output; older orders

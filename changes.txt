@@ -107,6 +107,13 @@ Changed Behaviour
   - Volume bounce gathers each order at its volume's nodes as up to six
     directional lobes, each scattered by the medium's phase over its spread.
 
+  - An interior light's `bounce { self off }` keeps its bounced light off
+    its own container's media, on camera rays and in the light its next
+    pass gathers, while it still lights surfaces and other media; the
+    medium's own emission lights it as before. The container is told apart
+    by identity, not position. Default `self on`; a surface light refuses
+    it. `self` is contextual and remains a free identifier elsewhere.
+
   - A light block's `samples` N is the light's detail for every receiver,
     and a receiver scales it by its `light_samples` M (default 1). Surfaces
     draw round(N x M) points per hit. Varying prepared method 4 media draw
