@@ -37,6 +37,7 @@ const CURATION = {
     normal: ['Parse_Tnormal', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
     density: ['Parse_Pigment', 'Parse_Pattern', 'ParseDensityFilePattern', 'ParsePotentialPattern'],
     interior: ['Parse_Interior'],
+    refraction: ['Parse_Interior_Refraction'],
     media: ['Parse_Media'],
     light: ['Parse_Interior_Light'],
     camera: ['Parse_Camera', 'Parse_Camera_Mods', 'Parse_Camera_Look_At'],

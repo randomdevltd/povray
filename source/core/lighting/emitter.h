@@ -113,14 +113,10 @@ struct MediaLight final
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
-    double fadeCutoff = 0.0;        ///< radiance-solid-angle below which a lit point leaves the light out; set by the scene version
     int samples = 16;               ///< emitter draws per receiver point
-    double farRadii = 8.0;          ///< obsolete compatibility setting; transport never substitutes a centre
-    double clusterRadii = 0.0;      ///< obsolete compatibility setting; transport never substitutes a cluster
-    int shadowsMethod = 2;          ///< 2 the shadows cache, 1 this light's own shadow rays
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
-    bool photonOptions = false, photonLegacyOptions = false;
+    bool photonOptions = false;
     bool preparedParallelSafe = false;
 
     MediaLight() = default;

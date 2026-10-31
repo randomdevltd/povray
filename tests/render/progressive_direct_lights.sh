@@ -59,7 +59,7 @@ for distance in 5 245; do
         view "glass${method}_$distance" +w32 +h32 +wt2 Declare=Method="$method" Declare=Distance="$distance" Declare=Lens=1 Declare=Glass=1
     done
 done
-# a medium bending the beam inside the target keeps the whole path length in the deposit weight
+# An index field bending the beam inside the target keeps the whole path length in the deposit weight.
 view bendnear +w8 +h8 +wt2 Declare=Distance=20 Declare=Bend=1
 for bend in 1 2; do
     view "bend$bend" +w8 +h8 +wt2 Declare=Distance=20 Declare=Bend="$bend" Declare=Lens=1 Declare=PhotonQuality=16
@@ -106,4 +106,4 @@ for source in 2 3; do
         Declare=Source="$source" Declare=Disabled=0 Declare=Power=0 > progressive_direct_zero.log 2>&1 || { cat progressive_direct_zero.log; exit 1; }
 done
 rm -f progressive_direct_*.px progressive_direct_*.ppm progressive_direct_*.log progressive_direct_*.pov-state
-echo 'progressive_direct_lights: direct-light power and fade, photon power calibration at 5 and 245 units on surfaces and in media and through a bending medium, glass caustics against classic, shadows without deposits, disabled and zero emitters passed'
+echo 'progressive_direct_lights: direct-light power and fade, photon power calibration at 5 and 245 units on surfaces and in media and through a bending index field, glass caustics against classic, shadows without deposits, disabled and zero emitters passed'

@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A black hole bends light through media refraction alone: the index of a Schwarzschild field in isotropic coordinates, n(r) = (1 + rs/4r)^3 / (1 - rs/4r), lenses the stars and the glowing disk into a photon ring. +w640 +h360; Declare=Angle=A sets refraction_angle, the bend allowed per step, Disk=0 drops the disk.
+// A black hole bends light through an interior refraction field alone: the index of a Schwarzschild field in isotropic coordinates, n(r) = (1 + rs/4r)^3 / (1 - rs/4r), lenses the stars and the glowing disk into a photon ring. +w640 +h360; Declare=Angle=A sets refraction_angle, the bend allowed per step, Disk=0 drops the disk.
 #version 4.0;
 #ifndef (Disk) #declare Disk = 1; #end
 #ifndef (Angle) #declare Angle = 0.25; #end
@@ -10,7 +10,7 @@
 #declare Index = function(r) { pow(1 + RS / (4 * r), 3) / (1 - RS / (4 * r)) }
 #declare Edge = Index(Reach);
 
-global_settings { assumed_gamma 1 refraction_angle Angle refraction_detail 5 } // the index turns over across about half a unit near the horizon, where refraction_angle slows the bend anyway
+global_settings { assumed_gamma 1 refraction_angle Angle } // the index turns over across about half a unit near the horizon, where refraction_angle slows the bend anyway
 camera { location <0, 2.2, -32> look_at 0 angle 24 right x * image_width / image_height }
 
 sky_sphere {
@@ -24,17 +24,18 @@ sky_sphere {
   }
 }
 
+#declare BlackHoleIndex = function { pigment {
+  function { select(sqrt(x * x + y * y + z * z) - RS * 0.26, 1,
+                    min(1, max(0, (Index(sqrt(x * x + y * y + z * z)) - Edge) / Most))) }
+} }
+
 sphere {
   0, Reach
   pigment { rgbt 1 }
   interior {
-    media {
-      method 3
-      refraction Most
-      density {
-        function { select(sqrt(x * x + y * y + z * z) - RS * 0.26, 1,
-                          min(1, max(0, (Index(sqrt(x * x + y * y + z * z)) - Edge) / Most))) }
-      }
+    refraction {
+      function { Most * BlackHoleIndex(x, y, z).red }
+      detail 0.5
     }
   }
 }

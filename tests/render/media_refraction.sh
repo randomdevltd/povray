@@ -1,5 +1,5 @@
 #!/bin/sh
-# media_refraction.sh <povray> <srcdir>: media refraction, curved rays, and surface indices where solids meet or overlap.
+# media_refraction.sh <povray> <srcdir>: independent index fields, curved rays, and surface indices where solids meet or overlap.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -50,34 +50,36 @@ region() {
         END { if (bad) { print bad " channels differ"; exit 1 } }' >&2 || { echo "media_refraction: $1 differs from $2" >&2; exit 1; }
 }
 
-# In vacuum a constant refraction 0.5 over the void is a uniform ior 1.5.
+# In vacuum, delta-n 0.5 gives n=1.5; radiance/n^2 makes emission 0.1 equivalent to 0.1/2.25.
 render constant Declare=Case=1 Declare=Atmosphere=1
 render uniform Declare=Case=2 Declare=Atmosphere=1
 region constant uniform 0 95 0 71
-says "Media refraction changes by 0.5 across a surface" constant || { echo "media_refraction: no jump warning" >&2; exit 1; }
+says "Refraction field changes by 0.5 across a surface" constant || { echo "media_refraction: no jump warning" >&2; exit 1; }
 
 render lens Declare=Case=3
 render none Declare=Case=4
 says "Curved Rays" lens || { echo "media_refraction: the lens does not curve rays" >&2; exit 1; }
-if says "across a surface" lens; then echo "media_refraction: a faded density warns of a jump" >&2; exit 1; fi
-# Rows where the box holds no density: neither refraction nor Fresnel reflection shows.
+if says "across a surface" lens; then echo "media_refraction: a faded field warns of a jump" >&2; exit 1; fi
+# Rows where the box holds no field: neither refraction nor Fresnel reflection shows.
 for name in lens none; do tail -c $(( 6 * W * H )) media_refraction_$name.ppm | head -c $(( 6 * W * 4 )) > media_refraction_${name}_top; done
 cmp -s media_refraction_lens_top media_refraction_none_top || { echo "media_refraction: the faded box shows at its edge" >&2; exit 1; }
-if says "Curved Rays" none; then echo "media_refraction: curved rays without media refraction" >&2; exit 1; fi
+if says "Curved Rays" none; then echo "media_refraction: curved rays without an index field" >&2; exit 1; fi
 
 render rise Declare=Case=5 Declare=Ramp=1
-render prepared Declare=Case=6 Declare=Ramp=1
+render inline_field Declare=Case=6 Declare=Ramp=1
 render ramp Declare=Case=4 Declare=Ramp=1
 expect ramp 48 36 0.4948
 expect rise 48 36 0.5918 0.006
-expect prepared 48 36 0.5918 0.006
+expect inline_field 48 36 0.5918 0.006
 
-for blend in 7:subtract 8:multiply 9:replace; do
-    render ${blend#*:} Declare=Case=${blend%:*} Declare=Ramp=1
-    region ${blend#*:} ramp 42 54 30 42
-done
-render outranked Declare=Case=10 Declare=Ramp=1
-region outranked rise 44 52 32 40
+# Two coincident half-amplitude fields give the same index and gradient as one full-amplitude field.
+render additive Declare=Case=7 Declare=Ramp=1
+region additive rise 0 95 0 71
+# Opposite signed fields cancel; reversing their declaration order changes neither index nor surfaces.
+render cancellation Declare=Case=8 Declare=Ramp=1
+render cancellation_reversed Declare=Case=9 Declare=Ramp=1
+region cancellation ramp 0 95 0 71
+same cancellation cancellation_reversed
 
 render hidden Declare=Case=11
 render water Declare=Case=15
@@ -137,7 +139,7 @@ render in_water Declare=Case=58
 region underwater in_water 14 81 2 69
 render underwater_off Declare=Case=59 Declare=Atmosphere=1.33
 same underwater underwater_off
-# An ior off box of refracting media bends from the index around it, water or atmosphere alike, with no surface of its own.
+# An ior off box with an index field bends from the index around it, water or atmosphere alike, with no surface of its own.
 render lens_water Declare=Case=66
 render lens_air_133 Declare=Case=67 Declare=Atmosphere=1.33
 render water_only Declare=Case=68
@@ -236,5 +238,5 @@ for case in 48:union_bounded 49:union_whole; do
 done
 
 render only Declare=Case=14
-if says "Media Samples" only; then echo "media_refraction: a refraction-only medium is sampled" >&2; exit 1; fi
+if says "Media Samples" only; then echo "media_refraction: an index-only interior samples scattering media" >&2; exit 1; fi
 echo "media_refraction: ok"

@@ -176,9 +176,9 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
     if (maxDepth >= EPSILON)
         bestisect.Depth = maxDepth;
 
-    if (sceneData->mediaRefraction && (maxDepth < EPSILON) && RefractingRay(ray))
+    if (sceneData->fieldRefraction && (maxDepth < EPSILON) && RefractingRay(ray))
     {
-        RefractionField field(ray.GetInteriors(), threadData);
+        RefractionField field(ray.GetInteriors());
         if (field.Varies())
         {
             const double base = MixedIor(ray.GetInteriors(), nullptr, nullptr);

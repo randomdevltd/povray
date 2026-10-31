@@ -22,12 +22,14 @@ plane { y, 0 pigment { checker rgb 0.85 rgb 0.6 scale 0.25 } finish { diffuse 0.
   pigment { rgb 0.15 } finish { specular 0.3 }
 }
 
+#declare LensIndex = function { pigment { function { max(0, 1 - (x * x + z * z)) } } }
+
 object {
   Disc
   texture { Glass }
   interior {
     ior 1.5
-    media { method 3 refraction 0.4 density { function { max(0, 1 - (x * x + z * z)) } } }
+    refraction { function { 0.4 * LensIndex(x, y, z).red } detail auto }
   }
   photons { target refraction on reflection off collect off }
   translate <-1.2, 2.5, 0>

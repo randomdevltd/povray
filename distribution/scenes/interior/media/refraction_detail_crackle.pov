@@ -1,13 +1,12 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Structure below the detail size averages instead of speckling: a 500 mm plate holds crackle at a
-// 0.2 mm scale, far below refraction_detail 1, so every ray meets the same mean index and the plate
-// reads as smooth faint glass. Declare=Detail=0 asks for refraction_detail auto, whose bounds-derived
-// detail (about 16 mm) averages the crackle the same way. +w640 +h360
+// A five-unit plate holds crackle at a 0.002-unit scale, below the index detail, so it reads as smooth glass.
+// Declare=Detail sets the index detail in scene units; its default is 0.01. Detail=0 selects auto.
+// +w640 +h360
 #version 4.0;
 
-#ifndef (Detail) #declare Detail = 1; #end
+#ifndef (Detail) #declare Detail = 0.01; #end
 
-global_settings { assumed_gamma 1 mm_per_unit 100 #if (Detail > 0) refraction_detail Detail #end }
+global_settings { assumed_gamma 1 }
 camera { location <0, 0.9, -4> look_at <0, 0.55, 0> angle 16 right x * image_width / image_height }
 light_source { <-1, 4, -3> rgb 1 }
 
@@ -21,11 +20,16 @@ plane {
 #declare Fade = function(x, y, z) { S((2.5 - abs(x)) / 0.25) * S((1.75 - abs(y)) / 0.25) * S((0.3 - abs(z)) / 0.06) }
 #declare Fine = function { pattern { crackle solid scale 0.002 } }
 
+#declare CrackleIndex = function { pigment { function { Fine(x, y, z) * Fade(x, y, z) } } }
+
 box {
   <-2.5, -1.75, -0.3>, <2.5, 1.75, 0.3>
   pigment { rgbt 1 }
   interior {
     ior 1
-    media { method 3 refraction 0.01 density { function { Fine(x, y, z) * Fade(x, y, z) } } }
+    refraction {
+      function { 0.01 * CrackleIndex(x, y, z).red }
+      #if (Detail > 0) detail Detail #else detail auto #end
+    }
   }
 }

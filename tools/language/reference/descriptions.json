@@ -250,6 +250,10 @@
    "text": "The dents pattern was originally designed only to be used as a normal pattern.",
    "doc": "r3_6.html#r3_6_2_1_9"
   },
+  "detail": {
+   "text": "Per-field detail D is a finite positive length in scene units; omitted detail or detail auto uses bounds-derived preparation and integration controls.",
+   "doc": "r3_11.html#r3_11_3_2"
+  },
   "diffuse": {
    "text": "The keyword diffuse is used in a finish statement to control how much of the light coming directly from any light sources is reflected via diffuse reflection.",
    "doc": "r3_6.html#r3_6_1_3_3_1"
@@ -411,7 +415,7 @@
    "doc": "r3_6.html#r3_6_2_7_3"
   },
   "intervals": {
-   "text": "The classic controls intervals, samples, jitter, aa_level, aa_threshold, confidence, variance and ratio apply to methods 1, 2 and 3, and to method 4 when it falls back to classic sampling.",
+   "text": "The classic controls intervals, samples, jitter, aa_level, aa_threshold, confidence, variance and ratio apply to methods 1, 2 and 3, but not to prepared method 4.",
    "doc": "r3_7.html#r3_7_2_3"
   },
   "inverse": {
@@ -726,18 +730,6 @@
    "text": "Such mirror-like reflection is controlled by the reflection {...} block in a finish statement.",
    "doc": "r3_6.html#r3_6_1_3_5"
   },
-  "refraction": {
-   "text": "In addition to turning refraction on or off, the old refraction keyword was followed by a float value from 0.0 to 1.0.",
-   "doc": "r3_7.html#r3_7_2_1_4"
-  },
-  "refraction_angle": {
-   "text": "Rays that graze the hole bend by a large angle, so the scene sets a small refraction_angle (Declare=Angle=A).",
-   "doc": "r3_11.html#r3_11_5_3"
-  },
-  "refraction_detail": {
-   "text": "A media block may give its own refraction_detail, overriding the scene's.",
-   "doc": "r3_4.html#r3_4_1_17"
-  },
   "repeat": {
    "text": "The repeat warp causes a section of the pattern to be repeated over and over.",
    "doc": "r3_6.html#r3_6_2_5_5_2"
@@ -759,8 +751,8 @@
    "doc": "r3_6.html#r3_6_1_3_4_2"
   },
   "samples": {
-   "text": "The classic controls intervals, samples, jitter, aa_level, aa_threshold, confidence, variance and ratio apply to methods 1, 2 and 3, and to method 4 when it falls back to classic sampling.",
-   "doc": "r3_7.html#r3_7_2_3"
+   "text": "The samples count controls integration noise and shadow quality, not expected brightness.",
+   "doc": "r3_12.html#r3_12_3"
   },
   "save_file": {
    "text": "The keywords save_file and load_file allow you to save and load photon maps.",
@@ -1040,8 +1032,8 @@
   },
   "absorption": {
    "rank": 1020,
-   "code": "absorption : <0,0,0>",
-   "from": "doc/html/r3_7.html"
+   "code": "absorption rgb 0.005",
+   "from": "tests/pov4/interior_all_options.pov4:31"
   },
   "accuracy": {
    "rank": 1015,
@@ -1094,9 +1086,9 @@
    "from": "doc/html/r3_4.html"
   },
   "ambient": {
-   "rank": 71,
-   "code": "plane { y, 0 pigment { color rgb 0.8 } finish { ambient 0 diffuse 1 } }",
-   "from": "tests/pov4/default_media.pov4:5"
+   "rank": 30,
+   "code": "finish { ambient 0 diffuse 0 }",
+   "from": "tests/pov4/interior_all_options.pov4:10"
   },
   "ambient_light": {
    "rank": 39,
@@ -1144,9 +1136,9 @@
    "from": "doc/html/r3_3.html"
   },
   "assumed_gamma": {
-   "rank": 37,
-   "code": "global_settings { assumed_gamma 1.0 }",
-   "from": "tests/pov4/default_media.pov4:3"
+   "rank": 35,
+   "code": "global_settings { assumed_gamma 1 }",
+   "from": "tests/pov4/interior_all_options.pov4:2"
   },
   "atan": {
    "rank": 1047,
@@ -1169,19 +1161,19 @@
    "from": "doc/html/r3_4.html"
   },
   "atmospheric_ior": {
-   "rank": 40,
-   "code": "global_settings { atmospheric_ior 1.33 }",
-   "from": "doc/html/r3_4.html"
+   "rank": 53,
+   "code": "global_settings { assumed_gamma 1 atmospheric_ior 1 }",
+   "from": "tests/pov4/ok_refraction_components.pov4:1"
   },
   "attenuation": {
-   "rank": 1029,
-   "code": "attenuation : 1, 2 (physical)",
-   "from": "doc/html/r3_12.html"
+   "rank": 1016,
+   "code": "attenuation 2, 1",
+   "from": "tests/pov4/interior_all_options.pov4:17"
   },
   "auto": {
-   "rank": 1060,
-   "code": "refraction_detail : auto (derived from each medium's bounds)",
-   "from": "doc/html/r3_4.html"
+   "rank": 87,
+   "code": "let Bend = refraction { function { -0.01*(x+detail) } function { 0.005 } detail auto };",
+   "from": "tests/pov4/ok_refraction_components.pov4:4"
   },
   "autostop": {
    "rank": 1010,
@@ -1236,9 +1228,9 @@
    "from": "tests/pov4/components.pov4:17"
   },
   "bozo": {
-   "rank": 63,
-   "code": "interior { media { scattering { 1, 0.2 } density { bozo } } } }",
-   "from": "doc/html/r3_7.html"
+   "rank": 50,
+   "code": "density { bozo color_map { [0 rgb 0] [1 rgb 1] } }",
+   "from": "doc/html/r3_11.html"
   },
   "break": {
    "rank": 1016,
@@ -1317,11 +1309,6 @@
    "rank": 22,
    "code": "clipped_by{plane{y,0}}",
    "from": "doc/html/r3_5.html"
-  },
-  "cluster_radii": {
-   "rank": 1023,
-   "code": "cluster_radii : 0 (off)",
-   "from": "doc/html/r3_12.html"
   },
   "collect": {
    "rank": 1011,
@@ -1466,7 +1453,7 @@
    "from": "tests/pov4/ok_debug_statement.pov4:2"
   },
   "default": {
-   "code": "default { media { mix replace } interior { light { fade_cutoff 0.05 } } }",
+   "code": "default { media { mix replace } interior { light { } } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "defined": {
@@ -1475,8 +1462,8 @@
    "from": "tests/pov4/review.pov4:44"
   },
   "density": {
-   "code": "density { spherical turbulence 0.4 color_map { [0 rgb 0] [1 rgb 1] } }",
-   "from": "doc/html/r3_11.html:2"
+   "code": "density { bozo color_map { [0 rgb 0] [1 rgb 1] } }",
+   "from": "doc/html/r3_11.html:6"
   },
   "density_file": {
    "rank": 1031,
@@ -1498,6 +1485,11 @@
    "code": "volume_sampling BOOL | volume_sampling { [depth FLOAT] [spread FLOAT] }",
    "from": "doc/html/r3_6.html"
   },
+  "detail": {
+   "rank": 72,
+   "code": "interior { ior 1 refraction { function { -0.03*(2+x/4) } detail 0.06 } }",
+   "from": "tests/pov4/refraction.pov4:7"
+  },
   "df3": {
    "rank": 1031,
    "code": "density_file df3 \"filename.df3\"",
@@ -1508,9 +1500,9 @@
    "from": "tests/pov4/components.pov4:16"
   },
   "diffuse": {
-   "rank": 71,
-   "code": "plane { y, 0 pigment { color rgb 0.8 } finish { ambient 0 diffuse 1 } }",
-   "from": "tests/pov4/default_media.pov4:5"
+   "rank": 30,
+   "code": "finish { ambient 0 diffuse 0 }",
+   "from": "tests/pov4/interior_all_options.pov4:10"
   },
   "direction": {
    "rank": 11,
@@ -1616,11 +1608,6 @@
    "code": "fade_color : <0,0,0>",
    "from": "doc/html/r3_7.html"
   },
-  "fade_cutoff": {
-   "rank": 73,
-   "code": "default { media { mix replace } interior { light { fade_cutoff 0.05 } } }",
-   "from": "tests/pov4/default_media.pov4:2"
-  },
   "fade_distance": {
    "rank": 1019,
    "code": "fade_distance : 0.0",
@@ -1650,11 +1637,6 @@
    "rank": 38,
    "code": "far { pigment { rgb <0.45, 0.7, 1> } }",
    "from": "doc/html/r3_10.html"
-  },
-  "far_radii": {
-   "rank": 1013,
-   "code": "far_radii : 8",
-   "from": "doc/html/r3_12.html"
   },
   "file": {
    "rank": 73,
@@ -1721,9 +1703,9 @@
    "from": "doc/html/r3_10.html"
   },
   "function": {
-   "rank": 76,
-   "code": "function { sqrt(x * x + y * y + z * z) - 1 + Amp * sin(K * x) * sin(K * z) }",
-   "from": "tests/pov4/mixed.pov4:12"
+   "rank": 42,
+   "code": "function { -0.0003*max(0, 1-x*x-y*y-z*z) }",
+   "from": "tests/pov4/interior_all_options.pov4:24"
   },
   "gamma": {
    "rank": 1027,
@@ -1789,9 +1771,9 @@
    "from": "doc/html/r3_5.html"
   },
   "hollow": {
-   "rank": 31,
-   "code": "sphere { -0.5*x, 1 hollow off }",
-   "from": "doc/html/r3_5.html"
+   "rank": 25,
+   "code": "pigment { rgbt 1 } hollow",
+   "from": "doc/html/r3_11.html"
   },
   "hypercomplex": {
    "rank": 1025,
@@ -1853,7 +1835,7 @@
    "from": "doc/html/r3_4.html"
   },
   "interior": {
-   "code": "interior { light { fade_cutoff 0.05 } }",
+   "code": "interior { light { } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "interior_texture": {
@@ -1886,9 +1868,9 @@
    "from": "doc/html/r3_5.html"
   },
   "ior": {
-   "rank": 20,
-   "code": "interior { ior 1.5 }",
-   "from": "doc/html/r3_7.html"
+   "rank": 33,
+   "code": "interior { ior 1 refraction off }",
+   "from": "tests/pov4/refraction_off.pov4:7"
   },
   "ior_mix": {
    "rank": 80,
@@ -1957,8 +1939,8 @@
    "from": "tests/pov4/ok_string_compare.pov4:4"
   },
   "light": {
-   "code": "light { fade_cutoff 0.05 }",
-   "from": "tests/pov4/default_media.pov4:2"
+   "code": "light { pigment { rgb 50 } samples 4 }",
+   "from": "tests/pov4/default_media.pov4:6"
   },
   "light_group": {
    "code": "light_group { LIGHT_GROUP LIGHT | LIGHT_GROUP OBJECT | LIGHT_GROUP [LIGHT_GROUP MODIFIER] }",
@@ -1989,14 +1971,14 @@
    "from": "doc/html/r3_4.html"
   },
   "location": {
-   "rank": 48,
-   "code": "camera { location <0, 2, -4> look_at <0, 0, 4> }",
-   "from": "tests/pov4/default_media.pov4:4"
+   "rank": 38,
+   "code": "camera { location <0,0,-4> look_at 0 }",
+   "from": "tests/pov4/ok_refraction_components.pov4:2"
   },
   "look_at": {
-   "rank": 48,
-   "code": "camera { location <0, 2, -4> look_at <0, 0, 4> }",
-   "from": "tests/pov4/default_media.pov4:4"
+   "rank": 38,
+   "code": "camera { location <0,0,-4> look_at 0 }",
+   "from": "tests/pov4/ok_refraction_components.pov4:2"
   },
   "looks_like": {
    "rank": 23,
@@ -2087,14 +2069,14 @@
    "from": "tests/pov4/default_media.pov4:2"
   },
   "media_attenuation": {
-   "rank": 1021,
-   "code": "media_attenuation: on",
-   "from": "doc/html/r3_12.html"
+   "rank": 1020,
+   "code": "media_attenuation on",
+   "from": "tests/pov4/interior_all_options.pov4:20"
   },
   "media_interaction": {
-   "rank": 1021,
-   "code": "media_interaction: on",
-   "from": "doc/html/r3_12.html"
+   "rank": 1020,
+   "code": "media_interaction on",
+   "from": "tests/pov4/interior_all_options.pov4:19"
   },
   "memory": {
    "rank": 68,
@@ -2149,14 +2131,14 @@
    "from": "doc/html/r3_4.html"
   },
   "mix": {
-   "rank": 73,
-   "code": "default { media { mix replace } interior { light { fade_cutoff 0.05 } } }",
+   "rank": 56,
+   "code": "default { media { mix replace } interior { light { } } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "mm_per_unit": {
-   "rank": 77,
-   "code": "global_settings { refraction_angle 0.25 mm_per_unit 100 refraction_detail 1 }",
-   "from": "doc/html/r3_11.html"
+   "rank": 69,
+   "code": "global_settings { assumed_gamma 1 atmospheric_ior 1 mm_per_unit 100 }",
+   "from": "tests/pov4/refraction_off.pov4:1"
   },
   "mortar": {
    "rank": 1029,
@@ -2267,9 +2249,9 @@
    "from": "doc/html/r3_6.html"
   },
   "off": {
-   "rank": 31,
-   "code": "sphere { -0.5*x, 1 hollow off }",
-   "from": "doc/html/r3_5.html"
+   "rank": 33,
+   "code": "interior { ior 1 refraction off }",
+   "from": "tests/pov4/refraction_off.pov4:7"
   },
   "offset": {
    "rank": 31,
@@ -2297,9 +2279,9 @@
    "from": "doc/html/r3_4.html"
   },
   "orthographic": {
-   "rank": 47,
-   "code": "camera {location -2.5*z look_at 0 orthographic}",
-   "from": "doc/html/r3_3.html"
+   "rank": 70,
+   "code": "camera { orthographic location <0, 0, -6> look_at 0 right x*4 up y*3 }",
+   "from": "tests/pov4/refraction.pov4:2"
   },
   "output": {
    "code": "output { [size <Width, Height>] [window <SC, SR, EC, ER>] [file \"NAME\"] }",
@@ -2445,9 +2427,9 @@
    "from": "doc/html/r3_5.html"
   },
   "prepared_media_cells": {
-   "rank": 48,
-   "code": "global_settings { prepared_media_cells 4000000 }",
-   "from": "doc/html/r3_4.html"
+   "rank": 63,
+   "code": "global_settings { assumed_gamma 1.0 prepared_media_cells 4096 }",
+   "from": "tests/pov4/framing_tagged.pov4:3"
   },
   "pretrace_end": {
    "rank": 1019,
@@ -2553,19 +2535,13 @@
    "from": "doc/html/r3_6.html"
   },
   "refraction": {
-   "rank": 44,
-   "code": "media { refraction -0.03 density { Steam } }",
-   "from": "doc/html/r3_11.html"
+   "code": "refraction { function { -0.0003*max(0, 1-x*x-y*y-z*z) } detail 0.02 }",
+   "from": "tests/pov4/interior_all_options.pov4:23"
   },
   "refraction_angle": {
-   "rank": 77,
-   "code": "global_settings { refraction_angle 0.25 mm_per_unit 100 refraction_detail 1 }",
-   "from": "doc/html/r3_11.html"
-  },
-  "refraction_detail": {
-   "rank": 57,
-   "code": "global_settings { assumed_gamma 1.0 refraction_detail 1 }",
-   "from": "tests/pov4/framing_tagged.pov4:3"
+   "rank": 1022,
+   "code": "refraction_angle : 0.5",
+   "from": "doc/html/r3_4.html"
   },
   "repeat": {
    "rank": 19,
@@ -2573,9 +2549,9 @@
    "from": "doc/html/r3_6.html"
   },
   "resolution": {
-   "rank": 74,
-   "code": "media { method 4 resolution 0.1 scattering { 1, rgb 1 } density { bozo } }",
-   "from": "doc/html/r3_11.html"
+   "rank": 1016,
+   "code": "resolution 0.025",
+   "from": "tests/pov4/interior_all_options.pov4:29"
   },
   "return": {
    "rank": 26,
@@ -2598,14 +2574,14 @@
    "from": "doc/html/r3_3.html"
   },
   "rgbt": {
-   "rank": 30,
-   "code": "box { -1, 1 pigment { rgbt 1 }",
-   "from": "tests/pov4/interop.pov4:9"
+   "rank": 18,
+   "code": "pigment { rgbt 1 }",
+   "from": "tests/pov4/interior_all_options.pov4:9"
   },
   "right": {
-   "rank": 64,
-   "code": "camera { location <0, 0, -10> right x * 4 / 3 up y look_at Row }",
-   "from": "tests/pov4/framing_tagged.pov4:12"
+   "rank": 60,
+   "code": "camera { location <0, 2, -4> look_at <0, 1, 0> right x*4/3 }",
+   "from": "tests/pov4/interior_all_options.pov4:3"
   },
   "ripples": {
    "rank": 35,
@@ -2623,9 +2599,9 @@
    "from": "doc/html/r3_6.html"
   },
   "samples": {
-   "rank": 27,
-   "code": "light_source { samples 16 }",
-   "from": "doc/html/r3_7.html"
+   "rank": 1011,
+   "code": "samples 256",
+   "from": "tests/pov4/interior_all_options.pov4:16"
   },
   "save_file": {
    "rank": 1021,
@@ -2643,9 +2619,9 @@
    "from": "doc/html/r3_6.html"
   },
   "scattering": {
-   "rank": 12,
-   "code": "scattering {",
-   "from": "doc/html/r3_7.html"
+   "rank": 26,
+   "code": "scattering { 1, rgb 0.02 }",
+   "from": "tests/pov4/interior_all_options.pov4:30"
   },
   "screen": {
    "rank": 38,
@@ -2653,14 +2629,9 @@
    "from": "doc/html/r3_10.html"
   },
   "shadowless": {
-   "rank": 1016,
-   "code": "shadowless : off",
-   "from": "doc/html/r3_12.html"
-  },
-  "shadows": {
-   "rank": 40,
-   "code": "shadows method Integer | photons { ... }",
-   "from": "doc/html/r3_12.html"
+   "rank": 1014,
+   "code": "shadowless off",
+   "from": "tests/pov4/interior_all_options.pov4:18"
   },
   "sin": {
    "rank": 54,
@@ -3102,9 +3073,9 @@
    "from": "tests/pov4/stills.pov4:6"
   },
   "z": {
-   "rank": 43,
-   "code": "union { Count() Count() pigment { rgb z } }",
-   "from": "tests/pov4/review.pov4:26"
+   "rank": 42,
+   "code": "function { -0.0003*max(0, 1-x*x-y*y-z*z) }",
+   "from": "tests/pov4/interior_all_options.pov4:24"
   }
  }
 }

@@ -3769,12 +3769,6 @@ void Parser::Parse_Media(vector<Media>& medialist)
             Parse_Colour(IMedia->Emission);
         END_CASE
 
-        CASE (REFRACTION_TOKEN)
-            IMedia->Refraction = Parse_Float();
-            if (!std::isfinite(IMedia->Refraction))
-                Error("media refraction must be finite.");
-        END_CASE
-
         CASE (SCATTERING_TOKEN)
             Parse_Begin();
             IMedia->Type = (int)Parse_Float();
@@ -3876,26 +3870,8 @@ void Parser::Parse_Media(vector<Media>& medialist)
         END_CASE
 
         OTHERWISE
-            if (CurrentTrueTokenId() == LIGHT_SOURCE_TOKEN)
-                Error("A medium's light_source block moved out of media to its interior: interior { media { ... } light { ... } }.");
-            if (CurrentTokenText() == "refraction_detail")
-            {
-                Get_Token();
-                if (CurrentTokenText() == "auto")
-                    IMedia->RefractionDetail = 0.0;
-                else
-                {
-                    UNGET
-                    IMedia->RefractionDetail = Parse_Float();
-                    if (!std::isfinite(IMedia->RefractionDetail) || !(IMedia->RefractionDetail > 0.0))
-                        Error("media refraction_detail must be a length in millimetres greater than 0, or auto.");
-                }
-            }
-            else
-            {
-                UNGET
-                EXIT
-            }
+            UNGET
+            EXIT
         END_CASE
     END_EXPECT
 
@@ -3907,29 +3883,10 @@ void Parser::Parse_Media(vector<Media>& medialist)
     medialist.push_back(IMediaObj);
 }
 
-void Parser::Parse_Interior_Light(Interior& interior, bool defaultsOnly)
+void Parser::Parse_Interior_Light(Interior& interior)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
-    light->fadeCutoff = (defaultFadeCutoff >= 0.0) ? defaultFadeCutoff :
-                        (sceneData->EffectiveLanguageVersion() >= 400) ? kDefaultFadeCutoff : 0.0;
-
     Parse_Begin();
-
-    if (defaultsOnly)
-    {
-        Get_Token();
-        while (CurrentTokenText() == "fade_cutoff")
-        {
-            light->fadeCutoff = Parse_Fade_Cutoff();
-            Get_Token();
-        }
-        if (CurrentTrueTokenId() != RIGHT_CURLY_TOKEN)
-            Error("A #default interior light accepts only fade_cutoff, not '%s'.", CurrentTokenText().c_str());
-        UNGET
-        Parse_End();
-        interior.light = light;
-        return;
-    }
 
     EXPECT
         CASE (PIGMENT_TOKEN)
@@ -3983,14 +3940,6 @@ void Parser::Parse_Interior_Light(Interior& interior, bool defaultsOnly)
                     light->photonReflection = Parse_Float() > 0.0;
                 END_CASE
 
-                CASE (AREA_LIGHT_TOKEN)
-                END_CASE
-
-                CASE4 (TARGET_TOKEN, COLLECT_TOKEN, PASS_THROUGH_TOKEN, SPLIT_UNION_TOKEN)
-                    light->photonLegacyOptions = true;
-                    Allow_Float(1.0);
-                END_CASE
-
                 OTHERWISE
                     UNGET
                     EXIT
@@ -4000,13 +3949,7 @@ void Parser::Parse_Interior_Light(Interior& interior, bool defaultsOnly)
         END_CASE
 
         OTHERWISE
-            if (CurrentTrueTokenId() == FADE_POWER_TOKEN)
-                Error("A light block has no fade_power; its falloff is attenuation <power>, <scale>.");
-            else if (CurrentTrueTokenId() == FADE_DISTANCE_TOKEN)
-                Error("A light block has no fade_distance; its falloff is attenuation <power>, <scale>.");
-            else if (CurrentTokenText() == "fade_cutoff")
-                light->fadeCutoff = Parse_Fade_Cutoff();
-            else if (CurrentTokenText() == "attenuation")
+            if (CurrentTokenText() == "attenuation")
             {
                 Get_Token();
                 UNGET
@@ -4018,37 +3961,6 @@ void Parser::Parse_Interior_Light(Interior& interior, bool defaultsOnly)
                     !std::isfinite(light->attenuationPower) || (light->attenuationPower <= 0.0))
                     Error("A light block's attenuation takes a power greater than 0 and a scale of 0 or more; one value sets the scale.");
             }
-            else if (CurrentTokenText() == "far_radii")
-            {
-                light->farRadii = Parse_Float();
-                if (!warnedFarRadii)
-                {
-                    Warning("A volume light's far_radii is obsolete and ignored; the finite source is integrated at every distance.");
-                    warnedFarRadii = true;
-                }
-                if (!std::isfinite(light->farRadii) || (light->farRadii < 0.0) || ((light->farRadii > 0.0) && (light->farRadii < 1.0)))
-                    Error("A light block's far_radii must be 0 or at least 1.");
-            }
-            else if (CurrentTokenText() == "cluster_radii")
-            {
-                light->clusterRadii = Parse_Float();
-                if (!warnedClusterRadii)
-                {
-                    Warning("A volume light's cluster_radii is obsolete and ignored; source contributions remain separate.");
-                    warnedClusterRadii = true;
-                }
-                if (!std::isfinite(light->clusterRadii) || (light->clusterRadii < 0.0) || ((light->clusterRadii > 0.0) && (light->clusterRadii < 1.0)))
-                    Error("A light block's cluster_radii must be 0 or at least 1.");
-            }
-            else if (CurrentTokenText() == "shadows")
-            {
-                Get_Token();
-                if (CurrentTokenText() != "method")
-                    Error("A light block's shadows takes a method: 1 its own shadow rays, 2 the shadows cache.");
-                light->shadowsMethod = Parse_Int_With_Minimum(1, "shadows method");
-                if (light->shadowsMethod != 1 && light->shadowsMethod != 2)
-                    Error("A light block's shadows method must be 1 or 2.");
-            }
             else
             {
                 UNGET
@@ -4059,28 +3971,8 @@ void Parser::Parse_Interior_Light(Interior& interior, bool defaultsOnly)
 
     Parse_End();
 
-    if ((light->fadeCutoff > 0.0) && !warnedLightCutoff)
-    {
-        Warning("Volume-light fade_cutoff is currently disabled; finite-source culling requires a validated contribution bound.");
-        warnedLightCutoff = true;
-    }
     interior.light = light;
 }
-
-double Parser::Parse_Fade_Cutoff()
-{
-    const double cutoff = Parse_Float();
-    if (!std::isfinite(cutoff) || (cutoff < 0.0))
-        Error("A light block's fade_cutoff must be finite and not negative.");
-    if ((cutoff > 0.0) && !warnedLightCutoff)
-    {
-        Warning("Volume-light fade_cutoff is currently disabled; finite-source culling requires a validated contribution bound.");
-        warnedLightCutoff = true;
-    }
-    return cutoff;
-}
-
-
 
 /*****************************************************************************
 *
@@ -4108,6 +4000,61 @@ double Parser::Parse_Fade_Cutoff()
 *   Sep 1999 : Fade_Colour added - Edward Coffey
 *
 ******************************************************************************/
+
+void Parser::Parse_Interior_Refraction(Interior& interior)
+{
+    auto refraction = std::make_shared<RefractionSpec>();
+    Get_Token();
+    if (CurrentTrueTokenId() == OFF_TOKEN)
+    {
+        refraction->preparedParallelSafe = true;
+        interior.refraction = refraction;
+        return;
+    }
+    UNGET
+    Parse_Begin();
+    EXPECT
+        CASE (FUNCTION_TOKEN)
+            refraction->functions.push_back(new FunctionVM::CustomFunction(mpFunctionVM.get(), Parse_Function()));
+        END_CASE
+
+        OTHERWISE
+            if (CurrentTokenText() == "detail")
+            {
+                Get_Token();
+                if (CurrentTokenText() == "auto")
+                    refraction->detail = 0.0;
+                else
+                {
+                    UNGET
+                    refraction->detail = Parse_Float();
+                    if (!std::isfinite(refraction->detail) || refraction->detail <= 0.0)
+                        Error("Refraction detail must be auto or finite and greater than zero, in scene units.");
+                }
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
+        END_CASE
+    END_EXPECT
+    Parse_End();
+    if (refraction->functions.empty())
+        Error("A refraction block requires at least one function.");
+    bool known = true;
+    std::vector<FUNCTION> roots;
+    for (const auto *function : refraction->functions)
+    {
+        const auto *custom = dynamic_cast<const FunctionVM::CustomFunction *>(function);
+        if (!custom || custom->RequiresRayContext())
+            known = false;
+        else
+            roots.push_back(custom->Id());
+    }
+    refraction->preparedParallelSafe = known && SelfContained(roots);
+    interior.refraction = refraction;
+}
 
 void Parser::Parse_Interior(InteriorPtr& interior)
 {
@@ -4177,8 +4124,22 @@ void Parser::Parse_Interior(InteriorPtr& interior)
         END_CASE
 
         CASE (REFRACTION_TOKEN)
-            interior->Old_Refract = Parse_Float();
-            Warn_Compat(false, "Refraction value unnecessary to turn on refraction.\nTo attenuate, the fade_power and fade_distance keywords should be specified in 'interior{...}' statement.");
+            Get_Token();
+            // In a 3.7 or older scene `refraction off` is the classic value 0, as those versions read it.
+            if (CurrentTrueTokenId() == LEFT_CURLY_TOKEN ||
+                (CurrentTrueTokenId() == OFF_TOKEN && sceneData->EffectiveLanguageVersion() >= 380))
+            {
+                UNGET
+                if (interior->refraction)
+                    Error("Only one refraction block allowed in an interior.");
+                Parse_Interior_Refraction(*interior);
+            }
+            else
+            {
+                UNGET
+                interior->Old_Refract = Parse_Float();
+                Warn_Compat(false, "Refraction value unnecessary to turn on refraction.\nTo attenuate, the fade_power and fade_distance keywords should be specified in 'interior{...}' statement.");
+            }
         END_CASE
 
         OTHERWISE

@@ -5,9 +5,19 @@
 #include "core/coretypes.h"
 #include "core/material/preparedfield.h"
 #include "core/material/preparedlightaxis.h"
+#include "core/material/preparedrefractionaxis.h"
 
 namespace pov
 {
+
+class PreparedRefractionDefinition final
+{
+    public:
+        std::shared_ptr<const PreparedScalarField> field;
+        DBL detail = HUGE_VAL;
+        bool varying = false;
+        std::vector<std::shared_ptr<const PreparedGridLayout>> layouts;
+};
 
 struct PreparedLightComponent final
 {

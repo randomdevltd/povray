@@ -24,6 +24,13 @@ union {
 }
 
 #declare Plume = function(x, y, z) { exp(-(y * y + z * z) / (0.09 * (1 + x * 0.35) * (1 + x * 0.35))) * exp(-x / 5) * min(1, x * 8) }
+#declare PlumeIndexWarp = function { pigment {
+  function { exp(-(y * y + z * z) / (0.5 * (1 + (x + 0.8) * 0.3))) * exp(-(x + 0.8) / 6) }
+  warp { turbulence <0.3, 0.15, 0.15> octaves 3 }
+} }
+#declare PlumeIndexEnvelope = function { pigment {
+  function { max(0, min(1, (x + 0.8) * 4) * min(1, (9 - x) / 2) * (1 - sqrt(y * y + z * z) / 2.2)) }
+} }
 cylinder {
   <-0.8, 0, 0>, <9, 0, 0>, 2.2
   pigment { rgbt 1 }
@@ -38,14 +45,8 @@ cylinder {
       }
     }
     #if (Bend)
-      media {
-        method 3
-        refraction -0.08
-        density {
-          function { exp(-(y * y + z * z) / (0.5 * (1 + (x + 0.8) * 0.3))) * exp(-(x + 0.8) / 6) }
-          warp { turbulence <0.3, 0.15, 0.15> octaves 3 }
-        }
-        density { function { max(0, min(1, (x + 0.8) * 4) * min(1, (9 - x) / 2) * (1 - sqrt(y * y + z * z) / 2.2)) } }
+      refraction {
+        function { -0.08 * PlumeIndexWarp(x, y, z).red * PlumeIndexEnvelope(x, y, z).red }
       }
     #end
   }

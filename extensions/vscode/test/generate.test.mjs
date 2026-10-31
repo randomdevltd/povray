@@ -36,3 +36,14 @@ test('photon controls are completed and quality is highlighted', () => {
     for (const word of ['quality', 'method'])
         assert.ok(blocks.blocks.global_settings.nested.photons.includes(word));
 });
+
+test('independent refraction fields expose their block items to completion', () => {
+    const blocks = JSON.parse(readFileSync(join(root, targets[1]), 'utf8')).blocks;
+    const grammar = JSON.parse(readFileSync(join(root, targets[0]), 'utf8'));
+    assert.doesNotMatch(grammar.repository.block.match, /\bfield\b/);
+    assert.match(grammar.repository.block.match, /\brefraction\b/);
+    for (const word of ['function', 'detail', 'auto'])
+        assert.ok(blocks.refraction.items.includes(word));
+    assert.equal(blocks.field, undefined);
+    for (const word of ['strength', 'field', 'pigment']) assert.ok(!blocks.refraction.items.includes(word));
+});

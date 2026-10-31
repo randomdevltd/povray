@@ -982,7 +982,7 @@ class Trace
         /// Under interface_texture blend, fills `textures` with the textures of the clear faces meeting at a hit, if several.
         bool SharedFaceTextures(const Ray& ray, const Intersection& isect, const Vector3d& normal, WeightedTextureVector& textures,
                                 std::unique_ptr<InterfaceCache>& sides);
-        /// Whether interfaces merge coincident surfaces: version 4.0 or media refraction, with an ior or an opaque object.
+        /// Whether interfaces merge coincident surfaces: version 4.0 or refraction field, with an ior or an opaque object.
         bool MergesSurfaces() const;
         /// Whether an object's plain pigment lets no light through where its surface meets `point` along the ray.
         bool OpaqueAt(ConstObjectPtr object, const Ray& ray, const Vector3d& point, double tolerance);
@@ -993,7 +993,7 @@ class Trace
         /// The ior where a ray holds `interiors`, by their ior_mix, else the atmosphere's; `dispersion` gets the dispersion
         /// mixed the same way, and `elements` the largest dispersion sample count among the interiors that count.
         double MixedIor(const RayInteriorVector& interiors, double *dispersion, unsigned int *elements) const;
-        /// The index where a ray holds `interiors`: their mixed ior plus media refraction, whose part `offset` gets.
+        /// The index where a ray holds `interiors`: their mixed ior plus refraction field, whose part `offset` gets.
         double StackIndex(const RayInteriorVector& interiors, const Vector3d& point, double& offset, double *base = nullptr,
                           double *dispersion = nullptr, unsigned int *elements = nullptr);
         /// Warns once where a mean interior of ior 1 or the atmosphere's overlaps a denser one.

@@ -125,6 +125,7 @@ static void WarnFastMedia(TraceThreadData* td, const Media& media, unsigned reas
 }
 
 static bool ConstantDensity(const Media& medium);
+static DBL ChannelMean(const MathColour& colour);
 
 class Media::FastCache final
 {
@@ -139,7 +140,6 @@ class Media::FastCache final
         MathColour constantValue = MathColour(1.0);
         std::shared_ptr<const PreparedGridLayout> layout;
         bool published = false;
-        bool signedValues = false;
         unsigned failureReason = kFastField;
         std::string failure = "The density pattern or coefficients cannot be prepared; check for unsupported patterns or negative/non-finite values.";
         Vector3d low, size;
@@ -394,8 +394,8 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
         fieldReady = true;
         for (int ch = 0; ch < MathColour::channels; ch++)
             fieldReady = fieldReady && IsFiniteNumber(constantValue[ch]) &&
-                ((media.Sample_Method != 4 || media.OnlyRefracts()) || constantValue[ch] >= 0.0);
-        if ((media.Sample_Method == 4) && !media.OnlyRefracts())
+                constantValue[ch] >= 0.0;
+        if (media.Sample_Method == 4)
             for (int ch = 0; ch < MathColour::channels; ch++)
                 fieldReady = fieldReady && IsFiniteNumber(media.Extinction[ch]) && (media.Extinction[ch] >= 0.0) &&
                              IsFiniteNumber(media.Emission[ch]) && IsFiniteNumber(media.Scattering[ch]);
@@ -472,11 +472,9 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
 
 bool Media::FastCache::SizeGrid(const Media& media, const Vector3d& lo, const Vector3d& hi, DBL cellLimit)
 {
-    signedValues = (media.Sample_Method != 4) || media.OnlyRefracts();
-    if (!signedValues)
-        for (int ch = 0; ch < MathColour::channels; ch++)
-            if (!IsFiniteNumber(media.Extinction[ch]) || (media.Extinction[ch] < 0.0))
-                return false;
+    for (int ch = 0; ch < MathColour::channels; ch++)
+        if (!IsFiniteNumber(media.Extinction[ch]) || (media.Extinction[ch] < 0.0))
+            return false;
     for (const PIGMENT *pigment : media.Density)
         if ((pigment->Type != PLAIN_PATTERN) &&
             ((pigment->Type <= LAST_SPECIAL_PATTERN) ||
@@ -536,7 +534,7 @@ bool Media::FastCache::FillSlab(Media& media, int z, TraceThreadData *td, const 
                         MathColour sample;
                         Evaluate_Density_Pigment(media.Density, point, sample, td);
                         for (int ch = 0; ch < MathColour::channels; ch++)
-                            if (!IsFiniteNumber(sample[ch]) || (!signedValues && (sample[ch] < 0.0)))
+                            if (!IsFiniteNumber(sample[ch]) || (sample[ch] < 0.0))
                                 return false;
                         value += sample;
 
@@ -748,6 +746,28 @@ bool Media::FastCache::OpticalDepth(Media& media, const LightSource& light, cons
     return true;
 }
 
+RefractionSpec::RefractionSpec(const RefractionSpec& source) : detail(source.detail),
+    transform(Copy_Transform(source.transform)), preparedParallelSafe(source.preparedParallelSafe)
+{
+    for (const auto function : source.functions)
+        functions.push_back(function->Clone());
+}
+
+RefractionSpec::~RefractionSpec()
+{
+    for (auto function : functions)
+        delete function;
+    Destroy_Transform(transform);
+}
+
+void RefractionSpec::Transform(const TRANSFORM *mapping)
+{
+    if (!transform)
+        transform = Copy_Transform(mapping);
+    else
+        Compose_Transforms(transform, mapping);
+}
+
 Media::Media()
 {
     Type = ISOTROPIC_SCATTERING;
@@ -761,8 +781,6 @@ Media::Media()
     Emission.Clear();
     Extinction.Clear();
     Scattering.Clear();
-    Refraction = 0.0;
-    RefractionDetail = 0.0;
 
     is_constant = false;
 
@@ -827,8 +845,6 @@ Media& Media::operator=(const Media& source)
         Emission = source.Emission;
         Extinction = source.Extinction;
         Scattering = source.Scattering;
-        Refraction = source.Refraction;
-        RefractionDetail = source.RefractionDetail;
         Ratio = source.Ratio;
         Confidence = source.Confidence;
         Variance = source.Variance;
@@ -909,12 +925,17 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
     bool needed = owner->interior->light != nullptr;
     if (needed)
         requested = AutomaticResolution(owner);
+    if (owner->interior->refraction && !owner->interior->refraction->functions.empty())
+    {
+        needed = true;
+        const DBL detail = owner->interior->refraction->detail;
+        requested = std::min(requested, detail > 0.0 ? detail * 0.5 : AutomaticResolution(owner));
+    }
     // a constant medium owns no grid, so its step sets the layout only when nothing that varies does
     DBL constantStep = HUGE_VAL;
     for (const Media& medium : owner->interior->media)
     {
-        const bool refracting = medium.Refraction != 0.0 || (scene->mediaRefraction && medium.mix == kMediaBlendMultiply);
-        if (medium.Sample_Method != 4 && !refracting)
+        if (medium.Sample_Method != 4)
             continue;
         needed = true;
         const DBL authored = medium.fastResolutionRecorded ? medium.requestedFastResolution : medium.FastResolution;
@@ -922,12 +943,6 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         DBL& target = ConstantDensity(medium) ? constantStep : requested;
         if (step > 0.0)
             target = std::min(target, step);
-        if (refracting)
-        {
-            const DBL detailMM = medium.RefractionDetail > 0.0 ? medium.RefractionDetail : scene->refractionDetail;
-            if (detailMM > 0.0 && scene->mmPerUnit > 0.0)
-                requested = std::min(requested, 0.5 * detailMM / scene->mmPerUnit);
-        }
     }
     if (!(requested < HUGE_VAL))
         requested = constantStep;
@@ -956,9 +971,9 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
     return layout;
 }
 
-void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLimit, bool requiredAxis)
+void Media::SetFastContainer(ObjectPtr object, DBL cellLimit)
 {
-    if ((Sample_Method != 4) && !requiredAxis)
+    if (Sample_Method != 4)
         return;
     if (!fastResolutionRecorded)
     {
@@ -967,12 +982,7 @@ void Media::SetFastContainer(ObjectPtr object, DBL refractionDetail, DBL cellLim
     }
     FastResolution = requestedFastResolution;
     if (FastResolution == -1.0)
-    {
         FastResolution = AutomaticResolution(object);
-        // A prepared cell coarser than half the detail cannot hold it, so an automatic width follows the detail.
-        if ((refractionDetail > 0.0) && (Refraction != 0.0) && (FastResolution > 0.0))
-            FastResolution = min(FastResolution, 0.5 * refractionDetail);
-    }
     if ((FastResolution <= 0.0) || !IsFiniteNumber(FastResolution))
         return;
     for (const auto& binding : preparedBindings)
@@ -1026,16 +1036,14 @@ bool Media::PreparedFor(ConstObjectPtr object) const
     return fastCache && (fastCache->container == object);
 }
 
-void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate, bool requiredAxis)
+void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate)
 {
-    if ((Sample_Method != 4) && !requiredAxis)
+    if (Sample_Method != 4)
         return;
     if (owner != nullptr)
     {
         const auto scene = td->GetSceneData();
-        const DBL detailMM = RefractionDetail > 0.0 ? RefractionDetail : scene->refractionDetail;
-        const DBL detail = detailMM > 0.0 && scene->mmPerUnit > 0.0 ? detailMM / scene->mmPerUnit : 0.0;
-        SetFastContainer(owner, detail, scene->EffectivePreparedMediaCells(), requiredAxis);
+        SetFastContainer(owner, scene->EffectivePreparedMediaCells());
     }
     else if (!fastCache)
     {
@@ -1208,6 +1216,133 @@ static void ValidateNativePreparedPhotonSources(ObjectPtr owner, TraceThreadData
         validate(light);
 }
 
+class PreparedPlacedScalarField final : public PreparedScalarField
+{
+    public:
+        struct Entry final
+        {
+            std::shared_ptr<const PreparedGridLayout> layout;
+            std::shared_ptr<const PreparedScalarField> field;
+            DBL step;
+        };
+        explicit PreparedPlacedScalarField(std::vector<Entry> entries) : entries(std::move(entries)) {}
+        PreparedScalarSample Sample(const Vector3d& point) const override
+        {
+            const Entry *chosen = nullptr;
+            for (const Entry& entry : entries)
+            {
+                bool contains = true;
+                for (int axis = 0; axis < 3; axis++)
+                    contains = contains && point[axis] >= entry.layout->low[axis] &&
+                               point[axis] <= entry.layout->low[axis] + entry.layout->size[axis];
+                if (contains && (!chosen || entry.step < chosen->step))
+                    chosen = &entry;
+            }
+            return chosen ? chosen->field->Sample(point) : PreparedScalarSample();
+        }
+    private:
+        const std::vector<Entry> entries;
+};
+
+static std::shared_ptr<const PreparedScalarField> PrepareRefraction(const RefractionSpec& spec,
+    const Interior& interior, TraceThreadData *td, const std::function<void()>& cooperate)
+{
+    if (!IsFiniteNumber(spec.detail) || spec.detail < 0.0)
+        throw POV_EXCEPTION_STRING("Refraction detail must be finite and nonnegative.");
+    if (spec.functions.empty())
+        return std::make_shared<const PreparedConstantScalarField>(0.0);
+    for (const auto function : spec.functions)
+        if (!function || function->RequiresRayContext())
+            throw POV_EXCEPTION_STRING("Refraction function requires ray context and cannot be prepared.");
+    auto valueAt = [&](const Vector3d& world, TraceThreadData *thread) {
+        Vector3d point = world;
+        if (spec.transform)
+            MInvTransPoint(point, world, spec.transform);
+        DBL value = 0.0;
+        for (const auto function : spec.functions)
+        {
+            const DBL contribution = GenericScalarFunctionInstance(function, thread).Evaluate(point);
+            if (!IsFiniteNumber(contribution))
+                throw POV_EXCEPTION_STRING("Refraction function produced a non-finite scalar value.");
+            value += contribution;
+        }
+        if (!IsFiniteNumber(value))
+            throw POV_EXCEPTION_STRING("Refraction functions produced a non-finite sum.");
+        return value;
+    };
+    std::vector<PreparedPlacedScalarField::Entry> entries;
+    for (const auto& binding : interior.fields)
+    {
+        if (!binding->layout)
+            throw POV_EXCEPTION_STRING("Varying refraction requires a finite prepared region.");
+        const auto& layout = binding->layout;
+        std::vector<DBL> values(layout->ValueCount());
+        const size_t workers = spec.preparedParallelSafe ? std::max<size_t>(1,
+            std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads)) : 1;
+        std::vector<std::unique_ptr<TraceThreadData>> helpers;
+        for (size_t worker = 1; worker < workers; worker++)
+            helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), worker, false));
+        ParallelFor(layout->counts[Z], workers, [&](size_t z, size_t worker) {
+            if (workers == 1 && cooperate)
+                cooperate();
+            TraceThreadData *thread = worker ? helpers[worker - 1].get() : td;
+            for (size_t y = 0; y < layout->counts[Y]; y++)
+                for (size_t x = 0; x < layout->counts[X]; x++)
+                {
+                    const Vector3d point = layout->low + Vector3d((x + 0.5) * layout->size[X] / layout->counts[X],
+                        (y + 0.5) * layout->size[Y] / layout->counts[Y], (z + 0.5) * layout->size[Z] / layout->counts[Z]);
+                    values[(z * layout->counts[Y] + y) * layout->counts[X] + x] = valueAt(point, thread);
+                }
+        }, cooperate);
+        for (const auto& helper : helpers)
+            td->Stats() += helper->Stats();
+        const DBL step = std::max(layout->size[X] / layout->counts[X],
+            std::max(layout->size[Y] / layout->counts[Y], layout->size[Z] / layout->counts[Z]));
+        entries.push_back({layout, std::make_shared<const PreparedScalarGrid>(layout, std::move(values)), step});
+    }
+    if (entries.empty())
+        throw POV_EXCEPTION_STRING("Refraction has no prepared geometry binding.");
+    return std::make_shared<const PreparedPlacedScalarField>(std::move(entries));
+}
+
+static void PrepareRefractionDefinitions(TraceThreadData *td, const std::function<void()>& cooperate)
+{
+    const auto scene = td->GetSceneData();
+    std::unordered_set<ConstObjectPtr> seen;
+    std::unordered_set<Interior *> interiors;
+    std::function<void(ObjectPtr)> visit = [&](ObjectPtr object) {
+        if (!object || !seen.insert(object).second)
+            return;
+        if (object->interior)
+            interiors.insert(object->interior.get());
+        if (auto compound = dynamic_cast<CompoundObject *>(object))
+            for (ObjectPtr child : compound->children)
+                visit(child);
+    };
+    for (const auto& set : scene->preparedSets)
+        for (ObjectPtr object : set->objects)
+            visit(object);
+    for (Interior *interior : interiors)
+    {
+        if (cooperate)
+            cooperate();
+        if (!interior->refraction)
+        {
+            interior->preparedRefraction.reset();
+            continue;
+        }
+        auto definition = std::make_shared<PreparedRefractionDefinition>();
+        const RefractionSpec& spec = *interior->refraction;
+        definition->field = PrepareRefraction(spec, *interior, td, cooperate);
+        definition->varying = !spec.functions.empty();
+        definition->detail = spec.detail > 0.0 ? 0.5 * spec.detail : HUGE_VAL;
+        for (const auto& field : interior->fields)
+            if (field->layout)
+                definition->layouts.push_back(field->layout);
+        interior->preparedRefraction = definition;
+    }
+}
+
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate)
 {
     if (owner == nullptr || owner->interior == nullptr)
@@ -1215,8 +1350,7 @@ void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::func
     const auto sharedLayout = PrepareInteriorFieldLayout(owner, td);
     ValidateNativePreparedPhotonSources(owner, td);
     for (Media& medium : owner->interior->media)
-        medium.FinalizePreparedField(owner, td, cooperate, (medium.Refraction != 0.0) ||
-            (td->GetSceneData()->mediaRefraction && (medium.mix == kMediaBlendMultiply)));
+        medium.FinalizePreparedField(owner, td, cooperate);
     for (const auto& field : owner->interior->fields)
         if (field->owner == owner)
             field->mediaReady = true;
@@ -1237,7 +1371,7 @@ void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& c
 {
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
     for (Media& medium : scene->atmosphere)
-        medium.FinalizePreparedField(nullptr, td, cooperate, medium.Refraction != 0.0);
+        medium.FinalizePreparedField(nullptr, td, cooperate);
     bool prepared = false, varying = false;
     MathColour extinction, emission;
     for (Media& medium : scene->atmosphere)
@@ -1265,6 +1399,7 @@ void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& c
 
 void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooperate)
 {
+    PrepareRefractionDefinitions(td, cooperate);
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
     for (LightSource *light : scene->mediaLights)
     {
@@ -1281,6 +1416,10 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         const auto axis = light->emitter->PreparedAxis();
         if (!axis)
             throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
+        if (td->mediaMessages)
+            td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
+                unsigned(layout->counts[X]), unsigned(layout->counts[Y]), unsigned(layout->counts[Z]),
+                unsigned(light->index), light->lightGroupLight ? " in light group" : "");
         light->colour = light->emitter->Intensity() / M_PI;
         light->Center = light->emitter->Centre();
         light->lawRadius = light->emitter->Radius();
@@ -1345,11 +1484,11 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
     brightness(source.brightness), lumens(source.lumens),
-    attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), fadeCutoff(source.fadeCutoff),
-    samples(source.samples), farRadii(source.farRadii), clusterRadii(source.clusterRadii), shadowsMethod(source.shadowsMethod),
+    attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower),
+    samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
-    photonOptions(source.photonOptions), photonLegacyOptions(source.photonLegacyOptions)
+    photonOptions(source.photonOptions)
 {
 }
 
@@ -1834,19 +1973,13 @@ void SubtractFromSum(MathColour *values, size_t count, const MathColour& amount)
 
 }
 
-static bool PlaysRole(const Media& medium, MediaRole role)
-{
-    return (role == MediaRole::kRefraction) ? (medium.Refraction != 0.0) : !medium.OnlyRefracts();
-}
-
-void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers, MediaRole role)
+void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers)
 {
     if (modifiers == nullptr)
     {
         for (size_t i = 0; i < interiors.size(); i++)
             for (Media& medium : interiors[i]->media)
-                if (PlaysRole(medium, role))
-                    medias.push_back(&medium);
+                medias.push_back(&medium);
         return;
     }
     std::vector<Layer> layers;
@@ -1872,8 +2005,7 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
             if (!medias.empty())
                 modifiers->push_back(MediaModifier{ medium, layers[i].interior, medias.size() });
         }
-        else if ((role == MediaRole::kRefraction) ? (medium->Refraction != 0.0)
-                                                  : (medium->use_absorption || medium->use_emission || medium->use_scattering))
+        else if (medium->use_absorption || medium->use_emission || medium->use_scattering)
             medias.push_back(medium);
     }
 }
@@ -1894,146 +2026,118 @@ static DBL ChannelMean(const MathColour& colour)
     return sum / MathColour::channels;
 }
 
-RefractionField::RefractionField(const RayInteriorVector& interiors, TraceThreadData *td) :
-    threadData(td), low(HUGE_VAL), high(-HUGE_VAL), epsilon(HUGE_VAL), maxStep(HUGE_VAL), varies(false), bounded(true)
+RefractionField::RefractionField(const RayInteriorVector& interiors) :
+    maxStep(HUGE_VAL), varies(false), bounded(true)
 {
-    CollectInteriorMedia(interiors, medias, td->GetSceneData()->mediaBlendModes ? &modifiers : nullptr, MediaRole::kRefraction);
-    if (medias.empty())
-        return;
-    const std::shared_ptr<const SceneData> sceneData = td->GetSceneData();
-    for (Interior *interior : interiors)
+    std::vector<std::shared_ptr<const PreparedScalarField>> payloads;
+    for (const Interior *interior : interiors)
     {
-        for (Media& medium : interior->media)
+        if (!interior->preparedRefraction)
         {
-            const bool modifier = std::any_of(modifiers.begin(), modifiers.end(),
-                                              [&medium](const MediaModifier& m) { return m.medium == &medium; });
-            if (ConstantDensity(medium) ||
-                (modifier && (medium.mix != kMediaBlendMultiply) && (medium.Refraction == 0.0)) ||
-                (!modifier && (std::find(medias.begin(), medias.end(), &medium) == medias.end())))
-                continue;
-            varies = true;
-            const Vector3d size = interior->boundsHigh - interior->boundsLow;
-            const DBL extent = std::max(size[X], std::max(size[Y], size[Z]));
-            const bool finite = IsFiniteNumber(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5);
-            if (finite)
-            {
-                low = min(low, interior->boundsLow);
-                high = max(high, interior->boundsHigh);
-            }
-            else
-                bounded = false;
-            // The detail is a length in millimetres, so it needs the scene's scale; several media take the smallest.
-            // Auto derives it from the same extent measure the old size rule used, D = extent/32, so the D/2 step
-            // cap keeps the old extent/64 march step and the gradient averages at that scale.
-            const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
-            const DBL detail = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
-            const DBL effectiveDetail = (detail > 0.0) ? detail : (finite ? extent / 32.0 : 0.0);
-            if (effectiveDetail > 0.0)
-            {
-                // Steps of at most D/2 put about four curvature samples across the narrowest band; the same
-                // spacing as the gradient's central difference averages whatever is narrower, on every ray.
-                epsilon = std::min(epsilon, 0.5 * effectiveDetail);
-                maxStep = std::min(maxStep, 0.5 * effectiveDetail);
-            }
-            if (medium.fastCache && (medium.FastResolution > 0.0))
-            {
-                epsilon = std::min(epsilon, medium.FastResolution * 0.5);
-                maxStep = std::min(maxStep, medium.FastResolution * 2.0);
-            }
-            else if (finite)
-            {
-                if ((detail <= 0.0) && td->mediaMessages &&
-                    (sceneData->mmPerUnit > 0.0) && (extent * sceneData->mmPerUnit > 100.0) &&
-                    !(sceneData->mediaWarningFlags.fetch_or(kRefractionDetailUnset, std::memory_order_relaxed) & kRefractionDetailUnset))
-                    td->mediaMessages->Warning(kWarningGeneral,
-                        "A refracting medium %.4g mm across renders with refraction_detail auto: the detail follows the "
-                        "medium's bounds, and index structure narrower than about %.4g mm is averaged rather than refracted. "
-                        "An explicit refraction_detail, in millimetres, refracts finer structure. This warning is given once.",
-                        extent * sceneData->mmPerUnit, extent / 32.0 * sceneData->mmPerUnit);
-            }
-            else
-            {
-                epsilon = std::min(epsilon, 1.0e-4);
-                maxStep = std::min(maxStep, 1.0);
-            }
+            if (interior->refracting)
+                throw POV_EXCEPTION_STRING("Refraction axis was queried before publication.");
+            continue;
+        }
+        const PreparedRefractionDefinition& field = *interior->preparedRefraction;
+        payloads.push_back(field.field);
+        fields.push_back(&field);
+        if (!field.varying)
+            continue;
+        varies = true;
+        if (field.layouts.empty())
+            bounded = false;
+        for (const auto& layout : field.layouts)
+        {
+            const DBL extent = std::max(layout->size[X], std::max(layout->size[Y], layout->size[Z]));
+            const DBL cell = std::max(layout->size[X] / layout->counts[X],
+                std::max(layout->size[Y] / layout->counts[Y], layout->size[Z] / layout->counts[Z]));
+            maxStep = std::min(maxStep, std::min(field.detail < HUGE_VAL ? field.detail : extent / 64.0, 2.0 * cell));
         }
     }
-}
-
-DBL RefractionField::MeanDensity(Media& medium, const Vector3d& point)
-{
-    MathColour density;
-    medium.PreparedDensityAt(point, density);
-    return ChannelMean(density);
+    axis.reset(new PreparedRefractionAxis(std::move(payloads)));
+    if (!(maxStep < HUGE_VAL))
+        maxStep = 1.0;
 }
 
 DBL RefractionField::Offset(const Vector3d& point)
 {
-    const size_t n = medias.size();
-    terms.resize(n);
-    for (size_t i = 0; i < n; i++)
-        terms[i] = medias[i]->Refraction * MeanDensity(*medias[i], point);
-    for (const MediaModifier& modifier : modifiers)
-    {
-        const bool multiply = (modifier.medium->mix == kMediaBlendMultiply);
-        if (!multiply && (modifier.medium->Refraction == 0.0))
-            continue;
-        const DBL density = MeanDensity(*modifier.medium, point);
-        const DBL amount = multiply ? density : fabs(modifier.medium->Refraction) * density;
-        DBL scale = amount;
-        if (!multiply)
-        {
-            DBL sum = 0.0;
-            for (size_t t = 0; t < modifier.below; t++)
-                sum += terms[t];
-            const DBL reduced = (sum > 0.0) ? std::max(0.0, sum - amount) : std::min(0.0, sum + amount);
-            scale = (sum != 0.0) ? reduced / sum : 0.0;
-        }
-        for (size_t t = 0; t < modifier.below; t++)
-            terms[t] *= scale;
-    }
-    DBL offset = 0.0;
-    for (size_t i = 0; i < n; i++)
-        offset += terms[i];
-    return offset;
+    return axis->Sample(point).value;
 }
 
 DBL RefractionField::Offset(const Vector3d& point, Vector3d& gradient)
 {
-    for (int axis = X; axis <= Z; axis++)
+    const PreparedScalarSample sample = axis->Sample(point);
+    gradient = sample.gradient;
+    return sample.value;
+}
+
+DBL RefractionField::MaxStep(const Vector3d& point) const
+{
+    DBL limit = HUGE_VAL;
+    for (const PreparedRefractionDefinition *field : fields)
     {
-        Vector3d delta(0.0);
-        delta[axis] = epsilon;
-        gradient[axis] = (Offset(point + delta) - Offset(point - delta)) / (2.0 * epsilon);
+        if (!field->varying)
+            continue;
+        for (const auto& layout : field->layouts)
+        {
+            bool contains = true;
+            for (int coordinate = 0; coordinate < 3; coordinate++)
+                contains = contains && point[coordinate] >= layout->low[coordinate] &&
+                           point[coordinate] <= layout->low[coordinate] + layout->size[coordinate];
+            if (!contains)
+                continue;
+            const DBL extent = std::max(layout->size[X], std::max(layout->size[Y], layout->size[Z]));
+            const DBL cell = std::max(layout->size[X] / layout->counts[X],
+                std::max(layout->size[Y] / layout->counts[Y], layout->size[Z] / layout->counts[Z]));
+            limit = std::min(limit, std::min(field->detail < HUGE_VAL ? field->detail : extent / 64.0, 2.0 * cell));
+        }
     }
-    return Offset(point);
+    return limit < HUGE_VAL ? limit : maxStep;
 }
 
 bool RefractionField::Ahead(const Vector3d& origin, const Vector3d& direction, DBL& entry) const
 {
-    entry = 0.0;
+    entry = HUGE_VAL;
     if (!bounded)
-        return true;
-    DBL from = 0.0, to = HUGE_VAL;
-    for (int axis = X; axis <= Z; axis++)
     {
-        const DBL a = low[axis] - maxStep, b = high[axis] + maxStep;
-        if (fabs(direction[axis]) < 1.0e-12)
-        {
-            if ((origin[axis] < a) || (origin[axis] > b))
-                return false;
-            continue;
-        }
-        DBL first = (a - origin[axis]) / direction[axis], last = (b - origin[axis]) / direction[axis];
-        if (first > last)
-            std::swap(first, last);
-        from = std::max(from, first);
-        to = std::min(to, last);
-        if (to < from)
-            return false;
+        entry = 0.0;
+        return true;
     }
-    entry = from;
-    return true;
+    bool found = false;
+    for (const PreparedRefractionDefinition *field : fields)
+    {
+        if (!field->varying)
+            continue;
+        for (const auto& layout : field->layouts)
+        {
+            DBL from = 0.0, to = HUGE_VAL;
+            bool intersects = true;
+            for (int coordinate = 0; coordinate < 3; coordinate++)
+            {
+                const DBL a = layout->low[coordinate] - maxStep;
+                const DBL b = layout->low[coordinate] + layout->size[coordinate] + maxStep;
+                if (direction[coordinate] == 0.0)
+                {
+                    if (origin[coordinate] < a || origin[coordinate] > b)
+                        intersects = false;
+                    continue;
+                }
+                DBL first = (a - origin[coordinate]) / direction[coordinate];
+                DBL last = (b - origin[coordinate]) / direction[coordinate];
+                if (first > last)
+                    std::swap(first, last);
+                from = std::max(from, first);
+                to = std::min(to, last);
+                intersects = intersects && to >= from;
+            }
+            if (intersects)
+            {
+                found = true;
+                entry = std::min(entry, from);
+            }
+        }
+    }
+    return found;
 }
 
 static bool MediaAffectsTransport(const Media& medium, const Ray& ray)

@@ -29,7 +29,7 @@ box {
         #else mix subtract density { rgb 0 } #end }
     #end
     light {
-      samples 64 fade_cutoff 0
+      samples 64
       #switch (Case)
         #case (11) brightness 10 lumens brightness 0.1 nits #break
         #case (12) brightness 0.1 nits #break

@@ -81,10 +81,7 @@
   <td><div class="divh3"><a title="3.4.1.16" href="#r3_4_1_16">Interface_Texture</a></div></td>
 </tr>
 <tr>
-  <td><div class="divh3"><a title="3.4.1.17" href="#r3_4_1_17">Refraction_Detail</a></div></td>
-</tr>
-<tr>
-  <td><div class="divh3"><a title="3.4.1.18" href="#r3_4_1_18">Prepared_Media_Cells</a></div></td>
+  <td><div class="divh3"><a title="3.4.1.17" href="#r3_4_1_17">Prepared_Media_Cells</a></div></td>
 </tr>
 <tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
@@ -411,7 +408,7 @@ GLOBAL_SETTINGS_ITEM:
   hf_gray_16 [Bool] | irid_wavelength COLOR | charset GLOBAL_CHARSET |
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
-  refraction_angle Value | refraction_detail Value | refraction_detail auto |
+  refraction_angle Value |
   prepared_media_cells Value | atmospheric_ior Value | atmospheric_dispersion Value |
 
   interface_texture blend | interface_texture near | interface_texture far |
@@ -439,7 +436,6 @@ mm_per_unit        : 10
 number_of_waves	   : 10
 noise_generator	   : 2
 refraction_angle   : 0.5
-refraction_detail  : auto (derived from each medium's bounds)
 prepared_media_cells : 1000000 (the machine option raises it)
 atmospheric_ior    : 1.00029 (1.0 before #version 4.0)
 atmospheric_dispersion : 1.0
@@ -645,7 +641,7 @@ If there is no <code>max_trace_level</code> set and during rendering the default
 <a name="r3_4_1_9"></a>
 <div class="content-level-h4" contains="Mm_Per_Unit" id="r3_4_1_9">
 <h4>3.4.1.9 Mm_Per_Unit</h4>
-<p><code>mm_per_unit</code> is the scale of the scene: how many millimetres one POV-Ray unit stands for. The default, 10, suits a scene of centimetre-sized objects; a scene at another scale should say so, because the settings measured in real-world millimetres need it to mean what they say. Media <a href="r3_4.html#r3_4_1_17">refraction_detail</a> takes its length through it, and subsurface scattering scales its distances by it.</p>
+<p><code>mm_per_unit</code> is the scale of the scene: how many millimetres one POV-Ray unit stands for. The default, 10, suits a scene of centimetre-sized objects; a scene at another scale should say so, because the settings measured in real-world millimetres need it to mean what they say. Subsurface scattering scales its distances by it; refraction field detail uses scene units.</p>
 <pre>
 global_settings { mm_per_unit 100 }  // one unit is 100 mm
 </pre>
@@ -684,7 +680,7 @@ global_settings { number_of_waves Integer }
 <a name="r3_4_1_13"></a>
 <div class="content-level-h4" contains="Refraction_Angle" id="r3_4_1_13">
 <h4>3.4.1.13 Refraction_Angle</h4>
-<p>Rays curve where <a href="r3_7.html#r3_7_2_2_4">media refraction</a> makes the index vary, and POV-Ray follows them in short straight steps. <code>refraction_angle</code> is the largest change of direction, in degrees, that one step may take, and also the largest error a step may make in it; the default is 0.5 and values from just above 0 to 45 are accepted. Smaller values follow strongly bending rays, such as those grazing a black hole, more faithfully at the cost of more steps; larger values speed up gently bending scenes such as mirages. The statistics report the curved rays traced and the steps they took.</p></div>
+<p>Rays curve where <a href="r3_11.html#r3_11_3">refraction fields</a> makes the index vary, and POV-Ray follows them in short straight steps. <code>refraction_angle</code> is the largest change of direction, in degrees, that one step may take, and also the largest error a step may make in it; the default is 0.5 and values from just above 0 to 45 are accepted. Smaller values follow strongly bending rays, such as those grazing a black hole, more faithfully at the cost of more steps; larger values speed up gently bending scenes such as mirages. The statistics report the curved rays traced and the steps they took.</p></div>
 
 <a name="r3_4_1_14"></a>
 <div class="content-level-h4" contains="Filter_Tags" id="r3_4_1_14">
@@ -703,7 +699,7 @@ one, those views see all objects. The setting applies wherever it appears in the
 <a name="r3_4_1_15"></a>
 <div class="content-level-h4" contains="Atmospheric_Ior" id="r3_4_1_15">
 <h4>3.4.1.15 Atmospheric_Ior</h4>
-<p><code>atmospheric_ior</code> sets the ior of the space no object fills, and <code>atmospheric_dispersion</code> its dispersion, 1.0 (none) by default; both must be greater than 0 and must come before the first object. From <code>#version 4.0</code> the default ior is 1.00029, that of air at sea level, so glass refracts by 1.5 / 1.00029 as it does in air; <code>atmospheric_ior 1</code> restores vacuum, the default before 4.0. Objects stating <code>ior atmosphere</code> take its ior and dispersion. A scene set under water with <code>atmospheric_ior 1.33</code> refracts at a glass ball of ior 1.5 by 1.5 / 1.33, as it would inside a large water object. An object that should not refract at all, such as a media container, takes <code>ior off</code>; see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>. Curved rays, photons, subsurface scattering and media refraction measure the index from the same base.</p>
+<p><code>atmospheric_ior</code> sets the ior of the space no object fills, and <code>atmospheric_dispersion</code> its dispersion, 1.0 (none) by default; both must be greater than 0 and must come before the first object. From <code>#version 4.0</code> the default ior is 1.00029, that of air at sea level, so glass refracts by 1.5 / 1.00029 as it does in air; <code>atmospheric_ior 1</code> restores vacuum, the default before 4.0. Objects stating <code>ior atmosphere</code> take its ior and dispersion. A scene set under water with <code>atmospheric_ior 1.33</code> refracts at a glass ball of ior 1.5 by 1.5 / 1.33, as it would inside a large water object. An object that should not refract at all, such as a media container, takes <code>ior off</code>; see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>. Curved rays, photons, subsurface scattering and refraction fields measure the index from the same base.</p>
 <pre>
 global_settings { atmospheric_ior 1.33 }
 </pre></div>
@@ -711,25 +707,16 @@ global_settings { atmospheric_ior 1.33 }
 <a name="r3_4_1_16"></a>
 <div class="content-level-h4" contains="Interface_Texture" id="r3_4_1_16">
 <h4>3.4.1.16 Interface_Texture</h4>
-<p>Where clear objects share a face, such as glass and water meeting at a wall, the ray crosses it as one surface (see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>), and <code>interface_texture</code> chooses the texture it shows. <code>blend</code>, the default from <code>#version 4.0</code>, evaluates the texture of every object there and averages the results equally, pigment and finish alike, so the face looks the same from either side and in any placement order; it costs one texture evaluation per object, at shared faces only. <code>far</code> shows the texture of the object on the far side of the face from the ray, the one being entered; <code>near</code> shows the one on the ray's side, the one being left. Faces of an <code>ior_mix replace</code> object show its own texture whatever the setting. Before 4.0 coincident surfaces are merged only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses media refraction, and the default there is <code>far</code>. See <a href="r3_7.html#r3_7_2_1_10">Shared Faces</a>.</p>
+<p>Where clear objects share a face, such as glass and water meeting at a wall, the ray crosses it as one surface (see <a href="r3_7.html#r3_7_2_1_4">Refraction</a>), and <code>interface_texture</code> chooses the texture it shows. <code>blend</code>, the default from <code>#version 4.0</code>, evaluates the texture of every object there and averages the results equally, pigment and finish alike, so the face looks the same from either side and in any placement order; it costs one texture evaluation per object, at shared faces only. <code>far</code> shows the texture of the object on the far side of the face from the ray, the one being entered; <code>near</code> shows the one on the ray's side, the one being left. Faces of an <code>ior_mix replace</code> object show its own texture whatever the setting. Before 4.0 coincident surfaces are merged only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses refraction fields, and the default there is <code>far</code>. See <a href="r3_7.html#r3_7_2_1_10">Shared Faces</a>.</p>
 <pre>
 global_settings { interface_texture near }
 </pre></div>
 
 <a name="r3_4_1_17"></a>
-<div class="content-level-h4" contains="Refraction_Detail" id="r3_4_1_17">
-<h4>3.4.1.17 Refraction_Detail</h4>
-<p>Where <a href="r3_7.html#r3_7_2_2_4">media refraction</a> makes the index vary, the ray follows the curve in steps whose length the scene author otherwise cannot see or set. <code>refraction_detail</code> is a length in millimetres, converted through <a href="r3_4.html#r3_4_1_9">mm_per_unit</a>: the smallest index structure that must refract faithfully on every ray. Structure at least that wide bends as it should; narrower structure is averaged, the same way for every ray, rather than caught on some rays and missed on others, which is what renders it as speckle. A <code>media</code> block may give its own <code>refraction_detail</code>, overriding the scene's. How the step and the gradient follow the detail, and what it costs, is in <a href="r3_11.html#r3_11_3_2">Curved Rays</a>.</p>
-<p><code>refraction_detail auto</code> is the default in every language version: the detail is derived from each medium's own bounds, a thirty-second of its largest side, so the march step keeps the bounds-based length and the gradient averages over the same span. A render whose auto medium spans more than 100&nbsp;mm is told this once.</p>
-<pre>
-global_settings { mm_per_unit 100  refraction_detail 1 }  // or refraction_detail auto
-</pre></div>
-
-<a name="r3_4_1_18"></a>
-<div class="content-level-h4" contains="Prepared_Media_Cells" id="r3_4_1_18">
-<h4>3.4.1.18 Prepared_Media_Cells</h4>
+<div class="content-level-h4" contains="Prepared_Media_Cells" id="r3_4_1_17">
+<h4>3.4.1.17 Prepared_Media_Cells</h4>
 <p>A <a href="r3_11.html#r3_11_5_1">prepared media grid</a> (method 4) is limited to this many cells, 1000000 by default. A density grid or a per-light optical-depth table that would need more is not abandoned: it is built coarser, at the widest cell width that fits, with a warning naming the requested and fitted resolutions, the cells needed and the <code>prepared_media_cells</code> value that would avoid the coarsening. A prepared march longer than its step budget is likewise coarsened, not dropped.</p>
-<p>The same limit can be set for the machine as the <code>Prepared_Media_Cells</code> INI or command-line option, and the larger of the scene's and the machine's value applies: a render farm can raise a scene's request without editing it, and a scene can demand more than a machine's default. Place the setting before the media's containers, as with <code>refraction_detail</code>.</p>
+<p>The same limit can be set for the machine as the <code>Prepared_Media_Cells</code> INI or command-line option, and the larger of the scene's and the machine's value applies: a render farm can raise a scene's request without editing it, and a scene can demand more than a machine's default. Place the setting before field containers.</p>
 <pre>
 global_settings { prepared_media_cells 4000000 }
 </pre></div>

@@ -32,9 +32,10 @@ box { <-5, 0, -1.5>, <5, 4.5, 3.5> pigment { rgbt 1 } interior { media { scatter
     }
     media { mix #if (Blend) replace #else add #end scattering { 1, rgb <0.6, 0.8, 1.2> * Strength } density { Cloud } }
     #if (Bend)
-      media {
-        method 3 refraction -0.1
-        density { spherical turbulence 0.4 octaves 2 scale <Width, Length, Width> * 0.85 color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
+      #local CoreIndex = function { pigment { spherical turbulence 0.4 octaves 2 scale <Width, Length, Width> * 0.85 color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } };
+      refraction {
+        function { -0.1 * CoreIndex(x,y,z).red }
+        detail auto
       }
     #end
   }

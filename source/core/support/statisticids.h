@@ -330,7 +330,6 @@ typedef enum INTSTATS
     Subsurface_Cloud_Hidden,
     Subsurface_Cloud_Near_Field, ///< shading points that sampled the near field for a shadow edge between coarse points
     Subsurface_Cloud_Near_Rays, ///< the shadow rays that took
-    Fade_Cutoff_Drops, ///< media light tests left out by the light's fade_cutoff
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample

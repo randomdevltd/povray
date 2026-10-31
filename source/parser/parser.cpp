@@ -277,7 +277,7 @@ void Parser::LeaveMediaField(const Media& medium)
 
 void Parser::RecordMediaField(Media& medium, bool allowEager)
 {
-    if ((medium.Sample_Method != 4) && (medium.Refraction == 0.0) && (medium.mix != kMediaBlendMultiply))
+    if (medium.Sample_Method != 4)
         return;
     medium.SetPreparedParallelSafe(false);
     if (medium.Density.empty())
@@ -477,7 +477,6 @@ void Parser::Run()
             solidMediaSeen = false;
             hollowDeprecationWarned = false;
             defaultMix = kMediaBlendAuto;
-            defaultFadeCutoff = kFadeCutoffAuto;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -527,11 +526,7 @@ void Parser::Run()
 
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
-            {
                 i->PostProcess();
-                if (i->Refraction != 0.0)
-                    Warning("Atmospheric media do not refract; 'refraction' works in the media of an object's interior.");
-            }
 
             // post process global light sources
             for (size_t i = 0; i < sceneData->lightSources.size(); i++)
@@ -558,8 +553,6 @@ void Parser::Run()
                     if (light->mediaPhotonOptions)
                         Warning("photons in an interior light are ignored by photon method 1.");
                 }
-                else if (light->mediaPhotonLegacyOptions)
-                    Error("An interior light's photons block accepts reflection, refraction and area_light only.");
             }
             if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
@@ -771,7 +764,7 @@ void Parser::Run()
     sceneData->solidBlocksInteriorMedia = (sceneData->EffectiveLanguageVersion() < 400);
     if (!atmosphereIorSet)
         SetAtmosphereIor();
-    sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->mediaRefraction;
+    sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->fieldRefraction;
     if (sceneData->interfaceTexture == kInterfaceTextureAuto)
         sceneData->interfaceTexture = (sceneData->EffectiveLanguageVersion() >= 400) ? kInterfaceTextureBlend : kInterfaceTextureFar;
     if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
@@ -7822,29 +7815,11 @@ void Parser::Parse_Default ()
                 END_CASE
 
                 OTHERWISE
-                    if (CurrentTrueTokenId() == LIGHT_SOURCE_TOKEN)
-                        Error("A medium's light_source block moved out of media to its interior: #default { interior { light { fade_cutoff } } }.");
                     UNGET
                     EXIT
                 END_CASE
             END_EXPECT
             Parse_End ();
-        END_CASE
-
-        CASE (INTERIOR_TOKEN)
-        {
-            // the light block's own parser reads it, then #default keeps only fade_cutoff: it gives
-            // starting values, not a template
-            InteriorPtr probe(new Interior());
-            Parse_Begin();
-            Get_Token();
-            if (CurrentTokenText() != "light")
-                Error("A #default interior accepts only a light block, not '%s'.", CurrentTokenText().c_str());
-            Parse_Interior_Light(*probe, true);
-            const MediaLight& light = *probe->light;
-            defaultFadeCutoff = light.fadeCutoff;
-            Parse_End();
-        }
         END_CASE
 
         OTHERWISE
@@ -8632,19 +8607,6 @@ void Parser::Parse_Global_Settings()
                         sceneData->interfaceTexture = mode;
                 if (sceneData->interfaceTexture == kInterfaceTextureAuto)
                     Error("Expected blend, near or far after interface_texture.");
-            }
-            else if (CurrentTokenText() == "refraction_detail")
-            {
-                Get_Token();
-                if (CurrentTokenText() == "auto")
-                    sceneData->refractionDetail = 0.0;
-                else
-                {
-                    UNGET
-                    sceneData->refractionDetail = Parse_Float();
-                    if (!std::isfinite(sceneData->refractionDetail) || !(sceneData->refractionDetail > 0.0))
-                        Error("refraction_detail must be a length in millimetres greater than 0, or auto.");
-                }
             }
             else if (CurrentTokenText() == "prepared_media_cells")
             {
@@ -10610,20 +10572,15 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
     light->Jitter = true;
     light->Area_Size1 = settings.samples;
     light->Area_Size2 = 1;
-    light->fadeCutoff = settings.fadeCutoff;
     light->attenuationScale = settings.attenuationScale;
     light->attenuationPower = settings.attenuationPower;
     light->volumeLaw = true;
     light->lawRadius = emitter->Radius();
-    light->emitterFarRadii = settings.farRadii;
-    light->emitterClusterRadii = settings.clusterRadii;
-    light->shadowCacheOff = (settings.shadowsMethod == 1);
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
         light->Light_Type = FILL_LIGHT_SOURCE;
     light->mediaPhotonOptions = settings.photonOptions;
-    light->mediaPhotonLegacyOptions = settings.photonLegacyOptions;
     if (settings.photonRefraction >= 0)
         Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
     if (settings.photonReflection >= 0)
@@ -10822,22 +10779,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
-            // The detail comes from the medium or the scene's default, in millimetres; the grid width is in scene units.
-            // Auto derives it from the container's largest side, the same extent the marcher's rule measures.
-            const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
-            const DBL detailUnits = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
-            Vector3d boundsLow, boundsHigh;
-            Make_min_max_from_BBox(boundsLow, boundsHigh, Object->BBox);
-            const Vector3d boundsSize = boundsHigh - boundsLow;
-            const DBL extent = std::max(boundsSize[X], std::max(boundsSize[Y], boundsSize[Z]));
-            const DBL autoDetail = (std::isfinite(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5)) ? extent / 32.0 : 0.0;
-            medium.SetFastContainer(Object, (detailUnits > 0.0) ? detailUnits : autoDetail,
-                                    sceneData->EffectivePreparedMediaCells());
-            if ((detailUnits > 0.0) && (medium.Refraction != 0.0) && (medium.Sample_Method == 4) &&
-                !medium.Density.empty() && (medium.FastResolution > 0.5 * detailUnits))
-                Warning("Media resolution %.6g is coarser than half this medium's refraction_detail (%.6g), so the prepared "
-                        "grid holds index detail no finer than %.6g; raise the resolution or lower refraction_detail.",
-                        medium.FastResolution, detailUnits, medium.FastResolution);
+            medium.SetFastContainer(Object, sceneData->EffectivePreparedMediaCells());
         }
         if (Object->interior->light)
             Make_Interior_Light(*Object->interior, Object);
@@ -10963,7 +10905,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             int first = Test_Flag(Object, HOLLOW_FLAG) ? kMediaBlendAdd : defaultMix;
             if (first == kMediaBlendAuto)
                 first = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
-            interior.clears = interior.media.empty() && (first == kMediaBlendReplace);
+            interior.clears = interior.media.empty() && !interior.refraction && !interior.light &&
+                              (first == kMediaBlendReplace);
             bool blends = interior.clears;
             for (size_t i = 0; i < interior.media.size(); i++)
             {
@@ -10980,7 +10923,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Object->interior->hollow = (Test_Flag(Object, HOLLOW_FLAG) != false);
         const bool visibleMedia = std::any_of(interior.media.begin(), interior.media.end(), [](const Media& medium) {
             return !medium.Absorption.IsZero() || !medium.Emission.IsZero() || !medium.Scattering.IsZero(); });
-        sceneData->mediaRefraction = sceneData->mediaRefraction || Object->interior->refracting;
+        sceneData->fieldRefraction = sceneData->fieldRefraction || Object->interior->refracting;
         if (visibleMedia)
         {
             sceneData->interiorMedia = true;

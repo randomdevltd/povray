@@ -25,5 +25,5 @@ box { <-0.1,-0.1,0>,<0.1,0.1,1> pigment { rgbt 1 } hollow
 }
 box { <1,-0.1,0.35>,<1.2,0.1,0.65> pigment { rgbt 1 } hollow no_image
  interior { light { pigment { rgb <1,0.5,0.2> } brightness 100 lumens
-  samples Draws fade_cutoff 0 shadows method 1 } }
+  samples Draws } }
 }

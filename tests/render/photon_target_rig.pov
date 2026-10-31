@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Photon target allocation: a low sun shines through a canopy of glass leaves (one easy target) onto a stone-edged pool whose wavy water and mirror floor throw twice-refracted caustics on the garden wall, and onto a clump of glass grass on the near bank (one hard target). Declares PhotonQuality, CanopyWeight and PatchWeight (the number after target), UseCanopy and UsePatch (isolate one target), SplitPatch (split_union for the grass, still one target), Parallel (1, the default, a parallel sun; 0 a sun SunDistance away), Power (the photon-only sun), PhotonOnly (1 drops the direct sun, sky and fill), Bands, Dispersion, PatchDispersion, Detail. Render with +w640 +h360 -a.
+// Photon target allocation: a low sun shines through a canopy of glass leaves (one easy target) onto a stone-edged pool whose wavy water and mirror floor throw twice-refracted caustics on the garden wall, and onto a clump of glass grass on the near bank (one hard target). Declares PhotonQuality, CanopyWeight and PatchWeight (the number after target), UseCanopy and UsePatch (isolate one target), SplitPatch (split_union for the grass, still one target), Parallel (1, the default, a parallel sun; 0 a sun SunDistance away), Power (the photon-only sun), PhotonOnly (1 drops the direct sun, sky and fill), Bands, Dispersion, PatchDispersion. Render with +w640 +h360 -a.
 #version 3.8;
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #ifndef (CanopyWeight) #declare CanopyWeight = 1; #end
@@ -10,7 +10,6 @@
 #ifndef (PatchDispersion) #declare PatchDispersion = 1.3; #end
 #ifndef (Bands) #declare Bands = 9; #end
 #ifndef (Power) #declare Power = 3; #end
-#ifndef (Detail) #declare Detail = 1; #end
 #ifndef (Parallel) #declare Parallel = 1; #end
 #ifndef (SunDistance) #declare SunDistance = 200; #end
 #ifndef (SplitPatch) #declare SplitPatch = 0; #end
@@ -18,7 +17,7 @@
 #declare Sun = vnormalize(<-0.394, -0.616, 0.682>);
 #declare SunColour = <0.8, 0.67, 0.5>;
 global_settings {
-  assumed_gamma 1 max_trace_level 16 refraction_detail Detail
+  assumed_gamma 1 max_trace_level 16
   photons { method 2 quality PhotonQuality }
 }
 camera { location <-4.1, 1.55, -2.1> look_at <0.7, 1.85, 4.6> angle 84 right x * image_width / image_height }

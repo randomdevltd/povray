@@ -121,15 +121,15 @@ sphere {
         }
       #end
       #if (Shimmer)
-        media {
-          mix add
-          refraction -0.1
-          density {
+        #local HeatRadial = function { pigment {
             function { max(0, 1 - sqrt(x * x + z * z) / (0.1 + 0.18 * y)) }
             warp { turbulence <0.2, 0, 0.2> octaves 3 lambda 2 } translate Wick
-          }
-          density { bozo turbulence 0.6 octaves 3 lambda 2.4 scale <0.07, 0.1, 0.07> color_map { [0 rgb 0] [1 rgb 1] } }
-          density { function { max(0, min(1, (y - 0.05) * 8) * (1 - (y - 0.05) / 2.45) * (1 - sqrt(x * x + z * z) / (0.2 + 0.456 * y))) } translate Wick }
+          } };
+        #local HeatWisps = function { pigment { bozo turbulence 0.6 octaves 3 lambda 2.4 scale <0.07, 0.1, 0.07> color_map { [0 rgb 0] [1 rgb 1] } } };
+        #local HeatEnvelope = function { pigment { function { max(0, min(1, (y - 0.05) * 8) * (1 - (y - 0.05) / 2.45) * (1 - sqrt(x * x + z * z) / (0.2 + 0.456 * y))) } translate Wick } };
+        refraction {
+          function { -0.1 * HeatRadial(x,y,z).red * HeatWisps(x,y,z).red * HeatEnvelope(x,y,z).red }
+          detail auto
         }
       #end
     }
