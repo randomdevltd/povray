@@ -1,19 +1,8 @@
-// This work is licensed under the Creative Commons Attribution 3.0 Unported License.
-// To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
-// or send a letter to Creative Commons, 444 Castro Street, Suite 900, Mountain View,
-// California, 94041, USA.
-
-// Persistence Of Vision raytracer sample file.
-// File: slopemt.pov
-// Date: August 30 2001
-// Auth: Rune S. Johansen
-// Desc: This scene demonstrates the use of several slope pattern textures.
-//       First render SLOPEMT_DAT.POV and then render this file.
-//
-// -w320 -h240
-// -w800 -h600 +a0.3
-
-#version 3.7;
+// This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
+// Slope pattern textures on a height field (render slopemt_dat_37.pov first): the vegetation's own bumps feed its slope, so soil and rock break through it in patches on the steeper ground. +w320 +h240
+#version 4.0;
+// The ambient fill this scene was painted with, which 3.8 and later default to 0.
+#default { finish { ambient 0.1 } }
 
 global_settings {
   assumed_gamma 1.0
@@ -38,10 +27,9 @@ sky_sphere {
    }
 }
 
-// Some light.
 light_source {<200,200,-200>, color rgb 1.2}
 
-// And some simple water.
+// Some simple water.
 plane {
    y, 0
    pigment {color <0,0,0>}
@@ -49,70 +37,39 @@ plane {
    finish {reflection 0.7}
 }
 
+#declare Sand_Colour = <0.9,0.75,0.3>*0.9;
+#declare Vege_Colour = <0.2,0.5,0.1>*0.5;
+#declare Soil_Colour = <0.77,0.6,0.35>*0.7;
+#declare Rock_Colour = <0.6,0.6,0.6>*0.5;
 
-// Here are the basic textures.
+#declare Sand_Texture = texture { pigment {color Sand_Colour} }
+#declare Rock_Texture = texture { pigment {color Rock_Colour} }
+#declare Snow_Texture = texture { pigment {color rgb 1.0} }
 
-// Plain yellowish sand for the beaches.
-#declare Sand_Texture =                                                       
-texture {
-   pigment {color <0.9,0.75,0.3>*0.9}
-}
-
-// A green texture for grass, plants, trees, etc.
-#declare Vege_Texture =
-texture {
-   pigment{ color <0.2,0.5,0.1>*0.5} 
-   normal { bumps 0.5 scale 0.005 } 
-}
-
-// A brown texture for the soil, where the plants can't grow.
-#declare Soil_Texture =
-texture {
-   pigment {color <0.77,0.6,0.35>*0.7}
-}
-
-// A grey texture for the rock, where there is not even any soil.
-#declare Rock_Texture =
-texture {
-   pigment {color <0.6,0.6,0.6>*0.5}
-}
-
-// A white texture for the snow.
-#declare Snow_Texture =
-texture {
-   pigment {color rgb 1.0}
-  // finish {ambient 0.1 diffuse 0.8}
-}
-
-// Now for the slope pattern textures.
-// Before looking into these, try having a look at the
-// texture of the height_field at the bottom of this file.
-
-// A texture that has vegetation on the flat and low areas,
-// soil on the steeper and higher areas, and rock on the
-// steepest and highest areas.
-// Notice how the altitude values fit to the pattern values
-// in the texture_map of the height_field below.
+// Vegetation on flat low ground, soil steeper and higher, rock steepest and highest, all in one layer.
 #declare Vege2Rock_Texture =
 texture {
-   slope {
-      -y*3, 0, 0.5
-      altitude y, 0.005, 0.400
-   } 
-   texture_map {
-      [0.45, Vege_Texture]
-      [0.55, Soil_Texture]
-      [0.65, Soil_Texture]
-      [0.65, Rock_Texture]
+   // Read after the normal below, so the vegetation's bumps tip this slope into soil and rock in patches.
+   pigment {
+      slope { -y*3, 0, 0.5 altitude y, 0.005, 0.400 }
+      color_map {
+         [0.45, color Vege_Colour]
+         [0.55, color Soil_Colour]
+         [0.65, color Soil_Colour]
+         [0.65, color Rock_Colour]
+      }
+   }
+   // Bumps where the vegetation grows, read from the smooth surface.
+   normal {
+      slope { -y*3, 0, 0.5 altitude y, 0.005, 0.400 }
+      normal_map {
+         [0.45, bumps 0.5 scale 0.005]
+         [0.55, bumps 0]
+      }
    }
 }
 
-// A texture that has snow on the flat and high areas,
-// and rock on the steeper and lower areas.
-// Notice how the altitude values fit to the pattern values
-// in the texture_map of the height_field below.
-// The altitude values have been switched around because we
-// want the snow near the top and not near the bottom.
+// Snow on the flat high ground, rock on the steeper and lower ground.
 #declare Rock2Snow_Texture =
 texture {
    slope {
@@ -125,8 +82,7 @@ texture {
    }
 }
 
-
-// Here is the mountain.
+// The gradient's bands match the altitude ranges of the slope textures above.
 height_field {
    "slopemt_dat_37.jpg"
    scale <80,15,80>
@@ -134,19 +90,13 @@ height_field {
    texture {
       gradient y
       scale 10
-      texture_map { // Notice the values in this texture_map.
-                    // Then compare them to the altitude values
-                    // in the slope pattern textures above.
-         
-         [0.000, Sand_Texture] // At the foot of the mountain
-         [0.005, Sand_Texture] // we want some plain sand.
-         
-         [0.005, Vege2Rock_Texture] // Then some vegetation,
-         [0.400, Vege2Rock_Texture] // soil and rock.
-         
-         [0.400, Rock2Snow_Texture] // Then from rock to snow
-         [1.000, Rock2Snow_Texture] // at the top.
-         
+      texture_map {
+         [0.000, Sand_Texture]
+         [0.005, Sand_Texture]
+         [0.005, Vege2Rock_Texture]
+         [0.400, Vege2Rock_Texture]
+         [0.400, Rock2Snow_Texture]
+         [1.000, Rock2Snow_Texture]
       }
    }
 }
