@@ -1,28 +1,71 @@
-// Surface lights on a sphere, a patterned box, a strip and a mesh, stated in nits, lumens and their own emission. +w640 +h480
-#version 3.7;
+// This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
+// Surface lights on a sphere, a patterned box, a strip and a mesh, stated in nits, lumens and their own emission, as four copies of the scene seen from the same place at 4, 16, 64 and 256 samples per light; each copy is a light_group, so its lights reach only its own floor. +w640 +h480 +a0.3
+#version 3.8;
+#declare Spacing = 10000;
 global_settings { assumed_gamma 1 }
-camera { location <4,3,-6> look_at <0,1,0> right x*image_width/image_height }
 background { rgb 0.01 }
-plane { y,0 pigment { rgb 0.7 } finish { ambient 0 diffuse 0.8 } }
-sphere { <-1.5,1.7,0>,0.25
-  pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0 }
-  light { brightness 45 nits samples 32 }
+
+// each quarter of the image is the same view of its own copy, the copies Spacing apart along y
+#declare CamL = <4, 3, -6>;
+#declare CamD = vnormalize(<0, 1, 0> - CamL);
+#declare CamR = vnormalize(vcross(y, CamD));
+#declare CamU = vcross(CamD, CamR);
+#declare Aspect = image_width / image_height;
+#declare Lx = CamL.x; #declare Ly = CamL.y; #declare Lz = CamL.z;
+#declare Dx = CamD.x; #declare Dy = CamD.y; #declare Dz = CamD.z;
+#declare Rx = CamR.x; #declare Ry = CamR.y; #declare Rz = CamR.z;
+#declare Ux = CamU.x; #declare Uy = CamU.y; #declare Uz = CamU.z;
+#declare Copy = function(x, y) { (x >= 0) + 2 * (y < 0) }
+#declare Px = function(x) { (2 * x - select(x, -0.5, 0.5)) * Aspect }
+#declare Py = function(y) { 2 * y - select(y, -0.5, 0.5) }
+camera {
+  user_defined
+  location {
+    function { Lx }
+    function { Ly + Spacing * Copy(x, y) }
+    function { Lz }
+  }
+  direction {
+    function { Dx + Px(x) * Rx + Py(y) * Ux }
+    function { Dy + Px(x) * Ry + Py(y) * Uy }
+    function { Dz + Px(x) * Rz + Py(y) * Uz }
+  }
 }
-box { <-0.6,1,-0.05>,<0.6,2,0.05>
-  pigment { checker rgb <0.1,0.3,1> rgb <1,0.15,0.02> scale 0.3 }
-  finish { ambient 0 emission 1 diffuse 0 }
-  light { emission brightness 30 samples 32 }
-  rotate y*15
-}
-box { <-1,2.6,-0.05>,<1,2.65,0.05>
-  pigment { rgb <1,0.7,0.25> } finish { ambient 0 emission 1 diffuse 0 }
-  light { pigment { rgb <1,0.7,0.25> } brightness 120 lumens samples 32 }
-  translate z*-0.5
-}
-mesh {
-  triangle { <1,1,-0.3>,<2,1,0.7>,<2,1,-0.3> }
-  triangle { <1,1,-0.3>,<1,1,0.7>,<2,1,0.7> }
-  pigment { rgb <0.15,1,0.35> } finish { ambient 0 emission 1 diffuse 0 }
-  light { emission brightness 18 samples 32 }
-}
-sphere { <0,0.35,-1>,0.35 pigment { rgb 0.7 } finish { ambient 0 diffuse 0.8 } }
+
+#for (K, 0, 3)
+  #declare Samples = pow(4, K + 1);
+  union {
+    light_group {
+      disc { 0, y, 1000 pigment { rgb 0.7 } finish { ambient 0 diffuse 0.8 } }
+      sphere { <-1.5,1.7,0>,0.25
+        pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0 }
+        light { brightness 45 nits samples Samples }
+      }
+      box { <-0.6,1,-0.05>,<0.6,2,0.05>
+        pigment { checker rgb <0.1,0.3,1> rgb <1,0.15,0.02> scale 0.3 }
+        finish { ambient 0 emission 1 diffuse 0 }
+        light { emission brightness 30 samples Samples }
+        rotate y*15
+      }
+      box { <-1,2.6,-0.05>,<1,2.65,0.05>
+        pigment { rgb <1,0.7,0.25> } finish { ambient 0 emission 1 diffuse 0 }
+        light { pigment { rgb <1,0.7,0.25> } brightness 120 lumens samples Samples }
+        translate z*-0.5
+      }
+      mesh {
+        triangle { <1,1,-0.3>,<2,1,0.7>,<2,1,-0.3> }
+        triangle { <1,1,-0.3>,<1,1,0.7>,<2,1,0.7> }
+        pigment { rgb <0.15,1,0.35> } finish { ambient 0 emission 1 diffuse 0 }
+        light { emission brightness 18 samples Samples }
+      }
+      sphere { <0,0.35,-1>,0.35 pigment { rgb 0.7 } finish { ambient 0 diffuse 0.8 } }
+    }
+    // the label, half a unit in front of the camera at the top left of its quarter
+    text { ttf "timrom.ttf" concat(str(Samples, 0, 0), " samples") 0.001, 0 scale 0.035 no_shadow
+      pigment { rgb 1 } finish { ambient 0 diffuse 0 emission 1 }
+      translate <-0.47 * Aspect, 0.40, 1> * 0.5
+      matrix <CamR.x, CamR.y, CamR.z, CamU.x, CamU.y, CamU.z, CamD.x, CamD.y, CamD.z, CamL.x, CamL.y, CamL.z>
+    }
+    translate y * Spacing * K
+  }
+#end

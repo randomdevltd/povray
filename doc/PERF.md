@@ -1988,7 +1988,7 @@ any-root shadow search saves 1.7% on `isocacti`, 9% on the noise sphere and 8% o
 
 Built with the same flags, single-threaded, this branch draws every scene above exactly as `performance` does, pixel
 for pixel, and so does it for `incdemo/i_internal.pov` (frames 10–15), the noise sphere with max_gradient halved, and
-`distribution/scenes/objects/superel-iso.pov`, which draws superel1 and superel2 as `f_superellipsoid` isosurfaces
+`tests/render/superel-iso.pov`, which draws superel1 and superel2 as `f_superellipsoid` isosurfaces
 alone and under reflection, glass, bumps, area lights, media, radiosity and photons; their coverage matches the
 native superellipsoid at every pixel. Batched and one-point evaluation return the same bits, and `tests_fnbatch.cpp`
 checks the VM's library maths against `std::` to 1e-12 over ±200. The caverns, with a red background, show no red,

@@ -446,7 +446,7 @@ box { &lt;-30, 100, -2&gt;, &lt;30, 160, 2&gt;
   light { brightness scale_lumens(806, 0.01) lumens }
 }
 </pre>
-<p> <code>scenes/lights/surface_light.pov</code> shows a bulb, a patterned screen, a strip stated in lumens and a mesh.</p>
+<p> <code>scenes/lights/surface_light.pov</code> shows a bulb, a patterned screen, a strip stated in lumens and a mesh, as four quarters of one image at 4, 16, 64 and 256 samples per light.</p>
 <p>Not accepted in a surface light block: the attenuation <code>power</code> and <code>scale</code> (a surface light always follows the physical law of its geometry, with no artistic falloff) and <code>fade_power</code> or <code>fade_distance</code>. A <code>light_source</code> cannot carry a <code>light</code> block. A surface light combines with ordinary lights, media lights and radiosity; it does not shine through <a href="r3_10.html#r3_10">portals</a>, see below.</p>
 </div>
 
