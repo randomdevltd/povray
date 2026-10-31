@@ -21,6 +21,7 @@ runs:
         zlib/                   | libz-dev                          | zlib          |
                                 | automake                          | automake      |
                                 | pkg-config                        | pkg-config    |
+                                | ccache                            | ccache        | compiler cache for the build workflows
     shell: bash
     run: |
       echo "Preparing to install packages for ${{ runner.os }}"

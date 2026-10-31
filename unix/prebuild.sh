@@ -621,22 +621,17 @@ DISTCLEANFILES = \$(top_builddir)/povray.ini
 CONFIG_CLEAN_FILES = 
 
 # Render a test scene for 'make check'.
-# This is meant to run before 'make install'.
-check: all
+# 'check-quick' is the fast subset; 'check-heavy' the expensive remainder. 'check' runs both.
+check: check-heavy
+check-quick: all
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/pov4/identical.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/snapshot.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/cylindrical_projection.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/render_tags.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/look_at_framing.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/multi_camera.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/skein.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/isosurface_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/mesh_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/eager_preparation.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/shadow_order.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_grid_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_optical_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -659,13 +654,9 @@ check: all
 	rm -f progressive_photon_test
 	+sh "\$(top_srcdir)/tools/bench/check-progressive-surface.sh" "\$(top_builddir)" "\$(top_builddir)/tests/progressive-surface"
 	sh \$(top_srcdir)/tests/render/progressive_surface.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/progressive_receivers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/progressive_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photon_file.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/photon_target_weights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/progressive_direct_lights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_emitter_parity.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/progressive_photons4.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photon_groups.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_media_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_radiosity.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -674,16 +665,27 @@ check: all
 	\$(CXX) -std=c++14 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/photon_beam_map.cpp -o photon_beam_map_test
 	./photon_beam_map_test
 	rm -f photon_beam_test photon_beam_map_test
-	sh \$(top_srcdir)/tests/render/progressive_volume.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_volume_groups.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_solid.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/media_refraction.sh \$(top_builddir)/unix/povray \$(top_srcdir)
-	sh \$(top_srcdir)/tests/render/refraction_detail.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/split_union_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/fade_cutoff.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/token_cache.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/parser_token_count.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+check-heavy: check-quick
+	sh \$(top_srcdir)/tests/pov4/identical.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/render_tags.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/look_at_framing.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/multi_camera.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/skein.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/eager_preparation.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/progressive_receivers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/progressive_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/progressive_direct_lights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/progressive_photons4.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/progressive_volume.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_refraction.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/refraction_detail.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 
 # Install scripts in povlibdir.
 nobase_povlib_SCRIPTS = `echo $scriptfiles`

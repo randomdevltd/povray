@@ -3,20 +3,39 @@ name: 'Quick Tests'
 on:
   workflow_dispatch:
   push:
+    # Feature branches are checked by their pull request; this workflow runs again
+    # only where a branch is an integration point.
+    branches: [ 'master', 'performance' ]
     # For now, there's nothing in the following directories that we're actually checking.
     paths-ignore: [ 'distribution/**', 'doc/**', 'source-doc/**' ]
   pull_request:
     # For now, there's nothing in the following directories that we're actually checking.
     paths-ignore: [ 'distribution/**', 'doc/**', 'source-doc/**' ]
 
+# A new push to the same ref replaces the previous run instead of stacking
+# another full check beside it (a merged batch of pull requests starts one
+# run for the newest merge, not one per merge).
+concurrency:
+  group: quick-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_unix:
     name: 'Unix Build Test'
     runs-on: ubuntu-latest
+    env:
+      CCACHE_MAXSIZE: 512M
     steps:
 
     - name: 'Check out Repository'
       uses: actions/checkout@v7
+
+    - name: 'Compiler Cache'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-quick-${{ github.sha }}
+        restore-keys: ccache-${{ runner.os }}-quick-
 
     - name: 'Install Prerequisites'
       uses: ./.github/actions/unix_getlibs
@@ -28,6 +47,9 @@ jobs:
 
     - name: 'Configure'
       uses: ./.github/actions/unix_configure
+      with:
+        c-compiler: 'ccache gcc'
+        cxx-compiler: 'ccache g++'
     - name: 'Sanity-Check Working Tree'
       uses: ./.github/actions/git_check_repo
 
@@ -45,7 +67,7 @@ jobs:
     - name: 'Check Functionality'
       uses: ./.github/actions/unix_make
       with:
-        make-target: check
+        make-target: check-quick
     - name: 'Sanity-Check Working Tree'
       uses: ./.github/actions/git_check_repo
 
