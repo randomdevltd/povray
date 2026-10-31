@@ -245,7 +245,7 @@ public:
     MathColour RadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const
     {
         return field->Sample(hit, normal, outgoing, td) +
-            (includePrimary ? primary->SurfaceRadianceAt(hit, normal, outgoing) : MathColour());
+            (includePrimary ? primary->SurfaceRadianceAt(hit, normal, outgoing, td) : MathColour());
     }
     EmitterSample Sample(double s, std::uint64_t key, TraceThreadData* td = nullptr) const override
     {

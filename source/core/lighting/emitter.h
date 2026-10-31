@@ -92,7 +92,7 @@ class Emitter
         virtual bool IsSurface() const { return false; }
         virtual bool HasVolumeEmission() const { return false; }
         virtual void AccumulateSurfaceGuide(SurfaceAngularGuide&) const {}
-        virtual MathColour SurfaceRadianceAt(const Intersection&, const Vector3d&, const Vector3d&) const { return MathColour(); }
+        virtual MathColour SurfaceRadianceAt(const Intersection&, const Vector3d&, const Vector3d&, TraceThreadData*) const { return MathColour(); }
         virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const { return sample.weight * PhotonDirectionWeight(sample, outgoing); }
         /// As above, for emitters that evaluate materials on the shooting thread.
         virtual MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing, TraceThreadData*) const { return PhotonEmissionWeight(sample, outgoing); }
