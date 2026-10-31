@@ -30,6 +30,7 @@ struct ProgressiveVolumePhoton final
 {
     Vector3d point, direction;
     MathColour flux, extinction;
+    MathColour selfShare = MathColour(1.0);
     std::shared_ptr<const ProgressiveVolumeDomain> domain;
     double length = 0.0;
     double depth = -1.0; ///< path length from the light at the segment's start; negative when unknown

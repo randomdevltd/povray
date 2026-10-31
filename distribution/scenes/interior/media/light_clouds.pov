@@ -1,5 +1,5 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Single scattering only. +w640 +h480.
+// Sky lanterns rising over a night sea drift into a cumulus and light it from inside, while lightning and a flash light a storm tower from within and strike the sea. Clouds bounce light to their neighbours, with a small self share. +w640 +h480.
 // Declare=Samples=N sets each light's samples, LanternLumens each lantern's flux (400, a large paper lantern), Storm=0 drops the lightning tower.
 // The lanterns fall off physically, as 1/d^2, so the cone of light out of each open bottom stands out from the light through the paper.
 #version 4.0;
@@ -7,6 +7,9 @@
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Storm) #declare Storm = 1; #end
 #ifndef (LanternLumens) #declare LanternLumens = 400; #end
+#ifndef (BounceBrightness) #declare BounceBrightness = 6; #end
+#ifndef (SelfBounce) #declare SelfBounce = 0.05; #end
+// BounceBrightness scales the cloud bounce (6); SelfBounce keeps a small fraction on its own media (0.05).
 #declare R = seed(1907);
 
 global_settings { assumed_gamma 1 max_trace_level 6 }
@@ -35,6 +38,7 @@ plane {
         scattering { 5, rgb 0.3 eccentricity 0.35 }
         density { function { max(0, min(1, Body(x, y, z) * 3.5 - 0.45 + 0.9 * (Puffs(x / Scale, y / Scale, z / Scale) - 0.5))) } }
       }
+      light { brightness BounceBrightness samples Samples bounce { passes 2 self SelfBounce } }
     }
   }
 #end
