@@ -271,6 +271,8 @@ struct ProcessOptions::INI_Parser_Table RenderOptions_INI_Table[] =
     { "Texture_Filter_Scale",kPOVAttrib_TextureFilterScale, kPOVMSType_Float },
     { "Texture_Filter_Taps", kPOVAttrib_TextureFilterTaps, kPOVMSType_Int },
     { "Texture_Filter",      kPOVAttrib_TextureFilter,      kPOVMSType_Bool },
+    { "Texture_Filter_Normals",kPOVAttrib_TextureFilterNormals, kPOVMSType_Bool },
+    { "Texture_Filter_Pigments",kPOVAttrib_TextureFilterPigments, kPOVMSType_Bool },
 
     { "User_Abort_Command",  kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },
     { "User_Abort_Return",   kPOVAttrib_UserAbortCommand,   kUseSpecialHandler },

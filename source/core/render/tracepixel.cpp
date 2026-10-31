@@ -1510,6 +1510,7 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const I
                                   viewFlags, cooperate, media, radiosity, ray.IsPretraceRay()));
         view->SetTextureFilterScale(textureFilterScale);
         view->SetTextureFilterTaps(textureFilterTaps);
+        view->SetTextureFilterKinds(textureFilterPigments, textureFilterNormals);
     }
 
     RGBTColour colour;

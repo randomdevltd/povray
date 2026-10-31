@@ -2038,6 +2038,60 @@ averaged apart, so light through an upper layer times the layer under it is a pr
 two patterns are unrelated; metallic reflection reads the averaged colour; `texture_map` and `material_map` pick their
 texture at the hit point (aliased like an unfiltered ray, not biased). Scenes with `assumed_gamma` other than 1
 average, like antialiasing, in their working space.
+
+`+TF` filters normals over the same footprint and taps too (`Texture_Filter_Normals=off` opts out, as `Texture_Filter_Pigments=off` does for pigments). Each layer's `normal` is perturbed at every tap, and lighting
+uses that spread of normals instead of the one at the pixel centre. Diffuse light is the mean of each tap's own
+response (cosine, brilliance, Fresnel, back-side diffuse), which is exactly what supersampling the footprint gives
+wherever the light is the same across it; a light is tested only where the taps' mean normal faces it, so no shadow
+ray is cast for taps alone, and taps facing a light their mean faces away from get none of its direct light. Averaging the normals first and
+taking the mean's length as a dimming factor would cost one evaluation instead of one per tap, but is wrong at every
+terminator, where some taps face the light and some do not, and on grazing light those are most of the bumpy pixels;
+the per-tap loop is dot products, no rays. Highlights cannot be averaged from a few taps without glinting, so
+`specular` and `phong` come from the taps facing the light: their share scales the highlight, their mean is its
+normal, and their spread widens its lobe (Toksvig: angular variance (1 − |mean|) / |mean| added to the lobe's,
+keeping its integral). A tilt turns phong's mirror direction twice as far in the plane of incidence and by the
+eye's cosine across it, so phong widens by those two variances. Reflected and refracted rays leave along the taps'
+mean normal; their count is unchanged.
+
+On a checker of bumpy and flat tiles running to the horizon (`tests/render/texture_filter_normal.pov` at
+320×240, one ray a pixel), the mean OkLab error against a 64-sample reference falls from 22.1 to 5.4 (×1000) with
+`specular` and from 26.1 to 10.4 with `phong`; the mean brightness is within 1.5%. On a plane with `normal { granite .5 scale .16 }` lit by a grazing light, diffuse alone falls from
+198 to 17 with the mean within 0.5%, and specular alone from 62 to 17, with the highlight 14% dim: the facing
+taps' Gaussian stands in for a skewed distribution. The lobe widens for the whole footprint, so a pixel half
+flat and half rough blurs its flat part's sharp highlight too. In a lava scene whose rock has sub-pixel granite
+bumps, the static speckle (high-pass of the rock at 1024 light samples, % of its mean) falls from 75 to 34 at
+160×90, against 36 in a 4×4 supersampled reference, and from 83 to 33 in a window of a 640×360 frame; the
+rock's RMS difference from the reference, less light-sampling noise, falls from 412% to 148% and from 312% to
+61%. The cost is the normal's pattern evaluated at each tap, 8 to 72 times per bumped hit: on the checker, a
+scene that is nothing but a bumped plane under two point lights, `+TF` takes 6 times the CPU of `+TF` with `Texture_Filter_Normals=off` (three
+alternated pairs, one thread). Perturbing the centre's normal only where the taps' mean vanishes or the pigment reads
+it, computing each tap's eye-side `fresnel` loss once for all lights and copying the hit once per tap take 4.6% off
+that plane and 7.5% off it with diffuse `fresnel` under an area light (three alternated pairs, one thread). The
+surface bounce field still looks light up by the unperturbed normal, and radiosity by the mean normal.
+
+Every other term that reads the perturbed normal uses the taps too. Reflectivity (`fresnel`, falloff, `metallic`),
+the Fresnel loss of ambient, emission and radiosity, and `conserve_energy` are averaged per tap. Iridescence is a
+cosine of each tap's light and eye cosines; with the facing taps' mean m and variance v of that sum, the mean of
+cos(k s) for Gaussian s is cos(k m) exp(−k² v / 2), which needs only two dot products a tap. A shadow ray crossing an
+interior with faked `caustics` carries the lit pixel's footprint, converging on the light, to the crossing and
+averages the caustic term over taps there. `aoi` and `slope` pigments on a bumped layer see each tap's normal.
+Reflected and refracted rays still leave along the mean normal, with no extra rays, but their direction
+differentials grow in quadrature by the spread: a tilt variance V spreads a reflected direction by twice the tilt
+in the plane of incidence and by the eye's cosine across it, and a box one footprint wide has variance 1/12, so
+each differential gains √(12 V) times that tilt's image, over the footprint scale. What the ray hits is then
+filtered over the blur the bumps cause.
+
+At 320×240, one ray a pixel, mean absolute error against a 16-sample reference (×1000 of full scale), the earlier
+normal filter against this one: a bumpy chrome ball over a checker 36.6 → 29.4 on the ball (94.2 unfiltered),
+its mean within 0.2%; iridescent, falloff-reflecting bumps 49.8 → 25.2 (59.0 unfiltered; the mean normal's
+iridescence gives 31.2, a per-tap cosine 25.7 at 20% more CPU, the Gaussian 3%), mean within 1%; a floor under
+bumpy caustic glass 28.4 → 4.4, mean within 0.1% where it was 2.4% dark; an `aoi` pigment on minified bumps
+21.8 → 5.3. On the bump checker, a scene with none of these terms, the image is unchanged to the byte. In the stock
+`benchmark.pov` at 160×120 the 15% of pixels these terms change keep their error, 47.5 against 47.6: its error is
+not in the terms filtered here. Only iridescence costs more than the normals' own taps:
+on the iridescent plane the Gaussian takes 3% more CPU than the mean normal's single cosine.
+Degenerate footprints fall back without error: a tap whose perturbed normal has zero length takes the raw normal, taps whose mean normal has zero length light the layer by the centre's normal, taps of no total opacity keep their plain mean colour, a ray within 1e-12 of grazing or a footprint under 1e-9 of the hit's distance from the origin plus the ray's length is not filtered, and a grazing footprint is capped at 64 pixel widths.
+
 ## Function-density point batches
 
 Function densities reuse one function context for each density batch. Eligible functions with SIMD

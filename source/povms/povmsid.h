@@ -405,6 +405,8 @@ enum
     kPOVAttrib_TextureFilter         = 'TxFi',
     kPOVAttrib_TextureFilterScale    = 'TxFS',
     kPOVAttrib_TextureFilterTaps     = 'TxFT',
+    kPOVAttrib_TextureFilterNormals  = 'TxFN',
+    kPOVAttrib_TextureFilterPigments = 'TxFP',
 
     kPOVAttrib_Bounding              = 'Boun',
     kPOVAttrib_BoundingMethod        = 'BdMe',

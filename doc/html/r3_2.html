@@ -3097,12 +3097,22 @@ are used only at 5 or below.</td>
 <table width="100%" class="option-list">
 <tr>
 <td width="30%"><code>Texture_Filter=</code>bool</td>
-<td width="70%">Average pigments over each pixel's footprint (default off) <font class="New">New</font> in version 3.8</td>
+<td width="70%">Filter textures, pigments and normals, over each pixel's footprint (default off) <font class="New">New</font> in version 3.8</td>
 </tr>
 
 <tr>
 <td><code>+TF</code></td>
 <td>Same as <code>Texture_Filter=on</code></td>
+</tr>
+
+<tr>
+<td><code>Texture_Filter_Pigments=</code>bool</td>
+<td>With <code>+TF</code>, filter pigments (default on) <font class="New">New</font> in version 3.8</td>
+</tr>
+
+<tr>
+<td><code>Texture_Filter_Normals=</code>bool</td>
+<td>With <code>+TF</code>, filter normals (default on) <font class="New">New</font> in version 3.8</td>
 </tr>
 
 <tr>
@@ -3112,13 +3122,15 @@ are used only at 5 or below.</td>
 
 <tr>
 <td><code>Texture_Filter_Taps=</code>n</td>
-<td>Taps a filtered pigment starts with: 8 (default) or 3</td>
+<td>Taps a filtered pigment or normal starts with: 8 (default) or 3</td>
 </tr>
 </table>
 
-<p>With <code>+TF</code>, camera rays carry how their origin and direction change from one pixel to the next. Where such a ray hits a surface, each texture layer's pigment is averaged over the area the pixel covers there, so fine or distant patterns, such as a checker running to the horizon, are smoothed instead of aliasing. Reflected and refracted rays spawned by a filtered ray are filtered too.</p>
-<p>Plain pigments, uv-mapped textures and normals are not filtered, nor are shadow, photon, radiosity and subsurface rays. With focal blur, only perspective and orthographic cameras are filtered, and cameras with a normal block are not; nor is anything seen through a portal.</p>
-<p><code>Texture_Filter_Taps=3</code> starts each filtered pigment with three taps and adds the rest only where they disagree, which can save time on expensive pigments; any value of 3 or less means 3, any other 8.</p>
+<p>With <code>+TF</code>, camera rays carry how their origin and direction change from one pixel to the next. Where such a ray hits a surface, each texture layer, its pigment and its normal, is filtered over the area the pixel covers there, so fine or distant patterns, such as a checker or bumps running to the horizon, are smoothed instead of aliasing. Reflected and refracted rays spawned by a filtered ray are filtered too. <code>Texture_Filter_Pigments=off</code> or <code>Texture_Filter_Normals=off</code> leaves that kind unfiltered; neither matters without <code>+TF</code>.</p>
+<p>A filtered normal is evaluated at the taps the pigment filter uses, and everything that reads the perturbed normal sees that spread instead of the normal at the pixel centre. Diffuse light is the mean of what each tap's normal receives, and <code>specular</code> and <code>phong</code> highlights are widened by how far the taps' normals spread, keeping their total brightness, so bumps finer than a pixel shade as their average instead of speckling. Angle-dependent terms are averaged over the taps: <code>irid</code>, <code>reflection</code> with <code>fresnel</code> or a falloff, <code>metallic</code>, the Fresnel loss of <code>ambient</code>, <code>emission</code> and radiosity, <code>conserve_energy</code>, and the faked <code>caustics</code> of an interior a shadow ray crosses, over the lit pixel's footprint carried to where it crosses. A pigment that reads the normal, through <code>aoi</code> or <code>slope</code>, sees each tap's own normal. Reflected and refracted rays leave along the taps' mean normal, with no extra rays, and their footprint widens by the normals' spread, so what they hit is filtered over the blur the bumps cause.</p>
+<p>Plain pigments are not filtered, nor is a pigment that is itself <code>uv_mapping</code>; a <code>uv_mapping</code> texture or normal, or a texture on a uv-mapped object, is filtered over the footprint carried into its uv coordinates. Shadow, photon, radiosity and subsurface rays are not filtered. With focal blur, only perspective and orthographic cameras are filtered, and cameras with a normal block are not; nor is anything seen through a portal. <code>texture_map</code>, <code>material_map</code> and an <code>average</code> texture pick their textures at the hit point.</p>
+<p><code>Texture_Filter_Taps=3</code> starts each filtered pigment or normal with three taps and adds the rest only where they disagree, which can save time on expensive patterns; any value of 3 or less means 3, any other 8.</p>
+<p><code>+TF</code> never casts extra rays to compute a sample, though ray counts can differ slightly from <code>-TF</code> because the filtered normals differ from the one at the pixel centre. A light is shadow-tested only where the taps' mean normal faces it, so taps facing a light that their mean faces away from get none of its direct light. As no extra rays are cast, a footprint can reach texture that something else hides, such as a pattern clipped by another solid, or a <code>sky_sphere</code> gradient that wraps below the horizon behind the ground, and the filter blends that texture in. To avoid it, make the texture continuous there (for a sky, <code>function { max(0, y) }</code> instead of a wrapping <code>gradient y</code>), or leave <code>+TF</code> off for that render. Where a footprint's mean normal reflects totally while some of its normals would transmit, the one ray that total reflection traces refracts instead, about those normals, and carries the reflection's share of the light as well as its own.</p>
 
 </div>
 <a name="r3_2_8_4"></a>

@@ -1297,6 +1297,37 @@ static Vector3d ReflectDifferential(const Vector3d& d, const Vector3d& dd, const
     return dd - 2.0 * (dot(d, n) * dn + (dot(dd, n) + dot(d, dn)) * n);
 }
 
+// Variance of the normals' angle per axis from their mean's length, as Toksvig has it: 1 / (1 + variance).
+static double NormalSpreadVariance(double length)
+{
+    return (length > 1.0e-30) ? max(0.0, (1.0 - length) / length) : 1.0e30;
+}
+
+// A differential a widened by w in quadrature: a's length grows by w's part along it, and w's part across it is added.
+static Vector3d QuadratureAdd(const Vector3d& a, const Vector3d& w)
+{
+    const DBL len = a.length();
+    if (!(len > 0.0))
+        return w;
+    const Vector3d u = a / len;
+    const DBL along = dot(w, u);
+    return u * sqrt(len * len + along * along) + (w - along * u);
+}
+
+// Unit tilts of the normal n along the footprint's x axis and across it; false where the footprint has no extent off n.
+static bool TiltAxes(const Vector3d& n, const Vector3d& dPdx, const Vector3d& dPdy, Vector3d& tx, Vector3d& ty)
+{
+    Vector3d a = dPdx - dot(dPdx, n) * n;
+    if (!(a.length() > 0.0))
+        a = cross(n, dPdy - dot(dPdy, n) * n);
+    const DBL len = a.length();
+    if (!(len > 0.0))
+        return false;
+    tx = a / len;
+    ty = cross(n, tx);
+    return true;
+}
+
 // Give a derived ray differentials, spreading at most one radian per pixel step so a focus or a grazing bend stays bounded.
 static void SetRayDifferentials(Ray& nray, const Vector3d& dOdx, const Vector3d& dOdy, const Vector3d& dDdx, const Vector3d& dDdy)
 {
@@ -1382,78 +1413,29 @@ bool Trace::ComputePixelFootprint(const Intersection& isect, const vector<const 
     {
         Warp_EPoint(p, p, warp);
     }
-    if ((p - ipoint).length() > 1.0e-9 * (1.0 + ipoint.length()))
+    if ((p - ipoint).length() > 1.0e-9 * (p.length() + ipoint.length()))
         return false;
 
     footX = diff.dPdx * textureFilterScale;
     footY = diff.dPdy * textureFilterScale;
 
-    const DBL tiny = 1.0e-9 * (1.0 + isect.IPoint.length());
+    // relative to the hit's distances from the origin and along the ray, so the same at any scene scale
+    const DBL tiny = 1.0e-9 * (isect.IPoint.length() + isect.Depth);
     return (footX.length() > tiny) || (footY.length() > tiny);
 }
 
-bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, const PIGMENT *pigment, const vector<const TEXTURE *>& warps,
-                                   const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray)
+// Visits a footprint's taps: a starting set, then a sheared lattice where they disagree by more than kSpread or the footprint is stretched.
+template<class Sample>
+static void VisitFootprintTaps(int startTaps, const Vector3d& footX, const Vector3d& footY, const DBL& spread, Sample&& sample)
 {
     static const DBL kRotatedGrid[4][2] = { { -0.375, -0.125 }, { 0.125, -0.375 }, { 0.375, 0.125 }, { -0.125, 0.375 } };
     const DBL kSpread = 0.01;
-    TransColour sum, first, tap;
-    MathColour premultiplied, transmitted;
-    DBL opacity = 0.0;
-    bool found = false, filters = false;
-    const bool legacy = (sceneData->EffectiveLanguageVersion() < 370);
-    int taps = 0;
-    DBL spread = 0.0;
-
-    auto sample = [&](DBL u, DBL v)
-    {
-        Vector3d p = isect.IPoint + u * footX + v * footY;
-        Intersection tapIsect(isect);
-        tapIsect.IPoint = p;
-        tapIsect.haveLocalIPoint = false;
-        bool uvMapped = Test_Flag(isect.Object, UV_FLAG);
-        if (uvMapped)
-        {
-            Vector2d uv;
-            tapIsect.Object->UVCoord(uv, &tapIsect);
-            p = Vector3d(uv[X], uv[Y], 0.0);
-        }
-        for (const TEXTURE *warp : warps)
-            if (warp->Type == UV_MAP_PATTERN)
-            {
-                if (!uvMapped)
-                {
-                    Vector2d uv;
-                    tapIsect.Object->UVCoord(uv, &tapIsect);
-                    p = Vector3d(uv[X], uv[Y], 0.0);
-                    uvMapped = true;
-                }
-            }
-            else
-                Warp_EPoint(p, p, warp);
-        tap.Clear();
-        found = Compute_Pigment(tap, pigment, p, &tapIsect, &ray, threadData) || found;
-        sum += tap;
-        const DBL att = legacy ? DBL(tap.LegacyOpacity()) : DBL(tap.Opacity());
-        premultiplied += tap.colour() * att;
-        opacity += att;
-        transmitted += tap.TransmittedColour();
-        filters = filters || (tap.filter() != 0.0);
-        if (taps++ == 0)
-            first = tap;
-        else
-        {
-            const TransColour d = tap - first;
-            spread = max(spread, max(DBL(d.colour().MaxAbs()), max(fabs(DBL(d.filter())), fabs(DBL(d.transm())))));
-        }
-    };
-
     const DBL lenX = footX.length(), lenY = footY.length();
     const DBL aniso = max(lenX, lenY) / max(min(lenX, lenY), 1.0e-6 * max(lenX, lenY));
 
     // the cheap start: the centre and two opposite corners, which are enough where all three agree
     bool early = false;
-    if (textureFilterTaps == 3)
+    if (startTaps == 3)
     {
         sample(0.0, 0.0);
         sample(-0.35, -0.35);
@@ -1474,7 +1456,8 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, co
     if (!early && ((spread > kSpread) || (aniso > 2.0)))
     {
         // a sheared lattice: rows across the short side, columns along the long side growing with anisotropy
-        const int nLong = clip(int(ceil(4.0 * aniso)), 4, 32);
+        // an isotropic footprint's ratio is 1 only up to rounding, so it must not decide the first step at 1
+        const int nLong = clip(int(ceil(4.0 * aniso * (1.0 - 1.0e-9))), 4, 32);
         const int nShort = clip(64 / nLong, 2, 4);
         const int nu = (lenX >= lenY) ? nLong : nShort;
         const int nv = (lenX >= lenY) ? nShort : nLong;
@@ -1482,6 +1465,99 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, co
             for (int i = 0; i < nu; i++)
                 sample((i + (j + 0.5) / nv) / nu - 0.5, (j + 0.5) / nv - 0.5);
     }
+}
+
+Vector3d Trace::FootprintTapPoint(DBL u, DBL v, const Vector3d& footX, const Vector3d& footY, const vector<const TEXTURE *>& warps,
+                                   Intersection& tapIsect) const
+{
+    Vector3d p = tapIsect.IPoint + u * footX + v * footY;
+    tapIsect.IPoint = p;
+    tapIsect.haveLocalIPoint = false;
+    bool uvMapped = Test_Flag(tapIsect.Object, UV_FLAG);
+    if (uvMapped)
+    {
+        Vector2d uv;
+        tapIsect.Object->UVCoord(uv, &tapIsect);
+        p = Vector3d(uv[X], uv[Y], 0.0);
+    }
+    for (const TEXTURE *warp : warps)
+        if (warp->Type == UV_MAP_PATTERN)
+        {
+            if (!uvMapped)
+            {
+                Vector2d uv;
+                tapIsect.Object->UVCoord(uv, &tapIsect);
+                p = Vector3d(uv[X], uv[Y], 0.0);
+                uvMapped = true;
+            }
+        }
+        else
+            Warp_EPoint(p, p, warp);
+    return p;
+}
+
+// Whether a pigment reads the perturbed normal at its point, through aoi or slope anywhere in it.
+static bool PigmentReadsNormal(const PIGMENT *pigment)
+{
+    if (pigment == nullptr)
+        return false;
+    if (dynamic_cast<const AOIPattern*>(pigment->pattern.get()) || dynamic_cast<const SlopePattern*>(pigment->pattern.get()))
+        return true;
+    if (const PigmentPattern *nested = dynamic_cast<const PigmentPattern*>(pigment->pattern.get()))
+        if (PigmentReadsNormal(nested->pPigment))
+            return true;
+    if (const ScreenPattern *screen = dynamic_cast<const ScreenPattern*>(pigment->pattern.get()))
+        if (PigmentReadsNormal(screen->pFallback))
+            return true;
+    if (const PigmentBlendMap *map = dynamic_cast<const PigmentBlendMap*>(pigment->Blend_Map.get()))
+        for (const PigmentBlendMapEntry& entry : map->Blend_Map_Entries)
+            if (PigmentReadsNormal(entry.Vals))
+                return true;
+    return false;
+}
+
+bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, const PIGMENT *pigment, const vector<const TEXTURE *>& warps,
+                                   const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray, const TNORMAL *tnormal,
+                                   const Vector3d& rawnormal)
+{
+    // a pigment reading the normal sees each tap's own perturbed normal, as the centre's sees the centre's
+    const bool tapNormals = (tnormal != nullptr) && PigmentReadsNormal(pigment);
+    TransColour sum, first, tap;
+    MathColour premultiplied, transmitted;
+    DBL opacity = 0.0;
+    bool found = false, filters = false;
+    const bool legacy = (sceneData->EffectiveLanguageVersion() < 370);
+    int taps = 0;
+    DBL spread = 0.0;
+
+    VisitFootprintTaps(textureFilterTaps, footX, footY, spread, [&](DBL u, DBL v)
+    {
+        Intersection tapIsect(isect);
+        const Vector3d p = FootprintTapPoint(u, v, footX, footY, warps, tapIsect);
+        if (tapNormals)
+        {
+            Vector3d n = rawnormal;
+            for (const TEXTURE *warp : warps)
+                Warp_Normal(n, n, warp, Test_Flag(warp, DONT_SCALE_BUMPS_FLAG));
+            tapIsect.PNormal = rawnormal;
+            Perturb_Normal(n, tnormal, p, &tapIsect, &ray, threadData);
+        }
+        tap.Clear();
+        found = Compute_Pigment(tap, pigment, p, &tapIsect, &ray, threadData) || found;
+        sum += tap;
+        const DBL att = legacy ? DBL(tap.LegacyOpacity()) : DBL(tap.Opacity());
+        premultiplied += tap.colour() * att;
+        opacity += att;
+        transmitted += tap.TransmittedColour();
+        filters = filters || (tap.filter() != 0.0);
+        if (taps++ == 0)
+            first = tap;
+        else
+        {
+            const TransColour d = tap - first;
+            spread = max(spread, max(DBL(d.colour().MaxAbs()), max(fabs(DBL(d.filter())), fabs(DBL(d.transm())))));
+        }
+    });
 
     colour = sum / DBL(taps);
     // averaged premultiplied, so the colour that shows, colour times opacity, is the footprint's true mean
@@ -1492,6 +1568,58 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, co
     means.transmitted = transmitted / DBL(taps);
     means.opacity = opacity / DBL(taps);
     return found;
+}
+
+Vector3d Trace::ComputeFilteredNormal(const TEXTURE *layer, const vector<const TEXTURE *>& warps, const Vector3d& rawnormal,
+                                      const Vector3d& footX, const Vector3d& footY, Intersection& isect, const Ray& ray)
+{
+    Vector3d sum, first;
+    int taps = 0;
+    DBL spread = 0.0;
+    const bool unscaled = Test_Flag(layer->Tnormal, DONT_SCALE_BUMPS_FLAG);
+
+    VisitFootprintTaps(textureFilterTaps, footX, footY, spread, [&](DBL u, DBL v)
+    {
+        Intersection tapIsect(isect);
+        const Vector3d p = FootprintTapPoint(u, v, footX, footY, warps, tapIsect);
+        // the centre's chain: warped, perturbed at the tap, unwarped
+        Vector3d n = rawnormal;
+        for (const TEXTURE *warp : warps)
+            Warp_Normal(n, n, warp, Test_Flag(warp, DONT_SCALE_BUMPS_FLAG));
+        tapIsect.PNormal = rawnormal;
+        Perturb_Normal(n, layer->Tnormal, p, &tapIsect, &ray, threadData);
+        if (unscaled)
+            n.normalize();
+        for (auto i = warps.rbegin(); i != warps.rend(); ++i)
+            UnWarp_Normal(n, n, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
+        const DBL len = n.length();
+        n = (len > 0.0) ? n / len : rawnormal;
+        normalTaps.push_back(n);
+        sum += n;
+        if (taps++ == 0)
+            first = n;
+        else
+            spread = max(spread, (n - first).length());
+    });
+    return sum / DBL(taps);
+}
+
+bool Trace::FacingSpread(const Vector3d& direction, Vector3d& normal, double& share, double& length) const
+{
+    Vector3d sum;
+    size_t facing = 0;
+    for (size_t i = normalSpread.first; i < normalSpread.end; i++)
+        if (dot(normalTaps[i], direction) > 0.0)
+        {
+            sum += normalTaps[i];
+            facing++;
+        }
+    length = sum.length() / double(max(facing, size_t(1)));
+    if (!(length > 0.0))
+        return false;
+    normal = sum.normalized();
+    share = double(facing) / double(normalSpread.end - normalSpread.first);
+    return true;
 }
 
 void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resultTransm, const TEXTURE *texture, vector<const TEXTURE *>& warps, const Vector3d& ipoint,
@@ -1604,7 +1732,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
     SurfaceDifferentials hitDiff;
     Vector3d footX, footY;
     const bool haveDiff = (textureFilterScale > 0.0) && TransferDifferentials(ray, isect, rawnormal, hitDiff);
-    const bool filterPigments = haveDiff && ComputePixelFootprint(isect, warps, ipoint, hitDiff, footX, footY);
+    const bool haveFootprint = haveDiff && ComputePixelFootprint(isect, warps, ipoint, hitDiff, footX, footY);
+    const bool filterPigments = haveFootprint && textureFilterPigments, filterNormals = haveFootprint && textureFilterNormals;
     FilteredLayer layMeans;
     auto secondaryDiff = [&]() -> const SurfaceDifferentials *
     {
@@ -1612,6 +1741,33 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             ComputeNormalDifferentials(isect, rawnormal, hitDiff);
         return haveDiff ? &hitDiff : nullptr;
     };
+    // a secondary ray from a layer with a normal spread carries it, to widen its differentials
+    SurfaceDifferentials layDiff;
+    auto SpreadDiff = [&](const SurfaceDifferentials *diff, const NormalSpread& spread, SurfaceDifferentials& copy) -> const SurfaceDifferentials *
+    {
+        if ((diff == nullptr) || !spread.Active())
+            return diff;
+        copy = *diff;
+        copy.spread = spread;
+        return &copy;
+    };
+    // shading nested in this hit's lighting starts with no spread; this hit's taps are dropped when it returns
+    const NormalSpread outerSpread = normalSpread;
+    const ShadowFootprint outerFootprint = shadowFootprint;
+    const size_t tapBase = normalTaps.size();
+    normalSpread = NormalSpread();
+    shadowFootprint = ShadowFootprint();
+    ShadowFootprint litFootprint;
+    if (filterNormals)
+    {
+        litFootprint.point = isect.IPoint;
+        litFootprint.dPdx = hitDiff.dPdx;
+        litFootprint.dPdy = hitDiff.dPdy;
+        litFootprint.active = true;
+    }
+    NormalSpread laySpread, topSpread;
+    MathColour layConserve;
+    double layExit = 1.0;
 
     for (layer_number = 0, layer = texture; (layer != nullptr) && (trans > ray.GetTicket().adcBailout); layer_number++, layer = layer->Next)
     {
@@ -1619,7 +1775,22 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
         layNormal = rawnormal;
         isect.PNormal = rawnormal;
 
-        if (qualityFlags.normals && (layer->Tnormal != nullptr))
+        // with a footprint the layer is lit by its normals over the pixel, from their mean direction
+        laySpread = NormalSpread();
+        Vector3d mean;
+        const bool filterLayer = filterNormals && qualityFlags.normals && (layer->Tnormal != nullptr);
+        if (filterLayer)
+        {
+            laySpread.first = normalTaps.size();
+            mean = ComputeFilteredNormal(layer, warps, rawnormal, footX, footY, isect, ray);
+            laySpread.end = normalTaps.size();
+            laySpread.length = mean.length();
+            laySpread.twoSided = Test_Flag(isect.Object, DOUBLE_ILLUMINATE_FLAG);
+        }
+
+        // the centre's normal stands in where the taps' mean vanishes, and is what a pigment reading the normal sees there
+        if (qualityFlags.normals && (layer->Tnormal != nullptr) &&
+            (!filterLayer || !(laySpread.length > 0.0) || PigmentReadsNormal(layer->Pigment)))
         {
             for(vector<const TEXTURE *>::iterator i(warps.begin()); i != warps.end(); i++)
                 Warp_Normal(layNormal, layNormal, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
@@ -1634,10 +1805,15 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             for(vector<const TEXTURE *>::reverse_iterator i(warps.rbegin()); i != warps.rend(); i++)
                 UnWarp_Normal(layNormal, layNormal, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
         }
+        if (filterLayer && (laySpread.length > 0.0))
+            layNormal = mean / laySpread.length;
 
         // Store top layer normal.
         if(layer_number == 0)
+        {
             topNormal = layNormal;
+            topSpread = laySpread;
+        }
 
         // Get surface colour.
         new_Weight = weight * trans;
@@ -1650,7 +1826,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             bool uvLookup = Test_Flag(isect.Object, UV_FLAG);
             for (const TEXTURE *warp : warps)
                 uvLookup = uvLookup || (warp->Type == UV_MAP_PATTERN);
-            if (screen && haveDiff && !uvLookup)
+            if (screen && haveDiff && textureFilterPigments && !uvLookup)
             {
                 auto lookupPoint = [&](const Vector3d& offset)
                 {
@@ -1670,7 +1846,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                                                            0.5 * (bottomLeft[Y] + bottomRight[Y] - topLeft[Y] - topRight[Y]));
                 threadData->activePatternFootprint = true;
             }
-            else if (screen && haveDiff && uvLookup)
+            else if (screen && haveDiff && textureFilterPigments && uvLookup)
             {
                 auto lookupPoint = [&](const Vector3d& offset)
                 {
@@ -1696,7 +1872,8 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             if (filterPigments && !screen &&
                 (layer->Pigment->Type != PLAIN_PATTERN) && (layer->Pigment->Type != UV_MAP_PATTERN) &&
                 !(qualityFlags.quickColour && layer->Pigment->Quick_Colour.IsValid()))
-                colour_found = ComputeFilteredPigment(layCol, layMeans, layer->Pigment, warps, footX, footY, isect, ray);
+                colour_found = ComputeFilteredPigment(layCol, layMeans, layer->Pigment, warps, footX, footY, isect, ray,
+                                                      (filterNormals && qualityFlags.normals) ? layer->Tnormal : nullptr, rawnormal);
             else
                 colour_found = Compute_Pigment(layCol, layer->Pigment, ipoint, &isect, &ray, threadData);
             threadData->activePatternFootprint = savedPatternFootprint;
@@ -1733,13 +1910,6 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             if ((isect.Object->interior == nullptr) && layer->Finish->Reflection_Fresnel)
                 throw POV_EXCEPTION_STRING("fresnel reflection used with no interior."); // TODO FIXME - wrong place to report this [trf]
 
-            ComputeReflectivity(listWNRX->back().weight, listWNRX->back().reflec,
-                                layer->Finish->Reflection_Max, layer->Finish->Reflection_Min,
-                                layer->Finish->Reflection_Fresnel, layer->Finish->Reflection_Falloff,
-                                cos_Angle_Incidence, relativeIor);
-
-            ComputeMetallic(listWNRX->back().reflec, layer->Finish->Reflect_Metallic, layCol.colour(), cos_Angle_Incidence);
-
             // We need to reduce the layer's own brightness if it is transparent.
             if (sceneData->EffectiveLanguageVersion() < 370)
                 att = layCol.LegacyOpacity();
@@ -1747,6 +1917,44 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 att = layCol.Opacity();
             if (layMeans.filters)
                 att = layMeans.opacity;
+
+            listWNRX->back().spread = laySpread;
+            if (laySpread.Active())
+            {
+                // each tap's angle-dependent terms, averaged as supersampling the footprint would
+                MathColour reflec, kept;
+                double reflecWeight = 0.0, exitSum = 0.0;
+                for (size_t t = laySpread.first; t < laySpread.end; t++)
+                {
+                    const double c = -dot(ray.Direction, normalTaps[t]);
+                    double w = new_Weight;
+                    MathColour r;
+                    ComputeReflectivity(w, r, layer->Finish->Reflection_Max, layer->Finish->Reflection_Min,
+                                        layer->Finish->Reflection_Fresnel, layer->Finish->Reflection_Falloff, c, relativeIor);
+                    ComputeMetallic(r, layer->Finish->Reflect_Metallic, layCol.colour(), c);
+                    reflec += r;
+                    kept += (1.0 - (layer->Finish->AlphaKnockout ? r * att : r)).ClippedUpper(1.0);
+                    reflecWeight += w;
+                    if (layer->Finish->Fresnel != 0.0)
+                        exitSum += 1.0 - layer->Finish->Fresnel * FresnelR(c, relativeIor);
+                }
+                const double inv = 1.0 / double(laySpread.end - laySpread.first);
+                listWNRX->back().reflec = reflec * inv;
+                listWNRX->back().weight = reflecWeight * inv;
+                layConserve = kept * inv;
+                layExit = exitSum * inv;
+            }
+            else
+            {
+                ComputeReflectivity(listWNRX->back().weight, listWNRX->back().reflec,
+                                    layer->Finish->Reflection_Max, layer->Finish->Reflection_Min,
+                                    layer->Finish->Reflection_Fresnel, layer->Finish->Reflection_Falloff,
+                                    cos_Angle_Incidence, relativeIor);
+
+                ComputeMetallic(listWNRX->back().reflec, layer->Finish->Reflect_Metallic, layCol.colour(), cos_Angle_Incidence);
+                if (layer->Finish->Fresnel != 0.0)
+                    layExit = 1.0 - layer->Finish->Fresnel * FresnelR(cos_Angle_Incidence, relativeIor);
+            }
 
             if (layer->Finish->AlphaKnockout)
                 listWNRX->back().reflec *= att;
@@ -1852,8 +2060,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                     // _inverse_ of the relative refractive index; however, the Fresnel formula
                     // is such that we can just as well plug in the external angle of incidence
                     // and straight relative refractive index.
-                    double f = layer->Finish->Fresnel * FresnelR(cos_Angle_Incidence, relativeIor);
-                    radiosityContribution *= (1.0 - f);
+                    radiosityContribution *= layExit;
                 }
 
                 tmpCol += radiosityContribution;
@@ -1880,8 +2087,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 // _inverse_ of the relative refractive index; however, the Fresnel formula
                 // is such that we can just as well plug in the external angle of incidence
                 // and straight relative refractive index.
-                double f = layer->Finish->Fresnel * FresnelR(cos_Angle_Incidence, relativeIor);
-                emission *= (1.0 - f);
+                emission *= layExit;
             }
             tmpCol += (layCol.colour() * emission * att);
 
@@ -1904,7 +2110,12 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 {
                     MathColour classicContribution;
 
+                    normalSpread = laySpread;
+                    normalSpread.eyeExit = EyeExitTaps(layer->Finish, laySpread, ray.Direction, relativeIor);
+                    shadowFootprint = litFootprint;
                     ComputeDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, layCol.colour(), classicContribution, att, isect.Object, relativeIor, rawnormal);
+                    normalSpread = NormalSpread();
+                    shadowFootprint = ShadowFootprint();
 
 #if POV_EXPERIMENTAL_BRILLIANCE_OUT
                     if(layer->Finish->BrillianceOut != 1.0)
@@ -1925,7 +2136,10 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 {
                     MathColour photonsContribution;
 
+                    normalSpread = laySpread;
+                    normalSpread.eyeExit = EyeExitTaps(layer->Finish, laySpread, ray.Direction, relativeIor);
                     ComputePhotonDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, rawnormal, isect, layCol.colour(), photonsContribution, att, isect.Object, relativeIor, *surfacePhotonGatherer, weight);
+                    normalSpread = NormalSpread();
 
 #if POV_EXPERIMENTAL_BRILLIANCE_OUT
                     if(layer->Finish->BrillianceOut != 1.0)
@@ -1952,7 +2166,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             {
                 // adjust filCol based on reflection
                 // this would work so much better with r,g,b,rt,gt,bt
-                filCol *= (1.0 - listWNRX->back().reflec).ClippedUpper(1.0);
+                filCol *= listWNRX->back().spread.Active() ? layConserve : (1.0 - listWNRX->back().reflec).ClippedUpper(1.0);
             }
         }
 
@@ -1986,7 +2200,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             const double share = ray.GetTicket().radiosityShare;
             ray.GetTicket().radiosityShare = share * roulette;
             tir_occured = ComputeRefraction(texture->Finish, interior, isect.IPoint, ray, topNormal, rawnormal, rfrCol, rfrTransm, new_Weight,
-                                            secondaryDiff());
+                                            SpreadDiff(secondaryDiff(), topSpread, layDiff));
             ray.GetTicket().radiosityShare = share;
             rfrCol *= roulette;
         }
@@ -2067,7 +2281,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                         const double share = ray.GetTicket().radiosityShare;
                         ray.GetTicket().radiosityShare = share * roulette;
                         ComputeReflection(layer->Finish, isect.IPoint, ray, (*listWNRX)[i].normal, rawnormal, rflCol, (*listWNRX)[i].weight,
-                                          secondaryDiff());
+                                          SpreadDiff(secondaryDiff(), (*listWNRX)[i].spread, layDiff));
                         ray.GetTicket().radiosityShare = share;
                     }
 
@@ -2085,6 +2299,29 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             layer = layer->Next;
         }
     }
+    normalTaps.resize(tapBase);
+    normalSpread = outerSpread;
+    shadowFootprint = outerFootprint;
+}
+
+bool Trace::ShadowCrossingFootprint(const Intersection& isect, const vector<const TEXTURE *>& warps, const Vector3d& ipoint,
+                                    const Vector3d& rawnormal, const Ray& ray, Vector3d& footX, Vector3d& footY) const
+{
+    if (!shadowFootprint.active)
+        return false;
+    // the lit footprint carried along shadow rays that converge on the light, or stay parallel for parallel light
+    Ray carried(ray);
+    carried.hasDifferentials = true;
+    carried.dOdx = shadowFootprint.dPdx;
+    carried.dOdy = shadowFootprint.dPdy;
+    const Vector3d& d = ray.Direction;
+    const DBL inv = (shadowReach > 0.0) ? -1.0 / shadowReach : 0.0;
+    carried.dDdx = inv * (shadowFootprint.dPdx - dot(shadowFootprint.dPdx, d) * d);
+    carried.dDdy = inv * (shadowFootprint.dPdy - dot(shadowFootprint.dPdy, d) * d);
+    Intersection crossing(isect);
+    crossing.Depth = dot(isect.IPoint - shadowFootprint.point, d);
+    SurfaceDifferentials diff;
+    return TransferDifferentials(carried, crossing, rawnormal, diff) && ComputePixelFootprint(isect, warps, ipoint, diff, footX, footY);
 }
 
 void Trace::ComputeShadowTexture(MathColour& filtercolour, const TEXTURE *texture, vector<const TEXTURE *>& warps, const Vector3d& ipoint,
@@ -2119,26 +2356,41 @@ void Trace::ComputeShadowTexture(MathColour& filtercolour, const TEXTURE *textur
         {
             layer_Normal = rawnormal;
 
-            if (qualityFlags.normals && (layer->Tnormal != nullptr))
+            // over the lit footprint, the mean of each tap's term; else the centre's
+            Vector3d footX, footY;
+            if (qualityFlags.normals && (layer->Tnormal != nullptr) && ShadowCrossingFootprint(isect, warps, ipoint, rawnormal, ray, footX, footY))
             {
-                for(vector<const TEXTURE *>::iterator i(warps.begin()); i != warps.end(); i++)
-                    Warp_Normal(layer_Normal, layer_Normal, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
-
-                Perturb_Normal(layer_Normal, layer->Tnormal, ipoint, &isect, &ray, threadData);
-
-                if((Test_Flag(layer->Tnormal,DONT_SCALE_BUMPS_FLAG)))
-                    layer_Normal.normalize();
-
-                // TODO - Reverse iterator may be less performant than forward iterator; we might want to
-                //        compare performance with using forward iterators and decrement, or using random access.
-                for(vector<const TEXTURE *>::reverse_iterator i(warps.rbegin()); i != warps.rend(); i++)
-                    UnWarp_Normal(layer_Normal, layer_Normal, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
+                const size_t first = normalTaps.size();
+                ComputeFilteredNormal(layer, warps, rawnormal, footX, footY, isect, ray);
+                k = 0.0;
+                for (size_t i = first; i < normalTaps.size(); i++)
+                    k += 1.0 + pow(fabs(dot(normalTaps[i], ray.Direction)), caustics);
+                k /= double(normalTaps.size() - first);
+                normalTaps.resize(first);
             }
+            else
+            {
+                if (qualityFlags.normals && (layer->Tnormal != nullptr))
+                {
+                    for(vector<const TEXTURE *>::iterator i(warps.begin()); i != warps.end(); i++)
+                        Warp_Normal(layer_Normal, layer_Normal, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
 
-            // Get new filter/transmit values.
-            dotval = dot(layer_Normal, ray.Direction);
+                    Perturb_Normal(layer_Normal, layer->Tnormal, ipoint, &isect, &ray, threadData);
 
-            k = (1.0 + pow(fabs(dotval), caustics));
+                    if((Test_Flag(layer->Tnormal,DONT_SCALE_BUMPS_FLAG)))
+                        layer_Normal.normalize();
+
+                    // TODO - Reverse iterator may be less performant than forward iterator; we might want to
+                    //        compare performance with using forward iterators and decrement, or using random access.
+                    for(vector<const TEXTURE *>::reverse_iterator i(warps.rbegin()); i != warps.rend(); i++)
+                        UnWarp_Normal(layer_Normal, layer_Normal, *i, Test_Flag(*i, DONT_SCALE_BUMPS_FLAG));
+                }
+
+                // Get new filter/transmit values.
+                dotval = dot(layer_Normal, ray.Direction);
+
+                k = (1.0 + pow(fabs(dotval), caustics));
+            }
 
             tmpCol *= k;
         }
@@ -2169,6 +2421,14 @@ void Trace::ComputeShadowTexture(MathColour& filtercolour, const TEXTURE *textur
 
     // Get distance based attenuation.
     filtercolour = tmpCol * refraction;
+}
+
+double Trace::SpreadWidth(const SurfaceDifferentials& diff) const
+{
+    // a box one footprint wide has variance 1/12, so a tilt variance V spreads like a differential sqrt(12 V) per footprint
+    if (!diff.spread.Active() || !(textureFilterScale > 0.0))
+        return 0.0;
+    return sqrt(12.0 * NormalSpreadVariance(diff.spread.length)) / textureFilterScale;
 }
 
 void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray& ray, const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, COLC weight,
@@ -2218,6 +2478,13 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
         const DBL s = ((mirror == &normal) && (dot(normal, rawnormal) < 0.0)) ? -1.0 : 1.0;
         Vector3d dDdx = ReflectDifferential(ray.Direction, ray.dDdx, *mirror, s * diff->dNdx);
         Vector3d dDdy = ReflectDifferential(ray.Direction, ray.dDdy, *mirror, s * diff->dNdy);
+        Vector3d tx, ty;
+        const double width = SpreadWidth(*diff);
+        if ((width > 0.0) && TiltAxes(*mirror, diff->dPdx, diff->dPdy, tx, ty))
+        {
+            dDdx = QuadratureAdd(dDdx, width * ReflectDifferential(ray.Direction, Vector3d(0.0), *mirror, tx));
+            dDdy = QuadratureAdd(dDdy, width * ReflectDifferential(ray.Direction, Vector3d(0.0), *mirror, ty));
+        }
         if (mirrorAgain)
         {
             const Vector3d once = ray.Direction - 2.0 * dot(ray.Direction, normal) * normal;
@@ -2239,7 +2506,10 @@ void Trace::ComputeReflection(const FINISH* finish, const Vector3d& ipoint, Ray&
         MathColour tmpCol;
         ColourChannel dummyTransm;
         TraceRay(nray, tmpCol, dummyTransm, weight, false);
+        const NormalSpread outerSpread = normalSpread;
+        normalSpread = (diff != nullptr) ? diff->spread : NormalSpread();
         ComputeIridColour(finish, nray.Direction, ray.Direction, normal, ipoint, tmpCol);
+        normalSpread = outerSpread;
         colour += tmpCol;
     }
     else
@@ -2372,7 +2642,15 @@ bool Trace::TraceRefractionRay(const FINISH* finish, const Vector3d& ipoint, Ray
             const DBL dn = -(dot(dD, localnormal) + s * dot(ray.Direction, dN));
             return ior * dD + ((ior - Sqr(ior) * n / root) * dn) * localnormal + (t * s) * dN;
         };
-        SetRayDifferentials(nray, diff->dPdx, diff->dPdy, refract(ray.dDdx, diff->dNdx), refract(ray.dDdy, diff->dNdy));
+        Vector3d dDdx = refract(ray.dDdx, diff->dNdx), dDdy = refract(ray.dDdy, diff->dNdy);
+        Vector3d tx, ty;
+        const double width = SpreadWidth(*diff);
+        if ((width > 0.0) && TiltAxes(localnormal, diff->dPdx, diff->dPdy, tx, ty))
+        {
+            dDdx = QuadratureAdd(dDdx, width * refract(Vector3d(0.0), tx));
+            dDdy = QuadratureAdd(dDdy, width * refract(Vector3d(0.0), ty));
+        }
+        SetRayDifferentials(nray, diff->dPdx, diff->dPdy, dDdx, dDdy);
     }
 
     // Trace a refracted ray.
@@ -3434,6 +3712,8 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     Intersection isect;
     Ray newray(lightsourceray);
     newray.SetMediaLight(&lightsource);
+    const DBL outerReach = shadowReach;
+    shadowReach = (lightsource.Parallel || (lightsource.Light_Type == CYLINDER_SOURCE)) ? 0.0 : depth;
 
     // Store current depth and ray because they will be modified.
     newdepth = depth;
@@ -3461,6 +3741,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
         ComputeShadowMedia(newray, isect, colour, (lightsource.Media_Interaction) && (lightsource.Media_Attenuation));
     }
 
+    shadowReach = outerReach;
     lightsourceray.GetTicket().traceLevel--;
     maxFoundTraceLevel = (unsigned int) max(maxFoundTraceLevel, lightsourceray.GetTicket().maxFoundTraceLevel);
 }
@@ -3991,7 +4272,11 @@ void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& 
     threadData->Stats()[Emitter_Shadow_Calls]++;
     if (lightsource.emitter && lightsource.emitter->IsSurface() && !lightsourceray.HasSurfaceEndpoint())
         lightsourceray.SetSurfaceEndpoint(lightsource.emitterContainer, lightsource.Center + offset);
+    // a lit footprint's shadow rays converge on the sampled emitter point
+    const DBL outerReach = shadowReach;
+    shadowReach = lightsourcedepth;
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
+    shadowReach = outerReach;
     if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media &&
         (lightsourcedepth > 0.0) && !lightcolour.IsZero())
     {
@@ -4227,11 +4512,54 @@ void Trace::ComputeShadowColour(const LightSource &lightsource, Intersection& is
     ComputeShadowMedia(lightsourceray, isect, colour, (lightsource.Media_Interaction) && (lightsource.Media_Attenuation));
 }
 
+bool Trace::EyeExitTaps(const FINISH *finish, const NormalSpread& spread, const Vector3d& eyeDirection, double relativeIor)
+{
+    if (!spread.Active() || (finish->Fresnel == 0.0))
+        return false;
+    if (tapExit.size() < spread.end)
+        tapExit.resize(spread.end);
+    for (size_t i = spread.first; i < spread.end; i++)
+        tapExit[i] = 1.0 - finish->Fresnel * FresnelR(-dot(normalTaps[i], eyeDirection), relativeIor);
+    return true;
+}
+
 void Trace::ComputeDiffuseColour(const FINISH *finish, const Vector3d& lightDirection, const Vector3d& eyeDirection, const Vector3d& layer_normal, MathColour& colour, const MathColour& light_colour,
                                  const MathColour& layer_pigment_colour, double relativeIor, double attenuation, bool backside, std::uint64_t key, std::uint64_t index)
 {
     double cos_angle_of_incidence, intensity;
     double diffuse = (backside? finish->DiffuseBack : finish->Diffuse) * finish->BrillianceAdjust;
+
+    if (normalSpread.Active())
+    {
+        // the mean of each tap's response, which supersampling the footprint gives where the light is the same across it
+        intensity = 0.0;
+        bool lit = false;
+        for (size_t i = normalSpread.first; i < normalSpread.end; i++)
+        {
+            const Vector3d& n = normalTaps[i];
+            const double c = dot(n, lightDirection);
+            const double side = (((c > 0.0) || normalSpread.twoSided) ? finish->Diffuse : finish->DiffuseBack) * finish->BrillianceAdjust;
+            if (side <= 0.0)
+                continue;
+            lit = true;
+            double response = side * ((finish->Brilliance != 1.0) ? pow(fabs(c), (double) finish->Brilliance) : fabs(c));
+            if (finish->Fresnel != 0.0)
+                response *= (1.0 - finish->Fresnel * FresnelR(c, relativeIor)) *
+                            (normalSpread.eyeExit ? tapExit[i] : (1.0 - finish->Fresnel * FresnelR(-dot(n, eyeDirection), relativeIor)));
+            intensity += response;
+        }
+        // as unfiltered, a side with no diffuse adds nothing, crand included
+        if (!lit)
+            return;
+        intensity *= attenuation / double(normalSpread.end - normalSpread.first);
+        if (finish->Crand > 0.0)
+        {
+            intensity -= Draw(key, kDrawCrand, index) * finish->Crand;
+            MarkGrain();
+        }
+        colour += intensity * layer_pigment_colour * light_colour;
+        return;
+    }
 
     if (diffuse <= 0.0)
         return;
@@ -4298,6 +4626,28 @@ void Trace::ComputeIridColour(const FINISH *finish, const Vector3d& lightDirecti
         film_thickness *= noise;
     }
 
+    if (normalSpread.Active())
+    {
+        // over the taps facing the light (all where none do), the mean of cos(k s) for a Gaussian s is cos(k mean) exp(-k^2 var / 2)
+        double sum = 0.0, sumSq = 0.0;
+        size_t count = 0;
+        for (int pass = 0; (pass < 2) && (count == 0); pass++)
+            for (size_t i = normalSpread.first; i < normalSpread.end; i++)
+            {
+                const Vector3d& n = normalTaps[i];
+                if ((pass == 0) && !normalSpread.twoSided && !(dot(n, lightDirection) > 0.0))
+                    continue;
+                const double path = fabs(dot(n, lightDirection)) + fabs(dot(n, eyeDirection));
+                sum += path;
+                sumSq += path * path;
+                count++;
+            }
+        const double mean = sum / double(count), variance = max(0.0, sumSq / double(count) - mean * mean);
+        const MathColour k = (2.0 * M_PI * film_thickness) / sceneData->iridWavelengths;
+        colour *= 1.0 + finish->Irid * Cos(k * mean) * Exp(k * k * (-0.5 * variance));
+        return;
+    }
+
     // NOTE: Shouldn't we compute Cos_Angle_Of_Incidence just once?
     cos_angle_of_incidence_light = abs(dot(layer_normal, lightDirection));
     cos_angle_of_incidence_eye   = abs(dot(layer_normal, eyeDirection));
@@ -4309,23 +4659,45 @@ void Trace::ComputeIridColour(const FINISH *finish, const Vector3d& lightDirecti
     colour *= 1.0 + finish->Irid * Cos(interference / sceneData->iridWavelengths);
 }
 
+// Widens a lobe cos^size by angular variances along two axes (Toksvig 2005); `scale` keeps its integral, (size' + 1) / (size + 1).
+static void ToksvigLobe(double varianceA, double varianceB, double& size, double& scale)
+{
+    const double wider = size / sqrt((1.0 + size * varianceA) * (1.0 + size * varianceB));
+    scale = (wider + 1.0) / (size + 1.0);
+    size = wider;
+}
+
 void Trace::ComputePhongColour(const FINISH *finish, const Vector3d& lightDirection, const Vector3d& eyeDirection, const Vector3d& layer_normal, MathColour& colour, const MathColour& light_colour,
                                const MathColour& layer_pigment_colour, double relativeIor)
 {
     double cos_angle_of_incidence, intensity;
     Vector3d reflect_direction;
+    // with a spread, the highlight comes from the taps that face the light: their share, mean and spread
+    Vector3d normal = layer_normal;
+    double share = 1.0, length = 1.0;
+    if (normalSpread.Active() && !FacingSpread(lightDirection, normal, share, length))
+        return;
 
-    cos_angle_of_incidence = -2.0 * dot(eyeDirection, layer_normal);
+    cos_angle_of_incidence = -2.0 * dot(eyeDirection, normal);
 
-    reflect_direction = eyeDirection + cos_angle_of_incidence * layer_normal;
+    reflect_direction = eyeDirection + cos_angle_of_incidence * normal;
 
     cos_angle_of_incidence = dot(reflect_direction, lightDirection);
 
     if(cos_angle_of_incidence > 0.0)
     {
-        if((finish->Phong_Size < 60) || (cos_angle_of_incidence > 0.0008)) // rgs
+        double size = finish->Phong_Size, scale = 1.0;
+        // a tilt of the normal turns the mirror direction twice as far in the plane of incidence, and by the eye's cosine across it
+        if (normalSpread.Active())
         {
-            intensity = finish->Phong * pow(cos_angle_of_incidence, (double)finish->Phong_Size);
+            const double variance = 4.0 * NormalSpreadVariance(length), across = dot(eyeDirection, normal);
+            ToksvigLobe(variance, variance * across * across, size, scale);
+        }
+        if((size < 60) || (cos_angle_of_incidence > 0.0008)) // rgs
+        {
+            intensity = finish->Phong * pow(cos_angle_of_incidence, size);
+            if (normalSpread.Active())
+                intensity *= scale * share;
 
             if ((finish->Fresnel != 0.0) || (finish->Metallic != 0.0))
             {
@@ -4335,7 +4707,7 @@ void Trace::ComputePhongColour(const FINISH *finish, const Vector3d& lightDirect
                 // But since the Phong model specifically takes shortcuts to not compute that
                 // vector, we'll take the surface normal as an approximation. Also, the choice to
                 // compute the dot with the light rather than viewing direction is arbitrary.
-                double ndotl = dot(layer_normal, lightDirection);
+                double ndotl = dot(normal, lightDirection);
                 if (finish->Fresnel != 0.0)
                     // In specular reflections (which includes highlights), the Fresnel effect is
                     // that we only get the reflected component.
@@ -4354,6 +4726,10 @@ void Trace::ComputeSpecularColour(const FINISH *finish, const Vector3d& lightDir
 {
     double cos_angle_of_incidence, intensity, halfway_length;
     Vector3d halfway;
+    Vector3d normal = layer_normal;
+    double share = 1.0, length = 1.0;
+    if (normalSpread.Active() && !FacingSpread(lightDirection, normal, share, length))
+        return;
 
     halfway = (reyeDirection + lightDirection) * 0.5;
 
@@ -4361,11 +4737,19 @@ void Trace::ComputeSpecularColour(const FINISH *finish, const Vector3d& lightDir
 
     if(halfway_length > 0.0)
     {
-        cos_angle_of_incidence = dot(halfway, layer_normal) / halfway_length;
+        cos_angle_of_incidence = dot(halfway, normal) / halfway_length;
 
         if(cos_angle_of_incidence > 0.0)
         {
-            intensity = finish->Specular * pow(cos_angle_of_incidence, (double)finish->Roughness);
+            if (normalSpread.Active())
+            {
+                double size = finish->Roughness, scale = 1.0;
+                const double variance = NormalSpreadVariance(length);
+                ToksvigLobe(variance, variance, size, scale);
+                intensity = finish->Specular * scale * share * pow(cos_angle_of_incidence, size);
+            }
+            else
+                intensity = finish->Specular * pow(cos_angle_of_incidence, (double)finish->Roughness);
 
             if ((finish->Fresnel != 0.0) || (finish->Metallic != 0.0))
             {

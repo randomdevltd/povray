@@ -255,10 +255,12 @@ class Trace
         static std::shared_ptr<const SurfaceBounceRadiance> SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
             const std::vector<MathColour>& radiance, const std::vector<double>& etas, const std::vector<double>& areas);
 
-        /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
+        /// Make rays with differentials filter textures over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
-        /// Start each filtered pigment with 3 taps, or with 8 (the default).
+        /// Start each filtered pigment or normal with 3 taps, or with 8 (the default).
         void SetTextureFilterTaps(int taps) { textureFilterTaps = taps; }
+        /// Which textures a footprint filters: pigments, normals, or both.
+        void SetTextureFilterKinds(bool pigments, bool normals) { textureFilterPigments = pigments; textureFilterNormals = normals; }
 
         /// The object the last primary ray hit, and its top layer's pigment there.
         const void *primaryObject = nullptr;
@@ -335,6 +337,16 @@ class Trace
 
     protected: // TODO FIXME - should be private
 
+        /// The perturbed normals of the layer being lit over its pixel footprint: taps [first, end) of normalTaps.
+        struct NormalSpread final
+        {
+            size_t first = 0, end = 0;
+            DBL length = 1.0; ///< length of the taps' mean normal, 1 where they agree
+            bool twoSided = false;
+            bool eyeExit = false; ///< tapExit holds each tap's eye-side diffuse Fresnel factor for this ray
+            bool Active() const { return end > first; }
+        };
+
         /// Structure used to cache reflection information for multi-layered textures.
         struct WNRX final
         {
@@ -342,6 +354,7 @@ class Trace
             Vector3d normal;
             MathColour reflec;
             SNGL reflex;
+            NormalSpread spread;
 
             WNRX(DBL w, const Vector3d& n, const MathColour& r, SNGL x) :
                 weight(w), normal(n), reflec(r), reflex(x) { }
@@ -352,6 +365,8 @@ class Trace
         {
             Vector3d dPdx, dPdy, dNdx, dNdy;
             bool haveNormal = false;
+            /// The perturbed normals a secondary ray leaves from, whose spread widens its direction differentials.
+            NormalSpread spread;
         };
 
         /// Footprint means a filtered layer's shading needs that its averaged colour cannot give where taps filter.
@@ -413,9 +428,23 @@ class Trace
         unsigned int maxFoundTraceLevel;
         /// Various quality-related flags.
         QualityFlags qualityFlags;
-        /// Pixel footprint scale that hits of rays with differentials average their pigments over; zero turns filtering off.
+        /// Pixel footprint scale that hits of rays with differentials filter their textures over; zero turns filtering off.
         DBL textureFilterScale = 0.0;
         int textureFilterTaps = 8;
+        bool textureFilterPigments = false, textureFilterNormals = false;
+
+        std::vector<Vector3d> normalTaps;
+        std::vector<double> tapExit;
+        NormalSpread normalSpread;
+        /// The footprint of the hit being lit, which shadow rays toward a light carry to the surfaces they cross.
+        struct ShadowFootprint final
+        {
+            Vector3d point, dPdx, dPdy;
+            bool active = false;
+        };
+        ShadowFootprint shadowFootprint;
+        /// Distance from the lit point to the light, or emitter sample, the shadow ray being traced aims at; zero for parallel light.
+        DBL shadowReach = 0.0;
 
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;
@@ -617,7 +646,26 @@ class Trace
 
         /// Average a pigment over the pixel footprint with adaptively added, deterministic taps; `means` is set where a tap filters.
         bool ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, const PIGMENT *pigment, const std::vector<const TEXTURE *>& warps,
-                                    const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray);
+                                    const Vector3d& footX, const Vector3d& footY, Intersection& isect, Ray& ray, const TNORMAL *tnormal,
+                                    const Vector3d& rawnormal);
+
+        /// Texture-space point of the footprint tap at (u, v), with `tapIsect`, a copy of the hit, moved there.
+        Vector3d FootprintTapPoint(DBL u, DBL v, const Vector3d& footX, const Vector3d& footY, const std::vector<const TEXTURE *>& warps,
+                                   Intersection& tapIsect) const;
+
+        /// Perturb a layer's normal at footprint taps appended to normalTaps; returns their mean, whose length is the spread's.
+        Vector3d ComputeFilteredNormal(const TEXTURE *layer, const std::vector<const TEXTURE *>& warps, const Vector3d& rawnormal,
+                                       const Vector3d& footX, const Vector3d& footY, Intersection& isect, const Ray& ray);
+
+        /// The pixel footprint of the lit hit where its shadow ray crosses a surface; false without one.
+        bool ShadowCrossingFootprint(const Intersection& isect, const std::vector<const TEXTURE *>& warps, const Vector3d& ipoint,
+                                     const Vector3d& rawnormal, const Ray& ray, Vector3d& footX, Vector3d& footY) const;
+
+        /// Per-footprint direction differential that a ray leaving a surface gets from one radian of its normals' tilt spread.
+        double SpreadWidth(const SurfaceDifferentials& diff) const;
+
+        /// The taps of a normal spread facing a direction, which a highlight sees: their mean direction, the length of their mean and their share.
+        bool FacingSpread(const Vector3d& direction, Vector3d& normal, double& share, double& length) const;
 
         /// Compute the effective filtering effect of a simple or layered texture.
         ///
@@ -872,6 +920,9 @@ class Trace
     ///
     /// @{
     ///
+
+        /// Fill tapExit with each tap's light-independent eye-side diffuse Fresnel factor; false where the finish has none.
+        bool EyeExitTaps(const FINISH *finish, const NormalSpread& spread, const Vector3d& eyeDirection, double relativeIor);
 
         /// Compute the diffuse contribution of a finish illuminated by light from a given direction.
         ///

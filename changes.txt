@@ -623,8 +623,15 @@ New Features
   - Anti-aliasing method 4 (`+AM4`, with `+PR`) spends a sample budget set
     with `+AB` on fitted edges and noisy pixels.
   - Texture filtering (`+TF`, `Texture_Filter_Scale`, `Texture_Filter_Taps`)
-    averages each pigment over the area a pixel covers on the surface, using
-    ray differentials, without extra rays.
+    filters each texture's pigment and normal over the area a pixel covers on
+    the surface, using ray differentials, without extra rays;
+    `Texture_Filter_Pigments=off` or `Texture_Filter_Normals=off` opts a kind
+    out. Diffuse light is averaged over the perturbed normals there, specular
+    and phong highlights widen by their spread, iridescence, angle-dependent
+    reflection, Fresnel losses and faked caustics average over them, aoi and
+    slope pigments see each tap's normal, and reflected and refracted rays
+    widen their footprint by the spread, so bumps finer than a pixel no longer
+    speckle.
   - Progressive rendering (`+PR`) traces the whole frame at doubling
     resolution, each pixel once, so the image is always a complete best-so-far
     picture. It continues with `+C`.
