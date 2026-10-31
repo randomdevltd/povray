@@ -25,7 +25,7 @@ box { <-0.5, -0.05, -0.5>, <0.5, 0, 0.5> pigment { rgb 1 }
 box {
   <0.55, 0.2, -0.7>, <1.35, 1.2, 0.7> pigment { rgbt 1 } hollow
   interior {
-    media { method 3 emission rgb Glow
+    media { method #if (ExplicitLight) 4 #else 3 #end emission rgb Glow
       #if (Sigma > 0) scattering { 1, rgb Sigma } #end }
     #if (Modified) media { mix multiply method 4 resolution 0.1 density { rgb 1 } } #end
     #if (ExplicitLight) light { brightness 10 lumens samples 32 } #end

@@ -66,6 +66,7 @@ test('mined keyword sets match known parser content', () => {
     assert.ok(!blocks.global_settings.items.includes('refraction_detail'));
     assert.ok(!blocks.light_source.items.includes('light'), 'a light_source cannot take a light block');
     assert.ok(blocks.light_source.items.includes('shadowless'));
+    assert.deepEqual(blocks.attenuation.items, ['power', 'scale']);
 });
 
 test('nested items stay in their sub-block', () => {

@@ -124,8 +124,10 @@ Changed Behaviour
 
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
-    including density and mixing. Brightness units and the default 1 nit
-    calibration are unchanged. Available in classic scenes of every version
+    including density and mixing. With it, a unitless or nits brightness is a
+    plain multiplier of that emission, with no geometric reference: at 1 the
+    light cast equals what the glow emits. Lumens still normalize total flux.
+    Available in classic scenes of every version
     and .pov4; `emission` was already reserved, while `light`, `nits` and
     `lumens` remain matched by text and free as identifiers elsewhere.
 
@@ -494,10 +496,10 @@ New Features
     centre light or replaces its visibility with a silhouette disk. There is
     no cell-distance clamp; near illumination and distant inverse-square
     divergence follow the same integral. `samples` controls variance and cost.
-    `attenuation Power, Scale` defaults to physical `2,1`; a single value is
-    the scale shorthand. Artistic attenuation applies consistently to direct
-    and photon paths. `light`, `nits`, `lumens` and `attenuation` are contextual.
-    An item of a nested block, such as a light's
+    `attenuation { power P scale S }` defaults to physical power 2, scale 1;
+    either may be left out. Artistic attenuation applies consistently to direct
+    and photon paths. `light`, `nits`, `lumens`, `attenuation` and `power` are
+    contextual. An item of a nested block, such as a light's
     `photons { reflection on }`, is rejected outside it in both syntaxes.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction

@@ -23,8 +23,8 @@ Generated C sources are committed; renderer builds do not run the generator.
 ## Independent volume lights
 
 Both syntaxes accept `interior { light { pigment { ... } brightness 5 nits
-attenuation 2, 1 samples 16 } }`. By default the source depends on its object's geometry
-and its own pigment, independently of media coefficients and density. Nits use
+attenuation { power 2 scale 1 } samples 16 } }`. By default the source depends on its object's geometry
+and its own pigment, independently of media coefficients and density. A pigment's nits use
 the isotropic geometry reference `j(x) = L * pigment(x) / (4V/A)`; this normalizes
 source strength, not every nearby receiver reading. The declared emitting region affects this
 calibration; unused container padding is not guaranteed to be neutral. Surface
@@ -37,12 +37,15 @@ light { emission brightness 12 lumens } }` at every scene version. Bare
 `emission` selects the full combined RGB emission of the interior's own media,
 including density patterns and mixing, and is mutually exclusive with `pigment`.
 Absorption, scattering and overlapping objects do not contribute to this source
-field. Brightness keeps its existing calibration: omitted brightness is 1 nit,
-so selecting emission does not make `j(x)` equal to the media emission coefficient.
-Without the flag, the default pigment remains solid white.
+field. Brightness is then a plain multiplier with no geometric reference:
+`j(x)` is the media's combined emission coefficient times brightness, so at the
+default brightness 1 the light cast equals what the visible glow emits. A `nits`
+suffix reads the same as a unitless value here; `lumens` still normalizes total
+flux. Without the flag, the default pigment remains solid white.
 
-The two attenuation values are power then scale; a single value is the scale
-shorthand with power two. The default `2,1` leaves physical transport unchanged.
+`attenuation { power P scale S }` names both values; either may be left out
+(power 2, scale 1) and each may appear once, as may the block. Bare numbers after
+`attenuation` are a parse error. The default leaves physical transport unchanged.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 
@@ -118,11 +121,21 @@ A passive source is a bounce light whose own emission is zero (for a surface,
 `finish { emission 0 }`): it shines only the light it receives from other
 sources and is dark when nothing lights it. A bounced surface whose finish uses
 subsurface scattering also sends its subsurface light on, which needs subsurface
-method 2 (the default from version 4.0); under method 1 the render stops before
-tracing with `Surface subsurface bounce requires subsurface method 2.` The same
-stop, without a line number, reports `Surface bounce cannot prepare stochastic
-crand diffuse finishes` and `Surface bounce cannot prepare Fresnel or
-energy-conserving reflection attenuation`.
+method 2 (the default from version 4.0). The render stops before tracing, without
+a line number, with `Surface bounce cannot prepare stochastic crand diffuse
+finishes` and `Surface bounce cannot prepare Fresnel or energy-conserving
+reflection attenuation`.
+
+Media methods 1 to 3 and subsurface method 1 stay exactly as they were and take
+no part in a light block's light. Parsing stops, naming each line and its file, when an object
+with a light block holds a method 1 to 3 medium or uses a subsurface method 1
+finish (`... a light block needs method 4 media.`, `... a light block needs
+subsurface method 2.`), when a method 1 to 3 medium scatters while a light
+block lights media (`... only method 4 media scatter a light block's light.`),
+and when any object uses a subsurface method 1 finish in a scene with a light
+block, which lights surfaces (`... only subsurface method 2 carries a light
+block's light.`).
+Classic media that only absorb or glow stay legal beside light blocks.
 
 ## Lumens
 

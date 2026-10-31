@@ -1,11 +1,11 @@
-// Contextual units, repeated brightness settings, defaults and attenuation ordering.
+// Contextual units, repeated brightness settings, defaults and the attenuation block.
 #version 3.8;
 #ifndef (Case) #declare Case = 0; #end
 #switch (Case)
   #case (1) #default { interior { light { brightness 1 } } } #break
   #case (2) #default { interior { light { samples 16 } } } #break
   #case (3) #default { interior { light { shadowless off } } } #break
-  #case (4) #default { interior { light { attenuation 2, 1 } } } #break
+  #case (4) #default { interior { light { attenuation { power 2 scale 1 } } } } #break
   #case (5) #default { interior { light { far_radii 8 } } } #break
   #case (6) #default { interior { light { media_attenuation on } } } #break
   #case (7) #default { interior { light { fade_cutoff 0 } } } #break
@@ -23,7 +23,7 @@ box {
   interior {
     #if (Case = 21) media { light_source { } } #end
     #if (Case = 25 | Case = 26)
-      media { method 3 absorption 0.1 }
+      media { method 4 absorption 0.1 }
       media { method 4 resolution 0.25
         #if (Case = 25) mix multiply density { rgb 1 }
         #else mix subtract density { rgb 0 } #end }
@@ -35,8 +35,9 @@ box {
         #case (12) brightness 0.1 nits #break
         #case (13) brightness 10 lumens brightness 0.1 #break
         #case (14) brightness 0.1 #break
-        #case (15) brightness 0.1 attenuation 2, 1 #break
-        #case (16) brightness 0.1 attenuation 1 #break
+        #case (15) brightness 0.1 attenuation { power 2 scale 1 } #break
+        #case (16) brightness 0.1 attenuation { scale 1 } #break
+        #case (17) brightness 0.1 attenuation { power 2 } #break
         // 20 and 22-24 use words this block no longer has, so each is rejected as unknown, repeated or not
         #case (20) fade_power 2 #break
         #case (22) cluster_radii 2 cluster_radii 4 #break

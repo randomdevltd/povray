@@ -71,16 +71,16 @@ int main()
     }
     for (DBL scale : {1e-8, 1.0, 6.4e6})
     {
-        auto domain = std::make_shared<PreparedSourceDomain>(PreparedSourceDomain::Sphere(Vector3d(0.0), scale, 3, {0, .2, .99, 1}));
+        auto domain = std::make_shared<PreparedSourceDomain>(PreparedSourceDomain::Cartesian(Vector3d(-scale), Vector3d(2 * scale), {{3, 3, 3}}));
         std::vector<MathColour> values(domain->NodeCount(), MathColour(2.0));
         auto field = std::make_shared<PreparedSourceColourField>(domain, values);
-        PreparedLightAxis sphere(domain, field);
+        PreparedLightAxis scaled(domain, field);
         for (std::uint64_t key = 0; key < 4096; ++key)
         {
-            const auto sample = sphere.SamplePosition(key);
+            const auto sample = scaled.SamplePosition(key);
             Near(sample.pdf * domain->Volume(), 1);
-            Near(sphere.ColourAt(sample.position)[0], 2);
-            Near(sphere.ColourAt(sample.position)[0] / sample.pdf / domain->Volume(), 2);
+            Near(scaled.ColourAt(sample.position)[0], 2);
+            Near(scaled.ColourAt(sample.position)[0] / sample.pdf / domain->Volume(), 2);
         }
         Near(field->Sample(Vector3d(scale * 1.01, 0, 0))[0], 0);
     }

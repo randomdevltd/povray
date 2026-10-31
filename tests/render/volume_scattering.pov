@@ -22,7 +22,7 @@ global_settings { assumed_gamma 1 }
     <Receiver + 0.001, 0.001, 0.02> * Radius
     pigment { rgbt 1 } hollow
     interior {
-      media { method 3 intervals 1 samples 256, 256
+      media { method 4 intervals 1 samples 256, 256
         scattering { 1, rgb 0.01 / Radius extinction 1 } }
     }
   }

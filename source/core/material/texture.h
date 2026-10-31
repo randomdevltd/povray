@@ -150,6 +150,7 @@ struct Finish_Struct final
     int Conserve_Energy;  // added by NK Dec 19 1999
     bool UseSubsurface;   // whether to use subsurface light transport
     int SubsurfaceMethod; // kSubsurfaceMethodSampled, kSubsurfaceMethodPointCloud, or 0 for the scene's
+    std::string SubsurfaceWhere; ///< where its subsurface block was written, "line N of file", for messages
     bool SubsurfaceHasColour, SubsurfaceEmits;
     bool SubsurfaceThicknessSet; ///< whether the skin's thickness was given, so the skin is looked up where light enters
     bool SubsurfaceVolume; ///< whether the flesh and its emission are looked up below where light enters

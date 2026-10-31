@@ -2547,6 +2547,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         {
             // a block giving only minimum_influence leaves subsurface off, so #default can carry the scene's value
             bool otherItem = false, influence = false;
+            const std::string subsurfaceWhere = CurrentSourceLine();
             Parse_Begin();
             EXPECT
                 CASE (ANISOTROPY_TOKEN)
@@ -2642,6 +2643,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
             {
                 mExperimentalFlags.subsurface = true;
                 New->UseSubsurface = true;
+                New->SubsurfaceWhere = subsurfaceWhere;
             }
         }
         END_CASE
@@ -3695,6 +3697,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
     Vector3d Local_Vector;
     MATRIX Local_Matrix;
     bool resolutionSpecified = false;
+    const std::string where = CurrentSourceLine();
 
     Parse_Begin();
 
@@ -3891,7 +3894,44 @@ void Parser::Parse_Media(vector<Media>& medialist)
     if (resolutionSpecified && IMedia->Sample_Method != 4)
         Error("media resolution requires method 4.");
 
+    IMediaObj.where = where;
     medialist.push_back(IMediaObj);
+}
+
+void Parser::Parse_Light_Attenuation(MediaLight& light)
+{
+    if (!Peek_Token(LEFT_CURLY_TOKEN))
+        Error("A light block's attenuation is a block: attenuation { power 2 scale 1 }.");
+    bool havePower = false;
+    bool haveScale = false;
+    Parse_Begin();
+    EXPECT
+        CASE (SCALE_TOKEN)
+            if (haveScale)
+                Error("An attenuation block accepts only one scale.");
+            haveScale = true;
+            light.attenuationScale = Parse_Float();
+        END_CASE
+
+        OTHERWISE
+            if (CurrentTokenText() == "power")
+            {
+                if (havePower)
+                    Error("An attenuation block accepts only one power.");
+                havePower = true;
+                light.attenuationPower = Parse_Float();
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
+        END_CASE
+    END_EXPECT
+    Parse_End();
+    if (!std::isfinite(light.attenuationScale) || (light.attenuationScale < 0.0) ||
+        !std::isfinite(light.attenuationPower) || (light.attenuationPower <= 0.0))
+        Error("An attenuation block takes a power greater than 0 and a scale of 0 or more.");
 }
 
 unsigned Parser::Parse_Light_Bounce()
@@ -3928,6 +3968,8 @@ unsigned Parser::Parse_Light_Bounce()
 std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
+    light->where = CurrentSourceLine();
+    bool haveAttenuation = false;
     Parse_Begin();
 
     EXPECT
@@ -4007,15 +4049,10 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             {
                 if (surface)
                     Error("Surface light blocks do not accept attenuation.");
-                Get_Token();
-                UNGET
-                const double first = Parse_Float();
-                const bool paired = Parse_Comma();
-                light->attenuationPower = paired ? first : 2.0;
-                light->attenuationScale = paired ? Parse_Float() : first;
-                if (!std::isfinite(light->attenuationScale) || (light->attenuationScale < 0.0) ||
-                    !std::isfinite(light->attenuationPower) || (light->attenuationPower <= 0.0))
-                    Error("A light block's attenuation takes a power greater than 0 and a scale of 0 or more; one value sets the scale.");
+                if (haveAttenuation)
+                    Error("A light block accepts only one attenuation block.");
+                haveAttenuation = true;
+                Parse_Light_Attenuation(*light);
             }
             else
             {

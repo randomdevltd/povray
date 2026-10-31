@@ -575,6 +575,7 @@ class Parser final
         bool HaveCurrentFile() const;
         const UCS2* CurrentFileName() const;
         const LexemePosition& CurrentFilePosition() const;
+        std::string CurrentSourceLine() const;
         bool HaveCurrentMessageContext() const;
         const MessageContext& CurrentMessageContext() const;
         void SetInputStream(const std::shared_ptr<IStream>& stream, const UCS2String& path);
@@ -607,6 +608,7 @@ class Parser final
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
         unsigned Parse_Light_Bounce();
+        void Parse_Light_Attenuation(MediaLight& light);
         std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
         void Reject_Nested_Item(const char* block, const char* where);
         void Parse_Interior_Refraction(Interior& interior);
@@ -937,6 +939,8 @@ class Parser final
         void Split_Unions();
         void Split_Union(ObjectPtr Object);
         void Assign_Scene_Lights();
+        void Check_Legacy_Transport();
+        void Warn_Unused_Media_Resolution();
         /// Media lights made inside light groups, with their group, given out after the groups' own lights.
         std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);

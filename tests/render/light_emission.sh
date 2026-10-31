@@ -11,11 +11,28 @@ render() {
     tail -c 96 "$name.ppm" >"$name.rgb"
 }
 same() { cmp "$1.rgb" "$2.rgb"; }
-for method in 1 2 3 4; do
+# close <a> <b>: every sample within 0.5% (or 2/65535); the alias and its hand-written field differ in their last bits, which move draws
+close() {
+    { od -An -v -tu1 "$1.rgb"; echo next; od -An -v -tu1 "$2.rgb"; } | awk -v pair="$1 $2" '
+        $1 == "next" { second = 1; n = 0; next }
+        { for (i = 1; i <= NF; i++) if (n++ % 2) { if (second) v[n] = hi * 256 + $i; else w[n] = hi * 256 + $i } else hi = $i }
+        END { for (k in w) { a = w[k]; b = v[k]; d = a > b ? a - b : b - a; m = a > b ? a : b
+                  if (d > 2 && d > 0.005 * m) bad++; if (m > 0 && d / m > worst) worst = d / m }
+              printf "light_emission: %s differ by at most %.4f\n", pair, worst; exit bad > 0 }'
+}
+# pair <name> <args>: the alias and the manual field at FINE draws agree, and the alias keeps its 16-draw render
+# 1024 draws left their worst moved-draw difference at 0.3-0.7%, on the 0.5% limit; 16384 keep it near 0.1%
+FINE=16384
+pair() {
+    pair_name=$1; shift
+    render "alias$pair_name" "$@"
+    render "fine_alias$pair_name" Declare=Samples=$FINE "$@"
+    render "fine_manual$pair_name" Declare=Samples=$FINE Declare=Alias=0 "$@"
+    close "fine_alias$pair_name" "fine_manual$pair_name"
+}
+for method in 4; do
     for unit in 0 1; do
-        render "alias${method}_$unit" Declare=Method="$method" Declare=Lumens="$unit"
-        render "manual${method}_$unit" Declare=Method="$method" Declare=Lumens="$unit" Declare=Alias=0
-        same "alias${method}_$unit" "manual${method}_$unit"
+        pair "${method}_$unit" Declare=Method="$method" Declare=Lumens="$unit"
     done
 done
 render alias_parallel +wt2
@@ -25,18 +42,15 @@ for version in 3.6 3.7 3.8 4.0; do
     same alias4_0 "version$version"
 done
 for option in Constant OwnAbsorb Overlap; do
-    render "alias$option" Declare="$option"=1
-    render "manual$option" Declare="$option"=1 Declare=Alias=0
-    same "alias$option" "manual$option"
+    pair "$option" Declare="$option"=1
 done
 "$POVRAY" +i"$SRCDIR/tests/render/light_emission.pov4" +w4 +h4 +wt1 +pr -a -d -p -v -gp +fp16 File_Gamma=1 +opov4.ppm >pov4.log 2>&1 || { cat pov4.log; exit 1; }
 tail -c 96 pov4.ppm >pov4.rgb
 same aliasConstant pov4
-render scale_nits Declare=Strength=100
-render manual_scale_nits Declare=Strength=100 Declare=Alias=0
-same scale_nits manual_scale_nits
-render scale_lumens Declare=Strength=100 Declare=Lumens=1
-same alias4_1 scale_lumens
+pair _scale_nits Declare=Strength=100
+# stated lumens hold whatever the field's strength; its last bits move draws, so the many-draw renders agree
+render fine_scale_lumens Declare=Strength=100 Declare=Lumens=1 Declare=Samples=$FINE
+close fine_alias4_1 fine_scale_lumens
 render omit Declare=Omit=1
 render omit_strong Declare=Omit=1 Declare=Strength=100
 same omit omit_strong

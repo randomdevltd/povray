@@ -8,7 +8,7 @@ box { -1,1 pigment { rgbt 1 } hollow no_image
     media { method 4 mix add emission rgb <2,1,0.5> }
     media { method 4 mix multiply density { rgb 0.5 } }
     media { method 4 mix subtract emission rgb <1,0.5,0.25> }
-    light { emission brightness 0.08 nits samples 16 }
+    light { emission brightness 0.2 nits samples 16 }
   }
   scale <0.35,0.25,0.3> rotate y*15 translate y*1.5
 }

@@ -52,8 +52,8 @@ plane { y, Probe * SceneScale pigment { rgb 1 } finish { ambient 0 emission 0 di
   #end
   pigment { rgbt 1 } hollow no_image
   interior {
-    #if (Sigma > 0 & Case != 6 & Case != 7) media { method 3 absorption Sigma / SceneScale } #end
-    #if (Case = 7) media { mix replace method 3 absorption Sigma } #end
+    #if (Sigma > 0 & Case != 6 & Case != 7) media { method 4 absorption Sigma / SceneScale } #end
+    #if (Case = 7) media { mix replace method 4 absorption Sigma } #end
     light {
       #if (Case = 4)
         pigment { rgb <1, 0, 0> }

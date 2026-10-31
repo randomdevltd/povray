@@ -7618,7 +7618,7 @@ std::string Trace::DescribeSubsurfaceObject(ConstObjectPtr object)
 }
 
 // A part with no inside for light to diffuse through: a disc, unless it cuts an intersection or difference, or a mesh with
-// an inside_vector whose triangles leave a border open. `shared` keeps the answer across threads; without one it is worked out here.
+// an inside_vector whose triangles leave a border open. The shared cache, if any, remembers the answer.
 bool Trace::SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared)
 {
     if (dynamic_cast<const Disc*>(part) != nullptr)

@@ -189,6 +189,8 @@ class Media final
         std::vector<std::shared_ptr<FastCache>> preparedBindings;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
+        /// where it was written, "line N of file", for messages
+        std::string where;
 
         Media();
         Media(const Media&);
@@ -202,6 +204,8 @@ class Media final
         void SetFastContainer(ObjectPtr object, DBL cellLimit = 0.0);
         void FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
         void SetRequestedFastResolution(DBL value) { FastResolution = requestedFastResolution = value; fastResolutionRecorded = true; }
+        /// the resolution the scene wrote, or a nonpositive value when it left the grid automatic
+        DBL AuthoredFastResolution() const { return fastResolutionRecorded ? requestedFastResolution : FastResolution; }
         void RequirePreparedField() const;
         void PreparedDensityAt(const Vector3d& point, MathColour& result) const;
         DBL PreparedStep(const Ray& ray, DBL from, DBL to) const;

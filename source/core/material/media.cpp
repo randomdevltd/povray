@@ -864,6 +864,7 @@ Media& Media::operator=(const Media& source)
         fastResolutionRecorded = source.fastResolutionRecorded;
         mix = source.mix;
         priority = source.priority;
+        where = source.where;
         fastCache.reset();
         preparedBindings.clear();
 
@@ -962,7 +963,7 @@ std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr o
         if (medium.Sample_Method != 4)
             continue;
         needed = true;
-        const DBL authored = medium.fastResolutionRecorded ? medium.requestedFastResolution : medium.FastResolution;
+        const DBL authored = medium.AuthoredFastResolution();
         const DBL step = authored > 0.0 ? authored : AutomaticResolution(owner);
         DBL& target = ConstantDensity(medium) ? constantStep : requested;
         if (step > 0.0)
@@ -1441,9 +1442,8 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
     for (const LightSource* light : scene->mediaLights)
         if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
             sourceOwners.push_back(light->emitterContainer);
-    std::vector<ConstObjectPtr> sourceBoundaries(scene->objects.begin(), scene->objects.end());
     std::map<ConstObjectPtr, std::shared_ptr<const PreparedSourceDomain>> sourceDomains;
-    for (const auto& group : PrepareSourceDomains(sourceOwners, sourceBoundaries))
+    for (const auto& group : PrepareSourceDomains(sourceOwners))
         for (ConstObjectPtr owner : group.owners)
             sourceDomains.emplace(owner, group.domain);
     for (LightSource *light : scene->mediaLights)
@@ -1550,7 +1550,7 @@ MediaLight::MediaLight(const MediaLight& source) :
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
-    photonOptions(source.photonOptions)
+    photonOptions(source.photonOptions), where(source.where)
 {
 }
 
@@ -1574,6 +1574,24 @@ class OwningEmissionInput final
         MediaModifierVector modifiers;
 };
 
+/// Lobes an emitter aims draws at: 2^4, enough to follow a thin or forked source.
+const int kEmitterLobeDepth = 4;
+const size_t kEmitterLobes = size_t(1) << kEmitterLobeDepth;
+const std::uint8_t kNoLobe = 0xff;
+/// The share of a receiver's position draws that ignore its distance to each lobe.
+const double kPowerPositionShare = 0.25;
+/// The share of a receiver's chord directions over the emitter's whole box rather than its lobes.
+const double kBoxDirectionShare = 0.125;
+/// Finer lobes chord directions aim at: 2^8, so their cones stay close about thin parts.
+const int kConeLobeDepth = 8;
+const size_t kConeLobes = size_t(1) << kConeLobeDepth;
+
+std::uint64_t NextEmitterSerial()
+{
+    static std::atomic<std::uint64_t> next{1};
+    return next++;
+}
+
 // The uniform proposal component preserves support of the prepared interpolated light field.
 class VolumeEmitter final : public Emitter
 {
@@ -1588,8 +1606,175 @@ class VolumeEmitter final : public Emitter
         MathColour coefficient, intensity;
         double radius = 0.0, boxVolume = 0.0;
         bool volumeEmission = true;
+        /// the share of each prepared cell inside the geometry, so position draws find thin parts
+        std::shared_ptr<const vector<DBL>> occupancy;
+        vector<EmitterLobe> lobes;
+        vector<size_t> lobeBegin;            ///< each lobe's run in lobeCells, then the end
+        vector<std::uint32_t> lobeCells;     ///< emitting cells grouped by lobe
+        vector<DBL> lobeCdf;                 ///< cumulative share of each of those cells within its lobe
+        vector<std::uint8_t> cellLobe;       ///< each cell's lobe, or kNoLobe
+        vector<DBL> cellShare;               ///< each cell's share of its lobe's power
+        vector<EmitterLobe> coneLobes;       ///< finer lobes for chord directions
+        vector<DBL> coneRadius2;             ///< squared radius about each of those lobes' centres that holds its cells
+        const std::uint64_t serial = NextEmitterSerial();
 
         ~VolumeEmitter() override { Destroy_Object(geometry); }
+        const vector<EmitterLobe>& Lobes() const override { return lobes; }
+
+        /// Each lobe's power over its squared distance from `from`, widened by its spread; returns their sum.
+        double LobeWeights(const Vector3d& from, double *weights) const
+        {
+            double total = 0.0;
+            for (size_t k = 0; k < lobes.size(); k++)
+                total += weights[k] = lobes[k].share / ((lobes[k].centre - from).lengthSqr() + lobes[k].spread2);
+            return total;
+        }
+
+        /// Cones from a receiver around each finer lobe's cells, weighted by power over squared distance as LobeWeights() does.
+        struct LobeCones final
+        {
+            double weights[kConeLobes], sin2[kConeLobes], solid[kConeLobes], total;
+            Vector3d axes[kConeLobes];
+        };
+
+        void Cones(const Vector3d& from, LobeCones& cones) const
+        {
+            cones.total = 0.0;
+            for (size_t k = 0; k < coneLobes.size(); k++)
+            {
+                const Vector3d to = coneLobes[k].centre - from;
+                const double d2 = to.lengthSqr();
+                cones.total += cones.weights[k] = coneLobes[k].share / (d2 + coneLobes[k].spread2);
+                cones.axes[k] = d2 > 0.0 ? to / std::sqrt(d2) : Vector3d(0.0, 0.0, 1.0);
+                cones.sin2[k] = d2 > coneRadius2[k] ? coneRadius2[k] / d2 : 1.0;
+                cones.solid[k] = 2.0 * M_PI * (cones.sin2[k] < 1.0 ? cones.sin2[k] / (1.0 + std::sqrt(1.0 - cones.sin2[k])) : 2.0);
+            }
+        }
+
+        /// A direction in a lobe's cone, the lobe chosen by weight; u in [0,1) stratifies.
+        static Vector3d ConeDirection(const LobeCones& cones, size_t count, double u, double v)
+        {
+            double pick = u * cones.total;
+            size_t k = 0;
+            while (k + 1 < count && pick >= cones.weights[k])
+                pick -= cones.weights[k++];
+            const double w = min(max(pick / cones.weights[k], 0.0), 1.0);
+            const double fall = w * cones.solid[k] / (2.0 * M_PI), sine = std::sqrt(max(0.0, fall * (2.0 - fall)));
+            const double phi = 2.0 * M_PI * v;
+            const Vector3d& n = cones.axes[k];
+            const double sign = std::copysign(1.0, n[Z]), a = -1.0 / (sign + n[Z]), b = n[X] * n[Y] * a;
+            const Vector3d t1(1.0 + sign * n[X] * n[X] * a, sign * b, -sign * n[X]), t2(b, sign + n[Y] * n[Y] * a, -n[Y]);
+            return (t1 * (sine * std::cos(phi)) + t2 * (sine * std::sin(phi)) + n * (1.0 - fall)).normalized();
+        }
+
+        /// The solid-angle density of ConeDirection() at unit `dir`.
+        static double ConePdf(const LobeCones& cones, size_t count, const Vector3d& dir)
+        {
+            double sum = 0.0;
+            for (size_t k = 0; k < count; k++)
+                if ((cones.sin2[k] >= 1.0) || ((dot(dir, cones.axes[k]) > 0.0) && (cross(dir, cones.axes[k]).lengthSqr() <= cones.sin2[k])))
+                    sum += cones.weights[k] / cones.solid[k];
+            return sum / cones.total;
+        }
+
+        /// The density of Toward()'s draws from `from` at `point`.
+        DBL TowardPdf(const Vector3d& from, const Vector3d& point) const
+        {
+            const DBL power = axis->PositionPdf(point);
+            if (lobes.empty())
+                return power;
+            const auto stencil = axis->Domain()->SampleStencil(point);
+            DBL nearby = 0.0;
+            if (stencil.valid && cellLobe[stencil.cell] != kNoLobe)
+            {
+                double weights[kEmitterLobes];
+                const double total = LobeWeights(from, weights);
+                nearby = weights[cellLobe[stencil.cell]] / total * cellShare[stencil.cell] / axis->Domain()->CellVolume(stencil.cell);
+            }
+            return kPowerPositionShare * power + (1.0 - kPowerPositionShare) * nearby;
+        }
+
+        /// A position by power, or mostly by a lobe chosen for its power over its distance from `from`; u in [0,1) stratifies.
+        PreparedLightPositionSample Toward(const Vector3d& from, double u, const Vector3d& offset) const
+        {
+            PreparedLightPositionSample sample;
+            if (lobes.empty() || u < kPowerPositionShare)
+                sample = axis->SamplePosition(lobes.empty() ? u : u / kPowerPositionShare, offset);
+            else
+            {
+                double weights[kEmitterLobes];
+                double v = (u - kPowerPositionShare) / (1.0 - kPowerPositionShare) * LobeWeights(from, weights);
+                size_t k = 0;
+                while (k + 1 < lobes.size() && v >= weights[k])
+                    v -= weights[k++];
+                v = min(max(v / weights[k], 0.0), std::nextafter(1.0, 0.0));
+                const auto first = lobeCdf.begin() + lobeBegin[k], last = lobeCdf.begin() + lobeBegin[k + 1];
+                const size_t i = min(size_t(std::upper_bound(first, last, v) - first), lobeBegin[k + 1] - lobeBegin[k] - 1);
+                sample = axis->Domain()->SamplePosition(lobeCells[lobeBegin[k] + i], offset);
+            }
+            sample.pdf = TowardPdf(from, sample.position);
+            return sample;
+        }
+
+        void BuildLobes(const PreparedSourceDomain& layout, const vector<DBL>& masses);
+
+        using Parallel = std::function<void(size_t, const std::function<void(size_t, TraceThreadData *, size_t)>&)>;
+        /// Occupied length along 2x2 lines per cell row on each axis, as a share of the cell, or its inside corners' share.
+        std::shared_ptr<const vector<DBL>> Occupancy(const PreparedSourceDomain& layout, size_t workers,
+                                                     const Parallel& parallel) const
+        {
+            const std::array<size_t, 3>& n = layout.Counts();
+            const Vector3d low = layout.Low(), size = layout.Size();
+            vector<DBL> axes[3];
+            std::vector<vector<std::pair<double, double>>> pieces(workers);
+            for (int a = X; a <= Z; a++)
+            {
+                const int b = (a + 1) % 3, c = (a + 2) % 3;
+                const double step = size[a] / n[a];
+                axes[a].assign(layout.CellCount(), 0.0);
+                Vector3d dir(0.0);
+                dir[a] = 1.0;
+                parallel(n[b] * n[c], [&](size_t row, TraceThreadData *worker, size_t slot) {
+                    const size_t jb = row % n[b], jc = row / n[b];
+                    for (int sub = 0; sub < 4; sub++)
+                    {
+                        Vector3d from = low;
+                        from[b] += (jb + 0.25 + 0.5 * (sub & 1)) * size[b] / n[b];
+                        from[c] += (jc + 0.25 + 0.5 * (sub >> 1)) * size[c] / n[c];
+                        Chord(from, dir, size[a], worker, pieces[slot]);
+                        for (const auto& piece : pieces[slot])
+                        {
+                            const size_t first = size_t(std::max(0.0, std::min(double(n[a] - 1), floor(piece.first / step))));
+                            for (size_t i = first; (i < n[a]) && (i * step < piece.second); i++)
+                            {
+                                const double overlap = std::min(piece.second, (i + 1) * step) - std::max(piece.first, i * step);
+                                if (!(overlap > 0.0))
+                                    continue;
+                                size_t index[3];
+                                index[a] = i;
+                                index[b] = jb;
+                                index[c] = jc;
+                                axes[a][(index[Z] * n[Y] + index[Y]) * n[X] + index[X]] += 0.25 * overlap / step;
+                            }
+                        }
+                    }
+                });
+            }
+            // a corner inside keeps cells whose occupied corner the lines pass by
+            vector<unsigned char> inside(layout.NodeCount());
+            parallel(layout.NodeCount(), [&](size_t node, TraceThreadData *worker, size_t) {
+                inside[node] = Inside_Object((layout.Node(node) - centre) / radius, geometry, worker);
+            });
+            auto result = std::make_shared<vector<DBL>>(layout.CellCount());
+            for (size_t cell = 0; cell < result->size(); cell++)
+            {
+                int corners = 0;
+                for (size_t node : layout.CellNodes(cell))
+                    corners += inside[node];
+                (*result)[cell] = std::min(1.0, std::max(corners / 8.0, (axes[X][cell] + axes[Y][cell] + axes[Z][cell]) / 3.0));
+            }
+            return result;
+        }
         void PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                          const std::function<void()>& cooperate) const override;
 
@@ -1662,7 +1847,7 @@ class VolumeEmitter final : public Emitter
         {
             if (!axis)
                 throw POV_EXCEPTION_STRING("Interior light axis was not published before tracing.");
-            const auto position = axis->SamplePosition(draw.positionKey);
+            const auto position = axis->SamplePosition(draw.choose, Vector3d(draw.x, draw.y, draw.z));
             EmitterSample sample;
             sample.position = position.position;
             sample.pdf = position.pdf;
@@ -1712,7 +1897,8 @@ class VolumeEmitter final : public Emitter
             const double start = -offset, end = start + reach / radius;
             TraceTicket ticket(1, 0.0);
             Ray ray(ticket, origin, dir);
-            vector<double> cuts(1, start);
+            thread_local vector<double> cuts;
+            cuts.assign(1, start);
             Boundaries(geometry, ray, start, end, td, cuts);
             cuts.push_back(end);
             std::sort(cuts.begin(), cuts.end());
@@ -1750,28 +1936,59 @@ class VolumeEmitter final : public Emitter
             const double chordShare = 0.5 * min(1.0, max(0.0, 2.0 - 0.5 * d / radius));
             if (chordShare == 0.0)
             {
-                sample = SamplePosition(draw, td);
+                const auto position = Toward(from, draw.choose, Vector3d(draw.x, draw.y, draw.z));
+                if (!bounceField)
+                {
+                    sample.position = position.position;
+                    sample.pdf = position.pdf;
+                    const double r2 = (sample.position - from).lengthSqr();
+                    if (r2 > 0.0)
+                        sample.weight = EmissionAt(sample.position, td) / (r2 * sample.pdf);
+                    else
+                        sample.weight.Clear();
+                    return true;
+                }
+                sample.position = position.position;
+                sample.pdf = position.pdf;
                 const double r2 = (sample.position - from).lengthSqr();
                 if (r2 > 0.0)
                 {
-                    if (bounceField)
-                    {
-                        const Vector3d outgoing = (from - sample.position) / std::sqrt(r2);
-                        sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
-                    }
-                    else
-                        sample.weight /= r2;
+                    const Vector3d outgoing = (from - sample.position) / std::sqrt(r2);
+                    sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
                 }
                 else
                     sample.weight.Clear();
                 return true;
             }
-            const EmitterAabbProposal angular(from, low, size);
-            vector<std::pair<double, double>> pieces;
-            double length, depth;
+            // A receiver's draws share their proposal over the emitter's box, built once per receiver point and box.
+            thread_local struct { Vector3d key[3]; EmitterAabbProposal proposal; } recent =
+                { { Vector3d(std::numeric_limits<double>::quiet_NaN()), Vector3d(), Vector3d() },
+                  EmitterAabbProposal(Vector3d(), Vector3d(-1.0), Vector3d(2.0)) };
+            const Vector3d key[3] = { from, low, size };
+            bool same = true;
+            for (int k = 0; k < 3; k++)
+                same = same && (recent.key[k][X] == key[k][X]) && (recent.key[k][Y] == key[k][Y]) && (recent.key[k][Z] == key[k][Z]);
+            if (!same)
+                recent = { { from, low, size }, EmitterAabbProposal(from, low, size) };
+            const EmitterAabbProposal& angular = recent.proposal;
+            // A receiver's draws share their cones, built once per emitter and receiver point.
+            thread_local struct { std::uint64_t serial; Vector3d from; LobeCones cones; } aimed = { 0, Vector3d(), LobeCones() };
+            if ((aimed.serial != serial) || (aimed.from[X] != from[X]) || (aimed.from[Y] != from[Y]) || (aimed.from[Z] != from[Z]))
+            {
+                aimed.serial = serial;
+                aimed.from = from;
+                Cones(from, aimed.cones);
+            }
+            const LobeCones& cones = aimed.cones;
+            const double boxShare = coneLobes.empty() ? 1.0 : kBoxDirectionShare;
+            thread_local vector<std::pair<double, double>> pieces;
+            double length, depth, positionPdf = 0.0;
+            bool positionKnown = false;
             if (s < chordShare)
             {
-                const Vector3d dir = angular.Sample(s / chordShare, t);
+                const double u = s / chordShare;
+                const Vector3d dir = u < boxShare ? angular.Sample(u / boxShare, t) :
+                                     ConeDirection(cones, coneLobes.size(), (u - boxShare) / (1.0 - boxShare), t);
                 length = Chord(from, dir, d + radius, td, pieces);
                 sample.position = centre;
                 sample.pdf = 0.0;
@@ -1794,7 +2011,10 @@ class VolumeEmitter final : public Emitter
             }
             else
             {
-                sample = SamplePosition(EmitterDraw((s - chordShare) / (1.0 - chordShare), draw.x, draw.y, draw.z, draw.positionKey), td);
+                const auto position = Toward(from, (s - chordShare) / (1.0 - chordShare), Vector3d(draw.x, draw.y, draw.z));
+                sample.position = position.position;
+                sample.pdf = positionPdf = position.pdf;
+                positionKnown = true;
                 const Vector3d delta = sample.position - from;
                 depth = delta.length();
                 if (!(depth > 0.0))
@@ -1814,9 +2034,11 @@ class VolumeEmitter final : public Emitter
             for (const auto& piece : pieces)
                 inChord = inChord || ((depth >= piece.first) && (depth <= piece.second));
             const double r2 = depth * depth;
-            const double angularPdf = angular.Pdf((sample.position - from) / depth);
+            const Vector3d toward = (sample.position - from) / depth;
+            const double angularPdf = boxShare * angular.Pdf(toward) +
+                                      (boxShare < 1.0 ? (1.0 - boxShare) * ConePdf(cones, coneLobes.size(), toward) : 0.0);
             const double chordPdf = (inChord && (length > 0.0)) ? angularPdf / (length * r2) : 0.0;
-            sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * PositionPdf(sample.position);
+            sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * (positionKnown ? positionPdf : TowardPdf(from, sample.position));
             const Vector3d outgoing = (from - sample.position) / depth;
             sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
             return true;
@@ -1824,6 +2046,119 @@ class VolumeEmitter final : public Emitter
 
 };
 
+}
+
+namespace
+{
+
+struct LobePoint final
+{
+    Vector3d position;
+    DBL mass, spread2;
+    std::uint32_t cell;
+};
+
+/// Splits power-weighted points at the weighted median of their longest extent until `depth` runs out.
+void SplitLobes(vector<LobePoint>& points, size_t begin, size_t end, int depth, DBL total, vector<EmitterLobe>& lobes,
+                vector<std::pair<size_t, size_t>>& ranges)
+{
+    DBL mass = 0.0;
+    Vector3d centre, low(HUGE_VAL), high(-HUGE_VAL);
+    for (size_t i = begin; i < end; i++)
+    {
+        mass += points[i].mass;
+        centre += points[i].position * points[i].mass;
+        for (int a = 0; a < 3; a++)
+        {
+            low[a] = std::min(low[a], points[i].position[a]);
+            high[a] = std::max(high[a], points[i].position[a]);
+        }
+    }
+    if (!(mass > 0.0))
+        return;
+    centre /= mass;
+    if (depth == 0 || end - begin < 2)
+    {
+        DBL spread2 = 0.0;
+        for (size_t i = begin; i < end; i++)
+            spread2 += points[i].mass * ((points[i].position - centre).lengthSqr() + points[i].spread2);
+        lobes.push_back(EmitterLobe{centre, spread2 / mass, mass / total});
+        ranges.emplace_back(begin, end);
+        return;
+    }
+    const Vector3d extent = high - low;
+    const int axis = extent[X] >= extent[Y] ? (extent[X] >= extent[Z] ? X : Z) : (extent[Y] >= extent[Z] ? Y : Z);
+    std::stable_sort(points.begin() + begin, points.begin() + end, [axis](const LobePoint& a, const LobePoint& b) {
+        return a.position[axis] < b.position[axis]; });
+    size_t middle = begin + 1;
+    for (DBL running = points[begin].mass; middle + 1 < end && running + points[middle].mass <= 0.5 * mass; middle++)
+        running += points[middle].mass;
+    SplitLobes(points, begin, middle, depth - 1, total, lobes, ranges);
+    SplitLobes(points, middle, end, depth - 1, total, lobes, ranges);
+}
+
+}
+
+void VolumeEmitter::BuildLobes(const PreparedSourceDomain& layout, const vector<DBL>& masses)
+{
+    vector<LobePoint> points;
+    DBL total = 0.0;
+    for (size_t cell = 0; cell < masses.size(); cell++)
+        if (masses[cell] > 0.0)
+        {
+            const auto corners = layout.CornerQuadrature(cell);
+            Vector3d middle;
+            for (const auto& q : corners)
+                middle += q.position / DBL(corners.size());
+            DBL spread2 = 0.0;
+            for (const auto& q : corners)
+                spread2 += (q.position - middle).lengthSqr() / DBL(corners.size());
+            points.push_back(LobePoint{middle, masses[cell], spread2, std::uint32_t(cell)});
+            total += masses[cell];
+        }
+    vector<std::pair<size_t, size_t>> ranges;
+    if (total > 0.0)
+        SplitLobes(points, 0, points.size(), kEmitterLobeDepth, total, lobes, ranges);
+    cellLobe.assign(masses.size(), kNoLobe);
+    cellShare.assign(masses.size(), 0.0);
+    for (size_t k = 0; k < ranges.size(); k++)
+    {
+        lobeBegin.push_back(lobeCells.size());
+        DBL lobeMass = 0.0, running = 0.0;
+        for (size_t i = ranges[k].first; i < ranges[k].second; i++)
+            lobeMass += points[i].mass;
+        for (size_t i = ranges[k].first; i < ranges[k].second; i++)
+        {
+            running += points[i].mass;
+            lobeCells.push_back(points[i].cell);
+            lobeCdf.push_back(running / lobeMass);
+            cellLobe[points[i].cell] = std::uint8_t(k);
+            cellShare[points[i].cell] = points[i].mass / lobeMass;
+        }
+        lobeCdf.back() = 1.0;
+    }
+    lobeBegin.push_back(lobeCells.size());
+    ranges.clear();
+    if (total > 0.0)
+        SplitLobes(points, 0, points.size(), kConeLobeDepth, total, coneLobes, ranges);
+    for (size_t k = 0; k < ranges.size(); k++)
+    {
+        DBL radius2 = 0.0;
+        for (size_t i = ranges[k].first; i < ranges[k].second; i++)
+            for (const auto& q : layout.CornerQuadrature(points[i].cell))
+                radius2 = max(radius2, (q.position - coneLobes[k].centre).lengthSqr());
+        coneRadius2.push_back(radius2);
+    }
+}
+
+// The corner rule's integral of f over a prepared cell.
+template<typename Function>
+static DBL CellIntegral(const PreparedSourceDomain& layout, size_t cell, const Function& f)
+{
+    DBL sum = 0.0;
+    for (const auto& q : layout.CornerQuadrature(cell))
+        sum += f(q.position) * q.weight;
+    return sum;
 }
 
 void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
@@ -1862,26 +2197,40 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    emitter->coefficient = MathColour(settings.lumens < 0.0 && settings.brightness == 0.0 ? 0.0 : 1.0);
-    if (settings.lumens < 0.0 && settings.brightness != 0.0)
+    // the emission alias casts its own glow times brightness; a pigment's nits take the mean chord 4V/A
+    emitter->coefficient = MathColour(settings.lumens >= 0.0 ? 1.0 : settings.brightness);
+    // every serial estimate below is gathered per index on the workers, then summed in index order
+    const size_t workers = std::max<size_t>(1, td->GetSceneData()->workThreads);
+    std::vector<std::unique_ptr<TraceThreadData>> helpers;
+    for (size_t i = 1; i < workers; i++)
+        helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
+    const auto poll = [&cooperate]() { if (cooperate) cooperate(); };
+    const auto thread = [&](size_t worker) { return worker ? helpers[worker - 1].get() : td; };
+    const auto parallel = [&](size_t count, const std::function<void(size_t, TraceThreadData *, size_t)>& work) {
+        ParallelFor(count, workers, [&](size_t i, size_t worker) {
+            if ((workers == 1) && (i % 1024 == 0))
+                poll();
+            work(i, thread(worker), worker);
+        }, poll);
+    };
+    if (settings.lumens < 0.0 && settings.brightness != 0.0 && !settings.useEmission)
     {
         double meanChord = 0.0, discrepancy = HUGE_VAL;
-        vector<std::pair<double, double>> pieces;
+        std::vector<vector<std::pair<double, double>>> pieces(workers);
+        std::vector<double> lineLength;
+        std::vector<size_t> lineCrossings;
         for (int lines : {1024, 4096, 16384})
         {
             double replicate[4], sumLength = 0.0;
             size_t sumPieces = 0;
-            for (int r = 0; r < 4; r++)
-            {
-                double length = 0.0;
-                size_t crossings = 0;
+            lineLength.assign(size_t(4) * lines, 0.0);
+            lineCrossings.assign(size_t(4) * lines, 0);
+            parallel(size_t(4) * lines, [&](size_t index, TraceThreadData *worker, size_t slot) {
+                const int r = int(index / lines), k = int(index % lines);
                 const std::uint64_t scramble = DeriveKey(0x63686f726473ull, kDrawEmitter, r);
                 const double a = Draw(scramble, kDrawEmitter, 0), b = Draw(scramble, kDrawEmitter, 1);
                 const double c = Draw(scramble, kDrawEmitter, 2);
-                for (int k = 0; k < lines; k++)
                 {
-                    if ((k % 1024 == 0) && cooperate)
-                        cooperate();
                     const std::uint64_t key = DeriveKey(scramble, kDrawEmitter, k);
                     const double su = a + k * 0.7548776662466927, sv = b + k * 0.5698402909980532;
                     const double z = 1.0 - 2.0 * (su - floor(su)), azimuth = 2.0 * M_PI * (sv - floor(sv));
@@ -1891,8 +2240,18 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                     const double t = c + k * 0.4142135623730950, phi = 2.0 * M_PI * (t - floor(t));
                     const double rho = emitter->radius * std::sqrt((k + Draw(key, kDrawEmitter, 3)) / lines);
                     const Vector3d origin = emitter->centre + (u * std::cos(phi) + cross(w, u) * std::sin(phi)) * rho - w * emitter->radius;
-                    length += emitter->Chord(origin, w, 2.0 * emitter->radius, td, pieces);
-                    crossings += pieces.size();
+                    lineLength[index] = emitter->Chord(origin, w, 2.0 * emitter->radius, worker, pieces[slot]);
+                    lineCrossings[index] = pieces[slot].size();
+                }
+            });
+            for (int r = 0; r < 4; r++)
+            {
+                double length = 0.0;
+                size_t crossings = 0;
+                for (int k = 0; k < lines; k++)
+                {
+                    length += lineLength[size_t(r) * lines + k];
+                    crossings += lineCrossings[size_t(r) * lines + k];
                 }
                 replicate[r] = crossings ? length / crossings : 0.0;
                 sumLength += length;
@@ -1940,25 +2299,16 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     else
     {
         vector<MathColour> values(count);
-        const size_t workers = std::max<size_t>(1, std::min<size_t>(count, td->GetSceneData()->workThreads));
-        std::vector<std::unique_ptr<TraceThreadData>> helpers;
-        for (size_t i = 1; i < workers; i++)
-            helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
-        ParallelFor(count, workers, [&](size_t node, size_t worker) {
-            if ((workers == 1) && cooperate)
-                cooperate();
-            TraceThreadData *sampleThread = worker ? helpers[worker - 1].get() : td;
-            const MathColour value = colourAt(layout->Node(node), sampleThread);
+        parallel(count, [&](size_t node, TraceThreadData *worker, size_t) {
+            const MathColour value = colourAt(layout->Node(node), worker);
             values[node] = value;
             if (value.Weight() > 0.0)
                 positiveField.store(true, std::memory_order_relaxed);
-        }, cooperate);
-        for (const auto& helper : helpers)
-            td->Stats() += helper->Stats();
+        });
         field = std::make_shared<PreparedSourceColourField>(layout, std::move(values));
     }
-    auto preparedEmission = [&](const Vector3d& p) {
-        return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, td) ?
+    auto preparedEmission = [&](const Vector3d& p, TraceThreadData *worker) {
+        return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, worker) ?
             field->Sample(p) * emitter->coefficient : MathColour();
     };
     MathColour integral;
@@ -1970,17 +2320,22 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
                 break;
             MathColour replicate[4];
             const size_t draws = size_t(bins) * bins * bins;
-            for (int r = 0; r < 4; r++)
-                for (size_t k = 0; k < draws; k++)
+            vector<MathColour> drawn(4 * draws);
+            parallel(4 * draws, [&](size_t index, TraceThreadData *worker, size_t) {
+                const size_t r = index / draws, k = index % draws;
                 {
-                    if ((k % 1024 == 0) && cooperate)
-                        cooperate();
                     const std::uint64_t key = DeriveKey(0x766f6c756d65ull, kDrawEmitter, size_t(r) * draws + k);
                     const Vector3d q((k % bins + Draw(key, kDrawEmitter, 0)) / bins,
                                      ((k / bins) % bins + Draw(key, kDrawEmitter, 1)) / bins,
                                      (k / (size_t(bins) * bins) + Draw(key, kDrawEmitter, 2)) / bins);
                     const Vector3d p = emitter->low + Vector3d(q[X] * emitter->size[X], q[Y] * emitter->size[Y], q[Z] * emitter->size[Z]);
-                    const MathColour j = preparedEmission(p);
+                    drawn[index] = preparedEmission(p, worker);
+                }
+            });
+            for (int r = 0; r < 4; r++)
+                for (size_t k = 0; k < draws; k++)
+                {
+                    const MathColour& j = drawn[r * draws + k];
                     if (!IsFiniteNumber(j.Weight()) || (j.Min() < 0.0))
                     {
                         throw POV_EXCEPTION_STRING("Interior light prepared pigment is negative or not finite.");
@@ -2014,16 +2369,16 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layo
     vector<DBL> masses;
     if (emitter->volumeEmission)
     {
+        emitter->occupancy = emitter->Occupancy(*layout, workers, parallel);
         masses.resize(layout->CellCount());
-        for (size_t cell = 0; cell < layout->CellCount(); ++cell)
-        {
-            if (cooperate)
-                cooperate();
-            for (const auto& q : layout->CornerQuadrature(cell))
-                if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, td))
-                    masses[cell] += field->Sample(q.position).Weight() * q.weight;
-        }
+        parallel(layout->CellCount(), [&](size_t cell, TraceThreadData *, size_t) {
+            masses[cell] = emitter->occupancy->at(cell) * CellIntegral(*layout, cell, [&](const Vector3d& p) {
+                return field->Sample(p).Weight(); });
+        });
     }
+    for (const auto& helper : helpers)
+        td->Stats() += helper->Stats();
+    emitter->BuildLobes(*layout, masses);
     emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses));
 }
 
@@ -2061,14 +2416,21 @@ std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary
         masses.resize(layout->CellCount());
     for (size_t node = 0; node < layout->NodeCount(); ++node)
         emitter->volumeEmission = emitter->volumeEmission || proposal->Sample(layout->Node(node)).Weight() > 0.0;
+    emitter->occupancy = (original->occupancy && (original->axis->Domain() == layout)) ? original->occupancy :
+        emitter->Occupancy(*layout, 1, [&](size_t count, const std::function<void(size_t, TraceThreadData *, size_t)>& work) {
+            for (size_t i = 0; i < count; ++i)
+                work(i, td, 0);
+        });
     for (size_t cell = 0; cell < layout->CellCount(); ++cell)
+    {
+        const DBL occupied = emitter->occupancy->at(cell);
+        if (!(occupied > 0.0))
+            continue;
+        if (!sharedProposal)
+            masses[cell] = occupied * CellIntegral(*layout, cell, [&](const Vector3d& p) { return proposal->Sample(p).Weight(); });
         for (const auto& q : layout->CornerQuadrature(cell))
-            if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, td))
-            {
-                if (!sharedProposal)
-                    masses[cell] += proposal->Sample(q.position).Weight() * q.weight;
-                emitter->intensity += field->AngularAverage(q.position) * q.weight;
-            }
+            emitter->intensity += field->AngularAverage(q.position) * (q.weight * occupied);
+    }
     emitter->axis = sharedProposal ? std::make_shared<PreparedLightAxis>(layout, proposal, std::move(sharedProposal)) :
         std::make_shared<PreparedLightAxis>(layout, proposal, std::move(masses));
     return emitter;
@@ -2523,7 +2885,8 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         vector<Cell> cells;
         vector<size_t> order, selected;
         vector<LightSource *> sources;
-        vector<DBL> cdf, mass, base;
+        vector<DBL> cdf, mass, base, lit;
+        vector<EmitterLobe> lobes;
     };
 
     MediaFunction& owner;
@@ -2599,6 +2962,59 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         return bytes;
     }
 
+    /// Where a lobe's centre falls along a cell's ray, and its squared clearance widened by the lobe's spread.
+    bool Aim(const Cell& cell, const EmitterLobe& lobe, DBL& foot, DBL& clearance2) const
+    {
+        const Ray& ray = domains[cell.domain].ray;
+        const DBL speed2 = ray.Direction.lengthSqr();
+        const Vector3d toLobe = lobe.centre - ray.Origin;
+        foot = dot(toLobe, ray.Direction) / speed2;
+        clearance2 = (std::max(0.0, toLobe.lengthSqr() - foot * foot * speed2) + lobe.spread2) / speed2;
+        return IsFiniteNumber(foot) && IsFiniteNumber(clearance2) && clearance2 > 0.0;
+    }
+
+    /// A light's inverse-square reach over a cell: integrated along a continuous cell, at a point cell's point.
+    DBL CellReach(const Cell& cell, const vector<EmitterLobe>& lobes) const
+    {
+        const Ray& ray = domains[cell.domain].ray;
+        DBL sum = 0.0, foot, clearance2;
+        for (const EmitterLobe& lobe : lobes)
+            if (!cell.continuous)
+                sum += lobe.share / ((ray.Evaluate(cell.at) - lobe.centre).lengthSqr() + lobe.spread2);
+            else if (Aim(cell, lobe, foot, clearance2))
+                sum += lobe.share * PreparedEquiangularMass(cell.start, cell.end, foot, clearance2) / ray.Direction.lengthSqr();
+        return sum;
+    }
+
+    /// The density along a continuous cell of drawing distance `at` in proportion to the light's reach.
+    DBL AimPdf(const Cell& cell, const vector<EmitterLobe>& lobes, DBL reach, DBL at) const
+    {
+        if (!(at >= cell.start) || !(at <= cell.end))
+            return 0.0;
+        DBL sum = 0.0, foot, clearance2;
+        for (const EmitterLobe& lobe : lobes)
+            if (Aim(cell, lobe, foot, clearance2))
+                sum += lobe.share / (Sqr(at - foot) + clearance2);
+        return sum / (domains[cell.domain].ray.Direction.lengthSqr() * reach);
+    }
+
+    /// A distance along a continuous cell drawn in proportion to the light's reach: a lobe by its share, then its angle.
+    DBL AimDraw(const Cell& cell, const vector<EmitterLobe>& lobes, DBL reach, DBL u) const
+    {
+        const DBL speed2 = domains[cell.domain].ray.Direction.lengthSqr();
+        DBL choose = u * reach * speed2, foot = 0.0, clearance2 = 0.0, part = 0.0;
+        for (const EmitterLobe& lobe : lobes)
+            if (Aim(cell, lobe, foot, clearance2))
+            {
+                part = lobe.share * PreparedEquiangularMass(cell.start, cell.end, foot, clearance2);
+                if (choose < part)
+                    break;
+                choose -= part;
+            }
+        const DBL within = part > 0.0 ? std::min(std::nextafter(1.0, 0.0), std::max(0.0, choose / part)) : 0.5;
+        return SamplePreparedEquiangularDistance(cell.start, cell.end, within, foot, clearance2).distance;
+    }
+
     void Finish(MathColour& colour) override
     {
         collecting = false;
@@ -2640,6 +3056,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         vector<DBL>& cdf = storage.cdf;
         vector<DBL>& mass = storage.mass;
         vector<DBL>& base = storage.base;
+        vector<DBL>& lit = storage.lit;
         for (size_t source = 0; source < sources.size(); source++)
         {
             LightSource& light = *sources[source];
@@ -2647,8 +3064,17 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
             cdf.clear();
             mass.clear();
             base.clear();
-            DBL total = 0.0, totalMass = 0.0;
-            bool resolved = true;
+            lit.clear();
+            vector<EmitterLobe>& lobes = storage.lobes;
+            lobes.clear();
+            if (light.emitter)
+                lobes = light.emitter->Lobes();
+            // A light that does not fade with distance spreads over all space: it has no reach to aim at.
+            if (lobes.empty())
+                lobes.push_back(EmitterLobe{light.Center, (light.emitter || light.Fade_Power > 0.0) ?
+                    Sqr(max(light.lawRadius, light.emitter ? 0.0 : light.Fade_Distance)) : HUGE_VAL, 1.0});
+            DBL total = 0.0, totalMass = 0.0, totalLit = 0.0;
+            bool resolved = true, reached = true;
             for (size_t i : order)
                 if (Affected(cells[i], &light))
                 {
@@ -2669,17 +3095,29 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                     }
                     mass.push_back(weight);
                     totalMass += weight;
+                    const DBL geometric = CellReach(cell, lobes);
+                    DBL reach = 0.0;
+                    for (int ch = 0; ch < MathColour::channels; ch++)
+                        if (cell.scattering[ch] != 0.0 && suffix[cell.mark][ch] != 0.0)
+                            reach = std::max(reach, std::abs(DBL(cell.scattering[ch]) * suffix[cell.mark][ch]) * geometric *
+                                (cell.continuous ? std::exp(-DBL(cell.extinction[ch]) * cell.start) : DBL(cell.transfer[ch])));
+                    reached = reached && IsFiniteNumber(reach);
+                    lit.push_back(reach);
+                    totalLit += reach;
                 }
             if (!IsFiniteNumber(total))
                 throw POV_EXCEPTION_STRING("Prepared-media scattering path length is not finite.");
             if (!(total > 0.0))
                 continue;
             resolved = resolved && (totalMass > 0.0) && IsFiniteNumber(totalMass);
+            reached = reached && (totalLit > 0.0) && IsFiniteNumber(totalLit);
+            // Half the cells' choice follows the light's inverse-square reach, the rest their length and scattering.
+            const DBL litShare = reached ? 0.5 : 0.0, massShare = resolved ? 0.5 * (1.0 - litShare) : 0.0;
             DBL cumulative = 0.0;
             for (size_t i = 0; i < selected.size(); i++)
             {
-                const DBL uniform = base[i] / total;
-                cumulative += resolved ? 0.5 * uniform + 0.5 * mass[i] / totalMass : uniform;
+                cumulative += (1.0 - litShare - massShare) * base[i] / total + (resolved ? massShare * mass[i] / totalMass : 0.0) +
+                              (reached ? litShare * lit[i] / totalLit : 0.0);
                 cdf.push_back(cumulative);
             }
             if (!(cumulative > 0.0) || !IsFiniteNumber(cumulative))
@@ -2727,12 +3165,16 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                         channelTotal += channelMass[ch];
                     }
                     importance = importance && IsFiniteNumber(channelTotal) && channelTotal > 0.0;
+                    const DBL cellReach = CellReach(cell, lobes);
+                    const bool aimed = cellReach > 0.0 && IsFiniteNumber(cellReach);
+                    const DBL aimShare = aimed ? 0.5 : 0.0, expShare = importance ? 0.5 * (1.0 - aimShare) : 0.0;
+                    const DBL uniformShare = 1.0 - aimShare - expShare;
                     PreparedDistanceSample position;
-                    if (!importance || within < 0.5)
-                        position = SamplePreparedDistance(cell.start, cell.end, importance ? 2.0 * within : within, scale);
-                    else
+                    if (within < uniformShare)
+                        position = SamplePreparedDistance(cell.start, cell.end, within / uniformShare, scale);
+                    else if (within < uniformShare + expShare)
                     {
-                        DBL choose = std::min(std::nextafter(channelTotal, 0.0), (2.0 * within - 1.0) * channelTotal);
+                        DBL choose = std::min(std::nextafter(channelTotal, 0.0), (within - uniformShare) / expShare * channelTotal);
                         int channel = 0;
                         while (channel + 1 < MathColour::channels && choose >= channelMass[channel])
                         {
@@ -2744,17 +3186,19 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                         const DBL u = std::min(std::nextafter(1.0, 0.0), choose / channelMass[channel]);
                         position = SamplePreparedExponentialDistance(cell.start, cell.end, u, cell.extinction[channel]);
                     }
+                    else
+                        position.distance = AimDraw(cell, lobes, cellReach,
+                            std::min(std::nextafter(1.0, 0.0), (within - uniformShare - expShare) / aimShare));
                     at = position.distance;
-                    distancePdf = IsFiniteNumber(cell.end) ? 1.0 / (cell.end - cell.start) :
-                        (scale + cell.start) / (scale + at) / (scale + at);
+                    distancePdf = uniformShare * (IsFiniteNumber(cell.end) ? 1.0 / (cell.end - cell.start) :
+                        (scale + cell.start) / (scale + at) / (scale + at));
                     if (importance)
-                    {
-                        distancePdf *= 0.5;
                         for (int ch = 0; ch < MathColour::channels; ch++)
                             if (channelMass[ch] > 0.0)
-                                distancePdf += 0.5 * channelMass[ch] / channelTotal *
+                                distancePdf += expShare * channelMass[ch] / channelTotal *
                                     PreparedExponentialDistancePdf(cell.start, cell.end, at, cell.extinction[ch]);
-                    }
+                    if (aimed)
+                        distancePdf += aimShare * AimPdf(cell, lobes, cellReach, at);
                     for (int ch = 0; ch < MathColour::channels; ch++)
                         transfer[ch] = std::exp(-DBL(cell.extinction[ch]) * at) / distancePdf;
                 }

@@ -519,6 +519,8 @@ void Parser::Run()
             for (ObjectPtr object : sceneData->objects)
                 ResolveInheritedTags(object);
             Assign_Scene_Lights();
+            Check_Legacy_Transport();
+            Warn_Unused_Media_Resolution();
             Split_Unions();
 
             // post process atmospheric media
@@ -10663,6 +10665,155 @@ void Parser::Assign_Scene_Lights()
     for (const std::pair<ObjectPtr, LightSource *>& added : mGroupMediaLights)
         Add_Local_Light(added.first, added.second);
     mGroupMediaLights.clear();
+}
+
+// The first finish in these textures that uses subsurface method 1, or null.
+static const FINISH *Legacy_Subsurface(const TEXTURE *textures, int sceneMethod)
+{
+    for (const TEXTURE *layer = textures; layer != nullptr; layer = layer->Next)
+    {
+        if ((layer->Finish != nullptr) && layer->Finish->UseSubsurface &&
+            ((layer->Finish->SubsurfaceMethod ? layer->Finish->SubsurfaceMethod : sceneMethod) == kSubsurfaceMethodSampled))
+            return layer->Finish;
+        for (const TEXTURE *material : layer->Materials)
+            if (const FINISH *finish = Legacy_Subsurface(material, sceneMethod))
+                return finish;
+        if (layer->Blend_Map != nullptr)
+            for (const TextureBlendMapEntry& entry : layer->Blend_Map->Blend_Map_Entries)
+                if (const FINISH *finish = Legacy_Subsurface(entry.Vals, sceneMethod))
+                    return finish;
+    }
+    return nullptr;
+}
+
+// The first subsurface method 1 finish on this object's own textures, including per-face and per-component ones.
+static const FINISH *Object_Legacy_Subsurface(ConstObjectPtr object, int sceneMethod)
+{
+    const FINISH *finish = Legacy_Subsurface(object->Texture, sceneMethod);
+    if (finish == nullptr)
+        finish = Legacy_Subsurface(object->Interior_Texture, sceneMethod);
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        for (MeshIndex i = 0; (finish == nullptr) && (i < mesh->Number_Of_Textures); i++)
+            finish = Legacy_Subsurface(mesh->Textures[i], sceneMethod);
+    if (const Blob *blob = dynamic_cast<const Blob *>(object))
+        for (size_t i = 0; (finish == nullptr) && (i < blob->Element_Texture.size()); i++)
+            finish = Legacy_Subsurface(blob->Element_Texture[i], sceneMethod);
+    return finish;
+}
+
+static bool Media_Is_Constant(const Media& medium)
+{
+    for (const PIGMENT *pigment : medium.Density)
+        if (pigment->Type != PLAIN_PATTERN)
+            return false;
+    return true;
+}
+
+static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
+{
+    objects.push_back(object);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            Collect_Scene_Objects(child, objects);
+}
+
+// Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter, bounce
+// or receive the light of a light block. See "Light Blocks and Classic Transport" in the manual.
+void Parser::Check_Legacy_Transport()
+{
+    std::vector<ObjectPtr> objects;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, objects);
+    for (ObjectPtr object : objects)
+    {
+        const Interior *interior = object->interior.get();
+        const MediaLight *block = (interior != nullptr) ? interior->light.get() : nullptr;
+        if (block != nullptr)
+            for (const Media& medium : interior->media)
+                if (medium.Sample_Method != 4)
+                    Error("The %s light block at %s holds the method %d medium at %s; a light block needs "
+                          "method 4 media.", ShapeName(object), block->where.c_str(), int(medium.Sample_Method),
+                          medium.where.c_str());
+        for (const MediaLight *light : { static_cast<const MediaLight *>(object->surfaceLight.get()), block })
+        {
+            if ((light == nullptr) || !sceneData->useSubsurface)
+                continue;
+            std::vector<ObjectPtr> parts;
+            Collect_Scene_Objects(object, parts);
+            for (ObjectPtr part : parts)
+                if (Object_Legacy_Subsurface(part, sceneData->subsurfaceMethod))
+                    Error("The %s light block at %s is on a subsurface method 1 finish; a light block needs "
+                          "subsurface method 2.", ShapeName(object), light->where.c_str());
+        }
+    }
+    auto blockOf = [](const LightSource *light) {
+        const ConstObjectPtr owner = light->emitterContainer;
+        return light->emitter->IsSurface() ? owner->surfaceLight.get() : owner->interior->light.get();
+    };
+    if (!sceneData->mediaLights.empty() && sceneData->useSubsurface)
+    {
+        const LightSource *first = sceneData->mediaLights.front();
+        for (ObjectPtr object : objects)
+        {
+            if (const FINISH *finish = Object_Legacy_Subsurface(object, sceneData->subsurfaceMethod))
+                Error("The subsurface method 1 finish at %s on the %s is lit by the %s light block at %s; "
+                      "only subsurface method 2 carries a light block's light.", finish->SubsurfaceWhere.c_str(),
+                      ShapeName(object), ShapeName(first->emitterContainer), blockOf(first)->where.c_str());
+        }
+    }
+    const LightSource *lighting = nullptr;
+    for (const LightSource *light : sceneData->mediaLights)
+        if (light->Media_Interaction)
+        {
+            lighting = light;
+            break;
+        }
+    if (lighting == nullptr)
+        return;
+    const ConstObjectPtr owner = lighting->emitterContainer;
+    const MediaLight *block = blockOf(lighting);
+    auto reject = [&](const Media& medium, const std::string& where) {
+        if ((medium.Sample_Method != 4) && !medium.Scattering.IsZero())
+            Error("The method %d medium at %s %s scatters, and the %s light block at %s lights media; "
+                  "only method 4 media scatter a light block's light.", int(medium.Sample_Method), medium.where.c_str(),
+                  where.c_str(), ShapeName(owner), block->where.c_str());
+    };
+    for (const Media& medium : sceneData->atmosphere)
+        reject(medium, "in the atmosphere");
+    for (ObjectPtr object : objects)
+        if (object->interior != nullptr)
+            for (const Media& medium : object->interior->media)
+                reject(medium, std::string("in the ") + ShapeName(object));
+}
+
+// A constant method 4 medium's resolution sets its interior's grid only when nothing there varies.
+void Parser::Warn_Unused_Media_Resolution()
+{
+    std::vector<ObjectPtr> objects;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, objects);
+    std::unordered_set<std::string> warned;
+    for (ObjectPtr object : objects)
+    {
+        const Interior *interior = object->interior.get();
+        if (interior == nullptr)
+            continue;
+        std::string cause;
+        if (interior->light != nullptr)
+            cause = "the light block at " + interior->light->where;
+        else if (interior->refraction && !interior->refraction->functions.empty())
+            cause = "its refraction";
+        for (const Media& medium : interior->media)
+            if (cause.empty() && (medium.Sample_Method == 4) && !Media_Is_Constant(medium))
+                cause = "the varying medium at " + medium.where;
+        if (cause.empty())
+            continue;
+        for (const Media& medium : interior->media)
+            if ((medium.Sample_Method == 4) && (medium.AuthoredFastResolution() > 0.0) && Media_Is_Constant(medium) &&
+                warned.insert(medium.where).second)
+                Warning("The constant medium at %s in the %s gives a resolution, but the grid there follows %s, "
+                        "so the resolution is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());
+    }
 }
 
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
