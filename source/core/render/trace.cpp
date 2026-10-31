@@ -216,6 +216,26 @@ void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, R
 }
 }
 
+bool Trace::LeavesOpaqueSolid(const Ray& ray, double depth)
+{
+    Intersection isect;
+    if (!FindIntersection(isect, ray) || !(isect.Depth < depth) || !Test_Flag(isect.Object, OPAQUE_FLAG))
+        return false;
+    Vector3d normal;
+    isect.Object->Normal(normal, &isect, threadData);
+    if (Test_Flag(isect.Object, INVERTED_FLAG))
+        normal.invert();
+    return dot(normal, ray.Direction) > 0.0;
+}
+
+bool Trace::InsideAny(const Vector3d& point, const std::vector<ConstObjectPtr>& objects)
+{
+    for (const auto object : objects)
+        if (Inside_Object(point, const_cast<ObjectPtr>(object), threadData))
+            return true;
+    return false;
+}
+
 bool Trace::InteriorMediaReach(const Ray& ray) const
 {
     return ray.IsHollowRay() || !sceneData->solidBlocksInteriorMedia;

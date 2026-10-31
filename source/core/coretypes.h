@@ -217,6 +217,11 @@ class Media final
         std::shared_ptr<EagerField> PlanEagerField(const std::shared_ptr<Media>& copy, DBL cellLimit) const;
         /// Whether its prepared grid was fitted to this container.
         bool PreparedFor(ConstObjectPtr object) const;
+        /// Whether it may scatter anywhere within `reach` along each axis of `point` in `container`; true where it has no grid to tell.
+        bool ScattersNear(ConstObjectPtr container, const Vector3d& point, const Vector3d& reach) const;
+    private:
+        /// The finest published grid it has for `container`; null if none is.
+        const FastCache *ScatterGrid(ConstObjectPtr container) const;
 };
 
 /// @}

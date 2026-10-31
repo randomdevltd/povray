@@ -642,39 +642,40 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                             if (std::find(prepared.phases.begin(), prepared.phases.end(), phase) ==
                                 prepared.phases.end())
                                 prepared.phases.push_back(phase);
-                std::vector<std::vector<BounceFieldNode>> phaseNodes(prepared.phases.size());
-                for (size_t phase = 0; phase < phaseNodes.size(); ++phase)
-                {
-                    phaseNodes[phase].reserve(target.domain->NodeCount());
-                    for (size_t node = 0; node < target.domain->NodeCount(); ++node)
-                        phaseNodes[phase].emplace_back(samples,
-                                                       BounceOrderSeed(phase, order, groups.size(), node));
-                }
+                // Every phase scatters the same arriving light, so the nodes hold it once.
+                auto moments = std::make_shared<std::vector<VolumeIncident>>(target.domain->NodeCount());
                 const size_t groupIndex = groups.size();
                 const std::string step = orderItem + " " + Of("t", targetIndex, targets.size());
-                // A node stands for its cell: the inverse square from its centre has its mean over a ball of the cell's
-                // volume at this radius.
-                const double receiverRadius =
-                    std::cbrt(3.0 * target.domain->Volume() / target.domain->CellCount() / (4.0 * M_PI)) / std::sqrt(3.0);
+                // A node gathers over a box of its domain cell.
+                Vector3d cellSize;
+                for (int axis = X; axis <= Z; ++axis)
+                    cellSize[axis] = target.domain->Size()[axis] / double(target.domain->Counts()[axis]);
+                VolumeGather gather;
+                gather.lights.assign(sources.begin(), sources.end());
+                gather.samples = samples;
+                for (const auto& candidate : targets)
+                    if (!candidate.surface && candidate.domain == target.domain)
+                        gather.receivers.push_back(candidate.light->emitterContainer);
                 workers.Step(step + " volume");
                 workers.For(target.domain->NodeCount(), cooperate, [&](size_t node, size_t worker)
                 {
-                    const auto beams =
-                        CollectBounceIncident(workers[worker].trace, target.domain->Node(node), sources, samples,
-                                              BounceOrderSeed(0, order, groupIndex, node), nullptr, nullptr,
-                                              receiverRadius);
-                    for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
-                    {
-                        for (const auto& beam : beams)
-                            phaseNodes[phase][node].AddScatteringBeam(
-                                prepared.phases[phase].type, prepared.phases[phase].eccentricity,
-                                MathColour(1.0), beam.direction, beam.angularWeight);
-                        phaseNodes[phase][node].Seal();
-                    }
+                    // Nodes no scattering reaches through the stencil hold no light, as every coefficient there is zero.
+                    const Vector3d at = target.domain->Node(node);
+                    bool scatters = false;
+                    for (const auto container : gather.receivers)
+                        for (const Media& medium : container->interior->media)
+                            scatters = scatters || medium.ScattersNear(container, at, cellSize);
+                    if (!scatters)
+                        return;
+                    TraceTicket ticket(256, 0.0);
+                    thread_local std::vector<IncidentDraw> draws;
+                    thread_local std::vector<int> scratch;
+                    (*moments)[node] = GatherVolumeIncident(workers[worker].trace, at, cellSize, gather,
+                                                            BounceOrderSeed(0, order, groupIndex, node), ticket, draws, scratch);
                 });
-                for (auto& nodes : phaseNodes)
-                    prepared.fields.push_back(
-                        std::make_shared<const BounceFieldGrid>(target.domain, std::move(nodes)));
+                for (size_t phase = 0; phase < prepared.phases.size(); ++phase)
+                    prepared.fields.push_back(std::make_shared<const BounceMomentGrid>(
+                        target.domain, moments, prepared.phases[phase].type, prepared.phases[phase].eccentricity, phase == 0));
                 std::vector<const Target*> contributing;
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain &&

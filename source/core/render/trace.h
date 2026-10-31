@@ -375,6 +375,11 @@ class Trace
                                      MathColour& colour, const EmitterDraw& draw, bool shadows = true,
                                      const Vector3d* receiverNormal = nullptr, Interior* receiverInterior = nullptr);
 
+        /// Whether the first surface `ray` meets nearer than `depth` is an opaque one it leaves: its origin is inside an opaque solid.
+        bool LeavesOpaqueSolid(const Ray& ray, double depth);
+        /// Whether `point` is inside any of `objects`.
+        bool InsideAny(const Vector3d& point, const std::vector<ConstObjectPtr>& objects);
+
     protected: // TODO FIXME - should be private
 
         /// Structure used to cache reflection information for multi-layered textures.

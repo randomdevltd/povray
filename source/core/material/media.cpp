@@ -59,6 +59,7 @@
 #include "core/lighting/surfaceemitter.h"
 #include "core/lighting/emitteraabb.h"
 #include "core/material/preparedtransfer.h"
+#include "core/material/volumeincident.h"
 #include "core/material/physicalphase.h"
 #include "core/material/interiorfield.h"
 #include "core/math/finite.h"
@@ -1089,6 +1090,303 @@ void Media::FinalizePreparedField(ObjectPtr owner, TraceThreadData *td, const st
             fastCache->PrepareOptical(*this, *light, td, cooperate);
         }
     }
+}
+
+namespace
+{
+// Lloyd steps the lobe clustering takes after seeding.
+const int kLobeSteps = 8;
+
+double DrawMagnitude(const MathColour& light)
+{
+    double sum = 0.0;
+    for (int channel = 0; channel < MathColour::channels; ++channel)
+        sum += std::fabs(double(light[channel]));
+    return sum;
+}
+
+int NearestLobe(const Vector3d& toward, const std::array<Vector3d, kVolumeLobes>& centres, int count)
+{
+    int best = 0;
+    double closest = -HUGE_VAL;
+    for (int k = 0; k < count; ++k)
+    {
+        const double cosine = dot(toward, centres[k]);
+        if (cosine > closest)
+        {
+            closest = cosine;
+            best = k;
+        }
+    }
+    return best;
+}
+
+void GaussLegendre(int n, std::vector<double>& nodes, std::vector<double>& weights)
+{
+    nodes.assign(n, 0.0);
+    weights.assign(n, 0.0);
+    for (int i = 0; i < n; ++i)
+    {
+        double x = std::cos(M_PI * (i + 0.75) / (n + 0.5)), derivative = 1.0;
+        for (int step = 0; step < 100; ++step)
+        {
+            double p0 = 1.0, p1 = x;
+            for (int l = 2; l <= n; ++l)
+            {
+                const double p2 = ((2 * l - 1) * x * p1 - (l - 1) * p0) / l;
+                p0 = p1;
+                p1 = p2;
+            }
+            derivative = n * (x * p1 - p0) / (x * x - 1.0);
+            const double next = x - p1 / derivative;
+            const bool done = std::fabs(next - x) < 1e-15;
+            x = next;
+            if (done)
+                break;
+        }
+        nodes[i] = x;
+        weights[i] = 2.0 / ((1.0 - x * x) * derivative * derivative);
+    }
+}
+}
+
+VolumeIncident FitIncidentLobes(const std::vector<IncidentDraw>& draws, std::vector<int>& lobeOf)
+{
+    VolumeIncident result;
+    result.valid = true;
+    std::array<Vector3d, kVolumeLobes> centres;
+    int count = 0;
+    double heaviest = 0.0;
+    for (const IncidentDraw& draw : draws)
+        if (DrawMagnitude(draw.light) > heaviest)
+        {
+            heaviest = DrawMagnitude(draw.light);
+            centres[0] = draw.toward;
+            count = 1;
+        }
+    // Each further seed is the draw least covered by the seeds so far, weighted by its light.
+    while ((count > 0) && (count < kVolumeLobes))
+    {
+        double farthest = 0.0;
+        const IncidentDraw *pick = nullptr;
+        for (const IncidentDraw& draw : draws)
+        {
+            const double distance = DrawMagnitude(draw.light) * (1.0 - dot(draw.toward, centres[NearestLobe(draw.toward, centres, count)]));
+            if (distance > farthest)
+            {
+                farthest = distance;
+                pick = &draw;
+            }
+        }
+        if (!pick)
+            break;
+        centres[count++] = pick->toward;
+    }
+    lobeOf.resize(draws.size());
+    for (int step = 0; step <= kLobeSteps; ++step)
+    {
+        std::array<Vector3d, kVolumeLobes> sums;
+        for (std::size_t i = 0; i < draws.size(); ++i)
+        {
+            lobeOf[i] = NearestLobe(draws[i].toward, centres, count);
+            sums[lobeOf[i]] += draws[i].toward * DrawMagnitude(draws[i].light);
+        }
+        if (step == kLobeSteps)
+            break;
+        for (int k = 0; k < count; ++k)
+            if (sums[k].length() > 0.0)
+                centres[k] = sums[k].normalized();
+    }
+    std::array<MathColour, kVolumeLobes> light;
+    std::array<Vector3d, kVolumeLobes> moment;
+    for (std::size_t i = 0; i < draws.size(); ++i)
+    {
+        light[lobeOf[i]] += draws[i].light;
+        moment[lobeOf[i]] += draws[i].toward * double(draws[i].light.Weight());
+    }
+    for (int k = 0; k < count; ++k)
+        for (int c = 0; c < 3; ++c)
+        {
+            result.lobes[k].light[c] = float(light[k][c]);
+            result.lobes[k].moment[c] = float(moment[k][c]);
+        }
+    return result;
+}
+
+std::shared_ptr<const PhaseLobeTable> PhaseLobeTable::For(int type, double eccentricity)
+{
+    static std::mutex mutex;
+    static std::vector<std::weak_ptr<const PhaseLobeTable>> tables;
+    if (type != HENYEY_GREENSTEIN_SCATTERING)
+        eccentricity = 0.0;
+    std::lock_guard<std::mutex> lock(mutex);
+    for (auto entry = tables.begin(); entry != tables.end();)
+    {
+        const auto table = entry->lock();
+        if (!table)
+        {
+            entry = tables.erase(entry);
+            continue;
+        }
+        if ((table->type == type) && (table->eccentricity == eccentricity))
+            return table;
+        ++entry;
+    }
+    const auto table = std::make_shared<const PhaseLobeTable>(type, eccentricity);
+    tables.push_back(table);
+    return table;
+}
+
+// Legendre series of the phase times that of an even cone: the phase's coefficients g^l, or exact by quadrature for
+// the polynomial phases, and the cone's (P_{l-1} - P_{l+1})(cos a) / ((2l + 1)(1 - cos a)).
+PhaseLobeTable::PhaseLobeTable(int type, double eccentricity) :
+    type(type), eccentricity(eccentricity), values(std::size_t(kCones) * kAngles)
+{
+    std::vector<double> phase;
+    if (type == HENYEY_GREENSTEIN_SCATTERING)
+    {
+        const double g = std::fabs(eccentricity);
+        const int order = g > 0.0 ? int(std::min(8192.0, std::ceil(std::log(1e-7) / std::log(std::min(g, 0.9999))))) : 0;
+        phase.resize(order + 1);
+        double power = 1.0;
+        for (int l = 0; l <= order; ++l, power *= eccentricity)
+            phase[l] = power;
+    }
+    else
+    {
+        std::vector<double> nodes, weights;
+        GaussLegendre(48, nodes, weights);
+        phase.assign(33, 0.0);
+        for (int i = 0; i < 48; ++i)
+        {
+            const double factor = 0.5 * weights[i] * PhysicalPhaseFactor(type, eccentricity, nodes[i]);
+            double p0 = 1.0, p1 = nodes[i];
+            phase[0] += factor;
+            phase[1] += factor * p1;
+            for (int l = 2; l <= 32; ++l)
+            {
+                const double p2 = ((2 * l - 1) * nodes[i] * p1 - (l - 1) * p0) / l;
+                p0 = p1;
+                p1 = p2;
+                phase[l] += factor * p1;
+            }
+        }
+    }
+    const int order = int(phase.size()) - 1;
+    std::vector<double> series(std::size_t(kCones) * (order + 1)), legendre(order + 2);
+    for (int cone = 1; cone < kCones; ++cone)
+    {
+        const double edge = std::cos(M_PI * Sqr(double(cone) / (kCones - 1)));
+        legendre[0] = 1.0;
+        if (order + 1 >= 1)
+            legendre[1] = edge;
+        for (int l = 1; l <= order; ++l)
+            legendre[l + 1] = ((2 * l + 1) * edge * legendre[l] - l * legendre[l - 1]) / (l + 1);
+        for (int l = 0; l <= order; ++l)
+        {
+            const double coneTerm = l == 0 ? 1.0 : (legendre[l - 1] - legendre[l + 1]) / ((2 * l + 1) * (1.0 - edge));
+            series[std::size_t(cone) * (order + 1) + l] = (2 * l + 1) * phase[l] * coneTerm;
+        }
+    }
+    std::vector<double> sums(kCones);
+    for (int angle = 0; angle < kAngles; ++angle)
+    {
+        const double mu = std::cos(M_PI * angle / (kAngles - 1));
+        std::fill(sums.begin(), sums.end(), 0.0);
+        double p0 = 1.0, p1 = mu;
+        for (int l = 0; l <= order; ++l)
+        {
+            const double pl = l == 0 ? 1.0 : p1;
+            for (int cone = 1; cone < kCones; ++cone)
+                sums[cone] += series[std::size_t(cone) * (order + 1) + l] * pl;
+            if (l >= 1)
+            {
+                const double p2 = ((2 * l + 1) * mu * p1 - l * p0) / (l + 1);
+                p0 = p1;
+                p1 = p2;
+            }
+        }
+        values[angle] = float(PhysicalPhaseFactor(type, eccentricity, mu));
+        for (int cone = 1; cone < kCones; ++cone)
+            values[std::size_t(cone) * kAngles + angle] = float(std::max(0.0, sums[cone]));
+    }
+}
+
+double PhaseLobeTable::Factor(double cosine, double spread) const
+{
+    const double mu = std::max(-1.0, std::min(1.0, cosine));
+    const double cone = std::sqrt(std::acos(std::max(-1.0, std::min(1.0, 2.0 * spread - 1.0))) / M_PI) * (kCones - 1);
+    const double angle = std::acos(mu) * (kAngles - 1) / M_PI;
+    const int c0 = std::min(kCones - 2, int(cone)), a0 = std::min(kAngles - 2, int(angle));
+    const double fc = cone - c0, fa = angle - a0;
+    const auto row = [&](int c) -> double
+    {
+        if (c == 0)
+            return PhysicalPhaseFactor(type, eccentricity, mu);
+        const float *v = &values[std::size_t(c) * kAngles + a0];
+        return (1.0 - fa) * v[0] + fa * v[1];
+    };
+    return (1.0 - fc) * row(c0) + fc * row(c0 + 1);
+}
+
+MathColour PhaseLobeTable::Scatter(const VolumeIncident& incident, const Vector3d& outgoing) const
+{
+    MathColour result;
+    for (int k = 0; k < kVolumeLobes; ++k)
+    {
+        const VolumeLobe& lobe = incident.lobes[k];
+        MathColour light;
+        for (int c = 0; c < 3; ++c)
+            light[c] = lobe.light[c];
+        if (light.IsZero())
+            continue;
+        const Vector3d moment(lobe.moment[0], lobe.moment[1], lobe.moment[2]);
+        const double length = moment.length(), weight = light.Weight();
+        if (!(length > 0.0) || (weight == 0.0))
+        {
+            result += light;
+            continue;
+        }
+        const double sign = weight > 0.0 ? 1.0 : -1.0;
+        result += light * Factor(-sign * dot(moment, outgoing) / length, std::min(1.0, length / std::fabs(weight)));
+    }
+    return result;
+}
+
+const Media::FastCache *Media::ScatterGrid(ConstObjectPtr container) const
+{
+    const FastCache *chosen = nullptr;
+    for (const auto& binding : preparedBindings)
+        if ((binding->container == container) && binding->published && binding->fieldReady &&
+            (!chosen || (binding->step < chosen->step)))
+            chosen = binding.get();
+    return chosen;
+}
+
+bool Media::ScattersNear(ConstObjectPtr container, const Vector3d& point, const Vector3d& reach) const
+{
+    if (!use_scattering || Scattering.IsZero())
+        return false;
+    const FastCache *binding = ScatterGrid(container);
+    if (!binding)
+        return true;
+    if (binding->constantDensity)
+        return true;
+    const int n[3] = { binding->nx, binding->ny, binding->nz };
+    int lo[3], hi[3];
+    for (int axis = 0; axis < 3; axis++)
+    {
+        const DBL scale = n[axis] / binding->size[axis];
+        lo[axis] = std::max(0, int(floor((point[axis] - reach[axis] - binding->low[axis]) * scale - 0.5)) - 1);
+        hi[axis] = std::min(n[axis] - 1, int(floor((point[axis] + reach[axis] - binding->low[axis]) * scale - 0.5)) + 2);
+    }
+    for (int z = lo[2]; z <= hi[2]; z++)
+        for (int y = lo[1]; y <= hi[1]; y++)
+            for (int x = lo[0]; x <= hi[0]; x++)
+                for (int ch = 0; ch < MathColour::channels; ch++)
+                    if (binding->density[(size_t(z) * n[1] + y) * n[0] + x][ch] * Scattering[ch] > 0.0)
+                        return true;
+    return false;
 }
 
 void Media::RequirePreparedField() const

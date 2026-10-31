@@ -104,6 +104,9 @@ Changed Behaviour
     allocating constant density cells. Prepared modifier fields also select
     fixed integration when the underlying media are constant.
 
+  - Volume bounce gathers each order at its volume's nodes as up to six
+    directional lobes, each scattered by the medium's phase over its spread.
+
   - Prepared method 4 scattering samples camera distance and volume-light
     position jointly, sharing each light's sample budget across a geometric
     ray segment and its numerical refraction chords. Optical-depth and glow
