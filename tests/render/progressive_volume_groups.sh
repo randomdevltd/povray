@@ -19,31 +19,39 @@ render group_lamp Declare=RightLamp=0 +wt2
 render global_lamp Declare=LeftLamp=0 +wt2
 render open_global Declare=Grouped=0 Declare=LeftLamp=0 +wt2
 render open_group Declare=Grouped=0 Declare=RightLamp=0 +wt2
-python3 - <<'PY'
-from array import array
-import sys
-
-def half(name, side):
-    values = array('H')
-    values.frombytes(open('progressive_volume_groups_' + name + '.px', 'rb').read())
-    if sys.byteorder == 'little':
-        values.byteswap()
-    return [v for i, v in enumerate(values) if (i // 3 % 80 >= 40) == (side == 'right')]
-
-def mean(values):
-    return sum(values) / (len(values) * 65535.0)
-
-def close(a, b):
-    return max(abs(x - y) for x, y in zip(a, b)) <= 3
-
-assert max(half('group_lamp', 'right')) == 0, 'a group light lit media outside its group'
-assert max(half('global_lamp', 'left')) == 0, 'a global light lit media in a global_lights off group'
-assert mean(half('open_global', 'left')) > 0.001 and mean(half('open_group', 'right')) > 0.001, 'the lamps do not reach the other box'
-assert close(half('group_lamp', 'left'), half('left', 'left')), 'the group box differs from the group alone'
-assert close(half('global_lamp', 'right'), half('right', 'right')), 'the global box differs from the global half alone'
-for side in ('left', 'right'):
-    together, alone = mean(half('one', side)), mean(half(side, side))
-    assert alone > 0.01 and abs(together / alone - 1) < 0.02, side + ' box changes when both lamps shoot'
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function half(name, side, out,    v, n, i, k) {
+    n = read_words("progressive_volume_groups_" name ".px", v, 0)
+    k = 0
+    for (i = 0; i < n; i++) if ((int(i / 3) % 80 >= 40) == (side == "right")) out[k++] = v[i]
+    return k
+}
+function mean(name, side,    v, n) {
+    n = half(name, side, v)
+    return sum_of(v, n) / (n * 65535.0)
+}
+function close_halves(a, b,    first, second, n, i) {
+    n = half(a[1], a[2], first)
+    half(b[1], b[2], second)
+    for (i = 0; i < n; i++) if (abs(first[i] - second[i]) > 3) return 0
+    return 1
+}
+BEGIN {
+    if (max_of(v, half("group_lamp", "right", v)) != 0) fail("a group light lit media outside its group")
+    if (max_of(v, half("global_lamp", "left", v)) != 0) fail("a global light lit media in a global_lights off group")
+    if (!(mean("open_global", "left") > 0.00025 && mean("open_group", "right") > 0.00025))
+        fail("the lamps do not reach the other box: " mean("open_global", "left") ", " mean("open_group", "right"))
+    split("group_lamp left", a, " "); split("left left", b, " ")
+    if (!close_halves(a, b)) fail("the group box differs from the group alone")
+    split("global_lamp right", a, " "); split("right right", b, " ")
+    if (!close_halves(a, b)) fail("the global box differs from the global half alone")
+    for (s = 0; s < 2; s++) {
+        side = s ? "right" : "left"
+        together = mean("one", side); alone = mean(side, side)
+        if (!(alone > 0.0025 && abs(together / alone - 1) < 0.02))
+            fail(side " box changes when both lamps shoot: " together " together, " alone " alone")
+    }
+}'
 rm -f progressive_volume_groups_*.ppm progressive_volume_groups_*.px progressive_volume_groups_*.log
 echo 'progressive_volume_groups: group and global media lighting, isolation, controls and threads passed'

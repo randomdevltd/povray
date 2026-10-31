@@ -15,34 +15,23 @@ for part in 0 1; do
     render "open0$part" Declare=Union=$part Declare=Shadowless=1
     render "lit1$part" Declare=Subsurface=1 Declare=Union=$part
 done
-python3 - <<'PY'
-def pixels(path):
-    data = open(path, 'rb').read()
-    head, _, rest = data.partition(b'\n\n')
-    size, _, body = rest.partition(b'\n')
-    height, width = int(size.split()[1]), int(size.split()[3])
-    out, i = [], 0
-    for _ in range(height):
-        assert body[i] == 2 and body[i + 1] == 2
-        i += 4
-        channels = [[] for _ in range(4)]
-        for c in range(4):
-            while len(channels[c]) < width:
-                n = body[i]; i += 1
-                if n > 128:
-                    channels[c] += [body[i]] * (n - 128); i += 1
-                else:
-                    channels[c] += list(body[i:i + n]); i += n
-        for r, g, b, e in zip(*channels):
-            out.append(0.0 if e == 0 else (r + g + b) * 2.0 ** (e - 136))
-    return out
-total = lambda name: sum(pixels(name + '.hdr'))
-for part in '01':
-    lit, opened = total('lit0' + part), total('open0' + part)
-    # Nothing lies between the light and the lit side of a convex receiver, so any shadow there is its own.
-    assert lit > 0 and abs(lit / opened - 1) < 0.002, (part, lit, opened)
-for sslt in '01':
-    alone, joined = total('lit' + sslt + '0'), total('lit' + sslt + '1')
-    assert abs(joined / alone - 1) < 0.01, (sslt, alone, joined)
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function total(name,    r, g, bl, e, n, i, sum) {
+    n = read_hdr(name ".hdr", r, g, bl, e)
+    sum = 0
+    for (i = 0; i < n; i++) sum += e[i] == 0 ? 0.0 : (r[i] + g[i] + bl[i]) * 2 ^ (e[i] - 136)
+    return sum
+}
+BEGIN {
+    for (part = 0; part < 2; part++) {
+        lit = total("lit0" part); opened = total("open0" part)
+        # Nothing lies between the light and the lit side of a convex receiver, so any shadow there is its own.
+        if (!(lit > 0 && abs(lit / opened - 1) < 0.002)) fail("part " part ": lit " lit ", shadowless " opened ", limit 0.2%")
+    }
+    for (sslt = 0; sslt < 2; sslt++) {
+        alone = total("lit" sslt "0"); joined = total("lit" sslt "1")
+        if (!(abs(joined / alone - 1) < 0.01)) fail("subsurface " sslt ": alone " alone ", as a union part " joined ", limit 1%")
+    }
+}'
 echo 'surface_part_accuracy: an isosurface lit alone and as a union part shows no self-shadow and the same light'

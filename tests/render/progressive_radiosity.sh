@@ -23,24 +23,23 @@ state_bytes=$(wc -c < progressive_radiosity_saved.pov-state)
 head -c $((state_bytes - 100)) progressive_radiosity_saved.pov-state > progressive_radiosity_resumed.pov-state
 render resumed +pr +wt4 +c
 cmp progressive_radiosity_progressive.px progressive_radiosity_resumed.px
-python3 - <<'PY'
-from array import array
-import sys
-
-def rows(name, first, last):
-    values = array('H')
-    values.frombytes(open('progressive_radiosity_' + name + '.px', 'rb').read())
-    if sys.byteorder == 'little':
-        values.byteswap()
-    return sum(values[first * 192:last * 192]) / ((last - first) * 192 * 65535.0)
-
-wall = {name: rows(name, 24, 36) for name in ('one', 'direct', 'dark', 'classic')}
-floor = {name: rows(name, 36, 48) for name in ('one', 'direct', 'classic')}
-print('progressive_radiosity lower wall: %(one).4f radiosity, %(direct).4f without, %(classic).4f classic' % wall)
-assert wall['direct'] == 0.0 and wall['dark'] == 0.0, 'the wall is lit without radiosity or without the caustic'
-assert wall['one'] > 0.02, 'radiosity does not carry the caustic to the wall'
-assert 0.8 < wall['one'] / wall['classic'] < 1.25, 'the bounced caustic differs from classic photons'
-assert 0.8 < floor['one'] / floor['classic'] < 1.25 and floor['direct'] > 0.05
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function rows(name, first, last,    v, n, i, sum) {
+    n = read_words("progressive_radiosity_" name ".px", v, 0)
+    sum = 0
+    for (i = first * 192; i < last * 192 && i < n; i++) sum += v[i]
+    return sum / ((last - first) * 192 * 65535.0)
+}
+BEGIN {
+    one = rows("one", 24, 36); direct = rows("direct", 24, 36); dark = rows("dark", 24, 36); classic = rows("classic", 24, 36)
+    printf "progressive_radiosity lower wall: %.4f radiosity, %.4f without, %.4f classic\n", one, direct, classic
+    if (!(direct == 0.0 && dark == 0.0)) fail("the wall is lit without radiosity or without the caustic: " direct ", " dark)
+    if (!(one > 0.02)) fail("radiosity does not carry the caustic to the wall: " one)
+    if (!(0.8 < one / classic && one / classic < 1.25)) fail("the bounced caustic differs from classic photons: " one " / " classic)
+    floor_one = rows("one", 36, 48); floor_direct = rows("direct", 36, 48); floor_classic = rows("classic", 36, 48)
+    if (!(0.8 < floor_one / floor_classic && floor_one / floor_classic < 1.25 && floor_direct > 0.05))
+        fail("floor: radiosity " floor_one ", classic " floor_classic ", direct " floor_direct)
+}'
 rm -f progressive_radiosity_*.ppm progressive_radiosity_*.px progressive_radiosity_*.log progressive_radiosity_*.pov-state
 echo 'progressive_radiosity: bounced caustic, threads, continue and classic agreement passed'

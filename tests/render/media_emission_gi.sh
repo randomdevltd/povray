@@ -20,23 +20,27 @@ render scatter_on Declare=Spot=1 Declare=Sigma=0.5
 render scatter_no_gi Declare=Spot=1 Declare=Sigma=0.5 Declare=Radio=0
 render visible_low Declare=ViewGlow=1 Declare=Radio=0 Declare=Glow=0.01
 render visible_high Declare=ViewGlow=1 Declare=Radio=0 Declare=Glow=0.1
-python3 - "$SRCDIR/tests/render" <<'PY'
-import sys
-sys.dont_write_bytecode = True
-sys.path.insert(0, sys.argv[1])
-from pathlib import Path
-from volume_transport_reference import read_ppm
-def pixels(name):
-    return read_ppm(Path(name + '.ppm'))[2]
-def mean(name):
-    values = pixels(name)
-    return sum(values) / len(values)
-for name in ['appearance_only', 'scatter_none', 'scatter_no_gi']:
-    assert max(pixels(name)) == 0, (name, mean(name))
-for first, second in [('lit_low', 'lit_high'), ('modified_low', 'modified_high')]:
-    a, b = pixels(first), pixels(second)
-    assert a == b, (first, second, mean(first), mean(second))
-assert mean('scatter_on') > 0.0001, ('physical scattered light did not reach the gather', mean('scatter_on'))
-assert mean('visible_low') > 0 and mean('visible_high') > 5 * mean('visible_low')
-print('media_emission_gi: appearance excluded from gathering, physical scattering retained, visible glow preserved')
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function mean(name,    v, n) {
+    n = read_ppm(name ".ppm", v)
+    return sum_of(v, n) / n
+}
+BEGIN {
+    split("appearance_only scatter_none scatter_no_gi", dark, " ")
+    for (i = 1; i <= 3; i++) {
+        n = read_ppm(dark[i] ".ppm", v)
+        if (max_of(v, n) != 0) fail(dark[i] ": mean " mean(dark[i]) ", expected black")
+    }
+    split("lit_low lit_high modified_low modified_high", pairs, " ")
+    for (i = 1; i <= 4; i += 2) {
+        na = read_ppm(pairs[i] ".ppm", a)
+        nb = read_ppm(pairs[i + 1] ".ppm", b)
+        if (!same_values(a, na, b, nb))
+            fail(pairs[i] " and " pairs[i + 1] " differ: means " mean(pairs[i]) ", " mean(pairs[i + 1]))
+    }
+    if (!(mean("scatter_on") > 0.0001)) fail("physical scattered light did not reach the gather: mean " mean("scatter_on"))
+    if (!(mean("visible_low") > 0 && mean("visible_high") > 5 * mean("visible_low")))
+        fail("visible glow: low mean " mean("visible_low") ", high mean " mean("visible_high") ", expected high above 5x low")
+    print "media_emission_gi: appearance excluded from gathering, physical scattering retained, visible glow preserved"
+}'

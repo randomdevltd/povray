@@ -33,31 +33,44 @@ for parallel in 0 1; do
     cmp "photon_target_weights_patch$parallel.targets" "photon_target_weights_split$parallel.targets"
     cmp "photon_target_weights_patch$parallel.px" "photon_target_weights_split$parallel.px"
 done
-python3 - <<'PY'
-import re
-from pathlib import Path
-
-def split(name):
-    text = Path(f'photon_target_weights_{name}.targets').read_text()
-    aimed = [int(a) for a in re.findall(r'aimed (\d+)', text)]
-    assert len(aimed) == 2, text
-    return aimed[1] / sum(aimed), sum(aimed)
-
-def mean(name):
-    data = Path(f'photon_target_weights_{name}.px').read_bytes()
-    return sum(256 * data[i] + data[i + 1] for i in range(0, len(data), 2)) / (len(data) / 2)
-
-for parallel in (0, 1):
-    even = split(f'even{parallel}')[0]
-    for name in ('even', 'canopy', 'patch'):
-        got, aimed = split(f'{name}{parallel}')
-        print(f'photon_target_weights: parallel {parallel} {name}: patch share {got:.4f} (even {even:.4f}), '
-              f'{aimed} aimed, image mean {mean(name + str(parallel)) / mean("even" + str(parallel)):.4f} of even')
-        # half the samples split by weight: weight 4 moves the patch's share of that half from 1/2 to 4/5 or 1/5
-        assert name == 'even' or (got - even) * (1 if name == 'patch' else -1) > 0.1, (parallel, name, got)
-        assert aimed == 65536, (parallel, name, aimed)
-        assert abs(mean(name + str(parallel)) / mean('even' + str(parallel)) - 1) < 0.03, (parallel, name)
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function split_share(name,    path, text, line, count, rest, aimed) {
+    path = "photon_target_weights_" name ".targets"
+    text = ""
+    while ((getline line < path) > 0) text = text line "\n"
+    close(path)
+    count = 0
+    rest = text
+    while (match(rest, /aimed [0-9]+/)) {
+        aimed[++count] = substr(rest, RSTART + 6, RLENGTH - 6) + 0
+        rest = substr(rest, RSTART + RLENGTH)
+    }
+    if (count != 2) fail(path ": expected two aimed counts in: " text)
+    AIMED = aimed[1] + aimed[2]
+    return aimed[2] / AIMED
+}
+function mean(name,    v, n) {
+    n = read_words("photon_target_weights_" name ".px", v, 0)
+    return sum_of(v, n) / n
+}
+BEGIN {
+    split("even canopy patch", names, " ")
+    for (parallel = 0; parallel < 2; parallel++) {
+        even = split_share("even" parallel)
+        for (i = 1; i <= 3; i++) {
+            name = names[i]
+            got = split_share(name parallel)
+            ratio = mean(name parallel) / mean("even" parallel)
+            printf "photon_target_weights: parallel %d %s: patch share %.4f (even %.4f), %d aimed, image mean %.4f of even\n",
+                parallel, name, got, even, AIMED, ratio
+            # half the samples split by weight: weight 4 moves the patch share of that half from 1/2 to 4/5 or 1/5
+            if (!(name == "even" || (got - even) * (name == "patch" ? 1 : -1) > 0.1)) fail("parallel " parallel " " name ": patch share " got " did not move from " even)
+            if (AIMED != 65536) fail("parallel " parallel " " name ": " AIMED " aimed, expected 65536")
+            if (!(abs(ratio - 1) < 0.03)) fail("parallel " parallel " " name ": image mean " ratio " of even, limit 3%")
+        }
+    }
+}'
 refuse negative "$SRCDIR/tests/render/photon_target_rig.pov" Declare=PatchWeight=-1
 refuse infinite "$SRCDIR/tests/render/photon_target_rig.pov" Declare=CanopyWeight=1e300
 cat > photon_target_weights_nan.pov <<'SCENE'

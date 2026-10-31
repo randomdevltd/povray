@@ -40,41 +40,45 @@ for name in open aperture blocked crossings oriented; do
     esac
     render "classic_$name" Declare=Method=1 +wt2 $options
 done
-python3 - <<'PY'
-from array import array
-from pathlib import Path
-import sys
-
-def values(name):
-    output = array('H')
-    output.frombytes(Path(f'progressive_emitter_{name}.ppm').read_bytes()[-32*24*6:])
-    if sys.byteorder == 'little':
-        output.byteswap()
-    return output
-
-def equal(a, b, tolerance=2):
-    error = max(abs(x-y) for x, y in zip(values(a), values(b)))
-    assert error <= tolerance, (a, b, error)
-
-equal('rectangle', 'oriented', 0)
-equal('oriented', 'oriented_four', 0)
-equal('aperture', 'aperture_four', 0)
-for a, b in [('open', 'aperture'), ('open', 'crossings'), ('open', 'inside_aperture'), ('oriented_open', 'oriented_aperture'),
-             ('parallel', 'parallel_aperture'), ('medium', 'aperture_medium'),
-             ('open', 'aperture_skipped_medium'), ('classic_open', 'classic_aperture'), ('classic_open', 'classic_crossings')]:
-    equal(a, b)
-for name in ['oriented', 'aperture', 'medium', 'parallel', 'classic_oriented']:
-    assert sum(values(name)) > 100, name
-for name in ['blocked', 'wall', 'downstream_wall', 'classic_blocked']:
-    assert sum(values(name)) == 0, name
-for low, high in [('oriented', 'oriented_power'), ('aperture', 'aperture_power')]:
-    ratio = sum(values(high)) / sum(values(low))
-    assert max(values(high)) < 65535 and 1.99 < ratio < 2.01, (low, high, ratio)
-ratio = sum(values('half')) / sum(values('open'))
-assert 0.4 < ratio < 0.6, ('half aperture power', ratio)
-assert sum(values('medium')) < 0.9 * sum(values('open'))
-assert sum(values('skipped_medium')) < 0.9 * sum(values('open'))
-print(f'half aperture / open power: {ratio:.6f}')
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function values(name, v) {
+    return read_tail_words("progressive_emitter_" name ".ppm", v, 32 * 24 * 3)
+}
+function power(name,    v) {
+    return sum_of(v, values(name, v))
+}
+function equal(a, b, tolerance,    va, vb, n, i, error) {
+    n = values(a, va)
+    values(b, vb)
+    error = 0
+    for (i = 0; i < n; i++) if (abs(va[i] - vb[i]) > error) error = abs(va[i] - vb[i])
+    if (!(error <= tolerance)) fail(a " and " b " differ by " error ", limit " tolerance)
+}
+BEGIN {
+    equal("rectangle", "oriented", 0)
+    equal("oriented", "oriented_four", 0)
+    equal("aperture", "aperture_four", 0)
+    count = split("open aperture open crossings open inside_aperture oriented_open oriented_aperture parallel parallel_aperture " \
+        "medium aperture_medium open aperture_skipped_medium classic_open classic_aperture classic_open classic_crossings", pairs, " ")
+    for (i = 1; i < count; i += 2) equal(pairs[i], pairs[i + 1], 2)
+    count = split("oriented aperture medium parallel classic_oriented", names, " ")
+    for (i = 1; i <= count; i++) if (!(power(names[i]) > 100)) fail(names[i] ": power " power(names[i]) ", expected above 100")
+    count = split("blocked wall downstream_wall classic_blocked", names, " ")
+    for (i = 1; i <= count; i++) if (power(names[i]) != 0) fail(names[i] ": power " power(names[i]) ", expected 0")
+    split("oriented oriented_power aperture aperture_power", pairs, " ")
+    for (i = 1; i < 4; i += 2) {
+        n = values(pairs[i + 1], high)
+        ratio = sum_of(high, n) / power(pairs[i])
+        if (!(max_of(high, n) < 65535 && 1.99 < ratio && ratio < 2.01))
+            fail(pairs[i] " to " pairs[i + 1] ": power ratio " ratio ", peak " max_of(high, n))
+    }
+    ratio = power("half") / power("open")
+    if (!(0.4 < ratio && ratio < 0.6)) fail("half aperture power: " ratio)
+    if (!(power("medium") < 0.9 * power("open"))) fail("medium power " power("medium") " is not below 0.9 of open " power("open"))
+    if (!(power("skipped_medium") < 0.9 * power("open")))
+        fail("skipped_medium power " power("skipped_medium") " is not below 0.9 of open " power("open"))
+    printf "half aperture / open power: %.6f\n", ratio
+}'
 rm -f progressive_emitter_*.ppm progressive_emitter_*.log progressive_emitter_*.pov-state
 echo 'progressive_emitter_parity: active sources, power, threads, aperture misses, CSG crossings, blockers and interiors passed'

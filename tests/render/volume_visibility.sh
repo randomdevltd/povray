@@ -16,17 +16,18 @@ render small_opaque_sphere Declare=Opaque=1 Declare=SceneScale=0.1
 render clear_slab Declare=Kind=1
 render blocked_slab Declare=Kind=1 Declare=Blocker=1
 render scaled_blocked_slab Declare=Kind=1 Declare=Blocker=1 Declare=SceneScale=10
-python3 - "$SRCDIR/tests/render" <<'PY'
-import sys
-sys.dont_write_bytecode = True
-sys.path.insert(0, sys.argv[1])
-from pathlib import Path
-from volume_transport_reference import read_ppm
-for name in ['clear_sphere', 'clear_slab']:
-    values = read_ppm(Path(name + '.ppm'))[2]
-    assert sum(values) / len(values) > 0.01, (name, max(values))
-for name in ['opaque_sphere', 'small_opaque_sphere', 'blocked_slab', 'scaled_blocked_slab']:
-    values = read_ppm(Path(name + '.ppm'))[2]
-    assert max(values) == 0, (name, max(values), sum(values) / len(values))
-print('volume_visibility: opaque enclosing and external surfaces block the full sampled connection')
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+BEGIN {
+    split("clear_sphere clear_slab", lit, " ")
+    for (i = 1; i <= 2; i++) {
+        n = read_ppm(lit[i] ".ppm", values)
+        if (!(sum_of(values, n) / n > 0.01)) fail(lit[i] ": mean " sum_of(values, n) / n ", maximum " max_of(values, n) "; expected mean above 0.01")
+    }
+    split("opaque_sphere small_opaque_sphere blocked_slab scaled_blocked_slab", dark, " ")
+    for (i = 1; i <= 4; i++) {
+        n = read_ppm(dark[i] ".ppm", values)
+        if (max_of(values, n) != 0) fail(dark[i] ": maximum " max_of(values, n) ", mean " sum_of(values, n) / n "; expected black")
+    }
+    print "volume_visibility: opaque enclosing and external surfaces block the full sampled connection"
+}'

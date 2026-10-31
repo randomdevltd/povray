@@ -17,37 +17,35 @@ render touch_few Declare=SingleSamples=16
 render touch_many Declare=SingleSamples=512
 render far_few Declare=SingleSamples=16 Declare=Far=1
 render far_many Declare=SingleSamples=512 Declare=Far=1
-python3 - <<'PY'
-import glob
-def pixels(path):
-    data = open(path, 'rb').read()
-    head, _, rest = data.partition(b'\n\n')
-    size, _, body = rest.partition(b'\n')
-    height, width = int(size.split()[1]), int(size.split()[3])
-    out, i = [], 0
-    for _ in range(height):
-        assert body[i] == 2 and body[i + 1] == 2
-        i += 4
-        channels = [[] for _ in range(4)]
-        for c in range(4):
-            while len(channels[c]) < width:
-                n = body[i]; i += 1
-                if n > 128:
-                    channels[c] += [body[i]] * (n - 128); i += 1
-                else:
-                    channels[c] += list(body[i:i + n]); i += n
-        for r, g, b, e in zip(*channels):
-            out.append(0.0 if e == 0 else max(r, g, b) * 2.0 ** (e - 136))
-    return out
-mean = lambda path: sum(pixels(path)) / len(pixels(path))
-# Few and many single-scattering samples estimate the same light, touching the membrane or well clear of it.
-for case in ('touch', 'far'):
-    few, many = mean(case + '_few.hdr'), mean(case + '_many.hdr')
-    assert abs(few / many - 1) < 0.03, (case, few, many)
-for path in sorted(glob.glob('cavity*.hdr')):
-    values = sorted(pixels(path))
-    median, peak = values[len(values) // 2], values[-1]
-    # Single scattering from a light touching the membrane stays within the diffuse light's range.
-    assert median > 0 and peak < 8 * median, (path, median, peak)
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function pixels(path, out,    r, g, bl, e, n, i) {
+    n = read_hdr(path, r, g, bl, e)
+    for (i = 0; i < n; i++) out[i] = e[i] == 0 ? 0.0 : max2(max2(r[i], g[i]), bl[i]) * 2 ^ (e[i] - 136)
+    return n
+}
+function mean(path,    v, n) {
+    n = pixels(path, v)
+    return sum_of(v, n) / n
+}
+function sort(v, n,    gap, i, j, t) {
+    for (gap = int(n / 2); gap > 0; gap = int(gap / 2))
+        for (i = gap; i < n; i++)
+            for (j = i; j >= gap && v[j - gap] > v[j]; j -= gap) { t = v[j]; v[j] = v[j - gap]; v[j - gap] = t }
+}
+BEGIN {
+    for (c = 0; c < 2; c++) {
+        kind = c ? "far" : "touch"
+        few = mean(kind "_few.hdr"); many = mean(kind "_many.hdr")
+        # Few and many single-scattering samples estimate the same light, touching the membrane or well clear of it.
+        if (!(abs(few / many - 1) < 0.03)) fail(kind ": mean " few " with few samples, " many " with many; limit 3%")
+    }
+    for (a = 1; a < ARGC; a++) {
+        n = pixels(ARGV[a], values)
+        sort(values, n)
+        median = values[int(n / 2)]; peak = values[n - 1]
+        # Single scattering from a light touching the membrane stays within the range of the diffuse light.
+        if (!(median > 0 && peak < 8 * median)) fail(ARGV[a] ": median " median ", peak " peak "; peak must stay below 8 medians")
+    }
+}' cavity*.hdr
 echo 'subsurface_cavity_light: single scattering from a light touching the membrane stays bounded'

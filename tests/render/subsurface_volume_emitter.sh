@@ -22,7 +22,31 @@ for pattern in 'samples/set), [1-9][0-9]* deposits' ' [1-9][0-9]* contributions;
     tr '\n' ' ' < sslt_volume_near_photons.log | tr -s ' ' | grep -q "$pattern" ||
         { cat sslt_volume_near_photons.log; exit 1; }
 done
-python3 "$SRCDIR/tests/render/subsurface_volume_emitter_reference.py" .
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function pixels(name, v,    n, average) {
+    n = read_ppm("sslt_volume_" name ".ppm", v)
+    if (IMAGE_W != 12 || IMAGE_H != 12) fail(name ": " IMAGE_W "x" IMAGE_H ", expected 12x12")
+    average = sum_of(v, n) / n
+    if (!(min_of(v, n) >= 0 && 0.001 < average && average < 0.9))
+        fail(name ": minimum " min_of(v, n) ", mean " average ", expected mean in (0.001, 0.9)")
+    return n
+}
+function mean(name,    v) {
+    return sum_of(v, pixels(name, v)) / 144.0
+}
+BEGIN {
+    # J = Phi/(4*pi); the classic inverse-square colour is J/pi.
+    na = pixels("far_volume", a); nb = pixels("far_point", b)
+    compare("SSLT far physical intensity", a, na, b, nb, 0.03)
+    # A small distant emitter single scattering, alone, converges to an equal-power point light.
+    volume = mean("far_volume") - mean("far_volume_diffuse")
+    point = mean("far_point") - mean("far_point_diffuse")
+    printf "SSLT far single scattering: volume %.6f, point %.6f\n", volume, point
+    if (!(point > 0 && abs(volume / point - 1) < 0.05)) fail("SSLT far single scattering: volume " volume ", point " point ", limit 5%")
+    na = pixels("near_photons", a); nb = pixels("near_direct", b)
+    compare("SSLT near physical photon irradiance", a, na, b, nb, 0.08)
+}'
 echo 'subsurface_volume_emitter: physical far-field point equivalence and near-field photon irradiance passed'
 render near_reuse Declare=NearSource=1 Declare=SingleSamples=0 Declare=Photons=1 Declare=PhotonQuality=0.25 Declare=ReuseViews=1
 tr -d ' \r\n' < sslt_volume_near_reuse.log > sslt_volume_near_reuse.txt

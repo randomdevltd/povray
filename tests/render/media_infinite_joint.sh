@@ -14,4 +14,5 @@ done
 for field in 'Forbidden4 Procedure' 'Old Integrator'; do
     grep -Eq "$field:[[:space:]]+0([[:space:]]|$)" infinite.log || { cat infinite.log; exit 1; }
 done
-python3 "$SRCDIR/tests/render/media_infinite_joint_reference.py" --image infinite.ppm --output infinite-reference.json
+. "$SRCDIR/tests/render/image.sh"
+image_awk -l media_infinite_joint_reference 'BEGIN { media_infinite_joint_check(ARGV[1]) }' infinite.ppm

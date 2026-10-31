@@ -57,24 +57,28 @@ too_big option 'Photon_Memory option' Photon_Memory=0.00001
 (unset POV_PHOTON_MEMORY; render budget_option_up Declare=Dispersion=1.03 Declare=PhotonFile=2 Declare=PhotonMemory=0.00001 Photon_Memory=64 +wt2)
 cmp progressive_photon_file_Dispersion-loaded.px progressive_photon_file_budget_option_up.px
 cp "$FILE" progressive_photon_file.whole
-python3 - progressive_photon_file.whole "$FILE" <<'PYOLD'
-import struct, sys
-data = bytearray(open(sys.argv[1], 'rb').read())
-struct.pack_into('=I', data, 8, 2)
-open(sys.argv[2], 'wb').write(data)
-PYOLD
+# The file is in native byte order: u32 reads a word of it, patch writes it back with bytes replaced.
+little=$(printf '\001\000\000\000' | od -An -t u4 | tr -d ' ')
+u32() { od -An -t u4 -j "$1" -N 4 progressive_photon_file.whole | tr -d ' '; }
+native() {
+    escapes=
+    for byte in "$@"; do
+        if [ "$little" = 1 ]; then escapes=$escapes$(printf '\\%03o' "$byte"); else escapes=$(printf '\\%03o' "$byte")$escapes; fi
+    done
+    printf '%s' "$escapes"
+}
+native_u32() { native $(($1 & 255)) $(($1 >> 8 & 255)) $(($1 >> 16 & 255)) $(($1 >> 24 & 255)); }
+patch() {
+    { head -c "$1" progressive_photon_file.whole; printf "$3"; tail -c +$(($1 + $2 + 1)) progressive_photon_file.whole; } > "$FILE"
+}
+skip_header() {
+    at=12
+    at=$((at + 4 + $(u32 $at))); at=$((at + 8)); at=$((at + 4 + $(u32 $at))); at=$((at + 4)); at=$((at + 4 + $(u32 $at)))
+}
+patch 8 4 "$(native_u32 2)"
 refuse old_version 'format version 2; this build reads version 3' Declare=Dispersion=1.03
-python3 - progressive_photon_file.whole "$FILE" <<'PYRECEIVER'
-import struct, sys
-data = bytearray(open(sys.argv[1], 'rb').read())
-at = 12
-def skip_string():
-    global at
-    at += 4 + struct.unpack_from('=I', data, at)[0]
-skip_string(); at += 8; skip_string(); at += 4; skip_string()
-struct.pack_into('=I', data, at, (1 << 29) + 1)
-open(sys.argv[2], 'wb').write(data)
-PYRECEIVER
+skip_header
+patch "$at" 4 "$(native_u32 $(((1 << 29) + 1)))"
 refuse receiver_overflow 'truncated or damaged' Declare=Dispersion=1.03
 bytes=$(wc -c < progressive_photon_file.whole)
 head -c $((bytes - 20)) progressive_photon_file.whole > "$FILE"
@@ -82,19 +86,11 @@ refuse truncated 'truncated or damaged' Declare=Dispersion=1.03
 head -c $((bytes / 2)) progressive_photon_file.whole > "$FILE"
 refuse halved 'truncated or damaged' Declare=Dispersion=1.03
 # a NaN in the first surface photon's point is refused by name, not sorted
-python3 - progressive_photon_file.whole "$FILE" <<'PY'
-import struct, sys
-data = bytearray(open(sys.argv[1], 'rb').read())
-at = 12
-def skip_string():
-    global at
-    at += 4 + struct.unpack_from('=I', data, at)[0]
-skip_string(); at += 8; skip_string(); at += 4; skip_string()
-at += 4 + 4 * struct.unpack_from('=I', data, at)[0]
-assert struct.unpack_from('=Q', data, at)[0] > 0
-struct.pack_into('=d', data, at + 8, float('nan'))
-open(sys.argv[2], 'wb').write(data)
-PY
+skip_header
+at=$((at + 4 + 4 * $(u32 $at)))
+od -An -t u1 -j "$at" -N 8 progressive_photon_file.whole | grep -q '[1-9]' ||
+    { echo "progressive_photon_file: no surface photons at byte $at" >&2; exit 1; }
+patch $((at + 8)) 8 "$(native 0 0 0 0 0 0 248 127)"
 refuse nan 'non-finite surface photon point' Declare=Dispersion=1.03
 rm -f "$FILE"
 refuse missing 'Cannot open the photon file' Declare=Dispersion=1.03

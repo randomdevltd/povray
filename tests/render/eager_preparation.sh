@@ -4,7 +4,7 @@ set -e
 POVRAY=$1; SRCDIR=$2
 run() {
     run_name=$1; run_scene=$2; shift 2
-    "$POVRAY" +i"$SRCDIR/tests/render/$run_scene.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +L. +w96 +h32 -a -d -p -v -gp +fp \
+    "$POVRAY" +i"$SRCDIR/tests/render/$run_scene.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/distribution/include" +L. +w96 +h32 -a -d -p -v -gp +fp \
         +o"eager_$run_name.ppm" "$@" > "eager_$run_name.log" 2>&1 || { cat "eager_$run_name.log"; exit 1; }
     tail -c $((96 * 32 * 3)) "eager_$run_name.ppm" > "eager_$run_name.px"
 }
@@ -68,7 +68,7 @@ compare mediashared eager_media Declare=Kind=3 Declare=Tail=1500000
 expect mediashared_on8 "2 of 2" 0
 compare mediamerge eager_media Declare=Kind=4 Declare=Tail=1500000
 expect mediamerge_on8 "1 of 1" 0
-status=0; timeout -k 10 120 "$POVRAY" +i"$SRCDIR/tests/render/eager_media.pov" +L"$SRCDIR/include" +w8 +h8 -d -p -gp -f +wt4 \
+status=0; timeout -k 10 120 "$POVRAY" +i"$SRCDIR/tests/render/eager_media.pov" +L"$SRCDIR/distribution/include" +w8 +h8 -d -p -gp -f +wt4 \
     Declare=Fail=1 Declare=Tail=200000 > eager_mediafail.log 2>&1 || status=$?
 test "$status" = 1 || { cat eager_mediafail.log; echo "eager preparation: the media error scene exited $status"; exit 1; }
 grep -q "stop with the grid half built" eager_mediafail.log || { cat eager_mediafail.log; echo "eager preparation: no media parse error"; exit 1; }
@@ -109,14 +109,14 @@ compare povmtail eager_preparation Declare=Mode=5 Declare=Tail=2000000
 test "$(line povmtail_on4)" = "Deferred meshes: 1 recorded, 0 built for parse-time queries, 1 built for the scene, 0 not needed." || { echo "eager preparation: povm counts $(line povmtail_on4)"; exit 1; }
 eager povmtail_on4 | grep -q "1 of 1 scene meshes built ahead" || { echo "eager preparation: the povm mesh was not built ahead: $(eager povmtail_on4)"; exit 1; }
 # a parse error ends the render with status 1, promptly
-status=0; timeout -k 10 120 "$POVRAY" +i"$SRCDIR/tests/render/eager_preparation.pov" +L"$SRCDIR/include" +w8 +h8 -d -p -gp -f +wt4 \
+status=0; timeout -k 10 120 "$POVRAY" +i"$SRCDIR/tests/render/eager_preparation.pov" +L"$SRCDIR/distribution/include" +w8 +h8 -d -p -gp -f +wt4 \
     Declare=Mode=4 > eager_error.log 2>&1 || status=$?
 test "$status" = 1 || { cat eager_error.log; echo "eager preparation: the error scene exited $status"; exit 1; }
 grep -q "stop after the meshes are recorded" eager_error.log || { cat eager_error.log; echo "eager preparation: no parse error"; exit 1; }
 # a stop sent once the log shows the marker ends the render as cancelled (status 2) within 30 s, before the eager builds finished
 stop() {
     stop_name=$1; stop_scene=$2; stop_marker=$3; shift 3
-    "$POVRAY" +i"$SRCDIR/tests/render/$stop_scene.pov" +L"$SRCDIR/include" +w8 +h8 -d -p -gp -f +wt4 "$@" > "eager_$stop_name.log" 2>&1 &
+    "$POVRAY" +i"$SRCDIR/tests/render/$stop_scene.pov" +L"$SRCDIR/distribution/include" +w8 +h8 -d -p -gp -f +wt4 "$@" > "eager_$stop_name.log" 2>&1 &
     stop_pid=$!
     stop_ticks=0
     until grep -qs "$stop_marker" "eager_$stop_name.log"; do
