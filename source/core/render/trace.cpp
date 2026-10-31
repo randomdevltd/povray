@@ -48,6 +48,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -56,6 +57,7 @@
 // POV-Ray header files (core module)
 #include "core/bounding/boundingbox.h"
 #include "core/bounding/bsptree.h"
+#include "core/lighting/bounceincident.h"
 #include "core/lighting/emitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
@@ -63,6 +65,7 @@
 #include "core/lighting/progressivephoton.h"
 #include "core/lighting/subsurface.h"
 #include "core/lighting/subsurfaceboundary.h"
+#include "core/lighting/subsurfacepatch.h"
 #include "core/lighting/surfacebounce.h"
 #include "core/material/interior.h"
 #include "core/material/media.h"
@@ -860,7 +863,8 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
         invdir = BBoxVector3d(tmp);
         variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
 
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
+        // The box pretest skips boxes left before MIN_ISECT_DEPTH, a floor an exact shadow window does not have.
+        if(!ray.HasExactShadowWindow() && (object->Intersect_BBox(variant, origin, invdir, closest) == false))
             return false;
 
         if(object->Bound.empty() == false)
@@ -882,7 +886,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
             {
                 tmpDepth = depthstack->top().Depth;
                 // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH))
+                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || tmpDepth >= MIN_ISECT_DEPTH))
                 {
                     isect = depthstack->top();
                     closest = tmpDepth;
@@ -914,7 +918,8 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
         invdir = BBoxVector3d(tmp);
         variant = (BBoxDirection)((int(invdir[X] < 0.0) << 2) | (int(invdir[Y] < 0.0) << 1) | int(invdir[Z] < 0.0));
 
-        if(object->Intersect_BBox(variant, origin, invdir, closest) == false)
+        // The box pretest skips boxes left before MIN_ISECT_DEPTH, a floor an exact shadow window does not have.
+        if(!ray.HasExactShadowWindow() && (object->Intersect_BBox(variant, origin, invdir, closest) == false))
             return false;
 
         if(object->Bound.empty() == false)
@@ -936,7 +941,7 @@ bool Trace::FindIntersection(ObjectPtr object, Intersection& isect, const Ray& r
             {
                 tmpDepth = depthstack->top().Depth;
                 // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
+                if(tmpDepth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || tmpDepth >= MIN_ISECT_DEPTH) && postcondition(ray, object, tmpDepth))
                 {
                     isect = depthstack->top();
                     closest = tmpDepth;
@@ -1103,7 +1108,7 @@ void Trace::ComputeTextureColour(Intersection& isect, MathColour& colour, Colour
     // TODO - For photon rays we're still potentially doing double work on media.
     // TODO - For shadow rays we're still potentially doing double work on distance-based attenuation.
     // Calculate participating media effects.
-    if(ssltBounceSources == nullptr && !photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
+    if(ssltBridge == nullptr && !photonPass && qualityFlags.media && (!ray.GetInteriors().empty()) && InteriorMediaReach(ray))
     {
         media.ComputeMedia(ray.GetInteriors(), ray, isect, tmpCol, tmpTransm);
     }
@@ -1472,7 +1477,7 @@ bool Trace::ComputeFilteredPigment(TransColour& colour, FilteredLayer& means, co
 void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resultTransm, const TEXTURE *texture, vector<const TEXTURE *>& warps, const Vector3d& ipoint,
                                   const Vector3d& rawnormal, Ray& ray, COLC weight, Intersection& isect)
 {
-    if (ssltBounceSources != nullptr)
+    if (ssltBridge != nullptr)
     {
         SubsurfaceLayers layers;
         MathColour transmitted(1.0);
@@ -3426,7 +3431,7 @@ void Trace::TraceShadowRay(const LightSource &lightsource, double depth, Ray& li
     // If there's some distance left for the ray to reach the light source
     // we have to apply atmospheric stuff to this part of the ray.
 
-    if((newdepth > SHADOW_TOLERANCE) && (lightsource.Media_Interaction) && (lightsource.Media_Attenuation))
+    if((newdepth > (newray.HasExactShadowWindow() ? 0.0 : SHADOW_TOLERANCE)) && (lightsource.Media_Interaction) && (lightsource.Media_Attenuation))
     {
         isect.Depth = newdepth;
         isect.Object = nullptr;
@@ -3472,8 +3477,9 @@ struct OpaqueShadowStopCondition final : public IntersectionStopCondition
 void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray, MathColour& lightcolour)
 {
     lightsourceray.ResetMediaErrorBudget();
-    const double endpointTolerance = lightsource.emitter ? 0.0 : SHADOW_TOLERANCE;
-    const double startTolerance = lightsource.emitter && lightsource.emitter->IsSurface() ? 0.0 : SHADOW_TOLERANCE;
+    const bool exact = lightsourceray.HasExactShadowWindow();
+    const double endpointTolerance = lightsource.emitter || exact ? 0.0 : SHADOW_TOLERANCE;
+    const double startTolerance = (lightsource.emitter && lightsource.emitter->IsSurface()) || exact ? 0.0 : SHADOW_TOLERANCE;
     Intersection boundedIntersection;
     ObjectPtr cacheObject = nullptr;
     bool foundTransparentObjects = false;
@@ -5018,9 +5024,11 @@ void Trace::ComputeOneWhiteLightRay(const LightSource &lightsource, double& ligh
         // NK 1998 parallel beams for cylinder source - the stuff in this 'else'
         // block used to be all that there was... the first half of the if
         // statement (before the 'else') is new
-        lightsourceray.Direction = center - ipoint;
-        lightsourcedepth = lightsourceray.Direction.length();
-        lightsourceray.Direction /= lightsourcedepth;
+        const Vector3d toLight = center - ipoint;
+        lightsourcedepth = toLight.length();
+        // A light at the point itself has no direction; the ray keeps the one it was given.
+        if (lightsourcedepth > 0.0)
+            lightsourceray.Direction = toLight / lightsourcedepth;
     }
 
     // Attenuate light source color.
@@ -5522,7 +5530,7 @@ namespace
 class SubsurfaceBounceRadiance final : public SurfaceBounceRadiance
 {
 public:
-    struct Component { double eta; std::shared_ptr<const PreparedSurfaceBounceField> field; };
+    struct Component { double eta; std::shared_ptr<const SurfaceBounceRadiance> field; };
     explicit SubsurfaceBounceRadiance(std::vector<Component> components) : components(std::move(components))
     {
         for (const auto& component : this->components)
@@ -5550,14 +5558,14 @@ public:
             result += components[i].field->IntegratedRadiance() * fluxFactors[i];
         return result;
     }
-    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing) const override
+    MathColour Sample(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
     {
         const double cosine = clip(dot(normal, outgoing), 0.0, 1.0);
         if (!(cosine > 0.0)) return MathColour();
         MathColour result;
         for (const auto& component : components)
         {
-            result += component.field->Sample(hit, normal, outgoing) * ExitRatio(cosine, component.eta);
+            result += component.field->Sample(hit, normal, outgoing, td) * ExitRatio(cosine, component.eta);
         }
         return result;
     }
@@ -5576,45 +5584,80 @@ private:
 };
 }
 
-std::shared_ptr<const SurfaceBounceRadiance> Trace::PrepareSurfaceSubsurfaceRadiance(
-    const std::vector<SurfaceBounceNode>& nodes, const std::vector<std::shared_ptr<LightSource>>& sources,
-    PreparedSetId preparedSetId, std::size_t trials, const std::set<ObjectPtr>& collapsedOwners)
+void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field)
 {
-    if (!sceneData->useSubsurface) return nullptr;
-    struct CacheScope
+    ssltBridge = &field;
+    ssltBridgeEntryKnown.clear();
+}
+
+// Light from either side enters from the material's exterior, as at a cloud point.
+MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const std::vector<BounceIncidentBeam>& incident,
+                                         PreparedSetId preparedSetId, double& eta)
+{
+    TraceTicket ticket(1, 0.0);
+    ticket.preparedSetId = preparedSetId;
+    const Intersection& hit = node.intersection;
+    const double tolerance = InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
+    Ray eye(ticket, hit.IPoint + node.normal * tolerance, -node.normal);
+    RayInteriorVector containing;
+    FindContainingInteriors(eye.Origin, containing, preparedSetId);
+    eye.AppendInteriors(containing);
+    ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, node.normal, eta);
+    MathColour light;
+    if (FindSubsurfaceParts(SubsurfaceObject(hit), preparedSetId).sheets.count(hit.Object) != 0)
+        return light;
+    for (const BounceIncidentBeam& beam : incident)
     {
-        TraceThreadData* thread;
-        std::shared_ptr<SubsurfaceCache> saved;
-        ~CacheScope() { thread->subsurfaceCache = saved; }
-    } scope{threadData, threadData->subsurfaceCache};
-    threadData->subsurfaceCache = std::make_shared<SubsurfaceCache>(sceneData->subsurfaceMemory, sceneData->subsurfaceSpacing);
-    Trace preparation(sceneData, threadData, qualityFlags, cooperate, media, radiosity);
-    preparation.ssltBounceSources = &sources;
-    preparation.ssltCameraKnown = true;
-    preparation.ssltPixelSize = preparation.ssltPixelAngle = 0.0;
+        const double cosine = fabs(dot(node.normal, beam.direction));
+        if (cosine >= EPSILON)
+            light += beam.angularWeight * float(cosine * ComputeFt(min(cosine, 1.0), eta));
+    }
+    return light / float(M_PI);
+}
+
+MathColour Trace::SurfaceSubsurfaceNode(const SurfaceBounceNode& node, std::size_t index, PreparedSetId preparedSetId, double& length)
+{
+    Intersection hit(node.intersection);
+    TraceTicket ticket(1, 0.0);
+    ticket.preparedSetId = preparedSetId;
+    const double tolerance = InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
+    Ray eye(ticket, hit.IPoint + node.normal * tolerance, -node.normal);
+    RayInteriorVector containing;
+    FindContainingInteriors(eye.Origin, containing, preparedSetId);
+    eye.AppendInteriors(containing);
+    eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, index));
+    ssltBridgeNode = index;
+    ssltBridgeLength = HUGE_VAL;
+    MathColour radiance;
+    ColourChannel transmission = 0.0;
+    ComputeTextureColour(hit, radiance, transmission, eye, 1.0, false);
+    length = ssltBridgeLength;
+    return radiance;
+}
+
+std::shared_ptr<const SurfaceBounceRadiance> Trace::SurfaceSubsurfaceRadiance(std::shared_ptr<const SurfaceNodeIndex> index,
+    const std::vector<MathColour>& radiance, const std::vector<double>& etas, const std::vector<double>& areas)
+{
+    const std::vector<std::uint32_t>& source = index->Source();
     std::map<double, std::vector<MathColour>> values;
-    for (std::size_t i = 0; i < nodes.size(); ++i)
+    for (std::size_t i = 0; i < source.size(); ++i)
     {
-        if (i % 64 == 0) cooperate();
-        Intersection hit(nodes[i].intersection);
-        TraceTicket ticket(1, 0.0);
-        ticket.preparedSetId = preparedSetId;
-        const double tolerance = preparation.InterfaceTolerance(hit.IPoint, hit.Object->interior.get());
-        Ray eye(ticket, hit.IPoint + nodes[i].normal * tolerance, -nodes[i].normal);
-        RayInteriorVector containing;
-        preparation.FindContainingInteriors(eye.Origin, containing, preparedSetId);
-        eye.AppendInteriors(containing);
-        double eta;
-        preparation.ComputeRelativeIOR(eye, hit.Object->interior.get(), hit.IPoint, nodes[i].normal, eta);
-        auto& radiance = values[eta];
-        if (radiance.empty()) radiance.resize(nodes.size());
-        eye.SetKey(DeriveKey(UINT64_C(0x73736c74626f756e), kDrawSubsurface, i));
-        ColourChannel transmission = 0.0;
-        preparation.ComputeTextureColour(hit, radiance[i], transmission, eye, 1.0, false);
+        auto& component = values[etas[source[i]]];
+        if (component.empty()) component.resize(source.size());
+        component[i] = radiance[source[i]];
     }
     std::vector<SubsurfaceBounceRadiance::Component> components;
     for (auto& entry : values)
-        components.push_back({entry.first, std::make_shared<const PreparedSurfaceBounceField>(nodes, std::move(entry.second), trials, collapsedOwners)});
+    {
+        std::vector<float> power(source.size());
+        MathColour integral;
+        for (std::size_t i = 0; i < source.size(); ++i)
+        {
+            power[i] = float(entry.second[i].Greyscale() * areas[source[i]]);
+            integral += entry.second[i] * areas[source[i]];
+        }
+        components.push_back({entry.first, std::make_shared<const SurfaceRadianceNodeField>(index, std::move(entry.second), std::move(power), integral)});
+    }
     return std::make_shared<const SubsurfaceBounceRadiance>(std::move(components));
 }
 
@@ -6159,11 +6202,9 @@ ObjectPtr Trace::SubsurfaceObject(const Intersection& isect)
 void Trace::CollectSubsurfaceLights(ConstObjectPtr object, std::vector<const LightSource*>& lights, PreparedSetId preparedSetId)
 {
     lights.clear();
-    if (ssltBounceSources != nullptr)
-    {
-        for (const auto& source : *ssltBounceSources) lights.push_back(source.get());
+    // The bridge's light is its field's, and preparation threads hold no scene lights.
+    if (ssltBridge != nullptr)
         return;
-    }
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
         for(unsigned int i : view.globalLights)
@@ -7658,7 +7699,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
     if (std::find(cloud.exitSlot.begin(), cloud.exitSlot.end(), -1) != cloud.exitSlot.end())
         return false;
     const PreparedSet& photonSet = sceneData->GetPreparedSet(eye.GetPreparedSetId());
-    cloud.photons = (ssltBounceSources == nullptr) && cloud.parts->anyCollects && sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
+    cloud.photons = cloud.parts->anyCollects && sceneData->photonSettings.photonsEnabled && (sceneData->photonSettings.maxGatherCount > 0) &&
                     ((photonSet.surfacePhotonMap.numPhotons > 0) || !photonSet.progressiveSurface.photons.empty());
     double mm = sceneData->mmPerUnit;
     double sigmaMin = min(profile.sigma_tr[0], min(profile.sigma_tr[1], profile.sigma_tr[2]));
@@ -7984,7 +8025,7 @@ bool Trace::FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& r
         return false;
     double closest = HUGE_VAL;
     for (; depthstack->size() > 0; depthstack->pop())
-        if ((depthstack->top().Depth < closest) && (ray.IsSubsurfaceRay() || (depthstack->top().Depth >= MIN_ISECT_DEPTH)))
+        if ((depthstack->top().Depth < closest) && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || (depthstack->top().Depth >= MIN_ISECT_DEPTH)))
         {
             isect = depthstack->top();
             closest = isect.Depth;
@@ -8546,6 +8587,240 @@ PreciseMathColour Trace::SubsurfaceProfile::RdEdgeShare(double inner, double out
     return share;
 }
 
+void Trace::SurfaceSubsurfaceField::Build(const std::vector<SurfaceBounceNode>& nodes, const std::vector<MathColour>& irradiance, std::size_t trials)
+{
+    patches.clear();
+    leaf.assign(nodes.size(), 0);
+    tree.assign(nodes.size(), 0);
+    auto area = [&](std::size_t i) { return nodes[i].areaWeight / double(trials); };
+    std::vector<std::size_t> order;
+    std::function<void(std::size_t, std::size_t)> build = [&](std::size_t first, std::size_t last)
+    {
+        Patch patch;
+        patch.lo = Vector3d(HUGE_VAL);
+        patch.hi = Vector3d(-HUGE_VAL);
+        patch.centre = patch.normal = Vector3d(0.0);
+        for (std::size_t k = first; k < last; k++)
+        {
+            const SurfaceBounceNode& node = nodes[order[k]];
+            const Vector3d& p = node.intersection.IPoint;
+            const double a = area(order[k]);
+            for (int axis = 0; axis < 3; axis++)
+            {
+                patch.lo[axis] = min(patch.lo[axis], p[axis]);
+                patch.hi[axis] = max(patch.hi[axis], p[axis]);
+            }
+            if (!(a > 0.0))
+                continue;
+            patch.centre += p * a;
+            patch.normal += node.normal.normalized() * a;
+            patch.area += a;
+            patch.radius = max(patch.radius, sqrt(a / M_PI));
+            patch.irradiance += PreciseMathColour(irradiance[order[k]]) * a;
+        }
+        const double length = patch.normal.length();
+        const bool weighed = (patch.area > 0.0);
+        patch.centre = (last - first == 1) || !weighed ? nodes[order[first]].intersection.IPoint : patch.centre / patch.area;
+        patch.irradiance = weighed ? patch.irradiance / patch.area : PreciseMathColour();
+        patch.normal = (length > 0.0) ? patch.normal / length : nodes[order[first]].normal.normalized();
+        patch.cone = 1.0;
+        for (std::size_t k = first; k < last; k++)
+            patch.cone = min(patch.cone, dot(nodes[order[k]].normal.normalized(), patch.normal));
+        const std::size_t index = patches.size();
+        patch.node = order[first];
+        patch.next = index + 1;
+        patches.push_back(patch);
+        if (last - first == 1)
+        {
+            leaf[order[first]] = index;
+            return;
+        }
+        // A patch too wide in facing to stand for its members as one disc splits by facing, so its parts can.
+        const bool facing = (patch.cone < kCloudCone);
+        Vector3d low(HUGE_VAL), high(-HUGE_VAL);
+        for (std::size_t k = first; k < last; k++)
+            for (int a = 0; a < 3; a++)
+            {
+                const double v = facing ? nodes[order[k]].normal[a] : nodes[order[k]].intersection.IPoint[a];
+                low[a] = min(low[a], v);
+                high[a] = max(high[a], v);
+            }
+        const Vector3d extent = high - low;
+        const int axis = (extent[X] >= extent[Y]) ? ((extent[X] >= extent[Z]) ? X : Z) : ((extent[Y] >= extent[Z]) ? Y : Z);
+        const std::size_t middle = (first + last) / 2;
+        std::nth_element(order.begin() + first, order.begin() + middle, order.begin() + last, [&](std::size_t i, std::size_t j)
+        {
+            const double a = facing ? nodes[i].normal[axis] : nodes[i].intersection.IPoint[axis];
+            const double b = facing ? nodes[j].normal[axis] : nodes[j].intersection.IPoint[axis];
+            return (a < b) || ((a == b) && (i < j));
+        });
+        build(first, middle);
+        build(middle, last);
+        patches[index].next = patches.size();
+    };
+    // Light diffuses only within one object's material, as each cloud is one object's.
+    std::vector<std::pair<std::pair<const void*, const void*>, std::vector<std::size_t>>> groups;
+    for (std::size_t i = 0; i < nodes.size(); i++)
+    {
+        const Intersection& hit = nodes[i].intersection;
+        const std::pair<const void*, const void*> key((hit.Csg != nullptr) ? (const void*)hit.Csg : (const void*)hit.Object, hit.Object->interior.get());
+        auto group = std::find_if(groups.begin(), groups.end(), [&](const decltype(groups)::value_type& g) { return g.first == key; });
+        if (group == groups.end())
+            group = groups.insert(groups.end(), std::make_pair(key, std::vector<std::size_t>()));
+        group->second.push_back(i);
+    }
+    for (const auto& group : groups)
+    {
+        order = group.second;
+        const std::size_t root = patches.size();
+        build(0, order.size());
+        for (std::size_t i : group.second)
+            tree[i] = root;
+    }
+}
+
+// The exit node's own patch is a disc on its face lit as it is; every other patch of its tree in reach, or a far group of
+// them, a disc whose profile integral outside that one is summed by annuli about the exit point; see doc/PERF.md.
+bool Trace::SurfaceSubsurfaceDiffusion(const Intersection& out, const SubsurfaceProfile& profile, const SubsurfaceFlesh& flesh, double ftOut,
+                                       MathColour& diffuse, TraceTicket& ticket)
+{
+    diffuse.Clear();
+    const ObjectPtr object = SubsurfaceObject(out);
+    if (FindSubsurfaceParts(object, ticket.preparedSetId).sheets.count(out.Object) != 0)
+        return true;
+    const SurfaceSubsurfaceField& field = *ssltBridge;
+    const double mm = sceneData->mmPerUnit, errorBound = sceneData->subsurfaceErrorBound;
+    const std::size_t exitPatch = field.leaf[ssltBridgeNode], root = field.tree[ssltBridgeNode];
+    const SurfaceSubsurfaceField::Patch& exit = field.patches[exitPatch];
+    const Vector3d x = exit.centre, n = exit.normal;
+    double sigmaMin = HUGE_VAL, sigmaMax = 0.0, depth = HUGE_VAL;
+    for (int j = 0; j < MathColour::channels; j++)
+    {
+        sigmaMin = min(sigmaMin, double(profile.sigma_tr[j]));
+        sigmaMax = max(sigmaMax, double(profile.sigma_tr[j]));
+        depth = min(depth, double(profile.z_r[j]));
+    }
+    const double decay = (sigmaMax > 0.0) ? 1.0 / sigmaMax : HUGE_VAL;
+    ssltBridgeLength = min(ssltBridgeLength, decay / mm);
+    // The profile counts out to where all but the error bound's share of its mass lies within, at most kCloudReach lengths.
+    double reach = (sigmaMin > 0.0) ? kCloudReach / sigmaMin : HUGE_VAL;
+    if (reach < HUGE_VAL)
+    {
+        const PreciseMathColour total = profile.RdTotal();
+        auto outside = [&](double s)
+        {
+            const PreciseMathColour inside = profile.RdDisc(s) * (M_PI * Sqr(s));
+            for (int j = 0; j < MathColour::channels; j++)
+                if (total[j] - inside[j] > errorBound * total[j])
+                    return true;
+            return false;
+        };
+        double low = 0.0, high = reach;
+        for (int step = outside(reach) ? 24 : 0; step < 24; step++)
+        {
+            const double middle = 0.5 * (low + high);
+            (outside(middle) ? low : high) = middle;
+        }
+        reach = high;
+    }
+    const double core = sqrt(exit.area / M_PI) * mm;
+    // The thin part's probe steps a thousandth of the spacing in, and at least as far as the entry probe would.
+    const Interior *interior = out.Object->interior.get();
+    const double extent = SubsurfaceFiniteBounds(interior->boundsLow, interior->boundsHigh) ? (interior->boundsHigh - interior->boundsLow).length() : 0.0;
+    const double probe = (SubsurfaceBoundaryProbe(x, -n, out.Object->SurfaceTolerance(), extent) - x).length();
+    SubsurfaceCloud cloud;
+    cloud.object = object;
+    cloud.spacing = max(core / mm, 1e3 * probe);
+    cloud.reach = reach;
+    AttachRdTables(profile, ticket);
+    SetUpSubsurfaceThin(cloud, x, n, profile, ticket);
+    const SubsurfaceThin& thin = ssltThin;
+    auto disc = [&](double radius, bool face)
+    {
+        PreciseMathColour rd;
+        if (!(radius > 0.0))
+            return rd;
+        rd = profile.RdDisc(radius) * (M_PI * Sqr(radius));
+        if (face && thin.active)
+            thin.Apply(rd, Sqr(radius), 1);
+        return rd;
+    };
+    // A patch's entry factor depends on it and the finish and skin alone, so each thread keeps the ones it has found.
+    if (flesh.PerEntry() && ((ssltBridgeEntryFinish != flesh.finish) || (ssltBridgeEntrySkin != flesh.skin) ||
+                             (ssltBridgeEntryKnown.size() != field.patches.size())))
+    {
+        ssltBridgeEntryFinish = flesh.finish;
+        ssltBridgeEntrySkin = flesh.skin;
+        ssltBridgeEntryKnown.assign(field.patches.size(), 0);
+        ssltBridgeEntry.resize(field.patches.size());
+    }
+    auto entering = [&](const SurfaceSubsurfaceField::Patch& patch, std::size_t index)
+    {
+        PreciseMathColour light = patch.irradiance;
+        if (flesh.PerEntry())
+        {
+            if (!ssltBridgeEntryKnown[index])
+            {
+                SubsurfaceEntry entry;
+                ComputeSubsurfaceEntry(flesh, patch.centre, -patch.normal, Draw(DeriveKey(UINT64_C(0x73736c74656e7472), kDrawSubsurface, index), kDrawSubsurface, 0), entry);
+                ssltBridgeEntry[index] = PreciseMathColour(entry.factor);
+                ssltBridgeEntryKnown[index] = 1;
+            }
+            light *= ssltBridgeEntry[index];
+        }
+        return light;
+    };
+    PreciseMathColour sum = disc(core, true) * entering(exit, exitPatch);
+    for (std::size_t c = root; c < field.patches[root].next;)
+    {
+        const SurfaceSubsurfaceField::Patch& patch = field.patches[c];
+        const bool leaf = (patch.next == c + 1);
+        double boxSqr = 0.0;
+        for (int a = 0; a < 3; a++)
+            boxSqr += Sqr(max(0.0, max(patch.lo[a] - x[a], x[a] - patch.hi[a])));
+        boxSqr *= Sqr(mm);
+        if (!(patch.area > 0.0) || (boxSqr > Sqr(reach + patch.radius * mm)) || (c == exitPatch))
+        {
+            c = patch.next;
+            continue;
+        }
+        // A group stands as one disc where it is small beside its distance, or beside a quarter of the diffusion length.
+        const double extent = ((patch.hi - patch.lo).length() + 2.0 * patch.radius) * mm;
+        const bool holdsExit = (c < exitPatch) && (exitPatch < patch.next);
+        if (!leaf && !((patch.cone >= kCloudCone) && !holdsExit && ((patch.area * Sqr(mm) < errorBound * boxSqr) || (extent < 0.25 * decay))))
+        {
+            c++;
+            continue;
+        }
+        // Facing faces with air between them exchange no light through the material.
+        const Vector3d v = patch.centre - x;
+        if (!((dot(v, n) > 0.0) && (dot(v, patch.normal) < 0.0) && (dot(n, patch.normal) < 0.0)))
+        {
+            const double below = -dot(v, n) * mm, h = fabs(below);
+            const bool through = thin.active && (below > 0.5 * thin.depth);
+            // The exit disc stands for its own face near the exit point, not for the far face of a thin part.
+            const double from = through ? 0.0 : sqrt(max(0.0, Sqr(core) - Sqr(h)));
+            double last = -1.0;
+            PreciseMathColour lastDisc;
+            auto annulus = [&](double s0, double s1)
+            {
+                PreciseMathColour inner = (s0 == last) ? lastDisc : disc(sqrt(Sqr(s0) + Sqr(h)), !through);
+                lastDisc = disc(sqrt(Sqr(s1) + Sqr(h)), !through);
+                last = s1;
+                PreciseMathColour rd = lastDisc - inner;
+                if (through)
+                    thin.Apply(rd, Sqr(0.5 * (s0 + s1)), 2);
+                return rd;
+            };
+            const double d = (v - n * dot(v, n)).length() * mm, r = sqrt(patch.area / M_PI) * mm;
+            sum += SubsurfaceDiscIntegral<PreciseMathColour>(annulus, d, r, from, reach, depth, decay) * entering(patch, c);
+        }
+        c = patch.next;
+    }
+    diffuse = MathColour(sum * ftOut);
+    return true;
+}
+
 // log Rd (in reduced mean free paths, with beam diffusion) at one channel's column; underflow is floored, so it interpolates.
 double Trace::SubsurfaceProfile::FillRd(int channel, int column) const
 {
@@ -8903,7 +9178,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         inward.invert();
     SubsurfaceFlesh flesh;
     SetUpSubsurfaceFlesh(flesh, layers, out, inward, DeriveKey(key, kDrawSubsurface, 5));
-    if (ssltBounceSources != nullptr)
+    if (ssltBridge != nullptr)
     {
         flesh.emissionAtDepth = false;
         flesh.emission.Clear();
@@ -8958,7 +9233,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     double      sigma_prime_s_mean  = sigma_prime_s.Greyscale(); // TODO FIXME - use a "fair" average of all three color channels
     double      sigma_prime_t_mean  = sigma_a_mean + sigma_prime_s_mean;
 
-    bool radiosity_needed = (ssltBounceSources == nullptr) && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
+    bool radiosity_needed = (ssltBridge == nullptr) && (sceneData->radiositySettings.radiosityEnabled == true) && qualityFlags.radiosity &&
                             (sceneData->subsurfaceUseRadiosity == true) &&
                             (radiosity.CheckRadiosityTraceLevel(Eye.GetTicket()) == true) &&
                             (Test_Flag(out.Object, IGNORE_RADIOSITY_FLAG) == false);
@@ -8970,15 +9245,17 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
     bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();
     Vector3d sampleBase;
-    ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
-
     SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
-    cloudData.radiosity = cloudRadiosity;
-    cloudData.flesh = &flesh;
-    cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
+    if (ssltBridge == nullptr)
+    {
+        ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
+        cloudData.radiosity = cloudRadiosity;
+        cloudData.flesh = &flesh;
+        cloudData.medium = flesh.PerEntry() ? layers.top : nullptr;
+    }
     MathColour cloudDiffuse;
     // Below the finish's minimum influence a hit is lit as its exit point is, times the profile's integral; see doc/PERF.md.
-    const bool estimate = pointCloud && (rayWeight * layers.weight.WeightMax() < Finish->SubsurfaceMinimumInfluence) &&
+    const bool estimate = (ssltBridge == nullptr) && pointCloud && (rayWeight * layers.weight.WeightMax() < Finish->SubsurfaceMinimumInfluence) &&
                           (FindSubsurfaceParts(SubsurfaceObject(out), Eye.GetPreparedSetId()).sheets.count(out.Object) == 0);
     if (estimate)
     {
@@ -8998,8 +9275,9 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     const bool tryCloud = pointCloud && !estimate;
     if (tryCloud)
         threadData->Stats()[Subsurface_Cloud_Attempts]++;
-    bool cloud = tryCloud && OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
-                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftDiffuse, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1));
+    bool cloud = tryCloud && ((ssltBridge != nullptr) ? SurfaceSubsurfaceDiffusion(out, profile, flesh, ftDiffuse, cloudDiffuse, Eye.GetTicket()) :
+                 OpenSubsurfaceCloud(out, Eye, profile, lights, cloudData) &&
+                 ComputeSubsurfaceCloud(out, sampleBase, profile, ftDiffuse, cloudData, cloudDiffuse, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 1)));
     if (cloud && radiosity_needed && !cloudRadiosity)
         threadData->Stats()[Subsurface_Cloud_Pretrace]++;
     if (tryCloud && !cloud)
@@ -9092,7 +9370,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     if (Finish->SubsurfaceEmits && !flesh.emissionAtDepth)
         Total_Colour += MathColour(profile.RdTotal() * PreciseMathColour(flesh.emission) * ftDiffuse);
 
-    if (ssltBounceSources != nullptr)
+    if (ssltBridge != nullptr)
     {
         if (Finish->SubsurfaceHasColour) Total_Colour *= flesh.exitSkin;
         Final_Colour += Total_Colour * layers.weight;

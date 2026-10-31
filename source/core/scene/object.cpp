@@ -148,7 +148,7 @@ static bool Nearest_Intersection(Intersection *isect, ObjectPtr object, const Ra
     {
         const DBL depth = depthstack->top().Depth;
         // TODO FIXME - This was SMALL_TOLERANCE, but that's too rough for some scenes [cjc] need to check what it was in the old code [trf]
-        if (depth < closest && (ray.IsSubsurfaceRay() || depth >= MIN_ISECT_DEPTH) && accept(depth))
+        if (depth < closest && (ray.IsSubsurfaceRay() || ray.HasExactShadowWindow() || depth >= MIN_ISECT_DEPTH) && accept(depth))
         {
             *isect = depthstack->top();
             closest = depth;

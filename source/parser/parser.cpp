@@ -47,6 +47,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <sstream>
 #include <unordered_set>
@@ -278,14 +279,8 @@ void Parser::LeaveMediaField(const Media& medium)
 
 void Parser::RecordMediaField(Media& medium, bool allowEager)
 {
-    if (medium.Sample_Method != 4)
+    if ((medium.Sample_Method != 4) || medium.Density.empty())
         return;
-    medium.SetPreparedParallelSafe(false);
-    if (medium.Density.empty())
-    {
-        medium.SetPreparedParallelSafe(true);
-        return;
-    }
     std::shared_ptr<Media> copy(new Media(medium));
     std::vector<std::pair<GenericScalarFunctionPtr *, FUNCTION>> slots;
     for (PIGMENT *pigment : copy->Density)
@@ -308,7 +303,6 @@ void Parser::RecordMediaField(Media& medium, bool allowEager)
         roots.push_back(slot.second);
     if (!SelfContained(roots))
         return LeaveMediaField(medium);
-    medium.SetPreparedParallelSafe(true);
     if (!allowEager || !sceneData->meshPool || !medium.fastCache)
         return;
     if (!slots.empty())
@@ -454,6 +448,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 /* Parse the file. */
 void Parser::Run()
 {
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     SourceInfo errorInfo(UCS2String(POV_FILENAME_BUFFER_CHARS, u'\0'), // Pre-claim some memory, so we can handle an out-of-memory error.
                          SourcePosition(-1,-1,-1));
 
@@ -560,6 +555,8 @@ void Parser::Run()
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
                       "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
             Make_Portal_Lights();
+            mMessageFactory.Info("Preparation: parse finished %.1fs",
+                                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
         // (both to the user interface and "upward" to the calling code)
@@ -10598,36 +10595,6 @@ void Parser::Make_Surface_Light(ObjectPtr container)
 void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
 {
     MediaLight& settings = *interior.light;
-    bool known = true;
-    std::vector<FUNCTION> roots;
-    auto inspect = [&](PIGMENT *pigment) {
-        known = known && !PigmentTestsObjects(pigment) && !PigmentRequiresRayContext(pigment);
-        ForEachPigmentFunction(pigment, false, [&](GenericScalarFunctionPtr& slot) {
-            if (const FunctionVM::CustomFunction *custom = dynamic_cast<const FunctionVM::CustomFunction *>(slot))
-                roots.push_back(custom->Id());
-            else
-                known = false;
-        });
-    };
-    if (settings.useEmission)
-    {
-        RayInteriorVector interiors;
-        interiors.push_back(&interior);
-        MediaVector media;
-        MediaModifierVector modifiers;
-        CollectInteriorMedia(interiors, media, &modifiers);
-        for (const Media *medium : media)
-            if (medium->use_emission)
-                for (PIGMENT *density : medium->Density)
-                    inspect(density);
-        for (const MediaModifier& modifier : modifiers)
-            if (modifier.medium->mix == kMediaBlendMultiply || modifier.medium->use_emission)
-                for (PIGMENT *density : modifier.medium->Density)
-                    inspect(density);
-    }
-    else
-        inspect(settings.pigment);
-    settings.preparedParallelSafe = known && SelfContained(roots);
     std::string failure;
     std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(interior, container, &mThreadData, failure);
     if (!emitter)

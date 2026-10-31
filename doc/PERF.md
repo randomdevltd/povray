@@ -1450,6 +1450,107 @@ does the same until σ·τ passes 15, so this is not a case of its own. Against 
 at 2896; its disc integral is within 10⁻⁴ out to 2896, and
 its ratio through to the far face 2.6% low. It is left as it is.
 
+## Adaptive surface bounce nodes
+
+A passive surface `light { bounce }` stores, per order, the light arriving at nodes on its surface, not the light
+leaving: front and back sums of L·|cos θ|^brilliance for each brilliance its materials use. Where the field is read,
+the surface's own diffuse layers are evaluated at that point, so a texture costs no nodes and is exact.
+
+Nodes are seeded once for the whole scene. Every bounce surface is drawn by area (`SurfaceGeometrySampler::SampleArea`,
+eight draws per expected node), the baseline spacing r₀ is set so 4096 nodes of a maximal Poisson disc set cover the
+scene's total bounce area, and each surface's draws are thinned to such a set, a draw kept only when no node of the same
+sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
+
+Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
+from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
+projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
+mean over the reachable disc and its draws give a standard error. A node splits
+when, relative to the local irradiance max(own, predicted):
+- between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
+- within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
+  (a shadow edge or a contact crossing it);
+- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths).
+The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
+gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours and a spread trusted
+only from eight draws. A difference that is large but not yet certain, or a value whose standard error exceeds 10%,
+doubles the node's draws instead, to at most four times what resolving the tolerance needs and never above 64, so the
+light's `samples` do not change refinement. A split parent becomes a node of the next level and is measured again. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
+spacing; the parent's area is shared by draws. Splits are decided per level from per-node results and applied in a fixed
+order, so the field is the same on any thread count; all lengths are ratios of r₀, and the shadow rays of node draws use
+no absolute offsets, so it is the same at any scale.
+
+Surface bounce fields draw on the prepared media cell budget: as many bytes as that many colours, over every order,
+each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
+byte, most first. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
+`Bounce oN: ...`, with its nodes per level and how many splits each criterion asked for.
+
+Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
+16·((n + nᵢ)·Δ)², so another sheet or a stacked parallel face is far; the kernel (1 − d²/d₉²)² times (nᵢ·n)² is corrected
+to reproduce planes in the tangent coordinates (moving least squares) and the result kept within the neighbours' range.
+The subsurface bridge takes these nodes and areas as its patches; a patch whose normals spread past the cloud cone
+splits by facing rather than position.
+
+## Subsurface light leaving surface bounce nodes
+
+A surface `light { bounce }` on a method 2 object emits, each order, what its nodes send on: the diffuse reflection of
+the light the order's surface pass gathers at each node, and subsurface light. The subsurface part shaded every node
+through the ordinary method 2 path, so each node opened a point cloud over the object, lit afresh by every source of the
+previous order. Preparation has no camera, so the cloud took no pixel term and its spacing fell to the diffusion floor,
+a 128th of a cell. On a bowl of `tools/bench/sslt-bounce-shell.pov`'s material and size (0.2 mm wall, `mm_per_unit 10`)
+in a scene of 60 emitters and scattering media, that is 0.02 mm, about 200 points per bounce node, each lit by 4
+connections per source: 25 ms of thread time a point, 88% of it shadow rays through the media, and well over half an
+hour for two such shells.
+
+The nodes are now the cloud. A node's entering light comes from the beams the surface pass already holds:
+E = Σ L·|cos θ|·Ft(cos θ, η)/π, from either side, the material receiving from its exterior as a cloud point does; a
+node on a sheet takes none, and one there sends none. Its patch is a disc of its area. Light
+diffuses only between nodes of one object and interior, as a cloud is one object's: each such group has its own tree of
+median splits, and a group of patches inside the cloud tree's cone whose area is under `error_bound` times its squared
+distance is taken as one disc. A patch keeps its mean E in double precision; one of no area is skipped.
+
+The light reaching an exit node is its own disc's closed-form profile integral (`RdDisc`, with the thin-part disc
+ratio) times its own E, plus, over every other patch in reach, that patch's E times the profile integrated over its
+disc. The disc lies d along the exit face and h off it. It is cut into annuli about the exit point (`subsurfacepatch.h`):
+each takes the difference of the closed-form cumulative integral at its two distances √(s² + h²), times the exact share
+of its area inside the disc (from the area two circles share), and spans an eighth of the length the profile or the
+disc's edge changes over there: its distance from the exit point, at least the shallowest depth z_r, at most the fastest
+decay length 1/σtr, and at most the disc's radius. A far disc's annuli then sum to Rd times its area, a near one's to its
+part outside the exit disc, and a disc much wider than the profile is resolved at the profile's scale, so no rule switches
+between forms. What lies within the exit disc's radius in three dimensions is left out, the exit disc standing for its own
+face there; a patch more than half a thin part's depth below the exit face lies on the far face and keeps all of it, with
+the layer table's ratio through to that face at each annulus, as a cloud point there does. Facing faces with air between
+them (each in front of the other, normals opposed) exchange nothing. The thin part's depth is found by a material run
+from a step inside the exit point at least as long as the entry probe's, from the part's own surface accuracy and the
+coordinates' precision, so it does not start outside the material in a scene of small units. Flesh and skin, the layers'
+weight and the result's type are unchanged. The tree is built on one thread, and every node's light and radiance are
+computed from its own index and that tree alone, so the field is the same on any thread count.
+
+`tests/source/subsurface_patch.cpp` checks the annuli against a fine quadrature of a dipole profile over 76 discs, from a
+twentieth of the decay length across to 13 times it, centred on the exit point to beyond its edge, in and off the exit
+plane and with and without the exit disc cut out: all are within 0.48%. Eight equal annuli, as at first, were off by up to
+9%, and by 3% on the widest discs.
+
+The bridge traces no shadow rays: per node one material run for the thin part's depth, and its texture. Against the cloud
+bridge on `sslt-bounce-shell.pov`, node by node (luminance, new over old minus one):
+
+| | area-weighted total | median | 5th / 95th percentile |
+|---|---|---|---|
+| Case 0, 16 samples a source | +2.1% | +0.1% | −31% / +44% |
+| Case 0, 128 samples a source | +1.6% | 0.0% | −23% / +33% |
+| Case 1, point lights | +0.6% | −1.3% | −28% / +32% |
+| Case 2, a light in the cavity | +0.7% | −0.7% | −32% / +35% |
+| Case 3, union of two materials | −0.8% | −1.2% | −19% / +22% |
+
+In Case 2 the outer face, lit only through the wall, totals +0.4%, and the inner +1.4%. In Case 3 the two spheres total
+−1.8% and +0.2%, and the diffuse part's nodes send no subsurface light in either.
+
+The spread is at the node scale. The nodes' E carries the surface pass's sampling noise (its node-to-neighbourhood rms
+falls from 0.25 to 0.10 from 16 to 128 samples), and where the profile is narrower than the node spacing (here 1/σtr is
+0.05 to 0.16 mm against 0.28 mm between nodes) a node's light is mostly its own E, while the cloud averaged 200 points.
+What is left is detail finer than the node spacing, which the bounce field cannot hold either: the open rim, a strip
+0.2 mm wide, differs most (46 nodes, totals +63% in Case 0, −43% in Case 1, −25% in Case 2). In Case 1 at 256 samples the
+floor, lit only by the bowl, receives 1.6% less in all, median pixel −0.2%.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
@@ -2216,3 +2317,26 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Height fields: their own block walk.
 - Mesh memory: the tree is now 55% of a mesh; 8-bit blocks are the next saving.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
+
+## Scene preparation progress
+
+The user-facing description is in the manual, section 3.2.7.6 (`doc/html/r3_2.html`); this section keeps the format and its rules.
+
+Preparation reports itself as information lines, one event per line, each short enough with the console's
+`<Task> Info: ` prefix to stay under 80 columns:
+
+    Preparation plan: <phase>[:<units>] <phase>[:<units>] ...
+    Preparation: <phase> <done>/<total> <elapsed>s[; <step>]
+    Preparation: <phase> finished <elapsed>s
+    Preparation: <phase> stalled <idle>s at <done>/<total> <elapsed>s[; <step>]
+
+A phase is one of `parse meshes media atmosphere lights bounce photons`, in that order. A plan line lists the phases
+about to run, with their work units where they are known then: scene preparation gives one, and a render that
+shoots photons another for `photons`. `parse` gives only its `finished` line; every planned phase gives at least
+its `finished` line. `<done>/<total>` counts the phase's meshes, interiors, media, lights, bounce nodes and cells
+(the subsurface light of bounce surfaces included, its step ending in `subsurface`) or photons; the total is `?`
+where it is not known ahead. Times have one decimal. A phase reports `0/<total>` as it starts, then at most every
+2 seconds, then its count and `finished`. A count that has not moved for 60 seconds gives the `stalled` line, again
+every 60 seconds while it stays flat; the phase is still running. `<step>` is terse free text, cut to fit:
+
+    Preparation: bounce 18432/61440 4.0s; o2/2 t3/7 surface

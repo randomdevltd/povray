@@ -66,6 +66,10 @@
 #include "core/lighting/bounceprepare.h"
 #include "core/shape/mesh.h"
 #include "core/support/parallel.h"
+#include "core/support/preparationprogress.h"
+
+#include <algorithm>
+#include <cstring>
 
 // POV-Ray header files (POVMS module)
 #include "povms/povmsid.h"
@@ -300,6 +304,48 @@ void MeshBuildTask::Run()
     for (Camera *camera : FramedCameras(*sceneData))
         collect(camera->frameTarget.get());
 
+    std::vector<ObjectPtr> interiors;
+    std::unordered_set<ConstObjectPtr> preparedFields;
+    std::function<void(ObjectPtr, ObjectPtr)> collectInteriors = [&](ObjectPtr object, ObjectPtr parent)
+    {
+        if ((object == nullptr) || !preparedFields.insert(object).second)
+            return;
+        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
+            interiors.push_back(object);
+        if (LightSource *light = dynamic_cast<LightSource *>(object))
+            collectInteriors(light->Projected_Through_Object, nullptr);
+        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+            for (ObjectPtr child : compound->children)
+                collectInteriors(child, object);
+    };
+    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+        for (ObjectPtr object : set->objects)
+            collectInteriors(object, nullptr);
+    // The console puts the task's name and " Info: " before each line.
+    PreparationProgress progress(mpMessageFactory, std::strlen("Mesh Info: "));
+    std::unordered_set<const Media::EagerField *> eagerFields;
+    for (const auto& media : sceneData->eagerMediaFields)
+        eagerFields.insert(media.second.get());
+    const std::size_t meshUnits = needed.size() + eagerFields.size();
+    {
+        std::vector<std::string> plan;
+        if (meshUnits > 0)
+            plan.push_back("meshes:" + std::to_string(meshUnits));
+        if (!interiors.empty())
+            plan.push_back("media:" + std::to_string(interiors.size()));
+        if (!sceneData->atmosphere.empty())
+            plan.push_back("atmosphere:" + std::to_string(sceneData->atmosphere.size()));
+        if (const std::size_t units = PreparedLightUnits(*sceneData))
+            plan.push_back("lights:" + std::to_string(units));
+        if (std::any_of(sceneData->mediaLights.begin(), sceneData->mediaLights.end(),
+                        [](const LightSource *light) { return bounce_prepare::BounceSettings(*light) != nullptr; }))
+        {
+            const std::size_t units = bounce_prepare::BounceUnits(*sceneData);
+            plan.push_back(units > 0 ? "bounce:" + std::to_string(units) : std::string("bounce"));
+        }
+        progress.Plan(plan);
+    }
+
     DeferredMeshPool *pool = sceneData->meshPool.get();
     unsigned int discarded = 0;
     POV_LONG wasted = 0;
@@ -313,6 +359,7 @@ void MeshBuildTask::Run()
         {
             try
             {
+                progress.Poll();
                 Cooperate();
             }
             catch (...)
@@ -321,6 +368,12 @@ void MeshBuildTask::Run()
                 throw;
             }
         };
+        if (meshUnits > 0)
+            progress.Begin("meshes", meshUnits, [&needed]()
+            {
+                return std::size_t(std::count_if(needed.begin(), needed.end(),
+                                                  [](const std::shared_ptr<DeferredMeshState>& state) { return state->Built(); }));
+            });
         if (pool != nullptr)
         {
             // what no set keeps is never built: queued builds are skipped and running ones stop
@@ -379,8 +432,11 @@ void MeshBuildTask::Run()
         // A single build runs on this task's own thread, whose time is counted already.
         for (size_t worker = (count > 1) ? 0 : 1; worker < count; ++worker)
             buildCpuTime += cpu[worker];
+        workers.front()->preparationProgress = &progress;
         if (!sceneData->eagerMediaFields.empty() || !sceneData->eagerMediaUnsafe.empty())
             FinishMediaFields(*workers.front(), caches, cooperate);
+        workers.front()->preparationProgress = nullptr;
+        progress.End();
     }
     catch (const StopThreadException&)
     {
@@ -487,12 +543,13 @@ void MeshBuildTask::Run()
             rebound(object);
 
     TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
-    std::unordered_set<ConstObjectPtr> preparedFields;
+    finalFields.preparationProgress = &progress;
     finalFields.mediaMessages = mpMessageFactory;
     const auto cooperateFields = [&]()
     {
         try
         {
+            progress.Poll();
             Cooperate();
         }
         catch (...)
@@ -501,26 +558,23 @@ void MeshBuildTask::Run()
             throw;
         }
     };
-    std::function<void(ObjectPtr, ObjectPtr)> prepareFields = [&](ObjectPtr object, ObjectPtr parent)
+    if (!interiors.empty())
+        progress.Begin("media", interiors.size());
+    for (ObjectPtr object : interiors)
     {
-        if ((object == nullptr) || !preparedFields.insert(object).second)
-            return;
         cooperateFields();
-        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
-            PrepareInteriorFields(object, &finalFields, cooperateFields);
-        if (LightSource *light = dynamic_cast<LightSource *>(object))
-            prepareFields(light->Projected_Through_Object, nullptr);
-        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
-            for (ObjectPtr child : compound->children)
-                prepareFields(child, object);
-    };
-    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
-        for (ObjectPtr object : set->objects)
-            prepareFields(object, nullptr);
+        PrepareInteriorFields(object, &finalFields, cooperateFields);
+        progress.Advance();
+    }
+    progress.End();
+    if (!sceneData->atmosphere.empty())
+        progress.Begin("atmosphere", sceneData->atmosphere.size());
     PrepareAtmosphereFields(&finalFields, cooperateFields);
+    progress.End();
     PrepareLightFields(&finalFields, cooperateFields);
     PrepareVolumeBounceLightFields(&finalFields, cooperateFields);
     cooperateFields();
+    finalFields.preparationProgress = nullptr;
     parseData->Stats() += finalFields.Stats();
 
     const size_t recorded = sceneData->deferredMeshes.size();
@@ -572,19 +626,23 @@ void MeshBuildTask::FinishMediaFields(const TraceThreadData& final, const std::u
     std::unordered_set<const Media::EagerField *> fields;
     for (const auto& media : sceneData->eagerMediaFields)
     {
-        if (!fields.insert(media.second.get()).second || media.first->discarded)
+        if (!fields.insert(media.second.get()).second)
             continue;
-        int before, total;
-        EagerFieldSlabs(*media.second, before, total);
-        claimed += before;
-        slabs += total;
-        const MeshBuildGlobals& recorded = media.first->recordedGlobals;
-        for (TraceThreadData *helper : helpers)
-            helper->FreezeGlobals(recorded.noiseGenerator, recorded.workingGamma, recorded.numberOfWaves);
-        if (FinishEagerField(media.second, sceneData->EffectivePreparedMediaCells(), helpers,
-                             [&](unsigned char reads) { return recorded.Differs(now, reads); }, cooperate))
-            ++prepared;
-        cpu += EagerFieldCpuTime(*media.second);
+        if (!media.first->discarded)
+        {
+            int before, total;
+            EagerFieldSlabs(*media.second, before, total);
+            claimed += before;
+            slabs += total;
+            const MeshBuildGlobals& recorded = media.first->recordedGlobals;
+            for (TraceThreadData *helper : helpers)
+                helper->FreezeGlobals(recorded.noiseGenerator, recorded.workingGamma, recorded.numberOfWaves);
+            if (FinishEagerField(media.second, sceneData->EffectivePreparedMediaCells(), helpers,
+                                 [&](unsigned char reads) { return recorded.Differs(now, reads); }, cooperate))
+                ++prepared;
+            cpu += EagerFieldCpuTime(*media.second);
+        }
+        AdvancePreparation(final.preparationProgress);
     }
     for (const std::unique_ptr<TraceThreadData>& helper : data)
         parseData->Stats() += helper->Stats();

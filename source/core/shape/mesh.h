@@ -212,14 +212,14 @@ class DeferredMeshPool final
     private:
         unsigned int threadCount;
         std::mutex mutex;
-        std::condition_variable wake, idle;
+        std::condition_variable wake, idle, joined;
         std::deque<std::shared_ptr<DeferredMeshState>> queue;
         std::vector<std::shared_ptr<DeferredMeshState>> retained;
         std::vector<std::unique_ptr<TraceThreadData>> threadData;
         std::vector<DeferredMeshState *> running;
         std::vector<std::thread> threads;
         unsigned int busy = 0;
-        bool paused = false, stopping = false;
+        bool paused = false, stopping = false, joining = false;
         std::atomic<POV_LONG> cpuTime{0};
 
         void Work(size_t index);

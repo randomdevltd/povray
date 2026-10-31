@@ -123,6 +123,12 @@ class Ray final : public BasicRay
         bool IsMonochromaticRay() const { return monochromaticRay; }
         bool IsHollowRay() const { return hollowRay; }
         bool IsPretraceRay() const { return pretraceRay; }
+        /// Shadow tests of this ray count every blocker between its ends, with no fixed margin at either.
+        void SetExactShadowWindow() { exactShadowWindow = true; }
+        bool HasExactShadowWindow() const { return exactShadowWindow; }
+        /// A receiver standing for a region this wide takes a light's falloff no nearer than this to the light.
+        void SetReceiverRadius(DBL radius) { receiverRadius = radius; }
+        DBL ReceiverRadius() const { return receiverRadius; }
 
         bool AdmitRoot(ConstObjectPtr object, double depth) const
         { return !rootQuery.query || rootQuery.query->Admit(rootQuery.owner ? rootQuery.owner : object, depth); }
@@ -161,26 +167,37 @@ class Ray final : public BasicRay
         void SetPreparedSetId(PreparedSetId view) { preparedSetId = view; }
 
         /// The path key this ray's random draws are hashed from.
-        std::uint64_t GetKey() const { return key; }
+        std::uint64_t GetKey() const { MarkKeyRead(); return key; }
         void SetKey(std::uint64_t k) { key = k; children = 0; }
         /// Makes this ray the index-th child of its kind below the parent.
-        void Derive(const Ray& parent, std::uint64_t kind, std::uint64_t index) { SetKey(DeriveKey(parent.key, kind, index)); }
+        void Derive(const Ray& parent, std::uint64_t kind, std::uint64_t index)
+        {
+            keyRead = parent.keyRead;
+            SetKey(DeriveKey(parent.key, kind, index));
+        }
         /// A key for the next child of a kind whose place among its siblings is its only index.
-        std::uint64_t NextChildKey(std::uint64_t kind) const { return DeriveKey(key, kind, children++); }
+        std::uint64_t NextChildKey(std::uint64_t kind) const { MarkKeyRead(); return DeriveKey(key, kind, children++); }
+        /// Sets `*flag` once anything reads the key of this ray, a copy or a derived ray; `*flag` must outlive them.
+        void WatchKey(bool *flag) { keyRead = flag; }
 
         /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
         Vector3d dOdx, dOdy, dDdx, dDdy;
 
     private:
 
+        void MarkKeyRead() const { if (keyRead != nullptr) *keyRead = true; }
+
         RayInteriorVector interiors;
         SpectralBand spectralBand;
         TraceTicket& ticket;
         std::uint64_t key = 0;
+        bool *keyRead = nullptr;
         mutable DBL mediaErrorBudget = 0.0;
         const LightSource *mediaLight = nullptr;
         PreparedSetId preparedSetId = 0;
         mutable std::uint32_t children = 0;
+        bool exactShadowWindow = false;
+        DBL receiverRadius = 0.0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;

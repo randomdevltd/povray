@@ -1107,12 +1107,21 @@ void DeferredMeshPool::Join(std::unique_lock<std::mutex>& lock)
 {
     stopping = true;
     wake.notify_all();
-    std::vector<std::thread> joining;
-    joining.swap(threads);
+    // a stop from another thread may be joining the threads already: their data stays live until it is done
+    if (joining)
+    {
+        joined.wait(lock, [this]() { return !joining; });
+        return;
+    }
+    joining = true;
+    std::vector<std::thread> stopped;
+    stopped.swap(threads);
     lock.unlock();
-    for (std::thread& thread : joining)
+    for (std::thread& thread : stopped)
         thread.join();
     lock.lock();
+    joining = false;
+    joined.notify_all();
 }
 
 std::vector<std::unique_ptr<TraceThreadData>> DeferredMeshPool::Dispose()

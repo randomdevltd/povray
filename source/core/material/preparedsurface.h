@@ -153,7 +153,8 @@ public:
         double front, back, brilliance, adjust, outgoing;
     };
 
-    static std::vector<DiffuseLayer> DiffuseLayersAt(Intersection intersection, const Vector3d& normal, TraceThreadData* thread)
+    static std::vector<DiffuseLayer> DiffuseLayersAt(Intersection intersection, const Vector3d& normal, TraceThreadData* thread,
+        bool validate = true)
     {
         intersection.INormal = intersection.PNormal = normal;
         intersection.haveNormal = true;
@@ -188,7 +189,7 @@ public:
             std::set<const TEXTURE*> validated;
             for (const auto& weighted : textures)
             {
-                ValidateTexture(weighted.texture, validated, true, thread->GetSceneData()->useSubsurface);
+                if (validate) ValidateTexture(weighted.texture, validated, true, thread->GetSceneData()->useSubsurface);
                 const Vector3d point = ConstantMaterial(weighted.texture) ? intersection.IPoint : EvaluationPoint(intersection);
                 colour += TextureEmission(weighted.texture, point, intersection, thread, 0, true, finish) * weighted.weight;
             }

@@ -6,8 +6,8 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 render() {
-    name=$1; scene=$2; shift 2
-    "$POVRAY" +i"$scene" +w8 +h8 +wt1 +pr -a -d -p -v -gp +fp16 File_Gamma=1 +o"$name.ppm" "$@" >"$name.log" 2>&1 || { cat "$name.log"; exit 1; }
+    name=$1; input=$2; shift 2
+    "$POVRAY" +i"$input" +w8 +h8 +wt1 +pr -a -d -p -v -gp +fp16 File_Gamma=1 +o"$name.ppm" "$@" >"$name.log" 2>&1 || { cat "$name.log"; exit 1; }
     tail -c 384 "$name.ppm" >"$name.rgb"
 }
 scene=$SRCDIR/tests/render/surface_light.pov
@@ -44,6 +44,9 @@ cmp bounce1.rgb bounce2.rgb
 render passive "$scene" Declare=Bounce=1 Declare=Passive=1
 render native_passive "$SRCDIR/tests/render/surface_light.pov4" Declare=Bounce=1 Declare=Passive=1
 cmp passive.rgb native_passive.rgb
+render csg "$scene" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
+render native_csg "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=8 Declare=Bounce=3 Declare=Passive=1 Declare=Volume=1
+cmp csg.rgb native_csg.rgb
 render portal "$scene" Declare=Case=9
 render native_portal "$SRCDIR/tests/render/surface_light.pov4" Declare=Case=9
 cmp portal.rgb native_portal.rgb
@@ -63,6 +66,7 @@ for case in range(8):
 assert power('native7')>0
 assert abs(power('native7')/power('geometry7')-1)<0.05
 assert power('passive')==0
+assert power('csg')>0
 assert power('portal')>0
 assert power('self')==0
 reference=power('geometry0')

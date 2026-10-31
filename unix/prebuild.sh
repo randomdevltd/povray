@@ -645,7 +645,10 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/csg_mesh_media_shadow.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/shadow_coincident_layers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_grid_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_tested_density_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/prepared_fields_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/bounce_preparation.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/bounce_adaptive.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_optical_threads.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/clear_containers.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/texture_filter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -667,6 +670,9 @@ check-quick: all
 	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/progressive_photon.cpp -o progressive_photon_test
 	./progressive_photon_test
 	rm -f progressive_photon_test
+	\$(CXX) -std=c++14 -O2 -I\$(top_srcdir)/source \$(top_srcdir)/tests/source/subsurface_patch.cpp -o subsurface_patch_test
+	./subsurface_patch_test
+	rm -f subsurface_patch_test
 	+sh "\$(top_srcdir)/tools/bench/check-progressive-surface.sh" "\$(top_builddir)" "\$(top_builddir)/tests/progressive-surface"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-light.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-light"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-refraction.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-refraction"
@@ -683,6 +689,24 @@ check-quick: all
 	\$(CXX) -std=c++14 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/photon_beam_map.cpp -o photon_beam_map_test
 	./photon_beam_map_test
 	rm -f photon_beam_test photon_beam_map_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/bounce_grid_test.cpp -o bounce_grid_test
+	./bounce_grid_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/prepared_source_domain.cpp -o prepared_source_domain_test
+	./prepared_source_domain_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/prepared_source_selector.cpp -o prepared_source_selector_test
+	./prepared_source_selector_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/shared_incident_field.cpp -o shared_incident_field_test
+	./shared_incident_field_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/surface_angular_guide.cpp -o surface_angular_guide_test
+	./surface_angular_guide_test
+	\$(CXX) -std=c++17 -O2 -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/simple_vector.cpp -o simple_vector_test
+	./simple_vector_test
+	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test
+	mkdir -p \$(top_builddir)/tests/subsurface-entry-ior
+	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
+	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_entry_ior.cpp" \\
+	  PREPARED_OBJECT="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior.o" \\
+	  PREPARED_BINARY="\$(abs_top_builddir)/tests/subsurface-entry-ior/subsurface_entry_ior_test"
 	sh \$(top_srcdir)/tests/render/progressive_volume_groups.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/media_solid.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/refraction_frontend.sh \$(top_builddir)/unix/povray \$(top_srcdir)

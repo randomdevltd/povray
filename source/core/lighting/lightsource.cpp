@@ -621,6 +621,9 @@ DBL Attenuate_Light (const LightSource *Light, const Ray &ray, DBL Distance)
     }
 
     if (Light->volumeLaw)
+    if (ray.ReceiverRadius() > 0.0)
+        Distance = std::max(Distance, ray.ReceiverRadius());
+
         return Attenuation * Light_Distance_Attenuation(Light, Distance);
 
     if (Attenuation > 0.0)

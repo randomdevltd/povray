@@ -19,7 +19,7 @@ class BounceFieldGrid final : public PreparedDirectionalSourceField
 {
 public:
     BounceFieldGrid(std::shared_ptr<const PreparedSourceDomain> domain, std::vector<BounceFieldNode> nodes)
-        : domain(std::move(domain)), nodes(std::move(nodes))
+        : domain(std::move(domain)), nodes(Sealed(std::move(nodes)))
     {
         if (!this->domain || this->nodes.size() != this->domain->NodeCount())
             throw std::invalid_argument("Bounce field size does not match its source domain");
@@ -48,6 +48,12 @@ public:
     }
 
 private:
+    static std::vector<BounceFieldNode> Sealed(std::vector<BounceFieldNode> nodes)
+    {
+        for (auto& node : nodes)
+            node.Seal();
+        return nodes;
+    }
     template <class EvaluateNode> MathColour Interpolate(const Vector3d& point, EvaluateNode evaluate) const
     {
         const auto stencil = domain->SampleStencil(point);
