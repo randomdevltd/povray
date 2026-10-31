@@ -46,6 +46,7 @@
 // POV-Ray header files (core module)
 #include "core/material/interior.h"
 #include "core/render/trace.h"
+#include "core/scene/object.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -68,6 +69,31 @@ Ray::Ray(TraceTicket& ticket, const Vector3d& ov, const Vector3d& dv, RayType rt
     SetFlags(rt, shadowTest, photon, radiosity, monochromatic, pretrace);
     hollowRay = true;
     ClearInteriors();
+}
+
+static double SurfaceErrorScale(ConstObjectPtr object)
+{
+    double scale = 0.0;
+    if (object)
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const double extent = object->BBox.size[axis];
+            if (extent >= BOUND_HUGE / 2.0)
+                return 0.0;
+            scale = std::max(scale, std::abs(extent));
+        }
+    return scale;
+}
+
+void Ray::SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal)
+{
+    surfaceOrigin = {object, point, normal, SurfaceErrorScale(object), object ? object->SurfaceTolerance() : 0.0};
+}
+
+void Ray::SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface)
+{
+    const ConstObjectPtr part = surface ? surface : object;
+    surfaceEndpoint = {object, point, Vector3d(0.0), SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
 }
 
 Ray::~Ray()

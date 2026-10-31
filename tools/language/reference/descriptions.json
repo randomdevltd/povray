@@ -282,10 +282,6 @@
    "text": "This eccentricity is specified by the optional keyword eccentricity which is only used for scattering type five.",
    "doc": "r3_7.html#r3_7_2_2_3"
   },
-  "emission": {
-   "text": "The emission keyword New in version 3.7 can be used to model glowing materials, eliminating the need to co-opt ambient for this purpose.",
-   "doc": "r3_6.html#r3_6_1_3_2"
-  },
   "error_bound": {
    "text": "The error_bound float value is one of the two main speed/quality tuning values (the other is of course the number of rays shot).",
    "doc": "r3_4.html#r3_4_3_3_3_5"
@@ -2156,8 +2152,8 @@
    "from": "doc/html/r3_4.html"
   },
   "nits": {
-   "rank": 67,
-   "code": "pigment { PIGMENT } | emission | brightness Value [nits | lumens] |",
+   "rank": 66,
+   "code": "light { pigment { rgb <1,0.5,0.2> } brightness 8 nits samples 16 }",
    "from": "doc/html/r3_12.html"
   },
   "no_bump_scale": {

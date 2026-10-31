@@ -16,11 +16,15 @@
 namespace pov
 {
 
+// With `watched`, even one worker runs off the calling thread, so that cooperate keeps being called while it works.
 template<typename Function, typename Cooperate>
-void ParallelFor(std::size_t count, std::size_t threadCount, const Function& function, const Cooperate& cooperate)
+void ParallelFor(std::size_t count, std::size_t threadCount, const Function& function, const Cooperate& cooperate,
+                 bool watched = false)
 {
     threadCount = std::max<std::size_t>(1, std::min(count, threadCount));
-    if (threadCount == 1)
+    if (count == 0)
+        return;
+    if ((threadCount == 1) && !watched)
     {
         for (std::size_t i = 0; i < count; ++i)
             function(i, 0);
@@ -34,10 +38,10 @@ void ParallelFor(std::size_t count, std::size_t threadCount, const Function& fun
     std::mutex failureMutex;
     std::mutex doneMutex;
     std::condition_variable done;
-    auto recordFailure = [&]()
+    auto recordFailure = [&](bool first)
     {
         std::lock_guard<std::mutex> lock(failureMutex);
-        if (!failure)
+        if (!failure || first)
             failure = std::current_exception();
         failed.store(true, std::memory_order_relaxed);
     };
@@ -55,7 +59,7 @@ void ParallelFor(std::size_t count, std::size_t threadCount, const Function& fun
         }
         catch (...)
         {
-            recordFailure();
+            recordFailure(false);
         }
         if (running.fetch_sub(1, std::memory_order_release) == 1)
             done.notify_one();
@@ -71,7 +75,7 @@ void ParallelFor(std::size_t count, std::size_t threadCount, const Function& fun
         done.wait_for(lock, std::chrono::milliseconds(100), [&]() { return running.load(std::memory_order_acquire) == 0; });
         lock.unlock();
         if (!failed.load(std::memory_order_relaxed) && (running.load(std::memory_order_acquire) != 0))
-            try { cooperate(); } catch (...) { recordFailure(); }
+            try { cooperate(); } catch (...) { recordFailure(true); }
     }
     for (std::thread& worker : workers)
         worker.join();

@@ -48,6 +48,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <set>
 
 // POV-Ray header files (base module)
 //  (none at the moment)
@@ -63,6 +64,8 @@
 
 namespace pov
 {
+class SurfaceBounceRadiance;
+struct SurfaceBounceNode;
 
 //##############################################################################
 ///
@@ -266,6 +269,9 @@ class Trace
         virtual ~Trace();
         /// Adds this thread's counts of shading points the subsurface cloud left unserved to the shared ones.
         void FlushSubsurfaceCounts();
+        std::shared_ptr<const SurfaceBounceRadiance> PrepareSurfaceSubsurfaceRadiance(
+            const std::vector<SurfaceBounceNode>& nodes, const std::vector<std::shared_ptr<LightSource>>& sources,
+            PreparedSetId preparedSetId, std::size_t trials, const std::set<ObjectPtr>& collapsedOwners = {});
 
         /// Make rays with differentials average their pigments over this multiple of the pixel footprint; zero turns it off.
         void SetTextureFilterScale(DBL scale) { textureFilterScale = scale; }
@@ -959,7 +965,8 @@ class Trace
     ///
 
         /// Compute relative index of refraction.
-        void ComputeRelativeIOR(const Ray& ray, const Interior* interior, const Vector3d& point, const Vector3d& normal, double& ior);
+        void ComputeRelativeIOR(const Ray& ray, const Interior* interior, const Vector3d& point, const Vector3d& normal, double& ior,
+                                const RayInteriorVector* after = nullptr);
 
         /// The ratios a surface refracts by.
         struct InterfaceIor final
@@ -1138,6 +1145,7 @@ class Trace
             void Apply(PreciseMathColour& rd, double distSqr, int part) const;
         };
         SubsurfaceThin ssltThin;
+        const std::vector<std::shared_ptr<LightSource>>* ssltBounceSources = nullptr;
         /// Rd tables per subsurface recursion depth, one per channel.
         SubsurfaceRdTable ssltRdTables[2][MathColour::channels];
         void AttachRdTables(const SubsurfaceProfile& profile, const TraceTicket& ticket);
@@ -1212,7 +1220,7 @@ class Trace
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
             int sizeLevel = 0, depthLevel = kCloudNoDepthLevel;
             SubsurfaceUnserved unserved = kUnservedSheet; ///< why the cloud could not be opened
-            double size = 0.0, spacing = 0.0, reach = 0.0, eta = 1.0; ///< spacing: that of the cell holding the exit point
+            double size = 0.0, spacing = 0.0, reach = 0.0; ///< spacing: that of the cell holding the exit point
             bool local = false; ///< diffusion within about a pixel, or no points near: all of it is lit as the exit point is
             bool photons = false;
             bool radiosity = false; ///< the points carry the radiosity cache's light too
@@ -1254,22 +1262,24 @@ class Trace
         void ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket,
                                        std::uint64_t key, int sample);
         ObjectPtr SubsurfaceObject(const Intersection& isect);
-        void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta, SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
+        void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
+        double ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, const Interior* interior,
+                                          const Vector3d& towardSource, TraceTicket& ticket);
         void SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d& normal, const Interior* interior, Ray& ray);
         void SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate);
-        void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double eta, double weight, TraceTicket& ticket);
+        void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
-                                              const PreciseMathColour& weightOut, double eta, const Vector3d& bend_point, double ftOut, double cos_out_prime,
+                                              const PreciseMathColour& weightOut, const Vector3d& bend_point, double ftOut, double cos_out_prime,
                                               SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
         void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
-                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
+                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo,
                                                  const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
                                                  TraceTicket& ticket, std::uint64_t key);
         void ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket,
                                        std::uint64_t key);
         MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket,
                                          std::uint64_t key);
-        MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
+        MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
                                                const Vector3d& geometricNormal, const Interior* interior, const char* uses = nullptr);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
@@ -1297,7 +1307,7 @@ class Trace
                                            double probe, Vector3d& outward, TraceTicket& ticket);
         bool SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incoming, ObjectPtr receiver, double rootTolerance,
                                      Vector3d& outward, TraceTicket& ticket);
-        MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, double eta, ObjectPtr receiver,
+        MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, ObjectPtr receiver,
                                                      PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud);
         bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
                                                const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,

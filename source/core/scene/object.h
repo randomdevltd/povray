@@ -175,6 +175,7 @@ namespace pov
 
 class Portal;
 class Emitter;
+struct MediaLight;
 struct PhotonTargetGroup final { BoundingBox box; }; ///< the bounds of the split union the group was
 
 /// Abstract base class for all geometric objects.
@@ -186,6 +187,7 @@ class ObjectBase
         TEXTURE *Texture;
         TEXTURE *Interior_Texture;
         InteriorPtr interior;
+        std::shared_ptr<MediaLight> surfaceLight;
         std::vector<ObjectPtr> Bound;
         std::vector<ObjectPtr> Clip;
         std::vector<LightSource*> LLights;  ///< Used for light groups.
@@ -224,7 +226,7 @@ class ObjectBase
         ///
         ObjectBase(int t, ObjectBase& o, bool transplant) :
             Type(t),
-            Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
+            Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), surfaceLight(o.surfaceLight), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),

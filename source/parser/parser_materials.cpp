@@ -36,6 +36,7 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
 
+#include <limits>
 #include <climits>
 #include <cmath>
 
@@ -3883,7 +3884,38 @@ void Parser::Parse_Media(vector<Media>& medialist)
     medialist.push_back(IMediaObj);
 }
 
-void Parser::Parse_Interior_Light(Interior& interior)
+unsigned Parser::Parse_Light_Bounce()
+{
+    unsigned passes = 1;
+    if (!Peek_Token(LEFT_CURLY_TOKEN))
+        return passes;
+    bool havePasses = false;
+    Parse_Begin();
+    EXPECT
+        OTHERWISE
+            if (CurrentTokenText() == "passes")
+            {
+                if (havePasses)
+                    Error("A bounce block accepts only one passes setting.");
+                havePasses = true;
+                const double value = Parse_Float();
+                if (!std::isfinite(value) || value < 1.0 || std::floor(value) != value ||
+                    value > static_cast<double>(std::numeric_limits<unsigned>::max()))
+                    Error("Bounce passes must be a positive integer in the unsigned range.");
+                passes = static_cast<unsigned>(value);
+            }
+            else
+            {
+                UNGET
+                EXIT
+            }
+        END_CASE
+    END_EXPECT
+    Parse_End();
+    return passes;
+}
+
+std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 {
     std::shared_ptr<MediaLight> light(new MediaLight());
     Parse_Begin();
@@ -3955,8 +3987,16 @@ void Parser::Parse_Interior_Light(Interior& interior)
         END_CASE
 
         OTHERWISE
-            if (CurrentTokenText() == "attenuation")
+            if (CurrentTokenText() == "bounce")
             {
+                if (light->bouncePasses != 0)
+                    Error("A light block accepts only one bounce setting.");
+                light->bouncePasses = Parse_Light_Bounce();
+            }
+            else if (CurrentTokenText() == "attenuation")
+            {
+                if (surface)
+                    Error("Surface light blocks do not accept attenuation.");
                 Get_Token();
                 UNGET
                 const double first = Parse_Float();
@@ -3977,7 +4017,9 @@ void Parser::Parse_Interior_Light(Interior& interior)
 
     Parse_End();
 
-    interior.light = light;
+    if (light->bouncePasses > 0 && light->pigment == nullptr && !light->useEmission)
+        light->useEmission = true;
+    return light;
 }
 
 /*****************************************************************************
@@ -4154,7 +4196,7 @@ void Parser::Parse_Interior(InteriorPtr& interior)
             {
                 if (interior->light != nullptr)
                     Error("Only one light block allowed in an interior.");
-                Parse_Interior_Light(*interior);
+                interior->light = Parse_Light();
             }
             else if (CurrentTokenText() == "ior_mix")
             {

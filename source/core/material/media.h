@@ -93,10 +93,14 @@ enum
 void Transform_Density(std::vector<PIGMENT*>& Density, const TRANSFORM *Trans);
 
 class Emitter;
+class PreparedDirectionalSourceField;
+class PreparedSourceDistribution;
 
 /// The light an interior's `light { }` block gives from its container: a table of each cell's power, its radiance
 /// times the media's density-weighted extinction, or their mean chord when none has any; nullptr and why if none.
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData *td, std::string& failure);
+std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary, std::shared_ptr<const PreparedDirectionalSourceField> field, TraceThreadData *td, bool includePrimary = false,
+    std::shared_ptr<const PreparedSourceDistribution> proposal = nullptr);
 void PrepareInteriorFields(ObjectPtr owner, TraceThreadData *td, const std::function<void()>& cooperate);
 void PrepareAtmosphereFields(TraceThreadData *td, const std::function<void()>& cooperate);
 std::shared_ptr<const PreparedGridLayout> PrepareInteriorFieldLayout(ObjectPtr owner, TraceThreadData *td);
@@ -116,6 +120,16 @@ const unsigned kRefractionJump = 64, kThinOverlap = 128, kRefractionTrapped = 25
 
 /// The media a ray's interiors show, in precedence order; without modifiers every interior adds its media.
 void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& medias, MediaModifierVector *modifiers);
+
+struct BounceScatteringComponent final
+{
+    int type;
+    double eccentricity;
+    MathColour coefficient;
+};
+
+std::vector<BounceScatteringComponent> EvaluateOwnerBounceScattering(
+    const RayInteriorVector& interiors, const Interior& owner, const Vector3d& point, TraceThreadData *td);
 
 /// The refraction on a stack of interiors: the refractive index there is the base ior plus Offset().
 class RefractionField final

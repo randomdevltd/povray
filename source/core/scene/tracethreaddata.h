@@ -71,6 +71,7 @@ namespace pov
 {
 
 class SubsurfaceCache;
+class SurfaceAngularGuideCache;
 
 //##############################################################################
 ///
@@ -174,6 +175,7 @@ class TraceThreadData : public ThreadData
         std::vector<LightSource*> lightSources;
 
         std::shared_ptr<SubsurfaceCache> subsurfaceCache;
+        std::shared_ptr<SurfaceAngularGuideCache> surfaceAngularGuideCache;
 
         // all of these are for photons
         // most of them should be refactored into parameters, return values, or other objects

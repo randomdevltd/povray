@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/lighting/photons.h"
+#include "core/lighting/emitter.h"
 #include "core/math/finite.h"
 
 // C++ variants of C standard header files
@@ -148,12 +149,27 @@ bool PhotonTrace::PhotonLightAffectsObject(ConstObjectPtr object) const
     return std::find(object->LLights.begin(), object->LLights.end(), light) != object->LLights.end();
 }
 
+class PhotonOriginQuery final : public RayRootQuery, public RayObjectCondition
+{
+public:
+    explicit PhotonOriginQuery(const Ray& ray) : ray(ray) {}
+    bool Admit(ConstObjectPtr object, double depth) const override
+    { return !ray.MatchesSurfaceOrigin(object, depth); }
+    bool operator()(const Ray&, ConstObjectPtr object, double depth) const override
+    { return Admit(object, depth); }
+private:
+    const Ray& ray;
+};
+
 DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth, bool)
 {
     Intersection bestisect;
     bool found;
     NoSomethingFlagRayObjectCondition precond;
-    TrueRayObjectCondition postcond;
+    PhotonOriginQuery postcond(ray);
+    const RayRootQueryDisabled restoreQuery(ray);
+    if (ray.HasSurfaceOrigin())
+        ray.SetRootQuery(&postcond);
 
     POV_ULONG nrays = threadData->Stats()[Number_Of_Rays]++;
     if(((unsigned char) nrays & 0x0f) == 0x00)
@@ -230,7 +246,7 @@ DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC wei
 bool PhotonTrace::ShadePhoton(Ray& ray, Intersection& bestisect, MathColour& colour, COLC weight)
 {
     const auto* source = threadData->photonSourceLight;
-    const bool ownEmitter = sceneData->photonSettings.Progressive() && source->emitterContainer &&
+    const bool ownEmitter = sceneData->photonSettings.Progressive() && source->emitterContainer && source->emitter && !source->emitter->IsSurface() &&
                             IsObjectInCSG(bestisect.Object, source->emitterContainer);
     if (sceneData->photonSettings.Progressive() && (ray.GetTicket().traceLevel == 1 || threadData->passThruThis) &&
         Test_Flag(bestisect.Object, PH_TARGET_FLAG) && !PhotonLightAffectsObject(bestisect.Object))

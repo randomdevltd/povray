@@ -38,6 +38,9 @@
 
 // Module config header file must be the first file included within POV-Ray unit header files
 #include "core/configcore.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include "core/render/ray_fwd.h"
 
 // C++ variants of C standard header files
@@ -70,6 +73,7 @@ struct RayRootQuery
 {
     virtual ~RayRootQuery() = default;
     virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
+    virtual bool AllRoots() const { return false; }
 };
 
 class Ray final : public BasicRay
@@ -127,6 +131,21 @@ class Ray final : public BasicRay
         void SetRootQuery(const RayRootQuery* query) const { rootQuery.query = query; rootQuery.owner = nullptr; }
         void SetRootOwner(ConstObjectPtr owner) const { rootQuery.owner = owner; }
 
+        void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal);
+        void ClearSurfaceOrigin() { surfaceOrigin.object = nullptr; }
+        bool HasSurfaceOrigin() const { return surfaceOrigin.object != nullptr; }
+        /// `surface` is the part of `object` the point lies on, whose stated accuracy the match allows; `object` if none.
+        void SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface = nullptr);
+        bool HasSurfaceEndpoint() const { return surfaceEndpoint.object != nullptr; }
+        void ClearSurfaceEndpoint() { surfaceEndpoint.object = nullptr; }
+        bool MatchesSurfaceEndpoint(ConstObjectPtr object, double depth) const
+        { return MatchesSurfacePoint(surfaceEndpoint, object, depth); }
+        bool MatchesSurfaceOrigin(ConstObjectPtr object, double depth) const
+        {
+            return surfaceOrigin.object && dot(Direction, surfaceOrigin.normal) > 0.0 &&
+                MatchesSurfacePoint(surfaceOrigin, object, 0.0) && MatchesSurfacePoint(surfaceOrigin, object, depth);
+        }
+
         bool Inside(const BoundingBox& bbox) const { return Inside_BBox(Origin, bbox); }
 
         inline TraceTicket& GetTicket() { return ticket; }
@@ -179,6 +198,28 @@ class Ray final : public BasicRay
         bool hasDifferentials = false;
 
     private:
+        struct SurfacePoint
+        {
+            ConstObjectPtr object = nullptr;
+            Vector3d point, normal;
+            double errorScale = 0.0;
+            double rootTolerance = 0.0;
+        };
+        SurfacePoint surfaceOrigin, surfaceEndpoint;
+        bool MatchesSurfacePoint(const SurfacePoint& surface, ConstObjectPtr object, double depth) const
+        {
+            if (!surface.object || surface.object != object)
+                return false;
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const double travel = depth * Direction[axis];
+                const double scale = std::max(surface.errorScale, std::max(std::abs(surface.point[axis]), std::max(std::abs(Origin[axis]), std::abs(travel))));
+                const double tolerance = std::max(16.0 * std::numeric_limits<double>::epsilon() * scale, surface.rootTolerance);
+                if (std::abs((Origin[axis] + travel) - surface.point[axis]) > tolerance)
+                    return false;
+            }
+            return true;
+        }
 
         struct RootQueryState
         {

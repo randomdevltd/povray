@@ -55,6 +55,8 @@
 #include "base/timer.h"
 
 #include "core/lighting/emitter.h"
+#include "core/material/prepareddirectionalsource.h"
+#include "core/lighting/surfaceemitter.h"
 #include "core/lighting/emitteraabb.h"
 #include "core/material/preparedtransfer.h"
 #include "core/material/physicalphase.h"
@@ -67,6 +69,7 @@
 #include "core/material/pattern.h"
 #include "core/material/pigment.h"
 #include "core/material/preparedlightaxis.h"
+#include "core/material/preparedsourceselector.h"
 #include "core/math/chi2.h"
 #include "core/math/matrix.h"
 #include "core/render/ray.h"
@@ -1416,35 +1419,58 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
 {
     PrepareRefractionDefinitions(td, cooperate);
     const auto scene = std::const_pointer_cast<SceneData>(td->GetSceneData());
+    std::vector<ConstObjectPtr> sourceOwners;
+    for (const LightSource* light : scene->mediaLights)
+        if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
+            sourceOwners.push_back(light->emitterContainer);
+    std::vector<ConstObjectPtr> sourceBoundaries(scene->objects.begin(), scene->objects.end());
+    std::map<ConstObjectPtr, std::shared_ptr<const PreparedSourceDomain>> sourceDomains;
+    for (const auto& group : PrepareSourceDomains(sourceOwners, sourceBoundaries))
+        for (ConstObjectPtr owner : group.owners)
+            sourceDomains.emplace(owner, group.domain);
     for (LightSource *light : scene->mediaLights)
     {
-        if (cooperate)
-            cooperate();
         if (!light->emitter || !light->emitterContainer)
             throw POV_EXCEPTION_STRING("Interior light has no prepared geometry binding.");
         if (light->portal)
             throw POV_EXCEPTION_STRING("Prepared volume light paths through portals are not supported.");
-        const auto layout = PrepareInteriorFieldLayout(const_cast<ObjectPtr>(light->emitterContainer), td);
+        light->emitter->ResolveGeometry();
+    }
+    for (LightSource *light : scene->mediaLights)
+    {
+        if (cooperate)
+            cooperate();
+        if (light->emitter->IsSurface())
+        {
+            light->emitter->PrepareAxis(nullptr, td, cooperate);
+            light->colour = light->emitter->Intensity() / M_PI;
+            light->Center = light->emitter->Centre();
+            light->lawRadius = light->emitter->Radius();
+            continue;
+        }
+        const auto layout = sourceDomains.at(light->emitterContainer);
         if (!layout)
             throw POV_EXCEPTION_STRING("A varying interior light requires finite prepared coordinates.");
         light->emitter->PrepareAxis(layout, td, cooperate);
-        const auto axis = light->emitter->PreparedAxis();
-        if (!axis)
+        if (!light->emitter->PreparedAxis())
             throw POV_EXCEPTION_STRING("Interior light did not publish its prepared emission field.");
         if (td->mediaMessages)
             td->mediaMessages->Info("Prepared interior light grid: %u x %u x %u; source %u%s.",
-                unsigned(layout->counts[X]), unsigned(layout->counts[Y]), unsigned(layout->counts[Z]),
+                unsigned(layout->Counts()[X]), unsigned(layout->Counts()[Y]), unsigned(layout->Counts()[Z]),
                 unsigned(light->index), light->lightGroupLight ? " in light group" : "");
         light->colour = light->emitter->Intensity() / M_PI;
         light->Center = light->emitter->Centre();
         light->lawRadius = light->emitter->Radius();
-        for (const auto& field : light->emitterContainer->interior->fields)
-            if (field->owner == light->emitterContainer)
-            {
-                field->lights.push_back(PreparedLightComponent{light, axis});
-                field->lightReady = true;
-            }
     }
+    // Shared interior fields gain their lights on this thread, in scene order.
+    for (LightSource *light : scene->mediaLights)
+        if (!light->emitter->IsSurface())
+            for (const auto& field : light->emitterContainer->interior->fields)
+                if (field->owner == light->emitterContainer)
+                {
+                    field->lights.push_back(PreparedLightComponent{light, light->emitter->PreparedAxis()});
+                    field->lightReady = true;
+                }
 }
 
 void Media::PostProcess()
@@ -1498,12 +1524,12 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
+    bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
     photonReflection(source.photonReflection), photonRefraction(source.photonRefraction),
-    photonOptions(source.photonOptions)
+    photonOptions(source.photonOptions), preparedParallelSafe(source.preparedParallelSafe)
 {
 }
 
@@ -1533,14 +1559,17 @@ class VolumeEmitter final : public Emitter
     public:
         ObjectPtr container = nullptr, geometry = nullptr;
         std::shared_ptr<const MediaLight> sourceSettings;
+        std::shared_ptr<const PreparedDirectionalSourceField> bounceField;
+        std::shared_ptr<const PreparedLightAxis> authoredAxis;
         std::shared_ptr<const PreparedLightAxis> axis;
         mutable std::mutex prepareMutex;
         Vector3d low, size, centre;
         MathColour coefficient, intensity;
         double radius = 0.0, boxVolume = 0.0;
+        bool volumeEmission = true;
 
         ~VolumeEmitter() override { Destroy_Object(geometry); }
-        void PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout, TraceThreadData *td,
+        void PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                          const std::function<void()>& cooperate) const override;
 
         struct ScaledColour final : PreparedColourField
@@ -1551,18 +1580,49 @@ class VolumeEmitter final : public Emitter
             MathColour Sample(const Vector3d& p) const override { return field->Sample(p) * scale; }
         };
 
+        struct CombinedColour final : PreparedColourField
+        {
+            std::shared_ptr<const PreparedLightAxis> authored;
+            std::shared_ptr<const PreparedDirectionalSourceField> bounced;
+            CombinedColour(std::shared_ptr<const PreparedLightAxis> authored, std::shared_ptr<const PreparedDirectionalSourceField> bounced) :
+                authored(std::move(authored)), bounced(std::move(bounced)) {}
+            MathColour Sample(const Vector3d& p) const override
+            { return authored->ColourAt(p) + bounced->AngularAverage(p); }
+        };
+
         std::shared_ptr<const PreparedLightAxis> PreparedAxis() const override { return axis; }
         const MathColour& Intensity() const override { return intensity; }
         const Vector3d& Centre() const override { return centre; }
         double Radius() const override { return radius; }
 
-        MathColour EmissionAt(const Vector3d& p, TraceThreadData *td) const
+        bool HasVolumeEmission() const override { return volumeEmission; }
+
+        MathColour EmissionAt(const Vector3d& p, TraceThreadData *td, const Vector3d *outgoing = nullptr) const
         {
             if (!axis)
                 throw POV_EXCEPTION_STRING("Interior light axis was not published before tracing.");
             if (!Inside_Object((p - centre) / radius, geometry, td))
                 return MathColour();
+            if (bounceField)
+            {
+                MathColour result = outgoing ? bounceField->Evaluate(p, *outgoing) : bounceField->AngularAverage(p);
+                if (authoredAxis)
+                    result += authoredAxis->ColourAt(p);
+                return result;
+            }
             return axis->ColourAt(p);
+        }
+
+        MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const override
+        {
+            if (!bounceField)
+                return Emitter::PhotonEmissionWeight(sample, outgoing);
+            if (!(sample.pdf > 0.0) || !(sample.weight.Weight() > 0.0))
+                return MathColour();
+            MathColour result = bounceField->Evaluate(sample.position, outgoing);
+            if (authoredAxis)
+                result += authoredAxis->ColourAt(sample.position);
+            return result / sample.pdf;
         }
 
         double PositionPdf(const Vector3d& p) const
@@ -1574,14 +1634,14 @@ class VolumeEmitter final : public Emitter
 
         EmitterSample Sample(double s, std::uint64_t key, TraceThreadData *td = nullptr) const override
         {
-            return SamplePosition(EmitterDraw(s, Draw(key, kDrawEmitter, 0), Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2)), td);
+            return SamplePosition(EmitterDraw(s, Draw(key, kDrawEmitter, 0), Draw(key, kDrawEmitter, 1), Draw(key, kDrawEmitter, 2), DeriveKey(key, kDrawEmitter, UINT64_C(0x706f736974696f6e))), td);
         }
 
         EmitterSample SamplePosition(const EmitterDraw& draw, TraceThreadData *td) const
         {
             if (!axis)
                 throw POV_EXCEPTION_STRING("Interior light axis was not published before tracing.");
-            const auto position = axis->SamplePosition(draw.choose, draw.x, draw.y, draw.z);
+            const auto position = axis->SamplePosition(draw.positionKey);
             EmitterSample sample;
             sample.position = position.position;
             sample.pdf = position.pdf;
@@ -1672,7 +1732,15 @@ class VolumeEmitter final : public Emitter
                 sample = SamplePosition(draw, td);
                 const double r2 = (sample.position - from).lengthSqr();
                 if (r2 > 0.0)
-                    sample.weight /= r2;
+                {
+                    if (bounceField)
+                    {
+                        const Vector3d outgoing = (from - sample.position) / std::sqrt(r2);
+                        sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
+                    }
+                    else
+                        sample.weight /= r2;
+                }
                 else
                     sample.weight.Clear();
                 return true;
@@ -1705,7 +1773,7 @@ class VolumeEmitter final : public Emitter
             }
             else
             {
-                sample = SamplePosition(EmitterDraw((s - chordShare) / (1.0 - chordShare), draw.x, draw.y, draw.z), td);
+                sample = SamplePosition(EmitterDraw((s - chordShare) / (1.0 - chordShare), draw.x, draw.y, draw.z, draw.positionKey), td);
                 const Vector3d delta = sample.position - from;
                 depth = delta.length();
                 if (!(depth > 0.0))
@@ -1728,7 +1796,8 @@ class VolumeEmitter final : public Emitter
             const double angularPdf = angular.Pdf((sample.position - from) / depth);
             const double chordPdf = (inChord && (length > 0.0)) ? angularPdf / (length * r2) : 0.0;
             sample.pdf = chordShare * chordPdf + (1.0 - chordShare) * PositionPdf(sample.position);
-            sample.weight = EmissionAt(sample.position, td) / (r2 * sample.pdf);
+            const Vector3d outgoing = (from - sample.position) / depth;
+            sample.weight = EmissionAt(sample.position, td, &outgoing) / (r2 * sample.pdf);
             return true;
         }
 
@@ -1736,7 +1805,7 @@ class VolumeEmitter final : public Emitter
 
 }
 
-void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout, TraceThreadData *td,
+void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedSourceDomain> layout, TraceThreadData *td,
                                 const std::function<void()>& cooperate) const
 {
     std::lock_guard<std::mutex> lock(prepareMutex);
@@ -1772,8 +1841,8 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
     Translate_Object(emitter->geometry, displacement, &translation);
     Compute_Scaling_Transform(&scaling, scale);
     Scale_Object(emitter->geometry, scale, &scaling);
-    emitter->coefficient = MathColour(1.0);
-    if (settings.lumens < 0.0)
+    emitter->coefficient = MathColour(settings.lumens < 0.0 && settings.brightness == 0.0 ? 0.0 : 1.0);
+    if (settings.lumens < 0.0 && settings.brightness != 0.0)
     {
         double meanChord = 0.0, discrepancy = HUGE_VAL;
         vector<std::pair<double, double>> pieces;
@@ -1823,7 +1892,7 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
             td->mediaMessages->Warning(kWarningGeneral, "Interior light's geometric mean-chord normalization has %.3g relative sampling discrepancy.", discrepancy);
         emitter->coefficient = MathColour(settings.brightness / meanChord);
     }
-    const size_t count = layout->ValueCount();
+    const size_t count = layout->NodeCount();
     std::unique_ptr<OwningEmissionInput> emissionInput;
     if (settings.useEmission)
         emissionInput.reset(new OwningEmissionInput(*container->interior));
@@ -1840,7 +1909,6 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         return value;
     };
     std::shared_ptr<const PreparedColourField> field;
-    vector<DBL> nodalMasses;
     std::atomic<bool> positiveField(false);
     if (solid)
     {
@@ -1851,42 +1919,35 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
     else
     {
         vector<MathColour> values(count);
-        nodalMasses.resize(count);
         const size_t workers = settings.preparedParallelSafe ?
-            std::max<size_t>(1, std::min<size_t>(layout->counts[Z], td->GetSceneData()->workThreads)) : 1;
+            std::max<size_t>(1, std::min<size_t>(count, td->GetSceneData()->workThreads)) : 1;
         std::vector<std::unique_ptr<TraceThreadData>> helpers;
         for (size_t i = 1; i < workers; i++)
             helpers.emplace_back(new TraceThreadData(std::const_pointer_cast<SceneData>(td->GetSceneData()), i, false));
-        ParallelFor(layout->counts[Z], workers, [&](size_t z, size_t worker) {
+        ParallelFor(count, workers, [&](size_t node, size_t worker) {
             if ((workers == 1) && cooperate)
                 cooperate();
             TraceThreadData *sampleThread = worker ? helpers[worker - 1].get() : td;
-            for (size_t y = 0; y < layout->counts[Y]; y++)
-                for (size_t x = 0; x < layout->counts[X]; x++)
-                {
-                    const Vector3d p = layout->low + Vector3d((x + 0.5) * layout->size[X] / layout->counts[X],
-                                                            (y + 0.5) * layout->size[Y] / layout->counts[Y],
-                                                            (z + 0.5) * layout->size[Z] / layout->counts[Z]);
-                    const MathColour value = colourAt(p, sampleThread);
-                    values[(z * layout->counts[Y] + y) * layout->counts[X] + x] = value;
-                    nodalMasses[(z * layout->counts[Y] + y) * layout->counts[X] + x] = value.Weight();
-                    if (value.Weight() > 0.0)
-                        positiveField.store(true, std::memory_order_relaxed);
-                }
+            const MathColour value = colourAt(layout->Node(node), sampleThread);
+            values[node] = value;
+            if (value.Weight() > 0.0)
+                positiveField.store(true, std::memory_order_relaxed);
         }, cooperate);
         for (const auto& helper : helpers)
             td->Stats() += helper->Stats();
-        field = std::make_shared<PreparedColourGrid>(layout, std::move(values));
+        field = std::make_shared<PreparedSourceColourField>(layout, std::move(values));
     }
     auto preparedEmission = [&](const Vector3d& p) {
         return Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, td) ?
             field->Sample(p) * emitter->coefficient : MathColour();
     };
     MathColour integral;
-    double relativeDiscrepancy = HUGE_VAL;
+    double relativeDiscrepancy = 0.0;
     {
         for (int bins : {16, 24, 32})
         {
+            if (!positiveField.load(std::memory_order_relaxed) || !(emitter->coefficient.Weight() > 0.0))
+                break;
             MathColour replicate[4];
             const size_t draws = size_t(bins) * bins * bins;
             for (int r = 0; r < 4; r++)
@@ -1928,25 +1989,69 @@ void VolumeEmitter::PrepareAxis(std::shared_ptr<const PreparedGridLayout> layout
         emitter->coefficient *= scale;
         emitter->intensity = integral * scale;
     }
-    if (emitter->coefficient[0] == 0.0)
-        nodalMasses.clear();
+    emitter->volumeEmission = positiveField.load(std::memory_order_relaxed) && emitter->coefficient.Weight() > 0.0;
     field = std::make_shared<ScaledColour>(field, emitter->coefficient[0]);
-    vector<DBL> masses(count);
-    for (size_t z = 0; z < layout->counts[Z]; z++)
+    vector<DBL> masses;
+    if (emitter->volumeEmission)
     {
-        if (cooperate)
-            cooperate();
-        for (size_t y = 0; y < layout->counts[Y]; y++)
-            for (size_t x = 0; x < layout->counts[X]; x++)
-            {
-                const Vector3d p = layout->low + Vector3d((x + 0.5) * layout->size[X] / layout->counts[X],
-                                                        (y + 0.5) * layout->size[Y] / layout->counts[Y],
-                                                        (z + 0.5) * layout->size[Z] / layout->counts[Z]);
-                if (Inside_Object((p - emitter->centre) / emitter->radius, emitter->geometry, td))
-                    masses[(z * layout->counts[Y] + y) * layout->counts[X] + x] = field->Sample(p).Weight();
-            }
+        masses.resize(layout->CellCount());
+        for (size_t cell = 0; cell < layout->CellCount(); ++cell)
+        {
+            if (cooperate)
+                cooperate();
+            for (const auto& q : layout->CornerQuadrature(cell))
+                if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, td))
+                    masses[cell] += field->Sample(q.position).Weight() * q.weight;
+        }
     }
-    emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses), std::move(nodalMasses));
+    emitter->axis = std::make_shared<PreparedLightAxis>(std::move(layout), std::move(field), std::move(masses));
+}
+
+std::shared_ptr<const Emitter> MakeBouncedInteriorEmitter(const Emitter& primary,
+    std::shared_ptr<const PreparedDirectionalSourceField> field, TraceThreadData *td, bool includePrimary,
+    std::shared_ptr<const PreparedSourceDistribution> sharedProposal)
+{
+    const VolumeEmitter *original = dynamic_cast<const VolumeEmitter*>(&primary);
+    if (!original || !original->axis || !original->geometry || !field || (includePrimary && original->bounceField))
+        throw POV_EXCEPTION_STRING("Bounced interior light requires a prepared volume emitter and field.");
+    std::shared_ptr<VolumeEmitter> emitter(new VolumeEmitter());
+    emitter->container = original->container;
+    emitter->geometry = Copy_Object(original->geometry);
+    emitter->sourceSettings = original->sourceSettings;
+    emitter->bounceField = field;
+    emitter->volumeEmission = includePrimary && original->HasVolumeEmission();
+    std::shared_ptr<const PreparedColourField> proposal = field;
+    if (includePrimary)
+    {
+        emitter->authoredAxis = original->axis;
+        emitter->intensity = original->intensity;
+        proposal = std::make_shared<VolumeEmitter::CombinedColour>(original->axis, field);
+    }
+    emitter->low = original->low;
+    emitter->size = original->size;
+    emitter->centre = original->centre;
+    emitter->radius = original->radius;
+    emitter->boxVolume = original->boxVolume;
+    emitter->coefficient = MathColour(1.0);
+    const auto layout = field->Domain();
+    if (sharedProposal && sharedProposal->Domain() != layout)
+        throw POV_EXCEPTION_STRING("Bounced interior light proposal must match its source domain.");
+    vector<DBL> masses;
+    if (!sharedProposal)
+        masses.resize(layout->CellCount());
+    for (size_t node = 0; node < layout->NodeCount(); ++node)
+        emitter->volumeEmission = emitter->volumeEmission || proposal->Sample(layout->Node(node)).Weight() > 0.0;
+    for (size_t cell = 0; cell < layout->CellCount(); ++cell)
+        for (const auto& q : layout->CornerQuadrature(cell))
+            if (Inside_Object((q.position - emitter->centre) / emitter->radius, emitter->geometry, td))
+            {
+                if (!sharedProposal)
+                    masses[cell] += proposal->Sample(q.position).Weight() * q.weight;
+                emitter->intensity += field->AngularAverage(q.position) * q.weight;
+            }
+    emitter->axis = sharedProposal ? std::make_shared<PreparedLightAxis>(layout, proposal, std::move(sharedProposal)) :
+        std::make_shared<PreparedLightAxis>(layout, proposal, std::move(masses));
+    return emitter;
 }
 
 std::shared_ptr<const Emitter> MakeInteriorEmitter(const Interior& interior, ObjectPtr container, TraceThreadData*, std::string&)
@@ -2044,6 +2149,48 @@ void CollectInteriorMedia(const RayInteriorVector& interiors, MediaVector& media
         else if (medium->use_absorption || medium->use_emission || medium->use_scattering)
             medias.push_back(medium);
     }
+}
+
+std::vector<BounceScatteringComponent> EvaluateOwnerBounceScattering(
+    const RayInteriorVector& interiors, const Interior& owner, const Vector3d& point, TraceThreadData *td)
+{
+    MediaVector media;
+    MediaModifierVector modifiers;
+    CollectInteriorMedia(interiors, media, &modifiers);
+    const auto densityAt = [&](Media& medium) {
+        MathColour density;
+        if (medium.Sample_Method == 4)
+        {
+            td->Stats()[Media_Prepared4_Queries]++;
+            medium.PreparedDensityAt(point, density);
+        }
+        else
+        {
+            if (medium.Sample_Method == 3)
+                td->Stats()[Media_Legacy3_Queries]++;
+            Evaluate_Density_Pigment(medium.Density, point, density, td);
+        }
+        return density;
+    };
+    std::vector<MathColour> scattered(media.size());
+    for (size_t i = 0; i < media.size(); ++i)
+        scattered[i] = densityAt(*media[i]) * media[i]->Scattering;
+    for (const MediaModifier& modifier : modifiers)
+    {
+        Media& medium = *modifier.medium;
+        if (medium.mix == kMediaBlendMultiply || medium.use_scattering)
+            ApplyCoefficientModifier(scattered.data(), modifier.below, densityAt(medium), medium.Scattering, medium.mix);
+    }
+    std::vector<BounceScatteringComponent> result;
+    for (size_t i = 0; i < media.size(); ++i)
+        for (const Media& owned : owner.media)
+            if (media[i] == &owned)
+            {
+                if (!scattered[i].IsZero())
+                    result.push_back(BounceScatteringComponent{owned.Type, owned.Eccentricity, scattered[i]});
+                break;
+            }
+    return result;
 }
 
 namespace
@@ -2578,7 +2725,8 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 for (const Media *medium : domain.medias)
                     owner.threadData->litObjectIgnoresPhotons = owner.threadData->litObjectIgnoresPhotons && medium->ignore_photons;
                 const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 1), count, Draw(sourceKey, kDrawEmitter, j)),
-                                       sequence(j, 2), sequence(j, 3), sequence(j, 4));
+                                       sequence(j, 2), sequence(j, 3), sequence(j, 4),
+                                       DeriveKey(DeriveKey(sourceKey, kDrawEmitter, j), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
                 MathColour incoming;
                 DBL depth;
                 const Vector3d point = shadow.Evaluate(at);
@@ -4544,7 +4692,8 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 for (int j = 0; j < count; j++)
                 {
                     const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(key, kDrawEmitter, j)),
-                                           sequence(j, 1), sequence(j, 2), sequence(j, 3));
+                                           sequence(j, 1), sequence(j, 2), sequence(j, 3),
+                                           DeriveKey(DeriveKey(key, kDrawEmitter, j), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
                     Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
                     if (trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
                         ComputePhysicalMediaScattering(medias, Emission,

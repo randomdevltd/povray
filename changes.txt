@@ -52,6 +52,8 @@ Changed Behaviour
   version 3.8 and a warning in a scene of version 3.7 or older.
 - A Sturm-solved polynomial outside the solver's floating-point range has no
   roots, rather than ending the render with an error.
+- scale_lumens(phi, metres) requires finite lumens and positive finite metres
+  and is a .pov4 built-in as well.
 -----------------
 
   - Declared method 4 transport uses prepared evaluation in camera, shadow
@@ -79,6 +81,19 @@ Changed Behaviour
     ray segment and its numerical refraction chords. Optical-depth and glow
     integration remain separate; finer optical steps no longer multiply the
     volume-light shadow-ray count. Surface continuations start new segments.
+
+  - Surface and interior light blocks accept `bounce` and
+    `bounce { passes N }` to request bounce orders. Bare bounce requests one
+    order; passes must be a positive unsigned integer. With no explicit source
+    input, bounce selects the source's own emission field rather than white.
+    `bounce` and `passes` are contextual and remain free identifiers elsewhere.
+
+  - Objects accept a surface `light { ... }` modifier alongside the existing
+    interior volume-light block. Surface lights share pigment/emission inputs,
+    brightness in nits or lumens, samples and transport flags, and emit outward
+    with a Lambert distribution. The emission selector reuses material pigment
+    times finish emission; source appearance remains independent. `light`,
+    `nits` and `lumens` are matched by text and remain free identifiers elsewhere.
 
   - Interior lights accept a bare `emission` flag, mutually exclusive with
     `pigment`, to use the full combined RGB emission of their own media,
