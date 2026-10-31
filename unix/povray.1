@@ -274,6 +274,8 @@ with no extra rays: where the mean reflects totally but some taps transmit, the 
 refracts about them and carries the reflection's share too.
 No extra rays are cast to compute a sample: a light is shadow\-tested only where the taps' mean
 normal faces it, so ray counts can differ slightly from \-TF as the filtered normals differ.
+A ray that leaves the scene averages the \fBsky_sphere\fP over the directions its footprint spans,
+a reflected ray's folded back above the surface it left.
 .TP
 \fBUA\fP or \fBOutput_Alpha\fP=\fIbool\fP
 Use alpha channel for transparency mask.

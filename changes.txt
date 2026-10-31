@@ -631,7 +631,9 @@ New Features
     reflection, Fresnel losses and faked caustics average over them, aoi and
     slope pigments see each tap's normal, and reflected and refracted rays
     widen their footprint by the spread, so bumps finer than a pixel no longer
-    speckle.
+    speckle. A ray leaving the scene averages the `sky_sphere` over the
+    directions its footprint spans, so a sky seen in bumpy mirrors or through
+    bumpy glass is blurred as the bumps blur it.
   - Progressive rendering (`+PR`) traces the whole frame at doubling
     resolution, each pixel once, so the image is always a complete best-so-far
     picture. It continues with `+C`.

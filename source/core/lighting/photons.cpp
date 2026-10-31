@@ -161,7 +161,7 @@ private:
     const Ray& ray;
 };
 
-DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth, bool)
+DBL PhotonTrace::TraceRay(Ray& ray, MathColour& colour, ColourChannel&, COLC weight, bool continuedRay, DBL maxDepth, bool, const Vector3d *)
 {
     Intersection bestisect;
     bool found;

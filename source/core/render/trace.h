@@ -279,10 +279,11 @@ class Trace
         /// @param[in]      maxDepth        Objects at or beyond this distance won't be hit by the ray (ignored if
         ///                                 < EPSILON).
         /// @param[in]      missOpen        Whether a ray that hits nothing returns at once, leaving sky and atmosphere to the caller.
+        /// @param[in]      fold            Normal on the side a reflected ray left, about which its sky footprint folds; null if none.
         /// @return                         The distance to the nearest object hit.
         ///
         virtual double TraceRay(Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay, DBL maxDepth = 0.0,
-                                bool missOpen = false);
+                                bool missOpen = false, const Vector3d *fold = nullptr);
 /*
         /// Trace a ray.
         ///
@@ -445,6 +446,8 @@ class Trace
         ShadowFootprint shadowFootprint;
         /// Distance from the lit point to the light, or emitter sample, the shadow ray being traced aims at; zero for parallel light.
         DBL shadowReach = 0.0;
+        /// The fold of the reflected ray whose hit is being shaded, which a straight transmitted continuation keeps.
+        const Vector3d *hitFold = nullptr;
 
         /// Bounding slabs priority queue.
         BBoxPriorityQueue priorityQueue;
@@ -701,7 +704,8 @@ class Trace
     ///
 
         /// Shades a hit on a portal: the view beyond it where it is open and entered, the ray going on past it elsewhere.
-        void TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight);
+        void TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight,
+                         const Vector3d *fold = nullptr);
         /// Traces the view through a portal entered at a hit; false where it leaves nothing to show.
         bool TracePortalView(const Portal& portal, Intersection& isect, const Ray& ray, const Vector3d& rawnormal, bool frontSide,
                              COLC weight, MathColour& view, ColourChannel& transm);
@@ -736,11 +740,12 @@ class Trace
         /// @param[out]     transm          Computed transmittance.
         /// @param[in]      weight          Importance of this computation.
         /// @param[in]      diff            Differentials at the hit for the refracted ray to carry, or `nullptr`.
+        /// @param[in]      fold            Fold of the arriving ray, as @ref TraceRay takes it, for an unbent continuation.
         /// @return                         `true` if total internal reflection _did_ occur.
         ///
         bool ComputeRefraction(const FINISH* finish, Interior *interior, const Vector3d& ipoint, Ray& ray,
                                const Vector3d& normal, const Vector3d& rawnormal, MathColour& colour, ColourChannel& transm, COLC weight,
-                               const SurfaceDifferentials *diff = nullptr);
+                               const SurfaceDifferentials *diff = nullptr, const Vector3d *fold = nullptr);
 
         /// Compute the contribution of a single refracted ray.
         ///
@@ -1063,7 +1068,7 @@ class Trace
         int MarchCurvedRay(Ray& chord, RefractionField& field, double base, Intersection& isect, CurvedPath& path);
         double TraceCurvedRay(Ray& ray, RefractionField& field, MathColour& colour, ColourChannel& transm, COLC weight, bool continuedRay);
         double ShadeRay(Ray& ray, Intersection& bestisect, bool found, MathColour& colour, ColourChannel& transm, COLC weight,
-                        bool continuedRay);
+                        bool continuedRay, const Vector3d *fold = nullptr);
 
         /// Compute Reflectivity.
         ///
@@ -1098,8 +1103,13 @@ class Trace
         /// @param[in]      ray             Ray.
         /// @param[out]     colour          Computed sky/background colour.
         /// @param[out]     transm          Computed transmittance.
+        /// @param[in]      fold            Normal on the side a reflected ray left, as @ref TraceRay takes it.
         ///
-        void ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm);
+        void ComputeSky(const Ray& ray, MathColour& colour, ColourChannel& transm, const Vector3d *fold);
+
+        /// A sky sphere pigment where a ray points; with +TF, averaged over the ray's direction footprint, folded about `fold` if given.
+        /// `means` takes the mean transmitted colour where a filtered tap filters, as a surface layer's does.
+        void ComputeSkyPigment(TransColour& colour, FilteredLayer& means, const PIGMENT *pigment, const Ray& ray, const Vector3d *fold);
 
         void ComputeFog(const Ray& ray, const Intersection& isect, MathColour& colour, ColourChannel& transm);
         double ComputeConstantFogDepth(const Ray &ray, double depth, double width, const FOG *fog);
