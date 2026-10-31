@@ -438,6 +438,10 @@
    "text": "The lambda parameter controls how statistically different the random move of an octave is compared to its previous octave.",
    "doc": "r3_6.html#r3_6_2_5_5_5"
   },
+  "light_samples": {
+   "text": "The light_samples keyword multiplies the samples of every surface and volume light for this surface.",
+   "doc": "r3_6.html#r3_6_1_3"
+  },
   "linear_spline": {
    "text": "The default if none is specified is linear_spline.",
    "doc": "r3_5.html#r3_5_1_1_8"
@@ -1029,7 +1033,7 @@
   "absorption": {
    "rank": 1020,
    "code": "absorption rgb 0.005",
-   "from": "tests/pov4/interior_all_options.pov4:31"
+   "from": "tests/pov4/interior_all_options.pov4:32"
   },
   "accuracy": {
    "rank": 1015,
@@ -1950,6 +1954,11 @@
    "code": "light_group { LIGHT_GROUP LIGHT | LIGHT_GROUP OBJECT | LIGHT_GROUP [LIGHT_GROUP MODIFIER] }",
    "from": "doc/html/r3_4.html:2"
   },
+  "light_samples": {
+   "rank": 1015,
+   "code": "light_samples 1",
+   "from": "tests/pov4/interior_all_options.pov4:30"
+  },
   "light_source": {
    "code": "light_source { <4, 6, -3> rgb 1 }",
    "from": "tests/pov4/framing.pov4:3"
@@ -2640,7 +2649,7 @@
   "scattering": {
    "rank": 26,
    "code": "scattering { 1, rgb 0.02 }",
-   "from": "tests/pov4/interior_all_options.pov4:30"
+   "from": "tests/pov4/interior_all_options.pov4:31"
   },
   "screen": {
    "rank": 38,

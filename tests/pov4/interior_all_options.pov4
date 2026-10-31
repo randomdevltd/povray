@@ -27,6 +27,7 @@ sphere {
     media {
       method 4
       resolution 0.025
+      light_samples 1
       scattering { 1, rgb 0.02 }
       absorption rgb 0.005
     }

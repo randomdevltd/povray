@@ -58,7 +58,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `density` | 102 | Pattern block scaling media density across its container. |
 | `difference` | 75 | CSG: first child minus every following child. |
 | `disc` | 32 | Infinitely thin flat disc: center, normal, outer radius, optional inner radius. |
-| `finish` | 21 | How the surface reflects: highlights, reflection, ambient, brilliance. |
+| `finish` | 22 | How the surface reflects: highlights, reflection, ambient, brilliance. |
 | `fog` | — | Fades distant objects toward a colour; fog_type picks flat fog or ground mist. |
 | `global_settings` | 25 | Renderer-wide scene options: radiosity, photons, gamma, tracing depth. |
 | `height_field` | 58 | Triangle mesh whose heights come from an image's brightness. |
@@ -74,7 +74,7 @@ Precedence high→low: call/index/member; unary `- + !`; `* /`; `+ -`; `< <= > >
 | `light_group` | 75 | Objects lit only by the lights named inside it. |
 | `light_source` | 54 | A light: position, colour, area, shadowing and photon options. |
 | `material` | 8 | texture with interior and interior_texture grouped together. |
-| `media` | 22 | Participating medium: scattering, emission, absorption, intervals. |
+| `media` | 23 | Participating medium: scattering, emission, absorption, intervals. |
 | `merge` | 75 | CSG union that removes inner surfaces, for transparent children. |
 | `mesh` | 35 | One object collecting explicit triangle components. |
 | `mesh2` | 40 | Mesh in structured lists: vertex_vectors, normal_vectors, face_indices. |

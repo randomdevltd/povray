@@ -107,8 +107,16 @@ Changed Behaviour
   - Volume bounce gathers each order at its volume's nodes as up to six
     directional lobes, each scattered by the medium's phase over its spread.
 
-  - Prepared method 4 scattering samples camera distance and volume-light
-    position jointly, sharing each light's sample budget across a geometric
+  - A light block's `samples` N is the light's detail for every receiver,
+    and a receiver scales it by its `light_samples` M (default 1). Surfaces
+    draw round(N x M) points per hit. Varying prepared method 4 media draw
+    sqrt(N) x M positions per cell width of ray, per light, evenly spaced
+    from a drawn offset, each with its own shadow ray through the media;
+    the cell width is the finest grid the ray is in. The stride grouping
+    of volume lighting over finer media is gone.
+
+  - Constant prepared method 4 scattering samples camera distance and
+    volume-light position jointly, sharing each light's sample budget across a geometric
     ray segment and its numerical refraction chords. Optical-depth and glow
     integration remain separate; finer optical steps no longer multiply the
     volume-light shadow-ray count. Surface continuations start new segments.
@@ -560,6 +568,10 @@ New Features
     cannot apply is an error before rendering, and a grid beyond its size
     limit is coarsened with a warning. It is the default with
     `#version 4.0`; it is the method that light blocks require.
+  - `light_samples FLOAT` in `finish` and `media` scales the `samples` of
+    every surface and volume light for that receiver: round(N x M) draws
+    per surface hit, sqrt(N) x M draws per cell width in varying method 4
+    media, round(N x M) joint pairs in constant method 4 media.
   - Subsurface scattering: a point-cloud `method 2` (global setting
     `subsurface { method INT spacing FLOAT error_bound FLOAT }`, or `method`
     in a finish's `subsurface` block); `colour`, `pigment`, `emission` and
@@ -771,9 +783,8 @@ Performance Improvements
     stop ring sweeps from being split across threads.
   - Subtract and multiply media read their prepared density grid: -13.7%
     instructions on a layered slime scene and -12.6% on a lightning scene with
-    a multiply tint. Media lights over finer prepared media are lit at their
-    own cadence (a fish scene 179 -> 24 CPU-s), and their samples are
-    stratified, needing 1.5-4.3 times fewer shadow rays at equal error.
+    a multiply tint. Media lights' samples are stratified, needing 1.5-4.3
+    times fewer shadow rays at equal error.
   - Prepared media (`method 4`) makes media of high complexity and detail
     practical, including combined with other expensive effects. On two small
     public fixtures, `tools/bench/media-self-shadow.pov` at 96x54 renders in

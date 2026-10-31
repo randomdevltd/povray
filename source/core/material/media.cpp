@@ -811,6 +811,7 @@ Media::Media()
     Sample_Method = 1;
     AA_Threshold = 0.1;
     AA_Level = 3;
+    Light_Samples = 1.0;
     Jitter = 0.0;
     FastResolution = -1.0;
     mix = kMediaBlendAuto;
@@ -860,6 +861,7 @@ Media& Media::operator=(const Media& source)
         Variance = source.Variance;
         AA_Threshold = source.AA_Threshold;
         AA_Level = source.AA_Level;
+        Light_Samples = source.Light_Samples;
         FastResolution = source.FastResolution;
         requestedFastResolution = source.requestedFastResolution;
         fastResolutionRecorded = source.fastResolutionRecorded;
@@ -2176,6 +2178,10 @@ class VolumeEmitter final : public Emitter
         void Boundaries(ObjectPtr object, const Ray& ray, double start, double end, TraceThreadData *td,
                         vector<double>& cuts) const
         {
+            // A plain shape whose certified box the stretch misses has no crossing on it.
+            if (!(object->Type & IS_COMPOUND_OBJECT) && object->Clip.empty() &&
+                StretchMissesBox(object->BBox, ray.Origin, ray.Direction, start, end))
+                return;
             if (object->Type & IS_COMPOUND_OBJECT)
             {
                 for (ObjectPtr child : static_cast<CompoundObject *>(object)->children)
@@ -3178,7 +3184,20 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
 // Points of each area light tested per media sample; see doc/PERF.md.
 static const int kMediaAreaLightPoints = 4;
 
-// Where the draws picking the step a stride of prepared steps takes its light at start.
+// Steps a prepared camera march takes across a cell of the finest grid it is in.
+static const DBL kPreparedStepsPerCell = 3.0;
+
+// The light_samples of the scattering media on a ray, the largest where several overlap; 1 where none scatters.
+static DBL ReceiverLightSamples(const MediaVector& medias)
+{
+    DBL multiplier = 0.0;
+    for (const Media *medium : medias)
+        if (medium->use_scattering)
+            multiplier = std::max(multiplier, medium->Light_Samples);
+    return multiplier > 0.0 ? multiplier : 1.0;
+}
+
+// Where a fixed light path's draws, and each prepared interval's volume-light offsets, start.
 static const std::uint64_t kMediaLightDraw = std::uint64_t(1) << 40;
 
 struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
@@ -3193,8 +3212,9 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         MediaModifierVector modifiers;
         bool allLights = false, infinite = false, physicalOrdinary = false;
         int ordinarySamples = 1;
+        DBL lightSamples;
         Domain(const MediaVector& m, const LightSourceEntryVector& l, const Ray& r, DBL at) :
-            medias(m), lights(l), ray(r), ticket(r.GetTicket()), offset(at) {}
+            medias(m), lights(l), ray(r), ticket(r.GetTicket()), offset(at), lightSamples(ReceiverLightSamples(m)) {}
     };
     struct Cell final
     {
@@ -3202,7 +3222,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         DBL at, width;
         MathColour scattering, transfer;
         size_t mark = 0;
-        bool continuous = false, dynamic = false;
+        bool dynamic = false;
         DBL start = 0.0, end = 0.0;
         MathColour extinction;
     };
@@ -3211,7 +3231,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         vector<MathColour> transfers, suffix;
         vector<Domain> domains;
         vector<Cell> cells;
-        vector<size_t> order, selected;
+        vector<size_t> order, selected, ranked, cellStratum, emitterStratum;
         vector<LightSource *> sources;
         vector<DBL> cdf, mass, base, lit;
         vector<EmitterLobe> lobes;
@@ -3226,7 +3246,6 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
     vector<MathColour>& transfers;
     vector<Domain>& domains;
     vector<Cell>& cells;
-    size_t temporaryBytes = 0;
     bool collecting = true;
 
     static Storage& StorageAt(MediaFunction& f, size_t depth)
@@ -3271,8 +3290,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         for (size_t i = cell.firstLight; i <= cell.lastLight && i < lights.size(); i++)
             if (lights[i].light == light)
             {
-                if (cell.continuous ? (cell.end > lights[i].s0 && cell.start < lights[i].s1) :
-                                      (cell.at >= lights[i].s0 && cell.at <= lights[i].s1))
+                if (cell.end > lights[i].s0 && cell.start < lights[i].s1)
                     return true;
             }
         return false;
@@ -3281,7 +3299,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
     size_t Bytes() const
     {
         size_t bytes = sizeof(*this) + cells.capacity() * sizeof(Cell) + domains.capacity() * sizeof(Domain) +
-                       transfers.capacity() * sizeof(MathColour) + temporaryBytes;
+                       transfers.capacity() * sizeof(MathColour);
         for (const Domain& domain : domains)
             bytes += sizeof(MediaVector::VectorType) + domain.medias.capacity() * sizeof(Media *) +
                      sizeof(LightSourceEntryVector::VectorType) + domain.lights.capacity() * sizeof(LightSourceEntry) +
@@ -3301,15 +3319,13 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
         return IsFiniteNumber(foot) && IsFiniteNumber(clearance2) && clearance2 > 0.0;
     }
 
-    /// A light's inverse-square reach over a cell: integrated along a continuous cell, at a point cell's point.
+    /// A light's inverse-square reach integrated along a cell.
     DBL CellReach(const Cell& cell, const vector<EmitterLobe>& lobes) const
     {
         const Ray& ray = domains[cell.domain].ray;
         DBL sum = 0.0, foot, clearance2;
         for (const EmitterLobe& lobe : lobes)
-            if (!cell.continuous)
-                sum += lobe.share / ((ray.Evaluate(cell.at) - lobe.centre).lengthSqr() + lobe.spread2);
-            else if (Aim(cell, lobe, foot, clearance2))
+            if (Aim(cell, lobe, foot, clearance2))
                 sum += lobe.share * PreparedEquiangularMass(cell.start, cell.end, foot, clearance2) / ray.Direction.lengthSqr();
         return sum;
     }
@@ -3341,6 +3357,72 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
             }
         const DBL within = part > 0.0 ? std::min(std::nextafter(1.0, 0.0), std::max(0.0, choose / part)) : 0.5;
         return SamplePreparedEquiangularDistance(cell.start, cell.end, within, foot, clearance2).distance;
+    }
+
+    /// Each draw's stratum among `count` equal strata: its rank in the sequence's values for that dimension.
+    static void Rank(const PhotonSobol& sequence, unsigned int dimension, int count, vector<size_t>& ranked, vector<size_t>& stratum)
+    {
+        ranked.resize(count);
+        for (int j = 0; j < count; j++)
+            ranked[j] = j;
+        std::sort(ranked.begin(), ranked.end(), [&](size_t a, size_t b) { return sequence(a, dimension) < sequence(b, dimension); });
+        stratum.resize(count);
+        for (int r = 0; r < count; r++)
+            stratum[ranked[r]] = r;
+    }
+
+    static DBL Stratum(size_t stratum, int count, DBL tail)
+    {
+        const DBL result = (DBL(stratum) + tail) / count;
+        return std::min(result, std::nextafter((DBL(stratum) + 1.0) / count, DBL(stratum) / count));
+    }
+
+    /// A distance along a continuous cell from its uniform and exponential proposals together, by inverting their joint
+    /// distribution so that stratified variates stay stratified along the cell.
+    static DBL TransmittanceDraw(const Cell& cell, DBL scale, DBL uniformShare, DBL expShare, const DBL *channelMass,
+                                 DBL channelTotal, DBL u)
+    {
+        const bool finite = IsFiniteNumber(cell.end);
+        auto at = [&](DBL v) { return SamplePreparedDistance(cell.start, cell.end, v, scale).distance; };
+        if (!(expShare > 0.0))
+            return at(u);
+        const DBL total = uniformShare + expShare;
+        // Distribution and density over v, the uniform proposal's own variate.
+        auto evaluate = [&](DBL v, DBL& cumulative, DBL& density) {
+            const DBL t = at(v);
+            const DBL uniform = finite ? 1.0 / (cell.end - cell.start) : (scale + cell.start) / (scale + t) / (scale + t);
+            cumulative = uniformShare * v;
+            DBL pdf = uniformShare * uniform;
+            for (int ch = 0; ch < MathColour::channels; ch++)
+                if (channelMass[ch] > 0.0)
+                {
+                    const DBL rate = cell.extinction[ch], weight = expShare * channelMass[ch] / channelTotal;
+                    const DBL depth = rate * (cell.end - cell.start);
+                    cumulative += weight * ((rate == 0.0 || depth == 0.0) ? v :
+                        -std::expm1(-rate * (t - cell.start)) / (finite ? -std::expm1(-depth) : 1.0));
+                    pdf += weight * PreparedExponentialDistancePdf(cell.start, cell.end, t, rate);
+                }
+            cumulative /= total;
+            density = pdf / (total * uniform);
+        };
+        DBL lo = 0.0, hi = 1.0, v = u;
+        for (int step = 0; step < 100; step++)
+        {
+            DBL cumulative, density;
+            evaluate(v, cumulative, density);
+            const DBL error = cumulative - u;
+            if (error == 0.0)
+                break;
+            (error < 0.0 ? lo : hi) = v;
+            DBL next = (density > 0.0 && IsFiniteNumber(density)) ? v - error / density : 0.5 * (lo + hi);
+            if (!(next > lo && next < hi))
+                next = 0.5 * (lo + hi);
+            const bool settled = std::abs(next - v) <= 1.0e-15 || hi - lo <= 1.0e-15;
+            v = next;
+            if (settled)
+                break;
+        }
+        return at(std::min(v, std::nextafter(1.0, 0.0)));
     }
 
     void Finish(MathColour& colour) override
@@ -3409,7 +3491,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                     const Cell& cell = cells[i];
                     const Domain& domain = domains[cell.domain];
                     const DBL scale = std::max(1.0e-12, (light.Center - domain.ray.Origin).length());
-                    const DBL support = cell.continuous && domain.infinite ? PreparedDistanceMass(cell.start, cell.end, scale) : cell.width;
+                    const DBL support = domain.infinite ? PreparedDistanceMass(cell.start, cell.end, scale) : cell.width;
                     total += support;
                     base.push_back(support);
                     selected.push_back(i);
@@ -3428,7 +3510,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                     for (int ch = 0; ch < MathColour::channels; ch++)
                         if (cell.scattering[ch] != 0.0 && suffix[cell.mark][ch] != 0.0)
                             reach = std::max(reach, std::abs(DBL(cell.scattering[ch]) * suffix[cell.mark][ch]) * geometric *
-                                (cell.continuous ? std::exp(-DBL(cell.extinction[ch]) * cell.start) : DBL(cell.transfer[ch])));
+                                std::exp(-DBL(cell.extinction[ch]) * cell.start));
                     reached = reached && IsFiniteNumber(reach);
                     lit.push_back(reach);
                     totalLit += reach;
@@ -3453,7 +3535,10 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
             for (DBL& value : cdf)
                 value /= cumulative;
             cdf.back() = 1.0;
-            int count = light.emitter ? std::max(1, light.Area_Size1) : 1;
+            DBL receiver = 0.0;
+            for (size_t index : selected)
+                receiver = std::max(receiver, domains[cells[index].domain].lightSamples);
+            int count = light.emitter ? std::max(1, int(std::lround(light.Area_Size1 * receiver))) : 1;
             if (!light.emitter)
                 for (size_t index : selected)
                     count = std::max(count, domains[cells[index].domain].ordinarySamples);
@@ -3465,71 +3550,54 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 (order.capacity() + selected.capacity()) * sizeof(size_t) + (cdf.capacity() + mass.capacity() + base.capacity()) * sizeof(DBL);
             auto& peak = owner.threadData->Stats()[Media_Scatter_Peak_Bytes];
             peak = std::max(static_cast<POV_ULONG>(peak), static_cast<POV_ULONG>(liveBytes + scratch));
+            Rank(sequence, 0, count, storage.ranked, storage.cellStratum);
+            Rank(sequence, 1, count, storage.ranked, storage.emitterStratum);
             for (int j = 0; j < count; j++)
             {
                 owner.threadData->Stats()[Media_Scatter_Pairs]++;
-                const DBL distance = EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(sourceKey, kDrawMediaSample, j));
+                const DBL distance = Stratum(storage.cellStratum[j], count, Draw(sourceKey, kDrawMediaSample, j));
                 const size_t picked = std::min(cdf.size() - 1, size_t(std::upper_bound(cdf.begin(), cdf.end(), distance) - cdf.begin()));
                 const DBL probability = cdf[picked] - (picked ? cdf[picked - 1] : 0.0);
                 const Cell& cell = cells[selected[picked]];
                 Domain& domain = domains[cell.domain];
-                DBL at = cell.at;
-                DBL distancePdf = 1.0;
-                MathColour transfer = cell.transfer;
-                if (cell.continuous)
+                DBL at;
+                MathColour transfer;
+                const DBL within = std::min(std::nextafter(1.0, 0.0), std::max(0.0,
+                    (distance - (picked ? cdf[picked - 1] : 0.0)) / probability));
+                const DBL scale = std::max(1.0e-12, (light.Center - domain.ray.Origin).length());
+                DBL channelMass[MathColour::channels], channelTotal = 0.0;
+                bool importance = true;
+                for (int ch = 0; ch < MathColour::channels; ch++)
                 {
-                    const DBL within = std::min(std::nextafter(1.0, 0.0), std::max(0.0,
-                        (distance - (picked ? cdf[picked - 1] : 0.0)) / probability));
-                    const DBL scale = std::max(1.0e-12, (light.Center - domain.ray.Origin).length());
-                    DBL channelMass[MathColour::channels], channelTotal = 0.0;
-                    bool importance = true;
-                    for (int ch = 0; ch < MathColour::channels; ch++)
-                    {
-                        // An exponential draw needs a rate of zero or more, and above zero on an unbounded cell.
-                        const bool drawable = cell.extinction[ch] > 0.0 || (cell.extinction[ch] == 0.0 && IsFiniteNumber(cell.end));
-                        channelMass[ch] = !drawable || cell.scattering[ch] == 0.0 || suffix[cell.mark][ch] == 0.0 ? 0.0 :
-                            std::abs(DBL(cell.scattering[ch]) * cell.transfer[ch] * suffix[cell.mark][ch]);
-                        importance = importance && IsFiniteNumber(channelMass[ch]);
-                        channelTotal += channelMass[ch];
-                    }
-                    importance = importance && IsFiniteNumber(channelTotal) && channelTotal > 0.0;
-                    const DBL cellReach = CellReach(cell, lobes);
-                    const bool aimed = cellReach > 0.0 && IsFiniteNumber(cellReach);
-                    const DBL aimShare = aimed ? 0.5 : 0.0, expShare = importance ? 0.5 * (1.0 - aimShare) : 0.0;
-                    const DBL uniformShare = 1.0 - aimShare - expShare;
-                    PreparedDistanceSample position;
-                    if (within < uniformShare)
-                        position = SamplePreparedDistance(cell.start, cell.end, within / uniformShare, scale);
-                    else if (within < uniformShare + expShare)
-                    {
-                        DBL choose = std::min(std::nextafter(channelTotal, 0.0), (within - uniformShare) / expShare * channelTotal);
-                        int channel = 0;
-                        while (channel + 1 < MathColour::channels && choose >= channelMass[channel])
-                        {
-                            choose -= channelMass[channel];
-                            channel++;
-                        }
-                        while (channelMass[channel] == 0.0 && channel > 0)
-                            channel--;
-                        const DBL u = std::min(std::nextafter(1.0, 0.0), choose / channelMass[channel]);
-                        position = SamplePreparedExponentialDistance(cell.start, cell.end, u, cell.extinction[channel]);
-                    }
-                    else
-                        position.distance = AimDraw(cell, lobes, cellReach,
-                            std::min(std::nextafter(1.0, 0.0), (within - uniformShare - expShare) / aimShare));
-                    at = position.distance;
-                    distancePdf = uniformShare * (IsFiniteNumber(cell.end) ? 1.0 / (cell.end - cell.start) :
-                        (scale + cell.start) / (scale + at) / (scale + at));
-                    if (importance)
-                        for (int ch = 0; ch < MathColour::channels; ch++)
-                            if (channelMass[ch] > 0.0)
-                                distancePdf += expShare * channelMass[ch] / channelTotal *
-                                    PreparedExponentialDistancePdf(cell.start, cell.end, at, cell.extinction[ch]);
-                    if (aimed)
-                        distancePdf += aimShare * AimPdf(cell, lobes, cellReach, at);
-                    for (int ch = 0; ch < MathColour::channels; ch++)
-                        transfer[ch] = std::exp(-DBL(cell.extinction[ch]) * at) / distancePdf;
+                    // An exponential draw needs a rate of zero or more, and above zero on an unbounded cell.
+                    const bool drawable = cell.extinction[ch] > 0.0 || (cell.extinction[ch] == 0.0 && IsFiniteNumber(cell.end));
+                    channelMass[ch] = !drawable || cell.scattering[ch] == 0.0 || suffix[cell.mark][ch] == 0.0 ? 0.0 :
+                        std::abs(DBL(cell.scattering[ch]) * cell.transfer[ch] * suffix[cell.mark][ch]);
+                    importance = importance && IsFiniteNumber(channelMass[ch]);
+                    channelTotal += channelMass[ch];
                 }
+                importance = importance && IsFiniteNumber(channelTotal) && channelTotal > 0.0;
+                const DBL cellReach = CellReach(cell, lobes);
+                const bool aimed = cellReach > 0.0 && IsFiniteNumber(cellReach);
+                const DBL aimShare = aimed ? 0.5 : 0.0, expShare = importance ? 0.5 * (1.0 - aimShare) : 0.0;
+                const DBL uniformShare = 1.0 - aimShare - expShare;
+                if (within < uniformShare + expShare)
+                    at = TransmittanceDraw(cell, scale, uniformShare, expShare, channelMass, channelTotal,
+                        std::min(std::nextafter(1.0, 0.0), within / (uniformShare + expShare)));
+                else
+                    at = AimDraw(cell, lobes, cellReach,
+                        std::min(std::nextafter(1.0, 0.0), (within - uniformShare - expShare) / aimShare));
+                DBL distancePdf = uniformShare * (IsFiniteNumber(cell.end) ? 1.0 / (cell.end - cell.start) :
+                    (scale + cell.start) / (scale + at) / (scale + at));
+                if (importance)
+                    for (int ch = 0; ch < MathColour::channels; ch++)
+                        if (channelMass[ch] > 0.0)
+                            distancePdf += expShare * channelMass[ch] / channelTotal *
+                                PreparedExponentialDistancePdf(cell.start, cell.end, at, cell.extinction[ch]);
+                if (aimed)
+                    distancePdf += aimShare * AimPdf(cell, lobes, cellReach, at);
+                for (int ch = 0; ch < MathColour::channels; ch++)
+                    transfer[ch] = std::exp(-DBL(cell.extinction[ch]) * at) / distancePdf;
                 struct TicketScope final
                 {
                     TraceTicket& ticket;
@@ -3548,7 +3616,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 owner.threadData->litObjectIgnoresPhotons = true;
                 for (const Media *medium : domain.medias)
                     owner.threadData->litObjectIgnoresPhotons = owner.threadData->litObjectIgnoresPhotons && medium->ignore_photons;
-                const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 1), count, Draw(sourceKey, kDrawEmitter, j)),
+                const EmitterDraw draw(Stratum(storage.emitterStratum[j], count, Draw(sourceKey, kDrawEmitter, j)),
                                        sequence(j, 2), sequence(j, 3), sequence(j, 4),
                                        DeriveKey(DeriveKey(sourceKey, kDrawEmitter, j), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
                 MathColour incoming;
@@ -3886,8 +3954,8 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
             ComputeMediaTransmittance(medias, mediaintervals, ray, IMedia);
     }
     else if(fastCamera)
-        ComputeMediaFixedSampling(medias, lights, mediaintervals, ray, preparedResolution / 3.0,
-                                  ignore_photons, use_scattering, preparedCoarsening);
+        ComputeMediaFixedSampling(medias, lights, mediaintervals, ray, preparedResolution / kPreparedStepsPerCell,
+                                  use_scattering, preparedCoarsening);
     else if((IMedia->Sample_Method == 3) && !all_constant_and_light_ray) // explicitly selected legacy adaptive sampling
         ComputeMediaAdaptiveSampling(medias, lights, mediaintervals, ray, IMedia, aa_threshold, minSamples, ignore_photons, use_scattering);
     else
@@ -4149,7 +4217,7 @@ void MediaFunction::PreparedRange(MediaVector& medias, const Ray& ray, DBL& from
 
 DBL MediaFunction::PreparedSteps(MediaVector& medias, const Ray& ray, DBL from, DBL to, DBL resolution, DBL coarsening)
 {
-    const DBL divisor = ray.IsShadowTestRay() ? 1.0 : 3.0;
+    const DBL divisor = ray.IsShadowTestRay() ? 1.0 : kPreparedStepsPerCell;
     DBL count = 2.0 * medias.size() + 1.0;
     for (Media* medium : medias)
     {
@@ -4240,7 +4308,7 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
         }
         const DBL fieldStep = medium->Sample_Method == 4 ? medium->PreparedStep(ray, interval.s0, interval.s1) :
                              interval.ds / std::max(1, medium->Min_Samples);
-        step = std::min(step, fieldStep * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
+        step = std::min(step, fieldStep * coarsening / (ray.IsShadowTestRay() ? 1.0 : kPreparedStepsPerCell));
     }
     if (modifiers)
         for (const MediaModifier& modifier : *modifiers)
@@ -4249,7 +4317,7 @@ DBL MediaFunction::PreparedStep(MediaVector& medias, const Ray& ray, const Media
                 step = std::min(step, interval.ds * coarsening / std::max(1, modifier.medium->Min_Samples));
     const DBL modifierResolution = ModifierResolution(ray, interval.s0, interval.s1);
     if (modifierResolution < HUGE_VAL)
-        step = std::min(step, modifierResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : 3.0));
+        step = std::min(step, modifierResolution * coarsening / (ray.IsShadowTestRay() ? 1.0 : kPreparedStepsPerCell));
     return step;
 }
 
@@ -4307,6 +4375,10 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
     MathColour total;
     bool dark = false;
     std::vector<MathColour> densities;
+    // A medium with a single prepared grid reads it directly, as PreparedDensityAt() would.
+    std::vector<const Media::FastCache *> grids;
+    for (const Media *medium : medias)
+        grids.push_back(medium->use_extinction && (medium->Sample_Method == 4) ? medium->SinglePreparedBinding() : nullptr);
     for (MediaInterval& interval : mediaintervals)
     {
         MathColour depth;
@@ -4320,11 +4392,20 @@ void MediaFunction::ComputeMediaFieldTransmittance(MediaVector& medias, MediaInt
                 const Vector3d point = ray.Evaluate(interval.s0 + (j + 0.5) * step);
                 MathColour extinction;
                 densities.clear();
-                for (Media* medium : medias)
+                for (size_t k = 0; k < medias.size(); k++)
                 {
+                    Media *medium = medias[k];
                     MathColour density;
                     if (!medium->use_extinction)
                         density.Clear();
+                    else if (const Media::FastCache *grid = grids[k])
+                    {
+                        threadData->Stats()[Media_Prepared4_Queries]++;
+                        if (grid->constantDensity)
+                            density = grid->constantValue;
+                        else if (!grid->DensityAt(point, density))
+                            density.Clear();
+                    }
                     else
                         DensityForDeclaredMode(*medium, point, density);
                     if (modifiers != nullptr)
@@ -4577,16 +4658,6 @@ void MediaFunction::ComputeMediaRegularSampling(MediaVector& medias, LightSource
     }
 }
 
-DBL MediaFunction::ScatteringStep(MediaVector& medias, const MediaInterval& interval, const Ray& ray) const
-{
-    DBL step = HUGE_VAL;
-    for (const Media *medium : medias)
-        if (medium->use_scattering)
-            step = std::min(step, medium->Density.empty() || medium->Sample_Method != 4 ? interval.ds / std::max(1, medium->Min_Samples)
-                                                          : medium->PreparedStep(ray, interval.s0, interval.s1) / 3.0);
-    return step;
-}
-
 static std::vector<DBL> ContinuousLightCuts(const MediaInterval& interval, const LightSourceEntryVector& lights)
 {
     std::vector<DBL> cuts{interval.s0, interval.s1};
@@ -4691,7 +4762,6 @@ void MediaFunction::ComputeMediaConstantSampling(MediaVector& medias, LightSourc
             cell.width = IsFiniteNumber(width) ? width : 1.0;
             cell.scattering = scattering;
             cell.extinction = extinction;
-            cell.continuous = true;
             for (int ch = 0; ch < MathColour::channels; ch++)
             {
                 const DBL integral = extinction[ch] > 0.0 ?
@@ -4738,7 +4808,7 @@ void MediaFunction::CollectLegacyLightIntervals(MediaVector& medias, LightSource
         cell.end = cuts[piece];
         cell.at = IsFiniteNumber(width) ? cell.start + width * 0.5 : std::nextafter(cell.start, cell.end);
         cell.width = IsFiniteNumber(width) ? width : 1.0;
-        cell.continuous = cell.dynamic = true;
+        cell.dynamic = true;
         MathColour emitted;
         ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), false, emitted, cell.extinction, cell.scattering);
         for (int ch = 0; ch < MathColour::channels; ch++)
@@ -4749,25 +4819,9 @@ void MediaFunction::CollectLegacyLightIntervals(MediaVector& medias, LightSource
 }
 
 void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
-                                              const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening)
+                                              const Ray& ray, DBL resolution, bool use_scattering, DBL coarsening)
 {
-    FixedLightPath *path = (currentPath && currentPath->collecting && use_scattering && !ray.IsPhotonRay()) ? currentPath : nullptr;
-    bool volume = false;
-    for (const LightSourceEntry& entry : lights)
-        volume = volume || (entry.light->emitter != nullptr);
-    if (!volume)
-        path = nullptr;
-    const size_t domain = path ? path->domains.size() : 0;
-    if (path)
-    {
-        path->domains.emplace_back(medias, lights, ray, path->offset);
-        if (modifiers)
-            path->domains.back().modifiers = *modifiers;
-    }
-    MathColour previousDepth;
-    // A stride's light is gathered once, unscattered; each step's own media scatter it.
-    std::vector<MediaIncident> incident;
-    std::vector<MathColour> stepDensities;
+    const DBL receiver = ReceiverLightSamples(medias);
     for (MediaInterval& interval : mediaintervals)
     {
         if (interval.ds <= 0.0)
@@ -4784,95 +4838,75 @@ void MediaFunction::ComputeMediaFixedSampling(MediaVector& medias, LightSourceEn
             continue;
         }
         MathColour accumulated, transmitted;
-        // Scattering media coarser than the step take media lights' light once per stride of steps, at a step drawn within it.
-        bool mediaLit = false;
-        for (size_t l = interval.l0; interval.lit && (l <= interval.l1) && (l < lights.size()); l++)
-            mediaLit = mediaLit || (lights[l].light->emitter != nullptr);
-        int stride = 1;
-        if (mediaLit && use_scattering && (modifiers == nullptr) && !ray.IsPhotonRay() &&
-            ((photonGatherer == nullptr) ||
-             (threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap.numPhotons == 0)))
-            stride = std::max(1, std::min(count, int(ScatteringStep(medias, interval, ray) / step)));
         struct Cell final
         {
             DBL at;
-            MathColour emission, extinction, scattering;
+            MathColour emission, extinction, scattering, before;
         };
         vector<Cell> cells(count);
-        if (path)
-            path->temporaryBytes = std::max(path->temporaryBytes, cells.capacity() * sizeof(Cell));
-        // A stride's steps scatter with the densities their coefficients read; a shadow ray reads only extinction.
-        const size_t mediaCount = medias.size();
-        const bool keepDensities = (stride > 1) && !ray.IsShadowTestRay();
-        stepDensities.resize(keepDensities ? size_t(count) * mediaCount : 0);
         for (int j = 0; j < count; j++)
         {
             Cell& cell = cells[j];
             cell.at = interval.s0 + j * step + 0.5 * step;
             ComputeMediaCoefficients(medias, ray, ray.Evaluate(cell.at), true,
-                                     cell.emission, cell.extinction, cell.scattering,
-                                     keepDensities ? &stepDensities[size_t(j) * mediaCount] : nullptr);
+                                     cell.emission, cell.extinction, cell.scattering);
         }
-        int lit = -1;
+        // Volume lights are drawn at their own positions below; the steps take the other lights.
+        const bool sampled = use_scattering && interval.lit && !ray.IsPhotonRay();
         for (int j = 0; j < count; j++)
         {
             MediaInterval cell(interval.lit, 0, interval.s0 + j * step, interval.s0 + (j + 1) * step,
                                step, interval.l0, interval.l1);
-            const Cell& coefficients = cells[j];
+            Cell& coefficients = cells[j];
             MathColour emission = coefficients.emission;
             const MathColour depth = coefficients.extinction * step;
-            const MathColour& scattering = coefficients.scattering;
             ComputeMediaSampleLighting(medias, lights, cell, ray, coefficients.at, ray.Evaluate(coefficients.at),
-                                      scattering, emission, true, use_scattering && (stride == 1), path == nullptr);
+                                      coefficients.scattering, emission, true, use_scattering, !sampled);
             emission *= step;
-            if (path && cell.lit && !scattering.IsZero())
-            {
-                FixedLightPath::Cell sample;
-                sample.domain = domain;
-                sample.firstLight = cell.l0;
-                sample.lastLight = cell.l1;
-                sample.at = coefficients.at;
-                sample.width = step;
-                sample.scattering = scattering;
-                sample.transfer = step * Exp(-(transmitted + depth * 0.5)) * Exp(-previousDepth);
-                path->cells.push_back(sample);
-            }
-            if (stride > 1)
-            {
-                const int group = j / stride, first = group * stride, size = std::min(stride, count - first);
-                if (group != lit)
-                {
-                    const int at = first + std::min(size - 1, int(Draw(drawKey, kDrawMediaSample, kMediaLightDraw + group) * size));
-                    const DBL d = interval.s0 + (at + 0.5) * step;
-                    incident.clear();
-                    threadData->Stats()[Media_Stride_Lights]++;
-                    MathColour unused;
-                    ComputeMediaLight(medias, lights, cell, ray, d, ray.Evaluate(d), MathColour(1.0), unused, path == nullptr, true,
-                                      &incident);
-                    lit = group;
-                }
-                if (!incident.empty() && !scattering.IsZero())
-                {
-                    MathColour scattered;
-                    ScatterIncident(medias, scattered, incident.data(), incident.size(), ray.Evaluate(coefficients.at), ray,
-                                    keepDensities ? &stepDensities[size_t(j) * mediaCount] : nullptr);
-                    emission += scattered * step;
-                }
-                if (!ignore_photons && photonGatherer && !scattering.IsZero() &&
-                    threadData->GetSceneData()->photonSettings.Progressive())
-                {
-                    photonGatherer->map = const_cast<PhotonMap *>(&threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId()).mediaPhotonMap);
-                    MathColour indirect;
-                    ComputeMediaPhotons(medias, indirect, scattering, ray, ray.Evaluate(cell.s0 + step * 0.5), true);
-                    emission += indirect * step;
-                }
-            }
             accumulated += emission * Exp(-(transmitted + depth * 0.5));
+            coefficients.before = transmitted;
             transmitted += depth;
+        }
+        if (sampled)
+        {
+            // Each volume light takes sqrt(samples) x light_samples draws per cell width, evenly spaced from a stratified offset.
+            DBL cellWidth = std::min(resolution * kPreparedStepsPerCell, ModifierResolution(ray, interval.s0, interval.s1) * coarsening);
+            for (Media *medium : medias)
+                if ((medium->Sample_Method == 4) && !medium->Density.empty() && MediaAffectsTransport(*medium, ray))
+                    cellWidth = std::min(cellWidth, medium->PreparedStep(ray, interval.s0, interval.s1) * coarsening);
+            const std::uint64_t key = DeriveKey(drawKey, kDrawMediaSample, kMediaLightDraw + (&interval - &mediaintervals[0]));
+            for (size_t l = interval.l0; (l <= interval.l1) && (l < lights.size()); l++)
+            {
+                if (lights[l].light->emitter == nullptr)
+                    continue;
+                const DBL from = std::max(interval.s0, lights[l].s0), to = std::min(interval.s1, lights[l].s1);
+                const DBL spacing = cellWidth / (sqrt(DBL(std::max(1, lights[l].light->Area_Size1))) * receiver);
+                if (!(to > from) || !(spacing > 0.0))
+                    continue;
+                const DBL offset = Draw(key, kDrawAreaLight, l);
+                const MediaInterval one(true, 0, from, to, to - from, l, l);
+                for (DBL n = 0.0; ; n += 1.0)
+                {
+                    const DBL at = from + (n + offset) * spacing;
+                    if (!(at < to))
+                        break;
+                    const Vector3d point = ray.Evaluate(at);
+                    MathColour emission, extinction, scattering, lit;
+                    ComputeMediaCoefficients(medias, ray, point, true, emission, extinction, scattering);
+                    if (scattering.IsZero())
+                    {
+                        lightSampleIndex++;
+                        continue;
+                    }
+                    ComputeMediaLight(medias, lights, one, ray, at, point, scattering, lit, true, true);
+                    const int j = std::max(0, std::min(count - 1, int((at - interval.s0) / step)));
+                    const Cell& cell = cells[j];
+                    accumulated += lit * spacing * Exp(-(cell.before + cell.extinction * (at - (interval.s0 + j * step))));
+                }
+            }
         }
         interval.te = accumulated;
         interval.od = transmitted;
-        previousDepth += transmitted;
         interval.samples = 1;
         threadData->Stats()[Media_Intervals]++;
     }
@@ -5464,7 +5498,9 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
     if(sample_method != 3)
         mediainterval.od += SampOptDepth;
 
-    ComputeMediaSampleLighting(medias, lights, mediainterval, ray, d1, H, Scattering, Emission, prepared, use_scattering);
+    // A collecting path draws volume lights over the legacy intervals it collected.
+    ComputeMediaSampleLighting(medias, lights, mediainterval, ray, d1, H, Scattering, Emission, prepared, use_scattering,
+                               !(currentPath && currentPath->collecting));
 
     if(sample_method == 3)
     {
@@ -5492,8 +5528,7 @@ void MediaFunction::ComputeOneMediaSample(MediaVector& medias, LightSourceEntryV
 }
 
 void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting, bool preparedSampling,
-                                      std::vector<MediaIncident>* incident)
+                                      DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting, bool preparedSampling)
 {
     if (ray.IsShadowTestRay())
         threadData->Stats()[Media_Shadow_Lighting_Calls]++;
@@ -5515,7 +5550,6 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
 
     // Draws are scattered together, so the media's densities at P are evaluated once, in the same order of sums.
     const size_t base = pointIncident.size();
-    std::vector<MediaIncident>& gathered = incident ? *incident : pointIncident;
     const auto scatter = [&]() {
         if (pointIncident.size() > base)
             ScatterIncident(medias, Emission, pointIncident.data() + base, pointIncident.size() - base, P, ray);
@@ -5532,13 +5566,14 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
         // Use light only if active and within it's boundaries.
         if((d1 >= lights[i].s0) && (d1 <= lights[i].s1))
         {
-            if(lights[i].light->Area_Light && (lightSampleShift[U] < 0.0))
+            if((lights[i].light->Area_Light || lights[i].light->emitter) && (lightSampleShift[U] < 0.0))
                 lightSampleShift = Vector2d(Draw(drawKey, kDrawMediaAreaShift, 0), Draw(drawKey, kDrawMediaAreaShift, 1));
             if (lights[i].light->emitter)
             {
-                if (!volumeLighting || (currentPath && currentPath->collecting) || Light_Below_Cutoff(lights[i].light, P))
+                if (!volumeLighting || Light_Below_Cutoff(lights[i].light, P))
                     continue;
-                const int count = max(1, lights[i].light->Area_Size1);
+                // Prepared steps take one draw per light, stratified along the ray; others take the light's samples.
+                const int count = preparedSampling ? 1 : max(1, lights[i].light->Area_Size1);
                 threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;
                 if (Scattering.IsZero())
                     threadData->Stats()[Media_Zero_Scatter_Emitter_Draws] += count;
@@ -5546,13 +5581,16 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 const PhotonSobol sequence(key);
                 for (int j = 0; j < count; j++)
                 {
-                    const EmitterDraw draw(EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(key, kDrawEmitter, j)),
-                                           sequence(j, 1), sequence(j, 2), sequence(j, 3),
+                    const double su = lightSampleShift[U] + k * 0.7548776662466927 + i * 0.6180339887498949;
+                    const double sv = lightSampleShift[V] + k * 0.5698402909980532 + i * 0.4142135623730950;
+                    const EmitterDraw draw(preparedSampling ? su - floor(su) :
+                                               EmitterDraw::JitterSelection(sequence(j, 0), count, Draw(key, kDrawEmitter, j)),
+                                           preparedSampling ? sv - floor(sv) : sequence(j, 1), sequence(j, 2), sequence(j, 3),
                                            DeriveKey(DeriveKey(key, kDrawEmitter, j), kDrawEmitter, UINT64_C(0x706f736974696f6e)));
                     Light_Ray.SetKey(DeriveKey(key, kDrawShadow, j));
                     if (!trace->SampleEmitterConnection(*lights[i].light, P, Light_Ray, len, Light_Colour, draw))
                         continue;
-                    gathered.push_back({Light_Colour / (4.0 * M_PI * count), Light_Ray.Direction});
+                    pointIncident.push_back({Light_Colour / (4.0 * M_PI * count), Light_Ray.Direction});
                 }
                 continue;
             }
@@ -5569,7 +5607,7 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                 if (!(trace->TestShadow(*lights[i].light, len, Light_Ray, P, Light_Colour, &areaSample)))
                 {
                     if (preparedSampling)
-                        gathered.push_back({Light_Colour / (4.0 * points), Light_Ray.Direction});
+                        pointIncident.push_back({Light_Colour / (4.0 * points), Light_Ray.Direction});
                     else
                         Lit_Colour += Light_Colour;
                 }

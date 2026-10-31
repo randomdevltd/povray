@@ -237,6 +237,7 @@ FINISH *Create_Finish()
 
     New = new FINISH;
 
+    New->LightSamples = 1.0;
     New->Ambient.Set(0.1);
     New->Emission.Clear();
     New->Reflection_Max.Clear();

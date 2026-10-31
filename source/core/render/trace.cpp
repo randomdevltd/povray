@@ -3192,7 +3192,8 @@ void Trace::ComputeFullAreaDiffuseLight(const LightSource &lightsource, const Ve
     {
         if (Light_Below_Cutoff(&lightsource, ipoint))
             return;
-        const int count = max(1, lightsource.Area_Size1);
+        // The light's samples, scaled by the receiving finish's light_samples.
+        const int count = max(1, int(std::lround(lightsource.Area_Size1 * (finish ? finish->LightSamples : 1.0))));
         threadData->Stats()[Emitter_Surface_Draws] += count;
         const std::uint64_t key = DeriveKey(eye.GetKey(), kDrawFullAreaLight, LightSlot(lightsource));
         const PhotonSobol sequence(DeriveKey(key, kDrawAreaLight, 0));
@@ -3609,7 +3610,8 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             OpaqueShadowStopCondition stop(postcond.End(), !lightsource.emitter ||
                 (qualityFlags.shadows && (lightsource.Light_Type != FILL_LIGHT_SOURCE)));
             const IsoShadowWindow window(threadData, std::max(startTolerance, postcond.Cursor()), stop.farthest);
-            foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, query, &boundedIntersection, precond, postcond, stop, threadData);
+            foundIntersection = Intersect_Flat_BBox_Tree(*shadowView.flatSlabs, query, &boundedIntersection, precond, postcond, stop, threadData,
+                                                         postcond.Cursor());
         }
         else
             foundIntersection = FindIntersection(boundedIntersection, query, precond, postcond);

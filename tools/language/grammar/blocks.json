@@ -2432,6 +2432,7 @@
     "fresnel",
     "ior",
     "irid",
+    "light_samples",
     "metallic",
     "phong",
     "phong_size",
@@ -2589,7 +2590,7 @@
     ]
    },
    "sources": [
-    "parser_materials.cpp:2748 Parse_Texture",
+    "parser_materials.cpp:2753 Parse_Texture",
     "parser_materials.cpp:1339 Parse_Pattern"
    ]
   },
@@ -2606,7 +2607,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:5142 Parse_Material"
+    "parser_materials.cpp:5164 Parse_Material"
    ]
   },
   "pigment": {
@@ -2986,7 +2987,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4160 Parse_Interior"
+    "parser_materials.cpp:4182 Parse_Interior"
    ]
   },
   "refraction": {
@@ -2997,7 +2998,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:4117 Parse_Interior_Refraction"
+    "parser_materials.cpp:4139 Parse_Interior_Refraction"
    ]
   },
   "media": {
@@ -3011,6 +3012,7 @@
     "emission",
     "intervals",
     "jitter",
+    "light_samples",
     "matrix",
     "method",
     "mix",
@@ -3032,7 +3034,7 @@
     ]
    },
    "sources": [
-    "parser_materials.cpp:3692 Parse_Media"
+    "parser_materials.cpp:3697 Parse_Media"
    ]
   },
   "light": {
@@ -3057,7 +3059,7 @@
     ]
    },
    "sources": [
-    "parser_materials.cpp:3983 Parse_Light"
+    "parser_materials.cpp:4001 Parse_Light"
    ]
   },
   "bounce": {
@@ -3066,7 +3068,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:3952 Parse_Light_Bounce"
+    "parser_materials.cpp:3970 Parse_Light_Bounce"
    ]
   },
   "attenuation": {
@@ -3077,7 +3079,7 @@
    ],
    "nested": {},
    "sources": [
-    "parser_materials.cpp:3901 Parse_Light_Attenuation"
+    "parser_materials.cpp:3911 Parse_Light_Attenuation"
    ]
   },
   "camera": {

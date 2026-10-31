@@ -180,6 +180,8 @@ class Media final
 
         DBL AA_Threshold;
         int AA_Level;
+        /// multiplies the light samples this medium receives (light_samples)
+        DBL Light_Samples;
 
         std::vector<PIGMENT*> Density;
         DBL FastResolution;

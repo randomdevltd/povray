@@ -155,6 +155,7 @@ struct Finish_Struct final
     bool SubsurfaceThicknessSet; ///< whether the skin's thickness was given, so the skin is looked up where light enters
     bool SubsurfaceVolume; ///< whether the flesh and its emission are looked up below where light enters
     bool AlphaKnockout;   // whether pigment alpha knocks out finish effects
+    DBL LightSamples;     ///< multiplies each light's samples for this surface's draws (light_samples)
     ~Finish_Struct();
 };
 

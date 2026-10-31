@@ -120,8 +120,7 @@ The focused fixture is `tests/render/progressive_volume.pov`, combining a media
 emitter, a method-4 scattering receiver and a refractive target. The method-4
 lighting stride previously omitted photon gathers: its 24×24 mean linear value
 was 0.00481 versus 0.01939 with classic media sampling. The registered regression
-fails on that version. Direct light keeps its coarse stride while photon gathers
-now run at every coefficient sample.
+fails on that version. Photon gathers now run at every coefficient sample.
 
 These measurements used `+W24 +H24 +PR -A +WT1 +FP16 File_Gamma=1`, GCC 15,
 and the same scene with `Declare=Heat=0`. The development point fallback is built

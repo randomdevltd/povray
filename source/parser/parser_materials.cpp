@@ -2653,9 +2653,14 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         END_CASE
 
         OTHERWISE
-            Reject_Nested_Item("finish", "a finish");
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "light_samples")
+                New->LightSamples = Parse_Light_Samples();
+            else
+            {
+                Reject_Nested_Item("finish", "a finish");
+                UNGET
+                EXIT
+            }
         END_CASE
 
     END_EXPECT    /* End of finish_body */
@@ -3883,9 +3888,14 @@ void Parser::Parse_Media(vector<Media>& medialist)
         END_CASE
 
         OTHERWISE
-            Reject_Nested_Item("media", "a media");
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "light_samples")
+                IMedia->Light_Samples = Parse_Light_Samples();
+            else
+            {
+                Reject_Nested_Item("media", "a media");
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -3947,6 +3957,14 @@ void Parser::Parse_Light_Attenuation(MediaLight& light, bool surface)
     if (!std::isfinite(light.attenuationScale) || (light.attenuationScale < 0.0) ||
         !std::isfinite(light.attenuationPower) || (light.attenuationPower <= 0.0))
         Error("An attenuation block takes a power greater than 0 and a scale of 0 or more.");
+}
+
+double Parser::Parse_Light_Samples()
+{
+    const double multiplier = Parse_Float();
+    if (!std::isfinite(multiplier) || !(multiplier > 0.0))
+        Error("light_samples takes a finite multiplier greater than 0.");
+    return multiplier;
 }
 
 unsigned Parser::Parse_Light_Bounce()

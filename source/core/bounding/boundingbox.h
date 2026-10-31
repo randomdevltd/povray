@@ -223,6 +223,34 @@ inline bool UsableFiniteBounds(const BoundingBox& box)
     return true;
 }
 
+/// Each bound of a certified box is widened by this share of its magnitude before a ray is tested against it.
+const double kCertifiedBoxMargin = 1.0e-9;
+
+/// Whether the ray's stretch from `from` to `to` misses a certified box, so nothing inside has a root there; false if uncertified.
+inline bool StretchMissesBox(const BoundingBox& box, const Vector3d& origin, const Vector3d& direction, double from, double to)
+{
+    if (!box.finite)
+        return false;
+    double enter = from, exit = to;
+    for (int axis = X; axis <= Z; axis++)
+    {
+        const double low = box.lowerLeft[axis], high = low + double(box.size[axis]);
+        const double margin = (fabs(low) + fabs(high)) * kCertifiedBoxMargin;
+        if (direction[axis] == 0.0)
+        {
+            if ((origin[axis] < low - margin) || (origin[axis] > high + margin))
+                return true;
+            continue;
+        }
+        const double a = (low - margin - origin[axis]) / direction[axis], b = (high + margin - origin[axis]) / direction[axis];
+        enter = std::max(enter, std::min(a, b));
+        exit = std::min(exit, std::max(a, b));
+        if (enter > exit)
+            return true;
+    }
+    return false;
+}
+
 inline void Make_Transformed_BBox(BoundingBox& box, const MATRIX& matrix)
 {
     using halfspace_bounds::Interval;
@@ -459,7 +487,8 @@ FlatBBoxTree *Build_Flat_BBox_Tree(const BBOX_TREE *Root);
 FlatMeshBBoxTree *Build_Flat_BBox_Tree(size_t numLeaves, const FlatLeafBoxFn& leafBox);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, TraceThreadData *Thread);
 bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, TraceThreadData *Thread);
-bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread);
+/// As above, stopping where `stop` says; with `from` above zero, objects whose certified boxes the ray leaves before it are skipped.
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread, double from = 0.0);
 
 /// A ray's box tests against a flat tree, and the entries they produce.
 template<typename RayT>

@@ -238,7 +238,7 @@ class MediaFunction : public Trace::MediaFunctor
                                          const Ray& ray, const Media *IMedia, int minsamples, bool ignore_photons, bool use_scattering,
                                          bool all_constant_and_light_ray);
         void ComputeMediaFixedSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& mediaintervals,
-                                       const Ray& ray, DBL resolution, bool ignore_photons, bool use_scattering, DBL coarsening = 1.0);
+                                       const Ray& ray, DBL resolution, bool use_scattering, DBL coarsening = 1.0);
         void ComputeMediaConstantSampling(MediaVector& medias, LightSourceEntryVector& lights, MediaIntervalVector& intervals,
                                           const Ray& ray, bool use_scattering, bool prepared);
         void CollectLegacyLightIntervals(MediaVector& medias, LightSourceEntryVector& lights, const MediaIntervalVector& intervals,
@@ -290,10 +290,7 @@ class MediaFunction : public Trace::MediaFunctor
                                    MathColour *scattering = nullptr);
         /// Adds to Emission the light the media's scattering coefficients Scattering send along the ray at depth d1 (point P).
         void ComputeMediaLight(MediaVector& medias, LightSourceEntryVector& lights, const MediaInterval& mediainterval, const Ray& ray,
-                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false,
-                               std::vector<MediaIncident>* incident = nullptr);
-        /// The step the scattering media would sample an interval at alone: a uniform one by its samples, a prepared one by its grid.
-        DBL ScatteringStep(MediaVector& medias, const MediaInterval& interval, const Ray& ray) const;
+                               DBL d1, const Vector3d& P, const MathColour& Scattering, MathColour& Emission, bool volumeLighting = true, bool preparedSampling = false);
         void ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
                                             DBL d1, DBL d3, MathColour& Result, const MathColour& C1, const MathColour& C3, MathColour& ODResult, const MathColour& od1, const MathColour& od3,
                                             int depth, DBL Jitter, DBL aa_threshold, bool ignore_photons, bool use_scattering, bool photonPass, std::uint64_t key);

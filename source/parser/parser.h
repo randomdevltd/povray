@@ -608,6 +608,7 @@ class Parser final
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
         unsigned Parse_Light_Bounce();
+        double Parse_Light_Samples();
         void Parse_Light_Attenuation(MediaLight& light, bool surface);
         std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
         void Reject_Nested_Item(const char* block, const char* where);

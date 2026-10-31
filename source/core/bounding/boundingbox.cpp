@@ -785,14 +785,15 @@ bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersec
     return found;
 }
 
-bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread)
+bool Intersect_Flat_BBox_Tree(const FlatBBoxTree& tree, const Ray& ray, Intersection *Best_Intersection, const RayObjectCondition& precondition, const RayObjectCondition& postcondition, const IntersectionStopCondition& stop, TraceThreadData *Thread, double from)
 {
     Intersection New_Intersection;
     bool found = false;
 
     Traverse_Flat_BBox_Tree(tree, ray, Best_Intersection->Depth, true, Thread->Stats(), [&](std::int32_t leaf) {
         ObjectPtr object = reinterpret_cast<ObjectPtr>(const_cast<void *>(tree.leaves[leaf]));
-        if (!precondition(ray, object, 0.0))
+        if (((from > 0.0) && StretchMissesBox(object->BBox, ray.Origin, ray.Direction, from, HUGE_VAL)) ||
+            !precondition(ray, object, 0.0))
             return false;
         // An admitted hint is a hit like any other, so the nearest admitted root is always the one returned.
         if (object->Shadow_Hint_Intersection(ray, &New_Intersection, Thread) && postcondition(ray, object, New_Intersection.Depth) &&
