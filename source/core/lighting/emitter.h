@@ -152,6 +152,7 @@ struct MediaLight final
 {
     PIGMENT *pigment = nullptr;     ///< the light's own colour or pattern; null for solid white
     unsigned bouncePasses = 0;
+    double bounceSelf = 1.0;        ///< how much of the bounced light lights the media that bounced it: 1 all, 0 none
     bool useEmission = false;      ///< use the owning interior's combined emission as the input field
     double brightness = 1.0;        ///< a plain multiplier of the input when no unit follows
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not

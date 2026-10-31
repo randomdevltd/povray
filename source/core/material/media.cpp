@@ -139,6 +139,28 @@ static bool UsablePreparedContainer(ConstObjectPtr container)
 static bool ConstantDensity(const Media& medium);
 static DBL ChannelMean(const MathColour& colour);
 
+static bool OwnedBy(const Media *medium, ConstObjectPtr container)
+{
+    if (container == nullptr || !container->interior)
+        return false;
+    for (const Media& owned : container->interior->media)
+        if (&owned == medium)
+            return true;
+    return false;
+}
+
+/// The share of the light the medium scatters: of a bounce light its container's media scatter selfScale, and the rest of
+/// the light it had before bouncing (selfOnly), which no other medium scatters.
+static DBL ScatterShare(const LightSource *light, const Media *medium)
+{
+    if ((light == nullptr) || (light->selfContainer == nullptr))
+        return 1.0;
+    const bool own = OwnedBy(medium, light->selfContainer);
+    if (light->selfOnly)
+        return own ? 1.0 - light->selfScale : 0.0;
+    return own ? light->selfScale : 1.0;
+}
+
 class Media::FastCache final
 {
     public:
@@ -1845,7 +1867,7 @@ void Transform_Density(vector<PIGMENT*>& Density, const TRANSFORM *Trans)
 
 MediaLight::MediaLight(const MediaLight& source) :
     pigment(source.pigment ? Copy_Pigment(source.pigment) : nullptr),
-    bouncePasses(source.bouncePasses), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
+    bouncePasses(source.bouncePasses), bounceSelf(source.bounceSelf), useEmission(source.useEmission), brightness(source.brightness), lumens(source.lumens), nits(source.nits),
     attenuationScale(source.attenuationScale), attenuationPower(source.attenuationPower), cutoff(source.cutoff),
     samples(source.samples),
     shadowless(source.shadowless), mediaInteraction(source.mediaInteraction), mediaAttenuation(source.mediaAttenuation),
@@ -3658,7 +3680,7 @@ struct MediaFunction::FixedLightPath final : public Trace::MediaFunctor::Path
                 ModifierScope modifierScope(owner, domain.modifiers.empty() ? nullptr : &domain.modifiers);
                 if (light.emitter || domain.physicalOrdinary)
                     owner.ComputePhysicalMediaScattering(domain.medias, local,
-                        incoming / ((light.emitter ? 4.0 * M_PI : 4.0) * count * probability), point, domain.ray, shadow);
+                        incoming / ((light.emitter ? 4.0 * M_PI : 4.0) * count * probability), point, domain.ray, shadow, &light);
                 else
                     owner.ComputeMediaScatteringAttenuation(domain.medias, local, scattering,
                         incoming / (count * probability), domain.ray, shadow);
@@ -3816,7 +3838,7 @@ void MediaFunction::ComputeMedia(MediaVector& medias, const MediaModifierVector 
 
     // Prepare the Monte Carlo integration along the ray from P0 to P1.
     if(!ray.IsShadowTestRay())
-        ComputeMediaLightInterval(lights, litintervals, ray, endpoint);
+        ComputeMediaLightInterval(lights, litintervals, ray, endpoint, medias);
 
     if(litintervals.empty())
         litintervals.push_back(LitInterval(false, 0.0, endpoint.Depth, 0, 0));
@@ -5087,17 +5109,18 @@ void MediaFunction::ComputeMediaSampleInterval(LitIntervalVector& litintervals, 
     }
 }
 
-void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect)
+void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect,
+                                              const MediaVector& medias)
 {
     const PreparedSet& view = threadData->GetSceneData()->GetPreparedSet(ray.GetPreparedSetId());
     if ((isect.Object == nullptr) || ((isect.Object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG))
         for (unsigned int i : view.globalLights)
             if (threadData->lightSources[i]->Media_Interaction)
-                ComputeOneMediaLightInterval(threadData->lightSources[i], lights, ray, isect);
+                AddMediaLight(threadData->lightSources[i], medias, lights, ray, isect);
     if (isect.Object != nullptr)
         for (LightSource *light : isect.Object->LLights)
             if (light->Media_Interaction && view.UsesGroupLight(light->index))
-                ComputeOneMediaLightInterval(light, lights, ray, isect);
+                AddMediaLight(light, medias, lights, ray, isect);
 
     if(lights.empty() == false)
     {
@@ -5186,6 +5209,24 @@ void MediaFunction::ComputeMediaLightInterval(LightSourceEntryVector& lights, Li
         }
 #endif
     }
+}
+
+void MediaFunction::AddMediaLight(LightSource *light, const MediaVector& medias, LightSourceEntryVector& lights, const Ray& ray,
+                                  const Intersection& isect)
+{
+    if (light->selfContainer == nullptr)
+    {
+        ComputeOneMediaLightInterval(light, lights, ray, isect);
+        return;
+    }
+    bool own = false, other = false;
+    for (const Media *medium : medias)
+        if (medium->use_scattering)
+            (OwnedBy(medium, light->selfContainer) ? own : other) = true;
+    if (other || (own && light->selfScale > 0.0))
+        ComputeOneMediaLightInterval(light, lights, ray, isect);
+    if (own && light->selfLight && light->selfScale < 1.0)
+        ComputeOneMediaLightInterval(light->selfLight.get(), lights, ray, isect);
 }
 
 void MediaFunction::ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect)
@@ -5550,9 +5591,9 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
 
     // Draws are scattered together, so the media's densities at P are evaluated once, in the same order of sums.
     const size_t base = pointIncident.size();
-    const auto scatter = [&]() {
+    const auto scatter = [&](const LightSource *light) {
         if (pointIncident.size() > base)
-            ScatterIncident(medias, Emission, pointIncident.data() + base, pointIncident.size() - base, P, ray);
+            ScatterIncident(medias, Emission, pointIncident.data() + base, pointIncident.size() - base, P, ray, nullptr, light);
         pointIncident.resize(base);
     };
 
@@ -5572,6 +5613,10 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
             {
                 if (!volumeLighting || Light_Below_Cutoff(lights[i].light, P))
                     continue;
+                // A light some media here do not scatter is scattered on its own.
+                const LightSource *apart = lights[i].light->selfContainer ? lights[i].light : nullptr;
+                if (apart)
+                    scatter(nullptr);
                 // Prepared steps take one draw per light, stratified along the ray; others take the light's samples.
                 const int count = preparedSampling ? 1 : max(1, lights[i].light->Area_Size1);
                 threadData->Stats()[preparedSampling ? Emitter_Media_Fixed_Draws : Emitter_Media_Classic_Draws] += count;
@@ -5592,6 +5637,8 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
                         continue;
                     pointIncident.push_back({Light_Colour / (4.0 * M_PI * count), Light_Ray.Direction});
                 }
+                if (apart)
+                    scatter(apart);
                 continue;
             }
             const int points = lights[i].light->Area_Light ? kMediaAreaLightPoints : 1;
@@ -5614,12 +5661,12 @@ void MediaFunction::ComputeMediaLight(MediaVector& medias, LightSourceEntryVecto
             }
             if(!Lit_Colour.IsZero())
             {
-                scatter();
+                scatter(nullptr);
                 ComputeMediaScatteringAttenuation(medias, Emission, Scattering, Lit_Colour / points, ray, Light_Ray);
             }
         }
     }
-    scatter();
+    scatter(nullptr);
 }
 
 void MediaFunction::ComputeOneMediaSampleRecursive(MediaVector& medias, LightSourceEntryVector& lights, MediaInterval& mediainterval, const Ray& ray,
@@ -5766,7 +5813,7 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                         integral *= Light_Photon_Path_Weight(photon.light, middle);
                     // the same scattering law as the direct light on this medium
                     if (photon.light && photon.light->emitter)
-                        ComputePhysicalMediaScattering(medias, sum, integral / (4.0 * M_PI), H, ray, light);
+                        ComputePhysicalMediaScattering(medias, sum, integral / (4.0 * M_PI), H, ray, light, photon.light);
                     else if (prepared)
                         ComputePhysicalMediaScattering(medias, sum, integral / 4.0, H, ray, light);
                     else
@@ -5847,24 +5894,31 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
 }
 
 void MediaFunction::ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
-                                                   const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay)
+                                                   const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay,
+                                                   const LightSource *light)
 {
     const MediaIncident sample{incoming, lightRay.Direction};
-    ScatterIncident(medias, output, &sample, 1, point, ray);
+    ScatterIncident(medias, output, &sample, 1, point, ray, nullptr, light);
 }
 
 void MediaFunction::ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
-                                    const Vector3d& point, const BasicRay& ray, const MathColour *densities)
+                                    const Vector3d& point, const BasicRay& ray, const MathColour *densities,
+                                    const LightSource *light)
 {
     scatterDensity.assign(medias.size(), MathColour());
     for (size_t i = 0; i < medias.size(); ++i)
-        if (medias[i]->use_scattering)
+    {
+        const DBL share = ScatterShare(light, medias[i]);
+        if (medias[i]->use_scattering && share > 0.0)
         {
             if (densities != nullptr)
                 scatterDensity[i] = densities[i];
             else
                 DensityForDeclaredMode(*medias[i], point, scatterDensity[i]);
+            if (share != 1.0)
+                scatterDensity[i] *= share;
         }
+    }
     for (size_t s = 0; s < count; ++s)
     {
         const DBL cosine = dot(ray.Direction, incident[s].direction);
@@ -5876,7 +5930,7 @@ void MediaFunction::ScatterIncident(MediaVector& medias, MathColour& output, con
         }
         else
             for (size_t i = 0; i < medias.size(); ++i)
-                if (medias[i]->use_scattering)
+                if (medias[i]->use_scattering && ScatterShare(light, medias[i]) > 0.0)
                     kernel += scatterDensity[i] * medias[i]->Scattering *
                               PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, cosine);
         output += kernel * incident[s].incoming;
