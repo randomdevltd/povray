@@ -191,19 +191,20 @@ struct SurfacePhotonGatherNesting final
     ~SurfacePhotonGatherNesting() { if (active) --depth; }
 };
 
-void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread)
+void FindContainingInteriorsTree(const Vector3d& point, const BBOX_TREE *node, RayInteriorVector& found, TraceThreadData *thread,
+                                 const HasInteriorPointObjectCondition& holds)
 {
     if (!Inside_BBox(point, node->BBox))
         return;
     if (node->Entries == 0)
     {
         ObjectPtr object = ObjectPtr(node->Node);
-        if ((object->interior != nullptr) && object->Inside(point, thread))
+        if (holds(point, object) && object->Inside(point, thread))
             found.push_back(object->interior.get());
     }
     else
         for (int i = 0; i < node->Entries; i++)
-            FindContainingInteriorsTree(point, node->Node[i], found, thread);
+            FindContainingInteriorsTree(point, node->Node[i], found, thread, holds);
 }
 }
 
@@ -212,31 +213,31 @@ bool Trace::InteriorMediaReach(const Ray& ray) const
     return ray.IsHollowRay() || !sceneData->solidBlocksInteriorMedia;
 }
 
-void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId)
+void Trace::FindContainingInteriors(const Vector3d& point, RayInteriorVector& found, PreparedSetId preparedSetId, bool shadowing)
 {
     const PreparedSet& view = sceneData->GetPreparedSet(preparedSetId);
+    const HasInteriorPointObjectCondition holds(shadowing);
     if (view.boundingMethod == 2)
     {
-        HasInteriorPointObjectCondition precond;
         ContainingInteriorsPointObjectCondition postcond(found);
-        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, precond, postcond);
+        BSPInsideCondFunctor ifn(point, const_cast<std::vector<ObjectPtr>&>(view.objects), threadData, holds, postcond);
 
         mailbox.clear();
         (*view.tree)(point, ifn, mailbox);
 
         // test infinite objects
         for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin() + view.numberOfFiniteObjects; object != view.objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+            if (holds(point, *object) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else if ((view.boundingMethod == 0) || (view.boundingSlabs == nullptr))
     {
         for (std::vector<ObjectPtr>::const_iterator object = view.objects.begin(); object != view.objects.end(); object++)
-            if (((*object)->interior != nullptr) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
+            if (holds(point, *object) && Inside_BBox(point, (*object)->BBox) && (*object)->Inside(point, threadData))
                 found.push_back((*object)->interior.get());
     }
     else
-        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData);
+        FindContainingInteriorsTree(point, view.boundingSlabs, found, threadData, holds);
 }
 
 void Trace::TracePortal(const Portal& portal, Intersection& isect, Ray& ray, MathColour& colour, ColourChannel& transm, COLC weight)
@@ -1786,7 +1787,7 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
                 {
                     MathColour classicContribution;
 
-                    ComputeDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, layCol.colour(), classicContribution, att, isect.Object, relativeIor);
+                    ComputeDiffuseLight(layer->Finish, isect.IPoint, ray, layNormal, layCol.colour(), classicContribution, att, isect.Object, relativeIor, rawnormal);
 
 #if POV_EXPERIMENTAL_BRILLIANCE_OUT
                     if(layer->Finish->BrillianceOut != 1.0)
@@ -2280,14 +2281,14 @@ bool Trace::LightsAddNothing(const FINISH *finish, double attenuation) const
 
 // see Diffuse in the v3.6 code (lighting.cpp)
 void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal, const MathColour& layer_pigment_colour,
-                                MathColour& colour, double attenuation, ObjectPtr object, double relativeIor)
+                                MathColour& colour, double attenuation, ObjectPtr object, double relativeIor, const Vector3d& geometricNormal)
 {
     Vector3d reye;
 
     // crand draws a random number per evaluation, so its lights are tested one by one as before
     if(eye.IsRadiosityRay() && (finish->Crand <= 0.0) && (threadData->lightSources.size() + object->LLights.size() > 1))
     {
-        ComputeSampledDiffuseLight(finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+        ComputeSampledDiffuseLight(finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, &geometricNormal);
         return;
     }
 
@@ -2300,13 +2301,13 @@ void Trace::ComputeDiffuseLight(const FINISH *finish, const Vector3d& ipoint, co
     if((object->Flags & NO_GLOBAL_LIGHTS_FLAG) != NO_GLOBAL_LIGHTS_FLAG)
     {
         for(unsigned int i : view.globalLights)
-            ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i);
+            ComputeOneDiffuseLight(*threadData->lightSources[i], reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, i, &geometricNormal);
     }
 
     // local light sources from a light group, if any; a selected object's group is selected with it
     for(LightSource *light : object->LLights)
         if(view.UsesGroupLight(light->index))
-            ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor);
+            ComputeOneDiffuseLight(*light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, -1, &geometricNormal);
 
     // Lights seen through portals; a light path crosses at most one portal, so images are of real lights only.
     if(!sceneData->portalLights.empty() && !eye.IsRadiosityRay())
@@ -2368,7 +2369,8 @@ static const double kSampledLightFraction = 0.25;
 static const unsigned int kLightDrawSalt = 97;
 
 void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
-                                       const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor)
+                                       const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ObjectPtr object, double relativeIor,
+                                       const Vector3d* geometricNormal)
 {
     const Vector3d reye(-eye.Direction);
     const size_t first = lightCandidates.size();
@@ -2381,7 +2383,7 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
     {
         if (!qualityFlags.shadows || (light.Light_Type == FILL_LIGHT_SOURCE) || (light.Projected_Through_Object != nullptr))
         {
-            ComputeOneDiffuseLight(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, index);
+            ComputeOneDiffuseLight(light, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor, index, geometricNormal);
             return;
         }
         LightCandidate candidate;
@@ -2425,6 +2427,7 @@ void Trace::ComputeSampledDiffuseLight(const FINISH *finish, const Vector3d& ipo
         MathColour lightcolour = candidate.colour;
         lightsourceray.Origin = ipoint;
         lightsourceray.Direction = candidate.direction;
+        SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal, candidate.light->emitter == nullptr);
         TestOneLightShadow(*candidate.light, candidate.depth, lightsourceray, ipoint, lightcolour, candidate.index);
         MathColour lit;
         if ((lightcolour - candidate.colour).IsZero())
@@ -2677,7 +2680,8 @@ void Trace::ComputePhotonDiffuseLight(const FINISH *Finish, const Vector3d& IPoi
 
 // see Diffuse_One_Light in the v3.6 code (lighting.cpp)
 void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3d& reye, const FINISH *finish, const Vector3d& ipoint, const Ray& eye, const Vector3d& layer_normal,
-                                   const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index)
+                                   const MathColour& layer_pigment_colour, MathColour& colour, double attenuation, ConstObjectPtr object, double relativeIor, int light_index,
+                                   const Vector3d* geometricNormal)
 {
     double lightsourcedepth;
     Ray lightsourceray(eye);
@@ -2688,6 +2692,7 @@ void Trace::ComputeOneDiffuseLight(const LightSource &lightsource, const Vector3
     if (!ComputeOneLightReach(lightsource, finish, ipoint, layer_normal, object, lightsourcedepth, lightsourceray, lightcolour, backside))
         return;
 
+    SetShadowStart(lightsourceray, eye, object, ipoint, geometricNormal, lightsource.emitter == nullptr);
     TestOneLightShadow(lightsource, lightsourcedepth, lightsourceray, ipoint, lightcolour, light_index);
 
     ComputeOneLightContribution(lightsource, reye, finish, ipoint, eye, layer_normal, layer_pigment_colour, colour, attenuation, object, relativeIor,
@@ -3466,6 +3471,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     // From 4.0 each search after a clear hit starts `shift` behind it, so a surface meeting the hit is crossed in turn.
     double nearest = SHADOW_TOLERANCE, shift = 0.0, travelled = 0.0;
     int crossings = 0;
+    bool stalled = false;
 
     while(true)
     {
@@ -3531,7 +3537,10 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             {
                 // A backstop: crossings that fail to advance must not hold the ray forever.
                 if ((++crossings > kMaxShadowCrossings) || (postcond.accepted == nullptr))
+                {
+                    stalled = true;
                     break;
+                }
                 travelled += depth;
                 postcond.Cross(postcond.accepted, travelled, 4.0 * MIN_ISECT_DEPTH);
                 shift = std::max(0.0, std::min(2.0 * MIN_ISECT_DEPTH, travelled - SHADOW_TOLERANCE));
@@ -3548,6 +3557,32 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             // No further intersections in the direction of the ray.
             break;
     }
+
+    if (lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && sceneData->interiorMedia &&
+        !stalled && (lightsourcedepth > 0.0) && !lightcolour.IsZero())
+        DimShadowLastStretch(lightsource, lightsourcedepth, projectedDepth, lightsourceray, lightcolour);
+}
+
+// The stretch past the last boundary lies in the media of the shadowing containers around it, whatever its ends skipped.
+POV_COLD_PATH void Trace::DimShadowLastStretch(const LightSource& lightsource, double lightsourcedepth, double projectedDepth,
+                                               const Ray& lightsourceray, MathColour& lightcolour)
+{
+    const Vector3d middle = lightsourceray.Evaluate(0.5 * lightsourcedepth);
+    // A shadowing container around the midpoint holds the walked stretch to its far end, so both lie in the bounds.
+    const Vector3d farEnd = lightsourceray.Evaluate(std::max(0.5 * lightsourcedepth, lightsourcedepth - std::max(SHADOW_TOLERANCE, projectedDepth)));
+    const PreparedSet& set = sceneData->GetPreparedSet(lightsourceray.GetPreparedSetId());
+    if (set.mediaBounded && (set.mediaBounds.isEmpty() || !Inside_BBox(middle, set.mediaBounds) ||
+                             ((lightsource.emitter == nullptr) && !Inside_BBox(farEnd, set.mediaBounds))))
+        return;
+    RayInteriorVector around;
+    FindContainingInteriors(middle, around, lightsourceray.GetPreparedSetId(), !lightsource.emitter);
+    const bool reach = !sceneData->solidBlocksInteriorMedia || std::all_of(around.begin(), around.end(), [](const Interior *i) { return i->hollow; });
+    Intersection end;
+    end.Depth = lightsourcedepth;
+    end.Object = nullptr;
+    ColourChannel unused = 0.0;
+    if (!around.empty() && reach)
+        media.ComputeMedia(around, lightsourceray, end, lightcolour, unused);
 }
 
 void Trace::TraceAreaLightShadowRay(const LightSource &lightsource, double& lightsourcedepth, Ray& lightsourceray,
@@ -3818,15 +3853,6 @@ void Trace::TraceEmitterSampleShadowRay(const LightSource &lightsource, double& 
                                         MathColour& lightcolour, const Vector3d& offset)
 {
     TraceSampleShadowRay(lightsource, lightsourcedepth, lightsourceray, lightcolour, offset);
-    if(lightsource.Media_Interaction && lightsource.Media_Attenuation && qualityFlags.media && (lightsourcedepth > SHADOW_TOLERANCE) &&
-       !lightcolour.IsNearZero(EPSILON) && !lightsourceray.GetInteriors().empty() && InteriorMediaReach(lightsourceray))
-    {
-        Intersection end;
-        end.Depth = lightsourcedepth;
-        end.Object = nullptr;
-        ColourChannel transm = 0.0;
-        media.ComputeMedia(lightsourceray.GetInteriors(), lightsourceray, end, lightcolour, transm);
-    }
 }
 
 Vector3d Trace::AreaLightOffset(const LightSource &lightsource, double jitter_u, double jitter_v, const Vector3d& axis1, const Vector3d& axis2)
@@ -4356,6 +4382,34 @@ bool SurfaceBefore(const SurfaceHit& a, const SurfaceHit& b)
     return false;
 }
 
+}
+
+// A light behind the lit surface is reached from the receiver's far side, which is inside the receiver only where it has an inside.
+void Trace::SetShadowStart(Ray& shadow, const Ray& eye, ConstObjectPtr object, const Vector3d& point, const Vector3d* geometricNormal,
+                           bool shadowing)
+{
+    const RayInteriorVector& from = eye.GetInteriors();
+    const RayInteriorVector& held = shadow.GetInteriors();
+    Interior *interior = object->interior.get();
+    const double toward = (geometricNormal != nullptr) ? dot(shadow.Direction, *geometricNormal) : 0.0;
+    int change = 0;
+    if ((toward != 0.0) && (interior != nullptr) && HasInside(object) && (dot(eye.Direction, *geometricNormal) * toward > 0.0))
+    {
+        const Vector3d beyond = point + ((toward > 0.0) ? 1.0 : -1.0) * InterfaceTolerance(point, interior) * geometricNormal->normalized();
+        const bool inside = object->Inside(beyond, threadData);
+        // a no_shadow receiver's interior is not on its own shadow rays, as the walk and the last stretch skip it
+        if ((inside != (std::find(from.begin(), from.end(), interior) != from.end())) && !(inside && shadowing && Test_Flag(object, NO_SHADOW_FLAG)))
+            change = inside ? 1 : -1;
+    }
+    if ((change == 0) && (held.size() == from.size()) && std::equal(from.begin(), from.end(), held.begin()))
+        return;
+    RayInteriorVector start(from);
+    if (change > 0)
+        start.push_back(interior);
+    else if (change < 0)
+        start.erase(std::find(start.begin(), start.end(), interior));
+    shadow.ResetInteriors();
+    shadow.AppendInteriors(start);
 }
 
 void Trace::StartProbe(Ray& probe, const Ray& ray)
