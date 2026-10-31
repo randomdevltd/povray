@@ -64,6 +64,36 @@ test('mined keyword sets match known parser content', () => {
     assert.ok(!JSON.parse(read('tools/language/keywords.json')).some((k) => k.word === 'quality'));
     for (const w of ['refraction', 'refraction_detail']) assert.ok(!blocks.media.items.includes(w), `invalid media item '${w}'`);
     assert.ok(!blocks.global_settings.items.includes('refraction_detail'));
+    assert.ok(!blocks.light_source.items.includes('light'), 'a light_source cannot take a light block');
+    assert.ok(blocks.light_source.items.includes('shadowless'));
+});
+
+test('nested items stay in their sub-block', () => {
+    const blocks = JSON.parse(read('tools/language/grammar/blocks.json')).blocks;
+    const misplaced = {
+        light: { photons: ['reflection', 'refraction'] },
+        sphere: { photons: ['collect', 'pass_through', 'target'], radiosity: ['importance'] },
+        light_source: { photons: ['global'] },
+        finish: { reflection: ['falloff', 'exponent'], irid: ['thickness'], subsurface: ['translucency'] },
+        media: { scattering: ['eccentricity', 'extinction'] },
+        camera: { bokeh: ['pigment'] },
+        global_settings: { photons: ['count', 'gather'], radiosity: ['pretrace_start'], subsurface: ['samples'] },
+        pigment: { screen: ['fallback'] },
+    };
+    for (const [word, subs] of Object.entries(misplaced))
+        for (const [sub, items] of Object.entries(subs))
+            for (const w of items) {
+                assert.ok(blocks[word].nested[sub].includes(w), `${word} ${sub} item '${w}'`);
+                assert.ok(!blocks[word].items.includes(w), `'${w}' misplaced directly in ${word}`);
+            }
+    assert.deepEqual(blocks.light.nested.photons, ['reflection', 'refraction']);
+    assert.ok(!blocks.light_source.nested.photons.includes('target'), 'a light_source photons block has no target');
+    // Words after a value position stay items of the block: charset utf8, filter all.
+    for (const w of ['utf8', 'ascii']) assert.ok(blocks.global_settings.items.includes(w), `charset value '${w}'`);
+    assert.ok(blocks.image_map.items.includes('all'));
+    assert.ok(!('charset' in blocks.global_settings.nested));
+    const header = read('source/parser/pov4schema.h');
+    assert.match(header, /\{ "light", \{ "photons", kPov4NestedItems_\d+, 2 \} \}/);
 });
 
 test('generators are stable: regenerating changes nothing', () => {

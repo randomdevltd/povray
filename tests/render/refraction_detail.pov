@@ -23,7 +23,8 @@ light_source { <-1, 4, -3> rgb 1 #if (Case = 12 | Case = 13) parallel media_atte
 #declare Seams = function(x, y, z) { S(U(x) / 0.02) * Fade(x, y, z) }
 #declare Ramp = function(x, y, z) { ((x + 2) / 4) * Fade(x, y, z) }
 // Unresolved oscillations of period 0.0006 probe aliasing; the resolved wave has period 0.48.
-#declare Sine = function(x, y, z) { (0.5 + 0.5 * sin(x / 0.00015 * pi / 2 + (Case = 16 ? pi/2 : 0))) * Fade(x, y, z) }
+#declare Phase = (Case = 16 ? pi / 2 : 0);
+#declare Sine = function(x, y, z) { (0.5 + 0.5 * sin(x / 0.00015 * pi / 2 + Phase)) * Fade(x, y, z) }
 #declare Resolved = function(x, y, z) { (0.5 + 0.5 * sin(2*pi*x/0.48)) * Fade(x, y, z) }
 #declare Mean = function(x, y, z) { 0.5 * Fade(x, y, z) }
 #declare Amplitude = (Case = 5 | Case = 6 ? 0.07 : Case = 7 | Case = 8 | Case = 9 | Case = 16 ? 1e-5 : 0.00025);

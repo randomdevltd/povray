@@ -728,6 +728,9 @@ private:
     void LowerItems(Program& p, TSNode n, Node& into, const char* skipField);
     int CheckedName(Program& p, TSNode n);
     void LowerPhotonItems(Program& p, Node& body);
+    const Node* ContextualOperand(const Node* n, const Node*& word);
+    std::deque<Node> mContextualNodes;
+    std::unordered_map<const Node*, std::pair<const Node*, const Node*>> mContextualSplits;
     const Node* PhotonOperand(Program& p, const Node* n, const Node*& word);
 
     void Snippet(const std::string& text, std::vector<POV_LONG> lines, unsigned file);
@@ -1069,6 +1072,14 @@ void Pov4Evaluator::LowerTagExpression(Program& p, TSNode n, Node& into)
 static bool PhotonValueWord(const std::string& text)
 {
     return (text == "quality") || (text == "memory");
+}
+
+// names a block the way the classic parser does: global_settings bare, otherwise with its article
+static std::string NestedOwnerPhrase(const std::string& block)
+{
+    if (block == "global_settings")
+        return block;
+    return std::string(std::strchr("aeiou", block[0]) != nullptr ? "an " : "a ") + block;
 }
 
 const Node* Pov4Evaluator::PhotonOperand(Program& p, const Node* n, const Node*& word)
@@ -1911,12 +1922,14 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
         ctx.block = word;
         ctx.photonSettingsAllowed = parent.empty() || (parent == "global_settings");
     }
-    const Pov4BlockSchema* schema = FindPov4BlockSchema(word.data(), word.size());
+    const Pov4BlockSchema* nested = context.empty() ? FindPov4NestedSchema(parent, word) : nullptr;
+    const Pov4BlockSchema* schema = (nested != nullptr) ? nested : FindPov4BlockSchema(word.data(), word.size());
     for (const Node* k : n->kids)
     {
         if (word == "photons")
         {
-            if (ctx.checking && !ctx.photonSettingsAllowed &&
+            // reported in both passes, so it comes before the block's own item check
+            if (!ctx.photonSettingsAllowed &&
                 ((k->kind == NK::PhotonValue) ||
                  (((k->kind == NK::Keyword) || (k->kind == NK::Ident)) &&
                   ((k->text == "method") || PhotonValueWord(k->text)))))
@@ -1956,6 +1969,9 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
                     legal = true;
                     break;
                 }
+            const std::string owners = legal ? std::string() : Pov4NestedOwners(word, k->text);
+            if (!owners.empty())
+                Fail(k, "'%s' belongs inside the %s block of %s.", k->text.c_str(), owners.c_str(), NestedOwnerPhrase(word).c_str());
             if (!legal)
             {
                 std::string note;
@@ -1999,6 +2015,9 @@ void Pov4Evaluator::CheckBlockItems(const Node* n, CheckCtx& ctx, const std::str
                     }
                 if (contextual)
                     continue;
+                const std::string owners = Pov4NestedOwners(word, k->text);
+                if (!owners.empty())
+                    Fail(k, "'%s' belongs inside the %s block of %s.", k->text.c_str(), owners.c_str(), NestedOwnerPhrase(word).c_str());
                 int best = -1;
                 size_t limit = (k->text.size() >= 6) ? 2 : 1;
                 size_t bestDistance = limit + 1;
@@ -3364,6 +3383,42 @@ bool Pov4Evaluator::ContextualItem(const std::string& block, const std::string& 
     return false;
 }
 
+// `word -1` parses as the sum `word - 1`; split, it is the word and the signed rest, built once per sum.
+const Node* Pov4Evaluator::ContextualOperand(const Node* n, const Node*& word)
+{
+    auto known = mContextualSplits.find(n);
+    if (known != mContextualSplits.end())
+    {
+        word = known->second.first;
+        return known->second.second;
+    }
+    const Node* value = nullptr;
+    word = nullptr;
+    if ((n->a->kind == NK::Ident) && ((n->op == OpAdd) || (n->op == OpSub)))
+    {
+        word = n->a;
+        mContextualNodes.push_back(*n);
+        Node& unary = mContextualNodes.back();
+        unary.kind = NK::Unary;
+        unary.op = (n->op == OpAdd) ? OpPlus : OpNeg;
+        unary.a = n->b;
+        unary.b = nullptr;
+        value = &unary;
+    }
+    else if (n->a->kind == NK::Binary)
+    {
+        const Node* left = ContextualOperand(n->a, word);
+        if (left != nullptr)
+        {
+            mContextualNodes.push_back(*n);
+            mContextualNodes.back().a = left;
+            value = &mContextualNodes.back();
+        }
+    }
+    mContextualSplits[n] = {word, value};
+    return value;
+}
+
 // An empty spread takes the comma after it, so `tags { ...None, inherit }` stays a list.
 void Pov4Evaluator::Emit(const Node* n, Output& out)
 {
@@ -3395,6 +3450,22 @@ void Pov4Evaluator::EmitItem(const Node* n, Output& out)
             {
                 out.Put(Item(Item::Keyword, n->text, n->text, n), false);
                 return;
+            }
+            break;
+        case NK::Binary:
+            // An unbound contextual word of the block heads the item; a bound name of that spelling keeps the sum.
+            if (out.IsBlock())
+            {
+                const Node* word = nullptr;
+                const Node* value = ContextualOperand(n, word);
+                PValue classic;
+                if ((value != nullptr) && ContextualItem(static_cast<TextOutput&>(out).context, word->text) &&
+                    !FindBinding(word) && !ClassicLookup(word->text, classic))
+                {
+                    out.Put(Item(Item::Keyword, word->text, word->text, word), false);
+                    out.Put(Item(Eval(value), value), false);
+                    return;
+                }
             }
             break;
         case NK::Comma:

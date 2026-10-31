@@ -37,6 +37,7 @@ box {
         #case (14) brightness 0.1 #break
         #case (15) brightness 0.1 attenuation 2, 1 #break
         #case (16) brightness 0.1 attenuation 1 #break
+        // 20 and 22-24 use words this block no longer has, so each is rejected as unknown, repeated or not
         #case (20) fade_power 2 #break
         #case (22) cluster_radii 2 cluster_radii 4 #break
         #case (23) far_radii 2 far_radii 4 #break

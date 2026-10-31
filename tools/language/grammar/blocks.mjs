@@ -53,8 +53,9 @@ const CURATION = {
     bump_map: ['Parse_Bump_Map', 'Parse_Image'],
 };
 
-// Nested rows emitted into pov4schema.h: only genuine sub-blocks, not value positions.
-const NESTED_IN_HEADER = new Set(['reflection', 'scattering', 'photons', 'radiosity', 'subsurface', 'light']);
+// Items the shared object-modifier loop mines for a block whose own parser refuses them: a light_source
+// takes the modifier loop, but a surface `light { }` there is an error in the classic parser.
+const EXCLUDED = { light_source: ['light'] };
 
 const pad = (s) => s.replace(/[^\n]/g, ' ');
 // Single-pass context scanner: blanks comments and literals without letting their
@@ -108,16 +109,24 @@ function mineFunction(name, body) {
             else top.add(item);
         } else if (macro === 'EXPECT' || macro === 'EXPECT_ONE' || macro === 'EXPECT_ONE_CAT' || macro === 'EXPECT_CAT') {
             let owner = null;
+            let block = false;
             for (let k = arms.length - 1; k >= 0; --k)
-                if (arms[k] && wordsOf.has(arms[k])) { owner = arms[k]; break; }
-            groups.push({ owner, items: new Set() });
+                if (arms[k].token && wordsOf.has(arms[k].token)) {
+                    // A sub-block opens a brace between its arm and its loop; a value position does not.
+                    const lead = body.slice(arms[k].at, m.index);
+                    owner = arms[k].token;
+                    block = (lead.match(/\bParse_Begin\b/g) ?? []).length > (lead.match(/\bParse_End\b/g) ?? []).length;
+                    break;
+                }
+            groups.push({ owner, block, items: new Set() });
         } else if (macro === 'END_EXPECT') {
             const g = groups.pop();
             if (g) {
                 for (const item of g.items) {
                     if (g.owner) {
-                        if (!nested.has(g.owner)) nested.set(g.owner, new Set());
-                        nested.get(g.owner).add(item);
+                        if (!nested.has(g.owner)) nested.set(g.owner, { block: false, items: new Set() });
+                        nested.get(g.owner).block = nested.get(g.owner).block || g.block;
+                        nested.get(g.owner).items.add(item);
                     } else if (groups.length === 0) {
                         top.add(item);
                     } else {
@@ -128,11 +137,11 @@ function mineFunction(name, body) {
         } else if (macro.startsWith('CASE')) {
             const tokens = (args ?? '').split(',').map((t) => t.trim()).filter((t) => /^[A-Z0-9_]+_TOKEN$/.test(t));
             if (groups.length > 0) for (const t of tokens) groups.at(-1).items.add(t);
-            arms.push(tokens[0] ?? null);
+            arms.push({ token: tokens[0] ?? null, at: m.index });
         } else if (macro === 'END_CASE') {
             arms.pop();
         } else if (macro === 'OTHERWISE') {
-            arms.push(null);
+            arms.push({ token: null, at: m.index });
         } else if ((macro === 'AllowToken') || (macro === 'ALLOW') || (macro === 'GET')) {
             const t = (args ?? '').trim();
             if (!/^[A-Z0-9_]+_TOKEN$/.test(t))
@@ -191,7 +200,7 @@ if (process.argv.includes('--inspect')) {
     const rows = [...inventory.entries()].filter(([, r]) => r.top.size > 0).sort((a, b) => a[0].localeCompare(b[0]));
     for (const [name, r] of rows)
         console.log(`${name} (${r.file}:${r.line})\n  items: ${clean(r.top).join(' ') || '(none reserved)'}\n` +
-            [...r.nested.entries()].map(([p, s]) => `  nested ${(wordsOf.get(p) ?? [p])[0]}: ${clean(s).join(' ')}`).join('\n'));
+            [...r.nested.entries()].map(([p, g]) => `  ${g.block ? 'nested' : 'value'} ${(wordsOf.get(p) ?? [p])[0]}: ${clean(g.items).join(' ')}`).join('\n'));
     process.exit(0);
 }
 
@@ -201,18 +210,23 @@ for (const [word, fns] of Object.entries(CURATION)) {
     if (found.some((f) => !f)) { console.error(`skip ${word}: missing ${fns.filter((f) => !inventory.has(f)).join(', ')}`); continue; }
     const items = new Set();
     const nested = {};
+    const nestedBy = {};
     for (const f of found) {
         for (const w of clean(f.top)) items.add(w);
-        for (const [parent, set] of f.nested) {
-            const pw = wordsOf.get(parent) ?? [];
-            for (const p of pw) {
+        for (const [parent, g] of f.nested) {
+            // Words after a value position are items of this block; a sub-block's items are not,
+            // and a sub-block with its own schema is checked by that schema.
+            if (!g.block) { for (const w of clean(g.items)) items.add(w); continue; }
+            for (const p of wordsOf.get(parent) ?? []) {
+                // The block's own parser runs first, so its sub-block shadows a shared loop's.
+                if (CURATION[p] || ((nestedBy[p] ?? f) !== f)) continue;
+                nestedBy[p] = f;
                 nested[p] = nested[p] ?? new Set();
-                for (const w of clean(set)) nested[p].add(w);
+                for (const w of clean(g.items)) nested[p].add(w);
             }
         }
     }
-    for (const set of Object.values(nested))
-        for (const w of set) items.add(w);
+    for (const w of EXCLUDED[word] ?? []) items.delete(w);
     blocks[word] = {
         items: [...items].sort(),
         nested: Object.fromEntries(Object.entries(nested).map(([p, s]) => [p, [...s].sort()])),
@@ -229,7 +243,7 @@ writeFileSync(join(here, 'blocks.json'), JSON.stringify(document, null, 1) + '\n
 
 const rows = Object.entries(blocks).sort(([a], [b]) => a.localeCompare(b));
 let header = '// Generated by tools/language/grammar/blocks.mjs from the classic parser expect-loops. Do not edit.\n';
-header += '#pragma once\n#include <cstddef>\n#include <cstring>\n\nnamespace pov_parser {\n\n';
+header += '#pragma once\n#include <cstddef>\n#include <cstring>\n#include <string>\n\nnamespace pov_parser {\n\n';
 const defs = rows.map(([word, b]) => {
     const id = word.replace(/[^a-z0-9_]/g, '_');
     return `static const char* const kPov4BlockItems_${id}[] = { ${b.items.map((w) => `"${w}"`).join(', ')} };\n`;
@@ -237,8 +251,18 @@ const defs = rows.map(([word, b]) => {
 const nestedEntriesUnions = new Map();
 for (const [, b] of rows)
     for (const [p, items] of Object.entries(b.nested))
-        if (NESTED_IN_HEADER.has(p))
-            nestedEntriesUnions.set(p, [...new Set([...(nestedEntriesUnions.get(p) ?? []), ...items])].sort());
+        nestedEntriesUnions.set(p, [...new Set([...(nestedEntriesUnions.get(p) ?? []), ...items])].sort());
+// Per-parent sub-block items, so an item is legal only inside the sub-block of the block that owns it.
+const nestedArrays = new Map();
+const nestedRows = [];
+for (const [word, b] of rows)
+    for (const [p, items] of Object.entries(b.nested)) {
+        const key = items.join(' ');
+        if (!nestedArrays.has(key)) nestedArrays.set(key, { id: `kPov4NestedItems_${nestedArrays.size}`, items });
+        nestedRows.push({ word, p, id: nestedArrays.get(key).id, count: items.length });
+    }
+const nestedArrayDefs = [...nestedArrays.values()].map(({ id, items }) =>
+    `static const char* const ${id}[] = { ${items.map((w) => `"${w}"`).join(', ')} };\n`).join('');
 const nestedEntries = [...nestedEntriesUnions.entries()];
 const nestedDefs = nestedEntries.map(([p, items]) => {
     const id = p.replace(/[^a-z0-9_]/g, '_');
@@ -254,6 +278,18 @@ const table = `struct Pov4BlockSchema { const char* word; const char* const* ite
         return `    { "${p}", kPov4BlockItems_${id}, sizeof(kPov4BlockItems_${id}) / sizeof(kPov4BlockItems_${id}[0]) },`;
     }).join('\n') : '') +
     `\n};\n\ninline const Pov4BlockSchema* FindPov4BlockSchema(const char* word, size_t len)\n{\n` +
-    `    for (const Pov4BlockSchema& s : kPov4BlockSchemas)\n        if ((std::strlen(s.word) == len) && (std::memcmp(s.word, word, len) == 0)) return &s;\n    return nullptr;\n}\n\n} // namespace pov_parser\n`;
-writeFileSync(join(here, '../../../source/parser/pov4schema.h'), header + defs + nestedDefs.join('') + table);
+    `    for (const Pov4BlockSchema& s : kPov4BlockSchemas)\n        if ((std::strlen(s.word) == len) && (std::memcmp(s.word, word, len) == 0)) return &s;\n    return nullptr;\n}\n\n` +
+    `struct Pov4NestedSchema { const char* parent; Pov4BlockSchema block; };\n\n` +
+    `static const Pov4NestedSchema kPov4NestedSchemas[] = {\n` +
+    nestedRows.map(({ word, p, id, count }) => `    { "${word}", { "${p}", ${id}, ${count} } },`).join('\n') +
+    `\n};\n\n// The sub-block of parent named word, or null when parent has no such sub-block.\n` +
+    `inline const Pov4BlockSchema* FindPov4NestedSchema(const std::string& parent, const std::string& word)\n{\n` +
+    `    for (const Pov4NestedSchema& s : kPov4NestedSchemas)\n        if ((parent == s.parent) && (word == s.block.word)) return &s.block;\n    return nullptr;\n}\n\n` +
+    `// The sub-blocks of parent that take item, joined by " or ", or empty when none does.\n` +
+    `inline std::string Pov4NestedOwners(const std::string& parent, const std::string& item)\n{\n` +
+    `    std::string owners;\n    for (const Pov4NestedSchema& s : kPov4NestedSchemas)\n        if (parent == s.parent)\n` +
+    `            for (size_t i = 0; i < s.block.count; ++i)\n                if (item == s.block.items[i])\n` +
+    `                {\n                    owners += (owners.empty() ? "" : " or ") + std::string(s.block.word);\n                    break;\n                }\n` +
+    `    return owners;\n}\n\n} // namespace pov_parser\n`;
+writeFileSync(join(here, '../../../source/parser/pov4schema.h'), header + defs + nestedDefs.join('') + nestedArrayDefs + table);
 console.log(`blocks.json: ${rows.length} blocks, ${rows.reduce((n, [, b]) => n + b.items.length, 0)} items`);

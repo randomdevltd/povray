@@ -87,6 +87,15 @@ reject() {
     done
 }
 reject duplicate 'Only one surface light block' 'light {} light {}'
+for block in "normal { bumps 0.5 max_trace_level 2 }:a normal" "pigment { bozo fallback rgb 1 }:a pigment" \
+             "texture { checker texture { pigment { rgb 1 } } texture { pigment { rgb 0 } } camera {} }:a texture"; do
+    printf '%s\n' '#version 3.7;' "sphere { 0,1 ${block%%:*} }" >nested.pov
+    if "$POVRAY" +inested.pov +w1 +h1 +wt1 +pr -f -d -p -v -gp >nested.log 2>&1; then
+        echo "surface_light: expected the nested item in ${block%%:*} to fail" >&2; exit 1
+    fi
+    tr '\n' ' ' <nested.log | tr -s '[:space:]' ' ' | grep -F "belongs inside the screen block of ${block#*:}." >/dev/null ||
+        { cat nested.log; exit 1; }
+done
 reject input 'one pigment or emission input' 'light { pigment { rgb 1 } emission }'
 reject brightness 'brightness must be finite and not negative' 'light { brightness -1 }'
 reject samples 'Expected at least 1' 'light { samples 0 }'
@@ -100,6 +109,11 @@ reject bounce_aoi 'cannot depend on ray or camera context' 'pigment { aoi } ligh
 reject angular_finish 'cannot bake direction-dependent finish attenuation' 'finish { emission 1 fresnel on } light { emission }'
 reject bounce_crand 'cannot prepare stochastic crand diffuse finishes' 'finish { crand 0.5 } light { bounce }'
 reject attenuation 'Surface light blocks do not accept attenuation' 'light { attenuation 2,1 }'
+reject surface_photon_item "'reflection' belongs inside the photons block of" 'light { reflection on }'
+reject volume_photon_item "'refraction' belongs inside the photons block of" 'hollow interior { light { refraction on } }'
+reject object_photon_item "'target' belongs inside the photons block of" 'target'
+reject finish_reflection_item "'falloff' belongs inside the reflection block of" 'finish { reflection 0.5 falloff 2 }'
+reject media_scattering_item "'eccentricity' belongs inside the scattering block of" 'hollow interior { media { scattering { 1, 0.1 } eccentricity 0.3 } }'
 reject zero_lumens 'requires positive surface emission' 'light { pigment { rgb 0 } brightness 1 lumens }'
 reject negative_colour 'requires finite nonnegative emitted colour' 'light { pigment { rgb <-1,0,0> } }'
 reject ray_context 'cannot depend on ray or camera context' 'light { pigment { aoi } }'
@@ -117,11 +131,20 @@ for language in pov pov4; do
     fi
     tr '\n' ' ' <"lamp.$language.log" | tr -s '[:space:]' ' ' | grep -F 'a light_source cannot take one' >/dev/null || { cat "lamp.$language.log"; exit 1; }
 done
+{ echo 'let passes = 3;'; echo 'sphere { 0,1 light { bounce { passes passes - 1 } } }'; } >bound.pov4
+"$POVRAY" +ibound.pov4 +w1 +h1 +wt1 +pr -f -d -p -v -gp >bound.log 2>&1 || { cat bound.log; exit 1; }
 for language in pov pov4; do
     echo 'plane { y,0 light {} }' >"infinite.$language"
     if "$POVRAY" +i"infinite.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"infinite.$language.log" 2>&1; then
         echo "surface_light: infinite source accepted in $language" >&2; exit 1
     fi
     tr '\n' ' ' <"infinite.$language.log" | tr -s '[:space:]' ' ' | grep -F 'requires finite geometry with nonzero surface area' >/dev/null || { cat "infinite.$language.log"; exit 1; }
+done
+for language in pov pov4; do
+    { if [ "$language" = pov ]; then echo '#version 3.7;'; fi; echo 'light_source { <0,2,-3> rgb 1 light {} }'; } >"direct.$language"
+    if "$POVRAY" +i"direct.$language" +w1 +h1 +wt1 +pr -f -d -p -v -gp >"direct.$language.log" 2>&1; then
+        echo "surface_light: light block inside a light_source accepted in $language" >&2; exit 1
+    fi
+    tr '\n' ' ' <"direct.$language.log" | tr -s '[:space:]' ' ' | grep -F 'a light_source cannot take one' >/dev/null || { cat "direct.$language.log"; exit 1; }
 done
 echo 'surface_light: ok'

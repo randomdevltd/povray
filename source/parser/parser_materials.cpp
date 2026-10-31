@@ -2225,6 +2225,14 @@ void Parser::Parse_Pattern (PATTERN_T *New, BlendMapTypeId TPat_Type)
         END_CASE
 
         OTHERWISE
+            if (TPat_Type == kBlendMapType_Normal)
+                Reject_Nested_Item("normal", "a normal");
+            else if (TPat_Type == kBlendMapType_Texture)
+                Reject_Nested_Item("texture", "a texture");
+            else if (TPat_Type == kBlendMapType_Density)
+                Reject_Nested_Item("density", "a density");
+            else
+                Reject_Nested_Item("pigment", "a pigment");
             UNGET
             EXIT
         END_CASE
@@ -2643,6 +2651,7 @@ void Parser::Parse_Finish (FINISH **Finish_Ptr)
         END_CASE
 
         OTHERWISE
+            Reject_Nested_Item("finish", "a finish");
             UNGET
             EXIT
         END_CASE
@@ -3871,6 +3880,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
         END_CASE
 
         OTHERWISE
+            Reject_Nested_Item("media", "a media");
             UNGET
             EXIT
         END_CASE
@@ -4009,6 +4019,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             }
             else
             {
+                Reject_Nested_Item("light", "a light");
                 UNGET
                 EXIT
             }
