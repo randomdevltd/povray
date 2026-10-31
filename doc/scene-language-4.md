@@ -37,11 +37,12 @@ light { emission brightness 12 lumens } }` at every scene version. Bare
 `emission` selects the full combined RGB emission of the interior's own media,
 including density patterns and mixing, and is mutually exclusive with `pigment`.
 Absorption, scattering and overlapping objects do not contribute to this source
-field. Brightness is then a plain multiplier with no geometric reference:
-`j(x)` is the media's combined emission coefficient times brightness, so at the
-default brightness 1 the light cast equals what the visible glow emits. A `nits`
-suffix reads the same as a unitless value here; `lumens` still normalizes total
-flux. Without the flag, the default pigment remains solid white.
+field. With omitted brightness, or `nits`, the light's emission coefficient is the
+media emission times the brightness, `j(x) = B * emission(x)`: the container's size
+and shape do not enter, and brightness 1 casts the coefficient the camera integrates
+as glow. `lumens` distribute a stated flux over the emission pattern instead.
+Without the flag, the default pigment remains solid white, with the reference-length
+calibration of the volume-light chapter.
 
 `attenuation { power P scale S }` names both values; either may be left out
 (power 2, scale 1) and each may appear once, as may the block. Bare numbers after
@@ -127,15 +128,114 @@ finishes` and `Surface bounce cannot prepare Fresnel or energy-conserving
 reflection attenuation`.
 
 Media methods 1 to 3 and subsurface method 1 stay exactly as they were and take
-no part in a light block's light. Parsing stops, naming each line and its file, when an object
-with a light block holds a method 1 to 3 medium or uses a subsurface method 1
-finish (`... a light block needs method 4 media.`, `... a light block needs
-subsurface method 2.`), when a method 1 to 3 medium scatters while a light
-block lights media (`... only method 4 media scatter a light block's light.`),
-and when any object uses a subsurface method 1 finish in a scene with a light
-block, which lights surfaces (`... only subsurface method 2 carries a light
-block's light.`).
-Classic media that only absorb or glow stay legal beside light blocks.
+no part in a light block's light. Parsing stops, naming each line and its file, when
+the interior that holds a light block also holds a method 1 to 3 medium of any kind,
+or an object with a light block uses a subsurface method 1 finish (`... a light block
+needs method 4 media.`, `... a light block needs subsurface method 2.`), when a method
+1 to 3 medium scatters while a light block lights media (`... only method 4 media
+scatter a light block's light.`), and when any object uses a subsurface method 1
+finish in a scene with a light block, which lights surfaces (`... only subsurface
+method 2 carries a light block's light.`). A classic medium that only absorbs or
+glows stays legal elsewhere, including in the interior of an object with a surface
+light; `media_interaction off` on every light block allows classic scattering media.
+
+## Physical scattering in method 4
+
+A `method 4` medium in-scatters light so that a non-absorbing medium returns exactly the
+light it removes from a beam: every phase function integrates to 1 over the sphere. Media of
+methods 1 to 3 keep the classic formula and glow four times brighter at the same
+coefficients, because a light colour stands for the illuminance over pi while the classic
+phase factor averages 1, not 1/(4 pi). The classic Rayleigh and Mie haze and murky factors
+also average 1.0658, 1.1533 and 1.2468; method 4 normalises them. `extinction 1` is the
+physical choice in both. For the classic look in method 4 with isotropic or Henyey-Greenstein
+scattering, multiply the scattering colour by 4 and write `extinction 0.25`. Real coefficients
+are 3.912/visibility (2% contrast) or 3.0/visibility (5%). The manual's media chapter
+(3.7.2.2.5) works three scenes through in real units; they are
+`physical_haze_street.pov`, `physical_haze_torch.pov` and `physical_haze_sunbeam.pov`
+in `scenes/interior/media`.
+
+## Light and media examples
+
+Each of these is valid in both syntaxes, unchanged, with a camera and a light source around it.
+
+A surface light stated in lumens, and a lantern with an attenuation block (a surface light takes
+the cutoff only):
+
+```
+// 800 lumens spread over the panel, whatever its size
+box { <-0.6, 1, -0.05>, <0.6, 2, 0.05>
+  pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0 }
+  light { brightness 800 lumens samples 16 }
+}
+
+// lantern: 400 lumens, falling as 1/d^1.5 so it reaches further, with a stricter cutoff
+sphere { 0, 0.2
+  pigment { rgbt 1 }
+  interior { light { brightness 400 lumens attenuation { power 1.5 scale 1 cutoff 0.00001 } } }
+  translate y*1.5
+}
+// a surface light takes the cutoff only; 0 turns it off
+box { <-1, 3, -1>, <1, 3.05, 1> light { brightness 5 attenuation { cutoff 0 } } }
+```
+
+The volume light that is the media's own glow, with brightness as a gain on its emission:
+
+```
+// the light is the glow: each point emits its media emission times brightness
+sphere { 0, 0.3
+  pigment { rgbt 1 }
+  interior {
+    media { method 4 emission rgb <4, 1.5, 0.4> density { spherical } }
+    light { emission brightness 1 samples 24 }
+  }
+  translate y*1.5
+}
+```
+
+Passive surface bounce and volume bounce, two orders each:
+
+```
+box { <-1.5, -0.1, -1.5>, <1.5, 0, 1.5>
+  pigment { rgb <0.8, 0.8, 0.8> } finish { ambient 0 emission 0 diffuse 0.8 }
+  light { bounce { passes 2 } samples 8 }
+}
+
+sphere { 0, 1 pigment { rgbt 1 }
+  interior {
+    media { method 4 scattering { 1, rgb 0.3 } emission rgb 2 }
+    light { emission brightness 3 lumens bounce { passes 2 } samples 8 }
+  }
+}
+```
+
+A method 4 medium in real units, and the same medium with the classic look:
+
+```
+// fog of 150 m visibility: sigma_s = 3.912 / 150 = 0.026 per metre, scene unit 1 m
+box { <-20, 0, -5>, <20, 12, 60>
+  pigment { rgbt 1 }
+  interior { media { method 4 scattering { 5, rgb 0.026 eccentricity 0.7 } } }
+}
+
+// the classic look in method 4: scattering colour x 4 and extinction 0.25
+box { <-20, 0, -5>, <20, 12, 60>
+  pigment { rgbt 1 }
+  interior { media { method 4 scattering { 1, rgb 4 * 0.026 extinction 0.25 } } }
+}
+```
+
+The method rule and nested items are errors at the end of the parse and at the item:
+
+```
+sphere { 0, 0.3
+  pigment { rgbt 1 }
+  interior { media { method 3 scattering { 1, rgb 0.2 } } light { brightness 20 } }
+}
+box { <-1, 3, -1>, <1, 3.05, 1> light { brightness 5 reflection on } }
+```
+
+The first stops with `The sphere light block at line L of F holds the method 3 medium at line N of F; a
+light block needs method 4 media.` The second stops with `'reflection' belongs inside the photons block of a light.`
 
 ## Lumens
 

@@ -102,6 +102,18 @@
   <td><div class="divh4"><a title="3.7.2.2.4" href="#r3_7_2_2_4">Media Lights</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh4"><a title="3.7.2.2.5" href="#r3_7_2_2_5">Physical Scattering in Method 4</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.7.2.2.5.1" href="#r3_7_2_2_5_1">Street Lamp in Night Fog</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.7.2.2.5.2" href="#r3_7_2_2_5_2">Torch Beam in a Smoky Room</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.7.2.2.5.3" href="#r3_7_2_2_5_3">Sunbeam Through a Window</a></div></td>
+</tr>
+<tr>
   <td><div class="divh3"><a title="3.7.2.3" href="#r3_7_2_3">Sampling Parameters & Methods</a></div></td>
 </tr>
 <tr>
@@ -1020,7 +1032,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Its bare <code>emission</code> flag selects this interior's combined media emission as the light's RGB input; brightness and its units still calibrate generated power. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
+<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Its bare <code>emission</code> flag selects this interior's combined media emission as the light's emission coefficient: unitless brightness and <code>nits</code> multiply it, and <code>lumens</code> distribute a stated flux over its pattern. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
@@ -1103,12 +1115,134 @@ SCATTERING:
 <pre>
 interior {
   light { brightness 200 pigment { rgb &lt;1, 0.4, 0.1&gt; } samples 16 }
-  media { emission rgb &lt;1, 0.4, 0.1&gt; }
+  media { method 4 emission rgb &lt;1, 0.4, 0.1&gt; }
 }
 </pre>
 <p>The source law, units, sampling, shadows and transport settings are described in <a href="r3_12.html#r3_12">Surface and Volume Lights</a>.</p>
 </div>
 
+<a name="r3_7_2_2_5"></a>
+<div class="content-level-h5" contains="Physical Scattering in Method 4" id="r3_7_2_2_5">
+<h5>3.7.2.2.5 Physical Scattering in Method 4</h5>
+<p>A <code>method 4</code> medium in-scatters light with energy-conserving normalisation. Over all directions, a medium that does not absorb returns exactly the light it removes from a beam: the phase function of every scattering type integrates to 1 over the sphere. Media of <code>method</code> 1 to 3 keep the original formula, so scenes written for them render as before; at the same coefficients they glow four times brighter than method 4.</p>
+
+<p><strong>Why a factor of 4.</strong> POV-Ray light colours follow the surface convention: a white diffuse surface of albedo &rho; lit by a light of colour <em>C</em> shows &rho;<em>C</em>, where physics gives a radiance &rho;<em>E</em>/&pi; for an illuminance <em>E</em>. A colour therefore stands for <em>E</em>/&pi;, and <em>E</em> = &pi;<em>C</em>. A medium with scattering coefficient &sigma;<sub>s</sub> and a phase function <em>p</em> that integrates to 1 over 4&pi; steradians adds the radiance &sigma;<sub>s</sub><em>E</em><em>p</em>(&theta;) per unit length, which in colour units is &sigma;<sub>s</sub>&pi;<em>C</em><em>p</em>(&theta;). For isotropic scattering <em>p</em> = 1/4&pi;, so a unit length returns &sigma;<sub>s</sub><em>C</em>/4. The classic formula is &sigma;<sub>s</sub><em>C</em><em>k</em>(&theta;) with a phase factor <em>k</em> that averages 1 over the sphere, that is 4&pi;<em>p</em>, and it differs from the physical value by 4&pi;/&pi; = 4. Method 4 uses &sigma;<sub>s</sub><em>C</em><em>k</em>(&theta;)/4.</p>
+
+<p><strong>Extinction is the same in both.</strong> <code>extinction 1</code>, the default, removes light at the rate &sigma;<sub>t</sub> = &sigma;<sub>s</sub>, which is the physical choice for a medium that does not absorb, and the statement under <a href="r3_7.html#r3_7_2_2_3">Scattering</a> about it holds in every method. Only the brightness of the scattered light differs between classic and method 4.</p>
+
+<p><strong>Phase functions.</strong> The classic Rayleigh and Mie phase factors do not even average 1: their sphere means are listed below, so on top of the factor of 4 they return more than the light they remove. Method 4 uses the same shapes, rescaled to a mean of exactly 1. Isotropic and Henyey-Greenstein scattering are normalised in both methods.</p>
+<table class="centered" width="560px" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Type</th><th>Phase function</th><th>Classic sphere mean</th><th>Method 4</th><th>Classic returns, relative to the energy removed</th></tr>
+<tr><td align="center">1</td><td>isotropic</td><td align="center">1</td><td align="center">1</td><td align="center">4.00</td></tr>
+<tr><td align="center">2</td><td>Mie haze</td><td align="center">1.1533</td><td align="center">1</td><td align="center">4.61</td></tr>
+<tr><td align="center">3</td><td>Mie murky</td><td align="center">1.2468</td><td align="center">1</td><td align="center">4.99</td></tr>
+<tr><td align="center">4</td><td>Rayleigh</td><td align="center">1.0658</td><td align="center">1</td><td align="center">4.26</td></tr>
+<tr><td align="center">5</td><td>Henyey-Greenstein</td><td align="center">1</td><td align="center">1</td><td align="center">4.00</td></tr>
+</table>
+<p>The excess of the classic Mie haze, Mie murky and Rayleigh types over the energy-conserving value is 15.3%, 24.7% and 6.6%.</p>
+
+<p><strong>Measured.</strong> A point light of known power is placed at the centre of a spherical shell of non-absorbing medium, 2 to 4 scene units from the light, and an orthographic camera images the whole shell. The total of the image is compared with the single-scattering energy balance of the shell: the power the medium removes from the light, (1 &minus; e<sup>&minus;&tau;</sup>) times the power, less what the medium removes again from the scattered light on its way out (an exact quadrature). Over radial optical depths &tau; of 0.01 to 1, isotropic and Henyey-Greenstein scattering and three view directions, method 4 returns 1.000 times that balance (0.9995 to 1.0003) and method 3 returns 4.000 times (3.9999 to 4.0012). For a medium lit by an interior <code>light</code> block, method 4 returns 1.002 times. The light that a volume <a href="r3_12.html#r3_12_8">bounce</a> delivers to a surface is 1.000 times the analytic value (0.9996 to 0.9998 for isotropic scattering, 0.996 for Henyey-Greenstein).</p>
+
+<p><strong>Moving a scene between the two.</strong> Both rules keep the transmittance of the original medium.</p>
+<table class="centered" width="640px" cellpadding="4" cellspacing="0" border="1">
+<tr><th>From</th><th>To</th><th>Scattering colour</th><th>Extinction</th></tr>
+<tr><td>method 4</td><td>the classic look, with isotropic or Henyey-Greenstein scattering</td><td align="center">&times; 4</td><td align="center">add <code>extinction 0.25</code>, or multiply the existing value by 0.25</td></tr>
+<tr><td>method 3</td><td>the physical result of method 4</td><td align="center">&divide; 4</td><td align="center">add <code>extinction 4</code>, or multiply the existing value by 4</td></tr>
+</table>
+<p>A classic medium of colour &sigma; with <code>extinction 1</code> and a method 4 medium of colour &sigma; with <code>extinction 1</code> have the same transmittance and differ by 4 in scattered light. Better than converting is stating real coefficients. For a non-absorbing medium, &sigma;<sub>s</sub> is about 3.912/<em>V</em> for a visibility <em>V</em> at the 2% contrast threshold (Koschmieder) and 3.0/<em>V</em> at 5% (the meteorological optical range). Water droplets have a single-scattering albedo above 0.999, so fog, cloud and haze need no absorption: give <code>scattering</code> the coefficient in inverse scene units, in every channel, and leave <code>extinction</code> at 1. Droplets much larger than the wavelength scatter strongly forward, which a Henyey-Greenstein <code>eccentricity</code> of 0.6 to 0.9 reproduces; the Mie and Rayleigh types follow their own fixed shapes.</p>
+
+<p><strong>Worked examples.</strong> The three scenes below, <code>physical_haze_street.pov</code>, <code>physical_haze_torch.pov</code> and <code>physical_haze_sunbeam.pov</code> in <code>scenes/interior/media</code>, are set up in real units: 1 scene unit is 1 m, and every light is entered as luminous intensity in candela, or illuminance in lux, divided by &pi;, so that a white diffuse surface reads in cd/m<sup>2</sup> (render with <code>+FH</code> and <code>Declare=Exposure=1</code> to get those units in the file). Each defaults to method 4. <code>Declare=Look=1</code> renders the classic <code>method 3</code> medium at the same coefficients, <code>Look=2</code> the method 4 medium with the scattering colour &times; 4 and <code>extinction 0.25</code>, and <code>Look=3</code> an absorbing medium of the same coefficient, which gives the surfaces and the dimming without the glow. The images show classic, physical and physical &times; 4 at one fixed exposure per scene, 1 &minus; e<sup>&minus;<em>kL</em></sup> for a luminance <em>L</em> in cd/m<sup>2</sup>. In each table, &quot;without glow&quot; is the same view with the scattering replaced by absorption of the same coefficient, so the surfaces and the dimming are identical in all three renders; the last two columns divide what scattering adds in the physical and in the &times; 4 render (the luminance minus the one without glow) by what it adds in the classic one.</p>
+</div>
+
+<a name="r3_7_2_2_5_1"></a>
+<div class="content-level-h6" contains="Street Lamp in Night Fog" id="r3_7_2_2_5_1">
+<h6>3.7.2.2.5.1 Street Lamp in Night Fog</h6>
+<p><code>physical_haze_street.pov</code>: a street lamp 6 m above the road in fog with a visibility of 150 m.</p>
+<ul>
+  <li><strong>Units.</strong> 1 scene unit is 1 m. Light colours are in cd/&pi;, so a white diffuse surface reads in cd/m<sup>2</sup>.</li>
+  <li><strong>Fog.</strong> Visibility <em>V</em> = 150 m gives &sigma;<sub>s</sub> = 3.912/150 = 0.026 per metre (at the 5% threshold, 3.0/150 = 0.020). It is written once for every colour channel: <code>scattering { 5, rgb 0.026 eccentricity 0.7 }</code>. The medium does not absorb, because water droplets have a single-scattering albedo above 0.999, so <code>extinction</code> stays at 1. The fog is the scene's atmosphere, a <code>media</code> statement outside any object: only atmospheric media dim an ordinary <code>light_source</code> on its way (a medium inside an object dims the view through it, and the light of <code>light</code> blocks, but not a <code>light_source</code>). Fog droplets scatter strongly forward, which the Henyey-Greenstein type 5 with <code>eccentricity</code> 0.7 reproduces; real fog is often fitted with 0.8 or more.</li>
+  <li><strong>Lamp.</strong> A cut-off LED lamp of about 3000 K with a peak of 900 cd straight down. The colour is the intensity over &pi;: <code>rgb &lt;1, 0.85, 0.65&gt; / 0.868 * 900 / pi</code>, where 0.868 is the luminance of the warm tint, so the colour carries 900/&pi; = 286 cd. <code>fade_power 2</code> with the default <code>fade_distance 0</code> (from version 3.8) makes the colour the value at 1 m and the light falls as 1/<em>d</em><sup>2</sup>. <code>spotlight radius 55 falloff 75</code> is the cut-off optic: full intensity within 55 degrees of straight down, none beyond 75, so the lamp lights no sky.</li>
+  <li><strong>Illuminance.</strong> The lamp is 5.9 m above the road: <em>E</em> = 900/5.9<sup>2</sup> = 25.9 lux on the road below it. A wall 4.9 m to the side, at a height of 2 m, receives 900/(4.9<sup>2</sup> + 3.9<sup>2</sup>) &times; 0.78 = 18 lux.</li>
+  <li><strong>Albedos.</strong> Road 0.12, kerb and pavement 0.25, building 0.35 (<code>pigment { rgb 0.12 }</code> with <code>diffuse 1</code> and <code>ambient 0</code>). Without fog, the road under the lamp is 0.12 &times; 25.9/&pi; = 0.99 cd/m<sup>2</sup> and the wall 0.35 &times; 18/&pi; = 2.0 cd/m<sup>2</sup>; the fog dims both, by e<sup>&minus;0.026 &times; 5.9</sup> = 0.86 from the lamp to the road, and adds its glow.</li>
+  <li><strong>Exposure.</strong> Fixed for all three images: 1 &minus; e<sup>&minus;0.5<em>L</em></sup>, with <em>L</em> in cd/m<sup>2</sup>.</li>
+</ul>
+<table class="centered" width="900px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="880px" src="images/haze_street.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">A street lamp in night fog, 150 m visibility. The same coefficients: classic (left), physical (middle), and the physical medium with the scattering colour &times; 4 and extinction 0.25 (right), which matches the classic look.</p></td>
+</tr>
+</table>
+<p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Region</th><th>Without glow</th><th>Classic</th><th>Physical</th><th>Physical &times; 4</th><th>Glow, physical &divide; classic</th><th>Glow, &times; 4 &divide; classic</th></tr>
+<tr><td>air beside the lamp</td><td align="right">0.000</td><td align="right">0.416</td><td align="right">0.104</td><td align="right">0.416</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>fog down the street</td><td align="right">0.000</td><td align="right">1.11</td><td align="right">0.279</td><td align="right">1.11</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>road under the lamp</td><td align="right">0.548</td><td align="right">1.46</td><td align="right">0.776</td><td align="right">1.46</td><td align="right">0.250</td><td align="right">0.999</td></tr>
+<tr><td>building wall</td><td align="right">0.770</td><td align="right">1.57</td><td align="right">0.970</td><td align="right">1.57</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+</table>
+</div>
+
+<a name="r3_7_2_2_5_2"></a>
+<div class="content-level-h6" contains="Torch Beam in a Smoky Room" id="r3_7_2_2_5_2">
+<h6>3.7.2.2.5.2 Torch Beam in a Smoky Room</h6>
+<p><code>physical_haze_torch.pov</code>: a torch in a 4 &times; 5 m room, 2.6 m high, full of haze.</p>
+<ul>
+  <li><strong>Units.</strong> 1 scene unit is 1 m; light colours are in cd/&pi;.</li>
+  <li><strong>Smoke.</strong> &sigma;<sub>s</sub> = 0.2 per metre, an optical depth of 1 across the 5 m room and a visibility of 3.912/0.2 = 20 m. The scattering colour is 0.2 in every channel. It is a haze of non-absorbing droplets, like the fluid of a fog machine, so <code>extinction</code> stays at 1. The closed room is filled by the scene's atmosphere, so the smoke dims the torch and the fill light as well as the view. Droplets near the wavelength of light scatter forward less than fog: <code>eccentricity 0.5</code>.</li>
+  <li><strong>Torch.</strong> An LED with a peak of 3000 cd: <code>rgb Cool * 3000 / pi</code>, with <code>Cool</code> a slightly blue tint of unit luminance. <code>spotlight radius 4 falloff 9</code> is a beam at full intensity within 4 degrees of the axis and none beyond 9. The 15 cd fill light in the ceiling is an ordinary point light, <code>rgb Warm * 15 / pi</code>.</li>
+  <li><strong>Illuminance.</strong> The wall is 3.3 m from the torch: 3000/3.29<sup>2</sup> = 277 lux normal to the beam and, with the wall at 31 degrees to it, 277 &times; 0.85 = 235 lux, which is the &quot;about 230 lux in the spot&quot;. The smoke between them transmits e<sup>&minus;0.2 &times; 3.29</sup> = 0.52 of it, and the view of the wall from the camera, 3.8 m, e<sup>&minus;0.76</sup> = 0.47. The fill light gives the floor under it 15/2.5<sup>2</sup> = 2.4 lux.</li>
+  <li><strong>Albedos.</strong> Walls 0.5, floor 0.3, ceiling 0.6, cabinet 0.25. The wall in the spot is 0.5 &times; 235/&pi; = 37 cd/m<sup>2</sup> without smoke; the floor under the fill light 0.3 &times; 2.4/&pi; = 0.23 cd/m<sup>2</sup>.</li>
+  <li><strong>Exposure.</strong> 1 &minus; e<sup>&minus;0.05<em>L</em></sup>.</li>
+</ul>
+<table class="centered" width="900px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="880px" src="images/haze_torch.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">A torch beam in a smoky room. Left to right: classic, physical, and physical with the scattering colour &times; 4 and extinction 0.25.</p></td>
+</tr>
+</table>
+<p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Region</th><th>Without glow</th><th>Classic</th><th>Physical</th><th>Physical &times; 4</th><th>Glow, physical &divide; classic</th><th>Glow, &times; 4 &divide; classic</th></tr>
+<tr><td>beam, midway</td><td align="right">0.034</td><td align="right">6.95</td><td align="right">1.76</td><td align="right">6.95</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>lit spot on the wall</td><td align="right">9.44</td><td align="right">10.7</td><td align="right">9.75</td><td align="right">10.7</td><td align="right">0.251</td><td align="right">1.001</td></tr>
+<tr><td>wall away from the beam</td><td align="right">0.157</td><td align="right">0.551</td><td align="right">0.255</td><td align="right">0.551</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>floor in front</td><td align="right">0.042</td><td align="right">0.323</td><td align="right">0.112</td><td align="right">0.323</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+</table>
+</div>
+
+<a name="r3_7_2_2_5_3"></a>
+<div class="content-level-h6" contains="Sunbeam Through a Window" id="r3_7_2_2_5_3">
+<h6>3.7.2.2.5.3 Sunbeam Through a Window</h6>
+<p><code>physical_haze_sunbeam.pov</code>: the sun through a 1.6 &times; 1.5 m window into a 5 &times; 6 m room, 3 m high, with dust in the air.</p>
+<ul>
+  <li><strong>Units.</strong> 1 scene unit is 1 m. A parallel light is stated in lux, and its colour is the illuminance over &pi;.</li>
+  <li><strong>Dust.</strong> &sigma;<sub>s</sub> = 0.03 per metre, a visibility of 3.912/0.03 = 130 m and an optical depth of 0.18 across the 6 m room. It is non-absorbing for the comparison, and <code>eccentricity 0.6</code> is a moderately forward-scattering dust. The window opens on the sky, which an atmosphere would extinguish, so the dust is an object medium filling the room: it dims the view but not the sun, which would lose e<sup>&minus;0.18</sup> = 16% across the room.</li>
+  <li><strong>Sun.</strong> 100,000 lux on a plane normal to the beam, 35 degrees above the horizon: <code>rgb SunC * 100000 / pi parallel</code>, with <code>SunC</code> a warm tint of unit luminance. On the floor this is 100,000 &times; sin 35.3&deg; = 57,800 lux. The sky seen through the window is the <code>background</code>, 4000 cd/m<sup>2</sup>. A 1500 cd point light in the ceiling stands in for sky light and bounce light and gives the floor under it 1500/2.85<sup>2</sup> = 185 lux.</li>
+  <li><strong>Albedos.</strong> Floor 0.3, walls 0.6, ceiling 0.7, a box 0.35. The sunlit floor is 0.3 &times; 57,800/&pi; = 5,520 cd/m<sup>2</sup> before the dust dims the view of it.</li>
+  <li><strong>Check of the beam.</strong> The glow per metre of path is &sigma;<sub>s</sub><em>E</em><em>p</em>(&theta;). Seen at a scattering angle of 44 degrees, Henyey-Greenstein with <em>g</em> = 0.6 has 4&pi;<em>p</em> = 1.83, so 0.03 &times; 100,000 &times; 1.83/4&pi; = 437 cd/m<sup>2</sup> per metre of beam, before the medium's own extinction.</li>
+  <li><strong>Exposure.</strong> 1 &minus; e<sup>&minus;0.0004<em>L</em></sup>.</li>
+</ul>
+<table class="centered" width="900px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="880px" src="images/haze_sunbeam.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">A sunbeam through a window in dusty air. Left to right: classic, physical, and physical with the scattering colour &times; 4 and extinction 0.25.</p></td>
+</tr>
+</table>
+<p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Region</th><th>Without glow</th><th>Classic</th><th>Physical</th><th>Physical &times; 4</th><th>Glow, physical &divide; classic</th><th>Glow, &times; 4 &divide; classic</th></tr>
+<tr><td>beam near the window</td><td align="right">2984</td><td align="right">4851</td><td align="right">3453</td><td align="right">4851</td><td align="right">0.251</td><td align="right">1.000</td></tr>
+<tr><td>beam, mid-air</td><td align="right">15.4</td><td align="right">1761</td><td align="right">453</td><td align="right">1764</td><td align="right">0.250</td><td align="right">1.001</td></tr>
+<tr><td>sunlit floor</td><td align="right">4551</td><td align="right">5118</td><td align="right">4692</td><td align="right">5118</td><td align="right">0.248</td><td align="right">1.000</td></tr>
+<tr><td>wall away from the window</td><td align="right">22.5</td><td align="right">39.5</td><td align="right">26.7</td><td align="right">39.5</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+</table>
+</div>
 <a name="r3_7_2_3"></a>
 <div class="content-level-h4" contains="Sampling Parameters & Methods" id="r3_7_2_3">
 <h4>3.7.2.3 Sampling Parameters & Methods</h4>
