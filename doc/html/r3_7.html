@@ -1191,18 +1191,18 @@ interior {
 <p><code>physical_haze_torch.pov</code>: a torch in a 4 &times; 5 m room, 2.6 m high, full of haze.</p>
 <ul>
   <li><strong>Units.</strong> 1 scene unit is 1 m; light colours are in cd/&pi;.</li>
-  <li><strong>Smoke.</strong> &sigma;<sub>s</sub> = 0.2 per metre, an optical depth of 1 across the 5 m room and a visibility of 3.912/0.2 = 20 m. The scattering colour is 0.2 in every channel. It is a haze of non-absorbing droplets, like the fluid of a fog machine, so <code>extinction</code> stays at 1. The closed room is filled by the scene's atmosphere, so the smoke dims the torch and the fill light as well as the view. Droplets near the wavelength of light scatter forward less than fog: <code>eccentricity 0.5</code>.</li>
+  <li><strong>Smoke.</strong> &sigma;<sub>s</sub> = 0.2 per metre, an optical depth of 1 across the 5 m room and a visibility of 3.912/0.2 = 20 m. The scattering colour is 0.2 in every channel. It is a haze of non-absorbing droplets, like the fluid of a fog machine, so <code>extinction</code> stays at 1. The smoke is an object medium filling the room and reaching into its walls, so that every surface and both lights are inside it; with <code>media_attenuation on</code> it dims the torch and the fill light as well as the view. Droplets near the wavelength of light scatter forward less than fog: <code>eccentricity 0.5</code>.</li>
   <li><strong>Torch.</strong> An LED with a peak of 3000 cd: <code>rgb Cool * 3000 / pi</code>, with <code>Cool</code> a slightly blue tint of unit luminance. <code>spotlight radius 4 falloff 9</code> is a beam at full intensity within 4 degrees of the axis and none beyond 9. The 15 cd fill light in the ceiling is an ordinary point light, <code>rgb Warm * 15 / pi</code>.</li>
   <li><strong>Illuminance.</strong> The wall is 3.3 m from the torch: 3000/3.29<sup>2</sup> = 277 lux normal to the beam and, with the wall at 31 degrees to it, 277 &times; 0.85 = 235 lux, which is the &quot;about 230 lux in the spot&quot;. The smoke between them transmits e<sup>&minus;0.2 &times; 3.29</sup> = 0.52 of it, and the view of the wall from the camera, 3.8 m, e<sup>&minus;0.76</sup> = 0.47. The fill light gives the floor under it 15/2.5<sup>2</sup> = 2.4 lux.</li>
   <li><strong>Albedos.</strong> Walls 0.5, floor 0.3, ceiling 0.6, cabinet 0.25. The wall in the spot is 0.5 &times; 235/&pi; = 37 cd/m<sup>2</sup> without smoke; the floor under the fill light 0.3 &times; 2.4/&pi; = 0.23 cd/m<sup>2</sup>.</li>
-  <li><strong>Exposure.</strong> 1 &minus; e<sup>&minus;0.05<em>L</em></sup>.</li>
+  <li><strong>Exposure.</strong> <code>Exposure</code> 0.05: the image shows 0.05<em>L</em> for a luminance <em>L</em> in cd/m<sup>2</sup>.</li>
 </ul>
 <table class="centered" width="900px" cellpadding="0" cellspacing="10">
 <tr>
   <td><img class="center" width="880px" src="images/haze_torch.png"></td>
 </tr>
 <tr>
-  <td><p class="caption">A torch beam in a smoky room. Left to right: classic, physical, and physical with the scattering colour &times; 4 and extinction 0.25.</p></td>
+  <td><p class="caption">A torch beam in a smoky room, as the scene renders it. Top: classic and physical; bottom: physical with the scattering colour &times; 4 and extinction 0.25, and absorption only.</p></td>
 </tr>
 </table>
 <p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
@@ -1225,14 +1225,14 @@ interior {
   <li><strong>Sun.</strong> 100,000 lux on a plane normal to the beam, 35 degrees above the horizon: <code>rgb SunC * 100000 / pi parallel</code>, with <code>SunC</code> a warm tint of unit luminance. On the floor this is 100,000 &times; sin 35.3&deg; = 57,800 lux. The sky seen through the window is the <code>background</code>, 4000 cd/m<sup>2</sup>. A 1500 cd point light in the ceiling stands in for sky light and bounce light and gives the floor under it 1500/2.85<sup>2</sup> = 185 lux.</li>
   <li><strong>Albedos.</strong> Floor 0.3, walls 0.6, ceiling 0.7, a box 0.35. The sunlit floor is 0.3 &times; 57,800/&pi; = 5,520 cd/m<sup>2</sup> before the dust dims the sun on its way down and the view of it.</li>
   <li><strong>Check of the beam.</strong> The glow per metre of path is &sigma;<sub>s</sub><em>E</em><em>p</em>(&theta;). Seen at a scattering angle of 44 degrees, Henyey-Greenstein with <em>g</em> = 0.6 has 4&pi;<em>p</em> = 1.83, so 0.03 &times; 100,000 &times; 1.83/4&pi; = 437 cd/m<sup>2</sup> per metre of beam, before the dust dims the sun on its way to that point and the view of the beam back to the camera.</li>
-  <li><strong>Exposure.</strong> 1 &minus; e<sup>&minus;0.0004<em>L</em></sup>.</li>
+  <li><strong>Exposure.</strong> <code>Exposure</code> 0.0004: the image shows 0.0004<em>L</em> for a luminance <em>L</em> in cd/m<sup>2</sup>.</li>
 </ul>
 <table class="centered" width="900px" cellpadding="0" cellspacing="10">
 <tr>
   <td><img class="center" width="880px" src="images/haze_sunbeam.png"></td>
 </tr>
 <tr>
-  <td><p class="caption">A sunbeam through a window in dusty air. Left to right: classic, physical, and physical with the scattering colour &times; 4 and extinction 0.25.</p></td>
+  <td><p class="caption">A sunbeam through a window in dusty air, as the scene renders it. Top: classic and physical; bottom: physical with the scattering colour &times; 4 and extinction 0.25, and absorption only.</p></td>
 </tr>
 </table>
 <p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>

@@ -1,8 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A black hole bends light through an interior refraction field alone: the index of a Schwarzschild field in isotropic coordinates, n(r) = (1 + rs/4r)^3 / (1 - rs/4r), lenses the stars and the glowing disk into a photon ring. +w640 +h360; Declare=Angle=A sets refraction_angle, the bend allowed per step, Disk=0 drops the disk.
+// A black hole made from an interior refraction field alone: the index of a Schwarzschild field in isotropic coordinates, n(r) = (1 + rs/4r)^3 / (1 - rs/4r), lenses the starfield and a glowing emissive accretion disk into a photon ring, with refraction_angle limiting the bend per step where the index is steep. +w640 +h360
 #version 4.0;
-#ifndef (Disk) #declare Disk = 1; #end
-#ifndef (Angle) #declare Angle = 0.25; #end
 
 #declare RS = 1;          // Schwarzschild radius; the horizon sits at RS/4 in these coordinates
 #declare Reach = 14;      // radius of the field's container
@@ -10,7 +8,7 @@
 #declare Index = function(r) { pow(1 + RS / (4 * r), 3) / (1 - RS / (4 * r)) }
 #declare Edge = Index(Reach);
 
-global_settings { assumed_gamma 1 refraction_angle Angle } // the index turns over across about half a unit near the horizon, where refraction_angle slows the bend anyway
+global_settings { assumed_gamma 1 refraction_angle 0.25 } // the index turns over across about half a unit near the horizon, where refraction_angle slows the bend anyway
 camera { location <0, 2.2, -32> look_at 0 angle 24 right x * image_width / image_height }
 
 sky_sphere {
@@ -42,23 +40,21 @@ sphere {
 
 sphere { 0, RS * 0.26 pigment { rgb 0 } finish { diffuse 0 ambient 0 } }
 
-#if (Disk)
-  cylinder {
-    -0.06 * y, 0.06 * y, 9
-    pigment { rgbt 1 }
-    interior {
-      media {
-        mix add
-        method 3 intervals 1 samples 6
-        emission rgb <2.2, 1.1, 0.45>
-        density {
-          function {
-            select(sqrt(x * x + z * z) - 2.7, 0,
-                   exp(-(sqrt(x * x + z * z) - 2.7) / 1.8) * (0.55 + 0.45 * sin(9 * sqrt(x * x + z * z) + atan2(z, x))))
-          }
+cylinder {
+  -0.06 * y, 0.06 * y, 9
+  pigment { rgbt 1 }
+  interior {
+    media {
+      mix add
+      method 3 intervals 1 samples 6
+      emission rgb <2.2, 1.1, 0.45>
+      density {
+        function {
+          select(sqrt(x * x + z * z) - 2.7, 0,
+                 exp(-(sqrt(x * x + z * z) - 2.7) / 1.8) * (0.55 + 0.45 * sin(9 * sqrt(x * x + z * z) + atan2(z, x))))
         }
       }
     }
-    rotate <-4, 0, 9>
   }
-#end
+  rotate <-4, 0, 9>
+}

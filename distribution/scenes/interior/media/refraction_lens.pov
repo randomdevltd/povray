@@ -1,11 +1,10 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Gradient-index lenses: two flat glass discs, the left one with a dissolved concentration that raises its index toward the axis. Its curved photons focus sunlight to a spot; the plain disc beside it only casts a soft shadow. +w640 +h400
+// A gradient-index lens: two flat glass discs, the left with an interior refraction field that raises its index toward the axis. Photons follow the curved paths through it and focus the sunlight to a spot; the plain disc beside it only casts a soft shadow. +w640 +h400
 #version 4.0;
-#ifndef (Photons) #declare Photons = 1; #end
 
 global_settings {
   assumed_gamma 1
-  #if (Photons) photons { spacing 0.004 } #end
+  photons { spacing 0.004 }
 }
 camera { location <0, 5.2, -6.8> look_at <0, 1.3, 0> angle 44 right x * image_width / image_height }
 light_source { <0, 40, 0> rgb 1.4 parallel point_at 0 photons { refraction on reflection off } }

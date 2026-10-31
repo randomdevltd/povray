@@ -153,9 +153,9 @@ box {
 <p>Media <code>resolution</code> is a positive cell width in scene units and requires method 4. <a href="r3_4.html#r3_4_1_17">prepared_media_cells</a> limits finite preparation sizes. Fields can be coarsened to fit, with an explicit diagnostic. Finite varying fields require usable bounds. Context-dependent patterns needing a shading ray cannot define a spatial field.</p></div>
 <a name="r3_11_5"></a><div class="content-level-h3" contains="Worked Examples" id="r3_11_5">
 <h3>3.11.5 Worked Examples</h3>
-<p>Examples are in <code>scenes/interior/media</code>. Their comments document their scene parameters.</p></div>
+<p>Examples are in <code>scenes/interior/media</code>. The header of each says what it shows.</p></div>
 <a name="r3_11_5_1"></a><div class="content-level-h4" contains="Heat Shimmer" id="r3_11_5_1"><h4>3.11.5.1 Heat Shimmer</h4>
-<p><code>refraction_shimmer.pov</code> and <code>refraction_plume.pov</code> use independent negative index contributions for warm air. The field can vary or fade without changing smoke extinction or source strength.</p></div>
+<p><code>refraction_shimmer.pov</code> and <code>refraction_plume.pov</code> use independent negative index contributions for warm air. The field can vary or fade without changing smoke extinction or source strength. In <code>refraction_shimmer.pov</code> the hot layer covers only the left half of the view, so the shimmering half of the marker board stands beside the still half.</p></div>
 <a name="r3_11_5_2"></a><div class="content-level-h4" contains="Steam: Independent Optical and Index Fields" id="r3_11_5_2"><h4>3.11.5.2 Steam: Independent Optical and Index Fields</h4>
 <pre>
 #declare Steam = function { max(0, 1-x*x-z*z) }
@@ -167,13 +167,13 @@ cylinder {
   }
 }
 </pre>
-<p>Reusing a declared function is an authoring choice, not coupling between the two axes.</p></div>
+<p>Reusing a declared function is an authoring choice, not coupling between the two axes. <code>refraction_steam.pov</code> shows three mugs: vapour with its index field, vapour alone, and the index field alone.</p></div>
 <a name="r3_11_5_3"></a><div class="content-level-h4" contains="A Black Hole" id="r3_11_5_3"><h4>3.11.5.3 A Black Hole</h4>
 <p><code>refraction_blackhole.pov</code> demonstrates a strong positive index field. Keep indices above the renderer's positive lower limit and check integration convergence near strong gradients.</p></div>
 <a name="r3_11_5_4"></a><div class="content-level-h4" contains="Carving and Scaling Fog" id="r3_11_5_4"><h4>3.11.5.4 Carving and Scaling Fog</h4>
 <p><code>blend_carve.pov</code> and <code>blend_streaks.pov</code> demonstrate optical media subtraction and multiplication. These operations affect coefficient media, not independently authored sources or refraction.</p></div>
 <a name="r3_11_5_5"></a><div class="content-level-h4" contains="Resolved Detail" id="r3_11_5_5"><h4>3.11.5.5 Resolved Detail</h4>
-<p><code>refraction_detail_bands.pov</code> and <code>refraction_detail_crackle.pov</code> expose detail controls. Compare resolved grids; a finer integration step cannot recover information absent from a coarse field grid.</p></div>
+<p><code>refraction_detail_bands.pov</code> and <code>refraction_detail_crackle.pov</code> each stack three plates with the same index field at <code>detail auto</code>, a coarser and a finer detail: sharp seams and fine crackle cells resolve only on the finest grid. A finer integration step cannot recover information absent from a coarse field grid.</p></div>
 <a name="r3_11_6"></a><div class="content-level-h3" contains="Defaults and Messages" id="r3_11_6"><h3>3.11.6 Defaults and Messages</h3>
 <p>Refraction requires one or more scalar functions, or <code>refraction off</code>, which disables only this interior's field contribution. In a scene of version 3.7 or older <code>refraction off</code> keeps its classic meaning, the old <code>refraction</code> value 0 (with the warning that value gives), so a 3.7 scene renders as it did; the block form <code>refraction { function { ... } }</code> works at every version. Detail defaults to <code>auto</code>; all sampled function values must be finite. Detail must be auto or positive. Preparation diagnostics identify coarsened layouts, invalid spatial contexts and unsupported bounds. An explicitly requested prepared representation is never silently replaced with a procedural or classic path.</p></div>
 
