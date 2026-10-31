@@ -59,6 +59,7 @@ Ray::Ray(TraceTicket& ticket, RayType rt, bool shadowTest, bool photon, bool rad
 {
     SetFlags(rt, shadowTest, photon, radiosity, monochromatic, pretrace);
     hollowRay = true;
+    watchesKey = false;
     ClearInteriors();
 }
 
@@ -68,6 +69,7 @@ Ray::Ray(TraceTicket& ticket, const Vector3d& ov, const Vector3d& dv, RayType rt
 {
     SetFlags(rt, shadowTest, photon, radiosity, monochromatic, pretrace);
     hollowRay = true;
+    watchesKey = false;
     ClearInteriors();
 }
 
@@ -88,13 +90,14 @@ static double SurfaceErrorScale(ConstObjectPtr object)
 void Ray::SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface)
 {
     const ConstObjectPtr part = surface ? surface : object;
-    surfaceOrigin = {object, point, normal, SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
+    static_cast<SurfacePoint&>(surfaceOrigin) = SurfacePoint{object, point, SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
+    surfaceOrigin.normal = normal;
 }
 
 void Ray::SetSurfaceEndpoint(ConstObjectPtr object, const Vector3d& point, ConstObjectPtr surface)
 {
     const ConstObjectPtr part = surface ? surface : object;
-    surfaceEndpoint = {object, point, Vector3d(0.0), SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
+    surfaceEndpoint = SurfacePoint{object, point, SurfaceErrorScale(object), part ? part->SurfaceTolerance() : 0.0};
 }
 
 Ray::~Ray()

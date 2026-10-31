@@ -2230,8 +2230,8 @@ alone left the text mesh no faster and 57 MB larger, which the bounds and `strto
 ## Ray size
 
 `Ray` is copied whole for every reflected, refracted and transmitted ray, every shadow ray and each piece of a
-shadow ray that crosses a surface, and every media and subsurface sample ray, and copies sit in the frames of the
-recursive trace. Every byte a member adds is written and read again on each of those copies, in every scene,
+shadow ray that crosses a surface, and every media, subsurface and bounce sample ray, and copies sit in the frames
+of the recursive trace. Every byte a member adds is written and read again on each of those copies, in every scene,
 whether or not the scene uses the feature it serves. So nothing joins `Ray` without counting instructions over the
 whole scene set before and after.
 
@@ -2240,11 +2240,13 @@ whole scene set before and after.
 | POV-Ray 3.8 | 80 |
 | ray differentials, path keys, media budget and light, prepared set | 224 |
 | differentials flag and child counter packed beside the ray type bits | 208 |
+| plus surface endpoints, root query, key watch, shadow window, receiver radius | 392 |
+| shadow window flag packed, key watch a bit, endpoint without a normal, root query in the ticket | 336 |
 
 What belongs elsewhere: state for one call, such as a query, a budget or a flag for one test, goes in an argument,
-in `Trace` or in `TraceTicket`; state of a hit goes in `Intersection`. A member belongs in `Ray` only when the
-copies made from a ray need it. A `static_assert` in `ray.h` fails the build on x86-64 GCC and Clang where `Ray`
-grows past 208 bytes.
+in `Trace` (as `shadowReach` does) or in `TraceTicket`; state of a hit goes in `Intersection`. A member belongs in
+`Ray` only when the copies made from a ray need it. A `static_assert` in `ray.h` fails the build on x86-64 GCC and
+Clang where `Ray` grows past the last size in this table.
 
 To measure the size, compile a probe in the build environment: `template<int N> struct SizeIs;` and
 `SizeIs<sizeof(pov::Ray)> probe;` after including `core/render/ray.h` fail with the size in the message. To measure

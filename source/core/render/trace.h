@@ -172,53 +172,6 @@ typedef PooledSimpleVector<LitInterval, LIT_INTERVAL_VECTOR_SIZE> LitIntervalVec
 typedef PooledSimpleVector<LightSourceIntersectionEntry, LIGHT_INTERSECTION_VECTOR_SIZE> LightSourceIntersectionVector;
 typedef PooledSimpleVector<LightSourceEntry, LIGHTSOURCE_VECTOR_SIZE> LightSourceEntryVector;
 
-
-struct TraceTicket final
-{
-    /// trace recursion level
-    unsigned int traceLevel;
-
-    /// maximum trace recursion level allowed
-    unsigned int maxAllowedTraceLevel;
-
-    /// maximum trace recursion level found
-    unsigned int maxFoundTraceLevel;
-
-    /// adc bailout
-    double adcBailout;
-
-    /// whether background should be rendered all transparent
-    bool alphaBackground;
-
-    /// something the radiosity algorithm needs
-    unsigned int radiosityRecursionDepth;
-
-    /// something the radiosity algorithm needs
-    float radiosityImportanceQueried;
-    /// something the radiosity algorithm needs
-    float radiosityImportanceFound;
-    /// set by radiosity code according to the sample quality encountered (1.0 is ideal, 0.0 really sucks)
-    float radiosityQuality;
-
-    /// something the subsurface scattering algorithm needs
-    unsigned int subsurfaceRecursionDepth;
-
-    /// share of its radiosity sample that a ray below a gather ray carries, for Russian roulette
-    double radiosityShare;
-
-    /// eye whose distance spaces radiosity samples; null takes the radiosity functor's camera
-    const Vector3d *radiosityEye;
-    PreparedSetId preparedSetId;
-
-    TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
-                float riq = -1.0, float rq = 1.0):
-        traceLevel(0), maxAllowedTraceLevel(mtl), maxFoundTraceLevel(0), adcBailout(adcb), alphaBackground(ab),
-        radiosityRecursionDepth(rrd), subsurfaceRecursionDepth(ssrd), radiosityImportanceQueried(riq),
-        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0), radiosityEye(nullptr), preparedSetId(0)
-    {}
-};
-
-
 /// Ray tracing and shading engine.
 ///
 /// This class provides the fundamental functionality to trace rays and determine the effective colour of an object.

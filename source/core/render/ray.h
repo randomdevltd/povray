@@ -76,6 +76,67 @@ struct RayRootQuery
     virtual bool AllRoots() const { return false; }
 };
 
+/// The root query active on one ray of a ticket; a copy of a ticket has none, and assigning a ticket keeps it.
+struct RayRootQuerySlot final
+{
+    const Ray* ray = nullptr;
+    const RayRootQuery* query = nullptr;
+    ConstObjectPtr owner = nullptr;
+    RayRootQuerySlot() = default;
+    RayRootQuerySlot(const RayRootQuerySlot&) {}
+    RayRootQuerySlot& operator=(const RayRootQuerySlot&) { return *this; }
+    void Set(const Ray* r, const RayRootQuery* q, ConstObjectPtr o) { ray = r; query = q; owner = o; }
+};
+
+struct TraceTicket final
+{
+    /// trace recursion level
+    unsigned int traceLevel;
+
+    /// maximum trace recursion level allowed
+    unsigned int maxAllowedTraceLevel;
+
+    /// maximum trace recursion level found
+    unsigned int maxFoundTraceLevel;
+
+    /// adc bailout
+    double adcBailout;
+
+    /// whether background should be rendered all transparent
+    bool alphaBackground;
+
+    /// something the radiosity algorithm needs
+    unsigned int radiosityRecursionDepth;
+
+    /// something the radiosity algorithm needs
+    float radiosityImportanceQueried;
+    /// something the radiosity algorithm needs
+    float radiosityImportanceFound;
+    /// set by radiosity code according to the sample quality encountered (1.0 is ideal, 0.0 really sucks)
+    float radiosityQuality;
+
+    /// something the subsurface scattering algorithm needs
+    unsigned int subsurfaceRecursionDepth;
+
+    /// share of its radiosity sample that a ray below a gather ray carries, for Russian roulette
+    double radiosityShare;
+
+    /// eye whose distance spaces radiosity samples; null takes the radiosity functor's camera
+    const Vector3d *radiosityEye;
+    PreparedSetId preparedSetId;
+    /// Set when a ray watching it had its key read (Ray::WatchKey).
+    bool keyRead = false;
+    /// Filters the roots that intersection tests of one ray on this ticket return (Ray::AdmitRoot).
+    RayRootQuerySlot rootQuery;
+
+    TraceTicket(unsigned int mtl, double adcb, bool ab = true, unsigned int rrd = 0, unsigned int ssrd = 0,
+                float riq = -1.0, float rq = 1.0):
+        traceLevel(0), maxAllowedTraceLevel(mtl), maxFoundTraceLevel(0), adcBailout(adcb), alphaBackground(ab),
+        radiosityRecursionDepth(rrd), subsurfaceRecursionDepth(ssrd), radiosityImportanceQueried(riq),
+        radiosityImportanceFound(-1.0), radiosityQuality(rq), radiosityShare(1.0), radiosityEye(nullptr), preparedSetId(0)
+    {}
+};
+
 class Ray final : public BasicRay
 {
     // Hot path, deep-copied: add no member without re-measuring every scene for regressions (counters).
@@ -131,11 +192,15 @@ class Ray final : public BasicRay
         DBL ReceiverRadius() const { return receiverRadius; }
 
         bool AdmitRoot(ConstObjectPtr object, double depth) const
-        { return !rootQuery.query || rootQuery.query->Admit(rootQuery.owner ? rootQuery.owner : object, depth); }
-        const RayRootQuery* GetRootQuery() const { return rootQuery.query; }
-        ConstObjectPtr GetRootOwner() const { return rootQuery.owner; }
-        void SetRootQuery(const RayRootQuery* query) const { rootQuery.query = query; rootQuery.owner = nullptr; }
-        void SetRootOwner(ConstObjectPtr owner) const { rootQuery.owner = owner; }
+        {
+            const RayRootQuerySlot& slot = ticket.rootQuery;
+            return slot.ray != this || !slot.query || slot.query->Admit(slot.owner ? slot.owner : object, depth);
+        }
+        const RayRootQuery* GetRootQuery() const { return ticket.rootQuery.ray == this ? ticket.rootQuery.query : nullptr; }
+        ConstObjectPtr GetRootOwner() const { return ticket.rootQuery.ray == this ? ticket.rootQuery.owner : nullptr; }
+        void SetRootQuery(const RayRootQuery* query) const { ticket.rootQuery.Set(this, query, nullptr); }
+        void SetRootOwner(ConstObjectPtr owner) const { if (ticket.rootQuery.ray == this) ticket.rootQuery.owner = owner; }
+        RayRootQuerySlot& RootQuerySlot() const { return ticket.rootQuery; }
 
         void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface = nullptr);
         void ClearSurfaceOrigin() { surfaceOrigin.object = nullptr; }
@@ -172,32 +237,35 @@ class Ray final : public BasicRay
         /// Makes this ray the index-th child of its kind below the parent.
         void Derive(const Ray& parent, std::uint64_t kind, std::uint64_t index)
         {
-            keyRead = parent.keyRead;
+            // A flag lives in a ticket, and so only as long as the rays on it.
+            if (&ticket == &parent.ticket)
+                watchesKey = parent.watchesKey;
+            else
+                parent.MarkKeyRead();
             SetKey(DeriveKey(parent.key, kind, index));
         }
         /// A key for the next child of a kind whose place among its siblings is its only index.
         std::uint64_t NextChildKey(std::uint64_t kind) const { MarkKeyRead(); return DeriveKey(key, kind, children++); }
-        /// Sets `*flag` once anything reads the key of this ray, a copy or a derived ray; `*flag` must outlive them.
-        void WatchKey(bool *flag) { keyRead = flag; }
+        /// Sets the ticket's keyRead once anything reads the key of this ray, a copy or a derived ray.
+        void WatchKey() { watchesKey = true; }
 
         /// Change of origin and direction per image pixel step in x and y; valid only when @ref hasDifferentials is set.
         Vector3d dOdx, dOdy, dDdx, dDdy;
 
     private:
 
-        void MarkKeyRead() const { if (keyRead != nullptr) *keyRead = true; }
+        void MarkKeyRead() const { if (watchesKey) ticket.keyRead = true; }
 
         RayInteriorVector interiors;
         SpectralBand spectralBand;
         TraceTicket& ticket;
         std::uint64_t key = 0;
-        bool *keyRead = nullptr;
         mutable DBL mediaErrorBudget = 0.0;
         const LightSource *mediaLight = nullptr;
         PreparedSetId preparedSetId = 0;
+        DBL receiverRadius = 0.0;
         mutable std::uint32_t children = 0;
         bool exactShadowWindow = false;
-        DBL receiverRadius = 0.0;
 
         bool primaryRay : 1;
         bool reflectionRay : 1;
@@ -209,20 +277,24 @@ class Ray final : public BasicRay
         bool monochromaticRay : 1;
         bool hollowRay : 1;
         bool pretraceRay : 1;
+        bool watchesKey : 1;
 
     public:
         /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
         bool hasDifferentials = false;
 
     private:
+
         struct SurfacePoint
         {
             ConstObjectPtr object = nullptr;
-            Vector3d point, normal;
+            Vector3d point;
             double errorScale = 0.0;
             double rootTolerance = 0.0;
         };
-        SurfacePoint surfaceOrigin, surfaceEndpoint;
+        struct SurfaceOrigin : SurfacePoint { Vector3d normal; };
+        SurfaceOrigin surfaceOrigin;
+        SurfacePoint surfaceEndpoint;
         bool MatchesSurfacePoint(const SurfacePoint& surface, ConstObjectPtr object, double depth) const
         {
             if (!surface.object || surface.object != object)
@@ -237,16 +309,6 @@ class Ray final : public BasicRay
             }
             return true;
         }
-
-        struct RootQueryState
-        {
-            const RayRootQuery* query = nullptr;
-            ConstObjectPtr owner = nullptr;
-            RootQueryState() = default;
-            RootQueryState(const RootQueryState&) {}
-            RootQueryState& operator=(const RootQueryState&) { query = nullptr; owner = nullptr; return *this; }
-        };
-        mutable RootQueryState rootQuery;
 };
 
 struct RayRootOwnerScope final
@@ -260,16 +322,17 @@ struct RayRootOwnerScope final
 
 struct RayRootQueryDisabled final
 {
-    const Ray& ray;
+    RayRootQuerySlot& slot;
+    const Ray* ray;
     const RayRootQuery* query;
     ConstObjectPtr owner;
-    explicit RayRootQueryDisabled(const Ray& r) : ray(r), query(r.GetRootQuery()), owner(r.GetRootOwner())
-    { ray.SetRootQuery(nullptr); }
-    ~RayRootQueryDisabled() { ray.SetRootQuery(query); ray.SetRootOwner(owner); }
+    explicit RayRootQueryDisabled(const Ray& r) : slot(r.RootQuerySlot()), ray(slot.ray), query(slot.query), owner(slot.owner)
+    { if (slot.ray == &r) slot.Set(nullptr, nullptr, nullptr); }
+    ~RayRootQueryDisabled() { slot.Set(ray, query, owner); }
 };
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-static_assert(sizeof(Ray) <= 416, "Ray grew: see \"Ray size\" in doc/PERF.md before adding a member");
+static_assert(sizeof(Ray) <= 336, "Ray grew: see \"Ray size\" in doc/PERF.md before adding a member");
 #endif
 
 /// @}

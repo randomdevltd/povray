@@ -3596,6 +3596,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     }
 
     foundTransparentObjects = false;
+    const RayRootQueryDisabled restoreQuery(query);
     while(true)
     {
         cooperate();
