@@ -136,6 +136,7 @@ static bool Nearest_Intersection(Intersection *isect, ObjectPtr object, const Ra
     IStack depthstack(threadData->stackPool);
     POV_REFPOOL_ASSERT(depthstack->empty()); // verify that the IStack pulled from the pool is in a cleaned-up condition
 
+    const RayRootOwnerScope rootOwner(ray, object);
     if (object->All_Intersections(ray, depthstack, threadData) == false)
         return false;
 
@@ -254,6 +255,7 @@ bool Inside_Object (const Vector3d& IPoint, ObjectPtr Object, TraceThreadData *T
 
 bool Ray_In_Bound (const Ray& ray, const vector<ObjectPtr>& Bounding_Object, TraceThreadData *Thread)
 {
+    const RayRootQueryDisabled rootQuery(ray);
     Intersection Local;
 
     for(vector<ObjectPtr>::const_iterator Bound = Bounding_Object.begin(); Bound != Bounding_Object.end(); Bound++)

@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/plane.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 // C++ standard header files
@@ -171,7 +172,7 @@ bool Plane::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats) 
 
     *Depth = -(NormalDotOrigin + Distance) / NormalDotDirection;
 
-    if ((*Depth >= DEPTH_TOLERANCE) && (*Depth <= MAX_DISTANCE))
+    if ((*Depth >= DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(*Depth))
     {
         stats[Ray_Plane_Tests_Succeeded]++;
         return (true);

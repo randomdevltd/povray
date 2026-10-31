@@ -96,6 +96,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/blob.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 #include <cstring>
@@ -540,7 +541,7 @@ bool Blob::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadDat
 
                 dist = (dist * max_bound + start_dist) / len;
 
-                if ((dist > depthTolerance) && (dist < MAX_DISTANCE))
+                if ((dist > depthTolerance) && IsFiniteIntersectionDepth(dist) && ray.AdmitRoot(this, dist))
                 {
                     IPoint = ray.Evaluate(dist);
 

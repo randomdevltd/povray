@@ -495,7 +495,7 @@ DBL HField::normalize(Vector3d& A, const Vector3d& B)
 *
 ******************************************************************************/
 
-bool HField::intersect_pixel(int x, int z, const BasicRay &ray, DBL height1, DBL height2, IStack& HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread)
+bool HField::intersect_pixel(int x, int z, const BasicRay &ray, DBL height1, DBL height2, IStack& HField_Stack, const Ray &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread)
 {
     int Found;
     DBL dot1, depth1, depth2;
@@ -596,7 +596,7 @@ bool HField::intersect_pixel(int x, int z, const BasicRay &ray, DBL height1, DBL
 
                     P = RRay.Evaluate(depth1);
 
-                    if (Clip.empty() || Point_In_Clip(P, Clip, Thread))
+                    if (RRay.AdmitRoot(this, depth1) && (Clip.empty() || Point_In_Clip(P, Clip, Thread)))
                         // (Check whether the point of intersection is within the clipped-by volume)
                     {
                         if (Test_Flag(this, SMOOTHED_FLAG))
@@ -674,7 +674,7 @@ bool HField::intersect_pixel(int x, int z, const BasicRay &ray, DBL height1, DBL
 
                     P = RRay.Evaluate(depth2);
 
-                    if (Clip.empty() || Point_In_Clip(P, Clip, Thread))
+                    if (RRay.AdmitRoot(this, depth2) && (Clip.empty() || Point_In_Clip(P, Clip, Thread)))
                         // (Check whether the point of intersection is within the clipped-by volume)
                     {
                         if (Test_Flag(this, SMOOTHED_FLAG))
@@ -1481,7 +1481,7 @@ void HField::Compute_BBox()
 *
 ******************************************************************************/
 
-bool HField::dda_traversal(const BasicRay &ray, const Vector3d& Start, const HFBlock *Block, IStack &HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread)
+bool HField::dda_traversal(const BasicRay &ray, const Vector3d& Start, const HFBlock *Block, IStack &HField_Stack, const Ray &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread)
 {
     const char *dda_msg = "Illegal grid value in dda_traversal().\n"
                           "The height field may contain dark spots. To eliminate them\n"
@@ -1894,7 +1894,7 @@ bool HField::dda_traversal(const BasicRay &ray, const Vector3d& Start, const HFB
 *
 ******************************************************************************/
 
-bool HField::block_traversal(const BasicRay &ray, const Vector3d& Start, IStack &HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread)
+bool HField::block_traversal(const BasicRay &ray, const Vector3d& Start, IStack &HField_Stack, const Ray &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread)
 {
     int xmax, zmax;
     int x, z, nx, nz, signx, signz;

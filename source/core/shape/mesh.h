@@ -348,7 +348,7 @@ class Mesh final : public ObjectBase
 
         virtual void Determine_Textures(Intersection *, bool, WeightedTextureVector&, TraceThreadData *) override;
     protected:
-        bool Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly = false);
+        bool Intersect(const BasicRay& ray, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly = false, const Ray* query = nullptr);
         DBL mesh_ray(const BasicRay& ray, BasicRay& New_Ray) const;
         void Compute_Mesh_BBox();
         void MeshUV(const Vector3d& P, const MESH_TRIANGLE *Triangle, Vector2d& Result) const;
@@ -357,7 +357,7 @@ class Mesh final : public ObjectBase
         MeshTriangleDecode& decoded_triangle(MeshIndex i, TraceThreadData *Thread) const;
         bool test_hit(const MESH_TRIANGLE *Triangle, const BasicRay& OrigRay, DBL Depth, DBL len, IStack& Depth_Stack, TraceThreadData *Thread);
         void get_triangle_bbox(const MESH_TRIANGLE *Triangle, BoundingBox *BBox) const;
-        bool intersect_bbox_tree(const BasicRay& ray, const BasicRay& Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly = false);
+        bool intersect_bbox_tree(const BasicRay& ray, const BasicRay& Orig_Ray, DBL len, bool shadow, IStack& Depth_Stack, TraceThreadData *Thread, bool nearestOnly = false, const Ray* query = nullptr);
         bool inside_bbox_tree(const BasicRay& ray, RenderStatistics& stats, DBL depthTolerance) const;
         void get_triangle_vertices(const MESH_TRIANGLE *Triangle, Vector3d& P1, Vector3d& P2, Vector3d& P3) const;
         void get_triangle_normals(const MESH_TRIANGLE *Triangle, Vector3d& N1, Vector3d& N2, Vector3d& N3) const;

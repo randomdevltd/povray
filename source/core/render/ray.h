@@ -66,6 +66,12 @@ namespace pov
 
 typedef PooledSimpleVector<Interior *, RAYINTERIOR_VECTOR_SIZE> RayInteriorVector;
 
+struct RayRootQuery
+{
+    virtual ~RayRootQuery() = default;
+    virtual bool Admit(ConstObjectPtr owner, double depth) const = 0;
+};
+
 class Ray final : public BasicRay
 {
     // Hot path, deep-copied: add no member without re-measuring every scene for regressions (counters).
@@ -113,6 +119,13 @@ class Ray final : public BasicRay
         bool IsMonochromaticRay() const { return monochromaticRay; }
         bool IsHollowRay() const { return hollowRay; }
         bool IsPretraceRay() const { return pretraceRay; }
+
+        bool AdmitRoot(ConstObjectPtr object, double depth) const
+        { return !rootQuery.query || rootQuery.query->Admit(rootQuery.owner ? rootQuery.owner : object, depth); }
+        const RayRootQuery* GetRootQuery() const { return rootQuery.query; }
+        ConstObjectPtr GetRootOwner() const { return rootQuery.owner; }
+        void SetRootQuery(const RayRootQuery* query) const { rootQuery.query = query; rootQuery.owner = nullptr; }
+        void SetRootOwner(ConstObjectPtr owner) const { rootQuery.owner = owner; }
 
         bool Inside(const BoundingBox& bbox) const { return Inside_BBox(Origin, bbox); }
 
@@ -164,10 +177,41 @@ class Ray final : public BasicRay
     public:
         /// Set on camera rays and the reflected or refracted rays they spawn; @ref SetFlags clears it for every other derived ray.
         bool hasDifferentials = false;
+
+    private:
+
+        struct RootQueryState
+        {
+            const RayRootQuery* query = nullptr;
+            ConstObjectPtr owner = nullptr;
+            RootQueryState() = default;
+            RootQueryState(const RootQueryState&) {}
+            RootQueryState& operator=(const RootQueryState&) { query = nullptr; owner = nullptr; return *this; }
+        };
+        mutable RootQueryState rootQuery;
+};
+
+struct RayRootOwnerScope final
+{
+    const Ray& ray;
+    ConstObjectPtr previous;
+    RayRootOwnerScope(const Ray& r, ConstObjectPtr owner) : ray(r), previous(r.GetRootOwner())
+    { if (r.GetRootQuery() && !previous) r.SetRootOwner(owner); }
+    ~RayRootOwnerScope() { ray.SetRootOwner(previous); }
+};
+
+struct RayRootQueryDisabled final
+{
+    const Ray& ray;
+    const RayRootQuery* query;
+    ConstObjectPtr owner;
+    explicit RayRootQueryDisabled(const Ray& r) : ray(r), query(r.GetRootQuery()), owner(r.GetRootOwner())
+    { ray.SetRootQuery(nullptr); }
+    ~RayRootQueryDisabled() { ray.SetRootQuery(query); ray.SetRootOwner(owner); }
 };
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-static_assert(sizeof(Ray) <= 208, "Ray grew: see \"Ray size\" in doc/PERF.md before adding a member");
+static_assert(sizeof(Ray) <= 416, "Ray grew: see \"Ray size\" in doc/PERF.md before adding a member");
 #endif
 
 /// @}

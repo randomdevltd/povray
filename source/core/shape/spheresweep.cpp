@@ -80,6 +80,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/spheresweep.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 #include <cstdlib>
@@ -440,7 +441,7 @@ int SphereSweep::Intersect_Segment(const BasicRay &ray, const SPHSWEEP_SEG *Segm
         Vector = ray.Origin - Segment->Closing_Sphere[0].Center;
         Dot2 = dot(Vector, Segment->Center_Deriv[0]);
         t1 = -(Dot2 + Segment->Closing_Sphere[0].Radius * Segment->Radius_Deriv[0]) / Dot1;
-        if ((t1 > -MAX_DISTANCE) && (t1 < MAX_DISTANCE))
+        if (IsFiniteIntersectionDepth(t1))
         {
             // Calculate point
             IPoint = ray.Evaluate(t1);
@@ -471,7 +472,7 @@ int SphereSweep::Intersect_Segment(const BasicRay &ray, const SPHSWEEP_SEG *Segm
         Vector = ray.Origin - Segment->Closing_Sphere[1].Center;
         Dot2 = dot(Vector, Segment->Center_Deriv[1]);
         t2 = -(Dot2 + Segment->Closing_Sphere[1].Radius * Segment->Radius_Deriv[1]) / Dot1;
-        if((t2 > -MAX_DISTANCE) && (t2 < MAX_DISTANCE))
+        if(IsFiniteIntersectionDepth(t2))
         {
             // Calculate point
             IPoint = ray.Evaluate(t2);
@@ -675,7 +676,7 @@ int SphereSweep::Intersect_Segment(const BasicRay &ray, const SPHSWEEP_SEG *Segm
 
             t = -fp0 / fp1;
 
-            if ((t > -MAX_DISTANCE) && (t < MAX_DISTANCE))
+            if (IsFiniteIntersectionDepth(t))
             {
                 // Calculate intersection point
                 Isect[Isect_Count].Point = ray.Evaluate(t);

@@ -38,6 +38,8 @@ NOTE: This release cycle has been redesignated v3.8.0. There will not be a
 v3.7.1 release proper.
 
 Changed Behaviour
+- A Sturm-solved polynomial outside the solver's floating-point range has no
+  roots, rather than ending the render with an error.
 -----------------
 
   - Media `emission` is appearance only again: it paints the glow the camera
