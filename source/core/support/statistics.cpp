@@ -38,6 +38,7 @@
 
 // C++ variants of C standard header files
 // C++ standard header files
+#include <type_traits>
 //  (none at the moment)
 
 // POV-Ray header files (base module)
@@ -81,9 +82,16 @@ void StatisticsBase<T, numElem>::operator+=(const StatisticsBase<T, numElem>& ot
 {
     for (int i = 0; i < numElem; i++)
     {
-        T temp;
+        T temp = 0;
         other.counters[i].SafeRead(kMaxReadAttempts, &temp);
-        counters[i] += temp;
+        if (std::is_same<T, POV_ULONG>::value && (numElem == MaxIntStat) && ((i == Media_Scatter_Max_Cells) || (i == Media_Scatter_Peak_Bytes)))
+        {
+            T current = 0;
+            counters[i].SafeRead(kMaxReadAttempts, &current);
+            counters[i] = current > temp ? current : temp;
+        }
+        else
+            counters[i] += temp;
     }
 }
 

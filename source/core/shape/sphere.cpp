@@ -35,6 +35,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/sphere.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 // C++ standard header files
@@ -112,7 +113,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
         if(Intersect(New_Ray, Vector3d(0.0), 1.0, &Depth1, &Depth2))
         {
             Thread->Stats()[Ray_Sphere_Tests_Succeeded]++;
-            if((Depth1 > DEPTH_TOLERANCE) && (Depth1 < MAX_DISTANCE))
+            if((Depth1 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth1))
             {
                 IPoint = New_Ray.Evaluate(Depth1);
                 MTransPoint(IPoint, IPoint, Trans);
@@ -124,7 +125,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                 }
             }
 
-            if((Depth2 > DEPTH_TOLERANCE) && (Depth2 < MAX_DISTANCE))
+            if((Depth2 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth2))
             {
                 IPoint = New_Ray.Evaluate(Depth2);
                 MTransPoint(IPoint, IPoint, Trans);
@@ -150,7 +151,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
         if(Intersect(ray, Center, Sqr(Radius), &Depth1, &Depth2))
         {
             Thread->Stats()[Ray_Sphere_Tests_Succeeded]++;
-            if((Depth1 > DEPTH_TOLERANCE) && (Depth1 < MAX_DISTANCE))
+            if((Depth1 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth1))
             {
                 IPoint = ray.Evaluate(Depth1);
 
@@ -161,7 +162,7 @@ bool Sphere::All_Intersections(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                 }
             }
 
-            if((Depth2 > DEPTH_TOLERANCE) && (Depth2 < MAX_DISTANCE))
+            if((Depth2 > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth2))
             {
                 IPoint = ray.Evaluate(Depth2);
 
@@ -222,12 +223,12 @@ bool Sphere::Intersect(const BasicRay& ray, const Vector3d& Center, DBL Radius2,
 
     t_Closest_Approach = dot(Origin_To_Center, ray.Direction);
 
-    if ((OCSquared >= Radius2) && (t_Closest_Approach < EPSILON))
+    if ((OCSquared >= Radius2) && (t_Closest_Approach < 0.0))
         return(false);
 
-    t_Half_Chord_Squared = Radius2 - OCSquared + Sqr(t_Closest_Approach);
+    t_Half_Chord_Squared = Radius2 - cross(Origin_To_Center, ray.Direction).lengthSqr();
 
-    if (t_Half_Chord_Squared > EPSILON)
+    if (t_Half_Chord_Squared > 0.0)
     {
         Half_Chord = sqrt(t_Half_Chord_Squared);
 

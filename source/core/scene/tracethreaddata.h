@@ -71,6 +71,8 @@ namespace pov
 {
 
 class SubsurfaceCache;
+class SurfaceAngularGuideCache;
+class PreparationProgress;
 
 //##############################################################################
 ///
@@ -129,6 +131,8 @@ class TraceThreadData : public ThreadData
         /// Depths between which an opaque blocker ends a shadow ray, so an opaque isosurface may report any root
         /// there rather than the first; both zero where the first is needed.
         GenericMessenger* mediaMessages = nullptr;
+        /// The progress report of scene preparation; set only on the thread that prepares.
+        PreparationProgress* preparationProgress = nullptr;
 
         double isoShadowFrom;
         double isoShadowTo;
@@ -174,6 +178,7 @@ class TraceThreadData : public ThreadData
         std::vector<LightSource*> lightSources;
 
         std::shared_ptr<SubsurfaceCache> subsurfaceCache;
+        std::shared_ptr<SurfaceAngularGuideCache> surfaceAngularGuideCache;
 
         // all of these are for photons
         // most of them should be refactored into parameters, return values, or other objects

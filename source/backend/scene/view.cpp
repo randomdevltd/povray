@@ -910,7 +910,10 @@ void View::StartRender(POVMS_Object& renderOptions)
     aathreshold = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasThreshold, 0.3f), 0.0f, 1.0f);
     aaconfidence = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasConfidence, 0.9f), 0.0f, 1.0f);
     aaBudget = clip(renderOptions.TryGetFloat(kPOVAttrib_AntialiasBudget, 0.0f), 0.0f, 1.0e9f);
-    viewData.textureFilterScale = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false) ?
+    const bool textureFilter = renderOptions.TryGetBool(kPOVAttrib_TextureFilter, false);
+    viewData.textureFilterPigments = textureFilter && renderOptions.TryGetBool(kPOVAttrib_TextureFilterPigments, true);
+    viewData.textureFilterNormals = textureFilter && renderOptions.TryGetBool(kPOVAttrib_TextureFilterNormals, true);
+    viewData.textureFilterScale = (viewData.textureFilterPigments || viewData.textureFilterNormals) ?
                                   clip(renderOptions.TryGetFloat(kPOVAttrib_TextureFilterScale, 1.0f), 0.0f, 64.0f) : 0.0f;
     viewData.textureFilterTaps = (renderOptions.TryGetInt(kPOVAttrib_TextureFilterTaps, 8) <= 3) ? 3 : 8;
     if(renderOptions.TryGetBool(kPOVAttrib_Jitter, true) == true)
@@ -1298,9 +1301,6 @@ void View::StartRender(POVMS_Object& renderOptions)
     {
         photonScene.photonSettings = shot->settings;
         photonScene.shotPhotons->views++;
-        // building method 2 maps leaves a view the default subsurface cache; a view reusing them takes the same
-        if (photonScene.photonSettings.Progressive())
-            viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
         MessageFactory(photonScene.warningLevel, "Photons", photonScene.backendAddress, photonScene.frontendAddress,
                        photonScene.sceneId, viewData.viewId)
             .Info("Photon maps shot once for this scene's sets are reused by this camera (view %u of those sharing them).",
@@ -1324,6 +1324,15 @@ void View::StartRender(POVMS_Object& renderOptions)
         {
             PhotonShootingStrategy* strategy = new PhotonShootingStrategy(maxRenderThreads,
                 viewData.GetSceneData()->photonSettings.autoStopPercent);
+            renderTasks.AppendFunction([this](TaskQueue&) {
+                MessageFactory messages(viewData.sceneData->warningLevel, "Photon", viewData.sceneData->backendAddress,
+                                        viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+                viewData.photonPreparationStart = std::chrono::steady_clock::now();
+                viewData.photonPreparationLine.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    viewData.photonPreparationStart.time_since_epoch()).count(), std::memory_order_relaxed);
+                messages.Info("Preparation plan: photons");
+                messages.Info("Preparation: photons 0/? 0.0s");
+            });
 
             viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new PhotonEstimationTask(
                 &viewData, seed
@@ -1353,6 +1362,12 @@ void View::StartRender(POVMS_Object& renderOptions)
                 ))));
             // wait for photons to finish
             renderTasks.AppendSync();
+            renderTasks.AppendFunction([this](TaskQueue&) {
+                MessageFactory messages(viewData.sceneData->warningLevel, "Photon", viewData.sceneData->backendAddress,
+                                        viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
+                messages.Info("Preparation: photons finished %.1fs", std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - viewData.photonPreparationStart).count());
+            });
 
         }
     }
@@ -1648,12 +1663,6 @@ void View::GetStatistics(POVMS_Object& renderStats)
                          double(stats[Subsurface_Cloud_Depth_Floor]));
     }
 
-    if (stats[Fade_Cutoff_Drops] > 0)
-    {
-        MessageFactory messages(viewData.sceneData->warningLevel, "Volume lights", viewData.sceneData->backendAddress,
-                                viewData.sceneData->frontendAddress, viewData.sceneData->sceneId, viewData.viewId);
-        messages.Info("%.0f light tests dropped by fade_cutoff.", double(stats[Fade_Cutoff_Drops]));
-    }
     if (stats[Subsurface_Thin_Walls] > 0)
     {
         MessageFactory messages(viewData.sceneData->warningLevel, "Subsurface", viewData.sceneData->backendAddress,
@@ -1697,6 +1706,36 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_ShadowCacheHits, stats[Shadow_Cache_Hits]);
     renderStats.SetLong(kPOVAttrib_MediaSamples, stats[Media_Samples]);
     renderStats.SetLong(kPOVAttrib_MediaIntervals, stats[Media_Intervals]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterLegs, stats[Media_Scatter_Legs]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterDomains, stats[Media_Scatter_Domains]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterCells, stats[Media_Scatter_Cells]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterPairs, stats[Media_Scatter_Pairs]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterMaxCells, stats[Media_Scatter_Max_Cells]);
+    renderStats.SetLong(kPOVAttrib_MediaScatterPeakBytes, stats[Media_Scatter_Peak_Bytes]);
+    renderStats.SetLong(kPOVAttrib_EmitterConnections, stats[Emitter_Connections]);
+    renderStats.SetLong(kPOVAttrib_EmitterSurfaceDraws, stats[Emitter_Surface_Draws]);
+    renderStats.SetLong(kPOVAttrib_EmitterMediaFixedDraws, stats[Emitter_Media_Fixed_Draws]);
+    renderStats.SetLong(kPOVAttrib_EmitterMediaClassicDraws, stats[Emitter_Media_Classic_Draws]);
+    renderStats.SetLong(kPOVAttrib_EmitterShadowCalls, stats[Emitter_Shadow_Calls]);
+    renderStats.SetLong(kPOVAttrib_EmitterShadowInput, stats[Emitter_Shadow_Input]);
+    renderStats.SetLong(kPOVAttrib_EmitterPhotonInput, stats[Emitter_Photon_Input]);
+    renderStats.SetLong(kPOVAttrib_MediaFixedCalls, stats[Media_Fixed_Calls]);
+    renderStats.SetLong(kPOVAttrib_MediaClassicCalls, stats[Media_Classic_Calls]);
+    renderStats.SetLong(kPOVAttrib_MediaModifierFallbackCalls, stats[Media_Modifier_Fallback_Calls]);
+    renderStats.SetLong(kPOVAttrib_MediaFixedCoefficients, stats[Media_Fixed_Coefficients]);
+    renderStats.SetLong(kPOVAttrib_MediaClassicCoefficients, stats[Media_Classic_Coefficients]);
+    renderStats.SetLong(kPOVAttrib_MediaShadowCoefficients, stats[Media_Shadow_Coefficients]);
+    renderStats.SetLong(kPOVAttrib_MediaPhotonCoefficients, stats[Media_Photon_Coefficients]);
+    renderStats.SetLong(kPOVAttrib_MediaOrdinaryLightDraws, stats[Media_Ordinary_Light_Draws]);
+    renderStats.SetLong(kPOVAttrib_MediaShadowLightingCalls, stats[Media_Shadow_Lighting_Calls]);
+    renderStats.SetLong(kPOVAttrib_MediaZeroScatterEmitterDraws, stats[Media_Zero_Scatter_Emitter_Draws]);
+    renderStats.SetLong(kPOVAttrib_SubsurfaceSingleEmitterDraws, stats[Subsurface_Single_Emitter_Draws]);
+    renderStats.SetLong(kPOVAttrib_SubsurfaceSingleSideRejects, stats[Subsurface_Single_Emitter_Side_Rejects]);
+    renderStats.SetLong(kPOVAttrib_MediaPrepared4Queries, stats[Media_Prepared4_Queries]);
+    renderStats.SetLong(kPOVAttrib_MediaLegacy3Queries, stats[Media_Legacy3_Queries]);
+    renderStats.SetLong(kPOVAttrib_MediaForbidden4Procedural, stats[Media_Forbidden4_Procedural]);
+    renderStats.SetLong(kPOVAttrib_MediaForbidden4Integration, stats[Media_Forbidden4_Integration]);
+    renderStats.SetLong(kPOVAttrib_MediaAnalyticInfiniteIntervals, stats[Media_Analytic_Infinite_Intervals]);
     renderStats.SetLong(kPOVAttrib_CurvedRays, stats[Curved_Rays]);
     renderStats.SetLong(kPOVAttrib_RefractionSteps, stats[Refraction_Steps]);
     renderStats.SetLong(kPOVAttrib_ReflectedRays, stats[Reflected_Rays_Traced]);
@@ -2106,7 +2145,6 @@ try
         set->progressiveMedia.Build();
         bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
     }
-    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
     viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
     return true;
 }
@@ -2241,7 +2279,7 @@ void ViewData::StartAaState()
     aaWidth = renderArea.GetWidth();
     const size_t count = size_t(renderArea.GetWidth()) * size_t(renderArea.GetHeight());
     aaHit.assign(count, 0);
-    if ((textureFilterScale > 0.0) || std::getenv("POV_AA4_DUMP"))
+    if (((textureFilterScale > 0.0) && textureFilterPigments) || std::getenv("POV_AA4_DUMP"))
         aaPigment.assign(count * 3, 0.0f);
     else
         std::vector<float>().swap(aaPigment);

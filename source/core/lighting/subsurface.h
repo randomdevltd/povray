@@ -156,6 +156,7 @@ struct SubsurfacePoint final
     float irradiance[MathColour::channels]; ///< until lit, the shading normal
     static_assert(MathColour::channels >= 3, "a point keeps its shading normal in its irradiance until lit");
     float area;
+    float tolerance; ///< the stated accuracy of the surface part the point lies on, in world units
     unsigned id : 30; ///< index into the cell's visibility, which stays in build order; while casting, its part's light set and photons
     unsigned axis : 2; ///< that of the line that found it
 };

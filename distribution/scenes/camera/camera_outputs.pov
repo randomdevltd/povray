@@ -1,14 +1,5 @@
-// This work is licensed under the Creative Commons Attribution 3.0 Unported License.
-// To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
-// or send a letter to Creative Commons, 444 Castro Street, Suite 900, Mountain View,
-// California, 94041, USA.
-
-// Persistence Of Vision Raytracer sample file.
-// This file demonstrates cameras with output items, rendered from one parse into their own images: the main view at the
-// command line's size, a small thumbnail of it, and a close-up that filter_tags limits to the tagged vase.
-//
-// +w640 +h480
-
+// This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
+// Cameras with output items, rendered from one parse into their own images: the main view at the command line's size into camera_outputs-1.png, a 160 x 120 thumbnail of the same view into camera_outputs_thumbnail.png, and a square close-up into camera_outputs_vase.png whose filter_tags keep only the vase and the room. +w640 +h480
 #version 4.0;
 global_settings { assumed_gamma 1.0 }
 

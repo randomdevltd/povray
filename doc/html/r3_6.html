@@ -1140,7 +1140,7 @@ FINISH_ITEMS:
   reflection { Color_Reflecting_Min [REFLECTION_ITEMS...] } |
   subsurface { translucency COLOR [SUBSURFACE_ITEMS...] } |
   irid { Irid_Amount [IRID_ITEMS...] |
-  use_alpha BOOL
+  use_alpha BOOL | light_samples Multiplier
   }
 REFLECTION_ITEMS:
   COLOR_REFLECTION_MAX | fresnel BOOL |
@@ -1155,6 +1155,8 @@ IRID_ITEMS:
 <p>The <em>FINISH_IDENTIFIER</em> is optional but should proceed all other items. Any items after the <em>FINISH_IDENTIFIER</em> modify or override settings given in the <em>FINISH_IDENTIFIER</em>. If no identifier is specified then the items modify the finish values in the current default texture.</p>
 
 <p class="Note"><strong>Note:</strong> Transformations are not allowed inside a finish because finish items cover the entire surface uniformly. Each of the <em>FINISH_ITEMS</em> listed above is described in sub-sections below.</p>
+
+<p>The <code>light_samples</code> keyword multiplies the <code>samples</code> of every surface and volume light for this surface. A light block's <code>samples</code> <em>N</em> says how detailed that light is for every receiver, and <code>light_samples</code> <em>M</em> in a finish scales it for this one. A hit on the surface draws round(<em>N</em> &times; <em>M</em>) points from each <a href="r3_12.html#r3_12">surface or volume light</a>, at least 1. <em>M</em> is a multiplier greater than 0, default 1.0, so a surface that needs smoother soft shadows than the rest of the scene can ask for them without changing the light. Point, spot, parallel and <code>area_light</code> sources are not affected.</p>
 
 <p>In earlier versions of POV-Ray, the <code>refraction</code>, <code>ior</code>, and <code>caustics</code> keywords were part of the <code>finish</code> statement but they are now part of the <code>interior</code> statement. They are still supported under <code>finish</code> for backward compatibility but the results may not be 100% identical to previous versions. See <a href="r3_7.html#r3_7_2_1_1">Why are Interior and Media Necessary?</a> for more details.</p>
 
@@ -1323,7 +1325,7 @@ finish { crand 0.05 }
 <p class="Note"><strong>Note:</strong> The effect doesn't scale with the object, and values may be greater than 1.0</p>
 <p>To adjust materials to the dimensions of your scene, you <em>should</em> first determine the proper <code>mm_per_unit</code> setting (it should always match the actual scale of the object) to use in the global settings block, <em>then</em> adjust the materials <code>translucency</code> value.</p>
 <p class="Note"><strong>Note:</strong> Any effect that can be achieved by changing <code>mm_per_unit</code> can also be achieved by adjusting the <code>translucency</code> value of materials.</p>
-<p>The <code>mm_per_unit</code> algorithm is designed to give realistic results at a scale of 10 mm per POV-Ray unit by default. It is the scene's scale generally &mdash; <a href="r3_4.html#r3_4_1_9">Mm_Per_Unit</a> describes it in its own right, and media <a href="r3_4.html#r3_4_1_17">refraction_detail</a> takes its length through it. For other scales, you can place the following statement in the <code>global_settings</code> block:</p>
+<p>The <code>mm_per_unit</code> algorithm is designed to give realistic results at a scale of 10 mm per POV-Ray unit by default. It is the scene's scale generally &mdash; <a href="r3_4.html#r3_4_1_9">Mm_Per_Unit</a> describes it in its own right. For other scales, you can place the following statement in the <code>global_settings</code> block:</p>
 <pre>
   mm_per_unit INT
 </pre>
@@ -3218,6 +3220,8 @@ PAVEMENT_MODIFIERS:
 </table>
 
 <p>There is no nomenclature for pattern, they are just numbered from 1 to the maximum relevant value.</p>
+
+<p>A combination outside the table is a parse error that names the limit, such as <code>number_of_tiles of pavement must be between 1 and 5.</code> (six-sided tiles), <code>number_of_sides of pavement must be 3, 4 or 6.</code> or <code>pattern value for pavement is out of range.</code> followed by the maximum per tile. Every combination inside the table accepts a <code>texture_map</code>, a <code>pigment_map</code> or a <code>color_map</code> as any other pattern does.</p>
 
 <dl>
 <dt><code>form</code></dt>

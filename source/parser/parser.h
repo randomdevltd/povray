@@ -122,11 +122,6 @@ using namespace pov;
 
 const int TOKEN_OVERFLOW_RESET_COUNT = 2500;
 
-/// Media lights' fade_cutoff by scene version from 4.0 on, about adc_bailout / 1000; 0 (off) before.
-const double kDefaultFadeCutoff = 4.0e-6;
-/// No `#default` fade_cutoff given, so each media light takes its version's.
-const double kFadeCutoffAuto = -1.0;
-
 /*****************************************************************************
 * Global preprocessor defines
 ******************************************************************************/
@@ -468,7 +463,7 @@ class Parser final
         bool SelfContained(const std::vector<FUNCTION>& roots) const;
         /// Queues the prepared density grids of the media in a completed top-level object on the eager threads.
         void RecordMediaFields(ObjectPtr object, ObjectPtr parent);
-        void RecordMediaField(Media& medium);
+        void RecordMediaField(Media& medium, bool allowEager);
         void LeaveMediaField(const Media& medium);
         bool Resolve_Mesh_Geometry(ObjectPtr object);
         void QueueMeshBuild(const std::shared_ptr<DeferredMeshState>& state);
@@ -580,6 +575,7 @@ class Parser final
         bool HaveCurrentFile() const;
         const UCS2* CurrentFileName() const;
         const LexemePosition& CurrentFilePosition() const;
+        std::string CurrentSourceLine() const;
         bool HaveCurrentMessageContext() const;
         const MessageContext& CurrentMessageContext() const;
         void SetInputStream(const std::shared_ptr<IStream>& stream, const UCS2String& path);
@@ -611,8 +607,12 @@ class Parser final
         void Parse_Finish (FINISH **);
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
-        void Parse_Media_Light(Media& medium);
-        double Parse_Fade_Cutoff();
+        unsigned Parse_Light_Bounce();
+        double Parse_Light_Samples();
+        void Parse_Light_Attenuation(MediaLight& light, bool surface);
+        std::shared_ptr<MediaLight> Parse_Light(bool surface = false);
+        void Reject_Nested_Item(const char* block, const char* where);
+        void Parse_Interior_Refraction(Interior& interior);
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
         /// Gives the atmosphere the ior of air from version 4.0, of vacuum before it.
@@ -840,7 +840,6 @@ class Parser final
         bool defaultsModified   : 1;        ///< Whether a `default` statement has been encountered.
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
-        double defaultFadeCutoff;           ///< `fade_cutoff` of `#default { media { light_source { } } }`, or kFadeCutoffAuto.
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
         bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.
@@ -941,11 +940,14 @@ class Parser final
         void Split_Unions();
         void Split_Union(ObjectPtr Object);
         void Assign_Scene_Lights();
+        void Check_Legacy_Transport();
+        void Warn_Unused_Media_Resolution();
         /// Media lights made inside light groups, with their group, given out after the groups' own lights.
         std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
-        void Make_Media_Light(Media& medium, ObjectPtr container);
+        void Make_Surface_Light(ObjectPtr container);
+        void Make_Interior_Light(Interior& interior, ObjectPtr container);
         /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.
         bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.

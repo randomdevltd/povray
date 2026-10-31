@@ -240,7 +240,6 @@ object { B scale A > 1 ? 2 : 3 }
       (number)
       (number))))
 
-
 ==================
 Tag expressions, and tagged as a keyword only before a block
 ==================
@@ -362,3 +361,137 @@ camera { location output }
     name: (keyword)
     (keyword)
     (identifier)))
+
+==================
+Independent interior refraction and contextual names
+==================
+let detail = 2;
+sphere { 0, 1 interior { refraction { function { x + detail } detail 0.06 } } }
+sphere { 0, 1 interior { refraction off } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (number))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (function_block
+          (binary_expression
+            (builtin)
+            (identifier)))
+        (identifier)
+        (number))))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (keyword)
+      (builtin))))
+
+==================
+Contextual surface bounce block and bare source selector
+==================
+sphere { 0,1 light { bounce { passes 3 } } }
+sphere { 0,1 light { bounce } }
+---
+
+(source_file
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (identifier)
+        (number))))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (identifier))))
+
+==================
+Contextual attenuation block and free attenuation name
+==================
+let attenuation = 2;
+sphere { 0,1 hollow interior { light { attenuation { power 1.5 scale attenuation } } } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (number))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (keyword)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (block
+          (keyword)
+          (identifier)
+          (number)
+          (keyword)
+          (identifier))))))
+
+==================
+Light units, scale_lumens and free unit names
+==================
+let nits = 2;
+sphere { 0,1 light { brightness 8 nits samples 4 } }
+sphere { 0,1 light { pigment { rgb 1 } brightness scale_lumens(800, 0.5) lumens bounce { passes 2 } } }
+---
+
+(source_file
+  (let_statement
+    (identifier)
+    (number))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (keyword)
+      (number)
+      (identifier)
+      (keyword)
+      (number)))
+  (block
+    (keyword)
+    (number)
+    (number)
+    (block
+      (keyword)
+      (block
+        (keyword)
+        (colour_expression
+          (colour_operator)
+          (number)))
+      (keyword)
+      (call_expression
+        (builtin)
+        (arguments
+          (number)
+          (number)))
+      (identifier)
+      (block
+        (keyword)
+        (identifier)
+        (number)))))

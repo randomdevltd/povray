@@ -341,6 +341,7 @@ TraceTask::TraceTask(ViewData *vd, unsigned int tm, DBL js,
     GetViewDataPtr()->qualityFlags = vd->GetQualityFeatureFlags();
     trace.SetTextureFilterScale(vd->textureFilterScale);
     trace.SetTextureFilterTaps(vd->textureFilterTaps);
+    trace.SetTextureFilterKinds(vd->textureFilterPigments, vd->textureFilterNormals);
 }
 
 TraceTask::~TraceTask()
@@ -2056,7 +2057,7 @@ void M4ChainFit(ViewData* vd, const M4Options& o)
 
     // squared distance to the east and south neighbours; with textures filtered, a link on one surface whose pigment explains
     // the change is dropped (the filter has averaged it), while a change of lighting (a shadow edge, a highlight) stays
-    const bool filtered = (vd->textureFilterScale > 0.0) && vd->HasAaHits() && vd->HasAaPigments();
+    const bool filtered = (vd->textureFilterScale > 0.0) && vd->textureFilterPigments && vd->HasAaHits() && vd->HasAaPigments();
     auto luma = [](float r, float g, float b) { return std::max(1.0e-4f, 0.2126f * r + 0.7152f * g + 0.0722f * b); };
     auto resolved = [&](int xa, int ya, int xb, int yb)
     {

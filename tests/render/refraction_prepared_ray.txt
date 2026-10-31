@@ -1,0 +1,20 @@
+Independent prepared-refraction ray proof
+
+Every arm uses an interior-owned refraction field independently of media.
+The constant control has n=1+.2*.5=1.1. The affine field has n(x)=1.1+.1x.
+A separate method3 medium adds gray absorption .7 in the third arm. The fourth
+arm sums two half-amplitude functions, preserving the same affine index. No light power is tuned; an emissive coordinate screen measures rays.
+
+For normal entry at x0 into the slab z0..1, K=n(x0) is conserved z momentum.
+The exact Fermat solution gives n(z)=K*cosh(k*z/K), k=.1,
+x_exit=x0+K/k*(cosh(k/K)-1), sin(theta_air)=K*sinh(k/K).
+At the screen z2, x=x_exit+sin(theta_air)/sqrt(1-sin(theta_air)^2).
+Inside arclength is K/k*sinh(k/K). The constant control remains at x0.
+Indices stay above1.05, away from clamps and total internal reflection.
+
+The screen encodes R/G=.5+.2*x, cancelling gray attenuation. Maximum coordinate
+error is .001 scene unit, including quantization and numerical integration.
+Adding absorption must preserve position within .001. The green ratio
+absorbed/linear must match exp(-.7*inside_arclength) within3%. Both single-function
+and summed-function arms require nonzero curved rays and bending steps.
+All four frames are8x8 linear16bitRGB, AAoff, two threads, fixed geometry.

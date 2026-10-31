@@ -50,6 +50,7 @@
 #include "core/bounding/boundingbox.h"
 #include "core/lighting/lightgroup.h"
 #include "core/math/matrix.h"
+#include "core/math/halfspacebounds.h"
 #include "core/render/ray.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/heightfield.h"
@@ -66,6 +67,18 @@ namespace pov
 using std::min;
 using std::max;
 using std::vector;
+
+static bool HalfspaceIntersectionBounds(const CSGIntersection& intersection, BoundingBox& bounds);
+static bool FiniteCSGBounds(const CSG& object, BoundingBox& bounds);
+
+static void RecomputeCSGBounds(CSG *object, const TRANSFORM *transform)
+{
+    Recompute_BBox(&object->BBox, transform);
+    const CSGIntersection *intersection = dynamic_cast<const CSGIntersection *>(object);
+    BoundingBox bounds;
+    if (FiniteCSGBounds(*object, bounds) || (intersection && HalfspaceIntersectionBounds(*intersection, bounds)))
+        object->BBox = bounds;
+}
 
 /*****************************************************************************
 * Global preprocessor defines
@@ -491,7 +504,7 @@ void CSG::Translate(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Translate_Object (*Current_Sib, Vector, tr) ;
 
-    Recompute_BBox(&BBox, tr);
+    RecomputeCSGBounds(this, tr);
 }
 
 
@@ -528,7 +541,7 @@ void CSG::Rotate(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Rotate_Object (*Current_Sib, Vector, tr) ;
 
-    Recompute_BBox(&BBox, tr);
+    RecomputeCSGBounds(this, tr);
 }
 
 
@@ -565,7 +578,7 @@ void CSG::Scale(const Vector3d& Vector, const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Scale_Object (*Current_Sib, Vector, tr) ;
 
-    Recompute_BBox(&BBox, tr);
+    RecomputeCSGBounds(this, tr);
 }
 
 
@@ -602,7 +615,7 @@ void CSG::Transform(const TRANSFORM *tr)
     for(vector<ObjectPtr>::iterator Current_Sib = children.begin(); Current_Sib != children.end(); Current_Sib++)
         Transform_Object(*Current_Sib, tr);
 
-    Recompute_BBox(&BBox, tr);
+    RecomputeCSGBounds(this, tr);
 }
 
 /*****************************************************************************
@@ -875,13 +888,114 @@ ObjectPtr CSGIntersection::Copy()
 *
 ******************************************************************************/
 
+static bool HalfspaceIntersectionBounds(const CSGIntersection& intersection, BoundingBox& bounds)
+{
+    using namespace halfspace_bounds;
+    if (intersection.isDifference || Test_Flag(&intersection, INVERTED_FLAG))
+        return false;
+    std::vector<halfspace_bounds::Plane> planes;
+    for (ConstObjectPtr child : intersection.children)
+    {
+        const pov::Plane *plane = dynamic_cast<const pov::Plane *>(child);
+        if (!plane || Test_Flag(child, INVERTED_FLAG))
+            return false;
+        halfspace_bounds::Plane equation;
+        Interval translation(plane->Distance);
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            equation.normal[axis] = Interval(plane->Normal_Vector[axis]);
+            if (plane->Trans)
+            {
+                equation.normal[axis] = Interval();
+                for (int local = 0; local < 3; ++local)
+                    equation.normal[axis] = equation.normal[axis] + Interval(plane->Normal_Vector[local]) *
+                                            Interval(plane->Trans->inverse[axis][local]);
+            }
+        }
+        if (plane->Trans)
+            for (int local = 0; local < 3; ++local)
+                translation = translation + Interval(plane->Normal_Vector[local]) * Interval(plane->Trans->inverse[3][local]);
+        equation.interiorOffset = -translation;
+        equation.offset = Interval(EPSILON) - translation;
+        planes.push_back(equation);
+    }
+    std::array<double, 3> low, high;
+    if (!Bounds(planes, low, high))
+        return false;
+    Make_BBox_from_min_max(bounds, Vector3d(low[0], low[1], low[2]), Vector3d(high[0], high[1], high[2]));
+    return UsableFiniteBounds(bounds);
+}
+
+static bool FiniteCSGBounds(const CSG& object, BoundingBox& bounds)
+{
+    if (object.children.empty())
+        return false;
+    const CSGIntersection *intersection = dynamic_cast<const CSGIntersection *>(&object);
+    const bool difference = intersection && intersection->isDifference;
+    bool found = false;
+    bool finiteInterior = !Test_Flag(&object, INVERTED_FLAG);
+    Vector3d low, high;
+    for (size_t index = 0; index < object.children.size(); ++index)
+    {
+        if (difference && index != 0)
+            break;
+        ConstObjectPtr child = object.children[index];
+        if (!child->BBox.finite || (intersection && (Test_Flag(child, INVERTED_FLAG) || !child->BBox.finiteInterior)))
+        {
+            if (!intersection || difference)
+                return false;
+            continue;
+        }
+        finiteInterior = finiteInterior && child->BBox.finiteInterior && !Test_Flag(child, INVERTED_FLAG);
+        Vector3d childLow, childHigh;
+        Make_min_max_from_BBox(childLow, childHigh, child->BBox);
+        if (!found)
+        {
+            low = childLow;
+            high = childHigh;
+            found = true;
+        }
+        else if (intersection)
+        {
+            low = max(low, childLow);
+            high = min(high, childHigh);
+        }
+        else
+        {
+            low = min(low, childLow);
+            high = max(high, childHigh);
+        }
+    }
+    if (!found)
+        return false;
+    for (int axis = 0; axis < 3; ++axis)
+        if (high[axis] < low[axis])
+            return false;
+    Make_BBox_from_min_max(bounds, low, high);
+    bounds.finiteInterior = bounds.finite && finiteInterior;
+    return bounds.finite;
+}
+
 void CSG::Compute_BBox()
 {
     DBL Old_Volume, New_Volume;
     Vector3d NewMin, NewMax, TmpMin, TmpMax, Min, Max;
 
-    if (dynamic_cast<CSGIntersection *>(this) != nullptr) // FIXME
+    BoundingBox finiteBounds;
+    if (FiniteCSGBounds(*this, finiteBounds))
     {
+        BBox = finiteBounds;
+        return;
+    }
+    CSGIntersection *intersection = dynamic_cast<CSGIntersection *>(this);
+    if (intersection != nullptr) // FIXME
+    {
+        BoundingBox halfspaceBounds;
+        if (HalfspaceIntersectionBounds(*intersection, halfspaceBounds))
+        {
+            BBox = halfspaceBounds;
+            return;
+        }
         /*
          * Calculate the bounding box of a CSG intersection
          * by intersecting the bounding boxes of all children.
@@ -959,14 +1073,14 @@ void CSG::Compute_BBox()
 
         if(New_Volume < Old_Volume)
         {
-            Make_BBox_from_min_max(BBox, NewMin, NewMax);
+            Make_BBox_from_min_max(BBox, NewMin, NewMax, false);
 
             /* Beware of bounding boxes too large. */
 
             if((BBox.size[X] > CRITICAL_LENGTH) ||
                (BBox.size[Y] > CRITICAL_LENGTH) ||
                (BBox.size[Z] > CRITICAL_LENGTH))
-                Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+                Make_BBox(BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         }
     }
 }

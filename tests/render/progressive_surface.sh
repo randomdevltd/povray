@@ -14,17 +14,22 @@ tail -c 18432 progressive_surface_one.ppm > progressive_surface_one.px
 tail -c 18432 progressive_surface_four.ppm > progressive_surface_four.px
 cmp progressive_surface_one.px progressive_surface_four.px
 render reference 64 48 +wt4 +ss7 Declare=PhotonQuality=16
-python3 "$SRCDIR/tools/bench/check-progressive-photons.py" progressive_surface_reference.ppm \
+sh "$SRCDIR/tools/bench/check-progressive-photons.sh" progressive_surface_reference.ppm \
     progressive_surface_one.ppm > progressive_surface_quality.json
-python3 - <<'PY'
-import json
-from pathlib import Path
-result = json.loads(Path('progressive_surface_quality.json').read_text())
-assert result['mse'] < 6e-6, result
-assert 0.85 < result['energy_ratio'] < 1.15, result
-assert result['peak'] < 0.99, result
-print('progressive surface reference:', result)
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function field(text, key) {
+    if (!match(text, "\"" key "\": [^,}]*")) fail("progressive surface reference: no " key " in " text)
+    return substr(text, RSTART + length(key) + 4, RLENGTH - length(key) - 4) + 0
+}
+BEGIN {
+    getline result < "progressive_surface_quality.json"
+    if (!(field(result, "mse") < 6e-6)) fail("progressive surface reference: mse above 6e-6: " result)
+    ratio = field(result, "energy_ratio")
+    if (!(0.85 < ratio && ratio < 1.15)) fail("progressive surface reference: energy ratio outside (0.85, 1.15): " result)
+    if (!(field(result, "peak") < 0.99)) fail("progressive surface reference: peak not below 0.99: " result)
+    print "progressive surface reference: " result
+}'
 back() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_diffuse_back.pov" +w48 +h48 -a -d -p -v -gp +wt2 \

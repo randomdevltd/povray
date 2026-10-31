@@ -59,36 +59,31 @@ for distance in 5 245; do
         view "glass${method}_$distance" +w32 +h32 +wt2 Declare=Method="$method" Declare=Distance="$distance" Declare=Lens=1 Declare=Glass=1
     done
 done
-# a medium bending the beam inside the target keeps the whole path length in the deposit weight
+# An index field bending the beam inside the target keeps the whole path length in the deposit weight.
 view bendnear +w8 +h8 +wt2 Declare=Distance=20 Declare=Bend=1
 for bend in 1 2; do
     view "bend$bend" +w8 +h8 +wt2 Declare=Distance=20 Declare=Bend="$bend" Declare=Lens=1 Declare=PhotonQuality=16
 done
-python3 - <<'PY'
-from array import array
-from pathlib import Path
-import sys
-
-def mean(name):
-    data = Path(f'progressive_direct_{name}.ppm').read_bytes()
-    pixels = array('H')
-    pixels.frombytes(data[data.index(b'65535\n') + 6:])
-    if sys.byteorder == 'little':
-        pixels.byteswap()
-    return sum(pixels) / len(pixels)
-
-for distance in (5, 245):
-    cases = [(f'lens{fade}', f'near{fade}', 0.03) for fade in range(6)]
-    cases += [(f'mediumlens{fade}', f'mediumnear{fade}', 0.045) for fade in range(2)] + [('glass2', 'glass1', 0.10)]
-    for photon, direct, tolerance in cases:
-        ratio = mean(f'{photon}_{distance}') / mean(f'{direct}_{distance}')
-        print(f'distance {distance}: {photon} / {direct} {ratio:.4f}')
-        assert abs(ratio - 1.0) < tolerance, (distance, photon, ratio)
-for photon in ('bend1', 'bend2'):
-    ratio = mean(photon) / mean('bendnear')
-    print(f'distance 20: {photon} / bendnear {ratio:.4f}')
-    assert abs(ratio - 1.0) < 0.03, (photon, ratio)
-PY
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+function mean(name,    v, n) {
+    n = read_samples("progressive_direct_" name ".ppm", v)
+    return sum_of(v, n) / n
+}
+function check(photon, direct, suffix, distance, tolerance,    ratio) {
+    ratio = mean(photon suffix) / mean(direct suffix)
+    printf "distance %d: %s / %s %.4f\n", distance, photon, direct, ratio
+    if (!(abs(ratio - 1.0) < tolerance)) fail("distance " distance ": " photon " / " direct " " ratio ", limit " tolerance)
+}
+BEGIN {
+    for (d = 0; d < 2; d++) {
+        distance = d ? 245 : 5
+        for (fade = 0; fade < 6; fade++) check("lens" fade, "near" fade, "_" distance, distance, 0.03)
+        for (fade = 0; fade < 2; fade++) check("mediumlens" fade, "mediumnear" fade, "_" distance, distance, 0.045)
+        check("glass2", "glass1", "_" distance, distance, 0.10)
+    }
+    for (b = 1; b <= 2; b++) check("bend" b, "bendnear", "", 20, 0.03)
+}'
 # a refracting target darkens its shadow for photons only when the map holds deposits
 for method in 1 2; do
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_direct_lights.pov" +w8 +h8 -a -d -p -v -gp +fp16 File_Gamma=1 \
@@ -106,4 +101,4 @@ for source in 2 3; do
         Declare=Source="$source" Declare=Disabled=0 Declare=Power=0 > progressive_direct_zero.log 2>&1 || { cat progressive_direct_zero.log; exit 1; }
 done
 rm -f progressive_direct_*.px progressive_direct_*.ppm progressive_direct_*.log progressive_direct_*.pov-state
-echo 'progressive_direct_lights: direct-light power and fade, photon power calibration at 5 and 245 units on surfaces and in media and through a bending medium, glass caustics against classic, shadows without deposits, disabled and zero emitters passed'
+echo 'progressive_direct_lights: direct-light power and fade, photon power calibration at 5 and 245 units on surfaces and in media and through a bending index field, glass caustics against classic, shadows without deposits, disabled and zero emitters passed'

@@ -1,0 +1,55 @@
+Shadow-quality measurement contract
+
+Source: uniform isotropic sphere of radius 0.03 m, centre (0,1.8,0), generated
+flux 806 lm; Shape=1 substitutes a uniform 0.06 m cube at the same centre/flux.
+Rotation rotates source, blockers and camera together about y, preserving the
+physical image. In particular, compare Shape=1 at Rotation=0 and 90 to expose
+axis-dependent sampling errors. No source power, geometry or exposure retuning.
+
+Render linear RGBE HDR (+FH File_Gamma=1), AA off, with Samples explicitly set.
+Use 256x32 for Case=1 (knife edge); 128x16 is sufficient for initial Case=2
+(unequal rods),3 (narrow aperture),4 (sub-penumbra rod). All share the same
+0.025x0.003125 m crop. Case=0 is the unobstructed control. The camera's explicit
+direction preserves its positive x image basis. A shared -3-stop conversion
+may be used for previews; measurements always read the unexposed HDR.
+
+The independent reference integrates the actual uniform source volume, with
+its correct visibility and inverse-square/cosine kernel. All blockers span
+the entire source/receiver z interval. Cylinder roots and finite plate slabs
+therefore determine visibility in x/y exactly. The source's z chord and the
+camera row average are integrated analytically, leaving Cartesian x/y midpoint
+quadrature. The continuous row average differs from the discrete >=16-row
+midpoint average by less than 1e-7 relatively for these dimensions. The sphere
+clear-field reference independently uses the shell theorem. This is not a
+uniform-disk shadow fit or a centre-magnitude shortcut.
+
+Reference grids 256/512 must agree within 0.005 of the analytical unobstructed
+radiance at every column; otherwise the analysis refuses to report acceptance.
+An optional cache contains only geometry-derived profiles, convergence and the
+analysis script's SHA256. It is never normalized to a measured image.
+
+Predeclared numerical gates (before candidate images): normalized profile RMS
+<=0.025; feature contrast error <=0.04. Contrast uses fixed three-column bands
+selected by the independent reference, not noisy measured extrema. Knife-edge
+10-90 width must differ by no more than max(10%,1.5 pixels); the whole-profile
+gate remains in force. Width is measured from an isotonic fit to the row mean,
+using absolute 0.1/0.9 of the independent unobstructed radiance, not each image's
+own minimum/maximum. This fit is analysis only and does not filter the image.
+
+Desired pixel RMS is 0.02 of unobstructed radiance. Report it separately for lit,
+edge and dark regions, with raw RGBE quantization steps; a geometry pass does
+not imply this noise target is met. A high-sample rendered reference (4096 or
+more if affordable) adds a pixel comparison; it never replaces the independent
+source/visibility integral. Existing transport, attenuation and phase tests
+must still pass after any estimator change.
+
+Example analysis:
+python3 tests/render/volume_shadow_quality.py crop.hdr --case 1 --shape 0 \
+  --oracle-cache reference.json --reference crop_4096.hdr --check
+
+Compare fixed-cost 64/256/1024 arms before increasing sample counts. Measure full
+render instructions and a matching one-pixel preparation control, repeated in
+alternating build order. Record preparation instructions, memory, trace error,
+total cost and any multiplexing. Pick a quality/cost tradeoff from these data;
+neither a lower wall time on a shared host nor a clean-looking image establishes
+an optimal setting.

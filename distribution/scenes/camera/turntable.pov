@@ -1,26 +1,13 @@
-// This work is licensed under the Creative Commons Attribution 3.0 Unported License.
-// To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
-// or send a letter to Creative Commons, 444 Castro Street, Suite 900, Mountain View,
-// California, 94041, USA.
-
-// Persistence Of Vision Raytracer sample file.
-// This file demonstrates a turntable from one render: a loop makes a camera every Step degrees around the object, each
-// with a bare output, so one parse writes turntable-01.png, turntable-02.png, ... (turntable.pov4 is the same in 4.0).
-//
-// +w320 +h240 Declare=Step=30
-
+// This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
+// A turntable from one render: a loop makes a camera every 30 degrees around the object, each with a bare output, so one parse writes twelve frames, turntable-01.png to turntable-12.png; turntable.pov4 is the same scene in 4.0. +w320 +h240
 #version 3.7;
 global_settings { assumed_gamma 1.0 }
 
 #include "colors.inc"
+#default { finish { ambient 0.1 } }
 
-#ifndef (Step) #declare Step = 30; #end
-#if (Step <= 0) #error "Step must be a number of degrees greater than 0." #end
-
-#declare Angle = 0;
-#while (Angle < 360)
-  camera { location vrotate(<0, 2, -6>, y * Angle) look_at <0, 1, 0> angle 40 output }
-  #declare Angle = Angle + Step;
+#for (Angle, 0, 330, 30)
+  camera { location vrotate(<0, 2, -6>, y * Angle) right x * image_width / image_height look_at <0, 1, 0> angle 40 output }
 #end
 
 light_source { <-4, 8, -6> color White }

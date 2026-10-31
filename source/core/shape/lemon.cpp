@@ -37,6 +37,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/lemon.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 // C++ standard header files
@@ -250,7 +251,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
                 Half_Chord = sqrt(t_Half_Chord_Squared);
                 // first intersection
                 Depth = t_Closest_Approach - Half_Chord;
-                if((Depth > DEPTH_TOLERANCE) && (Depth < MAX_DISTANCE))
+                if((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth))
                 {
 
                     Ipoint = P + Depth * D;
@@ -267,7 +268,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
                 }
                 // second intersection
                 Depth = t_Closest_Approach + Half_Chord;
-                if((Depth > DEPTH_TOLERANCE) && (Depth < MAX_DISTANCE))
+                if((Depth > DEPTH_TOLERANCE) && IsFiniteIntersectionDepth(Depth))
                 {
                     Ipoint = P + Depth * D;
                     vertical = Ipoint[Z];
@@ -295,7 +296,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
 
         b = (P[Y] + d * D[Y]);
 
-        if (((Sqr(a) + Sqr(b)) <= Sqr(base_radius)) && (d > Lemon_Tolerance) && (d < MAX_DISTANCE))
+        if (((Sqr(a) + Sqr(b)) <= Sqr(base_radius)) && (d > Lemon_Tolerance) && IsFiniteIntersectionDepth(d))
         {
             Intersection[i].d   = d ;
             Intersection[i].n = Vector3d(0, 0, -1);
@@ -309,7 +310,7 @@ int Lemon::Intersect(const Vector3d& P, const Vector3d& D, LEMON_INT *Intersecti
         b = (P[Y] + d * D[Y]);
 
         if (((Sqr(a) + Sqr(b)) <= Sqr(apex_radius))
-                && (d > Lemon_Tolerance) && (d < MAX_DISTANCE))
+                && (d > Lemon_Tolerance) && IsFiniteIntersectionDepth(d))
         {
             Intersection[i].d   = d ;
             Intersection[i].n = Vector3d(0, 0, 1);

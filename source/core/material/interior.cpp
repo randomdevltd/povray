@@ -47,7 +47,10 @@
 //  (none at the moment)
 
 // POV-Ray header files (core module)
+#include "core/lighting/emitter.h"
 #include "core/lighting/subsurface.h"
+#include "core/material/media.h"
+#include "core/material/pattern.h"
 #include "core/material/texture.h"
 
 // this must be the last file included
@@ -92,6 +95,8 @@ Interior::Interior(const Interior& source)
     Fade_Power = source.Fade_Power;
     Fade_Colour = source.Fade_Colour;
     media = source.media;
+    light = source.light ? std::shared_ptr<MediaLight>(new MediaLight(*source.light)) : nullptr;
+    refraction = source.refraction ? std::make_shared<RefractionSpec>(*source.refraction) : nullptr;
     hollow = source.hollow;
     clears = source.clears;
     boundsLow = Vector3d(HUGE_VAL);
@@ -113,17 +118,22 @@ Interior::~Interior()
 
 void Interior::Transform(const TRANSFORM *trans)
 {
+    fields.clear();
+    preparedRefraction.reset();
     for(std::vector<Media>::iterator i(media.begin());i != media.end(); i++)
         i->Transform(trans);
+    if ((light != nullptr) && (light->pigment != nullptr))
+        Transform_Tpattern(light->pigment, trans);
+    if (refraction)
+        refraction->Transform(trans);
 }
 
 void Interior::PostProcess()
 {
-    refracting = false;
+    refracting = refraction && !refraction->functions.empty();
     for(std::vector<Media>::iterator i(media.begin());i != media.end(); i++)
     {
         i->PostProcess();
-        refracting = refracting || (i->Refraction != 0.0);
     }
 }
 

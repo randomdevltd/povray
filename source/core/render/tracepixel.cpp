@@ -195,7 +195,7 @@ inline int PseudoRandom(int v)
 
 bool HasInteriorPointObjectCondition::operator()(const Vector3d& point, ConstObjectPtr object) const
 {
-    return object->interior != nullptr;
+    return (object->interior != nullptr) && !(shadowing && Test_Flag(object, NO_SHADOW_FLAG));
 }
 
 bool ContainingInteriorsPointObjectCondition::operator()(const Vector3d& point, ConstObjectPtr object) const
@@ -1510,6 +1510,7 @@ bool Trace::TraceScreen(const ScreenPattern& screen, double u, double v, const I
                                   viewFlags, cooperate, media, radiosity, ray.IsPretraceRay()));
         view->SetTextureFilterScale(textureFilterScale);
         view->SetTextureFilterTaps(textureFilterTaps);
+        view->SetTextureFilterKinds(textureFilterPigments, textureFilterNormals);
     }
 
     RGBTColour colour;

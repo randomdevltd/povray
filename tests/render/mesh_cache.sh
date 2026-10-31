@@ -5,7 +5,7 @@ POVRAY=$1; SRCDIR=$2
 rm -rf mesh_cache_dir && mkdir mesh_cache_dir
 run() {
     name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/mesh_cache_check.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/include" +w48 +h36 -a -d -p -v -gp +wt1 +fp +o"mesh_cache_$name.ppm" "$@" > "mesh_cache_$name.log" 2>&1 || { cat "mesh_cache_$name.log"; exit 1; }
+    "$POVRAY" +i"$SRCDIR/tests/render/mesh_cache_check.pov" +L"$SRCDIR/tests/render" +L"$SRCDIR/distribution/include" +w48 +h36 -a -d -p -v -gp +wt1 +fp +o"mesh_cache_$name.ppm" "$@" > "mesh_cache_$name.log" 2>&1 || { cat "mesh_cache_$name.log"; exit 1; }
     tail -c $((48 * 36 * 3)) "mesh_cache_$name.ppm" > "mesh_cache_$name.px"
 }
 cached() { grep -c '(cached)' "mesh_cache_$1.log" || true; }

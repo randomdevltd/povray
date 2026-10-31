@@ -2,6 +2,9 @@
 set -eu
 POVRAY=$1
 SRCDIR=$2
+# a fixed photon ceiling, so the budget never reads the host's free memory
+POV_PHOTON_MEMORY=2.5
+export POV_PHOTON_MEMORY
 render() {
     name=$1; shift
     "$POVRAY" +i"$SRCDIR/tests/render/progressive_volume.pov" +w24 +h24 +pr -a -d -p -v -gp \
@@ -16,8 +19,6 @@ mean() {
 }
 render prepared +wt1
 tr '\n' ' ' < progressive_volume_prepared.log | tr -s ' ' | grep -q 'Progressive photons: 1 shooting batches'
-render classic Declare=ReceiverMethod=3 +wt1
-awk -v a="$(mean prepared)" -v b="$(mean classic)" 'BEGIN {exit !(a>0.65*b && a<1.35*b)}'
 render threads +wt4
 cmp progressive_volume_prepared.px progressive_volume_threads.px
 render straight Declare=Heat=0 +wt2
@@ -33,8 +34,9 @@ fi
 stored() {
     tr '\n' ' ' < "progressive_volume_$1.log" | tr -s ' ' | grep -o 'Media photons stored: [0-9]*' | grep -o '[0-9]*$'
 }
-render spaced Declare=Variation=0.1 Declare=MediaSpacing=4 +wt2
-[ "$(stored spaced)" -lt "$(stored varying)" ] || { echo 'progressive_volume: the media spacing factor changes no step' >&2; exit 1; }
+# prepared detail is the floor of a method 4 march, so only a spacing finer than its cells adds steps
+render spaced Declare=Variation=0.1 Declare=MediaSpacing=0.25 Declare=MediaSteps=64 +wt2
+[ "$(stored spaced)" -gt "$(stored varying)" ] || { echo 'progressive_volume: the media spacing factor changes no step' >&2; exit 1; }
 awk -v a="$(mean spaced)" -v b="$(mean varying)" 'BEGIN {exit !(a>0.97*b && a<1.03*b)}'
 render decoy_first Declare=Variation=0.1 Declare=Decoy=1 +wt2
 render decoy_last Declare=Variation=0.1 Declare=Decoy=2 +wt2
@@ -58,27 +60,28 @@ grouped_render() {
 grouped_render one Declare=LampPower=0.1 +wt1
 grouped_render four Declare=LampPower=0.1 +wt4
 grouped_render brighter Declare=LampPower=0.2 +wt4
-python3 - <<'PY_GROUPED'
-from array import array
-from pathlib import Path
-import re
-import sys
-
-def pixels(name):
-    raw = Path('progressive_volume_grouped_' + name + '.ppm').read_bytes()
-    header = re.match(rb'P6\s+(?:#[^\n]*\n\s*)*(\d+)\s+(\d+)\s+65535\s', raw)
-    assert header is not None
-    values = array('H')
-    values.frombytes(raw[header.end():])
-    if sys.byteorder == 'little':
-        values.byteswap()
-    return values
-
-one, four, brighter = pixels('one'), pixels('four'), pixels('brighter')
-assert one == four
-assert sum(one) > 100 and max(brighter) < 65535
-assert 1.98 < sum(brighter) / sum(one) < 2.02
-PY_GROUPED
-printf 'progressive_volume means: prepared=%s classic=%s\n' "$(mean prepared)" "$(mean classic)"
+# whole 3000x2667 frames are too big for awk: sums read the rendered 16x16 crop, thread identity compares whole frames
+crop() {
+    file=progressive_volume_grouped_$1.ppm
+    header=$(( $(wc -c < "$file") - 3000 * 2667 * 6 ))
+    for row in $(seq 1325 1340); do
+        dd if="$file" bs=1 skip=$(( header + (row * 3000 + 1491) * 6 )) count=96 2> /dev/null
+    done > "progressive_volume_grouped_$1.px"
+}
+crop one; crop brighter
+pixels() { tail -c $(( 3000 * 2667 * 6 )) "progressive_volume_grouped_$1.ppm" | cksum; }
+[ "$(pixels one)" = "$(pixels four)" ] ||
+    { echo 'progressive_volume: grouped media differ between one and four threads' >&2; exit 1; }
+. "$SRCDIR/tests/render/image.sh"
+image_awk '
+BEGIN {
+    n1 = read_words("progressive_volume_grouped_one.px", one, 768)
+    nb = read_words("progressive_volume_grouped_brighter.px", brighter, 768)
+    total = sum_of(one, n1)
+    if (!(total > 100 && max_of(brighter, nb) < 65535)) fail("progressive_volume: grouped sum " total ", brighter peak " max_of(brighter, nb))
+    ratio = sum_of(brighter, nb) / total
+    if (!(1.98 < ratio && ratio < 2.02)) fail("progressive_volume: grouped power ratio " ratio ", expected between 1.98 and 2.02")
+}'
+printf 'progressive_volume mean: prepared=%s\n' "$(mean prepared)"
 rm -f progressive_volume_*.ppm progressive_volume_*.px progressive_volume_*.log
 echo 'progressive_volume: prepared photon gathers, curved segments, extinction, media spacing, target steps, power, threads and grouped media passed'

@@ -1,5 +1,5 @@
 #!/bin/sh
-# refraction_detail.sh <povray> <srcdir>: media refraction_detail — the smallest index detail, in mm, that must refract.
+# refraction_detail.sh <povray> <srcdir>: independent index fields with detail in scene units.
 set -e
 POVRAY=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); SRCDIR=$(cd "$2" && pwd)
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT; cd "$WORK"
@@ -20,21 +20,9 @@ render_file() {
 says() {
     tr -s ' \n' '  ' < "refraction_detail_$2.log" | grep -q "$1"
 }
-# value <name> <col> <row>: red channel of a pixel, 0..1
-value() {
-    tail -c $(( (W * H - ($3 * W + $2)) * 6 )) "refraction_detail_$1.ppm" | head -c 2 | od -An -tu1 | awk '{ printf "%.4f", ($1 * 256 + $2) / 65535 }'
-}
-expect() {
-    got=$(value $1 $2 $3)
-    awk -v a="$got" -v b="$4" -v t="${5:-0.004}" 'BEGIN { exit !(a - b <= t && b - a <= t) }' ||
-        { echo "refraction_detail: $1 at $2,$3 is $got, expected $4" >&2; exit 1; }
-}
 same() {
     for name in $1 $2; do tail -c $(( 6 * W * H )) refraction_detail_$name.ppm > refraction_detail_$name.pixels; done
     cmp -s "refraction_detail_$1.pixels" "refraction_detail_$2.pixels" || { echo "refraction_detail: $1 differs from $2" >&2; exit 1; }
-}
-differs() {
-    if (same $1 $2 2> /dev/null); then echo "refraction_detail: $1 matches $2" >&2; exit 1; fi
 }
 # region <a> <b> <col0> <col1> <row0> <row1>: the two images agree within 0.004 over a block of pixels
 region() {
@@ -47,63 +35,46 @@ region() {
         END { if (bad) { print bad " channels differ"; exit 1 } }' >&2 || { echo "refraction_detail: $1 differs from $2" >&2; exit 1; }
 }
 
-# 2 mm seams in a 400 mm plate: auto (the default, setting omitted or named) derives its detail from the plate's
-# bounds, notes so once, and 12.5 mm (an extent of 4 units over 32) is that auto detail written out.
+# Omitted and explicit auto use the same field; preparation is deterministic across thread counts.
 render unset Declare=Case=1 Declare=Detail=0
-says "renders with refraction_detail auto" unset || { echo "refraction_detail: no auto note without the setting" >&2; exit 1; }
 render auto Declare=Case=1 Declare=Detail=0 Declare=Auto=1
 same unset auto
-render auto_12_5 Declare=Case=1 Declare=Detail=12.5
-same unset auto_12_5
 render set Declare=Case=1
-if says "renders with refraction_detail auto" set; then echo "refraction_detail: the auto note fires with the setting" >&2; exit 1; fi
-render medium Declare=Case=3
-if says "renders with refraction_detail auto" medium; then echo "refraction_detail: the auto note fires with a medium's own setting" >&2; exit 1; fi
-differs set unset
-region set medium 0 95 0 71
-# One thread and four agree with itself, under the setting and under auto.
 render threads1 Declare=Case=1 +WT1
 render threads4 Declare=Case=1 +WT4
 same threads1 threads4
 render auto_t1 Declare=Case=1 Declare=Detail=0 +WT1
 render auto_t4 Declare=Case=1 Declare=Detail=0 +WT4
 same auto_t1 auto_t4
-# Details well below the 2 mm seam width refract it the same; the averaging span D/2 is part of the
-# detail, so a detail near the seam width smooths its edges where a finer one does not.
-render fine Declare=Case=1 Declare=Detail=0.2
-render finer Declare=Case=1 Declare=Detail=0.05
-region fine finer 0 95 0 71
-render fine_t4 Declare=Case=1 Declare=Detail=0.2 +WT4
-same fine fine_t4
-
-# A linear ramp has a scale-free gradient, so details well below its variation scale leave the
-# deflection where it was; auto still notes what it derived.
-render ramp Declare=Case=5 Declare=Detail=0
-says "renders with refraction_detail auto" ramp || { echo "refraction_detail: no auto note for a large medium" >&2; exit 1; }
-render ramp_set Declare=Case=6
-render ramp_fine Declare=Case=6 Declare=Detail=0.2
-region ramp_set ramp_fine 0 95 0 71
-
-# 0.3 mm sine structure under a 1 mm detail refracts as its smooth mean, not as noise; auto's 12.5 mm detail
-# averages it the same way, which is the point of a default.
-render sine Declare=Case=7
-render mean Declare=Case=8
-region sine mean 0 95 0 71
-render sine_auto Declare=Case=9 Declare=Detail=0
-region sine_auto mean 0 95 0 71
-# No version gates the feature: the auto note sounds and the detail works the same before 4.0.
 render v37_set Version=3.7 Declare=Case=1
 region set v37_set 0 95 0 71
 render v37_auto Version=3.7 Declare=Case=1 Declare=Detail=0
-says "renders with refraction_detail auto" v37_auto || { echo "refraction_detail: no auto note before version 4.0" >&2; exit 1; }
+same auto v37_auto
 
-# Method 4 derives its grid width from the detail, and warns when an explicit resolution is coarser than half of it.
-render derived Declare=Case=10 Declare=Detail=6
-if says "using classic sampling" derived; then echo "refraction_detail: the derived grid fell back" >&2; exit 1; fi
-if says "coarser than half this medium" derived; then echo "refraction_detail: the derived grid warned" >&2; exit 1; fi
-render coarse Declare=Case=11
-says "coarser than half this medium" coarse || { echo "refraction_detail: no warning for a coarse explicit resolution" >&2; exit 1; }
-if says "using classic sampling" coarse; then echo "refraction_detail: the coarse grid fell back" >&2; exit 1; fi
+# Resolved periodic fields converge against a reference with 32 cells per period.
+error() {
+    for name in "$1" "$2"; do tail -c $((6 * W * H)) "refraction_detail_$name.ppm" | od -An -v -tu1 -w6 > "refraction_detail_$name.values"; done
+    paste -d' ' "refraction_detail_$1.values" "refraction_detail_$2.values" | awk '
+        { for (k = 1; k <= 5; k += 2) { d = ($k * 256 + $(k + 1)) - ($(k + 6) * 256 + $(k + 7)); total += d < 0 ? -d : d } }
+        END { printf "%.12g", total / (NR * 3 * 65535) }'
+}
+render resolved_coarse Declare=Case=15 Declare=Detail=0.24 Declare=Cells=10000000
+render resolved_medium Declare=Case=15 Declare=Detail=0.12 Declare=Cells=10000000
+render resolved_fine Declare=Case=15 Declare=Detail=0.06 Declare=Cells=10000000
+render resolved_reference Declare=Case=15 Declare=Detail=0.03 Declare=Cells=10000000
+coarse_error=$(error resolved_coarse resolved_reference)
+medium_error=$(error resolved_medium resolved_reference)
+fine_error=$(error resolved_fine resolved_reference)
+awk -v a="$coarse_error" -v b="$medium_error" -v c="$fine_error" 'BEGIN { exit !(b < a && c < b) }' || {
+    echo "refraction_detail: field did not converge: $coarse_error / $medium_error / $fine_error" >&2; exit 1;
+}
+
+# Unresolved waves measure alias error and grid-phase sensitivity.
+render sine Declare=Case=7
+render sine_phase Declare=Case=16
+render mean Declare=Case=8
+printf 'refraction_detail: unresolved-wave mean errors %s / %s; phase difference %s\n' \
+    "$(error sine mean)" "$(error sine_phase mean)" "$(error sine sine_phase)"
 
 # A grid beyond the cell limit is coarsened to the widest step that fits, never dropped to classic sampling.
 render overcap Declare=Case=12

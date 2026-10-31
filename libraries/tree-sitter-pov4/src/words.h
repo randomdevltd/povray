@@ -473,6 +473,7 @@ static const char *const BUILTINS[] = {
   "radians",
   "rand",
   "range",
+  "scale_lumens",
   "seed",
   "select",
   "sin",

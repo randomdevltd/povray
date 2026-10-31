@@ -1,4 +1,5 @@
 #version 3.8;
+#ifndef (VolumeSource) #declare VolumeSource = 0; #end
 #ifndef (Method) #declare Method = 2; #end
 #ifndef (PhotonQuality) #declare PhotonQuality = 1; #end
 #ifndef (LampPower) #declare LampPower = 40; #end
@@ -20,6 +21,7 @@
 #ifndef (PhotonFile) #declare PhotonFile = 0; #end
 #ifndef (CameraTurn) #declare CameraTurn = 0; #end
 #ifndef (TargetWeight) #declare TargetWeight = 1; #end
+#declare CurvedIndex = function { pigment { spherical scale 1.2 translate 1.1*y } }
 global_settings {
     assumed_gamma 1
     max_trace_level 8
@@ -39,6 +41,18 @@ camera {
     angle 40
     #if (CameraTurn != 0) rotate CameraTurn*y #end
 }
+#if (VolumeSource)
+#declare VolumeLamp = union {
+    #switch (VolumeSource)
+        #case (2) box { <-0.8, -0.02, -0.5>, <0.8, 0.02, 0.5> } #break
+        #case (3) cylinder { <-0.8, 0, 0>, <0.8, 0, 0>, 0.05 } #break
+        #else sphere { 0, 0.2 }
+    #end
+    hollow no_image pigment { rgbt 1 }
+    interior { light { brightness LampPower samples 16 photons { reflection on refraction on } } }
+}
+object { VolumeLamp translate <-2, 6, -1> }
+#else
 light_source {
     <-2, 6, -1> color rgb LampPower photon_only PhotonOnly
     photons { reflection on refraction on }
@@ -50,6 +64,7 @@ light_source {
     #end
     #if (LampType != 2 & LampType != 4) fade_power 2 fade_distance FadeDistance #end
 }
+#end
 #for (Index, 1, InactiveLights)
     light_source { <Index, 5, -2> rgb 0 }
 #end
@@ -75,7 +90,7 @@ sphere {
     pigment { color rgbt 1 }
     finish { ambient 0 diffuse 0 reflection { 0, 1 fresnel } conserve_energy }
     interior { ior 1.5 dispersion Dispersion
-        #if (Curved) media { method 3 refraction 0.1 density { spherical scale 1.2 translate 1.1*y } } #end
+        #if (Curved) refraction { function { 0.1 * CurvedIndex(x,y,z).red } detail auto } #end
     }
     photons { target TargetWeight reflection on refraction on }
 }

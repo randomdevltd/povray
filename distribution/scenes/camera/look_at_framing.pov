@@ -1,24 +1,10 @@
-// This work is licensed under the Creative Commons Attribution 3.0 Unported License.
-// To view a copy of this license, visit http://creativecommons.org/licenses/by/3.0/
-// or send a letter to Creative Commons, 444 Castro Street, Suite 900, Mountain View,
-// California, 94041, USA.
-
-// Persistence Of Vision Raytracer sample file.
-// This file demonstrates "look_at" framing an object or a tagged selection.
-// Declare=View=0 frames one object; 1 frames a tagged selection; 2 frames it with a spherical camera.
-// A selection holds the objects placed before it, so the cameras come last.
-//
-// +w320 +h240 Declare=View=0
-// +w320 +h240 Declare=View=1
-// +w320 +h160 Declare=View=2
-
+// This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
+// look_at framing, rendered from one parse into three images: look_at_framing_ball.png turns to one object and fills the frame with it, look_at_framing_cubes.png frames the objects tagged "cubes", and look_at_framing_spherical.png frames that selection with a spherical camera; a selection holds the objects placed before it, so the cameras come last. +w320 +h240
 #version 4.0;
 global_settings {assumed_gamma 1.0}
 
 #include "colors.inc"
 #include "camera-context.inc" //common file containing object definitions for the camera demos
-
-#ifndef (View) #declare View = 0; #end
 
 #declare Ball = sphere {<-2,3,14>,3 pigment {SteelBlue} finish {phong .2 reflection {.3}}}
 
@@ -38,13 +24,12 @@ sky_sphere {pigment {rgb <0.859,0.910,0.831>}}
 light_source {<-5,10,10> White*2}
 light_source {<20,40,-60> White*0.8}
 
-#switch (View)
-  #case (0)
-    camera {location <4,9,-45> right x*image_width/image_height look_at Ball}
-  #break
-  #case (1)
-    camera {location <4,9,-45> right x*image_width/image_height look_at tagged {"cubes"}, 0.8}
-  #break
-  #else
-    camera {spherical location <0,10,0> look_at tagged {"cubes"}, 0.8}
-#end
+camera {location <4,9,-45> right x*image_width/image_height look_at Ball output {file "look_at_framing_ball"}}
+camera {
+  location <4,9,-45> right x*image_width/image_height look_at tagged {"cubes"}, 0.8
+  output {file "look_at_framing_cubes"}
+}
+camera {
+  spherical location <0,10,0> look_at tagged {"cubes"}, 0.8
+  output {size <320,160> file "look_at_framing_spherical"}
+}

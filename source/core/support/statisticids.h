@@ -247,6 +247,36 @@ typedef enum INTSTATS
     /* Media */
     Media_Samples,
     Media_Intervals,
+    Media_Scatter_Legs,
+    Media_Scatter_Domains,
+    Media_Scatter_Cells,
+    Media_Scatter_Pairs,
+    Media_Scatter_Max_Cells,
+    Media_Scatter_Peak_Bytes,
+    Emitter_Connections,
+    Emitter_Surface_Draws,
+    Emitter_Media_Fixed_Draws,
+    Emitter_Media_Classic_Draws,
+    Emitter_Shadow_Calls,
+    Emitter_Shadow_Input,
+    Emitter_Photon_Input,
+    Media_Fixed_Calls,
+    Media_Classic_Calls,
+    Media_Modifier_Fallback_Calls,
+    Media_Fixed_Coefficients,
+    Media_Classic_Coefficients,
+    Media_Shadow_Coefficients,
+    Media_Photon_Coefficients,
+    Media_Ordinary_Light_Draws,
+    Media_Shadow_Lighting_Calls,
+    Media_Zero_Scatter_Emitter_Draws,
+    Subsurface_Single_Emitter_Draws,
+    Subsurface_Single_Emitter_Side_Rejects,
+    Media_Prepared4_Queries,
+    Media_Legacy3_Queries,
+    Media_Forbidden4_Procedural,
+    Media_Forbidden4_Integration,
+    Media_Analytic_Infinite_Intervals,
     Curved_Rays,
     Refraction_Steps,
 
@@ -302,7 +332,6 @@ typedef enum INTSTATS
     Subsurface_Cloud_Hidden,
     Subsurface_Cloud_Near_Field, ///< shading points that sampled the near field for a shadow edge between coarse points
     Subsurface_Cloud_Near_Rays, ///< the shadow rays that took
-    Fade_Cutoff_Drops, ///< media light tests left out by the light's fade_cutoff
 
     // [CLi] radiosity total stats (all pre- & final traces, all recursion depths)
     Radiosity_ReuseCount,             // ambient value queries satisfied without taking a new sample

@@ -1,7 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A portal ringed by distorted space: a torus of refracting media around its rim, densest at the rim and fading to nothing at the torus surface, lenses the courtyard and the view through the portal into each other. +w640 +h400
+// A portal ringed by distorted space: a toroidal interior refraction field around the portal's rim, strongest at the rim and fading to nothing at the torus surface, lenses the near courtyard and the far court seen through the portal into each other. +w640 +h400
 #version 4.0;
-#ifndef (Ring) #declare Ring = 1; #end
 
 global_settings { assumed_gamma 1 max_trace_level 12 }
 camera { location <1.2, 1.7, -7> look_at <0, 1.6, 0> angle 44 right x * image_width / image_height }
@@ -23,19 +22,17 @@ plane { y, 0.002 pigment { checker rgb <0.75, 0.35, 0.2> rgb <0.55, 0.25, 0.15> 
 torus { Rim, 0.06 rotate x * 90 translate y * 1.7 pigment { rgb <0.25, 0.25, 0.3> } finish { specular 0.6 metallic } }
 portal { disc { y * 1.7, -z, Rim - 0.02 } to { translate z * 40 } }
 
-#if (Ring)
-  torus {
-    Rim, 0.9
-    pigment { rgbt 1 }
-    interior {
-      media {
-        method 3
-        refraction 0.15
-        density {
-          function { pow(max(0, 1 - sqrt(pow(sqrt(x * x + z * z) - Rim, 2) + y * y) / 0.9), 2) }
-        }
-      }
+#declare PortalIndex = function { pigment {
+  function { pow(max(0, 1 - sqrt(pow(sqrt(x * x + z * z) - Rim, 2) + y * y) / 0.9), 2) }
+} }
+
+torus {
+  Rim, 0.9
+  pigment { rgbt 1 }
+  interior {
+    refraction {
+      function { 0.15 * PortalIndex(x, y, z).red }
     }
-    rotate x * 90 translate y * 1.7
   }
-#end
+  rotate x * 90 translate y * 1.7
+}

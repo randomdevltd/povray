@@ -60,6 +60,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/polygon.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 //  (none at the moment)
@@ -213,7 +214,7 @@ bool Polygon::Intersect(const BasicRay& ray, DBL *Depth, RenderStatistics& stats
 
     *Depth = -p[Z] / d[Z];
 
-    if ((*Depth < DEPTH_TOLERANCE) || (*Depth > MAX_DISTANCE))
+    if ((*Depth < DEPTH_TOLERANCE) || (!IsFiniteIntersectionDepth(*Depth)))
         return(false);
 
     /* Does the intersection point lie inside the polygon? */

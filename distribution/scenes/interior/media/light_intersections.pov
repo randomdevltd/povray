@@ -1,8 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Emitting media meeting things: red, green and blue lights overlapping, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone; a pool sunk in the floor, pierced by rods. +w640 +h480; Declare=Samples=N sets each light's samples, Smoke=0 drops the smoke.
+// Emitting media meeting other objects: red, green and blue media lights overlap, threaded by a bronze knot, holding a glass ball and crossed by smoke; a glow sealed in a cracked stone shines out through the cracks; a glowing pool sunk in the floor is pierced by rods. +w640 +h480
 #version 4.0;
-#ifndef (Samples) #declare Samples = 24; #end
-#ifndef (Smoke) #declare Smoke = 1; #end
+// Units: lamps cast their emission times 3.1, the geode 1600 lm through its cracks, the pool 190 lm; the smoke scatters 4x the classic colour with extinction 0.25.
 #declare R = seed(42);
 #declare Mid = <0, 2.9, 0.3>;
 #declare Geode = <3.5, 0.92, 0.9>;
@@ -25,8 +24,8 @@ plane { x, -7 texture { pigment { rgb 0.7 } finish { diffuse 0.85 } } }
         mix add
         emission Colour * 14
         density { spherical turbulence 0.12 octaves 3 color_map { [0 rgb 0] [1 rgb 1] } }
-        light_source { samples Samples }
       }
+      light { emission brightness 3.1 samples 24 }
     }
     translate Centre
   }
@@ -44,24 +43,22 @@ sphere_sweep {
   texture { pigment { rgb <0.35, 0.22, 0.1> } finish { diffuse 0.6 specular 0.6 roughness 0.01 metallic reflection { 0.2 metallic } } }
 }
 
-#if (Smoke)
-  cone {
-    <1.8, 0, 0.9>, 0.35, <0.6, 7, 0.6>, 1.4
-    pigment { rgbt 1 }
-    interior {
-      media {
-        mix add
-        scattering { 1, rgb 0.3 } absorption rgb 3
-        density {
-          cylindrical turbulence <0.6, 0.1, 0.6> octaves 5 lambda 2.5 scale <0.5, 1, 0.5>
-          color_map { [0 rgb 0] [0.45 rgb 0] [0.8 rgb 0.7] [1 rgb 1] }
-          warp { turbulence <0.4, 0.2, 0.4> octaves 4 lambda 2.2 }
-          rotate z * 10 translate <1.8, 0, 0.9>
-        }
+cone {
+  <1.8, 0, 0.9>, 0.35, <0.6, 7, 0.6>, 1.4
+  pigment { rgbt 1 }
+  interior {
+    media {
+      mix add
+      scattering { 1, rgb 1.2 extinction 0.25 } absorption rgb 3
+      density {
+        cylindrical turbulence <0.6, 0.1, 0.6> octaves 5 lambda 2.5 scale <0.5, 1, 0.5>
+        color_map { [0 rgb 0] [0.45 rgb 0] [0.8 rgb 0.7] [1 rgb 1] }
+        warp { turbulence <0.4, 0.2, 0.4> octaves 4 lambda 2.2 }
+        rotate z * 10 translate <1.8, 0, 0.9>
       }
     }
   }
-#end
+}
 
 sphere {
   Mid + <0, 0, -0.15>, 0.3
@@ -87,8 +84,8 @@ sphere {
       mix add
       emission rgb <1, 0.72, 0.38> * 60
       density { spherical turbulence 0.3 octaves 4 color_map { [0 rgb 0.1] [1 rgb 1] } }
-      light_source { samples Samples }
     }
+    light { emission brightness 1600 lumens samples 24 }
   }
   translate Geode
 }
@@ -100,8 +97,8 @@ sphere {
       mix add
       emission rgb <1, 0.38, 0.06> * 12
       density { spherical turbulence 0.35 octaves 5 lambda 2.4 color_map { [0 rgb 0] [0.3 rgb 0.2] [1 rgb 1] } }
-      light_source { samples Samples }
     }
+    light { emission brightness 190 lumens samples 24 }
   }
   scale <1.6, 0.7, 1.2> translate Pool
 }

@@ -99,10 +99,19 @@
   <td><div class="divh4"><a title="3.7.2.2.3" href="#r3_7_2_2_3">Scattering</a></div></td>
 </tr>
 <tr>
-  <td><div class="divh4"><a title="3.7.2.2.4" href="#r3_7_2_2_4">Refraction</a></div></td>
+  <td><div class="divh4"><a title="3.7.2.2.4" href="#r3_7_2_2_4">Media Lights</a></div></td>
 </tr>
 <tr>
-  <td><div class="divh4"><a title="3.7.2.2.5" href="#r3_7_2_2_5">Media Lights</a></div></td>
+  <td><div class="divh4"><a title="3.7.2.2.5" href="#r3_7_2_2_5">Physical Scattering in Method 4</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.7.2.2.5.1" href="#r3_7_2_2_5_1">Street Lamp in Night Fog</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.7.2.2.5.2" href="#r3_7_2_2_5_2">Torch Beam in a Smoky Room</a></div></td>
+</tr>
+<tr>
+  <td><div class="divh5"><a title="3.7.2.2.5.3" href="#r3_7_2_2_5_3">Sunbeam Through a Window</a></div></td>
 </tr>
 <tr>
   <td><div class="divh3"><a title="3.7.2.3" href="#r3_7_2_3">Sampling Parameters & Methods</a></div></td>
@@ -450,10 +459,9 @@ MEDIA:
 MEDIA_ITEMS:
   method Number | intervals Number | samples Min, Max |
   confidence Value  | variance Value | ratio Value | jitter Value
-  absorption COLOR | emission COLOR | refraction Value | refraction_detail Value | refraction_detail auto | aa_threshold Value |
-  aa_level Value | resolution Value |
+  absorption COLOR | emission COLOR | aa_threshold Value |
+  aa_level Value | resolution Value | light_samples Multiplier |
   mix add | replace | subtract | multiply | priority Integer |
-  light_source { [MEDIA_LIGHT_ITEM...] } |
   scattering { 
     Type, COLOR [ eccentricity Value ] [ extinction Value ]
     }  | 
@@ -476,12 +484,12 @@ confidence   : 0.9
 emission     : &lt;0,0,0&gt;
 intervals    : 1 (10 before 3.5)
 jitter       : 0.0
+light_samples: 1.0
 method       : 3 from version 3.5, 4 from version 4.0 (1 before 3.5)
 mix          : see Media Mix
 priority     : 0
 ratio        : 0.9
 refraction   : 0.0
-refraction_detail : auto (the global setting; auto derives it from the medium's bounds)
 resolution   : automatic (method 4 only)
 samples      : Min 1, Max 1 (10, 10 from version 3.5)
 variance     : 1/128
@@ -491,7 +499,7 @@ eccentricity : 0.0
 extinction   : 1.0
 </pre>
 
-<p>Media whose density varies are described further in <a href="r3_11.html#r3_11">Volume Density</a>, and media that light their surroundings in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
+<p>Media whose density varies are described further in <a href="r3_11.html#r3_11">Volume Density</a>, and media that light their surroundings in <a href="r3_12.html#r3_12">Surface and Volume Lights</a>.</p>
 
 <p>If a media identifier is specified, it must be the first item. All other media items may be specified in any order. All are optional. You may have multiple <code>density</code> statements in a single <code>media</code> statement. See <a href="r3_7.html#r3_7_2_4_4">Multiple Density vs. Multiple Media</a> for details. Transformations apply only to the <code>density</code> statements which have been already specified. Any <code>density</code> after a transformation is not affected. If the <code>media</code> has no <code>density</code> statements and none was specified in any media identifier, then the transformation has no effect. All other media items except for <code>density</code> and transformations override default values or any previously set values for this <code>media</code> statement.</p>
 
@@ -774,12 +782,12 @@ and <code><a href="r3_7.html#r3_7_2_1">fade_distance</a></code> keywords.
 See <a href="r3_7.html#r3_7_2_1_6">Attenuation</a>.</p>
 <p>The <code>ior</code> of an interior is a number, which means what it says (<code>ior 1</code> is vacuum), or one of two words:</p>
 <ul>
-<li><code>ior off</code>, the default when no ior is given: the object takes no part in refraction under any <code>ior_mix</code>. It is never counted in a mean and never replaces, and its surfaces neither bend rays nor reflect by Fresnel, so a fog box or a media container leaves the glass inside it, and whatever it sits in, untouched. Media <code>refraction</code> inside it adds to the index of whatever surrounds it, so a refraction-only box shimmers the water or air it sits in without a surface of its own.</li>
+<li><code>ior off</code>, the default when no ior is given: the object takes no part in refraction under any <code>ior_mix</code>. It is never counted in a mean and never replaces, and its surfaces neither bend rays nor reflect by Fresnel, so a fog box or a media container leaves the glass inside it, and whatever it sits in, untouched. An interior <code>refraction</code> field inside it adds to the index of whatever surrounds it, so a refraction-only box shimmers the water or air it sits in without a surface of its own.</li>
 <li><code>ior atmosphere</code>: the object is air; its ior and dispersion are the atmosphere's (see <a href="r3_4.html#r3_4_1_15">atmospheric_ior</a>), and it takes part like any material.</li>
 </ul>
-<p>Before <code>#version 4.0</code> an object without an ior refracts as one of the atmosphere's ior, as in POV-Ray 3.7, unless the scene merges faces (it uses media refraction, or a non-opaque object states <code>ior_mix mean</code> or <code>replace</code>); then it is <code>ior off</code> as above. A surface always refracts by the ior just before it over the ior just after it. Where objects overlap, the ior in the overlap follows each object's <code>ior_mix</code>:</p>
+<p>Before <code>#version 4.0</code> an object without an ior refracts as one of the atmosphere's ior, as in POV-Ray 3.7, unless the scene merges faces (it uses independent refraction, or a non-opaque object states <code>ior_mix mean</code> or <code>replace</code>); then it is <code>ior off</code> as above. A surface always refracts by the ior just before it over the ior just after it. Where objects overlap, the ior in the overlap follows each object's <code>ior_mix</code>:</p>
 <ul>
-<li><code>surface</code>, the default before <code>#version 4.0</code>: the innermost object entered gives the ior, as in POV-Ray 3.7, so leaving an overlap of two objects does not refract and an <code>ior atmosphere</code> sphere inside glass is an air pocket. A scene whose objects that are not opaque all have an ior and are <code>surface</code>, and which has no <a href="r3_7.html#r3_7_2_2_4">media refraction</a>, renders exactly as POV-Ray 3.7 does.</li>
+<li><code>surface</code>, the default before <code>#version 4.0</code>: the innermost object entered gives the ior, as in POV-Ray 3.7, so leaving an overlap of two objects does not refract and an <code>ior atmosphere</code> sphere inside glass is an air pocket. A scene whose objects that are not opaque all have an ior and are <code>surface</code>, and which has no <a href="r3_11.html#r3_11_3">independent refraction</a>, renders exactly as POV-Ray 3.7 does.</li>
 <li><code>mean</code>, the default from <code>#version 4.0</code>: overlapping objects mix 50/50, and the ior is the mean of their iors; where glass (1.5) overlaps water (1.33) it is 1.415, whatever order the objects are placed in. Every object that takes part counts, so an <code>ior 1</code> sphere inside glass is vacuum mixed with glass, 1.25, and POV-Ray warns once when an object of ior 1 or <code>ior atmosphere</code> overlaps a denser one. Dispersion is averaged the same way.</li>
 <li><code>replace</code>: the object's ior overrides the objects ranked beneath it inside its volume, ranked by the interior's <code>priority</code> (an integer, 0 by default, higher first; it is not the <code>priority</code> of a <code>media</code>) and then by placement, later first, exactly as <a href="r3_7.html#r3_7_2_1_9">media mix replace</a> ranks. Objects ranked above it still mix with it by their own <code>ior_mix</code>.</li>
 </ul>
@@ -993,16 +1001,16 @@ sphere { 0, 1 pigment { rgbt &lt;0.9, 0.95, 1, 0.9&gt; } interior { ior 1.5 } }
   <li>A modifier with no media beneath it, or whose lower media a higher <code>replace</code> has already cleared, does nothing.</li>
   <li>Modifiers apply in rank order. Several <code>subtract</code> media give the same result in any order, but a <code>subtract</code> and a <code>multiply</code> do not commute: the one ranked higher acts on the result of the lower.</li>
 </ul>
-<p><strong>Mix and method 4.</strong> <a href="r3_7.html#r3_7_2_3">Method 4</a> fallback to classic sampling looks only at the media that take part: <code>subtract</code> and <code>multiply</code> media, and media that a <code>replace</code> removed, do not trigger the fallback for a classic medium that overlaps them. A modifier's own classic settings (<code>samples</code>, <code>intervals</code>, <code>jitter</code>, <code>confidence</code> and the rest) are not used. A method 4 modifier with a unique finite container reads its prepared grid; otherwise its density pattern is evaluated at every sample of the media beneath it, and prepared steps are no coarser than the modifier's resolution. Segments with modifiers do without the per-light optical-depth cache for parallel lights, the early stop once a medium is opaque enough, and the shortcut for constant media in shadow rays, so they cost more.</p>
+<p><strong>Mix and method 4.</strong> Every selected method 4 density uses its published prepared representation, including applicable modifiers. Explicit methods 1 through 3 retain their own coefficient evaluation in mixed media. A failed method 4 preparation is an error, not a change to another integrator. Media operations alter optical coefficients independently of light and refraction.</p>
 <p><strong>Photons.</strong> Photon propagation and the deposit of media photons rank media through the same rules.</p>
 </div>
 
 <a name="r3_7_2_1_10"></a>
 <div class="content-level-h5" contains="Shared Faces" id="r3_7_2_1_10">
 <h5>3.7.2.1.10 Shared Faces</h5>
-<p>Under <code>mean</code> or <code>replace</code>, or with media refraction, surfaces that meet at the point hit, such as glass and water sharing a wall or three wedges meeting along an edge, are one interface: the ray refracts and reflects once, by the ior just before the point over the ior just after it, with one test for total internal reflection. Every object with a surface there is tested for whether it holds a point a small distance beyond the surface, along the normal, and the rays spawned start that far beyond the point; objects without an inside, such as polygons and meshes without <code>inside_vector</code>, are crossed instead. If any surface there belongs to an object whose texture POV-Ray can tell is opaque, that surface is hit, for camera, reflected, refracted, shadow and photon rays alike. Otherwise the texture shown follows <a href="r3_4.html#r3_4_1_16">interface_texture</a>: by default (<code>blend</code>) the textures of every clear object with a surface there are each evaluated and their results averaged equally, so the face looks the same from both sides and whatever order the objects are placed in; <code>far</code> shows the texture of an object the ray enters there, else of one it leaves, and <code>near</code> the reverse, with exact ties settled by the objects' bounds. An <code>ior_mix replace</code> object owns its faces: where one of its surfaces is among them, its texture shows whatever the setting. Objects whose texture varies over their surface by other means, such as mesh textures, <code>uv_mapping</code> or <code>cutaway_textures</code>, are not blended, and those faces use <code>far</code>. Shadow rays cross such a surface surface by surface: each surface there filters the light once, and an opaque one blocks it.</p>
+<p>Under <code>mean</code> or <code>replace</code>, or with independent refraction, surfaces that meet at the point hit, such as glass and water sharing a wall or three wedges meeting along an edge, are one interface: the ray refracts and reflects once, by the ior just before the point over the ior just after it, with one test for total internal reflection. Every object with a surface there is tested for whether it holds a point a small distance beyond the surface, along the normal, and the rays spawned start that far beyond the point; objects without an inside, such as polygons and meshes without <code>inside_vector</code>, are crossed instead. If any surface there belongs to an object whose texture POV-Ray can tell is opaque, that surface is hit, for camera, reflected, refracted, shadow and photon rays alike. Otherwise the texture shown follows <a href="r3_4.html#r3_4_1_16">interface_texture</a>: by default (<code>blend</code>) the textures of every clear object with a surface there are each evaluated and their results averaged equally, so the face looks the same from both sides and whatever order the objects are placed in; <code>far</code> shows the texture of an object the ray enters there, else of one it leaves, and <code>near</code> the reverse, with exact ties settled by the objects' bounds. An <code>ior_mix replace</code> object owns its faces: where one of its surfaces is among them, its texture shows whatever the setting. Objects whose texture varies over their surface by other means, such as mesh textures, <code>uv_mapping</code> or <code>cutaway_textures</code>, are not blended, and those faces use <code>far</code>. Shadow rays cross such a surface surface by surface: each surface there filters the light once, and an opaque one blocks it.</p>
 <p>The distance is the lesser of a thousandth of the object's smallest extent (10<sup>-3</sup> for objects without finite bounds) and 10<sup>-5</sup> of the point's largest coordinate, raised to 2&times;10<sup>-4</sup> for objects at least 0.2 units across in every direction; surfaces of other objects closer than that count as meeting at the point, while on smaller objects only surfaces that truly coincide do.</p>
-<p>The default <code>ior_mix</code> is <code>mean</code> from <code>#version 4.0</code>, so faces are merged there by default. Before 4.0 the default is <code>surface</code>, and faces merge only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses media refraction; the texture shown is then chosen by <a href="r3_4.html#r3_4_1_16">interface_texture</a>, which defaults to <code>far</code>.</p>
+<p>The default <code>ior_mix</code> is <code>mean</code> from <code>#version 4.0</code>, so faces are merged there by default. Before 4.0 the default is <code>surface</code>, and faces merge only if an object states <code>ior_mix mean</code> or <code>replace</code> or the scene uses independent refraction; the texture shown is then chosen by <a href="r3_4.html#r3_4_1_16">interface_texture</a>, which defaults to <code>far</code>.</p>
 </div>
 
 <a name="r3_7_2_2"></a>
@@ -1025,7 +1033,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on, or if the medium is declared a light with a <a href="r3_12.html#r3_12">light_source</a> block.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
+<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Its bare <code>emission</code> flag selects this interior's combined media emission as the light's emission coefficient: a unitless brightness multiplies it, <code>nits</code> scale it to a stated mean radiance at the container's boundary, and <code>lumens</code> distribute a stated flux over its pattern. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
@@ -1086,6 +1094,7 @@ SCATTERING:
 </table>
 
 <p>Type 5 is the <em>Henyey-Greenstein scattering</em> model. It is based on an analytical function and can be used to model a large variety of different scattering types. The function models an ellipse with a given eccentricity e. This eccentricity is specified by the optional keyword <code>eccentricity</code> which is only used for scattering type five. The default eccentricity value of zero defines isotropic scattering while positive values lead to scattering in the direction of the light and negative values lead to scattering in the opposite direction of the light. Larger values of e (or smaller values in the negative case) increase the directional property of the scattering.</p>
+<p>The eccentricity of a Henyey-Greenstein medium must lie strictly between -1 and 1. At 1 or -1 the phase function is undefined in the forward direction and negative beyond, which would give scattering negative or infinite weights. From <code>#version 3.8</code> any other value is a parse error, <code>Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive.</code> In a scene of version 3.7 or older the same text is a warning and the value is kept, as in POV-Ray 3.7.</p>
 
 <table class="centered" width="660px" cellpadding="0" cellspacing="10">
 <tr>
@@ -1101,37 +1110,140 @@ SCATTERING:
 <p class="Note"><strong>Note:</strong> See the section on <a href="r3_4.html#r3_4_3_2">Light Groups</a> for additional information when using scattering media in a light group.</p></div>
 
 <a name="r3_7_2_2_4"></a>
-<div class="content-level-h5" contains="Refraction" id="r3_7_2_2_4">
-<h5>3.7.2.2.4 Refraction</h5>
-<p>The <code>refraction</code> keyword makes a medium change the index of refraction of the interior holding it in proportion to its density, so that light curves where the density varies: heat shimmer, mirages, steam, rocket exhaust, gradient-index lenses, or the bending of light around a black hole. Inside an object the index at any point is</p>
+<div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_4">
+<h5>3.7.2.2.4 Media Lights</h5>
+<p>An independent <code>light</code> block inside an object's <code>interior</code> supplies volume illumination. Its pigment and brightness define the source independently of any media in that interior; media control the visible glow, extinction and scattering separately.</p>
 <pre>
-n = ior + refraction<sub>1</sub> &times; density<sub>1</sub> + refraction<sub>2</sub> &times; density<sub>2</sub> + ...
-</pre>
-<p>where <code>ior</code> is the object's <a href="r3_7.html#r3_7_2_1_4">interior ior</a> and the sum runs over the refracting media that hold the point, combined by their <a href="r3_7.html#r3_7_2_1_9">mix</a> like every other coefficient: <code>add</code> sums them, <code>replace</code> keeps only its own, <code>multiply</code> scales the refraction beneath it by its density, and <code>subtract</code> reduces it toward zero by its own <code>refraction</code> times density, so a <code>subtract</code> medium without <code>refraction</code> of its own leaves the refraction beneath it unchanged. The density is a colour, and refraction uses the mean of its channels; it is not dispersive. The coefficient may be negative: hot air and steam are thinner than the air around them. A medium with only <code>refraction</code> is invisible and costs nothing in the media integration; it only bends rays.</p>
-<pre>
-box {
-  &lt;-5, 0, 2&gt;, &lt;5, 2, 50&gt;
-  pigment { rgbt 1 }
-  interior { media { refraction -0.0001 density { bozo turbulence 0.6 scale 0.5 } density { gradient y color_map { [0 rgb 1] [1 rgb 0] } scale 2 } } }
+interior {
+  light { brightness 200 pigment { rgb &lt;1, 0.4, 0.1&gt; } samples 16 }
+  media { method 4 emission rgb &lt;1, 0.4, 0.1&gt; }
 }
 </pre>
-<p>How rays curve through the field, the limits that stop them, how brightness scales, the warnings and worked examples are in <a href="r3_11.html#r3_11_3">Refracting Volumes</a>. Atmospheric media do not refract.</p>
-<p>A medium may carry its own <code>refraction_detail</code>, a length in millimetres (through <code>mm_per_unit</code>) that overrides the scene's <a href="r3_4.html#r3_4_1_17">global setting</a>, or <code>refraction_detail auto</code> to take the bounds-derived default again: the smallest index structure of this medium that must refract faithfully. Where several refracting media hold a point, the smallest detail among them governs the step, as the step cap already takes the smallest over the media.</p></div>
-
-<a name="r3_7_2_2_5"></a>
-<div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
-<h5>3.7.2.2.5 Media Lights</h5>
-<p>A <code>light_source</code> block inside an emitting medium makes the medium a light source: it lights surfaces, casting shadows, and lights scattering media, with its brightness and colour taken from its own <code>emission</code> and density, so the light always matches the glow the camera sees.</p>
-<pre>
-media {
-  emission rgb &lt;14, 6, 1.6&gt; * 200
-  density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-  light_source { samples 16 }
-}
-</pre>
-<p>The items of the block (<code>samples</code>, <code>brightness</code>, <code>shadowless</code>, <code>media_interaction</code>, <code>media_attenuation</code>, <code>fade_distance</code>, <code>fade_power</code> and <code>fade_cutoff</code>), their defaults, the power and falloff of the light, its sampling, and its limits are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
+<p>The source law, units, sampling, shadows and transport settings are described in <a href="r3_12.html#r3_12">Surface and Volume Lights</a>.</p>
 </div>
 
+<a name="r3_7_2_2_5"></a>
+<div class="content-level-h5" contains="Physical Scattering in Method 4" id="r3_7_2_2_5">
+<h5>3.7.2.2.5 Physical Scattering in Method 4</h5>
+<p>A <code>method 4</code> medium in-scatters light with energy-conserving normalisation. Over all directions, a medium that does not absorb returns exactly the light it removes from a beam: the phase function of every scattering type integrates to 1 over the sphere. Media of <code>method</code> 1 to 3 keep the original formula, so scenes written for them render as before; at the same coefficients they glow four times brighter than method 4.</p>
+
+<p><strong>Why a factor of 4.</strong> POV-Ray light colours follow the surface convention: a white diffuse surface of albedo &rho; lit by a light of colour <em>C</em> shows &rho;<em>C</em>, where physics gives a radiance &rho;<em>E</em>/&pi; for an illuminance <em>E</em>. A colour therefore stands for <em>E</em>/&pi;, and <em>E</em> = &pi;<em>C</em>. A medium with scattering coefficient &sigma;<sub>s</sub> and a phase function <em>p</em> that integrates to 1 over 4&pi; steradians adds the radiance &sigma;<sub>s</sub><em>E</em><em>p</em>(&theta;) per unit length, which in colour units is &sigma;<sub>s</sub>&pi;<em>C</em><em>p</em>(&theta;). For isotropic scattering <em>p</em> = 1/4&pi;, so a unit length returns &sigma;<sub>s</sub><em>C</em>/4. The classic formula is &sigma;<sub>s</sub><em>C</em><em>k</em>(&theta;) with a phase factor <em>k</em> that averages 1 over the sphere, that is 4&pi;<em>p</em>, and it differs from the physical value by 4&pi;/&pi; = 4. Method 4 uses &sigma;<sub>s</sub><em>C</em><em>k</em>(&theta;)/4.</p>
+
+<p><strong>Extinction is the same in both.</strong> <code>extinction 1</code>, the default, removes light at the rate &sigma;<sub>t</sub> = &sigma;<sub>s</sub>, which is the physical choice for a medium that does not absorb, and the statement under <a href="r3_7.html#r3_7_2_2_3">Scattering</a> about it holds in every method. Only the brightness of the scattered light differs between classic and method 4.</p>
+
+<p><strong>Phase functions.</strong> The classic Rayleigh and Mie phase factors do not even average 1: their sphere means are listed below, so on top of the factor of 4 they return more than the light they remove. Method 4 uses the same shapes, rescaled to a mean of exactly 1. Isotropic and Henyey-Greenstein scattering are normalised in both methods.</p>
+<table class="centered" width="560px" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Type</th><th>Phase function</th><th>Classic sphere mean</th><th>Method 4</th><th>Classic returns, relative to the energy removed</th></tr>
+<tr><td align="center">1</td><td>isotropic</td><td align="center">1</td><td align="center">1</td><td align="center">4.00</td></tr>
+<tr><td align="center">2</td><td>Mie haze</td><td align="center">1.1533</td><td align="center">1</td><td align="center">4.61</td></tr>
+<tr><td align="center">3</td><td>Mie murky</td><td align="center">1.2468</td><td align="center">1</td><td align="center">4.99</td></tr>
+<tr><td align="center">4</td><td>Rayleigh</td><td align="center">1.0658</td><td align="center">1</td><td align="center">4.26</td></tr>
+<tr><td align="center">5</td><td>Henyey-Greenstein</td><td align="center">1</td><td align="center">1</td><td align="center">4.00</td></tr>
+</table>
+<p>The excess of the classic Mie haze, Mie murky and Rayleigh types over the energy-conserving value is 15.3%, 24.7% and 6.6%.</p>
+
+<p><strong>Measured.</strong> A point light of known power is placed at the centre of a spherical shell of non-absorbing medium, 2 to 4 scene units from the light, and an orthographic camera images the whole shell. The total of the image is compared with the single-scattering energy balance of the shell: the power the medium removes from the light, (1 &minus; e<sup>&minus;&tau;</sup>) times the power, less what the medium removes again from the scattered light on its way out (an exact quadrature). Over radial optical depths &tau; of 0.01 to 1, isotropic and Henyey-Greenstein scattering and three view directions, method 4 returns 1.000 times that balance (0.9995 to 1.0003) and method 3 returns 4.000 times (3.9999 to 4.0012). For a medium lit by an interior <code>light</code> block, method 4 returns 1.002 times. The light that a volume <a href="r3_12.html#r3_12_8">bounce</a> delivers to a surface is 1.000 times the analytic value (0.9996 to 0.9998 for isotropic scattering, 0.996 for Henyey-Greenstein).</p>
+
+<p><strong>Moving a scene between the two.</strong> Both rules keep the transmittance of the original medium.</p>
+<table class="centered" width="640px" cellpadding="4" cellspacing="0" border="1">
+<tr><th>From</th><th>To</th><th>Scattering colour</th><th>Extinction</th></tr>
+<tr><td>method 4</td><td>the classic look, with isotropic or Henyey-Greenstein scattering</td><td align="center">&times; 4</td><td align="center">add <code>extinction 0.25</code>, or multiply the existing value by 0.25</td></tr>
+<tr><td>method 3</td><td>the physical result of method 4</td><td align="center">&divide; 4</td><td align="center">add <code>extinction 4</code>, or multiply the existing value by 4</td></tr>
+</table>
+<p>A classic medium of colour &sigma; with <code>extinction 1</code> and a method 4 medium of colour &sigma; with <code>extinction 1</code> have the same transmittance and differ by 4 in scattered light. Better than converting is stating real coefficients. For a non-absorbing medium, &sigma;<sub>s</sub> is about 3.912/<em>V</em> for a visibility <em>V</em> at the 2% contrast threshold (Koschmieder) and 3.0/<em>V</em> at 5% (the meteorological optical range). Water droplets have a single-scattering albedo above 0.999, so fog, cloud and haze need no absorption: give <code>scattering</code> the coefficient in inverse scene units, in every channel, and leave <code>extinction</code> at 1. Droplets much larger than the wavelength scatter strongly forward, which a Henyey-Greenstein <code>eccentricity</code> of 0.6 to 0.9 reproduces; the Mie and Rayleigh types follow their own fixed shapes.</p>
+
+<p><strong>Worked examples.</strong> The three scenes below, <code>physical_haze_street.pov</code>, <code>physical_haze_torch.pov</code> and <code>physical_haze_sunbeam.pov</code> in <code>scenes/interior/media</code>, are set up in real units: 1 scene unit is 1 m, and every light is entered as luminous intensity in candela, or illuminance in lux, divided by &pi;, so that a white diffuse surface reads in cd/m<sup>2</sup>. Every colour is multiplied by the scene's <code>Exposure</code>; set it to 1 and render with <code>+FH</code> to get those units in the file. The torch and sunbeam scenes each show four copies of the same room, seen from the same place, in the four quarters of one image: the classic <code>method 3</code> medium at the stated coefficients (top left), the <code>method 4</code> medium at the same coefficients (top right), the method 4 medium with the scattering colour &times; 4 and <code>extinction 0.25</code> (bottom left), and an absorbing medium of the same coefficient, which gives the surfaces and the dimming without the glow (bottom right). In each table, &quot;without glow&quot; is the absorbing room, so the surfaces and the dimming are identical in all four; the last two columns divide what scattering adds in the physical and in the &times; 4 room (the luminance minus the one without glow) by what it adds in the classic one.</p>
+</div>
+
+<a name="r3_7_2_2_5_1"></a>
+<div class="content-level-h6" contains="Street Lamp in Night Fog" id="r3_7_2_2_5_1">
+<h6>3.7.2.2.5.1 Street Lamp in Night Fog</h6>
+<p><code>physical_haze_street.pov</code>: a street lamp 6 m above the road in fog with a visibility of 150 m. Like the other two, it shows four copies of the street, seen from the same place, in the four quarters of one image.</p>
+<ul>
+  <li><strong>Units.</strong> 1 scene unit is 1 m. Light colours are in cd/&pi;, so a white diffuse surface reads in cd/m<sup>2</sup>.</li>
+  <li><strong>Fog.</strong> Visibility <em>V</em> = 150 m gives &sigma;<sub>s</sub> = 3.912/150 = 0.026 per metre (at the 5% threshold, 3.0/150 = 0.020). It is written once for every colour channel: <code>scattering { 5, rgb 0.026 eccentricity 0.7 }</code>. The medium does not absorb, because water droplets have a single-scattering albedo above 0.999, so <code>extinction</code> stays at 1. The fog is an object medium filling a box that reaches far past the lit street, so that the road, the buildings and the lamp are inside it; with <code>media_attenuation on</code> the lamp's light is dimmed on its way by the fog as well as the view. Fog droplets scatter strongly forward, which the Henyey-Greenstein type 5 with <code>eccentricity</code> 0.7 reproduces; real fog is often fitted with 0.8 or more.</li>
+  <li><strong>Lamp.</strong> A cut-off LED lamp of about 3000 K with a peak of 900 cd straight down. The colour is the intensity over &pi;: <code>rgb &lt;1, 0.85, 0.65&gt; / 0.868 * 900 / pi</code>, where 0.868 is the luminance of the warm tint, so the colour carries 900/&pi; = 286 cd. <code>fade_power 2</code> with the default <code>fade_distance 0</code> (from version 3.8) makes the colour the value at 1 m and the light falls as 1/<em>d</em><sup>2</sup>. <code>spotlight radius 55 falloff 75</code> is the cut-off optic: full intensity within 55 degrees of straight down, none beyond 75, so the lamp lights no sky.</li>
+  <li><strong>Illuminance.</strong> The lamp is 5.9 m above the road: <em>E</em> = 900/5.9<sup>2</sup> = 25.9 lux on the road below it. A wall 4.9 m to the side, at a height of 2 m, receives 900/(4.9<sup>2</sup> + 3.9<sup>2</sup>) &times; 0.78 = 18 lux.</li>
+  <li><strong>Albedos.</strong> Road 0.12, kerb and pavement 0.25, building 0.35 (<code>pigment { rgb 0.12 }</code> with <code>diffuse 1</code> and <code>ambient 0</code>). Without fog, the road under the lamp is 0.12 &times; 25.9/&pi; = 0.99 cd/m<sup>2</sup> and the wall 0.35 &times; 18/&pi; = 2.0 cd/m<sup>2</sup>; the fog dims both, by e<sup>&minus;0.026 &times; 5.9</sup> = 0.86 from the lamp to the road, and adds its glow.</li>
+  <li><strong>Exposure.</strong> <code>Exposure</code> 0.5: the image shows 0.5<em>L</em> for a luminance <em>L</em> in cd/m<sup>2</sup>.</li>
+</ul>
+<table class="centered" width="900px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="880px" src="images/haze_street.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">A street lamp in night fog, 150 m visibility, as the scene renders it. Top: classic and physical; bottom: physical with the scattering colour &times; 4 and extinction 0.25, and absorption only.</p></td>
+</tr>
+</table>
+<p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Region</th><th>Without glow</th><th>Classic</th><th>Physical</th><th>Physical &times; 4</th><th>Glow, physical &divide; classic</th><th>Glow, &times; 4 &divide; classic</th></tr>
+<tr><td>air beside the lamp</td><td align="right">0.000</td><td align="right">0.416</td><td align="right">0.104</td><td align="right">0.416</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>fog down the street</td><td align="right">0.000</td><td align="right">1.11</td><td align="right">0.279</td><td align="right">1.11</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>road under the lamp</td><td align="right">0.548</td><td align="right">1.46</td><td align="right">0.776</td><td align="right">1.46</td><td align="right">0.250</td><td align="right">0.999</td></tr>
+<tr><td>building wall</td><td align="right">0.770</td><td align="right">1.57</td><td align="right">0.970</td><td align="right">1.57</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+</table>
+</div>
+
+<a name="r3_7_2_2_5_2"></a>
+<div class="content-level-h6" contains="Torch Beam in a Smoky Room" id="r3_7_2_2_5_2">
+<h6>3.7.2.2.5.2 Torch Beam in a Smoky Room</h6>
+<p><code>physical_haze_torch.pov</code>: a torch in a 4 &times; 5 m room, 2.6 m high, full of haze.</p>
+<ul>
+  <li><strong>Units.</strong> 1 scene unit is 1 m; light colours are in cd/&pi;.</li>
+  <li><strong>Smoke.</strong> &sigma;<sub>s</sub> = 0.2 per metre, an optical depth of 1 across the 5 m room and a visibility of 3.912/0.2 = 20 m. The scattering colour is 0.2 in every channel. It is a haze of non-absorbing droplets, like the fluid of a fog machine, so <code>extinction</code> stays at 1. The smoke is an object medium filling the room and reaching into its walls, so that every surface and both lights are inside it; with <code>media_attenuation on</code> it dims the torch and the fill light as well as the view. Droplets near the wavelength of light scatter forward less than fog: <code>eccentricity 0.5</code>.</li>
+  <li><strong>Torch.</strong> An LED with a peak of 3000 cd: <code>rgb Cool * 3000 / pi</code>, with <code>Cool</code> a slightly blue tint of unit luminance. <code>spotlight radius 4 falloff 9</code> is a beam at full intensity within 4 degrees of the axis and none beyond 9. The 15 cd fill light in the ceiling is an ordinary point light, <code>rgb Warm * 15 / pi</code>.</li>
+  <li><strong>Illuminance.</strong> The wall is 3.3 m from the torch: 3000/3.29<sup>2</sup> = 277 lux normal to the beam and, with the wall at 31 degrees to it, 277 &times; 0.85 = 235 lux, which is the &quot;about 230 lux in the spot&quot;. The smoke between them transmits e<sup>&minus;0.2 &times; 3.29</sup> = 0.52 of it, and the view of the wall from the camera, 3.8 m, e<sup>&minus;0.76</sup> = 0.47. The fill light gives the floor under it 15/2.5<sup>2</sup> = 2.4 lux.</li>
+  <li><strong>Albedos.</strong> Walls 0.5, floor 0.3, ceiling 0.6, cabinet 0.25. The wall in the spot is 0.5 &times; 235/&pi; = 37 cd/m<sup>2</sup> without smoke; the floor under the fill light 0.3 &times; 2.4/&pi; = 0.23 cd/m<sup>2</sup>.</li>
+  <li><strong>Exposure.</strong> <code>Exposure</code> 0.05: the image shows 0.05<em>L</em> for a luminance <em>L</em> in cd/m<sup>2</sup>.</li>
+</ul>
+<table class="centered" width="900px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="880px" src="images/haze_torch.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">A torch beam in a smoky room, as the scene renders it. Top: classic and physical; bottom: physical with the scattering colour &times; 4 and extinction 0.25, and absorption only.</p></td>
+</tr>
+</table>
+<p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Region</th><th>Without glow</th><th>Classic</th><th>Physical</th><th>Physical &times; 4</th><th>Glow, physical &divide; classic</th><th>Glow, &times; 4 &divide; classic</th></tr>
+<tr><td>beam, midway</td><td align="right">0.034</td><td align="right">6.95</td><td align="right">1.76</td><td align="right">6.95</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>lit spot on the wall</td><td align="right">9.44</td><td align="right">10.7</td><td align="right">9.75</td><td align="right">10.7</td><td align="right">0.251</td><td align="right">1.001</td></tr>
+<tr><td>wall away from the beam</td><td align="right">0.157</td><td align="right">0.551</td><td align="right">0.255</td><td align="right">0.551</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>floor in front</td><td align="right">0.042</td><td align="right">0.323</td><td align="right">0.112</td><td align="right">0.323</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+</table>
+</div>
+
+<a name="r3_7_2_2_5_3"></a>
+<div class="content-level-h6" contains="Sunbeam Through a Window" id="r3_7_2_2_5_3">
+<h6>3.7.2.2.5.3 Sunbeam Through a Window</h6>
+<p><code>physical_haze_sunbeam.pov</code>: the sun through a 1.6 &times; 1.5 m window into a 5 &times; 6 m room, 3 m high, with dust in the air.</p>
+<ul>
+  <li><strong>Units.</strong> 1 scene unit is 1 m. A parallel light is stated in lux, and its colour is the illuminance over &pi;.</li>
+  <li><strong>Dust.</strong> &sigma;<sub>s</sub> = 0.03 per metre, a visibility of 3.912/0.03 = 130 m and an optical depth of 0.18 across the 6 m room. It is non-absorbing for the comparison, and <code>eccentricity 0.6</code> is a moderately forward-scattering dust. The window opens on the sky, which an atmosphere would extinguish, so the dust is an object medium filling the room, reaching into the walls so that every surface is inside it. It dims the view, and it dims the sun and the ceiling light with <code>media_attenuation on</code> all the way from the lit point to the light: a path of 6 m loses e<sup>&minus;0.18</sup> = 16%, the 2.8 m from the window to the floor 8%.</li>
+  <li><strong>Sun.</strong> 100,000 lux on a plane normal to the beam, 35 degrees above the horizon: <code>rgb SunC * 100000 / pi parallel</code>, with <code>SunC</code> a warm tint of unit luminance. On the floor this is 100,000 &times; sin 35.3&deg; = 57,800 lux. The sky seen through the window is the <code>background</code>, 4000 cd/m<sup>2</sup>. A 1500 cd point light in the ceiling stands in for sky light and bounce light and gives the floor under it 1500/2.85<sup>2</sup> = 185 lux.</li>
+  <li><strong>Albedos.</strong> Floor 0.3, walls 0.6, ceiling 0.7, a box 0.35. The sunlit floor is 0.3 &times; 57,800/&pi; = 5,520 cd/m<sup>2</sup> before the dust dims the sun on its way down and the view of it.</li>
+  <li><strong>Check of the beam.</strong> The glow per metre of path is &sigma;<sub>s</sub><em>E</em><em>p</em>(&theta;). Seen at a scattering angle of 44 degrees, Henyey-Greenstein with <em>g</em> = 0.6 has 4&pi;<em>p</em> = 1.83, so 0.03 &times; 100,000 &times; 1.83/4&pi; = 437 cd/m<sup>2</sup> per metre of beam, before the dust dims the sun on its way to that point and the view of the beam back to the camera.</li>
+  <li><strong>Exposure.</strong> <code>Exposure</code> 0.0004: the image shows 0.0004<em>L</em> for a luminance <em>L</em> in cd/m<sup>2</sup>.</li>
+</ul>
+<table class="centered" width="900px" cellpadding="0" cellspacing="10">
+<tr>
+  <td><img class="center" width="880px" src="images/haze_sunbeam.png"></td>
+</tr>
+<tr>
+  <td><p class="caption">A sunbeam through a window in dusty air, as the scene renders it. Top: classic and physical; bottom: physical with the scattering colour &times; 4 and extinction 0.25, and absorption only.</p></td>
+</tr>
+</table>
+<p>Luminance in cd/m<sup>2</sup>, the mean of a region of the image at 480 &times; 320:</p>
+<table class="centered" cellpadding="4" cellspacing="0" border="1">
+<tr><th>Region</th><th>Without glow</th><th>Classic</th><th>Physical</th><th>Physical &times; 4</th><th>Glow, physical &divide; classic</th><th>Glow, &times; 4 &divide; classic</th></tr>
+<tr><td>beam near the window</td><td align="right">2984</td><td align="right">4850</td><td align="right">3453</td><td align="right">4851</td><td align="right">0.251</td><td align="right">1.001</td></tr>
+<tr><td>beam, mid-air</td><td align="right">13.9</td><td align="right">1759</td><td align="right">450</td><td align="right">1758</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+<tr><td>sunlit floor</td><td align="right">4550</td><td align="right">5117</td><td align="right">4691</td><td align="right">5117</td><td align="right">0.249</td><td align="right">1.000</td></tr>
+<tr><td>wall away from the window</td><td align="right">20.5</td><td align="right">36.3</td><td align="right">24.4</td><td align="right">36.3</td><td align="right">0.250</td><td align="right">1.000</td></tr>
+</table>
+</div>
 <a name="r3_7_2_3"></a>
 <div class="content-level-h4" contains="Sampling Parameters & Methods" id="r3_7_2_3">
 <h4>3.7.2.3 Sampling Parameters & Methods</h4>
@@ -1139,32 +1251,29 @@ media {
 
 <p class="Note"><strong>Note:</strong> From version 3.5 through 3.x, the default <code>method</code> is 3 and the default <code>intervals</code> is 1. With <code>#version 4.0</code> or later, new media default to <code>method 4</code> with automatic resolution. Explicit <code>method 1</code>, <code>method 2</code> or <code>method 3</code> selects the corresponding classic sampling behavior, including under version 4.0.</p>
 
-<p><code>method 4</code> prepares density at a fixed scene-unit cell width. For example, <code>media { method 4 resolution 0.1 scattering { 1, rgb 1 } density { bozo } }</code> uses cells no wider than 0.1 scene units. Omit <code>resolution</code> to choose a width automatically from the container bounds. A smaller positive width retains more spatial detail but increases preparation memory and rendering work; a larger width is coarser and faster. <code>resolution</code> accepts a finite positive number only with method 4. It may appear before or after <code>method 4</code> in the media block. Using it with methods 1, 2 or 3 is an error.</p>
+<p><code>method 4</code> prepares density at a fixed scene-unit cell width. For example, <code>media { method 4 resolution 0.1 scattering { 1, rgb 1 } density { bozo } }</code> uses cells no wider than 0.1 scene units. Omit <code>resolution</code> to choose a width automatically from the container bounds. A smaller positive width retains more spatial detail but increases preparation memory and rendering work; a larger width is coarser and faster. <code>resolution</code> accepts a finite positive number only with method 4. It may appear before or after <code>method 4</code> in the media block. Using it with methods 1, 2 or 3 is an error. A constant medium (no <code>density</code> block) sets its interior's grid only when nothing there varies: beside a varying method 4 medium, a light block or a refraction field the grid follows those, and the constant medium's <code>resolution</code> is ignored with a warning naming its line.</p>
 
-<p>For supported bounded media, method 4 prepares the density once and reuses it for camera rays and media shadowing. Independent media inside CSG groups also receive their own prepared fields. Multiple variable method 4 media can be combined in one interior or in overlapping containers. Integration splits at container bounds and uses the smallest resolved cell width among the variable media present in each portion. A small fine volume does not impose its step size across a distant coarse volume. Prepared variable media contribute only within their container bounds; portions of a ray outside all those bounds are skipped before applying the step limit. Constant media still cover their active ray segment. Constant media with no <code>density</code> block can join this integration without a density cache, even if they specify a classic method. Parallel lights with <code>media_attenuation on</code> can also use prepared optical-depth fields; eligible contributions add to give the total optical depth. Where a constant or coarser scattering medium lit by a <a href="r3_7.html#r3_7_2_2_5">media light</a> shares a portion with a finer prepared medium, its scattered light is found at its own cadence instead of at every fine step, at a step drawn within each stride: a prepared medium's cadence is its own step, a constant medium's is its <code>samples</code> count per portion. Extinction, emission and the scattering coefficient are still taken at every step.</p>
+<p>For supported bounded media, method 4 prepares the density once and reuses it for camera rays and media shadowing. Independent media inside CSG groups also receive their own prepared fields. Multiple variable method 4 media can be combined in one interior or in overlapping containers. Integration splits at container bounds and uses the smallest resolved cell width among the variable media present in each portion. A small fine volume does not impose its step size across a distant coarse volume. Prepared variable media contribute only within their container bounds; portions of a ray outside all those bounds are skipped before applying the step limit. Constant media still cover their active ray segment. Constant media with no <code>density</code> block can join this integration without a density cache, even if they specify a classic method. Parallel lights with <code>media_attenuation on</code> can also use prepared optical-depth fields; eligible contributions add to give the total optical depth. A camera ray takes three steps across each cell of the finest grid it is in, sampled at their midpoints, for extinction, emission, the scattering coefficient and the light of point, spot, parallel and area lights.</p>
+<p><strong>Volume lights and light_samples.</strong> A <a href="r3_12.html#r3_12">volume or surface light</a> with <code>samples</code> <em>N</em> lights a varying method 4 medium at &radic;<em>N</em> &times; <em>M</em> positions per cell width of ray, where <em>M</em> is the medium's <code>light_samples</code> (a multiplier greater than 0, default 1.0) and the cell width is that of the finest grid among the media the ray is in. At <code>samples 16</code> and <code>light_samples 1</code> that is 4 positions per cell width. The positions are evenly spaced, cell width / (&radic;<em>N</em> &times; <em>M</em>) apart, from an offset drawn per light, so a short chord through the corner of a cell takes proportionally fewer; each position takes its own draw from the light and traces its own shadow ray. Each light is spaced by its own <em>N</em>. Where scattering media with different <code>light_samples</code> overlap, the largest applies. Doubling <em>M</em> doubles the cost of a medium's volume lighting. Constant method 4 media, which have no steps, sample camera distance and the light jointly with round(<em>N</em> &times; <em>M</em>) pairs.</p>
+<p>A method 4 medium without a density block uses constant coefficients and prepared layout metadata; it allocates no constant density array. Applicable prepared multiply and subtract fields contribute their layout and sampling step even when the underlying medium is constant. Each density retains its declared representation in a mixed stack. Unsupported requested method 4 fields report an error; methods 1 through 3 retain their selected coefficient evaluation.</p>
+<p>Prepared density payloads are finalized after geometry bounds are resolved, including when eager preparation is off. Functions that need finalized geometry are evaluated during that preparation stage. A field that requires a viewing ray cannot define prepared spatial density and produces an error before rendering. Prepared camera and shadow queries read the published interpolant; they do not replace rough grid samples with procedural density evaluation.</p>
+<p>Declaring method 4 selects prepared transport rather than a best-effort optimization. Camera, shadow and photon paths use the published representation. A mixed stack reads method 4 density from its prepared payload and explicitly selected legacy density from its evaluator, with a common integration partition respecting prepared detail and legacy sample requirements. Constants use analytic Beer and glow transfer without allocating constant voxel arrays. Unbounded constant atmosphere is supported; varying prepared fields and unbounded varying mixtures require an explicit finite region.</p>
+<p>Native photon method 1 requires a positive beam width before entering participating media. A nonparallel source starting inside prepared scattering media is rejected before rendering; use photon method 2 for that configuration. For a finite emitting volume, method 1 conservatively requires certified source-origin bounds disjoint from the medium bounds. This certification is a support restriction, not an assertion that overlapping bounding regions necessarily contain emitting material. Photon method 2 supports sources starting inside finite media.</p>
 
 <p>The optical-depth cache is an additional acceleration for eligible parallel-light shadow rays. Point lights, area lights, cylinder lights, and scenes containing portals cannot use this cache. Each medium has at most four light-cache entries; additional lights cannot acquire an entry. A light-aligned optical grid can also exceed its 1,000,000-cell limit even when the density grid fits. In these cases, supported shadow rays still march through the prepared density field. Losing the optical-depth cache alone does not cause classic fallback; prepared shadow marching is subject to the density-field eligibility and step limits below.</p>
 
-<p>The prepared field is an approximation and can miss details smaller than its cells; reduce <code>resolution</code> to retain finer structures. A fine width applies throughout its container bounds, so a large container with a small requested width can require excessive memory. A grid that would need more than the <a href="r3_4.html#r3_4_1_18">prepared_media_cells</a> limit is widened to the coarsest width that fits, with a warning naming what was requested and what fitted.</p>
+<p>The prepared field is an approximation and can miss details smaller than its cells; reduce <code>resolution</code> to retain finer structures. A fine width applies throughout its container bounds, so a large container with a small requested width can require excessive memory. A grid that would need more than the <a href="r3_4.html#r3_4_1_17">prepared_media_cells</a> limit is widened to the coarsest width that fits, with a warning naming what was requested and what fitted.</p>
 
-<p>Some work still falls back to classic sampling, using the media's classic quality settings:</p>
-<ul>
-<li>A variable medium using method 1, 2 or 3 overlaps a variable method 4 medium. Select method 4 on all overlapping variable media to enable prepared integration. Only media that take part count: <code>subtract</code> and <code>multiply</code> media, and media a <code>replace</code> has removed, are not tested (see <a href="r3_7.html#r3_7_2_1_9">Media Mix</a>).</li>
-<li>The density field cannot be prepared, including unsupported fields or negative or non-finite values rejected by the cache, or no unique finite container is available.</li>
-<li>Photon propagation requires classic media sampling.</li>
-</ul>
-<p>A ray segment that would need more than 4096 prepared integration steps does not fall back: the march runs coarsened, at a wider resolution chosen so the steps fit, and warns once naming the fitted resolution. Camera integration uses steps one third of the selected cell width; prepared shadow marching uses the cell width. Splitting long containers or choosing a coarser width avoids the coarsening.</p>
-<p>Runtime fallback warnings report the reason, resolution and container bounding box, when available. Preparation failures are reported once for each affected field, so one oversized volume does not hide another. Other runtime reasons are reported on their first occurrence per scene; a single warning can therefore represent many affected rays. Check these warnings when a method 4 render is unexpectedly slow. Changing classic <code>samples</code> does not repair a failed prepared field.</p>
-
+<p>Requested method 4 never switches to an old integrator. Unsupported preparation fails before rendering. Explicit methods 1 through 3 can evaluate their own densities in a mixed stack while method 4 continues reading its prepared payload. Integration limits can coarsen the partition with a diagnostic; they do not alter the authored coefficients or select another method.</p>
 <p>The public fixtures <code>tools/bench/media-prepared-combinations.pov</code> and <code>tools/bench/media-prepared-fallback.pov</code> provide small comparisons. Both accept <code>Declare=Method=4</code> (prepared) or <code>Declare=Method=3</code> (classic), and <code>Declare=Samples=64</code> for a more expensive classic reference. Use <code>+W96 +H64 +PR -A</code> for a small render.</p>
 <ul>
 <li>In <code>media-prepared-combinations.pov</code>, <code>Mode=0</code> stacks two variable media and one constant medium; <code>Mode=1</code> combines their coefficients into one equivalent density. Compare these images. <code>Wrapped=1</code> places the containers inside a union; it should give the same image as <code>Wrapped=0</code>. <code>Mode=2</code> and <code>Mode=3</code> repeat the pair with two overlapping containers. The stacked variable media request <code>CellSize</code> and <code>CellSize/2</code>; the equivalent medium requests <code>CellSize/2</code>. The transport equations match, though preparation and integration can introduce small numerical differences.</li>
-<li>In <code>media-prepared-fallback.pov</code>, <code>Mode=0</code> exceeds the density-grid limit and is coarsened to the widest width that fits, <code>Mode=1</code> overlaps classic variable media, and <code>Mode=2</code> exceeds the ray-step limit in a narrow, long container whose grid fits and marches coarsened; <code>Mode=3</code> exercises classic photon propagation. Each method 4 case should warn for its intended reason; method 3 is the classic comparison. <code>CellSize</code>, <code>ClassicOverlap</code> and <code>SegmentLength</code> allow each limit to be removed explicitly.</li>
+<li>In <code>media-prepared-fallback.pov</code>, <code>Mode=0</code> exceeds the density-grid limit and is coarsened to the widest width that fits, <code>Mode=1</code> overlaps classic variable media, and <code>Mode=2</code> exceeds the ray-step limit in a narrow, long container whose grid fits and marches coarsened; <code>Mode=3</code> exercises classic photon propagation. Coarsening cases report their fitted resolution; method 3 is the explicitly selected comparison. <code>CellSize</code>, <code>ClassicOverlap</code> and <code>SegmentLength</code> allow each limit to be removed explicitly.</li>
 </ul>
 
 <p><code>tools/bench/media-prepared-boundary.pov</code> checks bounded shadow integration. Moving its invisible transparent receiver from <code>Distance=2</code> to <code>Distance=200</code> must not extend the prepared medium or change its illumination. With <code>Wide=1</code>, a larger coarse volume overlaps the fine one; compare <code>Distance=200</code> and <code>Distance=400</code> to exercise separate step sizes within one ray.</p>
 
-<p>The classic controls <code>intervals</code>, <code>samples</code>, <code>jitter</code>, <code>aa_level</code>, <code>aa_threshold</code>, <code>confidence</code>, <code>variance</code> and <code>ratio</code> apply to methods 1, 2 and 3, and to method 4 when it falls back to classic sampling. They do not change quality on a prepared method 4 path. For method 4, adjust quality with <code>resolution</code>; omit it to use the automatic width. To keep classic sampling under version 4.0, specify <code>method 3</code> (or explicitly choose method 1 or 2).</p>
+<p>The classic controls <code>intervals</code>, <code>samples</code>, <code>jitter</code>, <code>aa_level</code>, <code>aa_threshold</code>, <code>confidence</code>, <code>variance</code> and <code>ratio</code> apply to methods 1, 2 and 3, but not to prepared method 4. They do not change quality on a prepared method 4 path. For method 4, adjust detail with <code>resolution</code> (omit it to use the automatic width) and the grain of volume lighting with <code>light_samples</code>. To keep classic sampling under version 4.0, specify <code>method 3</code> (or explicitly choose method 1 or 2).</p>
 
 <p>Sample <code>method 3</code> uses adaptive sampling (similar to adaptive anti-aliasing) which is very much like the sampling method used in POV-Ray 3.0 atmosphere. This code was written from the ground-up to work with media. However, adaptive sampling works by taking another sample between two existing samples if there is too much variance in the original two samples. This leads to fewer samples being taken in areas where the effect from the media remains constant. The adaptive sampling is only performed if the minimum samples are set to 3 or more.</p>
 

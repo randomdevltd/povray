@@ -1,0 +1,1 @@
+sphere { 0,1 interior { refraction { function { 0.1 } detial 0.06 } } }

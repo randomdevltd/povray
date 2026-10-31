@@ -120,8 +120,7 @@ The focused fixture is `tests/render/progressive_volume.pov`, combining a media
 emitter, a method-4 scattering receiver and a refractive target. The method-4
 lighting stride previously omitted photon gathers: its 24×24 mean linear value
 was 0.00481 versus 0.01939 with classic media sampling. The registered regression
-fails on that version. Direct light keeps its coarse stride while photon gathers
-now run at every coefficient sample.
+fails on that version. Photon gathers now run at every coefficient sample.
 
 These measurements used `+W24 +H24 +PR -A +WT1 +FP16 File_Gamma=1`, GCC 15,
 and the same scene with `Declare=Heat=0`. The development point fallback is built
@@ -421,9 +420,9 @@ interval against 10.1 before, at 1.3 Gcycles against 7.3 for a 64×48 render, wi
 
 `method 3` explicitly selects classic adaptive sampling, including under version 4.0. The automatic mode uses an internal unset width until container bounds are known, then chooses the larger of the longest box side divided by 128 and the cube root of box volume divided by 500000. This is a memory-limited starting resolution, not a bound on image error. `resolution` accepts a finite positive value only with method 4; it can appear before or after `method 4`, and is an error with a classic method.
 
-While preparation succeeds, `resolution` is the quality dial for camera and shadow integration: a smaller positive width keeps more detail and takes more preparation, memory and steps; a larger width is cheaper and coarser. An explicit positive value overrides the auto width. The classic sampling controls (`intervals`, `samples`, `jitter`, `aa_level`, `aa_threshold`, `confidence`, `variance` and `ratio`) are parsed but ignored on the prepared path. If preparation falls back or the ray is a photon ray, classic method 3 evaluation uses those controls without changing the stored method. Explicit methods 1, 2 and 3 select classic behavior throughout.
+While preparation succeeds, `resolution` is the quality dial for camera and shadow integration: a smaller positive width keeps more detail and takes more preparation, memory and steps; a larger width is cheaper and coarser. An explicit positive value overrides the auto width. The classic sampling controls (`intervals`, `samples`, `jitter`, `aa_level`, `aa_threshold`, `confidence`, `variance` and `ratio`) are parsed but ignored on the prepared path. Explicit methods 1, 2 and 3 select classic behavior throughout.
 
-The first stage uses a fixed dense grid with a cap of one million density cells and one million cells per optical grid. Up to four optical grids are kept per medium. The field covers the container box; the container geometry clips ray segments and optical-depth construction, so field interpolation does not dilute density at a boundary. An unbounded or degenerate container, an unsupported pigment, non-finite or negative density, negative extinction, or a grid over the cap uses the classic path. Multiple simultaneous media and rays that need over 4096 steps also use classic evaluation. Portals, point lights and area lights do not use a light-aligned optical grid. A density grid is built across the `+WT` threads in z slabs, and each optical-depth grid in light-aligned columns (grids of 4096 cells or more), each cell by one thread, so a grid is the same on any thread count. With eager preparation (the default, see below) a density grid is filled before the render, starting on spare threads during the parse; with it off, for a density that tests an object, and for every optical-depth grid, construction waits for the first ray that needs the grid and is included in that trace. Subsequent rays reuse it. This is a finite-resolution approximation: subcell sampling can miss thin features and softens shadow edges. Reducing the cell width approaches the underlying continuous field where it is well behaved, but need not reproduce classic media's finite quadrature exactly.
+The first stage uses a fixed dense grid with a cap of one million density cells and one million cells per optical grid. Up to four optical grids are kept per medium. The field covers the container box; the container geometry clips ray segments and optical-depth construction, so field interpolation does not dilute density at a boundary. Method 4 never falls back to classic evaluation: every ray that a method 4 medium affects takes the prepared path, and a medium whose field was not built is an error. A grid that would exceed the cap is built at the widest cell width that fits, and a warning names the `prepared_media_cells` value that avoids the coarsening. A ray whose march would need more than 4096 steps runs at a uniformly coarser step with a warning. A method 4 medium with varying density in an unbounded, inverted or otherwise unusable container stops the render with "Prepared varying density requires finite usable bounds." A negative or non-finite density sample anywhere in the grid, a negative or non-finite extinction, and a pigment that cannot be sampled as a density also stop the render with an error; negative density is not clamped. Overlapping method 4 media render prepared, with the ray split at the boundaries of each medium. Portals, point lights and area lights do not use a light-aligned optical grid. A density grid is built across the `+WT` threads in z slabs, and each optical-depth grid in light-aligned columns (grids of 4096 cells or more), each cell by one thread, so a grid is the same on any thread count. With eager preparation (the default, see below) a density grid is filled before the render, starting on spare threads during the parse; with it off, for a density that tests an object, and for every optical-depth grid, construction waits for the first ray that needs the grid and is included in that trace. Subsequent rays reuse it. This is a finite-resolution approximation: subcell sampling can miss thin features and softens shadow edges. Reducing the cell width approaches the underlying continuous field where it is well behaved, but need not reproduce classic media's finite quadrature exactly.
 
 `tools/bench/media-self-shadow.pov` selects the mode with `Declare=Fast=1` and its cell width with `Declare=CellSize=0.1`. `tools/bench/media-fast-combinations.pov` exercises several containers, overlapping media, turbulent and function densities, emission, absorption, scattering, two parallel lights and an optional area light (`Declare=Area=1`). Compare paired 16-bit PPM files with `tools/bench/compare-media-fast.py`; use `+PR -A` at the same size and sampling settings. `distribution/scenes/interior/media/media5.pov` is a stock no-opt-in regression scene.
 
@@ -1450,6 +1449,107 @@ does the same until σ·τ passes 15, so this is not a case of its own. Against 
 at 2896; its disc integral is within 10⁻⁴ out to 2896, and
 its ratio through to the far face 2.6% low. It is left as it is.
 
+## Adaptive surface bounce nodes
+
+A passive surface `light { bounce }` stores, per order, the light arriving at nodes on its surface, not the light
+leaving: front and back sums of L·|cos θ|^brilliance for each brilliance its materials use. Where the field is read,
+the surface's own diffuse layers are evaluated at that point, so a texture costs no nodes and is exact.
+
+Nodes are seeded once for the whole scene. Every bounce surface is drawn by area (`SurfaceGeometrySampler::SampleArea`,
+eight draws per expected node), the baseline spacing r₀ is set so 4096 nodes of a maximal Poisson disc set cover the
+scene's total bounce area, and each surface's draws are thinned to such a set, a draw kept only when no node of the same
+sheet (normals within 60°) lies within r₀. A node's area is its share of the area draws nearest it.
+
+Each order refines level by level, to r₀/64. A node starts with four draws per source, the node itself first, each other
+from a point drawn on the surface within half its spacing (a Halton sequence on the tangent disc, rotated by the node's key,
+projected along the normal); a draw that finds no surface or lands inside an opaque solid is dropped, so its value is the
+mean over the reachable disc and its draws give a standard error. A node splits
+when, relative to the local irradiance max(own, predicted):
+- between nodes, its value differs from the leave-one-out prediction of its neighbours by more than 10%;
+- within the node, the two halves of its disc differ, beyond what the neighbours' gradient explains, by more than 10%
+  (a shadow edge or a contact crossing it);
+- its light comes from closer than half its spacing (contribution-weighted harmonic mean of connection lengths).
+The first two must also exceed the 99.9% Student t quantile times their standard error, the prediction's and the
+gradient's included, with the t quantile taken at the fewest draws among the node and its neighbours and a spread trusted
+only from eight draws. A difference that is large but not yet certain, or a value whose standard error exceeds 10%,
+doubles the node's draws instead, to at most four times what resolving the tolerance needs and never above 64, so the
+light's `samples` do not change refinement. A split parent becomes a node of the next level and is measured again. Children are drawn about the parent within its own cell and kept as a Poisson disc set at half its
+spacing; the parent's area is shared by draws. Splits are decided per level from per-node results and applied in a fixed
+order, so the field is the same on any thread count; all lengths are ratios of r₀, and the shadow rays of node draws use
+no absolute offsets, so it is the same at any scale.
+
+Surface bounce fields draw on the prepared media cell budget: as many bytes as that many colours, over every order,
+each order allowed an equal share of what is left. When it binds, a level's splits are taken by error times area per
+byte, most first. Each order reports its nodes, levels, MiB and time (refinement + bridge) on a line of its own,
+`Bounce oN: ...`, with its nodes per level and how many splits each criterion asked for.
+
+Reads find the nine nearest nodes of the surface in a k-d tree, by distance plus 4·spacing²·(1 − n·nᵢ) plus
+16·((n + nᵢ)·Δ)², so another sheet or a stacked parallel face is far; the kernel (1 − d²/d₉²)² times (nᵢ·n)² is corrected
+to reproduce planes in the tangent coordinates (moving least squares) and the result kept within the neighbours' range.
+The subsurface bridge takes these nodes and areas as its patches; a patch whose normals spread past the cloud cone
+splits by facing rather than position.
+
+## Subsurface light leaving surface bounce nodes
+
+A surface `light { bounce }` on a method 2 object emits, each order, what its nodes send on: the diffuse reflection of
+the light the order's surface pass gathers at each node, and subsurface light. The subsurface part shaded every node
+through the ordinary method 2 path, so each node opened a point cloud over the object, lit afresh by every source of the
+previous order. Preparation has no camera, so the cloud took no pixel term and its spacing fell to the diffusion floor,
+a 128th of a cell. On a bowl of `tools/bench/sslt-bounce-shell.pov`'s material and size (0.2 mm wall, `mm_per_unit 10`)
+in a scene of 60 emitters and scattering media, that is 0.02 mm, about 200 points per bounce node, each lit by 4
+connections per source: 25 ms of thread time a point, 88% of it shadow rays through the media, and well over half an
+hour for two such shells.
+
+The nodes are now the cloud. A node's entering light comes from the beams the surface pass already holds:
+E = Σ L·|cos θ|·Ft(cos θ, η)/π, from either side, the material receiving from its exterior as a cloud point does; a
+node on a sheet takes none, and one there sends none. Its patch is a disc of its area. Light
+diffuses only between nodes of one object and interior, as a cloud is one object's: each such group has its own tree of
+median splits, and a group of patches inside the cloud tree's cone whose area is under `error_bound` times its squared
+distance is taken as one disc. A patch keeps its mean E in double precision; one of no area is skipped.
+
+The light reaching an exit node is its own disc's closed-form profile integral (`RdDisc`, with the thin-part disc
+ratio) times its own E, plus, over every other patch in reach, that patch's E times the profile integrated over its
+disc. The disc lies d along the exit face and h off it. It is cut into annuli about the exit point (`subsurfacepatch.h`):
+each takes the difference of the closed-form cumulative integral at its two distances √(s² + h²), times the exact share
+of its area inside the disc (from the area two circles share), and spans an eighth of the length the profile or the
+disc's edge changes over there: its distance from the exit point, at least the shallowest depth z_r, at most the fastest
+decay length 1/σtr, and at most the disc's radius. A far disc's annuli then sum to Rd times its area, a near one's to its
+part outside the exit disc, and a disc much wider than the profile is resolved at the profile's scale, so no rule switches
+between forms. What lies within the exit disc's radius in three dimensions is left out, the exit disc standing for its own
+face there; a patch more than half a thin part's depth below the exit face lies on the far face and keeps all of it, with
+the layer table's ratio through to that face at each annulus, as a cloud point there does. Facing faces with air between
+them (each in front of the other, normals opposed) exchange nothing. The thin part's depth is found by a material run
+from a step inside the exit point at least as long as the entry probe's, from the part's own surface accuracy and the
+coordinates' precision, so it does not start outside the material in a scene of small units. Flesh and skin, the layers'
+weight and the result's type are unchanged. The tree is built on one thread, and every node's light and radiance are
+computed from its own index and that tree alone, so the field is the same on any thread count.
+
+`tests/source/subsurface_patch.cpp` checks the annuli against a fine quadrature of a dipole profile over 76 discs, from a
+twentieth of the decay length across to 13 times it, centred on the exit point to beyond its edge, in and off the exit
+plane and with and without the exit disc cut out: all are within 0.48%. Eight equal annuli, as at first, were off by up to
+9%, and by 3% on the widest discs.
+
+The bridge traces no shadow rays: per node one material run for the thin part's depth, and its texture. Against the cloud
+bridge on `sslt-bounce-shell.pov`, node by node (luminance, new over old minus one):
+
+| | area-weighted total | median | 5th / 95th percentile |
+|---|---|---|---|
+| Case 0, 16 samples a source | +2.1% | +0.1% | −31% / +44% |
+| Case 0, 128 samples a source | +1.6% | 0.0% | −23% / +33% |
+| Case 1, point lights | +0.6% | −1.3% | −28% / +32% |
+| Case 2, a light in the cavity | +0.7% | −0.7% | −32% / +35% |
+| Case 3, union of two materials | −0.8% | −1.2% | −19% / +22% |
+
+In Case 2 the outer face, lit only through the wall, totals +0.4%, and the inner +1.4%. In Case 3 the two spheres total
+−1.8% and +0.2%, and the diffuse part's nodes send no subsurface light in either.
+
+The spread is at the node scale. The nodes' E carries the surface pass's sampling noise (its node-to-neighbourhood rms
+falls from 0.25 to 0.10 from 16 to 128 samples), and where the profile is narrower than the node spacing (here 1/σtr is
+0.05 to 0.16 mm against 0.28 mm between nodes) a node's light is mostly its own E, while the cloud averaged 200 points.
+What is left is detail finer than the node spacing, which the bounce field cannot hold either: the open rim, a strip
+0.2 mm wide, differs most (46 nodes, totals +63% in Case 0, −43% in Case 1, −25% in Case 2). In Case 1 at 256 samples the
+floor, lit only by the bowl, receives 1.6% less in all, median pixel −0.2%.
+
 ## Mesh memory
 
 Large meshes ran out of memory before render time mattered: a 10.4-million-triangle mesh took about 1.4 GB. Each
@@ -1888,7 +1988,7 @@ any-root shadow search saves 1.7% on `isocacti`, 9% on the noise sphere and 8% o
 
 Built with the same flags, single-threaded, this branch draws every scene above exactly as `performance` does, pixel
 for pixel, and so does it for `incdemo/i_internal.pov` (frames 10–15), the noise sphere with max_gradient halved, and
-`distribution/scenes/objects/superel-iso.pov`, which draws superel1 and superel2 as `f_superellipsoid` isosurfaces
+`tests/render/superel-iso.pov`, which draws superel1 and superel2 as `f_superellipsoid` isosurfaces
 alone and under reflection, glass, bumps, area lights, media, radiosity and photons; their coverage matches the
 native superellipsoid at every pixel. Batched and one-point evaluation return the same bits, and `tests_fnbatch.cpp`
 checks the VM's library maths against `std::` to 1e-12 over ±200. The caverns, with a red background, show no red,
@@ -1938,6 +2038,88 @@ averaged apart, so light through an upper layer times the layer under it is a pr
 two patterns are unrelated; metallic reflection reads the averaged colour; `texture_map` and `material_map` pick their
 texture at the hit point (aliased like an unfiltered ray, not biased). Scenes with `assumed_gamma` other than 1
 average, like antialiasing, in their working space.
+
+`+TF` filters normals over the same footprint and taps too (`Texture_Filter_Normals=off` opts out, as `Texture_Filter_Pigments=off` does for pigments). Each layer's `normal` is perturbed at every tap, and lighting
+uses that spread of normals instead of the one at the pixel centre. Diffuse light is the mean of each tap's own
+response (cosine, brilliance, Fresnel, back-side diffuse), which is exactly what supersampling the footprint gives
+wherever the light is the same across it; a light is tested only where the taps' mean normal faces it, so no shadow
+ray is cast for taps alone, and taps facing a light their mean faces away from get none of its direct light. Averaging the normals first and
+taking the mean's length as a dimming factor would cost one evaluation instead of one per tap, but is wrong at every
+terminator, where some taps face the light and some do not, and on grazing light those are most of the bumpy pixels;
+the per-tap loop is dot products, no rays. Highlights cannot be averaged from a few taps without glinting, so
+`specular` and `phong` come from the taps facing the light: their share scales the highlight, their mean is its
+normal, and their spread widens its lobe (Toksvig: angular variance (1 − |mean|) / |mean| added to the lobe's,
+keeping its integral). A tilt turns phong's mirror direction twice as far in the plane of incidence and by the
+eye's cosine across it, so phong widens by those two variances. Reflected and refracted rays leave along the taps'
+mean normal; their count is unchanged.
+
+On a checker of bumpy and flat tiles running to the horizon (`tests/render/texture_filter_normal.pov` at
+320×240, one ray a pixel), the mean OkLab error against a 64-sample reference falls from 22.1 to 5.4 (×1000) with
+`specular` and from 26.1 to 10.4 with `phong`; the mean brightness is within 1.5%. On a plane with `normal { granite .5 scale .16 }` lit by a grazing light, diffuse alone falls from
+198 to 17 with the mean within 0.5%, and specular alone from 62 to 17, with the highlight 14% dim: the facing
+taps' Gaussian stands in for a skewed distribution. The lobe widens for the whole footprint, so a pixel half
+flat and half rough blurs its flat part's sharp highlight too. In a lava scene whose rock has sub-pixel granite
+bumps, the static speckle (high-pass of the rock at 1024 light samples, % of its mean) falls from 75 to 34 at
+160×90, against 36 in a 4×4 supersampled reference, and from 83 to 33 in a window of a 640×360 frame; the
+rock's RMS difference from the reference, less light-sampling noise, falls from 412% to 148% and from 312% to
+61%. The cost is the normal's pattern evaluated at each tap, 8 to 72 times per bumped hit: on the checker, a
+scene that is nothing but a bumped plane under two point lights, `+TF` takes 6 times the CPU of `+TF` with `Texture_Filter_Normals=off` (three
+alternated pairs, one thread). Perturbing the centre's normal only where the taps' mean vanishes or the pigment reads
+it, computing each tap's eye-side `fresnel` loss once for all lights and copying the hit once per tap take 4.6% off
+that plane and 7.5% off it with diffuse `fresnel` under an area light (three alternated pairs, one thread). The
+surface bounce field still looks light up by the unperturbed normal, and radiosity by the mean normal.
+
+Every other term that reads the perturbed normal uses the taps too. Reflectivity (`fresnel`, falloff, `metallic`),
+the Fresnel loss of ambient, emission and radiosity, and `conserve_energy` are averaged per tap. Iridescence is a
+cosine of each tap's light and eye cosines; with the facing taps' mean m and variance v of that sum, the mean of
+cos(k s) for Gaussian s is cos(k m) exp(−k² v / 2), which needs only two dot products a tap. A shadow ray crossing an
+interior with faked `caustics` carries the lit pixel's footprint, converging on the light, to the crossing and
+averages the caustic term over taps there. `aoi` and `slope` pigments on a bumped layer see each tap's normal.
+Reflected and refracted rays still leave along the mean normal, with no extra rays, but their direction
+differentials grow in quadrature by the spread: a tilt variance V spreads a reflected direction by twice the tilt
+in the plane of incidence and by the eye's cosine across it, and a box one footprint wide has variance 1/12, so
+each differential gains √(12 V) times that tilt's image, over the footprint scale. What the ray hits is then
+filtered over the blur the bumps cause.
+
+At 320×240, one ray a pixel, mean absolute error against a 16-sample reference (×1000 of full scale), the earlier
+normal filter against this one: a bumpy chrome ball over a checker 36.6 → 29.4 on the ball (94.2 unfiltered),
+its mean within 0.2%; iridescent, falloff-reflecting bumps 49.8 → 25.2 (59.0 unfiltered; the mean normal's
+iridescence gives 31.2, a per-tap cosine 25.7 at 20% more CPU, the Gaussian 3%), mean within 1%; a floor under
+bumpy caustic glass 28.4 → 4.4, mean within 0.1% where it was 2.4% dark; an `aoi` pigment on minified bumps
+21.8 → 5.3. On the bump checker, a scene with none of these terms, the image is unchanged to the byte. In the stock
+`benchmark.pov` at 160×120 the 15% of pixels these terms change keep their error, 47.5 against 47.6: its error is
+not in the terms filtered here. Only iridescence costs more than the normals' own taps:
+on the iridescent plane the Gaussian takes 3% more CPU than the mean normal's single cosine.
+
+A ray with differentials that leaves the scene filters the `sky_sphere` pigments over its direction footprint, with the
+same taps as a surface pigment; a reflected ray's taps that dip below the surface it left are mirrored back above it, as
+the ray is. Reflected rays off bumps carry the footprint widened by the bumps' spread, so a sky seen in them is averaged
+over the blur the bumps cause instead of point-sampled along the mean normal's mirror direction. ꟻLIP at 320×240
+against 16 samples per pixel: the bumpy chrome sea of `Sea_blue_sky.pov` falls from 0.0221 to 0.0149 mean (sea half
+0.0408 to 0.0264), its 90th percentile from 0.096 to 0.044 and its pixels over 0.1 from 9.6% to 3.8%; a bumpy chrome
+ball under a sky gradient from 0.0421 to 0.0401 and its pixels over 0.3 from 0.8% to 0.2%. Where part of a footprint
+would meet an object, the sky stands in for it: on that ball the band where the reflection turns from sky to floor
+reads brighter, 0.0755 to 0.0788 over the ball, and through a bumpy glass ball 0.1308 to 0.1353. No ray is added; the
+cost is the sky's taps, eight where the footprint agrees and up to 72 where it does not, +16%, +14% and +9% CPU on the
+three scenes (alternated pairs, one thread). A sky of plain colour, or a scene without one, renders as before.
+
+With normals filtered, a refracting hit whose footprint's mean normal is past the critical angle, while some of its taps'
+normals are not, refracts and reflects as any refracting hit does: the reflection at the footprint's averaged Fresnel
+share and the refraction at the rest, bent about the mean of the taps that transmit. Total reflection about the mean
+normal dropped the transmitting taps' light, and inside a bumpy glass ball its path kept the smooth sphere's angle at
+every bounce, so it never escaped and returned black. The hit reflects totally only where no tap transmits; where the
+light left to transmit is under the ADC bailout the refraction is not traced at all, as without `+TF`. A totally
+reflected ray is added unfiltered, so under `+TF` it is traced at the hit's weight, not the transmitted share's, which
+cut it short at the bailout. On that ball at 320×240, ball pixels under 60/255 go from 25 with total reflection to 2 at
+one sample a pixel, and from 5 to 0 at four; mean absolute error over the ball against a sixteen-sample render without
+`+TF` goes from 50.1 to 43.5 at one sample and from 40.1 to 38.0 at four (×1000 of full scale), and the mean is 4 and 6
+above the reference's. The two pixels left are paths that reach `max_trace_level` 8 inside the ball; at 64 they are 68
+and 183. Tracing both rays at those hits adds 5.7% rays (shadow tests included) at one and four samples, 6.3% and 6.2%
+more than the same renders without `+TF`. Glass without Fresnel reflection refracts at its full filter there, as its
+reflection does not take the totally reflecting taps' share.
+
+Degenerate footprints fall back without error: a tap whose perturbed normal has zero length takes the raw normal, taps whose mean normal has zero length light the layer by the centre's normal, taps of no total opacity keep their plain mean colour, a ray within 1e-12 of grazing or a footprint under 1e-9 of the hit's distance from the origin plus the ray's length is not filtered, and a grazing footprint is capped at 64 pixel widths.
+
 ## Function-density point batches
 
 Function densities reuse one function context for each density batch. Eligible functions with SIMD
@@ -2130,8 +2312,8 @@ alone left the text mesh no faster and 57 MB larger, which the bounds and `strto
 ## Ray size
 
 `Ray` is copied whole for every reflected, refracted and transmitted ray, every shadow ray and each piece of a
-shadow ray that crosses a surface, and every media and subsurface sample ray, and copies sit in the frames of the
-recursive trace. Every byte a member adds is written and read again on each of those copies, in every scene,
+shadow ray that crosses a surface, and every media, subsurface and bounce sample ray, and copies sit in the frames
+of the recursive trace. Every byte a member adds is written and read again on each of those copies, in every scene,
 whether or not the scene uses the feature it serves. So nothing joins `Ray` without counting instructions over the
 whole scene set before and after.
 
@@ -2140,11 +2322,13 @@ whole scene set before and after.
 | POV-Ray 3.8 | 80 |
 | ray differentials, path keys, media budget and light, prepared set | 224 |
 | differentials flag and child counter packed beside the ray type bits | 208 |
+| plus surface endpoints, root query, key watch, shadow window, receiver radius | 392 |
+| shadow window flag packed, key watch a bit, endpoint without a normal, root query in the ticket | 336 |
 
 What belongs elsewhere: state for one call, such as a query, a budget or a flag for one test, goes in an argument,
-in `Trace` or in `TraceTicket`; state of a hit goes in `Intersection`. A member belongs in `Ray` only when the
-copies made from a ray need it. A `static_assert` in `ray.h` fails the build on x86-64 GCC and Clang where `Ray`
-grows past 208 bytes.
+in `Trace` (as `shadowReach` does) or in `TraceTicket`; state of a hit goes in `Intersection`. A member belongs in
+`Ray` only when the copies made from a ray need it. A `static_assert` in `ray.h` fails the build on x86-64 GCC and
+Clang where `Ray` grows past the last size in this table.
 
 To measure the size, compile a probe in the build environment: `template<int N> struct SizeIs;` and
 `SizeIs<sizeof(pov::Ray)> probe;` after including `core/render/ray.h` fail with the size in the message. To measure
@@ -2216,3 +2400,26 @@ Swept 2026-09-24: all 293 visible forks and the known derivatives.
 - Height fields: their own block walk.
 - Mesh memory: the tree is now 55% of a mesh; 8-bit blocks are the next saving.
 - A multi-occluder shadow cache saved 3% but changed shadows in ways not yet explained; it is not in this branch.
+
+## Scene preparation progress
+
+The user-facing description is in the manual, section 3.2.7.6 (`doc/html/r3_2.html`); this section keeps the format and its rules.
+
+Preparation reports itself as information lines, one event per line, each short enough with the console's
+`<Task> Info: ` prefix to stay under 80 columns:
+
+    Preparation plan: <phase>[:<units>] <phase>[:<units>] ...
+    Preparation: <phase> <done>/<total> <elapsed>s[; <step>]
+    Preparation: <phase> finished <elapsed>s
+    Preparation: <phase> stalled <idle>s at <done>/<total> <elapsed>s[; <step>]
+
+A phase is one of `parse meshes media atmosphere lights bounce photons`, in that order. A plan line lists the phases
+about to run, with their work units where they are known then: scene preparation gives one, and a render that
+shoots photons another for `photons`. `parse` gives only its `finished` line; every planned phase gives at least
+its `finished` line. `<done>/<total>` counts the phase's meshes, interiors, media, lights, bounce nodes and cells
+(the subsurface light of bounce surfaces included, its step ending in `subsurface`) or photons; the total is `?`
+where it is not known ahead. Times have one decimal. A phase reports `0/<total>` as it starts, then at most every
+2 seconds, then its count and `finished`. A count that has not moved for 60 seconds gives the `stalled` line, again
+every 60 seconds while it stays flat; the phase is still running. `<step>` is terse free text, cut to fit:
+
+    Preparation: bounce 18432/61440 4.0s; o2/2 t3/7 surface

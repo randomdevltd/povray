@@ -1280,6 +1280,9 @@ void Parser::optimise_call(ExprNode *node)
         case ATAN2_TOKEN:
             have_result = false;
             break;
+        case SCALE_LUMENS_TOKEN:
+            have_result = false;
+            break;
         case POW_TOKEN:
             have_result = false;
             break;

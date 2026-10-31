@@ -38,8 +38,150 @@ NOTE: This release cycle has been redesignated v3.8.0. There will not be a
 v3.7.1 release proper.
 
 Changed Behaviour
+
+- Add independent interior refraction { function { DeltaN } detail D },
+  or refraction off, in classic SDL and .pov4 at every scene version.
+  Blocks require one or more raw signed scalar functions; their sum adds to
+  the active IOR. Detail uses scene units and defaults to auto. Off disables
+  only its own interior contribution, without clearing overlapping fields.
+  In a scene of version 3.7 or older, refraction off keeps its classic
+  meaning, the refraction value 0.
+  detail and auto are matched by text and remain free as identifiers.
+- Henyey-Greenstein eccentricity must lie strictly between -1 and 1; other
+  values, whose phase is negative or undefined, are a parse error from
+  version 3.8 and a warning in a scene of version 3.7 or older.
+- A Sturm-solved polynomial outside the solver's floating-point range has no
+  roots, rather than ending the render with an error.
+- scale_lumens(phi, metres) returns phi / metres^2, the lumens to state for a
+  scene whose unit is that many metres long. It requires finite lumens and
+  positive finite metres, is a built-in of .pov4 as well, and is a new
+  reserved word: a scene that uses the name as an identifier needs it renamed.
+- Media of method 4 in-scatter light with energy-conserving normalisation: a
+  medium that does not absorb returns exactly the light it removes from a
+  beam, because each phase function integrates to 1 over the sphere. Methods
+  1 to 3 keep the classic formula, which glows 4 times brighter at the same
+  coefficients (a light colour stands for illuminance over pi, while the classic
+  phase factor averages 1 rather than 1/(4 pi)); the classic Rayleigh, Mie haze
+  and Mie murky factors are further over-normalised by 6.6%, 15.3% and 24.7%,
+  and method 4 uses normalised versions. extinction 1 is physical in both.
+  To get the classic look in method 4 with isotropic or Henyey-Greenstein
+  scattering, multiply the scattering colour by 4 and add extinction 0.25;
+  transmittance is unchanged. The manual (3.7.2.2.5) works through three scenes
+  in real units, distribution/scenes/interior/media/physical_haze_*.pov.
+- Light blocks do not work with classic media or subsurface method 1: the
+  parse stops, naming the lines, when the interior of a light block holds a
+  media of method 1 to 3, when a method 1 to 3 medium scatters while a light
+  block lights media, and when a subsurface method 1 finish is on an object
+  with a light block or anywhere in a scene with one. Absorbing and glowing
+  classic media elsewhere stay legal; media_interaction off on every light
+  block allows classic scattering media.
+- An ordinary light's shadow rays are now dimmed by object media all the way to
+  the light. Before, the last stretch from the final surface crossing to the
+  light only met atmospheric media, so a light inside a medium was not dimmed
+  by it with media_attenuation on, and a light behind a closed receiver started
+  its shadow ray on the wrong side. The stretch now takes the media of the
+  shadow-casting containers around it, whatever their method. Scenes with
+  media_attenuation on and a light inside a classic medium render darker.
 -----------------
 
+  - Declared method 4 transport uses prepared evaluation in camera, shadow
+    and photon paths. Mixed media retain each declared density representation
+    without switching prepared fields to a legacy integrator. Constant fields
+    use analytic transfer, including unbounded support; volume-light sampling
+    has a separate path budget even when the media evaluator is legacy.
+
+  - Prepared density fields are published after final geometry resolution.
+    Safe functions can finish in parallel; geometry-dependent functions are
+    prepared against the finalized scene. Ray-dependent fields fail before
+    rendering, and prepared density queries never rebuild their data.
+
+  - Prepared interiors use certified finite geometry bounds independently
+    of acceleration size heuristics. Large translated emitters and rotated
+    plane intersections retain finite domains; open mesh interiors require
+    finite clipping. Framing uses finite surface bounds independently.
+
+  - Requested method 4 constant media own prepared layout metadata without
+    allocating constant density cells. Prepared modifier fields also select
+    fixed integration when the underlying media are constant.
+
+  - Volume bounce gathers each order at its volume's nodes as up to six
+    directional lobes, each scattered by the medium's phase over its spread.
+
+  - A light block's `samples` N is the light's detail for every receiver,
+    and a receiver scales it by its `light_samples` M (default 1). Surfaces
+    draw round(N x M) points per hit. Varying prepared method 4 media draw
+    sqrt(N) x M positions per cell width of ray, per light, evenly spaced
+    from a drawn offset, each with its own shadow ray through the media;
+    the cell width is the finest grid the ray is in. The stride grouping
+    of volume lighting over finer media is gone.
+
+  - Constant prepared method 4 scattering samples camera distance and
+    volume-light position jointly, sharing each light's sample budget across a geometric
+    ray segment and its numerical refraction chords. Optical-depth and glow
+    integration remain separate; finer optical steps no longer multiply the
+    volume-light shadow-ray count. Surface continuations start new segments.
+
+  - Scene preparation reports its progress as `Preparation:` lines, with a
+    warning when a phase stops moving, in the manual's text output section
+    and doc/PERF.md. Warning_Level=0 hides them. Bounce
+    orders, their scattering coefficients and the subsurface light of bounce
+    surfaces are prepared on the scene's work threads, with results that do
+    not depend on their number.
+
+  - Surface bounce stores the light arriving at adaptive nodes, seeded over the
+    scene's total bounce area and refined where the light changes; the
+    surface's material is evaluated where the field is read. Reads use the
+    nearest nodes of the same surface, without per-primitive charts.
+
+  - Surface and interior light blocks accept `bounce` and
+    `bounce { passes N }` to request bounce orders. Bare bounce requests one
+    order; passes must be a positive unsigned integer. A block emits light of
+    its own only from an explicit `pigment` or `emission`: with neither, a
+    block without bounce stays a white pigment light, and a block with bounce
+    is bounce-only, emitting nothing of its own whatever the material's or
+    media's emission. A bounce-only block's brightness multiplies every order
+    it re-emits (default 1, physical); nits or lumens there are a parse error.
+    `bounce` and `passes` are contextual and remain free identifiers elsewhere.
+    A bounced surface may not use crand, fresnel or energy-conserving
+    reflection, and one with subsurface scattering needs subsurface method 2;
+    these stop the render before tracing with a message that names the cause.
+    Light blocks of any kind are not imaged by portals.
+
+  - Objects accept a surface `light { ... }` modifier alongside the existing
+    interior volume-light block. Surface lights share pigment/emission inputs,
+    brightness in nits or lumens, samples and transport flags, and emit outward
+    with a Lambert distribution. The emission selector reuses material pigment
+    times finish emission; source appearance remains independent. `light`,
+    `nits` and `lumens` are matched by text and remain free identifiers elsewhere.
+    A surface light needs finite geometry of nonzero area, takes only
+    `attenuation { cutoff C }`, and a `light_source` cannot hold a `light` block.
+
+  - Interior lights accept a bare `emission` flag, mutually exclusive with
+    `pigment`, to use the full combined RGB emission of their own media,
+    including density and mixing. Unitless brightness multiplies that
+    emission; nits scale it so the glow's mean radiance at the container's
+    boundary, 4 times its integrated emission over the boundary area, is the
+    stated value; lumens distribute a stated flux over it. A surface light's
+    `emission` takes nits as the material emission's mean radiance over the
+    surface. Nits on a pigment light are normalized the same way, so a light
+    in nits measures its stated mean radiance whatever its colour or
+    pattern; a unitless brightness stays a plain multiplier of the pigment.
+    Nonzero nits or lumens over an input whose luminance integrates to zero
+    are an error. Available in classic
+    scenes of every version and .pov4; `emission` was already reserved, while
+    `light`, `nits` and `lumens` remain matched by text and free as
+    identifiers elsewhere.
+
+  - Media `emission` is appearance only again: it paints the glow the camera
+    sees and lights nothing, whether or not the interior has a `light` block,
+    and radiosity gathers with `media on` exclude that appearance term.
+    Scattered light remains available to indirect transport.
+    A volume light's power is stated as radiance in its `light` block and is
+    read from media `emission` only when the bare `light { emission }` flag
+    selects it; scenes that lit with `emission` state their
+    luminance in the light block instead. The light's colour is the radiant
+    intensity over pi, the scale at which a white diffuse probe facing the
+    emitter renders the radiance itself.
   - Photon method 2 supports oriented area sources and projected-through apertures.
 
   - Photon method 2 shoots every batch into one map, with Sobol-stratified
@@ -132,11 +274,12 @@ Changed Behaviour
     `back_filter_tags`, `exit`, `fallback`, `far`, `filter_tags`, `front`,
     `front_filter_tags`, `isosurface_mesh`, `mix`, `near`, `no_lights`,
     `none`, `perturb`, `photon_only`, `portal`, `povm`, `priority`,
-    `radiosity_size`, `refraction_angle`, `resolution`, `screen`, `skein`,
+    `radiosity_size`, `refraction_angle`, `resolution`, `scale_lumens`,
+    `screen`, `skein`,
     `skein_mesh`, `tags`, `to` and `volume_sampling`. A scene that uses one of
     them as an identifier needs it renamed. (`depth` and `spread` inside
     `volume_sampling`, `mesh_cache`, `ior_mix`, `interface_texture`,
-    `atmospheric_ior`, `atmospheric_dispersion`, `refraction_detail`,
+    `atmospheric_ior`, `atmospheric_dispersion`,
     `prepared_media_cells` and the `off` and `atmosphere` of `ior` are matched
     by their text where they apply and stay free.)
   - Random effects (area light jitter, media, `crand`, rainbow jitter,
@@ -189,7 +332,7 @@ Changed Behaviour
     means `media { mix add }`. Earlier versions render as before and warn when
     a non-hollow object hides media.
   - Refraction no longer depends on file order under `#version 4.0` or with
-    media `refraction`: each interior says how its ior combines with what it
+    interior refraction fields: each interior says how its ior combines with what it
     overlaps (`ior_mix surface | mean | replace`, default `mean`, with
     `priority`), an object with no `ior` takes no part, and `atmospheric_ior`
     defaults to 1.00029 (air) instead of 1.0. Coincident clear surfaces merge
@@ -364,23 +507,6 @@ New Features
   - Media can mix: `media { mix add | replace | subtract | multiply priority N
     }` says how a medium combines with the media ranked beneath it, so media
     can carve, tint or replace each other.
-  - Media `refraction K` adds K times the density to the interior's ior, so
-    light curves where the density varies (heat shimmer, mirages, steam,
-    gradient-index lenses, black holes); `refraction_angle` bounds the bend of
-    each step. `refraction_detail`, a length in millimetres through
-    `mm_per_unit` (now the general scene scale it always wanted to be), sets
-    the smallest index structure that must refract faithfully: the march step
-    is derived from it (at most half of it) and the gradient becomes a central
-    difference over the same span, so finer structure is averaged the same way
-    on every ray instead of rendering as per-pixel speckle when the march step
-    was derived from the object's size. Set it in `global_settings` or per
-    `media`, in every language version. `refraction_detail auto`, the default,
-    derives the detail from the medium's bounds (a thirty-second of its
-    largest side), which keeps the old bounds-based step and widens the
-    gradient to average at that scale; a render whose auto medium spans more
-    than 100 mm is told so once. A method 4 grid derives its resolution from
-    the detail, or warns when an explicit `resolution` is coarser than half
-    of it.
   - A prepared method 4 grid never falls back to classic sampling at a size
     limit: a density grid, a per-light optical-depth table or a prepared
     march beyond its limit is coarsened to the widest fit and used, with a
@@ -392,17 +518,33 @@ New Features
     scene's request without editing it. Long marches are coarsened to fit a
     step budget; splitting long containers or a coarser resolution avoids
     that.
-  - An emitting medium can be a light: `media { emission ... light_source { }
-    }` lights surfaces and media with soft shadows, with `samples`,
-    `brightness`, `shadowless`, `fade_distance` and `fade_power` settings.
-  - A media `light_source { }` takes `fade_cutoff Value`: where the light,
-    attenuated to the emitter's nearest reach, is fainter than the value (on
-    the 0 to 1 scale of `adc_bailout`) at a lit point, it is left out there,
-    with no shadow ray. 0.000004 by default under #version 4.0 and later, 0
-    (off) before; independent of `fade_power`. `#default { media { light_source
-    { fade_cutoff Value } } }` sets the starting value of media lights parsed
-    after it; the media block of #default gives default values (`mix`,
-    `light_source { fade_cutoff }`), it is not a template.
+  - A finite object can be an independent volume light: `interior { light { } }`.
+    Its pigment and declared emitting region define its source; media density,
+    extinction and prepared grids affect transport separately. Nits use
+    isotropic j=L*pigment/(4V/A), with true geometric boundary area including
+    cavities and excluding internal union seams.
+    This is a reference calibration, not equal brightness at every receiver;
+    changing unused container extent is not guaranteed to preserve it.
+    Surface emission can approximate a volume, without exact angular identity.
+    Lumens normalize total generated flux with the renderer's greyscale
+    convention, before absorption. `scale_lumens(Phi,c)` explicitly converts
+    author-stated metres per scene unit. Uniform dilation preserves nits
+    illumination and changes fixed-lumen illumination inversely with area.
+    Geometry and flux normalization use convergence checks and warn
+    when their numerical discrepancy remains above the preparation target.
+  - Direct surface lighting, scattering media and progressive photons use the
+    same finite source at every distance. Sampling never collapses it to a
+    centre light or replaces its visibility with a silhouette disk. There is
+    no cell-distance clamp; near illumination and distant inverse-square
+    divergence follow the same integral. `samples` controls variance and cost.
+    `attenuation { power P scale S }` defaults to physical power 2, scale 1;
+    either may be left out. Artistic attenuation applies consistently to direct
+    and photon paths. `attenuation { cutoff C }` (0.000004 by default, 0 off,
+    on surface and volume lights) leaves a light out at a lit point, with no
+    emitter draws or shadow rays, where its power falling from the nearest
+    point of its bounds is below C on the 0 to 1 scale of `adc_bailout`. `light`, `nits`, `lumens`, `attenuation` and `power` are
+    contextual. An item of a nested block, such as a light's
+    `photons { reflection on }`, is rejected outside it in both syntaxes.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction
     between overlapping and shared surfaces.
@@ -422,8 +564,14 @@ New Features
     threads.
   - `media { method 4 [resolution FLOAT] }` selects a prepared density field
     for static media, with a cumulative optical-depth grid for parallel
-    lights; it falls back to the classic methods with a warning where it
-    cannot apply. It is the default with `#version 4.0`.
+    lights. It never falls back to a classic method: preparation that
+    cannot apply is an error before rendering, and a grid beyond its size
+    limit is coarsened with a warning. It is the default with
+    `#version 4.0`; it is the method that light blocks require.
+  - `light_samples FLOAT` in `finish` and `media` scales the `samples` of
+    every surface and volume light for that receiver: round(N x M) draws
+    per surface hit, sqrt(N) x M draws per cell width in varying method 4
+    media, round(N x M) joint pairs in constant method 4 media.
   - Subsurface scattering: a point-cloud `method 2` (global setting
     `subsurface { method INT spacing FLOAT error_bound FLOAT }`, or `method`
     in a finish's `subsurface` block); `colour`, `pigment`, `emission` and
@@ -475,8 +623,19 @@ New Features
   - Anti-aliasing method 4 (`+AM4`, with `+PR`) spends a sample budget set
     with `+AB` on fitted edges and noisy pixels.
   - Texture filtering (`+TF`, `Texture_Filter_Scale`, `Texture_Filter_Taps`)
-    averages each pigment over the area a pixel covers on the surface, using
-    ray differentials, without extra rays.
+    filters each texture's pigment and normal over the area a pixel covers on
+    the surface, using ray differentials, without extra rays;
+    `Texture_Filter_Pigments=off` or `Texture_Filter_Normals=off` opts a kind
+    out. Diffuse light is averaged over the perturbed normals there, specular
+    and phong highlights widen by their spread, iridescence, angle-dependent
+    reflection, Fresnel losses and faked caustics average over them, aoi and
+    slope pigments see each tap's normal, and reflected and refracted rays
+    widen their footprint by the spread, so bumps finer than a pixel no longer
+    speckle. A ray leaving the scene averages the `sky_sphere` over the
+    directions its footprint spans, so a sky seen in bumpy mirrors or through
+    bumpy glass is blurred as the bumps blur it. Where bumps' mean normal
+    is past the critical angle but some of them transmit, light refracts
+    about those and reflects at the share the bumps give it.
   - Progressive rendering (`+PR`) traces the whole frame at doubling
     resolution, each pixel once, so the image is always a complete best-so-far
     picture. It continues with `+C`.
@@ -635,9 +794,8 @@ Performance Improvements
     stop ring sweeps from being split across threads.
   - Subtract and multiply media read their prepared density grid: -13.7%
     instructions on a layered slime scene and -12.6% on a lightning scene with
-    a multiply tint. Media lights over finer prepared media are lit at their
-    own cadence (a fish scene 179 -> 24 CPU-s), and their samples are
-    stratified, needing 1.5-4.3 times fewer shadow rays at equal error.
+    a multiply tint. Media lights' samples are stratified, needing 1.5-4.3
+    times fewer shadow rays at equal error.
   - Prepared media (`method 4`) makes media of high complexity and detail
     practical, including combined with other expensive effects. On two small
     public fixtures, `tools/bench/media-self-shadow.pov` at 96x54 renders in
@@ -770,7 +928,7 @@ Miscellaneous:
     which gave AMD CPUs the portable noise code.
   - The `.pov4` static checker now accepts the contextual keywords — those
     matched by their text in the classic parser rather than reserved, such as
-    `refraction_detail`, `prepared_media_cells`, `atmospheric_ior`,
+    `prepared_media_cells`, `atmospheric_ior`,
     `atmospheric_dispersion`, `mesh_cache` and `interface_texture` — which the
     block schema had silently never learned. The schema miner derives them
     from the parser's text comparisons, so future contextual keywords need no

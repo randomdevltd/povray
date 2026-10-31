@@ -1,9 +1,8 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// Lightning in a storm cloud: the bolt and its glow add, and a multiply volume tints the grey cloud blue along crackles from the strike. +w480 +h360; Declare=Tint=0 drops the multiply, Declare=Seed=N picks another bolt.
+// Lightning in a storm cloud: the bolt and its glow are emitting media mixed with add, and a mix multiply volume tints the grey cloud blue along crackles spreading from the strike. +w480 +h360
 #version 4.0;
-#ifndef (Seed) #declare Seed = 11; #end
-#ifndef (Tint) #declare Tint = 1; #end
-#declare R = seed(Seed);
+// Method 4 scattering is physical: colours are 4x the classic values (4.4x for the Mie cloud) with extinction cutting back to the classic extinction.
+#declare R = seed(11);
 
 global_settings { assumed_gamma 1 }
 camera { location <0, 3.5, -24> look_at <0, 6, 0> angle 58 }
@@ -16,7 +15,7 @@ box {
   pigment { rgbt 1 }
   interior {
     media {
-      scattering { 2, rgb 0.05 } absorption rgb 0.09
+      scattering { 2, rgb 0.22 extinction 0.227 } absorption rgb 0.09
       density { bozo turbulence 0.8 octaves 6 lambda 2.5 scale 2.2 color_map { [0 rgb 0] [0.35 rgb 0.1] [0.7 rgb 0.9] [1 rgb 1.5] } }
       density { spherical turbulence 0.3 octaves 4 scale <13, 3.8, 5> translate y * 10 color_map { [0 rgb 0] [0.3 rgb 1] [1 rgb 1.2] } }
     }
@@ -77,7 +76,7 @@ merge {
     interior {
       media {
         mix add
-        scattering { 1, rgb 0.5 } absorption 0.4 emission rgb <0.15, 0.3, 1.2>
+        scattering { 1, rgb 2 extinction 0.25 } absorption 0.4 emission rgb <0.15, 0.3, 1.2>
         density { bozo turbulence 0.6 octaves 5 scale 0.3 color_map { [0 rgb 0] [0.5 rgb 0.3] [1 rgb 1.2] } }
         density { spherical turbulence 0.4 color_map { [0 rgb 0] [0.4 rgb 1] [1 rgb 1] } }
         density { gradient y color_map { [0 rgb 1] [1 rgb 0] } scale 2 translate -y }
@@ -90,22 +89,20 @@ merge {
 light_source { J rgb <1.2, 1.3, 2> * 1.1 fade_distance 3 fade_power 2 }
 light_source { F rgb <0.8, 0.9, 1.5> fade_distance 3 fade_power 2 media_interaction off }
 
-#if (Tint)
-  #declare Crack = function { pattern { crackle turbulence 0.35 octaves 4 scale 0.22 } }
-  sphere {
-    0, 1 pigment { rgbt 1 }
-    interior {
-      media {
-        mix multiply
-        density {
-          function {
-            min(1, max(0, 1 - Crack(x, y, z) / 0.05) * max(0, 1 - 1.1 * sqrt(x * x + y * y + z * z)) * 1.6
-                   + 0.35 * max(0, 1 - sqrt(x * x + y * y + z * z)))
-          }
-          color_map { [0 rgb 1] [0.3 rgb <0.6, 1.0, 3>] [1 rgb <1.5, 3.5, 14>] }
+#declare Crack = function { pattern { crackle turbulence 0.35 octaves 4 scale 0.22 } }
+sphere {
+  0, 1 pigment { rgbt 1 }
+  interior {
+    media {
+      mix multiply
+      density {
+        function {
+          min(1, max(0, 1 - Crack(x, y, z) / 0.05) * max(0, 1 - 1.1 * sqrt(x * x + y * y + z * z)) * 1.6
+                 + 0.35 * max(0, 1 - sqrt(x * x + y * y + z * z)))
         }
+        color_map { [0 rgb 1] [0.3 rgb <0.6, 1.0, 3>] [1 rgb <1.5, 3.5, 14>] }
       }
     }
-    scale <6, 4, 4> translate J
   }
-#end
+  scale <6, 4, 4> translate J
+}

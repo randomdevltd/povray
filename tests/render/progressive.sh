@@ -4,7 +4,7 @@ set -e
 W=67; H=43
 render() {
     name=$1; shift
-    "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/include" +w$W +h$H -d -p -v -gp +fp16 +o"progressive_$name.ppm" "$@"
+    "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -d -p -v -gp +fp16 +o"progressive_$name.ppm" "$@"
 }
 pixels() {
     tail -c $((W * H * 6)) "progressive_$1.ppm" > "progressive_$1.px"
@@ -34,7 +34,7 @@ if ! grep -q "^Pixels: *0 " progressive_resumed.log; then
     echo "progressive: the continued render traced lattice samples again"; exit 1
 fi
 same levels_am1 resumed
-if "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/include" +w$W +h$H -d -p -v -gp -f +a0.1 +am3 +pr 2> /dev/null; then
+if "$POVRAY" +i"$SRCDIR/tests/render/random_effects.pov" +L"$SRCDIR/distribution/include" +w$W +h$H -d -p -v -gp -f +a0.1 +am3 +pr 2> /dev/null; then
     echo "progressive: +AM3 with +PR should be refused"; exit 1
 fi
 rm -f progressive_*.ppm progressive_*.px progressive_*.log progressive_*.pov-state*

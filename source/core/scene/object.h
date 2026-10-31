@@ -175,6 +175,7 @@ namespace pov
 
 class Portal;
 class Emitter;
+struct MediaLight;
 struct PhotonTargetGroup final { BoundingBox box; }; ///< the bounds of the split union the group was
 
 /// Abstract base class for all geometric objects.
@@ -186,6 +187,7 @@ class ObjectBase
         TEXTURE *Texture;
         TEXTURE *Interior_Texture;
         InteriorPtr interior;
+        std::shared_ptr<MediaLight> surfaceLight;
         std::vector<ObjectPtr> Bound;
         std::vector<ObjectPtr> Clip;
         std::vector<LightSource*> LLights;  ///< Used for light groups.
@@ -213,7 +215,7 @@ class ObjectBase
             Texture(nullptr), Interior_Texture(nullptr), interior(), Trans(nullptr),
             Ph_Density(0), RadiosityImportance(0.0), RadiosityImportanceSet(false), Flags(0)
         {
-            Make_BBox(BBox, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            Make_BBox(BBox, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, -BOUND_HUGE/2.0, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         }
 
         /// Construct object as copy of existing one.
@@ -224,7 +226,7 @@ class ObjectBase
         ///
         ObjectBase(int t, ObjectBase& o, bool transplant) :
             Type(t),
-            Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), Trans(o.Trans),
+            Texture(o.Texture), Interior_Texture(o.Interior_Texture), interior(o.interior), surfaceLight(o.surfaceLight), Trans(o.Trans),
             Ph_Density(o.Ph_Density), RadiosityImportance(o.RadiosityImportance),
             RadiosityImportanceSet(o.RadiosityImportanceSet), Flags(o.Flags & ~FRAME_TARGET_FLAG),
             Bound(o.Bound), Clip(o.Clip), LLights(o.LLights), PhotonLights(o.PhotonLights), photonGroupEnabled(o.photonGroupEnabled),
@@ -353,7 +355,9 @@ class LightSource final : public CompoundObject
         Vector3d Direction, Center, Points_At, Axis1, Axis2;
         DBL Coeff, Radius, Falloff;
         DBL Fade_Distance, Fade_Power;
-        DBL fadeCutoff = 0.0; ///< media light: a point it would light less than this, at its nearest, is left out
+        /// an emitter light's distance law: factor A'(r) = A·(1/scale)^(1−A) over Radius², A = (Radius/max(r,Radius))^power
+        DBL attenuationScale = 1.0, attenuationPower = 2.0, lawRadius = 0.0;
+        DBL cutoff = 0.0; ///< an emitter light leaves out points its bound lights less than this
         int Area_Size1, Area_Size2;
         int Adaptive_Level;
         ObjectPtr Projected_Through_Object;
@@ -376,7 +380,7 @@ class LightSource final : public CompoundObject
         const Portal *portal = nullptr;                 ///< in an image, the portal it is seen through
         std::shared_ptr<const Emitter> emitter;         ///< where it emits from, for a light drawn as sample positions
         ConstObjectPtr emitterContainer = nullptr;      ///< for a media light, the object holding its medium
-        bool mediaPhotonOptions = false, mediaPhotonLegacyOptions = false;
+        bool mediaPhotonOptions = false;
 
         LightSource();
         virtual ~LightSource() override;

@@ -1,12 +1,10 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// A rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, lit only by the glowing core at its heart. +w640 +h480; Declare=Samples=N sets the core light's samples, Refract=0 drops the lens of space around the core, Haze=0 clears the air, Chains=0 drops the chains.
+// A media light as the only light: a glowing core casts 700 lumens from its own emission through a hazy rotunda of twisted columns, arches, lattice screens, armillary bands and hanging chains, and a refraction field bends space into a lens around it. +w640 +h480
 #version 4.0;
-#ifndef (Samples) #declare Samples = 32; #end
-#ifndef (Refract) #declare Refract = 1; #end
-#ifndef (Haze) #declare Haze = 1; #end
-#ifndef (Chains) #declare Chains = 1; #end
+// Units: the haze scatters 0.048 per metre (4x classic) with extinction 0.25, keeping the classic glow.
 #declare R = seed(1729);
 #declare Core = <0, 3.6, 0>;
+#declare Cut = Core.y - 0.05;
 #declare Inner = 3.9;
 #declare Outer = 8.4;
 #declare WallR = 12.6;
@@ -112,24 +110,22 @@ union {
   texture { Bronze }
 }
 
-#if (Refract)
-  intersection {
-    sphere { 0, Lens }
-    plane { -y, Core.y - 0.05 }
-    pigment { rgbt 1 }
-    interior {
-      media {
-        method 4 resolution 0.14 refraction 0.25 refraction_detail 3 // half the detail is 0.15 units, so the grid's 0.14 cells hold what it promises
-        density {
-          function {
-            1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z))
-          }
-        }
-      }
+#declare ColonnadeIndex = function { pigment {
+  function { 1.576 / max(sqrt(x * x + y * y + z * z), 1.7) * pow(max(0, 1 - (x * x + y * y + z * z) / (Lens * Lens)), 2) * (0.94 + 0.06 * Swirl(x, y, z)) }
+} }
+
+intersection {
+  sphere { 0, Lens }
+  plane { -y, Cut }
+  pigment { rgbt 1 }
+  interior {
+    refraction {
+      function { 0.25 * ColonnadeIndex(x, y, z).red }
+      detail 0.3
     }
-    translate Core
   }
-#end
+  translate Core
+}
 union {
   #for (K, 0, 4)
     difference {
@@ -146,29 +142,27 @@ union {
 }
 cylinder { Core + y * 2.4, y * (6 + Inner), 0.04 texture { Iron } }
 
-#if (Chains)
-  #declare Link = torus { 0.07, 0.02 scale <1, 1, 1.5> rotate x * 90 }
-  union {
-    #for (I, 0, 7)
-      #if (I != 3)
-      #local Top = 7.35;
-      #local Bottom = 1.25 + rand(R) * 1.4;
-      #local N = int((Top - Bottom) / 0.17);
-      #for (L, 0, N)
-        object { Link rotate y * (90 * mod(L, 2) + 7 * rand(R)) translate At(I * 45 + 45, Mid, Top - L * 0.17) }
-      #end
-      union {
-        cone { 0, 0.03, -y * 0.5, 0.2 }
-        cylinder { -y * 0.5, -y * 0.55, 0.22 }
-        #for (B, 0, 5) cylinder { -y * 0.55, -y * 0.95 + x * 0.08, 0.02 rotate y * B * 60 } #end
-        sphere { -y * 1, 0.09 }
-        translate At(I * 45 + 45, Mid, Top - N * 0.17 - 0.1)
-      }
-      #end
+#declare Link = torus { 0.07, 0.02 scale <1, 1, 1.5> rotate x * 90 }
+union {
+  #for (I, 0, 7)
+    #if (I != 3)
+    #local Top = 7.35;
+    #local Bottom = 1.25 + rand(R) * 1.4;
+    #local N = int((Top - Bottom) / 0.17);
+    #for (L, 0, N)
+      object { Link rotate y * (90 * mod(L, 2) + 7 * rand(R)) translate At(I * 45 + 45, Mid, Top - L * 0.17) }
     #end
-    texture { Iron }
-  }
-#end
+    union {
+      cone { 0, 0.03, -y * 0.5, 0.2 }
+      cylinder { -y * 0.5, -y * 0.55, 0.22 }
+      #for (B, 0, 5) cylinder { -y * 0.55, -y * 0.95 + x * 0.08, 0.02 rotate y * B * 60 } #end
+      sphere { -y * 1, 0.09 }
+      translate At(I * 45 + 45, Mid, Top - N * 0.17 - 0.1)
+    }
+    #end
+  #end
+  texture { Iron }
+}
 
 union {
   #for (K, 0, 71)
@@ -201,15 +195,13 @@ sphere {
                  + 0.25 * pow(max(0, Swirl(x, y, z) - 0.5) * 2, 2) * max(0, 1 - sqrt(x * x + y * y + z * z) / 1.7))
         }
       }
-      light_source { samples Samples }
     }
+    light { emission brightness 700 lumens samples 32 }
   }
   translate Core
 }
 
-#if (Haze)
-  cylinder {
-    -y * 0.1, y * 13, WallR - 0.01 pigment { rgbt 1 }
-    interior { media { mix add scattering { 5, rgb 0.012 eccentricity 0.4 } } }
-  }
-#end
+cylinder {
+  -y * 0.1, y * 13, WallR - 0.01 pigment { rgbt 1 }
+  interior { media { mix add scattering { 5, rgb 0.048 eccentricity 0.4 extinction 0.25 } } }
+}

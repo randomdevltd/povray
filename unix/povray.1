@@ -252,18 +252,30 @@ jittered from their true centers.
 \fBR\fP\fIn\fP or \fBAntialias_Depth\fP=\fIinteger\fP
 Set the maximum recursion depth for antialiased pixel sub\-sampling.
 .TP
-\fBTF\fP or \fBTexture_Filter\fP=\fIbool\fP \fBTexture_Filter_Scale\fP=\fIfloat\fP \fBTexture_Filter_Taps\fP=\fIinteger\fP
-Average each pigment over the area a pixel covers on the surface, so fine or distant
-patterns do not alias (default off). Camera rays and the reflected and refracted rays they
-spawn are filtered; plain pigments, uv\-mapped textures, normals, and shadow, photon, radiosity
-and subsurface rays are not, nor is focal blur with cameras other than perspective and
+\fBTF\fP or \fBTexture_Filter\fP=\fIbool\fP \fBTexture_Filter_Pigments\fP=\fIbool\fP \fBTexture_Filter_Normals\fP=\fIbool\fP \fBTexture_Filter_Scale\fP=\fIfloat\fP \fBTexture_Filter_Taps\fP=\fIinteger\fP
+Filter each texture, pigment and normal, over the area a pixel covers on the surface, so fine or distant
+patterns and bumps do not alias (default off). \fBTexture_Filter_Pigments\fP=off or
+\fBTexture_Filter_Normals\fP=off leaves that kind unfiltered (both default on, and matter only with \fBTF\fP).
+Camera rays and the reflected and refracted rays they
+spawn are filtered, uv\-mapped textures and normals over the footprint carried into uv; plain
+pigments, a pigment that is itself \fBuv_mapping\fP, and shadow, photon, radiosity and subsurface rays are not, nor is focal blur with cameras other than perspective and
 orthographic, nor are cameras with a normal block or anything seen through a portal. \fBTexture_Filter_Scale\fP scales that area (default 1.0, at most 64).
-\fBTexture_Filter_Taps\fP is 8 (default) to start each filtered pigment with eight taps, or 3
+\fBTexture_Filter_Taps\fP is 8 (default) to start each filtered pigment or normal with eight taps, or 3
 to start with three and add the rest only where they disagree; 3 or less means 3, more means 8.
 Lighting is linear in the pigment, so the mean colour matches supersampling, and a layer that
 filters or transmits keeps what it lets through apart from its own colour. Layers are averaged
 apart, which is exact only where their patterns are unrelated; metallic reflection reads the
 averaged colour; \fBtexture_map\fP and \fBmaterial_map\fP pick their texture at the hit point.
+Everything that reads a perturbed normal sees its taps: diffuse light is their mean, \fBspecular\fP
+and \fBphong\fP highlights widen by their spread, iridescence, angle\-dependent reflection, Fresnel
+losses and faked caustics average over them, \fBaoi\fP and \fBslope\fP pigments see each tap's normal,
+and reflected and refracted rays leave along their mean with a footprint widened by their spread,
+with no extra rays: where the mean reflects totally but some taps transmit, the one ray
+refracts about them and carries the reflection's share too.
+No extra rays are cast to compute a sample: a light is shadow\-tested only where the taps' mean
+normal faces it, so ray counts can differ slightly from \-TF as the filtered normals differ.
+A ray that leaves the scene averages the \fBsky_sphere\fP over the directions its footprint spans,
+a reflected ray's folded back above the surface it left.
 .TP
 \fBUA\fP or \fBOutput_Alpha\fP=\fIbool\fP
 Use alpha channel for transparency mask.

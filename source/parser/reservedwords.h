@@ -133,6 +133,7 @@ enum TokenId : int
     RADIANS_TOKEN,
     RAND_TOKEN,
     SEED_TOKEN,
+    SCALE_LUMENS_TOKEN,
     SELECT_TOKEN,
     SIN_TOKEN,
     SINH_TOKEN,

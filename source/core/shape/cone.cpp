@@ -37,6 +37,7 @@
 
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "core/shape/cone.h"
+#include "core/math/intersectiondepth.h"
 
 // C++ variants of C standard header files
 // C++ standard header files
@@ -193,7 +194,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
 
                 z = P[Z] + t1 * D[Z];
 
-                if ((t1 > Cone_Tolerance) && (t1 < MAX_DISTANCE) && (z >= 0.0) && (z <= 1.0))
+                if ((t1 > Cone_Tolerance) && IsFiniteIntersectionDepth(t1) && (z >= 0.0) && (z <= 1.0))
                 {
                     Intersection[i].d   = t1 / len;
                     Intersection[i++].t = SIDE_HIT;
@@ -201,7 +202,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
 
                 z = P[Z] + t2 * D[Z];
 
-                if ((t2 > Cone_Tolerance) && (t2 < MAX_DISTANCE) && (z >= 0.0) && (z <= 1.0))
+                if ((t2 > Cone_Tolerance) && IsFiniteIntersectionDepth(t2) && (z >= 0.0) && (z <= 1.0))
                 {
                     Intersection[i].d   = t2 / len;
                     Intersection[i++].t = SIDE_HIT;
@@ -229,7 +230,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
 
                 z = P[Z] + t1 * D[Z];
 
-                if ((t1 > Cone_Tolerance) && (t1 < MAX_DISTANCE) && (z >= dist) && (z <= 1.0))
+                if ((t1 > Cone_Tolerance) && IsFiniteIntersectionDepth(t1) && (z >= dist) && (z <= 1.0))
                 {
                     Intersection[i].d   = t1 / len;
                     Intersection[i++].t = SIDE_HIT;
@@ -251,7 +252,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
 
                 z = P[Z] + t1 * D[Z];
 
-                if ((t1 > Cone_Tolerance) && (t1 < MAX_DISTANCE) && (z >= dist) && (z <= 1.0))
+                if ((t1 > Cone_Tolerance) && IsFiniteIntersectionDepth(t1) && (z >= dist) && (z <= 1.0))
                 {
                     Intersection[i].d   = t1 / len;
                     Intersection[i++].t = SIDE_HIT;
@@ -259,7 +260,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
 
                 z = P[Z] + t2 * D[Z];
 
-                if ((t2 > Cone_Tolerance) && (t2 < MAX_DISTANCE) && (z >= dist) && (z <= 1.0))
+                if ((t2 > Cone_Tolerance) && IsFiniteIntersectionDepth(t2) && (z >= dist) && (z <= 1.0))
                 {
                     Intersection[i].d   = t2 / len;
                     Intersection[i++].t = SIDE_HIT;
@@ -276,7 +277,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
 
         b = (P[Y] + d * D[Y]);
 
-        if (((Sqr(a) + Sqr(b)) <= 1.0) && (d > Cone_Tolerance) && (d < MAX_DISTANCE))
+        if (((Sqr(a) + Sqr(b)) <= 1.0) && (d > Cone_Tolerance) && IsFiniteIntersectionDepth(d))
         {
             Intersection[i].d   = d / len;
             Intersection[i++].t = CAP_HIT;
@@ -289,7 +290,7 @@ int Cone::Intersect(const BasicRay& ray, CONE_INT *Intersection, RenderStatistic
         b = (P[Y] + d * D[Y]);
 
         if ((Sqr(a) + Sqr(b)) <= (Test_Flag(this, CYLINDER_FLAG) ? 1.0 : Sqr(dist))
-            && (d > Cone_Tolerance) && (d < MAX_DISTANCE))
+            && (d > Cone_Tolerance) && IsFiniteIntersectionDepth(d))
         {
             Intersection[i].d   = d / len;
             Intersection[i++].t = BASE_HIT;

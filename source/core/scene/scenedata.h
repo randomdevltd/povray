@@ -283,8 +283,8 @@ class SceneData
         bool solidBlocksInteriorMedia;
         /// whether any object carries interior media
         bool interiorMedia;
-        /// whether any interior medium refracts, so rays curve where its density varies
-        bool mediaRefraction;
+        /// whether any interior has a refraction field, so rays curve where it varies
+        bool fieldRefraction;
         /// whether surfaces refract by the innermost interior entered, as before language version 4.0
         bool legacyIorStack;
         /// whether any interior's ior_mix is surface or replace, so overlaps need more than the mean
@@ -295,8 +295,6 @@ class SceneData
         int interfaceTexture;
         /// the largest change of direction, in degrees, a curved ray takes in one step
         double refractionAngle;
-        /// the scene's default media refraction_detail, in millimetres; 0 for auto
-        double refractionDetail;
         /// the scene's prepared media cell limit (global_settings prepared_media_cells)
         double preparedMediaCells;
         /// the machine's prepared media cell limit (INI/CLI Prepared_Media_Cells)

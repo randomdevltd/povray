@@ -1,6 +1,7 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
 // An underground passage lit only by fluorescent tubes and neon strips, one tube dying and one dead; chairs, a trolley, a bicycle, cones, crates and a railing stretch their shadows along the tubes. +w640 +h480; Declare=Samples=N sets each tube's samples, Haze=0 clears the air.
 #version 4.0;
+// Units: tubes 205 and neon strips 28 times their colour, a radiance in nits where the colour is white; the haze scatters 0.0048 per metre (4x classic) with extinction 0.25, keeping the classic glow.
 #ifndef (Samples) #declare Samples = 16; #end
 #ifndef (Haze) #declare Haze = 1; #end
 #declare R = seed(314);
@@ -71,7 +72,7 @@ union {
     cylinder {
       <0, 0, -Length / 2>, <0, 0, Length / 2>, 0.028
       pigment { rgbt 1 }
-      interior { media { mix add method 4 resolution 0.009 emission Colour * 1200 * Strength light_source { samples Samples } } }
+      interior { media { mix add method 4 resolution 0.009 emission Colour * 1200 * Strength } light { pigment { Colour * Strength } brightness 205 samples Samples } }
       translate P
     }
   #end
@@ -84,7 +85,7 @@ union {
 cylinder {
   <-Half + 0.08, 2.25, -1>, <-Half + 0.08, 2.25, 28>, 0.024
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.012 emission rgb <1, 0.02, 0.3> * 160 light_source { samples Samples } } }
+  interior { media { mix add method 4 resolution 0.012 emission rgb <1, 0.02, 0.3> * 160 } light { pigment { rgb <1, 0.02, 0.3> } brightness 28 samples Samples } }
 }
 union {
   #for (Z, -1, 28, 1.5) cylinder { <-Half, 2.25, Z>, <-Half + 0.1, 2.25, Z>, 0.008 } #end
@@ -94,7 +95,7 @@ sphere_sweep {
   linear_spline 12,
   #for (I, 0, 11) <Half - 0.08, 1.3 + 0.55 * mod(I, 2) + 0.1 * sin(I), 7.2 + I * 0.55>, 0.024 #end
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.012 emission rgb <0.04, 0.75, 1> * 160 light_source { samples Samples } } }
+  interior { media { mix add method 4 resolution 0.012 emission rgb <0.04, 0.75, 1> * 160 } light { pigment { rgb <0.04, 0.75, 1> } brightness 28 samples Samples } }
 }
 
 #macro Chair(P, A)
@@ -213,6 +214,6 @@ union {
   box {
     <-Half + 0.01, 0.01, -7.99>, <Half - 0.01, Top - 0.01, Far - 0.01>
     pigment { rgbt 1 }
-    interior { media { mix add scattering { 5, rgb 0.0012 eccentricity 0.3 } } }
+    interior { media { mix add scattering { 5, rgb 0.0048 eccentricity 0.3 extinction 0.25 } } }
   }
 #end

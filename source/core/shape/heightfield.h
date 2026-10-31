@@ -118,10 +118,10 @@ class HField final : public ObjectBase
         /// The unsmoothed normal of the cell triangle at local offset x, z in cell px, pz, transformed and unnormalised.
         Vector3d Facet_Normal(int px, int pz, DBL x, DBL z) const;
         void smooth_height_field(int xsize, int zsize);
-        bool intersect_pixel(int x, int z, const BasicRay& ray, DBL height1, DBL height2, IStack &HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
+        bool intersect_pixel(int x, int z, const BasicRay& ray, DBL height1, DBL height2, IStack &HField_Stack, const Ray &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
         static int add_single_normal(HF_VAL **data, int xsize, int zsize, int x0, int z0,int x1, int z1,int x2, int z2, Vector3d& N);
-        bool dda_traversal(const BasicRay &ray, const Vector3d& Start, const HFBlock *Block, IStack &HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
-        bool block_traversal(const BasicRay &ray, const Vector3d& Start, IStack &HField_Stack, const BasicRay &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
+        bool dda_traversal(const BasicRay &ray, const Vector3d& Start, const HFBlock *Block, IStack &HField_Stack, const Ray &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
+        bool block_traversal(const BasicRay &ray, const Vector3d& Start, IStack &HField_Stack, const Ray &RRay, DBL mindist, DBL maxdist, TraceThreadData *Thread);
         void build_hfield_blocks();
 };
 

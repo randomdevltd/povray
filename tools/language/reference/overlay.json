@@ -1,6 +1,6 @@
 {
  "format": "pov4-reference-overlay/1",
- "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss \u2014 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
+ "comment": "Hand-written one-liners: one per block in grammar/blocks.json, plus words the tables miss — 4.0 statements and literals, colour built-ins, and top-level scene blocks. Everything else is mined into descriptions.json by tools/language/reference.mjs --generate. This file is the curated part; it may be edited.",
  "blocks": {
   "bicubic_patch": "Bezier patch surface from a 4x4 control-point grid.",
   "box": "Box from two opposite corner vectors.",
@@ -48,15 +48,19 @@
   "pigment": "Surface colour: a pattern, colour map or image map.",
   "normal": "Perturbed surface normals: bump pattern, bump map, slope.",
   "density": "Pattern block scaling media density across its container.",
-  "interior": "Inside-the-surface properties: ior, caustics, fading, media.",
-  "media": "Participating medium: scattering, emission, absorption, intervals; its light_source is a volume light, not a scene light.",
+  "interior": "Inside-the-surface properties: ior, caustics, fading, media, and the volume light of a light block.",
+  "media": "Participating medium: scattering, emission, absorption, intervals.",
   "camera": "The eye: location, direction, projection type, lens effects; an output item renders the camera as its own view, one image per such camera from a single parse.",
- "output": "Camera item that renders this camera as its own view: the scene parses once, each camera with one renders its own image in order, cameras without one are not rendered. Bare output keeps the command line's size, window and file; the block's parts are optional, and a later output replaces an earlier one. Refused with animation, STDOUT output or photon save_file/load_file.",
+  "output": "Camera item that renders this camera as its own view: the scene parses once, each camera with one renders its own image in order, cameras without one are not rendered. Bare output keeps the command line's size, window and file; the block's parts are optional, and a later output replaces an earlier one. Refused with animation, STDOUT output or photon save_file/load_file.",
   "global_settings": "Renderer-wide scene options: radiosity, photons, gamma, tracing depth.",
   "object": "Copies or wraps an already-declared object with new modifiers.",
   "light_source": "A light: position, colour, area, shadowing and photon options.",
+  "light": "A light on its object's surface, or its interior's volume: pigment or own-emission input, brightness in nits or lumens, bounce passes, sampling.",
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
-  "bump_map": "Normal perturbation pattern wrapping a 2-D image file."
+  "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
+  "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off.",
+  "bounce": "Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits.",
+  "attenuation": "Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C."
  },
  "words": {
   "quality": {
@@ -110,10 +114,6 @@
   "true": {
    "kind": "literal",
    "text": "Boolean true."
-  },
-  "fade_cutoff": {
-   "kind": "item",
-   "text": "In a media light_source { }: an intensity on the 0 to 1 scale of adc_bailout; a point the light would reach with less, taken at the emitter's nearest sample, leaves the light out entirely (no shadow ray, cache entry or media sample work). Applies to the physical 1/r^2 falloff and to fade_distance/fade_power alike. Default 0.000004 under #version 4.0 and later, 0 (off) before; default { media { light_source { fade_cutoff V } } } gives media lights parsed after it that starting value (the media block of default gives values, mix and light_source { fade_cutoff }, not a template); a light's own fade_cutoff overrides both. Matched by text, so fade_cutoff stays free as a name."
   },
   "false": {
    "kind": "literal",
@@ -274,6 +274,26 @@
   "size": {
    "kind": "item",
    "text": "In camera output, the image's <Width, Height> in whole pixels, 1 to 65535; a camera without one takes the command line's Width and Height, the values of image_width and image_height, and a camera leaving right at its default takes the aspect its own size gives it. In a facets pattern, size switches facet creation to curved surfaces only."
+  },
+  "nits": {
+   "kind": "item",
+   "text": "Unit after a light's brightness: brightness 8 nits scales the pigment or emission input so its measured mean radiance is 8 nits; without the unit brightness multiplies the input. Not allowed in a bounce-only block. Contextual: remains available as an identifier."
+  },
+  "lumens": {
+   "kind": "item",
+   "text": "Unit after a light's brightness: brightness 800 lumens states the total generated flux, before absorption, with one scene unit taken as one metre. Contextual: remains available as an identifier."
+  },
+  "emission": {
+   "kind": "item",
+   "text": "Light colour source in a light block: bare `emission` copies the object's own emission (surface: pigment times finish emission; interior: its media emission) instead of a pigment. Also finish emission (surface glow) and media emission (appearance only)."
+  },
+  "cutoff": {
+   "kind": "item",
+   "text": "In a light's attenuation block: where the most the light could add at a lit point, on the 0 to 1 scale of adc_bailout, is below this, the point draws nothing from it and traces no shadow rays. 0.000004 by default, 0 off; surface and interior lights. Contextual: remains available as an identifier."
+  },
+  "scale_lumens": {
+   "kind": "function",
+   "text": "scale_lumens(Lumens, Metres) returns Lumens / Metres^2, the value for brightness V lumens in a scene whose unit is Metres metres long; both arguments must be finite and Metres positive."
   }
  }
 }

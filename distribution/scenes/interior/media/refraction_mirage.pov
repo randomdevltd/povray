@@ -1,7 +1,6 @@
 // This scene is licensed under CC BY 3.0, http://creativecommons.org/licenses/by/3.0/
-// An inferior mirage: air over a hot desert road is thinnest at the ground, so grazing views curve up and the road shows the sky and the posts upside down beneath them. The camera stands inside the refracting air. +w640 +h300
+// An inferior mirage: air over a hot desert road is thinnest at the ground, an interior refraction field whose index falls toward the road, so grazing views curve up and the road shows the sky and the posts upside down beneath them. The camera stands inside the refracting air. +w640 +h300
 #version 4.0;
-#ifndef (Hot) #declare Hot = 1; #end
 
 global_settings { assumed_gamma 1 refraction_angle 1 }
 camera { location <0, 0.75, 0> look_at <0, 0.62, 100> angle 22 right x * image_width / image_height }
@@ -23,18 +22,16 @@ box {
   sphere { <-60 + I * 21, -6, 300 + mod(I * 37, 50)>, 12 scale <1, 0.6, 1> pigment { rgb <0.55, 0.42, 0.32> } }
 #end
 
-#if (Hot)
-  box {
-    <-80, -0.5, -10>, <80, 3, 420>
-    pigment { rgbt 1 }
-    interior {
-      media {
-        method 3
-        refraction -0.0007
-        density {
-          function { exp(-max(y, 0) / 0.18) * max(0, min(min(1, (z + 10) / 8), min((420 - z) / 30, (80 - abs(x)) / 20))) }
-        }
-      }
+#declare MirageIndex = function { pigment {
+  function { exp(-max(y, 0) / 0.18) * max(0, min(min(1, (z + 10) / 8), min((420 - z) / 30, (80 - abs(x)) / 20))) }
+} }
+box {
+  <-80, -0.5, -10>, <80, 3, 420>
+  pigment { rgbt 1 }
+  interior {
+    refraction {
+      function { -0.0007 * MirageIndex(x, y, z).red }
+      detail auto
     }
   }
-#end
+}

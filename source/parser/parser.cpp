@@ -36,6 +36,7 @@
 // Unit header file must be the first file included within POV-Ray *.cpp files (pulls in config)
 #include "parser/parser.h"
 #include "parser/pov4.h"
+#include "parser/pov4schema.h"
 
 // C++ variants of C standard header files
 #include <cctype>
@@ -47,6 +48,7 @@
 
 // C++ standard header files
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <sstream>
 #include <unordered_set>
@@ -66,6 +68,7 @@
 #include "core/bounding/boundingcylinder.h"
 #include "core/bounding/boundingsphere.h"
 #include "core/lighting/emitter.h"
+#include "core/lighting/surfaceemitter.h"
 #include "core/lighting/lightgroup.h"
 #include "core/lighting/lightsource.h"
 #include "core/lighting/photons.h"
@@ -254,26 +257,30 @@ static bool HasPendingMesh(ObjectPtr object)
 
 void Parser::RecordMediaFields(ObjectPtr object, ObjectPtr parent)
 {
-    if ((object == nullptr) || (sceneData->meshPool == nullptr))
+    if (object == nullptr)
         return;
     // a container's box is final once its top-level object completes, unless a pending mesh still sets it
-    if ((object->interior != nullptr) && ((parent == nullptr) || (object->interior != parent->interior)) && !HasPendingMesh(object))
+    if ((object->interior != nullptr) && ((parent == nullptr) || (object->interior != parent->interior)))
+    {
+        const bool allowEager = sceneData->meshPool && !HasPendingMesh(object);
         for (Media& medium : object->interior->media)
-            RecordMediaField(medium);
+            RecordMediaField(medium, allowEager);
+    }
     if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
         for (ObjectPtr child : compound->children)
             RecordMediaFields(child, object);
 }
 
-// A grid whose density a snapshot cannot take is left to the render, which the log counts.
+// A density a snapshot cannot take is prepared from the finalized scene before tracing.
 void Parser::LeaveMediaField(const Media& medium)
 {
-    sceneData->eagerMediaUnsafe.push_back(medium.fastCache);
+    if (medium.fastCache)
+        sceneData->eagerMediaUnsafe.push_back(medium.fastCache);
 }
 
-void Parser::RecordMediaField(Media& medium)
+void Parser::RecordMediaField(Media& medium, bool allowEager)
 {
-    if (!medium.fastCache || (medium.Sample_Method != 4) || medium.Density.empty())
+    if ((medium.Sample_Method != 4) || medium.Density.empty())
         return;
     std::shared_ptr<Media> copy(new Media(medium));
     std::vector<std::pair<GenericScalarFunctionPtr *, FUNCTION>> slots;
@@ -292,13 +299,15 @@ void Parser::RecordMediaField(Media& medium)
         if (!known)
             return LeaveMediaField(medium);
     }
+    std::vector<FUNCTION> roots;
+    for (const auto& slot : slots)
+        roots.push_back(slot.second);
+    if (!SelfContained(roots))
+        return LeaveMediaField(medium);
+    if (!allowEager || !sceneData->meshPool || !medium.fastCache)
+        return;
     if (!slots.empty())
     {
-        std::vector<FUNCTION> roots;
-        for (const auto& slot : slots)
-            roots.push_back(slot.second);
-        if (!SelfContained(roots))
-            return LeaveMediaField(medium);
         boost::intrusive_ptr<FunctionVM> functionVM = mpFunctionVM->Snapshot(roots);
         for (const auto& slot : slots)
         {
@@ -429,7 +438,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
         // CSG bounds only shrink, so a box taken around a pending mesh must be reset before it can grow.
         if (changed && compound->Bound.empty())
         {
-            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
             compound->Compute_BBox();
             Update_Infinite_Flag(compound);
         }
@@ -440,6 +449,7 @@ bool Parser::Resolve_Mesh_Geometry(ObjectPtr object)
 /* Parse the file. */
 void Parser::Run()
 {
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     SourceInfo errorInfo(UCS2String(POV_FILENAME_BUFFER_CHARS, u'\0'), // Pre-claim some memory, so we can handle an out-of-memory error.
                          SourcePosition(-1,-1,-1));
 
@@ -464,7 +474,6 @@ void Parser::Run()
             solidMediaSeen = false;
             hollowDeprecationWarned = false;
             defaultMix = kMediaBlendAuto;
-            defaultFadeCutoff = kFadeCutoffAuto;
             interiorSerial = 0;
 
             // Initialize various defaults depending on language version as per command line / INI settings.
@@ -510,15 +519,13 @@ void Parser::Run()
             for (ObjectPtr object : sceneData->objects)
                 ResolveInheritedTags(object);
             Assign_Scene_Lights();
+            Check_Legacy_Transport();
+            Warn_Unused_Media_Resolution();
             Split_Unions();
 
             // post process atmospheric media
             for (vector<Media>::iterator i(sceneData->atmosphere.begin()); i != sceneData->atmosphere.end(); i++)
-            {
                 i->PostProcess();
-                if (i->Refraction != 0.0)
-                    Warning("Atmospheric media do not refract; 'refraction' works in the media of an object's interior.");
-            }
 
             // post process global light sources
             for (size_t i = 0; i < sceneData->lightSources.size(); i++)
@@ -543,15 +550,16 @@ void Parser::Run()
                     Clear_Flag(light, PH_RFR_ON_FLAG);
                     Clear_Flag(light, PH_RFL_ON_FLAG);
                     if (light->mediaPhotonOptions)
-                        Warning("photons in a media light_source are ignored by photon method 1.");
+                        Warning("photons in %s light are ignored by photon method 1.",
+                                light->emitter->IsSurface() ? "a surface" : "an interior");
                 }
-                else if (light->mediaPhotonLegacyOptions)
-                    Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
             }
             if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
                       "positive finite number; line %lld gives %g.", (long long)mInvalidPhotonTargetLine, mInvalidPhotonTarget);
             Make_Portal_Lights();
+            mMessageFactory.Info("Preparation: parse finished %.1fs",
+                                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
         }
         // Make sure any exceptional situations are reported as a parse error (pov_base::Exception)
         // (both to the user interface and "upward" to the calling code)
@@ -758,7 +766,7 @@ void Parser::Run()
     sceneData->solidBlocksInteriorMedia = (sceneData->EffectiveLanguageVersion() < 400);
     if (!atmosphereIorSet)
         SetAtmosphereIor();
-    sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->mediaRefraction;
+    sceneData->legacyIorStack = !sceneData->crossedNonSurface && !sceneData->fieldRefraction;
     if (sceneData->interfaceTexture == kInterfaceTextureAuto)
         sceneData->interfaceTexture = (sceneData->EffectiveLanguageVersion() >= 400) ? kInterfaceTextureBlend : kInterfaceTextureFar;
     if (solidMediaSeen && sceneData->solidBlocksInteriorMedia)
@@ -1047,6 +1055,14 @@ void Parser::Parse_End(TokenId openTokenId, TokenId expectTokenId)
 
     ErrorInfo(maBraceStack.back(), "Unmatched %s", Get_Token_String(maBraceStack.back().openToken));
     Error("No matching %s, %s found instead", Get_Token_String(expectTokenId), Get_Token_String(CurrentTrueTokenId()));
+}
+
+// Stops on an item that only a sub-block of block takes, naming that sub-block.
+void Parser::Reject_Nested_Item(const char* block, const char* where)
+{
+    const std::string owners = Pov4NestedOwners(block, CurrentTokenText());
+    if (!owners.empty())
+        Error("'%s' belongs inside the %s block of %s.", CurrentTokenText().c_str(), owners.c_str(), where);
 }
 
 //******************************************************************************
@@ -2432,6 +2448,7 @@ void Parser::Parse_Camera (Camera& Cam)
                     Parse_Camera_Output(New);
                 else
                 {
+                    Reject_Nested_Item("camera", "a camera");
                     UNGET
                     EXIT
                 }
@@ -2596,7 +2613,7 @@ ObjectPtr Parser::Copy_Tagged(ObjectPtr object, const TagFilter& filter, const s
         copy->lightGroupActive = Light_Group_Lights_Something(copy);
     if (copy->Bound.empty())
     {
-        Make_BBox(copy->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+        Make_BBox(copy->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
         copy->Compute_BBox();
         Update_Infinite_Flag(copy);
     }
@@ -2751,6 +2768,7 @@ bool Parser::Parse_Camera_Mods(Camera& New)
         OTHERWISE
             if (CurrentTokenText() != "output")
             {
+                Reject_Nested_Item("camera", "a camera");
                 UNGET
                 return false;
             }
@@ -3811,6 +3829,7 @@ void Parser::ParseContainedBy(shared_ptr<pov::ContainedByShape>& container, Obje
                 }
 
                 container = box;
+                box->ComputeBBox(obj->BBox);
 
                 // TODO REVIEW - where is the bounding box computed when obj->Trans is `nullptr`?
                 if (obj->Trans != nullptr)
@@ -4779,6 +4798,9 @@ ObjectPtr Parser::Parse_Light_Source ()
         END_CASE
 
         OTHERWISE
+            if ((CurrentTokenText() == "light") && Peek_Token(LEFT_CURLY_TOKEN))
+                Error("A light block makes a shape's surface a light; a light_source cannot take one.");
+            Reject_Nested_Item("light_source", "a light_source");
             UNGET
             EXIT
         END_CASE
@@ -7808,18 +7830,6 @@ void Parser::Parse_Default ()
                     defaultMix = Parse_Mix ();
                 END_CASE
 
-                CASE (LIGHT_SOURCE_TOKEN)
-                    Parse_Begin ();
-                    while (!Peek_Token(RIGHT_CURLY_TOKEN))
-                    {
-                        Get_Token ();
-                        if (CurrentTokenText() != "fade_cutoff")
-                            Error("A #default media light_source accepts only fade_cutoff, not '%s'.", CurrentTokenText().c_str());
-                        defaultFadeCutoff = Parse_Fade_Cutoff ();
-                    }
-                    Parse_End ();
-                END_CASE
-
                 OTHERWISE
                     UNGET
                     EXIT
@@ -7887,8 +7897,6 @@ void Parser::Parse_Frame_Items ()
 
         CASE (MEDIA_TOKEN)
             Parse_Media(sceneData->atmosphere);
-            if (sceneData->atmosphere.back().light)
-                Error("A media light_source needs an object's interior; atmospheric media cannot be lights.");
         END_CASE
 
         CASE (BACKGROUND_TOKEN)
@@ -8616,19 +8624,6 @@ void Parser::Parse_Global_Settings()
                 if (sceneData->interfaceTexture == kInterfaceTextureAuto)
                     Error("Expected blend, near or far after interface_texture.");
             }
-            else if (CurrentTokenText() == "refraction_detail")
-            {
-                Get_Token();
-                if (CurrentTokenText() == "auto")
-                    sceneData->refractionDetail = 0.0;
-                else
-                {
-                    UNGET
-                    sceneData->refractionDetail = Parse_Float();
-                    if (!std::isfinite(sceneData->refractionDetail) || !(sceneData->refractionDetail > 0.0))
-                        Error("refraction_detail must be a length in millimetres greater than 0, or auto.");
-                }
-            }
             else if (CurrentTokenText() == "prepared_media_cells")
             {
                 const DBL cells = Parse_Float();
@@ -8661,6 +8656,7 @@ void Parser::Parse_Global_Settings()
             }
             else
             {
+                Reject_Nested_Item("global_settings", "global_settings");
                 UNGET
                 EXIT
             }
@@ -9063,8 +9059,20 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         END_CASE
 
         OTHERWISE
-            UNGET
-            EXIT
+            if (CurrentTokenText() == "light")
+            {
+                if (Object->Type & LIGHT_SOURCE_OBJECT)
+                    Error("A light block makes a shape's surface a light; a light_source cannot take one.");
+                if (Object->surfaceLight != nullptr)
+                    Error("Only one surface light block allowed on an object.");
+                Object->surfaceLight = Parse_Light(true);
+            }
+            else
+            {
+                Reject_Nested_Item("object", "an object");
+                UNGET
+                EXIT
+            }
         END_CASE
     END_EXPECT
 
@@ -9084,13 +9092,15 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
     {
         /* Get bounding objects bounding box. */
 
-        Min = Vector3d(-BOUND_HUGE);
-        Max = Vector3d(BOUND_HUGE);
+        Min = Vector3d(-std::numeric_limits<DBL>::infinity());
+        Max = Vector3d(std::numeric_limits<DBL>::infinity());
+        bool bounded = false;
 
         for(vector<ObjectPtr>::iterator Sib = Object->Bound.begin(); Sib != Object->Bound.end(); Sib++)
         {
-            if(!Test_Flag((*Sib), INVERTED_FLAG))
+            if(!Test_Flag((*Sib), INVERTED_FLAG) && (*Sib)->BBox.finiteInterior)
             {
+                bounded = true;
                 Min[X] = max(Min[X], (DBL)((*Sib)->BBox.lowerLeft[X]));
                 Min[Y] = max(Min[Y], (DBL)((*Sib)->BBox.lowerLeft[Y]));
                 Min[Z] = max(Min[Z], (DBL)((*Sib)->BBox.lowerLeft[Z]));
@@ -9100,7 +9110,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             }
         }
 
-        Make_BBox_from_min_max(BBox, Min, Max);
+        Make_BBox_from_min_max(BBox, Min, Max, bounded);
 
         /* Get bounding boxes' volumes. */
 
@@ -9109,8 +9119,9 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         BOUNDS_VOLUME(V1, BBox);
         BOUNDS_VOLUME(V2, Object->BBox);
 
-        if (V1 < V2)
+        if (bounded && !Object->BBox.finiteInterior && (!Object->BBox.finite || V1 < V2))
         {
+            BBox.finiteInterior = Object->BBox.finiteInterior;
             Object->BBox = BBox;
         }
     }
@@ -9124,13 +9135,15 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
     {
         /* Get clipping objects bounding box. */
 
-        Min = Vector3d(-BOUND_HUGE);
-        Max = Vector3d(BOUND_HUGE);
+        Min = Vector3d(-std::numeric_limits<DBL>::infinity());
+        Max = Vector3d(std::numeric_limits<DBL>::infinity());
+        bool bounded = false;
 
         for(vector<ObjectPtr>::iterator Sib = Object->Clip.begin(); Sib != Object->Clip.end(); Sib++)
         {
-            if(!Test_Flag((*Sib), INVERTED_FLAG))
+            if(!Test_Flag((*Sib), INVERTED_FLAG) && (*Sib)->BBox.finiteInterior)
             {
+                bounded = true;
                 Min[X] = max(Min[X], (DBL)((*Sib)->BBox.lowerLeft[X]));
                 Min[Y] = max(Min[Y], (DBL)((*Sib)->BBox.lowerLeft[Y]));
                 Min[Z] = max(Min[Z], (DBL)((*Sib)->BBox.lowerLeft[Z]));
@@ -9140,7 +9153,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
             }
         }
 
-        Make_BBox_from_min_max(BBox, Min, Max);
+        Make_BBox_from_min_max(BBox, Min, Max, bounded);
 
         /* Get bounding boxes' volumes. */
 
@@ -9148,7 +9161,7 @@ ObjectPtr Parser::Parse_Object_Mods (ObjectPtr Object)
         BOUNDS_VOLUME(V1, BBox);
         BOUNDS_VOLUME(V2, Object->BBox);
 
-        if (V1 < V2)
+        if (bounded && (!Object->BBox.finiteInterior || V1 < V2))
         {
             Object->BBox = BBox;
         }
@@ -10557,35 +10570,78 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
             Add_Local_Light(child, light);
 }
 
-void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
+void Parser::Make_Surface_Light(ObjectPtr container)
 {
+    const MediaLight& settings = *container->surfaceLight;
+    LightSource *light = new LightSource();
+    try
+    {
+        light->emitter = std::make_shared<GeometrySurfaceEmitter>(container, container->surfaceLight);
+    }
+    catch (const std::exception& failure)
+    {
+        delete light;
+        Error("%s", failure.what());
+    }
+    light->emitterContainer = container;
+    light->Center = light->emitter->Centre();
+    light->Area_Light = true;
+    light->Use_Full_Area_Lighting = true;
+    light->Jitter = true;
+    light->Area_Size1 = settings.samples;
+    light->Area_Size2 = 1;
+    light->lawRadius = light->emitter->Radius();
+    light->cutoff = settings.cutoff;
+    light->Media_Interaction = settings.mediaInteraction;
+    light->Media_Attenuation = settings.mediaAttenuation;
+    if (settings.shadowless) light->Light_Type = FILL_LIGHT_SOURCE;
+    light->mediaPhotonOptions = settings.photonOptions;
+    if (settings.photonRefraction >= 0)
+        Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
+    if (settings.photonReflection >= 0)
+        Set_Flag(light, settings.photonReflection ? PH_RFL_ON_FLAG : PH_RFL_OFF_FLAG);
+    sceneData->mediaLights.push_back(light);
+    if (mLightGroups.empty()) sceneData->lightSources.push_back(light);
+    else
+    {
+        light->Type |= LIGHT_GROUP_LIGHT_OBJECT;
+        light->photonGroupEnabled = mLightGroups.back()->photonGroupEnabled;
+        sceneData->lightGroupLightSources.push_back(light);
+        mGroupMediaLights.emplace_back(mLightGroups.back(), light);
+    }
+}
+
+void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
+{
+    MediaLight& settings = *interior.light;
     std::string failure;
-    std::shared_ptr<const Emitter> emitter = MakeVolumeEmitter(medium, container, &mThreadData, failure);
+    std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(interior, container, &mThreadData, failure);
     if (!emitter)
     {
-        Warning("A media light_source gives no light because %s.", failure.c_str());
+        Warning("An interior light gives no light because %s.", failure.c_str());
         return;
     }
-    const MediaLight& settings = *medium.light;
     LightSource *light = new LightSource();
     light->emitter = emitter;
     light->emitterContainer = container;
-    light->colour = emitter->Intensity() * settings.brightness;
+    // POV's diffuse reflects E without the Lambertian 1/pi, so a light of radiant intensity I renders a white
+    // surface facing it I/d^2 bright; dividing by pi makes that L, the radiance the light was stated as.
+    light->colour = emitter->Intensity() / M_PI;
     light->Center = emitter->Centre();
     light->Area_Light = true;
     light->Use_Full_Area_Lighting = true;
     light->Jitter = true;
     light->Area_Size1 = settings.samples;
     light->Area_Size2 = 1;
-    light->Fade_Distance = settings.fadeDistance;
-    light->Fade_Power = settings.fadePower;
-    light->fadeCutoff = settings.fadeCutoff;
+    light->attenuationScale = settings.attenuationScale;
+    light->attenuationPower = settings.attenuationPower;
+    light->cutoff = settings.cutoff;
+    light->lawRadius = emitter->Radius();
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
         light->Light_Type = FILL_LIGHT_SOURCE;
     light->mediaPhotonOptions = settings.photonOptions;
-    light->mediaPhotonLegacyOptions = settings.photonLegacyOptions;
     if (settings.photonRefraction >= 0)
         Set_Flag(light, settings.photonRefraction ? PH_RFR_ON_FLAG : PH_RFR_OFF_FLAG);
     if (settings.photonReflection >= 0)
@@ -10610,6 +10666,155 @@ void Parser::Assign_Scene_Lights()
     for (const std::pair<ObjectPtr, LightSource *>& added : mGroupMediaLights)
         Add_Local_Light(added.first, added.second);
     mGroupMediaLights.clear();
+}
+
+// The first finish in these textures that uses subsurface method 1, or null.
+static const FINISH *Legacy_Subsurface(const TEXTURE *textures, int sceneMethod)
+{
+    for (const TEXTURE *layer = textures; layer != nullptr; layer = layer->Next)
+    {
+        if ((layer->Finish != nullptr) && layer->Finish->UseSubsurface &&
+            ((layer->Finish->SubsurfaceMethod ? layer->Finish->SubsurfaceMethod : sceneMethod) == kSubsurfaceMethodSampled))
+            return layer->Finish;
+        for (const TEXTURE *material : layer->Materials)
+            if (const FINISH *finish = Legacy_Subsurface(material, sceneMethod))
+                return finish;
+        if (layer->Blend_Map != nullptr)
+            for (const TextureBlendMapEntry& entry : layer->Blend_Map->Blend_Map_Entries)
+                if (const FINISH *finish = Legacy_Subsurface(entry.Vals, sceneMethod))
+                    return finish;
+    }
+    return nullptr;
+}
+
+// The first subsurface method 1 finish on this object's own textures, including per-face and per-component ones.
+static const FINISH *Object_Legacy_Subsurface(ConstObjectPtr object, int sceneMethod)
+{
+    const FINISH *finish = Legacy_Subsurface(object->Texture, sceneMethod);
+    if (finish == nullptr)
+        finish = Legacy_Subsurface(object->Interior_Texture, sceneMethod);
+    if (const Mesh *mesh = dynamic_cast<const Mesh *>(object))
+        for (MeshIndex i = 0; (finish == nullptr) && (i < mesh->Number_Of_Textures); i++)
+            finish = Legacy_Subsurface(mesh->Textures[i], sceneMethod);
+    if (const Blob *blob = dynamic_cast<const Blob *>(object))
+        for (size_t i = 0; (finish == nullptr) && (i < blob->Element_Texture.size()); i++)
+            finish = Legacy_Subsurface(blob->Element_Texture[i], sceneMethod);
+    return finish;
+}
+
+static bool Media_Is_Constant(const Media& medium)
+{
+    for (const PIGMENT *pigment : medium.Density)
+        if (pigment->Type != PLAIN_PATTERN)
+            return false;
+    return true;
+}
+
+static void Collect_Scene_Objects(ObjectPtr object, std::vector<ObjectPtr>& objects)
+{
+    objects.push_back(object);
+    if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+        for (ObjectPtr child : compound->children)
+            Collect_Scene_Objects(child, objects);
+}
+
+// Media methods 1 to 3 and subsurface method 1 stay as they were: they absorb and glow, but never make, scatter, bounce
+// or receive the light of a light block. See "Light Blocks and Classic Transport" in the manual.
+void Parser::Check_Legacy_Transport()
+{
+    std::vector<ObjectPtr> objects;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, objects);
+    for (ObjectPtr object : objects)
+    {
+        const Interior *interior = object->interior.get();
+        const MediaLight *block = (interior != nullptr) ? interior->light.get() : nullptr;
+        if (block != nullptr)
+            for (const Media& medium : interior->media)
+                if (medium.Sample_Method != 4)
+                    Error("The %s light block at %s holds the method %d medium at %s; a light block needs "
+                          "method 4 media.", ShapeName(object), block->where.c_str(), int(medium.Sample_Method),
+                          medium.where.c_str());
+        for (const MediaLight *light : { static_cast<const MediaLight *>(object->surfaceLight.get()), block })
+        {
+            if ((light == nullptr) || !sceneData->useSubsurface)
+                continue;
+            std::vector<ObjectPtr> parts;
+            Collect_Scene_Objects(object, parts);
+            for (ObjectPtr part : parts)
+                if (Object_Legacy_Subsurface(part, sceneData->subsurfaceMethod))
+                    Error("The %s light block at %s is on a subsurface method 1 finish; a light block needs "
+                          "subsurface method 2.", ShapeName(object), light->where.c_str());
+        }
+    }
+    auto blockOf = [](const LightSource *light) {
+        const ConstObjectPtr owner = light->emitterContainer;
+        return light->emitter->IsSurface() ? owner->surfaceLight.get() : owner->interior->light.get();
+    };
+    if (!sceneData->mediaLights.empty() && sceneData->useSubsurface)
+    {
+        const LightSource *first = sceneData->mediaLights.front();
+        for (ObjectPtr object : objects)
+        {
+            if (const FINISH *finish = Object_Legacy_Subsurface(object, sceneData->subsurfaceMethod))
+                Error("The subsurface method 1 finish at %s on the %s is lit by the %s light block at %s; "
+                      "only subsurface method 2 carries a light block's light.", finish->SubsurfaceWhere.c_str(),
+                      ShapeName(object), ShapeName(first->emitterContainer), blockOf(first)->where.c_str());
+        }
+    }
+    const LightSource *lighting = nullptr;
+    for (const LightSource *light : sceneData->mediaLights)
+        if (light->Media_Interaction)
+        {
+            lighting = light;
+            break;
+        }
+    if (lighting == nullptr)
+        return;
+    const ConstObjectPtr owner = lighting->emitterContainer;
+    const MediaLight *block = blockOf(lighting);
+    auto reject = [&](const Media& medium, const std::string& where) {
+        if ((medium.Sample_Method != 4) && !medium.Scattering.IsZero())
+            Error("The method %d medium at %s %s scatters, and the %s light block at %s lights media; "
+                  "only method 4 media scatter a light block's light.", int(medium.Sample_Method), medium.where.c_str(),
+                  where.c_str(), ShapeName(owner), block->where.c_str());
+    };
+    for (const Media& medium : sceneData->atmosphere)
+        reject(medium, "in the atmosphere");
+    for (ObjectPtr object : objects)
+        if (object->interior != nullptr)
+            for (const Media& medium : object->interior->media)
+                reject(medium, std::string("in the ") + ShapeName(object));
+}
+
+// A constant method 4 medium's resolution sets its interior's grid only when nothing there varies.
+void Parser::Warn_Unused_Media_Resolution()
+{
+    std::vector<ObjectPtr> objects;
+    for (ObjectPtr object : sceneData->objects)
+        Collect_Scene_Objects(object, objects);
+    std::unordered_set<std::string> warned;
+    for (ObjectPtr object : objects)
+    {
+        const Interior *interior = object->interior.get();
+        if (interior == nullptr)
+            continue;
+        std::string cause;
+        if (interior->light != nullptr)
+            cause = "the light block at " + interior->light->where;
+        else if (interior->refraction && !interior->refraction->functions.empty())
+            cause = "its refraction";
+        for (const Media& medium : interior->media)
+            if (cause.empty() && (medium.Sample_Method == 4) && !Media_Is_Constant(medium))
+                cause = "the varying medium at " + medium.where;
+        if (cause.empty())
+            continue;
+        for (const Media& medium : interior->media)
+            if ((medium.Sample_Method == 4) && (medium.AuthoredFastResolution() > 0.0) && Media_Is_Constant(medium) &&
+                warned.insert(medium.where).second)
+                Warning("The constant medium at %s in the %s gives a resolution, but the grid there follows %s, "
+                        "so the resolution is ignored.", medium.where.c_str(), ShapeName(object), cause.c_str());
+    }
 }
 
 void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
@@ -10779,30 +10984,15 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 
     if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
     {
-        // a media light's table needs the container's geometry, so a deferred mesh is built now and boxes above it redone
-        if (std::any_of(Object->interior->media.begin(), Object->interior->media.end(), [](const Media& medium) { return bool(medium.light); }))
+        // an interior light's table needs the container's geometry, so a deferred mesh is built now and boxes above it redone
+        if (Object->interior->light)
             mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
-            // The detail comes from the medium or the scene's default, in millimetres; the grid width is in scene units.
-            // Auto derives it from the container's largest side, the same extent the marcher's rule measures.
-            const DBL detailMM = (medium.RefractionDetail > 0.0) ? medium.RefractionDetail : sceneData->refractionDetail;
-            const DBL detailUnits = ((detailMM > 0.0) && (sceneData->mmPerUnit > 0.0)) ? detailMM / sceneData->mmPerUnit : 0.0;
-            Vector3d boundsLow, boundsHigh;
-            Make_min_max_from_BBox(boundsLow, boundsHigh, Object->BBox);
-            const Vector3d boundsSize = boundsHigh - boundsLow;
-            const DBL extent = std::max(boundsSize[X], std::max(boundsSize[Y], boundsSize[Z]));
-            const DBL autoDetail = (std::isfinite(extent) && (extent > 0.0) && (extent < BOUND_HUGE * 0.5)) ? extent / 32.0 : 0.0;
-            medium.SetFastContainer(Object, (detailUnits > 0.0) ? detailUnits : autoDetail,
-                                    sceneData->EffectivePreparedMediaCells());
-            if ((detailUnits > 0.0) && (medium.Refraction != 0.0) && (medium.Sample_Method == 4) &&
-                !medium.Density.empty() && (medium.FastResolution > 0.5 * detailUnits))
-                Warning("Media resolution %.6g is coarser than half this medium's refraction_detail (%.6g), so the prepared "
-                        "grid holds index detail no finer than %.6g; raise the resolution or lower refraction_detail.",
-                        medium.FastResolution, detailUnits, medium.FastResolution);
-            if (medium.light)
-                Make_Media_Light(medium, Object);
+            medium.SetFastContainer(Object, sceneData->EffectivePreparedMediaCells());
         }
+        if (Object->interior->light)
+            Make_Interior_Light(*Object->interior, Object);
     }
 
     if ((Object->Texture == nullptr) &&
@@ -10830,6 +11020,12 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         {
             Post_Textures(Object->Interior_Texture);
         }
+    }
+
+    if (Object->surfaceLight)
+    {
+        mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
+        Make_Surface_Light(Object);
     }
 
     if(Object->Type & LIGHT_SOURCE_OBJECT)
@@ -10925,7 +11121,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
             int first = Test_Flag(Object, HOLLOW_FLAG) ? kMediaBlendAdd : defaultMix;
             if (first == kMediaBlendAuto)
                 first = (sceneData->EffectiveLanguageVersion() >= 400) ? kMediaBlendReplace : kMediaBlendAdd;
-            interior.clears = interior.media.empty() && (first == kMediaBlendReplace);
+            interior.clears = interior.media.empty() && !interior.refraction && !interior.light &&
+                              (first == kMediaBlendReplace);
             bool blends = interior.clears;
             for (size_t i = 0; i < interior.media.size(); i++)
             {
@@ -10942,7 +11139,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         Object->interior->hollow = (Test_Flag(Object, HOLLOW_FLAG) != false);
         const bool visibleMedia = std::any_of(interior.media.begin(), interior.media.end(), [](const Media& medium) {
             return !medium.Absorption.IsZero() || !medium.Emission.IsZero() || !medium.Scattering.IsZero(); });
-        sceneData->mediaRefraction = sceneData->mediaRefraction || Object->interior->refracting;
+        sceneData->fieldRefraction = sceneData->fieldRefraction || Object->interior->refracting;
         if (visibleMedia)
         {
             sceneData->interiorMedia = true;
@@ -11009,7 +11206,7 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
         CompoundObject *compound = dynamic_cast<CompoundObject *>(Object);
         if (mMeshResolvedBelow && (compound != nullptr) && compound->Bound.empty())
         {
-            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE);
+            Make_BBox(compound->BBox, -BOUND_HUGE/2, -BOUND_HUGE/2, -BOUND_HUGE/2, BOUND_HUGE, BOUND_HUGE, BOUND_HUGE, false);
             compound->Compute_BBox();
             Update_Infinite_Flag(compound);
         }
@@ -11300,9 +11497,10 @@ bool Parser::Splits_Union(ObjectPtr Object, bool warn)
         return false;
 
     // A medium prepared over the union, or a light made from it, keeps a pointer to the union, so the union stays whole.
-    if ((Object->interior != nullptr) &&
-        std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
-                    [Object](const Media& medium) { return medium.light || medium.PreparedFor(Object); }))
+    if (Object->surfaceLight || ((Object->interior != nullptr) &&
+        (Object->interior->light ||
+         std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
+                     [Object](const Media& medium) { return medium.PreparedFor(Object); }))))
         return false;
 
     /*

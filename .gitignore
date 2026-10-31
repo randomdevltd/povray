@@ -275,5 +275,15 @@ $RECYCLE.BIN/
 /tools/bench/pcount
 /tests/prepared-sets/
 /tests/progressive-surface/
+/tests/curved-ray-step/
+/tests/emitter-light-law/
+/tests/finite-bounds/
+/tests/halfspace-bounds/
+/tests/physical-phase/
+/tests/prepared-light/
+/tests/prepared-refraction/
+/tests/prepared-transfer/
+/tests/sphere-intersection/
+/tests/subsurface-entry-ior/
 *.vsix
 tools/language/reference/.stamp
