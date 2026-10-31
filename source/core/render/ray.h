@@ -131,7 +131,7 @@ class Ray final : public BasicRay
         void SetRootQuery(const RayRootQuery* query) const { rootQuery.query = query; rootQuery.owner = nullptr; }
         void SetRootOwner(ConstObjectPtr owner) const { rootQuery.owner = owner; }
 
-        void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal);
+        void SetSurfaceOrigin(ConstObjectPtr object, const Vector3d& point, const Vector3d& normal, ConstObjectPtr surface = nullptr);
         void ClearSurfaceOrigin() { surfaceOrigin.object = nullptr; }
         bool HasSurfaceOrigin() const { return surfaceOrigin.object != nullptr; }
         /// `surface` is the part of `object` the point lies on, whose stated accuracy the match allows; `object` if none.

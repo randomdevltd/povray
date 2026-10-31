@@ -1298,9 +1298,6 @@ void View::StartRender(POVMS_Object& renderOptions)
     {
         photonScene.photonSettings = shot->settings;
         photonScene.shotPhotons->views++;
-        // building method 2 maps leaves a view the default subsurface cache; a view reusing them takes the same
-        if (photonScene.photonSettings.Progressive())
-            viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
         MessageFactory(photonScene.warningLevel, "Photons", photonScene.backendAddress, photonScene.frontendAddress,
                        photonScene.sceneId, viewData.viewId)
             .Info("Photon maps shot once for this scene's sets are reused by this camera (view %u of those sharing them).",
@@ -1714,6 +1711,8 @@ void View::GetStatistics(POVMS_Object& renderStats)
     renderStats.SetLong(kPOVAttrib_MediaOrdinaryLightDraws, stats[Media_Ordinary_Light_Draws]);
     renderStats.SetLong(kPOVAttrib_MediaShadowLightingCalls, stats[Media_Shadow_Lighting_Calls]);
     renderStats.SetLong(kPOVAttrib_MediaZeroScatterEmitterDraws, stats[Media_Zero_Scatter_Emitter_Draws]);
+    renderStats.SetLong(kPOVAttrib_SubsurfaceSingleEmitterDraws, stats[Subsurface_Single_Emitter_Draws]);
+    renderStats.SetLong(kPOVAttrib_SubsurfaceSingleSideRejects, stats[Subsurface_Single_Emitter_Side_Rejects]);
     renderStats.SetLong(kPOVAttrib_MediaPrepared4Queries, stats[Media_Prepared4_Queries]);
     renderStats.SetLong(kPOVAttrib_MediaLegacy3Queries, stats[Media_Legacy3_Queries]);
     renderStats.SetLong(kPOVAttrib_MediaForbidden4Procedural, stats[Media_Forbidden4_Procedural]);
@@ -2128,7 +2127,6 @@ try
         set->progressiveMedia.Build();
         bytes += set->progressiveMedia.bounds.capacity() * sizeof(ProgressiveVolumePhotonMap::Bounds);
     }
-    viewData.subsurfaceCache = std::make_shared<SubsurfaceCache>();
     viewData.photonPeakBytes = std::max(viewData.photonPeakBytes, bytes);
     return true;
 }

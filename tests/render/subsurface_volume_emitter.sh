@@ -10,6 +10,8 @@ render() {
 }
 render far_point Declare=PointSource=1
 render far_volume
+render far_point_diffuse Declare=PointSource=1 Declare=SingleSamples=0
+render far_volume_diffuse Declare=SingleSamples=0
 render near_direct Declare=NearSource=1 Declare=SingleSamples=0
 render near_photons Declare=NearSource=1 Declare=SingleSamples=0 Declare=Photons=1 Declare=PhotonQuality=16
 for name in far_point far_volume near_direct near_photons; do
@@ -22,3 +24,12 @@ for pattern in 'samples/set), [1-9][0-9]* deposits' ' [1-9][0-9]* contributions;
 done
 python3 "$SRCDIR/tests/render/subsurface_volume_emitter_reference.py" .
 echo 'subsurface_volume_emitter: physical far-field point equivalence and near-field photon irradiance passed'
+render near_reuse Declare=NearSource=1 Declare=SingleSamples=0 Declare=Photons=1 Declare=PhotonQuality=0.25 Declare=ReuseViews=1
+tr -d ' \r\n' < sslt_volume_near_reuse.log > sslt_volume_near_reuse.txt
+grep -q 'Photonmapsshotonceforthisscene' sslt_volume_near_reuse.txt
+count=$(grep -o 'Method2pointcloudatspacing0.3:' sslt_volume_near_reuse.txt | wc -l)
+[ "$count" -eq 2 ] || { cat sslt_volume_near_reuse.log; exit 1; }
+tail -c 864 sslt_volume_near_reuse-1.ppm > sslt_volume_near_reuse-1.pixels
+tail -c 864 sslt_volume_near_reuse-2.ppm > sslt_volume_near_reuse-2.pixels
+cmp sslt_volume_near_reuse-1.pixels sslt_volume_near_reuse-2.pixels
+echo 'subsurface_volume_emitter: photon reuse preserves subsurface settings and pixels'

@@ -368,7 +368,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 ray.SetFlags(Ray::SubsurfaceRay, false, true);
                 ray.SetSurfaceOrigin(light->emitterContainer ? light->emitterContainer : origin.surfaceObject,
-                                     origin.position, origin.normal);
+                                     origin.position, origin.normal, origin.surfaceObject);
             }
             const size_t aimed = std::min<size_t>(targets[li].size() - 1, pick.target);
             auto& feedback = data->progressiveFeedback[feedbackOffset[li] + aimed];

@@ -270,6 +270,8 @@ typedef enum INTSTATS
     Media_Ordinary_Light_Draws,
     Media_Shadow_Lighting_Calls,
     Media_Zero_Scatter_Emitter_Draws,
+    Subsurface_Single_Emitter_Draws,
+    Subsurface_Single_Emitter_Side_Rejects,
     Media_Prepared4_Queries,
     Media_Legacy3_Queries,
     Media_Forbidden4_Procedural,

@@ -1,10 +1,12 @@
-#version 3.7;
+#version 3.8;
+// Zero fade_distance selects exact inverse-square attenuation from version 3.8.
 #ifndef (PointSource) #declare PointSource = 0; #end
 #ifndef (NearSource) #declare NearSource = 0; #end
 #ifndef (Photons) #declare Photons = 0; #end
 #ifndef (PhotonQuality) #declare PhotonQuality = 4; #end
 #ifndef (Samples) #declare Samples = 256; #end
 #ifndef (SingleSamples) #declare SingleSamples = 32; #end
+#ifndef (ReuseViews) #declare ReuseViews = 0; #end
 #ifndef (CloudSpacing) #declare CloudSpacing = 0.3; #end
 #declare Height = (NearSource ? 1.2 : 20);
 #declare Radius = (NearSource ? 0.3 : 0.02);
@@ -14,7 +16,11 @@ global_settings {
   subsurface { method 2 samples Samples, SingleSamples spacing CloudSpacing }
   #if (Photons) photons { method 2 quality PhotonQuality } #end
 }
-camera { orthographic location <0, 5, -0.001> look_at 0 right x * 1 up z * 1 }
+#for (View, 0, ReuseViews)
+  camera { orthographic location <0, 5, -0.001> look_at 0 right x * 1 up z * 1
+    #if (ReuseViews) output #end
+  }
+#end
 background { rgb 0 }
 box {
   <-3, -3, -3>, <3, 0, 3>

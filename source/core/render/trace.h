@@ -1263,8 +1263,9 @@ class Trace
                                        std::uint64_t key, int sample);
         ObjectPtr SubsurfaceObject(const Intersection& isect);
         void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
-        double ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, const Interior* interior,
-                                          const Vector3d& towardSource, TraceTicket& ticket);
+        /// `object` holds the interior, `whole` is the object it belongs to and `tolerance` the hit part's stated accuracy.
+        double ComputeSubsurfaceEntryIOR(const Vector3d& point, const Vector3d& normal, ConstObjectPtr object,
+                                          ConstObjectPtr whole, double tolerance, const Vector3d& towardSource, TraceTicket& ticket);
         void SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d& normal, const Interior* interior, Ray& ray);
         void SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate);
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
@@ -1281,15 +1282,17 @@ class Trace
                                          std::uint64_t key);
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
-                                               const Vector3d& geometricNormal, const Interior* interior, const char* uses = nullptr);
+                                               const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole,
+                                               double tolerance, const char* uses = nullptr);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
         std::string DescribeSubsurfaceObject(ConstObjectPtr object);
-        bool SubsurfaceSheet(ConstObjectPtr part, bool cutter);
+        bool SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared);
         bool StepInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool CreaseInMaterial(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const Vector3d& p, const Vector3d& np);
         bool InsideByBounds(const Vector3d& point, ObjectPtr object, const Vector3d *out = nullptr);
         bool FindNearestDepth(ObjectPtr object, Intersection& isect, const Ray& ray);
         std::unordered_map<const void*, bool> ssltClosedMeshes; ///< whether a mesh met by InsideByBounds is closed
+        std::unique_ptr<PhotonGatherer> cloudGatherer; ///< this thread's gatherer for lighting cloud points
         /// How far the material runs from origin along dir before it leaves the object, up to reach; see doc/PERF.md.
         double MaterialRun(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double reach, double step, TraceTicket& ticket);
         /// How far the material runs from under the exit point x toward a direction in its tangent plane, from runs along a
@@ -1302,12 +1305,13 @@ class Trace
         TraceTicket *ssltEscapeTicket = nullptr;
         bool SubsurfacePhotonsEnabled(ConstObjectPtr receiver, PreparedSetId preparedSetId) const;
         bool RecoverSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double radius,
-                                             Vector3d& outward, TraceTicket& ticket);
+                                             double rootTolerance, Vector3d& outward, TraceTicket& ticket);
         bool ProbeSubsurfacePhotonBoundary(const Vector3d& location, const Vector3d& normal, ObjectPtr receiver, double tolerance,
                                            double probe, Vector3d& outward, TraceTicket& ticket);
         bool SubsurfacePhotonDeposit(const Photon& photon, const Vector3d& incoming, ObjectPtr receiver, double rootTolerance,
                                      Vector3d& outward, TraceTicket& ticket);
-        MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, ObjectPtr receiver,
+        /// `tolerance` is the stated accuracy of the surface part the point lies on, in world units.
+        MathColour ComputeSubsurfacePhotonIrradiance(const Vector3d& point, const Vector3d& normal, ObjectPtr receiver, double tolerance,
                                                      PhotonGatherer& gatherer, TraceTicket& ticket, bool cloud);
         bool ComputeProjectedSubsurfacePhotons(const Intersection& out, const Vector3d& base, const SubsurfaceProfile& profile,
                                                const SubsurfaceFlesh& flesh, double ftOut, int samples, PhotonGatherer& gatherer,

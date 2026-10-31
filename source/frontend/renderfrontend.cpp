@@ -2060,6 +2060,10 @@ void RenderStatistics(POVMS_Object& cppmsg, TextStreamBuffer *tsb)
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaZeroScatterEmitterDraws, &l);
     if(POVMSLongToCDouble(l) > 0.5)
         tsb->printf("Zero Scatter Draws:    %13.0f\n", POVMSLongToCDouble(l));
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_SubsurfaceSingleEmitterDraws, &l);
+    (void)POVMSUtil_GetLong(msg, kPOVAttrib_SubsurfaceSingleSideRejects, &l2);
+    if(POVMSLongToCDouble(l) > 0.5)
+        tsb->printf("Single Scatter Emitter Draws: %13.0f   Side Rejects: %13.0f\n", POVMSLongToCDouble(l), POVMSLongToCDouble(l2));
 
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaPrepared4Queries, &l);
     (void)POVMSUtil_GetLong(msg, kPOVAttrib_MediaLegacy3Queries, &l2);
