@@ -611,7 +611,7 @@ class Parser final
         void Parse_Finish (FINISH **);
         void Parse_Subsurface_Pigment(PIGMENT *&pigment);
         void Parse_Media (std::vector<Media>&);
-        void Parse_Media_Light(Media& medium);
+        void Parse_Interior_Light(Interior& interior, bool defaultsOnly = false);
         double Parse_Fade_Cutoff();
         void Parse_Interior (InteriorPtr&);
         int Parse_Mix();
@@ -840,7 +840,8 @@ class Parser final
         bool defaultsModified   : 1;        ///< Whether a `default` statement has been encountered.
         bool solidMediaSeen     : 1;        ///< Whether a non-hollow object carries interior media.
         bool hollowDeprecationWarned : 1;   ///< Whether `hollow` has been warned about under version 4.0.
-        double defaultFadeCutoff;           ///< `fade_cutoff` of `#default { media { light_source { } } }`, or kFadeCutoffAuto.
+        double defaultFadeCutoff;           ///< `fade_cutoff` of `#default { interior { light { } } }`, or kFadeCutoffAuto.
+        bool warnedLightCutoff = false, warnedFarRadii = false, warnedClusterRadii = false;
         int defaultMix;                     ///< `mix` of objects placed after `#default { media { ... } }`.
         unsigned int interiorSerial;        ///< Last Interior::precedence handed out.
         bool atmosphereIorSet;              ///< Whether the atmosphere's ior is settled, by the scene or its version.
@@ -945,7 +946,7 @@ class Parser final
         std::vector<std::pair<ObjectPtr, LightSource *>> mGroupMediaLights;
         void Post_Process(ObjectPtr Object, ObjectPtr Parent);
         /// Makes an emitting medium with a `light_source` block in a container a light of the scene, or of its light group.
-        void Make_Media_Light(Media& medium, ObjectPtr container);
+        void Make_Interior_Light(Interior& interior, ObjectPtr container);
         /// Whether Post_Process built a deferred mesh below the compound it is in, whose box must then be redone.
         bool mMeshResolvedBelow = false;
         /// The light groups Post_Process is inside, innermost last.

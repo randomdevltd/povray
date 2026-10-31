@@ -66,10 +66,9 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
     interior {
       media {
         mix add method 4 resolution 0.008
-        emission rgb <1, 0.6, 0.25> * 20000
         density { spherical color_map { [0 rgb 0] [0.5 rgb 0.3] [1 rgb 1] } }
-        light_source { samples Samples }
       }
+      light { pigment { rgb <1, 0.6, 0.25> * 3000 } samples Samples }
     }
     scale <0.05, 0.11, 0.05> translate y * 0.2 rotate <Tilt, 0, Tilt * 0.6> translate P
   }
@@ -99,17 +98,16 @@ Cloud(<-90, 9, 70>, <90, 22, 100>, 5, Deck)
       Jag(A, A + <rand(R) - 0.5, -0.5 - rand(R) * 0.5, rand(R) - 0.5> * 8, 5, 0.12, 0.07, 1.6)
     #end
     pigment { rgbt 1 }
-    interior { media { mix add emission rgb <0.72, 0.82, 1> * 5 light_source { samples Samples } } }
+    interior { media { mix add } light { pigment { rgb <0.72, 0.82, 1> * 5 } samples Samples } }
   }
   sphere {
     0, 1 pigment { rgbt 1 }
     interior {
       media {
         mix add method 4 resolution 0.25
-        emission rgb <0.8, 0.7, 1> * 0.35
         density { spherical turbulence 0.3 color_map { [0 rgb 0] [1 rgb 1] } }
-        light_source { samples Samples }
       }
+      light { pigment { rgb <0.8, 0.7, 1> * 0.35 } samples Samples }
     }
     scale 4.5 translate <22, 38, 40>
   }

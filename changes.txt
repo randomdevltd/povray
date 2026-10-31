@@ -40,6 +40,14 @@ v3.7.1 release proper.
 Changed Behaviour
 -----------------
 
+  - Media `emission` is appearance only again: it paints the glow the camera
+    sees and lights nothing, whether or not the interior has a `light` block,
+    and radiosity gathers with `media on` see it as any other medium's glow.
+    A volume light's power is stated as radiance in its `light` block and is
+    not read from the `emission`; scenes that lit with `emission` state their
+    luminance in the light block instead. The light's colour is the radiant
+    intensity over pi, the scale at which a white diffuse probe facing the
+    emitter renders the radiance itself.
   - Photon method 2 supports oriented area sources and projected-through apertures.
 
   - Photon method 2 shoots every batch into one map, with Sobol-stratified
@@ -392,17 +400,31 @@ New Features
     scene's request without editing it. Long marches are coarsened to fit a
     step budget; splitting long containers or a coarser resolution avoids
     that.
-  - An emitting medium can be a light: `media { emission ... light_source { }
-    }` lights surfaces and media with soft shadows, with `samples`,
-    `brightness`, `shadowless`, `fade_distance` and `fade_power` settings.
-  - A media `light_source { }` takes `fade_cutoff Value`: where the light,
-    attenuated to the emitter's nearest reach, is fainter than the value (on
-    the 0 to 1 scale of `adc_bailout`) at a lit point, it is left out there,
-    with no shadow ray. 0.000004 by default under #version 4.0 and later, 0
-    (off) before; independent of `fade_power`. `#default { media { light_source
-    { fade_cutoff Value } } }` sets the starting value of media lights parsed
-    after it; the media block of #default gives default values (`mix`,
-    `light_source { fade_cutoff }`), it is not a template.
+  - A finite object can be an independent volume light: `interior { light { } }`.
+    Its pigment and declared emitting region define its source; media density,
+    extinction and prepared grids affect transport separately. Nits use
+    isotropic j=L*pigment/(4V/A), with true geometric boundary area including
+    cavities and excluding internal union seams.
+    This is a reference calibration, not equal brightness at every receiver;
+    changing unused container extent is not guaranteed to preserve it.
+    Surface emission can approximate a volume, without exact angular identity.
+    Lumens normalize total generated flux with the renderer's greyscale
+    convention, before absorption. `scale_lumens(Phi,c)` explicitly converts
+    author-stated metres per scene unit. Uniform dilation preserves nits
+    illumination and changes fixed-lumen illumination inversely with area.
+    Geometry and flux normalization use convergence checks and warn
+    when their numerical discrepancy remains above the preparation target.
+  - Direct surface lighting, scattering media and progressive photons use the
+    same finite source at every distance. Sampling never collapses it to a
+    centre light or replaces its visibility with a silhouette disk. There is
+    no cell-distance clamp; near illumination and distant inverse-square
+    divergence follow the same integral. `samples` controls variance and cost.
+    `attenuation Power, Scale` defaults to physical `2,1`; a single value is
+    the scale shorthand. Artistic attenuation applies consistently to direct
+    and photon paths. `light`, `nits`, `lumens` and `attenuation` are contextual.
+    Legacy media light_source blocks must be migrated; the codemod preserves
+    appearance emission and copies source patterns into the independent light.
+    Multiple old sources in one interior require explicit pattern composition.
   - `ior_mix`, `ior off`, `ior atmosphere`, `atmospheric_ior`,
     `atmospheric_dispersion` and `interface_texture` control refraction
     between overlapping and shared surfaces.

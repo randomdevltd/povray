@@ -25,8 +25,8 @@ plane { x, -7 texture { pigment { rgb 0.7 } finish { diffuse 0.85 } } }
         mix add
         emission Colour * 14
         density { spherical turbulence 0.12 octaves 3 color_map { [0 rgb 0] [1 rgb 1] } }
-        light_source { samples Samples }
       }
+      light { pigment { pigment_pattern { spherical turbulence 0.12 octaves 3 color_map { [0 rgb 0] [1 rgb 1] } } color_map { [0 rgb 0] [1 Colour * 14] } } samples Samples }
     }
     translate Centre
   }
@@ -87,8 +87,8 @@ sphere {
       mix add
       emission rgb <1, 0.72, 0.38> * 60
       density { spherical turbulence 0.3 octaves 4 color_map { [0 rgb 0.1] [1 rgb 1] } }
-      light_source { samples Samples }
     }
+    light { pigment { pigment_pattern { spherical turbulence 0.3 octaves 4 color_map { [0 rgb 0.1] [1 rgb 1] } } color_map { [0 rgb 0] [1 rgb <1, 0.72, 0.38> * 60] } } samples Samples }
   }
   translate Geode
 }
@@ -100,8 +100,8 @@ sphere {
       mix add
       emission rgb <1, 0.38, 0.06> * 12
       density { spherical turbulence 0.35 octaves 5 lambda 2.4 color_map { [0 rgb 0] [0.3 rgb 0.2] [1 rgb 1] } }
-      light_source { samples Samples }
     }
+    light { pigment { pigment_pattern { spherical turbulence 0.35 octaves 5 lambda 2.4 color_map { [0 rgb 0] [0.3 rgb 0.2] [1 rgb 1] } } color_map { [0 rgb 0] [1 rgb <1, 0.38, 0.06> * 12] } } samples Samples }
   }
   scale <1.6, 0.7, 1.2> translate Pool
 }

@@ -93,12 +93,12 @@
 <a name="r3_12"></a>
 <div class="content-level-h2" contains="Volume Lights" id="r3_12">
 <h2>3.12 Volume Lights</h2>
-<p>An emitting medium can be declared a light. It then lights the surfaces and scattering media around it as well as glowing, casts shadows shaped by its own volume, and gets its brightness and colour from the same <code>emission</code> and <code>density</code> the camera sees, so the light always matches the glow. A candle flame, a neon tube, a fireball, a glowing jellyfish and a lantern inside a cloud are all one medium with a <code>light_source</code> block.</p>
-<p>This chapter describes the block, how the light's power and falloff follow from the medium, how it is sampled, how it meets light groups, radiosity and other media, and its limits. The emission and density themselves are described in <a href="r3_7.html#r3_7_2_2_2">Emission</a> and <a href="r3_11.html#r3_11_1">Density Drives the Coefficients</a>. The sample scenes <code>light_*.pov</code> and <code>blend_candle.pov</code> in <code>scenes/interior/media</code> are the worked examples. The examples in this chapter assume <code>#version 4.0;</code>.</p>
+<p>A volume of medium can be declared a light. It lights the surfaces and scattering media around it, casts shadows shaped by its own volume, and states its own colour and brightness in a <code>light</code> block beside the media, separate from the glow the camera sees. A candle flame, a neon tube, a fireball, a glowing jellyfish and a lantern inside a cloud are all one interior with a <code>light</code> block.</p>
+<p>This chapter describes the block, the radiance law that gives the light its power and falloff, how it is sampled, how it meets light groups, radiosity and other media, and its limits. The media themselves are described in <a href="r3_7.html#r3_7_2_2_2">Emission</a> and <a href="r3_11.html#r3_11_1">Density Drives the Coefficients</a>. The sample scenes <code>light_*.pov</code> and <code>blend_candle.pov</code> in <code>scenes/interior/media</code> are the worked examples. The examples in this chapter assume <code>#version 4.0;</code>.</p>
 <p>Quick Links:</p>
 <ul>
-  <li><a href="r3_12.html#r3_12_1">Making a Medium a Light</a></li>
-  <li><a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a></li>
+  <li><a href="r3_12.html#r3_12_1">Making a Volume a Light</a></li>
+  <li><a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a></li>
   <li><a href="r3_12.html#r3_12_3">Sampling and Shadows</a></li>
   <li><a href="r3_12.html#r3_12_4">Media, Light Groups and Radiosity</a></li>
   <li><a href="r3_12.html#r3_12_5">Limits and Messages</a></li>
@@ -106,107 +106,114 @@
 </ul></div>
 
 <a name="r3_12_1"></a>
-<div class="content-level-h3" contains="Making a Medium a Light" id="r3_12_1">
-<h3>3.12.1 Making a Medium a Light</h3>
-<p>A <code>light_source</code> statement inside a <code>media</code> statement makes that medium a light. The block may be empty. A medium declared as an identifier, or copied, keeps its light.</p>
+<div class="content-level-h3" contains="Making a Volume a Light" id="r3_12_1">
+<h3>3.12.1 Making a Volume a Light</h3>
+<p>A <code>light</code> statement inside an <code>interior</code> statement makes the object an independent volume light. The word <code>light</code> is matched by its text before a block, so it stays free as an identifier everywhere else. The block belongs to the interior, not to any one medium: one interior, one light, using the object's shape and its own pigment. An interior declared as an identifier, or copied, keeps its light.</p>
 <pre>
-MEDIA_LIGHT:
-  light_source { [MEDIA_LIGHT_ITEM...] }
-MEDIA_LIGHT_ITEM:
-  samples Integer | brightness Value | shadowless |
-  media_interaction [Bool] | media_attenuation [Bool] |
-  fade_distance Value | fade_power Value | fade_cutoff Value
+INTERIOR_LIGHT:
+  light { [INTERIOR_LIGHT_ITEM...] }
+INTERIOR_LIGHT_ITEM:
+  pigment { PIGMENT } | brightness Value [nits | lumens] |
+  attenuation Value [, Value] | samples Integer |
+  shadowless [Bool] | media_interaction [Bool] | media_attenuation [Bool] |
+  fade_cutoff Value | far_radii Value | cluster_radii Value |
+  shadows method Integer | photons { ... }
 </pre>
-<p>Media light default values:</p>
+<p>Interior light default values:</p>
 <pre>
-samples           : 32
-brightness        : 1.0
-shadowless        : off
-media_interaction : on
-media_attenuation : on
-fade_distance     : 0 (physical falloff)
-fade_power        : 0 (physical falloff)
-fade_cutoff       : 0.000004 (#version 4.0 and later), 0 (earlier versions)
+pigment          : solid white
+brightness       : 1.0
+attenuation      : 2, 1 (physical)
+samples          : 16
+shadowless       : off
+media_interaction: on
+media_attenuation: on
+fade_cutoff      : 0.000004 (#version 4.0 and later), 0 (earlier versions)
+far_radii        : 8
+cluster_radii    : 0 (off)
+shadows          : method 2
 </pre>
 <table width="100%" class="option-list">
-<tr><td><code>samples</code></td><td>An integer of at least 1: the number of points of the medium that each lit point draws, and so the number of shadow rays. More samples give smoother soft shadows and cost more. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
-<tr><td><code>brightness</code></td><td>A number, 0 or more, that scales the light without changing the glow. See <a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a>.</td></tr>
+<tr><td><code>pigment</code></td><td>The light's own colour or pattern, evaluated in the container's coordinates. The pattern distributes emitted light independently of media density. Default solid white.</td></tr>
+<tr><td><code>brightness</code></td><td>A non-negative source brightness. A unitless value and <code>nits</code> use the topology-normalized radiance convention below; <code>lumens</code> specifies total generated luminous flux under the convention 1 scene unit = 1 m. See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
+<tr><td><code>attenuation</code></td><td>The falloff: a power and a scale, <code>2, 1</code> by default, which is physical. A scale of 0 turns the falloff off. See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
+<tr><td><code>samples</code></td><td>An integer of at least 1: emitter draws per lit point, and so the shadow rays. More samples give smoother soft shadows and cost more. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
 <tr><td><code>shadowless</code></td><td>The light casts no shadows, as a <a href="r3_4.html#r3_4_3_1_6">shadowless</a> light does.</td></tr>
-<tr><td><code>media_interaction</code></td><td>With <code>off</code>, the light does not light scattering media, as for a normal <a href="r3_4.html#r3_4_3_1_10">light source</a>. A bare keyword means on.</td></tr>
-<tr><td><code>media_attenuation</code></td><td>With <code>off</code>, a shadow ray is not dimmed by the media it passes; see <a href="r3_4.html#r3_4_3_1_11">Atmospheric Attenuation</a>. A bare keyword means on.</td></tr>
-<tr><td><code>fade_distance</code>, <code>fade_power</code></td><td>Replace the physical falloff with a regular light's fade, when <code>fade_power</code> is above 0. See <a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a>.</td></tr>
-<tr><td><code>fade_cutoff</code></td><td>A number, 0 or more: points the light reaches more faintly than this leave it out. 0 turns it off. See <a href="r3_12.html#r3_12_2">Power, Brightness and Falloff</a>.</td></tr>
+<tr><td><code>media_interaction</code></td><td>With <code>off</code>, the light does not light scattering media, as for a normal <a href="r3_4.html#r3_4_3_1_10">light source</a>.</td></tr>
+<tr><td><code>media_attenuation</code></td><td>With <code>off</code>, a shadow ray is not dimmed by the media it passes; see <a href="r3_4.html#r3_4_3_1_11">Atmospheric Attenuation</a>.</td></tr>
+<tr><td><code>fade_cutoff</code></td><td>A number, 0 or more: accepted for compatibility; culling is currently disabled and a positive value produces a parse warning. See <a href="r3_12.html#r3_12_2">Radiance, Attenuation and Cutoff</a>.</td></tr>
+<tr><td><code>far_radii</code></td><td>Obsolete and ignored, with a parse warning. It does not replace the finite emitter with its centre. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
+<tr><td><code>cluster_radii</code></td><td>Obsolete and ignored, with a parse warning; finite source contributions remain separate. See <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>.</td></tr>
+<tr><td><code>shadows method</code></td><td>1 or 2. 2, the default, shares the per-light shadow cache; 1 walks every shadow ray of this light on its own.</td></tr>
+<tr><td><code>photons</code></td><td>Photon options for the light: <code>reflection</code> and <code>refraction</code> switches, as a light source's <code>photons</code> block. Photon method 1 ignores the block with a warning; photon method 2 shoots from the emitter.</td></tr>
 </table>
-<p>The block takes no position or colour. Both come from the medium, which is placed, transformed and copied with its object, and an animated emission or density is taken afresh each frame. The container of the medium must be a finite object, and the medium must have a non-zero <code>emission</code>. For example, a candle flame:</p>
+<p>The block takes no position. The light is placed, transformed and copied with its object. The container must be finite. This example authors a separate visible glow; matching its colour does not make its angular radiance equal to the cast light:</p>
 <pre>
 sphere {
   0, 1 pigment { rgbt 1 }
   interior {
-    media {
-      mix add
-      emission rgb &lt;14, 6, 1.6&gt; * 200
-      density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-      light_source { }
-    }
+    media { emission rgb &lt;14, 6, 1.6&gt; * 9 density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } } }
+    light { pigment { rgb &lt;14, 6, 1.6&gt; * 9 } samples 32 }
   }
   scale &lt;0.06, 0.16, 0.06&gt; translate &lt;0, 1.45, 0&gt;
 }
 </pre></div>
 
 <a name="r3_12_2"></a>
-<div class="content-level-h3" contains="Power, Brightness and Falloff" id="r3_12_2">
-<h3>3.12.2 Power, Brightness and Falloff</h3>
-<p>The medium emits equally in all directions. A piece of it of volume <em>dV</em> and density <em>d</em> has a radiant intensity of <code>emission</code> &times; <em>d</em> &times; <em>dV</em>, and a power of 4&pi; times that. The light's intensity is the sum over the medium, and its colour is that sum times <code>brightness</code>. A medium of volume <em>V</em> and mean density <em>d</em> therefore lights like a point light of colour <code>emission</code> &times; <em>d</em> &times; <em>V</em> with <code>fade_distance 0 fade_power 2</code>, and the render tests compare them. A uniform ball of radius 0.25 and emission 50 lights a floor like</p>
-<pre>
-light_source { &lt;0, 2, 0&gt;, rgb 50 * 4 / 3 * pi * pow(0.25, 3) fade_distance 0 fade_power 2 }
-</pre>
-<p>Its light falls off with the square of the distance, as real light does and a <code>light_source</code> without <code>fade_power</code> does not. The distance is never taken to be less than half the diagonal of a grid cell (see <a href="r3_12.html#r3_12_3">Sampling and Shadows</a>), which keeps the light finite at the edge of the medium. With <code>fade_power</code> above 0, the regular <a href="r3_4.html#r3_4_3_1_9">fade_distance and fade_power</a> falloff replaces the physical one; <code>fade_distance</code> on its own changes nothing.</p>
-<p><code>fade_cutoff</code> lets distant points skip a light that would add nothing visible to them. At each lit point, surface, media sample or subsurface sample, the light's colour is attenuated to the nearest distance any part of the medium could be from the point (the distance to its centre less its radius, but not less than the least distance above), and when the brightest channel of that is below <code>fade_cutoff</code>, the light is left out at that point: it adds nothing there and spends no shadow ray, cache entry or media sample work. The value is on the same 0 to 1 scale as <code>adc_bailout</code>. It works with the physical falloff and with <code>fade_distance</code> and <code>fade_power</code> alike, and does not change either. Scenes of <code>#version 4.0</code> and later default to 0.000004, about a thousandth of the default <code>adc_bailout</code>; earlier versions default to 0, which keeps their renders unchanged. <code>#default { media { light_source { fade_cutoff Value } } }</code> gives media lights parsed after it that starting value instead, in any version, as <a href="r3_3.html#r3_3_2_4">#default</a> gives default values; a <code>fade_cutoff</code> written in the light overrides either. The render statistics give the number of light tests it left out.</p>
-<p><code>brightness</code> scales the light and not the glow. It is an artistic override: the right way to make a light stronger is to make the emitter as bright as the real thing and leave <code>brightness</code> at 1, so the light keeps matching the glow.</p>
-<p>A real flame is far brighter than the glow a scene usually gives it. The flame of the candle sample <code>blend_candle.pov</code> has its emission raised 200 times, to <code>rgb &lt;14, 6, 1.6&gt; * 200</code>, to light the room warmly, and its glow is then overexposed, as a flame is in a photograph exposed for the room. The sample does not raise <code>brightness</code>: a hot flame lights the room and also shows it.</p></div>
+<div class="content-level-h3" contains="Radiance, Attenuation and Cutoff" id="r3_12_2">
+<h3>3.12.2 Radiance, Attenuation and Cutoff</h3>
+<p>The light depends only on its declared emitting region and its own pigment, not on any coexisting medium's density, absorption, scattering or refraction. Let <em>V</em> be the region's geometric volume, <em>A</em> its true boundary area and <em>C</em>(x) the light pigment. Unitless brightness and <code>nits</code> use reference length &ell; = 4<em>V</em>/<em>A</em> and isotropic emission coefficient <em>j</em>(x) = <em>L C</em>(x)/&ell;. Exposed cavity walls contribute to <em>A</em>; internal union seams do not. This is not a convex hull or projected silhouette normalization. The declared emitting region affects this reference calibration: padding its container while keeping a smaller pigment field unchanged is not guaranteed to preserve source strength.</p>
+<p>A uniform white source generates flux &pi;<em>LA</em>. This is a predictable volume-source reference, not identical radiance along every chord or identical illumination at every nearby point. With no absorbing or scattering media and a white Lambertian probe of unit reflectance, a uniform unit cube gives about 0.9257<em>L</em> at its centre with an axis-aligned normal and 1.2399<em>L</em> immediately outside a face centre facing inward. A sphere gives 0.75<em>L</em> at its centre and <em>L</em> immediately outside facing inward. Geometry, receiver orientation and pigment determine actual illumination; there is no cell-sized near-distance clamp.</p>
+<p><code>lumens</code> specifies generated flux &Phi;, before absorption on the way out. It normalizes <em>j</em>(x) = &Phi;<em>C</em>(x)/(4&pi;&int;<em>Y</em>(<em>C</em>(x)) d<em>V</em>), where <em>Y</em> is the renderer's existing greyscale convention (RGB weights 0.297, 0.589 and 0.114, with white equal to one). A pattern redistributes the stated total; uniformly multiplying a nonzero pigment does not change that total. This is the renderer's established luminance convention, not a new spectral or colour-management model. A sampled zero integral cannot normalize nonzero stated lumens; a narrow source missed by preparation may also produce this diagnostic.</p>
+<p>The volume emitter is the reference model. An authored surface emitter can be an approximation with somewhat different angular and near-field illumination; exact surface/volume identity is not promised. A transparent emitting volume is also not automatically an opaque monitor or a frosted lamp envelope. Authors choose source geometry, backing and any separate scattering diffuser to represent those objects; no geometric angular multiplier silently turns a transparent source into a diffuse surface.</p>
+<p>For nits, uniformly scaling geometry and receiver positions by <em>s</em> divides <em>j</em> by <em>s</em>, multiplies generated flux by <em>s</em><sup>2</sup>, and preserves illumination. At fixed lumens, <em>j</em> instead scales by 1/<em>s</em><sup>3</sup> and illumination by 1/<em>s</em><sup>2</sup>. To preserve the optical appearance of coexisting media, their inverse-length absorption and scattering coefficients must also scale by 1/<em>s</em>; resizing the same physical material is a different operation. No light unit reads <code>mm_per_unit</code>. Lumens assume one scene unit is one metre; <code>scale_lumens(Phi, c)</code> returns <code>Phi / c<sup>2</sup></code> for author-stated metres per scene unit <em>c</em>.</p>
+<p>Physical divergence follows the finite-source integral and approaches inverse-square behavior at large distance. <code>attenuation Power, Scale</code> adds an artistic, nonconservative path modifier. Write <em>p</em> for Power, <em>a</em> for Scale, <em>R</em> for the bounding radius, <em>d</em> for source-to-receiver path length and <em>q</em> = <em>R</em>/max(<em>d</em>,<em>R</em>). For positive <em>a</em> the modifier is <em>q</em><sup><em>p</em>&minus;2</sup><em>a</em><sup><em>q</em><sup><em>p</em></sup>&minus;1</sup>. The default <code>2, 1</code> is exactly one. At distances within <em>R</em> it stays one; with power 2 its distant limit is 1/<em>a</em>. A zero scale compensates distant inverse-square divergence. One value retains the scale-only shorthand, with power 2. The same modifier applies to direct and photon paths. Classic <code>fade_power</code> and <code>fade_distance</code> are not accepted in this block.</p>
+<p><code>fade_cutoff</code> is accepted for compatibility, including in <code>#default { interior { light { fade_cutoff Value } } }</code>, but volume-light culling is currently disabled. A positive value produces a diagnostic once during parsing; it does not discard source energy. The stored default remains 0.000004 under <code>#version 4.0</code> and later, and zero earlier. Only <code>fade_cutoff</code> is accepted in the default light block. A reliable contribution bound or unbiased estimator is required before culling is re-enabled.</p>
+<p>The medium's authored <code>emission</code> is appearance alone: camera, reflection and refraction rays see it, but it creates no radiosity or photon energy. Light genuinely scattered by the medium remains eligible for indirect transport. A lantern's visible glow comes from its haze scattering the light, or from an authored <code>emission</code> look. To keep a light matching its glow, give them the same colour.</p></div>
 
 <a name="r3_12_3"></a>
 <div class="content-level-h3" contains="Sampling and Shadows" id="r3_12_3">
 <h3>3.12.3 Sampling and Shadows</h3>
-<p>When the scene is parsed, POV-Ray builds a table of the power of each cell of a grid over the container, counting only points inside it. The grid is the prepared grid of media method 4 (see <a href="r3_11.html#r3_11_4">Prepared Fields</a>), at its <code>resolution</code>, or the grid method 4 would choose for the container. Building the table evaluates the density at up to eight points per cell. A grid over 1000000 cells is not refused: the cell width is raised by 5 per cent at a time until it fits. A container that is a deferred mesh (<code>isosurface_mesh</code>, <code>skein_mesh</code> or a <code>.povm</code> mesh) is built then, on the parser thread and one at a time, instead of in parallel with the other meshes.</p>
-<p>Each lit point draws <code>samples</code> points from the medium, one from each of <code>samples</code> strata of equal power, each a compact region of the grid taken in Z-order, and traces a shadow ray to each. Within a cell, points are spread evenly over the eighths of the cell whose centres are inside the container. Shadows are therefore soft and shaped by the glow, and nearby surfaces are lit by its shape, as with <a href="r3_4.html#r3_4_3_1_5">area_illumination</a>.</p>
+<p>Preparation estimates &ell; from isotropic lines through the emitting region: occupied path length divided by the count of uninterrupted occupied intervals. Full intersection lists include cavity walls and merge internal union seams. Four independently scrambled estimates use 1024, 4096 and at most 16384 lines each, stopping when their maximum relative discrepancy is at most 0.5%. A discrepancy warning reports failure to meet that target at the limit. This is an empirical replicate check, not a certified error bound; thin geometry and narrow procedural pigment peaks can evade every preparation probe.</p>
+<p>Generated-lumen normalization uses four independently stratified volume estimates at 16<sup>3</sup>, 24<sup>3</sup> and at most 32<sup>3</sup> points each, targeting at most 0.25% relative discrepancy. Unresolved variation is reported; a zero or unresolved integral cannot normalize nonzero lumens. The proposal table has at most 16 cells along its longest axis, independent of media resolution. Half the proposal remains uniform over the bounding box, so an unprobed source region is not removed. Samples evaluate the actual geometry and pigment and divide by the complete proposal probability.</p>
+<p>At every distance, receivers integrate the finite volume rather than a centre point or a silhouette disk. Direction-and-chord sampling keeps the near field finite without a cell-distance clamp. Distant inverse-square divergence and the narrowing angular penumbra follow the same source. The <code>samples</code> count controls integration noise and shadow quality, not expected brightness. Increasing it costs more source evaluations and shadow rays; it is not an anti-aliasing setting.</p>
 <ul>
-  <li>The cost is <code>samples</code> shadow rays per lit point. There are none where the whole medium is behind the surface, unless the finish has <code>diffuse</code> backlighting or the object is <code>double_illuminate</code>.</li>
-  <li>With <code>media_attenuation</code>, each shadow ray is attenuated by the media of every interior it passes, including the light's own medium and any smoke surrounding it, so smoke dims its flame. Shadow rays that cross media that only glow skip them.</li>
-  <li><code>shadowless</code> casts no shadows. <code>media_interaction off</code> leaves scattering media unlit by this light.</li>
-  <li>A scattering medium is lit by one point of the light per media sample, as by an area light. Where a constant or coarser scattering medium lit by a media light shares a portion with a finer prepared medium, its scattered light is found at its own cadence; see <a href="r3_7.html#r3_7_2_3">Sampling Parameters &amp; Methods</a>.</li>
-  <li>Shadow rays travel straight, also through <a href="r3_11.html#r3_11_3">media refraction</a>.</li>
+  <li>Surface receivers apply their BSDF and incidence cosine. Scattering media use their scattering coefficient and phase function, without a surface cosine. Both receive the same source distribution.</li>
+  <li>With <code>media_attenuation</code>, shadow rays integrate media along the path, including media inside the emitting container. These coefficients affect transport, never source generation.</li>
+  <li><code>shadowless</code> disables surface occlusion; <code>media_interaction off</code> excludes this light from scattering-media illumination.</li>
+  <li><code>shadows method 1</code> bypasses the per-light shadow cache.</li>
+  <li>Photon method 2 samples the same emission coefficient and carries physical flux; surface irradiance conversion and volume scattering use their respective transport measures.</li>
+  <li>Shadow rays remain straight through refracting media. Fully bent direct-light paths and the final refractive-index radiance convention remain limitations; this is not a claim of exact refractive transport.</li>
 </ul>
-<p>The strata have equal power, so the noise of the soft shadows falls as <code>samples</code> rises. The sample scenes use 16 to 32 and take the count as <code>Declare=Samples=N</code>.</p></div>
+<p><code>far_radii</code> and <code>cluster_radii</code> remain accepted compatibility controls, with one warning per setting during parsing. They are ignored and do not authorize replacing source geometry, pigment or visibility with a centre point. Scene examples typically expose <code>Declare=Samples=N</code> to compare quality at different draw counts.</p></div>
 
 <a name="r3_12_4"></a>
 <div class="content-level-h3" contains="Media, Light Groups and Radiosity" id="r3_12_4">
 <h3>3.12.4 Media, Light Groups and Radiosity</h3>
 <ul>
-  <li><strong>The glow.</strong> The camera, reflections and refractions still see the medium's glow. Gathers of <code>radiosity { media on }</code> leave out the glow of media that are lights, since that light already reaches surfaces directly.</li>
-  <li><strong>Light groups.</strong> A medium in an object inside a <code>light_group</code> lights the objects of that group only, as the group's light sources do. See <a href="r3_4.html#r3_4_3_2">Light Groups</a>.</li>
-  <li><strong>Other media.</strong> The light follows the medium's own emission &times; density and ignores the <code>mix</code> and <code>priority</code> of other media: a <code>subtract</code> or <code>replace</code> medium that carves the glow does not carve the light. It is dimmed by other media only through <code>media_attenuation</code>.</li>
-  <li><strong>Several lights.</strong> Every medium with a <code>light_source</code> block is its own light, also several in one object.</li>
-  <li><strong>Copies.</strong> A declared object placed several times, scaled or moved, has one light per placement.</li>
+  <li><strong>The glow.</strong> The camera, reflections and refractions see authored media emission. Radiosity and photon transport exclude that appearance term while retaining light genuinely scattered by the medium; the independent light block supplies generated energy.</li>
+  <li><strong>Light groups.</strong> An object with a light interior inside a <code>light_group</code> lights the objects of that group only, as the group's light sources do. See <a href="r3_4.html#r3_4_3_2">Light Groups</a>.</li>
+  <li><strong>Other media.</strong> Source generation is independent of media <code>mix</code> and <code>priority</code>: a <code>subtract</code> or <code>replace</code> medium that carves the glow does not carve the light. It is dimmed by other media only through <code>media_attenuation</code>.</li>
+  <li><strong>Several lights.</strong> Every interior with a <code>light</code> block is its own light.</li>
+  <li><strong>Copies.</strong> A declared object placed several times, scaled or moved, has one light per placement, and a radiance-anchored light renders the same at every scale.</li>
 </ul></div>
 
 <a name="r3_12_5"></a>
 <div class="content-level-h3" contains="Limits and Messages" id="r3_12_5">
 <h3>3.12.5 Limits and Messages</h3>
 <ul>
-  <li>Only media in an object's interior can be lights. Atmospheric media cannot.</li>
-  <li>A medium that is a light must add or replace. It cannot <code>mix subtract</code> or <code>mix multiply</code>.</li>
-  <li>Media lights do not shoot photons. A <code>photons</code> block inside the <code>light_source</code> block is ignored, with a warning, as photons from media lights come with a later photon method.</li>
-  <li>They are not seen through portals.</li>
+  <li>Only an object's interior can hold a light. Atmospheric media cannot.</li>
+  <li>Media mixing affects transport and appearance independently of the source pigment.</li>
+  <li>A light interior's photons are shot by photon method 2; photon method 1 ignores its <code>photons</code> block with a warning.</li>
+  <li>Volume lights are not yet seen through portals.</li>
 </ul>
 <table width="100%" class="option-list">
-<tr><td><code>A media light_source needs an object's interior; atmospheric media cannot be lights.</code></td><td>Error: a <code>light_source</code> block in a scene-level <code>media</code>.</td></tr>
-<tr><td><code>A media light_source needs a medium that adds or replaces, not one that subtracts or multiplies.</code></td><td>Error: <code>mix subtract</code> or <code>mix multiply</code> with the block.</td></tr>
-<tr><td><code>A media light_source's brightness must be finite and not negative.</code></td><td>Error.</td></tr>
-<tr><td><code>A media light_source gives no light because ...</code></td><td>Warning, and the medium glows but does not light. The reason is one of: its emission is negative or not finite; it has no emission; its container is infinite; its container is unbounded; its density is negative or not finite; its density is zero throughout its container.</td></tr>
-<tr><td><code>photons in a media light_source are ignored: volume lights do not shoot photons yet.</code></td><td>Warning.</td></tr>
+<tr><td><code>A medium's light_source block moved out of media to its interior: interior { media { ... } light { ... } }.</code></td><td>Error: the old form, a <code>light_source</code> block inside <code>media</code>.</td></tr>
+<tr><td><code>A light block has no fade_power; its falloff is attenuation &lt;power&gt;, &lt;scale&gt;.</code></td><td>Error: <code>fade_power</code> in a light block. Likewise <code>fade_distance</code>.</td></tr>
+<tr><td><code>A light block's brightness must be finite and not negative.</code></td><td>Error.</td></tr>
+<tr><td><code>An interior light gives no light because ...</code></td><td>Warning: the source could not be prepared, for example because its bounds are infinite, its geometry or source integral is unresolved, or its pigment is negative or non-finite. Coexisting media remain independent.</td></tr>
+<tr><td><code>photons in an interior light are ignored by photon method 1.</code></td><td>Warning.</td></tr>
 </table></div>
-
 <a name="r3_12_6"></a>
 <div class="content-level-h3" contains="Worked Examples" id="r3_12_6">
 <h3>3.12.6 Worked Examples</h3>
@@ -220,12 +227,12 @@ light_source { &lt;0, 2, 0&gt;, rgb 50 * 4 / 3 * pi * pow(0.25, 3) fade_distance
 <a name="r3_12_6_2"></a>
 <div class="content-level-h4" contains="Tubes and Neon" id="r3_12_6_2">
 <h4>3.12.6.2 Tubes and Neon</h4>
-<p><code>light_tubes.pov</code> lights an underground passage only by fluorescent tubes and neon strips. A tube is a thin transparent cylinder with an emitting medium, and a fine <code>resolution</code> so the grid follows its thin shape; one tube is dying and one is dead, by the strength of the emission.</p>
+<p><code>light_tubes.pov</code> lights an underground passage only by fluorescent tubes and neon strips. A tube is a thin transparent cylinder with a glowing medium, and a fine <code>resolution</code> so the grid follows its thin shape; one tube is dying and one is dead, by the strength of the light.</p>
 <pre>
 cylinder {
   &lt;0, 0, -Length / 2&gt;, &lt;0, 0, Length / 2&gt;, 0.028
   pigment { rgbt 1 }
-  interior { media { mix add method 4 resolution 0.009 emission Colour * 1200 * Strength light_source { samples Samples } } }
+  interior { media { mix add method 4 resolution 0.009 } light { pigment { rgb Colour * 180 * Strength } samples Samples } }
   translate P
 }
 </pre></div>
@@ -233,7 +240,7 @@ cylinder {
 <a name="r3_12_6_3"></a>
 <div class="content-level-h4" contains="Glow Inside Other Media" id="r3_12_6_3">
 <h4>3.12.6.3 Glow Inside Other Media</h4>
-<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water). In each, the light is the medium's emission, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
+<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it (<code>Declare=Murk=0</code> clears the water). In each, the light is stated as radiance in the interior's light block, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
 
 <a name="r3_12_6_4"></a>
 <div class="content-level-h4" contains="Overlapping and Contained Lights" id="r3_12_6_4">

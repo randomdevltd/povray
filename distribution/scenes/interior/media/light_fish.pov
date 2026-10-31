@@ -151,8 +151,8 @@ union {
           mix add method 4 resolution 0.012
           emission Colour * 120
           density { function { max(0, min(1, FishShape(x, y, z))) } }
-          light_source { samples Samples }
         }
+        light { pigment { pigment_pattern { function { max(0, min(1, FishShape(x, y, z))) } } color_map { [0 rgb 0] [1 Colour * 120] } } samples Samples }
       }
     }
     sphere { <0.42, 0.04, 0.055>, 0.022 } sphere { <0.42, 0.04, -0.055>, 0.022 }
@@ -180,8 +180,8 @@ Fish(<-3.8, 1.3, 3.7>, 14, -3, 0.75, rgb <0.05, 1, 0.4>)
           density {
             function { max(0, min(1, (1 - sqrt(x * x + y * y + z * z)) * 4)) * max(0, min(1, (sqrt(x * x + y * y + z * z) - 0.55) * 4 + 0.4)) * max(0, min(1, y * 6 + 0.2)) }
           }
-          light_source { samples Samples }
         }
+        light { pigment { pigment_pattern { function { max(0, min(1, (1 - sqrt(x * x + y * y + z * z)) * 4)) * max(0, min(1, (sqrt(x * x + y * y + z * z) - 0.55) * 4 + 0.4)) * max(0, min(1, y * 6 + 0.2)) } } color_map { [0 rgb 0] [1 Colour * 60] } } samples Samples }
       }
       scale <0.5, 0.42, 0.5>
     }

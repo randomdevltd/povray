@@ -543,10 +543,10 @@ void Parser::Run()
                     Clear_Flag(light, PH_RFR_ON_FLAG);
                     Clear_Flag(light, PH_RFL_ON_FLAG);
                     if (light->mediaPhotonOptions)
-                        Warning("photons in a media light_source are ignored by photon method 1.");
+                        Warning("photons in an interior light are ignored by photon method 1.");
                 }
                 else if (light->mediaPhotonLegacyOptions)
-                    Error("A media light_source's photons block accepts reflection, refraction and area_light only.");
+                    Error("An interior light's photons block accepts reflection, refraction and area_light only.");
             }
             if (sceneData->photonSettings.Progressive() && mInvalidPhotonTargetLine != 0)
                 Error("Photon method 2 reads 'photons { target W }' as a share weight, which must be zero (no target) or a "
@@ -7808,24 +7808,30 @@ void Parser::Parse_Default ()
                     defaultMix = Parse_Mix ();
                 END_CASE
 
-                CASE (LIGHT_SOURCE_TOKEN)
-                    Parse_Begin ();
-                    while (!Peek_Token(RIGHT_CURLY_TOKEN))
-                    {
-                        Get_Token ();
-                        if (CurrentTokenText() != "fade_cutoff")
-                            Error("A #default media light_source accepts only fade_cutoff, not '%s'.", CurrentTokenText().c_str());
-                        defaultFadeCutoff = Parse_Fade_Cutoff ();
-                    }
-                    Parse_End ();
-                END_CASE
-
                 OTHERWISE
+                    if (CurrentTrueTokenId() == LIGHT_SOURCE_TOKEN)
+                        Error("A medium's light_source block moved out of media to its interior: #default { interior { light { fade_cutoff } } }.");
                     UNGET
                     EXIT
                 END_CASE
             END_EXPECT
             Parse_End ();
+        END_CASE
+
+        CASE (INTERIOR_TOKEN)
+        {
+            // the light block's own parser reads it, then #default keeps only fade_cutoff: it gives
+            // starting values, not a template
+            InteriorPtr probe(new Interior());
+            Parse_Begin();
+            Get_Token();
+            if (CurrentTokenText() != "light")
+                Error("A #default interior accepts only a light block, not '%s'.", CurrentTokenText().c_str());
+            Parse_Interior_Light(*probe, true);
+            const MediaLight& light = *probe->light;
+            defaultFadeCutoff = light.fadeCutoff;
+            Parse_End();
+        }
         END_CASE
 
         OTHERWISE
@@ -7887,8 +7893,6 @@ void Parser::Parse_Frame_Items ()
 
         CASE (MEDIA_TOKEN)
             Parse_Media(sceneData->atmosphere);
-            if (sceneData->atmosphere.back().light)
-                Error("A media light_source needs an object's interior; atmospheric media cannot be lights.");
         END_CASE
 
         CASE (BACKGROUND_TOKEN)
@@ -10557,29 +10561,36 @@ static void Add_Local_Light(ObjectPtr object, LightSource *light)
             Add_Local_Light(child, light);
 }
 
-void Parser::Make_Media_Light(Media& medium, ObjectPtr container)
+void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
 {
     std::string failure;
-    std::shared_ptr<const Emitter> emitter = MakeVolumeEmitter(medium, container, &mThreadData, failure);
+    std::shared_ptr<const Emitter> emitter = MakeInteriorEmitter(interior, container, &mThreadData, failure);
     if (!emitter)
     {
-        Warning("A media light_source gives no light because %s.", failure.c_str());
+        Warning("An interior light gives no light because %s.", failure.c_str());
         return;
     }
-    const MediaLight& settings = *medium.light;
+    const MediaLight& settings = *interior.light;
     LightSource *light = new LightSource();
     light->emitter = emitter;
     light->emitterContainer = container;
-    light->colour = emitter->Intensity() * settings.brightness;
+    // POV's diffuse reflects E without the Lambertian 1/pi, so a light of radiant intensity I renders a white
+    // surface facing it I/d^2 bright; dividing by pi makes that L, the radiance the light was stated as.
+    light->colour = emitter->Intensity() / M_PI;
     light->Center = emitter->Centre();
     light->Area_Light = true;
     light->Use_Full_Area_Lighting = true;
     light->Jitter = true;
     light->Area_Size1 = settings.samples;
     light->Area_Size2 = 1;
-    light->Fade_Distance = settings.fadeDistance;
-    light->Fade_Power = settings.fadePower;
     light->fadeCutoff = settings.fadeCutoff;
+    light->attenuationScale = settings.attenuationScale;
+    light->attenuationPower = settings.attenuationPower;
+    light->volumeLaw = true;
+    light->lawRadius = emitter->Radius();
+    light->emitterFarRadii = settings.farRadii;
+    light->emitterClusterRadii = settings.clusterRadii;
+    light->shadowCacheOff = (settings.shadowsMethod == 1);
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
     if (settings.shadowless)
@@ -10779,8 +10790,8 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
 
     if ((Object->interior != nullptr) && ((Parent == nullptr) || (Object->interior != Parent->interior)))
     {
-        // a media light's table needs the container's geometry, so a deferred mesh is built now and boxes above it redone
-        if (std::any_of(Object->interior->media.begin(), Object->interior->media.end(), [](const Media& medium) { return bool(medium.light); }))
+        // an interior light's table needs the container's geometry, so a deferred mesh is built now and boxes above it redone
+        if (Object->interior->light)
             mMeshResolvedBelow = Resolve_Mesh_Geometry(Object) || mMeshResolvedBelow;
         for (Media& medium : Object->interior->media)
         {
@@ -10800,9 +10811,9 @@ void Parser::Post_Process (ObjectPtr Object, ObjectPtr Parent)
                 Warning("Media resolution %.6g is coarser than half this medium's refraction_detail (%.6g), so the prepared "
                         "grid holds index detail no finer than %.6g; raise the resolution or lower refraction_detail.",
                         medium.FastResolution, detailUnits, medium.FastResolution);
-            if (medium.light)
-                Make_Media_Light(medium, Object);
         }
+        if (Object->interior->light)
+            Make_Interior_Light(*Object->interior, Object);
     }
 
     if ((Object->Texture == nullptr) &&
@@ -11301,8 +11312,9 @@ bool Parser::Splits_Union(ObjectPtr Object, bool warn)
 
     // A medium prepared over the union, or a light made from it, keeps a pointer to the union, so the union stays whole.
     if ((Object->interior != nullptr) &&
-        std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
-                    [Object](const Media& medium) { return medium.light || medium.PreparedFor(Object); }))
+        (Object->interior->light ||
+         std::any_of(Object->interior->media.begin(), Object->interior->media.end(),
+                     [Object](const Media& medium) { return medium.PreparedFor(Object); })))
         return false;
 
     /*

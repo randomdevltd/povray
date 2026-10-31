@@ -2035,6 +2035,11 @@
   "category": "other"
  },
  {
+  "word": "scale_lumens",
+  "token": "SCALE_LUMENS_TOKEN",
+  "category": "float"
+ },
+ {
   "word": "scallop_wave",
   "token": "SCALLOP_WAVE_TOKEN",
   "category": "other"

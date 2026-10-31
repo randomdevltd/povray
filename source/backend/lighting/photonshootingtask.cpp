@@ -172,12 +172,11 @@ class SurfaceLightEmitter final : public Emitter
         const MathColour& Intensity() const override { return light.colour; }
         const Vector3d& Centre() const override { return light.Center; }
         double Radius() const override { return light.Area_Light ? (light.Axis1.length() + light.Axis2.length()) * 0.5 : 0.0; }
-        double NearDistance() const override { return EPSILON; }
-        EmitterSample Sample(double s, std::uint64_t key) const override
+        EmitterSample Sample(double s, std::uint64_t key, TraceThreadData* = nullptr) const override
         {
             return SampleSquare(s, Draw(key, kDrawPhoton, 7), key);
         }
-        EmitterSample SampleSquare(double s, double t, std::uint64_t) const override
+        EmitterSample SampleSquare(double s, double t, std::uint64_t, TraceThreadData* = nullptr) const override
         {
             Vector3d point = light.Center;
             if (light.Area_Light)
@@ -355,7 +354,7 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 const SurfaceLightEmitter surface(*light);
                 const Emitter& emitter = light->emitter ? *light->emitter : surface;
-                origin = emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key);
+                origin = emitter.SampleSquare(sobol(sampleIndex, PhotonSobol::kPositionS), sobol(sampleIndex, PhotonSobol::kPositionT), key, data);
                 direction = domain.Direction(pick.x, pick.y);
             }
             TraceTicket ticket(maxTraceLevel, adcBailout);
@@ -401,8 +400,14 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             data->passThruThis = false;
             data->photonDepth = projectionDepth;
             data->photonSpread = std::max(1.0e-8, aim.Radius() * 0.05) * spreadScale;
-            MathColour flux = light->colour * origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
-            flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
+            MathColour flux = origin.weight * ProgressivePhotonBudget::EmissionWeight(count, pdf);
+            if (light->emitter)
+                flux *= light->emitter->DirectionalWeight(ray.Direction);
+            else
+            {
+                flux *= light->colour;
+                flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
+            }
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();
             if (!flux.IsZero())

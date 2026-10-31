@@ -17,9 +17,8 @@ camera { orthographic location <0, 2, -8> look_at <0, 2, 0> right 4*x up 4*y }
 #if (Grouped) light_group { #end
 sphere {
     <0, 5, 0>, 0.12 hollow no_image pigment { rgbt 1 }
-    interior { ior off media { method 4 emission 100*LampPower
-        light_source { samples 8 photons { refraction Photons reflection off } }
-    } }
+    interior { ior off light { brightness LampPower * 100 / 9 samples 8
+        photons { refraction Photons reflection off } } }
 }
 #declare DecoyTarget = box { <-2.5, -0.5, -1.5>, <2.5, 4.5, 1.5> hollow pigment { rgbf 1 } interior { ior 1 } photons { target } no_shadow no_image }
 #if (Decoy = 1) object { DecoyTarget } #end

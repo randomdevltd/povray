@@ -180,8 +180,6 @@ class Media final
         std::vector<PIGMENT*> Density;
         DBL FastResolution;
         std::shared_ptr<FastCache> fastCache;
-        /// its `light_source` block, making it a light, or empty
-        std::shared_ptr<const MediaLight> light;
         /// how it mixes with the media ranked beneath it, and its rank ahead of placement order
         int mix, priority;
 
@@ -264,6 +262,8 @@ class Interior final
         SNGL Fade_Distance, Fade_Power;
         MathColour Fade_Colour;
         std::vector<Media> media;
+        /// its `light { }` block, making the interior's media a light, or empty
+        std::shared_ptr<MediaLight> light;
         std::shared_ptr<SubsurfaceInterior> subsurface;
 
         Interior();

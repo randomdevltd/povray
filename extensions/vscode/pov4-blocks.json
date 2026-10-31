@@ -3221,6 +3221,7 @@
         "fade_power",
         "ior",
         "ior_mix",
+        "light",
         "media",
         "off",
         "priority",
@@ -3242,7 +3243,6 @@
         "extinction",
         "intervals",
         "jitter",
-        "light_source",
         "matrix",
         "method",
         "mix",
@@ -3263,6 +3263,42 @@
         "scattering": [
           "eccentricity",
           "extinction"
+        ]
+      }
+    },
+    "light": {
+      "items": [
+        "area_light",
+        "attenuation",
+        "brightness",
+        "cluster_radii",
+        "collect",
+        "fade_cutoff",
+        "far_radii",
+        "lumens",
+        "media_attenuation",
+        "media_interaction",
+        "nits",
+        "pass_through",
+        "photons",
+        "pigment",
+        "reflection",
+        "refraction",
+        "samples",
+        "shadowless",
+        "shadows",
+        "split_union",
+        "target"
+      ],
+      "nested": {
+        "photons": [
+          "area_light",
+          "collect",
+          "pass_through",
+          "reflection",
+          "refraction",
+          "split_union",
+          "target"
         ]
       }
     },
@@ -3595,7 +3631,6 @@
         "area_illumination",
         "area_light",
         "bounded_by",
-        "brightness",
         "circular",
         "clipped_by",
         "collect",
@@ -3641,7 +3676,6 @@
         "reflection",
         "refraction",
         "rotate",
-        "samples",
         "scale",
         "shadowless",
         "split_union",
@@ -3663,7 +3697,6 @@
           "pass_through",
           "reflection",
           "refraction",
-          "split_union",
           "target"
         ],
         "pigment": [

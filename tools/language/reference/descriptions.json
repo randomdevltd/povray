@@ -1173,6 +1173,11 @@
    "code": "global_settings { atmospheric_ior 1.33 }",
    "from": "doc/html/r3_4.html"
   },
+  "attenuation": {
+   "rank": 1029,
+   "code": "attenuation : 1, 2 (physical)",
+   "from": "doc/html/r3_12.html"
+  },
   "auto": {
    "rank": 1060,
    "code": "refraction_detail : auto (derived from each medium's bounds)",
@@ -1251,8 +1256,8 @@
    "from": "doc/html/r3_6.html"
   },
   "brightness": {
-   "rank": 1016,
-   "code": "brightness : 1.0",
+   "rank": 56,
+   "code": "pigment { PIGMENT } | brightness Value [nits | lumens] |",
    "from": "doc/html/r3_12.html"
   },
   "brilliance": {
@@ -1312,6 +1317,11 @@
    "rank": 22,
    "code": "clipped_by{plane{y,0}}",
    "from": "doc/html/r3_5.html"
+  },
+  "cluster_radii": {
+   "rank": 1023,
+   "code": "cluster_radii : 0 (off)",
+   "from": "doc/html/r3_12.html"
   },
   "collect": {
    "rank": 1011,
@@ -1456,7 +1466,7 @@
    "from": "tests/pov4/ok_debug_statement.pov4:2"
   },
   "default": {
-   "code": "default { media { mix replace light_source { fade_cutoff 0.05 } } }",
+   "code": "default { media { mix replace } interior { light { fade_cutoff 0.05 } } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "defined": {
@@ -1607,8 +1617,8 @@
    "from": "doc/html/r3_7.html"
   },
   "fade_cutoff": {
-   "rank": 67,
-   "code": "default { media { mix replace light_source { fade_cutoff 0.05 } } }",
+   "rank": 73,
+   "code": "default { media { mix replace } interior { light { fade_cutoff 0.05 } } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "fade_distance": {
@@ -1640,6 +1650,11 @@
    "rank": 38,
    "code": "far { pigment { rgb <0.45, 0.7, 1> } }",
    "from": "doc/html/r3_10.html"
+  },
+  "far_radii": {
+   "rank": 1013,
+   "code": "far_radii : 8",
+   "from": "doc/html/r3_12.html"
   },
   "file": {
    "rank": 73,
@@ -1838,8 +1853,8 @@
    "from": "doc/html/r3_4.html"
   },
   "interior": {
-   "code": "interior { media { emission 50 light_source { samples 4 } } }",
-   "from": "tests/pov4/default_media.pov4:6"
+   "code": "interior { light { fade_cutoff 0.05 } }",
+   "from": "tests/pov4/default_media.pov4:2"
   },
   "interior_texture": {
    "rank": 35,
@@ -1941,13 +1956,17 @@
    "code": "let D = { a: 1 };",
    "from": "tests/pov4/ok_string_compare.pov4:4"
   },
+  "light": {
+   "code": "light { fade_cutoff 0.05 }",
+   "from": "tests/pov4/default_media.pov4:2"
+  },
   "light_group": {
    "code": "light_group { LIGHT_GROUP LIGHT | LIGHT_GROUP OBJECT | LIGHT_GROUP [LIGHT_GROUP MODIFIER] }",
    "from": "doc/html/r3_4.html:2"
   },
   "light_source": {
-   "code": "light_source { fade_cutoff 0.05 }",
-   "from": "tests/pov4/default_media.pov4:2"
+   "code": "light_source { <4, 6, -3> rgb 1 }",
+   "from": "tests/pov4/framing.pov4:3"
   },
   "linear_spline": {
    "rank": 1024,
@@ -1988,6 +2007,11 @@
    "rank": 1022,
    "code": "low_error_factor : 0.5",
    "from": "doc/html/r3_4.html"
+  },
+  "lumens": {
+   "rank": 56,
+   "code": "pigment { PIGMENT } | brightness Value [nits | lumens] |",
+   "from": "doc/html/r3_12.html"
   },
   "magnet": {
    "rank": 1050,
@@ -2059,17 +2083,17 @@
    "from": "doc/html/r3_4.html"
   },
   "media": {
-   "code": "media { mix replace light_source { fade_cutoff 0.05 } }",
+   "code": "media { mix replace }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "media_attenuation": {
-   "rank": 1022,
-   "code": "media_attenuation : on",
+   "rank": 1021,
+   "code": "media_attenuation: on",
    "from": "doc/html/r3_12.html"
   },
   "media_interaction": {
-   "rank": 1022,
-   "code": "media_interaction : on",
+   "rank": 1021,
+   "code": "media_interaction: on",
    "from": "doc/html/r3_12.html"
   },
   "memory": {
@@ -2125,8 +2149,8 @@
    "from": "doc/html/r3_4.html"
   },
   "mix": {
-   "rank": 67,
-   "code": "default { media { mix replace light_source { fade_cutoff 0.05 } } }",
+   "rank": 73,
+   "code": "default { media { mix replace } interior { light { fade_cutoff 0.05 } } }",
    "from": "tests/pov4/default_media.pov4:2"
   },
   "mm_per_unit": {
@@ -2148,6 +2172,11 @@
    "rank": 1052,
    "code": "nearest_count : 5 (max = 20; supports adaptive mode)",
    "from": "doc/html/r3_4.html"
+  },
+  "nits": {
+   "rank": 56,
+   "code": "pigment { PIGMENT } | brightness Value [nits | lumens] |",
+   "from": "doc/html/r3_12.html"
   },
   "no_bump_scale": {
    "rank": 1035,
@@ -2626,6 +2655,11 @@
   "shadowless": {
    "rank": 1016,
    "code": "shadowless : off",
+   "from": "doc/html/r3_12.html"
+  },
+  "shadows": {
+   "rank": 40,
+   "code": "shadows method Integer | photons { ... }",
    "from": "doc/html/r3_12.html"
   },
   "sin": {
