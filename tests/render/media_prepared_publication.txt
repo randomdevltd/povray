@@ -1,0 +1,28 @@
+Requested method4 publication checks
+
+Case0 has no density; Case1 has a snapshot-safe varying scalar function;
+Case2 has a scalar function wrapping an object pigment. Its two colors are both
+one, so its exact physical field matches Case0, while the object private data
+still requires finalized-scene preparation rather than a parser snapshot.
+Case3 uses a screen-dependent function that requires a viewing ray and cannot
+define spatial density.
+
+Cases0/2 use the existing independent homogeneous RGB source/camera Beer
+integral; Case1 uses its independent two-voxel integral. Channel mean error
+must remain within3% with the existing2/65535 floor. No source power changes.
+Both eager-enabled and -WE fields must have identical decoded images. These
+valid fields must finish publication after final bounding-box rebound and
+before rendering, with no classic coefficients, source draws, calls, or
+modifier fallbacks. A snapshot-ineligible valid function must be prepared in
+finalized scene context; it must not be rejected merely for lacking a snapshot.
+
+Aggregate function-VM call statistics include preparation and tracing, so they
+cannot establish zero runtime procedural evaluation. That claim requires a
+separate runtime counter or an audit that every runtime access only reads
+published immutable storage. The current runner does not invent such a counter.
+Case3 must fail with its actual ray-context preparation diagnostic before
+rendering, never fall back to classic integration. All arms use two threads;
+the safe -WE function exercises final parallel preparation, while the
+object-dependent function must retain finalized-scene serial evaluation.
+These checks cover density publication; they do not establish independent
+light and refraction axis dispatch.

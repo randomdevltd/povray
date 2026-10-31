@@ -38,13 +38,38 @@ NOTE: This release cycle has been redesignated v3.8.0. There will not be a
 v3.7.1 release proper.
 
 Changed Behaviour
+- Henyey-Greenstein eccentricity must lie strictly between -1 and 1; other
+  values, whose phase is negative or undefined, are a parse error from
+  version 3.8 and a warning in a scene of version 3.7 or older.
 - A Sturm-solved polynomial outside the solver's floating-point range has no
   roots, rather than ending the render with an error.
 -----------------
 
+  - Declared method 4 transport uses prepared evaluation in camera, shadow
+    and photon paths. Mixed media retain each declared density representation
+    without switching prepared fields to a legacy integrator. Constant fields
+    use analytic transfer, including unbounded support; volume-light sampling
+    has a separate path budget even when the media evaluator is legacy.
+
+  - Prepared density fields are published after final geometry resolution.
+    Safe functions can finish in parallel; geometry-dependent functions are
+    prepared against the finalized scene. Ray-dependent fields fail before
+    rendering, and prepared density queries never rebuild their data.
+
+  - Requested method 4 constant media own prepared layout metadata without
+    allocating constant density cells. Prepared modifier fields also select
+    fixed integration when the underlying media are constant.
+
+  - Prepared method 4 scattering samples camera distance and volume-light
+    position jointly, sharing each light's sample budget across a geometric
+    ray segment and its numerical refraction chords. Optical-depth and glow
+    integration remain separate; finer optical steps no longer multiply the
+    volume-light shadow-ray count. Surface continuations start new segments.
+
   - Media `emission` is appearance only again: it paints the glow the camera
     sees and lights nothing, whether or not the interior has a `light` block,
-    and radiosity gathers with `media on` see it as any other medium's glow.
+    and radiosity gathers with `media on` exclude that appearance term.
+    Scattered light remains available to indirect transport.
     A volume light's power is stated as radiance in its `light` block and is
     not read from the `emission`; scenes that lit with `emission` state their
     luminance in the light block instead. The light's colour is the radiant

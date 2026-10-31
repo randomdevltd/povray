@@ -232,7 +232,16 @@ class Trace
         class MediaFunctor
         {
             public:
+                class Path
+                {
+                    public:
+                        virtual ~Path() {}
+                        virtual void Finish(MathColour&) = 0;
+                };
                 virtual ~MediaFunctor() {}
+                virtual std::unique_ptr<Path> BeginPath(const Ray&) { return nullptr; }
+                virtual void ScalePathRadiance(const MathColour&) {}
+                virtual void SetPathOffset(DBL) {}
                 virtual void ComputeMedia(std::vector<Media>&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(const RayInteriorVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
                 virtual void ComputeMedia(MediaVector&, const Ray&, Intersection&, MathColour&, ColourChannel&) { }
@@ -1176,7 +1185,9 @@ class Trace
         {
             Vector3d point;
             MathColour factor, unshadowed;
-            Vector3d normal;
+            Vector3d normal, source;
+            RayInteriorVector interiors;
+            std::uint64_t key = 0;
             double bound = 0.0;
             void SetLight(const Vector3d& p, const MathColour& lightcolour);
         };
@@ -1243,11 +1254,13 @@ class Trace
         void ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket,
                                        std::uint64_t key, int sample);
         ObjectPtr SubsurfaceObject(const Intersection& isect);
-        void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta, SubsurfaceCandidate& candidate, TraceTicket& ticket);
+        void ComputeDiffuseCandidate(const LightSource& lightsource, const Intersection& in, const PreciseMathColour& rd, double eta, SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
+        void SetSubsurfaceEmitterInteriors(const Vector3d& point, const Vector3d& normal, const Interior* interior, Ray& ray);
+        void SetSubsurfaceEmitterEndpoint(const Intersection& in, const Ray& ray, double depth, SubsurfaceCandidate& candidate);
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double eta, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
                                               const PreciseMathColour& weightOut, double eta, const Vector3d& bend_point, double ftOut, double cos_out_prime,
-                                              SubsurfaceCandidate& candidate, TraceTicket& ticket);
+                                              SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
         void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                  const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo, double eta,
                                                  const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
@@ -1258,7 +1271,7 @@ class Trace
                                          std::uint64_t key);
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights, double eta,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
-                                               const char* uses = nullptr);
+                                               const Vector3d& geometricNormal, const Interior* interior, const char* uses = nullptr);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
         std::string DescribeSubsurfaceObject(ConstObjectPtr object);
         bool SubsurfaceSheet(ConstObjectPtr part, bool cutter);

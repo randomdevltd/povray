@@ -1,0 +1,31 @@
+Unbounded constant-medium joint transport
+
+This is an infinite camera path: no receiver or other camera-hit geometry is
+present. The source box is off axis and no_image; black background contributes
+nothing. A finite Beer probe with a receiver cannot replace this test.
+The source is the same colored100lm box as the finite joint fixtures. Global
+method4 absorption is(.2,.4,.6), scattering(.04,.03,.02), extinction1. No density
+is authored; an analytic constant prepared representation is valid.
+
+The independent integral uses the actual source volume, normalized isotropic
+phase and exact global source+camera Beer exp(-sigma_t*(t+r)). Source Cartesian
+midpoints and composite eight-point Gauss camera integration are independently
+refined. The camera integration ends at80 only for numerical reference.
+The renderer must use its genuine continuous infinite-domain proposal.
+
+For every camera ray and source point, r>=.99. Since sigma_t>=.2 and source
+transmission<=1, the omitted channel tail is bounded by
+sigma_s*I/(4*pi*.99^2)*exp(-.2*80)/.2,
+where I=100*C/(4*pi*Y(C)). Bounds are(2.37e-8,8.88e-9,2.37e-9), far below output
+quantization and the acceptance limit. Reference refinement must agree within
+.5%; current center maximum difference is .00839%.
+
+Predeclare8x8, AAoff, linear16bit, N512, seed0. Channel means must agree with the
+independent integral within3%, floor2/65535, unchanged from the finite tests.
+Report pixel RMS separately. A second seed may be requested to characterize
+sampling uncertainty; preserve each result and never silently discard a seed.
+An actual typed analytic-infinite-domain counter and source pairs must be
+positive. Zero classic/fallback counts alone do not prove that branch ran.
+There is no image power fitting, source rescaling or finite-hit substitution.
+These checks test media integration, not completion of the independent light
+or refraction prepared-axis architecture.

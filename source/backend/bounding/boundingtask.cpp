@@ -485,6 +485,42 @@ void MeshBuildTask::Run()
         for (ObjectPtr object : set->objects)
             rebound(object);
 
+    TraceThreadData finalFields(std::dynamic_pointer_cast<SceneData>(sceneData), seed, false);
+    std::unordered_set<ConstObjectPtr> preparedFields;
+    finalFields.mediaMessages = mpMessageFactory;
+    const auto cooperateFields = [&]()
+    {
+        try
+        {
+            Cooperate();
+        }
+        catch (...)
+        {
+            sceneData->meshBuildCancelled->store(true, std::memory_order_relaxed);
+            throw;
+        }
+    };
+    std::function<void(ObjectPtr, ObjectPtr)> prepareFields = [&](ObjectPtr object, ObjectPtr parent)
+    {
+        if ((object == nullptr) || !preparedFields.insert(object).second)
+            return;
+        cooperateFields();
+        if (object->interior && ((parent == nullptr) || (object->interior != parent->interior)))
+            PrepareInteriorFields(object, &finalFields, cooperateFields);
+        if (LightSource *light = dynamic_cast<LightSource *>(object))
+            prepareFields(light->Projected_Through_Object, nullptr);
+        if (CompoundObject *compound = dynamic_cast<CompoundObject *>(object))
+            for (ObjectPtr child : compound->children)
+                prepareFields(child, object);
+    };
+    for (const std::unique_ptr<PreparedSet>& set : sceneData->preparedSets)
+        for (ObjectPtr object : set->objects)
+            prepareFields(object, nullptr);
+    PrepareAtmosphereFields(&finalFields, cooperateFields);
+    PrepareLightFields(&finalFields, cooperateFields);
+    cooperateFields();
+    parseData->Stats() += finalFields.Stats();
+
     const size_t recorded = sceneData->deferredMeshes.size();
     if (recorded > 0)
     {
@@ -550,7 +586,7 @@ void MeshBuildTask::FinishMediaFields(const TraceThreadData& final, const std::u
     }
     for (const std::unique_ptr<TraceThreadData>& helper : data)
         parseData->Stats() += helper->Stats();
-    mpMessageFactory->Info("Eager media grids: %u of %u prepared before the render, %u more left to it by a density that tests an object or "
+    mpMessageFactory->Info("Eager media grids: %u of %u prepared ahead of final publication, %u more require final preparation because their density tests an object or "
                            "runs a function a snapshot cannot take; %d of their %d slabs built during the parse; %.3f s CPU in all, %.3f s "
                            "finishing after it.", prepared, unsigned(fields.size()), unsafe, claimed, slabs, cpu / 1000.0,
                            finishing.ElapsedRealTime() / 1000.0);

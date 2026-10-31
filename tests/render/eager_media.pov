@@ -12,6 +12,7 @@ background { rgb <0.1, 0.1, 0.15> }
 camera { location <0, 2.5, -7> look_at <0, 0.5, 0> }
 light_source { <260, 710, 230> rgb 0.9 parallel point_at 0 }
 plane { y, -0.2 pigment { rgb 0.4 } }
+#declare Inside = function { pattern { object { sphere { 0, 1 } } } }
 #declare Haze = interior { media {
   method 4 resolution 0.08
   scattering { 1, 0.4 extinction 0.5 }
@@ -19,7 +20,7 @@ plane { y, -0.2 pigment { rgb 0.4 } }
   density { crackle turbulence 0.4 density_map { [0 rgb 0.2] [1 rgb 1] } scale 0.4 }
   #switch (Kind)
     #case (1) density { pigment_pattern { function { 0.5 + 0.5 * sin(5 * x) } } density_map { [0 rgb 0.3] [1 rgb 1] } } #break
-    #case (2) density { object { sphere { 0, 1 } rgb 0.4, rgb 1 } } #break
+    #case (2) density { function { Inside(x, y, z) } density_map { [0 rgb 0.4] [1 rgb 1] } } #break
   #end
   #switch (Late)
     #case (4) density { waves density_map { [0 rgb 0.5] [1 rgb 1] } scale 0.5 } #break

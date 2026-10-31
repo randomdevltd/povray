@@ -49,7 +49,7 @@ field() { flat "$1" | grep -o "$2" | grep -o "[0-9.]*" | head -1; }
 during() { field "$1" "[0-9]* of their [0-9]* slabs built during the parse"; }
 expect() {
     test "$(grids "$1")" = "Eager media grids: $2 prepared" || { echo "eager preparation: $1: $(grids "$1"), expected $2"; exit 1; }
-    test "$(field "$1" "[0-9]* more left to it by a density")" = "$3" || { echo "eager preparation: $1: $(field "$1" "[0-9]* more left to it by a density") left as no snapshot can take them, expected $3"; exit 1; }
+    test "$(field "$1" "[0-9]* more require final preparation")" = "$3" || { echo "eager preparation: $1: $(field "$1" "[0-9]* more require final preparation") left as no snapshot can take them, expected $3"; exit 1; }
 }
 compare media eager_media Declare=Tail=1500000
 expect media_on8 "1 of 1" 0

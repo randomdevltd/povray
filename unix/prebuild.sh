@@ -625,6 +625,9 @@ CONFIG_CLEAN_FILES =
 check: check-heavy
 check-quick: all
 	+sh "\$(top_srcdir)/tools/bench/check-sphere-intersection.sh" "\$(top_builddir)" "\$(top_builddir)/tests/sphere-intersection"
+	+EXTRA_CXXFLAGS=-ffast-math sh "\$(top_srcdir)/tools/bench/check-prepared-transfer.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-transfer"
+	+sh "\$(top_srcdir)/tools/bench/check-physical-phase.sh" "\$(top_builddir)" "\$(top_builddir)/tests/physical-phase"
+	sh "\$(top_srcdir)/tests/render/physical_media_phase.sh" "\$(top_builddir)/unix/povray" "\$(top_srcdir)"
 	+sh "\$(top_srcdir)/tools/bench/check-prepared-sets.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-sets"
 	\$(top_builddir)/unix/povray +i\$(top_srcdir)/scenes/advanced/biscuit.pov -f +d +p +v +w320 +h240 +a0.3 +L\$(top_srcdir)/include
 	sh \$(top_srcdir)/tests/render/same_image.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -645,6 +648,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_minimum_influence.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_tables.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_photons_method2.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_volume_emitter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_crease_mesh.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_boundaries.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/photon_hidden_target.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -654,6 +658,7 @@ check-quick: all
 	./progressive_photon_test
 	rm -f progressive_photon_test
 	+sh "\$(top_srcdir)/tools/bench/check-progressive-surface.sh" "\$(top_builddir)" "\$(top_builddir)/tests/progressive-surface"
+	+sh "\$(top_srcdir)/tools/bench/check-prepared-light.sh" "\$(top_builddir)" "\$(top_builddir)/tests/prepared-light"
 	sh \$(top_srcdir)/tests/render/progressive_surface.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/progressive_photon_file.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/photon_target_weights.sh \$(top_builddir)/unix/povray \$(top_srcdir)
@@ -673,6 +678,13 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/volume_transport.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_field_support.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_visibility.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_emission_gi.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/volume_joint_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/volume_joint_roles.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_prepared_publication.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_mixed_prepared.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_infinite_joint.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/media_prepared_photons.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/volume_scattering.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/split_union_media.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/fade_cutoff.sh \$(top_builddir)/unix/povray \$(top_srcdir)

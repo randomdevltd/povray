@@ -1025,7 +1025,7 @@ emission rgb &lt;0.75,0.75,0.75&gt;
 <a name="r3_7_2_2_2"></a>
 <div class="content-level-h5" contains="Emission" id="r3_7_2_2_2">
 <h5>3.7.2.2.2 Emission</h5>
-<p>The <code>emission</code> keyword specifies the color of the light emitted from the particles. Particles which emit light are visible without requiring additional illumination. However, they will only illuminate other objects if radiosity is used with media on, or if the medium is declared a light with a <a href="r3_12.html#r3_12">light_source</a> block.  This is similar to an object with high <code>ambient</code> values. The default value is <code>rgb&lt;0,0,0&gt;</code> which means no light is emitted.</p>
+<p>The <code>emission</code> keyword gives particles a visible glow without requiring illumination. Camera, reflection and refraction rays see this appearance, but it supplies no radiosity or photon energy. Use an independent <a href="r3_12.html#r3_12">interior light</a> to illuminate other objects and scattering media. Light scattered by the medium remains available to radiosity and photon transport. The default emission is <code>rgb&lt;0,0,0&gt;</code>.</p>
 
 </div>
 <a name="r3_7_2_2_3"></a>
@@ -1121,15 +1121,14 @@ box {
 <a name="r3_7_2_2_5"></a>
 <div class="content-level-h5" contains="Media Lights" id="r3_7_2_2_5">
 <h5>3.7.2.2.5 Media Lights</h5>
-<p>A <code>light_source</code> block inside an emitting medium makes the medium a light source: it lights surfaces, casting shadows, and lights scattering media, with its brightness and colour taken from its own <code>emission</code> and density, so the light always matches the glow the camera sees.</p>
+<p>An independent <code>light</code> block inside an object's <code>interior</code> supplies volume illumination. Its pigment and brightness define the source independently of any media in that interior; media control the visible glow, extinction and scattering separately.</p>
 <pre>
-media {
-  emission rgb &lt;14, 6, 1.6&gt; * 200
-  density { spherical color_map { [0 rgb 0] [0.4 rgb 0.3] [1 rgb 1] } }
-  light_source { samples 16 }
+interior {
+  light { brightness 200 pigment { rgb &lt;1, 0.4, 0.1&gt; } samples 16 }
+  media { emission rgb &lt;1, 0.4, 0.1&gt; }
 }
 </pre>
-<p>The items of the block (<code>samples</code>, <code>brightness</code>, <code>shadowless</code>, <code>media_interaction</code>, <code>media_attenuation</code>, <code>fade_distance</code>, <code>fade_power</code> and <code>fade_cutoff</code>), their defaults, the power and falloff of the light, its sampling, and its limits are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
+<p>The source law, units, sampling, shadows and transport settings are described in <a href="r3_12.html#r3_12">Volume Lights</a>.</p>
 </div>
 
 <a name="r3_7_2_3"></a>
@@ -1142,6 +1141,10 @@ media {
 <p><code>method 4</code> prepares density at a fixed scene-unit cell width. For example, <code>media { method 4 resolution 0.1 scattering { 1, rgb 1 } density { bozo } }</code> uses cells no wider than 0.1 scene units. Omit <code>resolution</code> to choose a width automatically from the container bounds. A smaller positive width retains more spatial detail but increases preparation memory and rendering work; a larger width is coarser and faster. <code>resolution</code> accepts a finite positive number only with method 4. It may appear before or after <code>method 4</code> in the media block. Using it with methods 1, 2 or 3 is an error.</p>
 
 <p>For supported bounded media, method 4 prepares the density once and reuses it for camera rays and media shadowing. Independent media inside CSG groups also receive their own prepared fields. Multiple variable method 4 media can be combined in one interior or in overlapping containers. Integration splits at container bounds and uses the smallest resolved cell width among the variable media present in each portion. A small fine volume does not impose its step size across a distant coarse volume. Prepared variable media contribute only within their container bounds; portions of a ray outside all those bounds are skipped before applying the step limit. Constant media still cover their active ray segment. Constant media with no <code>density</code> block can join this integration without a density cache, even if they specify a classic method. Parallel lights with <code>media_attenuation on</code> can also use prepared optical-depth fields; eligible contributions add to give the total optical depth. Where a constant or coarser scattering medium lit by a <a href="r3_7.html#r3_7_2_2_5">media light</a> shares a portion with a finer prepared medium, its scattered light is found at its own cadence instead of at every fine step, at a step drawn within each stride: a prepared medium's cadence is its own step, a constant medium's is its <code>samples</code> count per portion. Extinction, emission and the scattering coefficient are still taken at every step.</p>
+<p>A method 4 medium without a density block uses constant coefficients and prepared layout metadata; it allocates no constant density array. Applicable prepared multiply and subtract fields contribute their layout and sampling step even when the underlying medium is constant. Varying fields in a prepared combination must support method 4; unsupported combinations report a diagnostic. Constant legacy media may join an already prepared combination, while standalone classic media retain their selected integration method.</p>
+<p>Prepared density payloads are finalized after geometry bounds are resolved, including when eager preparation is off. Functions that need finalized geometry are evaluated during that preparation stage. A field that requires a viewing ray cannot define prepared spatial density and produces an error before rendering. Prepared camera and shadow queries read the published interpolant; they do not replace rough grid samples with procedural density evaluation.</p>
+<p>Declaring method 4 selects prepared transport rather than a best-effort optimization. Camera, shadow and photon paths use the published representation. A mixed stack reads method 4 density from its prepared payload and explicitly selected legacy density from its evaluator, with a common integration partition respecting prepared detail and legacy sample requirements. Constants use analytic Beer and glow transfer without allocating constant voxel arrays. Unbounded constant atmosphere is supported; varying prepared fields and unbounded varying mixtures require an explicit finite region.</p>
+<p>Native photon method 1 requires a positive beam width before entering participating media. A nonparallel source starting inside prepared scattering media is rejected before rendering; use photon method 2 for that configuration. For a finite emitting volume, method 1 conservatively requires certified source-origin bounds disjoint from the medium bounds. This certification is a support restriction, not an assertion that overlapping bounding regions necessarily contain emitting material. Photon method 2 supports sources starting inside finite media.</p>
 
 <p>The optical-depth cache is an additional acceleration for eligible parallel-light shadow rays. Point lights, area lights, cylinder lights, and scenes containing portals cannot use this cache. Each medium has at most four light-cache entries; additional lights cannot acquire an entry. A light-aligned optical grid can also exceed its 1,000,000-cell limit even when the density grid fits. In these cases, supported shadow rays still march through the prepared density field. Losing the optical-depth cache alone does not cause classic fallback; prepared shadow marching is subject to the density-field eligibility and step limits below.</p>
 

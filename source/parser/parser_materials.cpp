@@ -3738,7 +3738,7 @@ void Parser::Parse_Media(vector<Media>& medialist)
 
         CASE (RESOLUTION_TOKEN)
             resolutionSpecified = true;
-            IMedia->FastResolution = Parse_Float();
+            IMedia->SetRequestedFastResolution(Parse_Float());
             if ((IMedia->FastResolution <= 0.0) || !std::isfinite(IMedia->FastResolution))
                 Error("media resolution needs a finite positive scene-unit width.");
         END_CASE
@@ -3792,6 +3792,11 @@ void Parser::Parse_Media(vector<Media>& medialist)
                         Error("Eccentricity cannot be used with this scattering type.");
                     }
                     IMedia->Eccentricity = Parse_Float();
+                    if (!std::isfinite(IMedia->Eccentricity) ||
+                        (!(std::fabs(IMedia->Eccentricity) < 1.0) && (sceneData->EffectiveLanguageVersion() >= 380)))
+                        Error("Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive.");
+                    else if (!(std::fabs(IMedia->Eccentricity) < 1.0))
+                        Warning("Henyey-Greenstein eccentricity must lie between -1 and 1, exclusive; a scene of version 3.7 or older keeps it.");
                 END_CASE
 
                 CASE (EXTINCTION_TOKEN)
