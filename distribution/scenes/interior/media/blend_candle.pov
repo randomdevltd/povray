@@ -4,6 +4,7 @@
 #ifndef (Shimmer) #declare Shimmer = 1; #end
 #ifndef (FlameLight) #declare FlameLight = 1; #end
 #ifndef (FlameSamples) #declare FlameSamples = 64; #end
+#ifndef (FlameDomainCells) #declare FlameDomainCells = 0; #end
 #ifndef (WaterGlass) #declare WaterGlass = 1; #end
 #ifndef (WaxSSLT) #declare WaxSSLT = 1; #end
 #ifndef (WaxBounce) #declare WaxBounce = 0; #end
@@ -127,7 +128,7 @@ union {
 #declare EmissionAmplitude = 941729.020334*VisibleEmissionScale;
 box { <-0.018,0,-0.014>, <0.020,0.057,0.014> pigment { rgbt 1 }
  interior { media { mix add method 4 resolution 0.00045 emission EmissionAmplitude density { FlameColour() } }
- #if (FlameLight & RenderView!=2) light { emission brightness CandleLumens lumens samples FlameSamples photons { reflection on refraction on } } #end
+ #if (FlameLight & RenderView!=2) light { emission brightness CandleLumens lumens samples FlameSamples #if (FlameDomainCells > 0) domain_cells FlameDomainCells #end photons { reflection on refraction on } } #end
  } translate Wick
 }
 #declare AmbientT = 293.15;

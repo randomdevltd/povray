@@ -60,6 +60,9 @@ rays, where the most it could add there is below C on the 0 to 1 output scale of
 law from the nearest point of the emitter's bounds, so it never depends on the light's
 shape or kind. It applies to surface shading, media scattering, subsurface and bounce
 preparation alike; `cutoff 0` turns it off.
+Interior lights also take `domain_cells N` (once, an integer of 1 to 1000000000),
+budgeting that light's prepared source domain in place of the scene's
+`prepared_source_cells`; a surface light block refuses it. The word is contextual.
 Sampling integrates the finite source at every distance. See the volume-light
 manual chapter for reference probe readings and numerical preparation limits.
 

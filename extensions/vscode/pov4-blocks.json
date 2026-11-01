@@ -2860,6 +2860,7 @@
         "attenuation",
         "bounce",
         "brightness",
+        "domain_cells",
         "emission",
         "lumens",
         "media_attenuation",
