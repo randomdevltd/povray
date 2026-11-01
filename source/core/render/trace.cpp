@@ -3866,6 +3866,7 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
         std::min(connectionDepth - endpointTolerance, connectionDepth - projectedDepth), &query);
 
     // check for object in the light source shadow cache (object that fully shadowed during last test) first
+    const RayRootQueryDisabled restoreQuery(query);
 
     const size_t cacheSlot = lightsourceray.GetPreparedSetId() * shadowCacheLights + lightsource.index;
     if(lightsource.lightGroupLight == false &&
@@ -3882,10 +3883,12 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
             // Same window as the walk below, so a thread's earlier rays cannot change what shadows this one.
             const double limit = std::min(lightsourcedepth - endpointTolerance, lightsourcedepth - projectedDepth);
             const IsoShadowWindow window(threadData, startTolerance, limit);
-            if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(lightsourceray, &boundedIntersection, threadData) &&
+            // The window reaches the shape's own root search, so a root before it cannot hide the roots after it.
+            query.SetRootQuery(&postcond);
+            if ((Test_Flag(cacheObject, OPAQUE_FLAG) && cacheObject->Shadow_Hint_Intersection(query, &boundedIntersection, threadData) &&
                  (boundedIntersection.Depth > startTolerance) && (boundedIntersection.Depth < limit) &&
                  postcond.Admit(cacheOwner, boundedIntersection.Depth)) ||
-                FindIntersection(cacheObject, boundedIntersection, lightsourceray, HeldRootCondition(postcond, cacheOwner), limit))
+                FindIntersection(cacheObject, boundedIntersection, query, HeldRootCondition(postcond, cacheOwner), limit))
             {
                 if(!Test_Flag(boundedIntersection.Object, NO_SHADOW_FLAG))
                 {
@@ -3915,7 +3918,6 @@ void Trace::TracePointLightShadowRay(const LightSource &lightsource, double& lig
     }
 
     foundTransparentObjects = false;
-    const RayRootQueryDisabled restoreQuery(query);
     while(true)
     {
         cooperate();
