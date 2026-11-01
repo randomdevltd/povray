@@ -620,6 +620,7 @@ void SubsurfaceCache::Withdraw(const SubsurfaceCell *cell)
 {
     std::lock_guard<std::mutex> lock(offersMutex);
     offers.erase(std::remove_if(offers.begin(), offers.end(), [cell](const auto& offer) { return offer.first == cell; }), offers.end());
+    offered.notify_all();
 }
 
 bool SubsurfaceCache::Help(Trace& trace, std::chrono::milliseconds wait)
@@ -634,6 +635,7 @@ bool SubsurfaceCache::Help(Trace& trace, std::chrono::milliseconds wait)
             works.push_back(offers[(nextOffer + k) % offers.size()].second);
         nextOffer++;
     }
+    // a helper's shared_ptr can run an offer's function once more after its Withdraw, so the function must own everything it touches
     bool ran = false;
     for (const auto& work : works)
         ran = (*work)(trace) || ran;

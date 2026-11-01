@@ -1310,6 +1310,7 @@ class Trace
         std::vector<std::unique_ptr<PhotonGatherer>> surfacePhotonGatherers;
         size_t surfacePhotonGatherDepth = 0;
         /// The finished cells this thread has used, so it need not ask the shared cache again.
+        /// The raw pointers hold only while cells are never freed mid-render: there is no eviction, the cap throws instead.
         std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
         std::map<std::pair<const void*, PreparedSetId>, SubsurfaceParts> ssltParts;
         struct SubsurfaceUnservedCount { std::atomic<std::uint64_t> *shared = nullptr; std::uint64_t pending = 0; };
