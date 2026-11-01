@@ -39,6 +39,13 @@ v3.7.1 release proper.
 
 Changed Behaviour
 
+- The subsurface clouds' memory cap, when `global_settings { subsurface {
+  memory FLOAT } }` sets none, is a quarter of the memory the system
+  reports available, at least 1024 MB and at most 32 GB, instead of a
+  fixed 1024 MB which stopped renders at the start on large-memory
+  machines whose clouds would have fitted. An explicit `memory` still wins
+  at every scene version, and a cloud past the cap still stops the render
+  with the same error, naming the cap in force.
 - Add independent interior refraction { function { DeltaN } detail D },
   or refraction off, in classic SDL and .pov4 at every scene version.
   Blocks require one or more raw signed scalar functions; their sum adds to
@@ -583,10 +590,11 @@ New Features
     point clouds are spaced by the view instead of at the finest spacing. The
     cloud no longer has a point budget: every cell is built at its own
     spacing, so the image does not depend on thread count or order, and
-    `global_settings { subsurface { memory FLOAT } }` (megabytes, 1024 by
-    default; `memory` is matched by its text) caps the clouds' memory, past
-    which the render stops with an error suggesting a cap or a `spacing`
-    that would fit; `spacing` scales every point step, so cloud memory goes
+    `global_settings { subsurface { memory FLOAT } }` (megabytes, by
+    default a quarter of the memory the system reports available, at least
+    1024 MB and at most 32 GB; `memory` is matched by its text) caps the
+    clouds' memory, past which the render stops with an error suggesting a
+    cap or a `spacing` that would fit; `spacing` scales every point step, so cloud memory goes
     about as 1/spacing^2. The render statistics report the spacing, the
     cloud's peak memory, points built and read and which rule set each
     cell's step, split fallbacks to method 1 by reason, and a warning names
