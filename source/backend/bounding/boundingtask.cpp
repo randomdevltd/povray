@@ -397,7 +397,7 @@ void MeshBuildTask::Run()
                 if (timer.HasValidThreadCPUTime())
                     cpu[worker] += timer.ElapsedThreadCPUTime();
             }, cooperate);
-            for (size_t worker = (helpers > 1) ? 0 : 1; worker < helpers; ++worker)
+            for (size_t worker = 1; worker < helpers; ++worker)
                 buildCpuTime += cpu[worker];
             pool->Finish(cooperate);
 
@@ -429,8 +429,8 @@ void MeshBuildTask::Run()
             if (timer.HasValidThreadCPUTime())
                 cpu[worker] += timer.ElapsedThreadCPUTime();
         }, cooperate);
-        // A single build runs on this task's own thread, whose time is counted already.
-        for (size_t worker = (count > 1) ? 0 : 1; worker < count; ++worker)
+        // worker 0 is this task's own thread, whose time is counted already
+        for (size_t worker = 1; worker < count; ++worker)
             buildCpuTime += cpu[worker];
         workers.front()->preparationProgress = &progress;
         if (!sceneData->eagerMediaFields.empty() || !sceneData->eagerMediaUnsafe.empty())

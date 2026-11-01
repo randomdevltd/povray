@@ -616,8 +616,29 @@ void ViewData::CompletedRectangle(const POVRect& rect, unsigned int serial, floa
     }
 }
 
+void ViewData::OfferBlock(const std::shared_ptr<SharedBlock>& block)
+{
+    std::lock_guard<std::mutex> lock(sharedBlockMutex);
+    sharedBlocks.push_back(block);
+}
+
+std::shared_ptr<ViewData::SharedBlock> ViewData::BlockToHelp()
+{
+    std::lock_guard<std::mutex> lock(sharedBlockMutex);
+    sharedBlocks.erase(std::remove_if(sharedBlocks.begin(), sharedBlocks.end(),
+                                      [](const std::shared_ptr<SharedBlock>& b) { return b->Left() == 0; }), sharedBlocks.end());
+    auto most = std::max_element(sharedBlocks.begin(), sharedBlocks.end(),
+                                 [](const std::shared_ptr<SharedBlock>& a, const std::shared_ptr<SharedBlock>& b) { return a->Left() < b->Left(); });
+    return (most == sharedBlocks.end()) ? nullptr : *most;
+}
+
 void ViewData::SetNextRectangle(const BlockIdSet& bsl, unsigned int fs, bool keepProgress)
 {
+    {
+        std::lock_guard<std::mutex> lock(sharedBlockMutex);
+        sharedBlocks.clear();
+    }
+    passWorking = 0;
     blockSkipList = bsl;
     blockBusyList.clear(); // safety catch; shouldn't be necessary
     blockPostponedList.clear(); // safety catch; shouldn't be necessary
@@ -1847,6 +1868,13 @@ void View::GetStatistics(POVMS_Object& renderStats)
     }
     if (viewData.GetSceneData()->photonSettings.Progressive())
         timeData[TraceThreadData::kPhotonTime].samples = viewData.photonThreads;
+    if (passCount > 0)
+    {
+        // progressive passes run one after another: their trace time is the span from the first to the last
+        timeData[TraceThreadData::kRenderTime].realTime =
+            std::chrono::duration_cast<std::chrono::milliseconds>(lastPassEnd - firstPassStart).count();
+        timeData[TraceThreadData::kRenderTime].samples = size_t(passThreads);
+    }
 
     for(size_t i = TraceThreadData::kUnknownTime; i < TraceThreadData::kMaxTimeType; i++)
     {
@@ -1911,6 +1939,12 @@ void View::DispatchShutdownMessages(TaskQueue&)
 
 void View::SendStatistics(TaskQueue&)
 {
+    if (passCount > 0)
+        MessageFactory(viewData.sceneData->warningLevel, "Render", viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                       viewData.sceneData->sceneId, viewData.viewId)
+            .Info("Passes: %lu, %.1fs, %.1f of %d working, tails %.1fs, gaps %.1fs", (unsigned long)passCount,
+                  passWall, (passWall > 0.0) ? passBusy / passWall : 0.0, passThreads, passTail, passSerial);
+
     POVMS_Message renderStats(kPOVObjectClass_RenderStatistics, kPOVMsgClass_ViewOutput, kPOVMsgIdent_RenderStatistics);
 
     GetStatistics(renderStats);
@@ -2214,6 +2248,15 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         }
     }
 
+    // one worker per thread, reused for every pass
+    std::vector<std::shared_ptr<TraceTask>> workers;
+    for (int i = 0; i < maxRenderThreads; i++)
+    {
+        workers.push_back(std::make_shared<TraceTask>(&viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
+                                                      0, false, true, highReproducibility, seed, 0, 0, false, aaBudget));
+        viewThreadData.push_back(dynamic_cast<ViewThreadData *>(workers.back()->GetDataPtr()));
+    }
+
     shared_ptr<ViewData::BlockIdSet> noSkip(new ViewData::BlockIdSet());
     bool firstPass = true;
     unsigned int step = maxStep;
@@ -2229,12 +2272,9 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
         renderTasks.AppendSync();
         firstPass = false;
 
-        for (int i = 0; i < maxRenderThreads; i++)
-            viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
-                &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                0, false, true, highReproducibility, seed, level, refine ? 0 : step, level == 0, aaBudget
-                ))));
-        renderTasks.AppendSync();
+        const unsigned int levelStep = refine ? 0 : step;
+        QueuePass(refine ? std::to_string(level) + " refine" : std::to_string(level) + " step " + std::to_string(step), workers,
+                  [level, levelStep](TraceTask& task) { task.SetPass(level, levelStep, level == 0, 0, 0); });
     }
 
     if (tracingMethod == 4)
@@ -2251,12 +2291,10 @@ void View::QueueProgressiveRender(POVMS_Object& renderOptions, unsigned int trac
             }
             renderTasks.AppendFunction(boost::bind(&View::StartLevel, this, _1, skip, false));
             renderTasks.AppendSync();
-            for (int i = 0; i < maxRenderThreads; i++)
-                viewThreadData.push_back(dynamic_cast<ViewThreadData *>(renderTasks.AppendTask(new TraceTask(
-                    &viewData, tracingMethod, jitterScale, aaThreshold, aaConfidence, aaDepth, aaGamma,
-                    0, false, true, highReproducibility, seed, aaLevel, 0, false, aaBudget, pass, round
-                    ))));
-            renderTasks.AppendSync();
+            static const char* const names[] = { "", "AA fit", "AA probe", "AA noise", "AA resolve" };
+            const int level = aaLevel;
+            QueuePass(std::to_string(aaLevel) + " " + names[pass] + ((pass == 2) || (pass == 3) ? " " + std::to_string(round) : std::string()),
+                      workers, [level, pass, round](TraceTask& task) { task.SetPass(level, 0, false, pass, round); });
             aaLevel++;
         };
         renderTasks.AppendFunction(boost::bind(&View::PlanAntialias, this, _1, 0, 0));
@@ -2378,6 +2416,57 @@ void ViewData::AaStateBytes(double bytes[8]) const
     bytes[7] = double(aaGeom.size()) * sizeof(AaGeom);
 }
 
+void View::QueuePass(const std::string& name, const std::vector<std::shared_ptr<TraceTask>>& workers,
+                     const std::function<void(TraceTask&)>& setup)
+{
+    auto pass = std::make_shared<PassTimes>();
+    pass->name = name;
+    for (const std::shared_ptr<TraceTask>& worker : workers)
+        pass->workers.push_back(dynamic_cast<ViewThreadData *>(worker->GetDataPtr()));
+    renderTasks.AppendFunction([pass, workers, setup](TaskQueue&)
+    {
+        for (const std::shared_ptr<TraceTask>& worker : workers)
+        {
+            worker->Rearm();
+            setup(*worker);
+        }
+        pass->start = std::chrono::steady_clock::now();
+    });
+    for (const std::shared_ptr<TraceTask>& worker : workers)
+        renderTasks.AppendTask(worker);
+    renderTasks.AppendSync();
+    renderTasks.AppendFunction([this, pass](TaskQueue&) { ReportPass(*pass); });
+}
+
+void View::ReportPass(const PassTimes& pass)
+{
+    const std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    const double wall = std::chrono::duration<double>(end - pass.start).count();
+    double busy = 0.0, cpu = 0.0, first = wall;
+    for (const ViewThreadData* worker : pass.workers)
+    {
+        busy += double(worker->passRealTime) / 1000.0;
+        cpu += double(worker->passCpuTime) / 1000.0;
+        first = std::min(first, double(worker->passRealTime) / 1000.0);
+    }
+    if (passCount == 0)
+        firstPassStart = pass.start;
+    else
+        passSerial += std::chrono::duration<double>(pass.start - lastPassEnd).count();
+    lastPassEnd = end;
+    passCount++;
+    passWall += wall;
+    passBusy += busy;
+    passTail += std::max(0.0, wall - first);
+    passThreads = int(pass.workers.size());
+    if (wall < 0.5)
+        return;
+    MessageFactory(viewData.sceneData->warningLevel, "Render", viewData.sceneData->backendAddress, viewData.sceneData->frontendAddress,
+                   viewData.sceneData->sceneId, viewData.viewId)
+        .Info("Pass %s: %.1fs, %.1f of %d working, %.1f on CPU, tail %.1fs", pass.name.c_str(), wall, busy / wall,
+              passThreads, cpu / wall, std::max(0.0, wall - first));
+}
+
 void View::PlanAntialias(TaskQueue&, int pass, int round)
 {
     TraceTask::PlanM4(&viewData, pass, round);
@@ -2410,12 +2499,6 @@ void View::RenderControlThread()
         {
             RenderBackend::SendViewFailedResult(viewData.viewId, renderTasks.FailureCode(kUncategorizedError), viewData.sceneData->frontendAddress);
             sentFailedResult = true;
-        }
-
-        if(stopRequsted == false)
-        {
-            std::this_thread::yield();
-            Delay(50);
         }
     }
 }

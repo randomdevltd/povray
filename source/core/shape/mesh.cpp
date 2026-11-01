@@ -89,6 +89,7 @@
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/triangle.h"
 #include "core/support/statistics.h"
+#include "core/support/workerpool.h"
 
 // this must be the last file included
 #include "base/povdebug.h"
@@ -1015,12 +1016,27 @@ void DeferredMeshPool::Submit(const std::shared_ptr<DeferredMeshState>& state, c
         return;
     retained.push_back(state);
     queue.push_back(state);
-    if ((threads.size() < threadCount) && (queue.size() > threads.size() - busy))
+    if ((workers < threadCount) && (queue.size() > workers - busy))
     {
-        const size_t index = threads.size();
+        const size_t index = workers;
         running.resize(threadCount, nullptr);
         threadData.emplace_back(new TraceThreadData(sceneData, seed + index + 1, false));
-        threads.emplace_back(&DeferredMeshPool::Work, this, index);
+        try
+        {
+            WorkerPool::Shared().Run([this, index]() { Work(index); }, [this]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                --live;
+                gone.notify_all();
+            });
+        }
+        catch (...)
+        {
+            threadData.pop_back();
+            throw;
+        }
+        ++workers;
+        ++live;
     }
     else
         wake.notify_one();
@@ -1083,7 +1099,7 @@ void DeferredMeshPool::Resume()
 void DeferredMeshPool::Finish(const std::function<void()>& cooperate)
 {
     std::unique_lock<std::mutex> lock(mutex);
-    while (!threads.empty() && !(queue.empty() && (busy == 0)))
+    while ((live > 0) && !(queue.empty() && (busy == 0)))
     {
         idle.wait_for(lock, std::chrono::milliseconds(100));
         lock.unlock();
@@ -1107,21 +1123,8 @@ void DeferredMeshPool::Join(std::unique_lock<std::mutex>& lock)
 {
     stopping = true;
     wake.notify_all();
-    // a stop from another thread may be joining the threads already: their data stays live until it is done
-    if (joining)
-    {
-        joined.wait(lock, [this]() { return !joining; });
-        return;
-    }
-    joining = true;
-    std::vector<std::thread> stopped;
-    stopped.swap(threads);
-    lock.unlock();
-    for (std::thread& thread : stopped)
-        thread.join();
-    lock.lock();
-    joining = false;
-    joined.notify_all();
+    // a stop from another thread waits here too: each worker is released once, by its pool callback
+    gone.wait(lock, [this]() { return live == 0; });
 }
 
 std::vector<std::unique_ptr<TraceThreadData>> DeferredMeshPool::Dispose()

@@ -704,6 +704,16 @@ New Features
 Performance Improvements
 ------------------------
 
+  - Threads are made once and reused by every task, pass and parallel loop,
+    and a progressive render keeps one trace worker per thread for all its
+    passes instead of making one per thread per pass. A worker out of blocks
+    takes samples of blocks other workers are still tracing, and jobs of the
+    subsurface cells they are building, so a pass no longer ends with one
+    thread working; pixels are unchanged and the same for any +WT and +BS.
+    The queue starts the next pass when the last worker ends, not on a 50 ms
+    poll. Each progressive pass reports its time, workers busy and tail, and
+    progressive Trace Time now spans every pass (doc/PERF.md).
+
   - Significantly improved parsing speed of skipped conditional blocks (e.g. in
     `#if(false) ... #end`), especially for blocks containing few directives
     (stuff that begins with `#`).

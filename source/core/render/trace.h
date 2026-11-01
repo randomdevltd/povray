@@ -43,6 +43,7 @@
 //  (none at the moment)
 
 // C++ standard header files
+#include <chrono>
 #include <memory>
 #include <map>
 #include <unordered_map>
@@ -226,6 +227,8 @@ class Trace
         virtual ~Trace();
         /// Adds this thread's counts of shading points the subsurface cloud left unserved to the shared ones.
         void FlushSubsurfaceCounts();
+        /// Runs jobs of subsurface cells other threads are building, waiting up to `wait` for one; whether it ran any.
+        bool HelpSubsurfaceCells(std::chrono::milliseconds wait);
         /// Surface bounce nodes as patches of the surface, each with the light entering it, in one tree per object and interior,
         /// depth first: a patch's first child follows it, and `next` is the index past its subtree.
         struct SurfaceSubsurfaceField
@@ -1298,6 +1301,7 @@ class Trace
 
         /// The cloud of each subsurface recursion level, kept between shading points to save allocations.
         SubsurfaceCloud ssltClouds[2];
+        SubsurfaceCloud ssltHelpCloud; ///< another thread's cloud with this thread's lights, while helping with its cell
         void SetUpSubsurfaceThin(const SubsurfaceCloud& cloud, const Vector3d& x, const Vector3d& n, const SubsurfaceProfile& profile, TraceTicket& ticket);
         /// The light reaching a bounce node of the bridge's field by diffusion, before it leaves through the surface.
         bool SurfaceSubsurfaceDiffusion(const Intersection& out, const SubsurfaceProfile& profile, const SubsurfaceFlesh& flesh, double ftOut,
@@ -1306,6 +1310,7 @@ class Trace
         std::vector<std::unique_ptr<PhotonGatherer>> surfacePhotonGatherers;
         size_t surfacePhotonGatherDepth = 0;
         /// The finished cells this thread has used, so it need not ask the shared cache again.
+        /// The raw pointers hold only while cells are never freed mid-render: there is no eviction, the cap throws instead.
         std::unordered_map<SubsurfaceCellKey, const SubsurfaceCell*, SubsurfaceCellKeyHash> ssltCells;
         std::map<std::pair<const void*, PreparedSetId>, SubsurfaceParts> ssltParts;
         struct SubsurfaceUnservedCount { std::atomic<std::uint64_t> *shared = nullptr; std::uint64_t pending = 0; };
@@ -1388,7 +1393,12 @@ class Trace
         void SubsurfaceCellSteps(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, double step[3], SubsurfaceStepTerm& finestTerm, bool& floored);
         void FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable);
         void AddSubsurfaceAmbient(const SubsurfaceCloud& cloud, SubsurfaceCell& cell);
-        void WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder);
+        /// Takes the cell's jobs; an idle helper returns once none is left to take, whether it ran any.
+        bool WorkOnSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, bool builder,
+                                  bool idle = false);
+        /// Runs jobs of another thread's cell, the cloud's lights at `slots` of this thread's copies of the scene's lights.
+        bool HelpSubsurfaceCell(const SubsurfaceCloud& cloud, const std::vector<int>& slots, const SubsurfaceCellKey& key,
+                                SubsurfaceCell& cell);
         void CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
         void LightSubsurfacePoints(const SubsurfaceCloud& cloud, const SubsurfaceCellKey& key, SubsurfaceCell& cell, int job, TraceTicket& ticket);
         void CollectCrossings(ObjectPtr object, const Vector3d& origin, const Vector3d& dir, double from, double to, std::vector<Intersection>& hits, TraceTicket& ticket);

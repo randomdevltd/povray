@@ -40,6 +40,7 @@
 // C++ standard header files
 
 // Boost header files
+#include <chrono>
 #include <new>
 
 #include <boost/bind.hpp>
@@ -61,7 +62,7 @@ namespace pov
 using std::list;
 using std::shared_ptr;
 
-TaskQueue::TaskQueue() : failed(kNoError)
+TaskQueue::TaskQueue() : failed(kNoError), wakes(0)
 {
 }
 
@@ -171,11 +172,16 @@ void TaskQueue::Fail(int code)
 
 ThreadData *TaskQueue::AppendTask(Task *task)
 {
+    return AppendTask(shared_ptr<Task>(task));
+}
+
+ThreadData *TaskQueue::AppendTask(const shared_ptr<Task>& task)
+{
     std::lock_guard<std::recursive_mutex> lock(queueMutex);
 
     failed = false;
 
-    queuedTasks.push(TaskEntry(shared_ptr<Task>(task)));
+    queuedTasks.push(TaskEntry(task));
 
     Notify();
 
@@ -221,6 +227,7 @@ void TaskQueue::AppendFunction(const boost::function1<void, TaskQueue&>& fn)
 
 bool TaskQueue::Process()
 {
+    const unsigned int seen = Wakes();
     std::unique_lock<std::recursive_mutex> lock(queueMutex);
 
     for(list<TaskEntry>::iterator i(activeTasks.begin()); i != activeTasks.end();)
@@ -243,6 +250,9 @@ bool TaskQueue::Process()
     if(failed != kNoError)
     {
         Stop();
+        const unsigned int stopped = Wakes();
+        lock.unlock();
+        WaitForWake(stopped);
         return false;
     }
 
@@ -262,7 +272,11 @@ bool TaskQueue::Process()
                 if(activeTasks.empty() == true)
                     queuedTasks.pop();
                 else
+                {
+                    lock.unlock();
+                    WaitForWake(seen);
                     return false;
+                }
                 break;
             }
             case TaskEntry::kMessage:
@@ -281,14 +295,34 @@ bool TaskQueue::Process()
     }
 
     if(queuedTasks.empty() == true)
-        processCondition.wait(lock);
+    {
+        lock.unlock();
+        WaitForWake(seen);
+        return false;
+    }
 
-    return (queuedTasks.empty() == false);
+    return true;
 }
 
 void TaskQueue::Notify()
 {
-    processCondition.notify_one();
+    {
+        std::lock_guard<std::mutex> lock(wakeMutex);
+        wakes++;
+    }
+    wakeCondition.notify_all();
+}
+
+unsigned int TaskQueue::Wakes()
+{
+    std::lock_guard<std::mutex> lock(wakeMutex);
+    return wakes;
+}
+
+void TaskQueue::WaitForWake(unsigned int seen)
+{
+    std::unique_lock<std::mutex> lock(wakeMutex);
+    wakeCondition.wait_for(lock, std::chrono::milliseconds(50), [&]() { return wakes != seen; });
 }
 
 }

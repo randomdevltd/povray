@@ -57,6 +57,7 @@
 #include <unordered_map>
 #include <atomic>
 #include <chrono>
+#include <string>
 #include <vector>
 
 // POV-Ray header files (base module)
@@ -78,6 +79,8 @@
 
 namespace pov
 {
+
+class TraceTask;
 
 using namespace pov_base;
 
@@ -194,6 +197,24 @@ class ViewData final
             public:
                 virtual ~BlockInfo() {}
         };
+
+        /// A claimed block of a progressive pass whose items any worker of that pass may take once no block is left.
+        class SharedBlock
+        {
+            public:
+                virtual ~SharedBlock() {}
+                /// Next item to take, and how many there are.
+                std::atomic<size_t> next{0};
+                size_t count = 0;
+                size_t Left() const { const size_t n = next.load(std::memory_order_relaxed); return (n < count) ? (count - n) : 0; }
+        };
+
+        /// Lets workers of the pass take items of a block once they run out of blocks.
+        void OfferBlock(const std::shared_ptr<SharedBlock>& block);
+        /// The offered block with the most items left, or none.
+        std::shared_ptr<SharedBlock> BlockToHelp();
+        /// Workers of the running pass not yet out of blocks to work on.
+        std::atomic<int> passWorking{0};
 
         /**
          *  Get the next sub-rectangle of the view to render (if any).
@@ -521,6 +542,9 @@ class ViewData final
         BlockIdSet blockBusyList;
         /// list of blocks postponed for some reason
         BlockIdSet blockPostponedList;
+        /// blocks of the running pass that idle workers may help with
+        std::vector<std::shared_ptr<SharedBlock>> sharedBlocks;
+        std::mutex sharedBlockMutex;
         /// list of additional block information
         std::vector<BlockInfo*> blockInfoList;
         /// area of view to be rendered
@@ -722,6 +746,23 @@ class View final
 
         /// Method 4's planning step between two passes.
         void PlanAntialias(TaskQueue& taskq, int pass, int round);
+
+        /// One progressive pass's workers and when they started, for its line in the pass timeline.
+        struct PassTimes final
+        {
+            std::string name;
+            std::vector<ViewThreadData*> workers;
+            std::chrono::steady_clock::time_point start;
+        };
+        /// Queues a pass of the workers, `setup` choosing what each runs, between the functions that time it.
+        void QueuePass(const std::string& name, const std::vector<std::shared_ptr<TraceTask>>& workers,
+                       const std::function<void(TraceTask&)>& setup);
+        void ReportPass(const PassTimes& pass);
+        std::chrono::steady_clock::time_point firstPassStart, lastPassEnd;
+        /// Passes timed, their wall and serial seconds between passes, worker seconds busy and seconds after the first ran dry.
+        size_t passCount = 0;
+        double passWall = 0.0, passSerial = 0.0, passBusy = 0.0, passTail = 0.0;
+        int passThreads = 0;
 
         void EndRadiosityStateFile(TaskQueue& taskq, Path file);
 

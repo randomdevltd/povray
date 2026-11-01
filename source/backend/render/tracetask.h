@@ -89,6 +89,9 @@ class TraceTask final : public RenderTask
         /// Rounds of extra samples for noisy pixels, each adding at most one a pixel.
         static constexpr int kM4NoiseRounds = 64;
 
+        /// Sets the pass a progressive worker runs next, between its runs.
+        void SetPass(int level, unsigned int step, bool first, int pass, int round);
+
         virtual void Run() override;
         virtual void Stopped() override;
         virtual void Finish() override;
@@ -162,6 +165,20 @@ class TraceTask final : public RenderTask
         void NonAdaptiveSupersamplingM1();
         void AdaptiveSupersamplingM2();
         void StochasticSupersamplingM3();
+
+        struct PassBlock;
+        typedef void (TraceTask::*PassStep)(PassBlock&);
+        typedef void (TraceTask::*PassItem)(PassBlock&, size_t);
+        /// Whether idle workers of a pass may trace items of another worker's block; radiosity draws per block, so not with it.
+        bool shareBlocks;
+        void RunPass(PassStep open, PassItem item, PassStep close);
+        void WorkBlock(PassBlock& block, PassItem item, PassStep close);
+        void OpenLevelBlock(PassBlock& block);
+        void LevelItem(PassBlock& block, size_t i);
+        void CloseLevelBlock(PassBlock& block);
+        void OpenM4Block(PassBlock& block);
+        void M4Item(PassBlock& block, size_t i);
+        void CloseM4Block(PassBlock& block);
 
         void ProgressiveLevel();
         void ProgressiveRefineM1();

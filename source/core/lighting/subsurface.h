@@ -45,6 +45,7 @@
 
 // C++ standard header files
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <map>
 #include <functional>
@@ -70,6 +71,7 @@ namespace pov
 {
 
 class PhotonMap;
+class Trace;
 struct Photon;
 
 //##############################################################################
@@ -298,8 +300,17 @@ class SubsurfaceCache final
         std::shared_ptr<const float> Layer(const SubsurfaceBoundary& boundary, int step, int k);
         /// The boundary for a quantised index (SubsurfaceBoundary::Quantise), kept as the layer tables are.
         std::shared_ptr<const SubsurfaceBoundary> Boundary(double eta);
+        /// Lets threads with nothing else to do take jobs of a cell being built, through `work`, until it is withdrawn.
+        void Offer(const SubsurfaceCell *cell, std::function<bool(Trace&)> work);
+        void Withdraw(const SubsurfaceCell *cell);
+        /// Runs jobs of an offered cell on `trace`, waiting up to `wait` for an offer; whether it ran any.
+        bool Help(Trace& trace, std::chrono::milliseconds wait);
 
     private:
+        std::mutex offersMutex;
+        std::condition_variable offered;
+        std::vector<std::pair<const SubsurfaceCell*, std::shared_ptr<std::function<bool(Trace&)>>>> offers;
+        size_t nextOffer = 0;
         struct TableKey
         {
             double eta;
