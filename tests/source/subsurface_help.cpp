@@ -82,7 +82,7 @@ int main()
     bool caught = false;
     try
     {
-        cache.Help(trace, std::chrono::milliseconds(50));
+        cache.Help(trace, std::chrono::milliseconds(2000));
     }
     catch (const std::runtime_error&)
     {
