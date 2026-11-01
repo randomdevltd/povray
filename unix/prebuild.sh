@@ -704,7 +704,9 @@ check-quick: all
 	./simple_vector_test
 	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/worker_pool.cpp -o worker_pool_test
 	./worker_pool_test
-	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test
+	\$(CXX) -std=c++17 -O2 -pthread -DHAVE_CONFIG_H -I\$(top_srcdir)/source -I\$(top_srcdir)/libraries/xsimd/include -I\$(top_builddir)/unix -I\$(top_srcdir)/unix/povconfig -I\$(top_srcdir)/platform/unix -I\$(top_srcdir)/platform/x86 \$(top_srcdir)/tests/source/mesh_pool_stop.cpp \$(top_srcdir)/source/core/shape/mesh.cpp \$(top_srcdir)/source/core/scene/scenedata.cpp \$(top_srcdir)/source/core/scene/tracethreaddata.cpp -o mesh_pool_stop_test
+	./mesh_pool_stop_test
+	rm -f bounce_grid_test prepared_source_domain_test prepared_source_selector_test shared_incident_field_test surface_angular_guide_test simple_vector_test worker_pool_test mesh_pool_stop_test
 	mkdir -p \$(top_builddir)/tests/subsurface-entry-ior
 	+\$(MAKE) -C \$(top_builddir)/unix -f Makefile -f "\$(abs_top_srcdir)/tools/bench/check-prepared-sets.mk" check-prepared-sets \\
 	  PREPARED_SOURCE="\$(abs_top_srcdir)/tests/source/subsurface_entry_ior.cpp" \\
