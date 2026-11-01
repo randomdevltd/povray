@@ -159,6 +159,49 @@ using std::max;
 
 const DBL DEPTH_TOLERANCE = 1.0e-4;
 
+namespace
+{
+
+// Newton-polishes the roots in [0, 1] of c[0] w^order + ... + c[order]. A root keeps the solver's value if polishing would
+// move it further than twice its first Newton step, as near another root as to its own, or out of [0, 1].
+void PolishRoots(const DBL *c, int order, DBL *roots, int n)
+{
+    DBL polished[6];
+    for (int i = 0; i < n; i++)
+    {
+        const DBL w0 = roots[i];
+        polished[i] = w0;
+        if ((w0 < 0.0) || (w0 > 1.0))
+            continue;
+        DBL w = w0, bound = 0.0, last = HUGE_VAL;
+        for (int iteration = 0; iteration < 8; iteration++)
+        {
+            DBL v = 0.0, dv = 0.0;
+            for (int k = 0; k <= order; k++)
+            {
+                dv = dv * w + v;
+                v = v * w + c[k];
+            }
+            const DBL step = (dv != 0.0) ? v / dv : 0.0;
+            if (!(fabs(step) < last) || (step == 0.0))
+                break;
+            if (iteration == 0)
+                bound = 2.0 * fabs(step);
+            w -= step;
+            last = fabs(step);
+        }
+        bool keep = (fabs(w - w0) <= bound) && (w >= 0.0) && (w <= 1.0);
+        for (int j = 0; keep && (j < n); j++)
+            if ((j != i) && (fabs(w - roots[j]) <= fabs(w - w0)))
+                keep = false;
+        polished[i] = keep ? w : w0;
+    }
+    for (int i = 0; i < n; i++)
+        roots[i] = polished[i];
+}
+
+}
+
 /*****************************************************************************
 *
 * FUNCTION
@@ -322,6 +365,7 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
 
         // Init number of roots found.
         n1 = 0;
+        int order = 0;
 
         // Intersect segment.
         switch(Spline_Type)
@@ -332,6 +376,7 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[0] = Entry->C[Y] * Entry->C[Y] * r - Entry->C[X] * Entry->C[X] * Dy2;
                 x1[1] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[2] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
+                order = 2;
                 n1 = Solve_Polynomial(2, x1, y1, false, 0.0, Thread->Stats());
                 break;
             // Quadratic spline
@@ -342,6 +387,7 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[2] = r * (2.0 * Entry->B[Y] * (Entry->D[Y] - P[Y]) + Entry->C[Y] * Entry->C[Y]) + 2.0 * Entry->B[Y] * D[Y] * m - (2.0 * Entry->B[X] * Entry->D[X] + Entry->C[X] * Entry->C[X]) * Dy2;
                 x1[3] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[4] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
+                order = 4;
                 n1 = Solve_Polynomial(4, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
                 break;
             // Cubic spline
@@ -355,9 +401,13 @@ bool Lathe::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadData *Thre
                 x1[4] = (2.0 * Entry->B[Y] * (Entry->D[Y] - P[Y]) + Entry->C[Y] * Entry->C[Y]) * r + 2.0 * Entry->B[Y] * D[Y] * m - (2.0 * Entry->B[X] * Entry->D[X] + Entry->C[X] * Entry->C[X]) * Dy2;
                 x1[5] = 2.0 * (Entry->C[Y] * ((Entry->D[Y] - P[Y]) * r + D[Y] * m) - Entry->C[X] * Entry->D[X] * Dy2);
                 x1[6] = (Entry->D[Y] - P[Y]) * ((Entry->D[Y] - P[Y]) * r + 2.0 * D[Y] * m) + Dy2 * (P[X] * P[X] + P[Z] * P[Z] - Entry->D[X] * Entry->D[X]);
+                order = 6;
                 n1 = Solve_Polynomial(6, x1, y1, Test_Flag(this, STURM_FLAG), 0.0, Thread->Stats());
                 break;
         }
+
+        // The depth below is (y(w) - P[Y]) / D[Y], which multiplies any error in w by 1 / D[Y].
+        PolishRoots(x1, order, y1, n1);
 
         // Test roots for valid intersections.
         while(n1--)
