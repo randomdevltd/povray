@@ -1,3 +1,4 @@
+#include "core/material/noise.h"
 #include "core/scene/scenedata.h"
 #include "core/scene/tracethreaddata.h"
 #include "core/shape/mesh.h"
@@ -11,6 +12,7 @@
 using namespace pov;
 int main()
 {
+    Initialize_Noise();
     auto scene = std::make_shared<SceneData>();
     DeferredMeshPool pool(2);
 
