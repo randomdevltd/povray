@@ -157,7 +157,6 @@ class Media::FastCache final
         Vector3d low, size;
         int nx = 0, ny = 0, nz = 0;
         vector<MathColour> density;
-        vector<unsigned char> rough;
 
         struct Optical final
         {
@@ -332,7 +331,6 @@ bool Media::FastCache::TakePrepared()
     effect = grid.effect;
     cellWidth = grid.cellWidth;
     density.swap(grid.density);
-    rough.swap(grid.rough);
     prepared.reset();
     return true;
 }
@@ -445,7 +443,6 @@ void Media::FastCache::Finalize(Media& media, TraceThreadData *td, const std::fu
     {
         step = media.FastResolution;
         density.clear();
-        rough.clear();
         if (!SizeGrid(media, container->BBox, td->GetSceneData()->EffectivePreparedMediaCells()))
             throw POV_EXCEPTION_STRING("Prepared density cannot be published for this configuration.");
         std::atomic<bool> unusable(false);
@@ -520,7 +517,6 @@ bool Media::FastCache::SizeGrid(const Media& media, const BoundingBox& bounds, D
     nz = layout ? int(layout->counts[Z]) : int(sz);
     cell = Vector3d(size[X] / nx, size[Y] / ny, size[Z] / nz);
     density.resize(size_t(nx) * ny * nz);
-    rough.clear();
     effect = 0.0;
     cellWidth = std::max(cell[X], std::max(cell[Y], cell[Z]));
     if (layout)
