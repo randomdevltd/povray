@@ -380,6 +380,10 @@ class LightSource final : public CompoundObject
         const Portal *portal = nullptr;                 ///< in an image, the portal it is seen through
         std::shared_ptr<const Emitter> emitter;         ///< where it emits from, for a light drawn as sample positions
         ConstObjectPtr emitterContainer = nullptr;      ///< for a media light, the object holding its medium
+        ConstObjectPtr selfContainer = nullptr;         ///< for a bounce light, the container whose media scatter only selfScale of it
+        DBL selfScale = 1.0;
+        bool selfOnly = false;                          ///< in a selfLight: scattered only by selfContainer's media, 1 - selfScale of it
+        std::shared_ptr<LightSource> selfLight;         ///< the light as it was before bouncing, for the rest; null if it emitted none
         bool mediaPhotonOptions = false;
 
         LightSource();

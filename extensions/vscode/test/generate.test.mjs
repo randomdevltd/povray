@@ -61,7 +61,7 @@ test('surface lights and bounce orders expose contextual items to completion', (
     const blocks = JSON.parse(readFileSync(join(root, targets[1]), 'utf8')).blocks;
     assert.ok(blocks.sphere.items.includes('light'));
     assert.ok(blocks.light.items.includes('bounce'));
-    assert.deepEqual(blocks.bounce.items, ['passes']);
+    assert.deepEqual(blocks.bounce.items, ['passes', 'self']);
 });
 
 test('lumens helpers and light units are highlighted and a light_source takes no light block', () => {

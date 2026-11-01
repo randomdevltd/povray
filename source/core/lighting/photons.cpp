@@ -1158,7 +1158,7 @@ void PhotonMediaFunction::ComputeMediaAndDepositPhotons(MediaVector& medias, con
 
     // Prepare the Monte Carlo integration along the ray from P0 to P1.
     // for photon trace, this is always a light ray, so always do this
-    ComputeMediaLightInterval(lights, litintervals, ray, isect);
+    ComputeMediaLightInterval(lights, litintervals, ray, isect, medias);
 
     if(litintervals.empty())
         litintervals.push_back(LitInterval(false, 0.0, isect.Depth, 0, 0));

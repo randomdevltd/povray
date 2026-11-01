@@ -1218,7 +1218,7 @@
    "from": "doc/html/r3_4.html"
   },
   "bounce": {
-   "code": "bounce { passes Integer }",
+   "code": "bounce { [passes Integer] [self Bool] }",
    "from": "doc/html/r3_12.html:3"
   },
   "bounded_by": {
@@ -2655,6 +2655,11 @@
    "rank": 38,
    "code": "pigment { screen { camera { View } } }",
    "from": "doc/html/r3_10.html"
+  },
+  "self": {
+   "rank": 48,
+   "code": "bounce | bounce { [passes Integer] [self Bool] }",
+   "from": "doc/html/r3_12.html"
   },
   "shadowless": {
    "rank": 1014,

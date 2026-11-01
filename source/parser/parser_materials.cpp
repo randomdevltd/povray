@@ -3967,12 +3967,13 @@ double Parser::Parse_Light_Samples()
     return multiplier;
 }
 
-unsigned Parser::Parse_Light_Bounce()
+void Parser::Parse_Light_Bounce(MediaLight& light)
 {
-    unsigned passes = 1;
+    light.bouncePasses = 1;
     if (!Peek_Token(LEFT_CURLY_TOKEN))
-        return passes;
+        return;
     bool havePasses = false;
+    bool haveSelf = false;
     Parse_Begin();
     EXPECT
         OTHERWISE
@@ -3985,7 +3986,14 @@ unsigned Parser::Parse_Light_Bounce()
                 if (!std::isfinite(value) || value < 1.0 || std::floor(value) != value ||
                     value > static_cast<double>(std::numeric_limits<unsigned>::max()))
                     Error("Bounce passes must be a positive integer in the unsigned range.");
-                passes = static_cast<unsigned>(value);
+                light.bouncePasses = static_cast<unsigned>(value);
+            }
+            else if (CurrentTokenText() == "self")
+            {
+                if (haveSelf)
+                    Error("A bounce block accepts only one self setting.");
+                haveSelf = true;
+                light.bounceSelf = Allow_Float(1.0) > 0.0 ? 1.0 : 0.0;
             }
             else
             {
@@ -3995,7 +4003,6 @@ unsigned Parser::Parse_Light_Bounce()
         END_CASE
     END_EXPECT
     Parse_End();
-    return passes;
 }
 
 std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
@@ -4080,7 +4087,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             {
                 if (light->bouncePasses != 0)
                     Error("A light block accepts only one bounce setting.");
-                light->bouncePasses = Parse_Light_Bounce();
+                Parse_Light_Bounce(*light);
             }
             else if (CurrentTokenText() == "attenuation")
             {
@@ -4100,6 +4107,8 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
 
     Parse_End();
 
+    if (surface && light->bounceSelf != 1.0)
+        Error("bounce { self off } is for interior lights, not surface lights.");
     if (light->BounceOnly() && (light->nits || light->lumens >= 0.0))
         Error("A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.");
     // a pattern's luminance integral is known only once prepared; a constant pigment's is known here

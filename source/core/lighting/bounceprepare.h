@@ -142,6 +142,7 @@ struct Target final
     unsigned int passes;
     double gain = 1.0;
     bool surface = false;
+    double self = 1.0;
     std::size_t part = 0;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
 };
@@ -391,6 +392,33 @@ inline bool EmitsPreparedSource(const LightSource& light)
     return !light.emitter || light.emitter->IsSurface() || light.emitter->HasVolumeEmission();
 }
 
+struct Sources final
+{
+    std::vector<LightSource*> lights;
+    std::vector<double> scales;
+    bool operator==(const Sources& other) const { return lights == other.lights && scales == other.scales; }
+};
+
+// The previous order's lights a volume target gathers, its own bounced light scaled by its self share.
+inline Sources VolumeSources(const Target& target, unsigned int order,
+                             const std::vector<std::shared_ptr<LightSource>>& previous,
+                             const std::vector<const LightSource*>& previousOriginal)
+{
+    Sources sources;
+    for (size_t source = 0; source < previous.size(); ++source)
+    {
+        const double scale = (order > 1 && previousOriginal[source] == target.light) ? target.self : 1.0;
+        if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
+            previous[source]->Media_Interaction && Receives(target.light->emitterContainer, previousOriginal[source]) &&
+            scale > 0.0)
+        {
+            sources.lights.push_back(previous[source].get());
+            sources.scales.push_back(scale);
+        }
+    }
+    return sources;
+}
+
 inline std::shared_ptr<LightSource> Clone(const LightSource* light)
 {
     return std::shared_ptr<LightSource>(
@@ -429,6 +457,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         target.primary = light->emitter;
         target.passes = settings->bouncePasses;
         target.gain = settings->BounceGain();
+        target.self = settings->bounceSelf;
         maximum = std::max(maximum, target.passes);
         if (surface)
         {
@@ -508,7 +537,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         struct SharedGroup
         {
             std::shared_ptr<const PreparedSourceDomain> domain;
-            std::vector<LightSource*> sources;
+            Sources sources;
             unsigned int samples;
             std::vector<PreparedBouncePhase> phases;
             std::vector<std::shared_ptr<const PreparedDirectionalSourceField>> fields;
@@ -623,11 +652,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 nextOriginal.push_back(target.light);
                 continue;
             }
-            std::vector<LightSource*> sources;
-            for (size_t source = 0; source < previous.size(); ++source)
-                if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
-                    previous[source]->Media_Interaction && Receives(owner, previousOriginal[source]))
-                    sources.push_back(previous[source].get());
+            const Sources sources = VolumeSources(target, order, previous, previousOriginal);
             const unsigned int samples = std::max(1, owner->interior->light->samples);
             auto group = std::find_if(groups.begin(), groups.end(),
                                       [&](const SharedGroup& candidate)
@@ -655,7 +680,8 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                 for (int axis = X; axis <= Z; ++axis)
                     cellSize[axis] = target.domain->Size()[axis] / double(target.domain->Counts()[axis]);
                 VolumeGather gather;
-                gather.lights.assign(sources.begin(), sources.end());
+                gather.lights.assign(sources.lights.begin(), sources.lights.end());
+                gather.scales = sources.scales;
                 gather.samples = samples;
                 for (const auto& candidate : targets)
                     if (!candidate.surface && candidate.domain == target.domain)
@@ -685,17 +711,9 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
                     if (!candidate.surface && candidate.domain == target.domain &&
                         order <= candidate.passes &&
                         unsigned(std::max(1, candidate.light->emitterContainer->interior->light->samples)) ==
-                            samples)
-                    {
-                        std::vector<LightSource*> candidateSources;
-                        for (size_t source = 0; source < previous.size(); ++source)
-                            if (!previous[source]->Photon_Only && previous[source]->Media_Interaction &&
-                                EmitsPreparedSource(*previous[source]) &&
-                                Receives(candidate.light->emitterContainer, previousOriginal[source]))
-                                candidateSources.push_back(previous[source].get());
-                        if (candidateSources == sources)
-                            contributing.push_back(&candidate);
-                    }
+                            samples &&
+                        VolumeSources(candidate, order, previous, previousOriginal) == sources)
+                        contributing.push_back(&candidate);
                 std::vector<DBL> proposalMasses(target.domain->CellCount());
                 workers.Step(step + " proposal");
                 workers.For(proposalMasses.size(), cooperate, [&](size_t cell, size_t worker)
@@ -793,6 +811,20 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         }
         else
         {
+            // Its own media scatter the self share of the bounced light, and the rest of the light as it was before bouncing.
+            if (target.self != 1.0)
+            {
+                const auto owner = target.light->emitterContainer;
+                if (target.primary->HasVolumeEmission())
+                {
+                    target.light->selfLight = Clone(target.light);
+                    target.light->selfLight->selfContainer = owner;
+                    target.light->selfLight->selfScale = target.self;
+                    target.light->selfLight->selfOnly = true;
+                }
+                target.light->selfContainer = owner;
+                target.light->selfScale = target.self;
+            }
             const auto field =
                 std::make_shared<const SumPreparedBounceField>(target.domain, std::move(target.orders));
             target.light->emitter =

@@ -272,7 +272,11 @@ class MediaFunction : public Trace::MediaFunctor
                                     MathColour *extinction, size_t n);
         void ComputeMediaSampleInterval(LitIntervalVector& litintervals, MediaIntervalVector& mediaintervals, const Media *media,
                                         bool fixed = false);
-        void ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect);
+        void ComputeMediaLightInterval(LightSourceEntryVector& lights, LitIntervalVector& litintervals, const Ray& ray, const Intersection& isect,
+                                       const MediaVector& medias);
+        /// Adds the light, or what the media here scatter in its place (LightSource::selfContainer).
+        void AddMediaLight(LightSource *light, const MediaVector& medias, LightSourceEntryVector& lights, const Ray& ray,
+                           const Intersection& isect);
         void ComputeOneMediaLightInterval(LightSource *light, LightSourceEntryVector&lights, const Ray& ray, const Intersection& isect);
         bool ComputeSpotLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
         bool ComputeCylinderLightInterval(const Ray &ray, const LightSource *Light, DBL *d1, DBL *d2);
@@ -298,10 +302,13 @@ class MediaFunction : public Trace::MediaFunctor
         void ComputeMediaPhotons(MediaVector& medias, MathColour& Te, const MathColour& Sc, const BasicRay& ray, const Vector3d& H,
                                  bool prepared);
         void ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
-                                            const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay);
-        /// Adds to output the light the media at point scatter along the ray from each incident sample.
+                                            const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay,
+                                            const LightSource *light = nullptr);
+        /// Adds to output the light the media at point scatter along the ray from each incident sample; given the light,
+        /// each medium scatters its share of it (LightSource::selfContainer).
         void ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
-                             const Vector3d& point, const BasicRay& ray, const MathColour *densities = nullptr);
+                             const Vector3d& point, const BasicRay& ray, const MathColour *densities = nullptr,
+                             const LightSource *light = nullptr);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };
 
