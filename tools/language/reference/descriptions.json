@@ -1548,6 +1548,11 @@
    "code": "distance 1000",
    "from": "doc/html/r3_7.html"
   },
+  "domain_cells": {
+   "rank": 1022,
+   "code": "domain_cells Integer |",
+   "from": "doc/html/r3_12.html"
+  },
   "double_illuminate": {
    "rank": 1028,
    "code": "double_illuminate [ Bool ] |",

@@ -569,8 +569,10 @@ New Features
     default (about 80 cells per axis, capped at 128). The domain's node
     positions, corner indices and sampling tree, and the bounce gather
     lattice that hangs off the same domain, scale roughly linearly with it,
-    so it tunes both memory and bounce preparation. It is matched by text
-    and remains free as an identifier.
+    so it tunes both memory and bounce preparation. A single interior light
+    states its own budget with `domain_cells N` in its `light { }` block,
+    overriding the global value for that light alone. Both words are matched
+    by text and remain free as identifiers.
   - A finite object can be an independent volume light: `interior { light { } }`.
     Its pigment and declared emitting region define its source; media density,
     extinction and prepared grids affect transport separately. Nits use
