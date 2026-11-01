@@ -525,6 +525,13 @@ New Features
     scene's request without editing it. Long marches are coarsened to fit a
     step budget; splitting long containers or a coarser resolution avoids
     that.
+  - `prepared_source_cells`, in `global_settings`, sets the target cell
+    budget of every interior light's prepared source domain, 500000 by
+    default (about 80 cells per axis, capped at 128). The domain's node
+    positions, corner indices and sampling tree, and the bounce gather
+    lattice that hangs off the same domain, scale roughly linearly with it,
+    so it tunes both memory and bounce preparation. It is matched by text
+    and remains free as an identifier.
   - A finite object can be an independent volume light: `interior { light { } }`.
     Its pigment and declared emitting region define its source; media density,
     extinction and prepared grids affect transport separately. Nits use

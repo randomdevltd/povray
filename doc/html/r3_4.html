@@ -84,6 +84,9 @@
   <td><div class="divh3"><a title="3.4.1.17" href="#r3_4_1_17">Prepared_Media_Cells</a></div></td>
 </tr>
 <tr>
+  <td><div class="divh3"><a title="3.4.1.18" href="#r3_4_1_18">Prepared_Source_Cells</a></div></td>
+</tr>
+<tr>
   <td><div class="divh2"><strong><a title="3.4.2" href="#r3_4_2">Camera</a></strong></div></td>
 </tr>
 <tr>
@@ -409,7 +412,7 @@ GLOBAL_SETTINGS_ITEM:
   max_intersections Number | max_trace_level Number |
   mm_per_unit Number | number_of_waves Number | noise_generator Number |
   refraction_angle Value |
-  prepared_media_cells Value | atmospheric_ior Value | atmospheric_dispersion Value |
+  prepared_media_cells Value | prepared_source_cells Value | atmospheric_ior Value | atmospheric_dispersion Value |
 
   interface_texture blend | interface_texture near | interface_texture far |
   mesh_cache &quot;directory&quot; |
@@ -437,6 +440,7 @@ number_of_waves	   : 10
 noise_generator	   : 2
 refraction_angle   : 0.5
 prepared_media_cells : 1000000 (the machine option raises it)
+prepared_source_cells : 500000
 atmospheric_ior    : 1.00029 (1.0 before #version 4.0)
 atmospheric_dispersion : 1.0
 interface_texture  : blend (far before #version 4.0)
@@ -719,6 +723,14 @@ global_settings { interface_texture near }
 <p>The same limit can be set for the machine as the <code>Prepared_Media_Cells</code> INI or command-line option, and the larger of the scene's and the machine's value applies: a render farm can raise a scene's request without editing it, and a scene can demand more than a machine's default. Place the setting before field containers.</p>
 <pre>
 global_settings { prepared_media_cells 4000000 }
+</pre></div>
+
+<a name="r3_4_1_18"></a>
+<div class="content-level-h4" contains="Prepared_Source_Cells" id="r3_4_1_18">
+<h4>3.4.1.18 Prepared_Source_Cells</h4>
+<p>The prepared source domain of every interior <code>light { }</code> block targets this many cells, 500000 by default (a cube of about 80 by 80 by 80 cells, thinner axes coarser). The domain stores node positions, corner indices and a sampling tree, so its memory is roughly proportional to this budget; the bounce gather lattice hangs off the same domain, so this also scales bounce preparation. Unlike <code>prepared_media_cells</code> there is no machine option and no floor: the scene value is the budget, up or down. Counts cap at 128 cells per axis, so values beyond about two million change nothing.</p>
+<pre>
+global_settings { prepared_source_cells 65536 }
 </pre></div>
 
 <a name="r3_4_2"></a>
