@@ -109,6 +109,12 @@ Changed Behaviour
     plane intersections retain finite domains; open mesh interiors require
     finite clipping. Framing uses finite surface bounds independently.
 
+  - A mesh counts as closed when every edge appears an even number of
+    times, the same parity the subsurface sheet test uses, so shells
+    touching along a pinched edge, where one edge is shared four times,
+    qualify for interior media, inside tests and photon boundaries. A mesh
+    with an odd edge count is still open and needs finite clipping.
+
   - Requested method 4 constant media own prepared layout metadata without
     allocating constant density cells. Prepared modifier fields also select
     fixed integration when the underlying media are constant.
