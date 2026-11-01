@@ -2974,6 +2974,7 @@
         "number_of_waves",
         "photons",
         "prepared_media_cells",
+        "prepared_source_cells",
         "radiosity",
         "refraction_angle",
         "subsurface",
