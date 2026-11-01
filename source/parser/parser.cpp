@@ -10644,6 +10644,7 @@ void Parser::Make_Interior_Light(Interior& interior, ObjectPtr container)
     light->attenuationScale = settings.attenuationScale;
     light->attenuationPower = settings.attenuationPower;
     light->cutoff = settings.cutoff;
+    light->sourceDomainCells = settings.domainCells;
     light->lawRadius = emitter->Radius();
     light->Media_Interaction = settings.mediaInteraction;
     light->Media_Attenuation = settings.mediaAttenuation;
