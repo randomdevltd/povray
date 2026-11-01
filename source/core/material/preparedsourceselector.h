@@ -91,24 +91,6 @@ SelectSourceDomain(const std::vector<PreparedSourceGeometry>& owners, const Prep
         PreparedSourceDomain::Cartesian(low, high - low, cartesianCounts));
 }
 
-struct PreparedSourceDomainGroup
-{
-    std::shared_ptr<const PreparedSourceDomain> domain;
-    std::vector<ConstObjectPtr> owners;
-};
-
-/// Each owner's own domain, in first-seen order.
-inline std::vector<PreparedSourceDomainGroup>
-PrepareSourceDomains(const std::vector<ConstObjectPtr>& owners, const PreparedSourceDomainPolicy& policy = {})
-{
-    std::vector<PreparedSourceDomainGroup> result;
-    for (const auto owner : owners)
-        if (std::none_of(result.begin(), result.end(),
-                         [owner](const PreparedSourceDomainGroup& group) { return group.owners.front() == owner; }))
-            result.push_back({SelectSourceDomain({SourceGeometry(owner)}, policy), {owner}});
-    return result;
-}
-
 inline PreparedSourceDomainPolicy SceneSourceDomainPolicy(const SceneData& scene)
 {
     PreparedSourceDomainPolicy policy;
@@ -116,6 +98,7 @@ inline PreparedSourceDomainPolicy SceneSourceDomainPolicy(const SceneData& scene
     return policy;
 }
 
+/// Each owner's domain with its own policy: a light's domain_cells override, else the scene's.
 inline std::shared_ptr<const PreparedSourceDomain>
 PrepareSourceDomain(ConstObjectPtr owner, const PreparedSourceDomainPolicy& policy = {})
 {

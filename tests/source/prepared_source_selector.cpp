@@ -46,5 +46,13 @@ int main()
     PreparedSourceDomainPolicy raised;
     raised.automaticCells = 1.0e9;
     assert(SelectSourceDomain({Support(1)}, raised)->NodeCount() == 129 * 129 * 129);
+    // a light's own domain_cells overrides the scene budget; an unpinned light falls back to the scene's, then the default
+    PreparedSourceDomainPolicy scene;
+    scene.automaticCells = 65536;
+    PreparedSourceDomainPolicy pinned = scene;
+    pinned.automaticCells = 262144;
+    assert((SelectSourceDomain({Support(1)}, pinned)->Counts() == std::array<size_t, 3>({65, 65, 65})));
+    assert((SelectSourceDomain({Support(1)}, scene)->Counts() == std::array<size_t, 3>({41, 41, 41})));
+    assert((SelectSourceDomain({Support(1)}, PreparedSourceDomainPolicy())->Counts() == std::array<size_t, 3>({80, 80, 80})));
     std::cout << "Prepared source selector lattice and budget pass\n";
 }

@@ -4089,6 +4089,17 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
                 haveAttenuation = true;
                 Parse_Light_Attenuation(*light, surface);
             }
+            else if (CurrentTokenText() == "domain_cells")
+            {
+                if (surface)
+                    Error("A surface light has no prepared source domain; domain_cells is for interior lights.");
+                if (light->domainCells > 0.0)
+                    Error("A light block accepts only one domain_cells setting.");
+                const DBL cells = Parse_Float();
+                if (!std::isfinite(cells) || (cells != std::floor(cells)) || !(cells >= 1.0) || (cells > 1.0e9))
+                    Error("domain_cells must be an integer from 1 to 1000000000.");
+                light->domainCells = cells;
+            }
             else
             {
                 Reject_Nested_Item("light", "a light");
