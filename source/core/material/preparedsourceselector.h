@@ -13,17 +13,19 @@ struct PreparedSourceDomainPolicy
 {
     std::array<size_t, 3> cartesianCells{{80, 80, 80}};
     bool automaticCartesian = true;
+    /// the automatic lattice's target cell budget (global_settings prepared_source_cells)
+    double automaticCells = 500000;
     size_t maxNodes = 1048576;
 };
 
-inline std::array<size_t, 3> AutomaticSourceCartesianCounts(const Vector3d& size)
+inline std::array<size_t, 3> AutomaticSourceCartesianCounts(const Vector3d& size, double cells = 500000)
 {
     const DBL largest = std::max(size[X], std::max(size[Y], size[Z]));
     if (!IsFiniteNumber(largest) || !(largest > 0))
         throw std::invalid_argument("Invalid source extent");
     const Vector3d normalized = size / largest;
     const DBL step =
-        std::max(DBL(1.0 / 128), std::cbrt(normalized[X] * normalized[Y] * normalized[Z] / 500000));
+        std::max(DBL(1.0 / 128), std::cbrt(normalized[X] * normalized[Y] * normalized[Z] / cells));
     std::array<size_t, 3> counts;
     for (int a = X; a <= Z; ++a)
     {
@@ -32,6 +34,13 @@ inline std::array<size_t, 3> AutomaticSourceCartesianCounts(const Vector3d& size
         counts[a] = size_t(std::max(DBL(1), std::ceil(normalized[a] / step)));
     }
     return counts;
+}
+
+// The node ceiling the automatic lattice can reach for a budget: per axis at most max(128, cbrt(cells)) cells.
+inline size_t AutomaticSourceNodeBound(double cells)
+{
+    const size_t perAxis = std::max<size_t>(128, size_t(std::cbrt(std::max(cells, 1.0))));
+    return (perAxis + 1) * (perAxis + 1) * (perAxis + 1);
 }
 
 struct PreparedSourceGeometry
@@ -67,12 +76,14 @@ SelectSourceDomain(const std::vector<PreparedSourceGeometry>& owners, const Prep
             low[a] = std::min(low[a], owner.low[a]);
             high[a] = std::max(high[a], owner.low[a] + owner.size[a]);
         }
-    const auto cartesianCounts =
-        policy.automaticCartesian ? AutomaticSourceCartesianCounts(high - low) : policy.cartesianCells;
+    const bool automatic = policy.automaticCartesian;
+    const auto cartesianCounts = automatic ? AutomaticSourceCartesianCounts(high - low, policy.automaticCells) : policy.cartesianCells;
+    // The automatic path never refuses its own budget; the explicit path keeps the stated node ceiling.
+    const size_t nodeBudget = automatic ? std::max(policy.maxNodes, AutomaticSourceNodeBound(policy.automaticCells)) : policy.maxNodes;
     size_t count = 1;
     for (size_t cells : cartesianCounts)
     {
-        if (cells >= policy.maxNodes || cells + 1 > policy.maxNodes / count)
+        if (cells >= nodeBudget || cells + 1 > nodeBudget / count)
             throw std::invalid_argument("Prepared source domain exceeds node budget");
         count *= cells + 1;
     }
@@ -96,6 +107,13 @@ PrepareSourceDomains(const std::vector<ConstObjectPtr>& owners, const PreparedSo
                          [owner](const PreparedSourceDomainGroup& group) { return group.owners.front() == owner; }))
             result.push_back({SelectSourceDomain({SourceGeometry(owner)}, policy), {owner}});
     return result;
+}
+
+inline PreparedSourceDomainPolicy SceneSourceDomainPolicy(const SceneData& scene)
+{
+    PreparedSourceDomainPolicy policy;
+    policy.automaticCells = scene.preparedSourceCells;
+    return policy;
 }
 
 inline std::shared_ptr<const PreparedSourceDomain>

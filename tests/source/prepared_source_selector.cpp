@@ -18,6 +18,8 @@ int main()
     assert(thin[X] == 2 && thin[Y] == 128 && thin[Z] == 128);
     assert(AutomaticSourceCartesianCounts(Vector3d(1e-100)) == cubic);
     assert(AutomaticSourceCartesianCounts(Vector3d(1e100)) == cubic);
+    assert((AutomaticSourceCartesianCounts(Vector3d(1.0), 65536) == std::array<size_t, 3>({41, 41, 41})));
+    assert((AutomaticSourceCartesianCounts(Vector3d(1.0), 100000) == std::array<size_t, 3>({47, 47, 47})));
     PreparedSourceDomainPolicy policy;
     policy.automaticCartesian = false;
     policy.cartesianCells = {{16, 16, 16}};
@@ -41,5 +43,8 @@ int main()
         budget = true;
     }
     assert(budget);
+    PreparedSourceDomainPolicy raised;
+    raised.automaticCells = 1.0e9;
+    assert(SelectSourceDomain({Support(1)}, raised)->NodeCount() == 129 * 129 * 129);
     std::cout << "Prepared source selector lattice and budget pass\n";
 }

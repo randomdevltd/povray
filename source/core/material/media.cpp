@@ -1761,7 +1761,7 @@ void PrepareLightFields(TraceThreadData *td, const std::function<void()>& cooper
         if (light->emitter && !light->emitter->IsSurface() && light->emitterContainer)
             sourceOwners.push_back(light->emitterContainer);
     std::map<ConstObjectPtr, std::shared_ptr<const PreparedSourceDomain>> sourceDomains;
-    for (const auto& group : PrepareSourceDomains(sourceOwners))
+    for (const auto& group : PrepareSourceDomains(sourceOwners, SceneSourceDomainPolicy(*scene)))
         for (ConstObjectPtr owner : group.owners)
             sourceDomains.emplace(owner, group.domain);
     for (LightSource *light : scene->mediaLights)
