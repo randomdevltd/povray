@@ -34,7 +34,16 @@ public:
         jobs.emplace_back(std::move(job), std::move(done));
         if (idle < jobs.size())
         {
-            threads.emplace_back(&WorkerPool::Work, this);
+            try
+            {
+                threads.emplace_back(&WorkerPool::Work, this);
+            }
+            catch (...)
+            {
+                // nobody could have taken the job: no notify has run and the lock is still held
+                jobs.pop_back();
+                throw;
+            }
             idle++;
         }
         lock.unlock();

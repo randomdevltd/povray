@@ -115,13 +115,21 @@ void Task::Start(const boost::function0<void>& completion)
     if ((done == true) || started)
         return;
     started = true;
-    WorkerPool::Shared().Run([this, completion]() { TaskThread(completion); }, [this]()
+    try
     {
-        // notified under the lock: once Stop sees exited, this thread no longer touches the task
-        std::lock_guard<std::mutex> lock(exitMutex);
-        exited = true;
-        exitCondition.notify_all();
-    });
+        WorkerPool::Shared().Run([this, completion]() { TaskThread(completion); }, [this]()
+        {
+            // notified under the lock: once Stop sees exited, this thread no longer touches the task
+            std::lock_guard<std::mutex> lock(exitMutex);
+            exited = true;
+            exitCondition.notify_all();
+        });
+    }
+    catch (...)
+    {
+        started = false;
+        throw;
+    }
 }
 
 void Task::Rearm()
