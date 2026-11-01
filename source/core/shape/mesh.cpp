@@ -1021,12 +1021,20 @@ void DeferredMeshPool::Submit(const std::shared_ptr<DeferredMeshState>& state, c
         const size_t index = workers;
         running.resize(threadCount, nullptr);
         threadData.emplace_back(new TraceThreadData(sceneData, seed + index + 1, false));
-        WorkerPool::Shared().Run([this, index]() { Work(index); }, [this]()
+        try
         {
-            std::lock_guard<std::mutex> lock(mutex);
-            --live;
-            gone.notify_all();
-        });
+            WorkerPool::Shared().Run([this, index]() { Work(index); }, [this]()
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                --live;
+                gone.notify_all();
+            });
+        }
+        catch (...)
+        {
+            threadData.pop_back();
+            throw;
+        }
         ++workers;
         ++live;
     }
