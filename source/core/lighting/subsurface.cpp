@@ -43,7 +43,6 @@
 // C++ standard header files
 #include <algorithm>
 #include <functional>
-#include <fstream>
 #include <limits>
 
 // POV-Ray header files (base module)
@@ -506,30 +505,8 @@ std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey
     return slot;
 }
 
-// The bytes of the machine's total memory, as /proc/meminfo states them; 0 when it states none.
-static double TotalMemoryBytes()
-{
-    std::ifstream meminfo("/proc/meminfo");
-    std::string field;
-    double kilobytes;
-    while (meminfo >> field >> kilobytes)
-    {
-        if (field == "MemTotal:")
-            return kilobytes * 1024.0;
-        meminfo.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    }
-    return 0.0;
-}
-
-double SubsurfaceDefaultMemoryMB(double totalBytes)
-{
-    static const double machineBytes = TotalMemoryBytes();
-    const double total = (totalBytes >= 0.0) ? totalBytes : machineBytes;
-    return std::max(kSubsurfaceMemoryFloorMB, std::min(kSubsurfaceMemoryCeilingMB, kSubsurfaceMemoryShare * total / 1048576.0));
-}
-
 SubsurfaceCache::SubsurfaceCache(double capMB, double spacing) :
-    cap(size_t(std::max(1.0, capMB) * 1048576.0)),
+    cap(capMB >= 1.0 ? size_t(capMB * 1048576.0) : std::numeric_limits<size_t>::max()),
     spacing(spacing)
 {}
 
