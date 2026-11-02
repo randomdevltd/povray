@@ -58,29 +58,41 @@ public:
     }
     size_t CellCount() const
     {
-        return corners.size();
+        return counts[X] * counts[Y] * counts[Z];
     }
     size_t NodeCount() const
     {
-        return nodes.size();
+        return (counts[X] + 1) * (counts[Y] + 1) * (counts[Z] + 1);
     }
-    const Vector3d& Node(size_t i) const
+    /// The node at lattice index (ix, iy, iz); nodes are numbered by that index alone:
+    /// (iz * (counts[Y] + 1) + iy) * (counts[X] + 1) + ix.
+    Vector3d Node(size_t i) const
     {
-        return nodes.at(i);
+        const size_t nx = counts[X] + 1, ny = counts[Y] + 1;
+        if (i >= nx * ny * (counts[Z] + 1))
+            throw std::out_of_range("Prepared source node");
+        const size_t ix = i % nx, iy = (i / nx) % ny, iz = i / (nx * ny);
+        const Vector3d q(DBL(ix) / counts[X], DBL(iy) / counts[Y], DBL(iz) / counts[Z]);
+        Vector3d p = origin;
+        for (int a = X; a <= Z; ++a)
+            p[a] += q[a] * extent[a];
+        return p;
     }
-    const std::vector<Vector3d>& Nodes() const
+    /// The lattice indices of cell's eight corner nodes, x fastest, corner bit 0 x, bit 1 y, bit 2 z.
+    std::array<size_t, 8> CellNodes(size_t cell) const
     {
+        if (cell >= CellCount())
+            throw std::out_of_range("Prepared source cell");
+        const size_t x = cell % counts[X], y = (cell / counts[X]) % counts[Y], z = cell / (counts[X] * counts[Y]);
+        const size_t nx = counts[X] + 1, ny = counts[Y] + 1;
+        std::array<size_t, 8> nodes;
+        for (int i = 0; i < 8; ++i)
+            nodes[i] = ((z + size_t(i >> 2 & 1)) * ny + y + size_t(i >> 1 & 1)) * nx + x + size_t(i & 1);
         return nodes;
-    }
-    const std::array<size_t, 8>& CellNodes(size_t i) const
-    {
-        return corners.at(i);
     }
     size_t StorageBytes() const
     {
-        return sizeof(*this) + nodes.capacity() * sizeof(Vector3d) +
-               corners.capacity() * sizeof(std::array<size_t, 8>) +
-               volumes.capacity() * sizeof(DBL);
+        return sizeof(*this);
     }
     const std::array<size_t, 3>& Counts() const
     {
@@ -92,9 +104,10 @@ public:
     }
     std::array<QuadraturePoint, 8> CornerQuadrature(size_t cell) const
     {
+        const std::array<size_t, 8> nodes = CellNodes(cell);
         std::array<QuadraturePoint, 8> result;
         for (size_t i = 0; i < 8; ++i)
-            result[i] = {Node(CellNodes(cell)[i]), CellVolume(cell) / 8};
+            result[i] = {Node(nodes[i]), CellVolume(cell) / 8};
         return result;
     }
     const Vector3d& Low() const
@@ -107,7 +120,9 @@ public:
     }
     DBL CellVolume(size_t i) const
     {
-        return volumes.at(i);
+        if (i >= CellCount())
+            throw std::out_of_range("Prepared source cell");
+        return cellVolume;
     }
     DBL Volume() const
     {
@@ -129,7 +144,7 @@ public:
         Stencil s;
         s.valid = true;
         s.cell = (cell[Z] * counts[Y] + cell[Y]) * counts[X] + cell[X];
-        s.nodes = corners[s.cell];
+        s.nodes = CellNodes(s.cell);
         for (int i = 0; i < 8; ++i)
             s.weights[i] =
                 ((i & 1) ? t[X] : 1 - t[X]) * ((i & 2) ? t[Y] : 1 - t[Y]) * ((i & 4) ? t[Z] : 1 - t[Z]);
@@ -163,12 +178,12 @@ public:
         Vector3d p = origin;
         for (int a = X; a <= Z; ++a)
             p[a] += q[a] * extent[a];
-        return {p, 1 / volumes[cell]};
+        return {p, 1 / cellVolume};
     }
     DBL PositionPdf(size_t cell, const Vector3d& point) const
     {
         const auto s = SampleStencil(point);
-        return s.valid && s.cell == cell ? 1 / volumes.at(cell) : 0;
+        return s.valid && s.cell == cell ? 1 / cellVolume : 0;
     }
     Vector3d CellMidpoint(size_t cell) const
     {
@@ -185,9 +200,7 @@ private:
     friend class PreparedSourceDistribution;
     Vector3d origin, extent;
     std::array<size_t, 3> counts;
-    std::vector<DBL> volumes;
-    std::vector<Vector3d> nodes;
-    std::vector<std::array<size_t, 8>> corners;
+    DBL cellVolume = 0;
     DBL totalVolume = 0;
     static std::uint64_t Next64(std::uint64_t& state)
     {
@@ -204,13 +217,15 @@ private:
     PreparedSourceDomain(Vector3d origin, Vector3d extent, std::array<size_t, 3> counts)
         : origin(origin), extent(extent), counts(counts)
     {
-        size_t cells = 1;
+        size_t cells = 1, vertices = 1;
         for (int a = X; a <= Z; ++a)
         {
             if (!IsFiniteNumber(origin[a]) || !IsFiniteNumber(extent[a]) || extent[a] <= 0 ||
                 !IsFiniteNumber(origin[a] + extent[a]) || this->counts[a] == 0 ||
                 this->counts[a] > std::numeric_limits<int>::max() / 2 ||
                 this->counts[a] > std::numeric_limits<size_t>::max() / cells)
+                throw std::invalid_argument("Invalid source domain");
+            if (this->counts[a] + 1 > std::numeric_limits<size_t>::max() / vertices)
                 throw std::invalid_argument("Invalid source domain");
             const DBL magnitude = std::fabs(origin[a]) + extent[a];
             if (!IsFiniteNumber(magnitude))
@@ -219,38 +234,12 @@ private:
             if (extent[a] / this->counts[a] <= spacing)
                 throw std::invalid_argument("Unrepresentable source cell boundaries");
             cells *= this->counts[a];
+            vertices *= this->counts[a] + 1;
         }
         const DBL v = (extent[X] / this->counts[X]) * (extent[Y] / this->counts[Y]) * (extent[Z] / this->counts[Z]);
         if (!IsFiniteNumber(v) || !(v > 0) || !IsFiniteNumber(1 / v))
             throw std::invalid_argument("Unrepresentable source cell volume");
-        // nodes are numbered in the order the cells first reach them, as a lattice index finds them
-        const size_t nx = this->counts[X] + 1, ny = this->counts[Y] + 1;
-        std::vector<size_t> ids(nx * ny * (this->counts[Z] + 1), std::numeric_limits<size_t>::max());
-        corners.reserve(cells);
-        volumes.assign(cells, v);
-        for (size_t z = 0; z < this->counts[Z]; ++z)
-            for (size_t y = 0; y < this->counts[Y]; ++y)
-                for (size_t x = 0; x < this->counts[X]; ++x)
-                {
-                    std::array<size_t, 8> c;
-                    for (int i = 0; i < 8; ++i)
-                    {
-                        const size_t ix = x + bool(i & 1), iy = y + bool(i & 2), iz = z + bool(i & 4);
-                        size_t& id = ids[(iz * ny + iy) * nx + ix];
-                        if (id == std::numeric_limits<size_t>::max())
-                        {
-                            id = nodes.size();
-                            const Vector3d q(DBL(ix) / this->counts[X], DBL(iy) / this->counts[Y],
-                                             DBL(iz) / this->counts[Z]);
-                            Vector3d p = origin;
-                            for (int a = X; a <= Z; ++a)
-                                p[a] += q[a] * extent[a];
-                            nodes.push_back(p);
-                        }
-                        c[i] = id;
-                    }
-                    corners.push_back(c);
-                }
+        cellVolume = v;
         for (size_t cell = 0; cell < cells; ++cell)
             totalVolume += v;
         if (!IsFiniteNumber(totalVolume))

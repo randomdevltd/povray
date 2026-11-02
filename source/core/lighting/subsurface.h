@@ -128,8 +128,9 @@ enum SubsurfaceUnserved
 /// The depth level of a cell whose step the diffusion and pixel rules alone set.
 const int kCloudNoDepthLevel = -10000;
 
-/// Memory all subsurface clouds may take together unless global_settings { subsurface { memory MB } } says otherwise.
-const double kSubsurfaceMemoryMB = 1024.0;
+/// Memory all subsurface clouds may take together when global_settings { subsurface { memory MB } } sets a cap; without
+/// one they take the memory they need, and the system's own out-of-memory failure stops the render.
+const double kSubsurfaceUncappedMB = 0.0;
 
 /// Memory method 2's boundary and layer tables keep for reuse, besides those render threads are using; see doc/PERF.md.
 const double kSubsurfaceTablesMB = 32.0;
@@ -265,11 +266,14 @@ class SubsurfacePhotonBoundaries final
         void Allocate(const PhotonMap& map);
 };
 
-/// Irradiance clouds built on demand and shared by all render threads, within a memory cap that stops the render.
+/// Irradiance clouds built on demand and shared by all render threads; a cap the scene sets stops the render at it, and
+/// without one the clouds take the memory they need until the system runs out.
 class SubsurfaceCache final
 {
     public:
-        explicit SubsurfaceCache(double capMB = kSubsurfaceMemoryMB, double spacing = 1.0);
+        /// capMB in MB caps the clouds when at least 1; below it (kSubsurfaceUncappedMB, the scene's default) they are
+        /// uncapped.
+        explicit SubsurfaceCache(double capMB = kSubsurfaceUncappedMB, double spacing = 1.0);
         SubsurfacePhotonBoundaries& PhotonBoundaries(const PhotonMap& map);
         /// The cell for key, and whether the caller is the first to ask and so must build it.
         std::shared_ptr<SubsurfaceCell> Acquire(const SubsurfaceCellKey& key, bool& build);

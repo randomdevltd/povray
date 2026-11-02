@@ -583,10 +583,12 @@ New Features
     point clouds are spaced by the view instead of at the finest spacing. The
     cloud no longer has a point budget: every cell is built at its own
     spacing, so the image does not depend on thread count or order, and
-    `global_settings { subsurface { memory FLOAT } }` (megabytes, 1024 by
-    default; `memory` is matched by its text) caps the clouds' memory, past
-    which the render stops with an error suggesting a cap or a `spacing`
-    that would fit; `spacing` scales every point step, so cloud memory goes
+    `global_settings { subsurface { memory FLOAT } }` (megabytes; unset
+    by default, so the clouds take the memory they need and the render
+    stops only when the system has none to give; `memory` is matched by
+    its text) caps the
+    clouds' memory, past which the render stops with an error suggesting a
+    cap or a `spacing` that would fit; `spacing` scales every point step, so cloud memory goes
     about as 1/spacing^2. The render statistics report the spacing, the
     cloud's peak memory, points built and read and which rule set each
     cell's step, split fallbacks to method 1 by reason, and a warning names
@@ -704,6 +706,15 @@ New Features
 Performance Improvements
 ------------------------
 
+  - A prepared interior light's grid stores no topology: on its regular
+    lattice every cell's eight corner node indices, every node's position
+    and every cell's volume follow from the box and the counts, so none is
+    kept per cell or per node any more. A varying light at the automatic
+    resolution (about 512,000 cells) held about 47 MB of that
+    representation; fifty of them held about 2.3 GB. The samples, the
+    interpolation and the image are unchanged, and a light's memory is now
+    its colour values and sampling tree alone, about 22 MB at the automatic
+    resolution.
   - Threads are made once and reused by every task, pass and parallel loop,
     and a progressive render keeps one trace worker per thread for all its
     passes instead of making one per thread per pass. A worker out of blocks

@@ -506,7 +506,7 @@ std::shared_ptr<SubsurfaceCell> SubsurfaceCache::Acquire(const SubsurfaceCellKey
 }
 
 SubsurfaceCache::SubsurfaceCache(double capMB, double spacing) :
-    cap(size_t(std::max(1.0, capMB) * 1048576.0)),
+    cap(capMB >= 1.0 ? size_t(capMB * 1048576.0) : std::numeric_limits<size_t>::max()),
     spacing(spacing)
 {}
 
