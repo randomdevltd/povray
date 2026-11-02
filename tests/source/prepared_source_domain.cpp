@@ -55,6 +55,11 @@ int main()
             const auto sample = translated.SamplePosition(cell, cell * 1024 + k);
             Near(translated.PositionPdf(cell, sample.position) / sample.pdf, 1);
         }
+    // the lattice is implicit: whatever the cell count, the domain itself stores a fixed handful of bytes
+    auto dense = PreparedSourceDomain::Cartesian(Vector3d(0.0), Vector3d(1.0), {{128, 128, 128}});
+    assert(dense.CellCount() == 128 * 128 * 128);
+    assert(dense.StorageBytes() == sizeof(PreparedSourceDomain));
+    assert(translated.StorageBytes() == sizeof(PreparedSourceDomain));
     auto support = std::make_shared<const PreparedSourceDomain>(
         PreparedSourceDomain::Cartesian(Vector3d(-2), Vector3d(4), {{3, 3, 3}}));
     std::vector<DBL> masses(support->CellCount(), 0);

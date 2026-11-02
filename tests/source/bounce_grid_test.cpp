@@ -14,8 +14,9 @@ int main()
     auto box = std::make_shared<const PreparedSourceDomain>(
         PreparedSourceDomain::Cartesian(Vector3d(0.0), Vector3d(2, 3, 4), {{2, 2, 2}}));
     std::vector<BounceFieldNode> nodes;
-    for (const auto& point : box->Nodes())
+    for (size_t node = 0; node < box->NodeCount(); ++node)
     {
+        const Vector3d point = box->Node(node);
         const DBL amplitude = 1 + point[X] + 2 * point[Y] + 3 * point[Z];
         nodes.emplace_back();
         nodes.back().AddIsotropic(MathColour(.5 * amplitude));

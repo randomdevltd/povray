@@ -706,6 +706,15 @@ New Features
 Performance Improvements
 ------------------------
 
+  - A prepared interior light's grid stores no topology: on its regular
+    lattice every cell's eight corner node indices, every node's position
+    and every cell's volume follow from the box and the counts, so none is
+    kept per cell or per node any more. A varying light at the automatic
+    resolution (about 512,000 cells) held about 47 MB of that
+    representation; fifty of them held about 2.3 GB. The samples, the
+    interpolation and the image are unchanged, and a light's memory is now
+    its colour values and sampling tree alone, about 22 MB at the automatic
+    resolution.
   - Threads are made once and reused by every task, pass and parallel loop,
     and a progressive render keeps one trace worker per thread for all its
     passes instead of making one per thread per pass. A worker out of blocks

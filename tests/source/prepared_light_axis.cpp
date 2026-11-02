@@ -11,16 +11,22 @@ static void Near(DBL a, DBL b, DBL tolerance = 1e-6)
 static std::shared_ptr<const PreparedSourceColourField> Field(std::shared_ptr<const PreparedSourceDomain> domain)
 {
     std::vector<MathColour> values;
-    for (const auto& point : domain->Nodes())
+    for (size_t node = 0; node < domain->NodeCount(); ++node)
+    {
+        const Vector3d point = domain->Node(node);
         values.emplace_back(2 + point[X] * point[X]);
+    }
     return std::make_shared<PreparedSourceColourField>(domain, std::move(values));
 }
 int main()
 {
     auto box = std::make_shared<PreparedSourceDomain>(PreparedSourceDomain::Cartesian(Vector3d(0.0), Vector3d(1.0), {{2, 2, 2}}));
     std::vector<MathColour> affine;
-    for (const auto& point : box->Nodes())
+    for (size_t node = 0; node < box->NodeCount(); ++node)
+    {
+        const Vector3d point = box->Node(node);
         affine.emplace_back(1 + point[X] + 2 * point[Y] + 3 * point[Z]);
+    }
     PreparedSourceColourField linear(box, std::move(affine));
     Near(linear.Sample(Vector3d(.31, .42, .53))[0], 1 + .31 + 2 * .42 + 3 * .53);
     auto constant = std::make_shared<PreparedConstantColourField>(MathColour(3.0));
