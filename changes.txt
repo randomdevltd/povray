@@ -40,8 +40,8 @@ v3.7.1 release proper.
 Changed Behaviour
 
 - The subsurface clouds' memory cap, when `global_settings { subsurface {
-  memory FLOAT } }` sets none, is a quarter of the memory the system
-  reports available, at least 1024 MB and at most 32 GB, instead of a
+  memory FLOAT } }` sets none, is a quarter of the machine's total memory,
+  at least 1024 MB and at most 32 GB, instead of a
   fixed 1024 MB which stopped renders at the start on large-memory
   machines whose clouds would have fitted. An explicit `memory` still wins
   at every scene version, and a cloud past the cap still stops the render
@@ -591,7 +591,7 @@ New Features
     cloud no longer has a point budget: every cell is built at its own
     spacing, so the image does not depend on thread count or order, and
     `global_settings { subsurface { memory FLOAT } }` (megabytes, by
-    default a quarter of the memory the system reports available, at least
+    default a quarter of the machine's total memory, at least
     1024 MB and at most 32 GB; `memory` is matched by its text) caps the
     clouds' memory, past which the render stops with an error suggesting a
     cap or a `spacing` that would fit; `spacing` scales every point step, so cloud memory goes

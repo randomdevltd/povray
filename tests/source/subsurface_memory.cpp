@@ -46,13 +46,12 @@ int main()
         at = cap;
     }
 
-    // the default the scene starts from is machine-sized: within the bounds, and never above a quarter of installed memory
+    // the default the scene starts from is machine-sized: exactly a quarter of the machine's total memory, clamped,
+    // on any machine (total memory is fixed while the machine runs, so both reads of it agree)
     const double cap = SubsurfaceDefaultMemoryMB();
     const double quarterTotal = kSubsurfaceMemoryShare * Memory("MemTotal:") / 1048576.0;
+    assert(cap == std::max(kSubsurfaceMemoryFloorMB, std::min(kSubsurfaceMemoryCeilingMB, quarterTotal)));
     assert(cap >= kSubsurfaceMemoryFloorMB && cap <= kSubsurfaceMemoryCeilingMB);
-    assert(cap <= std::max(kSubsurfaceMemoryFloorMB, std::min(kSubsurfaceMemoryCeilingMB, quarterTotal)));
-    if (quarterTotal <= kSubsurfaceMemoryFloorMB)
-        assert(cap == kSubsurfaceMemoryFloorMB); // a machine whose quarter is under the floor keeps the floor
     assert(SceneData().subsurfaceMemory == cap);
     std::cout << "subsurface memory default " << cap << " MB passed\n";
     return 0;

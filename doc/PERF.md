@@ -598,7 +598,7 @@ then gets cubes as large as itself with points three z_r apart, so its cloud can
 1024 steps of three z_r, its finest floor (a 1024th of the side) sets the step instead, a warning counts those cubes,
 and their edges are drawn near each exit point as on a coarse cloud.
 
-All clouds together may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`, by default a quarter of the memory the system reports available, at least 1024 MB and at most 32 GB).
+All clouds together may take `memory` megabytes (`global_settings { subsurface { memory FLOAT } }`, by default a quarter of the machine's total memory, at least 1024 MB and at most 32 GB).
 Each finished cube's footprint counts against it in real bytes, by the capacity of what it holds: the cube itself,
 points (about 56 bytes each), hierarchy nodes, per-light shadows (12 bytes per point and light), radiosity, entry and
 photon arrays and read marks. A cube's footprint depends on the scene alone, and every cube the render needs is built,
