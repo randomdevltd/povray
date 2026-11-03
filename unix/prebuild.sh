@@ -664,6 +664,7 @@ check-quick: all
 	sh \$(top_srcdir)/tests/render/subsurface_fallback.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_minimum_influence.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_tables.sh \$(top_builddir)/unix/povray \$(top_srcdir)
+	sh \$(top_srcdir)/tests/render/subsurface_normals.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_photons_method2.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_volume_emitter.sh \$(top_builddir)/unix/povray \$(top_srcdir)
 	sh \$(top_srcdir)/tests/render/subsurface_cavity_light.sh \$(top_builddir)/unix/povray \$(top_srcdir)

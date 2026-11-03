@@ -1985,15 +1985,16 @@ void Trace::ComputeLightedTexture(MathColour& resultColour, ColourChannel& resul
             if(sceneData->useSubsurface && layer->Finish->UseSubsurface && qualityFlags.subsurface)
             {
                 // A single layer scatters here; several are blended as they are seen and scattered once after the loop.
+                const bool bumped = qualityFlags.normals && (layer->Tnormal != nullptr);
                 if (texture->Next == nullptr)
                 {
                     SubsurfaceLayers single;
-                    single.Add(layer, layCol.colour(), MathColour(att));
+                    single.Add(layer, layCol.colour(), MathColour(att), bumped);
                     if (single.Finish())
                         ComputeSubsurfaceScattering(single, isect, ray, weight, tmpCol);
                 }
                 else
-                    subsurfaceLayers.Add(layer, layCol.colour(), filCol * att);
+                    subsurfaceLayers.Add(layer, layCol.colour(), filCol * att, bumped);
 
                 // Radiosity-style ambient may be subject to subsurface light transport.
                 // In that case, the respective computations are handled by the BSSRDF code already.
@@ -6279,6 +6280,26 @@ private:
 };
 }
 
+// A light's cosine at a perturbed normal: the surface's side facing the light keeps it, the other side its reverse.
+static double BumpedCosine(const Vector3d& side, const Vector3d& bumped, const Vector3d& direction)
+{
+    const double c = dot(bumped, direction);
+    return max(0.0, (dot(side, direction) >= 0.0) ? c : -c);
+}
+
+// Light entering through perturbed facets: each one's cosine times its Fresnel transmission, weighted by its share, or equally.
+double Trace::ComputeFacetsEntry(const Vector3d& side, const Vector3d* facets, const double* shares, size_t count, const Vector3d& direction, double eta)
+{
+    double sum = 0.0;
+    for (size_t t = 0; t < count; t++)
+    {
+        const double cosine = BumpedCosine(side, facets[t], direction);
+        if (cosine >= EPSILON)
+            sum += ((shares != nullptr) ? shares[t] : 1.0 / double(count)) * (cosine * ComputeFt(min(cosine, 1.0), eta));
+    }
+    return sum;
+}
+
 void Trace::BeginSurfaceSubsurface(const SurfaceSubsurfaceField& field)
 {
     ssltBridge = &field;
@@ -6301,8 +6322,17 @@ MathColour Trace::SurfaceSubsurfaceEntry(const SurfaceBounceNode& node, const st
     MathColour light;
     if (FindSubsurfaceParts(SubsurfaceObject(hit), preparedSetId).sheets.count(hit.Object) != 0)
         return light;
+    // Disc draws have zero area here; their real hit normals supply the bounce node's area average.
+    std::vector<Vector3d>& taps = ssltScratchTaps;
+    taps.clear();
+    SubsurfaceEntryTaps(hit, node.normal.normalized(), sqrt(node.areaWeight), ticket, taps);
     for (const BounceIncidentBeam& beam : incident)
     {
+        if (!taps.empty())
+        {
+            light += beam.angularWeight * float(ComputeFacetsEntry(node.normal, taps.data(), nullptr, taps.size(), beam.direction, eta));
+            continue;
+        }
         const double cosine = fabs(dot(node.normal, beam.direction));
         if (cosine >= EPSILON)
             light += beam.angularWeight * float(cosine * ComputeFt(min(cosine, 1.0), eta));
@@ -6408,6 +6438,219 @@ void Trace::ComputeSSLTNormal(Intersection& Ray_Intersection)
     Ray_Intersection.Object->Normal(Raw_Normal, &Ray_Intersection, threadData);
     Ray_Intersection.INormal = Raw_Normal;
     Ray_Intersection.PNormal = Raw_Normal; // TODO FIXME - we should possibly take normal pertubation into account
+}
+
+// Where light enters from outside, the outward normal bent as the exterior texture there bends it; false where none does.
+bool Trace::SubsurfaceEntryNormal(const Intersection& hit, const Vector3d& outward, TraceTicket& ticket, Vector3d& bumped)
+{
+    if (!qualityFlags.normals)
+        return false;
+    Intersection isect(hit);
+    WeightedTextureVector textures;
+    if (Test_Flag(isect.Object, MULTITEXTURE_FLAG) || ((isect.Object->Texture == nullptr) && Test_Flag(isect.Object, CUTAWAY_TEXTURES_FLAG)))
+        isect.Object->Determine_Textures(&isect, false, textures, threadData);
+    else if (isect.Object->Texture != nullptr)
+        textures.push_back(WeightedTexture(1.0, isect.Object->Texture));
+    Vector3d ipoint(isect.IPoint);
+    if (Test_Flag(isect.Object, UV_FLAG))
+    {
+        Vector2d uv;
+        isect.Object->UVCoord(uv, &isect);
+        isect.Iuv = uv;
+        ipoint = Vector3d(uv.u(), uv.v(), 0.0);
+    }
+    const Ray ray(ticket, isect.IPoint, -outward);
+    Vector3d sum;
+    bool found = false;
+    for (const WeightedTexture& weighted : textures)
+    {
+        if (weighted.texture == nullptr)
+            continue;
+        TextureVector warps(texturePool);
+        Vector3d normal;
+        found = TextureEntryNormal(weighted.texture, *warps, ipoint, outward, ray, isect, normal) || found;
+        sum += normal * double(weighted.weight);
+    }
+    if (!found || !(sum.lengthSqr() > 0.0))
+        return false;
+    bumped = sum.normalized();
+    if (!std::isfinite(bumped[X]) || !std::isfinite(bumped[Y]) || !std::isfinite(bumped[Z]))
+        bumped = outward;
+    const double height = dot(bumped, outward);
+    if (height < EPSILON)
+        bumped = (bumped + outward * (EPSILON - height)).normalized();
+    return true;
+}
+
+static bool TextureHasEntryNormals(const TEXTURE *texture)
+{
+    if (texture == nullptr)
+        return false;
+    if (texture->Tnormal != nullptr)
+        return true;
+    if (texture->Blend_Map)
+        for (const auto& entry : texture->Blend_Map->Blend_Map_Entries)
+            if (TextureHasEntryNormals(entry.Vals))
+                return true;
+    for (const TEXTURE *material : texture->Materials)
+        if (TextureHasEntryNormals(material))
+            return true;
+    return TextureHasEntryNormals(texture->Next);
+}
+
+// Average entry transmission over the estimator's area, using real intersections for surface and UV coordinates.
+bool Trace::SubsurfaceEntryTaps(const Intersection& hit, const Vector3d& outward, double side, TraceTicket& ticket, std::vector<Vector3d>& taps,
+                                const SubsurfaceProfile *profile, std::vector<double> *shares)
+{
+    if (!qualityFlags.normals)
+        return false;
+    Vector3d centre = outward;
+    bool found = SubsurfaceEntryNormal(hit, outward, ticket, centre);
+    if (!found)
+    {
+        WeightedTextureVector textures;
+        Intersection materialHit(hit);
+        hit.Object->Determine_Textures(&materialHit, false, textures, threadData);
+        bool possible = false;
+        for (const auto& weighted : textures)
+            possible = possible || TextureHasEntryNormals(weighted.texture);
+        if (!possible)
+            return false;
+    }
+    const size_t first = taps.size();
+    const size_t firstShare = shares ? shares->size() : 0;
+    Vector3d footX, footY;
+    ComputeSurfaceTangents(outward, footX, footY);
+    side = std::isfinite(side) ? max(0.0, side) : 0.0;
+    footX *= side;
+    footY *= side;
+    const double mmSqr = Sqr(sceneData->mmPerUnit);
+    const double reach = max(side, 4.0 * hit.Object->SurfaceTolerance());
+    double spread = 0.0, total = 0.0;
+    std::vector<Intersection> crossings;
+    if (!(side > 0.0))
+    {
+        if (!found)
+            return false;
+        taps.push_back(centre);
+        if ((profile != nullptr) && (shares != nullptr))
+            shares->push_back(1.0);
+        return true;
+    }
+    VisitFootprintTaps(3, footX, footY, spread, [&](DBL u, DBL v)
+    {
+        const Vector3d offset = footX * u + footY * v;
+        Vector3d normal = centre;
+        if (offset.lengthSqr() > 0.0)
+        {
+            const Vector3d target = hit.IPoint + offset;
+            crossings.clear();
+            CollectCrossings(SubsurfaceObject(hit), target + outward * reach, -outward, 0.0, 2.0 * reach, crossings, ticket);
+            double nearest = reach;
+            for (Intersection& tap : crossings)
+            {
+                const double distance = fabs(tap.Depth - reach);
+                if (!(distance < nearest))
+                    continue;
+                Vector3d geometric;
+                tap.Object->Normal(geometric, &tap, threadData);
+                if (!(dot(geometric, outward) > EPSILON))
+                    continue;
+                nearest = distance;
+                normal = outward;
+                found = SubsurfaceEntryNormal(tap, outward, ticket, normal) || found;
+            }
+        }
+        taps.push_back(normal);
+        spread = max(spread, (normal - centre).length());
+        if ((profile == nullptr) || (shares == nullptr))
+            return;
+        shares->push_back(profile->Rd(offset.lengthSqr() * mmSqr).Greyscale());
+        total += shares->back();
+    });
+    if (!found)
+    {
+        taps.resize(first);
+        if (shares != nullptr)
+            shares->resize(firstShare);
+        return false;
+    }
+    for (size_t t = firstShare; (profile != nullptr) && (shares != nullptr) && (t < shares->size()); t++)
+        (*shares)[t] = (total > 0.0) ? (*shares)[t] / total : 1.0 / double(taps.size() - first);
+    return true;
+}
+
+// The texture's normal as ComputeOneTextureColour walks it, from its first scattering layer, else its top layer.
+bool Trace::TextureEntryNormal(const TEXTURE *texture, std::vector<const TEXTURE *>& warps, const Vector3d& ipoint, const Vector3d& outward,
+                               const Ray& ray, Intersection& isect, Vector3d& normal)
+{
+    isect.PNormal = outward;
+    struct RestoreWarps
+    {
+        std::vector<const TEXTURE *>& warps;
+        size_t size;
+        ~RestoreWarps() { warps.resize(size); }
+    } restore{warps, warps.size()};
+    if ((texture->Type != NO_PATTERN) && (texture->Type != PLAIN_PATTERN))
+        warps.push_back(texture);
+    Vector3d tpoint, other;
+    bool found = false;
+    if (texture->Type == PLAIN_PATTERN)
+    {
+        const TEXTURE *layer = texture;
+        for (const TEXTURE *l = texture; l != nullptr; l = l->Next)
+            if (sceneData->useSubsurface && l->Finish->UseSubsurface)
+            {
+                layer = l;
+                break;
+            }
+        normal = outward;
+        if (layer->Tnormal == nullptr)
+            return false;
+        for (const TEXTURE *warp : warps)
+            Warp_Normal(normal, normal, warp, Test_Flag(warp, DONT_SCALE_BUMPS_FLAG));
+        Perturb_Normal(normal, layer->Tnormal, ipoint, &isect, &ray, threadData);
+        if (Test_Flag(layer->Tnormal, DONT_SCALE_BUMPS_FLAG))
+            normal.normalize();
+        for (auto warp = warps.rbegin(); warp != warps.rend(); ++warp)
+            UnWarp_Normal(normal, normal, *warp, Test_Flag(*warp, DONT_SCALE_BUMPS_FLAG));
+        return true;
+    }
+    if (texture->Type == AVERAGE_PATTERN)
+    {
+        Warp_EPoint(tpoint, ipoint, warps.back());
+        double total = 0.0;
+        normal = Vector3d(0.0);
+        for (const TextureBlendMapEntry& entry : texture->Blend_Map->Blend_Map_Entries)
+        {
+            found = TextureEntryNormal(entry.Vals, warps, tpoint, outward, ray, isect, other) || found;
+            normal += other * double(entry.value);
+            total += entry.value;
+        }
+        normal /= total;
+        return found;
+    }
+    if (texture->Type == UV_MAP_PATTERN)
+    {
+        Vector2d uv;
+        isect.Object->UVCoord(uv, &isect);
+        return TextureEntryNormal(texture->Blend_Map->Blend_Map_Entries[0].Vals, warps, Vector3d(uv[U], uv[V], 0.0), outward, ray, isect, normal);
+    }
+    Warp_EPoint(tpoint, ipoint, texture);
+    if (texture->Type == BITMAP_PATTERN)
+        return TextureEntryNormal(material_map(tpoint, texture), warps, tpoint, outward, ray, isect, normal);
+    if (texture->Type <= LAST_SPECIAL_PATTERN)
+        throw POV_EXCEPTION_STRING("Bad texture type in TextureEntryNormal");
+    const TextureBlendMapEntry *prev, *cur;
+    DBL prevWeight, curWeight;
+    texture->Blend_Map->Search(Evaluate_TPat(texture, tpoint, &isect, &ray, threadData), prev, cur, prevWeight, curWeight);
+    found = TextureEntryNormal(cur->Vals, warps, tpoint, outward, ray, isect, normal);
+    if (prev != cur)
+    {
+        found = TextureEntryNormal(prev->Vals, warps, tpoint, outward, ray, isect, other) || found;
+        normal = curWeight * normal + prevWeight * other;
+    }
+    return found;
 }
 
 bool Trace::IsSameSSLTObject(ConstObjectPtr obj1, ConstObjectPtr obj2)
@@ -6599,7 +6842,7 @@ void Trace::ComputeDiffuseCandidate(const LightSource& lightsource, const Inters
 // Unshadowed single-scattered light from one source at bend_point; weightOut holds each channel's sampling weight.
 void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
                                              const PreciseMathColour& weightOut, const Vector3d& bend_point, double ftOut, double cos_out_prime,
-                                             SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key)
+                                             SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key, bool bumps)
 {
     // Do Light source to get the correct lightsourceray
     // (note that for now we're mainly interested in the direction)
@@ -6664,6 +6907,14 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
     // [CLi] light coming in almost parallel to the surface is a problem though
     if(cos_in < EPSILON)
         return;
+    double lit = cos_in;
+    Vector3d bumped;
+    if (bumps && SubsurfaceEntryNormal(xi, ((dot(xi.INormal, lightsourceray.Direction) >= 0.0) ? xi.INormal : -xi.INormal).normalized(), ticket, bumped))
+    {
+        lit = dot(bumped, lightsourceray.Direction);
+        if (lit < EPSILON)
+            return;
+    }
 
     const double eta = ComputeSubsurfaceEntryIOR(xi.IPoint, xi.INormal, xi.Object, SubsurfaceObject(xi), xi.Object->SurfaceTolerance(), lightsourceray.Direction, ticket);
     double cos_in_prime_sqr = 1 - (1 - Sqr(cos_in)) / Sqr(eta);
@@ -6675,7 +6926,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
 
     double si = (bend_point - xi.IPoint).length() * sceneData->mmPerUnit;
     double s_prime_i = si * cos_in / cos_in_prime;
-    double F = ComputeFt(min(cos_in, 1.0), eta) * ftOut;
+    double F = ComputeFt(min(lit, 1.0), eta) * ftOut;
 
     // G is only valid for comparatively flat surfaces; sigma_t where the light enters is taken to be that at the exit.
     double G = fabs(cos_out_prime / cos_in_prime);
@@ -6686,7 +6937,7 @@ void Trace::ComputeSingleScatteringCandidate(const LightSource& lightsource, con
     for (int j = 0; j < MathColour::channels; j++)
     {
         double sigma_tc = sigma_t_xo[j] * (1.0 + G);
-        double f = (sigma_s[j] * F * p / sigma_tc) * exp(-s_prime_i * sigma_t_xo[j]) * weightOut[j] * cos_in;
+        double f = (sigma_s[j] * F * p / sigma_tc) * exp(-s_prime_i * sigma_t_xo[j]) * weightOut[j] * lit;
         POV_SUBSURFACE_ASSERT((f >= 0.0) && (f <= DBL_MAX)); // verify f is a non-negative, finite value (no #INF, no #IND, no #NAN)
         candidate.factor[j] = min(f, double(FLT_MAX));
     }
@@ -6922,7 +7173,7 @@ const LightSource* Trace::LightOnObject(const LightSource& light, ConstObjectPtr
 void Trace::ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                 const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo,
                                                 const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
-                                                TraceTicket& ticket, std::uint64_t key)
+                                                TraceTicket& ticket, std::uint64_t key, bool bumps)
 {
     Lo.Clear();
     if (lights.empty())
@@ -6936,8 +7187,12 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
     if (cloud != nullptr)
     {
         Vector3d n = out.INormal.normalized();
-        if (dot(n, refractedREye) > 0.0)
+        const bool inverted = (dot(n, refractedREye) > 0.0);
+        if (inverted)
             n.invert();
+        const size_t facets = max(cloud->bumped.size(), size_t(1));
+        std::vector<double>& facetLit = ssltScratchFacets;
+        facetLit.resize(2 * facets);
         for (int l = 0; l < lights.size(); l++)
         {
             if (lights[l]->emitter)
@@ -6955,12 +7210,23 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
             if (cos_in_prime_sqr <= Sqr(EPSILON))
                 continue;
             double G = fabs(cos_out_prime / sqrt(cos_in_prime_sqr));
-            double F = ComputeFt(min(cos_in, 1.0), entryEta) * ftOut;
+            // each entry tap's cosine and transmission, weighted by its share of the light entering about the exit point
+            for (size_t t = 0; t < facets; t++)
+            {
+                const Vector3d& tap = cloud->bumped.empty() ? n : cloud->bumped[t];
+                const double lit = cloud->bumped.empty() ? cos_in : BumpedCosine(n, inverted ? -tap : tap, cloud->exitDirection[l]);
+                facetLit[2 * t] = lit;
+                facetLit[2 * t + 1] = ComputeFt(min(lit, 1.0), entryEta) * ftOut;
+            }
             MathColour f;
             for (int j = 0; j < MathColour::channels; j++)
             {
                 double depth = (dist < HUGE_VAL) ? -expm1(-sigma_t_xo[j] * (2.0 + G) * dist) : 1.0;
-                f[j] = sigma_s[j] * F * 0.25 * cos_in / (sigma_t_xo[j] * (1.0 + G)) * depth / (2.0 + G);
+                double sum = 0.0;
+                for (size_t t = 0; t < facets; t++)
+                    sum += (cloud->bumped.empty() ? 1.0 : cloud->bumpedShare[t]) *
+                           (sigma_s[j] * facetLit[2 * t + 1] * 0.25 * facetLit[2 * t] / (sigma_t_xo[j] * (1.0 + G)) * depth / (2.0 + G));
+                f[j] = sum;
             }
             if (flesh.skin != nullptr)
                 f *= flesh.exitSkin;
@@ -7001,7 +7267,7 @@ void Trace::ComputeSingleScatteringContribution(const Intersection& out, double 
         for (int l = 0; l < lights.size(); l++)
             if (!closed[l])
                 ComputeSingleScatteringCandidate(*lights[l], out, sigma_t_xo, sigma_s, weightOut, bend_point, ftOut, cos_out_prime,
-                                                 candidates[l * numSamples + i], ticket, DeriveKey(key, kDrawEmitter, l * numSamples + i));
+                                                 candidates[l * numSamples + i], ticket, DeriveKey(key, kDrawEmitter, l * numSamples + i), bumps);
     }
 
     // Light entering elsewhere crosses the skin there.
@@ -7102,7 +7368,7 @@ bool Trace::SubsurfaceVisibility::Agrees(int light) const
 MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                              int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
                                              const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole, double tolerance,
-                                             const char* uses, double lightSamples)
+                                             const char* uses, const Vector3d* bumped, const double* shares, size_t facets, double lightSamples)
 {
     const Interior* interior = (object != nullptr) ? object->interior.get() : nullptr;
     MathColour irradiance;
@@ -7153,7 +7419,9 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
                 }
             }
             shadowed += lightcolour;
-            double cos_in = fabs(dot(normal, lightsourceray.Direction));
+            double cos_in = (bumped != nullptr) ? 0.0 : fabs(dot(normal, lightsourceray.Direction));
+            for (size_t t = 0; (bumped != nullptr) && (t < facets); t++)
+                cos_in = max(cos_in, BumpedCosine(geometricNormal, bumped[t], lightsourceray.Direction));
             if (cos_in >= EPSILON)
             {
                 const int side = (dot(geometricNormal, lightsourceray.Direction) >= 0.0) ? 0 : 1;
@@ -7162,7 +7430,8 @@ MathColour Trace::ComputeSubsurfaceIrradiance(const Vector3d& point, const Vecto
                     sideEta[side] = ComputeSubsurfaceEntryIOR(point, geometricNormal, object, whole, tolerance, lightsourceray.Direction, ticket);
                     sideKnown[side] = true;
                 }
-                lit += lightcolour * float(cos_in * ComputeFt(min(cos_in, 1.0), sideEta[side]));
+                lit += lightcolour * float((bumped != nullptr) ? ComputeFacetsEntry(geometricNormal, bumped, shares, facets, lightsourceray.Direction, sideEta[side]) :
+                                                                 cos_in * ComputeFt(min(cos_in, 1.0), sideEta[side]));
             }
         }
         irradiance += lit / float(points);
@@ -7202,9 +7471,15 @@ MathColour Trace::ComputeCloudExitIrradiance(const Intersection& out, const Subs
                 continue;
             if (k == 0)
                 cloud.exitDirection[i] = lightsourceray.Direction;
-            double cos_in = fabs(dot(out.INormal, lightsourceray.Direction));
             const double eta = ComputeSubsurfaceEntryIOR(out.IPoint, out.INormal, out.Object, SubsurfaceObject(out), out.Object->SurfaceTolerance(), lightsourceray.Direction, ticket);
-            float lit = (cos_in >= EPSILON) ? float(cos_in * ComputeFt(min(cos_in, 1.0), eta)) : 0.0f;
+            float lit;
+            if (!cloud.bumped.empty())
+                lit = float(ComputeFacetsEntry(out.INormal, cloud.bumped.data(), cloud.bumpedShare.data(), cloud.bumped.size(), lightsourceray.Direction, eta));
+            else
+            {
+                const double cos_in = fabs(dot(out.INormal, lightsourceray.Direction));
+                lit = (cos_in >= EPSILON) ? float(cos_in * ComputeFt(min(cos_in, 1.0), eta)) : 0.0f;
+            }
             if ((qualityFlags.shadows && ((lightsource.Projected_Through_Object != nullptr) || (lightsource.Light_Type != FILL_LIGHT_SOURCE))) ||
                 (lightsource.emitter && qualityFlags.media && lightsource.Media_Interaction && lightsource.Media_Attenuation))
             {
@@ -7301,11 +7576,16 @@ PreciseMathColour Trace::ComputeCloudNearField(const Intersection& out, const Ve
             continue;
         // The draw's density on the disc, carried to the surface through the solid angle the ray stands for.
         double perArea = cosHit * Sqr(toPlane) / (cosPlane * Sqr(nearest->Depth)) / (2.0 * M_PI * norm * pow(Sqr(zr) + Sqr(r), 1.5));
+        // each draw's light enters over the share of the surface it stands for
+        std::vector<Vector3d>& taps = ssltScratchTaps;
+        taps.clear();
+        SubsurfaceEntryTaps(*nearest, nq, sqrt(1.0 / (perArea * kCloudNearSamples)) / mm, ticket, taps);
         auto set = cloud.parts->setOf.find(nearest->Object);
         const std::vector<char>& uses = cloud.parts->sets[(set != cloud.parts->setOf.end()) ? set->second : 0];
         Vector2d shift(areaShift[U] + k * 0.7548776662466927, areaShift[V] + k * 0.5698402909980532);
         MathColour irradiance = ComputeSubsurfaceIrradiance(nearest->IPoint, nq, cloud.lights, 1, &shift, nullptr, ticket,
-                                                            DeriveKey(key, kDrawSubsurface, 16 + k), face, nearest->Object, SubsurfaceObject(*nearest), nearest->Object->SurfaceTolerance(), uses.data(), cloud.flesh->finish->LightSamples);
+                                                            DeriveKey(key, kDrawSubsurface, 16 + k), face, nearest->Object, SubsurfaceObject(*nearest), nearest->Object->SurfaceTolerance(), uses.data(),
+                                                            taps.empty() ? nullptr : taps.data(), nullptr, taps.size(), cloud.flesh->finish->LightSamples);
         threadData->Stats()[Subsurface_Cloud_Near_Rays] += std::count(uses.begin(), uses.end(), 1);
         double distSqr = (x - nearest->IPoint).lengthSqr() * Sqr(mm);
         PreciseMathColour rd = profile.Rd(distSqr);
@@ -7903,6 +8183,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
                 cell.jobs += cell.steps[a];
             }
             cell.rows.resize(cell.jobs);
+            cell.tapRows.resize(cell.jobs);
+            threadData->subsurfaceCache->Stage(cell, cell.tapRows.capacity() * sizeof(std::vector<float>));
         }
         cell.changed.notify_all();
         WorkOnSubsurfaceCell(cloud, key, cell, true);
@@ -7916,6 +8198,27 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             {
                 cell.points.insert(cell.points.end(), row.begin(), row.end());
                 std::vector<SubsurfacePoint>().swap(row);
+            }
+            size_t tapCount = 0;
+            for (const std::vector<float>& row : cell.tapRows)
+                tapCount += row.size();
+            cell.taps.reserve(tapCount);
+            threadData->subsurfaceCache->Stage(cell, cell.taps.capacity() * sizeof(float));
+            for (std::vector<float>& row : cell.tapRows)
+            {
+                cell.taps.insert(cell.taps.end(), row.begin(), row.end());
+                std::vector<float>().swap(row);
+            }
+            if (!cell.taps.empty())
+            {
+                cell.tapStart.resize(count);
+                threadData->subsurfaceCache->Stage(cell, cell.tapStart.capacity() * sizeof(size_t));
+                size_t start = 0;
+                for (size_t k = 0; k < count; k++)
+                {
+                    cell.tapStart[k] = start;
+                    start += cell.points[k].taps;
+                }
             }
             cell.lights = int(cloud.lights.size());
             cell.visibility.resize(count * cell.lights * MathColour::channels);
@@ -7934,6 +8237,8 @@ void Trace::BuildSubsurfaceCell(const SubsurfaceCloud& cloud, const SubsurfaceCe
             cell.changed.notify_all();
             WorkOnSubsurfaceCell(cloud, key, cell, true);
             usable = !cell.failed;
+            std::vector<float>().swap(cell.taps);
+            std::vector<size_t>().swap(cell.tapStart);
             if (usable && key.radiosity)
                 AddSubsurfaceAmbient(cloud, cell);
             if (usable)
@@ -7962,6 +8267,7 @@ void Trace::FinishSubsurfaceCell(SubsurfaceCell& cell, bool usable)
         if (cell.done == cell.jobs)
         {
             cell.rows.clear();
+            std::vector<std::vector<float>>().swap(cell.tapRows);
             if (!usable)
                 cell.Release();
         }
@@ -8076,7 +8382,9 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
     dir[a] = 1.0;
     uint64_t state = CloudSeed(key, 0, job);
     std::vector<SubsurfacePoint>& row = cell.rows[job];
-    size_t capacity = row.capacity();
+    std::vector<float>& tapRow = cell.tapRows[job];
+    std::vector<Vector3d>& taps = ssltScratchTaps;
+    size_t capacity = row.capacity(), tapCapacity = tapRow.capacity();
     std::vector<Intersection> crossings;
     for (int j = 0; (j < steps) && !cell.failed; j++)
     {
@@ -8139,6 +8447,13 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
             for (int b = 0; b < 3; b++)
                 density += fabs(n[b]) * Sqr(cell.steps[b] / size);
             point.area = float(Sqr(mm) / density);
+            taps.clear();
+            if (key.normals)
+                SubsurfaceEntryTaps(in, (dot(shading, n) < 0.0) ? -shading : shading, sqrt(1.0 / density), ticket, taps);
+            point.taps = (unsigned char)(taps.size());
+            for (const Vector3d& tap : taps)
+                for (int k = 0; k < 3; k++)
+                    tapRow.push_back(float(tap[k]));
             point.tolerance = float(in.Object->SurfaceTolerance());
             auto set = cloud.parts->setOf.find(in.Object);
             point.id = unsigned(((set != cloud.parts->setOf.end()) ? set->second : 0) * 2 + (Test_Flag(in.Object, PH_IGNORE_PHOTONS_FLAG) ? 0 : 1));
@@ -8148,12 +8463,18 @@ void Trace::CastSubsurfaceLines(const SubsurfaceCloud& cloud, const SubsurfaceCe
         }
         if (kept == 0)
             continue;
+        const size_t addedTapBytes = (tapRow.capacity() - tapCapacity) * sizeof(float);
         if (row.capacity() > capacity)
             threadData->subsurfaceCache->Stage(cell, (row.capacity() - capacity) * sizeof(SubsurfacePoint));
+        if (tapRow.capacity() > tapCapacity)
+            threadData->subsurfaceCache->Stage(cell, (tapRow.capacity() - tapCapacity) * sizeof(float));
         capacity = row.capacity();
+        tapCapacity = tapRow.capacity();
         std::lock_guard<std::mutex> lock(cell.mutex);
         cell.found += kept;
-        if (!threadData->subsurfaceCache->CellFits(cell.found * sizeof(SubsurfacePoint)))
+        cell.tapBytes += addedTapBytes;
+        const size_t tapPeak = 2 * cell.tapBytes + (cell.tapBytes ? cell.found * sizeof(size_t) : 0);
+        if (!threadData->subsurfaceCache->CellFits(cell.found * sizeof(SubsurfacePoint) + tapPeak))
             cell.failed = true;
     }
 }
@@ -8194,8 +8515,14 @@ void Trace::LightSubsurfacePoints(const SubsurfaceCloud& cloud, const Subsurface
         Vector2d areaShift(CloudRandom(state), CloudRandom(state));
         const std::vector<char>& uses = cloud.parts->sets[min(size_t(point.id / 2), cloud.parts->sets.size() - 1)];
         bool collects = (point.id % 2 != 0);
+        std::vector<Vector3d>& taps = ssltScratchTaps;
+        taps.resize(point.taps);
+        for (int t = 0; t < point.taps; t++)
+            for (int j = 0; j < 3; j++)
+                taps[t][j] = cell.taps[(cell.tapStart[k] + t) * 3 + j];
         MathColour irradiance = ComputeSubsurfaceIrradiance(point.position, shading, cloud.lights, kCloudAreaPoints, &areaShift,
-                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k), normal, cloud.object, cloud.object, point.tolerance, uses.data(), key.lightSamples);
+                                                            cell.visibility.data() + k * stride, ticket, CloudSeed(key, 2, k), normal, cloud.object, cloud.object, point.tolerance, uses.data(),
+                                                            taps.empty() ? nullptr : taps.data(), nullptr, taps.size(), key.lightSamples);
         MathColour photonEntry;
         if (gatherer && collects)
         {
@@ -8489,7 +8816,7 @@ bool Trace::OpenSubsurfaceCloud(const Intersection& out, const Ray& eye, const S
                 SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(floor(out.IPoint[X] / cloud.size)) + k % 3 - 1,
                                           std::int64_t(floor(out.IPoint[Y] / cloud.size)) + (k / 3) % 3 - 1,
                                           std::int64_t(floor(out.IPoint[Z] / cloud.size)) + k / 9 - 1,
-                                          cloud.photons, cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples };
+                                          cloud.photons, cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
                 double step[3];
                 SubsurfaceStepTerm term;
                 bool floored;
@@ -8563,7 +8890,7 @@ bool Trace::GatherSubsurfaceCells(SubsurfaceCloud& cloud, const Vector3d& centre
     for (double cz = lo[Z]; cz <= hi[Z]; cz++)
     {
         SubsurfaceCellKey key = { cloud.object, cloud.sizeLevel, std::int64_t(cx), std::int64_t(cy), std::int64_t(cz), cloud.photons,
-                                  cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples };
+                                  cloud.radiosity, cloud.medium, cloud.preparedSetId, cloud.depthLevel, cloud.flesh->finish->LightSamples, qualityFlags.normals };
         const SubsurfaceCell *&known = ssltCells[key];
         if (known == nullptr)
         {
@@ -8891,9 +9218,21 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     // The exit normal points out of the object, away from the base point below it, as the cloud's normals do.
     if (dot(n, out.IPoint - base) < 0.0)
         n.invert();
+    // The light entering at the exit point stands for that over the disc of this radius (mm) around it.
+    auto entryTaps = [&](double radius)
+    {
+        if (!cloud.bumps)
+            return;
+        const Vector3d in = out.INormal.normalized();
+        const bool flip = (dot(in, n) < 0.0);
+        SubsurfaceEntryTaps(out, flip ? -in : in, sqrt(M_PI) * radius / mm, ticket, cloud.bumped, &profile, &cloud.bumpedShare);
+        for (size_t t = 0; flip && (t < cloud.bumped.size()); t++)
+            cloud.bumped[t].invert();
+    };
 
     if (cloud.local)
     {
+        entryTaps(cloud.reach);
         ssltScratchVisibility.Reset(cloud.lights.size());
         MathColour here = ComputeCloudExitIrradiance(out, ssltScratchVisibility, cloud, false, ticket, key) + ComputeCloudExitAmbient(out, n, cloud, ticket);
         if (cloud.photons)
@@ -9147,6 +9486,7 @@ bool Trace::ComputeSubsurfaceCloud(const Intersection& out, const Vector3d& base
     }
 
     SubsurfacePhotonReceiver receiverState(threadData->litObjectIgnoresPhotons, cloud.object, cloud.photons);
+    entryTaps(core);
     MathColour here = ComputeCloudExitIrradiance(out, visibility, cloud, coarse, ticket, key);
     // A shadow edge between coarse points, a shadow at the exit point its neighbours do not share, or an edge of the
     // surface within the disc, is drawn near the exit point.
@@ -9734,13 +10074,15 @@ void Trace::ComputeDiffuseAmbientContribution1(const Intersection& in, const Pre
     }
 }
 
-void Trace::SubsurfaceLayers::Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility)
+void Trace::SubsurfaceLayers::Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility, bool bumps)
 {
     reflectance += visibility * (pigment * layer->Finish->Diffuse);
     tint += visibility * pigment;
     weight += visibility;
-    if (top == nullptr)
-        top = layer;
+    if (top != nullptr)
+        return;
+    top = layer;
+    bumped = bumps;
 }
 
 bool Trace::SubsurfaceLayers::Finish()
@@ -9986,6 +10328,14 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
 
     double cos_out = clip(dot(vOut, out.INormal), -1.0, 1.0); // (clip values to not run into trouble due to petty precision issues)
     double ftOut   = ComputeFt(cos_out, eta);
+    // Method 2's light enters through the perturbed surface, averaged over the area each estimate of it stands for; it
+    // leaves by the surface's own normal (see doc/PERF.md), and the paths inside keep that normal too.
+    SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
+    std::vector<Vector3d>& bumped = cloudData.bumped;
+    std::vector<double>& shares = cloudData.bumpedShare;
+    bumped.clear();
+    shares.clear();
+    cloudData.bumps = pointCloud && layers.bumped;
     // Method 2's diffusion leaves with all the light its profile counts: Ft(out) / pi normalised by 1 - Fdr from outside.
     double ftDiffuse = pointCloud ? ftOut * ssltBoundary->exitScale : ftOut;
 
@@ -10008,7 +10358,6 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
     // filling); a shading point it cannot serve gets no diffuse subsurface light, and a warning names its object.
     bool cloudRadiosity = radiosity_needed && radiosity.IsFinalTrace();
     Vector3d sampleBase;
-    SubsurfaceCloud& cloudData = ssltClouds[Eye.GetTicket().subsurfaceRecursionDepth - 1];
     if (ssltBridge == nullptr)
     {
         ComputeDiffuseSampleBase(sampleBase, out, vOut, 1.0 / (sigma_prime_t_mean * sceneData->mmPerUnit), Eye.GetTicket());
@@ -10028,9 +10377,20 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         Vector3d geometricNormal;
         Intersection surface(out);
         out.Object->Normal(geometricNormal, &surface, threadData);
+        // it stands for the light entering as far as the largest core a cloud fine enough to have one gives
+        if (cloudData.bumps)
+        {
+            const double zr = max(profile.z_r[0], max(profile.z_r[1], profile.z_r[2]));
+            const Vector3d side = (dot(out.INormal, geometricNormal) < 0.0) ? -geometricNormal : geometricNormal;
+            SubsurfaceEntryTaps(out, side.normalized(), sqrt(M_PI) * kCloudCore * kCloudCoarse * zr / sceneData->mmPerUnit, Eye.GetTicket(),
+                                bumped, &profile, &shares);
+            if (dot(out.INormal, geometricNormal) < 0.0)
+                for (Vector3d& facet : bumped)
+                    facet.invert();
+        }
         MathColour here = ComputeSubsurfaceIrradiance(out.IPoint, out.INormal.normalized(), lights,
                                                       1, &shift, nullptr, Eye.GetTicket(), estimateKey, geometricNormal, out.Object, SubsurfaceObject(out),
-                                                      out.Object->SurfaceTolerance(), nullptr, Finish->LightSamples);
+                                                      out.Object->SurfaceTolerance(), nullptr, bumped.empty() ? nullptr : bumped.data(), shares.data(), bumped.size(), Finish->LightSamples);
         if (flesh.PerEntry())
             here = here * flesh.nearby.factor + flesh.nearby.emission;
         cloudDiffuse = MathColour(profile.RdTotal() * PreciseMathColour(here) * ftDiffuse);
@@ -10166,7 +10526,7 @@ void Trace::ComputeSubsurfaceScattering(const SubsurfaceLayers& layers, const In
         {
             MathColour singleColour;
             ComputeSingleScatteringContribution(out, dist, ftOut, cos_out_prime, refractedEye, sigma_t_xo, sigma_s, NumSamplesSingle, singleColour, lights,
-                                                cloud ? &cloudData : nullptr, flesh, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3));
+                                                cloud ? &cloudData : nullptr, flesh, Eye.GetTicket(), DeriveKey(key, kDrawSubsurface, 3), pointCloud);
             if (Finish->SubsurfaceHasColour)
                 singleColour *= flesh.entrySkin;
             Total_Colour += singleColour / NumSamplesSingle;

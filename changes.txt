@@ -4880,3 +4880,5 @@ You can render in only one thread by using the '/THREADS 1' switch in the
 Windows version. Note that parsing and photon building will only use one
 thread no matter how many are specified. However photon scenes will benefit
 from multiple threads once photon building has completed.
+
+Texture normals now affect method 2 subsurface entry illumination over each estimate's surface area; geometry and outgoing transmission retain surface normals.
