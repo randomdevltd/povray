@@ -23,26 +23,81 @@ equal() {
     }
 }
 
+# wide <name> <scene> <args...>: like render, one 128x32 frame holding two 64x32 screen views
+wide() {
+    render_name=$1
+    render_scene=$2
+    shift 2
+    "$POVRAY" "$@" +i"$SRCDIR/$render_scene" +w128 +h32 -a -d -p -v -gp +pr +wt1 +fp16 \
+        File_Gamma=1 +o"render_tags_$render_name.ppm" > "render_tags_$render_name.log" 2>&1 || {
+        cat "render_tags_$render_name.log"
+        exit 1
+    }
+    tail -c 24576 "render_tags_$render_name.ppm" > "render_tags_$render_name.px"
+}
+
+# values <px-file>: one pixel per line, six unsigned bytes as text, for comparing pixel streams
+values() { od -An -v -tu1 -w6 "$1" | tr -s ' '; }
+
+# half <wide-name> <l|r>: one 64x32 half of a 128x32 frame, as values on stdout
+half() {
+    values "render_tags_$1.px" | awk -v side="$2" '
+        { line[NR] = $0 }
+        END {
+            for (p = 0; p < 2048; p++) {
+                r = int(p / 64); c = p % 64
+                print line[r * 128 + (side == "l" ? c : c + 64) + 1]
+            }
+        }'
+}
+
+# mirrored <wide-name>: a wide frame whose two halves agree pixel for pixel
+mirrored() {
+    values "render_tags_$1.px" | awk -v name="$1" '
+        { line[NR] = $0 }
+        END {
+            bad = 0
+            for (p = 0; p < 2048; p++) {
+                r = int(p / 64); c = p % 64
+                if (line[r * 128 + c + 1] != line[r * 128 + c + 65]) bad++
+            }
+            if (bad) { printf "render tags mismatch: %s halves differ (%d pixels)\n", name, bad > "/dev/stderr"; exit 1 }
+        }'
+}
+
+# halfcmp <wide-name> <l|r> <narrow-name>: one half of a wide frame matches a 64x32 image
+halfcmp() {
+    half "$1" "$2" > "render_tags_$1.$2.half"
+    values "render_tags_$3.px" > "render_tags_$3.narrow"
+    cmp -s "render_tags_$1.$2.half" "render_tags_$3.narrow" || {
+        echo "render tags mismatch: $1 $2 half / $3" >&2
+        exit 1
+    }
+}
+
 truth=tests/render/render_tags_truth.pov
+# Each expression renders once: the frame's left half is the expression's own selection over all
+# four boxes, its right half the boxes the expected mask places, read through an unfiltered camera.
 for method in 1 2; do
     expr=0
     for mask in 15 14 1 10 8 14 14 1 2 0 15 4 2 12 0 14; do
-        render "m${method}_expr${expr}" "$truth" +bm"$method" +mb1 Declare=Expr="$expr"
-        render "m${method}_ref${expr}" "$truth" +bm"$method" +mb1 Declare=Expected="$mask"
-        equal "m${method}_expr${expr}" "m${method}_ref${expr}"
+        wide "m${method}_expr${expr}" "$truth" +bm"$method" +mb1 Declare=Combined=1 Declare=Expr="$expr" Declare=Expected="$mask"
+        mirrored "m${method}_expr${expr}"
         expr=$((expr + 1))
     done
 done
 for expr in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     equal "m1_expr${expr}" "m2_expr${expr}"
 done
+# The empty 64x32 view every later empty-image check compares against.
+render empty "$truth" Declare=Expr=9
 render late "$truth" Declare=Late=1
-equal late m1_expr3
-render cli "$truth" 'Filter_Tags="a*" & !"b" | "camera"'
+halfcmp m1_expr3 l late
+wide cli "$truth" Declare=Combined=1 Declare=Expected=2 'Filter_Tags="a*" & !"b" | "camera"'
 equal cli m1_expr8
-render universe "$truth" Declare=Expr=1 'Filter_Tags="a*" & !"b" | "camera"'
+wide universe "$truth" Declare=Combined=1 Declare=Expr=1 Declare=Expected=2 'Filter_Tags="a*" & !"b" | "camera"'
 equal universe m1_expr8
-render precedence "$truth" 'Filter_Tags="a" | "b" & !"a" | "camera"'
+wide precedence "$truth" Declare=Combined=1 Declare=Expected=14 'Filter_Tags="a" | "b" & !"a" | "camera"'
 equal precedence m1_expr6
 render escapes_sdl tests/render/render_tags_escapes.pov
 render escapes_ref tests/render/render_tags_escapes.pov Declare=Reference=1
@@ -55,8 +110,8 @@ equal escapes_cli escapes_ref
 equal escapes_ini escapes_ref
 equal escapes_roundtrip escapes_ref
 render legacy tests/render/render_tags_legacy.pov
-render legacy_any_operator "$truth" Declare=LegacySymbols=1 Declare=Expr=1
-render legacy_none_operator "$truth" Declare=LegacySymbols=1 Declare=Expr=2
+wide legacy_any_operator "$truth" Declare=Combined=1 Declare=LegacySymbols=1 Declare=Expr=1 Declare=Expected=14
+wide legacy_none_operator "$truth" Declare=Combined=1 Declare=LegacySymbols=1 Declare=Expr=2 Declare=Expected=1
 equal legacy_any_operator m1_expr1
 equal legacy_none_operator m1_expr2
 for check in 1 2; do
@@ -89,7 +144,7 @@ render macro tests/render/render_tags_macro.pov 'Filter_Tags="keep" | none'
 render macro_ref tests/render/render_tags_macro.pov Declare=Reference=1
 equal macro macro_ref
 
-render first_filter "$truth" 'Filter_Tags="a*" & !"b" | "camera"' 'Filter_Tags="b"'
+wide first_filter "$truth" Declare=Combined=1 Declare=Expected=2 'Filter_Tags="a*" & !"b" | "camera"' 'Filter_Tags="b"'
 equal first_filter m1_expr8
 if "$POVRAY" +i"$SRCDIR/$truth" +w8 +h8 -d -p -f 'Filter_Tags=!"a' > render_tags_unclosed.log 2>&1; then
     echo "unclosed quote in Filter_Tags accepted" >&2
@@ -197,7 +252,7 @@ for scene in screen portal lights; do
     render "${scene}_m1" "tests/render/render_tags_${scene}.pov" +bm1 +mb1
     render "${scene}_m2" "tests/render/render_tags_${scene}.pov" +bm2 +mb1
     equal "${scene}_m1" "${scene}_m2"
-    if cmp -s render_tags_m1_expr9.px "render_tags_${scene}_m1.px"; then
+    if cmp -s render_tags_empty.px "render_tags_${scene}_m1.px"; then
         echo "render tags $scene rendered empty" >&2
         exit 1
     fi
@@ -208,7 +263,7 @@ for mode in 1 2 3 4; do
     equal portal_m1 "portal_mode$mode"
 done
 render portal_reject tests/render/render_tags_portal.pov Declare=Mode=5
-equal portal_reject m1_expr9
+equal portal_reject empty
 for mode in 1 2; do
     render "screen_mode$mode" tests/render/render_tags_screen.pov Declare=Mode="$mode"
     equal screen_m1 "screen_mode$mode"
@@ -216,7 +271,7 @@ done
 render screen_default tests/render/render_tags_default_camera.pov
 render screen_default_ref tests/render/render_tags_default_camera.pov Declare=Reference=1
 equal screen_default screen_default_ref
-if cmp -s render_tags_screen_default.px render_tags_m1_expr9.px; then
+if cmp -s render_tags_screen_default.px render_tags_empty.px; then
     echo "default screen camera rendered empty" >&2
     exit 1
 fi
@@ -253,7 +308,7 @@ fi
 render photons_save tests/render/render_tags_photon_maps.pov +ss1
 render photons_load tests/render/render_tags_photon_maps.pov Declare=LoadMap=1 +ss1
 equal photons_save photons_load
-if cmp -s render_tags_photons_save.px render_tags_m1_expr9.px; then
+if cmp -s render_tags_photons_save.px render_tags_empty.px; then
     echo "multi-set photon fixture rendered empty" >&2
     exit 1
 fi
@@ -274,7 +329,7 @@ fi
 grep -qi 'legacy photon map cannot be loaded' render_tags_photon_legacy_reject.log
 render portal_photons tests/render/render_tags_portal_photons.pov +ss1
 render portal_photons_dark tests/render/render_tags_portal_photons.pov Declare=Lamp=0 +ss1
-equal portal_photons_dark m1_expr9
+equal portal_photons_dark empty
 # Expected failure until photons cross portals; once they do, this reports so the check can become strict.
 if cmp -s render_tags_portal_photons.px render_tags_portal_photons_dark.px; then
     echo "expected failure: photons do not cross portals into the destination prepared set yet"
@@ -285,7 +340,7 @@ fi
 render photon_light_group tests/render/render_tags_photon_light_group.pov +ss1
 render photon_light_group_ref tests/render/render_tags_photon_light_group.pov Declare=Reference=1 +ss1
 equal photon_light_group photon_light_group_ref
-if cmp -s render_tags_photon_light_group.px render_tags_m1_expr9.px; then
+if cmp -s render_tags_photon_light_group.px render_tags_empty.px; then
     echo "light-group photon receiver rendered empty" >&2
     exit 1
 fi
@@ -303,5 +358,5 @@ paste -d' ' render_tags_parallel.hex render_tags_parallel_a.hex render_tags_para
     { other++ }
     END { if (other || a < 200 || b < 200) { printf "parallel worlds: %d from a, %d from b, %d from neither\n", a, b, other > "/dev/stderr"; exit 1 } }'
 
-rm -f render_tags_*.ppm render_tags_*.px render_tags_*.hex render_tags_*.log render_tags_photon_maps.ph render_tags_legacy.ph render_tags_radiosity.rca.set-* rendertags_generated.ini
+rm -f render_tags_*.ppm render_tags_*.px render_tags_*.hex render_tags_*.log render_tags_*.half render_tags_*.narrow render_tags_photon_maps.ph render_tags_legacy.ph render_tags_radiosity.rca.set-* rendertags_generated.ini
 echo "render_tags: expressions, inheritance, selections, macros, CSG, lights, screens and portals passed"
