@@ -2,6 +2,7 @@
 #define POVRAY_CORE_PREPAREDSOURCESELECTOR_H
 
 #include "core/configcore.h"
+#include <limits>
 #include "core/lighting/lightsource.h"
 #include "core/material/preparedsourcelayout.h"
 #include "core/scene/scenedata.h"
@@ -18,29 +19,46 @@ struct PreparedSourceDomainPolicy
     size_t maxNodes = 1048576;
 };
 
+inline size_t AutomaticSourceAxisLimit(double cells)
+{
+    if (!IsFiniteNumber(cells) || !(cells > 0))
+        throw std::invalid_argument("Invalid source cell budget");
+    const double limit = std::ceil(128 * std::max(1.0, std::cbrt(cells / 500000)));
+    if (limit >= double(std::numeric_limits<size_t>::max()))
+        throw std::invalid_argument("Source cell budget is too large");
+    return size_t(limit);
+}
+
 inline std::array<size_t, 3> AutomaticSourceCartesianCounts(const Vector3d& size, double cells = 500000)
 {
+    const size_t axisLimit = AutomaticSourceAxisLimit(cells);
     const DBL largest = std::max(size[X], std::max(size[Y], size[Z]));
     if (!IsFiniteNumber(largest) || !(largest > 0))
         throw std::invalid_argument("Invalid source extent");
     const Vector3d normalized = size / largest;
     const DBL step =
-        std::max(DBL(1.0 / 128), std::cbrt(normalized[X] * normalized[Y] * normalized[Z] / cells));
+        std::max(DBL(1) / axisLimit, std::cbrt(normalized[X] * normalized[Y] * normalized[Z] / cells));
     std::array<size_t, 3> counts;
     for (int a = X; a <= Z; ++a)
     {
         if (!IsFiniteNumber(size[a]) || !(size[a] > 0))
             throw std::invalid_argument("Invalid source extent");
-        counts[a] = size_t(std::max(DBL(1), std::ceil(normalized[a] / step)));
+        counts[a] = size_t(std::max(DBL(1), std::min(DBL(axisLimit), std::ceil(normalized[a] / step))));
     }
     return counts;
 }
 
-// The node ceiling the automatic lattice can reach for a budget: per axis at most max(128, cbrt(cells)) cells.
 inline size_t AutomaticSourceNodeBound(double cells)
 {
-    const size_t perAxis = std::max<size_t>(128, size_t(std::cbrt(std::max(cells, 1.0))));
-    return (perAxis + 1) * (perAxis + 1) * (perAxis + 1);
+    const size_t nodes = AutomaticSourceAxisLimit(cells) + 1;
+    size_t bound = 1;
+    for (int a = X; a <= Z; ++a)
+    {
+        if (nodes > std::numeric_limits<size_t>::max() / bound)
+            throw std::invalid_argument("Source node budget is too large");
+        bound *= nodes;
+    }
+    return bound;
 }
 
 struct PreparedSourceGeometry
