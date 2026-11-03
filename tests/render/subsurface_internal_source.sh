@@ -19,6 +19,21 @@ BEGIN {
     if (!(first > 0.0001 && second > first)) fail("buried source failed to light the material")
     if (abs(second / first - 2) > 0.03) fail("buried source power is not linear: " second / first)
 }'
+for shape in 0 1; do
+    for mode in 0 1; do
+        "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_source.pov" +w16 +h16 +wt2 +pr -a -d -p -v -gp \
+            +fp16 File_Gamma=1 Stochastic_Seed=0 Declare=Power=0.1 Declare=CameraOnly=1 Declare=CameraSpan=2.2 \
+            Declare=Shape="$shape" Declare=ExportMode="$mode" +o"camera$mode.ppm" >"camera$mode.log" 2>&1 ||
+            { cat "camera$mode.log"; exit 1; }
+    done
+    image_awk '
+BEGIN {
+    na = read_ppm("camera0.ppm", a); nb = read_ppm("camera1.ppm", b)
+    if (na != nb || na == 0) fail("internal source camera image sizes differ")
+    for (i = 0; i < na; i++)
+        if (a[i] != b[i]) fail("exported source changed its convex host camera radiance")
+}'
+done
 for passes in 1 2; do
     "$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_source.pov" +w24 +h24 +wt2 +pr -a -d -p -v -gp \
         +fp16 File_Gamma=1 Stochastic_Seed=0 Declare=Power=0.1 Declare=BouncePasses="$passes" \
