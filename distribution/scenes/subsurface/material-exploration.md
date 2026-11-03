@@ -34,11 +34,11 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 
 `PanelHalfDepth` sets the real material thickness on either side of its buried source, defaulting to 0.006 metres. Shallower covers, such as 0.002 metres, expose finer circuit detail with shorter optical depth. Keep geometry fixed when comparing sampling quality or renderer changes.
 
-`CameraZoom` enlarges an isolated object without changing physical dimensions. The physical hand source follows a boundary inset by 0.7 mm and occupies a 0.4 mm central slice through the palm and fingers. Its blue vein density remains separate from homogeneous flesh scattering.
+`CameraZoom` enlarges an isolated object without changing physical dimensions. The physical hand source defaults to a closed vascular layer 0.7–1.5 mm below the skin. `VeinLayer=0` selects the separate 0.4 mm central-slice diagnostic through the palm and fingers. Its blue vein density remains separate from homogeneous flesh scattering.
 
 The transparent embedded emitter has `ior off`: it supplies light within the host material without adding a separate air cavity or optical interface.
 
-`VeinLayer=1` puts the hand emission inside a vascular layer bounded by the 0.7 mm and 1.5 mm inset hand surfaces, instead of the central slice. `VeinScale=0.015` spaces the physical blue veins farther apart than the default 5 mm pattern so their diffusion remains distinct. These controls change real source placement and pattern scale, not material attenuation.
+`VeinLayer=1`, the default, puts the hand emission inside a vascular layer bounded by the 0.7 mm and 1.5 mm inset hand surfaces. `VeinLayer=0` selects the central slice. `VeinScale=0.015` spaces the physical blue veins farther apart than the default 5 mm pattern so their diffusion remains distinct. These controls change real source placement and pattern scale, not material attenuation.
 
 `VeinPattern=1` replaces the turbulent marble source density with a branched vascular network following the palm and fingers. The source remains bounded by the selected real interior layer and uses the same total luminous flux.
 

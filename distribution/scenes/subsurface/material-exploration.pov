@@ -12,7 +12,7 @@
 #ifndef (EmitterSamples) #declare EmitterSamples=96; #end
 #ifndef (VeinPattern) #declare VeinPattern=1; #end
 #ifndef (VeinScale) #declare VeinScale=0.005; #end
-#ifndef (VeinLayer) #declare VeinLayer=0; #end
+#ifndef (VeinLayer) #declare VeinLayer=1; #end
 #ifndef (CameraZoom) #declare CameraZoom=1; #end
 #ifndef (PanelHalfDepth) #declare PanelHalfDepth=0.006; #end
 #ifndef (PanelRound) #declare PanelRound=1; #end
