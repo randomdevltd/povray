@@ -2,7 +2,7 @@
 
 `material-exploration.pov` uses metres, with `mm_per_unit 1000` for subsurface distances. The eight objects are a blue-veined hand, skin ear, wax candle, lamp membrane, fruit cross-section, ribbed leaf, alien control panel and rune scroll.
 
-The 864 selectors and eight-by-five sheet are an exploration scaffold, not a final curated showcase. Legacy subsurface emission remains the default reference path while its physical replacement is being verified. The default view contains all eight objects. `Declare=Artifact=N` selects one object, numbered 0–7. `Declare=Sheet=1` places eight rows against five treatments. Use a portrait image for the sheet, such as `+W800 +H1200 +PR +WT2`.
+The 864 selectors and eight-by-five sheet are an exploration scaffold, not a final curated showcase. The default object view uses physical internal sources. Legacy subsurface emission remains available with `InternalSource=0`; the indexed matrix and sheet retain that reference path by default. The default view contains all eight objects. `Declare=Artifact=N` selects one object, numbered 0–7. `Declare=Sheet=1` places eight rows against five treatments. Use a portrait image for the sheet, such as `+W800 +H1200 +PR +WT2`.
 
 | Treatment | Transport | Pattern sampling | Source | Surface |
 | --- | --- | --- | --- | --- |
