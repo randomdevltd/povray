@@ -357,7 +357,11 @@ bool Superellipsoid::Intersect(const Ray& ray, IStack& Depth_Stack, TraceThreadD
                             if (value * v1 >= 0.0) continue;
                             solve_hit1(value, inside, v1, P1, P2, precise);
                             const double farther = (P2 - P).length() / len;
-                            if (insert_hit(ray, farther, Depth_Stack, Thread)) return true;
+                            if (insert_hit(ray, farther, Depth_Stack, Thread))
+                            {
+                                if (Type & IS_CHILD_OBJECT) Found = true;
+                                else return true;
+                            }
                             break;
                         }
                     }
