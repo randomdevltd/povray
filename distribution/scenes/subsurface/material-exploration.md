@@ -35,3 +35,5 @@ For controlled comparisons, `TransportScale`, `LookupDepth` and `LookupSpread` o
 `PanelHalfDepth` sets the real material thickness on either side of its buried source, defaulting to 0.006 metres. Shallower covers, such as 0.002 metres, expose finer circuit detail with shorter optical depth. Keep geometry fixed when comparing sampling quality or renderer changes.
 
 `CameraZoom` enlarges an isolated object without changing physical dimensions. The physical hand source follows a boundary inset by 0.7 mm and occupies a 0.4 mm central slice through the palm and fingers. Its blue vein density remains separate from homogeneous flesh scattering.
+
+The transparent embedded emitter has `ior off`: it supplies light within the host material without adding a separate air cavity or optical interface.
