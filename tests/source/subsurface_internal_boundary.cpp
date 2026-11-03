@@ -23,6 +23,7 @@ int main()
     Compute_Scaling_Transform(&transform, scale);
     body.Scale(scale, &transform);
     body.Compute_BBox();
+    body.Type |= IS_CHILD_OBJECT;
     struct Query final : RayRootQuery { bool Admit(ConstObjectPtr, double) const override { return true; } } previous;
     Ray outer(ticket);
     outer.SetRootQuery(&previous);
@@ -35,48 +36,48 @@ int main()
     };
     for (const auto& test : cases)
     {
-    const auto& point = test.point;
-    const auto& direction = test.direction;
-    auto find = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& condition)
-    { return Find_Intersection(&hit, &body, ray, condition, &thread); };
-    auto exits = [&](Intersection& hit, Vector3d& normal)
-    {
-        body.Normal(normal, &hit, &thread);
-        normal.normalize();
-        return dot(normal, direction) > 0.0;
-    };
-    const auto boundary = FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, find, exits);
-    auto implicit = [&](double distance)
-    {
-        const Vector3d q = point + direction * distance;
-        double sum = 0.0;
-        for (int axis = 0; axis < 3; ++axis) sum += std::pow(std::abs(q[axis] / scale[axis]), 2.0 / 0.18);
-        return sum - 1.0;
-    };
-    double low = 0.002, high = 0.02;
-    for (int i = 0; i < 60; ++i)
-    {
-        const double middle = 0.5 * (low + high);
-        (implicit(middle) < 0.0 ? low : high) = middle;
-    }
-    assert(std::abs(boundary.distance - 0.5 * (low + high)) < 1e-9);
-    assert(outer.GetRootQuery() == &previous);
-    bool caught = false;
-    try
-    {
-        FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002,
-            [](Intersection&, const Ray&, const RayObjectCondition&) -> bool { throw std::runtime_error("query failure"); }, exits);
-    }
-    catch (const std::runtime_error&) { caught = true; }
-    assert(caught && outer.GetRootQuery() == &previous);
-    caught = false;
-    try
-    {
-        FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, find,
-            [](Intersection&, Vector3d&) -> bool { throw std::runtime_error("boundary failure"); });
-    }
-    catch (const std::runtime_error&) { caught = true; }
-    assert(caught && outer.GetRootQuery() == &previous);
+        const auto& point = test.point;
+        const auto& direction = test.direction;
+        auto find = [&](Intersection& hit, const Ray& ray, const RayObjectCondition& condition)
+        { return Find_Intersection(&hit, &body, ray, condition, &thread); };
+        auto exits = [&](Intersection& hit, Vector3d& normal)
+        {
+            body.Normal(normal, &hit, &thread);
+            normal.normalize();
+            return dot(normal, direction) > 0.0;
+        };
+        const auto boundary = FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, find, exits);
+        auto implicit = [&](double distance)
+        {
+            const Vector3d q = point + direction * distance;
+            double sum = 0.0;
+            for (int axis = 0; axis < 3; ++axis) sum += std::pow(std::abs(q[axis] / scale[axis]), 2.0 / 0.18);
+            return sum - 1.0;
+        };
+        double low = 0.002, high = 0.02;
+        for (int i = 0; i < 60; ++i)
+        {
+            const double middle = 0.5 * (low + high);
+            (implicit(middle) < 0.0 ? low : high) = middle;
+        }
+        assert(std::abs(boundary.distance - 0.5 * (low + high)) < 1e-9);
+        assert(outer.GetRootQuery() == &previous);
+        bool caught = false;
+        try
+        {
+            FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002,
+                [](Intersection&, const Ray&, const RayObjectCondition&) -> bool { throw std::runtime_error("query failure"); }, exits);
+        }
+        catch (const std::runtime_error&) { caught = true; }
+        assert(caught && outer.GetRootQuery() == &previous);
+        caught = false;
+        try
+        {
+            FindSubsurfaceInternalBoundary(point, direction, ticket, 0.0002, find,
+                [](Intersection&, Vector3d&) -> bool { throw std::runtime_error("boundary failure"); });
+        }
+        catch (const std::runtime_error&) { caught = true; }
+        assert(caught && outer.GetRootQuery() == &previous);
     }
     std::cout << "Internal subsurface rounded boundary and query lifetime passed\n";
     Free_Noise_Tables();
