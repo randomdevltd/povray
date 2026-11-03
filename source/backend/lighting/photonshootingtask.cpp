@@ -70,6 +70,7 @@
 #include "backend/scene/view.h"
 #include "backend/scene/viewthreaddata.h"
 #include "core/lighting/emitter.h"
+#include "core/material/preparedlightaxis.h"
 #include "core/lighting/progressivephoton.h"
 #include "core/shape/csg.h"
 
@@ -427,6 +428,17 @@ void PhotonShootingTask::ShootProgressive(unsigned int pass, unsigned int shard)
             {
                 flux *= light->colour;
                 flux *= computeAttenuation(light, ray, (origin.position - light->Center).length());
+            }
+            data->photonSelfShare = MathColour(1.0);
+            if (light->selfContainer != nullptr)
+            {
+                const MathColour primary = light->selfLight && origin.pdf > 0.0 ?
+                    light->selfLight->emitter->PreparedAxis()->ColourAt(origin.position) /
+                        origin.pdf * ProgressivePhotonBudget::EmissionWeight(count, pdf) : MathColour();
+                for (int channel = 0; channel < MathColour::channels; ++channel)
+                    data->photonSelfShare[channel] = flux[channel] > 0.0 ?
+                        std::max(0.0, std::min(1.0, light->selfScale[channel] +
+                            (1.0 - light->selfScale[channel]) * primary[channel] / flux[channel])) : 1.0;
             }
             ColourChannel unused;
             const size_t before = data->progressiveSurface.size() + data->progressiveMedia.size();

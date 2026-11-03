@@ -3967,12 +3967,13 @@ double Parser::Parse_Light_Samples()
     return multiplier;
 }
 
-unsigned Parser::Parse_Light_Bounce()
+void Parser::Parse_Light_Bounce(MediaLight& light, bool surface)
 {
-    unsigned passes = 1;
+    light.bouncePasses = 1;
     if (!Peek_Token(LEFT_CURLY_TOKEN))
-        return passes;
+        return;
     bool havePasses = false;
+    bool haveSelf = false;
     Parse_Begin();
     EXPECT
         OTHERWISE
@@ -3985,7 +3986,28 @@ unsigned Parser::Parse_Light_Bounce()
                 if (!std::isfinite(value) || value < 1.0 || std::floor(value) != value ||
                     value > static_cast<double>(std::numeric_limits<unsigned>::max()))
                     Error("Bounce passes must be a positive integer in the unsigned range.");
-                passes = static_cast<unsigned>(value);
+                light.bouncePasses = static_cast<unsigned>(value);
+            }
+            else if (CurrentTokenText() == "self")
+            {
+                if (haveSelf)
+                    Error("A bounce block accepts only one self setting.");
+                haveSelf = true;
+                if (surface)
+                    Error("Bounce self is for interior lights, not surface lights.");
+                Get_Token();
+                switch (CurrentCategorizedTokenId())
+                {
+                    CASE_EXPRESS_RAW
+                        break;
+                    OTHERWISE
+                        Error("Bounce self requires a scalar or RGB expression.");
+                }
+                UNGET
+                Parse_Colour(light.bounceSelf);
+                for (int channel = 0; channel < MathColour::channels; ++channel)
+                    if (!std::isfinite(light.bounceSelf[channel]) || light.bounceSelf[channel] < 0.0 || light.bounceSelf[channel] > 1.0)
+                        Error("Bounce self channels must be finite and between 0 and 1.");
             }
             else
             {
@@ -3995,7 +4017,6 @@ unsigned Parser::Parse_Light_Bounce()
         END_CASE
     END_EXPECT
     Parse_End();
-    return passes;
 }
 
 std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
@@ -4080,7 +4101,7 @@ std::shared_ptr<MediaLight> Parser::Parse_Light(bool surface)
             {
                 if (light->bouncePasses != 0)
                     Error("A light block accepts only one bounce setting.");
-                light->bouncePasses = Parse_Light_Bounce();
+                Parse_Light_Bounce(*light, surface);
             }
             else if (CurrentTokenText() == "attenuation")
             {

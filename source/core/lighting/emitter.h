@@ -152,6 +152,7 @@ struct MediaLight final
 {
     PIGMENT *pigment = nullptr;     ///< the light's own colour or pattern; null for solid white
     unsigned bouncePasses = 0;
+    MathColour bounceSelf = MathColour(1.0);        ///< how much of the bounced light lights the media that bounced it: 1 all, 0 none
     bool useEmission = false;      ///< use the owning interior's combined emission as the input field
     double brightness = 1.0;        ///< a plain multiplier of the input when no unit follows
     double lumens = -1.0;           ///< brightness given as lumens: the total power under 1 unit = 1 m; negative when not
@@ -159,7 +160,7 @@ struct MediaLight final
     double attenuationScale = 1.0;  ///< 1 physical, 0 no falloff; the far field is this times fainter
     double attenuationPower = 2.0;  ///< how steeply the falloff leaves the pivot at the emitter's radius
     double cutoff = kDefaultLightCutoff; ///< a point the light could light less than this is left out; 0 never
-    int samples = 16;               ///< emitter draws per receiver point
+    int samples = 64;               ///< emitter draws per receiver point
     bool shadowless = false, mediaInteraction = true, mediaAttenuation = true;
     int photonReflection = -1, photonRefraction = -1;
     bool photonOptions = false;

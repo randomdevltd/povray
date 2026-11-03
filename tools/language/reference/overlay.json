@@ -59,7 +59,7 @@
   "image_map": "Pigment pattern wrapping a 2-D image file around the object.",
   "bump_map": "Normal perturbation pattern wrapping a 2-D image file.",
   "refraction": "Independent interior index contributions: one or more raw scalar functions and scene-unit detail, or off.",
-  "bounce": "Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits.",
+  "bounce": "Scattering orders of the light its object receives: bare `bounce` is one pass, `bounce { passes N }` runs N, and `self` in an interior light sets a scalar or RGB self share from 0 to 1; `off` keeps the bounce off its own medium. With no pigment or emission input the block is bounce-only and brightness multiplies what it re-emits.",
   "attenuation": "Falloff and cutoff of a light: `attenuation { power P scale S cutoff C }`, power 2 and scale 1 by default (physical), interior lights only; far away the light falls as 1/d^P and the scale divides it. `cutoff`, 0.000004 by default and also on surface lights, leaves the light out where it could add less than C."
  },
  "words": {
@@ -286,6 +286,10 @@
   "emission": {
    "kind": "item",
    "text": "Light colour source in a light block: bare `emission` copies the object's own emission (surface: pigment times finish emission; interior: its media emission) instead of a pigment. Also finish emission (surface glow) and media emission (appearance only)."
+  },
+  "self": {
+   "kind": "item",
+   "text": "In an interior light's bounce block: self 0.05 keeps five percent of its bounced light on its own media, at the camera and in its own next pass. A scalar or RGB vector sets finite channels from 0 to 1; on is 1 and off is 0. Other receivers and original emission retain their full light. Default on; any explicit setting is refused in a surface light. Contextual: remains available as an identifier."
   },
   "cutoff": {
    "kind": "item",

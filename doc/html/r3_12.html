@@ -144,7 +144,7 @@ INTERIOR_LIGHT_ITEM:
   pigment { PIGMENT } | emission | brightness Value [nits | lumens] |
   attenuation { [power Value] [scale Value] [cutoff Value] } | samples Integer |
   shadowless [Bool] | media_interaction [Bool] | media_attenuation [Bool] |
-  photons { [reflection Bool] [refraction Bool] } | bounce [{ passes Integer }]
+  photons { [reflection Bool] [refraction Bool] } | bounce [{ [passes Integer] [self Float | Vector | rgb Vector | on | off] }]
 </pre>
 <p>Interior light default values:</p>
 <pre>
@@ -152,7 +152,7 @@ pigment          : solid white
 emission         : absent (use pigment)
 brightness       : 1.0 nits
 attenuation      : power 2, scale 1 (physical), cutoff 0.000004
-samples          : 16
+samples          : 64
 shadowless       : off
 media_interaction: on
 media_attenuation: on
@@ -250,7 +250,7 @@ box { &lt;-1, 3, -1&gt;, &lt;1, 3.05, 1&gt; light { brightness 5 attenuation { c
 <p>Preparation publishes an immutable RGB light field on the interior's shared world-space layout before tracing. Solid pigment colours remain analytic; other source fields are sampled on that layout and reconstructed by trilinear interpolation. The source geometry clips this field when light is evaluated, without masking grid nodes at curved boundaries. Runtime sampling never evaluates the authored source pattern. This sampled field approximates the authored pattern: subcell detail can be missed, so compare finer layouts for mean and shape convergence. With <code>emission</code>, nonlinear mixing is applied before the combined light field is interpolated, so it can differ from mixing separately interpolated media fields. The field layout may be refined by the interior's prepared-media resolution or refraction detail; changing absorption or scattering coefficients does not change the light's normalization.</p>
 <p>Power normalization and the source proposal use this same prepared RGB target. Four independently stratified volume estimates use 16<sup>3</sup>, 24<sup>3</sup> and at most 32<sup>3</sup> points each, targeting at most 0.25% relative discrepancy. Unresolved variation is reported; nonzero lumens require a positive integral. Positive nits with an unresolved power integral are rejected rather than published with zero source-selection weight. Half the position proposal remains uniform over the bounding box, preserving support of the prepared target. Every sample divides by its complete proposal probability.</p>
 <p>At every distance, receivers integrate the finite volume rather than a centre point or a silhouette disk. Direction-and-chord sampling keeps the near field finite without a cell-distance clamp. Distant inverse-square divergence and the narrowing angular penumbra follow the same source. The <code>samples</code> count controls integration noise and shadow quality, not expected brightness. Increasing it costs more source evaluations and shadow rays; it is not an anti-aliasing setting.</p>
-<p>The light's <code>samples</code> <em>N</em> says how detailed it is for every receiver, and each receiver scales it with its own <code>light_samples</code> <em>M</em> (default 1.0): a surface draws round(<em>N</em> &times; <em>M</em>) source positions per hit (<a href="r3_6.html#r3_6_1_3">finish</a>), and a varying method 4 medium draws &radic;<em>N</em> &times; <em>M</em> per cell width of ray (<a href="r3_7.html#r3_7_2_1">media</a>), where the cell width is that of the finest grid among the media the ray is in. In the medium the draws are evenly spaced along the ray from an offset drawn per light, each at its own position with its own shadow ray traced through the media to the light, where the light's falloff and the medium's phase apply; at <code>samples 16</code> that is 4 per cell width. A finer prepared resolution therefore takes more draws, and <em>M</em> scales a medium's lighting cost in proportion. Constant method 4 media have no steps and sample camera distance and source position jointly instead, as do the light blocks' contributions along legacy media intervals. For each light, <code>samples</code> sets the number of pairs for one geometric ray segment, shared across its numerical refraction chords and media integration calls. Each pair uses the local scattering coefficient, phase function, camera transmission and source-connection transmission, divided by both sampling probabilities. Optical depth and authored glow retain their own integration steps; refining those steps does not multiply the source-ray count. A recursive continuation through a surface starts another segment, so this is not a cap on an entire reflected or refracted ray tree. Legacy media methods 1 to 3 do not scatter a light block's light; see <em>Light blocks and classic transport</em> under Limits and Messages. Console statistics report collected legs, cells and attempted source pairs, plus the maximum cells per leg and an estimate of live sampling scratch space across nested legs on one render thread; allocator overhead and retained pool storage are not included.</p>
+<p>The light's <code>samples</code> <em>N</em> (default 64 for both surface and interior light blocks) says how detailed it is for every receiver, and each receiver scales it with its own <code>light_samples</code> <em>M</em> (default 1.0): a surface draws round(<em>N</em> &times; <em>M</em>) source positions per hit (<a href="r3_6.html#r3_6_1_3">finish</a>), and a varying method 4 medium draws &radic;<em>N</em> &times; <em>M</em> per cell width of ray (<a href="r3_7.html#r3_7_2_1">media</a>), where the cell width is that of the finest grid among the media the ray is in. In the medium the draws are evenly spaced along the ray from an offset drawn per light, each at its own position with its own shadow ray traced through the media to the light, where the light's falloff and the medium's phase apply; at <code>samples 64</code> that is 8 per cell width. A finer prepared resolution therefore takes more draws, and <em>M</em> scales a medium's lighting cost in proportion. Constant method 4 media have no steps and sample camera distance and source position jointly instead, as do the light blocks' contributions along legacy media intervals. For each light, <code>samples</code> sets the number of pairs for one geometric ray segment, shared across its numerical refraction chords and media integration calls. Each pair uses the local scattering coefficient, phase function, camera transmission and source-connection transmission, divided by both sampling probabilities. Optical depth and authored glow retain their own integration steps; refining those steps does not multiply the source-ray count. A recursive continuation through a surface starts another segment, so this is not a cap on an entire reflected or refracted ray tree. Legacy media methods 1 to 3 do not scatter a light block's light; see <em>Light blocks and classic transport</em> under Limits and Messages. Console statistics report collected legs, cells and attempted source pairs, plus the maximum cells per leg and an estimate of live sampling scratch space across nested legs on one render thread; allocator overhead and retained pool storage are not included.</p>
 <ul>
   <li>Surface receivers apply their BSDF and incidence cosine. Scattering media use their scattering coefficient and phase function, without a surface cosine. Both receive the same source distribution.</li>
   <li>With <code>media_attenuation</code>, shadow rays integrate media along the path, including media inside the emitting container. These coefficients affect transport, never source generation.</li>
@@ -380,7 +380,7 @@ cylinder {
 <a name="r3_12_6_3"></a>
 <div class="content-level-h4" contains="Glow Inside Other Media" id="r3_12_6_3">
 <h4>3.12.6.3 Glow Inside Other Media</h4>
-<p><code>light_clouds.pov</code> lets sky lanterns drift into a cumulus and light it from inside, and a flash light a storm tower from within. Each lantern is stated in lumens (<code>Declare=LanternLumens=N</code>, 400 by default, a large paper lantern) and falls off physically, so the light out of each lantern's open bottom stands out as a cone from the light through its paper; the storm lights are a brightness over their colour. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it; each fish uses <code>light { emission brightness 3.5 }</code>, an emission gain over its own glow. In each, the light is stated in its interior's light block, in nits, as a gain over the media's own emission, or in lumens, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
+<p><code>light_clouds.pov</code> uses 64 samples per light by default (<code>Declare=Samples=N</code>) and lets nine sky lanterns drift into a cumulus and light it from inside, and a blue lightning flash light a storm tower from within. The lightning keeps its previous luminance while shifting toward blue with a little red. Four lanterns sit along the cumulus's lower-right edge facing the tower; <code>Declare=Bounce=0</code> disables only the clouds' bounced light for a matching comparison. The cumulus uses two bounce orders with brightness 48 (<code>Declare=BounceBrightness=N</code>) and self share 0.00625 (<code>Declare=SelfBounce=N</code>), so its outgoing warm light is strong without a large gain in its own appearance. The tower uses a weak reciprocal bounce brightness of 0.1 (<code>Declare=StormBounceBrightness=N</code>), while the distant cloud deck remains a receiving medium rather than an additional bounce source. Each lantern is stated in lumens (<code>Declare=LanternLumens=N</code>, 400 by default, a large paper lantern) and falls off physically, so the light out of each lantern's open bottom stands out as a cone from the light through its paper; the storm lights are a brightness over their colour. <code>light_explosion.pov</code> shades a fireball's light with its own smoke and warps the street behind it with the heat. <code>light_fish.pov</code> makes glowing fish and jellyfish the only light in water that dims and tints it; each fish uses <code>light { emission brightness 3.5 }</code>, an emission gain over its own glow. In each, the light is stated in its interior's light block, in nits, as a gain over the media's own emission, or in lumens, and the surrounding media act on it through <code>media_attenuation</code> and, for the scattering, <code>media_interaction</code>.</p></div>
 
 <a name="r3_12_6_4"></a>
 <div class="content-level-h4" contains="Overlapping and Contained Lights" id="r3_12_6_4">
@@ -407,7 +407,7 @@ pigment          : solid white
 emission         : absent (use pigment)
 brightness       : 1.0 nits
 attenuation      : cutoff 0.000004
-samples          : 16
+samples          : 64
 shadowless       : off
 media_interaction: on
 media_attenuation: on
@@ -438,7 +438,7 @@ box { &lt;-0.6, 1, -0.05&gt;, &lt;0.6, 2, 0.05&gt;
 // 800 lumens spread over the panel, whatever its size
 box { &lt;-0.6, 1, -0.05&gt;, &lt;0.6, 2, 0.05&gt;
   pigment { rgb 1 } finish { ambient 0 emission 1 diffuse 0 }
-  light { brightness 800 lumens samples 16 }
+  light { brightness 800 lumens samples 64 }
 }
 // an 806 lumen panel in a scene drawn in centimetres (0.01 metre per unit)
 box { &lt;-30, 100, -2&gt;, &lt;30, 160, 2&gt;
@@ -480,11 +480,12 @@ box { &lt;-30, 100, -2&gt;, &lt;30, 160, 2&gt;
 <p>Light normally stops at the surfaces it lights. A light block with <code>bounce</code> lets its own object scatter on the light that reaches it, so that a wall lit by a lamp becomes a soft light itself and a glowing fog lights its surroundings from every point of the cloud. This is light the object receives from other sources, not emission of its own.</p>
 <pre>
 BOUNCE:
-  bounce | bounce { passes Integer }
+  bounce | bounce { [passes Integer] [self Float | Vector | rgb Vector | on | off] }
 </pre>
 <table width="100%" class="option-list">
 <tr><td><code>bounce</code></td><td>Bare <code>bounce</code> requests one bounce order: the light the object scatters once.</td></tr>
 <tr><td><code>passes N</code></td><td>The number of orders, a finite positive integer in the unsigned range (default 1). Order <em>k</em> is the light that the sources of order <em>k</em>&minus;1 give the object, scattered again. More passes add dimmer light and cost preparation time.</td></tr>
+<tr><td><code>self Scale</code></td><td>Interior lights only. A scalar or RGB vector sets the fraction of bounced light scattered by its own media, per channel from 0 to 1 (default <code>on</code>, or 1). <code>off</code> is 0. See <em>Volumes</em> below.</td></tr>
 </table>
 <pre>
 box { &lt;-1.5, -0.1, -1.5&gt;, &lt;1.5, 0, 1.5&gt;
@@ -498,7 +499,7 @@ box { &lt;-1.5, -0.1, -1.5&gt;, &lt;1.5, 0, 1.5&gt;
   <li><strong>No input, with <code>bounce</code>:</strong> a <em>bounce-only</em> block. It emits nothing of its own, whatever the material's or media's emission, and <code>brightness</code> is a plain multiplier of the light it re-emits, default 1, the physical amount. <code>nits</code> and <code>lumens</code> state an emission it does not have, so they are an error: <code>A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.</code></li>
   <li><strong>An input, with <code>bounce</code>:</strong> the input emits as stated, <code>brightness</code> and its unit apply to it alone, and the bounced orders keep their physical strength.</li>
 </ul>
-<p>Adding <code>bounce</code> to a block with no input therefore makes it bounce-only: a white emitter that also bounces writes <code>pigment { rgb 1 }</code>, and an emitting material or medium that also bounces writes <code>emission</code>. An explicit input may stand before or after <code>bounce</code>. <code>bounce</code> and <code>passes</code> are matched by their text and remain free as identifiers elsewhere.</p>
+<p>Adding <code>bounce</code> to a block with no input therefore makes it bounce-only: a white emitter that also bounces writes <code>pigment { rgb 1 }</code>, and an emitting material or medium that also bounces writes <code>emission</code>. An explicit input may stand before or after <code>bounce</code>. <code>bounce</code>, <code>passes</code> and <code>self</code> are matched by their text and remain free as identifiers elsewhere.</p>
 <p><strong>Passive sources.</strong> The wall above is bounce-only: it is a <em>passive</em> source, which shines only the light it receives from other lights. Passive objects light a scene indirectly without an area light placed at each wall. A passive source with nothing lighting it is dark. Its brightness scales every order it re-emits, so with <code>brightness 0.5</code> it sends on half of what it receives, and light that it receives back from itself in a later pass is halved again.</p>
 <p><strong>Surfaces.</strong> A surface scatters the light it receives diffusely according to its finish <code>diffuse</code>, <code>brilliance</code> and colour. Bounce does not attempt specular or mirror transport. A surface whose finish uses subsurface scattering with method 2 also sends its subsurface light on: the light that enters the object diffuses through it between the surface points and leaves from them, so a skin or wax object with a bounce block lights its neighbours with the glow that comes through it. Facing parts of one object with air between them exchange no subsurface light. This needs <code>subsurface { method 2 }</code> (the default from <code>#version 4.0</code>).</p>
 <p><strong>Volumes.</strong> In an <code>interior { light { bounce } }</code> the order is the light that the interior's scattering media scatter on, with their scattering coefficients and phase functions (isotropic, Rayleigh, Henyey-Greenstein, Mie).</p>
@@ -507,6 +508,17 @@ sphere { 0, 1 pigment { rgbt 1 }
   interior {
     media { method 4 scattering { 1, rgb 0.3 } emission rgb 2 }
     light { emission brightness 3 lumens bounce { passes 2 } samples 8 }
+  }
+}
+</pre>
+<p><code>scenes/interior/media/bounce_self_mirror.pov</code> shows a concave mirror returning an interior light's original warm emission at <code>self 0</code>. Compare <code>Declare=Photons=0</code> and <code>Declare=Photons=1</code> for the returned light, or <code>Declare=Self=0</code> and <code>Declare=Self=1</code> for the added self bounce.</p>
+<p>Saved progressive photon maps use format version 4 to retain the original and bounced light's self shares. Regenerate maps saved by older builds.</p>
+<p><strong>Self illumination.</strong> <code>bounce { self 0.05 }</code> keeps five percent of the bounce on its own media; <code>self &lt;0.1, 0.03, 0&gt;</code> or <code>self rgb &lt;0.1, 0.03, 0&gt;</code> sets the fraction independently for red, green and blue. Every channel must be finite and between 0 and 1; negative values and values above 1 are errors. The default <code>self on</code> keeps the whole bounce. <code>bounce { self off }</code> keeps a medium's bounced light off the medium that bounced it, an artistic choice rather than a physical one. The bounced light still lights surfaces and every other medium, as with <code>self on</code>, but the container's own media do not scatter it: not on camera rays, and not as the light the next pass of the same container gathers. Later passes of that container therefore carry only light that has reached it from other bounced objects. The container is told apart by identity, not by position: where its media overlap another container's, the other's media still scatter the bounce. The medium's own emission, given by <code>pigment</code> or <code>emission</code>, lights it as before, so a lone cloud with <code>self off</code> keeps exactly the look it has without <code>bounce</code> while it brightens its neighbours.</p>
+<pre>
+box { &lt;-27, 12, -2&gt;, &lt;3, 33, 24&gt; pigment { rgbt 1 }
+  interior {
+    media { scattering { 5, rgb 0.3 } density { bozo } }
+    light { samples 64 bounce { passes 1 self off } }
   }
 }
 </pre>
@@ -522,6 +534,10 @@ sphere { 0, 1 pigment { rgbt 1 }
 <tr><td><code>A light block accepts only one bounce setting.</code></td><td>Error: two <code>bounce</code> items in one block.</td></tr>
 <tr><td><code>A bounce-only light block takes a plain brightness multiplier; nits and lumens need an emission input.</code></td><td>Error: <code>nits</code> or <code>lumens</code> in a block with <code>bounce</code> and neither <code>pigment</code> nor <code>emission</code>.</td></tr>
 <tr><td><code>A bounce block accepts only one passes setting.</code></td><td>Error.</td></tr>
+<tr><td><code>A bounce block accepts only one self setting.</code></td><td>Error.</td></tr>
+<tr><td><code>Bounce self requires a scalar or RGB expression.</code></td><td>Error: a self setting without a value.</td></tr>
+<tr><td><code>Bounce self channels must be finite and between 0 and 1.</code></td><td>Error: a scalar or RGB self share outside the finite range 0 to 1.</td></tr>
+<tr><td><code>Bounce self is for interior lights, not surface lights.</code></td><td>Error: any explicit <code>self</code> setting in the bounce block of a surface light.</td></tr>
 <tr><td><code>Bounce passes must be a positive integer in the unsigned range.</code></td><td>Error: zero, negative, fractional, non-finite or very large passes.</td></tr>
 <tr><td><code>Surface bounce cannot prepare stochastic crand diffuse finishes</code></td><td>Error before tracing: a finish of a bounced surface uses <code>crand</code>. Its diffuse light is random, with nothing to scatter on.</td></tr>
 <tr><td><code>Surface bounce cannot prepare Fresnel or energy-conserving reflection attenuation</code></td><td>Error before tracing: the finish of a bounced surface uses <code>fresnel</code> or <code>conserve_energy</code> with reflection. With neither <code>pigment</code> nor <code>emission</code> given, the same finish is reported by the emission message of the surface light instead.</td></tr>
