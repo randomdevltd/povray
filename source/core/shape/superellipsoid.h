@@ -85,6 +85,7 @@ class Superellipsoid final : public ObjectBase
         virtual bool ReturnsAllRoots() const override { return (Type & IS_CHILD_OBJECT) != 0; }
         virtual bool Inside(const Vector3d&, TraceThreadData *) const override;
         virtual void Normal(Vector3d&, Intersection *, TraceThreadData *) const override;
+        double SurfaceTolerance() const override;
         virtual void Translate(const Vector3d&, const TRANSFORM *) override;
         virtual void Rotate(const Vector3d&, const TRANSFORM *) override;
         virtual void Scale(const Vector3d&, const TRANSFORM *) override;

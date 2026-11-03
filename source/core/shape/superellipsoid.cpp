@@ -1362,6 +1362,13 @@ int Superellipsoid::find_ray_plane_points(const Vector3d& P, const Vector3d& D, 
 *
 ******************************************************************************/
 
+double Superellipsoid::SurfaceTolerance() const
+{
+    double squared = 0.0;
+    for (int axis = 0; axis < 3; ++axis) squared += Sqr(double(BBox.size[axis]));
+    return 2.0 * ZERO_TOLERANCE * std::sqrt(squared);
+}
+
 void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vector3d& tP1, Vector3d& P, bool precise) const
 {
     int i;
@@ -1471,20 +1478,7 @@ void Superellipsoid::solve_hit1(DBL v0, const Vector3d& tP0, DBL v1, const Vecto
     }
 
     if (i == MAX_ITERATIONS)
-    {
-        // The loop never quite closed in on the result - just use the point
-        // closest to zero.  This really shouldn't happen since the max number
-        // of iterations is enough to converge with straight bisection.
-
-        if (fabs(v0) < fabs(v1))
-        {
-            P = P0;
-        }
-        else
-        {
-            P = P1;
-        }
-    }
+        solve_hit1(v0, P0, v1, P1, P, true);
 }
 
 
