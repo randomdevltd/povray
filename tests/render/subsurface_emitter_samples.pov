@@ -5,7 +5,7 @@
 #ifndef (Source) #declare Source = 0; #end
 global_settings {
   assumed_gamma 1
-  mm_per_unit (Cloud ? 1 : 10)
+  mm_per_unit (Cloud ? 1 : 1000)
   subsurface { method 2 samples 4, 1 spacing 2 }
 }
 camera { location <0,1.5,-4> look_at <0,0.4,0> right x*image_width/image_height angle 45 }
@@ -20,7 +20,7 @@ light_source { <-2,5,-3> rgb 1.3
 #end
 box { <-0.6,0,-0.6>, <0.6,1,0.6>
   pigment { rgb <0.8,0.4,0.25> }
-  finish { ambient 0 diffuse 0 light_samples Multiplier
+  finish { ambient 0 diffuse 0.7 light_samples Multiplier
     subsurface { translucency <3,2,1.5> minimum_influence 0 }
   }
   interior { ior 1.4 }
