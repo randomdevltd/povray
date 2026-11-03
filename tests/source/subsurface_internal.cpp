@@ -1,4 +1,5 @@
 #include "core/lighting/subsurfaceinternal.h"
+#include "core/lighting/subsurfaceinternalsampling.h"
 #include "core/lighting/subsurfaceexit.h"
 #include <cassert>
 #include <cmath>
@@ -15,6 +16,57 @@ static void Near(double actual, double expected, double tolerance = 1e-12)
 
 int main()
 {
+    for (unsigned count : {1u, 2u, 3u, 7u, 10u, 32u, 37u, 128u})
+        for (unsigned dimension = 0; dimension < 32; ++dimension)
+        {
+            std::vector<bool> visited(count, false);
+            for (unsigned sample = 0; sample < count; ++sample)
+            {
+                const double value = SubsurfaceInternalDraw(718, sample, count, dimension);
+                assert(value >= 0.0 && value < 1.0);
+                const unsigned stratum = unsigned(value * count);
+                assert(!visited[stratum]);
+                visited[stratum] = true;
+                Near(value, SubsurfaceInternalDraw(718, sample, count, dimension));
+            }
+        }
+    for (unsigned dimension = 0; dimension < 8; ++dimension)
+    {
+        double mean = 0.0;
+        for (unsigned seed = 0; seed < 8192; ++seed)
+            mean += SubsurfaceInternalDraw(seed, 7, 32, dimension) / 8192;
+        Near(mean, 0.5, 0.012);
+    }
+    double sums[2] = {}, squares[2] = {};
+    const unsigned seeds = 8192, count = 32;
+    // A sparse patterned source on a Beer-weighted slab chord, behind an attenuating layer.
+    auto slab = [](double flight, double source)
+    {
+        return (flight < 0.45 && (source < 0.08 || (source > 0.45 && source < 0.53))) ? 1.0 : 0.0;
+    };
+    for (unsigned seed = 0; seed < seeds; ++seed)
+        for (unsigned method = 0; method < 2; ++method)
+        {
+            double estimate = 0.0;
+            for (unsigned sample = 0; sample < count; ++sample)
+            {
+                const auto pathKey = DeriveKey(seed, kDrawSubsurface, sample);
+                auto draw = [&](unsigned d)
+                { return method ? SubsurfaceInternalDraw(seed, sample, count, d) : Draw(pathKey, kDrawSubsurface, d); };
+                estimate += slab(draw(0), draw(1)) / count;
+            }
+            sums[method] += estimate;
+            squares[method] += estimate * estimate;
+        }
+    double variance[2];
+    for (unsigned method = 0; method < 2; ++method)
+    {
+        const double mean = sums[method] / seeds;
+        variance[method] = squares[method] / seeds - mean * mean;
+        Near(mean, 0.45 * 0.16, 4.0 * std::sqrt(variance[method] / seeds));
+        std::cout << "patterned slab " << method << " mean=" << mean << " variance=" << variance[method] << '\n';
+    }
+    assert(variance[1] < variance[0] * 0.8);
     // A directional exit L=3*cosine^2 has flux/pi=1.5, independent of its diffuse export profile.
     for (double eta : {1.0, 1.33, 1.5, 2.0})
     {
@@ -43,6 +95,19 @@ int main()
         boundary, source, zero, [] { return 0.99; }), -std::expm1(-2.0) / 2.0);
     Near(SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1), 2.0, 0.0, 1.0,
         boundary, source, zero, [] { return 0.01; }), -std::expm1(-2.0) / 2.0);
+
+    double gray[3] = {};
+    for (unsigned channel = 0; channel < 3; ++channel)
+        for (unsigned sample = 0; sample < 32; ++sample)
+        {
+            std::uint64_t dimension = 0;
+            gray[channel] += SampleSubsurfaceInternalRadiance(Vector3d(), Vector3d(0, 0, 1),
+                1.0, 1.0, 1.0, boundary, source,
+                [](const Vector3d& p, double) { return p[Z] > 0.2 ? 1.0 : 0.0; },
+                [&] { return SubsurfaceInternalDraw(718, sample, 32, dimension++); });
+        }
+    assert(gray[0] == gray[1]);
+    assert(gray[1] == gray[2]);
 
     // The same millimetre-thick source authored in metres or millimetres has the same radiance.
     for (double mmPerUnit : {1.0, 1000.0})
