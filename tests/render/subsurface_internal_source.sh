@@ -47,4 +47,7 @@ BEGIN {
     if (abs(bounce / emission - 1) > 0.1) fail("emission and bounce internal source powers differ: " bounce / emission)
     if (abs(both / emission - 1) > 0.02) fail("emission plus bounce counted internal primary twice: " both / emission)
 }'
+"$POVRAY" +i"$SRCDIR/tests/render/subsurface_internal_source.pov" +w1 +h1 +wt2 +pr -a -d -p -v -gp \
+    Declare=ExportMode=1 Declare=Method=1 Declare=SourceDepth=-10 +o"unrelated.ppm" >"unrelated.log" 2>&1 ||
+    { cat "unrelated.log"; exit 1; }
 echo 'subsurface_internal_source: buried emission, linear power, source-order and emission/bounce isolation passed'
