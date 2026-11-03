@@ -245,7 +245,7 @@ public:
     double Radius() const override { return radius; }
     double Reach(const Vector3d& from) const override { return BoxReach(from, geometry.Lower(), geometry.Size()); }
     const MathColour& Intensity() const override { return intensity; }
-    MathColour RadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const
+    MathColour SurfaceRadianceAt(const Intersection& hit, const Vector3d& normal, const Vector3d& outgoing, TraceThreadData* td) const override
     {
         return field->Sample(hit, normal, outgoing, td) +
             (includePrimary ? primary->SurfaceRadianceAt(hit, normal, outgoing, td) : MathColour());
@@ -263,7 +263,7 @@ public:
         sample.surfaceObject = surface.intersection.Object;
         sample.surfaceIntersection = std::make_shared<const Intersection>(surface.intersection);
         sample.pdf = 1.0 / surface.areaWeight;
-        sample.weight = RadianceAt(surface.intersection, surface.normal, surface.normal, td) * surface.areaWeight;
+        sample.weight = SurfaceRadianceAt(surface.intersection, surface.normal, surface.normal, td) * surface.areaWeight;
         return sample;
     }
     bool SampleToward(const Vector3d& from, const EmitterDraw& draw, TraceThreadData* td, EmitterSample& sample) const override
@@ -278,7 +278,7 @@ public:
         sample.surfaceObject = surface.intersection.Object;
         sample.surfaceIntersection = std::make_shared<const Intersection>(surface.intersection);
         sample.pdf = 1.0 / surface.areaWeight;
-        sample.weight = RadianceAt(surface.intersection, surface.normal, -ray.Direction, td) * surface.solidAngleWeight;
+        sample.weight = SurfaceRadianceAt(surface.intersection, surface.normal, -ray.Direction, td) * surface.solidAngleWeight;
         return !sample.weight.IsZero();
     }
     MathColour PhotonEmissionWeight(const EmitterSample& sample, const Vector3d& outgoing) const override
@@ -289,7 +289,7 @@ public:
     {
         if (!(sample.pdf > 0.0)) return MathColour();
         if (!sample.surfaceIntersection) throw std::runtime_error("Surface photon sample is missing its surface point");
-        return RadianceAt(*sample.surfaceIntersection, sample.normal, outgoing, td) * (std::fabs(dot(sample.normal, outgoing)) / sample.pdf);
+        return SurfaceRadianceAt(*sample.surfaceIntersection, sample.normal, outgoing, td) * (std::fabs(dot(sample.normal, outgoing)) / sample.pdf);
     }
     Vector3d Direction(const EmitterSample& sample, double u, double v, double& pdf) const override
     {
