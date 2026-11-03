@@ -7,6 +7,7 @@
 #ifndef (SubsurfaceSamples) #declare SubsurfaceSamples=12; #end
 #ifndef (InternalSamples) #declare InternalSamples=2; #end
 #ifndef (EmitterSamples) #declare EmitterSamples=16; #end
+#ifndef (CameraZoom) #declare CameraZoom=1; #end
 #ifndef (PanelHalfDepth) #declare PanelHalfDepth=0.006; #end
 #ifndef (PanelRound) #declare PanelRound=1; #end
 #ifndef (EmissionExport) #declare EmissionExport=0; #end
@@ -70,7 +71,7 @@ background {rgb <0.012,0.019,0.031>}
 #declare SX=0.12;
 #declare SY=(Artifact=2?max(0.17,WaxLength+0.085):0.17);
 #declare ViewWidth=max(Cols*SX+0.035,(Rows*SY+0.025)*image_width/image_height);
-camera {orthographic location <0,0.07,-0.8> look_at <0,0,0> right x*ViewWidth up y*ViewWidth*image_height/image_width}
+camera {orthographic location <0,0.07,-0.8> look_at <0,0,0> right x*ViewWidth/CameraZoom up y*ViewWidth*image_height/image_width/CameraZoom}
 plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
 #macro Flesh(A,T)
  #local K=Travel[T]; #local D=Depths[T]; #local Spread=D*0.2;
@@ -114,16 +115,18 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   }
  #end
 #end
+#macro HandBoundary(Inset)
+ merge {
+  sphere {0,1 scale <0.025-Inset,0.028-Inset,0.009-Inset> translate y*-0.006}
+  cone {<0,-0.026,0>,0.016-Inset,<0,-0.05,0>,0.007-Inset}
+  #for(J,0,3) sphere_sweep {linear_spline 2 <(J-1.5)*0.012,0.008,0>,0.0055-Inset, <(J-1.5)*0.015,0.044+0.009*sin(J*pi/3),0>,0.0045-Inset} #end
+  sphere_sweep {linear_spline 2 <-0.019,-0.012,0>,0.007-Inset, <-0.038,0.009,0>,0.005-Inset}
+ }
+#end
 #macro Specimen(A,T)
  #switch(A)
  #case(0)
-  merge {
-   sphere {0,1 scale <0.025,0.028,0.009> translate y*-0.006}
-   cone {<0,-0.026,0>,0.015,<0,-0.05,0>,0.011}
-   #for(J,0,3) sphere_sweep {linear_spline 2 <(J-1.5)*0.012,0.008,0>,0.0055, <(J-1.5)*0.015,0.044+0.009*sin(J*pi/3),0>,0.0045} #end
-   sphere_sweep {linear_spline 2 <-0.019,-0.012,0>,0.007, <-0.038,0.009,0>,0.005}
-   Flesh(A,T)
-  } #break
+  object {HandBoundary(0) Flesh(A,T)} #break
  #case(1)
   difference {
    merge {torus {0.023,0.008 rotate x*90 scale <0.78,1.4,1>} sphere {0,1 scale <0.018,0.028,0.004> translate <0,-0.005,0.002>} sphere {0,0.009 translate <0,-0.033,0>}}
@@ -169,7 +172,12 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
  #end
  #if (InternalSource & SourceMode=1 & (A=0 | A=6 | A=7))
   #local Glow=(A=7?<1.8,0.32,0.04>:<0.05,0.4,1.7>);
-  box {<(A=0?-0.013:-0.025),(A=0?-0.020:-0.034),-0.0002>,<(A=0?0.013:0.025),(A=0?0.008:0.035),0.0002> pigment {rgbt 1}
+  #if (A=0)
+   intersection {HandBoundary(0.0007) box {<-0.06,-0.06,-0.0002>,<0.06,0.07,0.0002>}
+  #else
+   box {<-0.025,-0.034,-0.0002>,<0.025,0.035,0.0002>
+  #end
+  pigment {rgbt 1}
    interior {media {mix add method 4 resolution 0.001 emission Glow*Exposure*100
     density {
      #if(A=0) function {VeinField(x,y,z).gray} colour_map {[0 rgb 0] [1 rgb 1]}
