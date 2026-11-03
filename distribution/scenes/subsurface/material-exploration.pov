@@ -10,7 +10,7 @@
 #ifndef (SubsurfaceSamples) #declare SubsurfaceSamples=64; #end
 #ifndef (InternalSamples) #declare InternalSamples=128; #end
 #ifndef (EmitterSamples) #declare EmitterSamples=96; #end
-#ifndef (VeinPattern) #declare VeinPattern=0; #end
+#ifndef (VeinPattern) #declare VeinPattern=1; #end
 #ifndef (VeinScale) #declare VeinScale=0.005; #end
 #ifndef (VeinLayer) #declare VeinLayer=0; #end
 #ifndef (CameraZoom) #declare CameraZoom=1; #end
@@ -30,7 +30,7 @@
 #ifndef (WaxBouncePasses) #declare WaxBouncePasses=1; #end
 #ifndef (SourceOn) #declare SourceOn=1; #end
 #ifndef (NormalStrength) #declare NormalStrength=0.18; #end
-#ifndef (InternalSource) #declare InternalSource=0; #end
+#ifndef (InternalSource) #declare InternalSource=(Case<0 & !Sheet); #end
 #ifndef (Fill) #declare Fill=1; #end
 #ifndef (TransportScale) #declare TransportScale=-1; #end
 #ifndef (LookupDepth) #declare LookupDepth=-1; #end
