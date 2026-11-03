@@ -1218,7 +1218,7 @@
    "from": "doc/html/r3_4.html"
   },
   "bounce": {
-   "code": "bounce { [passes Integer] [self Bool] }",
+   "code": "bounce { [passes Integer] [self Float | Vector | rgb Vector | on | off] }",
    "from": "doc/html/r3_12.html:3"
   },
   "bounded_by": {
@@ -2657,8 +2657,8 @@
    "from": "doc/html/r3_10.html"
   },
   "self": {
-   "rank": 48,
-   "code": "bounce | bounce { [passes Integer] [self Bool] }",
+   "rank": 49,
+   "code": "light { samples 16 bounce { passes 1 self off } }",
    "from": "doc/html/r3_12.html"
   },
   "shadowless": {

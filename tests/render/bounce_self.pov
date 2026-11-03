@@ -1,8 +1,9 @@
 // bounce_self.pov: a lit cloud with Bounce passes, Self 0 keeping its bounce off its own media, Emit a light of its
 // own; Scene 1 adds a second cloud and a floor, Mask 1 shows only the floor, flat.
-#version 3.8;
+#version 3.7;
 #ifndef (Bounce) #declare Bounce = 0; #end
 #ifndef (Self) #declare Self = 1; #end
+#ifdef (Tint) #declare Self = <0, 0.5, 1>; #end
 #ifndef (Emit) #declare Emit = 0; #end
 #ifndef (Scene) #declare Scene = 0; #end
 #ifndef (Mask) #declare Mask = 0; #end
@@ -15,7 +16,11 @@ background { rgb 0 }
   box { -0.7, 0.7 pigment { rgbt 1 } hollow
     interior {
       media { method 4
-        scattering { 1, rgb 2 } absorption rgb 0.2
+        #ifdef (Modifier)
+          #if (!Light) scattering { 5, rgb 2 eccentricity 0.5 }
+          #else scattering { 1, rgb 2 } #end
+        #else scattering { 1, rgb 2 } #end
+        absorption rgb 0.2
         density { spherical turbulence 0.2 color_map { [0 rgb 0] [0.4 rgb 1] [1 rgb 1.5] } scale 0.7 }
       }
       #if (Light)
@@ -32,6 +37,11 @@ background { rgb 0 }
 #declare Lit = (Bounce > 0 | Emit);
 #if (!Mask)
   Cloud(<-1.4, 1.7, 0>, Lit)
+  #ifdef (Modifier)
+    Cloud(<-1.4, 1.7, 0>, 0)
+    box { <-2.1,1,-0.7>, <-0.7,2.4,0.7> pigment { rgbt 1 } hollow
+      interior { media { method 4 mix subtract priority 10 scattering { 1, rgb 0.2 } } } }
+  #end
   #if (Scene = 1) Cloud(<1.4, 1.7, 0>, 0) #end
 #end
 #if (Scene = 1)

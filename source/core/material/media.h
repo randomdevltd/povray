@@ -216,7 +216,7 @@ class MediaFunction : public Trace::MediaFunctor
         void ModifierDensity(Media& medium, const Vector3d& point, ModifierSource source, MathColour& local);
         /// Adds the media's coefficients at a point, density[i] being medias[i]'s density there, after the modifiers;
         void AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
-                                     MathColour& extinction, MathColour *emission, MathColour *scattering, const DBL *phaseCosine = nullptr);
+                                     MathColour& extinction, MathColour *emission, MathColour *scattering, const DBL *phaseCosine = nullptr, const LightSource *light = nullptr, const MathColour *selfShare = nullptr);
 
         /// The key the current ray's media draws are hashed from.
         std::uint64_t drawKey;
@@ -303,12 +303,12 @@ class MediaFunction : public Trace::MediaFunctor
                                  bool prepared);
         void ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
                                             const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay,
-                                            const LightSource *light = nullptr);
+                                            const LightSource *light = nullptr, const MathColour *selfShare = nullptr);
         /// Adds to output the light the media at point scatter along the ray from each incident sample; given the light,
         /// each medium scatters its share of it (LightSource::selfContainer).
         void ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
                              const Vector3d& point, const BasicRay& ray, const MathColour *densities = nullptr,
-                             const LightSource *light = nullptr);
+                             const LightSource *light = nullptr, const MathColour *selfShare = nullptr);
         void ComputeMediaScatteringAttenuation(MediaVector& medias, MathColour& OutputColor, const MathColour& Sc, const MathColour& Light_Colour, const BasicRay &ray, const BasicRay &Light_Ray);
 };
 

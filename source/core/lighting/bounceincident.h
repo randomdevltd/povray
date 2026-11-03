@@ -143,7 +143,7 @@ const unsigned int kVolumeDrawsPerSample = 2;
 struct VolumeGather final
 {
     std::vector<const LightSource*> lights;
-    std::vector<double> scales;            ///< each light's multiplier, none for all 1
+    std::vector<MathColour> scales;            ///< each light's multiplier, none for all 1
     unsigned int samples = 1;
     std::vector<ConstObjectPtr> receivers;
 };
@@ -214,7 +214,7 @@ inline VolumeIncident GatherVolumeIncident(Trace& trace, const Vector3d& centre,
     for (std::size_t index = 0; index < gather.lights.size(); ++index)
     {
         const LightSource* light = gather.lights[index];
-        const double scale = gather.scales.empty() ? 1.0 : gather.scales[index];
+        const MathColour scale = gather.scales.empty() ? MathColour(1.0) : gather.scales[index];
         const unsigned int count = gather.samples * kVolumeDrawsPerSample;
         const std::uint64_t lightKey = DeriveKey(key, kDrawAreaLight,
                                                  std::uint64_t(light->index) | (light->lightGroupLight ? (std::uint64_t(1) << 63) : 0));

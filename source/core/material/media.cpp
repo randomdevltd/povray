@@ -151,14 +151,14 @@ static bool OwnedBy(const Media *medium, ConstObjectPtr container)
 
 /// The share of the light the medium scatters: of a bounce light its container's media scatter selfScale, and the rest of
 /// the light it had before bouncing (selfOnly), which no other medium scatters.
-static DBL ScatterShare(const LightSource *light, const Media *medium)
+static MathColour ScatterShare(const LightSource *light, const Media *medium, const MathColour *selfShare = nullptr)
 {
     if ((light == nullptr) || (light->selfContainer == nullptr))
-        return 1.0;
+        return MathColour(1.0);
     const bool own = OwnedBy(medium, light->selfContainer);
     if (light->selfOnly)
-        return own ? 1.0 - light->selfScale : 0.0;
-    return own ? light->selfScale : 1.0;
+        return own ? MathColour(1.0) - light->selfScale : MathColour();
+    return own ? (selfShare ? *selfShare : light->selfScale) : MathColour(1.0);
 }
 
 class Media::FastCache final
@@ -3167,7 +3167,7 @@ void MediaFunction::ModifierDensity(Media& medium, const Vector3d& point, Modifi
 }
 
 void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColour *density, const Vector3d& point, ModifierSource source,
-                                            MathColour& extinction, MathColour *emission, MathColour *scattering, const DBL *phaseCosine)
+                                            MathColour& extinction, MathColour *emission, MathColour *scattering, const DBL *phaseCosine, const LightSource *light, const MathColour *selfShare)
 {
     const size_t n = medias.size();
     modifierScratch.resize(3 * n);
@@ -3195,7 +3195,7 @@ void MediaFunction::AddModifiedCoefficients(MediaVector& medias, const MathColou
         if (emission != nullptr)
             *emission += emitted[i];
         if (scattering != nullptr)
-            *scattering += scattered[i] * (phaseCosine ? PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, *phaseCosine) : 1.0);
+            *scattering += scattered[i] * ScatterShare(light, medias[i], selfShare) * (phaseCosine ? PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, *phaseCosine) : 1.0);
     }
 }
 
@@ -5219,9 +5219,9 @@ void MediaFunction::AddMediaLight(LightSource *light, const MediaVector& medias,
     for (const Media *medium : medias)
         if (medium->use_scattering)
             (OwnedBy(medium, light->selfContainer) ? own : other) = true;
-    if (other || (own && light->selfScale > 0.0))
+    if (other || (own && !light->selfScale.IsZero()))
         ComputeOneMediaLightInterval(light, lights, ray, isect);
-    if (own && light->selfLight && light->selfScale < 1.0)
+    if (own && light->selfLight && !(light->selfScale - MathColour(1.0)).IsZero())
         ComputeOneMediaLightInterval(light->selfLight.get(), lights, ray, isect);
 }
 
@@ -5809,7 +5809,7 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
                         integral *= Light_Photon_Path_Weight(photon.light, middle);
                     // the same scattering law as the direct light on this medium
                     if (photon.light && photon.light->emitter)
-                        ComputePhysicalMediaScattering(medias, sum, integral / (4.0 * M_PI), H, ray, light, photon.light);
+                        ComputePhysicalMediaScattering(medias, sum, integral / (4.0 * M_PI), H, ray, light, photon.light, &photon.selfShare);
                     else if (prepared)
                         ComputePhysicalMediaScattering(medias, sum, integral / 4.0, H, ray, light);
                     else
@@ -5891,28 +5891,25 @@ void MediaFunction::ComputeMediaPhotons(MediaVector& medias, MathColour& Te, con
 
 void MediaFunction::ComputePhysicalMediaScattering(MediaVector& medias, MathColour& output, const MathColour& incoming,
                                                    const Vector3d& point, const BasicRay& ray, const BasicRay& lightRay,
-                                                   const LightSource *light)
+                                                   const LightSource *light, const MathColour *selfShare)
 {
     const MediaIncident sample{incoming, lightRay.Direction};
-    ScatterIncident(medias, output, &sample, 1, point, ray, nullptr, light);
+    ScatterIncident(medias, output, &sample, 1, point, ray, nullptr, light, selfShare);
 }
 
 void MediaFunction::ScatterIncident(MediaVector& medias, MathColour& output, const MediaIncident* incident, size_t count,
                                     const Vector3d& point, const BasicRay& ray, const MathColour *densities,
-                                    const LightSource *light)
+                                    const LightSource *light, const MathColour *selfShare)
 {
     scatterDensity.assign(medias.size(), MathColour());
     for (size_t i = 0; i < medias.size(); ++i)
     {
-        const DBL share = ScatterShare(light, medias[i]);
-        if (medias[i]->use_scattering && share > 0.0)
+        if (medias[i]->use_scattering)
         {
             if (densities != nullptr)
                 scatterDensity[i] = densities[i];
             else
                 DensityForDeclaredMode(*medias[i], point, scatterDensity[i]);
-            if (share != 1.0)
-                scatterDensity[i] *= share;
         }
     }
     for (size_t s = 0; s < count; ++s)
@@ -5922,12 +5919,12 @@ void MediaFunction::ScatterIncident(MediaVector& medias, MathColour& output, con
         if (modifiers != nullptr)
         {
             MathColour unused;
-            AddModifiedCoefficients(medias, scatterDensity.data(), point, ModifierSource::kPattern, unused, nullptr, &kernel, &cosine);
+            AddModifiedCoefficients(medias, scatterDensity.data(), point, ModifierSource::kPattern, unused, nullptr, &kernel, &cosine, light, selfShare);
         }
         else
             for (size_t i = 0; i < medias.size(); ++i)
-                if (medias[i]->use_scattering && ScatterShare(light, medias[i]) > 0.0)
-                    kernel += scatterDensity[i] * medias[i]->Scattering *
+                if (medias[i]->use_scattering && !ScatterShare(light, medias[i], selfShare).IsZero())
+                    kernel += scatterDensity[i] * medias[i]->Scattering * ScatterShare(light, medias[i], selfShare) *
                               PhysicalPhaseFactor(medias[i]->Type, medias[i]->Eccentricity, cosine);
         output += kernel * incident[s].incoming;
     }

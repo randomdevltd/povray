@@ -142,7 +142,7 @@ struct Target final
     unsigned int passes;
     double gain = 1.0;
     bool surface = false;
-    double self = 1.0;
+    MathColour self = MathColour(1.0);
     std::size_t part = 0;
     std::vector<std::shared_ptr<const SurfaceBounceRadiance>> surfaceOrders;
 };
@@ -395,8 +395,10 @@ inline bool EmitsPreparedSource(const LightSource& light)
 struct Sources final
 {
     std::vector<LightSource*> lights;
-    std::vector<double> scales;
-    bool operator==(const Sources& other) const { return lights == other.lights && scales == other.scales; }
+    std::vector<MathColour> scales;
+    bool operator==(const Sources& other) const { return lights == other.lights && scales.size() == other.scales.size() &&
+        std::equal(scales.begin(), scales.end(), other.scales.begin(),
+                   [](const MathColour& a, const MathColour& b) { return (a - b).IsZero(); }); }
 };
 
 // The previous order's lights a volume target gathers, its own bounced light scaled by its self share.
@@ -407,10 +409,10 @@ inline Sources VolumeSources(const Target& target, unsigned int order,
     Sources sources;
     for (size_t source = 0; source < previous.size(); ++source)
     {
-        const double scale = (order > 1 && previousOriginal[source] == target.light) ? target.self : 1.0;
+        const MathColour scale = (order > 1 && previousOriginal[source] == target.light) ? target.self : MathColour(1.0);
         if (!previous[source]->Photon_Only && EmitsPreparedSource(*previous[source]) &&
             previous[source]->Media_Interaction && Receives(target.light->emitterContainer, previousOriginal[source]) &&
-            scale > 0.0)
+            !scale.IsZero())
         {
             sources.lights.push_back(previous[source].get());
             sources.scales.push_back(scale);
@@ -812,7 +814,7 @@ inline void PrepareVolumeBounceLightFields(TraceThreadData* td, const std::funct
         else
         {
             // Its own media scatter the self share of the bounced light, and the rest of the light as it was before bouncing.
-            if (target.self != 1.0)
+            if (!(target.self - MathColour(1.0)).IsZero())
             {
                 const auto owner = target.light->emitterContainer;
                 if (target.primary->HasVolumeEmission())
