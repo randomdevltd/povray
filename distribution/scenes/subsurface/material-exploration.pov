@@ -13,6 +13,9 @@
 #ifndef (VeinPattern) #declare VeinPattern=1; #end
 #ifndef (VeinScale) #declare VeinScale=0.005; #end
 #ifndef (VeinLayer) #declare VeinLayer=1; #end
+#ifndef (VeinInset) #declare VeinInset=0.0007; #end
+#ifndef (VeinThickness) #declare VeinThickness=0.0008; #end
+#ifndef (HandDomainCells) #declare HandDomainCells=2000000; #end
 #ifndef (CameraZoom) #declare CameraZoom=1; #end
 #ifndef (PanelHalfDepth) #declare PanelHalfDepth=0.006; #end
 #ifndef (PanelRound) #declare PanelRound=1; #end
@@ -73,14 +76,14 @@
  abs(sqrt(pow(X,2)+pow(Y-0.030,2))-0.0022),
  abs(sqrt(pow(X-0.019,2)+pow(Y-0.030,2))-0.0022)
  )/0.0006)};
-#declare VascularField=function(X,Y) {max(0,1-min(
- SegmentDistance(X,Y,0,-0.045,0,0.002),
- SegmentDistance(X,Y,0,0.002,-0.018,0.008),SegmentDistance(X,Y,-0.018,0.008,-0.0225,0.044),
- SegmentDistance(X,Y,0,0.002,-0.006,0.008),SegmentDistance(X,Y,-0.006,0.008,-0.0075,0.052),
- SegmentDistance(X,Y,0,0.002,0.006,0.008),SegmentDistance(X,Y,0.006,0.008,0.0075,0.052),
- SegmentDistance(X,Y,0,0.002,0.018,0.008),SegmentDistance(X,Y,0.018,0.008,0.0225,0.044),
- SegmentDistance(X,Y,0,-0.012,-0.019,-0.012),SegmentDistance(X,Y,-0.019,-0.012,-0.038,0.009)
- )/0.0015)};
+#macro CapillaryPattern()
+ crackle form <-1,1,0> metric 2 turbulence 0.6 octaves 5 omega 0.58 lambda 2.2
+ scale <VeinScale,VeinScale*3.6,1000>
+#end
+#declare CapillaryDensity=density {
+ CapillaryPattern()
+ colour_map {[0 rgb 1] [0.02 rgb 1] [0.06 rgb 0] [1 rgb 0]}
+};
 #declare Runes=union {
  #for(R,0,3)
   text {ttf "timrom.ttf" "FXH" 1,0 scale <0.015,0.015,0.012> translate <-0.025,R*0.018-0.033,-0.006>}
@@ -93,7 +96,7 @@
  #end
  box {<-0.020,0.005,-0.006>,<0.020,0.0062,0.006>}
 }
-global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12
+global_settings { assumed_gamma 1 mm_per_unit 1000 max_trace_level 12 prepared_media_cells 16000000
  subsurface {method 2 samples SubsurfaceSamples,InternalSamples spacing 1 error_bound 0.15 memory 256} }
 #default {finish {ambient 0 diffuse 0.7}}
 background {rgb <0.012,0.019,0.031>}
@@ -157,8 +160,8 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
      function {max(RuneMask(x,y),select(abs(RuneY(y))-0.006,0,1),select(abs(x)-0.030,0,1))}
      colour_map {[0 rgb <0.12,0.045,0.018>] [0.12 rgb <0.12,0.045,0.018>] [0.2 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]}
     #else
-     crackle metric 2 turbulence 0.15
-     colour_map {[0 rgb <0.018,0.012,0.032>] [0.09 rgb <0.018,0.012,0.032>] [0.14 rgbt <1,1,1,1>] [1 rgbt <1,1,1,1>]} scale 0.007
+     CapillaryPattern()
+     colour_map {[0 rgbt <1,1,1,1>] [0.02 rgbt <1,1,1,1>] [0.06 rgb <0.12,0.06,0.17>] [1 rgb <0.12,0.06,0.17>]}
     #end
    }
    normal {bumps 0.08 scale 0.00018}
@@ -347,7 +350,7 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #local Glow=Glow/max(Glow.x,Glow.y,Glow.z);
   #if (A=0)
    #if (VeinLayer)
-    difference {HandBoundary(0.0007) HandBoundary(0.0015)
+    difference {HandBoundary(VeinInset) HandBoundary(VeinInset+VeinThickness)
    #else
     intersection {HandBoundary(0.0007) box {<-0.06,-0.06,-0.0002>,<0.06,0.07,0.0002>}
    #end
@@ -355,16 +358,16 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
    box {<-(A=7?0.032:0.025),-(A=7?0.036:0.034),-0.0002>,<(A=7?0.032:0.025),(A=7?0.036:0.035),0.0002>
   #end
   pigment {rgbt 1}
-   interior {ior off media {mix add method 4 resolution 0.001 emission Glow*Exposure
+   interior {ior off media {mix add method 4 resolution ((A=0 & VeinPattern)?0.00025:0.001) emission Glow*Exposure
     density {
      #if(A=0)
-      #if(VeinPattern) function {VascularField(x,y)} #else function {VeinField(x,y,z).gray} #end
-      colour_map {[0 rgb 0] [1 rgb 1]}
+      #if(VeinPattern) CapillaryDensity
+      #else function {VeinField(x,y,z).gray} colour_map {[0 rgb 0] [1 rgb 1]} #end
      #elseif(A=6) function {CircuitMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]}
      #else function {RuneMask(x,y)} colour_map {[0 rgb 0] [1 rgb 1]} #end
     }
    }
-   light {emission brightness (A=0?HandLumens:InternalLumens)*Exposure lumens samples EmitterSamples}
+   light {emission brightness (A=0?HandLumens:InternalLumens)*Exposure lumens samples EmitterSamples #if(A=0 & VeinPattern) domain_cells HandDomainCells #end}
    }
   }
  #end
