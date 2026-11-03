@@ -1170,6 +1170,17 @@ Method 1 renders the same pixels, bit for bit, before and after: `version4_subsu
 1 and `_no_version` at `+MV4.0`, `subsurface_leaf`, `subsurface_photons` (one thread; with several, its photon map
 differs from run to run on one build), `subsurface_photon_prism`, and the reference scene's studs and trunk.
 
+## Subsurface method 2 emitter samples
+
+Surface and volume lights use round(`samples` × the receiving finish's `light_samples`), at least one,
+for each method 2 diffuse irradiance estimate: stored cloud points, near-field corrections, exit-point
+estimates and diffusion within a pixel. Classic point and area lights keep their existing budgets.
+The cloud cache distinguishes the finish multiplier. The exit estimate averages the diffuse light
+from all draws; its first connection remains the representative direction and light for the separate
+single-scattering estimator, whose sample count is still the global subsurface second `samples` value.
+`tests/render/subsurface_emitter_samples.sh` checks actual draw counts for local and stored clouds,
+equivalent finish-scaled budgets, and unchanged classic lighting.
+
 ## Subsurface method 2 on smooth meshes
 
 A cloud point stands for h²/|n|₁ of surface and is compared with its neighbours by its normal; both took the normal

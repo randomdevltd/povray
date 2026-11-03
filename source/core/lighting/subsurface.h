@@ -224,10 +224,11 @@ struct SubsurfaceCellKey final
     const void *medium; ///< the texture layer whose flesh and skin its points look up where light enters, or null
     size_t preparedSetId;
     int depthLevel; ///< where the diffusion would set too coarse a step for its depth, the step is 2^depthLevel scene units
+    double lightSamples = 1.0;
     bool operator==(const SubsurfaceCellKey& o) const
     {
         return object == o.object && sizeLevel == o.sizeLevel && x == o.x && y == o.y && z == o.z && radiosity == o.radiosity &&
-               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel;
+               medium == o.medium && photons == o.photons && preparedSetId == o.preparedSetId && depthLevel == o.depthLevel && lightSamples == o.lightSamples;
     }
 };
 
