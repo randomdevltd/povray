@@ -495,6 +495,8 @@ class Trace
         /// Scratch space for subsurface cloud queries.
         std::vector<int> ssltScratchStack;
         std::vector<char> ssltScratchClosed, ssltScratchSampled;
+        std::vector<double> ssltScratchFacets;
+        std::vector<Vector3d> ssltScratchTaps;
         std::vector<Intersection> ssltScratchHits;
         SubsurfaceVisibility ssltScratchVisibility;
         /// Thread data.
@@ -1222,7 +1224,8 @@ class Trace
         {
             MathColour reflectance, tint, weight;
             const TEXTURE *top = nullptr;
-            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility);
+            bool bumped = false; ///< whether the top layer's normal is perturbed
+            void Add(const TEXTURE *layer, const MathColour& pigment, const MathColour& visibility, bool bumps = false);
             bool Finish();
         };
 
@@ -1279,6 +1282,9 @@ class Trace
             PreparedSetId preparedSetId = 0;
             ObjectPtr object = nullptr;
             const SubsurfaceFlesh *flesh = nullptr;
+            bool bumps = false; ///< whether the exit point's texture perturbs the normal light enters by
+            std::vector<Vector3d> bumped; ///< perturbed normals over the area the exit point's own light enters, on its INormal's side
+            std::vector<double> bumpedShare; ///< each one's share of that light, by the profile at its offset
             const void *medium = nullptr; ///< what the points look up where light enters, keying their cells; null for nothing
             int sizeLevel = 0, depthLevel = kCloudNoDepthLevel;
             SubsurfaceUnserved unserved = kUnservedSheet; ///< why the cloud could not be opened
@@ -1324,6 +1330,11 @@ class Trace
         double ComputeFt(double cos_angle, double eta);
         void ComputeSurfaceTangents(const Vector3d& normal, Vector3d& u, Vector3d& v);
         void ComputeSSLTNormal (Intersection& Ray_Intersection);
+        bool SubsurfaceEntryNormal(const Intersection& hit, const Vector3d& outward, TraceTicket& ticket, Vector3d& bumped);
+        bool SubsurfaceEntryTaps(const Intersection& hit, const Vector3d& outward, double side, TraceTicket& ticket, std::vector<Vector3d>& taps,
+                                 const SubsurfaceProfile *profile = nullptr, std::vector<double> *shares = nullptr);
+        bool TextureEntryNormal(const TEXTURE *texture, std::vector<const TEXTURE *>& warps, const Vector3d& ipoint, const Vector3d& outward,
+                                const Ray& ray, Intersection& isect, Vector3d& normal);
         bool IsSameSSLTObject(ConstObjectPtr obj1, ConstObjectPtr obj2);
         void ComputeDiffuseSampleBase(Vector3d& basePoint, const Intersection& out, const Vector3d& vOut, double avgFreeDist, TraceTicket& ticket);
         void ComputeDiffuseSamplePoint(const Vector3d& basePoint, ObjectPtr object, Intersection& in, double& sampleArea, TraceTicket& ticket,
@@ -1338,11 +1349,11 @@ class Trace
         void ComputeDiffuseAmbientContribution1(const Intersection& in, const PreciseMathColour& rd, MathColour& Total_Colour, double weight, TraceTicket& ticket);
         void ComputeSingleScatteringCandidate(const LightSource& lightsource, const Intersection& out, const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s,
                                               const PreciseMathColour& weightOut, const Vector3d& bend_point, double ftOut, double cos_out_prime,
-                                              SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key);
+                                              SubsurfaceCandidate& candidate, TraceTicket& ticket, std::uint64_t key, bool bumps);
         void ComputeSingleScatteringContribution(const Intersection& out, double dist, double ftOut, double cos_out_prime, const Vector3d& refractedREye,
                                                  const PreciseMathColour& sigma_t_xo, const PreciseMathColour& sigma_s, int numSamples, MathColour& Lo,
                                                  const std::vector<const LightSource*>& lights, const SubsurfaceCloud* cloud, const SubsurfaceFlesh& flesh,
-                                                 TraceTicket& ticket, std::uint64_t key);
+                                                 TraceTicket& ticket, std::uint64_t key, bool bumps);
         void ShadeSubsurfaceCandidates(const std::vector<const LightSource*>& lights, const SubsurfaceCandidate* candidates, int count, MathColour& total, TraceTicket& ticket,
                                        std::uint64_t key);
         MathColour DrawSubsurfaceShadows(const LightSource& lightsource, const SubsurfaceCandidate* candidates, int count, double sum, int budget, TraceTicket& ticket,
@@ -1350,7 +1361,9 @@ class Trace
         MathColour ComputeSubsurfaceIrradiance(const Vector3d& point, const Vector3d& normal, const std::vector<const LightSource*>& lights,
                                                int areaPoints, const Vector2d* areaShift, float* visibility, TraceTicket& ticket, std::uint64_t key,
                                                const Vector3d& geometricNormal, ConstObjectPtr object, ConstObjectPtr whole,
-                                               double tolerance, const char* uses = nullptr, double lightSamples = 1.0);
+                                               double tolerance, const char* uses = nullptr, const Vector3d* bumped = nullptr,
+                                               const double* shares = nullptr, size_t facets = 1, double lightSamples = 1.0);
+        double ComputeFacetsEntry(const Vector3d& side, const Vector3d* facets, const double* shares, size_t count, const Vector3d& direction, double eta);
         const SubsurfaceParts& FindSubsurfaceParts(ObjectPtr object, PreparedSetId preparedSetId);
         std::string DescribeSubsurfaceObject(ConstObjectPtr object);
         bool SubsurfaceSheet(ConstObjectPtr part, bool cutter, SubsurfaceCache *shared);

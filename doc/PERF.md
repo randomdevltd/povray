@@ -803,6 +803,14 @@ along it against the reference before (high albedo; red 15%), and 6% (red 1%) af
 than the walks where the diffusion is long against the part (high-albedo stud tops, thin blocks), as the dipole on a
 semi-infinite medium is, and stud walls are a little bright in red near their base.
 
+## Subsurface entry normals
+
+Method 2 applies texture normals to the cosine and Fresnel transmission of entering light. Cloud points and local estimates average this response over the area they represent, using surface intersections for mapped texture coordinates. Surface bounce integrates each incident draw at its actual surface hit before rotating directions for diffuse moments. Internal paths, visibility probes and exit Fresnel transmission use the surface normal; a fine pore cannot turn an entire visible pixel into a dark grazing facet.
+
+Normal tap arrays exist only while a cell is built and lit. Their row and merged storage count toward staging and the explicit memory cap, including their overlap. Disabling normals selects separate unperturbed cells. Ordinary diffuse bounce still integrates its material brilliance against the geometric normal; this change affects subsurface entry only.
+
+`distribution/scenes/subsurface/skin_normals.pov` compares flat skin, pores and wrinkles on the same ear geometry. `Lighting=0` gives grazing front illumination, `Lighting=1` illuminates the thin folds from behind, and `Lighting=2` places a source inside each lobe. `Highlights=0` isolates subsurface response from surface highlights.
+
 ## Subsurface minimum influence
 
 `adc_bailout` only decides whether a ray is traced, so a reflection or refraction of small weight that meets a
