@@ -4,6 +4,7 @@
 #ifndef (Artifact) #declare Artifact=-1; #end
 #ifndef (Case) #declare Case=-1; #end
 #ifndef (Sheet) #declare Sheet=0; #end
+#ifndef (PanelRound) #declare PanelRound=1; #end
 #ifndef (EmissionExport) #declare EmissionExport=0; #end
 #ifndef (Export) #declare Export=0; #end
 #ifndef (SurfaceSource) #declare SurfaceSource=0; #end
@@ -150,7 +151,11 @@ plane {z,0.07 pigment {rgb <0.026,0.038,0.056>} finish {diffuse 0.7}}
   #for(J,-3,3) cylinder {<0,J*0.01,-0.002>,<0.018*(1-abs(J)/5),J*0.01+0.012,-0.002>,0.00035 pigment {rgb <0.1,0.22,0.03>}} #end
   #break
  #case(6)
-  superellipsoid {<0.18,0.18> scale <0.037,0.045,0.006> Flesh(A,T)}
+  #if (PanelRound)
+   superellipsoid {<0.18,0.18> scale <0.037,0.045,0.006> Flesh(A,T)}
+  #else
+   box {<-0.037,-0.045,-0.006>,<0.037,0.045,0.006> Flesh(A,T)}
+  #end
   #for(J,-1,1) cylinder {<J*0.019,-0.028,-0.007>,<J*0.019,-0.028,-0.009>,0.005 pigment {rgb <0.08,0.11,0.15>} finish {specular 0.6}} #end
   #break
  #case(7)
